@@ -9,7 +9,7 @@ assert.match(template, /<script src="chat\/voice-review\.js\?v=\{\{ASSET_VERSION
 assert.match(template, /class="input-actions-row"[\s\S]*?id="voiceReviewPanel"[\s\S]*?id="voiceBtn"/,
   'cleanup status belongs beside composer controls instead of below the input');
 const ids = [
-  'voiceReviewEnabled', 'voiceReviewTerms', 'voiceReviewProvider', 'voiceReviewProviderEndpoint',
+  'voiceReviewEnabled', 'voiceReviewModelEnabled', 'voiceReviewModelFields', 'voiceReviewTerms', 'voiceReviewProvider', 'voiceReviewProviderEndpoint',
   'voiceReviewDoubaoKeyNote', 'voiceReviewApiKey', 'voiceReviewApiKeyStatus', 'voiceReviewSave',
   'voiceReviewSettingsStatus', 'voiceReviewBackendNote', 'voiceReviewPanel', 'voiceReviewBody',
   'voiceReviewUndo', 'voiceReviewStatus', 'msgInput',
@@ -38,13 +38,13 @@ const context = {
     requests.push({ path, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
     if (path === '/api/voice-review/settings' && options.method === 'PATCH') {
       const body = JSON.parse(options.body);
-      return { settings: { enabled: true, terms: body.terms, provider: {
+      return { settings: { enabled: true, reviewMode: body.reviewMode, terms: body.terms, provider: {
         id: body.providerId,
         apiKeyConfigured: !!body.providerId && !!body.apiKey,
       } }, backend: body.apiKey ? 'api' : 'unconfigured' };
     }
     if (path === '/api/voice-review/settings') return { settings: {
-      enabled: true, terms: ['RoboDojo'], provider: { id: 'doubao', apiKeyConfigured: true },
+      enabled: true, reviewMode: 'model', terms: ['RoboDojo'], provider: { id: 'doubao', apiKeyConfigured: true },
     }, backend: 'api' };
     if (path === '/api/voice-review') return new Promise((resolve) => reviews.push(resolve));
     throw new Error('Unexpected request');
@@ -77,6 +77,7 @@ assert.equal((await pending).after, '已有草稿 请检查 RoboDojo 的结果�
 assert.equal(composer.value, '已有草稿 请检查 RoboDojo 的结果。');
 assert.equal(elements.get('voiceReviewUndo').hidden, false);
 assert.equal(browser.remotelabWaitForVoiceReview(), null);
+assert.equal(elements.get('voiceReviewModelFields').hidden, false);
 
 elements.get('voiceReviewUndo').listeners.get('click')();
 assert.equal(composer.value, '已有草稿 请检查肉波道场的结果');
@@ -160,5 +161,18 @@ elements.get('voiceReviewApiKey').value = 'private-key';
 await elements.get('voiceReviewSave').listeners.get('click')();
 assert.equal(requests.at(-1).body.apiKey, 'private-key');
 assert.equal(elements.get('voiceReviewApiKey').value, '', 'the input must clear after the secret is saved');
+
+elements.get('voiceReviewModelEnabled').checked = false;
+elements.get('voiceReviewModelEnabled').listeners.get('change')();
+assert.equal(elements.get('voiceReviewModelFields').hidden, true);
+await elements.get('voiceReviewSave').listeners.get('click')();
+assert.equal(requests.at(-1).body.reviewMode, 'asr');
+assert.equal(elements.get('voiceReviewBackendNote').textContent, 'settings.voiceReview.backend.asr');
+composer.value = '只做顺滑的转写';
+finishDictation('只做顺滑的转写');
+assert.equal(browser.remotelabWaitForVoiceReview(), null);
+assert.equal(elements.get('voiceReviewPanel').hidden, true);
+assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 6,
+  'ASR-only mode must not call the model even when an API key is saved');
 
 console.log('test-chat-voice-review-preview: ok');

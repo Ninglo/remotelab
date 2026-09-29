@@ -2,6 +2,8 @@
 
 (function attachVoiceReview(globalScope) {
   const enabledInput = document.getElementById("voiceReviewEnabled");
+  const modelInput = document.getElementById("voiceReviewModelEnabled");
+  const modelFields = document.getElementById("voiceReviewModelFields");
   const termsInput = document.getElementById("voiceReviewTerms");
   const providerSelect = document.getElementById("voiceReviewProvider");
   const providerEndpoint = document.getElementById("voiceReviewProviderEndpoint");
@@ -16,14 +18,14 @@
   const undoButton = document.getElementById("voiceReviewUndo");
   const status = document.getElementById("voiceReviewStatus");
   const composer = document.getElementById("msgInput");
-  if (!enabledInput || !termsInput || !providerSelect || !apiKeyInput || !saveButton || !panel || !composer) return;
+  if (!enabledInput || !modelInput || !termsInput || !providerSelect || !apiKeyInput || !saveButton || !panel || !composer) return;
 
   const providers = {
     doubao: { model: "doubao-seed-2-1-lite-260915", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions" },
     zhipu: { model: "glm-4.7-flash", endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions" },
     openrouter: { model: "qwen/qwen3-4b:free", endpoint: "https://openrouter.ai/api/v1/chat/completions" },
   };
-  let settings = { enabled: false, terms: [], provider: { id: "", apiKeyConfigured: false } };
+  let settings = { enabled: false, reviewMode: "asr", terms: [], provider: { id: "", apiKeyConfigured: false } };
   let backend = "unconfigured";
   let capture = null;
   let undoState = null;
@@ -60,6 +62,7 @@
   }
 
   function renderProvider() {
+    if (modelFields) modelFields.hidden = !modelInput.checked;
     const selected = providers[providerSelect.value];
     if (providerEndpoint) providerEndpoint.textContent = selected ? `${selected.model} · ${selected.endpoint}` : "";
     if (doubaoKeyNote) doubaoKeyNote.hidden = providerSelect.value !== "doubao";
@@ -68,6 +71,13 @@
         ? t("settings.voiceReview.apiKeySaved")
         : t("settings.voiceReview.apiKeyNeeded");
     apiKeyInput.disabled = !selected;
+  }
+
+  function renderBackendNote() {
+    if (!backendNote) return;
+    backendNote.textContent = settings.enabled && settings.reviewMode === "asr"
+      ? t("settings.voiceReview.backend.asr")
+      : t(`settings.voiceReview.backend.${backend}`);
   }
 
   function clearPanel() {
@@ -141,17 +151,19 @@
       const payload = await fetchJsonOrRedirect("/api/voice-review/settings", { revalidate: false });
       settings = payload?.settings || settings;
       backend = payload?.backend === "api" ? "api" : "unconfigured";
-      if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${backend}`);
+      renderBackendNote();
       enabledInput.checked = settings.enabled === true;
+      modelInput.checked = settings.reviewMode === "model";
       termsInput.value = (settings.terms || []).join("\n");
       providerSelect.value = settings.provider?.id || "";
       apiKeyInput.value = "";
       renderProvider();
       setStatus(settingsStatus, "");
     } catch (error) {
-      settings = { enabled: false, terms: [] };
+      settings = { enabled: false, reviewMode: "asr", terms: [] };
       backend = "unconfigured";
       enabledInput.checked = false;
+      modelInput.checked = false;
       providerSelect.value = "";
       apiKeyInput.value = "";
       renderProvider();
@@ -163,6 +175,8 @@
     apiKeyInput.value = "";
     renderProvider();
   });
+
+  modelInput.addEventListener("change", renderProvider);
 
   saveButton.addEventListener("click", async () => {
     const terms = [...new Set(termsInput.value.split(/\r?\n/).map((term) => term.trim()).filter(Boolean))];
@@ -178,17 +192,18 @@
         method: "PATCH",
         revalidate: false,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: enabledInput.checked, terms, providerId, ...(apiKey ? { apiKey } : {}) }),
+        body: JSON.stringify({ enabled: enabledInput.checked, reviewMode: modelInput.checked ? "model" : "asr", terms, providerId, ...(apiKey ? { apiKey } : {}) }),
       });
       settings = payload.settings;
       backend = payload?.backend === "api" ? "api" : "unconfigured";
-      if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${backend}`);
+      renderBackendNote();
       apiKeyInput.value = "";
       renderProvider();
       setStatus(settingsStatus, t("settings.voiceReview.saved"));
-      if (!settings.enabled) clearPanel();
+      if (!settings.enabled || settings.reviewMode !== "model") clearPanel();
     } catch (error) {
       enabledInput.checked = settings.enabled;
+      modelInput.checked = settings.reviewMode === "model";
       providerSelect.value = settings.provider?.id || "";
       renderProvider();
       setStatus(settingsStatus, error?.message || "Could not save personal voice settings");
@@ -199,7 +214,7 @@
 
   globalScope.addEventListener("remotelab:voice-transcript-complete", (event) => {
     clearPanel();
-    if (!settings.enabled || !event?.detail?.transcript) return;
+    if (!settings.enabled || settings.reviewMode !== "model" || !event?.detail?.transcript) return;
     capture = {
       transcript: event.detail.transcript,
       composerText: event.detail.composerText,

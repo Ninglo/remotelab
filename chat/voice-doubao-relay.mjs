@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { gzipSync, gunzipSync } from 'zlib';
 import { WebSocket } from 'ws';
 import { loadServerVoiceInputSettings } from './instance-settings.mjs';
-import { getVoiceReviewSettings, getVoiceRecognitionHotwords } from './voice-review.mjs';
+import { applyVoiceTermCorrections, getVoiceReviewSettings, getVoiceRecognitionHotwords } from './voice-review.mjs';
 
 export const DOUBAO_VOICE_WS_PATH = '/ws/voice-input/doubao';
 const DOUBAO_VOICE_UPSTREAM_URL = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async';
@@ -77,7 +77,10 @@ export function buildDoubaoFullClientRequest(rawConfig, overrides = {}) {
     audio: { ...DOUBAO_DEFAULT_AUDIO_CONFIG },
     request: {
       ...DOUBAO_DEFAULT_REQUEST_CONFIG,
-      ...(overrides.organize === true ? { enable_nonstream: true } : {}),
+      ...(overrides.organize === true ? {
+        enable_nonstream: true,
+        ...(overrides.smooth === true ? { enable_ddc: true } : {}),
+      } : {}),
       ...(hotwords.length ? { corpus: {
         context: JSON.stringify({ hotwords: hotwords.map((word) => ({ word })) }),
       } } : {}),
@@ -278,6 +281,7 @@ export function bindDoubaoVoiceRelaySocket(ws) {
     upstream: null,
     upstreamLogId: '',
     lastTranscript: '',
+    correctionTerms: [],
     sentAudio: false,
     started: false,
     readySent: false,
@@ -375,11 +379,14 @@ export function bindDoubaoVoiceRelaySocket(ws) {
     relayState.probeOnly = rawPayload?.probe === true;
     let hotwords = [];
     let organize = false;
+    let smooth = false;
     try {
       const personal = await getVoiceReviewSettings(ws?._authSession?.personId);
       if (personal.enabled) {
         hotwords = getVoiceRecognitionHotwords(personal.terms);
+        relayState.correctionTerms = personal.terms;
         organize = true;
+        smooth = personal.reviewMode === 'asr';
       }
     } catch (error) {
       logWarn('personal voice vocabulary unavailable', error?.message || 'unknown error');
@@ -387,7 +394,7 @@ export function bindDoubaoVoiceRelaySocket(ws) {
     const configLog = redactVoiceConfig(config);
     relayState.readySent = false;
     relayState.upstreamLogId = '';
-    logInfo('start requested', `resourceId=${configLog.resourceId} language=${configLog.language} appIdSuffix=${configLog.appIdSuffix || 'none'} probeOnly=${relayState.probeOnly} hotwordCount=${hotwords.length} organize=${organize}`);
+    logInfo('start requested', `resourceId=${configLog.resourceId} language=${configLog.language} appIdSuffix=${configLog.appIdSuffix || 'none'} probeOnly=${relayState.probeOnly} hotwordCount=${hotwords.length} organize=${organize} smooth=${smooth}`);
     sendEvent({ type: 'status', phase: 'connecting' });
 
     const upstream = new WebSocket(DOUBAO_VOICE_UPSTREAM_URL, {
@@ -417,6 +424,7 @@ export function bindDoubaoVoiceRelaySocket(ws) {
         uid: trimString(rawPayload?.uid) || 'remotelab-owner',
         hotwords,
         organize,
+        smooth,
       }));
     });
 
@@ -471,7 +479,7 @@ export function bindDoubaoVoiceRelaySocket(ws) {
           });
         }
       }
-      const transcript = extractDoubaoTranscript(response);
+      const transcript = applyVoiceTermCorrections(extractDoubaoTranscript(response), relayState.correctionTerms);
       if (transcript) {
         relayState.lastTranscript = transcript;
         sendEvent({

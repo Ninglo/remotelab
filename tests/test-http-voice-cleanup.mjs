@@ -170,6 +170,7 @@ try {
   const initialReview = await request(chatPort, 'GET', '/api/voice-review/settings');
   assert.equal(initialReview.status, 200);
   assert.equal(initialReview.json?.settings?.enabled, false, 'new personal review must be off by default');
+  assert.equal(initialReview.json?.settings?.reviewMode, 'asr', 'new personal settings should start with ASR-only cleanup');
   assert.equal(initialReview.json?.backend, 'unconfigured', 'a missing API must never select Codex');
   const reviewWhileOff = await request(chatPort, 'POST', '/api/voice-review', { text: '请检查结果' });
   assert.equal(reviewWhileOff.status, 400, 'no model should run until the Person opts in');
@@ -179,15 +180,15 @@ try {
   });
   assert.equal(savedReview.status, 200);
   assert.deepEqual(savedReview.json?.settings, {
-    enabled: true, terms: ['RoboDojo'], provider: { id: '', apiKeyConfigured: false },
+    enabled: true, reviewMode: 'asr', terms: ['RoboDojo'], provider: { id: '', apiKeyConfigured: false },
   });
   const loadedReview = await request(chatPort, 'GET', '/api/voice-review/settings');
   assert.deepEqual(loadedReview.json?.settings, savedReview.json?.settings);
   const reviewWithoutApi = await request(chatPort, 'POST', '/api/voice-review', { text: '请检查结果' });
   assert.equal(reviewWithoutApi.status, 400);
-  assert.match(reviewWithoutApi.json?.error || '', /configured model API/);
+  assert.match(reviewWithoutApi.json?.error || '', /Model review is off/);
   const configuredReview = await request(chatPort, 'PATCH', '/api/voice-review/settings', {
-    providerId: 'doubao', apiKey: 'test-personal-secret',
+    reviewMode: 'model', providerId: 'doubao', apiKey: 'test-personal-secret',
   });
   assert.equal(configuredReview.status, 200);
   assert.equal(configuredReview.json?.backend, 'api');
