@@ -718,7 +718,7 @@ function syncComposerPendingTurnFeedback() {
 function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false } = {}) {
   if (!container) return null;
   const role = evt.role || "assistant";
-  if (evt.messageKind === "todo_list") return renderActivityNote(container, evt, "plan");
+  if (evt.messageKind === "todo_list" || evt.source === "workboard_checklist") return renderActivityNote(container, evt, "plan");
 
   if (finalizeActiveThinkingBlock && inThinkingBlock) {
     finalizeThinkingBlock();

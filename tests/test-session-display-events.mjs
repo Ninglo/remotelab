@@ -84,6 +84,26 @@ assert.deepEqual(
   'running folded blocks should preserve intermediate assistant text so the page can still reveal everything on demand',
 );
 
+const workboardHistory = [
+  { seq: 1, type: 'message', role: 'user', content: 'Complete two deliverables', runId: 'run_pilot' },
+  { seq: 2, type: 'reasoning', content: 'Planning' },
+  { seq: 3, type: 'message', role: 'assistant', messageKind: 'todo_list', content: '[ ] First\n[ ] Second' },
+  { seq: 4, type: 'tool_use', toolName: 'shell', toolInput: 'do-work' },
+  { seq: 5, type: 'message', role: 'assistant', source: 'workboard_checklist', content: '[x] First\n[ ] Second' },
+  { seq: 6, type: 'tool_result', output: 'ok' },
+  { seq: 7, type: 'message', role: 'assistant', content: 'Done' },
+];
+for (const sessionRunning of [true, false]) {
+  const display = buildSessionDisplayEvents(workboardHistory, { sessionRunning, exposeWorkboard: true });
+  assert.deepEqual(display.filter(event => event.type === 'message').map(event => event.seq),
+    sessionRunning ? [1, 3, 5] : [1, 3, 5, 7],
+    'pilot checklist updates remain visible outside Thinking while work continues');
+  assert.deepEqual(display.filter(event => event.type === 'thinking_block').map(event => [event.blockStartSeq, event.blockEndSeq]),
+    [[2, 2], [4, 4], ...(sessionRunning ? [[6, 7]] : [[6, 6]])]);
+}
+assert.deepEqual(buildSessionDisplayEvents(workboardHistory, { sessionRunning: true }).map(event => event.type),
+  ['message', 'thinking_block'], 'other Sessions retain the existing Thinking projection');
+
 const hiddenAttachmentHistory = [
   { seq: 1, type: 'message', role: 'user', content: '把生成文件发给我' },
   { seq: 2, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'generate-files' },

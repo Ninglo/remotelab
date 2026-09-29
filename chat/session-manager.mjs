@@ -17,7 +17,7 @@ import {
   normalizeSessionExecutionProfile,
   QUICK_SESSION_PROFILE,
 } from '../lib/quick-session-profile.mjs';
-import { getJevRoutingSettings } from '../lib/jev-auto-router.mjs';
+import { getJevRoutingSettings, resolveJevChecklistGate } from '../lib/jev-auto-router.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
@@ -1369,6 +1369,14 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 
 async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
+  const checklistGate = session?.workboardPilot === true ? options.checklistGateReceipt : null;
+  if (checklistGate?.status === 'decided' && checklistGate.needsChecklist === true) {
+    slots.push(createModelContextSlot(
+      'session_workboard',
+      'Visible checklist for this opt-in Session',
+      'Jev judged that this request needs a visible delivery checklist. At the start of execution, derive 2–5 short, verifiable deliverables and publish them with the existing tool, for example in Bash: remotelab assistant-message --source workboard_checklist --text $\'[ ] First deliverable\\n[ ] Second deliverable\'. Continue the task immediately. When a deliverable changes state, call the same tool with the full updated checklist, using [x] for completed items. Do not call this tool for another Session. The checklist appears outside Thinking in the current Session. The Run monitor reads native Run state automatically; do not create a separate watcher just for this view.',
+    ));
+  }
   const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
   if (sourceRuntimePrompt) {
     slots.push(createModelContextSlot(
@@ -3083,6 +3091,14 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       : text?.trim(),
   });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  if (session.workboardPilot === true && !priorRequest && !options.internalOperation && options.recordUserMessage !== false) {
+    options = {
+      ...options,
+      checklistGateReceipt: await resolveJevChecklistGate(savedImages.length
+        ? `${text?.trim() || ''}\n[${savedImages.length} attachment(s)]`
+        : text?.trim()),
+    };
+  }
   const activeRequest = requestRuntime.active(sessionId)[0];
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
   const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
@@ -3105,6 +3121,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ? buildTemporarySessionName(record.text)
       : '';
     const mutation = await mutateSessionMeta(sessionId, draft => {
+      if (draft.workboardPilot === true && options.checklistGateReceipt && !duplicate) {
+        draft.workboardGate = { requestId: record.requestId, ...options.checklistGateReceipt };
+      }
       delete draft.workflowState;
       delete draft.workflowPriority;
       if (

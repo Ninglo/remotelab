@@ -231,6 +231,7 @@ export async function handleSessionMainRoutes({
     const timeline = await getSessionTimelineEvents(sessionId);
     const events = buildSessionDisplayEvents(timeline, {
       sessionRunning: session?.activity?.run?.state === 'running',
+      exposeWorkboard: session?.workboardPilot === true,
     });
     writeJsonCached(req, res, { sessionId, filter: 'visible', events });
     return true;

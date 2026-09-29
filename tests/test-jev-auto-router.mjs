@@ -13,9 +13,30 @@ const {
   getJevRoutingSettings,
   normalizeJevTierProfiles,
   resolveJevAutoRoute,
+  resolveJevChecklistGate,
   resolveJevTierPreset,
   updateJevRoutingSettings,
 } = await import('../lib/jev-auto-router.mjs');
+
+test('checklist gate returns a compact decision without task text or credentials', async () => {
+  const gate = await resolveJevChecklistGate('完成代码、测试和交付', {
+    apiKey: 'private-test-key',
+    fetchImpl: async (_url, request) => {
+      const body = JSON.parse(request.body);
+      assert.deepEqual(Object.keys(body.questions), ['checklist']);
+      assert.equal(body.questions.checklist.type, 'choice');
+      return { ok: true, json: async () => ({ answers: {
+        checklist: { choice: 'yes', confidence: 0.91, probabilities: { yes: 0.91, no: 0.09 } },
+      } }) };
+    },
+  });
+  assert.equal(gate.status, 'decided');
+  assert.equal(gate.needsChecklist, true);
+  assert.doesNotMatch(JSON.stringify(gate), /private-test-key|完成代码/);
+  const unavailable = await resolveJevChecklistGate('Task', { apiKey: 'private-test-key', fetchImpl: async () => ({ ok: false, status: 503 }) });
+  assert.equal(unavailable.needsChecklist, null);
+  assert.equal(unavailable.reason, 'http_503');
+});
 
 function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
   const defaults = {

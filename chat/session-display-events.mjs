@@ -239,6 +239,11 @@ function findLastHiddenEventIndex(events = []) {
   return -1;
 }
 
+function isWorkboardEvent(event) {
+  return event?.type === 'message' && event?.role === 'assistant'
+    && (event.messageKind === 'todo_list' || event.source === 'workboard_checklist');
+}
+
 function findTurnForBlockRange(history = [], startSeq = 0, endSeq = 0) {
   const normalizedHistory = Array.isArray(history) ? history : [];
   let startIndex = -1;
@@ -282,7 +287,7 @@ function findTurnForBlockRange(history = [], startSeq = 0, endSeq = 0) {
   };
 }
 
-function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
+function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard = false } = {}) {
   if (!turn?.user) return;
   target.push(stripDeferredBodyFields(turn.user));
 
@@ -298,14 +303,29 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
 
   // One user message owns one work block. A new user message closes the
   // previous block even if that work stopped before producing a final reply.
-  const lastHiddenIndex = sessionRunning ? bodyEvents.length - 1 : findLastHiddenEventIndex(bodyEvents);
+  let visibleStart = 0;
+  if (exposeWorkboard) {
+    for (let index = 0; index < bodyEvents.length; index += 1) {
+      if (!isWorkboardEvent(bodyEvents[index])) continue;
+      if (index > visibleStart) {
+        target.push(buildThinkingBlockEvent(
+          bodyEvents.slice(visibleStart, index),
+          sessionRunning ? 'running' : 'completed',
+        ));
+      }
+      pushVisibleEvent(target, bodyEvents[index], { localMarkdownImageRewriteMapBySeq });
+      visibleStart = index + 1;
+    }
+  }
+  const remainingEvents = bodyEvents.slice(visibleStart);
+  const lastHiddenIndex = sessionRunning ? remainingEvents.length - 1 : findLastHiddenEventIndex(remainingEvents);
   if (lastHiddenIndex >= 0) {
     target.push(buildThinkingBlockEvent(
-      bodyEvents.slice(0, lastHiddenIndex + 1),
+      remainingEvents.slice(0, lastHiddenIndex + 1),
       sessionRunning ? 'running' : 'completed',
     ));
   }
-  for (const event of bodyEvents.slice(lastHiddenIndex + 1)) {
+  for (const event of remainingEvents.slice(lastHiddenIndex + 1)) {
     pushVisibleEvent(target, event, {
       stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
       localMarkdownImageRewriteMapBySeq,
@@ -322,7 +342,7 @@ export function buildSessionDisplayEvents(history = [], options = {}) {
 
   for (const event of Array.isArray(history) ? history : []) {
     if (event?.type === 'message' && event.role === 'user') {
-      flushTurnInto(displayEvents, currentTurn, { sessionRunning: false });
+      flushTurnInto(displayEvents, currentTurn, { ...options, sessionRunning: false });
       currentTurn = {
         user: event,
         body: [],

@@ -1192,6 +1192,7 @@ function applyAttachedSessionState(id, session) {
     currentSessionId = id;
     hasAttachedSession = true;
   }
+  if (typeof updateSessionWorkboardSession === "function") updateSessionWorkboardSession(session);
   if (typeof syncQuickSessionUi === "function") syncQuickSessionUi(session);
   if (!shouldRefreshUi) {
     syncBrowserState();
@@ -1308,6 +1309,8 @@ function getComparableAttachedSessionStateSignature(session) {
     thinking: session.thinking === true ? true : null,
     executionProfile: session.executionProfile || null,
     systemPrompt: typeof session.systemPrompt === "string" ? session.systemPrompt : null,
+    workboardPilot: session.workboardPilot === true,
+    workboardGate: session.workboardGate || null,
   });
 }
 
@@ -1427,6 +1430,7 @@ async function fetchSessionEvents(
     );
   const events = data.events || [];
   if (currentSessionId !== sessionId) return events;
+  if (typeof updateSessionWorkboardEvents === "function") updateSessionWorkboardEvents(sessionId, events);
   const renderPlan = getEventRenderPlan(sessionId, events);
   const viewportSnapshot = captureSessionMessageViewport(
     `session-render:${renderPlan.mode}`,

@@ -910,6 +910,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: use one light proofreading pass after ASR, preserve full clauses and speaker framing, reject summary-shaped short outputs, and support explicit heard-form to canonical-term corrections in a personal dictionary. Keep name terms grounded in the accessible company directory and focus the hotword budget on frequent collaborators and domain terms.
 - Follow-up: compare a fresh recording against the original for complete item detail, the confirmed alias, and unrelated-name false corrections.
 
+### 2026-09-29 — 会话清单与监视状态必须在 Thinking 外可见
+
+- Source: direct correction during a single-Session workflow pilot.
+- Observed friction or ask: a checklist written only in chat and a one-off process wait did not provide a visible checklist or monitor. Native plan events could also be folded into Thinking.
+- Product implication: for an opted-in Session, let a cheap structured decision determine whether the Harness should publish a checklist with an existing tool; project checklist updates outside Thinking and show native Run state in the same Session. Do not create a second workflow engine for this pilot.
+- Follow-up: verify a real multi-step turn creates and updates the visible checklist, a short turn skips it, and the monitor reaches a terminal Run state without affecting other Sessions.
+
 ### YYYY-MM-DD — short title
 
 - Source:
