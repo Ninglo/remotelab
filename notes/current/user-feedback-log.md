@@ -891,6 +891,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: instruct the personal review model to remove only meaningless filler and self-repetition, preserve each item's information, and format explicitly enumerated speech as a numbered list. Keep the cleanup light and editable with Undo.
 - Follow-up: check a fresh browser dictation after deployment; compare it with the original transcript for item coverage, names, negation, and unwanted rewriting.
 
+### 2026-09-29 — 语音转写要边显示边组织，状态不要占一整块
+
+- Source: direct user correction with a screenshot of a new organized dictation.
+- Observed friction or ask: the cleaned text is usable, but the separate success panel takes too much space and personal hotwords still miss some names.
+- Product implication: show a compact status and Undo beside the composer controls; format clearly enumerated points as recognition streams, then run one final model review. For opted-in Doubao ASR, request semantic smoothing and dual-pass refinement. Treat hotwords as recognition hints rather than guaranteed substitutions.
+- Follow-up: verify a fresh browser recording for status size, live point layout, final correction latency, and exact names before adding term aliases.
+
 ### YYYY-MM-DD — short title
 
 - Source:

@@ -403,7 +403,7 @@
                   </div>
                   <div class="settings-voice-shortcut">
                     <div class="settings-section-title" data-i18n="settings.voiceReview.title">Voice draft cleanup</div>
-                    <div class="settings-section-note" data-i18n="settings.voiceReview.note">Personal trial. Off by default. With Doubao relay, your terms guide recognition. Once a model API key is configured, each finished dictation is cleaned up automatically without sending the message.</div>
+                    <div class="settings-section-note" data-i18n="settings.voiceReview.note">Personal trial, off by default. Dictation appears as you speak; the model finishes cleanup when recording ends. Nothing is sent automatically.</div>
                     <div class="settings-section-note" id="voiceReviewBackendNote"></div>
                     <label class="settings-voice-shortcut-toggle">
                       <input id="voiceReviewEnabled" type="checkbox">
@@ -543,6 +543,11 @@
                 </button>
               </div>
             </div>
+            <div class="voice-review-panel" id="voiceReviewPanel" role="status" aria-live="polite" hidden>
+              <span class="voice-review-body" id="voiceReviewBody"></span>
+              <button class="voice-review-undo" id="voiceReviewUndo" type="button" hidden data-i18n="voiceReview.undo">Undo</button>
+              <span class="sr-only" id="voiceReviewStatus" hidden></span>
+            </div>
             <div class="input-actions-group right">
               <button class="composer-action-btn voice-btn" id="voiceBtn" type="button" disabled title="Voice input" aria-label="Voice input" data-i18n-title="action.voiceInput" data-i18n-aria-label="action.voiceInput">
                 <span class="voice-btn-visual" aria-hidden="true">
@@ -560,14 +565,6 @@
             </div>
           </div>
           <div class="voice-availability-status" id="voiceAvailabilityStatus" role="status" hidden></div>
-          <div class="voice-review-panel" id="voiceReviewPanel" hidden>
-            <div class="voice-review-heading" data-i18n="voiceReview.heading">Voice draft cleanup</div>
-            <div class="voice-review-body" id="voiceReviewBody"></div>
-            <div class="settings-app-actions">
-              <button class="settings-app-btn" id="voiceReviewUndo" type="button" hidden data-i18n="voiceReview.undo">Undo</button>
-            </div>
-            <div class="settings-app-empty inline-status" id="voiceReviewStatus" role="status" hidden></div>
-          </div>
           <div class="quick-entry-focus-prompt" id="quickEntryFocusPrompt" hidden>
             <button class="quick-entry-focus-btn" id="quickEntryFocusBtn" type="button">
               <span class="quick-entry-focus-title" data-i18n="quickEntry.focusPrompt.title">Tap to start typing</span>

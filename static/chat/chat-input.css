@@ -423,23 +423,40 @@
   display: none;
 }
 .voice-review-panel {
-  margin: 0 12px 10px;
-  padding: 10px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(50%, 320px);
+  margin-left: 4px;
+  padding: 4px 7px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 999px;
   background: var(--bg-secondary);
-  color: var(--text);
-  font-size: 12px;
-}
-.voice-review-heading {
-  font-weight: 600;
-  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
 }
 .voice-review-body {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 130px;
-  overflow: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-review-undo {
+  flex: none;
+  min-height: 24px;
+  margin: -3px -4px -3px 0;
+  padding: 3px 5px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+@media (max-width: 540px) {
+  .voice-review-panel { max-width: 42%; }
 }
 .quick-entry-focus-prompt[hidden] {
   display: none !important;

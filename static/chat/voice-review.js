@@ -29,6 +29,25 @@
   let undoState = null;
   let pendingReview = null;
   let reviewTail = Promise.resolve();
+  const ordinalCharacters = "一二三四五六七八九十";
+  const pointPattern = /(?:首先|然后|接着)?\s*第([一二三四五六七八九十]|[1-9]\d?)(?:点|项|件事情|件事|个事情|个事)(?:是|：|:)?[，,\s]*/g;
+
+  function formatLiveTranscript(transcript) {
+    if (!settings.enabled || typeof transcript !== "string") return transcript;
+    const matches = [...transcript.matchAll(pointPattern)];
+    if (matches.length < 2) return transcript;
+    const numbers = matches.map((match) => /^\d+$/.test(match[1])
+      ? Number(match[1]) : ordinalCharacters.indexOf(match[1]) + 1);
+    if (numbers.some((number, index) => number < 1 || (index > 0 && number <= numbers[index - 1]))) return transcript;
+    const prefix = transcript.slice(0, matches[0].index).trim();
+    const points = matches.map((match, index) => {
+      const item = transcript.slice(match.index + match[0].length, matches[index + 1]?.index ?? transcript.length).trim();
+      return `${numbers[index]}. ${item}`;
+    });
+    return [prefix, ...points].filter(Boolean).join("\n");
+  }
+
+  globalScope.remotelabFormatVoiceTranscriptLive = formatLiveTranscript;
 
   function t(key, vars) {
     return globalScope.remotelabT ? globalScope.remotelabT(key, vars) : key;
@@ -56,6 +75,7 @@
     undoState = null;
     panel.hidden = true;
     undoButton.hidden = true;
+    panel.title = "";
     setStatus(status, "");
   }
 
@@ -77,15 +97,17 @@
       if (!captureIsCurrent(target)) return { after: null };
       const revised = typeof payload?.revised === "string" ? payload.revised.trim() : "";
       capture = null;
-      if (!revised || revised === target.transcript || !target.composerText.endsWith(target.transcript)) {
+      const displayedTranscript = target.displayedTranscript || target.transcript;
+      if (!revised || revised === target.transcript || !target.composerText.endsWith(displayedTranscript)) {
         clearPanel();
         return { after: target.composerText };
       }
-      const after = target.composerText.slice(0, -target.transcript.length) + revised;
-      undoState = { before: target.composerText, after, sessionId: target.sessionId };
+      const after = target.composerText.slice(0, -displayedTranscript.length) + revised;
+      undoState = { before: target.rawComposerText || target.composerText, after, sessionId: target.sessionId };
       composer.value = after;
       composer.dispatchEvent(new Event("input", { bubbles: true }));
       body.textContent = t("voiceReview.applied");
+      panel.title = t("voiceReview.applied");
       undoButton.hidden = false;
       panel.hidden = false;
       setStatus(status, "");
@@ -95,6 +117,7 @@
       capture = null;
       body.textContent = t("voiceReview.failed");
       setStatus(status, error?.message || "Voice review failed");
+      panel.title = error?.message || "Voice review failed";
       return { after: target.composerText };
     }
   }
@@ -167,12 +190,15 @@
     capture = {
       transcript: event.detail.transcript,
       composerText: event.detail.composerText,
+      displayedTranscript: event.detail.displayedTranscript,
+      rawComposerText: event.detail.rawComposerText,
       sessionId: event.detail.sessionId,
     };
     if (!captureIsCurrent(capture)) return clearPanel();
     panel.hidden = false;
     if (backend !== "api") {
       body.textContent = t("voiceReview.unconfigured");
+      panel.title = body.textContent;
       return;
     }
     body.textContent = t("voiceReview.working");

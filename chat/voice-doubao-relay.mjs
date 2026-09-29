@@ -77,6 +77,7 @@ export function buildDoubaoFullClientRequest(rawConfig, overrides = {}) {
     audio: { ...DOUBAO_DEFAULT_AUDIO_CONFIG },
     request: {
       ...DOUBAO_DEFAULT_REQUEST_CONFIG,
+      ...(overrides.organize === true ? { enable_ddc: true, enable_nonstream: true } : {}),
       ...(hotwords.length ? { corpus: {
         context: JSON.stringify({ hotwords: hotwords.map((word) => ({ word })) }),
       } } : {}),
@@ -373,16 +374,20 @@ export function bindDoubaoVoiceRelaySocket(ws) {
     }
     relayState.probeOnly = rawPayload?.probe === true;
     let hotwords = [];
+    let organize = false;
     try {
       const personal = await getVoiceReviewSettings(ws?._authSession?.personId);
-      if (personal.enabled) hotwords = personal.terms;
+      if (personal.enabled) {
+        hotwords = personal.terms;
+        organize = true;
+      }
     } catch (error) {
       logWarn('personal voice vocabulary unavailable', error?.message || 'unknown error');
     }
     const configLog = redactVoiceConfig(config);
     relayState.readySent = false;
     relayState.upstreamLogId = '';
-    logInfo('start requested', `resourceId=${configLog.resourceId} language=${configLog.language} appIdSuffix=${configLog.appIdSuffix || 'none'} probeOnly=${relayState.probeOnly} hotwordCount=${hotwords.length}`);
+    logInfo('start requested', `resourceId=${configLog.resourceId} language=${configLog.language} appIdSuffix=${configLog.appIdSuffix || 'none'} probeOnly=${relayState.probeOnly} hotwordCount=${hotwords.length} organize=${organize}`);
     sendEvent({ type: 'status', phase: 'connecting' });
 
     const upstream = new WebSocket(DOUBAO_VOICE_UPSTREAM_URL, {
@@ -411,6 +416,7 @@ export function bindDoubaoVoiceRelaySocket(ws) {
       upstream.send(buildDoubaoFullClientRequest(config, {
         uid: trimString(rawPayload?.uid) || 'remotelab-owner',
         hotwords,
+        organize,
       }));
     });
 

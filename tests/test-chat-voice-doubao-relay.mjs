@@ -54,11 +54,15 @@ const personalHotwordRequest = buildDoubaoFullClientRequest({
   appId: '123',
   accessToken: 'token-1',
   resourceId: 'volc.seedasr.sauc.duration',
-}, { hotwords: ['RoboDojo', 'RemoteLab'] });
+}, { hotwords: ['RoboDojo', 'RemoteLab'], organize: true });
 const personalHotwordPayload = JSON.parse(gunzipSync(personalHotwordRequest.subarray(8)).toString('utf8'));
 assert.deepEqual(JSON.parse(personalHotwordPayload.request.corpus.context), {
   hotwords: [{ word: 'RoboDojo' }, { word: 'RemoteLab' }],
 }, 'personal vocabulary should reach the Doubao request as direct recognition hotwords');
+assert.equal(personalHotwordPayload.request.enable_ddc, true,
+  'opted-in dictation should smooth filler words in ASR output');
+assert.equal(personalHotwordPayload.request.enable_nonstream, true,
+  'opted-in dictation should refine finalized speech segments');
 
 const audioFrame = buildDoubaoAudioFrame(Buffer.from([1, 2, 3]));
 assert.equal(audioFrame[0], 0x11, 'audio frame should keep protocol version 1');

@@ -6,6 +6,8 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../static/chat/voice-review.js', import.meta.url), 'utf8');
 const template = readFileSync(new URL('../templates/chat.html', import.meta.url), 'utf8');
 assert.match(template, /<script src="chat\/voice-review\.js\?v=\{\{ASSET_VERSION\}\}"/, 'the chat page must load cleanup behavior');
+assert.match(template, /class="input-actions-row"[\s\S]*?id="voiceReviewPanel"[\s\S]*?id="voiceBtn"/,
+  'cleanup status belongs beside composer controls instead of below the input');
 const ids = [
   'voiceReviewEnabled', 'voiceReviewTerms', 'voiceReviewProvider', 'voiceReviewProviderEndpoint',
   'voiceReviewDoubaoKeyNote', 'voiceReviewApiKey', 'voiceReviewApiKeyStatus', 'voiceReviewSave',
@@ -49,10 +51,10 @@ const context = {
   },
 };
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const finishDictation = (transcript) => {
+const finishDictation = (transcript, details = {}) => {
   const composer = elements.get('msgInput');
   listeners.get('remotelab:voice-transcript-complete')({ detail: {
-    transcript, composerText: composer.value, sessionId: 'session-a',
+    transcript, composerText: composer.value, sessionId: 'session-a', ...details,
   } });
 };
 
@@ -80,6 +82,19 @@ elements.get('voiceReviewUndo').listeners.get('click')();
 assert.equal(composer.value, '已有草稿 请检查肉波道场的结果');
 assert.equal(elements.get('voiceReviewPanel').hidden, true);
 
+const rawList = '第一点是机器还没有测完。然后第二点是先别开始打印。';
+const liveList = browser.remotelabFormatVoiceTranscriptLive(rawList);
+assert.equal(liveList, '1. 机器还没有测完。\n2. 先别开始打印。',
+  'the composer should organize explicit points while recognition is streaming');
+composer.value = `已有草稿 ${liveList}`;
+finishDictation(rawList, { displayedTranscript: liveList, rawComposerText: `已有草稿 ${rawList}` });
+const listReview = browser.remotelabWaitForVoiceReview();
+await flush();
+reviews.shift()({ revised: '1. 机器还没有测完。\n2. 打印暂缓。' });
+assert.equal((await listReview).after, '已有草稿 1. 机器还没有测完。\n2. 打印暂缓。');
+elements.get('voiceReviewUndo').listeners.get('click')();
+assert.equal(composer.value, `已有草稿 ${rawList}`, 'Undo must restore the original ASR text');
+
 composer.value = '另一段原文';
 finishDictation('另一段原文');
 const stale = browser.remotelabWaitForVoiceReview();
@@ -97,7 +112,7 @@ composer.value = '没有模型时的识别原文';
 finishDictation('没有模型时的识别原文');
 assert.equal(browser.remotelabWaitForVoiceReview(), null);
 assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.unconfigured');
-assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 2,
+assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 3,
   'hotwords alone cannot trigger model cleanup');
 
 elements.get('voiceReviewProvider').value = 'doubao';

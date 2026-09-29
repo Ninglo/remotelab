@@ -476,8 +476,14 @@
       return;
     }
     activeVoiceCapture.transcript = trimString(transcript);
-    msgInput.value = joinComposerText(activeVoiceCapture.baseText, activeVoiceCapture.transcript);
+    msgInput.value = joinComposerText(activeVoiceCapture.baseText, formatTranscriptForComposer(activeVoiceCapture.transcript));
     dispatchComposerInputEvent();
+  }
+
+  function formatTranscriptForComposer(transcript) {
+    const formatter = globalScope.remotelabFormatVoiceTranscriptLive;
+    const formatted = typeof formatter === "function" ? formatter(transcript) : transcript;
+    return typeof formatted === "string" && formatted.trim() ? formatted : transcript;
   }
 
   function announceFinalTranscript() {
@@ -487,6 +493,8 @@
       detail: {
         transcript,
         composerText: msgInput.value,
+        displayedTranscript: formatTranscriptForComposer(transcript),
+        rawComposerText: joinComposerText(activeVoiceCapture.baseText, transcript),
         sessionId: activeVoiceCapture.sessionId,
       },
     }));
