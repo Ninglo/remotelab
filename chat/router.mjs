@@ -87,6 +87,7 @@ import {
   handleConnectorSurfaceRoutes,
 } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
+import { handleSiteFeedbackRoutes } from './router-site-feedback-routes.mjs';
 import { getBootstrapInstanceSettings } from './instance-settings.mjs';
 import {
   buildFileAssetDirectUrl,
@@ -1422,6 +1423,8 @@ export async function handleRequest(req, res) {
   const authSession = getAuthSession(req);
 
   // ---- API endpoints ----
+
+  if (await handleSiteFeedbackRoutes({ req, res, pathname, authSession, writeJson })) return;
 
   if (await handleDisplaySettingsRoutes({ req, res, pathname, authSession, writeJson })) {
     return;
