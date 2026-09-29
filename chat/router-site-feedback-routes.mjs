@@ -6,13 +6,15 @@ import { readBody } from '../lib/utils.mjs';
 
 const SITE = 'qianyan-workbench';
 const feedbackDir = join(CONFIG_DIR, 'site-feedback', SITE);
-const targetKinds = new Set(['event', 'source', 'site']);
+const targetKinds = new Set(['event', 'source', 'page', 'site']);
+const usefulSignals = new Set(['useful', 'not_useful']);
 const nextSteps = new Set(['skip', 'follow', 'read', 'test']);
 const tags = new Set([
   'duplicate', 'off-topic', 'weak-evidence', 'misleading', 'wrong-fact',
   'missing-context', 'valuable-source', 'worth-testing', 'should-follow',
   'source-request', 'ui-issue',
 ]);
+let lastReceivedMs = 0;
 
 function text(value, max) {
   return typeof value === 'string' && value.trim().length <= max ? value.trim() : null;
@@ -41,6 +43,7 @@ function normalizeFeedback(input) {
   const priority = score(scores?.priority);
   const relevance = score(scores?.relevance);
   const novelty = score(scores?.novelty);
+  const usefulness = input.usefulness == null ? '' : input.usefulness;
   const nextStep = input.next_step == null || input.next_step === '' ? '' : input.next_step;
   const comment = input.comment == null ? '' : text(input.comment, 1500);
   const evidenceUrl = httpsUrl(input.evidence_url);
@@ -51,14 +54,16 @@ function normalizeFeedback(input) {
   if (!clientId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)
     || !targetKinds.has(target?.kind) || !id || !title || url === null
     || priority === undefined || relevance === undefined || novelty === undefined
+    || usefulness !== '' && !usefulSignals.has(usefulness)
     || !nextSteps.has(nextStep) && nextStep !== '' || comment === null || evidenceUrl === null
     || !Array.isArray(feedbackTags) || feedbackTags.length > 6
     || feedbackTags.some((tag) => !tags.has(tag)) || new Set(feedbackTags).size !== feedbackTags.length
-    || (priority === null && relevance === null && novelty === null && !nextStep && !comment && !feedbackTags.length)) return null;
+    || (priority === null && relevance === null && novelty === null && !usefulness && !nextStep && !comment && !feedbackTags.length)) return null;
   return {
     client_id: clientId.toLowerCase(),
     target: { kind: target.kind, id, title, url },
     scores: { priority, relevance, novelty },
+    usefulness,
     next_step: nextStep,
     tags: feedbackTags,
     comment,
@@ -84,11 +89,12 @@ async function saveFeedback(personId, input) {
     }
     return { record: existing, duplicate: true };
   }
+  lastReceivedMs = Math.max(Date.now(), lastReceivedMs + 1);
   const record = {
     id: `fb_${randomUUID()}`,
     site: SITE,
     person_id: personId,
-    received_at: new Date().toISOString(),
+    received_at: new Date(lastReceivedMs).toISOString(),
     ...input,
   };
   const temporary = join(feedbackDir, `.${randomUUID()}.tmp`);
@@ -122,9 +128,17 @@ async function listFeedback(personId) {
     try { return JSON.parse(await readFile(join(feedbackDir, name), 'utf8')); }
     catch { return null; }
   }));
-  return records.filter((record) => record?.person_id === personId)
-    .sort((a, b) => b.received_at.localeCompare(a.received_at))
-    .slice(0, 50);
+  const own = records.filter((record) => record?.person_id === personId)
+    .sort((a, b) => b.received_at.localeCompare(a.received_at));
+  const quickState = {};
+  for (const record of own) {
+    if (!usefulSignals.has(record.usefulness)) continue;
+    const key = `${record.target?.kind}:${record.target?.id}`;
+    if (!quickState[key]) quickState[key] = {
+      usefulness: record.usefulness, id: record.id, received_at: record.received_at,
+    };
+  }
+  return { feedback: own.slice(0, 50), quick_state: quickState };
 }
 
 function requestOrigin(req) {
@@ -141,7 +155,7 @@ export async function handleSiteFeedbackRoutes({ req, res, pathname, authSession
   const personId = authSession?.personId;
   if (!personId) { writeJson(res, 403, { error: '需要登录后提交反馈。' }); return true; }
   if (req.method === 'GET') {
-    try { writeJson(res, 200, { site: SITE, feedback: await listFeedback(personId) }); }
+    try { writeJson(res, 200, { site: SITE, ...await listFeedback(personId) }); }
     catch (error) { console.error('[site-feedback] read failed:', error); writeJson(res, 503, { error: '反馈暂时无法读取。' }); }
     return true;
   }

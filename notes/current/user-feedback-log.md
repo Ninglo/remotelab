@@ -23,9 +23,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ### 2026-09-29 — Direct, multidimensional feedback on a research workbench
 
-- Observed need: the user wants to respond inside the embodied-research website itself, including whether an item deserves attention, how relevant and novel it is, and what should happen next.
-- Product implication: capture a fast priority score first; keep relevance, novelty, next action, reason tags, and evidence-backed corrections available without making all of them mandatory. A save receipt and readback matter because browser-only reactions were invisible to the assistant. Human scores are preference signals; factual claims and citations still require independent verification before changing the knowledge base.
-- Implementation: the public research page links each daily item, event, and external source lead to a feedback form. An authenticated same-origin API stores records under the instance config directory and returns receipts. Feedback is retained for subsequent review; this feature does not silently reweight rankings or launch an AI run on every click.
+- Observed need: the user wants to respond inside the embodied-research website itself. The first version made daily 👍 / 👎 open a form while other items had only a feedback link. The user clarified that this is too much friction and that thumbs imply approval of the underlying paper or company rather than whether the information helps them.
+- Product implication: make "useful to me / not useful to me" a one-click, per-item signal across daily items, events, and external leads. Keep priority, relevance, novelty, next action, reason tags, and evidence-backed corrections as optional detail. Human usefulness is a preference signal; factual claims still require independent verification before changing the knowledge base.
+- Implementation: the public research page submits the quick signal to an authenticated same-origin API and exposes optional detailed feedback. The API stores records under the instance config directory, returns a receipt, and reads back the latest signal per item. Feedback is retained for subsequent review; this feature does not silently reweight rankings or launch an AI run on every click.
 
 ### 2026-09-29 — Reuse fixed Connector actions to save model tokens
 

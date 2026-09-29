@@ -51,13 +51,31 @@ try {
   assert.equal(list.data.feedback[0].person_id, 'person_test');
   assert.equal((await request('GET', undefined, {}, 'person_other')).data.feedback.length, 0);
 
+  const quick = {
+    ...payload,
+    client_id: '123e4567-e89b-42d3-a456-426614174001',
+    scores: { priority: null, relevance: null, novelty: null },
+    usefulness: 'useful', next_step: '', tags: [], comment: '',
+  };
+  assert.equal((await request('POST', quick)).status, 201);
+  const changed = {
+    ...quick, client_id: '123e4567-e89b-42d3-a456-426614174002',
+    usefulness: 'not_useful',
+  };
+  assert.equal((await request('POST', changed)).status, 201);
+  const latest = await request('GET');
+  assert.equal(latest.data.quick_state['source:x:123'].usefulness, 'not_useful');
+  assert.equal(latest.data.feedback.length, 3);
+  assert.equal((await request('GET', undefined, {}, 'person_other')).data.quick_state['source:x:123'], undefined);
+
   assert.equal((await request('POST', payload, { origin: 'https://evil.test' })).status, 403);
   assert.equal((await request('POST', payload, { 'content-type': 'text/plain' })).status, 415);
   assert.equal((await request('POST', { ...payload, scores: { priority: 6 } })).status, 400);
+  assert.equal((await request('POST', { ...quick, client_id: '123e4567-e89b-42d3-a456-426614174003', usefulness: 'like' })).status, 400);
   assert.equal((await request('POST', payload, {}, null)).status, 403);
   const files = await readdir(join(root, 'site-feedback', 'qianyan-workbench'));
-  assert.equal(files.filter((name) => name.endsWith('.json')).length, 1);
-  console.log('site feedback route: save, readback, idempotency, isolation, validation OK');
+  assert.equal(files.filter((name) => name.endsWith('.json')).length, 3);
+  console.log('site feedback route: detailed and quick save, readback, latest state, idempotency, isolation, validation OK');
 } finally {
   await rm(root, { recursive: true, force: true });
 }
