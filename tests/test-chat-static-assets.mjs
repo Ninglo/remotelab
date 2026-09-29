@@ -268,6 +268,7 @@ async function main() {
     assert.match(page.text, /<script src="chat\/session-list-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/instance-settings\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/voice-review\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/voice-shortcut\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/task-center\.js(?:\?v=[^"]*)?"/);
@@ -1114,6 +1115,10 @@ async function main() {
     assert.match(voiceInputAsset.text, /DOUBAO_VOICE_WS_PATH/);
     assert.match(voiceInputAsset.text, /function startVoiceCapture\(/);
     assert.match(voiceInputAsset.text, /VOICE_WORKLET_MODULE_PATH/);
+
+    const voiceReviewAsset = await request(port, 'GET', '/chat/voice-review.js');
+    assert.equal(voiceReviewAsset.status, 200, 'voice cleanup asset should load');
+    assert.match(voiceReviewAsset.text, /remotelab:voice-transcript-complete/);
 
     const voiceWorkletAsset = await request(port, 'GET', '/chat/voice-input-worklet.js');
     assert.equal(voiceWorkletAsset.status, 200, 'voice input worklet asset should load');

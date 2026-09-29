@@ -13,9 +13,7 @@
   const backendNote = document.getElementById("voiceReviewBackendNote");
   const panel = document.getElementById("voiceReviewPanel");
   const body = document.getElementById("voiceReviewBody");
-  const runButton = document.getElementById("voiceReviewRun");
-  const applyButton = document.getElementById("voiceReviewApply");
-  const dismissButton = document.getElementById("voiceReviewDismiss");
+  const undoButton = document.getElementById("voiceReviewUndo");
   const status = document.getElementById("voiceReviewStatus");
   const composer = document.getElementById("msgInput");
   if (!enabledInput || !termsInput || !providerSelect || !apiKeyInput || !saveButton || !panel || !composer) return;
@@ -28,7 +26,9 @@
   let settings = { enabled: false, terms: [], provider: { id: "", apiKeyConfigured: false } };
   let backend = "unconfigured";
   let capture = null;
-  let revised = "";
+  let undoState = null;
+  let pendingReview = null;
+  let reviewTail = Promise.resolve();
 
   function t(key, vars) {
     return globalScope.remotelabT ? globalScope.remotelabT(key, vars) : key;
@@ -53,17 +53,50 @@
 
   function clearPanel() {
     capture = null;
-    revised = "";
+    undoState = null;
     panel.hidden = true;
-    applyButton.hidden = true;
-    runButton.disabled = backend !== "api";
+    undoButton.hidden = true;
     setStatus(status, "");
   }
 
-  function captureIsCurrent() {
-    return capture
-      && capture.sessionId === (typeof currentSessionId === "string" ? currentSessionId : "")
-      && capture.composerText === composer.value;
+  function captureIsCurrent(target) {
+    return target === capture
+      && target.sessionId === (typeof currentSessionId === "string" ? currentSessionId : "")
+      && target.composerText === composer.value;
+  }
+
+  async function reviewCapture(target) {
+    if (!captureIsCurrent(target)) return { after: null };
+    try {
+      const payload = await fetchJsonOrRedirect("/api/voice-review", {
+        method: "POST",
+        revalidate: false,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: target.transcript }),
+      });
+      if (!captureIsCurrent(target)) return { after: null };
+      const revised = typeof payload?.revised === "string" ? payload.revised.trim() : "";
+      capture = null;
+      if (!revised || revised === target.transcript || !target.composerText.endsWith(target.transcript)) {
+        clearPanel();
+        return { after: target.composerText };
+      }
+      const after = target.composerText.slice(0, -target.transcript.length) + revised;
+      undoState = { before: target.composerText, after, sessionId: target.sessionId };
+      composer.value = after;
+      composer.dispatchEvent(new Event("input", { bubbles: true }));
+      body.textContent = t("voiceReview.applied");
+      undoButton.hidden = false;
+      panel.hidden = false;
+      setStatus(status, "");
+      return { after };
+    } catch (error) {
+      if (!captureIsCurrent(target)) return { after: null };
+      capture = null;
+      body.textContent = t("voiceReview.failed");
+      setStatus(status, error?.message || "Voice review failed");
+      return { after: target.composerText };
+    }
   }
 
   async function loadSettings() {
@@ -73,7 +106,6 @@
       settings = payload?.settings || settings;
       backend = payload?.backend === "api" ? "api" : "unconfigured";
       if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${backend}`);
-      runButton.disabled = backend !== "api";
       enabledInput.checked = settings.enabled === true;
       termsInput.value = (settings.terms || []).join("\n");
       providerSelect.value = settings.provider?.id || "";
@@ -87,7 +119,6 @@
       providerSelect.value = "";
       apiKeyInput.value = "";
       renderProvider();
-      runButton.disabled = true;
       setStatus(settingsStatus, error?.message || "Voice review settings unavailable");
     }
   }
@@ -105,11 +136,6 @@
     }
     const providerId = providerSelect.value;
     const apiKey = apiKeyInput.value.trim();
-    if (providerId && !apiKey && (providerId !== settings.provider?.id || !settings.provider?.apiKeyConfigured)) {
-      setStatus(settingsStatus, t("settings.voiceReview.apiKeyNeeded"));
-      apiKeyInput.focus();
-      return;
-    }
     saveButton.disabled = true;
     try {
       const payload = await fetchJsonOrRedirect("/api/voice-review/settings", {
@@ -121,7 +147,6 @@
       settings = payload.settings;
       backend = payload?.backend === "api" ? "api" : "unconfigured";
       if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${backend}`);
-      runButton.disabled = backend !== "api";
       apiKeyInput.value = "";
       renderProvider();
       setStatus(settingsStatus, t("settings.voiceReview.saved"));
@@ -138,60 +163,43 @@
 
   globalScope.addEventListener("remotelab:voice-transcript-complete", (event) => {
     clearPanel();
-    if (!settings.enabled || backend !== "api" || !event?.detail?.transcript) return;
+    if (!settings.enabled || !event?.detail?.transcript) return;
     capture = {
       transcript: event.detail.transcript,
       composerText: event.detail.composerText,
       sessionId: event.detail.sessionId,
     };
-    if (!captureIsCurrent()) return clearPanel();
+    if (!captureIsCurrent(capture)) return clearPanel();
     panel.hidden = false;
-    body.textContent = t("voiceReview.ready");
-  });
-
-  runButton.addEventListener("click", async () => {
-    if (backend !== "api") return;
-    if (!captureIsCurrent()) return clearPanel();
-    const requestCapture = capture;
-    runButton.disabled = true;
-    setStatus(status, t("voiceReview.working"));
-    try {
-      const payload = await fetchJsonOrRedirect("/api/voice-review", {
-        method: "POST",
-        revalidate: false,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: requestCapture.transcript }),
-      });
-      if (capture !== requestCapture || !captureIsCurrent()) {
-        clearPanel();
-        return;
-      }
-      revised = payload.revised || "";
-      body.textContent = t("voiceReview.result", { revised });
-      applyButton.hidden = !revised || revised === capture.transcript;
-      setStatus(status, "");
-    } catch (error) {
-      if (capture === requestCapture) setStatus(status, error?.message || "Voice review failed");
-    } finally {
-      runButton.disabled = false;
-    }
-  });
-
-  applyButton.addEventListener("click", () => {
-    if (!captureIsCurrent() || !revised || !capture.composerText.endsWith(capture.transcript)) {
-      setStatus(status, t("voiceReview.changed"));
-      clearPanel();
+    if (backend !== "api") {
+      body.textContent = t("voiceReview.unconfigured");
       return;
     }
-    composer.value = capture.composerText.slice(0, -capture.transcript.length) + revised;
+    body.textContent = t("voiceReview.working");
+    const target = capture;
+    const task = reviewTail.then(() => reviewCapture(target));
+    reviewTail = task;
+    pendingReview = { target, task };
+    void task.then(() => {
+      if (pendingReview?.target === target) pendingReview = null;
+    });
+  });
+
+  globalScope.remotelabWaitForVoiceReview = () => pendingReview && captureIsCurrent(pendingReview.target)
+    ? pendingReview.task : null;
+
+  undoButton.addEventListener("click", () => {
+    if (!undoState || undoState.sessionId !== currentSessionId || composer.value !== undoState.after) return clearPanel();
+    composer.value = undoState.before;
     composer.dispatchEvent(new Event("input", { bubbles: true }));
     clearPanel();
     composer.focus();
   });
 
-  dismissButton.addEventListener("click", clearPanel);
   composer.addEventListener("input", () => {
-    if (capture && !captureIsCurrent()) clearPanel();
+    if ((capture && !captureIsCurrent(capture))
+      || (undoState && (undoState.sessionId !== currentSessionId || composer.value !== undoState.after))
+      || (!capture && !undoState && !panel.hidden)) clearPanel();
   });
 
   void loadSettings();

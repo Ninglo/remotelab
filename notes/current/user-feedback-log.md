@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-29 — Finish voice dictation with an automatically cleaned draft
+
+- Observed friction: a personal voice trial exposed an extra “Review draft” and “Use revised text” sequence after dictation. The user expected one automatic cleanup after recording and found an enabled speech recognizer easy to mistake for an enabled cleanup model.
+- Product implication: keep the opt-in personal switch and hotwords, but when a model key is configured, replace only the just-finished transcript in the composer automatically. Preserve manual edits, retain an Undo action, and let Send wait for in-progress cleanup. Show the missing-model state plainly when hotwords work but cleanup cannot run.
+- Trial setup: seed a short personal dictionary from recent recurring project and product names; keep model credentials separate from speech recognition credentials.
+
 ### 2026-09-29 — Reuse fixed Connector actions to save model tokens
 
 - Observed friction: documenting Feishu commands and trimming chat history still left the model composing card JSON and provider calls during some tasks. The user expects recurring Connector work to use prewritten, reusable actions. Their specific token-cost question concerns the **post-answer conversion** into Feishu display form, not ordinary answer generation.

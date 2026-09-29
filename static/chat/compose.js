@@ -820,8 +820,24 @@ function createSessionAndSendDetachedComposer(text, existingRequestId) {
   return request;
 }
 
+let waitingForVoiceReviewSend = false;
+
 function sendMessage(existingRequestId) {
   if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) return;
+  const review = typeof window.remotelabWaitForVoiceReview === "function"
+    ? window.remotelabWaitForVoiceReview() : null;
+  if (review) {
+    if (waitingForVoiceReviewSend) return;
+    waitingForVoiceReviewSend = true;
+    const before = msgInput.value;
+    const sessionId = currentSessionId;
+    void Promise.resolve(review).then((result) => {
+      waitingForVoiceReviewSend = false;
+      if (currentSessionId !== sessionId || (msgInput.value !== before && msgInput.value !== result?.after)) return;
+      sendMessage(existingRequestId);
+    }, () => { waitingForVoiceReviewSend = false; });
+    return;
+  }
   const text = msgInput.value.trim();
   const currentSession = getCurrentSession();
   const composerSessionId = resolveActiveComposerSessionId();

@@ -408,6 +408,44 @@ canonicalSendContext.msgInput.value = '';
 canonicalSendContext.restoreDraft();
 assert.equal(canonicalSendContext.msgInput.value, 'hold the draft until confirmed', 'the active page should still rehydrate the pending send from memory while it is in flight');
 
+const reviewedSendContext = createContext();
+const reviewedSendCalls = [];
+let finishVoiceReview;
+let reviewPending = true;
+const voiceReview = new Promise((resolve) => { finishVoiceReview = resolve; });
+reviewedSendContext.window.remotelabWaitForVoiceReview = () => reviewPending ? voiceReview : null;
+reviewedSendContext.dispatchAction = async (payload) => {
+  reviewedSendCalls.push(payload);
+  return true;
+};
+loadComposeContext(reviewedSendContext);
+reviewedSendContext.msgInput.value = '肉波道场结果';
+reviewedSendContext.sendMessage();
+reviewedSendContext.sendMessage();
+assert.equal(reviewedSendCalls.length, 0, 'Send should wait while automatic voice cleanup is running');
+reviewedSendContext.msgInput.value = 'RoboDojo 结果';
+reviewPending = false;
+finishVoiceReview({ after: 'RoboDojo 结果' });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(reviewedSendCalls.length, 1, 'one queued Send should dispatch after cleanup');
+assert.equal(reviewedSendCalls[0].text, 'RoboDojo 结果');
+
+const editedSendContext = createContext();
+let finishEditedReview;
+let editedReviewPending = true;
+const editedReview = new Promise((resolve) => { finishEditedReview = resolve; });
+editedSendContext.window.remotelabWaitForVoiceReview = () => editedReviewPending ? editedReview : null;
+const editedSendCalls = [];
+editedSendContext.dispatchAction = async (payload) => { editedSendCalls.push(payload); return true; };
+loadComposeContext(editedSendContext);
+editedSendContext.msgInput.value = '识别原文';
+editedSendContext.sendMessage();
+editedSendContext.msgInput.value = '用户手动修改';
+editedReviewPending = false;
+finishEditedReview({ after: null });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(editedSendCalls.length, 0, 'a queued Send must not dispatch after the user edits the draft');
+
 const reloadedPendingSendContext = createContext({
   storageSeed: Object.fromEntries(canonicalSendContext.localStorage.store),
 });

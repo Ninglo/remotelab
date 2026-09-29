@@ -26,6 +26,7 @@ const filesToParse = [
   join(repoRoot, 'static', 'chat', 'session-list-ui.js'),
   join(repoRoot, 'static', 'chat', 'instance-settings.js'),
   join(repoRoot, 'static', 'chat', 'voice-input.js'),
+  join(repoRoot, 'static', 'chat', 'voice-review.js'),
   join(repoRoot, 'static', 'chat', 'settings-ui.js'),
   join(repoRoot, 'static', 'chat', 'task-center.js'),
   join(repoRoot, 'static', 'chat', 'sidebar-ui.js'),
