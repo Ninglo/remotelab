@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
 function safeName(value) {
-  return trim(value).replace(/[\r\n\t\u0000-\u001f<>＆&]/g, ' ').replace(/\s+/g, ' ').slice(0, 100).trim();
+  return trim(value).replace(/[\r\n\t\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ')
+    .slice(0, 100).replace(/[<>&]/g, character => ({ '<': '＜', '>': '＞', '&': '＆' })[character]).trim();
 }
 
 export function feishuParticipantKey(sender = {}) {
