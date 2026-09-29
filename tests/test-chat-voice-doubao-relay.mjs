@@ -60,9 +60,17 @@ assert.deepEqual(JSON.parse(personalHotwordPayload.request.corpus.context), {
   hotwords: [{ word: 'RoboDojo' }, { word: 'RemoteLab' }],
 }, 'personal vocabulary should reach the Doubao request as direct recognition hotwords');
 assert.equal(personalHotwordPayload.request.enable_ddc, undefined,
-  'ASR must not run a first cleanup before the draft review model');
+  'model review mode must not also smooth ASR text');
 assert.equal(personalHotwordPayload.request.enable_nonstream, true,
   'opted-in dictation should refine finalized speech segments');
+const smoothRequest = buildDoubaoFullClientRequest({
+  appId: '123', accessToken: 'token-1', resourceId: 'volc.seedasr.sauc.duration',
+}, { hotwords: ['Claude Tag'], organize: true, smooth: true });
+const smoothPayload = JSON.parse(gunzipSync(smoothRequest.subarray(8)).toString('utf8'));
+assert.equal(smoothPayload.request.enable_ddc, true,
+  'ASR-only mode should enable Doubao semantic smoothing');
+assert.equal(smoothPayload.request.enable_nonstream, true,
+  'ASR-only mode should keep final recognition refinement');
 
 const audioFrame = buildDoubaoAudioFrame(Buffer.from([1, 2, 3]));
 assert.equal(audioFrame[0], 0x11, 'audio frame should keep protocol version 1');

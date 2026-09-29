@@ -10,6 +10,7 @@ process.env.REMOTELAB_CONFIG_DIR = configDir;
 try {
   const {
     getVoiceReviewBackend,
+    normalizeVoiceReviewSettings,
     getVoiceRecognitionHotwords,
     applyVoiceTermCorrections,
     getVoiceReviewSettings,
@@ -18,14 +19,22 @@ try {
     updateVoiceReviewSettings,
   } = await import('../chat/voice-review.mjs');
 
-  const emptySettings = { enabled: false, terms: [], provider: { id: '', apiKeyConfigured: false } };
+  const emptySettings = { enabled: false, reviewMode: 'asr', terms: [], provider: { id: '', apiKeyConfigured: false } };
   assert.deepEqual(await getVoiceReviewSettings('person-a'), emptySettings);
+  assert.equal(normalizeVoiceReviewSettings({ enabled: true, providerId: 'doubao', apiKey: 'existing-key' }).reviewMode,
+    'model', 'an existing configured Person keeps their current behavior until they choose ASR-only');
   assert.equal(getVoiceReviewBackend(), 'unconfigured');
   await assert.rejects(runVoiceReviewModel('测试'), /configured model API/,
     'an unset provider must never spend Codex tokens');
   await assert.rejects(reviewVoiceText('person-a', '你好。', { runModel: async () => '你好。' }), /off/);
 
   await updateVoiceReviewSettings('person-a', { enabled: true, terms: ['RemoteLab', 'RoboDojo'] });
+  let modelCalled = false;
+  await assert.rejects(reviewVoiceText('person-a', '请检查结果', {
+    runModel: async () => { modelCalled = true; return '不应调用'; },
+  }), /Model review is off/);
+  assert.equal(modelCalled, false, 'ASR-only mode must not call the model');
+  await updateVoiceReviewSettings('person-a', { reviewMode: 'model' });
   assert.deepEqual(getVoiceRecognitionHotwords(['Cloud Talk => Claude Tag', 'Claude Tag']), ['Claude Tag']);
   assert.equal(applyVoiceTermCorrections('Cloud Talk 和 cloud talk', ['Cloud Talk => Claude Tag']),
     'Claude Tag 和 Claude Tag');
@@ -59,6 +68,7 @@ try {
   await assert.rejects(updateVoiceReviewSettings('person-a', {
     terms: Array.from({ length: 51 }, (_, index) => `term-${index}`),
   }), /at most 50/);
+  await assert.rejects(updateVoiceReviewSettings('person-a', { reviewMode: 'unknown' }), /reviewMode/);
   assert.deepEqual((await getVoiceReviewSettings('person-a')).terms, ['RemoteLab', 'RoboDojo']);
 
   await updateVoiceReviewSettings('person-a', { enabled: false });
@@ -113,6 +123,13 @@ try {
     providerId: 'doubao', apiKey: 'private-ark-key',
   });
   assert.deepEqual(doubao.provider, { id: 'doubao', apiKeyConfigured: true });
+  await updateVoiceReviewSettings('person-a', { enabled: true, reviewMode: 'asr' });
+  modelCalled = false;
+  await assert.rejects(reviewVoiceText('person-a', '已配置密钥但只用豆包顺滑', {
+    runModel: async () => { modelCalled = true; return '不应调用'; },
+  }), /Model review is off/);
+  assert.equal(modelCalled, false, 'a saved model key must not trigger a request in ASR-only mode');
+  await updateVoiceReviewSettings('person-a', { reviewMode: 'model' });
   globalThis.fetch = async (url, options) => {
     assert.equal(String(url), 'https://ark.cn-beijing.volces.com/api/v3/chat/completions');
     assert.equal(options.headers.Authorization, 'Bearer private-ark-key');

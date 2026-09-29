@@ -32,6 +32,9 @@ export function normalizeVoiceReviewSettings(value = {}) {
   const terms = Array.isArray(value?.terms) ? value.terms : [];
   return {
     enabled: value?.enabled === true,
+    // Existing configured users retain their prior model behavior until they choose ASR-only.
+    reviewMode: ['asr', 'model'].includes(value?.reviewMode) ? value.reviewMode
+      : (value?.enabled && value?.providerId ? 'model' : 'asr'),
     terms: [...new Set(terms.map((term) => String(term || '').trim()).filter(Boolean))].slice(0, MAX_TERMS),
     provider: {
       id: hasProvider(value?.providerId) ? value.providerId : '',
@@ -69,6 +72,9 @@ export function validateVoiceReviewSettings(value) {
   }
   if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
     throw new Error('enabled must be a boolean');
+  }
+  if (value.reviewMode !== undefined && !['asr', 'model'].includes(value.reviewMode)) {
+    throw new Error('reviewMode must be asr or model');
   }
   if (value.terms !== undefined) {
     if (!Array.isArray(value.terms) || value.terms.length > MAX_TERMS) {
@@ -113,6 +119,7 @@ export async function updateVoiceReviewSettings(personId, patch) {
       : (patch.apiKey?.trim() || '');
     const next = {
       enabled: patch.enabled === undefined ? current.enabled : patch.enabled,
+      reviewMode: patch.reviewMode === undefined ? current.reviewMode : patch.reviewMode,
       terms: patch.terms === undefined ? current.terms : patch.terms,
       providerId,
       apiKey,
@@ -179,6 +186,7 @@ export async function reviewVoiceText(personId, text, { runModel = runVoiceRevie
   }
   const settings = await getVoiceReviewSettings(personId);
   if (!settings.enabled) throw new Error('Voice review is off for this Person');
+  if (settings.reviewMode !== 'model') throw new Error('Model review is off for this Person');
   if (inFlight.has(personId)) throw new Error('A voice review is already in progress');
   inFlight.add(personId);
   try {

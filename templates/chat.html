@@ -402,15 +402,20 @@
                     <div class="settings-app-empty inline-status" id="voiceShortcutStatus" role="status" hidden></div>
                   </div>
                   <div class="settings-voice-shortcut">
-                    <div class="settings-section-title" data-i18n="settings.voiceReview.title">Voice draft cleanup</div>
-                    <div class="settings-section-note" data-i18n="settings.voiceReview.note">Personal trial, off by default. Dictation appears as you speak; the model finishes cleanup when recording ends. Nothing is sent automatically.</div>
+                    <div class="settings-section-title" data-i18n="settings.voiceReview.title">Voice dictation cleanup</div>
+                    <div class="settings-section-note" data-i18n="settings.voiceReview.note">Personal trial, off by default. Doubao smooths recognition by default; model review is an alternative. Nothing is sent automatically.</div>
                     <div class="settings-section-note" id="voiceReviewBackendNote"></div>
                     <label class="settings-voice-shortcut-toggle">
                       <input id="voiceReviewEnabled" type="checkbox">
-                      <span data-i18n="settings.voiceReview.enable">Enable personal hotwords and draft review when available</span>
+                      <span data-i18n="settings.voiceReview.enable">Enable personal hotwords and voice cleanup</span>
                     </label>
                     <label for="voiceReviewTerms" class="settings-section-note" data-i18n="settings.voiceReview.terms">Personal vocabulary, one term per line (up to 50). With Doubao relay, these terms guide recognition; they also guide draft correction.</label>
                     <textarea class="settings-inline-input voice-review-terms" id="voiceReviewTerms" rows="4" maxlength="4096" placeholder="RemoteLab&#10;RoboDojo" aria-label="Personal voice vocabulary"></textarea>
+                    <label class="settings-voice-shortcut-toggle">
+                      <input id="voiceReviewModelEnabled" type="checkbox">
+                      <span data-i18n="settings.voiceReview.modelEnable">Use model review instead of Doubao smoothing</span>
+                    </label>
+                    <div id="voiceReviewModelFields" hidden>
                     <div class="settings-section-title voice-review-api-title" data-i18n="settings.voiceReview.apiTitle">Draft review model API</div>
                     <div class="settings-section-note" data-i18n="settings.voiceReview.apiNote">Choose a provider and enter your own API key. The key stays on this instance, is never shown again, and only your voice draft reviews use it.</div>
                     <div class="settings-inline-form settings-inline-form--narrow">
@@ -429,6 +434,7 @@
                       <label for="voiceReviewApiKey" class="settings-section-note" data-i18n="settings.voiceReview.apiKey">API key</label>
                       <input class="settings-inline-input" id="voiceReviewApiKey" type="password" autocomplete="new-password" maxlength="4096" data-i18n-placeholder="settings.voiceReview.apiKeyPlaceholder" placeholder="Paste API key">
                       <div class="settings-section-note" id="voiceReviewApiKeyStatus"></div>
+                    </div>
                     </div>
                     <div class="settings-app-actions">
                       <button class="settings-app-btn" id="voiceReviewSave" type="button" data-i18n="settings.voiceReview.save">Save personal settings</button>
