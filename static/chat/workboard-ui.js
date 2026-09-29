@@ -9,8 +9,10 @@ let sessionWorkboardStallTimer = null;
 const SESSION_WORKBOARD_STALL_MS = 5 * 60 * 1000;
 
 function sessionWorkboardLastProgressAt(session, activity) {
+  const eventAt = typeof session?.lastEventAt === "number" && Number.isFinite(session.lastEventAt)
+    ? session.lastEventAt : Date.parse(session?.lastEventAt || "") || 0;
   return Math.max(
-    Date.parse(session?.lastEventAt || "") || 0,
+    eventAt,
     Date.parse(activity?.run?.startedAt || "") || 0,
   );
 }
