@@ -53,12 +53,12 @@
               <div class="overview-arrow" aria-hidden="true">→</div>
               <div class="overview-block"><small>02 · 接入</small><strong>入口与规则</strong><span>校验、去重、绑定 Session；飞书按群配置分叉</span></div>
               <div class="overview-arrow" aria-hidden="true">→</div>
-              <div class="overview-block"><small>03 · 工作</small><strong>Request → Run</strong><span>接纳后才启动 Harness；工具由 Harness 调用</span></div>
+              <div class="overview-block"><small>03 · 工作</small><strong>Request → Run</strong><span>接纳为正式工作后启动 Harness；工具由 Harness 调用</span></div>
               <div class="overview-arrow" aria-hidden="true">→</div>
               <div class="overview-block"><small>04 · 送达</small><strong>页面或连接器</strong><span>Web 读结果；飞书 outbox 经 API 投递并留回执</span></div>
             </div>
             <div class="overview-rails"><div><b>持久状态</b><span>Session 历史 · Request · Run · 投递状态各有位置</span></div><div><b>跨轮循环</b><span>记忆读写 · 日报 · Skill 审阅 · 定时任务在不同时间继续</span></div></div>
-            <figcaption id="overview-caption">总图是一张导航图。飞书新规则在 Jev 判定 silent 时，只保留观察与决策事件，不生成本次工作 Request / Run；旧规则与网页路径不同。</figcaption>
+            <figcaption id="overview-caption">总图是一张导航图。飞书新规则 silent 会留下 Session 观察与 Jev 决策，再用投递专用 Request 送表情；固定 /help 由脚本生成文字并投递。两者都不启动工作 Run。具体读写与成本见下方路径。</figcaption>
           </figure>
         </header>
         <section id="journey-section" class="article-section" aria-labelledby="journey-title">
