@@ -718,7 +718,7 @@ function syncComposerPendingTurnFeedback() {
 function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false } = {}) {
   if (!container) return null;
   const role = evt.role || "assistant";
-  // The workboard owns the current turn; earlier turns keep one final plan card.
+  // The opt-in workboard owns checklist history, so it stays one visible list.
   if (typeof isSessionWorkboardMessage === "function" && isSessionWorkboardMessage(evt)) return null;
   if (evt.messageKind === "todo_list" || evt.source === "workboard_checklist") return renderActivityNote(container, evt, "plan");
 

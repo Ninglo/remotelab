@@ -9,21 +9,10 @@ let sessionWorkboardStallTimer = null;
 const SESSION_WORKBOARD_STALL_MS = 5 * 60 * 1000;
 
 function isSessionWorkboardMessage(event) {
-  if (sessionWorkboardSession?.workboardPilot !== true
-    || sessionWorkboardSession.id !== currentSessionId
-    || event?.type !== "message" || event.role !== "assistant"
-    || (event.messageKind !== "todo_list" && event.source !== "workboard_checklist")) return false;
-  const latestUserSeq = parseSessionChecklist(sessionWorkboardEvents).latestUserSeq;
-  if (event.seq > latestUserSeq) return true;
-  const index = sessionWorkboardEvents.findIndex(item => item?.seq === event.seq
-    && item.type === "message" && item.role === "assistant");
-  if (index < 0) return false;
-  for (const next of sessionWorkboardEvents.slice(index + 1)) {
-    if (next?.type === "message" && next.role === "user") break;
-    if (next?.type === "message" && next.role === "assistant"
-      && (next.messageKind === "todo_list" || next.source === "workboard_checklist")) return true;
-  }
-  return false;
+  return sessionWorkboardSession?.workboardPilot === true
+    && sessionWorkboardSession.id === currentSessionId
+    && event?.type === "message" && event.role === "assistant"
+    && (event.messageKind === "todo_list" || event.source === "workboard_checklist");
 }
 
 function sessionWorkboardLastProgressAt(session, activity) {
@@ -54,9 +43,10 @@ function scheduleSessionWorkboardStallCheck() {
 
 function parseSessionChecklist(events) {
   const latestUserSeq = [...events].reverse().find(event => event?.type === "message" && event.role === "user")?.seq || 0;
-  const latest = [...events].reverse().find(event => event?.seq > latestUserSeq
-    && event?.type === "message" && event.role === "assistant"
+  const recent = [...events].reverse().find(event => event?.type === "message" && event.role === "assistant"
     && (event.messageKind === "todo_list" || event.source === "workboard_checklist"));
+  const currentTurn = Boolean(recent && recent.seq > latestUserSeq);
+  const latest = recent;
   const lines = String(latest?.content || "").split(/\r?\n/);
   const taskTitle = lines.find(line => /^\s*任务[：:]\s*\S/.test(line))?.replace(/^\s*任务[：:]\s*/, "").trim() || "";
   const description = lines.find(line => /^\s*说明[：:]\s*\S/.test(line))?.replace(/^\s*说明[：:]\s*/, "").trim() || "";
@@ -71,7 +61,7 @@ function parseSessionChecklist(events) {
     };
   }).filter(Boolean);
   return {
-    items, taskTitle, description, latestUserSeq,
+    items, taskTitle, description, latestUserSeq, currentTurn,
     updateSeq: latest?.workboardUpdateSeq || latest?.seq || 0,
     runId: [...events].reverse().find(event => event?.type === "message" && event.role === "user")?.runId || "",
   };
@@ -87,10 +77,15 @@ function renderSessionWorkboard() {
     return;
   }
   const activity = getSessionActivity(session);
-  const { items, taskTitle, description, runId } = parseSessionChecklist(sessionWorkboardEvents);
+  const checklist = parseSessionChecklist(sessionWorkboardEvents);
   const gate = session.workboardGate;
   const hasGate = gate?.needsChecklist === true;
   const active = activity.run.state === "running";
+  const pendingCurrentChecklist = hasGate && active && !checklist.currentTurn;
+  const items = pendingCurrentChecklist ? [] : checklist.items;
+  const taskTitle = pendingCurrentChecklist ? "" : checklist.taskTitle;
+  const description = pendingCurrentChecklist ? "" : checklist.description;
+  const runId = checklist.runId;
   const waitingUser = session.workState?.workflow?.state === "waiting_user";
   const lastProgressAt = sessionWorkboardLastProgressAt(session, activity);
   const stalled = active && lastProgressAt > 0 && Date.now() - lastProgressAt >= SESSION_WORKBOARD_STALL_MS;
@@ -116,7 +111,7 @@ function renderSessionWorkboard() {
   if (items.length || hasGate) {
     const listHeading = document.createElement("div");
     listHeading.className = "session-workboard-label";
-    listHeading.textContent = `清单${items.length ? ` · ${items.filter(item => item.done).length}/${items.length}` : ""}`;
+    listHeading.textContent = `${checklist.currentTurn || pendingCurrentChecklist ? "清单" : "最近一次清单"}${items.length ? ` · ${items.filter(item => item.done).length}/${items.length}` : ""}`;
     panel.appendChild(listHeading);
     if (items.length) {
       const progress = document.createElement("progress");
@@ -133,14 +128,15 @@ function renderSessionWorkboard() {
         state.className = "session-workboard-item-state";
         state.textContent = item.done ? "✓" : "○";
         row.appendChild(state);
-        const copy = document.createElement("div");
+        const copy = document.createElement("span");
+        copy.className = "session-workboard-item-copy";
         const title = document.createElement("strong");
         title.textContent = item.title;
         copy.appendChild(title);
         if (item.detail) {
-          const detail = document.createElement("p");
+          const detail = document.createElement("span");
           detail.className = "session-workboard-item-detail";
-          detail.textContent = item.detail;
+          detail.textContent = ` — ${item.detail}`;
           copy.appendChild(detail);
         }
         row.appendChild(copy);

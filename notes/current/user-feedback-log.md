@@ -931,6 +931,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: keep one current checklist in the opted-in Session workboard, update its completion state in place, and give it a one-line task title plus one or two plain sentences explaining the outcome and completion standard. Keep each item concise with a checkable condition.
 - Follow-up: verify live event updates, the rendered workboard, and a non-pilot Session separately; do not infer that stored events alone prove the page changed visibly.
 
+### 2026-09-29 — 清单每项独占一行，历史更新不能堆叠
+
+- Source: direct correction after the first workboard rendering change.
+- Observed friction or ask: the Person still saw a pile of checklist cards and asked for each deliverable to occupy its own row, with the next deliverable starting on a new row.
+- Product implication: use one workboard panel for the opted-in Session, keep prior checklist state available there, and suppress separate transcript cards for every checklist update. Put an item's short title and completion condition on the same row; the task-level explanation stays above the list.
+- Follow-up: verify current live events and served assets separately from the running server process and the Person's already-open browser tab.
+
 ### YYYY-MM-DD — short title
 
 - Source:

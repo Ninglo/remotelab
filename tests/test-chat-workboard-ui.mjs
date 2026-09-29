@@ -52,8 +52,10 @@ assert.equal(progress.value, 0);
 assert.equal(progress.max, 2);
 const list = panel.children.find(item => item.tagName === 'ul');
 assert.equal(list?.children.length, 2);
+assert.equal(list.children[0].tagName, 'li');
+assert.equal(list.children[1].tagName, 'li', 'the next deliverable starts a separate row');
 assert.equal(list.children[0].children[1].children[0].textContent, '第一项');
-assert.equal(list.children[0].children[1].children[1].textContent, '核对第一份结果。');
+assert.equal(list.children[0].children[1].children[1].textContent, ' — 核对第一份结果。');
 context.updateSessionWorkboardEvents('pilot', [
   firstSnapshot[0],
   { ...firstSnapshot[1], workboardUpdateSeq: 3,
@@ -72,8 +74,18 @@ context.updateSessionWorkboardEvents('pilot', [
 ]);
 assert.equal(context.isSessionWorkboardMessage(firstSnapshot[1]), true,
   'an older update is hidden once a later update exists in that turn');
-assert.equal(context.isSessionWorkboardMessage({ seq: 3, type: 'message', role: 'assistant', source: 'workboard_checklist' }), false,
-  'the final checklist from an earlier turn remains available in the transcript');
+assert.equal(context.isSessionWorkboardMessage({ seq: 3, type: 'message', role: 'assistant', source: 'workboard_checklist' }), true,
+  'history remains in the workboard instead of adding transcript cards');
+context.updateSessionWorkboardSession({
+  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: false },
+  activity: { run: { state: 'idle' } },
+});
+assert.equal(panel.children.find(item => item.className === 'session-workboard-label')?.textContent, '最近一次清单 · 1/1');
+context.updateSessionWorkboardSession({
+  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: true },
+  lastEventAt: now,
+  activity: { run: { state: 'running', runId: 'run-1', startedAt: new Date(now - 10 * 60_000).toISOString() } },
+});
 assert.match(panel.children.find(item => item.className === 'session-workboard-monitor')?.children[0]?.textContent, /运行中/,
   'a fresh numeric event timestamp must keep a long Run from looking stalled');
 
