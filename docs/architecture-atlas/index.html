@@ -5,20 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>RemoteLab 架构图谱</title>
-  <link rel="stylesheet" href="./styles.css?v=20260929d">
+  <link rel="stylesheet" href="./styles.css?v=20260929e">
+  <link rel="stylesheet" href="./reading.css?v=20260929e">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">R</span><span>RemoteLab <span class="brand-sub">架构图谱</span></span></div>
-      <div class="top-meta"><span class="version">第四版 · 2026-09-29</span><span class="version">源码 811d153a</span></div>
+      <div class="top-meta"><span class="version">阅读版 · 2026-09-29</span><span class="version">源码基线 811d153a</span></div>
     </header>
 
     <aside class="sidebar" aria-label="图谱导航">
       <div class="sidebar-intro">
         <div class="eyebrow">ARCHITECTURE ATLAS</div>
-        <h1>一条输入，<br>一条清楚的路</h1>
-        <p>按消息从发出到返回的顺序阅读；每一步都能看到程序、模型、存储、接口和代码。</p>
+        <h1>从用户动作<br>读懂系统</h1>
+        <p>先看一张总图和一条消息的过程，再按需追到存储、模型、接口与源码。</p>
       </div>
       <div class="side-label">浏览方式</div>
       <nav class="view-nav" aria-label="浏览方式">
@@ -29,24 +30,56 @@
       </nav>
       <div class="side-label map-only">机制区域 <span id="domain-count"></span></div>
       <nav id="domain-nav" class="domain-nav map-only" aria-label="架构区域"></nav>
-      <div class="sidebar-foot">沿主线读执行；沿分叉比差异；沿源码查证据。</div>
+      <div class="side-label article-only">本页目录</div>
+      <nav class="article-nav article-only" aria-label="消息主线目录">
+        <button type="button" data-scroll="overview">系统总览</button>
+        <button type="button" data-scroll="journey-section">一条消息的一生</button>
+        <button type="button" data-scroll="longer-loops">跨轮循环</button>
+      </nav>
+      <div class="sidebar-foot">先读发生了什么，再追问由谁执行、写在哪里、消耗什么。</div>
     </aside>
 
     <main class="main-content">
       <section id="experience-view" class="view is-active" aria-labelledby="experience-heading">
-        <div class="page-heading"><div><div class="eyebrow">ONE INPUT → ONE TRACE</div><h2 id="experience-heading">一条输入怎样变成用户看到的结果</h2><p>选择一个已核对的入口样本，再顺着同一条主线往下读。每一步固定回答：用户看到什么、谁处理和判断、写入哪里、消耗什么、经过哪个接口。</p></div></div>
-        <div class="journey-intro"><strong>先认清分工</strong><span>RemoteLab 负责接入、持久状态、运行边界和交付；Jev 只在配置的飞书规则中做快速参与判断；Harness 在真正的工作 Run 中理解任务、计划和使用工具。存储贯穿各步，下面逐步列出新增状态；并行调用和提前发生的运行选择会在具体入口中写明。</span></div>
-        <div id="journey-route-tabs" class="journey-route-tabs" role="tablist" aria-label="选择输入路径"></div>
-        <div id="journey-lead" class="journey-lead"></div>
-        <div id="journey-step-nav" class="journey-step-nav" aria-label="主线阶段"></div>
-        <div id="journey-stages" class="journey-stages"></div>
+        <header id="overview" class="article-hero">
+          <div class="eyebrow">REMOTELAB · ARCHITECTURE ATLAS</div>
+          <h2 id="experience-heading">用户发出一条消息后，系统里发生什么？</h2>
+          <p class="hero-lede">一句话：<strong>入口接收输入，RemoteLab 按规则保存状态；需要正式执行的任务交给 Harness，结果通过原入口回到用户。</strong></p>
+          <p class="hero-meta">这张网站按当前源码与本实例的部分配置、运行记录编写。总图用于定位责任；下方选择具体路径时，时间顺序、跳过的步骤和成本以该路径为准。</p>
+          <div class="hero-legend"><span><i class="dot code"></i>源码实现</span><span><i class="dot config"></i>实例配置</span><span><i class="dot observed"></i>运行样本</span><span><i class="dot unknown"></i>待核验</span></div>
+          <figure class="system-overview" aria-labelledby="overview-caption">
+            <div class="overview-flow">
+              <div class="overview-block"><small>01 · 起点</small><strong>用户或定时事件</strong><span>网页消息 / 飞书消息 / Schedule</span></div>
+              <div class="overview-arrow" aria-hidden="true">→</div>
+              <div class="overview-block"><small>02 · 接入</small><strong>入口与规则</strong><span>校验、去重、绑定 Session；飞书按群配置分叉</span></div>
+              <div class="overview-arrow" aria-hidden="true">→</div>
+              <div class="overview-block"><small>03 · 工作</small><strong>Request → Run</strong><span>接纳后才启动 Harness；工具由 Harness 调用</span></div>
+              <div class="overview-arrow" aria-hidden="true">→</div>
+              <div class="overview-block"><small>04 · 送达</small><strong>页面或连接器</strong><span>Web 读结果；飞书 outbox 经 API 投递并留回执</span></div>
+            </div>
+            <div class="overview-rails"><div><b>持久状态</b><span>Session 历史 · Request · Run · 投递状态各有位置</span></div><div><b>跨轮循环</b><span>记忆读写 · 日报 · Skill 审阅 · 定时任务在不同时间继续</span></div></div>
+            <figcaption id="overview-caption">总图是一张导航图。飞书新规则在 Jev 判定 silent 时，只保留观察与决策事件，不生成本次工作 Request / Run；旧规则与网页路径不同。</figcaption>
+          </figure>
+        </header>
+        <section id="journey-section" class="article-section" aria-labelledby="journey-title">
+          <div class="section-heading"><span>PART A</span><h2 id="journey-title">一条消息的一生</h2></div>
+          <p class="section-lede">先选一种实际入口。沿纵线看用户动作、系统转折和用户可见结果；展开每一步，才看到处理者、持久存储、模型或接口消耗以及对应代码。</p>
+          <div id="journey-route-tabs" class="journey-route-tabs" role="tablist" aria-label="选择输入路径"></div>
+          <div id="journey-lead" class="journey-lead"></div>
+          <div id="journey-stages" class="journey-stages"></div>
+        </section>
+        <section id="longer-loops" class="article-section" aria-labelledby="loops-title">
+          <div class="section-heading"><span>PART B</span><h2 id="loops-title">一次答复之外，系统怎样继续</h2></div>
+          <p class="section-lede">记忆、日报和 Skill 并非每条消息都会依次经过的步骤。它们有自己的触发条件、读写位置和核验边界。</p>
+          <div id="loop-preview" class="loop-preview"></div>
+        </section>
         <div class="journey-next"><button type="button" data-view="paths">横向比较所有入口 ↗</button><button type="button" data-view="evidence">查看资源总账与证据 ↗</button></div>
       </section>
 
       <section id="paths-view" class="view" aria-labelledby="paths-heading">
-        <div class="page-heading"><div><div class="eyebrow">SAME STEPS, DIFFERENT ROUTES</div><h2 id="paths-heading">入口之间在哪里分叉</h2><p>行是具体入口，列是同一个阶段。点击任一格，回到该入口在主线里的真实执行与代码。</p></div></div>
-        <div id="journey-matrix" class="journey-matrix"></div>
+        <div class="page-heading"><div><div class="eyebrow">SAME STEPS, DIFFERENT ROUTES</div><h2 id="paths-heading">入口之间在哪里分叉</h2><p>先读飞书新旧规则的关键差异，再按用户动作展开场景。完整阶段表放在下方，便于定位每一步的程序、模型和持久状态。</p></div></div>
         <div id="feishu-rules"></div>
+        <details class="comparison-appendix"><summary>展开六条路径的完整阶段对照表 <span aria-hidden="true">⌄</span></summary><div id="journey-matrix" class="journey-matrix"></div></details>
         <div class="resource-heading"><div class="eyebrow">SCENARIO DETAIL</div><h3>按用户动作继续展开</h3></div>
         <div id="experience-list" class="experience-list"></div>
         <div class="resource-heading"><div class="eyebrow">LONGER LOOPS</div><h3>记忆、日报和 Skill 的跨轮路径</h3><p>这些流程跨越多轮，不应挤进一次消息的同步返回链路。</p></div>
@@ -82,6 +115,6 @@
       <div class="detail-empty"><div class="empty-glyph">◎</div><h2>选择一个机制</h2><p>点击左侧地图中的节点，查看它负责什么、连接到哪里，以及当前证据和源码入口。</p></div>
     </aside>
   </div>
-  <script type="module" src="./app.js?v=20260929d"></script>
+  <script type="module" src="./app.js?v=20260929e"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929d';
-import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929d';
-import { journeyRoutes, journeyStages } from './journey-data.js?v=20260929d';
+import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929e';
+import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929e';
+import { journeyRoutes, journeyStages } from './journey-data.js?v=20260929e';
 
 const byId = new Map(nodes.map((node) => [node.id, node]));
 const elements = {
@@ -19,8 +19,8 @@ const elements = {
   feishuRules: document.querySelector('#feishu-rules'),
   journeyRouteTabs: document.querySelector('#journey-route-tabs'),
   journeyLead: document.querySelector('#journey-lead'),
-  journeyStepNav: document.querySelector('#journey-step-nav'),
   journeyStages: document.querySelector('#journey-stages'),
+  loopPreview: document.querySelector('#loop-preview'),
   journeyMatrix: document.querySelector('#journey-matrix'),
   resourceSummary: document.querySelector('#resource-summary'),
   missingDimensions: document.querySelector('#missing-dimensions'),
@@ -82,22 +82,25 @@ function renderFindings() {
 function renderJourney() {
   const route = journeyRoutes.find((item) => item.id === state.route) ?? journeyRoutes[0];
   elements.journeyRouteTabs.innerHTML = journeyRoutes.map((item) => `<button type="button" role="tab" aria-selected="${item.id === route.id}" class="journey-route-tab ${item.id === route.id ? 'is-active' : ''}" data-route="${escapeHtml(item.id)}">${escapeHtml(item.label)}</button>`).join('');
-  elements.journeyLead.innerHTML = `<div><span class="journey-route-kind">${escapeHtml(route.kind)}</span><h3>${escapeHtml(route.label)}</h3><p>${escapeHtml(route.intro)}</p></div><button type="button" data-view="paths">看所有入口的横向对照 ↗</button>`;
-  elements.journeyStepNav.innerHTML = journeyStages.map((stage, index) => `<button type="button" data-stage="${escapeHtml(stage.id)}" class="journey-step-link ${route.stages[stage.id]?.skipped ? 'is-skipped' : ''}"><span>${String(index + 1).padStart(2, '0')}</span>${escapeHtml(stage.title)}</button>`).join('');
+  elements.journeyLead.innerHTML = `<span class="journey-route-kind">${escapeHtml(route.kind)}</span><p>${escapeHtml(route.intro)}</p>`;
   const factLabels = [
-    ['visible', '用户看到'], ['action', '谁处理、谁判断'], ['stored', '写入哪里'],
+    ['action', '谁处理、谁判断'], ['stored', '写入哪里'],
     ['resources', '模型与资源'], ['protocol', '接口与协议'],
   ];
   elements.journeyStages.innerHTML = journeyStages.map((stage, index) => {
     const step = route.stages[stage.id];
-    return `<article id="journey-stage-${escapeHtml(stage.id)}" class="journey-stage ${step.skipped ? 'is-skipped' : ''}">
-      <div class="journey-stage-head"><span class="journey-stage-number">${String(index + 1).padStart(2, '0')}</span><div><span class="journey-question">${escapeHtml(stage.question)}</span><h3>${escapeHtml(stage.title)}</h3><p>${escapeHtml(step.summary)}</p></div>${step.skipped ? '<span class="journey-skip-tag">本路径跳过 Run</span>' : ''}</div>
-      <div class="journey-stage-marks"><span>计算：${escapeHtml(route.marks[index][0])}</span><span>主要状态：${escapeHtml(route.marks[index][1])}</span></div>
-      <div class="journey-facts">${factLabels.map(([key, title]) => `<div class="journey-fact"><strong>${title}</strong><p>${escapeHtml(step[key])}</p></div>`).join('')}</div>
-      <details class="journey-code"><summary>展开机制与代码 <span aria-hidden="true">⌄</span></summary><div class="journey-code-body"><div class="experience-node-links">${stage.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div><div class="experience-source-list">${step.sources.map(sourceMarkup).join('')}</div></div></details>
+    return `<article id="journey-stage-${escapeHtml(stage.id)}" class="journey-stage ${step.skipped ? 'is-skipped' : ''} ${stage.id === 'decide' ? 'is-decision' : ''}">
+      <div class="journey-timeline-mark"><span>${stage.id === 'decide' ? '◇' : String(index + 1).padStart(2, '0')}</span></div>
+      <div class="journey-stage-body"><div class="journey-stage-head"><span class="journey-question">${escapeHtml(stage.question)}</span><h3>${escapeHtml(stage.title)}</h3><p>${escapeHtml(step.summary)}</p>${step.skipped ? '<span class="journey-skip-tag">本路径跳过工作 Run</span>' : ''}</div>
+      <p class="journey-visible"><strong>用户看到</strong>${escapeHtml(step.visible)}</p>
+      <details class="journey-code"><summary>展开处理、存储、消耗、接口与源码 <span aria-hidden="true">⌄</span></summary><div class="journey-code-body"><div class="journey-stage-marks"><span>计算：${escapeHtml(route.marks[index][0])}</span><span>主要状态：${escapeHtml(route.marks[index][1])}</span></div><div class="journey-facts">${factLabels.map(([key, title]) => `<div class="journey-fact"><strong>${title}</strong><p>${escapeHtml(step[key])}</p></div>`).join('')}</div><div class="experience-node-links">${stage.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div><div class="experience-source-list">${step.sources.map(sourceMarkup).join('')}</div></div></details></div>
     </article>`;
   }).join('');
   renderedRoute = route.id;
+}
+
+function renderLoopPreview() {
+  elements.loopPreview.innerHTML = paths.map((path, index) => `<article class="loop-item"><span class="loop-number">${String(index + 1).padStart(2, '0')}</span><div><h3>${escapeHtml(path.title)}</h3><p>${escapeHtml(path.lead)}</p><button type="button" data-path="${escapeHtml(path.id)}">查看触发、读写与代码 ↗</button></div></article>`).join('');
 }
 
 function renderJourneyMatrix() {
@@ -233,4 +236,5 @@ renderFindings();
 renderFeishuRules();
 renderExperiences();
 renderJourneyMatrix();
+renderLoopPreview();
 readHash();
