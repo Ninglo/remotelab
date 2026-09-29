@@ -1,5 +1,5 @@
-import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js';
-import { experiences, resourceSnapshot, missingDimensions } from './experience-data.js';
+import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929b';
+import { experiences, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929b';
 
 const byId = new Map(nodes.map((node) => [node.id, node]));
 const elements = {
