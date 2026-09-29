@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { gzipSync, gunzipSync } from 'zlib';
 import { WebSocket } from 'ws';
 import { loadServerVoiceInputSettings } from './instance-settings.mjs';
+import { getVoiceReviewSettings } from './voice-review.mjs';
 
 export const DOUBAO_VOICE_WS_PATH = '/ws/voice-input/doubao';
 const DOUBAO_VOICE_UPSTREAM_URL = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async';
@@ -66,6 +67,9 @@ function buildPayloadSizeBuffer(size) {
 
 export function buildDoubaoFullClientRequest(rawConfig, overrides = {}) {
   const config = validateDoubaoVoiceConfig(rawConfig);
+  const hotwords = Array.isArray(overrides.hotwords)
+    ? overrides.hotwords.filter((term) => typeof term === 'string' && term.trim()).slice(0, 50)
+    : [];
   const payload = {
     user: {
       uid: trimString(overrides.uid) || 'remotelab-owner',
@@ -73,6 +77,9 @@ export function buildDoubaoFullClientRequest(rawConfig, overrides = {}) {
     audio: { ...DOUBAO_DEFAULT_AUDIO_CONFIG },
     request: {
       ...DOUBAO_DEFAULT_REQUEST_CONFIG,
+      ...(hotwords.length ? { corpus: {
+        context: JSON.stringify({ hotwords: hotwords.map((word) => ({ word })) }),
+      } } : {}),
     },
   };
   const encodedPayload = gzipSync(Buffer.from(JSON.stringify(payload), 'utf8'));
@@ -365,10 +372,17 @@ export function bindDoubaoVoiceRelaySocket(ws) {
       throw new Error('Voice input is not configured for this RemoteLab instance');
     }
     relayState.probeOnly = rawPayload?.probe === true;
+    let hotwords = [];
+    try {
+      const personal = await getVoiceReviewSettings(ws?._authSession?.personId);
+      if (personal.enabled) hotwords = personal.terms;
+    } catch (error) {
+      logWarn('personal voice vocabulary unavailable', error?.message || 'unknown error');
+    }
     const configLog = redactVoiceConfig(config);
     relayState.readySent = false;
     relayState.upstreamLogId = '';
-    logInfo('start requested', `resourceId=${configLog.resourceId} language=${configLog.language} appIdSuffix=${configLog.appIdSuffix || 'none'} probeOnly=${relayState.probeOnly}`);
+    logInfo('start requested', `resourceId=${configLog.resourceId} language=${configLog.language} appIdSuffix=${configLog.appIdSuffix || 'none'} probeOnly=${relayState.probeOnly} hotwordCount=${hotwords.length}`);
     sendEvent({ type: 'status', phase: 'connecting' });
 
     const upstream = new WebSocket(DOUBAO_VOICE_UPSTREAM_URL, {
@@ -396,6 +410,7 @@ export function bindDoubaoVoiceRelaySocket(ws) {
       logInfo('upstream connected');
       upstream.send(buildDoubaoFullClientRequest(config, {
         uid: trimString(rawPayload?.uid) || 'remotelab-owner',
+        hotwords,
       }));
     });
 

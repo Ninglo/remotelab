@@ -50,6 +50,16 @@ assert.deepEqual(fullRequestPayload, {
   },
 }, 'full request should use the v3 bigmodel payload shape');
 
+const personalHotwordRequest = buildDoubaoFullClientRequest({
+  appId: '123',
+  accessToken: 'token-1',
+  resourceId: 'volc.seedasr.sauc.duration',
+}, { hotwords: ['RoboDojo', 'RemoteLab'] });
+const personalHotwordPayload = JSON.parse(gunzipSync(personalHotwordRequest.subarray(8)).toString('utf8'));
+assert.deepEqual(JSON.parse(personalHotwordPayload.request.corpus.context), {
+  hotwords: [{ word: 'RoboDojo' }, { word: 'RemoteLab' }],
+}, 'personal vocabulary should reach the Doubao request as direct recognition hotwords');
+
 const audioFrame = buildDoubaoAudioFrame(Buffer.from([1, 2, 3]));
 assert.equal(audioFrame[0], 0x11, 'audio frame should keep protocol version 1');
 assert.equal(audioFrame[1], 0x20, 'audio frame should use the non-final audio packet type');
