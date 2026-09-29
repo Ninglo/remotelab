@@ -183,7 +183,7 @@ try {
   assert.equal(quickTopicSession.executionProfile, 'quick',
     'a new topic root may create a Quick Session even before chat metadata enrichment');
   assert.equal(quickTopicSession.conversation.target.conversationKind, 'thread');
-  assert.equal(submitted.at(-1).body.text, 'fast answer');
+  assert.equal(submitted.at(-1).body.text, '【飞书群消息｜发言人：身份未识别的群成员】\nfast answer');
   assert.equal(submitted.at(-1).body.sourceDelivery.target.threadId, 'provider-topic-quick');
 
   const quickTopicFollowup = await handleMessage(runtime, {
