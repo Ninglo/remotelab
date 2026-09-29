@@ -95,6 +95,27 @@ assert.equal((await listReview).after, '已有草稿 1. 机器还没有测完。
 elements.get('voiceReviewUndo').listeners.get('click')();
 assert.equal(composer.value, `已有草稿 ${rawList}`, 'Undo must restore the original ASR text');
 
+composer.value = `已有草稿 ${liveList}`;
+finishDictation(rawList, { displayedTranscript: liveList, rawComposerText: `已有草稿 ${rawList}` });
+const unchangedReview = browser.remotelabWaitForVoiceReview();
+await flush();
+reviews.shift()({ revised: rawList });
+assert.equal((await unchangedReview).after, `已有草稿 ${liveList}`);
+assert.equal(elements.get('voiceReviewUndo').hidden, false,
+  'Undo must remain available when live formatting is the only change');
+elements.get('voiceReviewUndo').listeners.get('click')();
+assert.equal(composer.value, `已有草稿 ${rawList}`);
+
+composer.value = `已有草稿 ${liveList}`;
+finishDictation(rawList, { displayedTranscript: liveList, rawComposerText: `已有草稿 ${rawList}` });
+const failedReview = browser.remotelabWaitForVoiceReview();
+await flush();
+reviews.shift()(Promise.reject(new Error('model unavailable')));
+assert.equal((await failedReview).after, `已有草稿 ${rawList}`);
+assert.equal(composer.value, `已有草稿 ${rawList}`,
+  'a failed model request should restore the original ASR text');
+assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.failed');
+
 composer.value = '另一段原文';
 finishDictation('另一段原文');
 const stale = browser.remotelabWaitForVoiceReview();
@@ -112,7 +133,7 @@ composer.value = '没有模型时的识别原文';
 finishDictation('没有模型时的识别原文');
 assert.equal(browser.remotelabWaitForVoiceReview(), null);
 assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.unconfigured');
-assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 3,
+assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 5,
   'hotwords alone cannot trigger model cleanup');
 
 elements.get('voiceReviewProvider').value = 'doubao';

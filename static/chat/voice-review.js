@@ -98,11 +98,16 @@
       const revised = typeof payload?.revised === "string" ? payload.revised.trim() : "";
       capture = null;
       const displayedTranscript = target.displayedTranscript || target.transcript;
-      if (!revised || revised === target.transcript || !target.composerText.endsWith(displayedTranscript)) {
+      if (!revised || !target.composerText.endsWith(displayedTranscript)) {
         clearPanel();
         return { after: target.composerText };
       }
-      const after = target.composerText.slice(0, -displayedTranscript.length) + revised;
+      const finalTranscript = revised === target.transcript ? displayedTranscript : revised;
+      const after = target.composerText.slice(0, -displayedTranscript.length) + finalTranscript;
+      if (after === (target.rawComposerText || target.composerText)) {
+        clearPanel();
+        return { after };
+      }
       undoState = { before: target.rawComposerText || target.composerText, after, sessionId: target.sessionId };
       composer.value = after;
       composer.dispatchEvent(new Event("input", { bubbles: true }));
@@ -115,10 +120,16 @@
     } catch (error) {
       if (!captureIsCurrent(target)) return { after: null };
       capture = null;
+      const after = target.rawComposerText || target.composerText;
+      if (after !== composer.value) {
+        composer.value = after;
+        composer.dispatchEvent(new Event("input", { bubbles: true }));
+      }
       body.textContent = t("voiceReview.failed");
       setStatus(status, error?.message || "Voice review failed");
       panel.title = error?.message || "Voice review failed";
-      return { after: target.composerText };
+      panel.hidden = false;
+      return { after };
     }
   }
 
