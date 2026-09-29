@@ -903,6 +903,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: show a compact status and Undo beside the composer controls; format clearly enumerated points as recognition streams, then run one final model review. For opted-in Doubao ASR, request semantic smoothing and dual-pass refinement. Treat hotwords as recognition hints rather than guaranteed substitutions.
 - Follow-up: verify a fresh browser recording for status size, live point layout, final correction latency, and exact names before adding term aliases.
 
+### 2026-09-29 — 语音整理过度压缩，个人词典需要明确错词
+
+- Source: direct correction with before/after screenshots of a three-item dictation.
+- Observed friction or ask: the final text shortened full spoken sentences into terse action summaries. The Person perceived two cleanup passes and confirmed one recurring English project name was misrecognized.
+- Product implication: use one light proofreading pass after ASR, preserve full clauses and speaker framing, reject summary-shaped short outputs, and support explicit heard-form to canonical-term corrections in a personal dictionary. Keep name terms grounded in the accessible company directory and focus the hotword budget on frequent collaborators and domain terms.
+- Follow-up: compare a fresh recording against the original for complete item detail, the confirmed alias, and unrelated-name false corrections.
+
 ### YYYY-MM-DD — short title
 
 - Source:

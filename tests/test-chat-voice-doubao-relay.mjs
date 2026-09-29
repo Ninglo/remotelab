@@ -59,8 +59,8 @@ const personalHotwordPayload = JSON.parse(gunzipSync(personalHotwordRequest.suba
 assert.deepEqual(JSON.parse(personalHotwordPayload.request.corpus.context), {
   hotwords: [{ word: 'RoboDojo' }, { word: 'RemoteLab' }],
 }, 'personal vocabulary should reach the Doubao request as direct recognition hotwords');
-assert.equal(personalHotwordPayload.request.enable_ddc, true,
-  'opted-in dictation should smooth filler words in ASR output');
+assert.equal(personalHotwordPayload.request.enable_ddc, undefined,
+  'ASR must not run a first cleanup before the draft review model');
 assert.equal(personalHotwordPayload.request.enable_nonstream, true,
   'opted-in dictation should refine finalized speech segments');
 

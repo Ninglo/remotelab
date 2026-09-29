@@ -96,13 +96,15 @@
       });
       if (!captureIsCurrent(target)) return { after: null };
       const revised = typeof payload?.revised === "string" ? payload.revised.trim() : "";
+      const overedited = payload?.overedited === true;
       capture = null;
       const displayedTranscript = target.displayedTranscript || target.transcript;
       if (!revised || !target.composerText.endsWith(displayedTranscript)) {
         clearPanel();
         return { after: target.composerText };
       }
-      const finalTranscript = revised === target.transcript ? displayedTranscript : revised;
+      const finalTranscript = overedited ? formatLiveTranscript(revised)
+        : revised === target.transcript ? displayedTranscript : revised;
       const after = target.composerText.slice(0, -displayedTranscript.length) + finalTranscript;
       if (after === (target.rawComposerText || target.composerText)) {
         clearPanel();
@@ -111,8 +113,8 @@
       undoState = { before: target.rawComposerText || target.composerText, after, sessionId: target.sessionId };
       composer.value = after;
       composer.dispatchEvent(new Event("input", { bubbles: true }));
-      body.textContent = t("voiceReview.applied");
-      panel.title = t("voiceReview.applied");
+      body.textContent = t(overedited ? "voiceReview.preserved" : "voiceReview.applied");
+      panel.title = body.textContent;
       undoButton.hidden = false;
       panel.hidden = false;
       setStatus(status, "");
