@@ -860,7 +860,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Source: direct user feedback on the existing speech-to-text input.
 - User slice: a Person dictating chat messages with recurring names and technical terms.
 - Observed friction or ask: offer optional cleanup and correction, disabled by default, and allow the Person to try it alongside the original transcript. A personal vocabulary should help with recurring terms.
-- Product implication: keep the recognition result editable, request model review only on an explicit click, preview before replacing it, and store vocabulary outside the shared People directory. Send opt-in personal terms as Doubao relay recognition hotwords and as hints for draft correction; other voice providers only receive the correction hints.
+- Product implication: once a Person opts in through settings, review each completed dictation automatically in the editable input box with Undo. Store vocabulary outside the shared People directory. Send opt-in personal terms as Doubao relay recognition hotwords and as hints for draft correction; other voice providers only receive the correction hints.
 - Follow-up: compare real utterances with and without personal vocabulary to measure recognition gains and unwanted substitutions. Record latency and token use for the chosen review backend.
 
 ### 2026-09-29 — 语音整理不应默认消耗 Codex CLI
@@ -883,6 +883,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction or ask: provider choices omitted Doubao even though the instance already uses Doubao for speech recognition; the settings path was unclear from the current page.
 - Product implication: offer a Doubao Ark model for personal draft review, explain that the Ark API key differs from the speech recognition App ID and Access Token, and point users from Sessions settings to the Connections section.
 - Follow-up: verify a real Ark call with a user-supplied key and compare short Chinese corrections, latency, and cost.
+
+### 2026-09-29 — 自动语音整理须去口水词并按口述结构分点
+
+- Source: direct correction with a screenshot of a completed four-item dictation in the chat input.
+- Observed friction or ask: the automatic review visibly ran, but left filler words and all four explicitly enumerated items in one paragraph.
+- Product implication: instruct the personal review model to remove only meaningless filler and self-repetition, preserve each item's information, and format explicitly enumerated speech as a numbered list. Keep the cleanup light and editable with Undo.
+- Follow-up: check a fresh browser dictation after deployment; compare it with the original transcript for item coverage, names, negation, and unwanted rewriting.
 
 ### YYYY-MM-DD — short title
 
