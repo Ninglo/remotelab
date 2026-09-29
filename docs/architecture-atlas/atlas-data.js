@@ -1,4 +1,4 @@
-export const sourceCommit = '6316fe76322f2fd341701b481be6b16e4744445f';
+export const sourceCommit = '503c1c37c8d8eaae6f36b70303a158e7e5faf1d1';
 
 export const statusNames = {
   code: '源码已核',
@@ -177,14 +177,21 @@ export const nodes = [
   {
     id: 'feishu-ingress', domain: 'integration', title: '飞书消息接入', summary: '连接器处理群、话题、发送者、附件和参与判断，再提交规范化输入。', owner: '飞书连接器', status: ['code'],
     contract: '接收到群消息、判断是否参与、把内容提交给 Harness 是不同阶段；外部元数据保存在 sourceContext。',
-    reads: '飞书事件、群/话题配置和需要的上下文。', writes: '耐久 inbox、会话绑定、prepared Request。', related: ['surface', 'person', 'admission', 'outbox'],
+    reads: '飞书事件、群/话题配置和需要的上下文。', writes: '耐久 inbox、会话绑定、prepared Request。', related: ['surface', 'person', 'admission', 'quick-participation', 'outbox'],
     sources: [{ path: 'scripts/feishu-connector.mjs', note: '入口与参与路径' }, { path: 'docs/connector-turn-context.md', line: 1, note: 'sourceContext 边界' }],
     open: '不同群模式、@、免 @ 观察、话题与文档评论分别有不同分叉。',
   },
   {
+    id: 'quick-participation', domain: 'integration', title: '飞书快速参与判断', summary: '有些群在正式答复之外另有快速模型判断；思考中表情自身由程序发送。', owner: '飞书连接器与外部快速判断服务', status: ['code', 'config'],
+    contract: '非 Jev 的 quickReactions 路径会在提交正常任务的同时并行调用快速判断；Jev 模式先记录消息，再按快速判断选择只发表情或提交完整任务。两种模式不可合并。',
+    reads: '群配置、最近消息和是否 @ Bot。', writes: 'THINKING 表情、快速判断日志；Jev 模式还写观察/决定与结果表情投递。', related: ['feishu-ingress', 'harness', 'outbox', 'usage-ledger'],
+    sources: [{ path: 'connectors/feishu/quick-participation.mjs', line: 1, note: '外部快速模型及条件' }, { path: 'scripts/feishu-connector.mjs', line: 1150, note: 'Jev 决定与提交分叉' }, { path: 'scripts/feishu-connector.mjs', line: 1648, note: '非 Jev 并行路径' }],
+    open: '逐群测量快速判断次数、模型用量、延迟和它是否改变最终参与；当前仅见判断时延日志，未见用量纳入统一账本。',
+  },
+  {
     id: 'outbox', domain: 'integration', title: '结果投递与回执', summary: 'Request 结果生成独立可认领的投递部分；连接器发送并确认。', owner: 'RemoteLab outbox + 连接器 sender', status: ['code'],
     contract: '文字、附件、结果表情可能拆成不同部分；发送成功与回执确认需分别记录。临时处理表情还有直接连接器路径。',
-    reads: 'Run 结果、Request 目标快照与 Session 绑定。', writes: '投递记录、外部消息 ID、已送达/失败/未知状态。', related: ['request', 'run', 'feishu-ingress', 'artifacts'],
+    reads: 'Run 结果、Request 目标快照与 Session 绑定。', writes: '投递记录、外部消息 ID、已送达/失败/未知状态。', related: ['request', 'run', 'feishu-ingress', 'quick-participation', 'artifacts'],
     sources: [{ path: 'lib/reply-deliveries.mjs', line: 4, note: '文字、附件和表情拆分' }, { path: 'chat/source-deliveries.mjs', line: 99, note: '投递队列' }, { path: 'scripts/feishu-connector.mjs', line: 1293, note: '发送与回执处理' }],
     open: '按一条真实消息检查“出队、飞书接收、回执写入、用户可见”四层证据。',
   },
@@ -226,9 +233,16 @@ export const nodes = [
   {
     id: 'observation', domain: 'operations', title: '观测、恢复与验收', summary: '从 Request、Run、历史和投递回执定位失败；分别判断执行和用户可见结果。', owner: 'RemoteLab 运行层与工作流程', status: ['code'],
     contract: 'HTTP 有响应、Run 结束、文档回读、群消息送达、用户实际使用是不同证据。',
-    reads: 'manifest、spool、事件、调度与外部回执。', writes: '恢复状态、核验记录与改进结论。', related: ['run', 'history', 'outbox', 'daily-review', 'config'],
+    reads: 'manifest、spool、事件、调度与外部回执。', writes: '恢复状态、核验记录与改进结论。', related: ['run', 'history', 'outbox', 'daily-review', 'usage-ledger', 'config'],
     sources: [{ path: 'chat/run-reconciler.mjs', note: '运行恢复' }, { path: 'docs/platform-skills/session-debug.md', note: '会话排障' }, { path: 'docs/external-message-protocol.md', line: 377, note: '投递观察' }],
     open: '将真实失败案例附到对应节点，避免只靠成功路径理解架构。',
+  },
+  {
+    id: 'usage-ledger', domain: 'operations', title: '模型与存储资源账', summary: '记录可归属的模型用量，并以目录快照观察持久数据增长；两者不能混作费用账单。', owner: 'RemoteLab 用量账本与实例运维', status: ['code', 'observed', 'unknown'],
+    contract: 'Run 用量账本按操作归类前台/后台；存储占用另由目录量测。飞书快速 Jev 调用不在当前 RemoteLab 用量账本中，外部 API 配额与真实计费也需另取。',
+    reads: 'Run usage 事件、操作类别、持久目录。', writes: '逐日 usage ledger JSONL；网站仅保存一个汇总快照。', related: ['run', 'quick-participation', 'memory-writeback', 'artifacts', 'observation'],
+    sources: [{ path: 'chat/usage-ledger.mjs', line: 788, note: '用量查询与汇总' }, { path: 'lib/config.mjs', line: 194, note: '核心存储目录' }, { path: 'connectors/feishu/quick-participation.mjs', line: 165, note: '快速判断只见时延日志' }],
+    open: '补齐快速模型的 tokens/API 回执，并做每条用户动作的 Run、外部 API 与存储增量归因。',
   },
   {
     id: 'change', domain: 'operations', title: '修改与持续更新', summary: '架构结论应随代码、配置、运行证据和用户反馈一起修订。', owner: '项目维护者', status: ['proposed'],
@@ -244,10 +258,10 @@ export const paths = [
     id: 'feishu', title: '飞书文字与表情', lead: '用同一条群消息检查“收到、是否参与、提交、执行、送达”的不同阶段。表情至少有即时处理与结果投递两类通道。',
     steps: [
       { title: '消息进入连接器', text: '解析发送者、群/话题、附件和本轮可用上下文，先保存来源事件。', nodes: ['feishu-ingress', 'person'] },
-      { title: '判断是否交给 Harness', text: '群规则、@ 与参与判断决定这一条是否形成 Request；临时处理表情可能直接由连接器操作。', nodes: ['feishu-ingress', 'admission'] },
+      { title: '判断是否交给 Harness', text: '群规则先过滤；quickReactions 可额外调用快速模型。Jev 模式由它决定是否启动完整任务，非 Jev 模式与正常任务并行。临时 THINKING 表情由连接器直接发送。', nodes: ['feishu-ingress', 'quick-participation', 'admission'] },
       { title: '运行当前工作', text: 'Request 关联 Session，Run 调用 Harness；任务理解和具体工具选择留在 Harness。', nodes: ['request', 'session', 'run', 'harness'] },
       { title: '拆分结果并投递', text: '文字、附件、结果表情进入可恢复的投递部分；连接器调用飞书接口并写入回执。', nodes: ['outbox', 'artifacts'] },
-    ], gap: '待补一条真实消息的完整 requestId → runId → deliveryId → 飞书回执，证明当前实例的所有分叉与时序。',
+    ], gap: '待补一条真实消息的事件 → 快速判断 → requestId → runId → deliveryId → 飞书回执，并计入额外模型调用与 API 次数。',
   },
   {
     id: 'memory', title: '记忆读写与再使用', lead: '把“写入了文件”和“下次工作真的读到并用上了”拆开检查。',
@@ -279,6 +293,8 @@ export const paths = [
 ];
 
 export const findings = [
+  { title: '飞书“只发一个表情”仍可能调用模型', status: 'code', text: 'THINKING 表情由固定程序调用飞书 API；quickReactions 在某些群另调快速模型，Jev 模式可能只发结果表情而不启动完整 Harness。用户给 Bot 点表情还可能产生隐藏反馈轮次。应按分叉单独计量。', nodes: ['quick-participation', 'outbox', 'usage-ledger'] },
+  { title: '统一用量账本还看不到全部外部模型调用', status: 'unknown', text: '本实例 7 日账本能按 Run 和操作归类模型 tokens；快速 Jev 判断在连接器中只见选择和时延日志，未见写入该账本。外部模型账单、飞书 API 配额和目录增量应分开核对。', nodes: ['usage-ledger', 'quick-participation', 'observation'] },
   { title: '相关 Session 的“可选择”与“实际注入”仍有距离', status: 'unknown', text: '当前源码可见相关 Session 上下文选择函数，但本轮调用搜索没有找到它进入普通前台 Run 的路径。分类器另会读取项目路由资料。网页暂不把跨 Session 自动记忆写成已运行能力。', nodes: ['related-sessions', 'prompt', 'classifier'] },
   { title: '本实例自动记忆目标覆盖代码默认值', status: 'config', text: '代码提供多个默认目标；这台实例的 writeback-targets 配置关闭部分默认目标，并把自动用户记忆入口改为待核验收件箱。只看代码或只看文件目录都会误判实际写入位置。', nodes: ['memory-writeback', 'memory-index', 'config'] },
   { title: '日报“总控”是组合流程', status: 'config', text: '活动调度在 04:00/18:00 启动审阅 Session，实际阅读、修订知识和出版遵循实例规则；不是平台核心里一个统一读取所有工作源的服务。', nodes: ['daily-review', 'automation', 'project-knowledge'] },

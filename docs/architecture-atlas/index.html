@@ -11,28 +11,40 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">R</span><span>RemoteLab <span class="brand-sub">架构图谱</span></span></div>
-      <div class="top-meta"><span class="version">第一版 · 2026-09-29</span><span class="version">源码 6316fe76</span></div>
+      <div class="top-meta"><span class="version">第二版 · 2026-09-29</span><span class="version">源码 503c1c37</span></div>
     </header>
 
     <aside class="sidebar" aria-label="图谱导航">
       <div class="sidebar-intro">
         <div class="eyebrow">ARCHITECTURE ATLAS</div>
-        <h1>从责任和状态<br>理解整个系统</h1>
-        <p>这里把产品对象、运行机制和实例工作流程放在一张图里。选择一处，即可查看它的边界、连接和证据。</p>
+        <h1>先看体验，<br>再追到实现</h1>
+        <p>从用户看到的动作出发，逐步展开模型、固定程序、协议、存储和代码归属。</p>
       </div>
       <div class="side-label">浏览方式</div>
       <nav class="view-nav" aria-label="浏览方式">
-        <button class="nav-button is-active" type="button" data-view="map"><span>01</span> 系统全景</button>
-        <button class="nav-button" type="button" data-view="paths"><span>02</span> 具体路径</button>
-        <button class="nav-button" type="button" data-view="evidence"><span>03</span> 证据与缺口</button>
+        <button class="nav-button is-active" type="button" data-view="experience"><span>01</span> 用户看到什么</button>
+        <button class="nav-button" type="button" data-view="map"><span>02</span> 系统结构</button>
+        <button class="nav-button" type="button" data-view="paths"><span>03</span> 具体路径</button>
+        <button class="nav-button" type="button" data-view="evidence"><span>04</span> 证据与缺口</button>
       </nav>
       <div class="side-label">架构区域 <span id="domain-count"></span></div>
       <nav id="domain-nav" class="domain-nav" aria-label="架构区域"></nav>
-      <div class="sidebar-foot">按区域理解构成，按路径检查执行，按证据决定能否修改。</div>
+      <div class="sidebar-foot">从体验定位功能，从执行分叉找成本，从证据决定修改。</div>
     </aside>
 
     <main class="main-content">
-      <section id="map-view" class="view is-active" aria-labelledby="map-heading">
+      <section id="experience-view" class="view is-active" aria-labelledby="experience-heading">
+        <div class="page-heading"><div><div class="eyebrow">USER → EXECUTION → RESOURCE</div><h2 id="experience-heading">用户看到什么，系统做了什么</h2><p>先选一个熟悉的动作。展开后沿同一条路径看程序、模型、接口和数据写入，再跳到对应代码。</p></div></div>
+        <div class="experience-shortcuts"><button type="button" data-scroll="resource-summary">看模型用量与存储占用 ↓</button><button type="button" data-view="map">按责任找代码 ↗</button></div>
+        <div class="meaning-note"><strong>先分清两个“token”</strong><p><b>模型 token</b> 是输入、缓存输入和输出的用量；<b>飞书应用 access token</b> 是 API 授权凭据。仅执行固定程序逻辑不消耗模型 token；程序若调用模型则另计，发飞书消息还会使用飞书接口配额。</p></div>
+        <div id="experience-list" class="experience-list"></div>
+        <div class="resource-heading"><div class="eyebrow">RESOURCE MAP</div><h3>资源占用在哪里</h3><p>这里先给一张可核对的本实例快照，再标出账本目前看不到的成本。</p></div>
+        <div id="resource-summary"></div>
+        <div class="resource-heading"><div class="eyebrow">CHECKLIST FOR FUTURE CHANGES</div><h3>下一步还要补齐什么</h3></div>
+        <div id="missing-dimensions" class="dimension-grid"></div>
+      </section>
+
+      <section id="map-view" class="view" aria-labelledby="map-heading">
         <div class="page-heading">
           <div><div class="eyebrow">SYSTEM MAP</div><h2 id="map-heading">系统全景</h2><p>这是一张责任与状态地图。上下排列便于阅读，不表示一次任务的执行顺序。</p></div>
           <div class="heading-stat"><strong id="node-count">—</strong><span>个可展开机制</span></div>

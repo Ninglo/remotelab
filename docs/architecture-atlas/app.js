@@ -1,4 +1,5 @@
 import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js';
+import { experiences, resourceSnapshot, missingDimensions } from './experience-data.js';
 
 const byId = new Map(nodes.map((node) => [node.id, node]));
 const elements = {
@@ -13,9 +14,12 @@ const elements = {
   findingList: document.querySelector('#finding-list'),
   detail: document.querySelector('#detail-panel'),
   main: document.querySelector('.main-content'),
+  experienceList: document.querySelector('#experience-list'),
+  resourceSummary: document.querySelector('#resource-summary'),
+  missingDimensions: document.querySelector('#missing-dimensions'),
 };
 
-const state = { view: 'map', domain: null, query: '', node: null, path: paths[0].id };
+const state = { view: 'experience', domain: null, query: '', node: null, path: paths[0].id };
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]));
@@ -65,6 +69,30 @@ function renderPaths() {
 
 function renderFindings() {
   elements.findingList.innerHTML = findings.map((finding) => `<article class="finding-card"><div class="finding-top"><h3>${escapeHtml(finding.title)}</h3>${badge(finding.status)}</div><p>${escapeHtml(finding.text)}</p><div class="finding-nodes">${finding.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div></article>`).join('');
+}
+
+function renderExperiences() {
+  const readingOrder = ['feishu-task', 'feishu-reaction', 'feishu-command', 'web-turn', 'daily-review', 'memory-skill'];
+  const ordered = readingOrder.map((id) => experiences.find((item) => item.id === id)).filter(Boolean);
+  elements.experienceList.innerHTML = ordered.map((item, index) => `<details class="experience-card">
+    <summary><span class="experience-index">${String(index + 1).padStart(2, '0')}</span><span class="experience-intro"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.visible)}</small><span class="experience-chips">${item.tags.map((tag) => `<i>${escapeHtml(tag)}</i>`).join('')}</span></span><span class="expand-mark" aria-hidden="true">⌄</span></summary>
+    <div class="experience-body"><div class="experience-facts"><div><b>模型调用</b><p>${escapeHtml(item.model)}</p></div><div><b>主要存储</b><p>${escapeHtml(item.storage)}</p></div></div>
+      <h4>这条路径实际经过</h4><ol class="stage-list">${item.stages.map(([kind, description]) => `<li><span>${escapeHtml(kind)}</span><p>${escapeHtml(description)}</p></li>`).join('')}</ol>
+      <div class="experience-extra"><div><h4>协议接口</h4><p>${escapeHtml(item.protocol)}</p></div><div><h4>怎样计量</h4><p>${escapeHtml(item.measurement)}</p></div></div>
+      <div class="experience-caveat"><b>判断边界</b> ${escapeHtml(item.caveat)}</div>
+      <div class="experience-references"><div class="experience-node-links">${item.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div><div class="experience-source-list">${item.sources.map(sourceMarkup).join('')}</div></div>
+    </div>
+  </details>`).join('');
+
+  const maxBytes = Math.max(...resourceSnapshot.stores.map((store) => store.bytes));
+  const formatBytes = (bytes) => bytes >= 1024 ** 3
+    ? `${(bytes / 1024 ** 3).toFixed(2)} GiB`
+    : `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+  elements.resourceSummary.innerHTML = `<div class="resource-ledger"><div class="ledger-stat"><strong>${resourceSnapshot.ledger.runs.toLocaleString('zh-CN')}</strong><span>7 日已记账 Run</span></div><div class="ledger-stat"><strong>${(resourceSnapshot.ledger.tokens / 1e8).toFixed(1)} 亿</strong><span>模型 tokens，含缓存</span></div><div class="ledger-stat"><strong>${Math.round(resourceSnapshot.ledger.cachedInputShare * 100)}%</strong><span>输入 tokens 为缓存读取</span></div><div class="ledger-stat"><strong>${Math.round(resourceSnapshot.ledger.backgroundShare * 100)}%</strong><span>tokens 属后台操作</span></div><p>${escapeHtml(resourceSnapshot.ledger.window)}。${escapeHtml(resourceSnapshot.ledger.note)} <button class="inline-link" type="button" data-node="usage-ledger">查看账本机制 ↗</button></p></div>
+    <div class="storage-card"><div class="storage-top"><h4>持久化目录占用</h4><span>${escapeHtml(resourceSnapshot.measuredAt)}</span></div><p class="storage-method">${escapeHtml(resourceSnapshot.method)}</p>
+    <div class="storage-list">${resourceSnapshot.stores.map((store) => `<button class="storage-row" type="button" data-node="${escapeHtml(store.node)}"><span class="storage-name"><strong>${escapeHtml(store.label)}</strong><small>${escapeHtml(store.key)} · ${escapeHtml(store.volume)}</small></span><span class="storage-track"><i style="width:${Math.max(2, Math.round(store.bytes / maxBytes * 100))}%"></i></span><span class="storage-value">${formatBytes(store.bytes)}</span></button>`).join('')}</div>
+    <p class="storage-foot">工作区、Harness 自有目录、外部飞书文件和云端账单不在此表内。历史与 Run 目录目前实际位于数据盘；其余列项在系统盘。</p></div>`;
+  elements.missingDimensions.innerHTML = missingDimensions.map(([title, explanation]) => `<div class="dimension-card"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(explanation)}</p></div>`).join('');
 }
 
 function sourceMarkup(source) {
@@ -119,13 +147,15 @@ function readHash() {
   if (kind === 'node' && byId.has(value)) navigate('map', { node: value });
   else if (kind === 'paths') navigate('paths', { node: null, path: paths.some((path) => path.id === value) ? value : paths[0].id });
   else if (kind === 'evidence') navigate('evidence', { node: null });
-  else navigate('map', { node: null });
+  else if (kind === 'map') navigate('map', { node: null });
+  else navigate('experience', { node: null });
 }
 
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('button');
   if (!button) return;
   if (button.dataset.view) navigate(button.dataset.view, { node: null, scroll: true });
+  else if (button.dataset.scroll) document.getElementById(button.dataset.scroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   else if (button.dataset.domain) navigate('map', { domain: button.dataset.domain === 'all' ? null : button.dataset.domain, node: null, scroll: true });
   else if (button.dataset.path) navigate('paths', { path: button.dataset.path, node: null, scroll: true });
   else if (button.dataset.node) navigate(state.view, { node: button.dataset.node });
@@ -145,4 +175,5 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && 
 window.addEventListener('hashchange', readHash);
 
 renderFindings();
+renderExperiences();
 readHash();
