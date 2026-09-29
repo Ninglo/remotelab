@@ -1428,9 +1428,11 @@ async function fetchSessionEvents(
       `/api/sessions/${encodeURIComponent(sessionId)}/events?filter=visible`,
       buildSessionRefreshRequestOptions(forceFresh),
     );
-  const events = data.events || [];
-  if (currentSessionId !== sessionId) return events;
-  if (typeof updateSessionWorkboardEvents === "function") updateSessionWorkboardEvents(sessionId, events);
+  const sourceEvents = data.events || [];
+  if (currentSessionId !== sessionId) return sourceEvents;
+  if (typeof updateSessionWorkboardEvents === "function") updateSessionWorkboardEvents(sessionId, sourceEvents);
+  const events = typeof projectSessionWorkboardTranscriptEvents === "function"
+    ? projectSessionWorkboardTranscriptEvents(sessionId, sourceEvents) : sourceEvents;
   const renderPlan = getEventRenderPlan(sessionId, events);
   const viewportSnapshot = captureSessionMessageViewport(
     `session-render:${renderPlan.mode}`,

@@ -15,6 +15,33 @@ function isSessionWorkboardMessage(event) {
     && (event.messageKind === "todo_list" || event.source === "workboard_checklist");
 }
 
+function projectSessionWorkboardTranscriptEvents(sessionId, events) {
+  if (sessionWorkboardSession?.id !== sessionId || sessionWorkboardSession.workboardPilot !== true) return events;
+  const projected = [];
+  let hiddenChecklistUpdates = 0;
+  for (const event of events) {
+    if (isSessionWorkboardMessage(event)) {
+      hiddenChecklistUpdates += 1;
+      continue;
+    }
+    const previous = projected[projected.length - 1];
+    if (hiddenChecklistUpdates > 0 && previous?.type === "thinking_block" && event?.type === "thinking_block") {
+      projected[projected.length - 1] = {
+        ...previous,
+        blockEndSeq: event.blockEndSeq,
+        state: event.state,
+        label: event.label,
+        hiddenEventCount: (previous.hiddenEventCount || 0) + hiddenChecklistUpdates + (event.hiddenEventCount || 0),
+        toolNames: [...new Set([...(previous.toolNames || []), ...(event.toolNames || [])])],
+      };
+    } else {
+      projected.push(event);
+    }
+    hiddenChecklistUpdates = 0;
+  }
+  return projected;
+}
+
 function sessionWorkboardLastProgressAt(session, activity) {
   const eventAt = typeof session?.lastEventAt === "number" && Number.isFinite(session.lastEventAt)
     ? session.lastEventAt : Date.parse(session?.lastEventAt || "") || 0;

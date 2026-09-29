@@ -44,6 +44,20 @@ context.updateSessionWorkboardEvents('pilot', firstSnapshot);
 assert.equal(context.isSessionWorkboardMessage(firstSnapshot[1]), true,
   'the current checklist appears in the workboard instead of the transcript');
 assert.equal(context.isSessionWorkboardMessage({ type: 'message', role: 'assistant', content: 'ordinary reply' }), false);
+const fragmentedTranscript = [
+  { seq: 1, type: 'message', role: 'user' },
+  { seq: 2, type: 'thinking_block', blockStartSeq: 2, blockEndSeq: 2, hiddenEventCount: 1, state: 'completed', label: 'Thought' },
+  { seq: 3, type: 'message', role: 'assistant', source: 'workboard_checklist' },
+  { seq: 4, type: 'thinking_block', blockStartSeq: 4, blockEndSeq: 4, hiddenEventCount: 1, state: 'completed', label: 'Thought' },
+  { seq: 5, type: 'message', role: 'assistant', source: 'workboard_checklist' },
+  { seq: 6, type: 'thinking_block', blockStartSeq: 6, blockEndSeq: 6, hiddenEventCount: 1, state: 'running', label: 'Thinking…' },
+  { seq: 7, type: 'message', role: 'assistant', content: 'Result' },
+];
+const compactedTranscript = context.projectSessionWorkboardTranscriptEvents('pilot', fragmentedTranscript);
+assert.deepEqual(Array.from(compactedTranscript, event => event.type), ['message', 'thinking_block', 'message']);
+assert.equal(compactedTranscript[1].blockStartSeq, 2);
+assert.equal(compactedTranscript[1].blockEndSeq, 6);
+assert.equal(compactedTranscript[1].hiddenEventCount, 5);
 assert.equal(panel.hidden, false);
 assert.equal(panel.children.find(item => item.className === 'session-workboard-heading')?.textContent, '交付两项结果');
 assert.match(panel.children.find(item => item.className === 'session-workboard-description')?.textContent, /逐项核对/);
@@ -108,4 +122,6 @@ context.updateSessionWorkboardSession({ id: 'other', workboardPilot: false, acti
 assert.equal(panel.hidden, true, 'the workboard must remain absent from other Sessions');
 assert.equal(context.isSessionWorkboardMessage({ type: 'message', role: 'assistant', source: 'workboard_checklist' }), false,
   'a non-pilot Session retains its normal transcript');
+assert.equal(context.projectSessionWorkboardTranscriptEvents('other', fragmentedTranscript), fragmentedTranscript,
+  'a non-pilot Session retains its original event projection');
 console.log('test-chat-workboard-ui: ok');
