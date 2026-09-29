@@ -12,8 +12,9 @@ remotelab feishu calendar.list --profile bot-2
 remotelab feishu task.list --profile bot-2 --limit 10
 ```
 
-The result is compact JSON. `message.send`, `card.send`, and `reaction.add`
-automatically read back the created message or reaction and return `confirmed`.
+The result is compact JSON. `message.send`, `card.send`, `reaction.add`,
+`calendar.create`, and `task.create`
+automatically read back the created resource and return `confirmed`.
 They never retry a write after a failed readback. Use `--dry-run` to preview the
 actual CLI request without sending it. Reuse the same `--key` when retrying the
 *same* message/card/task request; use a new key for a new request.
@@ -27,9 +28,9 @@ actual CLI request without sending it. Reuse the same `--key` when retrying the
 | Message readback | `message.get` | `--message-id` |
 | Static status card | `card.send` | recipient, `--title`, `--body`, `--key`; optional `--status info|success|warning|error` |
 | Emoji reaction | `reaction.add`, `reaction.list` | `--message-id`; add also needs `--emoji` |
-| Bot calendar | `calendar.list`, `calendar.get`, `calendar.create` | create needs `--calendar-id`, `--summary`, `--start`, `--end` with timezone |
+| Bot calendar | `calendar.list`, `calendar.get`, `calendar.create` | create needs `--calendar-id`, `--summary`, `--start`, `--end` with timezone, `--key` |
 | Bot task | `task.list`, `task.get`, `task.create` | create needs `--summary`, `--key`; optional due, assignee, tasklist |
-| Base records | `base.records`, `base.upsert` | Base token, table ID; reads also select 1–5 `--field` values; writes provide `--fields-json` |
+| Base records | `base.records`, `base.upsert` | Base token, table ID; reads select 1–5 `--field` values; writes provide `--fields-json` and exactly one of `--create` or `--record-id` |
 
 ```bash
 remotelab feishu card.send --profile bot-2 --user-id <known-open-id> \
@@ -37,7 +38,7 @@ remotelab feishu card.send --profile bot-2 --user-id <known-open-id> \
 remotelab feishu reaction.add --profile bot-2 --message-id <message-id> --emoji SMILE
 remotelab feishu calendar.create --profile bot-2 --calendar-id <bot-calendar-id> \
   --summary 'Review' --start '2026-10-01T09:00:00+08:00' \
-  --end '2026-10-01T09:30:00+08:00' --dry-run
+  --end '2026-10-01T09:30:00+08:00' --key <stable-request-key> --dry-run
 remotelab feishu base.records --profile bot-2 --base-token <base-token> \
   --table-id <table-id> --field Name --field Status --limit 10
 ```
@@ -50,8 +51,8 @@ A successful static card send does not establish that its buttons work.
 
 `base.upsert` takes a field map as task data, not generated API code. Use the
 Base field list to confirm writable names and select options before writing;
-without `--record-id`, that action creates a new record and must not be
-blindly repeated. Calendar creation also has no automatic retry.
+`--create` explicitly creates a new record and must not be blindly repeated.
+Calendar creation has an idempotency key and no automatic retry after readback.
 
 ## When no fixed action fits
 

@@ -31,6 +31,19 @@ assert.throws(() => planFeishuAction('calendar.create', { profile, 'calendar-id'
 assert.throws(() => planFeishuAction('calendar.create', { profile, 'calendar-id': 'cal', summary: 'Test',
   start: '2026-09-29T10:00:00+08:00', end: '2026-09-29T09:00:00+08:00' }), /later/);
 assert.throws(() => planFeishuAction('base.records', { profile, 'base-token': 'app123', 'table-id': 'tbl123' }), /--field/);
+assert.throws(() => planFeishuAction('base.upsert', { profile, 'base-token': 'app123', 'table-id': 'tbl123',
+  'fields-json': '{"Name":"Alice"}' }), /exactly one/);
+
+const eventPlan = planFeishuAction('calendar.create', {
+  profile, 'calendar-id': 'feishu.cn_example@group.calendar.feishu.cn', summary: 'Review',
+  start: '2026-09-29T09:00:00+08:00', end: '2026-09-29T09:30:00+08:00', key: 'calendar-run-123',
+});
+assert.deepEqual(eventPlan.args.slice(2, 5), ['calendar', 'events', 'create']);
+assert.equal(eventPlan.args[eventPlan.args.indexOf('--idempotency-key') + 1], 'calendar-run-123');
+const eventBody = JSON.parse(eventPlan.args[eventPlan.args.indexOf('--data') + 1]);
+assert.equal(eventBody.summary, 'Review');
+assert.equal(eventBody.start_time.timestamp, String(Date.parse('2026-09-29T09:00:00+08:00') / 1000));
+assert.equal(Object.hasOwn(eventBody, 'vchat'), false);
 
 const base = planFeishuAction('base.records', {
   profile, 'base-token': 'app123', 'table-id': 'tbl123', field: ['Name', 'Status'], limit: '5',
@@ -75,6 +88,16 @@ const failStatus = await runFeishuActionCommand([
 assert.equal(failStatus, 0);
 assert.equal(JSON.parse(failedReadback.output).confirmed, false);
 assert.equal(JSON.parse(failedReadback.output).message_id, messageId);
+
+const createdEvent = captureIo();
+const eventStatus = await runFeishuActionCommand([
+  'calendar.create', '--profile', profile, '--calendar-id', 'cal_123', '--summary', 'Review',
+  '--start', '2026-09-29T09:00:00+08:00', '--end', '2026-09-29T09:30:00+08:00', '--key', 'calendar-run-124',
+], createdEvent.io, async (_path, args) => args.includes('create')
+  ? { stdout: JSON.stringify({ ok: true, event_id: 'evt123' }) }
+  : { stdout: JSON.stringify({ ok: true, event: { event_id: 'evt123' } }) });
+assert.equal(eventStatus, 0);
+assert.equal(JSON.parse(createdEvent.output).confirmed, true);
 
 const rejected = captureIo();
 const rejectedStatus = await runFeishuActionCommand(['contact.get', '--profile', profile, '--user-id', userId],
