@@ -91,6 +91,7 @@ import {
   updateInstanceSettings,
 } from './instance-settings.mjs';
 import { broadcastAll } from './ws-clients.mjs';
+import { getVoiceReviewBackend, getVoiceReviewSettings, reviewVoiceText, updateVoiceReviewSettings } from './voice-review.mjs';
 import {
   appendAssistantMessage,
   delegateSession,
@@ -311,6 +312,36 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  if (pathname === '/api/voice-review/settings' && ['GET', 'PATCH'].includes(req.method)) {
+    if (!authSession?.personId) {
+      writeJson(res, 401, { error: 'Authentication required' });
+      return true;
+    }
+    try {
+      const settings = req.method === 'GET'
+        ? await getVoiceReviewSettings(authSession.personId)
+        : await updateVoiceReviewSettings(authSession.personId, JSON.parse(await readBody(req, 16384) || '{}'));
+      writeJson(res, 200, { settings, backend: getVoiceReviewBackend() });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Could not save voice review settings' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/voice-review' && req.method === 'POST') {
+    if (!authSession?.personId) {
+      writeJson(res, 401, { error: 'Authentication required' });
+      return true;
+    }
+    try {
+      const payload = JSON.parse(await readBody(req, 16384) || '{}');
+      writeJson(res, 200, await reviewVoiceText(authSession.personId, payload.text));
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Could not review voice transcript' });
+    }
+    return true;
+  }
+
   if (pathname === '/api/voice-shortcut/recording-diagnostic' && req.method === 'POST') {
     if (!authSession?.personId) {
       writeJson(res, 401, { error: 'Authentication required' });

@@ -401,6 +401,21 @@
                     <div class="settings-section-note" data-i18n="settings.voiceShortcut.recordHint">You can press Shift twice, Option three times, Shift + Option, Shift + Caps Lock, or a key combination. Check the detected shortcut and conflict warning before saving. Esc cancels. This page cannot inspect your system shortcuts.</div>
                     <div class="settings-app-empty inline-status" id="voiceShortcutStatus" role="status" hidden></div>
                   </div>
+                  <div class="settings-voice-shortcut">
+                    <div class="settings-section-title" data-i18n="settings.voiceReview.title">Voice draft review</div>
+                    <div class="settings-section-note" data-i18n="settings.voiceReview.note">Personal trial. Off by default. Review is requested only when you press Review after recording; it never sends the message.</div>
+                    <div class="settings-section-note" id="voiceReviewBackendNote"></div>
+                    <label class="settings-voice-shortcut-toggle">
+                      <input id="voiceReviewEnabled" type="checkbox">
+                      <span data-i18n="settings.voiceReview.enable">Offer a review after voice input</span>
+                    </label>
+                    <label for="voiceReviewTerms" class="settings-section-note" data-i18n="settings.voiceReview.terms">Personal vocabulary, one term per line (up to 50). These terms guide draft correction; they do not change speech recognition yet.</label>
+                    <textarea class="settings-inline-input voice-review-terms" id="voiceReviewTerms" rows="4" maxlength="4096" placeholder="RemoteLab&#10;RoboDojo" aria-label="Personal voice vocabulary"></textarea>
+                    <div class="settings-app-actions">
+                      <button class="settings-app-btn" id="voiceReviewSave" type="button" data-i18n="settings.voiceReview.save">Save personal settings</button>
+                    </div>
+                    <div class="settings-app-empty inline-status" id="voiceReviewSettingsStatus" role="status" hidden></div>
+                  </div>
                   <div class="settings-voice-provider">
                     <div class="settings-section-title" data-i18n="settings.voice.providerTitle">Speech recognition service</div>
                     <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. Any signed-in person can manage it.</div>
@@ -526,6 +541,16 @@
             </div>
           </div>
           <div class="voice-availability-status" id="voiceAvailabilityStatus" role="status" hidden></div>
+          <div class="voice-review-panel" id="voiceReviewPanel" hidden>
+            <div class="voice-review-heading" data-i18n="voiceReview.heading">Voice draft review</div>
+            <div class="voice-review-body" id="voiceReviewBody"></div>
+            <div class="settings-app-actions">
+              <button class="settings-app-btn" id="voiceReviewRun" type="button" data-i18n="voiceReview.run">Review draft</button>
+              <button class="settings-app-btn" id="voiceReviewApply" type="button" hidden data-i18n="voiceReview.apply">Use revised text</button>
+              <button class="settings-app-btn" id="voiceReviewDismiss" type="button" data-i18n="voiceReview.dismiss">Keep original</button>
+            </div>
+            <div class="settings-app-empty inline-status" id="voiceReviewStatus" role="status" hidden></div>
+          </div>
           <div class="quick-entry-focus-prompt" id="quickEntryFocusPrompt" hidden>
             <button class="quick-entry-focus-btn" id="quickEntryFocusBtn" type="button">
               <span class="quick-entry-focus-title" data-i18n="quickEntry.focusPrompt.title">Tap to start typing</span>

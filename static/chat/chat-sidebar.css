@@ -473,6 +473,13 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .settings-voice-shortcut {
   margin-top: 14px;
 }
+.voice-review-terms {
+  display: block;
+  width: 100%;
+  min-height: 82px;
+  margin-top: 8px;
+  resize: vertical;
+}
 .settings-voice-provider {
   margin-top: 20px;
   padding-top: 18px;

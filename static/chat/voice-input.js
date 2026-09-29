@@ -480,6 +480,18 @@
     dispatchComposerInputEvent();
   }
 
+  function announceFinalTranscript() {
+    const transcript = trimString(activeVoiceCapture.transcript);
+    if (!transcript || !msgInput) return;
+    globalScope.dispatchEvent(new CustomEvent("remotelab:voice-transcript-complete", {
+      detail: {
+        transcript,
+        composerText: msgInput.value,
+        sessionId: activeVoiceCapture.sessionId,
+      },
+    }));
+  }
+
   function appendTranscriptFragmentToComposer(fragment) {
     const cleanFragment = trimString(fragment);
     if (!cleanFragment) return;
@@ -783,6 +795,7 @@
     if (payload.type === "conversation.item.input_audio_transcription.completed") {
       reportVoiceInputRuntimeStatus("", { hidden: true });
       applyTranscriptToComposer(payload.transcript || payload.text || activeVoiceCapture.transcript);
+      announceFinalTranscript();
       await cleanupVoiceCapture();
       return;
     }
@@ -1039,6 +1052,7 @@
           });
           reportVoiceInputRuntimeStatus("", { hidden: true });
           applyTranscriptToComposer(payload.transcript || activeVoiceCapture.transcript);
+          announceFinalTranscript();
           await cleanupVoiceCapture();
           return;
         }

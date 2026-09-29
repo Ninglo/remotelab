@@ -167,6 +167,20 @@ try {
   assert.match(removedEndpointRes.json?.error || '', /removed/i, 'retired voice cleanup endpoint should explain that the path is gone');
   assert.match(removedEndpointRes.json?.error || '', /directly/i, 'retired voice cleanup endpoint should tell callers to send messages directly');
 
+  const initialReview = await request(chatPort, 'GET', '/api/voice-review/settings');
+  assert.equal(initialReview.status, 200);
+  assert.equal(initialReview.json?.settings?.enabled, false, 'new personal review must be off by default');
+  const reviewWhileOff = await request(chatPort, 'POST', '/api/voice-review', { text: '请检查结果' });
+  assert.equal(reviewWhileOff.status, 400, 'no model should run until the Person opts in');
+  const savedReview = await request(chatPort, 'PATCH', '/api/voice-review/settings', {
+    enabled: true,
+    terms: ['RoboDojo'],
+  });
+  assert.equal(savedReview.status, 200);
+  assert.deepEqual(savedReview.json?.settings, { enabled: true, terms: ['RoboDojo'] });
+  const loadedReview = await request(chatPort, 'GET', '/api/voice-review/settings');
+  assert.deepEqual(loadedReview.json?.settings, savedReview.json?.settings);
+
   console.log('test-http-voice-cleanup: ok');
 } catch (error) {
   console.error(error);

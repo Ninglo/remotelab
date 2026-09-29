@@ -843,6 +843,14 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: selecting a group or Person should show that scope's Sessions and give a direct way back through the same selector. Keep group Sessions out of personal counts and lists; do not create another navigation level for them.
 - Follow-up: verify switching Mine → group → Mine, the two pilot group names, no duplicate group heading or permission badge, and no leftover hidden origin or Space filter.
 
+### 2026-09-29 — 语音输入整理应由个人选择并保留原文
+
+- Source: direct user feedback on the existing speech-to-text input.
+- User slice: a Person dictating chat messages with recurring names and technical terms.
+- Observed friction or ask: offer optional cleanup and correction, disabled by default, and allow the Person to try it alongside the original transcript. A personal vocabulary should help with recurring terms.
+- Product implication: keep the recognition result editable, request model review only on an explicit click, preview before replacing it, and store vocabulary outside the shared People directory. Distinguish text correction from acoustic ASR hotwords; verify provider support before claiming the latter.
+- Follow-up: compare real utterances with and without personal vocabulary, then decide whether to add provider-specific ASR hotwords. Record latency and token use for the chosen review backend.
+
 ### YYYY-MM-DD — short title
 
 - Source:

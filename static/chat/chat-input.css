@@ -419,6 +419,28 @@
   line-height: 1.4;
   text-align: right;
 }
+.voice-review-panel[hidden] {
+  display: none;
+}
+.voice-review-panel {
+  margin: 0 12px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 12px;
+}
+.voice-review-heading {
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+.voice-review-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 130px;
+  overflow: auto;
+}
 .quick-entry-focus-prompt[hidden] {
   display: none !important;
 }
