@@ -1,4 +1,4 @@
-export const sourceCommit = '503c1c37c8d8eaae6f36b70303a158e7e5faf1d1';
+export const sourceCommit = '6dc19a03acf45122d11338fc49a1241b13654575';
 
 export const statusNames = {
   code: '源码已核',
@@ -177,16 +177,25 @@ export const nodes = [
   {
     id: 'feishu-ingress', domain: 'integration', title: '飞书消息接入', summary: '连接器处理群、话题、发送者、附件和参与判断，再提交规范化输入。', owner: '飞书连接器', status: ['code'],
     contract: '接收到群消息、判断是否参与、把内容提交给 Harness 是不同阶段；外部元数据保存在 sourceContext。',
-    reads: '飞书事件、群/话题配置和需要的上下文。', writes: '耐久 inbox、会话绑定、prepared Request。', related: ['surface', 'person', 'admission', 'quick-participation', 'outbox'],
+    reads: '飞书事件、群/话题配置和需要的上下文。', writes: '耐久 inbox、会话绑定；按规则追加观察事件或提交 Request。', related: ['surface', 'person', 'admission', 'quick-participation', 'feishu-observation', 'outbox'],
     sources: [{ path: 'scripts/feishu-connector.mjs', note: '入口与参与路径' }, { path: 'docs/connector-turn-context.md', line: 1, note: 'sourceContext 边界' }],
     open: '不同群模式、@、免 @ 观察、话题与文档评论分别有不同分叉。',
   },
   {
     id: 'quick-participation', domain: 'integration', title: '飞书快速参与判断', summary: '有些群在正式答复之外另有快速模型判断；思考中表情自身由程序发送。', owner: '飞书连接器与外部快速判断服务', status: ['code', 'config'],
-    contract: '非 Jev 的 quickReactions 路径会在提交正常任务的同时并行调用快速判断；Jev 模式先记录消息，再按快速判断选择只发表情或提交完整任务。两种模式不可合并。',
-    reads: '群配置、最近消息和是否 @ Bot。', writes: 'THINKING 表情、快速判断日志；Jev 模式还写观察/决定与结果表情投递。', related: ['feishu-ingress', 'harness', 'outbox', 'usage-ledger'],
+    contract: '旧 quickReactions 路径会在正常任务之外并行调用快速判断，不以它拦截 Run；新 jevReactions 先记录消息，再据 Jev 决定是否提交正式工作。新规则只在选定群主线试验。',
+    reads: '群配置、近期上下文和是否 @ Bot。', writes: '旧规则的 THINKING 与快速判断日志；新规则的观察/决定与结果表情投递。', related: ['feishu-ingress', 'feishu-observation', 'harness', 'outbox', 'usage-ledger'],
     sources: [{ path: 'connectors/feishu/quick-participation.mjs', line: 1, note: '外部快速模型及条件' }, { path: 'scripts/feishu-connector.mjs', line: 1150, note: 'Jev 决定与提交分叉' }, { path: 'scripts/feishu-connector.mjs', line: 1648, note: '非 Jev 并行路径' }],
     open: '逐群测量快速判断次数、模型用量、延迟和它是否改变最终参与；当前仅见判断时延日志，未见用量纳入统一账本。',
+  },
+  {
+    id: 'feishu-observation', domain: 'integration', title: '飞书群消息观察', summary: '新规则把不需回答的群消息也写入同一 group-feed Session，随后单独保存 Jev 决策。', owner: '飞书连接器 + Session 历史服务', status: ['code', 'config', 'observed'],
+    contract: '当前只对选定群主线启用。消息先追加为 user/message/feishu_observation；silent 不启动工作 Run，但结果表情仍有 delivery-only Request。一次已落盘的 silent 记录及两个事件已核。',
+    reads: '绑定群的 Session、来源上下文、近期最多 20 条且最多 2 小时的消息；Jev 输入总量最多 5,000 字符。',
+    writes: 'chat-history/{sessionId}/ 的用户和决策事件、session-observations/ 去重与决策记录、结果表情投递。观察分支不解析附件资产。',
+    related: ['session', 'history', 'quick-participation', 'outbox', 'usage-ledger'],
+    sources: [{ path: 'scripts/feishu-connector.mjs', line: 1051, note: '观察请求早于附件解析' }, { path: 'chat/session-observations.mjs', line: 49, note: '事件落盘与近期窗口' }, { path: 'chat/session-observations.mjs', line: 88, note: '决策落盘' }, { path: 'static/chat/ui.js', line: 710, note: '网页用户气泡' }],
+    open: '增加“观察未回复”和发送者的界面标识；确认图片/文件预览与下轮 Harness 上下文的实际覆盖，并按消息串联 Jev 调用、投递回执与成本。',
   },
   {
     id: 'outbox', domain: 'integration', title: '结果投递与回执', summary: 'Request 结果生成独立可认领的投递部分；连接器发送并确认。', owner: 'RemoteLab outbox + 连接器 sender', status: ['code'],
@@ -258,7 +267,8 @@ export const paths = [
     id: 'feishu', title: '飞书文字与表情', lead: '用同一条群消息检查“收到、是否参与、提交、执行、送达”的不同阶段。表情至少有即时处理与结果投递两类通道。',
     steps: [
       { title: '消息进入连接器', text: '解析发送者、群/话题、附件和本轮可用上下文，先保存来源事件。', nodes: ['feishu-ingress', 'person'] },
-      { title: '判断是否交给 Harness', text: '群规则先过滤；quickReactions 可额外调用快速模型。Jev 模式由它决定是否启动完整任务，非 Jev 模式与正常任务并行。临时 THINKING 表情由连接器直接发送。', nodes: ['feishu-ingress', 'quick-participation', 'admission'] },
+      { title: '按群规则分叉', text: '旧 quickReactions：立即 THINKING，快速 Jev 并行记录判断，正常任务仍提交 Harness。新 jevReactions：仅选定群主线先写 group-feed Session，再由 Jev 决定 reply 或 silent。', nodes: ['feishu-ingress', 'quick-participation', 'feishu-observation'] },
+      { title: '沉默也留下事件', text: '新规则 silent 保留 user/message/feishu_observation 和 system/reaction_decision；不启动工作 Run，结果表情仍经 delivery-only Request 和 outbox 送达。', nodes: ['feishu-observation', 'history', 'outbox'] },
       { title: '运行当前工作', text: 'Request 关联 Session，Run 调用 Harness；任务理解和具体工具选择留在 Harness。', nodes: ['request', 'session', 'run', 'harness'] },
       { title: '拆分结果并投递', text: '文字、附件、结果表情进入可恢复的投递部分；连接器调用飞书接口并写入回执。', nodes: ['outbox', 'artifacts'] },
     ], gap: '待补一条真实消息的事件 → 快速判断 → requestId → runId → deliveryId → 飞书回执，并计入额外模型调用与 API 次数。',
@@ -293,6 +303,7 @@ export const paths = [
 ];
 
 export const findings = [
+  { title: '新规则的 silent 消息确实进入同一 Session', status: 'observed', text: '本实例只配置一个群主线启用 jevReactions；已读回一条 silent 记录，对应 Session 历史里有 user/message/feishu_observation 和 system/reaction_decision。观察事件无附件，普通网页视图也未给它单独标记。', nodes: ['feishu-observation', 'history', 'quick-participation'] },
   { title: '飞书“只发一个表情”仍可能调用模型', status: 'code', text: 'THINKING 表情由固定程序调用飞书 API；quickReactions 在某些群另调快速模型，Jev 模式可能只发结果表情而不启动完整 Harness。用户给 Bot 点表情还可能产生隐藏反馈轮次。应按分叉单独计量。', nodes: ['quick-participation', 'outbox', 'usage-ledger'] },
   { title: '统一用量账本还看不到全部外部模型调用', status: 'unknown', text: '本实例 7 日账本能按 Run 和操作归类模型 tokens；快速 Jev 判断在连接器中只见选择和时延日志，未见写入该账本。外部模型账单、飞书 API 配额和目录增量应分开核对。', nodes: ['usage-ledger', 'quick-participation', 'observation'] },
   { title: '相关 Session 的“可选择”与“实际注入”仍有距离', status: 'unknown', text: '当前源码可见相关 Session 上下文选择函数，但本轮调用搜索没有找到它进入普通前台 Run 的路径。分类器另会读取项目路由资料。网页暂不把跨 Session 自动记忆写成已运行能力。', nodes: ['related-sessions', 'prompt', 'classifier'] },
@@ -300,5 +311,5 @@ export const findings = [
   { title: '日报“总控”是组合流程', status: 'config', text: '活动调度在 04:00/18:00 启动审阅 Session，实际阅读、修订知识和出版遵循实例规则；不是平台核心里一个统一读取所有工作源的服务。', nodes: ['daily-review', 'automation', 'project-knowledge'] },
   { title: 'Skill 一词跨越三种机制', status: 'code', text: 'Harness 加载的方法文件、RemoteLab 提示中的能力指针、连接器的带参数动作与候选审阅彼此不同。网站分别建节点并记录真实调用。', nodes: ['native-skill', 'connector-capability', 'skill-review'] },
   { title: 'Dream 和语义遗忘未证实为运行机制', status: 'unknown', text: '已确认会话压缩、记忆写回及限次候选审阅；在当前所查源码与活动调度中未发现独立 Dream 或自动语义遗忘任务。此结论仅覆盖本次检查范围。', nodes: ['semantic-forgetting', 'compaction', 'skill-review'] },
-  { title: '源码版本与生产进程仍要逐实例核对', status: 'unknown', text: '本站以源码 6316fe76 和本实例部分活动配置为基线。代码存在、配置活跃、进程已加载、真实送达是不同的证据层级；后续在运行快照中逐项补齐。', nodes: ['config', 'observation', 'outbox'] },
+  { title: '源码版本与生产进程仍要逐实例核对', status: 'unknown', text: '本站以源码 6dc19a03 和本实例部分活动配置为基线。代码存在、配置活跃、进程已加载、真实送达是不同的证据层级；后续在运行快照中逐项补齐。', nodes: ['config', 'observation', 'outbox'] },
 ];

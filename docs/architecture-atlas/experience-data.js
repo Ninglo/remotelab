@@ -1,6 +1,48 @@
 // A public, aggregate snapshot. No message text, identity, group ID or credential is included.
 export const measuredAt = '2026-09-29 13:07 中国时间';
 
+// Counts describe the inspected instance configuration, not a rollout guarantee.
+export const feishuRules = {
+  checkedAt: '2026-09-29 · 本实例配置与一条已落盘的 silent 记录',
+  modes: [
+    {
+      name: '旧规则 · quickReactions', scope: '当前配置：2 个群',
+      visible: '先出现临时 THINKING；随后可能有 Harness 选择的结果表情和文字。',
+      decision: '连接器并行调用 Jev，记录快速判断与交接候选；已接纳的消息仍按原路径提交 Harness，快速判断本身不拦截工作 Run。',
+      model: '快速 Jev 调用 + 正常任务的 Harness token；程序发送 THINKING 和最终投递，使用飞书 API。',
+      writes: '连接器 inbox/快速判断日志；正常任务的 Session、Request、Run、用量记录及投递回执。',
+    },
+    {
+      name: '新规则 · jevReactions', scope: '当前配置：1 个试验群的主线',
+      visible: '不加临时 THINKING；Jev 判定 silent 时只在原消息上加结果表情，判定 reply 时加 OnIt 并启动答复。',
+      decision: '先把消息写入绑定的 group-feed Session，再用近期 Session 消息调用 Jev；silent 跳过工作 Run，reply 复用已写入的用户事件提交任务。',
+      model: '每条进入判断的消息有一次快速 Jev 调用；只有 reply 再产生 Harness token。结果表情由固定程序经飞书 API 发送。',
+      writes: 'Session 用户事件、观察去重/决策记录、决策事件；silent 仍产生 delivery-only Request 和 outbox 回执。',
+    },
+  ],
+  observation: [
+    ['① 接收', '飞书 WebSocket → 连接器 inbox；核对群主线配置及消息路由。'],
+    ['② 观察', '连接器 POST /api/sessions/{id}/observations；同一群绑定的 group-feed Session 追加 type=message、role=user、source=feishu_observation。'],
+    ['③ 判断', 'Jev 读取该 Session 最近最多 20 条、最多 2 小时的消息，总上下文限 5,000 字符；决策写入 session-observations/，并追加 type=reaction_decision、role=system。'],
+    ['④ silent', '不创建正式工作 Run；outbox 创建 delivery-only Request，连接器调用飞书 reaction OpenAPI。原始用户事件仍在 chat-history/{sessionId}/。'],
+  ],
+  boundaries: [
+    '试验范围只覆盖选定群主线；该群话题、Thread 和其他群沿各自原有规则。旧规则不是所有群的统一规则。',
+    '无正文的本地命令先进入观察 Session，然后走现有命令脚本；不会进入普通 Jev 参与判断。',
+    '当前网页按普通用户消息气泡渲染观察事件，没有显示“已观察但未回复”的标记或飞书发送者；reaction_decision 也未在普通事件视图单独渲染。',
+    '观察分支在附件解析前返回，用户事件只含文字/预览，没有附件资产；原始历史长期留存不等于附件已保存。',
+    '近期 Jev 上下文是有界窗口；完整 Session 历史仍在磁盘。被保存并不等于下一次 Harness 一定会把原始事件全文作为提示读取。',
+  ],
+  sources: [
+    { path: 'connectors/feishu/group-settings.mjs', line: 52, note: '启用条件和主线范围' },
+    { path: 'scripts/feishu-connector.mjs', line: 1587, note: '先观察、命令分叉和 Jev 判断' },
+    { path: 'chat/session-observations.mjs', line: 49, note: '用户事件、去重与近期上下文' },
+    { path: 'chat/session-observations.mjs', line: 88, note: '决策记录和系统事件' },
+    { path: 'chat/source-deliveries.mjs', line: 99, note: 'delivery-only 投递' },
+    { path: 'static/chat/realtime-render.js', line: 116, note: '普通 Session 事件渲染' },
+  ],
+};
+
 export const experiences = [
   {
     id: 'web-turn', title: '在网页发一条消息', visible: '用户看到消息进入 Session、运行状态、工具过程与最终答复；文件要另有可打开的交付入口。',

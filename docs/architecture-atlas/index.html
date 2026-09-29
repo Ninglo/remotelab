@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>RemoteLab 架构图谱</title>
-  <link rel="stylesheet" href="./styles.css?v=20260929b">
+  <link rel="stylesheet" href="./styles.css?v=20260929c">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">R</span><span>RemoteLab <span class="brand-sub">架构图谱</span></span></div>
-      <div class="top-meta"><span class="version">第二版 · 2026-09-29</span><span class="version">源码 503c1c37</span></div>
+      <div class="top-meta"><span class="version">第三版 · 2026-09-29</span><span class="version">源码 6dc19a03</span></div>
     </header>
 
     <aside class="sidebar" aria-label="图谱导航">
@@ -35,8 +35,9 @@
     <main class="main-content">
       <section id="experience-view" class="view is-active" aria-labelledby="experience-heading">
         <div class="page-heading"><div><div class="eyebrow">USER → EXECUTION → RESOURCE</div><h2 id="experience-heading">用户看到什么，系统做了什么</h2><p>先选一个熟悉的动作。展开后沿同一条路径看程序、模型、接口和数据写入，再跳到对应代码。</p></div></div>
-        <div class="experience-shortcuts"><button type="button" data-scroll="resource-summary">看模型用量与存储占用 ↓</button><button type="button" data-view="map">按责任找代码 ↗</button></div>
+        <div class="experience-shortcuts"><button type="button" data-scroll="feishu-rules">看飞书新旧规则 ↓</button><button type="button" data-scroll="resource-summary">看模型用量与存储占用 ↓</button><button type="button" data-view="map">按责任找代码 ↗</button></div>
         <div class="meaning-note"><strong>先分清两个“token”</strong><p><b>模型 token</b> 是输入、缓存输入和输出的用量；<b>飞书应用 access token</b> 是 API 授权凭据。仅执行固定程序逻辑不消耗模型 token；程序若调用模型则另计，发飞书消息还会使用飞书接口配额。</p></div>
+        <div id="feishu-rules"></div>
         <div id="experience-list" class="experience-list"></div>
         <div class="resource-heading"><div class="eyebrow">RESOURCE MAP</div><h3>资源占用在哪里</h3><p>这里先给一张可核对的本实例快照，再标出账本目前看不到的成本。</p></div>
         <div id="resource-summary"></div>
@@ -72,6 +73,6 @@
       <div class="detail-empty"><div class="empty-glyph">◎</div><h2>选择一个机制</h2><p>点击左侧地图中的节点，查看它负责什么、连接到哪里，以及当前证据和源码入口。</p></div>
     </aside>
   </div>
-  <script type="module" src="./app.js?v=20260929b"></script>
+  <script type="module" src="./app.js?v=20260929c"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929b';
-import { experiences, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929b';
+import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929c';
+import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929c';
 
 const byId = new Map(nodes.map((node) => [node.id, node]));
 const elements = {
@@ -15,6 +15,7 @@ const elements = {
   detail: document.querySelector('#detail-panel'),
   main: document.querySelector('.main-content'),
   experienceList: document.querySelector('#experience-list'),
+  feishuRules: document.querySelector('#feishu-rules'),
   resourceSummary: document.querySelector('#resource-summary'),
   missingDimensions: document.querySelector('#missing-dimensions'),
 };
@@ -69,6 +70,18 @@ function renderPaths() {
 
 function renderFindings() {
   elements.findingList.innerHTML = findings.map((finding) => `<article class="finding-card"><div class="finding-top"><h3>${escapeHtml(finding.title)}</h3>${badge(finding.status)}</div><p>${escapeHtml(finding.text)}</p><div class="finding-nodes">${finding.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div></article>`).join('');
+}
+
+function renderFeishuRules() {
+  elements.feishuRules.innerHTML = `<div class="policy-heading"><div><div class="eyebrow">FEISHU POLICY SPLIT</div><h3>飞书的两套规则</h3><p>先看同一条群消息在两种规则下的用户体验、模型调用和存储位置。</p></div><span class="policy-snapshot">${escapeHtml(feishuRules.checkedAt)}</span></div>
+    <div class="policy-grid">${feishuRules.modes.map((mode) => `<article class="policy-card"><div class="policy-card-head"><h4>${escapeHtml(mode.name)}</h4><span>${escapeHtml(mode.scope)}</span></div>
+      <dl><div><dt>用户看到</dt><dd>${escapeHtml(mode.visible)}</dd></div><div><dt>谁决定</dt><dd>${escapeHtml(mode.decision)}</dd></div><div><dt>模型与接口</dt><dd>${escapeHtml(mode.model)}</dd></div><div><dt>写入哪里</dt><dd>${escapeHtml(mode.writes)}</dd></div></dl></article>`).join('')}</div>
+    <details class="policy-deep-dive"><summary><span><strong>Jev 判断“不回复”后，消息在 Session 哪里？</strong><small>展开事件顺序、磁盘位置和代码入口</small></span><span class="expand-mark" aria-hidden="true">⌄</span></summary>
+      <div class="policy-deep-body"><ol class="policy-timeline">${feishuRules.observation.map(([title, explanation]) => `<li><strong>${escapeHtml(title)}</strong><p>${escapeHtml(explanation)}</p></li>`).join('')}</ol>
+        <div class="policy-event-pair"><code>chat-history/{sessionId}/events/… · user / message / feishu_observation</code><code>chat-history/{sessionId}/events/… · system / reaction_decision / silent</code><code>session-observations/… · 去重键 + 决策</code></div>
+        <div class="policy-boundaries"><h4>需要继续核对的边界</h4><ul>${feishuRules.boundaries.map((value) => `<li>${escapeHtml(value)}</li>`).join('')}</ul></div>
+        <div class="experience-source-list">${feishuRules.sources.map(sourceMarkup).join('')}</div>
+      </div></details>`;
 }
 
 function renderExperiences() {
@@ -175,5 +188,6 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && 
 window.addEventListener('hashchange', readHash);
 
 renderFindings();
+renderFeishuRules();
 renderExperiences();
 readHash();
