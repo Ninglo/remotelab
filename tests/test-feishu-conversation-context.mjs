@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { buildMessageSourceContext } from '../connectors/feishu/index.mjs';
 import {
+  feishuConversationBoundary,
   loadFeishuConversationContext,
   normalizeFeishuHistoryItem,
   parseFeishuMessageTime,
@@ -81,6 +82,52 @@ assert.equal(groupCalls[0].params.container_id_type, 'chat');
 assert.equal(groupCalls[0].params.container_id, 'chat-secret');
 assert.ok(groupCalls[0].params.start_time);
 assert.ok(groupCalls[0].params.end_time);
+
+const boundary = feishuConversationBoundary({ message: {
+  connector: 'feishu', messageId: 'previous', chatId: 'chat-secret', topicId: '',
+  sourceRouteId: 'bot-2', createTime: at('2026-09-22T10:45:00.000Z'),
+} }, {
+  chatId: 'chat-secret', chatType: 'group', sourceRouteId: 'bot-2',
+  createTime: at('2026-09-22T11:00:00.000Z'),
+});
+assert.deepEqual(boundary, {
+  sinceTimeMs: Date.parse('2026-09-22T10:45:00.000Z'), sinceMessageId: 'previous',
+});
+const incrementalCalls = [];
+const incremental = await loadFeishuConversationContext(runtimeFor([
+  textItem('current', '2026-09-22T11:00:00.000Z', '酒嘉年', '当前消息'),
+  textItem('new', '2026-09-22T10:50:00.000Z', '张予', '新增讨论'),
+  textItem('previous', '2026-09-22T10:45:00.000Z', '酒嘉年', '上一轮已入 Session'),
+  textItem('same-time', '2026-09-22T10:45:00.000Z', 'Alice', '同一时刻的其他消息'),
+  textItem('old', '2026-09-22T08:00:00.000Z', 'Bob', '更早的重复历史'),
+], incrementalCalls), {
+  chatId: 'chat-secret', chatType: 'group', messageId: 'current',
+  createTime: at('2026-09-22T11:00:00.000Z'),
+}, { ...boundary, timeZone: 'Asia/Shanghai' });
+assert.deepEqual(incremental.messages.map(({ text }) => text), [
+  '同一时刻的其他消息', '新增讨论',
+]);
+assert.equal(incrementalCalls[0].params.start_time,
+  String(Math.floor(boundary.sinceTimeMs / 1000)));
+assert.equal(feishuConversationBoundary({ message: {
+  connector: 'feishu', messageId: 'previous', chatId: 'other-chat',
+  sourceRouteId: 'bot-2', createTime: at('2026-09-22T10:45:00.000Z'),
+} }, { chatId: 'chat-secret', sourceRouteId: 'bot-2',
+  createTime: at('2026-09-22T11:00:00.000Z') }), null,
+'a different chat must retain its full first-turn context');
+assert.equal(feishuConversationBoundary({ message: {
+  connector: 'feishu', messageId: 'previous', chatId: 'chat-secret', topicId: 'other-thread',
+  sourceRouteId: 'bot-2', createTime: at('2026-09-22T10:45:00.000Z'),
+} }, { chatId: 'chat-secret', threadId: 'current-thread', sourceRouteId: 'bot-2',
+  createTime: at('2026-09-22T11:00:00.000Z') }), null,
+'a different topic must retain its full first-turn context');
+assert.equal(feishuConversationBoundary({ message: {
+  connector: 'feishu', feishuParticipation: 'feedback', messageId: 'feedback',
+  chatId: 'chat-secret', sourceRouteId: 'bot-2',
+  createTime: at('2026-09-22T10:45:00.000Z'),
+} }, { chatId: 'chat-secret', sourceRouteId: 'bot-2',
+  createTime: at('2026-09-22T11:00:00.000Z') }), null,
+'feedback events are not a safe conversation-history boundary');
 
 const metadataContext = await loadFeishuConversationContext(runtimeFor([
   textItem('bot-answer', '2026-09-22T10:45:00.000Z', '茵蒂克丝', '我会继续查。', 'app'),

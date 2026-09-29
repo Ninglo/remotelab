@@ -86,8 +86,12 @@ try {
   const server = createServer(async (request, response) => {
     let text = '';
     for await (const chunk of request) text += chunk;
-    const body = JSON.parse(text);
+    const body = text ? JSON.parse(text) : {};
     response.setHeader('content-type', 'application/json');
+    if (request.method === 'GET' && request.url?.endsWith('/source-context')) {
+      response.end(JSON.stringify({ sourceContext: { message: null } }));
+      return;
+    }
     if (request.url === '/api/sessions') {
       response.end(JSON.stringify({ session: { id: body.externalTriggerId.split(':').at(-1) } }));
       return;

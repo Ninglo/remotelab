@@ -24,6 +24,20 @@ function positiveInteger(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+export function feishuConversationBoundary(previousSourceContext, summary) {
+  const previous = previousSourceContext?.message;
+  if (trimString(previous?.connector) !== 'feishu'
+    || trimString(previous?.feishuParticipation) === 'feedback'
+    || !trimString(previous?.messageId)
+    || trimString(previous?.chatId) !== trimString(summary?.chatId)
+    || trimString(previous?.topicId) !== trimString(buildFeishuTopicId(summary))
+    || trimString(previous?.sourceRouteId) !== trimString(summary?.sourceRouteId)) return null;
+  const previousTime = parseFeishuMessageTime(previous.createTime);
+  const currentTime = parseFeishuMessageTime(summary?.createTime);
+  if (!previousTime || !currentTime || previousTime >= currentTime) return null;
+  return { sinceTimeMs: previousTime, sinceMessageId: previous.messageId };
+}
+
 export function parseFeishuMessageTime(value) {
   const text = trimString(String(value ?? ''));
   if (!text) return 0;
@@ -199,23 +213,27 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
   const maxGapMs = positiveInteger(options.maxGapMs, FEISHU_CONTEXT_ACTIVITY_GAP_MS);
   const maxCharacters = positiveInteger(options.maxCharacters, FEISHU_CONTEXT_MAX_CHARACTERS);
   const timeoutMs = positiveInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS);
+  const sinceTimeMs = positiveInteger(options.sinceTimeMs, 0);
+  const sinceMessageId = trimString(options.sinceMessageId);
   const topicId = buildFeishuTopicId(summary);
   const rawItems = await listMessages(runtime, {
     containerId: topicId || chatId,
     containerIdType: topicId ? 'thread' : 'chat',
     endTimeMs: now,
-    startTimeMs: topicId ? 0 : now - maxAgeMs,
+    startTimeMs: Math.max(topicId ? 0 : now - maxAgeMs, sinceTimeMs),
     maxMessages,
     timeoutMs,
   });
   const normalized = rawItems
     .filter((item) => !currentMessageId || trimString(item?.message_id) !== currentMessageId)
+    .filter((item) => !sinceMessageId || trimString(item?.message_id) !== sinceMessageId)
     .map((item) => {
       const message = normalizeFeishuHistoryItem(item, { timeZone: options.timeZone });
       return message ? { ...message, messageId: trimString(item?.message_id),
         senderType: trimString(item?.sender?.sender_type), senderId: trimString(item?.sender?.id) } : null;
     })
-    .filter((item) => item && item.timestamp <= now);
+    .filter((item) => item && item.timestamp <= now
+      && (!sinceTimeMs || item.timestamp >= sinceTimeMs));
   const relevant = topicId ? normalized : keepCurrentActivity(normalized, maxGapMs);
   const fitted = fitCharacterBudget(relevant, maxCharacters);
   if (fitted.messages.length === 0) return null;

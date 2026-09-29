@@ -58,7 +58,10 @@ import {
   summarizeFeishuEvent as summarizeEvent,
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
-import { loadFeishuConversationContext } from '../connectors/feishu/conversation-context.mjs';
+import {
+  feishuConversationBoundary,
+  loadFeishuConversationContext,
+} from '../connectors/feishu/conversation-context.mjs';
 import {
   appendLinkedFeishuProjectDelivery,
   appendLinkedFeishuProjectEvent,
@@ -954,6 +957,18 @@ async function resolveFeishuRuntimeSelection(runtime) {
   });
 }
 
+async function loadFeishuContextBoundary(requester, sessionId, summary) {
+  try {
+    const result = await requester(`/api/sessions/${encodeURIComponent(sessionId)}/source-context`);
+    if (!result.response?.ok) return null;
+    return feishuConversationBoundary(result.json?.sourceContext, summary);
+  } catch {
+    // The existing full-history path remains available if the local metadata
+    // lookup fails. Losing the boundary must not lose conversation context.
+    return null;
+  }
+}
+
 async function submitRemoteLabRequest(runtime, summary, {
   prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
 } = {}) {
@@ -1063,10 +1078,12 @@ async function submitRemoteLabRequest(runtime, summary, {
   }
   const [attachmentResolution, conversationContext, linkedProjectContext] = await Promise.all([
     resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
-    loadFeishuConversationContext(runtime, effectiveSummary).catch((error) => {
-      console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
-      return null;
-    }),
+    loadFeishuContextBoundary(requester, session.id, effectiveSummary)
+      .then((boundary) => loadFeishuConversationContext(runtime, effectiveSummary, boundary || {}))
+      .catch((error) => {
+        console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
+        return null;
+      }),
     loadLinkedFeishuProjectContext(runtime, effectiveSummary).catch((error) => {
       console.warn(`[feishu-connector] failed to load linked project context for ${effectiveSummary.messageId}: ${error?.message || error}`);
       return null;
