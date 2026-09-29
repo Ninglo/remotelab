@@ -848,8 +848,8 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Source: direct user feedback on the existing speech-to-text input.
 - User slice: a Person dictating chat messages with recurring names and technical terms.
 - Observed friction or ask: offer optional cleanup and correction, disabled by default, and allow the Person to try it alongside the original transcript. A personal vocabulary should help with recurring terms.
-- Product implication: keep the recognition result editable, request model review only on an explicit click, preview before replacing it, and store vocabulary outside the shared People directory. Distinguish text correction from acoustic ASR hotwords; verify provider support before claiming the latter.
-- Follow-up: compare real utterances with and without personal vocabulary, then decide whether to add provider-specific ASR hotwords. Record latency and token use for the chosen review backend.
+- Product implication: keep the recognition result editable, request model review only on an explicit click, preview before replacing it, and store vocabulary outside the shared People directory. Send opt-in personal terms as Doubao relay recognition hotwords and as hints for draft correction; other voice providers only receive the correction hints.
+- Follow-up: compare real utterances with and without personal vocabulary to measure recognition gains and unwanted substitutions. Record latency and token use for the chosen review backend.
 
 ### YYYY-MM-DD — short title
 
