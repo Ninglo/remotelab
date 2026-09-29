@@ -10,6 +10,8 @@ process.env.REMOTELAB_CONFIG_DIR = configDir;
 try {
   const {
     getVoiceReviewBackend,
+    getVoiceRecognitionHotwords,
+    applyVoiceTermCorrections,
     getVoiceReviewSettings,
     reviewVoiceText,
     runVoiceReviewModel,
@@ -24,15 +26,18 @@ try {
   await assert.rejects(reviewVoiceText('person-a', '你好。', { runModel: async () => '你好。' }), /off/);
 
   await updateVoiceReviewSettings('person-a', { enabled: true, terms: ['RemoteLab', 'RoboDojo'] });
+  assert.deepEqual(getVoiceRecognitionHotwords(['Cloud Talk => Claude Tag', 'Claude Tag']), ['Claude Tag']);
+  assert.equal(applyVoiceTermCorrections('Cloud Talk 和 cloud talk', ['Cloud Talk => Claude Tag']),
+    'Claude Tag 和 Claude Tag');
   assert.deepEqual(await getVoiceReviewSettings('person-b'), emptySettings,
     'another Person must not receive the personal vocabulary or opt-in');
   const result = await reviewVoiceText('person-a', '我想试试肉波道场。', {
     runModel: async (prompt) => {
       assert.match(prompt, /RoboDojo/);
-      assert.match(prompt, /删掉无意义的口水词/);
-      assert.match(prompt, /至少两件事.*编号/);
-      assert.match(prompt, /不是摘要/);
-      assert.match(prompt, /保持原文语言.*不翻译/);
+      assert.match(prompt, /只删除独立的“嗯、呃”/);
+      assert.match(prompt, /完整原句分行并编号/);
+      assert.match(prompt, /不要把原句缩写成任务摘要/);
+      assert.match(prompt, /保持原文语言/);
       assert.match(prompt, /"draft":"我想试试肉波道场。"/);
       return '我想试试 RoboDojo。';
     },
@@ -41,7 +46,16 @@ try {
     original: '我想试试肉波道场。',
     revised: '我想试试 RoboDojo。',
     backend: 'unconfigured',
+    overedited: false,
   });
+  const longOriginal = '我们还是测试一下这个自动总结哈。首先就是第一点，我们看我们今天完成了整个飞书接入，然后第二点是我们补了一些这个 Cloud Talk 当中的一些实际体验感受，尤其是关于进度显示清单 To Do 那个拉取的。然后第三个是有关 RemoteLab 的一些优化。';
+  await updateVoiceReviewSettings('person-a', { terms: ['Cloud Talk => Claude Tag'] });
+  const guarded = await reviewVoiceText('person-a', longOriginal, {
+    runModel: async () => '1. 完成飞书接入。\n2. 补充 Claude Tag 体验。\n3. 优化 RemoteLab。',
+  });
+  assert.equal(guarded.overedited, true);
+  assert.equal(guarded.revised, longOriginal.replace('Cloud Talk', 'Claude Tag'));
+  await updateVoiceReviewSettings('person-a', { terms: ['RemoteLab', 'RoboDojo'] });
   await assert.rejects(updateVoiceReviewSettings('person-a', {
     terms: Array.from({ length: 51 }, (_, index) => `term-${index}`),
   }), /at most 50/);

@@ -106,6 +106,18 @@ assert.equal(elements.get('voiceReviewUndo').hidden, false,
 elements.get('voiceReviewUndo').listeners.get('click')();
 assert.equal(composer.value, `已有草稿 ${rawList}`);
 
+const aliasedList = '第一点是我们测试 Cloud Talk。然后第二点是保留这句说明。';
+composer.value = `已有草稿 ${aliasedList}`;
+finishDictation(aliasedList);
+const overeditedReview = browser.remotelabWaitForVoiceReview();
+await flush();
+reviews.shift()({ revised: aliasedList.replace('Cloud Talk', 'Claude Tag'), overedited: true });
+assert.equal((await overeditedReview).after,
+  '已有草稿 1. 我们测试 Claude Tag。\n2. 保留这句说明。');
+assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.preserved');
+elements.get('voiceReviewUndo').listeners.get('click')();
+assert.equal(composer.value, `已有草稿 ${aliasedList}`);
+
 composer.value = `已有草稿 ${liveList}`;
 finishDictation(rawList, { displayedTranscript: liveList, rawComposerText: `已有草稿 ${rawList}` });
 const failedReview = browser.remotelabWaitForVoiceReview();
@@ -133,7 +145,7 @@ composer.value = '没有模型时的识别原文';
 finishDictation('没有模型时的识别原文');
 assert.equal(browser.remotelabWaitForVoiceReview(), null);
 assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.unconfigured');
-assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 5,
+assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 6,
   'hotwords alone cannot trigger model cleanup');
 
 elements.get('voiceReviewProvider').value = 'doubao';

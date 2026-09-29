@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { gzipSync, gunzipSync } from 'zlib';
 import { WebSocket } from 'ws';
 import { loadServerVoiceInputSettings } from './instance-settings.mjs';
-import { getVoiceReviewSettings } from './voice-review.mjs';
+import { getVoiceReviewSettings, getVoiceRecognitionHotwords } from './voice-review.mjs';
 
 export const DOUBAO_VOICE_WS_PATH = '/ws/voice-input/doubao';
 const DOUBAO_VOICE_UPSTREAM_URL = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async';
@@ -77,7 +77,7 @@ export function buildDoubaoFullClientRequest(rawConfig, overrides = {}) {
     audio: { ...DOUBAO_DEFAULT_AUDIO_CONFIG },
     request: {
       ...DOUBAO_DEFAULT_REQUEST_CONFIG,
-      ...(overrides.organize === true ? { enable_ddc: true, enable_nonstream: true } : {}),
+      ...(overrides.organize === true ? { enable_nonstream: true } : {}),
       ...(hotwords.length ? { corpus: {
         context: JSON.stringify({ hotwords: hotwords.map((word) => ({ word })) }),
       } } : {}),
@@ -378,7 +378,7 @@ export function bindDoubaoVoiceRelaySocket(ws) {
     try {
       const personal = await getVoiceReviewSettings(ws?._authSession?.personId);
       if (personal.enabled) {
-        hotwords = personal.terms;
+        hotwords = getVoiceRecognitionHotwords(personal.terms);
         organize = true;
       }
     } catch (error) {
