@@ -871,6 +871,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: put supported provider choice and a personal API key field next to the voice-review toggle and hotwords. Show whether a key is saved without returning its value, and keep the feature off until the Person enables it.
 - Follow-up: verify that a new Person can configure a provider, save hotwords, preview a correction, and remove the provider from the same settings screen.
 
+### 2026-09-29 — 豆包识别用户希望豆包完成草稿整理
+
+- Source: direct correction with a screenshot of the Sessions settings area.
+- Observed friction or ask: provider choices omitted Doubao even though the instance already uses Doubao for speech recognition; the settings path was unclear from the current page.
+- Product implication: offer a Doubao Ark model for personal draft review, explain that the Ark API key differs from the speech recognition App ID and Access Token, and point users from Sessions settings to the Connections section.
+- Follow-up: verify a real Ark call with a user-supplied key and compare short Chinese corrections, latency, and cost.
+
 ### YYYY-MM-DD — short title
 
 - Source:

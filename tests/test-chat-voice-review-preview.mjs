@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../static/chat/voice-review.js', import.meta.url), 'utf8');
 const ids = [
   'voiceReviewEnabled', 'voiceReviewTerms', 'voiceReviewProvider', 'voiceReviewProviderEndpoint',
+  'voiceReviewDoubaoKeyNote',
   'voiceReviewApiKey', 'voiceReviewApiKeyStatus', 'voiceReviewSave', 'voiceReviewSettingsStatus',
   'voiceReviewBackendNote', 'voiceReviewPanel', 'voiceReviewBody', 'voiceReviewRun',
   'voiceReviewApply', 'voiceReviewDismiss', 'voiceReviewStatus', 'msgInput',
@@ -69,8 +70,10 @@ assert.equal(composer.value, '已有草稿 请检查 RoboDojo 的结果。');
 assert.equal(elements.get('voiceReviewPanel').hidden, true);
 
 elements.get('voiceReviewEnabled').checked = true;
-elements.get('voiceReviewProvider').value = 'openrouter';
+elements.get('voiceReviewProvider').value = 'doubao';
 elements.get('voiceReviewProvider').listeners.get('change')();
+assert.equal(elements.get('voiceReviewDoubaoKeyNote').hidden, false);
+assert.match(elements.get('voiceReviewProviderEndpoint').textContent, /doubao-seed-2-1-lite-260915/);
 elements.get('voiceReviewApiKey').value = 'private-key';
 await elements.get('voiceReviewSave').listeners.get('click')();
 assert.equal(requests.at(-1).body.apiKey, 'private-key');

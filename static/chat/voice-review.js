@@ -5,6 +5,7 @@
   const termsInput = document.getElementById("voiceReviewTerms");
   const providerSelect = document.getElementById("voiceReviewProvider");
   const providerEndpoint = document.getElementById("voiceReviewProviderEndpoint");
+  const doubaoKeyNote = document.getElementById("voiceReviewDoubaoKeyNote");
   const apiKeyInput = document.getElementById("voiceReviewApiKey");
   const apiKeyStatus = document.getElementById("voiceReviewApiKeyStatus");
   const saveButton = document.getElementById("voiceReviewSave");
@@ -20,6 +21,7 @@
   if (!enabledInput || !termsInput || !providerSelect || !apiKeyInput || !saveButton || !panel || !composer) return;
 
   const providers = {
+    doubao: { model: "doubao-seed-2-1-lite-260915", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions" },
     zhipu: { model: "glm-4.7-flash", endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions" },
     openrouter: { model: "qwen/qwen3-4b:free", endpoint: "https://openrouter.ai/api/v1/chat/completions" },
   };
@@ -41,6 +43,7 @@
   function renderProvider() {
     const selected = providers[providerSelect.value];
     if (providerEndpoint) providerEndpoint.textContent = selected ? `${selected.model} · ${selected.endpoint}` : "";
+    if (doubaoKeyNote) doubaoKeyNote.hidden = providerSelect.value !== "doubao";
     if (apiKeyStatus) apiKeyStatus.textContent = !selected ? ""
       : selected === providers[settings.provider?.id] && settings.provider?.apiKeyConfigured
         ? t("settings.voiceReview.apiKeySaved")

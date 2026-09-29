@@ -187,11 +187,11 @@ try {
   assert.equal(reviewWithoutApi.status, 400);
   assert.match(reviewWithoutApi.json?.error || '', /configured model API/);
   const configuredReview = await request(chatPort, 'PATCH', '/api/voice-review/settings', {
-    providerId: 'zhipu', apiKey: 'test-personal-secret',
+    providerId: 'doubao', apiKey: 'test-personal-secret',
   });
   assert.equal(configuredReview.status, 200);
   assert.equal(configuredReview.json?.backend, 'api');
-  assert.deepEqual(configuredReview.json?.settings?.provider, { id: 'zhipu', apiKeyConfigured: true });
+  assert.deepEqual(configuredReview.json?.settings?.provider, { id: 'doubao', apiKeyConfigured: true });
   assert.equal(JSON.stringify(configuredReview.json).includes('test-personal-secret'), false,
     'the write response must not reveal the API key');
   const loadedProvider = await request(chatPort, 'GET', '/api/voice-review/settings');

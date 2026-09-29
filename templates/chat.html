@@ -417,10 +417,15 @@
                       <label for="voiceReviewProvider" class="settings-section-note" data-i18n="settings.voiceReview.provider">Model provider</label>
                       <select class="settings-inline-select" id="voiceReviewProvider">
                         <option value="" data-i18n="settings.voiceReview.provider.none">No model API</option>
+                        <option value="doubao" data-i18n="settings.voiceReview.provider.doubao">Doubao · Seed 2.1 Lite</option>
                         <option value="zhipu" data-i18n="settings.voiceReview.provider.zhipu">Zhipu · GLM-4.7-Flash</option>
                         <option value="openrouter" data-i18n="settings.voiceReview.provider.openrouter">OpenRouter · Qwen3 4B Free</option>
                       </select>
                       <div class="settings-section-note" id="voiceReviewProviderEndpoint"></div>
+                      <div class="settings-section-note" id="voiceReviewDoubaoKeyNote" hidden>
+                        <span data-i18n="settings.voiceReview.doubaoKeyNote">Draft review needs a Volcengine Ark API key. The Doubao speech recognition App ID and Access Token cannot be used here.</span>
+                        <a href="https://docs.volcengine.com/docs/ark/manage-api-keys?lang=zh" target="_blank" rel="noopener noreferrer" data-i18n="settings.voiceReview.doubaoKeyGuide">Get an Ark API key</a>
+                      </div>
                       <label for="voiceReviewApiKey" class="settings-section-note" data-i18n="settings.voiceReview.apiKey">API key</label>
                       <input class="settings-inline-input" id="voiceReviewApiKey" type="password" autocomplete="new-password" maxlength="4096" data-i18n-placeholder="settings.voiceReview.apiKeyPlaceholder" placeholder="Paste API key">
                       <div class="settings-section-note" id="voiceReviewApiKeyStatus"></div>

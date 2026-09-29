@@ -91,6 +91,24 @@ try {
   }
   assert.deepEqual((await updateVoiceReviewSettings('person-a', { providerId: '' })).provider,
     emptySettings.provider, 'selecting no provider removes the key');
+  const doubao = await updateVoiceReviewSettings('person-a', {
+    providerId: 'doubao', apiKey: 'private-ark-key',
+  });
+  assert.deepEqual(doubao.provider, { id: 'doubao', apiKeyConfigured: true });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(String(url), 'https://ark.cn-beijing.volces.com/api/v3/chat/completions');
+    assert.equal(options.headers.Authorization, 'Bearer private-ark-key');
+    const body = JSON.parse(options.body);
+    assert.equal(body.model, 'doubao-seed-2-1-lite-260915');
+    assert.deepEqual(body.thinking, { type: 'disabled' });
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '整理稿' } }] }) };
+  };
+  try {
+    assert.equal(await runVoiceReviewModel('测试', { personId: 'person-a' }), '整理稿');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  await updateVoiceReviewSettings('person-a', { providerId: '' });
   await assert.rejects(updateVoiceReviewSettings('person-a', { providerId: 'unknown', apiKey: 'x' }),
     /supported voice review provider/);
   await assert.rejects(updateVoiceReviewSettings('person-a', { providerId: 'toString', apiKey: 'x' }),

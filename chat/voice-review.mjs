@@ -9,6 +9,7 @@ const inFlight = new Set();
 const MAX_TERMS = 50;
 const MAX_TEXT_CHARS = 4000;
 const PROVIDERS = Object.freeze({
+  doubao: { endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions', model: 'doubao-seed-2-1-lite-260915' },
   zhipu: { endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4.7-flash' },
   openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions', model: 'qwen/qwen3-4b:free' },
 });
@@ -127,7 +128,8 @@ export async function runVoiceReviewModel(prompt, { personId } = {}) {
       model,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 1200,
-      ...(model === 'glm-4.7-flash' ? { thinking: { type: 'disabled' } } : {}),
+      ...(['glm-4.7-flash', 'doubao-seed-2-1-lite-260915'].includes(model)
+        ? { thinking: { type: 'disabled' } } : {}),
     }),
     signal: AbortSignal.timeout(20_000),
   });
