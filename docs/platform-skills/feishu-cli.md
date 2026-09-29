@@ -18,7 +18,7 @@ RemoteLab Sessions; it is not a second client for general Feishu OpenAPI work.
 | Intent | Skill | First command to inspect |
 | --- | --- | --- |
 | Resolve a person or department | `lark-contact` | `lark-cli contact --help` |
-| Send/read messages, groups, cards, reactions | `lark-im` | `lark-cli im --help` |
+| Send/read messages, groups, static cards, reactions | `lark-im` | `lark-cli im --help` |
 | Events, free/busy, rooms | `lark-calendar` | `lark-cli calendar --help` |
 | Tasks and task lists | `lark-task` | `lark-cli task --help` |
 | Base records, forms, dashboards | `lark-base` | `lark-cli base --help` |
@@ -52,7 +52,25 @@ once, and check the returned ID instead of inferring delivery from exit status:
 
 ```bash
 lark-cli --profile <profile> im +messages-send --as bot --user-id <known-open-id> --text '<message>' --idempotency-key <unique-key> --jq '{ok,message_id:.data.message_id,chat_id:.data.chat_id}'
-lark-cli --profile <profile> im +messages-mget --as bot --message-ids <message-id> --jq '{ok,messages:[.data.messages[] | {message_id,chat_id,msg_type,content}]}'
+lark-cli --profile <profile> im +messages-mget --as bot --message-ids <message-id> --no-reactions --jq '{ok,messages:[.data.messages[] | {message_id,chat_id,msg_type,content}]}'
+```
+
+A static card uses the same IM send shortcut with `interactive` content. Its
+returned message ID can be read back with `+messages-mget` as above. The Bot
+path below was sent and read back on 2026-09-29; use a fresh idempotency key
+for each new card.
+
+```bash
+lark-cli --profile <profile> im +messages-send --as bot --user-id <known-open-id> --msg-type interactive --content '{"config":{"wide_screen_mode":true},"header":{"title":{"tag":"plain_text","content":"Status"}},"elements":[{"tag":"div","text":{"tag":"lark_md","content":"Ready"}}]}' --idempotency-key <unique-key> --jq '{ok,message_id:.data.message_id,chat_id:.data.chat_id}'
+```
+
+For a reaction, use the returned message ID and read it back. Bot `SMILE`
+create/list succeeded on the card above; `operator_type: app` identified the
+Bot in the response.
+
+```bash
+lark-cli --profile <profile> im reactions create --as bot --message-id <message-id> --data '{"reaction_type":{"emoji_type":"SMILE"}}' --jq '{ok,reaction_id:.data.reaction_id,emoji_type:.data.reaction_type.emoji_type}'
+lark-cli --profile <profile> im reactions list --as bot --message-id <message-id> --page-size 10 --jq '{ok,items:[.data.items[]? | {reaction_id,reaction_type,operator}]}'
 ```
 
 - A known `open_id` can be read as Bot. The installed `contact +search-user`
@@ -61,9 +79,14 @@ lark-cli --profile <profile> im +messages-mget --as bot --message-ids <message-i
   the ID if its exact scope and contact data range are granted.
 - `calendar calendars list --as bot` and `task tasks list --as bot` concern the
   Bot's calendars and tasks. They do not expose a person's calendar or tasks.
-- A static interactive message card uses IM sending. Updating an issued card's
-  entity or elements uses CardKit; button handling also needs a configured
-  callback. Reactions and message delivery need separate readback checks.
+- A static interactive message card uses IM sending with `--msg-type interactive`
+  and `--content` JSON. Button actions use `card.action.trigger`: read
+  `lark-cli skills read lark-im references/lark-im-card-action-reply.md` and
+  configure the Feishu callback before relying on a button. A successful card
+  send does not prove that a button callback works. Updating an issued card's
+  entity or elements uses the matching CardKit or delayed-update API.
+- `+messages-mget` enriches reactions by default. Pass `--no-reactions` when
+  the task only needs message content, avoiding extra API calls and output.
 - Keep large output out of the model context: use `--jq` to select needed
   fields, a bounded `--page-size`, and a single domain's command help. For a
   write, use `--dry-run` where supported, send once with an idempotency key if
