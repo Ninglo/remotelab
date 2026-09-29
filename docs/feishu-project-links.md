@@ -28,6 +28,15 @@ replies are included when they arrived as Connector events;
 each excerpt carries its original message ID and chat or thread link. A failed
 context read does not block the current message.
 
+Group Session transcripts label each new human message with its Feishu display
+name and a stable, shortened member key. Recent same-chat history and linked
+project excerpts use the same form when Feishu provides an identity. This
+distinguishes members who share a display name and keeps conflicting statements
+attributed to their speakers. If identity data is missing, the excerpt says so
+instead of treating anonymous lines as one person. Older Session transcript
+bodies are not rewritten; their original source metadata remains available for
+read-only review.
+
 The default direction is discussion to work. Work-chat messages are not
 automatically posted to the larger discussion chat. The feature does not create
 a semantic project ledger, send messages between chats, or change the scheduled

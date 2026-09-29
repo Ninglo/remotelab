@@ -1998,6 +1998,9 @@ try {
   assert.equal(topicMetadataSessionPayload?.sourceContext?.chatType, 'group');
   assert.equal(topicMetadataSessionPayload?.conversation?.target?.replyInThread, true);
   assert.equal(topicMetadataSubmittedPayload?.sourceContext?.messageId, 'msg_topic_metadata_test_1');
+  assert.match(topicMetadataSubmittedPayload?.text || '',
+    /^【飞书群消息｜发言人：群成员（成员 [a-f0-9]{10}）】\nNo groupMessageType or chatMode in payload\.$/,
+    'the stored group message must retain a stable speaker even when profile lookup has no name');
   assert.equal(topicMetadataReply.sessionId, 'sess_topic_metadata_test_1');
   assert.equal(topicMetadataReply.replyText, undefined);
 } finally {

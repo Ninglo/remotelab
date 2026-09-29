@@ -100,6 +100,13 @@
   max-width: 80%;
   color: var(--text);
 }
+.msg-user-author {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+  white-space: normal;
+}
 .msg-timestamp {
   display: block;
   margin-top: 6px;

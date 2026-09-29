@@ -5,6 +5,7 @@ import {
   summarizeMessageContent,
 } from './index.mjs';
 import { withTimeout } from '../../lib/connector-driver-transports.mjs';
+import { feishuParticipantLabel } from './participant-attribution.mjs';
 
 export const FEISHU_CONTEXT_MAX_MESSAGES = 100;
 export const FEISHU_CONTEXT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -64,13 +65,7 @@ export function formatFeishuConversationTime(value, { timeZone } = {}) {
 }
 
 function senderName(item) {
-  const sender = item?.sender || {};
-  const localized = sender.sender_i18n_names || {};
-  return trimString(sender.sender_name)
-    || trimString(localized.zh_cn)
-    || trimString(localized.en_us)
-    || trimString(localized.ja_jp)
-    || (trimString(sender.sender_type).toLowerCase() === 'app' ? '机器人' : '群成员');
+  return feishuParticipantLabel(item?.sender);
 }
 
 function attachmentPlaceholder(messageType, preview) {

@@ -32,7 +32,9 @@ function event(chatId, messageId, text, minutesAgo, extra = {}) {
     summary: {
       chatId, messageId, messageText: text,
       createTime: String(time - minutesAgo * 60_000),
-      sender: { senderType: extra.senderType || 'user' },
+      sender: { senderType: extra.senderType || 'user',
+        ...(extra.senderId ? { openId: extra.senderId } : {}),
+        ...(extra.senderName ? { name: extra.senderName } : {}) },
       ...(extra.threadId ? { threadId: extra.threadId } : {}),
     },
   });
@@ -46,7 +48,8 @@ try {
     event(discussionChatId, 'old', '超过一天的讨论', 24 * 60 + 1),
     event(discussionChatId, 'm2', '未经允许的消息', 10, { allowed: false }),
     event(discussionChatId, 'm3', '机器人回复', 8, { senderType: 'app' }),
-    event(workChatId, 'm4', '干活群内部文字', 7),
+    event(workChatId, 'm4', '干活群内部文字', 7,
+      { senderId: 'ou_same_name_a', senderName: '同名成员' }),
     event(discussionChatId, 'm1', '讨论修改后的决定', 5, { threadId: 'thread-1' }),
     event(discussionChatId, 'm5', '请核对 ＜private＞ 标记', 2),
   ].join('\n') + '\n');
@@ -71,6 +74,7 @@ try {
   assert.deepEqual(workContext.messages.map((entry) => entry.messageId), ['m4']);
   assert.equal(workContext.sourceChatId, workChatId);
   assert.equal(workContext.sourceChatName, 'Claude Tag 干活群');
+  assert.match(workContext.messages[0].sender, /^同名成员（成员 [a-f0-9]{10}）$/);
   assert.deepEqual((await loadLinkedFeishuProjectContext(bidirectionalRuntime, workSummary))
     .messages.map((entry) => entry.messageId), ['m1', 'm5'],
   'the reverse subscription must not remove discussion-to-work context');
@@ -86,9 +90,21 @@ try {
     receivedAt: new Date(time - 30_000).toISOString(), allowed: true,
     summary: { chatId: workChatId, messageId: 'new-project-event',
       createTime: String(time - 30_000), messageText: '新干活进展',
-      threadId: 'work-thread', sender: { senderType: 'user' } },
+      threadId: 'work-thread', sender: { senderType: 'user', name: '同名成员',
+        openId: 'ou_same_name_b' } },
   };
   assert.equal(await appendLinkedFeishuProjectEvent(bidirectionalRuntime, projectOnly), true);
+  const identifiedContext = await loadLinkedFeishuProjectContext(bidirectionalRuntime, discussionSummary);
+  assert.notEqual(identifiedContext.messages[0].sender, identifiedContext.messages[1].sender,
+    'two contradicting people with the same display name must keep distinct identities across chats');
+  await appendLinkedFeishuProjectEvent(bidirectionalRuntime, {
+    receivedAt: new Date(time - 7 * 60_000).toISOString(), allowed: true,
+    summary: { chatId: workChatId, messageId: 'm4', createTime: String(time - 7 * 60_000),
+      messageText: '旧格式重复记录', sender: { senderType: 'user' } },
+  });
+  const legacyDuplicate = await loadLinkedFeishuProjectContext(bidirectionalRuntime, discussionSummary);
+  assert.equal(legacyDuplicate.messages[0].sender, workContext.messages[0].sender,
+    'an older identity-free project record must not erase the matching event-log sender');
   assert.equal(await appendLinkedFeishuProjectEvent(bidirectionalRuntime, {
     ...projectOnly, allowed: false, summary: { ...projectOnly.summary, messageId: 'blocked-project-event' },
   }), false);

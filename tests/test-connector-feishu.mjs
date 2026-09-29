@@ -6,6 +6,7 @@ import { join } from 'path';
 import {
   DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT,
   FEISHU_CONNECTOR_ID,
+  buildAttributedFeishuMessage,
   buildExternalTriggerId,
   buildFeishuConversationQueueKey,
   buildFeishuApiUuid,
@@ -25,6 +26,7 @@ import {
   summarizeFeishuLegacyMessageEvent,
 } from '../connectors/feishu/index.mjs';
 import { buildFeishuSessionExternalTriggerId } from '../connectors/feishu/reply-routing.mjs';
+import { feishuParticipantKey } from '../connectors/feishu/participant-attribution.mjs';
 
 const repoRoot = process.cwd();
 const manifest = JSON.parse(await readFile(join(repoRoot, 'connectors', 'feishu', 'manifest.json'), 'utf8'));
@@ -77,6 +79,16 @@ assert.equal(textSummary.mentions[0].name, 'Rowan');
 assert.equal(buildRequestId(textSummary), 'feishu:om_msg_1');
 assert.equal(buildExternalTriggerId(textSummary), 'feishu:group:oc_chat_1');
 assert.equal(buildRemoteLabMessage(textSummary), '@Rowan 帮我看一下');
+const speakerA = { ...textSummary, sender: { ...textSummary.sender, name: '同名成员' } };
+const speakerB = { ...speakerA, sender: { ...speakerA.sender, openId: 'ou_user_2' } };
+assert.match(buildAttributedFeishuMessage(speakerA), /^【飞书群消息｜发言人：同名成员（成员 [a-f0-9]{10}）】\n@Rowan 帮我看一下$/);
+assert.notEqual(buildAttributedFeishuMessage(speakerA).split('\n')[0],
+  buildAttributedFeishuMessage(speakerB).split('\n')[0],
+  'two members with the same display name must remain distinct in the Session transcript');
+assert.equal(feishuParticipantKey(speakerA.sender),
+  feishuParticipantKey({ id: speakerA.sender.openId }),
+  'the inbound event and Feishu history lookup should produce the same key for an open ID');
+assert.equal(buildAttributedFeishuMessage({ ...speakerA, chatType: 'p2p' }), '@Rowan 帮我看一下');
 
 const quotedReplySummary = {
   ...textSummary,
