@@ -93,6 +93,8 @@ try {
     emptySettings.provider, 'selecting no provider removes the key');
   await assert.rejects(updateVoiceReviewSettings('person-a', { providerId: 'unknown', apiKey: 'x' }),
     /supported voice review provider/);
+  await assert.rejects(updateVoiceReviewSettings('person-a', { providerId: 'toString', apiKey: 'x' }),
+    /supported voice review provider/);
 
   process.env.REMOTELAB_VOICE_REVIEW_API_KEY = 'test-key';
   process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT = 'https://example.test/v1/chat/completions';

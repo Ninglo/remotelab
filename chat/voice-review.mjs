@@ -12,6 +12,7 @@ const PROVIDERS = Object.freeze({
   zhipu: { endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4.7-flash' },
   openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions', model: 'qwen/qwen3-4b:free' },
 });
+const hasProvider = (id) => Object.hasOwn(PROVIDERS, id);
 
 // Operators can use any OpenAI-compatible small model by setting
 // REMOTELAB_VOICE_REVIEW_ENDPOINT (full chat/completions URL),
@@ -19,7 +20,7 @@ const PROVIDERS = Object.freeze({
 // Without all three, draft review is unavailable while personal ASR hotwords still work.
 
 export function getVoiceReviewBackend(settings = {}) {
-  return (settings.provider?.apiKeyConfigured && PROVIDERS[settings.provider.id]) || (process.env.REMOTELAB_VOICE_REVIEW_API_KEY
+  return (settings.provider?.apiKeyConfigured && hasProvider(settings.provider.id)) || (process.env.REMOTELAB_VOICE_REVIEW_API_KEY
     && process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT
     && process.env.REMOTELAB_VOICE_REVIEW_API_MODEL)
     ? 'api' : 'unconfigured';
@@ -31,8 +32,8 @@ export function normalizeVoiceReviewSettings(value = {}) {
     enabled: value?.enabled === true,
     terms: [...new Set(terms.map((term) => String(term || '').trim()).filter(Boolean))].slice(0, MAX_TERMS),
     provider: {
-      id: PROVIDERS[value?.providerId] ? value.providerId : '',
-      apiKeyConfigured: !!(PROVIDERS[value?.providerId] && value?.apiKey),
+      id: hasProvider(value?.providerId) ? value.providerId : '',
+      apiKeyConfigured: !!(hasProvider(value?.providerId) && value?.apiKey),
     },
   };
 }
@@ -54,7 +55,7 @@ export function validateVoiceReviewSettings(value) {
       }
     }
   }
-  if (value.providerId !== undefined && value.providerId !== '' && !PROVIDERS[value.providerId]) {
+  if (value.providerId !== undefined && value.providerId !== '' && !hasProvider(value.providerId)) {
     throw new Error('Choose a supported voice review provider');
   }
   if (value.apiKey !== undefined && (typeof value.apiKey !== 'string'
@@ -107,7 +108,7 @@ export function buildVoiceReviewPrompt(text, terms = []) {
 export async function runVoiceReviewModel(prompt, { personId } = {}) {
   const all = personId ? await readJson(SETTINGS_FILE, {}) : {};
   const personal = all?.[personId];
-  const preset = PROVIDERS[personal?.providerId];
+  const preset = hasProvider(personal?.providerId) ? PROVIDERS[personal.providerId] : null;
   const apiKey = (preset && personal.apiKey) || process.env.REMOTELAB_VOICE_REVIEW_API_KEY;
   const endpoint = (preset && personal.apiKey && preset.endpoint) || process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT;
   const model = (preset && personal.apiKey && preset.model) || process.env.REMOTELAB_VOICE_REVIEW_API_MODEL;
