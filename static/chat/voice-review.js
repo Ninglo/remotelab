@@ -16,6 +16,7 @@
   if (!enabledInput || !termsInput || !saveButton || !panel || !composer) return;
 
   let settings = { enabled: false, terms: [] };
+  let backend = "unconfigured";
   let capture = null;
   let revised = "";
 
@@ -34,7 +35,7 @@
     revised = "";
     panel.hidden = true;
     applyButton.hidden = true;
-    runButton.disabled = false;
+    runButton.disabled = backend !== "api";
     setStatus(status, "");
   }
 
@@ -49,13 +50,17 @@
     try {
       const payload = await fetchJsonOrRedirect("/api/voice-review/settings", { revalidate: false });
       settings = payload?.settings || settings;
-      if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${payload?.backend === 'api' ? 'api' : 'codex'}`);
+      backend = payload?.backend === "api" ? "api" : "unconfigured";
+      if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${backend}`);
+      runButton.disabled = backend !== "api";
       enabledInput.checked = settings.enabled === true;
       termsInput.value = (settings.terms || []).join("\n");
       setStatus(settingsStatus, "");
     } catch (error) {
       settings = { enabled: false, terms: [] };
+      backend = "unconfigured";
       enabledInput.checked = false;
+      runButton.disabled = true;
       setStatus(settingsStatus, error?.message || "Voice review settings unavailable");
     }
   }
@@ -75,7 +80,9 @@
         body: JSON.stringify({ enabled: enabledInput.checked, terms }),
       });
       settings = payload.settings;
-      if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${payload?.backend === 'api' ? 'api' : 'codex'}`);
+      backend = payload?.backend === "api" ? "api" : "unconfigured";
+      if (backendNote) backendNote.textContent = t(`settings.voiceReview.backend.${backend}`);
+      runButton.disabled = backend !== "api";
       setStatus(settingsStatus, t("settings.voiceReview.saved"));
       if (!settings.enabled) clearPanel();
     } catch (error) {
@@ -88,7 +95,7 @@
 
   globalScope.addEventListener("remotelab:voice-transcript-complete", (event) => {
     clearPanel();
-    if (!settings.enabled || !event?.detail?.transcript) return;
+    if (!settings.enabled || backend !== "api" || !event?.detail?.transcript) return;
     capture = {
       transcript: event.detail.transcript,
       composerText: event.detail.composerText,
@@ -100,6 +107,7 @@
   });
 
   runButton.addEventListener("click", async () => {
+    if (backend !== "api") return;
     if (!captureIsCurrent()) return clearPanel();
     const requestCapture = capture;
     runButton.disabled = true;

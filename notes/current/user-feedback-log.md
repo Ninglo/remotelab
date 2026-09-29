@@ -851,6 +851,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: keep the recognition result editable, request model review only on an explicit click, preview before replacing it, and store vocabulary outside the shared People directory. Send opt-in personal terms as Doubao relay recognition hotwords and as hints for draft correction; other voice providers only receive the correction hints.
 - Follow-up: compare real utterances with and without personal vocabulary to measure recognition gains and unwanted substitutions. Record latency and token use for the chosen review backend.
 
+### 2026-09-29 — 语音整理不应默认消耗 Codex CLI
+
+- Source: direct user correction after the personal voice trial shipped.
+- Observed friction or ask: the Codex Luna fallback consumes too much fixed context for a short transcription cleanup; use a small, preferably free API model instead.
+- Product implication: no implicit model fallback. Keep personal ASR hotwords available, but offer draft review only after a dedicated model API is configured and report that state in settings.
+- Follow-up: compare free small models on real Chinese dictation, including name correction, meaning preservation, latency, and actual request limits before choosing an operator default.
+
 ### YYYY-MM-DD — short title
 
 - Source:

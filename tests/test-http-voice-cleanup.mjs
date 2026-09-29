@@ -170,6 +170,7 @@ try {
   const initialReview = await request(chatPort, 'GET', '/api/voice-review/settings');
   assert.equal(initialReview.status, 200);
   assert.equal(initialReview.json?.settings?.enabled, false, 'new personal review must be off by default');
+  assert.equal(initialReview.json?.backend, 'unconfigured', 'a missing API must never select Codex');
   const reviewWhileOff = await request(chatPort, 'POST', '/api/voice-review', { text: '请检查结果' });
   assert.equal(reviewWhileOff.status, 400, 'no model should run until the Person opts in');
   const savedReview = await request(chatPort, 'PATCH', '/api/voice-review/settings', {
@@ -180,6 +181,9 @@ try {
   assert.deepEqual(savedReview.json?.settings, { enabled: true, terms: ['RoboDojo'] });
   const loadedReview = await request(chatPort, 'GET', '/api/voice-review/settings');
   assert.deepEqual(loadedReview.json?.settings, savedReview.json?.settings);
+  const reviewWithoutApi = await request(chatPort, 'POST', '/api/voice-review', { text: '请检查结果' });
+  assert.equal(reviewWithoutApi.status, 400);
+  assert.match(reviewWithoutApi.json?.error || '', /configured model API/);
 
   console.log('test-http-voice-cleanup: ok');
 } catch (error) {

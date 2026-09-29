@@ -30,7 +30,10 @@ const context = {
   Event: class Event { constructor(type) { this.type = type; } },
   fetchJsonOrRedirect: async (path, options = {}) => {
     requests.push({ path, method: options.method || 'GET' });
-    if (path === '/api/voice-review/settings') return { settings: { enabled: true, terms: ['RoboDojo'] }, backend: 'codex' };
+    if (path === '/api/voice-review/settings' && options.method === 'PATCH') {
+      return { settings: { enabled: true, terms: ['RoboDojo'] }, backend: 'unconfigured' };
+    }
+    if (path === '/api/voice-review/settings') return { settings: { enabled: true, terms: ['RoboDojo'] }, backend: 'api' };
     if (path === '/api/voice-review') return { revised: '请检查 RoboDojo 的结果。' };
     throw new Error('Unexpected request');
   },
@@ -57,5 +60,16 @@ assert.equal(elements.get('voiceReviewApply').hidden, false);
 elements.get('voiceReviewApply').listeners.get('click')();
 assert.equal(composer.value, '已有草稿 请检查 RoboDojo 的结果。');
 assert.equal(elements.get('voiceReviewPanel').hidden, true);
+
+elements.get('voiceReviewEnabled').checked = true;
+await elements.get('voiceReviewSave').listeners.get('click')();
+composer.value = '另一段原文';
+listeners.get('remotelab:voice-transcript-complete')({ detail: {
+  transcript: '另一段原文', composerText: composer.value, sessionId: 'session-a',
+} });
+assert.equal(elements.get('voiceReviewPanel').hidden, true,
+  'without a configured API, recording should not offer an unusable model action');
+assert.equal(elements.get('voiceReviewRun').disabled, true);
+assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 1);
 
 console.log('test-chat-voice-review-preview: ok');

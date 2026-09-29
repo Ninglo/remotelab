@@ -9,6 +9,7 @@ process.env.REMOTELAB_CONFIG_DIR = configDir;
 
 try {
   const {
+    getVoiceReviewBackend,
     getVoiceReviewSettings,
     reviewVoiceText,
     runVoiceReviewModel,
@@ -16,6 +17,9 @@ try {
   } = await import('../chat/voice-review.mjs');
 
   assert.deepEqual(await getVoiceReviewSettings('person-a'), { enabled: false, terms: [] });
+  assert.equal(getVoiceReviewBackend(), 'unconfigured');
+  await assert.rejects(runVoiceReviewModel('测试'), /configured model API/,
+    'an unset provider must never spend Codex tokens');
   await assert.rejects(reviewVoiceText('person-a', '你好。', { runModel: async () => '你好。' }), /off/);
 
   await updateVoiceReviewSettings('person-a', { enabled: true, terms: ['RemoteLab', 'RoboDojo'] });
@@ -31,7 +35,7 @@ try {
   assert.deepEqual(result, {
     original: '我想试试肉波道场。',
     revised: '我想试试 RoboDojo。',
-    backend: 'codex',
+    backend: 'unconfigured',
   });
   await assert.rejects(updateVoiceReviewSettings('person-a', {
     terms: Array.from({ length: 51 }, (_, index) => `term-${index}`),
@@ -44,6 +48,7 @@ try {
   process.env.REMOTELAB_VOICE_REVIEW_API_KEY = 'test-key';
   process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT = 'https://example.test/v1/chat/completions';
   process.env.REMOTELAB_VOICE_REVIEW_API_MODEL = 'small-model';
+  assert.equal(getVoiceReviewBackend(), 'api');
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
     assert.equal(String(url), 'https://example.test/v1/chat/completions');

@@ -1,7 +1,4 @@
-import { spawn } from 'child_process';
 import { chmod } from 'fs/promises';
-import { createInterface } from 'readline';
-import { tmpdir } from 'os';
 import { join } from 'path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from './fs-utils.mjs';
@@ -15,13 +12,13 @@ const MAX_TEXT_CHARS = 4000;
 // Operators can use any OpenAI-compatible small model by setting
 // REMOTELAB_VOICE_REVIEW_ENDPOINT (full chat/completions URL),
 // REMOTELAB_VOICE_REVIEW_API_KEY, and REMOTELAB_VOICE_REVIEW_API_MODEL.
-// Without all three, the explicit trial falls back to a read-only Codex Luna call.
+// Without all three, draft review is unavailable while personal ASR hotwords still work.
 
 export function getVoiceReviewBackend() {
   return process.env.REMOTELAB_VOICE_REVIEW_API_KEY
     && process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT
     && process.env.REMOTELAB_VOICE_REVIEW_API_MODEL
-    ? 'api' : 'codex';
+    ? 'api' : 'unconfigured';
 }
 
 export function normalizeVoiceReviewSettings(value = {}) {
@@ -82,48 +79,13 @@ export function buildVoiceReviewPrompt(text, terms = []) {
   ].join('\n');
 }
 
-export function runCodexVoiceReviewModel(prompt, { model = process.env.REMOTELAB_VOICE_REVIEW_MODEL || 'gpt-6-luna' } = {}) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      'exec', '--json', '--sandbox', 'read-only', '--skip-git-repo-check',
-      '--disable', 'apps', '-m', model, '-c', 'model_reasoning_effort=low', prompt,
-    ];
-    const proc = spawn('codex', args, { cwd: tmpdir(), stdio: ['ignore', 'pipe', 'pipe'] });
-    const lines = createInterface({ input: proc.stdout });
-    let answer = '';
-    let outputBytes = 0;
-    let failed = false;
-    const timer = setTimeout(() => proc.kill('SIGKILL'), 30_000);
-    lines.on('line', (line) => {
-      outputBytes += Buffer.byteLength(line);
-      if (outputBytes > 100_000) {
-        proc.kill('SIGKILL');
-        return;
-      }
-      let event;
-      try { event = JSON.parse(line); } catch { return; }
-      if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
-        answer = String(event.item.text || '');
-      }
-      if (event.type === 'turn.failed') failed = true;
-    });
-    proc.on('error', (error) => { clearTimeout(timer); reject(error); });
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0 || failed || !answer.trim()) {
-        reject(new Error('Voice review model was unavailable; the original transcript is unchanged'));
-        return;
-      }
-      resolve(answer.trim());
-    });
-  });
-}
-
 export async function runVoiceReviewModel(prompt) {
   const apiKey = process.env.REMOTELAB_VOICE_REVIEW_API_KEY;
   const endpoint = process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT;
   const model = process.env.REMOTELAB_VOICE_REVIEW_API_MODEL;
-  if (!apiKey || !endpoint || !model) return runCodexVoiceReviewModel(prompt);
+  if (!apiKey || !endpoint || !model) {
+    throw new Error('Voice draft review needs a configured model API; the original transcript is unchanged');
+  }
 
   const url = new URL(endpoint);
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname))) {
