@@ -63,7 +63,7 @@ function renderSessionWorkboard() {
   const waitingUser = session.workState?.workflow?.state === "waiting_user";
   const lastProgressAt = sessionWorkboardLastProgressAt(session, activity);
   const stalled = active && lastProgressAt > 0 && Date.now() - lastProgressAt >= SESSION_WORKBOARD_STALL_MS;
-  if (!items.length && !hasGate && !active && !sessionWorkboardRun) {
+  if (!items.length && !hasGate && !active && !waitingUser && !sessionWorkboardRun) {
     panel.hidden = true;
     panel.replaceChildren();
     return;
@@ -103,9 +103,9 @@ function renderSessionWorkboard() {
     }
   }
 
-  if (runId || activity.run.runId) {
+  if (runId || activity.run.runId || waitingUser) {
     const monitoredRunId = activity.run.runId || runId;
-    const runState = active ? (activity.run.cancelRequested ? "正在停止" : waitingUser ? "需要你处理" : stalled ? "疑似停滞（5 分钟无新事件）" : "运行中")
+    const runState = waitingUser ? "需要你处理" : active ? (activity.run.cancelRequested ? "正在停止" : stalled ? "疑似停滞（5 分钟无新事件）" : "运行中")
       : sessionWorkboardRun?.id === monitoredRunId
         ? ({ completed: "已完成", failed: "失败", cancelled: "已取消", canceled: "已取消" }[sessionWorkboardRun.state] || sessionWorkboardRun.state)
         : "读取中";
@@ -114,13 +114,15 @@ function renderSessionWorkboard() {
     const label = document.createElement("span");
     label.textContent = `监视器 · ${runState} · `;
     monitor.appendChild(label);
-    const link = document.createElement("a");
-    link.href = `/api/runs/${encodeURIComponent(monitoredRunId)}`;
-    link.textContent = monitoredRunId.slice(0, 8);
-    link.title = "查看原始 Run 状态";
-    link.target = "_blank";
-    link.rel = "noopener";
-    monitor.appendChild(link);
+    if (monitoredRunId) {
+      const link = document.createElement("a");
+      link.href = `/api/runs/${encodeURIComponent(monitoredRunId)}`;
+      link.textContent = monitoredRunId.slice(0, 8);
+      link.title = "查看原始 Run 状态";
+      link.target = "_blank";
+      link.rel = "noopener";
+      monitor.appendChild(link);
+    }
     if (active && !activity.run.cancelRequested) {
       const stop = document.createElement("button");
       stop.type = "button";

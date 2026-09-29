@@ -54,6 +54,14 @@ context.updateSessionWorkboardSession({
 });
 assert.match(panel.children.find(item => item.className === 'session-workboard-monitor')?.children[0]?.textContent, /疑似停滞/);
 
+context.updateSessionWorkboardSession({
+  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: true },
+  workState: { workflow: { state: 'waiting_user' } },
+  activity: { run: { state: 'idle' } },
+});
+assert.match(panel.children.find(item => item.className === 'session-workboard-monitor')?.children[0]?.textContent, /需要你处理/,
+  'a user blocker remains visible after the Run becomes idle');
+
 context.updateSessionWorkboardSession({ id: 'other', workboardPilot: false, activity: { run: { state: 'idle' } } });
 assert.equal(panel.hidden, true, 'the workboard must remain absent from other Sessions');
 console.log('test-chat-workboard-ui: ok');
