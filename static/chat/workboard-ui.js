@@ -9,10 +9,21 @@ let sessionWorkboardStallTimer = null;
 const SESSION_WORKBOARD_STALL_MS = 5 * 60 * 1000;
 
 function isSessionWorkboardMessage(event) {
-  return sessionWorkboardSession?.workboardPilot === true
-    && sessionWorkboardSession.id === currentSessionId
-    && event?.type === "message" && event.role === "assistant"
-    && (event.messageKind === "todo_list" || event.source === "workboard_checklist");
+  if (sessionWorkboardSession?.workboardPilot !== true
+    || sessionWorkboardSession.id !== currentSessionId
+    || event?.type !== "message" || event.role !== "assistant"
+    || (event.messageKind !== "todo_list" && event.source !== "workboard_checklist")) return false;
+  const latestUserSeq = parseSessionChecklist(sessionWorkboardEvents).latestUserSeq;
+  if (event.seq > latestUserSeq) return true;
+  const index = sessionWorkboardEvents.findIndex(item => item?.seq === event.seq
+    && item.type === "message" && item.role === "assistant");
+  if (index < 0) return false;
+  for (const next of sessionWorkboardEvents.slice(index + 1)) {
+    if (next?.type === "message" && next.role === "user") break;
+    if (next?.type === "message" && next.role === "assistant"
+      && (next.messageKind === "todo_list" || next.source === "workboard_checklist")) return true;
+  }
+  return false;
 }
 
 function sessionWorkboardLastProgressAt(session, activity) {
