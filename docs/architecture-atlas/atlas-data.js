@@ -1,4 +1,4 @@
-export const sourceCommit = '6dc19a03acf45122d11338fc49a1241b13654575';
+export const sourceCommit = '811d153a8bd5084898f8f3430c8c77d22ebf3220';
 
 export const statusNames = {
   code: '源码已核',
@@ -264,16 +264,6 @@ export const nodes = [
 
 export const paths = [
   {
-    id: 'feishu', title: '飞书文字与表情', lead: '用同一条群消息检查“收到、是否参与、提交、执行、送达”的不同阶段。表情至少有即时处理与结果投递两类通道。',
-    steps: [
-      { title: '消息进入连接器', text: '解析发送者、群/话题、附件和本轮可用上下文，先保存来源事件。', nodes: ['feishu-ingress', 'person'] },
-      { title: '按群规则分叉', text: '旧 quickReactions：立即 THINKING，快速 Jev 并行记录判断，正常任务仍提交 Harness。新 jevReactions：仅选定群主线先写 group-feed Session，再由 Jev 决定 reply 或 silent。', nodes: ['feishu-ingress', 'quick-participation', 'feishu-observation'] },
-      { title: '沉默也留下事件', text: '新规则 silent 保留 user/message/feishu_observation 和 system/reaction_decision；不启动工作 Run，结果表情仍经 delivery-only Request 和 outbox 送达。', nodes: ['feishu-observation', 'history', 'outbox'] },
-      { title: '运行当前工作', text: 'Request 关联 Session，Run 调用 Harness；任务理解和具体工具选择留在 Harness。', nodes: ['request', 'session', 'run', 'harness'] },
-      { title: '拆分结果并投递', text: '文字、附件、结果表情进入可恢复的投递部分；连接器调用飞书接口并写入回执。', nodes: ['outbox', 'artifacts'] },
-    ], gap: '待补一条真实消息的事件 → 快速判断 → requestId → runId → deliveryId → 飞书回执，并计入额外模型调用与 API 次数。',
-  },
-  {
     id: 'memory', title: '记忆读写与再使用', lead: '把“写入了文件”和“下次工作真的读到并用上了”拆开检查。',
     steps: [
       { title: '工作留在 Session', text: '原始事件、工作摘要和续聊材料首先属于当前 Session。', nodes: ['session', 'history', 'classifier'] },
@@ -311,5 +301,5 @@ export const findings = [
   { title: '日报“总控”是组合流程', status: 'config', text: '活动调度在 04:00/18:00 启动审阅 Session，实际阅读、修订知识和出版遵循实例规则；不是平台核心里一个统一读取所有工作源的服务。', nodes: ['daily-review', 'automation', 'project-knowledge'] },
   { title: 'Skill 一词跨越三种机制', status: 'code', text: 'Harness 加载的方法文件、RemoteLab 提示中的能力指针、连接器的带参数动作与候选审阅彼此不同。网站分别建节点并记录真实调用。', nodes: ['native-skill', 'connector-capability', 'skill-review'] },
   { title: 'Dream 和语义遗忘未证实为运行机制', status: 'unknown', text: '已确认会话压缩、记忆写回及限次候选审阅；在当前所查源码与活动调度中未发现独立 Dream 或自动语义遗忘任务。此结论仅覆盖本次检查范围。', nodes: ['semantic-forgetting', 'compaction', 'skill-review'] },
-  { title: '源码版本与生产进程仍要逐实例核对', status: 'unknown', text: '本站以源码 6dc19a03 和本实例部分活动配置为基线。代码存在、配置活跃、进程已加载、真实送达是不同的证据层级；后续在运行快照中逐项补齐。', nodes: ['config', 'observation', 'outbox'] },
+  { title: '源码版本与生产进程仍要逐实例核对', status: 'unknown', text: '本站以源码 811d153a 和本实例部分活动配置为基线。代码存在、配置活跃、进程已加载、真实送达是不同的证据层级；后续在运行快照中逐项补齐。', nodes: ['config', 'observation', 'outbox'] },
 ];

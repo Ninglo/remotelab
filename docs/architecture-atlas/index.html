@@ -5,64 +5,73 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>RemoteLab 架构图谱</title>
-  <link rel="stylesheet" href="./styles.css?v=20260929c">
+  <link rel="stylesheet" href="./styles.css?v=20260929d">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">R</span><span>RemoteLab <span class="brand-sub">架构图谱</span></span></div>
-      <div class="top-meta"><span class="version">第三版 · 2026-09-29</span><span class="version">源码 6dc19a03</span></div>
+      <div class="top-meta"><span class="version">第四版 · 2026-09-29</span><span class="version">源码 811d153a</span></div>
     </header>
 
     <aside class="sidebar" aria-label="图谱导航">
       <div class="sidebar-intro">
         <div class="eyebrow">ARCHITECTURE ATLAS</div>
-        <h1>先看体验，<br>再追到实现</h1>
-        <p>从用户看到的动作出发，逐步展开模型、固定程序、协议、存储和代码归属。</p>
+        <h1>一条输入，<br>一条清楚的路</h1>
+        <p>按消息从发出到返回的顺序阅读；每一步都能看到程序、模型、存储、接口和代码。</p>
       </div>
       <div class="side-label">浏览方式</div>
       <nav class="view-nav" aria-label="浏览方式">
-        <button class="nav-button is-active" type="button" data-view="experience"><span>01</span> 用户看到什么</button>
-        <button class="nav-button" type="button" data-view="map"><span>02</span> 系统结构</button>
-        <button class="nav-button" type="button" data-view="paths"><span>03</span> 具体路径</button>
-        <button class="nav-button" type="button" data-view="evidence"><span>04</span> 证据与缺口</button>
+        <button class="nav-button is-active" type="button" data-view="experience"><span>01</span> 消息主线</button>
+        <button class="nav-button" type="button" data-view="paths"><span>02</span> 入口分叉</button>
+        <button class="nav-button" type="button" data-view="map"><span>03</span> 机制索引</button>
+        <button class="nav-button" type="button" data-view="evidence"><span>04</span> 资源与证据</button>
       </nav>
-      <div class="side-label">架构区域 <span id="domain-count"></span></div>
-      <nav id="domain-nav" class="domain-nav" aria-label="架构区域"></nav>
-      <div class="sidebar-foot">从体验定位功能，从执行分叉找成本，从证据决定修改。</div>
+      <div class="side-label map-only">机制区域 <span id="domain-count"></span></div>
+      <nav id="domain-nav" class="domain-nav map-only" aria-label="架构区域"></nav>
+      <div class="sidebar-foot">沿主线读执行；沿分叉比差异；沿源码查证据。</div>
     </aside>
 
     <main class="main-content">
       <section id="experience-view" class="view is-active" aria-labelledby="experience-heading">
-        <div class="page-heading"><div><div class="eyebrow">USER → EXECUTION → RESOURCE</div><h2 id="experience-heading">用户看到什么，系统做了什么</h2><p>先选一个熟悉的动作。展开后沿同一条路径看程序、模型、接口和数据写入，再跳到对应代码。</p></div></div>
-        <div class="experience-shortcuts"><button type="button" data-scroll="feishu-rules">看飞书新旧规则 ↓</button><button type="button" data-scroll="resource-summary">看模型用量与存储占用 ↓</button><button type="button" data-view="map">按责任找代码 ↗</button></div>
-        <div class="meaning-note"><strong>先分清两个“token”</strong><p><b>模型 token</b> 是输入、缓存输入和输出的用量；<b>飞书应用 access token</b> 是 API 授权凭据。仅执行固定程序逻辑不消耗模型 token；程序若调用模型则另计，发飞书消息还会使用飞书接口配额。</p></div>
-        <div id="feishu-rules"></div>
-        <div id="experience-list" class="experience-list"></div>
-        <div class="resource-heading"><div class="eyebrow">RESOURCE MAP</div><h3>资源占用在哪里</h3><p>这里先给一张可核对的本实例快照，再标出账本目前看不到的成本。</p></div>
-        <div id="resource-summary"></div>
-        <div class="resource-heading"><div class="eyebrow">CHECKLIST FOR FUTURE CHANGES</div><h3>下一步还要补齐什么</h3></div>
-        <div id="missing-dimensions" class="dimension-grid"></div>
-      </section>
-
-      <section id="map-view" class="view" aria-labelledby="map-heading">
-        <div class="page-heading">
-          <div><div class="eyebrow">SYSTEM MAP</div><h2 id="map-heading">系统全景</h2><p>这是一张责任与状态地图。上下排列便于阅读，不表示一次任务的执行顺序。</p></div>
-          <div class="heading-stat"><strong id="node-count">—</strong><span>个可展开机制</span></div>
-        </div>
-        <div class="boundary-note"><strong>阅读原则</strong><span>RemoteLab 管持久状态、能力边界、恢复与交付；Harness 管任务理解、计划与工具判断；连接器适配外部系统；日报等流程由具体实例配置。</span></div>
-        <div class="map-toolbar"><label class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><span class="sr-only">搜索机制、代码或问题</span><input id="map-search" type="search" placeholder="搜索机制、代码或问题" autocomplete="off"></label><button id="reset-map" class="quiet-button" type="button">显示全部</button></div>
-        <div id="map-layout" class="map-layout"></div>
+        <div class="page-heading"><div><div class="eyebrow">ONE INPUT → ONE TRACE</div><h2 id="experience-heading">一条输入怎样变成用户看到的结果</h2><p>选择一个已核对的入口样本，再顺着同一条主线往下读。每一步固定回答：用户看到什么、谁处理和判断、写入哪里、消耗什么、经过哪个接口。</p></div></div>
+        <div class="journey-intro"><strong>先认清分工</strong><span>RemoteLab 负责接入、持久状态、运行边界和交付；Jev 只在配置的飞书规则中做快速参与判断；Harness 在真正的工作 Run 中理解任务、计划和使用工具。存储贯穿各步，下面逐步列出新增状态；并行调用和提前发生的运行选择会在具体入口中写明。</span></div>
+        <div id="journey-route-tabs" class="journey-route-tabs" role="tablist" aria-label="选择输入路径"></div>
+        <div id="journey-lead" class="journey-lead"></div>
+        <div id="journey-step-nav" class="journey-step-nav" aria-label="主线阶段"></div>
+        <div id="journey-stages" class="journey-stages"></div>
+        <div class="journey-next"><button type="button" data-view="paths">横向比较所有入口 ↗</button><button type="button" data-view="evidence">查看资源总账与证据 ↗</button></div>
       </section>
 
       <section id="paths-view" class="view" aria-labelledby="paths-heading">
-        <div class="page-heading"><div><div class="eyebrow">EXECUTION PATHS</div><h2 id="paths-heading">具体路径</h2><p>路径跨过多个架构区域。每一步连接到同一张系统图，便于继续追到代码。</p></div></div>
+        <div class="page-heading"><div><div class="eyebrow">SAME STEPS, DIFFERENT ROUTES</div><h2 id="paths-heading">入口之间在哪里分叉</h2><p>行是具体入口，列是同一个阶段。点击任一格，回到该入口在主线里的真实执行与代码。</p></div></div>
+        <div id="journey-matrix" class="journey-matrix"></div>
+        <div id="feishu-rules"></div>
+        <div class="resource-heading"><div class="eyebrow">SCENARIO DETAIL</div><h3>按用户动作继续展开</h3></div>
+        <div id="experience-list" class="experience-list"></div>
+        <div class="resource-heading"><div class="eyebrow">LONGER LOOPS</div><h3>记忆、日报和 Skill 的跨轮路径</h3><p>这些流程跨越多轮，不应挤进一次消息的同步返回链路。</p></div>
         <div id="path-tabs" class="path-tabs" role="tablist" aria-label="选择路径"></div>
         <div id="path-content"></div>
       </section>
 
+      <section id="map-view" class="view" aria-labelledby="map-heading">
+        <div class="page-heading">
+          <div><div class="eyebrow">MECHANISM INDEX</div><h2 id="map-heading">按责任找到实现</h2><p>这里是机制索引，便于定位代码。机制之间的顺序以“消息主线”为准。</p></div>
+          <div class="heading-stat"><strong id="node-count">—</strong><span>个可展开机制</span></div>
+        </div>
+        <div class="boundary-note"><strong>阅读原则</strong><span>同一机制可以出现在多个阶段；点击节点查看责任、输入输出与源码。源码存在、实例配置和实际运行分别标记。</span></div>
+        <div class="map-toolbar"><label class="search-wrap"><span class="search-icon" aria-hidden="true">⌕</span><span class="sr-only">搜索机制、代码或问题</span><input id="map-search" type="search" placeholder="搜索机制、代码或问题" autocomplete="off"></label><button id="reset-map" class="quiet-button" type="button">显示全部</button></div>
+        <div id="map-layout" class="map-layout"></div>
+      </section>
+
       <section id="evidence-view" class="view" aria-labelledby="evidence-heading">
-        <div class="page-heading"><div><div class="eyebrow">EVIDENCE & GAPS</div><h2 id="evidence-heading">证据与缺口</h2><p>源码、实例配置、运行回执和设计提案各自回答不同的问题。这里保留尚未闭合的判断。</p></div></div>
+        <div class="page-heading"><div><div class="eyebrow">RESOURCE & EVIDENCE</div><h2 id="evidence-heading">资源和证据怎么核算</h2><p>每步成本见主线；这里汇总当前实例的目录和 Run 用量，再保留尚未闭合的判断。</p></div></div>
+        <div class="meaning-note"><strong>两个不同的 token</strong><p><b>模型 token</b> 是输入、缓存输入和输出的用量；<b>飞书应用 access token</b> 是 API 授权凭据。固定程序本身不消耗模型 token；程序若调用 Jev 或 Harness 则另计，发飞书消息还使用接口配额。</p></div>
+        <div class="resource-heading"><div class="eyebrow">RESOURCE SNAPSHOT</div><h3>当前存储和模型用量</h3><p>这是一次测量快照，不是单条消息的成本。逐步归因请回到消息主线。</p></div>
+        <div id="resource-summary"></div>
+        <div class="resource-heading"><div class="eyebrow">STILL MISSING</div><h3>下一轮该补的量测维度</h3></div>
+        <div id="missing-dimensions" class="dimension-grid"></div>
+        <div class="resource-heading"><div class="eyebrow">EVIDENCE STATUS</div><h3>已知事实与缺口</h3></div>
         <div class="evidence-legend"><span><i class="dot code"></i> 源码已核</span><span><i class="dot config"></i> 配置已核</span><span><i class="dot observed"></i> 运行记录已核</span><span><i class="dot proposed"></i> 设计方向</span><span><i class="dot unknown"></i> 待核验</span></div>
         <div id="finding-list" class="finding-list"></div>
         <div class="method-card"><h3>这张网站如何持续更新</h3><ol><li>每个机制只有一份数据条目；全景、路径和证据视图引用相同的 ID。</li><li>修改代码时更新对应节点的调用链、状态和相关路径；标记所依据的源码版本。</li><li>实例运行事实单独注明配置与核对时间。一次配置成功、一次模型输出和用户实际收到结果分别记录。</li><li>保留被新证据替代的判断，记录为何修改；没有证据的环节保持“待核验”。</li></ol></div>
@@ -73,6 +82,6 @@
       <div class="detail-empty"><div class="empty-glyph">◎</div><h2>选择一个机制</h2><p>点击左侧地图中的节点，查看它负责什么、连接到哪里，以及当前证据和源码入口。</p></div>
     </aside>
   </div>
-  <script type="module" src="./app.js?v=20260929c"></script>
+  <script type="module" src="./app.js?v=20260929d"></script>
 </body>
 </html>

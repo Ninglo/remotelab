@@ -1,5 +1,6 @@
-import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929c';
-import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929c';
+import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929d';
+import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929d';
+import { journeyRoutes, journeyStages } from './journey-data.js?v=20260929d';
 
 const byId = new Map(nodes.map((node) => [node.id, node]));
 const elements = {
@@ -16,11 +17,17 @@ const elements = {
   main: document.querySelector('.main-content'),
   experienceList: document.querySelector('#experience-list'),
   feishuRules: document.querySelector('#feishu-rules'),
+  journeyRouteTabs: document.querySelector('#journey-route-tabs'),
+  journeyLead: document.querySelector('#journey-lead'),
+  journeyStepNav: document.querySelector('#journey-step-nav'),
+  journeyStages: document.querySelector('#journey-stages'),
+  journeyMatrix: document.querySelector('#journey-matrix'),
   resourceSummary: document.querySelector('#resource-summary'),
   missingDimensions: document.querySelector('#missing-dimensions'),
 };
 
-const state = { view: 'experience', domain: null, query: '', node: null, path: paths[0].id };
+const state = { view: 'experience', domain: null, query: '', node: null, path: paths[0].id, route: journeyRoutes[0].id };
+let renderedRoute = null;
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]));
@@ -70,6 +77,31 @@ function renderPaths() {
 
 function renderFindings() {
   elements.findingList.innerHTML = findings.map((finding) => `<article class="finding-card"><div class="finding-top"><h3>${escapeHtml(finding.title)}</h3>${badge(finding.status)}</div><p>${escapeHtml(finding.text)}</p><div class="finding-nodes">${finding.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div></article>`).join('');
+}
+
+function renderJourney() {
+  const route = journeyRoutes.find((item) => item.id === state.route) ?? journeyRoutes[0];
+  elements.journeyRouteTabs.innerHTML = journeyRoutes.map((item) => `<button type="button" role="tab" aria-selected="${item.id === route.id}" class="journey-route-tab ${item.id === route.id ? 'is-active' : ''}" data-route="${escapeHtml(item.id)}">${escapeHtml(item.label)}</button>`).join('');
+  elements.journeyLead.innerHTML = `<div><span class="journey-route-kind">${escapeHtml(route.kind)}</span><h3>${escapeHtml(route.label)}</h3><p>${escapeHtml(route.intro)}</p></div><button type="button" data-view="paths">看所有入口的横向对照 ↗</button>`;
+  elements.journeyStepNav.innerHTML = journeyStages.map((stage, index) => `<button type="button" data-stage="${escapeHtml(stage.id)}" class="journey-step-link ${route.stages[stage.id]?.skipped ? 'is-skipped' : ''}"><span>${String(index + 1).padStart(2, '0')}</span>${escapeHtml(stage.title)}</button>`).join('');
+  const factLabels = [
+    ['visible', '用户看到'], ['action', '谁处理、谁判断'], ['stored', '写入哪里'],
+    ['resources', '模型与资源'], ['protocol', '接口与协议'],
+  ];
+  elements.journeyStages.innerHTML = journeyStages.map((stage, index) => {
+    const step = route.stages[stage.id];
+    return `<article id="journey-stage-${escapeHtml(stage.id)}" class="journey-stage ${step.skipped ? 'is-skipped' : ''}">
+      <div class="journey-stage-head"><span class="journey-stage-number">${String(index + 1).padStart(2, '0')}</span><div><span class="journey-question">${escapeHtml(stage.question)}</span><h3>${escapeHtml(stage.title)}</h3><p>${escapeHtml(step.summary)}</p></div>${step.skipped ? '<span class="journey-skip-tag">本路径跳过 Run</span>' : ''}</div>
+      <div class="journey-stage-marks"><span>计算：${escapeHtml(route.marks[index][0])}</span><span>主要状态：${escapeHtml(route.marks[index][1])}</span></div>
+      <div class="journey-facts">${factLabels.map(([key, title]) => `<div class="journey-fact"><strong>${title}</strong><p>${escapeHtml(step[key])}</p></div>`).join('')}</div>
+      <details class="journey-code"><summary>展开机制与代码 <span aria-hidden="true">⌄</span></summary><div class="journey-code-body"><div class="experience-node-links">${stage.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div><div class="experience-source-list">${step.sources.map(sourceMarkup).join('')}</div></div></details>
+    </article>`;
+  }).join('');
+  renderedRoute = route.id;
+}
+
+function renderJourneyMatrix() {
+  elements.journeyMatrix.innerHTML = `<p>每格标出该阶段的执行方式和主要持久状态；点击可回到主线展开用户体验、资源、协议与源码。<b>跳过 Run</b> 的路径仍可能有模型判断或飞书接口成本。</p><div class="journey-matrix-scroll"><table><thead><tr><th scope="col">输入路径</th>${journeyStages.map((stage, index) => `<th scope="col"><span>${String(index + 1).padStart(2, '0')}</span>${escapeHtml(stage.title)}</th>`).join('')}</tr></thead><tbody>${journeyRoutes.map((route) => `<tr><th scope="row">${escapeHtml(route.label)}</th>${journeyStages.map((stage, index) => { const step = route.stages[stage.id]; const [compute, state] = route.marks[index]; return `<td><button type="button" data-route="${escapeHtml(route.id)}" data-stage="${escapeHtml(stage.id)}" class="${step.skipped ? 'is-skipped' : ''}"><span class="matrix-cell-title">${escapeHtml(step.summary)}</span><span class="matrix-cell-mark">${escapeHtml(compute)} · ${escapeHtml(state)}</span></button></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
 function renderFeishuRules() {
@@ -137,6 +169,7 @@ function renderDetail() {
 }
 
 function renderViews() {
+  document.body.dataset.currentView = state.view;
   document.querySelectorAll('.view').forEach((element) => element.classList.toggle('is-active', element.id === `${state.view}-view`));
   document.querySelectorAll('[data-view]').forEach((element) => element.classList.toggle('is-active', element.dataset.view === state.view));
 }
@@ -146,18 +179,21 @@ function navigate(view, options = {}) {
   if (options.domain !== undefined) state.domain = options.domain;
   if (options.path !== undefined) state.path = options.path;
   if (options.node !== undefined) state.node = options.node;
+  if (options.route !== undefined) state.route = options.route;
   renderViews();
+  if (renderedRoute !== state.route) renderJourney();
   renderMap();
   renderPaths();
   renderDetail();
   if (options.scroll) elements.main.scrollTop = 0;
-  const hash = state.node ? `#node/${encodeURIComponent(state.node)}` : view === 'paths' ? `#paths/${encodeURIComponent(state.path)}` : `#${view}`;
+  const hash = state.node ? `#node/${encodeURIComponent(state.node)}` : view === 'paths' ? `#paths/${encodeURIComponent(state.path)}` : view === 'experience' ? `#route/${encodeURIComponent(state.route)}` : `#${view}`;
   if (window.location.hash !== hash) history.replaceState(null, '', hash);
 }
 
 function readHash() {
   const [kind, value] = decodeURIComponent(window.location.hash.slice(1)).split('/');
   if (kind === 'node' && byId.has(value)) navigate('map', { node: value });
+  else if (kind === 'route') navigate('experience', { node: null, route: journeyRoutes.some((route) => route.id === value) ? value : journeyRoutes[0].id });
   else if (kind === 'paths') navigate('paths', { node: null, path: paths.some((path) => path.id === value) ? value : paths[0].id });
   else if (kind === 'evidence') navigate('evidence', { node: null });
   else if (kind === 'map') navigate('map', { node: null });
@@ -167,7 +203,13 @@ function readHash() {
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('button');
   if (!button) return;
-  if (button.dataset.view) navigate(button.dataset.view, { node: null, scroll: true });
+  if (button.dataset.route) {
+    navigate('experience', { route: button.dataset.route, node: null });
+    if (button.dataset.stage) document.getElementById(`journey-stage-${button.dataset.stage}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else document.getElementById('journey-route-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  else if (button.dataset.stage) document.getElementById(`journey-stage-${button.dataset.stage}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  else if (button.dataset.view) navigate(button.dataset.view, { node: null, scroll: true });
   else if (button.dataset.scroll) document.getElementById(button.dataset.scroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   else if (button.dataset.domain) navigate('map', { domain: button.dataset.domain === 'all' ? null : button.dataset.domain, node: null, scroll: true });
   else if (button.dataset.path) navigate('paths', { path: button.dataset.path, node: null, scroll: true });
@@ -190,4 +232,5 @@ window.addEventListener('hashchange', readHash);
 renderFindings();
 renderFeishuRules();
 renderExperiences();
+renderJourneyMatrix();
 readHash();
