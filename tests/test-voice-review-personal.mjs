@@ -32,6 +32,7 @@ try {
       assert.match(prompt, /删掉无意义的口水词/);
       assert.match(prompt, /至少两件事.*编号/);
       assert.match(prompt, /不是摘要/);
+      assert.match(prompt, /保持原文语言.*不翻译/);
       assert.match(prompt, /"draft":"我想试试肉波道场。"/);
       return '我想试试 RoboDojo。';
     },
