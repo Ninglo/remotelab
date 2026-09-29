@@ -5,6 +5,32 @@ let sessionWorkboardSession = null;
 let sessionWorkboardEvents = [];
 let sessionWorkboardRun = null;
 let sessionWorkboardRunRequest = null;
+let sessionWorkboardStallTimer = null;
+const SESSION_WORKBOARD_STALL_MS = 5 * 60 * 1000;
+
+function sessionWorkboardLastProgressAt(session, activity) {
+  return Math.max(
+    Date.parse(session?.lastEventAt || "") || 0,
+    Date.parse(activity?.run?.startedAt || "") || 0,
+  );
+}
+
+function scheduleSessionWorkboardStallCheck() {
+  if (sessionWorkboardStallTimer) clearTimeout(sessionWorkboardStallTimer);
+  sessionWorkboardStallTimer = null;
+  const session = sessionWorkboardSession;
+  if (!session?.workboardPilot || session.id !== currentSessionId) return;
+  const activity = getSessionActivity(session);
+  if (activity.run.state !== "running") return;
+  const lastProgressAt = sessionWorkboardLastProgressAt(session, activity);
+  if (!lastProgressAt) return;
+  const remaining = lastProgressAt + SESSION_WORKBOARD_STALL_MS - Date.now();
+  if (remaining <= 0) return;
+  sessionWorkboardStallTimer = setTimeout(() => {
+    sessionWorkboardStallTimer = null;
+    renderSessionWorkboard();
+  }, remaining);
+}
 
 function parseSessionChecklist(events) {
   const latestUserSeq = [...events].reverse().find(event => event?.type === "message" && event.role === "user")?.seq || 0;
@@ -32,6 +58,9 @@ function renderSessionWorkboard() {
   const gate = session.workboardGate;
   const hasGate = gate?.needsChecklist === true;
   const active = activity.run.state === "running";
+  const waitingUser = session.workState?.workflow?.state === "waiting_user";
+  const lastProgressAt = sessionWorkboardLastProgressAt(session, activity);
+  const stalled = active && lastProgressAt > 0 && Date.now() - lastProgressAt >= SESSION_WORKBOARD_STALL_MS;
   if (!items.length && !hasGate && !active && !sessionWorkboardRun) {
     panel.hidden = true;
     panel.replaceChildren();
@@ -74,7 +103,7 @@ function renderSessionWorkboard() {
 
   if (runId || activity.run.runId) {
     const monitoredRunId = activity.run.runId || runId;
-    const runState = active ? (activity.run.cancelRequested ? "正在停止" : "运行中")
+    const runState = active ? (activity.run.cancelRequested ? "正在停止" : waitingUser ? "需要你处理" : stalled ? "疑似停滞（5 分钟无新事件）" : "运行中")
       : sessionWorkboardRun?.id === monitoredRunId
         ? ({ completed: "已完成", failed: "失败", cancelled: "已取消", canceled: "已取消" }[sessionWorkboardRun.state] || sessionWorkboardRun.state)
         : "读取中";
@@ -96,6 +125,17 @@ function renderSessionWorkboard() {
       stop.textContent = "停止";
       stop.addEventListener("click", () => cancelBtn?.click());
       monitor.appendChild(stop);
+    }
+    if (sessionWorkboardRun?.id === monitoredRunId && sessionWorkboardRun.state === "状态不可读") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "重试";
+      retry.addEventListener("click", () => {
+        sessionWorkboardRun = null;
+        renderSessionWorkboard();
+        refreshSessionWorkboardRun();
+      });
+      monitor.appendChild(retry);
     }
     panel.appendChild(monitor);
   }
@@ -131,6 +171,7 @@ function updateSessionWorkboardSession(session) {
   }
   sessionWorkboardSession = session;
   renderSessionWorkboard();
+  scheduleSessionWorkboardStallCheck();
   refreshSessionWorkboardRun();
 }
 
@@ -138,5 +179,6 @@ function updateSessionWorkboardEvents(sessionId, events) {
   if (sessionWorkboardSession?.id !== sessionId) return;
   sessionWorkboardEvents = Array.isArray(events) ? events : [];
   renderSessionWorkboard();
+  scheduleSessionWorkboardStallCheck();
   refreshSessionWorkboardRun();
 }
