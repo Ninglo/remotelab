@@ -23,9 +23,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ### 2026-09-29 — Reuse fixed Connector actions to save model tokens
 
-- Observed friction: documenting Feishu commands and trimming chat history still left the model composing card JSON and provider calls during each task. The user expects recurring Connector work to use prewritten, reusable actions.
+- Observed friction: documenting Feishu commands and trimming chat history still left the model composing card JSON and provider calls during some tasks. The user expects recurring Connector work to use prewritten, reusable actions. Their specific token-cost question concerns the **post-answer conversion** into Feishu display form, not ordinary answer generation.
 - Product implication: for common operations, the model selects an action and supplies task data; deterministic code owns provider request shape, Bot identity, validation, compact output, and readback. Apply this pattern to other Connectors as their repeated workflows become clear.
-- Implementation: `remotelab feishu` exposes fixed Bot actions for contacts, messages, status cards, reactions, calendars, tasks, and Base records. The native `lark-cli` remains the provider client and fallback for less common operations.
+- Implementation: `remotelab feishu` exposes fixed Bot actions for contacts, messages, status cards, reactions, calendars, tasks, and Base records. The native `lark-cli` remains the provider client and fallback for less common operations. The ordinary Feishu reply adapter already compiles the generated answer to rich text locally, without a second model call; the Feishu guide now states when this automatic path or a separate status card applies.
 
 ### 2026-09-28 — Short praise still needs a visible response
 

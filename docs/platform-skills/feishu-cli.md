@@ -1,4 +1,35 @@
-# Feishu actions
+# Feishu actions and message presentation
+
+## Reply presentation: automatic path and when to use a card
+
+For a Session whose reply destination is a Feishu chat or thread, write the
+answer once as normal text or Markdown. Source delivery automatically converts
+that answer to a Feishu `post` rich-text message. The connector's local code
+handles Markdown, known mentions, code blocks, and math; formulas may be
+rendered locally and uploaded as images. This conversion does **not** make a
+second model request or consume additional model tokens. It is already wired
+into the Feishu Connector, so do not call `remotelab feishu card.send` merely
+to format an ordinary answer.
+
+| Situation | Presentation path |
+| --- | --- |
+| Ordinary answer, explanation, list, or short progress update in a Feishu chat/thread | Reply normally; the bound Connector publishes `post` automatically. |
+| Feishu document comment | Reply in concise plain text; the comment API does not render Markdown. |
+| Connector delivery notice | The Connector publishes plain `text` automatically. |
+| A separately requested, compact status or alert that benefits from a colored header | Use the fixed `card.send` action with an explicit recipient, title, body, status, and stable key. This creates a separate message. |
+| A button, form, or other interactive card | Use the `lark-im` card workflow only after the callback handler and permissions are in place; a static status card does not provide this interaction. |
+| A lasting long-form document | Use `feishu-doc-writing` and `lark-doc`; a chat card is not a document. |
+
+Use a status card when the user requests a card or a distinct, compact status
+artifact; keep normal conversational results in the reply. The fixed card
+template constructs card JSON in code from the supplied fields. Sending that
+card does not itself call a model, but choosing and composing those fields
+during a model turn has the ordinary input/output cost of that turn. There is
+no automatic post-answer model pass to restyle a reply as a card.
+
+This guide is discoverable through the platform skill index for Feishu message
+and card tasks. Loading it is for deciding whether a separate Feishu action is
+needed; automatic reply formatting runs without loading this guide.
 
 For common office work, run the shipped `remotelab feishu` actions. Each action is a
 fixed `lark-cli` recipe: the Harness chooses an action and supplies data; it does
