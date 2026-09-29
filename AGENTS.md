@@ -33,6 +33,7 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 - Prefer work that helps a normal user reach one trusted automation win over work that mainly showcases orchestration sophistication.
 - Treat user feedback as a durable product asset; summarize reusable signals in repo-visible notes instead of leaving them only in private chat or machine-local memory.
 - For recurring Connector work, ship reusable actions with fixed provider request shapes. The Harness supplies task data; code handles identity, validation, compact output, and readback. Use direct provider APIs for cases that have no suitable action yet.
+- Let the Harness choose the useful output or office action from the user's goal during the normal task turn, even when the user does not name a format or API. Keep post-answer display conversion deterministic; resource writes still require the intended target and data to be resolved and verified.
 - Keep raw identifying details out of shared notes; record sanitized product evidence and promote stable conclusions into canonical docs.
 - See `notes/current/product-mainline.md` and `notes/current/user-feedback-log.md`.
 

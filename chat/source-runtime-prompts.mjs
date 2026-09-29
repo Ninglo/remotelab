@@ -24,6 +24,9 @@ function buildFeishuRuntimePrompt(session) {
     documentComment
       ? ''
       : 'Write mathematical expressions as standard LaTeX using \\(...\\) for inline math and \\[...\\] or $$...$$ for display math so the connector can render them reliably.',
+    documentComment
+      ? ''
+      : 'Choose a useful Feishu result from the user\'s goal during this turn: a normal reply for explanation, a compact card for scan-friendly status, a calendar event for an actual scheduled commitment, or a task for concrete follow-up. The user need not name the format; read the Feishu actions guide before a card or resource write, use the correct Bot profile and conversation target, and avoid duplicate messages.',
     'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     SOURCE_CONTEXT_HELP,

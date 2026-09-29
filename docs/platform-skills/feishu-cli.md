@@ -1,35 +1,48 @@
-# Feishu actions and message presentation
+# Feishu action choice and message presentation
 
-## Reply presentation: automatic path and when to use a card
+## Choose the useful result from the user's goal
 
-For a Session whose reply destination is a Feishu chat or thread, write the
-answer once as normal text or Markdown. Source delivery automatically converts
-that answer to a Feishu `post` rich-text message. The connector's local code
-handles Markdown, known mentions, code blocks, and math; formulas may be
-rendered locally and uploaded as images. This conversion does **not** make a
-second model request or consume additional model tokens. It is already wired
-into the Feishu Connector, so do not call `remotelab feishu card.send` merely
-to format an ordinary answer.
+Decide during the normal task turn what the user needs to receive or use. The
+user need not name a Feishu API, card, calendar, or task. Choose an office
+action from the intended outcome and choose a display form from how the result
+will be read. A resource action and a display form can be used together: a
+calendar event is the commitment; a card can make its status easy to scan.
+Create only the resources the request authorizes, and do not duplicate the
+same answer across surfaces.
 
-| Situation | Presentation path |
+| User's actual need | Suitable action or display |
 | --- | --- |
-| Ordinary answer, explanation, list, or short progress update in a Feishu chat/thread | Reply normally; the bound Connector publishes `post` automatically. |
+| Understand an answer, reasoning, comparison, or open-ended discussion | Reply normally; the bound Connector publishes rich-text `post`. |
+| Scan a compact status, decision, warning, or next action with a few stable fields | Consider a fixed status card even without an explicit card request. Use it when the header and concise body make the result materially easier to act on. |
+| Put a real time commitment on a calendar | For a Bot-owned event, use `calendar.create` after resolving the calendar, time zone, start, and end; read back the event. For attendees or invitations use `lark-calendar`. A proposed time alone is a reply, not an event. |
+| Assign or track a concrete follow-up | Use `task.create` with the intended owner and due date when known; read back the task. A discussion of possible next steps is a reply. |
+| Maintain structured records or a reusable data source | Use the matching Base action and verify fields and permissions; use a view, form, or dashboard only when the user needs that interaction. |
+| Preserve a long-lived, editable explanation | Use the document workflow and `feishu-doc-writing` component choices. |
 | Feishu document comment | Reply in concise plain text; the comment API does not render Markdown. |
-| Connector delivery notice | The Connector publishes plain `text` automatically. |
-| A separately requested, compact status or alert that benefits from a colored header | Use the fixed `card.send` action with an explicit recipient, title, body, status, and stable key. This creates a separate message. |
-| A button, form, or other interactive card | Use the `lark-im` card workflow only after the callback handler and permissions are in place; a static status card does not provide this interaction. |
-| A lasting long-form document | Use `feishu-doc-writing` and `lark-doc`; a chat card is not a document. |
+| Button, form, or other interactive card | Use the `lark-im` card workflow only when its callback handler and permissions are in place; a static status card does not provide this interaction. |
 
-Use a status card when the user requests a card or a distinct, compact status
-artifact; keep normal conversational results in the reply. The fixed card
-template constructs card JSON in code from the supplied fields. Sending that
-card does not itself call a model, but choosing and composing those fields
-during a model turn has the ordinary input/output cost of that turn. There is
-no automatic post-answer model pass to restyle a reply as a card.
+The fixed `card.send` action constructs card JSON in code from the selected
+title, body, status, recipient, and stable key. It sends a separate message;
+today a normal bound Session reply still becomes a `post`, so keep any companion
+reply brief and avoid repeating the card body. Native card selection inside the
+durable source-delivery reply is not yet implemented. A card cannot stand in
+for an actual calendar event, task, or Base record. `card.send` targets a user
+or chat, not the source thread; do not move a thread result into the top-level
+chat. Use the thread-aware `lark-im` workflow only when that placement and its
+Bot permissions have been verified.
+
+For a Session whose reply destination is a Feishu chat or thread, source
+delivery automatically converts the final text or Markdown answer to a `post`.
+The connector's local code handles Markdown, known mentions, code blocks, and
+math; formulas may be rendered locally and uploaded as images. Delivery
+notices use plain `text`. This conversion and the fixed office actions make no
+second model request: the model's choice of action and content belongs to the
+normal task turn, and the post-answer adaptation consumes no additional model
+tokens. Do not run a separate model pass merely to restyle a finished answer.
 
 This guide is discoverable through the platform skill index for Feishu message
-and card tasks. Loading it is for deciding whether a separate Feishu action is
-needed; automatic reply formatting runs without loading this guide.
+and office tasks. Loading it supports the in-turn choice of action and display;
+automatic reply formatting runs without loading this guide.
 
 For common office work, run the shipped `remotelab feishu` actions. Each action is a
 fixed `lark-cli` recipe: the Harness chooses an action and supplies data; it does
