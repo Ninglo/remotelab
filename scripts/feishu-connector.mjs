@@ -39,6 +39,7 @@ import {
   FEISHU_CONNECTOR_NAME,
   LARK_CONNECTOR_NAME,
   LEGACY_DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT as LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT,
+  buildAttributedFeishuMessage,
   buildExternalTriggerId,
   buildFeishuApiUuid,
   buildFeishuPostContent,
@@ -625,8 +626,14 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
 
 async function recordInboundEvent(runtime, summary, raw, sourceLabel) {
   const allowed = await isAllowedByPolicy(runtime.config.accessPolicy, summary);
-  await recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed);
-  await updateKnownSenders(runtime.storagePaths.knownSendersPath, summary);
+  const linkedHumanMessage = allowed
+    && trimString(summary?.sender?.senderType).toLowerCase() === 'user'
+    && runtime.config.projectLinks?.some(link => link.discussionChatId === summary.chatId
+      || link.workChatId === summary.chatId);
+  const recordedSummary = linkedHumanMessage
+    ? await enrichSummaryWithSenderProfile(runtime, summary) : summary;
+  await recordConnectorEvent(runtime, sourceLabel, recordedSummary, raw, allowed);
+  await updateKnownSenders(runtime.storagePaths.knownSendersPath, recordedSummary);
   if (!allowed) {
     console.log('[feishu-connector] sender blocked by whitelist policy');
   }
@@ -1069,7 +1076,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       method: 'POST', body: {
         sourceMessageId: effectiveSummary.messageId,
         requestId: buildRequestId(effectiveSummary),
-        text: buildRemoteLabMessage(effectiveSummary),
+        text: buildAttributedFeishuMessage(effectiveSummary),
         sourceContext,
       },
     });
@@ -1104,10 +1111,11 @@ async function submitRemoteLabRequest(runtime, summary, {
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: messageSummary.logContinuation
-      ? messageSummary.messageText
+      ? buildAttributedFeishuMessage({ ...messageSummary, messageText: messageSummary.messageText })
       : soleMention
-        ? '[群聊反馈：用户只 @ 了你。请重新审视最近仍未得到你回应的几条消息，结合后续讨论判断现在是否应该回复；没有必要时保持沉默。]'
-        : buildRemoteLabMessage(messageSummary),
+        ? buildAttributedFeishuMessage({ ...messageSummary,
+          messageText: '[群聊反馈：用户只 @ 了你。请重新审视最近仍未得到你回应的几条消息，结合后续讨论判断现在是否应该回复；没有必要时保持沉默。]' })
+        : buildAttributedFeishuMessage(messageSummary),
     tool: runtimeSelection.tool,
     runtimeSelectionScope: 'auto',
     sourceContext: {

@@ -21,6 +21,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-29 — Group transcripts need durable speaker attribution
+
+- Observed friction: a group Session's visible transcript stored each person's raw message without a speaker label. The short-term source context knew the current sender, but a paired project's message stream recorded human posts before profile enrichment and omitted both readable names and stable identity. Readers could mistake conflicting statements by different people for one person's changing view.
+- Product implication: show the speaker on old group messages from saved metadata, and put a stable speaker label into each new group Session message. Carry that identity through same-chat history and cross-group excerpts. When an identity is unavailable, say so rather than merging anonymous speakers. Keep original message IDs for source checks and leave historical transcript bodies intact.
+
 ### 2026-09-29 — Finish voice dictation with an automatically cleaned draft
 
 - Observed friction: a personal voice trial exposed an extra “Review draft” and “Use revised text” sequence after dictation. The user expected one automatic cleanup after recording and found an enabled speech recognizer easy to mistake for an enabled cleanup model.

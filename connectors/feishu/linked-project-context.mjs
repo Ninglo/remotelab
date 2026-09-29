@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { appendFile, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { feishuParticipantKey, feishuParticipantLabel } from './participant-attribution.mjs';
 
 const MAX_EVENT_TAIL_BYTES = 2 * 1024 * 1024;
 const MAX_CONTEXT_AGE_MS = 24 * 60 * 60 * 1000;
@@ -74,7 +75,8 @@ export async function appendLinkedFeishuProjectEvent(runtime, record) {
       chatId: summary.chatId, messageId: summary.messageId,
       createTime: summary.createTime, threadId: summary.threadId,
       messageText: trimString(summary.messageText || summary.textPreview).slice(0, MAX_MESSAGE_CHARACTERS),
-      sender: { senderType: 'user', name: trimString(summary.sender.name) },
+      sender: { senderType: 'user', name: trimString(summary.sender.name),
+        participantKey: feishuParticipantKey(summary.sender) },
     },
   })}\n`, { encoding: 'utf8', mode: 0o600 });
   return true;
@@ -150,12 +152,16 @@ export function selectLinkedFeishuMessages(eventText, link, current, options = {
     if (!timestamp || timestamp >= currentTime || currentTime - timestamp > maxAgeMs) continue;
     const text = trimString(item.messageText || item.textPreview);
     if (!text) continue;
+    const previous = latestById.get(messageId);
+    const identified = trimString(item.sender?.name) || feishuParticipantKey(item.sender)
+      || senderType === 'app';
     latestById.set(messageId, {
       messageId,
       timestamp,
       text: text.slice(0, MAX_MESSAGE_CHARACTERS),
       threadId: trimString(item.threadId),
-      sender: trimString(item.sender?.name),
+      sender: identified ? feishuParticipantLabel(item.sender)
+        : previous?.sender || feishuParticipantLabel(item.sender),
     });
   }
 

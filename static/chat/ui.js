@@ -592,6 +592,23 @@ function createUserMessageNode(evt, {
     bubble.classList.add("msg-pending");
   }
 
+  const sourceContext = evt?.sourceContext;
+  const sourceSender = sourceContext?.sender;
+  const groupMessage = sourceContext?.connector === "feishu"
+    && ["group", "topic"].includes(sourceContext?.chatType);
+  const alreadyAttributed = String(evt?.content || evt?.bodyPreview || "")
+    .startsWith("【飞书群消息｜发言人：");
+  if (groupMessage && sourceSender && !alreadyAttributed) {
+    const name = String(sourceSender.name || "").trim().slice(0, 100);
+    const identity = String(sourceSender.openId || sourceSender.userId || sourceSender.unionId || "").trim();
+    const author = document.createElement("div");
+    author.className = "msg-user-author";
+    author.textContent = identity
+      ? `${name || "群成员"} · 身份尾号 ${identity.slice(-6)}`
+      : name ? `${name}（身份未核实）` : "身份未识别的群成员";
+    bubble.appendChild(author);
+  }
+
   const userAttachments = Array.isArray(evt?.attachments) && evt.attachments.length > 0
     ? evt.attachments
     : (Array.isArray(evt?.images) ? evt.images : []);

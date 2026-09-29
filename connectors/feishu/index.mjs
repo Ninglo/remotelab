@@ -18,6 +18,7 @@ import {
   getSummaryFeishuResources,
 } from './inbound-envelope.mjs';
 import { buildFeishuMathDocument } from './math-renderer.mjs';
+import { feishuParticipantLabel } from './participant-attribution.mjs';
 
 export {
   extractFeishuImageKeysFromContent,
@@ -547,6 +548,12 @@ export function buildRemoteLabMessage(summary) {
   const rawMessage = trimString(summary?.messageText) || trimString(summary?.textPreview);
   return renderMentionPreview(rawMessage, summary?.mentions) || rawMessage
     || trimString(summary?.contentSummary) || '[non-text or empty message]';
+}
+
+export function buildAttributedFeishuMessage(summary) {
+  const message = buildRemoteLabMessage(summary);
+  if (!['group', 'topic'].includes(trimString(summary?.chatType).toLowerCase())) return message;
+  return `【飞书群消息｜发言人：${feishuParticipantLabel(summary?.sender)}】\n${message}`;
 }
 
 function buildFeishuSenderContext(summary) {
