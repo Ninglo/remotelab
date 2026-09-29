@@ -2516,6 +2516,22 @@ export async function updateSessionSystemPrompt(id, systemPrompt) {
   return enrichSessionMeta(result.meta);
 }
 
+export async function updateSessionWorkboardPilot(id, enabled) {
+  const result = await mutateSessionMeta(id, (session) => {
+    if ((session.workboardPilot === true) === enabled) return false;
+    if (enabled) session.workboardPilot = true;
+    else {
+      delete session.workboardPilot;
+      delete session.workboardGate;
+    }
+    session.updatedAt = nowIso();
+    return true;
+  });
+  if (!result.meta) return null;
+  if (result.changed) broadcastSessionInvalidation(id);
+  return enrichSessionMeta(result.meta);
+}
+
 export async function updateSessionInitiatorIdentity(id, initiatedByIdentityId) {
   const nextIdentityId = typeof initiatedByIdentityId === 'string' ? initiatedByIdentityId.trim() : '';
   if (!nextIdentityId) return null;

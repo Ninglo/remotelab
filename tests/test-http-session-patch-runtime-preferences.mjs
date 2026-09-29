@@ -274,6 +274,23 @@ try {
     });
     assert.equal(invalidSystemPrompt.status, 400, 'invalid Session instructions should be rejected');
 
+    const invalidWorkboard = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
+      workboardPilot: 'yes',
+    });
+    assert.equal(invalidWorkboard.status, 400, 'the workboard pilot flag requires a boolean');
+    const enabledWorkboard = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
+      workboardPilot: true,
+    });
+    assert.equal(enabledWorkboard.status, 200);
+    assert.equal(enabledWorkboard.json.session?.workboardPilot, true);
+    assert.equal((await request(port, 'GET', `/api/sessions/${newer.id}`)).json.session?.workboardPilot, undefined,
+      'opting in one Session must not opt in another Session');
+    const disabledWorkboard = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
+      workboardPilot: false,
+    });
+    assert.equal(disabledWorkboard.status, 200);
+    assert.equal(disabledWorkboard.json.session?.workboardPilot, undefined);
+
     const invalidWorkflowState = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
       workflowState: 'running',
     });
