@@ -924,6 +924,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: for an opted-in Session, let a cheap structured decision determine whether the Harness should publish a checklist with an existing tool; project checklist updates outside Thinking and show native Run state in the same Session. Do not create a second workflow engine for this pilot.
 - Follow-up: verify a real multi-step turn creates and updates the visible checklist, a short turn skips it, and the monitor reaches a terminal Run state without affecting other Sessions.
 
+### 2026-09-29 — 会话清单应原位更新并说明验收标准
+
+- Source: direct correction after a three-deliverable single-Session trial.
+- Observed friction or ask: four progress events appeared as separate collapsed plan cards, so the Person could not perceive one checklist changing state. The checklist also lacked a short explanation.
+- Product implication: keep one current checklist in the opted-in Session workboard, update its completion state in place, and give it a one-line task title plus one or two plain sentences explaining the outcome and completion standard. Keep each item concise with a checkable condition.
+- Follow-up: verify live event updates, the rendered workboard, and a non-pilot Session separately; do not infer that stored events alone prove the page changed visibly.
+
 ### YYYY-MM-DD — short title
 
 - Source:

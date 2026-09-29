@@ -35,15 +35,35 @@ context.updateSessionWorkboardSession({
   lastEventAt: now,
   activity: { run: { state: 'running', runId: 'run-1', startedAt: new Date(now - 10 * 60_000).toISOString() } },
 });
-context.updateSessionWorkboardEvents('pilot', [
+assert.equal(context.isSessionWorkboardMessage({ type: 'message', role: 'assistant', source: 'workboard_checklist' }), true);
+assert.equal(context.isSessionWorkboardMessage({ type: 'message', role: 'assistant', content: 'ordinary reply' }), false);
+const firstSnapshot = [
   { seq: 1, type: 'message', role: 'user', runId: 'run-1' },
-  { seq: 2, type: 'message', role: 'assistant', source: 'workboard_checklist', content: '[x] 第一项\n[ ] 第二项' },
-]);
+  { seq: 2, type: 'message', role: 'assistant', source: 'workboard_checklist', workboardUpdateSeq: 2,
+    content: '任务：交付两项结果\n说明：完成后逐项核对。结果应可在本会话查看。\n[ ] 第一项 — 核对第一份结果。\n[ ] 第二项 — 核对第二份结果。' },
+];
+context.updateSessionWorkboardEvents('pilot', firstSnapshot);
 assert.equal(panel.hidden, false);
+assert.equal(panel.children.find(item => item.className === 'session-workboard-heading')?.textContent, '交付两项结果');
+assert.match(panel.children.find(item => item.className === 'session-workboard-description')?.textContent, /逐项核对/);
 const progress = panel.children.find(item => item.tagName === 'progress');
-assert.equal(progress.value, 1);
+assert.equal(progress.value, 0);
 assert.equal(progress.max, 2);
-assert.equal(panel.children.find(item => item.tagName === 'ul')?.children.length, 2);
+const list = panel.children.find(item => item.tagName === 'ul');
+assert.equal(list?.children.length, 2);
+assert.equal(list.children[0].children[1].children[0].textContent, '第一项');
+assert.equal(list.children[0].children[1].children[1].textContent, '核对第一份结果。');
+context.updateSessionWorkboardEvents('pilot', [
+  firstSnapshot[0],
+  { ...firstSnapshot[1], workboardUpdateSeq: 3,
+    content: firstSnapshot[1].content.replace('[ ] 第一项', '[x] 第一项') },
+]);
+assert.equal(panel.children.filter(item => item.tagName === 'ul').length, 1,
+  'one checklist updates in place instead of stacking cards');
+assert.equal(panel.children.find(item => item.tagName === 'progress').value, 1);
+context.updateSessionWorkboardEvents('pilot', firstSnapshot);
+assert.equal(panel.children.find(item => item.tagName === 'progress').value, 1,
+  'an older response cannot roll back visible progress');
 assert.match(panel.children.find(item => item.className === 'session-workboard-monitor')?.children[0]?.textContent, /运行中/,
   'a fresh numeric event timestamp must keep a long Run from looking stalled');
 
@@ -64,4 +84,6 @@ assert.match(panel.children.find(item => item.className === 'session-workboard-m
 
 context.updateSessionWorkboardSession({ id: 'other', workboardPilot: false, activity: { run: { state: 'idle' } } });
 assert.equal(panel.hidden, true, 'the workboard must remain absent from other Sessions');
+assert.equal(context.isSessionWorkboardMessage({ type: 'message', role: 'assistant', source: 'workboard_checklist' }), false,
+  'a non-pilot Session retains its normal transcript');
 console.log('test-chat-workboard-ui: ok');

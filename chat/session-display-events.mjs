@@ -244,6 +244,18 @@ function isWorkboardEvent(event) {
     && (event.messageKind === 'todo_list' || event.source === 'workboard_checklist');
 }
 
+function coalesceWorkboardEvents(events = []) {
+  const firstIndex = events.findIndex(isWorkboardEvent);
+  if (firstIndex < 0) return events;
+  const latest = [...events].reverse().find(isWorkboardEvent);
+  const first = events[firstIndex];
+  return events.flatMap((event, index) => {
+    if (!isWorkboardEvent(event)) return [event];
+    if (index !== firstIndex) return [];
+    return [{ ...latest, seq: first.seq, workboardUpdateSeq: latest.seq }];
+  });
+}
+
 function findTurnForBlockRange(history = [], startSeq = 0, endSeq = 0) {
   const normalizedHistory = Array.isArray(history) ? history : [];
   let startIndex = -1;
@@ -291,7 +303,8 @@ function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard =
   if (!turn?.user) return;
   target.push(stripDeferredBodyFields(turn.user));
 
-  const bodyEvents = getTurnEventsWithoutIgnoredStatuses(turn.body);
+  const turnBodyEvents = getTurnEventsWithoutIgnoredStatuses(turn.body);
+  const bodyEvents = exposeWorkboard ? coalesceWorkboardEvents(turnBodyEvents) : turnBodyEvents;
   if (bodyEvents.length === 0) return;
 
   const mirroredAttachmentSourceEvents = collectMirroredAttachmentSourceEvents(bodyEvents);

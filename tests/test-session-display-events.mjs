@@ -96,10 +96,12 @@ const workboardHistory = [
 for (const sessionRunning of [true, false]) {
   const display = buildSessionDisplayEvents(workboardHistory, { sessionRunning, exposeWorkboard: true });
   assert.deepEqual(display.filter(event => event.type === 'message').map(event => event.seq),
-    sessionRunning ? [1, 3, 5] : [1, 3, 5, 7],
-    'pilot checklist updates remain visible outside Thinking while work continues');
+    sessionRunning ? [1, 3] : [1, 3, 7],
+    'pilot checklist updates occupy one stable place outside Thinking');
+  assert.equal(display.find(event => event.seq === 3)?.content, '[x] First\n[ ] Second');
+  assert.equal(display.find(event => event.seq === 3)?.workboardUpdateSeq, 5);
   assert.deepEqual(display.filter(event => event.type === 'thinking_block').map(event => [event.blockStartSeq, event.blockEndSeq]),
-    [[2, 2], [4, 4], ...(sessionRunning ? [[6, 7]] : [[6, 6]])]);
+    [[2, 2], sessionRunning ? [4, 7] : [4, 6]]);
 }
 assert.deepEqual(buildSessionDisplayEvents(workboardHistory, { sessionRunning: true }).map(event => event.type),
   ['message', 'thinking_block'], 'other Sessions retain the existing Thinking projection');

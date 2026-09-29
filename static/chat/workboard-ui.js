@@ -8,6 +8,13 @@ let sessionWorkboardRunRequest = null;
 let sessionWorkboardStallTimer = null;
 const SESSION_WORKBOARD_STALL_MS = 5 * 60 * 1000;
 
+function isSessionWorkboardMessage(event) {
+  return sessionWorkboardSession?.workboardPilot === true
+    && sessionWorkboardSession.id === currentSessionId
+    && event?.type === "message" && event.role === "assistant"
+    && (event.messageKind === "todo_list" || event.source === "workboard_checklist");
+}
+
 function sessionWorkboardLastProgressAt(session, activity) {
   const eventAt = typeof session?.lastEventAt === "number" && Number.isFinite(session.lastEventAt)
     ? session.lastEventAt : Date.parse(session?.lastEventAt || "") || 0;
@@ -39,11 +46,24 @@ function parseSessionChecklist(events) {
   const latest = [...events].reverse().find(event => event?.seq > latestUserSeq
     && event?.type === "message" && event.role === "assistant"
     && (event.messageKind === "todo_list" || event.source === "workboard_checklist"));
-  const items = String(latest?.content || "").split(/\r?\n/).map(line => {
+  const lines = String(latest?.content || "").split(/\r?\n/);
+  const taskTitle = lines.find(line => /^\s*任务[：:]\s*\S/.test(line))?.replace(/^\s*任务[：:]\s*/, "").trim() || "";
+  const description = lines.find(line => /^\s*说明[：:]\s*\S/.test(line))?.replace(/^\s*说明[：:]\s*/, "").trim() || "";
+  const items = lines.map(line => {
     const match = /^\s*(?:[-*]\s*)?\[([ xX])\]\s+(.+?)\s*$/.exec(line);
-    return match ? { done: match[1].toLowerCase() === "x", text: match[2] } : null;
+    if (!match) return null;
+    const parts = /^(.+?)\s+—\s+(.+)$/.exec(match[2]);
+    return {
+      done: match[1].toLowerCase() === "x",
+      title: parts ? parts[1].trim() : match[2],
+      detail: parts ? parts[2].trim() : "",
+    };
   }).filter(Boolean);
-  return { items, latestUserSeq, runId: [...events].reverse().find(event => event?.type === "message" && event.role === "user")?.runId || "" };
+  return {
+    items, taskTitle, description, latestUserSeq,
+    updateSeq: latest?.workboardUpdateSeq || latest?.seq || 0,
+    runId: [...events].reverse().find(event => event?.type === "message" && event.role === "user")?.runId || "",
+  };
 }
 
 function renderSessionWorkboard() {
@@ -56,7 +76,7 @@ function renderSessionWorkboard() {
     return;
   }
   const activity = getSessionActivity(session);
-  const { items, runId } = parseSessionChecklist(sessionWorkboardEvents);
+  const { items, taskTitle, description, runId } = parseSessionChecklist(sessionWorkboardEvents);
   const gate = session.workboardGate;
   const hasGate = gate?.needsChecklist === true;
   const active = activity.run.state === "running";
@@ -72,8 +92,15 @@ function renderSessionWorkboard() {
   panel.replaceChildren();
   const heading = document.createElement("div");
   heading.className = "session-workboard-heading";
-  heading.textContent = "交付清单与监视器";
+  heading.textContent = taskTitle || "交付清单与监视器";
   panel.appendChild(heading);
+
+  if (description) {
+    const explanation = document.createElement("p");
+    explanation.className = "session-workboard-description";
+    explanation.textContent = description;
+    panel.appendChild(explanation);
+  }
 
   if (items.length || hasGate) {
     const listHeading = document.createElement("div");
@@ -91,7 +118,21 @@ function renderSessionWorkboard() {
       for (const item of items) {
         const row = document.createElement("li");
         row.className = item.done ? "done" : "";
-        row.textContent = `${item.done ? "✓" : "○"} ${item.text}`;
+        const state = document.createElement("span");
+        state.className = "session-workboard-item-state";
+        state.textContent = item.done ? "✓" : "○";
+        row.appendChild(state);
+        const copy = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = item.title;
+        copy.appendChild(title);
+        if (item.detail) {
+          const detail = document.createElement("p");
+          detail.className = "session-workboard-item-detail";
+          detail.textContent = item.detail;
+          copy.appendChild(detail);
+        }
+        row.appendChild(copy);
         list.appendChild(row);
       }
       panel.appendChild(list);
@@ -181,7 +222,12 @@ function updateSessionWorkboardSession(session) {
 
 function updateSessionWorkboardEvents(sessionId, events) {
   if (sessionWorkboardSession?.id !== sessionId) return;
-  sessionWorkboardEvents = Array.isArray(events) ? events : [];
+  const nextEvents = Array.isArray(events) ? events : [];
+  const previous = parseSessionChecklist(sessionWorkboardEvents);
+  const next = parseSessionChecklist(nextEvents);
+  if (next.latestUserSeq < previous.latestUserSeq
+    || (next.latestUserSeq === previous.latestUserSeq && next.updateSeq < previous.updateSeq)) return;
+  sessionWorkboardEvents = nextEvents;
   renderSessionWorkboard();
   scheduleSessionWorkboardStallCheck();
   refreshSessionWorkboardRun();

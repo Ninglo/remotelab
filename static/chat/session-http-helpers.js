@@ -374,6 +374,9 @@ function getAttachmentDeliveryRenderKey(event) {
 function getEventRenderBaseKey(event) {
   const seq = Number.isInteger(event?.seq) ? event.seq : 0;
   const type = getNormalizedEventRenderType(event);
+  if (event?.type === "message" && Number.isInteger(event.workboardUpdateSeq)) {
+    return `${seq}:${type}:workboard:${event.workboardUpdateSeq}`;
+  }
   if (type === "thinking_block") {
     const state = typeof event?.state === "string" ? event.state : "";
     return `${seq}:${type}:${state}`;

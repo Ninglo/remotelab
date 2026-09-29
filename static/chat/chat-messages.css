@@ -84,10 +84,13 @@
   font-size: 13px;
 }
 .session-workboard-heading { font-weight: 700; margin-bottom: 8px; }
+.session-workboard-description { margin: 0 0 8px; color: var(--text-secondary); line-height: 1.45; }
 .session-workboard-label { color: var(--text-secondary); margin-bottom: 5px; }
 .session-workboard progress { width: 100%; height: 7px; }
 .session-workboard-list { margin: 6px 0 8px; padding-left: 4px; list-style: none; line-height: 1.55; }
-.session-workboard-list li { margin: 3px 0; }
+.session-workboard-list li { display: flex; align-items: baseline; gap: 7px; margin: 6px 0; }
+.session-workboard-item-state { flex: none; width: 12px; }
+.session-workboard-item-detail { margin: 1px 0 0; color: var(--text-secondary); line-height: 1.4; }
 .session-workboard-list li.done { color: var(--text-secondary); }
 .session-workboard-pending { color: var(--text-secondary); margin: 6px 0 10px; }
 .session-workboard-monitor { display: flex; align-items: center; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }
