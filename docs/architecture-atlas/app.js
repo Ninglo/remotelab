@@ -1,6 +1,7 @@
-import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929f';
-import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929f';
-import { journeyRoutes, journeyStages } from './journey-data.js?v=20260929f';
+import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929g';
+import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929g';
+import { journeyRoutes, journeyStages } from './journey-data.js?v=20260929g';
+import { stateLayers, situationGroups, situations } from './situation-data.js?v=20260929g';
 
 const byId = new Map(nodes.map((node) => [node.id, node]));
 const elements = {
@@ -22,6 +23,10 @@ const elements = {
   journeyStages: document.querySelector('#journey-stages'),
   loopPreview: document.querySelector('#loop-preview'),
   journeyMatrix: document.querySelector('#journey-matrix'),
+  groupOverview: document.querySelector('#group-overview'),
+  stateLayers: document.querySelector('#state-layers'),
+  situationList: document.querySelector('#situation-list'),
+  situationMatrix: document.querySelector('#situation-matrix'),
   resourceSummary: document.querySelector('#resource-summary'),
   missingDimensions: document.querySelector('#missing-dimensions'),
 };
@@ -32,6 +37,7 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]));
 const label = (id) => byId.get(id)?.title ?? id;
+const stateLabel = (id) => stateLayers.find((layer) => layer.id === id)?.title ?? id;
 const badge = (status) => `<span class="badge" data-tone="${escapeHtml(status)}">${escapeHtml(statusNames[status] ?? status)}</span>`;
 
 function renderDomainNav() {
@@ -101,6 +107,32 @@ function renderJourney() {
 
 function renderLoopPreview() {
   elements.loopPreview.innerHTML = paths.map((path, index) => `<article class="loop-item"><span class="loop-number">${String(index + 1).padStart(2, '0')}</span><div><h3>${escapeHtml(path.title)}</h3><p>${escapeHtml(path.lead)}</p><button type="button" data-path="${escapeHtml(path.id)}">查看触发、读写与代码 ↗</button></div></article>`).join('');
+}
+
+function renderSituationOverview() {
+  elements.groupOverview.innerHTML = situationGroups.map((group, index) => `<button type="button" class="group-overview-item" data-case-group="${escapeHtml(group.id)}"><span>${String(index + 1).padStart(2, '0')} / ${situations.filter((item) => item.group === group.id).length} 种情形</span><strong>${escapeHtml(group.title)}</strong><small>${escapeHtml(group.lead)}</small></button>`).join('');
+}
+
+function renderStateLayers() {
+  elements.stateLayers.innerHTML = stateLayers.map((layer, index) => `<details id="state-layer-${escapeHtml(layer.id)}" class="state-layer"><summary><span class="state-layer-index">${String(index + 1).padStart(2, '0')}</span><span class="state-layer-main"><strong>${escapeHtml(layer.title)}</strong><small>${escapeHtml(layer.meaning)}</small></span><span class="state-layer-scope">${escapeHtml(layer.scope)}</span><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="state-layer-body"><dl><div><dt>实际位置</dt><dd>${escapeHtml(layer.location)}</dd></div><div><dt>何时写入</dt><dd>${escapeHtml(layer.writeWhen)}</dd></div><div><dt>未来读取</dt><dd>${escapeHtml(layer.reuse)}</dd></div></dl><div class="state-layer-links"><button type="button" data-node="${escapeHtml(layer.node)}">查看机制 ↗</button></div>${sourceMarkup(layer.source)}</div></details>`).join('');
+}
+
+function situationLayerLinks(ids, verb) {
+  return ids.length
+    ? ids.map((id) => `<button type="button" data-layer="${escapeHtml(id)}">${escapeHtml(verb)} ${escapeHtml(stateLabel(id))} ↗</button>`).join('')
+    : '<span class="no-layer-write">没有确认的自动写入</span>';
+}
+
+function renderSituations() {
+  let index = 0;
+  elements.situationList.innerHTML = situationGroups.map((group) => `<section id="situation-group-${escapeHtml(group.id)}" class="situation-group"><header><span>${escapeHtml(group.id.toUpperCase())}</span><h3>${escapeHtml(group.title)}</h3><p>${escapeHtml(group.lead)}</p></header><div>${situations.filter((item) => item.group === group.id).map((item) => {
+    index += 1;
+    return `<details id="case-${escapeHtml(item.id)}" class="situation-case"><summary><span class="situation-index">${String(index).padStart(2, '0')}</span><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.preview)}</small></span><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="situation-case-body"><dl><div><dt>用户看到</dt><dd>${escapeHtml(item.visible)}</dd></div><div><dt>谁决定、怎么执行</dt><dd>${escapeHtml(item.decision)}</dd></div><div><dt>计算与接口成本</dt><dd>${escapeHtml(item.compute)}</dd></div><div><dt>下一次怎么用</dt><dd>${escapeHtml(item.next)}</dd></div></dl><div class="situation-state-links"><div><b>读取</b>${situationLayerLinks(item.reads, '读')}</div><div><b>写入</b>${situationLayerLinks(item.writes, '写')}</div></div><p class="situation-boundary"><strong>判断边界</strong>${escapeHtml(item.boundary)}</p><div class="experience-node-links">${item.nodes.map((id) => `<button type="button" data-node="${escapeHtml(id)}">${escapeHtml(label(id))} ↗</button>`).join('')}</div><div class="experience-source-list">${item.sources.map(sourceMarkup).join('')}</div></div></details>`;
+  }).join('')}</div></section>`).join('');
+}
+
+function renderSituationMatrix() {
+  elements.situationMatrix.innerHTML = `<p>写入与读取是两种不同关系。同一情形可能同时读写一层；格子只标示代码路径上的关系，展开情形看具体条件。</p><div class="situation-matrix-scroll"><table><thead><tr><th scope="col">情形</th>${stateLayers.map((layer) => `<th scope="col">${escapeHtml(layer.title)}</th>`).join('')}</tr></thead><tbody>${situations.map((item) => `<tr><th scope="row"><button type="button" data-case="${escapeHtml(item.id)}">${escapeHtml(item.title)} ↗</button></th>${stateLayers.map((layer) => { const reads = item.reads.includes(layer.id); const writes = item.writes.includes(layer.id); return `<td class="${writes ? 'has-write' : reads ? 'has-read' : ''}">${reads && writes ? '读写' : writes ? '写' : reads ? '读' : '·'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
 function renderJourneyMatrix() {
@@ -211,6 +243,20 @@ document.addEventListener('click', async (event) => {
     if (button.dataset.stage) document.getElementById(`journey-stage-${button.dataset.stage}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     else document.getElementById('journey-route-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+  else if (button.dataset.case) {
+    if (state.view !== 'experience') navigate('experience', { node: null });
+    const item = document.getElementById(`case-${button.dataset.case}`);
+    if (item) { item.open = true; item.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }
+  else if (button.dataset.caseGroup) {
+    if (state.view !== 'experience') navigate('experience', { node: null });
+    document.getElementById(`situation-group-${button.dataset.caseGroup}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  else if (button.dataset.layer) {
+    if (state.view !== 'experience') navigate('experience', { node: null });
+    const layer = document.getElementById(`state-layer-${button.dataset.layer}`);
+    if (layer) { layer.open = true; layer.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }
   else if (button.dataset.stage) document.getElementById(`journey-stage-${button.dataset.stage}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   else if (button.dataset.view) navigate(button.dataset.view, { node: null, scroll: true });
   else if (button.dataset.scroll) document.getElementById(button.dataset.scroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -237,4 +283,8 @@ renderFeishuRules();
 renderExperiences();
 renderJourneyMatrix();
 renderLoopPreview();
+renderSituationOverview();
+renderStateLayers();
+renderSituations();
+renderSituationMatrix();
 readHash();

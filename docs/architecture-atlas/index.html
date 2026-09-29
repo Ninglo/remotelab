@@ -5,26 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>RemoteLab 架构图谱</title>
-  <link rel="stylesheet" href="./styles.css?v=20260929f">
-  <link rel="stylesheet" href="./reading.css?v=20260929f">
+  <link rel="stylesheet" href="./styles.css?v=20260929g">
+  <link rel="stylesheet" href="./reading.css?v=20260929g">
+  <link rel="stylesheet" href="./situations.css?v=20260929g">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">R</span><span>RemoteLab <span class="brand-sub">架构图谱</span></span></div>
-      <div class="top-meta"><span class="version">阅读版 · 2026-09-29</span><span class="version">源码基线 811d153a</span></div>
+      <div class="top-meta"><span class="version">事件与状态版 · 2026-09-29</span><span class="version">源码基线 1ab6305d</span></div>
     </header>
 
     <aside class="sidebar" aria-label="图谱导航">
       <div class="sidebar-intro">
         <div class="eyebrow">ARCHITECTURE ATLAS</div>
-        <h1>从用户动作<br>读懂系统</h1>
-        <p>先看一张总图和一条消息的过程，再按需追到存储、模型、接口与源码。</p>
+        <h1>从事件到状态，<br>再到下一次使用</h1>
+        <p>每一种情况分别看触发、判断、执行、写入、读取和用户可见结果。</p>
       </div>
       <div class="side-label">浏览方式</div>
       <nav class="view-nav" aria-label="浏览方式">
-        <button class="nav-button is-active" type="button" data-view="experience"><span>01</span> 消息主线</button>
-        <button class="nav-button" type="button" data-view="paths"><span>02</span> 入口分叉</button>
+        <button class="nav-button is-active" type="button" data-view="experience"><span>01</span> 事件与状态</button>
+        <button class="nav-button" type="button" data-view="paths"><span>02</span> 输入路径</button>
         <button class="nav-button" type="button" data-view="map"><span>03</span> 机制索引</button>
         <button class="nav-button" type="button" data-view="evidence"><span>04</span> 资源与证据</button>
       </nav>
@@ -33,43 +34,45 @@
       <div class="side-label article-only">本页目录</div>
       <nav class="article-nav article-only" aria-label="消息主线目录">
         <button type="button" data-scroll="overview">系统总览</button>
-        <button type="button" data-scroll="journey-section">一条消息的一生</button>
+        <button type="button" data-scroll="state-section">状态放在哪里</button>
+        <button type="button" data-scroll="situations-section">不同情况</button>
+        <button type="button" data-scroll="journey-section">一次输入的过程</button>
         <button type="button" data-scroll="longer-loops">跨轮循环</button>
       </nav>
-      <div class="sidebar-foot">先读发生了什么，再追问由谁执行、写在哪里、消耗什么。</div>
+      <div class="sidebar-foot">读任何一个场景：先找触发和分支，再看状态写入、未来读取与送达证据。</div>
     </aside>
 
     <main class="main-content">
       <section id="experience-view" class="view is-active" aria-labelledby="experience-heading">
         <header id="overview" class="article-hero">
           <div class="eyebrow">REMOTELAB · ARCHITECTURE ATLAS</div>
-          <h2 id="experience-heading">用户发出一条消息后，系统里发生什么？</h2>
-          <p class="hero-lede">一句话：<strong>入口接收输入，RemoteLab 按规则保存状态；需要正式执行的任务交给 Harness，结果通过原入口回到用户。</strong></p>
-          <p class="hero-meta">这张网站按当前源码与本实例的部分配置、运行记录编写。总图用于定位责任；下方选择具体路径时，时间顺序、跳过的步骤和成本以该路径为准。</p>
+          <h2 id="experience-heading">一件事发生后，RemoteLab 究竟改变了什么？</h2>
+          <p class="hero-lede"><strong>消息、Session 状态变化、定时任务、压缩和外部投递，走的是不同分支。</strong>读架构要同时追踪：谁触发、谁判断、哪里执行、写入哪层状态、何时再读，以及用户是否真的看见。</p>
+          <p class="hero-meta">本站按源码基线 1ab6305d 与本实例已核对的配置和运行样本整理。每种情形都连接用户体验、程序或模型、状态位置、资源与源码；运行事实和待核边界分开标记。</p>
           <div class="hero-legend"><span><i class="dot code"></i>源码实现</span><span><i class="dot config"></i>实例配置</span><span><i class="dot observed"></i>运行样本</span><span><i class="dot unknown"></i>待核验</span></div>
-          <figure class="system-overview" aria-labelledby="overview-caption">
-            <div class="overview-flow">
-              <div class="overview-block"><small>01 · 起点</small><strong>用户或定时事件</strong><span>网页消息 / 飞书消息 / Schedule</span></div>
-              <div class="overview-arrow" aria-hidden="true">→</div>
-              <div class="overview-block"><small>02 · 接入</small><strong>入口与规则</strong><span>校验、去重、绑定 Session；飞书按群配置分叉</span></div>
-              <div class="overview-arrow" aria-hidden="true">→</div>
-              <div class="overview-block"><small>03 · 工作</small><strong>Request → Run</strong><span>接纳为正式工作后启动 Harness；工具由 Harness 调用</span></div>
-              <div class="overview-arrow" aria-hidden="true">→</div>
-              <div class="overview-block"><small>04 · 送达</small><strong>页面或连接器</strong><span>Web 读结果；飞书 outbox 经 API 投递并留回执</span></div>
-            </div>
-            <div class="overview-rails"><div><b>持久状态</b><span>Session 历史 · Request · Run · 投递状态各有位置</span></div><div><b>跨轮循环</b><span>记忆读写 · 日报 · Skill 审阅 · 定时任务在不同时间继续</span></div></div>
-            <figcaption id="overview-caption">总图是一张导航图。飞书新规则 silent 会留下 Session 观察与 Jev 决策，再用投递专用 Request 送表情；固定 /help 由脚本生成文字并投递。两者都不启动工作 Run。具体读写与成本见下方路径。</figcaption>
-          </figure>
+          <div class="state-question"><strong>拿“Session 发生重大变化”举例</strong><ol><li>原对话和当前工作摘要是否更新？</li><li>另一次长期记忆审阅是否真的写入文件？</li><li>下一次工作是否读取并使用了它？</li></ol><p>这是三个需要分别核对的事件。一次模型答复、一个 Session 字段和一条跨会话记忆不能画成同一个方框。</p><button type="button" data-case="material-session-change">看代码中的这条分支 ↗</button></div>
+          <div id="group-overview" class="group-overview" aria-label="情形总览"></div>
         </header>
+        <section id="state-section" class="article-section" aria-labelledby="state-title">
+          <div class="section-heading"><span>PART A</span><h2 id="state-title">状态放在哪里，下一次谁会读取</h2></div>
+          <p class="section-lede">这里是架构的坐标。Session 历史、当前工作状态、执行记录、长期记忆、项目主账和外部投递是不同的存储层。点击一层，查看写入条件、读取时机与源码。</p>
+          <div id="state-layers" class="state-layers"></div>
+        </section>
+        <section id="situations-section" class="article-section" aria-labelledby="situations-title">
+          <div class="section-heading"><span>PART B</span><h2 id="situations-title">各种情况，逐一沿状态追踪</h2></div>
+          <p class="section-lede">每个情形先给结论；展开后对照用户看到的结果、判断者、读写层、成本、未来复用和代码。读写标记可跳回上面的状态层。</p>
+          <div id="situation-list" class="situation-list"></div>
+          <details class="comparison-appendix"><summary>展开“情形 × 状态层”交叉矩阵 <span aria-hidden="true">⌄</span></summary><div id="situation-matrix" class="situation-matrix"></div></details>
+        </section>
         <section id="journey-section" class="article-section" aria-labelledby="journey-title">
-          <div class="section-heading"><span>PART A</span><h2 id="journey-title">一条消息的一生</h2></div>
-          <p class="section-lede">先选一种实际入口。沿纵线看用户动作、系统转折和用户可见结果；展开每一步，才看到处理者、持久存储、模型或接口消耗以及对应代码。</p>
+          <div class="section-heading"><span>PART C</span><h2 id="journey-title">再看一次输入的具体过程</h2></div>
+          <p class="section-lede">这条时间线适合追某次消息或日报从发起到返回的顺序。上面的场景和状态层说明它为什么不能代替系统全貌。</p>
           <div id="journey-route-tabs" class="journey-route-tabs" role="tablist" aria-label="选择输入路径"></div>
           <div id="journey-lead" class="journey-lead"></div>
           <div id="journey-stages" class="journey-stages"></div>
         </section>
         <section id="longer-loops" class="article-section" aria-labelledby="loops-title">
-          <div class="section-heading"><span>PART B</span><h2 id="loops-title">一次答复之外，系统怎样继续</h2></div>
+          <div class="section-heading"><span>PART D</span><h2 id="loops-title">跨轮流程继续展开</h2></div>
           <p class="section-lede">记忆、日报和 Skill 并非每条消息都会依次经过的步骤。它们有自己的触发条件、读写位置和核验边界。</p>
           <div id="loop-preview" class="loop-preview"></div>
         </section>
@@ -115,6 +118,6 @@
       <div class="detail-empty"><div class="empty-glyph">◎</div><h2>选择一个机制</h2><p>点击左侧地图中的节点，查看它负责什么、连接到哪里，以及当前证据和源码入口。</p></div>
     </aside>
   </div>
-  <script type="module" src="./app.js?v=20260929f"></script>
+  <script type="module" src="./app.js?v=20260929g"></script>
 </body>
 </html>

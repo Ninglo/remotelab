@@ -1,4 +1,4 @@
-export const sourceCommit = '811d153a8bd5084898f8f3430c8c77d22ebf3220';
+export const sourceCommit = '1ab6305d4fbdd365cebcd4a5e6917a1428fc9f5f';
 
 export const statusNames = {
   code: '源码已核',
@@ -115,7 +115,7 @@ export const nodes = [
     id: 'memory-index', domain: 'knowledge', title: '记忆入口与按需读取', summary: '启动只给短指针；项目、任务和更深的记忆按需要打开。', owner: 'RemoteLab 投影 + Harness 读取', status: ['code'],
     contract: '“提供路径”“选中作用域”“完整读取文件”“用于决策”是不同程度的使用，不能合并计数。',
     reads: 'bootstrap、projects、skills、task notes 等入口。', writes: '检索后的当前任务上下文；原文件修改由对应工作流程负责。', related: ['prompt', 'related-sessions', 'memory-writeback', 'native-skill'],
-    sources: [{ path: 'notes/current/memory-activation-architecture.md', line: 13, note: '分层设计' }, { path: 'chat/system-prompt.mjs', line: 48, note: '实际启动指针' }],
+    sources: [{ path: 'notes/current/memory-activation-architecture.md', line: 14, note: '分层设计' }, { path: 'chat/system-prompt.mjs', line: 48, note: '实际启动指针' }],
     open: '量化实际加载、命中、遗漏和错误引用，而不是把目录存在算成记忆生效。',
   },
   {
@@ -143,7 +143,7 @@ export const nodes = [
     id: 'semantic-forgetting', domain: 'knowledge', title: '遗忘、Dream 与自进化', summary: '当前有压缩和候选审阅；独立 Dream 或自动语义遗忘的运行实现尚未确认。', owner: '待确定', status: ['proposed', 'unknown'],
     contract: '要分别定义上下文压缩、过期记忆降级、错误纠正、方法抽象、Skill 晋升；不能统称“自进化”。',
     reads: '现有记忆、来源与使用效果（若未来实现）。', writes: '目前没有确认的统一自动 Dream/遗忘输出。', related: ['compaction', 'memory-writeback', 'skill-review', 'project-knowledge'],
-    sources: [{ path: 'notes/current/memory-activation-architecture.md', line: 77, note: '修剪原则' }, { path: 'notes/current/active-work-radar-memory-upgrade.md', line: 1, note: '设计提案，不是运行证明' }],
+    sources: [{ path: 'notes/current/memory-activation-architecture.md', line: 80, note: '修剪原则' }, { path: 'notes/current/active-work-radar-memory-upgrade.md', line: 1, note: '设计提案，不是运行证明' }],
     open: '继续查本实例之外的进程和仓库；在取得调用链及回执前维持“未确认”。',
   },
   {
@@ -236,7 +236,7 @@ export const nodes = [
     id: 'config', domain: 'operations', title: '配置与部署版本', summary: '源码、实例配置和运行进程可以处于不同版本；三者需单独核对。', owner: '部署与实例运维', status: ['code', 'config'],
     contract: '代码提交不证明进程加载；配置读回不证明一条真实用户路径成功。',
     reads: 'Git commit、进程入口、环境变量与实例配置。', writes: '部署、重启、激活状态及回滚记录。', related: ['instance', 'prompt', 'automation', 'observation'],
-    sources: [{ path: 'AGENTS.md', line: 64, note: '服务与重启边界' }, { path: 'docs/control-plane-runbook.md', note: '运行维护指南' }],
+    sources: [{ path: 'AGENTS.md', line: 65, note: '服务与重启边界' }, { path: 'docs/control-plane-runbook.md', note: '运行维护指南' }],
     open: '为网站追加可更新的运行快照，明确当前实例究竟加载哪个 commit。',
   },
   {
