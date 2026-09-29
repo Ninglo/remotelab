@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-29 — Reuse fixed Connector actions to save model tokens
+
+- Observed friction: documenting Feishu commands and trimming chat history still left the model composing card JSON and provider calls during each task. The user expects recurring Connector work to use prewritten, reusable actions.
+- Product implication: for common operations, the model selects an action and supplies task data; deterministic code owns provider request shape, Bot identity, validation, compact output, and readback. Apply this pattern to other Connectors as their repeated workflows become clear.
+- Implementation: `remotelab feishu` exposes fixed Bot actions for contacts, messages, status cards, reactions, calendars, tasks, and Base records. The native `lark-cli` remains the provider client and fallback for less common operations.
+
 ### 2026-09-28 — Short praise still needs a visible response
 
 - Observed friction: two consecutive short acknowledgements praising the assistant were correctly left without a text reply, but the contextual reaction selector chose no reaction both times. The user noticed the missing response immediately.

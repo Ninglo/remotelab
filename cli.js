@@ -47,6 +47,7 @@ Usage:
   remotelab gmail                    Manage the bound Gmail mailbox connector
   remotelab github-workspace         Prepare and verify a person's GitHub checkout
   remotelab connector                Invoke Connector capabilities (owner may target a managed guest)
+  remotelab feishu                   Run reusable Bot-only Feishu office actions
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
@@ -207,6 +208,12 @@ switch (command) {
       console.error(error.message || String(error));
       process.exit(1);
     }
+    break;
+  }
+
+  case 'feishu': {
+    const { runFeishuActionCommand } = await import(scriptPath('lib/feishu-action-command.mjs'));
+    process.exitCode = await runFeishuActionCommand(args);
     break;
   }
 

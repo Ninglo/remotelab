@@ -116,9 +116,12 @@ former commands (`document_get`, `wiki_node_get`, `wiki_children_list`, and
 `wiki_tree_list`) and their local capability server are not part of the product
 surface.
 
-The harness uses the package-provided `lark-cli` directly through normal shell
-tools. RemoteLab, the Feishu connector, and every harness launched for the Bot
-run inside the same instance runtime cell: one OS user, one home directory, one
+The harness uses fixed `remotelab feishu` actions for recurring office work;
+each action invokes the package-provided `lark-cli` with Bot identity, compact
+output, and readback where supported. Other authorized operations use
+`lark-cli` directly through normal shell tools. RemoteLab, the Feishu connector,
+and every harness launched for the Bot run inside the same instance runtime cell:
+one OS user, one home directory, one
 environment contract, and one instance-owned lark-cli config directory. The
 connector initializes that config from its existing Bot credentials at startup;
 the App Secret is never copied into a prompt.
@@ -130,11 +133,14 @@ version-matched workflow before using any Feishu capability:
 ```bash
 lark-cli profile list
 lark-cli auth status --json --verify
+remotelab feishu list
+remotelab feishu calendar.list --profile <bot-profile>
 lark-cli skills read lark-doc
 lark-cli docs +fetch --doc <docx-or-wiki-url>
 ```
 
-This is not an API proxy or a handwritten permission bridge. `lark-cli` talks
+These fixed actions are reusable recipes, not an API proxy or a handwritten
+permission bridge. `lark-cli` talks
 to Feishu directly with the selected Bot or user identity's actual authorization, so adding Base,
 Doc write, Sheets, Drive, or another supported capability does not require a
 new RemoteLab connector tool. The real security boundary is the instance's OS

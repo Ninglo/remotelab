@@ -710,7 +710,7 @@ try {
   ]);
   assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
   assert.match(readFileSync(join(platformSkillsDir, 'session-delegate.md'), 'utf8'), /Visible RemoteLab delegation/);
-  assert.match(readFileSync(join(platformSkillsDir, 'feishu-cli.md'), 'utf8'), /direct lark-cli access/i);
+  assert.match(readFileSync(join(platformSkillsDir, 'feishu-cli.md'), 'utf8'), /fixed `lark-cli` recipe/i);
   assert.match(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), /Session Debug/);
   assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /Static Page Publish/);
   assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /never live in the RemoteLab Git checkout/);
