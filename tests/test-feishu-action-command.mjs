@@ -95,7 +95,7 @@ const eventStatus = await runFeishuActionCommand([
   '--start', '2026-09-29T09:00:00+08:00', '--end', '2026-09-29T09:30:00+08:00', '--key', 'calendar-run-124',
 ], createdEvent.io, async (_path, args) => args.includes('create')
   ? { stdout: JSON.stringify({ ok: true, event_id: 'evt123' }) }
-  : { stdout: JSON.stringify({ ok: true, event: { event_id: 'evt123' } }) });
+  : { stdout: JSON.stringify({ ok: true, event: { event_id: 'evt123', summary: 'Review' } }) });
 assert.equal(eventStatus, 0);
 assert.equal(JSON.parse(createdEvent.output).confirmed, true);
 
