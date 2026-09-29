@@ -8,16 +8,20 @@ const writeSettings = createSerialTaskQueue();
 const inFlight = new Set();
 const MAX_TERMS = 50;
 const MAX_TEXT_CHARS = 4000;
+const PROVIDERS = Object.freeze({
+  zhipu: { endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4.7-flash' },
+  openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions', model: 'qwen/qwen3-4b:free' },
+});
 
 // Operators can use any OpenAI-compatible small model by setting
 // REMOTELAB_VOICE_REVIEW_ENDPOINT (full chat/completions URL),
 // REMOTELAB_VOICE_REVIEW_API_KEY, and REMOTELAB_VOICE_REVIEW_API_MODEL.
 // Without all three, draft review is unavailable while personal ASR hotwords still work.
 
-export function getVoiceReviewBackend() {
-  return process.env.REMOTELAB_VOICE_REVIEW_API_KEY
+export function getVoiceReviewBackend(settings = {}) {
+  return (settings.provider?.apiKeyConfigured && PROVIDERS[settings.provider.id]) || (process.env.REMOTELAB_VOICE_REVIEW_API_KEY
     && process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT
-    && process.env.REMOTELAB_VOICE_REVIEW_API_MODEL
+    && process.env.REMOTELAB_VOICE_REVIEW_API_MODEL)
     ? 'api' : 'unconfigured';
 }
 
@@ -26,6 +30,10 @@ export function normalizeVoiceReviewSettings(value = {}) {
   return {
     enabled: value?.enabled === true,
     terms: [...new Set(terms.map((term) => String(term || '').trim()).filter(Boolean))].slice(0, MAX_TERMS),
+    provider: {
+      id: PROVIDERS[value?.providerId] ? value.providerId : '',
+      apiKeyConfigured: !!(PROVIDERS[value?.providerId] && value?.apiKey),
+    },
   };
 }
 
@@ -46,6 +54,13 @@ export function validateVoiceReviewSettings(value) {
       }
     }
   }
+  if (value.providerId !== undefined && value.providerId !== '' && !PROVIDERS[value.providerId]) {
+    throw new Error('Choose a supported voice review provider');
+  }
+  if (value.apiKey !== undefined && (typeof value.apiKey !== 'string'
+    || value.apiKey.length > 4096 || /[\r\n\x00-\x1f]/.test(value.apiKey))) {
+    throw new Error('Voice review API key must be one line of at most 4096 characters');
+  }
 }
 
 export async function getVoiceReviewSettings(personId) {
@@ -59,11 +74,21 @@ export async function updateVoiceReviewSettings(personId, patch) {
   validateVoiceReviewSettings(patch);
   return writeSettings(async () => {
     const all = await readJson(SETTINGS_FILE, {});
-    const current = normalizeVoiceReviewSettings(all?.[personId]);
-    const next = normalizeVoiceReviewSettings({ ...current, ...patch });
-    await writeJsonAtomic(SETTINGS_FILE, { ...all, [personId]: next });
+    const raw = all?.[personId] || {};
+    const current = normalizeVoiceReviewSettings(raw);
+    const providerId = patch.providerId === undefined ? current.provider.id : patch.providerId;
+    const apiKey = providerId && providerId === current.provider.id
+      ? (patch.apiKey?.trim() || raw.apiKey || '')
+      : (patch.apiKey?.trim() || '');
+    const next = {
+      enabled: patch.enabled === undefined ? current.enabled : patch.enabled,
+      terms: patch.terms === undefined ? current.terms : patch.terms,
+      providerId,
+      apiKey,
+    };
+    await writeJsonAtomic(SETTINGS_FILE, { ...all, [personId]: next }, { mode: 0o600 });
     await chmod(SETTINGS_FILE, 0o600);
-    return next;
+    return normalizeVoiceReviewSettings(next);
   });
 }
 
@@ -79,10 +104,13 @@ export function buildVoiceReviewPrompt(text, terms = []) {
   ].join('\n');
 }
 
-export async function runVoiceReviewModel(prompt) {
-  const apiKey = process.env.REMOTELAB_VOICE_REVIEW_API_KEY;
-  const endpoint = process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT;
-  const model = process.env.REMOTELAB_VOICE_REVIEW_API_MODEL;
+export async function runVoiceReviewModel(prompt, { personId } = {}) {
+  const all = personId ? await readJson(SETTINGS_FILE, {}) : {};
+  const personal = all?.[personId];
+  const preset = PROVIDERS[personal?.providerId];
+  const apiKey = (preset && personal.apiKey) || process.env.REMOTELAB_VOICE_REVIEW_API_KEY;
+  const endpoint = (preset && personal.apiKey && preset.endpoint) || process.env.REMOTELAB_VOICE_REVIEW_ENDPOINT;
+  const model = (preset && personal.apiKey && preset.model) || process.env.REMOTELAB_VOICE_REVIEW_API_MODEL;
   if (!apiKey || !endpoint || !model) {
     throw new Error('Voice draft review needs a configured model API; the original transcript is unchanged');
   }
@@ -94,7 +122,12 @@ export async function runVoiceReviewModel(prompt) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], max_tokens: 1200 }),
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1200,
+      ...(model === 'glm-4.7-flash' ? { thinking: { type: 'disabled' } } : {}),
+    }),
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw new Error(`Voice review model returned HTTP ${response.status}`);
@@ -114,11 +147,11 @@ export async function reviewVoiceText(personId, text, { runModel = runVoiceRevie
   if (inFlight.has(personId)) throw new Error('A voice review is already in progress');
   inFlight.add(personId);
   try {
-    const revised = await runModel(buildVoiceReviewPrompt(text.trim(), settings.terms));
+    const revised = await runModel(buildVoiceReviewPrompt(text.trim(), settings.terms), { personId });
     if (typeof revised !== 'string' || !revised.trim() || revised.length > MAX_TEXT_CHARS * 2) {
       throw new Error('Voice review returned an invalid result');
     }
-    return { original: text.trim(), revised: revised.trim(), backend: getVoiceReviewBackend() };
+    return { original: text.trim(), revised: revised.trim(), backend: getVoiceReviewBackend(settings) };
   } finally {
     inFlight.delete(personId);
   }

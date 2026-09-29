@@ -480,6 +480,9 @@ body:not([data-app-view="sessions"]) .session-item.active {
   margin-top: 8px;
   resize: vertical;
 }
+.voice-review-api-title {
+  margin-top: 18px;
+}
 .settings-voice-provider {
   margin-top: 20px;
   padding-top: 18px;

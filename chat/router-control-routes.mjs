@@ -321,7 +321,7 @@ export async function handleControlRoutes({
       const settings = req.method === 'GET'
         ? await getVoiceReviewSettings(authSession.personId)
         : await updateVoiceReviewSettings(authSession.personId, JSON.parse(await readBody(req, 16384) || '{}'));
-      writeJson(res, 200, { settings, backend: getVoiceReviewBackend() });
+      writeJson(res, 200, { settings, backend: getVoiceReviewBackend(settings) });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Could not save voice review settings' });
     }

@@ -178,12 +178,26 @@ try {
     terms: ['RoboDojo'],
   });
   assert.equal(savedReview.status, 200);
-  assert.deepEqual(savedReview.json?.settings, { enabled: true, terms: ['RoboDojo'] });
+  assert.deepEqual(savedReview.json?.settings, {
+    enabled: true, terms: ['RoboDojo'], provider: { id: '', apiKeyConfigured: false },
+  });
   const loadedReview = await request(chatPort, 'GET', '/api/voice-review/settings');
   assert.deepEqual(loadedReview.json?.settings, savedReview.json?.settings);
   const reviewWithoutApi = await request(chatPort, 'POST', '/api/voice-review', { text: '请检查结果' });
   assert.equal(reviewWithoutApi.status, 400);
   assert.match(reviewWithoutApi.json?.error || '', /configured model API/);
+  const configuredReview = await request(chatPort, 'PATCH', '/api/voice-review/settings', {
+    providerId: 'zhipu', apiKey: 'test-personal-secret',
+  });
+  assert.equal(configuredReview.status, 200);
+  assert.equal(configuredReview.json?.backend, 'api');
+  assert.deepEqual(configuredReview.json?.settings?.provider, { id: 'zhipu', apiKeyConfigured: true });
+  assert.equal(JSON.stringify(configuredReview.json).includes('test-personal-secret'), false,
+    'the write response must not reveal the API key');
+  const loadedProvider = await request(chatPort, 'GET', '/api/voice-review/settings');
+  assert.equal(JSON.stringify(loadedProvider.json).includes('test-personal-secret'), false,
+    'the read response must not reveal the API key');
+  assert.equal(loadedProvider.json?.backend, 'api');
 
   console.log('test-http-voice-cleanup: ok');
 } catch (error) {

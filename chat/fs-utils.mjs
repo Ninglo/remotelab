@@ -32,10 +32,10 @@ export async function readJson(path, fallback = null) {
   }
 }
 
-export async function writeJsonAtomic(path, value) {
+export async function writeJsonAtomic(path, value, { mode } = {}) {
   await ensureDir(dirname(path));
   const tempPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
-  await writeFile(tempPath, JSON.stringify(value, null, 2), 'utf8');
+  await writeFile(tempPath, JSON.stringify(value, null, 2), { encoding: 'utf8', mode });
   await rename(tempPath, path);
 }
 

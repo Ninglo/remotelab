@@ -5,7 +5,8 @@ import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../static/chat/voice-review.js', import.meta.url), 'utf8');
 const ids = [
-  'voiceReviewEnabled', 'voiceReviewTerms', 'voiceReviewSave', 'voiceReviewSettingsStatus',
+  'voiceReviewEnabled', 'voiceReviewTerms', 'voiceReviewProvider', 'voiceReviewProviderEndpoint',
+  'voiceReviewApiKey', 'voiceReviewApiKeyStatus', 'voiceReviewSave', 'voiceReviewSettingsStatus',
   'voiceReviewBackendNote', 'voiceReviewPanel', 'voiceReviewBody', 'voiceReviewRun',
   'voiceReviewApply', 'voiceReviewDismiss', 'voiceReviewStatus', 'msgInput',
 ];
@@ -29,11 +30,17 @@ const context = {
   currentSessionId: 'session-a',
   Event: class Event { constructor(type) { this.type = type; } },
   fetchJsonOrRedirect: async (path, options = {}) => {
-    requests.push({ path, method: options.method || 'GET' });
+    requests.push({ path, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
     if (path === '/api/voice-review/settings' && options.method === 'PATCH') {
-      return { settings: { enabled: true, terms: ['RoboDojo'] }, backend: 'unconfigured' };
+      const body = JSON.parse(options.body);
+      return { settings: { enabled: true, terms: ['RoboDojo'], provider: {
+        id: body.providerId,
+        apiKeyConfigured: !!body.providerId && !!body.apiKey,
+      } }, backend: body.apiKey ? 'api' : 'unconfigured' };
     }
-    if (path === '/api/voice-review/settings') return { settings: { enabled: true, terms: ['RoboDojo'] }, backend: 'api' };
+    if (path === '/api/voice-review/settings') return { settings: {
+      enabled: true, terms: ['RoboDojo'], provider: { id: 'zhipu', apiKeyConfigured: true },
+    }, backend: 'api' };
     if (path === '/api/voice-review') return { revised: '请检查 RoboDojo 的结果。' };
     throw new Error('Unexpected request');
   },
@@ -62,6 +69,13 @@ assert.equal(composer.value, '已有草稿 请检查 RoboDojo 的结果。');
 assert.equal(elements.get('voiceReviewPanel').hidden, true);
 
 elements.get('voiceReviewEnabled').checked = true;
+elements.get('voiceReviewProvider').value = 'openrouter';
+elements.get('voiceReviewProvider').listeners.get('change')();
+elements.get('voiceReviewApiKey').value = 'private-key';
+await elements.get('voiceReviewSave').listeners.get('click')();
+assert.equal(requests.at(-1).body.apiKey, 'private-key');
+assert.equal(elements.get('voiceReviewApiKey').value, '', 'the input must clear after the secret is saved');
+elements.get('voiceReviewProvider').value = '';
 await elements.get('voiceReviewSave').listeners.get('click')();
 composer.value = '另一段原文';
 listeners.get('remotelab:voice-transcript-complete')({ detail: {

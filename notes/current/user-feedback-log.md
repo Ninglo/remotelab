@@ -864,6 +864,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: no implicit model fallback. Keep personal ASR hotwords available, but offer draft review only after a dedicated model API is configured and report that state in settings.
 - Follow-up: compare free small models on real Chinese dictation, including name correction, meaning preservation, latency, and actual request limits before choosing an operator default.
 
+### 2026-09-29 — 个人语音整理需要可见的 API 配置入口
+
+- Source: direct user question after the small-model API change.
+- Observed friction or ask: settings did not show where to enter a model API key, so the personal trial could not be completed from the product surface.
+- Product implication: put supported provider choice and a personal API key field next to the voice-review toggle and hotwords. Show whether a key is saved without returning its value, and keep the feature off until the Person enables it.
+- Follow-up: verify that a new Person can configure a provider, save hotwords, preview a correction, and remove the provider from the same settings screen.
+
 ### YYYY-MM-DD — short title
 
 - Source:
