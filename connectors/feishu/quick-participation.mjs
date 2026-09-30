@@ -11,7 +11,7 @@ const MAX_CONTEXT_CHARACTERS = 5_000;
 const JEV_TIMEOUT_MS = 1_600;
 const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
 const JEV_MODEL = 'jev-1.13.0';
-const EXPRESSIVE_REACTIONS = Object.freeze({ praise: 'WOW', criticism: 'DULL' });
+const EXPRESSIVE_REACTIONS = Object.freeze({ praise: 'WOW', criticism: 'TOASTED' });
 
 export function buildFeishuSessionReactionContext(recent, { mentioned = false } = {}) {
   const lines = (Array.isArray(recent) ? recent : []).map(entry =>
@@ -80,7 +80,7 @@ export async function classifyFeishuQuickParticipation(context, {
         questions: {
           participation: {
             type: 'choice',
-            instructions: 'Decide whether the Feishu group assistant should send a useful reply to the newest message now. Read the whole recent discussion. Choose reply for a direct request to the assistant, an actionable correction or update to its current work, or a concrete contribution the assistant can make now. Choose silent for human-to-human conversation, acknowledgements, status reports without a request, repeated information, or a question already answered. A bare mention asks you to reconsider the preceding unanswered discussion. Do not treat every group message as a request. Judge the newest message in context, including Chinese text.'
+            instructions: 'Decide whether the Feishu group assistant should send a useful reply to the newest message now. Read the whole recent discussion and resolve what the newest message refers to, regardless of whether it @ mentions the assistant. Choose reply for a direct request, a concrete unanswered question about this assistant, its behavior, implementation, deployment or current work, or feedback that identifies a problem to investigate or fix. A follow-up such as "why did it react that way?", "how does Jev do this?", "can we roll this out?", "how many groups have this bot?" or "why did it stop replying?" needs an answer even without an @ mention. Bug reports like "that sentence was misread as criticism" and follow-up requests like "investigate it further" also need a reply when they refer to the assistant just discussed. Choose silent for human-to-human conversation, acknowledgements, status reports without a request, repeated information, a question already answered by a person, or a test phrase that merely names an emotion or mentions the assistant. A bare mention asks you to reconsider the preceding unanswered discussion; a mention alone does not authorize work. Judge the newest message in context, including Chinese text.'
               + (includeHandoff ? '' : ' A direct @ mention that only praises, criticizes, or rejects the assistant or its past answer, without asking for a new answer, explanation, or concrete fix, should be silent. The separate emotion question handles that reaction.'),
             criteria: {
               reply: 'The assistant should respond or act now; silence would miss a clear request or useful contribution.',
@@ -92,7 +92,7 @@ export async function classifyFeishuQuickParticipation(context, {
             instructions: 'Only for a newest message that will not start work, decide whether it clearly praises or compliments this assistant or its work, clearly criticizes or rejects this assistant or its work, or needs no reaction. Use the recent discussion to resolve what the message refers to. Ordinary thanks, acknowledgements, neutral updates, human-to-human discussion, ambiguous sentiment, sad news and another person\'s misfortune need no reaction. This question never decides whether to start work.',
             criteria: {
               praise: 'The newest message explicitly praises or compliments this assistant or its work. React with surprise (WOW).',
-              criticism: 'The newest message explicitly criticizes or rejects this assistant or its work. React with DULL (衰).',
+              criticism: 'The newest message explicitly criticizes or rejects this assistant or its work without asking for an explanation or fix. React with TOASTED (飞书表情「衰」).',
               none: 'No clear praise or criticism of this assistant or its work. Send no reaction.',
             },
           }, reactionOnly: {

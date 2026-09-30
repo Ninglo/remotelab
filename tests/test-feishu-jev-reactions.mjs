@@ -36,6 +36,12 @@ try {
   assert.equal(buildFeishuSessionConversationTarget(workSummary).rootId, base.messageId);
   assert.equal(resolveFeishuGroupSettings(config, workSummary).quickReactions, undefined,
     'a new Jev work Session must not inherit the old reaction directive prompt');
+  assert.doesNotMatch(resolveFeishuGroupSettings(config, workSummary).systemPrompt,
+    /THINKING|<feishu-reaction emoji=/,
+    'the new work Session must not be told to answer with a reaction');
+  assert.match(resolveFeishuGroupSettings(config, workSummary).systemPrompt,
+    /Keep replies in the same topic/);
+  assert.equal(resolveFeishuGroupSettings(config, workSummary).responseMode, 'all');
 
   const classified = await classifyFeishuQuickParticipation('Ada: 你这次做得真棒', {
     key: 'fixture', includeHandoff: false, fetchImpl: async (_url, request) => {
@@ -43,6 +49,8 @@ try {
       assert.deepEqual(Object.keys(questions.emotion.criteria), ['praise', 'criticism', 'none']);
       assert.deepEqual(Object.keys(questions.workMode.criteria), ['short', 'complex']);
       assert.match(questions.participation.instructions, /only praises, criticizes, or rejects/);
+      assert.match(questions.participation.instructions, /how many groups have this bot/);
+      assert.match(questions.participation.instructions, /mention alone does not authorize work/);
       return { ok: true, json: async () => ({ answers: {
       participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
       emotion: { choice: 'praise', probabilities: { praise: 0.96, criticism: 0.01, none: 0.03 } },
@@ -66,7 +74,7 @@ try {
   }
 
   for (const [choice, probability, expected] of [
-    ['criticism', 0.94, 'DULL'], ['none', 0.99, null], ['praise', 0.61, null],
+    ['criticism', 0.94, 'TOASTED'], ['none', 0.99, null], ['praise', 0.61, null],
   ]) {
     const verdict = await classifyFeishuQuickParticipation('Ada: 这次答得不对', {
       key: 'fixture', includeHandoff: false,
@@ -187,12 +195,24 @@ try {
     messageText: '你这次回答得很差', mentions: [{ openId: 'bot' }] }, 'test', {
       ...helpers, classifyJevReaction: async () => {
         effects.push('jev');
-        return { decision: 'silent', emojiType: 'DULL' };
+        return { decision: 'silent', emojiType: 'TOASTED' };
       },
     });
   assert.equal(mentionedCriticism.decision.participation, 'silent');
   assert.deepEqual(effects, ['observe:mentioned-criticism', 'jev',
-    'decision:silent:null:DULL', 'reaction:DULL']);
+    'decision:silent:null:TOASTED', 'reaction:TOASTED']);
+
+  effects.length = 0;
+  const testMention = await handleMessage(runtime, { ...base, messageId: 'test-mention',
+    messageText: '用户彻底怒了！', mentions: [{ openId: 'bot' }] }, 'test', {
+      ...helpers, classifyJevReaction: async () => {
+        effects.push('jev');
+        return { decision: 'unknown', reason: 'low_support', emojiType: null };
+      },
+    });
+  assert.equal(testMention.decision.participation, 'silent');
+  assert.deepEqual(effects, ['observe:test-mention', 'jev', 'decision:silent:null:null'],
+    'an uncertain @ mention must not force a work Session, topic or reaction');
 
   effects.length = 0;
   const onlyReaction = await handleMessage(runtime, { ...base, messageId: 'emoji-only',
@@ -206,7 +226,7 @@ try {
   assert.deepEqual(effects, ['observe:emoji-only', 'jev', 'decision:silent:null:WOW', 'reaction:WOW']);
 
   for (const [messageId, messageText, emojiType] of [
-    ['criticism', '你这次答得不对', 'DULL'],
+    ['criticism', '你这次答得不对', 'TOASTED'],
     ['neutral', '今天下午三点开会', null],
     ['thanks', '谢谢', null],
   ]) {
