@@ -1,3 +1,4 @@
+import { projectWorkboardTranscript } from '../lib/workboard-state.mjs';
 import {
   getMessageAttachments,
   stripAttachmentSavedPath,
@@ -7,6 +8,7 @@ import {
   rewriteAssistantLocalMarkdownImageTargets,
   stripAssistantArtifactDeliveryHints,
 } from './session-result-files.mjs';
+import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
 
 const HIDDEN_EVENT_TYPES = new Set(['reasoning', 'manager_context', 'tool_use', 'tool_result', 'file_change']);
 
@@ -113,12 +115,12 @@ function isIgnoredStatusEvent(event) {
 }
 
 function isHiddenEvent(event) {
-  return HIDDEN_EVENT_TYPES.has(event?.type);
+  return HIDDEN_EVENT_TYPES.has(event?.type) || event?.messageKind === 'execution_plan';
 }
 
 function isVisibleEvent(event) {
   if (!event || typeof event !== 'object') return false;
-  if (event.type === 'message') return true;
+  if (event.type === 'message') return event.messageKind !== 'execution_plan';
   if (event.type === 'context_barrier' || event.type === 'context_operation' || event.type === 'usage') return true;
   if (event.type === 'status') return !isIgnoredStatusEvent(event) && !!String(event.content || '').trim();
   return false;
@@ -245,6 +247,7 @@ function isWorkboardEvent(event) {
 }
 
 function coalesceWorkboardEvents(events = []) {
+  if (events.some(event => event.workboard)) return events;
   const firstIndex = events.findIndex(isWorkboardEvent);
   if (firstIndex < 0) return events;
   const latest = [...events].reverse().find(isWorkboardEvent);
@@ -331,6 +334,18 @@ function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard =
     }
   }
   const remainingEvents = bodyEvents.slice(visibleStart);
+  if (sessionRunning && remainingEvents.some(isFinalAssistantMessage)) {
+    let start = 0;
+    for (let index = 0; index < remainingEvents.length; index++) {
+      if (!isFinalAssistantMessage(remainingEvents[index])) continue;
+      if (index > start) target.push(buildThinkingBlockEvent(remainingEvents.slice(start, index), 'completed'));
+      pushVisibleEvent(target, remainingEvents[index], { localMarkdownImageRewriteMapBySeq });
+      start = index + 1;
+    }
+    if (start < remainingEvents.length) target.push(buildThinkingBlockEvent(remainingEvents.slice(start), 'running'));
+    if (deliveryEvent) target.push(deliveryEvent);
+    return;
+  }
   const lastHiddenIndex = sessionRunning ? remainingEvents.length - 1 : findLastHiddenEventIndex(remainingEvents);
   if (lastHiddenIndex >= 0) {
     target.push(buildThinkingBlockEvent(
@@ -353,7 +368,8 @@ export function buildSessionDisplayEvents(history = [], options = {}) {
   const displayEvents = [];
   let currentTurn = null;
 
-  for (const event of Array.isArray(history) ? history : []) {
+  const input = Array.isArray(history) ? history : [];
+  for (const event of options.exposeWorkboard ? projectWorkboardTranscript(input) : input) {
     if (event?.type === 'message' && event.role === 'user') {
       flushTurnInto(displayEvents, currentTurn, { ...options, sessionRunning: false });
       currentTurn = {

@@ -39,6 +39,19 @@ await fs.writeFile(
 );
 
 const { buildPrompt } = await import('../chat/session-manager.mjs');
+const { appendEvent } = await import('../chat/history.mjs');
+await appendEvent('existing-workboard', { type: 'message', role: 'assistant', source: 'workboard_checklist', runId: 'old-run',
+  content: '目标：原任务\n[ ] 交付 — 可读\n[ ] 验收 — 可查', workboard: {
+    taskId: 'stable-task', revision: 2, goal: '原任务', status: 'blocked', reason: '等待输入',
+    items: [{ id: 'a', title: '交付', condition: '可读', status: 'pending', evidenceRefs: [] },
+      { id: 'b', title: '验收', condition: '可查', status: 'pending', evidenceRefs: [] }],
+  } });
+const workboardPrompt = await buildPrompt('existing-workboard', {
+  id: 'existing-workboard', workboardPilot: true, systemPrompt: '',
+}, '继续原任务', 'codex', 'codex', null, { checklistGateReceipt: { status: 'decided', needsChecklist: false } });
+assert.match(workboardPrompt, /stable-task/);
+assert.match(workboardPrompt, /--workboard-file/);
+assert.match(workboardPrompt, /Jev gates only new checklist creation/);
 
 const baseSession = {
   systemPrompt: '',

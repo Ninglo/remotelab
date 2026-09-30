@@ -1307,6 +1307,7 @@ export async function handleControlRoutes({
           requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
           runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
           source: payload.source || 'assistant_message_api',
+          ...(payload.workboard ? { workboard: payload.workboard } : {}),
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         });
         writeJson(res, 201, {

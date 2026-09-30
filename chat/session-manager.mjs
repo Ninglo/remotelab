@@ -20,9 +20,12 @@ import {
 import { getJevRoutingSettings, resolveJevChecklistGate } from '../lib/jev-auto-router.mjs';
 import { isWorkboardOptedIn, isWorkboardTurnEnabled, loadWorkboardOptIns } from '../lib/workboard-opt-in.mjs';
 import { draftWorkboardChecklist } from '../lib/workboard-checklist.mjs';
+import { normalizeWorkboardUpdate, formatWorkboard, projectWorkboards } from '../lib/workboard-state.mjs';
+import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
+import { publishNativeFinalReplies, excludePublishedFinalReplies, prepareNativeFinalFiles } from './native-final-publication.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { join as joinRequestPath } from 'node:path';
@@ -729,6 +732,15 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   if (normalizedEvents.length > 0) {
     await appendEvents(sessionId, normalizedEvents);
     historyChanged = true;
+    if (manifest.inputMode === 'native') {
+      const record = await requests.byRunId(run.id);
+      await publishNativeFinalReplies(record, normalizedEvents, {
+        store: requests,
+        plan: normalizeSourceDeliveryPlan(record?.deliveryPlan || record?.options?.sourceDelivery),
+        session: await findSessionMeta(sessionId),
+        prepareFinal: event => prepareNativeFinalFiles(record, event, { run, manifest }),
+      });
+    }
   }
 
   // Detect if the adapter emitted a "completed" status in this delta — meaning
@@ -963,11 +975,30 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
 
 export { resolveSavedAttachments, saveAttachments } from './session-attachments.mjs';
 
+const runWorkboardMutation = createKeyedTaskQueue();
 export async function appendAssistantMessage(sessionId, text = '', images = [], options = {}) {
+  if (options.workboard || options.source === 'workboard_checklist') {
+    return runWorkboardMutation(sessionId, () => appendAssistantMessageUnlocked(sessionId, text, images, options));
+  }
+  return appendAssistantMessageUnlocked(sessionId, text, images, options);
+}
+async function appendAssistantMessageUnlocked(sessionId, text = '', images = [], options = {}) {
   let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
 
-  const normalizedText = typeof text === 'string' ? text.trim() : '';
+  let normalizedText = typeof text === 'string' ? text.trim() : '';
+  let workboard = null;
+  if (options.workboard || options.source === 'workboard_checklist') {
+    const history = await loadHistory(sessionId, { includeBodies: true });
+    const normalized = normalizeWorkboardUpdate(options.workboard, { history, runId: options.runId, text: normalizedText });
+    workboard = normalized.board;
+    if (normalized.duplicate) {
+      const event = [...history].reverse().find(event => event.workboard?.taskId === workboard.taskId && event.workboard.revision === workboard.revision);
+      return { event: stripEventAttachmentSavedPaths(event), session: await enrichSessionMeta(session) };
+    }
+    normalizedText = formatWorkboard(workboard);
+    options = { ...options, source: 'workboard_checklist' };
+  }
   const savedImages = options.preSavedAttachments?.length > 0
     ? sanitizeRequestAttachments(options.preSavedAttachments)
     : await saveAttachments(images);
@@ -978,6 +1009,7 @@ export async function appendAssistantMessage(sessionId, text = '', images = [], 
   }
 
   const event = await appendEvent(sessionId, messageEvent('assistant', normalizedText, buildMessageAttachmentRefs(savedImages), {
+    ...(workboard ? { workboard } : {}),
     ...(typeof options.source === 'string' && options.source.trim() ? { source: options.source.trim() } : {}),
     ...(typeof options.requestId === 'string' && options.requestId.trim() ? { requestId: options.requestId.trim() } : {}),
     ...(typeof options.responseId === 'string' && options.responseId.trim() ? { responseId: options.responseId.trim() } : {}),
@@ -1372,13 +1404,16 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
   const checklistGate = session?.workboardPilot === true ? options.checklistGateReceipt : null;
-  if (checklistGate?.status === 'decided' && checklistGate.needsChecklist === true) {
-    slots.push(createModelContextSlot(
-      'session_workboard',
-      'Visible checklist for this opt-in Session',
-      options.workboardDraft
-        ? 'Jev selected a checklist and code already published the user-supplied goal and acceptance lines. Do not publish another initial list. Update that same list with `remotelab assistant-message --source workboard_checklist --text ...` only when a deliverable is truly done; send the final result separately.'
-        : 'Jev selected a visible checklist. In this same Run, derive 2–5 short deliverables and publish once with `remotelab assistant-message --source workboard_checklist --text ...`. Use one `目标：` line, then one `[ ] 标题 — 可核验条件` line per deliverable. Update the full list with `[x]` only when a result exists. Keep its wording stable; give the final result separately. Formatting and Feishu rendering are handled by code. Do not make a separate planning model call or watcher.',
+  const optedIn = session?.workboardPilot === true
+    && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
+  const priorBoards = optedIn ? projectWorkboards(await loadHistory(session.id, { includeBodies: true })).slice(-3) : [];
+  if ((checklistGate?.status === 'decided' && checklistGate.needsChecklist === true) || priorBoards.length) {
+    slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
+      'The Harness owns planning and semantic verification. For new work, publish a 2–5 item deliverable list immediately, before investigation, using one 目标： line and [ ] title — verifiable acceptance lines with `remotelab assistant-message --source workboard_checklist --text ...`. If code already published the supplied list, do not create another. Internal execution plans are separate. '
+      + 'For updates, use `remotelab assistant-message --workboard-file <local-json-file>` with {taskId,revision,goal,status,reason,items:[{id,title,condition,status,evidenceRefs:[Session-event-seq]}]}. Read `/api/sessions/$REMOTELAB_SESSION_ID/events?filter=all` via `remotelab api GET` for the latest revision and evidence. Keep IDs and criteria stable; use the original taskId across Runs when continuing the same task. A new task needs a new taskId; within an existing Run, create its initial JSON snapshot with a new taskId rather than reuse the default text task. Jev gates only new checklist creation, never updates to an existing task. '
+      + 'After EACH deliverable passes acceptance, immediately submit the full updated snapshot. done needs a reference to actual verification results; references existing in history are checked by code, their semantic adequacy is your responsibility. Retracting done or changing scope needs a reason and fresh verification. Task statuses: running, partial, blocked, failed, cancelled, completed; item statuses: pending, running, done, blocked, failed, cancelled. Unfinished outcomes need reasons and must still get a normal final explanation. Do not wait for all items to be done. Send your final answer separately; commentary and tool completion never imply task success. A task can remain unfinished after this Run ends. Do not start a separate planner or watcher. '
+      + (options.workboardDraft ? 'Code has published the supplied initial list. ' : '')
+      + (priorBoards.length ? `Recent task snapshots (resume only if the current user request continues that task): ${JSON.stringify(priorBoards.map(task => task.board))}` : ''),
     ));
   }
   const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
@@ -1631,7 +1666,12 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
     && record.options.sourceContext?.feishuExplicitMention !== true;
   const ambientWorkStarted = runHistory.some(event => event?.type === 'tool_use' && event.role === 'assistant');
-  const deliveryPayload = run.state === 'completed' ? payload : {
+  const pendingPayload = record.streamedFinalReplyIds?.length
+    ? buildReplyPublicationPayload(excludePublishedFinalReplies(runHistory, record.streamedFinalReplyIds), run, {
+        session, fullHistory: history, includeSessionEntry: false,
+      })
+    : payload;
+  const deliveryPayload = run.state === 'completed' ? pendingPayload : {
     text: run.state === 'cancelled' ? '任务已取消。'
       : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`,
     attachments: [],
@@ -3210,10 +3250,10 @@ async function ensureRequestInput(record, manifest) {
   if (record.options.workboardDraft && !events.some(event => event.type === 'message'
       && event.role === 'assistant' && event.source === 'workboard_checklist'
       && event.requestId === record.requestId)) {
-    await appendEvent(record.sessionId, messageEvent('assistant', record.options.workboardDraft, [], {
+    await appendAssistantMessage(record.sessionId, record.options.workboardDraft, [], {
       source: 'workboard_checklist', requestId: record.requestId,
       responseId: record.responseId, runId: record.runId,
-    }));
+    });
   }
   const visibleModelContext = typeof manifest.modelContext === 'string' && manifest.modelContext.trim()
     ? manifest.modelContext.trim()

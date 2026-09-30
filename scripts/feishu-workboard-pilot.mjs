@@ -7,6 +7,7 @@ import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import {
   collectFeishuWorkboardCycles,
   collectFeishuGroupWorkboardCycles,
+  expandFeishuWorkboardUpdates,
   isFeishuWorkboardGroupSession,
   isFeishuWorkboardPilotSession,
   publishFeishuWorkboardCycle,
@@ -27,6 +28,7 @@ if (!pilot.sessionId || !pilot.chatId || !pilot.senderOpenId || !pilot.sourceRou
 }
 pilot.cards ||= [];
 pilot.groupSessions ||= {};
+let migrating = pilot.protocolVersion !== 2;
 if (pilot.groupEnabled === true && !pilot.personId) {
   throw new Error('Group workboard pilot requires an opted-in Person');
 }
@@ -80,6 +82,7 @@ let stopped = false;
 let syncing = false;
 const pending = new Set();
 const ignored = new Set();
+const retries = new Map();
 let socket = null;
 let reconnectTimer = null;
 let reconnectMs = 250;
@@ -88,7 +91,11 @@ async function syncPrivate() {
   const session = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`)).session;
   if (!isFeishuWorkboardPilotSession(session, pilot)) return;
   const events = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}/events?filter=all`)).events;
-  for (const cycle of collectFeishuWorkboardCycles(events, pilot)) {
+  if (!Number.isInteger(pilot.protocolAfterSeq)) {
+    pilot.protocolAfterSeq = migrating ? Math.max(0, ...events.map(event => event.seq || 0)) : 0;
+    await persist();
+  }
+  for (const cycle of expandFeishuWorkboardUpdates(collectFeishuWorkboardCycles(events, pilot), events)) {
     if (stopped || expired()) { stop(); break; }
     const result = await publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage });
     if (result) console.log(`[feishu-workboard] ${result.action} session=${pilot.sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
@@ -114,7 +121,13 @@ async function syncGroup(sessionId) {
   const groupPilot = { ...pilot, sessionId, chatId: target.chatId,
     startedAfterSeq: 0, cards: stored.cards };
   const events = (await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/events?filter=all`)).events;
-  for (const cycle of collectFeishuGroupWorkboardCycles(events, groupPilot, session)) {
+  if (!Number.isInteger(stored.protocolAfterSeq)) {
+    // Upgrade fence: preserve old cards without replaying historical revisions.
+    stored.protocolAfterSeq = migrating ? Math.max(0, ...events.map(event => event.seq || 0)) : 0;
+    await persist();
+  }
+  groupPilot.protocolAfterSeq = stored.protocolAfterSeq;
+  for (const cycle of expandFeishuWorkboardUpdates(collectFeishuGroupWorkboardCycles(events, groupPilot, session), events)) {
     if (stopped || expired()) { stop(); break; }
     const result = await publishFeishuWorkboardCycle(cycle, { pilot: groupPilot, app, persist,
       verifyMessage: (messageId, options) => verifyMessage(messageId, options, target.chatId) });
@@ -148,8 +161,18 @@ async function drain() {
     while (pending.size && !stopped) {
       const sessionId = pending.values().next().value;
       pending.delete(sessionId);
-      try { await syncOne(sessionId); }
-      catch (error) { console.error(`[feishu-workboard] sync ${sessionId}: ${error.message}`); }
+      try {
+        await syncOne(sessionId);
+        if (retries.has(sessionId)) clearTimeout(retries.get(sessionId));
+        retries.delete(sessionId);
+      } catch (error) {
+        console.error(`[feishu-workboard] sync ${sessionId}: ${error.message}`);
+        // Patches are idempotent. An uncertain creation needs inspection rather
+        // than another send; the publisher durably fences that outcome.
+        if (!/outcome is unknown/.test(error.message) && !retries.has(sessionId)) {
+          retries.set(sessionId, setTimeout(() => { retries.delete(sessionId); enqueue(sessionId); }, 2000));
+        }
+      }
     }
   } finally { syncing = false; }
 }
@@ -163,6 +186,7 @@ function enqueue(sessionId) {
 function stop() {
   stopped = true;
   if (reconnectTimer) clearTimeout(reconnectTimer);
+  for (const timer of retries.values()) clearTimeout(timer);
   socket?.close();
 }
 process.once('SIGTERM', stop);
@@ -216,4 +240,7 @@ function scheduleReconnect() {
 
 await syncPrivate(); // Read state before waiting for notifications.
 for (const id of await discoverGroupSessions()) await syncGroup(id);
+pilot.protocolVersion = 2;
+migrating = false;
+await persist();
 connect(await remote.ensureAuthCookie());

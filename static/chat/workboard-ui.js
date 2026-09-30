@@ -40,6 +40,12 @@ function sessionWorkboardSnapshotInfo(events) {
 
 function projectSessionWorkboardTranscriptEvents(sessionId, events) {
   if (sessionWorkboardSession?.id !== sessionId || sessionWorkboardSession.workboardPilot !== true) return events;
+  if (events.some(event => event.workboard)) {
+    // The server already projects task identities, outcomes and revisions.
+    return events.filter(event => event.messageKind !== "todo_list").map(event => event.workboard
+      ? { ...event, workboardCurrentTurn: event.workboardLastRunId === (sessionWorkboardRun?.id || sessionWorkboardSession?.activeRunId) }
+      : event);
+  }
   const projected = [];
   let turn = [];
   const flushTurn = () => {
@@ -145,7 +151,7 @@ function sessionWorkboardRunLabel() {
 
 function syncSessionWorkboardRunLabel() {
   const badges = document.querySelectorAll?.('.session-workboard-inline[data-current-turn="true"] .session-workboard-run-state') || [];
-  for (const badge of badges) badge.textContent = sessionWorkboardRunLabel();
+  for (const badge of badges) if (!badge.dataset.taskState) badge.textContent = sessionWorkboardRunLabel();
 }
 
 function scheduleSessionWorkboardStallCheck() {
@@ -214,7 +220,10 @@ function updateSessionWorkboardEvents(sessionId, events) {
 }
 
 function renderSessionWorkboardMessage(container, event) {
-  const { taskTitle, description, items } = parseSessionChecklistContent(event.content);
+  const { taskTitle, description, items } = event.workboard ? {
+    taskTitle: event.workboard.goal, description: event.workboard.reason,
+    items: event.workboard.items.map(item => ({ ...item, done: item.status === "done", detail: item.condition })),
+  } : parseSessionChecklistContent(event.content);
   const card = document.createElement("section");
   card.className = "session-workboard-inline";
   card.setAttribute("aria-label", "交付清单");
@@ -261,10 +270,11 @@ function renderSessionWorkboardMessage(container, event) {
     list.appendChild(row);
   }
   card.appendChild(list);
-  if (event.workboardCurrentTurn) {
+  if (event.workboard || event.workboardCurrentTurn) {
     const status = document.createElement("div");
     status.className = "session-workboard-run-state";
-    status.textContent = sessionWorkboardRunLabel();
+    if (event.workboard) status.dataset.taskState = event.workboard.status;
+    status.textContent = event.workboardStatusLabel || sessionWorkboardRunLabel();
     card.appendChild(status);
   }
   container.appendChild(card);

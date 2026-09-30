@@ -4,6 +4,14 @@ import { createCodexAdapter } from '../chat/adapters/codex.mjs';
 
 const adapter = createCodexAdapter();
 
+for (const phase of ['commentary', 'final_answer']) {
+  const [message] = adapter.parseLine(JSON.stringify({ type: 'item.completed', item: {
+    id: `message-${phase}`, type: 'agent_message', text: phase, phase,
+  } }));
+  assert.equal(message.phase, phase, 'native reply boundaries survive normalization');
+  assert.equal(message.providerMessageId, `message-${phase}`, 'completed message identity survives replay');
+}
+
 const preflightActivity = adapter.parseLine(JSON.stringify({
   type: 'remotelab.activity',
   presentation: 'reasoning',

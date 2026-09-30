@@ -4,6 +4,7 @@ import {
   buildFeishuWorkboardCard,
   collectFeishuGroupWorkboardCycles,
   collectFeishuWorkboardCycles,
+  expandFeishuWorkboardUpdates,
   isFeishuWorkboardGroupSession,
   isFeishuWorkboardPilotSession,
   publishFeishuWorkboardCycle,
@@ -50,12 +51,13 @@ test('group cards require the opted-in Person and her own source Run', () => {
     groupUser(3, 'run-zhang', 'open-zhang', 'message-zhang'), groupList(4, 'run-zhang'),
     groupUser(5, 'run-other-2', 'open-other', 'message-other-2'), groupList(6, 'run-other-2'),
     groupList(7, 'run-zhang', true),
-    { seq: 8, type: 'message', role: 'assistant', runId: 'run-zhang', content: '结果' },
+    { seq: 8, type: 'message', role: 'assistant', runId: 'run-zhang', phase: 'final_answer', content: '结果' },
   ];
   assert.equal(isFeishuWorkboardGroupSession(groupSession, groupPilot), true);
   assert.equal(isFeishuWorkboardGroupSession({ ...groupSession, groupFeed: true }, groupPilot), false);
   assert.equal(isFeishuWorkboardGroupSession({ ...groupSession, workboardOptInPersonId: 'other' }, groupPilot), false);
-  assert.deepEqual(collectFeishuGroupWorkboardCycles(events, groupPilot, groupSession), [{
+  assert.deepEqual(collectFeishuGroupWorkboardCycles(events, groupPilot, groupSession)
+    .map(({ anchorSeq, latestSeq, content, closed, replyMessageId }) => ({ anchorSeq, latestSeq, content, closed, replyMessageId })), [{
     anchorSeq: 4, latestSeq: 7, content: groupList(7, 'run-zhang', true).content,
     closed: true, replyMessageId: 'message-zhang',
   }]);
@@ -64,7 +66,7 @@ test('group cards require the opted-in Person and her own source Run', () => {
 test('steering keeps one card while a final result closes the cycle', () => {
   const cycles = collectFeishuWorkboardCycles([
     user(9), list(10), user(11), list(12), user(13), list(14, true),
-    { seq: 15, type: 'message', role: 'assistant', content: '结果' },
+    { seq: 15, type: 'message', role: 'assistant', phase: 'final_answer', content: '结果' },
     user(16), list(17),
   ], pilot);
   assert.deepEqual(cycles.map(x => [x.anchorSeq, x.latestSeq, x.closed]), [[12, 14, true], [17, 17, false]]);
@@ -81,6 +83,62 @@ test('card renderer keeps one item per row and updates its progress', () => {
   const complete = buildFeishuWorkboardCard('目标：交付两项结果\n[x] 排序 — 日期递增。\n[x] 核验 — 每项可查。');
   assert.equal(complete.header.template, 'green');
   assert.equal(complete.body.elements[1].content, '**2/2 · 已完成**');
+});
+
+test('progress commentary and each verified item keep one group card across replay', async () => {
+  const groupPilot = { ...pilot, personId: 'zhang', groupEnabled: true, chatId: 'group-1',
+    sessionId: 'group-session', startedAfterSeq: 0, cards: [] };
+  const groupSession = { workboardPilot: true, workboardOptInPersonId: 'zhang', conversation: {
+    connector: 'feishu', sourceRouteId: 'bot-2', target: {
+      chatType: 'group', chatId: 'group-1', conversationKind: 'thread',
+    },
+  } };
+  const events = [{ seq: 1, type: 'message', role: 'user', runId: 'run-task', sourceContext: {
+    connector: 'feishu', sourceRouteId: 'bot-2', chatType: 'group', chatId: 'group-1',
+    messageId: 'om-task', sender: { openId: 'open-zhang' },
+  } }];
+  const calls = [];
+  const options = { pilot: groupPilot, persist: async () => {}, verifyMessage: async () => {},
+    app: { im: { v1: { message: {
+      reply: async () => { calls.push('create'); return { code: 0, data: { message_id: 'om-one-card' } }; },
+      patch: async request => { assert.equal(request.path.message_id, 'om-one-card'); calls.push('patch'); return { code: 0 }; },
+    } } } },
+  };
+  let seq = 2;
+  for (let done = 0; done <= 3; done++) {
+    events.push({ seq: seq++, type: 'message', role: 'assistant', runId: 'run-task',
+      source: 'workboard_checklist', content: '目标：逐项交付\n'
+        + [1, 2, 3].map(i => `[${i <= done ? 'x' : ' '}] 项目${i} — 已核验`).join('\n') });
+    const cycles = collectFeishuGroupWorkboardCycles(events, groupPilot, groupSession);
+    assert.equal(cycles.length, 1);
+    await publishFeishuWorkboardCycle(cycles[0], options);
+    // Older histories have no phase; neither form may close or split a card.
+    events.push({ seq: seq++, type: 'message', role: 'assistant', runId: 'run-task',
+      ...(done % 2 ? { phase: 'commentary' } : {}), content: '有新的核验结果' });
+  }
+  events.push({ seq: seq++, type: 'message', role: 'assistant', runId: 'run-task',
+    phase: 'final_answer', content: '最终结果' });
+  const cycles = collectFeishuGroupWorkboardCycles(events, groupPilot, groupSession);
+  assert.equal(cycles.length, 1);
+  assert.equal(cycles[0].closed, true);
+  assert.equal(await publishFeishuWorkboardCycle(cycles[0], options), null);
+  assert.deepEqual(calls, ['create', 'patch', 'patch', 'patch']);
+  assert.equal(groupPilot.cards.length, 1);
+  const replayPilot = { ...groupPilot, cards: [{ anchorSeq: cycles[0].anchorSeq,
+    messageId: 'om-one-card', latestSeq: cycles[0].anchorSeq }] };
+  calls.length = 0;
+  for (const update of expandFeishuWorkboardUpdates(cycles, events)) {
+    await publishFeishuWorkboardCycle(update, { ...options, pilot: replayPilot });
+  }
+  assert.deepEqual(calls, ['patch', 'patch', 'patch'], 'recovery replays each unseen item update on the original card');
+});
+
+test('private progress commentary does not split a checklist', () => {
+  const cycles = collectFeishuWorkboardCycles([
+    user(11), list(12), { seq: 13, type: 'message', role: 'assistant', phase: 'commentary', content: '进度' },
+    list(14, true), { seq: 15, type: 'message', role: 'assistant', phase: 'final_answer', content: '结果' },
+  ], pilot);
+  assert.deepEqual(cycles.map(cycle => [cycle.anchorSeq, cycle.latestSeq, cycle.closed]), [[12, 14, true]]);
 });
 
 test('create once, edit the same message, and fence uncertain sends', async () => {
