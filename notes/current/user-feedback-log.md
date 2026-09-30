@@ -951,6 +951,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: show the latest checklist revision inline in its turn on both viewport sizes, keep one row per deliverable, and place the final answer after it. Preserve raw revisions for audit without rendering them as separate cards.
 - Follow-up: verify the current Session on mobile and desktop after fresh load; confirm a second update changes the same visible checklist and other Sessions retain their normal transcript.
 
+### 2026-09-30 — 清单用目标开头，真实进度与思考都应可见
+
+- Source: direct follow-up during the single-Session checklist pilot.
+- Observed friction or ask: the Person asked for `目标：` directly above the deliverables, a real state change in the same checklist, and an expandable Thinking block. A steering message during unfinished work started a new Run and exposed a gap in per-turn checklist coalescing.
+- Product implication: coalesce checklist revisions across steering messages until the result closes the work, keep one expandable Thinking block per user turn, and let WebSocket invalidation refresh the inline checklist after a genuine update.
+- Follow-up: verify the current Session receives an invalidation, projects one updated card, and loads its Thinking event range; the already-open browser tab may need one refresh to load changed JavaScript.
+
 ### YYYY-MM-DD — short title
 
 - Source:
