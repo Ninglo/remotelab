@@ -36,6 +36,7 @@ export function createSessionTurnCompletionHelpers(services) {
     isTerminalRunState,
     listRunIds,
     loadHistory,
+    loadSessionsMeta,
     loadReplySelfCheckTurnContext,
     maybeApplyAssistantTaskCard,
     maybeAutoCompact,
@@ -160,9 +161,14 @@ export function createSessionTurnCompletionHelpers(services) {
   }
 
   async function resumePendingCompletionTargets() {
+    const targetSessions = new Set((await loadSessionsMeta())
+      .filter(session => session?.completionTargets?.length)
+      .map(session => session.id));
+    if (!targetSessions.size) return;
     for (const runId of await listRunIds()) {
       const run = await getRun(runId);
       if (!run || !isTerminalRunState(run.state)) continue;
+      if (!targetSessions.has(run.sessionId)) continue;
       const session = await getSession(run.sessionId);
       if (!session?.completionTargets?.length) continue;
       const manifest = await getRunManifest(runId);

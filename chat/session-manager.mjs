@@ -1713,6 +1713,7 @@ const {
   isTerminalRunState,
   listRunIds,
   loadHistory,
+  loadSessionsMeta,
   loadReplySelfCheckTurnContext,
   maybeApplyAssistantTaskCard,
   maybeAutoCompact,
