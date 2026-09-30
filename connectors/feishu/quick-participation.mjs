@@ -102,6 +102,13 @@ export async function classifyFeishuQuickParticipation(context, {
               yes: 'The sender explicitly wants only a reaction on this message.',
               no: 'The sender has not explicitly limited the assistant to a reaction.',
             },
+          }, workMode: {
+            type: 'choice',
+            instructions: 'Only if the participation answer is reply, decide where the work belongs. Choose short only when this assistant can answer accurately and completely in one brief group message using existing context, without tools, research, files, or a separate work Session. Choose complex for investigation, coding, multi-step work, uncertain facts needing verification, reports, or any task that needs tools or a dedicated Session. If in doubt choose complex. This question never changes whether to start work.',
+            criteria: {
+              short: 'A brief, complete answer belongs in the existing group timeline Session and mainline.',
+              complex: 'The task needs a new Feishu Thread and a separate work Session.',
+            },
           } } : {}),
           ...(includeHandoff ? { projectHandoff: {
             type: 'choice',
@@ -136,10 +143,15 @@ export async function classifyFeishuQuickParticipation(context, {
     const emotionProbability = Number(emotion?.probabilities?.[emotionChoice]);
     const emojiType = Number.isFinite(emotionProbability) && emotionProbability >= 0.8
       ? EXPRESSIVE_REACTIONS[emotionChoice] || null : null;
+    const workModeAnswer = result?.answers?.workMode;
+    const workMode = !includeHandoff && decision === 'reply' && !uncertain
+      && workModeAnswer?.choice === 'short'
+      && Number(workModeAnswer.probabilities?.short) >= 0.8 ? 'short' : 'complex';
     return {
       decision: uncertain ? 'unknown' : decision,
       reactionOnly,
       emojiType,
+      ...(!includeHandoff ? { workMode } : {}),
       handoffDecision,
       handoffProbability: Number.isFinite(offerProbability) ? offerProbability : null,
       ...(uncertain ? { reason: 'low_support' } : {}),

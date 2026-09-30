@@ -976,6 +976,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: enable the checklist judgment on only his bound private Session, mirror checklist revisions by editing one Bot message, and leave the existing final source delivery as a separate reply. Keep Thinking inside RemoteLab because Feishu chat text has no native expandable Thinking block.
 - Follow-up: validate a real multi-step Feishu request, one message ID across revisions, final result delivery, and other private chats remaining unchanged.
 
+### 2026-09-30 — 试验群开工后仍需分短回复和复杂任务
+
+- Source: direct correction after observing a work reply without a dedicated topic.
+- Observed friction or ask: routing every admitted reply into a Thread loses brief mainline answers, while routing complex work from the group Session does not create a separate work Session.
+- Product implication: Jev first decides whether to work, then selects short mainline work in the existing group Session or complex work in a new Thread and Session. For no-work messages, retain only explicit praise (`WOW`), explicit criticism (`DULL`), or silence.
+- Follow-up: verify both work paths and all three no-work outcomes with fresh messages in a pilot group; inspect Feishu delivery receipts and Session bindings.
+
 ### YYYY-MM-DD — short title
 
 - Source:

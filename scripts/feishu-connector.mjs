@@ -96,7 +96,7 @@ import { normalizeFeishuReplyPolicy } from '../connectors/feishu/reply-policy.mj
 import {
   applyFeishuReplyRouting,
   buildFeishuRequestDeliveryTarget,
-  buildFeishuWorkThreadDeliveryTarget,
+  buildFeishuLegacyGroupWorkThreadTarget,
   buildFeishuSessionConversationTarget,
   buildFeishuSessionExternalTriggerId,
   isFeishuThreadConversation,
@@ -979,7 +979,7 @@ async function loadFeishuContextBoundary(requester, sessionId, summary) {
 
 async function submitRemoteLabRequest(runtime, summary, {
   prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
-  workReplyInThread = false,
+  observedRecent = null, legacyGroupWorkThread = false,
 } = {}) {
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   if (prepared) {
@@ -1098,9 +1098,16 @@ async function submitRemoteLabRequest(runtime, summary, {
       return null;
     }),
   ]);
+  const groupObservationContext = Array.isArray(observedRecent) ? {
+    messages: observedRecent.slice(0, -1)
+      .map(entry => ({ sender: entry.sender, time: new Date(entry.time || Date.now()).toISOString(), text: entry.text }))
+      .filter(entry => entry.sender && entry.text),
+  } : null;
   const messageSummary = {
     ...effectiveSummary,
-    ...(conversationContext ? { conversationContext } : {}),
+    ...(groupObservationContext?.messages.length
+      ? { conversationContext: groupObservationContext }
+      : conversationContext ? { conversationContext } : {}),
     ...(linkedProjectContext ? { linkedProjectContext } : {}),
     ...(attachmentResolution.failures.length > 0
       ? { attachmentDownloadFailures: attachmentResolution.failures }
@@ -1109,8 +1116,8 @@ async function submitRemoteLabRequest(runtime, summary, {
   // Session identity follows main-vs-thread topology. Each request still owns
   // an immutable delivery snapshot so delayed replies return to the location
   // selected for that inbound message.
-  const requestDeliveryTarget = workReplyInThread
-    ? buildFeishuWorkThreadDeliveryTarget(messageSummary)
+  const requestDeliveryTarget = legacyGroupWorkThread
+    ? buildFeishuLegacyGroupWorkThreadTarget(messageSummary)
     : buildFeishuRequestDeliveryTarget(messageSummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
@@ -1195,11 +1202,13 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       ? 'reply' : 'silent';
     const emojiType = participation === 'reply' ? 'OnIt'
       : ['WOW', 'DULL'].includes(verdict?.emojiType) ? verdict.emojiType : null;
+    const workMode = participation === 'reply'
+      ? (verdict?.workMode === 'short' ? 'short' : 'complex') : null;
     const saved = await (helpers.recordJevDecision || ((sessionId, sourceMessageId, value) =>
       requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(sessionId)}/observations/decision`, {
         method: 'POST', body: { sourceMessageId, ...value },
       })))(sessionId, summary.messageId, {
-      participation, emojiType, reason: verdict?.reason || '',
+      participation, emojiType, workMode, reason: verdict?.reason || '',
     });
     if (saved?.response && !saved.response.ok) throw new Error(saved.json?.error || 'Unable to record Jev decision');
     decision = saved?.json?.decision || saved?.decision;
@@ -1208,9 +1217,15 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
 
   let workReceipt = null;
   if (decision.participation === 'reply') {
+    const legacyWork = !['short', 'complex'].includes(decision.workMode);
+    const complexWork = decision.workMode === 'complex';
+    const workSummary = complexWork
+      ? { ...summary, replyModeOverride: 'thread', startThread: true }
+      : summary;
     workReceipt = await (helpers.submitRemoteLabRequest || ((runtime, summary, options) =>
-      submitRemoteLabRequest(runtime, summary, options)))(runtime, summary,
-      { skipUserMessage: true, workReplyInThread: true });
+      submitRemoteLabRequest(runtime, summary, options)))(runtime, workSummary,
+      complexWork ? { observedRecent: observation.recent }
+        : { skipUserMessage: true, ...(legacyWork ? { legacyGroupWorkThread: true } : {}) });
   }
   const delivery = decision.emojiType
     ? await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
@@ -1218,7 +1233,8 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     : null;
   return { sessionId, externalTriggerId, decision,
     ...(delivery ? { deliveryId: delivery.id } : {}),
-    ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId } : {}) };
+    ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId,
+      workSessionId: workReceipt.sessionId } : {}) };
 }
 
 async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
