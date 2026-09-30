@@ -59,6 +59,7 @@ try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
   const result = await getModelsForTool('codex');
   const hardcodedModelIds = [
+    'gpt-6.1-sol',
     'gpt-6-sol',
     'gpt-6-luna',
     'gpt-5.6-sol',
@@ -74,8 +75,8 @@ try {
     'configured Jev is the default for new Codex selections',
   );
   assert.deepEqual(
-    result.models.slice(0, 5).map((model) => model.id),
-    ['auto', 'gpt-6-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-5.6-sol'],
+    result.models.slice(0, 6).map((model) => model.id),
+    ['auto', 'gpt-6-sol', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-5.6-sol'],
     'Codex should expose Jev auto first followed by the current model catalog',
   );
   assert.deepEqual(result.models[0].reasoning, { kind: 'none', label: 'Thinking' });
@@ -88,6 +89,8 @@ try {
     'Astra must remain available for explicit SOTA sessions');
   assert.equal(result.models.find(model => model.id === 'gpt-6-sol').defaultEffort, 'low',
     'the product-default model should keep the product effort default');
+  assert.deepEqual(result.models.find(model => model.id === 'gpt-6.1-sol').effortLevels,
+    ['low', 'medium', 'high', 'xhigh', 'max'], 'GPT-6.1 Sol must not advertise none or ultra');
   assert.deepEqual(result.effortLevels, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
   assert.deepEqual(result.reasoning, {
     kind: 'enum',
