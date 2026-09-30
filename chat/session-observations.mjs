@@ -26,6 +26,7 @@ async function ensureDecisionEvent(sessionId, sourceMessageId, key, record) {
     sourceMessageId,
     participation: record.decision.participation, emojiType: record.decision.emojiType,
     ...(record.decision.workMode ? { workMode: record.decision.workMode } : {}),
+    ...(record.decision.contextSources ? { contextSources: record.decision.contextSources } : {}),
   })).seq;
   return store.mutate(key, current => ({ ...current, decisionEventSeq }));
 }
@@ -107,6 +108,12 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
         participation, emojiType: emojiType || null, workMode: workMode || null,
         reason: trim(proposed?.reason),
         decidedAt: new Date().toISOString(),
+        ...(Array.isArray(proposed.contextSources) ? { contextSources: proposed.contextSources
+          .filter(source => source?.kind === 'daily_report' && /^\d{4}-\d{2}-\d{2}$/.test(source.date)
+            && /^[a-f0-9]{64}$/.test(source.sha256)).slice(0, 3).map(source => ({
+            kind: 'daily_report', date: source.date, sha256: source.sha256,
+            url: trim(source.url).slice(0, 1000), updatedAt: trim(source.updatedAt).slice(0, 40),
+          })) } : {}),
       };
       record = await store.mutate(key, current => ({ ...current, decision }));
     }
