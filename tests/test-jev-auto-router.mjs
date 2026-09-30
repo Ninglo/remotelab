@@ -58,7 +58,7 @@ function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
 test('five service tiers map to fixed model and effort profiles', () => {
   assert.deepEqual(
     (({ model, effort }) => ({ model, effort }))(applyJevAutoPolicy(answer('quick'))),
-    { model: 'gpt-6-sol', effort: 'low' },
+    { model: 'gpt-6.1-sol', effort: 'low' },
   );
   assert.deepEqual(
     (({ tool, model, effort }) => ({ tool, model, effort }))(applyJevAutoPolicy(answer('sota'))),
@@ -66,11 +66,11 @@ test('five service tiers map to fixed model and effort profiles', () => {
   );
   assert.deepEqual(
     (({ tool, model, effort }) => ({ tool, model, effort }))(applyJevAutoPolicy(answer('quality'))),
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'xhigh' },
+    { tool: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' },
   );
   assert.deepEqual(
     (({ model, effort }) => ({ model, effort }))(applyJevAutoPolicy(answer('balanced'))),
-    { model: 'gpt-6-sol', effort: 'medium' },
+    { model: 'gpt-6.1-sol', effort: 'medium' },
   );
   assert.deepEqual(
     (({ model, effort }) => ({ model, effort }))(applyJevAutoPolicy(answer('economy'))),
@@ -113,7 +113,7 @@ test('tier profiles are configurable while invalid fields keep safe defaults', (
     economy: { model: '', effort: 'invalid' },
   });
   assert.deepEqual(profiles, {
-    quick: { model: 'gpt-6-sol', effort: 'low' },
+    quick: { model: 'gpt-6.1-sol', effort: 'low' },
     sota: { model: 'frontier', effort: 'xhigh' },
     quality: { model: 'future-sota', effort: 'high' },
     balanced: { model: 'sweet-spot', effort: 'medium' },

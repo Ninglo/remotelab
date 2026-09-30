@@ -943,7 +943,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       && typeof getActiveRuntimeModeUi === "function"
       && getActiveRuntimeModeUi() !== "auto";
     const visibleModels = concreteCodex ? currentToolModels.filter((model) => model.id !== "auto") : currentToolModels;
-    const defaultModel = concreteCodex ? "gpt-6-sol" : data.defaultModel || "";
+    const defaultModel = concreteCodex ? "gpt-6.1-sol" : data.defaultModel || "";
     const attachedModel = sessionPreferences?.hasModel ? sessionPreferences.model : "";
     const requestedModel = concreteCodex && attachedModel === "auto"
       ? defaultModel
