@@ -986,8 +986,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Source: direct correction after observing a work reply without a dedicated topic.
 - Observed friction or ask: routing every admitted reply into a Thread loses brief mainline answers, while routing complex work from the group Session does not create a separate work Session.
-- Product implication: Jev first decides whether to work, then selects short mainline work in the existing group Session or complex work in a new Thread and Session. For no-work messages, retain only explicit praise (`WOW`), explicit criticism (`DULL`), or silence.
+- Product implication: Jev first decides whether to work, then selects short mainline work in the existing group Session or complex work in a new Thread and Session. For no-work messages, retain only explicit praise (`WOW`), explicit criticism (`TOASTED`, 飞书「衰」), or silence.
 - Follow-up: verify both work paths and all three no-work outcomes with fresh messages in a pilot group; inspect Feishu delivery receipts and Session bindings.
+
+### 2026-09-30 — 试验群需要按问题接话，表情不能代替答案
+
+- Source: direct user correction after reviewing a full pilot-group exchange and a screenshot of an unwanted reaction.
+- Observed friction or ask: an @ mention of the assistant plus a test phrase opened a work topic even though Jev had not admitted work; a new topic inherited an old reaction instruction and posted only「摸头」. Questions about the assistant's behavior, implementation, rollout and group coverage went unanswered without an @ mention. Criticism produced a dog-head emoji because `DULL` had been mistaken for 飞书「衰」.
+- Product implication: use the Jev work decision rather than @ presence as the work gate. Treat concrete unanswered questions and actionable bug feedback about the assistant as work even without @. Give short answers on the group mainline and investigation in a new topic Session; do not let that Session emit a reaction-only answer. Map explicit no-work criticism to `TOASTED`; keep pure test phrases silent.
+- Follow-up: use fresh pilot messages to read back reactions, mainline answers, topic creation and Session bindings. Historical replay is useful for classifier tuning but does not prove live delivery.
 
 ### YYYY-MM-DD — short title
 
