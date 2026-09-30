@@ -8,6 +8,7 @@ import { isWorkboardOptedIn, isWorkboardTurnEnabled, loadWorkboardOptIns } from 
 const people = [{
   personId: 'zhang', identityIds: ['zhang-web', 'zhang-feishu'],
   feishuPrivateChats: [{ sourceRouteId: 'bot-2', chatId: 'zhang-private' }],
+  feishuGroupSenders: [{ sourceRouteId: 'bot-2', openId: 'open-zhang' }],
 }];
 const turn = { viewPersonId: 'zhang', initiatedByIdentityId: 'zhang-web' };
 const personal = { sourceId: 'chat', initiatedByIdentityId: 'zhang-web' };
@@ -40,6 +41,33 @@ test('workboard opt-in stays with one Person and their own private conversations
   assert.equal(isWorkboardOptedIn({ ...feishu, conversation: {
     ...feishu.conversation, target: { ...feishu.conversation.target, chatId: 'other-private' },
   } }, feishuTurn, people), false);
+});
+
+test('a Feishu group turn follows its verified sender, not the Session creator', () => {
+  const group = { sourceId: 'feishu', initiatedByIdentityId: 'other', conversation: {
+    connector: 'feishu', sourceRouteId: 'bot-2',
+    target: { chatId: 'group-1', chatType: 'group', conversationKind: 'thread', tenantKey: 'tenant-1' },
+  } };
+  const sourceContext = { connector: 'feishu', sourceRouteId: 'bot-2',
+    chatId: 'group-1', chatType: 'group', tenantKey: 'tenant-1', messageId: 'message-1',
+    sender: { openId: 'open-zhang' } };
+  const groupTurn = { viewPersonId: 'zhang', initiatedByIdentityId: 'zhang-feishu',
+    feishuConnectorAuthenticated: true, sourceContext,
+    sourceDelivery: { connector: 'feishu', sourceRouteId: 'bot-2',
+      target: { chatId: 'group-1' } } };
+  assert.equal(isWorkboardOptedIn(group, groupTurn, people), true);
+  assert.equal(isWorkboardTurnEnabled(group, groupTurn, people), true);
+  assert.equal(isWorkboardTurnEnabled({ ...group, workboardPilot: true,
+    workboardOptInPersonId: 'zhang' }, { ...groupTurn, viewPersonId: 'other' }, people), false);
+  assert.equal(isWorkboardOptedIn(group, { ...groupTurn, feishuConnectorAuthenticated: false }, people), false);
+  assert.equal(isWorkboardOptedIn(group, { ...groupTurn,
+    sourceContext: { ...sourceContext, sender: { openId: 'open-other' } } }, people), false);
+  assert.equal(isWorkboardOptedIn(group, { ...groupTurn,
+    sourceDelivery: { ...groupTurn.sourceDelivery, target: { chatId: 'another-group' } } }, people), false);
+  assert.equal(isWorkboardOptedIn({ ...group, groupFeed: true }, groupTurn, people), false);
+  assert.equal(isWorkboardOptedIn({ ...group, conversation: { ...group.conversation,
+    sourceRouteId: 'other-bot' } }, groupTurn, people), false);
+  assert.equal(isWorkboardOptedIn(group, groupTurn, []), false);
 });
 
 test('an absent opt-in file never enables another person', async () => {

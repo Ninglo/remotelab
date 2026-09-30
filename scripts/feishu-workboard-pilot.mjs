@@ -6,6 +6,8 @@ import { writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import {
   collectFeishuWorkboardCycles,
+  collectFeishuGroupWorkboardCycles,
+  isFeishuWorkboardGroupSession,
   isFeishuWorkboardPilotSession,
   publishFeishuWorkboardCycle,
 } from '../connectors/feishu/workboard-pilot.mjs';
@@ -24,6 +26,10 @@ if (!pilot.sessionId || !pilot.chatId || !pilot.senderOpenId || !pilot.sourceRou
   throw new Error('Incomplete Feishu workboard pilot state');
 }
 pilot.cards ||= [];
+pilot.groupSessions ||= {};
+if (pilot.groupEnabled === true && !pilot.personId) {
+  throw new Error('Group workboard pilot requires an opted-in Person');
+}
 
 const botConfig = JSON.parse(await readFile(pilot.botConfigPath, 'utf8'));
 if (botConfig.botId !== pilot.sourceRouteId || !botConfig.appId || !botConfig.appSecret) {
@@ -58,13 +64,13 @@ const requestJson = async path => {
 };
 const persist = () => writeJsonAtomic(statePath, pilot, { mode: 0o600 });
 
-async function verifyMessage(messageId, { updated } = {}) {
+async function verifyMessage(messageId, { updated } = {}, chatId = pilot.chatId) {
   const readback = await app.im.v1.message.get({ path: { message_id: messageId } });
   const item = readback?.data?.items?.find(entry => entry.message_id === messageId);
   // IM get exposes a compatibility preview for v2 cards, not the card JSON.
   // The patch response is the content-write receipt; readback checks its
   // identity, destination, type and updated state.
-  if (readback?.code !== 0 || !item || item.chat_id !== pilot.chatId
+  if (readback?.code !== 0 || !item || item.chat_id !== chatId
       || item.msg_type !== 'interactive' || (updated && item.updated !== true)) {
     throw new Error(`Feishu workboard readback did not match message ${messageId}`);
   }
@@ -72,33 +78,86 @@ async function verifyMessage(messageId, { updated } = {}) {
 
 let stopped = false;
 let syncing = false;
-let pending = false;
+const pending = new Set();
+const ignored = new Set();
 let socket = null;
 let reconnectTimer = null;
 let reconnectMs = 250;
 
-async function sync() {
-  if (stopped || expired()) { stop(); return; }
-  if (syncing) { pending = true; return; }
+async function syncPrivate() {
+  const session = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`)).session;
+  if (!isFeishuWorkboardPilotSession(session, pilot)) return;
+  const events = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}/events?filter=all`)).events;
+  for (const cycle of collectFeishuWorkboardCycles(events, pilot)) {
+    if (stopped || expired()) { stop(); break; }
+    const result = await publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage });
+    if (result) console.log(`[feishu-workboard] ${result.action} session=${pilot.sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
+  }
+}
+
+async function syncGroup(sessionId) {
+  if (!pilot.groupEnabled || ignored.has(sessionId)) return;
+  const response = await remote.request(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  if (response.response.status === 404) { ignored.add(sessionId); return; }
+  if (!response.response.ok) throw new Error(`Group Session read failed: ${response.response.status}`);
+  const session = response.json?.session;
+  const target = session?.conversation?.target;
+  if (session?.conversation?.connector !== 'feishu'
+      || session.conversation.sourceRouteId !== pilot.sourceRouteId
+      || target?.chatType !== 'group') {
+    ignored.add(sessionId);
+    return;
+  }
+  if (!isFeishuWorkboardGroupSession(session, pilot)) return;
+  const stored = pilot.groupSessions[sessionId] ||= { chatId: target.chatId, cards: [] };
+  if (stored.chatId !== target.chatId) throw new Error(`Group Session destination changed: ${sessionId}`);
+  const groupPilot = { ...pilot, sessionId, chatId: target.chatId,
+    startedAfterSeq: 0, cards: stored.cards };
+  const events = (await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/events?filter=all`)).events;
+  for (const cycle of collectFeishuGroupWorkboardCycles(events, groupPilot, session)) {
+    if (stopped || expired()) { stop(); break; }
+    const result = await publishFeishuWorkboardCycle(cycle, { pilot: groupPilot, app, persist,
+      verifyMessage: (messageId, options) => verifyMessage(messageId, options, target.chatId) });
+    if (result) console.log(`[feishu-workboard] ${result.action} session=${sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
+  }
+}
+
+async function discoverGroupSessions() {
+  if (!pilot.groupEnabled) return [];
+  const list = await requestJson('/api/sessions?sourceId=feishu');
+  return [...new Set([
+    ...Object.keys(pilot.groupSessions),
+    ...(Array.isArray(list.sessions) ? list.sessions : [])
+      .filter(session => session?.workboardPilot === true
+        && session?.conversation?.connector === 'feishu'
+        && session.conversation.sourceRouteId === pilot.sourceRouteId
+        && session.conversation.target?.chatType === 'group')
+      .map(session => session.id),
+  ])];
+}
+
+async function syncOne(sessionId) {
+  if (sessionId === pilot.sessionId) return syncPrivate();
+  return syncGroup(sessionId);
+}
+
+async function drain() {
+  if (syncing) return;
   syncing = true;
   try {
-    do {
-      pending = false;
-      const session = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`)).session;
-      if (!isFeishuWorkboardPilotSession(session, pilot)) {
-        stop();
-        return;
-      }
-      const events = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}/events?filter=all`)).events;
-      for (const cycle of collectFeishuWorkboardCycles(events, pilot)) {
-        if (stopped || expired()) { stop(); break; }
-        const result = await publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage });
-        if (result) console.log(`[feishu-workboard] ${result.action} anchor=${result.anchorSeq} revision=${result.revision}`);
-      }
-    } while (pending && !stopped);
-  } finally {
-    syncing = false;
-  }
+    while (pending.size && !stopped) {
+      const sessionId = pending.values().next().value;
+      pending.delete(sessionId);
+      try { await syncOne(sessionId); }
+      catch (error) { console.error(`[feishu-workboard] sync ${sessionId}: ${error.message}`); }
+    }
+  } finally { syncing = false; }
+}
+
+function enqueue(sessionId) {
+  if (!sessionId || stopped) return;
+  pending.add(sessionId);
+  void drain();
 }
 
 function stop() {
@@ -120,13 +179,16 @@ function connect(cookie) {
   });
   socket.on('open', () => {
     reconnectMs = 250;
-    void sync().catch(error => console.error(`[feishu-workboard] sync: ${error.message}`));
+    void discoverGroupSessions().then(ids => {
+      enqueue(pilot.sessionId);
+      for (const id of ids) enqueue(id);
+    }).catch(error => console.error(`[feishu-workboard] discovery: ${error.message}`));
   });
   socket.on('message', data => {
     let message;
     try { message = JSON.parse(data); } catch { return; }
-    if (message.type === 'session_invalidated' && message.sessionId === pilot.sessionId) {
-      void sync().catch(error => console.error(`[feishu-workboard] sync: ${error.message}`));
+    if (message.type === 'session_invalidated' && (message.sessionId === pilot.sessionId || pilot.groupEnabled)) {
+      enqueue(message.sessionId);
     }
   });
   socket.on('error', error => console.error(`[feishu-workboard] socket: ${error.message}`));
@@ -152,5 +214,6 @@ function scheduleReconnect() {
   reconnectMs = Math.min(5000, reconnectMs * 2);
 }
 
-await sync(); // Read state before waiting for notifications.
+await syncPrivate(); // Read state before waiting for notifications.
+for (const id of await discoverGroupSessions()) await syncGroup(id);
 connect(await remote.ensureAuthCookie());

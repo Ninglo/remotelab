@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildFeishuWorkboardCard,
+  collectFeishuGroupWorkboardCycles,
   collectFeishuWorkboardCycles,
+  isFeishuWorkboardGroupSession,
   isFeishuWorkboardPilotSession,
   publishFeishuWorkboardCycle,
 } from '../connectors/feishu/workboard-pilot.mjs';
@@ -30,6 +32,33 @@ test('only the opted-in private chat can publish a checklist', () => {
     ...session.conversation, target: { ...session.conversation.target, chatId: 'chat-other' },
   } }, pilot), false);
   assert.deepEqual(collectFeishuWorkboardCycles([user(11, 'open-other'), list(12)], pilot), []);
+});
+
+test('group cards require the opted-in Person and her own source Run', () => {
+  const groupPilot = { ...pilot, personId: 'zhang', groupEnabled: true, chatId: 'group-1',
+    startedAfterSeq: 0 };
+  const groupSession = { workboardPilot: true, workboardOptInPersonId: 'zhang',
+    conversation: { connector: 'feishu', sourceRouteId: 'bot-2', target: {
+      chatType: 'group', chatId: 'group-1', conversationKind: 'thread', tenantKey: 'tenant-1',
+    } } };
+  const groupUser = (seq, runId, sender, messageId) => ({ seq, type: 'message', role: 'user', runId,
+    sourceContext: { connector: 'feishu', sourceRouteId: 'bot-2', chatType: 'group',
+      chatId: 'group-1', tenantKey: 'tenant-1', messageId, sender: { openId: sender } } });
+  const groupList = (seq, runId, done = false) => ({ ...list(seq, done), runId });
+  const events = [
+    groupUser(1, 'run-other', 'open-other', 'message-other'), groupList(2, 'run-other'),
+    groupUser(3, 'run-zhang', 'open-zhang', 'message-zhang'), groupList(4, 'run-zhang'),
+    groupUser(5, 'run-other-2', 'open-other', 'message-other-2'), groupList(6, 'run-other-2'),
+    groupList(7, 'run-zhang', true),
+    { seq: 8, type: 'message', role: 'assistant', runId: 'run-zhang', content: '结果' },
+  ];
+  assert.equal(isFeishuWorkboardGroupSession(groupSession, groupPilot), true);
+  assert.equal(isFeishuWorkboardGroupSession({ ...groupSession, groupFeed: true }, groupPilot), false);
+  assert.equal(isFeishuWorkboardGroupSession({ ...groupSession, workboardOptInPersonId: 'other' }, groupPilot), false);
+  assert.deepEqual(collectFeishuGroupWorkboardCycles(events, groupPilot, groupSession), [{
+    anchorSeq: 4, latestSeq: 7, content: groupList(7, 'run-zhang', true).content,
+    closed: true, replyMessageId: 'message-zhang',
+  }]);
 });
 
 test('steering keeps one card while a final result closes the cycle', () => {
@@ -89,4 +118,24 @@ test('create once, edit the same message, and fence uncertain sends', async () =
   state.cards.push({ anchorSeq: 30, messageId: '', pendingCreate: true, latestSeq: 0 });
   await assert.rejects(publishFeishuWorkboardCycle({ ...first, anchorSeq: 30 }, options), /outcome is unknown/);
   assert.equal(calls.length, 2, 'an uncertain create must not be sent again');
+});
+
+test('a group thread card replies once and patches that same message', async () => {
+  const state = { ...pilot, sessionId: 'group-session', chatId: 'group-1', cards: [] };
+  const calls = [];
+  const app = { im: { v1: { message: {
+    reply: async request => { calls.push(['reply', request]); return { code: 0, data: { message_id: 'om-group-card' } }; },
+    patch: async request => { calls.push(['patch', request]); return { code: 0 }; },
+  } } } };
+  const options = { pilot: state, app, persist: async () => {}, verifyMessage: async () => {} };
+  const first = { anchorSeq: 12, latestSeq: 12, content: list(12).content,
+    closed: false, replyMessageId: 'om-user-task' };
+  assert.equal((await publishFeishuWorkboardCycle(first, options)).action, 'created');
+  assert.equal((await publishFeishuWorkboardCycle({ ...first, latestSeq: 13,
+    content: list(13, true).content }, options)).action, 'updated');
+  assert.equal(calls[0][0], 'reply');
+  assert.equal(calls[0][1].path.message_id, 'om-user-task');
+  assert.equal(calls[0][1].data.reply_in_thread, true);
+  assert.equal(calls[1][0], 'patch');
+  assert.equal(calls[1][1].path.message_id, 'om-group-card');
 });
