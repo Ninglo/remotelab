@@ -178,6 +178,8 @@ function createContext() {
 
 const context = createContext();
 vm.runInNewContext(sessionHttpSource, context, { filename: 'static/chat/session-http.js' });
+assert.equal(context.getEventBoundarySeq({ seq: 3, displayBoundarySeq: 9 }), 9,
+  'a hidden thinking block can advance the inline checklist snapshot without adding a transcript card');
 
 const runningSession = {
   latestSeq: 42,

@@ -718,8 +718,9 @@ function syncComposerPendingTurnFeedback() {
 function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false } = {}) {
   if (!container) return null;
   const role = evt.role || "assistant";
-  // The opt-in workboard owns checklist history, so it stays one visible list.
-  if (typeof isSessionWorkboardMessage === "function" && isSessionWorkboardMessage(evt)) return null;
+  if (typeof isSessionWorkboardMessage === "function" && isSessionWorkboardMessage(evt)) {
+    return renderSessionWorkboardMessage(container, evt);
+  }
   if (evt.messageKind === "todo_list" || evt.source === "workboard_checklist") return renderActivityNote(container, evt, "plan");
 
   if (finalizeActiveThinkingBlock && inThinkingBlock) {

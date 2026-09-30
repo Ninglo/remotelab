@@ -6,23 +6,19 @@ class Element {
   constructor(tagName) {
     this.tagName = tagName;
     this.children = [];
-    this.hidden = false;
+    this.dataset = {};
     this.textContent = '';
     this.className = '';
   }
   appendChild(child) { this.children.push(child); return child; }
-  replaceChildren(...children) { this.children = children; }
   setAttribute() {}
-  addEventListener() {}
 }
 
-const panel = new Element('section');
+const container = new Element('div');
 const context = {
-  document: { getElementById: () => panel, createElement: tag => new Element(tag) },
+  document: { createElement: tag => new Element(tag), querySelectorAll: () => [] },
   currentSessionId: 'pilot',
   getSessionActivity: session => session.activity,
-  cancelBtn: { click() {} },
-  fetchJsonOrRedirect: async () => ({ run: { id: 'run-1', state: 'completed' } }),
   setTimeout: () => 1,
   clearTimeout() {},
 };
@@ -31,97 +27,70 @@ vm.runInContext(await readFile(new URL('../static/chat/workboard-ui.js', import.
 
 const now = Date.now();
 context.updateSessionWorkboardSession({
-  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: true },
-  lastEventAt: now,
-  activity: { run: { state: 'running', runId: 'run-1', startedAt: new Date(now - 10 * 60_000).toISOString() } },
+  id: 'pilot', workboardPilot: true, lastEventAt: now,
+  activity: { run: { state: 'running', startedAt: new Date(now).toISOString() } },
 });
-const firstSnapshot = [
-  { seq: 1, type: 'message', role: 'user', runId: 'run-1' },
-  { seq: 2, type: 'message', role: 'assistant', source: 'workboard_checklist', workboardUpdateSeq: 2,
-    content: '任务：交付两项结果\n说明：完成后逐项核对。结果应可在本会话查看。\n[ ] 第一项 — 核对第一份结果。\n[ ] 第二项 — 核对第二份结果。' },
+const checklist = '任务：交付两项结果\n说明：完成后逐项核对。结果应可在本会话查看。\n[ ] 第一项 — 核对第一份结果。\n[ ] 第二项 — 核对第二份结果。';
+const user = { seq: 1, type: 'message', role: 'user' };
+const first = { seq: 3, type: 'message', role: 'assistant', source: 'workboard_checklist', content: checklist };
+const updated = { ...first, seq: 5, content: checklist.replace('[ ] 第一项', '[x] 第一项') };
+const result = { seq: 7, type: 'message', role: 'assistant', content: '最终结果' };
+const raw = [
+  user,
+  { seq: 2, type: 'thinking_block', blockStartSeq: 2, blockEndSeq: 2 },
+  first,
+  { seq: 4, type: 'thinking_block', blockStartSeq: 4, blockEndSeq: 4 },
+  updated,
+  { seq: 6, type: 'thinking_block', blockStartSeq: 6, blockEndSeq: 6 },
+  result,
 ];
-context.updateSessionWorkboardEvents('pilot', firstSnapshot);
-assert.equal(context.isSessionWorkboardMessage(firstSnapshot[1]), true,
-  'the current checklist appears in the workboard instead of the transcript');
-assert.equal(context.isSessionWorkboardMessage({ type: 'message', role: 'assistant', content: 'ordinary reply' }), false);
-const fragmentedTranscript = [
-  { seq: 1, type: 'message', role: 'user' },
-  { seq: 2, type: 'thinking_block', blockStartSeq: 2, blockEndSeq: 2, hiddenEventCount: 1, state: 'completed', label: 'Thought' },
-  { seq: 3, type: 'message', role: 'assistant', source: 'workboard_checklist' },
-  { seq: 4, type: 'thinking_block', blockStartSeq: 4, blockEndSeq: 4, hiddenEventCount: 1, state: 'completed', label: 'Thought' },
-  { seq: 5, type: 'message', role: 'assistant', source: 'workboard_checklist' },
-  { seq: 6, type: 'thinking_block', blockStartSeq: 6, blockEndSeq: 6, hiddenEventCount: 1, state: 'running', label: 'Thinking…' },
-  { seq: 7, type: 'message', role: 'assistant', content: 'Result' },
-];
-const compactedTranscript = context.projectSessionWorkboardTranscriptEvents('pilot', fragmentedTranscript);
-assert.deepEqual(Array.from(compactedTranscript, event => event.type), ['message', 'thinking_block', 'message']);
-assert.equal(compactedTranscript[1].blockStartSeq, 2);
-assert.equal(compactedTranscript[1].blockEndSeq, 6);
-assert.equal(compactedTranscript[1].hiddenEventCount, 5);
-assert.equal(panel.hidden, false);
-assert.equal(panel.children.find(item => item.className === 'session-workboard-heading')?.textContent, '交付两项结果');
-assert.match(panel.children.find(item => item.className === 'session-workboard-description')?.textContent, /逐项核对/);
-const progress = panel.children.find(item => item.tagName === 'progress');
-assert.equal(progress.value, 0);
-assert.equal(progress.max, 2);
-const list = panel.children.find(item => item.tagName === 'ul');
-assert.equal(list?.children.length, 2);
-assert.equal(list.children[0].tagName, 'li');
-assert.equal(list.children[1].tagName, 'li', 'the next deliverable starts a separate row');
+assert.equal(context.updateSessionWorkboardEvents('pilot', raw), raw);
+const projected = context.projectSessionWorkboardTranscriptEvents('pilot', raw);
+assert.deepEqual(Array.from(projected, event => event.type), ['message', 'message', 'message'],
+  'a pilot turn shows the user, one inline checklist, and one result');
+assert.equal(projected[1].seq, first.seq, 'the inline checklist keeps its original position');
+assert.equal(projected[1].workboardUpdateSeq, updated.seq, 'later updates replace the same checklist');
+assert.equal(projected[1].content, updated.content);
+assert.equal(projected[2].displayBoundarySeq, result.seq);
+assert.equal(projected[1].workboardCurrentTurn, true);
+assert.equal(raw.length, 7, 'raw Session history remains unchanged');
+
+const card = context.renderSessionWorkboardMessage(container, projected[1]);
+assert.equal(container.children.length, 1);
+assert.equal(card.className, 'session-workboard-inline');
+assert.equal(card.children[0].children[0].textContent, '任务：交付两项结果');
+assert.equal(card.children[0].children[1].textContent, '1/2');
+assert.match(card.children[1].textContent, /完成后逐项核对/);
+const list = card.children.find(child => child.tagName === 'ul');
+assert.equal(list.children.length, 2, 'each deliverable starts a separate row');
 assert.equal(list.children[0].children[1].children[0].textContent, '第一项');
 assert.equal(list.children[0].children[1].children[1].textContent, ' — 核对第一份结果。');
-context.updateSessionWorkboardEvents('pilot', [
-  firstSnapshot[0],
-  { ...firstSnapshot[1], workboardUpdateSeq: 3,
-    content: firstSnapshot[1].content.replace('[ ] 第一项', '[x] 第一项') },
-]);
-assert.equal(panel.children.filter(item => item.tagName === 'ul').length, 1,
-  'one checklist updates in place instead of stacking cards');
-assert.equal(panel.children.find(item => item.tagName === 'progress').value, 1);
-context.updateSessionWorkboardEvents('pilot', firstSnapshot);
-assert.equal(panel.children.find(item => item.tagName === 'progress').value, 1,
-  'an older response cannot roll back visible progress');
-context.updateSessionWorkboardEvents('pilot', [
-  firstSnapshot[0], firstSnapshot[1],
-  { seq: 3, type: 'message', role: 'assistant', source: 'workboard_checklist', content: '[x] 第一项 — 核对第一份结果。' },
-  { seq: 4, type: 'message', role: 'user', content: '下一轮' },
-]);
-assert.equal(context.isSessionWorkboardMessage(firstSnapshot[1]), true,
-  'an older update is hidden once a later update exists in that turn');
-assert.equal(context.isSessionWorkboardMessage({ seq: 3, type: 'message', role: 'assistant', source: 'workboard_checklist' }), true,
-  'history remains in the workboard instead of adding transcript cards');
-context.updateSessionWorkboardSession({
-  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: false },
-  activity: { run: { state: 'idle' } },
-});
-assert.equal(panel.children.find(item => item.className === 'session-workboard-label')?.textContent, '最近一次清单 · 1/1');
-context.updateSessionWorkboardSession({
-  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: true },
-  lastEventAt: now,
-  activity: { run: { state: 'running', runId: 'run-1', startedAt: new Date(now - 10 * 60_000).toISOString() } },
-});
-assert.match(panel.children.find(item => item.className === 'session-workboard-monitor')?.children[0]?.textContent, /运行中/,
-  'a fresh numeric event timestamp must keep a long Run from looking stalled');
+assert.equal(card.children.at(-1).textContent, '运行中');
 
-context.updateSessionWorkboardSession({
-  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: true },
-  lastEventAt: now - 10 * 60_000,
-  activity: { run: { state: 'running', runId: 'run-1', startedAt: new Date(now - 10 * 60_000).toISOString() } },
-});
-assert.match(panel.children.find(item => item.className === 'session-workboard-monitor')?.children[0]?.textContent, /疑似停滞/);
+const stale = context.updateSessionWorkboardEvents('pilot', raw.slice(0, 3));
+assert.equal(stale, raw, 'a late older response cannot roll progress back');
+const completed = { ...updated, seq: 8, content: updated.content.replace('[ ] 第二项', '[x] 第二项') };
+const completedProjection = context.projectSessionWorkboardTranscriptEvents('pilot', [...raw, completed]);
+assert.equal(completedProjection.filter(event => event.source === 'workboard_checklist').length, 1);
+assert.equal(completedProjection.find(event => event.source === 'workboard_checklist').seq, first.seq);
+const completedCard = context.renderSessionWorkboardMessage(new Element('div'),
+  completedProjection.find(event => event.source === 'workboard_checklist'));
+assert.equal(completedCard.children[0].children[1].textContent, '2/2');
 
-context.updateSessionWorkboardSession({
-  id: 'pilot', workboardPilot: true, workboardGate: { needsChecklist: true },
-  workState: { workflow: { state: 'waiting_user' } },
-  activity: { run: { state: 'idle' } },
-});
-assert.match(panel.children.find(item => item.className === 'session-workboard-monitor')?.children[0]?.textContent, /需要你处理/,
-  'a user blocker remains visible after the Run becomes idle');
+const anotherTurn = [...raw, { seq: 8, type: 'message', role: 'user' },
+  { seq: 9, type: 'thinking_block', blockStartSeq: 9, blockEndSeq: 9 }];
+const history = context.projectSessionWorkboardTranscriptEvents('pilot', anotherTurn);
+assert.equal(history.filter(event => event.source === 'workboard_checklist').length, 1);
+assert.equal(history.find(event => event.source === 'workboard_checklist').workboardCurrentTurn, false);
+assert.equal(history.at(-1).type, 'thinking_block', 'short turns without a checklist retain native display');
 
 context.updateSessionWorkboardSession({ id: 'other', workboardPilot: false, activity: { run: { state: 'idle' } } });
-assert.equal(panel.hidden, true, 'the workboard must remain absent from other Sessions');
-assert.equal(context.isSessionWorkboardMessage({ type: 'message', role: 'assistant', source: 'workboard_checklist' }), false,
-  'a non-pilot Session retains its normal transcript');
-assert.equal(context.projectSessionWorkboardTranscriptEvents('other', fragmentedTranscript), fragmentedTranscript,
-  'a non-pilot Session retains its original event projection');
+assert.equal(context.projectSessionWorkboardTranscriptEvents('other', raw), raw,
+  'other Sessions retain their original transcript');
+assert.equal(context.isSessionWorkboardMessage(first), false);
+
+const css = await readFile(new URL('../static/chat/chat-messages.css', import.meta.url), 'utf8');
+assert.doesNotMatch(css.match(/\.session-workboard-inline\s*\{([^}]*)\}/)?.[1] || '', /position:\s*sticky/);
+const html = await readFile(new URL('../templates/chat.html', import.meta.url), 'utf8');
+assert.doesNotMatch(html, /sessionWorkboardPanel/, 'no floating panel remains in the page');
 console.log('test-chat-workboard-ui: ok');
