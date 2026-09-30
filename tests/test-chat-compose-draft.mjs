@@ -9,6 +9,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const composerStoreSource = readFileSync(join(repoRoot, 'static/chat/composer-store.js'), 'utf8');
 const composeSource = readFileSync(join(repoRoot, 'static/chat/compose.js'), 'utf8');
+const realtimeSource = readFileSync(join(repoRoot, 'static/chat/realtime.js'), 'utf8');
+const actionSource = realtimeSource.slice(realtimeSource.indexOf('async function dispatchAction('), realtimeSource.indexOf('\nfunction buildOptimisticArchivedSession('));
 
 class StorageMock {
   constructor() {
@@ -363,6 +365,39 @@ failedSendFocusContext.restoreFailedSendState('session-a', 'retry me', []);
 assert.equal(failedSendFocusContext.focusComposerCalls.length, 1, 'failed-send recovery should invoke the shared focus helper once');
 assert.equal(failedSendFocusContext.focusComposerCalls[0]?.force, true, 'failed-send recovery should force composer focus when rehydrating the draft');
 assert.equal(failedSendFocusContext.focusComposerCalls[0]?.preventScroll, true, 'failed-send recovery should keep the viewport from jumping during draft recovery');
+
+const busyError = '当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。';
+const rejectedSendContext = createContext();
+const sendNotices = [];
+rejectedSendContext.console = { ...console, error() {}, warn() {} };
+rejectedSendContext.showSystemToast = (...args) => sendNotices.push(args);
+rejectedSendContext.fetchJsonOrRedirect = async () => { throw Object.assign(new Error(busyError), { status: 409, code: 'SESSION_BUSY' }); };
+loadComposeContext(rejectedSendContext);
+vm.runInNewContext(actionSource, rejectedSendContext);
+rejectedSendContext.msgInput.value = 'continue with the new model';
+rejectedSendContext.replaceComposerAttachmentsState([{ assetId: 'fasset_saved', originalName: 'input.csv' }], { sessionId: 'session-a' });
+rejectedSendContext.sendMessage();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(sendNotices.length, 1, 'a rejected send must produce one visible notification');
+assert.equal(sendNotices[0][0], `Message not sent: ${busyError}`, 'the notification must preserve the server reason');
+assert.equal(sendNotices[0][1], 'error');
+assert.equal(sendNotices[0][2].sessionId, 'session-a');
+assert.equal(rejectedSendContext.msgInput.value, 'continue with the new model', 'rejected text must return to the composer');
+assert.equal(rejectedSendContext.localStorage.getItem('draft_session-a'), 'continue with the new model');
+assert.equal(rejectedSendContext.getComposerAttachmentsState('session-a')[0].assetId, 'fasset_saved', 'a rejected send must retain uploaded attachments');
+assert.equal(rejectedSendContext.getComposerPendingSendState(), null, 'a rejection must unlock sending');
+
+const networkSendContext = createContext();
+const networkNotices = [];
+networkSendContext.console = { ...console, error() {} };
+networkSendContext.showSystemToast = (...args) => networkNotices.push(args);
+networkSendContext.dispatchAction = async () => { throw new Error('Network disconnected'); };
+loadComposeContext(networkSendContext);
+networkSendContext.msgInput.value = 'keep this draft';
+networkSendContext.sendMessage();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(networkNotices[0][0], 'Message not sent: Network disconnected');
+assert.equal(networkSendContext.msgInput.value, 'keep this draft');
 
 const pendingUiContext = createContext();
 loadComposeContext(pendingUiContext);

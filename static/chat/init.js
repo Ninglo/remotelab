@@ -1,23 +1,3 @@
-// ---- System toast notifications ----
-function showSystemToast(message, level = "info") {
-  const container = document.getElementById("system-toast-container")
-    || (() => {
-      const el = document.createElement("div");
-      el.id = "system-toast-container";
-      el.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:90vw;";
-      document.body.appendChild(el);
-      return el;
-    })();
-  const toast = document.createElement("div");
-  const bgColor = level === "error" ? "#d32f2f" : level === "warn" ? "#ed6c02" : "#1976d2";
-  toast.style.cssText = `background:${bgColor};color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;line-height:1.4;box-shadow:0 2px 12px rgba(0,0,0,.25);pointer-events:auto;cursor:pointer;max-width:100%;word-break:break-word;opacity:0;transition:opacity .2s;`;
-  toast.textContent = message;
-  toast.onclick = () => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 200); };
-  container.appendChild(toast);
-  requestAnimationFrame(() => { toast.style.opacity = "1"; });
-  setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 200); }, level === "error" ? 8000 : 5000);
-}
-
 function applyShareSnapshotMode(snapshot) {
   shareSnapshotMode = true;
   shareSnapshotPayload = snapshot;

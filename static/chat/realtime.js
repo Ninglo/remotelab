@@ -54,6 +54,7 @@ function scheduleReconnect() {
 }
 
 async function dispatchAction(msg) {
+  const actionSessionId = msg.sessionId || currentSessionId;
   try {
     switch (msg.action) {
       case "list":
@@ -371,6 +372,11 @@ async function dispatchAction(msg) {
     }
   } catch (error) {
     console.error("HTTP action failed:", error.message);
+    if (typeof showSystemToast === "function") {
+      showSystemToast(t(msg.action === "send" ? "notifications.sendFailed" : "notifications.actionFailed", {
+        error: error?.message || String(error),
+      }), "error", { sessionId: actionSessionId });
+    }
     return false;
   }
 }
