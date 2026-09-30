@@ -106,10 +106,22 @@ try {
 
   effects.length = 0;
   const direct = await handleMessage(runtime, { ...base, messageId: 'work',
-    messageText: '请处理这个问题', mentions: [{ openId: 'bot' }] }, 'test', helpers);
+    messageText: '请处理这个问题', mentions: [{ openId: 'bot' }] }, 'test', {
+      ...helpers, classifyJevReaction: async () => {
+        effects.push('jev');
+        return { decision: 'reply', emojiType: null };
+      },
+    });
   assert.equal(direct.runId, 'work-run');
   assert.deepEqual(effects, ['observe:work', 'jev', 'decision:reply:OnIt', 'run:true', 'reaction:OnIt'],
     'an accepted task gets OnIt after Run admission without a read reaction');
+
+  effects.length = 0;
+  const mentionedPraise = await handleMessage(runtime, { ...base, messageId: 'mentioned-praise',
+    messageText: '你这次做得真棒', mentions: [{ openId: 'bot' }] }, 'test', helpers);
+  assert.equal(mentionedPraise.decision.participation, 'silent');
+  assert.deepEqual(effects, ['observe:mentioned-praise', 'jev', 'decision:silent:WOW', 'reaction:WOW'],
+    'a direct mention with clear praise and a silent Jev verdict does not start work');
 
   effects.length = 0;
   const onlyReaction = await handleMessage(runtime, { ...base, messageId: 'emoji-only',

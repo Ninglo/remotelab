@@ -41,7 +41,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 ### 2026-09-30 — Only targeted reactions when a trial group does not start work
 
 - Observed friction: the trial groups now retain every message in their main Session, and the broad no-work reaction fallback creates more visible responses than the user finds useful.
-- Product implication: keep the Jev work decision and normal work handling. For no-work messages, react with `WOW` only to clear praise of the assistant or its work and `DULL` only to clear criticism or rejection. Otherwise record the decision and stay silent. The user plans to test this in a trial group.
+- Product implication: honor Jev's no-work decision even for a direct @ mention. For no-work messages, react with `WOW` only to clear praise of the assistant or its work and `DULL` only to clear criticism or rejection. Otherwise record the decision and stay silent. Keep the direct-mention work fallback only when Jev cannot make a confident work decision. The user plans to test this in a trial group.
 - Scope: this narrows the `jevReactions` path; the older `quickReactions` path has a separate outcome policy.
 
 ### 2026-09-28 — Short praise still needs a visible response
