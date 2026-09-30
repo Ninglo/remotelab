@@ -144,9 +144,10 @@ export async function classifyFeishuQuickParticipation(context, {
     const emojiType = Number.isFinite(emotionProbability) && emotionProbability >= 0.8
       ? EXPRESSIVE_REACTIONS[emotionChoice] || null : null;
     const workModeAnswer = result?.answers?.workMode;
-    const workMode = !includeHandoff && decision === 'reply' && !uncertain
-      && workModeAnswer?.choice === 'short'
-      && Number(workModeAnswer.probabilities?.short) >= 0.8 ? 'short' : 'complex';
+    const workMode = !includeHandoff && decision === 'reply'
+      ? (!uncertain && workModeAnswer?.choice === 'short'
+        && Number(workModeAnswer.probabilities?.short) >= 0.8 ? 'short' : 'complex')
+      : null;
     return {
       decision: uncertain ? 'unknown' : decision,
       reactionOnly,

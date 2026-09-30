@@ -49,6 +49,7 @@ try {
     } }) }; },
   });
   assert.equal(classified.decision, 'silent');
+  assert.equal(classified.workMode, null);
   assert.equal(classified.emojiType, 'WOW');
 
   for (const [choice, probability, expected] of [
