@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../static/chat/session-token-pilot.js', import.meta.url), 'utf8');
 
-function makeView(personId, usage) {
+function makeView(personId, usage, initialTheme = 'amber') {
   const titleRow = {
     children: [{ className: 'session-item-name' }, { className: 'session-item-actions' }],
     querySelector(selector) {
@@ -24,17 +24,20 @@ function makeView(personId, usage) {
   };
   const list = { querySelectorAll: () => [row] };
   const classes = [];
+  const windowEvents = {};
+  let theme = initialTheme;
   let fetchCount = 0;
   const context = {
     bootstrapAuthInfo: { person: { id: personId } },
     document: {
-      documentElement: { classList: { add: (value) => classes.push(value) } },
+      documentElement: { classList: { add: (value) => classes.push(value) },
+        getAttribute: () => theme },
       getElementById: () => list,
       createElement: () => ({ className: '', textContent: '', title: '', setAttribute() {} }),
       addEventListener() {},
       hidden: false,
     },
-    window: { setInterval() {} },
+    window: { setInterval() {}, addEventListener: (name, listener) => { windowEvents[name] = listener; } },
     MutationObserver: class { observe() {} disconnect() {} },
     queueMicrotask,
     fetch: async () => {
@@ -43,7 +46,8 @@ function makeView(personId, usage) {
     },
   };
   runInNewContext(source, context);
-  return { titleRow, classes, fetchCount: () => fetchCount };
+  return { titleRow, classes, fetchCount: () => fetchCount,
+    setTheme(value) { theme = value; windowEvents['remotelab:themechange']?.(); } };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -77,4 +81,17 @@ test('large recorded totals remain in k and missing records stay blank', async (
   await settle();
   assert.equal(large.titleRow.children[1].textContent, '893316k');
   assert.equal(missing.titleRow.children.length, 2);
+});
+
+test('Session Token usage waits for Amber and loads after theme change', async () => {
+  const view = makeView('person_8b536b37317e491d96036fc8', [
+    { sessionId: 'session-one', runCount: 1, totalTokens: 8_700 },
+  ], 'light');
+  await settle();
+  assert.equal(view.fetchCount(), 0);
+  assert.equal(view.titleRow.children.length, 2);
+  view.setTheme('amber');
+  await settle();
+  assert.equal(view.fetchCount(), 1);
+  assert.equal(view.titleRow.children[1].textContent, '8.7k');
 });

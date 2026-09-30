@@ -22,6 +22,7 @@
   workspace.append(container);
 
   let requestId = 0;
+  const isAmber = () => document.documentElement.getAttribute("data-theme") === "amber";
   const dateText = (value) => {
     const date = new Date(value || "");
     return Number.isFinite(date.getTime())
@@ -35,6 +36,7 @@
     : value?.windowDurationMins === 300 ? "5 小时" : "额度";
 
   async function refresh() {
+    if (!isAmber()) return;
     const currentRequest = ++requestId;
     button.textContent = "本周额度 · 查询中";
     try {
@@ -75,10 +77,23 @@
     if (!details.hidden) void refresh();
   });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) void refresh();
+    if (!document.hidden && isAmber()) void refresh();
+  });
+  function syncTheme() {
+    if (isAmber()) {
+      void refresh();
+    } else {
+      requestId++;
+      details.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+    }
+  }
+  window.addEventListener("remotelab:themechange", syncTheme);
+  window.addEventListener("storage", (event) => {
+    if (!event.key || event.key === "remotelab.theme") syncTheme();
   });
   window.setInterval(() => {
-    if (!document.hidden) void refresh();
+    if (!document.hidden && isAmber()) void refresh();
   }, 5 * 60_000);
-  void refresh();
+  syncTheme();
 })();

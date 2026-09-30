@@ -26,6 +26,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction: a Token bar and then a colored edge marker made the Session list feel cluttered. A small amount on the right edge of the Session title row fits better, but the selected row must still leave space for rename, archive, and pin actions.
 - Product implication: trial the compact amount only for the requesting Person, use `k` consistently, and keep it separate from the larger UI redesign in Appearance Lab. The live value must use recorded usage with a clear source; missing records stay blank.
 - Pilot action: show the read-only cumulative amount above the Session actions so the title-line number and selected-row buttons can coexist. The separate pet quota display remains in place.
+- Follow-up: the user accepted this pair of indicators and asked to collect them under Amber for now. Broader theme support remains a later decision; see `notes/current/amber-usage-pilot.md`.
 
 ### 2026-09-30 — Failed actions must show their reason in the product
 

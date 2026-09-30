@@ -11,6 +11,7 @@
   let refreshing = false;
   let updateQueued = false;
   let lastReadAt = 0;
+  const isAmber = () => document.documentElement.getAttribute("data-theme") === "amber";
 
   function formatTokens(tokens) {
     if (tokens > 0 && tokens < 100) return "<0.1k";
@@ -58,7 +59,7 @@
   queueUpdate();
 
   async function refresh() {
-    if (refreshing) return;
+    if (refreshing || !isAmber()) return;
     refreshing = true;
     try {
       // The existing summary is sufficient for this single-Person trial.
@@ -84,8 +85,15 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && Date.now() - lastReadAt >= 2 * 60_000) void refresh();
   });
+  function syncTheme() {
+    if (isAmber() && Date.now() - lastReadAt >= 2 * 60_000) void refresh();
+  }
+  window.addEventListener("remotelab:themechange", syncTheme);
+  window.addEventListener("storage", (event) => {
+    if (!event.key || event.key === "remotelab.theme") syncTheme();
+  });
   window.setInterval(() => {
     if (!document.hidden && Date.now() - lastReadAt >= 2 * 60_000) void refresh();
   }, 2 * 60_000);
-  void refresh();
+  syncTheme();
 })();
