@@ -25,6 +25,7 @@ async function ensureDecisionEvent(sessionId, sourceMessageId, key, record) {
     type: 'reaction_decision', role: 'system', timestamp: Date.now(),
     sourceMessageId,
     participation: record.decision.participation, emojiType: record.decision.emojiType,
+    ...(record.decision.workMode ? { workMode: record.decision.workMode } : {}),
   })).seq;
   return store.mutate(key, current => ({ ...current, decisionEventSeq }));
 }
@@ -91,15 +92,18 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
     if (!record?.eventSeq) throw new Error('Source message has not entered the Session');
     const participation = proposed?.participation;
     const emojiType = trim(proposed?.emojiType);
+    const workMode = trim(proposed?.workMode);
     if (!record.decision) {
       if (!['reply', 'silent'].includes(participation)
           || (participation === 'reply' && emojiType !== 'OnIt')
+          || (participation === 'reply' && !['short', 'complex'].includes(workMode))
+          || (participation === 'silent' && workMode !== '')
           || (participation === 'silent' && emojiType !== ''
             && !['WOW', 'DULL'].includes(emojiType))) {
         throw new Error('Invalid Jev reaction decision');
       }
       const decision = {
-        participation, emojiType: emojiType || null,
+        participation, emojiType: emojiType || null, workMode: workMode || null,
         reason: trim(proposed?.reason),
         decidedAt: new Date().toISOString(),
       };

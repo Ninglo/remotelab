@@ -54,6 +54,17 @@ export function buildFeishuRequestDeliveryTarget(summary) {
   });
 }
 
+// Persisted pilot decisions from before workMode existed must replay against
+// their original group Session and Thread delivery target.
+export function buildFeishuLegacyGroupWorkThreadTarget(summary) {
+  const target = buildFeishuRequestDeliveryTarget(summary);
+  if (target.conversationKind !== 'main' || !target.chatId || !target.messageId) return target;
+  return normalizeConversationTarget({
+    ...target, conversationKind: 'thread', rootId: target.messageId,
+    replyInThread: true, sourceKind: 'ambient_thread_open',
+  });
+}
+
 export function buildFeishuSessionExternalTriggerId(summary, sourceRouteId = 'default') {
   const safe = value => encodeURIComponent(trimString(value) || 'unknown');
   const route = safe(sourceRouteId);

@@ -44,6 +44,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: during the normal task turn, the model should infer the useful result from the user's goal, including a card for a scannable status or a real calendar/task resource for a commitment or follow-up, even when the user does not name the format. Deterministic code owns provider request shape, Bot identity, validation, compact output, readback, and post-answer display conversion. Apply this pattern to other Connectors as their repeated workflows become clear.
 - Implementation: `remotelab feishu` exposes fixed Bot actions for contacts, messages, status cards, reactions, calendars, tasks, and Base records. The native `lark-cli` remains the provider client and fallback for less common operations. The ordinary Feishu reply adapter compiles the generated answer to rich text locally, without a second model call. The Feishu guide and source prompt now describe in-turn selection by user goal. A card still sends as a separate action; the durable source-delivery reply does not yet carry a native card variant.
 
+### 2026-09-30 — Open a Feishu Thread for work admitted from a trial group
+
+- Observed friction: a substantial request in a trial group's main timeline was admitted by Jev and handed to a separate work Session, but the visible progress reply stayed in the group main timeline. The group member expected a Feishu Thread on the source message.
+- Product implication: keep observation and work admission in the shared group Session, then bind the work request's visible delivery to a Thread rooted at the inbound message. Do this in the connector so it does not depend on the Harness emitting a special reply marker. A later human reply in that Thread should resolve to its own Session.
+
 ### 2026-09-30 — Only targeted reactions when a trial group does not start work
 
 - Observed friction: the trial groups now retain every message in their main Session, and the broad no-work reaction fallback creates more visible responses than the user finds useful.
@@ -963,6 +968,20 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction or ask: the Person asked for `目标：` directly above the deliverables, a real state change in the same checklist, and an expandable Thinking block. A steering message during unfinished work started a new Run and exposed a gap in per-turn checklist coalescing.
 - Product implication: coalesce checklist revisions across steering messages until the result closes the work, keep one expandable Thinking block per user turn, and let WebSocket invalidation refresh the inline checklist after a genuine update.
 - Follow-up: verify the current Session receives an invalidation, projects one updated card, and loads its Thinking event range; the already-open browser tab may need one refresh to load changed JavaScript.
+
+### 2026-09-30 — 单人飞书私聊试用动态交付清单
+
+- Source: direct request after the Session checklist pilot was tested.
+- Observed friction or ask: the Person wants Zhang Siyuan to test the same checklist and separate result in his Feishu conversation without changing other people's conversations.
+- Product implication: enable the checklist judgment on only his bound private Session, mirror checklist revisions by editing one Bot message, and leave the existing final source delivery as a separate reply. Keep Thinking inside RemoteLab because Feishu chat text has no native expandable Thinking block.
+- Follow-up: validate a real multi-step Feishu request, one message ID across revisions, final result delivery, and other private chats remaining unchanged.
+
+### 2026-09-30 — 试验群开工后仍需分短回复和复杂任务
+
+- Source: direct correction after observing a work reply without a dedicated topic.
+- Observed friction or ask: routing every admitted reply into a Thread loses brief mainline answers, while routing complex work from the group Session does not create a separate work Session.
+- Product implication: Jev first decides whether to work, then selects short mainline work in the existing group Session or complex work in a new Thread and Session. For no-work messages, retain only explicit praise (`WOW`), explicit criticism (`DULL`), or silence.
+- Follow-up: verify both work paths and all three no-work outcomes with fresh messages in a pilot group; inspect Feishu delivery receipts and Session bindings.
 
 ### YYYY-MM-DD — short title
 

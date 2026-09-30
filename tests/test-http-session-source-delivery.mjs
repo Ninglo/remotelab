@@ -183,9 +183,29 @@ try {
     text: '请调查这个问题', sourceContext: { ...observedSource, messageId: 'observed-work' },
   });
   assert.equal(workObservation.status, 201);
-  const observedWorkRun = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
-    requestId: 'feishu:observed-work', text: '请调查这个问题', recordUserMessage: false,
+  const workDecision = await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-work', participation: 'reply', workMode: 'complex', emojiType: 'OnIt',
+  });
+  assert.equal(workDecision.status, 200);
+  assert.equal(workDecision.body.decision.workMode, 'complex');
+  assert.equal((await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-work', participation: 'reply', workMode: 'short', emojiType: 'OnIt',
+  })).body.decision.workMode, 'complex', 'a replay cannot change the selected work topology');
+  const workConversation = { ...groupFeedConversation, target: {
+    ...groupFeedConversation.target, messageId: 'observed-work',
+    conversationKind: 'thread', rootId: 'observed-work', replyInThread: true,
+  } };
+  const workSession = await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu', conversation: workConversation,
+    externalTriggerId: 'feishu:thread:pilot-bot:pilot-tenant:pilot-group:observed-work',
+  });
+  assert.equal(workSession.status, 201);
+  assert.notEqual(workSession.body.session.id, groupFeedId);
+  const observedWorkRun = await connectorRequest('POST', `/api/sessions/${workSession.body.session.id}/messages`, {
+    requestId: 'feishu:observed-work', text: '请调查这个问题',
     tool: 'fake-codex', model: 'fake-model',
+    sourceContext: { ...observedSource, messageId: 'observed-work', conversationKind: 'topic' },
+    sourceDelivery: workConversation,
   });
   assert.equal(observedWorkRun.status, 202);
   await waitFor(async () => {
@@ -194,7 +214,60 @@ try {
   }, 'observed work response completion');
   const afterWork = (await request('GET', `/api/sessions/${groupFeedId}/events?filter=all`)).body.events;
   assert.equal(afterWork.filter(event => event.type === 'message' && event.sourceMessageId === 'observed-work').length, 1,
-    'starting Harness after observation must not duplicate its user message');
+    'the group timeline keeps its single observation');
+  assert.equal(afterWork.find(event => event.type === 'reaction_decision'
+    && event.sourceMessageId === 'observed-work')?.workMode, 'complex');
+  const workEvents = (await request('GET', `/api/sessions/${workSession.body.session.id}/events?filter=all`)).body.events;
+  assert.equal(workEvents.filter(event => event.type === 'message' && event.role === 'user').length, 1,
+    'the dedicated work Session receives the task');
+  const shortObservation = await connectorRequest('POST', observePath, {
+    sourceMessageId: 'observed-short', requestId: 'feishu:observed-short',
+    text: '这个词是什么意思？', sourceContext: { ...observedSource, messageId: 'observed-short' },
+  });
+  assert.equal(shortObservation.status, 201);
+  const shortDecision = await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-short', participation: 'reply', workMode: 'short', emojiType: 'OnIt',
+  });
+  assert.equal(shortDecision.status, 200);
+  assert.equal(shortDecision.body.decision.workMode, 'short');
+  const shortRun = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
+    requestId: 'feishu:observed-short', text: '这个词是什么意思？', recordUserMessage: false,
+    tool: 'fake-codex', model: 'fake-model',
+    sourceContext: { ...observedSource, messageId: 'observed-short', feishuParticipation: 'ambient' },
+    sourceDelivery: { ...groupFeedConversation, target: {
+      ...groupFeedConversation.target, messageId: 'observed-short',
+    } },
+  });
+  assert.equal(shortRun.status, 202);
+  await waitFor(async () => {
+    const result = await request('GET', `/api/runs/${shortRun.body.run.id}`);
+    return result.body.run?.state === 'completed';
+  }, 'short group reply completion');
+  const pilotDeliveries = [];
+  for (let index = 0; index < 5; index += 1) {
+    const claim = await request('POST', '/api/source-deliveries/claim', {
+      connector: 'feishu', sourceRouteId: 'pilot-bot',
+    });
+    assert.equal(claim.status, 200);
+    assert(claim.body.claim?.delivery, 'the reaction, previous group reply and work reply must be queued');
+    pilotDeliveries.push(claim.body.claim.delivery);
+    assert.equal((await request('POST', `/api/source-deliveries/${claim.body.claim.delivery.id}/complete`, {
+      leaseId: claim.body.claim.leaseId, externalId: `pilot-delivery-${index}`,
+    })).status, 200);
+  }
+  const workReply = pilotDeliveries.find(delivery => delivery.target?.rootId === 'observed-work');
+  assert(workReply, 'the work reply must be published');
+  assert.equal(workReply.target.rootId, 'observed-work', JSON.stringify(pilotDeliveries.map(delivery => ({
+    kind: delivery.kind, target: delivery.target,
+  }))));
+  assert.equal(workReply.target.replyInThread, true);
+  assert.equal(workReply.sessionId, workSession.body.session.id);
+  assert.equal(workReply.target.sourceKind, undefined);
+  const mainReplies = pilotDeliveries.filter(delivery => delivery.kind === 'content'
+    && delivery.sessionId === groupFeedId);
+  assert.equal(mainReplies.length, 2, 'both existing group work and short reply stay in the group Session');
+  assert(mainReplies.every(delivery => delivery.target.conversationKind === 'main'
+    && delivery.target.replyInThread !== true));
   console.log('PASS: group conversation is shared for reading but only the connector can write or bind it');
   const longClaim = request('POST', '/api/source-deliveries/claim', {
     connector: 'feishu', sourceRouteId: 'long-poll-fixture', waitMs: 5000,

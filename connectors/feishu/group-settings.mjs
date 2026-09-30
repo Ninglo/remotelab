@@ -78,7 +78,8 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     ...(ambient ? { participationMode: 'ambient' } : {}),
     ...(ambient && typeof group.groupFeed === 'boolean' ? { groupFeed: group.groupFeed } : {}),
-    ...(group.quickReactions === true && !privateChat ? { quickReactions: true } : {}),
+    ...(group.quickReactions === true && !privateChat && (group.jevReactions !== true || ambient)
+      ? { quickReactions: true } : {}),
     ...(group.jevReactions === true && ambient ? { jevReactions: true } : {}),
     systemPrompt: [config.systemPrompt, group.systemPrompt,
       group.jevReactions === true && ambient ? JEV_REACTION_SESSION_PROMPT
