@@ -81,7 +81,7 @@ async function selectRuntimeMode(mode) {
     action: "session_preferences",
     sessionId: currentSessionId,
     tool: auto ? "codex" : session.tool || "codex",
-    model: auto ? "auto" : session.model && session.model !== "auto" ? session.model : "gpt-6-sol",
+    model: auto ? "auto" : session.model && session.model !== "auto" ? session.model : "gpt-6.1-sol",
     effort: auto ? "" : session.model && session.model !== "auto" ? session.effort || "low" : "low",
     thinking: auto ? false : session.thinking === true,
   });
@@ -103,7 +103,7 @@ function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions ||
   const quick = options?.executionProfile === "quick";
   const auto = !quick && options?.runtimeMode !== "custom";
   const tool = selectedTool || preferredTool || toolsList[0]?.id;
-  const model = auto ? "auto" : selectedModel === "auto" ? "gpt-6-sol" : typeof selectedModel === "string" ? selectedModel : "";
+  const model = auto ? "auto" : selectedModel === "auto" ? "gpt-6.1-sol" : typeof selectedModel === "string" ? selectedModel : "";
   const effort = auto ? "" : selectedModel === "auto" ? "low" : typeof selectedEffort === "string" ? selectedEffort : "";
   if (!quick && !auto && !tool) return null;
   return {

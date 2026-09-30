@@ -77,11 +77,11 @@ dropdowns showing the concrete model and effort. Later messages keep that
 selection unless the user changes it; they do not run Jev again. The next new
 Session starts in Auto again. The default tier mappings are:
 
-- `quick`: GPT-6 Sol with `low` reasoning and a short-answer developer prompt
+- `quick`: GPT-6.1 Sol with `low` reasoning and a short-answer developer prompt
   for self-contained, low-risk requests that need no tools or current facts.
-- `balanced`: GPT-6 Sol with `medium` reasoning for clearly bounded,
+- `balanced`: GPT-6.1 Sol with `medium` reasoning for clearly bounded,
   low-consequence routine work.
-- `quality`: GPT-6 Sol with `xhigh` reasoning. This is the conservative default
+- `quality`: GPT-6.1 Sol with `xhigh` reasoning. This is the conservative default
   for serious work, research, development, debugging, and contextual tasks.
 - `sota`: GPT-6 Astra with `xhigh` reasoning. Jev may choose it only when the
   user explicitly requests the strongest/SOTA model, maximum reasoning, or
@@ -97,7 +97,7 @@ An Auto-selected Quick Session can still use tools when a later request needs
 them. Legacy Quick Sessions and Feishu `/quick` remain compatible, but the Web
 new-session switch no longer exposes Quick as a separate mode.
 
-GPT-6 Sol and Luna availability rolls out by ChatGPT workspace and Codex CLI
+GPT-6.1 Sol and GPT-6 Luna availability can differ by ChatGPT workspace and Codex CLI
 version. Before enabling these mappings on an existing instance, update Codex,
 refresh the native model catalog, and run one real low-effort canary for each
 model. Do not switch the tier file when either canary is rejected.
@@ -121,10 +121,10 @@ JSON file. The file can also be edited directly:
 
 ```json
 {
-  "quick": { "model": "gpt-6-sol", "effort": "low" },
+  "quick": { "model": "gpt-6.1-sol", "effort": "low" },
   "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
-  "quality": { "model": "gpt-6-sol", "effort": "xhigh" },
-  "balanced": { "model": "gpt-6-sol", "effort": "medium" },
+  "quality": { "model": "gpt-6.1-sol", "effort": "xhigh" },
+  "balanced": { "model": "gpt-6.1-sol", "effort": "medium" },
   "economy": { "model": "gpt-6-luna", "effort": "low" },
   "quickPrompt": "Answer directly and concisely in the user's language..."
 }

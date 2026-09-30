@@ -72,7 +72,7 @@ assert.equal(context.sessionProfileControl.hidden, false);
 assert.equal(context.runtimeSelectionControls.hidden, true);
 
 await context.select('custom');
-assert.equal(actions.at(-1).model, 'gpt-6-sol');
+assert.equal(actions.at(-1).model, 'gpt-6.1-sol');
 assert.equal(context.mode(context.current), 'custom');
 assert.equal(context.runtimeSelectionControls.hidden, false);
 

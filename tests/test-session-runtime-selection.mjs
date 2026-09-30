@@ -12,7 +12,7 @@ try {
   const autoDefault = await resolveSessionRuntimeSelection({ tool: 'codex' });
   assert.deepEqual(
     { tool: autoDefault.tool, model: autoDefault.model, effort: autoDefault.effort, thinking: autoDefault.thinking },
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'xhigh', thinking: false },
+    { tool: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh', thinking: false },
     'an incomplete new Codex Session starts from Auto and safely falls back to quality',
   );
   assert.equal(autoDefault.autoRoutingReceipt.status, 'fallback');
@@ -36,7 +36,7 @@ try {
   );
   assert.deepEqual(
     { tool: switchedToCodex.tool, model: switchedToCodex.model, effort: switchedToCodex.effort },
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'xhigh' },
+    { tool: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' },
     'switching to Codex without a concrete model starts from Auto',
   );
   assert.equal((await resolveSessionRuntimeSelection({ ...defaults, effort: 'ultra' }, { model: 'gpt-5.6-luna' })).effort, 'medium', 'a different model resolves its own default effort');
@@ -44,7 +44,7 @@ try {
   const migratedAuto = await resolveSessionRuntimeSelection({ tool: 'micro-agent' });
   assert.deepEqual(
     { tool: migratedAuto.tool, model: migratedAuto.model, effort: migratedAuto.effort },
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'low' },
+    { tool: 'codex', model: 'gpt-6.1-sol', effort: 'low' },
   );
   const previousFetch = globalThis.fetch;
   process.env.TYPESAFE_API_KEY = 'private-test-key';
@@ -90,7 +90,7 @@ try {
       { executionProfile: 'quick', tool: 'claude', model: 'opus', effort: 'high', thinking: true },
       { tool: 'pi', model: 'provider/model', effort: 'max', thinking: true },
     ),
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'low', thinking: false },
+    { tool: 'codex', model: 'gpt-6.1-sol', effort: 'low', thinking: false },
     'Quick Sessions ignore every per-message and persisted runtime override',
   );
   const pinned = { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high', thinking: false };

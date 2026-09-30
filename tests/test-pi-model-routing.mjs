@@ -47,7 +47,7 @@ const rpcCatalog = parsePiRpcModels([
   },
   {
     provider: 'openai-codex',
-    id: 'gpt-6-sol',
+    id: 'gpt-6.1-sol',
     reasoning: true,
     thinkingLevelMap: {
       off: null,
@@ -126,7 +126,7 @@ assert.deepEqual(
       kind: 'enum',
     },
     {
-      id: 'openai-codex/gpt-6-sol',
+      id: 'openai-codex/gpt-6.1-sol',
       provider: 'openai-codex',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
       control: '',
