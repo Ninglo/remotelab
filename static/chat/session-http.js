@@ -1430,9 +1430,10 @@ async function fetchSessionEvents(
     );
   const sourceEvents = data.events || [];
   if (currentSessionId !== sessionId) return sourceEvents;
-  if (typeof updateSessionWorkboardEvents === "function") updateSessionWorkboardEvents(sessionId, sourceEvents);
+  const stableSourceEvents = typeof updateSessionWorkboardEvents === "function"
+    ? updateSessionWorkboardEvents(sessionId, sourceEvents) : sourceEvents;
   const events = typeof projectSessionWorkboardTranscriptEvents === "function"
-    ? projectSessionWorkboardTranscriptEvents(sessionId, sourceEvents) : sourceEvents;
+    ? projectSessionWorkboardTranscriptEvents(sessionId, stableSourceEvents) : stableSourceEvents;
   const renderPlan = getEventRenderPlan(sessionId, events);
   const viewportSnapshot = captureSessionMessageViewport(
     `session-render:${renderPlan.mode}`,

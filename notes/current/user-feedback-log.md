@@ -938,6 +938,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: use one workboard panel for the opted-in Session, keep prior checklist state available there, and suppress separate transcript cards for every checklist update. Put an item's short title and completion condition on the same row; the task-level explanation stays above the list.
 - Follow-up: verify current live events and served assets separately from the running server process and the Person's already-open browser tab.
 
+### 2026-09-30 — 清单应是会话内的一条消息
+
+- Source: direct correction during the opted-in checklist pilot.
+- Observed friction or ask: the checklist floated on mobile and was absent from the desktop view; the Person wanted one checklist message that updates progress, followed by one result message.
+- Product implication: show the latest checklist revision inline in its turn on both viewport sizes, keep one row per deliverable, and place the final answer after it. Preserve raw revisions for audit without rendering them as separate cards.
+- Follow-up: verify the current Session on mobile and desktop after fresh load; confirm a second update changes the same visible checklist and other Sessions retain their normal transcript.
+
 ### YYYY-MM-DD — short title
 
 - Source:

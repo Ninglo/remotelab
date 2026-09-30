@@ -334,6 +334,9 @@ function resetRenderedEventState(sessionId = null) {
 }
 
 function getEventBoundarySeq(event) {
+  if (Number.isInteger(event?.displayBoundarySeq) && event.displayBoundarySeq > 0) {
+    return event.displayBoundarySeq;
+  }
   if (Number.isInteger(event?.blockEndSeq) && event.blockEndSeq > 0) {
     return event.blockEndSeq;
   }
