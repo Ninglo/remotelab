@@ -39,7 +39,14 @@ export async function publishNativeFinalReplies(record, events, { store, plan, s
   for (const event of events || []) {
     if (!isFinalAssistantMessage(event) || !event.providerMessageId) continue;
     if ((await store.get(record.key))?.streamedFinalReplyIds?.includes(event.providerMessageId)) continue;
-    const prepared = await prepareFinal(event);
+    let prepared;
+    try { prepared = await prepareFinal(event); }
+    catch (error) {
+      // Asset transport failure must not freeze Run observation or other final
+      // messages. The terminal asset path still owns this deferred answer.
+      console.error(`[native-final-publication] deferred ${event.providerMessageId}: ${error.message}`);
+      continue;
+    }
     if (!prepared) continue;
     const payload = buildReplyPublicationPayload([prepared], {
       id: record.runId, responseId: record.responseId,
