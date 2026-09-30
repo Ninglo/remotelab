@@ -3,7 +3,7 @@
   display: block;
   position: absolute;
   top: 102px;
-  right: 12px;
+  right: 24px;
   z-index: 5;
   max-width: min(240px, calc(100% - 24px));
   font-size: 11px;
