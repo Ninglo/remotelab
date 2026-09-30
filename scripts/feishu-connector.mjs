@@ -1186,7 +1186,8 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     const verdict = await (helpers.classifyJevReaction || ((context) =>
       classifyFeishuQuickParticipation(context, { includeHandoff: false })))(context);
     const participation = !verdict?.reactionOnly
-      && (mentionsFeishuBot(runtime, summary) || verdict?.decision === 'reply')
+      && (verdict?.decision === 'reply'
+        || (verdict?.decision === 'unknown' && mentionsFeishuBot(runtime, summary)))
       ? 'reply' : 'silent';
     const emojiType = participation === 'reply' ? 'OnIt'
       : ['WOW', 'DULL'].includes(verdict?.emojiType) ? verdict.emojiType : null;

@@ -511,8 +511,9 @@ hours, capped at 5,000 characters, to one Jev judgment. Jev first decides
 whether text or task work is needed. If no work starts, explicit praise of the
 assistant or its work gets `WOW` (惊喜), explicit criticism or rejection gets
 `DULL` (衰), and all other messages get no reaction. Weak or missing emotion
-support also gets no reaction. A direct @ mention normally starts a Run; an
-explicit request for only an emoji stays reaction-only. When a Run is admitted,
+support also gets no reaction. Jev decides whether a direct @ mention needs a
+Run; an uncertain judgment with a direct @ mention retains the existing work
+fallback. An explicit request for only an emoji stays reaction-only. When a Run is admitted,
 the outcome remains `OnIt`. The connector records every judgment in the
 Session and queues a reaction only when one was chosen. The durable
 source-delivery outbox and Feishu Bot SDK send that reaction. This path does not add a temporary

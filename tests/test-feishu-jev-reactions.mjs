@@ -27,6 +27,7 @@ try {
     key: 'fixture', includeHandoff: false, fetchImpl: async (_url, request) => {
       const { questions } = JSON.parse(request.body);
       assert.deepEqual(Object.keys(questions.emotion.criteria), ['praise', 'criticism', 'none']);
+      assert.match(questions.participation.instructions, /only praises, criticizes, or rejects/);
       return { ok: true, json: async () => ({ answers: {
       participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
       emotion: { choice: 'praise', probabilities: { praise: 0.96, criticism: 0.01, none: 0.03 } },
@@ -54,6 +55,7 @@ try {
       assert.equal(questions.emotion, undefined, 'other groups keep their original Jev request size');
       assert.equal(questions.reactionOnly, undefined);
       assert(questions.projectHandoff);
+      assert.doesNotMatch(questions.participation.instructions, /only praises, criticizes, or rejects/);
       return { ok: true, json: async () => ({ answers: {
         participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
       } }) };
@@ -106,10 +108,34 @@ try {
 
   effects.length = 0;
   const direct = await handleMessage(runtime, { ...base, messageId: 'work',
-    messageText: '请处理这个问题', mentions: [{ openId: 'bot' }] }, 'test', helpers);
+    messageText: '请处理这个问题', mentions: [{ openId: 'bot' }] }, 'test', {
+      ...helpers, classifyJevReaction: async () => {
+        effects.push('jev');
+        return { decision: 'reply', emojiType: null };
+      },
+    });
   assert.equal(direct.runId, 'work-run');
   assert.deepEqual(effects, ['observe:work', 'jev', 'decision:reply:OnIt', 'run:true', 'reaction:OnIt'],
     'an accepted task gets OnIt after Run admission without a read reaction');
+
+  effects.length = 0;
+  const mentionedPraise = await handleMessage(runtime, { ...base, messageId: 'mentioned-praise',
+    messageText: '你这次做得真棒', mentions: [{ openId: 'bot' }] }, 'test', helpers);
+  assert.equal(mentionedPraise.decision.participation, 'silent');
+  assert.deepEqual(effects, ['observe:mentioned-praise', 'jev', 'decision:silent:WOW', 'reaction:WOW'],
+    'a direct mention with clear praise and a silent Jev verdict does not start work');
+
+  effects.length = 0;
+  const mentionedCriticism = await handleMessage(runtime, { ...base, messageId: 'mentioned-criticism',
+    messageText: '你这次回答得很差', mentions: [{ openId: 'bot' }] }, 'test', {
+      ...helpers, classifyJevReaction: async () => {
+        effects.push('jev');
+        return { decision: 'silent', emojiType: 'DULL' };
+      },
+    });
+  assert.equal(mentionedCriticism.decision.participation, 'silent');
+  assert.deepEqual(effects, ['observe:mentioned-criticism', 'jev',
+    'decision:silent:DULL', 'reaction:DULL']);
 
   effects.length = 0;
   const onlyReaction = await handleMessage(runtime, { ...base, messageId: 'emoji-only',
