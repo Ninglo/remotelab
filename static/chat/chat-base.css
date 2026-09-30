@@ -179,42 +179,6 @@
   z-index: 1;
 }
 
-.pet-quota-pilot { display: none; }
-:root[data-theme="amber"] .pet-quota-pilot {
-  display: block;
-  position: absolute;
-  top: 102px;
-  right: 12px;
-  z-index: 5;
-  max-width: min(240px, calc(100% - 24px));
-  font-size: 11px;
-}
-.pet-quota-pilot-button {
-  display: block;
-  margin-left: auto;
-  padding: 5px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text-secondary);
-  font: inherit;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
-}
-.pet-quota-pilot-button:hover { border-color: var(--border-strong); color: var(--text); }
-.pet-quota-pilot-button:focus-visible { outline: 2px solid var(--focus-border); outline-offset: 2px; }
-.pet-quota-pilot-details {
-  margin-top: 5px;
-  padding: 9px 11px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text-secondary);
-  line-height: 1.6;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
-}
-.pet-quota-pilot-details[hidden] { display: none; }
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 .rl-icon {
