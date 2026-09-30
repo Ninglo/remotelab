@@ -13,12 +13,6 @@
   let loading = false;
   let queued = false;
 
-  function compactTokens(value) {
-    if (value >= 1e8) return `${Number((value / 1e8).toFixed(1))}亿`;
-    if (value >= 1e4) return `${Number((value / 1e4).toFixed(1))}万`;
-    return String(value);
-  }
-
   function heatLevel(value) {
     if (value < 1e5) return 1;
     if (value < 1e6) return 2;
@@ -30,36 +24,14 @@
   function updateRow(row) {
     const sessionId = row.querySelector(".session-action-btn[data-id]")?.dataset.id;
     if (!sessionId) return;
-    const info = row.querySelector(".session-item-info");
-    if (!info) return;
-    let target = info.querySelector(".session-item-description, .session-item-meta");
-    if (!target) {
-      target = document.createElement("div");
-      target.className = "session-item-description";
-      info.append(target);
-    }
-    let badge = target.querySelector(".session-token-pilot");
-    if (!badge) {
-      badge = document.createElement("span");
-      badge.className = "session-token-pilot";
-      const bar = document.createElement("span");
-      bar.className = "session-token-pilot-bar";
-      bar.setAttribute("aria-hidden", "true");
-      const label = document.createElement("span");
-      label.className = "session-token-pilot-label";
-      badge.append(bar, label);
-      target.append(badge);
-    }
     const tokens = bySession.get(sessionId);
-    const known = Number.isFinite(tokens);
-    const text = known ? `${compactTokens(tokens)} Token` : loadState === "loading" ? "Token · …" : "Token · —";
-    const title = known
-      ? `已记录 Token：${tokens.toLocaleString("zh-CN")}。包含此 Session 的后台调用；不代表剩余额度。`
-      : loadState === "error" ? "用量暂时无法读取" : "暂无可核对的 Token 记录";
-    badge.className = `session-token-pilot${known ? ` level-${heatLevel(tokens)}` : " is-unknown"}`;
-    badge.title = title;
-    const label = badge.querySelector(".session-token-pilot-label");
-    if (label.textContent !== text) label.textContent = text;
+    if (Number.isFinite(tokens)) {
+      row.dataset.tokenHeat = String(heatLevel(tokens));
+      row.title = `已记录 Token：${tokens.toLocaleString("zh-CN")}。包含此 Session 的后台调用；不代表剩余额度。`;
+    } else {
+      delete row.dataset.tokenHeat;
+      row.title = loadState === "error" ? "用量暂时无法读取" : "暂无可核对的 Token 记录";
+    }
   }
 
   function updateRows() {

@@ -1,29 +1,18 @@
-.session-token-pilot {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.session-token-pilot-bar {
-  display: inline-block;
-  width: 6px;
-  height: 4px;
-  border-radius: 99px;
+/* A small heat mark at the row edge keeps titles and metadata at their original size. */
+.session-item[data-token-heat]::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  bottom: 7px;
+  width: 3px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--notice);
-  opacity: 0.65;
+  opacity: .52;
+  pointer-events: none;
 }
-.session-token-pilot.level-2 .session-token-pilot-bar { width: 12px; }
-.session-token-pilot.level-3 .session-token-pilot-bar { width: 18px; }
-.session-token-pilot.level-4 .session-token-pilot-bar { width: 24px; }
-.session-token-pilot.level-5 .session-token-pilot-bar { width: 30px; }
-.session-token-pilot.is-unknown .session-token-pilot-bar { background: var(--border-strong); }
-.session-item-meta:has(.session-token-pilot) {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
+.session-item[data-token-heat="2"]::before { height: 10px; opacity: .57; }
+.session-item[data-token-heat="3"]::before { height: 14px; opacity: .63; }
+.session-item[data-token-heat="4"]::before { height: 18px; opacity: .70; }
+.session-item[data-token-heat="5"]::before { height: 22px; opacity: .78; }
+:root[data-theme="amber"] .session-item[data-token-heat]::before { background: #6d91a0; }

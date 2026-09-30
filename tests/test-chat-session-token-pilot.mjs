@@ -47,7 +47,7 @@ function makeView(personId, usage) {
     },
     Date, Number, Map,
   });
-  return { description, fetchCount: () => fetchCount };
+  return { row, description, fetchCount: () => fetchCount };
 }
 
 test('per-Session usage pilot stays invisible for other People', async () => {
@@ -55,6 +55,7 @@ test('per-Session usage pilot stays invisible for other People', async () => {
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(view.fetchCount(), 0);
   assert.equal(view.description.children.length, 0);
+  assert.equal(view.row.dataset.tokenHeat, undefined);
 });
 
 test('pilot renders recorded usage with a heat level for Zhang Siyuan', async () => {
@@ -62,14 +63,14 @@ test('pilot renders recorded usage with a heat level for Zhang Siyuan', async ()
     [{ sessionId: 'session-one', runCount: 1, totalTokens: 1300000 }]);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(view.fetchCount(), 1);
-  assert.equal(view.description.children.length, 1);
-  assert.match(view.description.children[0].className, /level-3/);
-  assert.equal(view.description.children[0].children[1].textContent, '130万 Token');
-  assert.match(view.description.children[0].title, /已记录 Token/);
+  assert.equal(view.description.children.length, 0);
+  assert.equal(view.row.dataset.tokenHeat, '3');
+  assert.match(view.row.title, /已记录 Token：1,300,000/);
 });
 
 test('missing records are not displayed as zero usage', async () => {
   const view = makeView('person_8b536b37317e491d96036fc8', []);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(view.description.children[0].children[1].textContent, 'Token · —');
+  assert.equal(view.row.dataset.tokenHeat, undefined);
+  assert.match(view.row.title, /暂无可核对/);
 });
