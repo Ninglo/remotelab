@@ -59,7 +59,9 @@ const {
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
 const { getRun, getRunManifest } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
 const { requests } = await import('../chat/requests.mjs');
-const { claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
+const { claimSourceDelivery, completeSourceDelivery, enqueueSourceDelivery } = await import('../chat/source-deliveries.mjs');
+const { appendEvent, loadHistory } = await import('../chat/history.mjs');
+const { projectWorkboards } = await import('../lib/workboard-state.mjs');
 const { buildSessionEntryDeliveries } = await import('../chat/session-entry-notification.mjs');
 const { publishNativeFinalReplies } = await import('../chat/native-final-publication.mjs');
 
@@ -83,6 +85,18 @@ try {
   });
   assert.deepEqual(probe.streamedFinalReplyIds, ['ready-text'], 'failed asset preparation does not freeze observation or other final replies');
   assert.equal(probe.deliveries.length, 1);
+  const taggedSession = await createSession(tempHome, 'fake-codex', 'Explicit task result');
+  await appendEvent(taggedSession.id, { type: 'message', role: 'assistant', source: 'workboard_checklist',
+    workboard: { taskId: 'result-task', revision: 1, goal: '结果', status: 'blocked', reason: '等待输入',
+      items: [{ id: 'a', title: '输入', condition: '可查', status: 'pending', evidenceRefs: [] }] } });
+  await assert.rejects(enqueueSourceDelivery({ sessionId: taggedSession.id, responseId: 'stale-task-result', text: '说明',
+    sourceDelivery: { connector: 'feishu', target: { chatId: 'tagged-chat' } }, workboardTaskId: 'result-task', workboardRevision: 2 }), /current task/);
+  await enqueueSourceDelivery({ sessionId: taggedSession.id, responseId: 'tagged-result', text: '尚未完成，等待输入',
+    sourceDelivery: { connector: 'feishu', target: { chatId: 'tagged-chat' } }, workboardTaskId: 'result-task', workboardRevision: 1 });
+  const tagged = await claimSourceDelivery({ connector: 'feishu' });
+  await completeSourceDelivery(tagged.delivery.id, tagged.leaseId, { externalId: 'om-tagged-result' });
+  const taggedBoard = projectWorkboards(await loadHistory(taggedSession.id))[0].board;
+  assert.equal(taggedBoard.deliveryState, 'delivered'); assert.equal(taggedBoard.status, 'blocked');
   const session = await createSession(tempHome, 'fake-codex', 'Direct Reply Publication', {
     space: 'Product',
     group: 'RemoteLab',

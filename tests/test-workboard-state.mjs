@@ -160,3 +160,14 @@ test('provider item IDs reused across Runs cannot reuse another Run delivery rec
   history.push({ ...history[2], seq: 7, runId: 'run-2', deliveryId: 'second', externalId: 'om-second' });
   assert.equal(projectWorkboards(history)[0].board.deliveryState, 'delivered');
 });
+test('explicit outbox result receipts bind to the task revision, including local continuations', () => {
+  const board = make({ status: 'completed' });
+  const receipt = { seq: 3, type: 'source_delivery', deliveryId: 'manual', workboardTaskId: board.taskId,
+    workboardRevision: 1, kind: 'content', state: 'delivered', externalId: 'om-result', providerPartCount: 2 };
+  const history = [event(2, board), receipt];
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, 'pending', 'one part does not prove all attachments delivered');
+  history.push({ ...receipt, seq: 4, deliveryId: 'file', kind: 'attachment' });
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, 'delivered');
+  history.push(event(5, make({ revision: 2 }), 'local-continuation'));
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, undefined);
+});
