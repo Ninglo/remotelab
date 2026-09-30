@@ -60,6 +60,8 @@ export function isFeishuWorkboardGroupSession(session, pilot) {
 
 function collectAuthorizedCycles(events, pilot, session = null) {
   const allowed = new Map();
+  const localRuns = new Set();
+  const authorizedTasks = new Set();
   const target = session?.conversation?.target;
   let authorizedUser = false;
   const history = [];
@@ -67,6 +69,7 @@ function collectAuthorizedCycles(events, pilot, session = null) {
     if (!Number.isInteger(event.seq) || event.seq <= (pilot.startedAfterSeq || 0)) continue;
     if (event.type === 'message' && event.role === 'user') {
       const source = event.sourceContext;
+      if (!source && event.runId) localRuns.add(event.runId);
       authorizedUser = trim(source?.sender?.openId) === pilot.senderOpenId
         && (!target || (source?.connector === 'feishu' && source.chatType === 'group'
           && source.chatId === target.chatId && source.sourceRouteId === pilot.sourceRouteId
@@ -76,8 +79,18 @@ function collectAuthorizedCycles(events, pilot, session = null) {
         else allowed.delete(event.runId);
       }
       history.push(event);
-    } else if (event.source !== 'workboard_checklist'
-        || (event.runId ? allowed.has(event.runId) : authorizedUser)) history.push(event);
+    } else if (event.source !== 'workboard_checklist') history.push(event);
+    else {
+      const ownSource = event.runId ? allowed.has(event.runId) : authorizedUser;
+      // A Session owner can resume an existing explicitly identified task from
+      // the local Session surface. This never creates a new opt-in task, and
+      // does not grant other Feishu senders access through the same Run.
+      const taskId = event.workboard?.taskId || (event.runId ? `wb_${event.runId}` : `wb_seq_${event.seq}`);
+      if (ownSource || (event.workboard && localRuns.has(event.runId) && authorizedTasks.has(taskId))) {
+        history.push(event);
+        authorizedTasks.add(taskId);
+      }
+    }
   }
   return projectWorkboards(history).map(task => {
     const anchor = history.find(event => event.seq === task.anchorSeq);

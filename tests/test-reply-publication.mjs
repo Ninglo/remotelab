@@ -61,6 +61,7 @@ const { getRun, getRunManifest } = await import(pathToFileURL(join(repoRoot, 'ch
 const { requests } = await import('../chat/requests.mjs');
 const { claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
 const { buildSessionEntryDeliveries } = await import('../chat/session-entry-notification.mjs');
+const { publishNativeFinalReplies } = await import('../chat/native-final-publication.mjs');
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -72,6 +73,16 @@ async function waitFor(predicate, description, timeoutMs = 6000) {
 }
 
 try {
+  let probe = { key: 'probe', runId: 'probe-run', responseId: 'probe-response', options: {}, deliveries: [] };
+  await publishNativeFinalReplies(probe, ['unready-assets', 'ready-text'].map(providerMessageId => ({
+    type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId, content: 'ready reply',
+  })), {
+    store: { get: async () => probe, mutate: async (key, fn) => { probe = fn(probe); } },
+    plan: { connector: 'feishu', target: { chatId: 'probe-chat' } },
+    prepareFinal: async event => { if (event.providerMessageId === 'unready-assets') throw new Error('asset transport unavailable'); return event; },
+  });
+  assert.deepEqual(probe.streamedFinalReplyIds, ['ready-text'], 'failed asset preparation does not freeze observation or other final replies');
+  assert.equal(probe.deliveries.length, 1);
   const session = await createSession(tempHome, 'fake-codex', 'Direct Reply Publication', {
     space: 'Product',
     group: 'RemoteLab',

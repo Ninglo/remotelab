@@ -134,3 +134,11 @@ test('migration fence never replays old cards, and other senders cannot mutate t
   assert.equal(cycles[0].latestSeq, 2);
   assert.equal(await publishFeishuWorkboardCycle(cycles[0], { pilot: { ...pilot, protocolAfterSeq: 4 } }), null);
 });
+test('local Session continuation updates an existing opted-in card without creating a new task', () => {
+  const history = [user(), event(2, make()),
+    { seq: 3, type: 'message', role: 'user', runId: 'local-run', content: '再看看' },
+    event(4, make({ revision: 2 }), 'local-run'), event(5, make({ taskId: 'new-local-task' }), 'local-run')];
+  const cycles = collectFeishuGroupWorkboardCycles(history, pilot, session);
+  assert.equal(cycles.length, 1); assert.equal(cycles[0].anchorSeq, 2); assert.equal(cycles[0].latestSeq, 4);
+  assert.equal(cycles[0].replyMessageId, 'om-1');
+});
