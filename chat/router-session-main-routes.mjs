@@ -448,6 +448,8 @@ export async function handleSessionMainRoutes({
           sourceContext: payload.sourceContext,
           suppressSourceDelivery: authSession?.authKind !== 'service' && !payload.sourceDelivery,
           allowGroupFeedWrite: authSession?.authKind === 'service',
+          feishuConnectorAuthenticated: authSession?.authKind === 'service'
+            && payload.sourceContext?.connector === 'feishu',
           ...(authSession?.authKind === 'service' && payload.recordUserMessage === false
             ? { recordUserMessage: false } : {}),
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),

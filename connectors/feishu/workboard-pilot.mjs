@@ -43,6 +43,66 @@ export function isFeishuWorkboardPilotSession(session, pilot) {
     && target?.chatId === pilot?.chatId;
 }
 
+export function isFeishuWorkboardGroupSession(session, pilot) {
+  const conversation = session?.conversation;
+  const target = conversation?.target;
+  return pilot?.groupEnabled === true
+    && session?.workboardPilot === true
+    && session?.workboardOptInPersonId === pilot?.personId
+    && session?.groupFeed !== true
+    && conversation?.connector === 'feishu'
+    && conversation?.sourceRouteId === pilot?.sourceRouteId
+    && target?.chatType === 'group'
+    && ['main', 'thread'].includes(target?.conversationKind)
+    && Boolean(trim(target?.chatId));
+}
+
+export function collectFeishuGroupWorkboardCycles(events, pilot, session) {
+  if (!isFeishuWorkboardGroupSession(session, pilot)) return [];
+  const target = session.conversation.target;
+  const authorizedRuns = new Map();
+  const cycles = [];
+  const active = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    if (!Number.isInteger(event?.seq) || event.seq <= (pilot.startedAfterSeq || 0)
+        || event.type !== 'message' || !trim(event.runId)) continue;
+    if (event.role === 'user') {
+      const source = event.sourceContext;
+      if (trim(source?.sender?.openId) === pilot.senderOpenId
+          && source?.connector === 'feishu'
+          && source?.chatType === 'group'
+          && source?.chatId === target.chatId
+          && source?.sourceRouteId === pilot.sourceRouteId
+          && (!trim(target.tenantKey) || source?.tenantKey === target.tenantKey)
+          && trim(source?.messageId)) {
+        authorizedRuns.set(event.runId, source.messageId);
+      } else {
+        authorizedRuns.delete(event.runId);
+      }
+      continue;
+    }
+    if (event.role !== 'assistant' || !authorizedRuns.has(event.runId)) continue;
+    if (event.source === 'workboard_checklist' && trim(event.content)) {
+      const prior = active.get(event.runId);
+      if (prior) {
+        prior.latestSeq = event.seq;
+        prior.content = event.content;
+      } else {
+        const cycle = { anchorSeq: event.seq, latestSeq: event.seq,
+          content: event.content, closed: false,
+          ...(target.conversationKind === 'thread'
+            ? { replyMessageId: authorizedRuns.get(event.runId) } : {}) };
+        cycles.push(cycle);
+        active.set(event.runId, cycle);
+      }
+    } else if (active.has(event.runId)) {
+      active.get(event.runId).closed = true;
+      active.delete(event.runId);
+    }
+  }
+  return cycles;
+}
+
 export function collectFeishuWorkboardCycles(events, pilot) {
   const cycles = [];
   let active = null;
@@ -84,10 +144,15 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
     card = { anchorSeq: cycle.anchorSeq, uuid, messageId: '', pendingCreate: true, latestSeq: 0 };
     pilot.cards.push(card);
     await persist();
-    const response = await app.im.v1.message.create({
-      params: { receive_id_type: 'chat_id' },
-      data: { receive_id: pilot.chatId, msg_type: 'interactive', content: contentFor(cycle.content), uuid },
-    });
+    const response = cycle.replyMessageId
+      ? await app.im.v1.message.reply({
+        path: { message_id: cycle.replyMessageId },
+        data: { msg_type: 'interactive', content: contentFor(cycle.content), reply_in_thread: true, uuid },
+      })
+      : await app.im.v1.message.create({
+        params: { receive_id_type: 'chat_id' },
+        data: { receive_id: pilot.chatId, msg_type: 'interactive', content: contentFor(cycle.content), uuid },
+      });
     if (response?.code !== 0 || !response.data?.message_id) {
       throw new Error(response?.msg || 'Feishu workboard create failed');
     }
