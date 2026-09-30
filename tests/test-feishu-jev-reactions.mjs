@@ -17,20 +17,36 @@ try {
       quickReactions: true, jevReactions: true } } };
   const base = { chatId: 'pilot', chatType: 'group', messageType: 'text',
     sender: { senderType: 'user', openId: 'person' }, mentions: [],
-    messageId: 'surprise', messageText: '这个结果真惊喜' };
+    messageId: 'praise', messageText: '你这次做得真棒' };
   assert.equal(resolveFeishuGroupSettings(config, base).jevReactions, true);
   assert.doesNotMatch(resolveFeishuGroupSettings(config, base).systemPrompt, /THINKING|<feishu-reaction emoji=/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread' }).jevReactions, undefined,
     'the pilot must stay on the selected group mainline');
 
-  const classified = await classifyFeishuQuickParticipation('Ada: 这个结果真惊喜', {
-    key: 'fixture', includeHandoff: false, fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+  const classified = await classifyFeishuQuickParticipation('Ada: 你这次做得真棒', {
+    key: 'fixture', includeHandoff: false, fetchImpl: async (_url, request) => {
+      const { questions } = JSON.parse(request.body);
+      assert.deepEqual(Object.keys(questions.emotion.criteria), ['praise', 'criticism', 'none']);
+      return { ok: true, json: async () => ({ answers: {
       participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
-      emotion: { choice: 'surprise' },
-    } }) }),
+      emotion: { choice: 'praise', probabilities: { praise: 0.96, criticism: 0.01, none: 0.03 } },
+    } }) }; },
   });
   assert.equal(classified.decision, 'silent');
   assert.equal(classified.emojiType, 'WOW');
+
+  for (const [choice, probability, expected] of [
+    ['criticism', 0.94, 'DULL'], ['none', 0.99, null], ['praise', 0.61, null],
+  ]) {
+    const verdict = await classifyFeishuQuickParticipation('Ada: 这次答得不对', {
+      key: 'fixture', includeHandoff: false,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+        participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
+        emotion: { choice, probabilities: { [choice]: probability } },
+      } }) }),
+    });
+    assert.equal(verdict.emojiType, expected);
+  }
 
   await classifyFeishuQuickParticipation('Ada: old group', {
     key: 'fixture', fetchImpl: async (_url, request) => {
@@ -47,7 +63,7 @@ try {
   const emojiOnly = await classifyFeishuQuickParticipation('Ada @Bot: 只回个表情就行，太惊喜了', {
     key: 'fixture', includeHandoff: false, fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
       participation: { choice: 'reply', probabilities: { silent: 0.02, reply: 0.98 } },
-      emotion: { choice: 'surprise' },
+      emotion: { choice: 'praise', probabilities: { praise: 0.97 } },
       reactionOnly: { choice: 'yes', probabilities: { yes: 0.97, no: 0.03 } },
     } }) }),
   });
@@ -67,7 +83,7 @@ try {
     },
     classifyJevReaction: async context => {
       effects.push('jev');
-      assert.match(context, /这个结果真惊喜|请处理这个问题|只回个表情/);
+      assert.match(context, /你这次做得真棒|请处理这个问题|只回个表情/);
       return { decision: 'silent', emojiType: 'WOW' };
     },
     recordJevDecision: async (_sessionId, _messageId, decision) => {
@@ -85,7 +101,7 @@ try {
   };
   const silent = await handleMessage(runtime, base, 'test', helpers);
   assert.equal(silent.decision.emojiType, 'WOW');
-  assert.deepEqual(effects, ['observe:surprise', 'jev', 'decision:silent:WOW', 'reaction:WOW'],
+  assert.deepEqual(effects, ['observe:praise', 'jev', 'decision:silent:WOW', 'reaction:WOW'],
     'a social reaction needs one Jev decision, one scripted delivery and no Harness Run');
 
   effects.length = 0;
@@ -105,6 +121,24 @@ try {
   });
   assert.equal(onlyReaction.decision.participation, 'silent');
   assert.deepEqual(effects, ['observe:emoji-only', 'jev', 'decision:silent:WOW', 'reaction:WOW']);
+
+  for (const [messageId, messageText, emojiType] of [
+    ['criticism', '你这次答得不对', 'DULL'],
+    ['neutral', '今天下午三点开会', null],
+    ['thanks', '谢谢', null],
+  ]) {
+    effects.length = 0;
+    const outcome = await handleMessage(runtime, { ...base, messageId, messageText }, 'test', {
+      ...helpers, classifyJevReaction: async () => {
+        effects.push('jev');
+        return { decision: 'silent', emojiType };
+      },
+    });
+    assert.equal(outcome.decision.emojiType, emojiType);
+    assert.deepEqual(effects, ['observe:' + messageId, 'jev',
+      `decision:silent:${emojiType}`, ...(emojiType ? [`reaction:${emojiType}`] : [])]);
+    assert.equal('deliveryId' in outcome, Boolean(emojiType));
+  }
 
   effects.length = 0;
   const replay = await handleMessage(runtime, { ...base, messageId: 'replay' }, 'test', {

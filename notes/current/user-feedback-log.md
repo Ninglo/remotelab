@@ -38,6 +38,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: during the normal task turn, the model should infer the useful result from the user's goal, including a card for a scannable status or a real calendar/task resource for a commitment or follow-up, even when the user does not name the format. Deterministic code owns provider request shape, Bot identity, validation, compact output, readback, and post-answer display conversion. Apply this pattern to other Connectors as their repeated workflows become clear.
 - Implementation: `remotelab feishu` exposes fixed Bot actions for contacts, messages, status cards, reactions, calendars, tasks, and Base records. The native `lark-cli` remains the provider client and fallback for less common operations. The ordinary Feishu reply adapter compiles the generated answer to rich text locally, without a second model call. The Feishu guide and source prompt now describe in-turn selection by user goal. A card still sends as a separate action; the durable source-delivery reply does not yet carry a native card variant.
 
+### 2026-09-30 — Only targeted reactions when a trial group does not start work
+
+- Observed friction: the trial groups now retain every message in their main Session, and the broad no-work reaction fallback creates more visible responses than the user finds useful.
+- Product implication: keep the Jev work decision and normal work handling. For no-work messages, react with `WOW` only to clear praise of the assistant or its work and `DULL` only to clear criticism or rejection. Otherwise record the decision and stay silent. The user plans to test this in a trial group.
+- Scope: this narrows the `jevReactions` path; the older `quickReactions` path has a separate outcome policy.
+
 ### 2026-09-28 — Short praise still needs a visible response
 
 - Observed friction: two consecutive short acknowledgements praising the assistant were correctly left without a text reply, but the contextual reaction selector chose no reaction both times. The user noticed the missing response immediately.

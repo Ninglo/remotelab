@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { createRecordStore } from '../lib/durable-records.mjs';
-import { FEISHU_OUTCOME_REACTIONS } from '../lib/feishu-reaction-directive.mjs';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { appendEvent, getHistoryHeadSeq, readEventsAfter } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
@@ -94,13 +93,13 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
     const emojiType = trim(proposed?.emojiType);
     if (!record.decision) {
       if (!['reply', 'silent'].includes(participation)
-          || !FEISHU_OUTCOME_REACTIONS.includes(emojiType)
           || (participation === 'reply' && emojiType !== 'OnIt')
-          || (participation === 'silent' && emojiType === 'OnIt')) {
+          || (participation === 'silent' && emojiType !== ''
+            && !['WOW', 'DULL'].includes(emojiType))) {
         throw new Error('Invalid Jev reaction decision');
       }
       const decision = {
-        participation, emojiType,
+        participation, emojiType: emojiType || null,
         reason: trim(proposed?.reason),
         decidedAt: new Date().toISOString(),
       };

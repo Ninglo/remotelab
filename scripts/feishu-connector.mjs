@@ -1188,7 +1188,8 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     const participation = !verdict?.reactionOnly
       && (mentionsFeishuBot(runtime, summary) || verdict?.decision === 'reply')
       ? 'reply' : 'silent';
-    const emojiType = participation === 'reply' ? 'OnIt' : verdict?.emojiType || 'EatingFood';
+    const emojiType = participation === 'reply' ? 'OnIt'
+      : ['WOW', 'DULL'].includes(verdict?.emojiType) ? verdict.emojiType : null;
     const saved = await (helpers.recordJevDecision || ((sessionId, sourceMessageId, value) =>
       requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(sessionId)}/observations/decision`, {
         method: 'POST', body: { sourceMessageId, ...value },
@@ -1205,9 +1206,12 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     workReceipt = await (helpers.submitRemoteLabRequest || ((runtime, summary, options) =>
       submitRemoteLabRequest(runtime, summary, options)))(runtime, summary, { skipUserMessage: true });
   }
-  const delivery = await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
-    runtime, summary, sessionId, decision.emojiType);
-  return { sessionId, externalTriggerId, decision, deliveryId: delivery.id,
+  const delivery = decision.emojiType
+    ? await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
+      runtime, summary, sessionId, decision.emojiType)
+    : null;
+  return { sessionId, externalTriggerId, decision,
+    ...(delivery ? { deliveryId: delivery.id } : {}),
     ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId } : {}) };
 }
 
