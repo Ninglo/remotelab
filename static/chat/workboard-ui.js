@@ -2,6 +2,8 @@
 
 let sessionWorkboardSession = null;
 let sessionWorkboardEvents = [];
+let sessionWorkboardRun = null;
+let sessionWorkboardRunRequest = null;
 let sessionWorkboardStallTimer = null;
 const SESSION_WORKBOARD_STALL_MS = 5 * 60 * 1000;
 
@@ -91,7 +93,12 @@ function sessionWorkboardRunLabel() {
     const lastProgressAt = Math.max(eventAt, Date.parse(activity.run.startedAt || "") || 0);
     return lastProgressAt && Date.now() - lastProgressAt >= SESSION_WORKBOARD_STALL_MS ? "疑似停滞" : "运行中";
   }
-  return ({ failed: "失败", cancelled: "已取消", canceled: "已取消" })[activity?.run?.state] || "执行已结束";
+  const state = sessionWorkboardRun?.state || activity?.run?.state;
+  return ({
+    completed: "运行完成", failed: "运行失败",
+    cancelled: "已取消", canceled: "已取消",
+    "状态不可读": "状态不可读",
+  })[state] || "执行已结束";
 }
 
 function syncSessionWorkboardRunLabel() {
@@ -116,11 +123,39 @@ function scheduleSessionWorkboardStallCheck() {
   }, remaining);
 }
 
+function refreshSessionWorkboardRun() {
+  const session = sessionWorkboardSession;
+  if (!session?.workboardPilot || session.id !== currentSessionId) return;
+  const runId = [...sessionWorkboardEvents].reverse()
+    .find(event => event?.type === "message" && event.role === "user")?.runId;
+  if (!runId || getSessionActivity(session).run.state === "running") return;
+  if (sessionWorkboardRun?.id === runId && sessionWorkboardRun.state !== "running") return;
+  if (sessionWorkboardRunRequest?.runId === runId) return;
+  const request = fetchJsonOrRedirect("/api/runs/" + encodeURIComponent(runId))
+    .then(data => {
+      if (sessionWorkboardSession?.id !== session.id) return;
+      sessionWorkboardRun = data?.run || null;
+      syncSessionWorkboardRunLabel();
+    })
+    .catch(() => {
+      if (sessionWorkboardSession?.id !== session.id) return;
+      sessionWorkboardRun = { id: runId, state: "状态不可读" };
+      syncSessionWorkboardRunLabel();
+    })
+    .finally(() => { if (sessionWorkboardRunRequest?.promise === request) sessionWorkboardRunRequest = null; });
+  sessionWorkboardRunRequest = { runId, promise: request };
+}
+
 function updateSessionWorkboardSession(session) {
-  if (sessionWorkboardSession?.id !== session?.id) sessionWorkboardEvents = [];
+  if (sessionWorkboardSession?.id !== session?.id) {
+    sessionWorkboardEvents = [];
+    sessionWorkboardRun = null;
+    sessionWorkboardRunRequest = null;
+  }
   sessionWorkboardSession = session;
   syncSessionWorkboardRunLabel();
   scheduleSessionWorkboardStallCheck();
+  refreshSessionWorkboardRun();
 }
 
 function updateSessionWorkboardEvents(sessionId, events) {
@@ -132,6 +167,7 @@ function updateSessionWorkboardEvents(sessionId, events) {
     || (next.latestUserSeq === previous.latestUserSeq && next.updateSeq < previous.updateSeq)) return sessionWorkboardEvents;
   sessionWorkboardEvents = nextEvents;
   scheduleSessionWorkboardStallCheck();
+  refreshSessionWorkboardRun();
   return nextEvents;
 }
 

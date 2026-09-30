@@ -84,6 +84,22 @@ assert.equal(history.filter(event => event.source === 'workboard_checklist').len
 assert.equal(history.find(event => event.source === 'workboard_checklist').workboardCurrentTurn, false);
 assert.equal(history.at(-1).type, 'thinking_block', 'short turns without a checklist retain native display');
 
+context.fetchJsonOrRedirect = async () => ({ run: { id: 'run-1', state: 'failed' } });
+context.updateSessionWorkboardSession({ id: 'pilot', workboardPilot: true, activity: { run: { state: 'idle' } } });
+context.updateSessionWorkboardEvents('pilot', [
+  { seq: 10, type: 'message', role: 'user', runId: 'run-1' },
+  { ...first, seq: 11 },
+]);
+await new Promise(setImmediate);
+assert.equal(context.sessionWorkboardRunLabel(), '运行失败',
+  'the inline card reads terminal failure from the native Run');
+context.updateSessionWorkboardSession({
+  id: 'pilot', workboardPilot: true,
+  workState: { workflow: { state: 'waiting_user' } },
+  activity: { run: { state: 'idle' } },
+});
+assert.equal(context.sessionWorkboardRunLabel(), '需要你处理');
+
 context.updateSessionWorkboardSession({ id: 'other', workboardPilot: false, activity: { run: { state: 'idle' } } });
 assert.equal(context.projectSessionWorkboardTranscriptEvents('other', raw), raw,
   'other Sessions retain their original transcript');
