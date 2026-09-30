@@ -6,7 +6,7 @@ import { resolveFeishuGroupSettings } from './group-settings.mjs';
 import { isFeishuBotSender, mentionsFeishuBot } from './response-policy.mjs';
 
 const MAX_MESSAGES = 20;
-const MAX_AGE_MS = 4 * 60 * 60 * 1000;
+const MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const MAX_CONTEXT_CHARACTERS = 5_000;
 const JEV_TIMEOUT_MS = 1_600;
 const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
