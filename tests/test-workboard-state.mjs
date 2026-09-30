@@ -142,3 +142,12 @@ test('local Session continuation updates an existing opted-in card without creat
   assert.equal(cycles.length, 1); assert.equal(cycles[0].anchorSeq, 2); assert.equal(cycles[0].latestSeq, 4);
   assert.equal(cycles[0].replyMessageId, 'om-1');
 });
+test('a later task final in the same Run cannot undo an earlier delivery receipt', () => {
+  const final = (seq, providerMessageId) => ({ seq, type: 'message', role: 'assistant', runId: 'run-1', phase: 'final_answer', providerMessageId });
+  const history = [event(2, make({ status: 'completed' })), final(3, 'answer-one'),
+    { seq: 4, type: 'source_delivery', deliveryId: 'one', providerMessageId: 'answer-one', kind: 'content', state: 'delivered', externalId: 'om-one' },
+    event(5, make({ taskId: 'task-2' })), final(6, 'answer-two')];
+  const tasks = projectWorkboards(history);
+  assert.equal(tasks[0].board.deliveryState, 'delivered');
+  assert.equal(tasks[1].board.deliveryState, undefined);
+});
