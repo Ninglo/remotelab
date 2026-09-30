@@ -19,7 +19,7 @@ const QUICK_REACTION_SESSION_PROMPT = [
   'In this group the connector immediately adds THINKING to each incoming human message as a temporary receipt. It removes that reaction after your final outcome reaction succeeds.',
   'A message @ mentioning another person but not you is normally for that person. Do not start their work or use research/coding tools unless the message clearly invites you too.',
   'Choose one outcome reaction in your final answer by starting it with exactly `<private><feishu-reaction emoji="EMOJI"/></private>`. The connector applies it as this Bot to the current source message before posting any visible text. Do not call a CLI, provide a message ID, or use personal OAuth for this reaction.',
-  'Available emoji types: OnIt (working on a requested reply or task), EatingFood (quietly leave human-to-human discussion), OK, THUMBSUP, THANKS, GLANCE (saw an update), SMILE, APPLAUSE, WOW, WHAT, DULL, TEARS, HUG, COMFORT. Choose a fitting tone; a reaction must not imply that work is finished when it is not.',
+  'Available emoji types: OnIt (working on a requested reply or task), EatingFood (quietly leave human-to-human discussion), OK, THUMBSUP, THANKS, GLANCE (saw an update), SMILE, APPLAUSE, WOW, WHAT, DULL, TOASTED (衰), TEARS, HUG, COMFORT. Choose a fitting tone; a reaction must not imply that work is finished when it is not.',
   'For a useful short answer, put the OnIt reaction directive first, then your ordinary final answer. For reaction-only participation, finish with only the directive and no visible text. For human-to-human discussion needing no participation, finish with only an EatingFood directive. Never end with an empty final answer. If your directive is absent or invalid, the connector uses EatingFood. The connector removes the directive before any text is posted.',
   'If you used research, coding, or other work tools, provide a visible result or honest handoff in the final answer even when you include a reaction. Never hide unfinished work with a reaction-only directive.',
 ].join('\n');
@@ -64,28 +64,31 @@ export function normalizeFeishuGroups(value = {}) {
 export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const group = config.groups?.[summary.chatId] || {};
   const privateChat = ['p2p', 'private'].includes(String(summary.chatType || '').trim().toLowerCase());
+  const topic = isFeishuTopicChat(summary)
+    || (group.jevReactions === true && summary.conversationKind === 'thread');
   const ambient = group.participationMode === 'ambient' && !privateChat
     && !summary.threadId && !summary.topicId && summary.conversationKind !== 'thread'
     && !isFeishuTopicChat(summary);
+  const quickReactions = group.quickReactions === true && !privateChat
+    && (group.jevReactions !== true || ambient);
   return {
     // A Feishu topic is already an intentional conversation surface. Admit its
     // human messages by default, while retaining mention-only ordinary groups
     // and allowing an exact chat override to narrow either behavior.
-    responseMode: group.responseMode ?? (ambient ? 'all' : isFeishuTopicChat(summary)
+    responseMode: group.responseMode ?? (ambient ? 'all' : topic
       ? 'all'
       : config.responsePolicy?.group ?? 'mention_only'),
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     ...(ambient ? { participationMode: 'ambient' } : {}),
     ...(ambient && typeof group.groupFeed === 'boolean' ? { groupFeed: group.groupFeed } : {}),
-    ...(group.quickReactions === true && !privateChat && (group.jevReactions !== true || ambient)
-      ? { quickReactions: true } : {}),
+    ...(quickReactions ? { quickReactions: true } : {}),
     ...(group.jevReactions === true && ambient ? { jevReactions: true } : {}),
     systemPrompt: [config.systemPrompt, group.systemPrompt,
       group.jevReactions === true && ambient ? JEV_REACTION_SESSION_PROMPT
-        : group.quickReactions === true ? QUICK_REACTION_SESSION_PROMPT : '',
+        : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
       ambient ? GROUP_TIMELINE_SESSION_PROMPT : '',
-      ambient ? AMBIENT_SESSION_PROMPT : isFeishuTopicChat(summary) ? TOPIC_SESSION_PROMPT : '']
+      ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
   };
 }

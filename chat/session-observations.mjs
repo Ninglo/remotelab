@@ -99,7 +99,7 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
           || (participation === 'reply' && !['short', 'complex'].includes(workMode))
           || (participation === 'silent' && workMode !== '')
           || (participation === 'silent' && emojiType !== ''
-            && !['WOW', 'DULL'].includes(emojiType))) {
+            && !['WOW', 'TOASTED'].includes(emojiType))) {
         throw new Error('Invalid Jev reaction decision');
       }
       const decision = {

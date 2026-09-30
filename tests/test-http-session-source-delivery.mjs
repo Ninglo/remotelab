@@ -133,9 +133,18 @@ try {
     sourceMessageId: 'observed-one', participation: 'silent', emojiType: 'WOW',
   })).status, 200);
   const stableDecision = await connectorRequest('POST', decisionPath, {
-    sourceMessageId: 'observed-one', participation: 'silent', emojiType: 'DULL',
+    sourceMessageId: 'observed-one', participation: 'silent', emojiType: 'TOASTED',
   });
   assert.equal(stableDecision.body.decision.emojiType, 'WOW', 'a replay cannot revise an accepted outcome');
+  const criticizedObservation = { ...observation, sourceMessageId: 'observed-criticism',
+    requestId: 'feishu:observed-criticism', text: '这活干得不中',
+    sourceContext: { ...observedSource, messageId: 'observed-criticism' } };
+  assert.equal((await connectorRequest('POST', observePath, criticizedObservation)).status, 201);
+  const criticismDecision = await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-criticism', participation: 'silent', emojiType: 'TOASTED',
+  });
+  assert.equal(criticismDecision.status, 200);
+  assert.equal(criticismDecision.body.decision.emojiType, 'TOASTED');
   const neutralObservation = { ...observation, sourceMessageId: 'observed-neutral',
     requestId: 'feishu:observed-neutral', text: '下午三点开会',
     sourceContext: { ...observedSource, messageId: 'observed-neutral' } };
