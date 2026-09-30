@@ -20,6 +20,13 @@ const ids = CODEX_MODEL_CATALOG.map((model) => `openai-codex/${model.id}`);
 
 try {
   const baselineCosts = Object.fromEntries(getPiBaselineModels().map((model) => [model.id, model.cost]));
+  assert.deepEqual(baselineCosts['gpt-6.1-sol'], {
+    input: 2,
+    output: 10,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    tiers: [{ inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }],
+  }, 'GPT-6.1 Sol should expose published Standard and long-context rates');
   assert.deepEqual(
     [baselineCosts['gpt-6-sol'], baselineCosts['gpt-6-luna']],
     [
@@ -153,8 +160,9 @@ if (process.argv.includes('--list-models')) {
   assert.equal(found.models[0].id, 'openai-codex/gpt-6-astra');
   assert.equal(found.models[0].providerDefault, undefined);
   assert.equal(found.models[0].reasoning.default, 'medium');
-  assert.equal(found.models[1].providerDefault, true);
-  assert.equal(found.models[1].reasoning.default, 'low');
+  assert.equal(found.models.find((model) => model.id === 'openai-codex/gpt-6-sol').providerDefault, true);
+  assert.equal(found.models.find((model) => model.id === 'openai-codex/gpt-6-sol').reasoning.default, 'low');
+  assert.equal(found.models.find((model) => model.id === 'openai-codex/gpt-6.1-sol').reasoning.default, 'medium');
   assert(!found.models.some((model) => model.effortLevels?.includes('ultra')));
 
   for (const scenario of ['empty', 'text', 'failed']) {
@@ -163,8 +171,9 @@ if (process.argv.includes('--list-models')) {
     assert.deepEqual(result.models[0].effortLevels, ['low', 'medium', 'high', 'xhigh', 'max']);
     assert.equal(result.models[0].reasoning.default, 'medium');
     assert.equal(result.models[0].providerDefault, undefined);
-    assert.equal(result.models[1].reasoning.default, 'low');
-    assert.equal(result.models[1].providerDefault, true);
+    assert.equal(result.models.find((model) => model.id === 'openai-codex/gpt-6-sol').reasoning.default, 'low');
+    assert.equal(result.models.find((model) => model.id === 'openai-codex/gpt-6-sol').providerDefault, true);
+    assert.equal(result.models.find((model) => model.id === 'openai-codex/gpt-6.1-sol').reasoning.default, 'medium');
     assert(!result.models.some((model) => model.effortLevels?.includes('ultra')));
     assert.equal(Boolean(result.discoveryError), scenario === 'failed');
   }
