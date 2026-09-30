@@ -507,14 +507,15 @@ already has `quickReactions: true`, `participationMode: "ambient"`, and
 `groupFeed: true`. Each admitted human message is first appended once to the
 same bound group Session, including messages that need no text answer. The
 connector sends the last 20 Session messages from at most the preceding two
-hours, capped at 5,000 characters, to one Jev judgment. Jev chooses whether
-text or task work is needed and one outcome from `WOW` (surprise), `TEARS`
-(touching moment), `DULL` (mild mishap), `APPLAUSE`, `HUG`, `COMFORT`, `SMILE`,
-or `EatingFood` (quiet fallback). A direct @ mention normally starts a Run;
-an explicit request for only an emoji stays reaction-only. When a Run is
-admitted, the outcome becomes `OnIt`. The connector records the judgment in
-the Session and queues the reaction in the durable source-delivery outbox; the
-Feishu Bot SDK sends it from that receipt. This path does not add a temporary
+hours, capped at 5,000 characters, to one Jev judgment. Jev first decides
+whether text or task work is needed. If no work starts, explicit praise of the
+assistant or its work gets `WOW` (惊喜), explicit criticism or rejection gets
+`DULL` (衰), and all other messages get no reaction. Weak or missing emotion
+support also gets no reaction. A direct @ mention normally starts a Run; an
+explicit request for only an emoji stays reaction-only. When a Run is admitted,
+the outcome remains `OnIt`. The connector records every judgment in the
+Session and queues a reaction only when one was chosen. The durable
+source-delivery outbox and Feishu Bot SDK send that reaction. This path does not add a temporary
 `THINKING` or generic read reaction, and it does not ask the Harness to select
 or post the outcome. Ordinary social messages do not start a Harness Run.
 Commands still use their existing script response path after entering the

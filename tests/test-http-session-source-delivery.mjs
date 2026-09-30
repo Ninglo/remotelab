@@ -136,6 +136,17 @@ try {
     sourceMessageId: 'observed-one', participation: 'silent', emojiType: 'DULL',
   });
   assert.equal(stableDecision.body.decision.emojiType, 'WOW', 'a replay cannot revise an accepted outcome');
+  const neutralObservation = { ...observation, sourceMessageId: 'observed-neutral',
+    requestId: 'feishu:observed-neutral', text: '下午三点开会',
+    sourceContext: { ...observedSource, messageId: 'observed-neutral' } };
+  assert.equal((await connectorRequest('POST', observePath, neutralObservation)).status, 201);
+  const noReaction = await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-neutral', participation: 'silent', emojiType: null,
+  });
+  assert.equal(noReaction.status, 200);
+  assert.equal(noReaction.body.decision.emojiType, null);
+  assert.equal((await connectorRequest('POST', observePath, neutralObservation)).body.decision.emojiType,
+    null, 'a quiet decision must survive connector replay');
   const observedEvents = (await request('GET', `/api/sessions/${groupFeedId}/events?filter=all`)).body.events;
   assert.equal(observedEvents.filter(event => event.sourceMessageId === 'observed-one'
     && event.type === 'message').length, 1);

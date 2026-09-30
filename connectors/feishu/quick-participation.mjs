@@ -11,10 +11,7 @@ const MAX_CONTEXT_CHARACTERS = 5_000;
 const JEV_TIMEOUT_MS = 1_600;
 const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
 const JEV_MODEL = 'jev-1.13.0';
-const EXPRESSIVE_REACTIONS = Object.freeze({
-  surprise: 'WOW', tears: 'TEARS', dull: 'DULL', applause: 'APPLAUSE',
-  hug: 'HUG', comfort: 'COMFORT', smile: 'SMILE', quiet: 'EatingFood',
-});
+const EXPRESSIVE_REACTIONS = Object.freeze({ praise: 'WOW', criticism: 'DULL' });
 
 export function buildFeishuSessionReactionContext(recent, { mentioned = false } = {}) {
   const lines = (Array.isArray(recent) ? recent : []).map(entry =>
@@ -91,16 +88,11 @@ export async function classifyFeishuQuickParticipation(context, {
           },
           ...(!includeHandoff ? { emotion: {
             type: 'choice',
-            instructions: 'Choose exactly one fitting reaction for the newest message using the whole recent discussion. Prefer a warm, expressive response when the tone clearly supports it. This question only chooses a reaction; the participation question separately decides whether to start a text/task turn. Never treat serious loss, distress or another person\'s misfortune as a joke. Use quiet for ordinary human-to-human discussion or unclear tone.',
+            instructions: 'Only for a newest message that will not start work, decide whether it clearly praises or compliments this assistant or its work, clearly criticizes or rejects this assistant or its work, or needs no reaction. Use the recent discussion to resolve what the message refers to. Ordinary thanks, acknowledgements, neutral updates, human-to-human discussion, ambiguous sentiment, sad news and another person\'s misfortune need no reaction. This question never decides whether to start work.',
             criteria: {
-              surprise: 'A genuinely surprising reveal or unexpectedly good result; react with delight.',
-              tears: 'A touching or lightly emotional moment where tearful empathy fits; not a casual response to serious harm.',
-              dull: 'A mild mishap or self-deprecating complaint where a shared "oh no" feels friendly; not serious distress.',
-              applause: 'Someone achieved something worth celebrating.',
-              hug: 'A person needs warm personal support.',
-              comfort: 'A difficult or sad situation calls for gentle sympathy.',
-              smile: 'A light friendly exchange or playful moment.',
-              quiet: 'No expressive reaction fits, or the Bot should quietly leave the human conversation alone.',
+              praise: 'The newest message explicitly praises or compliments this assistant or its work. React with surprise (WOW).',
+              criticism: 'The newest message explicitly criticizes or rejects this assistant or its work. React with DULL (衰).',
+              none: 'No clear praise or criticism of this assistant or its work. Send no reaction.',
             },
           }, reactionOnly: {
             type: 'choice',
@@ -138,7 +130,11 @@ export async function classifyFeishuQuickParticipation(context, {
       && offerProbability >= 0.9 ? 'offer' : 'none';
     const reactionOnly = result?.answers?.reactionOnly?.choice === 'yes'
       && Number(result.answers.reactionOnly.probabilities?.yes) >= 0.85;
-    const emojiType = EXPRESSIVE_REACTIONS[result?.answers?.emotion?.choice] || 'EatingFood';
+    const emotion = result?.answers?.emotion;
+    const emotionChoice = emotion?.choice;
+    const emotionProbability = Number(emotion?.probabilities?.[emotionChoice]);
+    const emojiType = Number.isFinite(emotionProbability) && emotionProbability >= 0.8
+      ? EXPRESSIVE_REACTIONS[emotionChoice] || null : null;
     return {
       decision: uncertain ? 'unknown' : decision,
       reactionOnly,
