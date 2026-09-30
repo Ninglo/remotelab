@@ -54,6 +54,11 @@ assert.equal(projected[1].content, updated.content);
 assert.equal(projected[2].displayBoundarySeq, result.seq);
 assert.equal(projected[1].workboardCurrentTurn, true);
 assert.equal(raw.length, 7, 'raw Session history remains unchanged');
+const serverCoalesced = context.projectSessionWorkboardTranscriptEvents('pilot', [
+  user, { ...updated, seq: first.seq, workboardUpdateSeq: updated.seq },
+]);
+assert.equal(serverCoalesced[1].displayBoundarySeq, updated.seq,
+  'a server-coalesced update still advances the native event boundary');
 
 const card = context.renderSessionWorkboardMessage(container, projected[1]);
 assert.equal(container.children.length, 1);

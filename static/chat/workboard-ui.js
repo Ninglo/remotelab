@@ -52,7 +52,9 @@ function projectSessionWorkboardTranscriptEvents(sessionId, events) {
     }
     const first = updates[0];
     const latest = updates[updates.length - 1];
-    const boundary = turn.reduce((max, event) => Math.max(max, event.blockEndSeq || event.seq || 0), 0);
+    const boundary = turn.reduce((max, event) => Math.max(
+      max, event.displayBoundarySeq || event.blockEndSeq || event.workboardUpdateSeq || event.seq || 0,
+    ), 0);
     let inserted = false;
     for (const event of turn) {
       // Raw revisions and thinking remain in Session history.
