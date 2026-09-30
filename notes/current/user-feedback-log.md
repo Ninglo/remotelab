@@ -1000,3 +1000,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication:
 - Promote to:
 - Follow-up:
+
+### 2026-09-30 — Keep one live checklist and publish final answers independently
+
+- Observed friction: an opted-in group task created a second checklist card after a progress message, and its final answer remained local while a follow-up kept the native execution active.
+- Product implication: one execution supplies two independent outputs: one card updated after each verified deliverable, and a separate final result. Progress text does not end the card cycle. The existing event-driven publisher observes durable completion events; it is not a second semantic planner.
+- Implementation: preserve native message phase and item identity, keep one card per task across Runs, validate status/evidence/revision snapshots, separate public deliverables from native execution plans, replay unseen card revisions in order, and commit completed final answers with ready assets to the durable outbox before the native process exits. Delivery identities prevent replay and terminal settlement from sending that final again. Local file and image publication retains its asset-materialization boundary.

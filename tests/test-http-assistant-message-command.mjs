@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
 import { spawn } from 'child_process';
+import { once } from 'node:events';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -267,6 +268,38 @@ try {
 
     const finalAssistant = resultMessage.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'done');
     assert.ok(finalAssistant, 'original assistant completion message should still be present');
+
+    const task = { taskId: 'http-task', revision: 1, goal: 'HTTP 清单验收', status: 'running', reason: '',
+      items: [{ id: 'files', title: '文件', condition: '附件可下载', status: 'pending', evidenceRefs: [] },
+        { id: 'reply', title: '答复', condition: '正文已生成', status: 'pending', evidenceRefs: [] }] };
+    const boardPath = `/api/sessions/${session.id}/assistant-messages`;
+    const initial = await request(port, 'POST', boardPath, { workboard: task, runId: run.id });
+    assert.equal(initial.status, 201, JSON.stringify(initial.json)); assert.equal(initial.json.event.source, 'workboard_checklist');
+    assert.equal(initial.json.event.workboard.taskId, task.taskId);
+    const unsupported = await request(port, 'POST', boardPath, { workboard: { ...task, revision: 2,
+      items: task.items.map(item => ({ ...item, status: 'done' })) }, runId: run.id });
+    assert.equal(unsupported.status, 400, 'unchecked evidence cannot produce a done card');
+    const verified = { ...task, revision: 2, status: 'completed',
+      items: task.items.map(item => ({ ...item, status: 'done', evidenceRefs: [generated.seq] })) };
+    const update = await request(port, 'POST', boardPath, { workboard: verified, runId: run.id });
+    assert.equal(update.status, 201);
+    const replay = await request(port, 'POST', boardPath, { workboard: verified, runId: run.id });
+    assert.equal(replay.json.event.seq, update.json.event.seq, 'same revision retry returns the original event');
+    const competing = await Promise.all(['权限', '输入'].map(reason => request(port, 'POST', boardPath, {
+      workboard: { ...verified, revision: 3, status: 'blocked', reason }, runId: 'continued-run',
+    })));
+    assert.deepEqual(competing.map(value => value.status).sort(), [201, 409], 'concurrent conflicting revisions are serialized');
+    const snapshotFile = join(home, 'workboard.json');
+    writeFileSync(snapshotFile, JSON.stringify({ ...verified, revision: 4, status: 'running' }));
+    const cli = spawn(process.execPath, ['cli.js', 'assistant-message', '--workboard-file', snapshotFile,
+      '--session', session.id, '--run-id', 'continued-run', '--base-url', `http://127.0.0.1:${port}`, '--json'], {
+      cwd: repoRoot, env: { ...process.env, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let cliOutput = '', cliError = '';
+    cli.stdout.on('data', value => { cliOutput += value; });
+    cli.stderr.on('data', value => { cliError += value; });
+    assert.equal((await once(cli, 'exit'))[0], 0, cliError);
+    assert.equal(JSON.parse(cliOutput).event.workboard.revision, 4, 'CLI reaches the same validated HTTP contract');
 
     for (const [index, attachment] of generated.attachments.entries()) {
       const assetRes = await request(port, 'GET', `/api/assets/${attachment.assetId}`);

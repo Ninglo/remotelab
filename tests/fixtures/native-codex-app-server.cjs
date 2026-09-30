@@ -6,14 +6,14 @@ const readline = require('node:readline');
 if (!process.argv.includes('app-server')) { console.log('codex-cli native-test'); process.exit(0); }
 const root = process.env.HOME;
 const runId = process.env.REMOTELAB_RUN_ID;
-let nextTurn = 0, activeTurn = '', released = false;
+let nextTurn = 0, activeTurn = '', released = false, finalText = 'durable native answer';
 const log = event => fs.appendFileSync(path.join(root, 'native-log.jsonl'), JSON.stringify({ ...event, runId, pid: process.pid }) + '\n');
 const emit = message => console.log(JSON.stringify(message));
 const notify = (method, params) => emit({ method, params: { threadId: 'native-thread', ...params } });
 const finish = (status = 'completed', answer = true) => {
   if (!activeTurn) return;
   const id = activeTurn; activeTurn = '';
-  if (answer) notify('item/completed', { turnId: id, item: { id: `answer-${id}`, type: 'agentMessage', text: 'durable native answer', phase: 'final_answer' } });
+  if (answer) notify('item/completed', { turnId: id, item: { id: `answer-${id}`, type: 'agentMessage', text: finalText, phase: 'final_answer' } });
   notify('turn/completed', { turn: { id, status, items: [] } });
   log({ kind: 'completed', turnId: id, status });
 };
@@ -38,7 +38,23 @@ lines.on('line', line => {
       emit({ id, error: { code: -32600, message: 'no active turn to steer' } });
     } else if (params.expectedTurnId !== activeTurn || !activeTurn) {
       emit({ id, error: { code: -32600, message: 'no active turn to steer' } });
-    } else emit({ id, result: { turnId: activeTurn } });
+    } else {
+      emit({ id, result: { turnId: activeTurn } });
+      if (text.includes('PUBLISH_FINAL_EARLY') || text.includes('PUBLISH_FINAL_FILE_EARLY')) {
+        if (text.includes('PUBLISH_FINAL_FILE_EARLY')) {
+          const file = path.join(root, 'early-result.txt');
+          fs.writeFileSync(file, 'ready file result');
+          finalText = `文件已准备好。\n\nArtifacts:\n- ${file}`;
+        }
+        notify('item/completed', { turnId: activeTurn, item: {
+          id: `answer-${activeTurn}`, type: 'agentMessage', phase: 'final_answer', text: finalText,
+        } });
+        notify('item/completed', { turnId: activeTurn, item: {
+          id: `progress-${activeTurn}`, type: 'agentMessage', phase: 'commentary', text: 'Continuing after the final answer',
+        } });
+        log({ kind: 'early-final', turnId: activeTurn });
+      }
+    }
   } else if (method === 'turn/interrupt') {
     emit({ id, result: {} }); finish('interrupted', false);
   }

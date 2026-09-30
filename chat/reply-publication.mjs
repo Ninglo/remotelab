@@ -11,6 +11,7 @@ import {
 } from '../lib/session-navigation.mjs';
 import { buildSessionDisplayEvents } from './session-display-events.mjs';
 import { parseFeishuReactionDirective } from '../lib/feishu-reaction-directive.mjs';
+import { isReplyMessage } from '../lib/assistant-message-phase.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -195,10 +196,12 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
   fullHistory = history,
   includeSessionEntry = true,
 } = {}) {
-  const displayEvents = buildSessionDisplayEvents(history, { sessionRunning: false })
+  const replyHistory = history.filter(event => event?.type !== 'message'
+    || event.role !== 'assistant' || isReplyMessage(event));
+  const displayEvents = buildSessionDisplayEvents(replyHistory, { sessionRunning: false })
     .filter((event) => event?.role === 'assistant')
     .filter((event) => event.type === 'message' || event.type === 'attachment_delivery');
-  const lastAssistantMessage = [...history].reverse().find(event => event?.type === 'message' && event.role === 'assistant');
+  const lastAssistantMessage = [...replyHistory].reverse().find(isReplyMessage);
   const reactionDirective = session?.sourceId === 'feishu'
     ? parseFeishuReactionDirective(lastAssistantMessage?.content) : null;
   const noTextDecision = reactionDirective

@@ -78,6 +78,16 @@ const goalCard = context.renderSessionWorkboardMessage(new Element('div'), {
   content: '目标：一条可更新的清单\n[ ] 核验 — 进度可见。',
 });
 assert.equal(goalCard.children[0].children[0].textContent, '目标：一条可更新的清单');
+const structured = { ...first, workboard: { taskId: 'task-fixed', goal: '保留验收条件', status: 'blocked', reason: '等待权限',
+  items: [{ id: 'a', title: '交付', condition: '同一原卡读回', status: 'done' },
+    { id: 'b', title: '送达', condition: '有发送回执', status: 'pending' }] }, workboardStatusLabel: '等待条件：等待权限' };
+const structuredProjection = context.projectSessionWorkboardTranscriptEvents('pilot', [user, structured,
+  { ...updated, source: '', messageKind: 'todo_list', content: '[x] 读代码' }]);
+assert.equal(structuredProjection.filter(event => event.source === 'workboard_checklist').length, 1);
+assert.equal(structuredProjection.length, 2, 'native steps never replace a structured public card');
+const blockedCard = context.renderSessionWorkboardMessage(new Element('div'), structuredProjection[1]);
+assert.equal(blockedCard.children[0].children[1].textContent, '1/2');
+assert.equal(blockedCard.children.at(-1).textContent, '等待条件：等待权限');
 
 const stale = context.updateSessionWorkboardEvents('pilot', raw.slice(0, 3));
 assert.equal(stale, raw, 'a late older response cannot roll progress back');

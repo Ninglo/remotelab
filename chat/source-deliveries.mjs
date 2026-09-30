@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { serialQueue } from '../lib/durable-records.mjs';
 import { broadcastAll } from './ws-clients.mjs';
+import { appendEvent, loadHistory } from './history.mjs';
 import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
 import {
   getSourceDeliverySignalVersion,
@@ -150,6 +151,20 @@ async function mutateDelivery(id, update) {
     }
     return next;
   });
+  const updated = record.deliveries[index];
+  // Keep the delivery receipt in canonical history, including after Request
+  // archival. Both public workboard surfaces can then distinguish work from delivery.
+  if (updated.providerMessageId && ['content', 'attachment'].includes(updated.kind)
+      && await findSessionMeta(record.sessionId)) {
+    const history = await loadHistory(record.sessionId, { includeBodies: false });
+    const prior = [...history].reverse().find(event => event.type === 'source_delivery' && event.deliveryId === updated.id);
+    if (!prior || prior.state !== updated.state || prior.externalId !== updated.externalId) {
+      await appendEvent(record.sessionId, { type: 'source_delivery', runId: record.runId,
+        deliveryId: updated.id, providerMessageId: updated.providerMessageId,
+        kind: updated.kind, state: updated.state, providerPartCount: updated.providerPartCount || 1,
+        externalId: updated.externalId || '' });
+    }
+  }
   await requests.archiveFinished(key);
   broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
   return record.deliveries[index];

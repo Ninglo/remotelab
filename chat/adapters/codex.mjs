@@ -182,7 +182,10 @@ function parseItem(item) {
 
   switch (item.type) {
     case 'agent_message':
-      events.push(messageEvent('assistant', item.text || ''));
+      events.push(messageEvent('assistant', item.text || '', undefined, {
+        ...(item.phase ? { phase: item.phase } : {}),
+        ...(item.id ? { providerMessageId: item.id } : {}),
+      }));
       break;
 
     case 'reasoning':
