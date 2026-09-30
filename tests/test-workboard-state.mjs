@@ -142,3 +142,32 @@ test('local Session continuation updates an existing opted-in card without creat
   assert.equal(cycles.length, 1); assert.equal(cycles[0].anchorSeq, 2); assert.equal(cycles[0].latestSeq, 4);
   assert.equal(cycles[0].replyMessageId, 'om-1');
 });
+test('a later task final in the same Run cannot undo an earlier delivery receipt', () => {
+  const final = (seq, providerMessageId) => ({ seq, type: 'message', role: 'assistant', runId: 'run-1', phase: 'final_answer', providerMessageId });
+  const history = [event(2, make({ status: 'completed' })), final(3, 'answer-one'),
+    { seq: 4, type: 'source_delivery', runId: 'run-1', deliveryId: 'one', providerMessageId: 'answer-one', kind: 'content', state: 'delivered', externalId: 'om-one' },
+    event(5, make({ taskId: 'task-2' })), final(6, 'answer-two')];
+  const tasks = projectWorkboards(history);
+  assert.equal(tasks[0].board.deliveryState, 'delivered');
+  assert.equal(tasks[1].board.deliveryState, undefined);
+});
+test('provider item IDs reused across Runs cannot reuse another Run delivery receipt', () => {
+  const final = (seq, runId) => ({ seq, runId, type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId: 'item-0' });
+  const history = [event(2, make()), final(3, 'run-1'), { seq: 4, type: 'source_delivery', runId: 'run-1',
+    deliveryId: 'first', providerMessageId: 'item-0', kind: 'content', state: 'delivered', externalId: 'om-first' },
+    event(5, make({ revision: 2 }), 'run-2'), final(6, 'run-2')];
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, undefined);
+  history.push({ ...history[2], seq: 7, runId: 'run-2', deliveryId: 'second', externalId: 'om-second' });
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, 'delivered');
+});
+test('explicit outbox result receipts bind to the task revision, including local continuations', () => {
+  const board = make({ status: 'completed' });
+  const receipt = { seq: 3, type: 'source_delivery', deliveryId: 'manual', workboardTaskId: board.taskId,
+    workboardRevision: 1, kind: 'content', state: 'delivered', externalId: 'om-result', providerPartCount: 2 };
+  const history = [event(2, board), receipt];
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, 'pending', 'one part does not prove all attachments delivered');
+  history.push({ ...receipt, seq: 4, deliveryId: 'file', kind: 'attachment' });
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, 'delivered');
+  history.push(event(5, make({ revision: 2 }), 'local-continuation'));
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, undefined);
+});

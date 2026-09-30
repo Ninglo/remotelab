@@ -11,6 +11,7 @@ import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { serialQueue } from '../lib/durable-records.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { appendEvent, loadHistory } from './history.mjs';
+import { projectWorkboards } from '../lib/workboard-state.mjs';
 import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
 import {
   getSourceDeliverySignalVersion,
@@ -106,12 +107,22 @@ export async function enqueueSourceDelivery(input = {}) {
     throw new Error('Delivery requires target, responseId and content or a Feishu reaction');
   }
   const sessionId = input.sessionId || 'outbound';
+  let workboard = null;
+  if (input.workboardTaskId) {
+    const session = await findSessionMeta(sessionId);
+    if (session?.conversation && !sameConversation(session.conversation, plan)) throw new Error('Workboard result destination must match its Session');
+    workboard = projectWorkboards(await loadHistory(sessionId, { includeBodies: true }))
+      .find(task => task.taskId === input.workboardTaskId)?.board;
+    if (!workboard || workboard.revision !== input.workboardRevision) throw new Error('Workboard result requires the current task identity and revision');
+  }
   const requestId = `outbound:${input.responseId}:${requestKey(plan.sourceRouteId, JSON.stringify(plan.target))}`;
   // This producer has no AI execution; it uses the same committed outbox aggregate.
   const { record } = await requests.accept({ sessionId, requestId, text: input.text || (reaction ? '[reaction]' : '[attachment]'),
     options: { deliveryOnly: true, responseId: input.responseId },
     result: { state: 'completed', payload: { text: input.text || '', attachments: input.attachments || [], reaction } },
     plans: buildReplyDeliveries(plan, { text: input.text, attachments: input.attachments, reaction }).map(part => ({ ...part,
+      ...(workboard ? { workboardTaskId: workboard.taskId, workboardRevision: workboard.revision,
+        providerPartCount: (input.text ? 1 : 0) + (input.attachments?.length || 0) } : {}),
       triggerId: input.triggerId || '', scheduleId: input.scheduleId || '', occurrenceId: input.occurrenceId || '' })),
   });
   return record.deliveries[0];
@@ -154,13 +165,14 @@ async function mutateDelivery(id, update) {
   const updated = record.deliveries[index];
   // Keep the delivery receipt in canonical history, including after Request
   // archival. Both public workboard surfaces can then distinguish work from delivery.
-  if (updated.providerMessageId && ['content', 'attachment'].includes(updated.kind)
+  if ((updated.providerMessageId || updated.workboardTaskId) && ['content', 'attachment'].includes(updated.kind)
       && await findSessionMeta(record.sessionId)) {
     const history = await loadHistory(record.sessionId, { includeBodies: false });
     const prior = [...history].reverse().find(event => event.type === 'source_delivery' && event.deliveryId === updated.id);
     if (!prior || prior.state !== updated.state || prior.externalId !== updated.externalId) {
       await appendEvent(record.sessionId, { type: 'source_delivery', runId: record.runId,
         deliveryId: updated.id, providerMessageId: updated.providerMessageId,
+        workboardTaskId: updated.workboardTaskId, workboardRevision: updated.workboardRevision,
         kind: updated.kind, state: updated.state, providerPartCount: updated.providerPartCount || 1,
         externalId: updated.externalId || '' });
     }
