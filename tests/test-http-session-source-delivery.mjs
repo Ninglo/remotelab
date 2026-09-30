@@ -239,6 +239,18 @@ try {
   });
   assert.equal(shortDecision.status, 200);
   assert.equal(shortDecision.body.decision.workMode, 'short');
+  const binaryObservation = await connectorRequest('POST', observePath, {
+    sourceMessageId: 'observed-binary', requestId: 'feishu:observed-binary',
+    text: '你能不能看到这条消息',
+    sourceContext: { ...observedSource, messageId: 'observed-binary' },
+  });
+  assert.equal(binaryObservation.status, 201);
+  const binaryDecision = await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-binary', participation: 'reply', workMode: 'reaction', emojiType: 'Yes',
+  });
+  assert.equal(binaryDecision.status, 200);
+  assert.equal(binaryDecision.body.decision.workMode, 'reaction');
+  assert.equal(binaryDecision.body.decision.emojiType, 'Yes');
   const shortRun = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
     requestId: 'feishu:observed-short', text: '这个词是什么意思？', recordUserMessage: false,
     tool: 'fake-codex', model: 'fake-model',

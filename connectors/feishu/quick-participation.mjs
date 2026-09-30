@@ -6,7 +6,7 @@ import { resolveFeishuGroupSettings } from './group-settings.mjs';
 import { isFeishuBotSender, mentionsFeishuBot } from './response-policy.mjs';
 
 const MAX_MESSAGES = 20;
-const MAX_AGE_MS = 2 * 60 * 60 * 1000;
+const MAX_AGE_MS = 4 * 60 * 60 * 1000;
 const MAX_CONTEXT_CHARACTERS = 5_000;
 const JEV_TIMEOUT_MS = 1_600;
 const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
@@ -23,8 +23,10 @@ export function buildFeishuSessionReactionContext(recent, { mentioned = false } 
     selected.push(line);
     characters += line.length;
   }
-  return [`You are the assistant in this ongoing Feishu group. The newest message is the last line. Assistant mentioned in newest message: ${mentioned}.`,
-    ...selected.reverse()].join('\n');
+  const ordered = selected.reverse();
+  if (ordered.length) ordered[ordered.length - 1] = `NEWEST MESSAGE TO CLASSIFY: ${ordered[ordered.length - 1]}`;
+  return [`You are the assistant in this ongoing Feishu group. Classify only the NEWEST MESSAGE below; older lines are context, not pending requests to answer. Assistant mentioned in newest message: ${mentioned}. The newest message has already been durably received and recorded, so a question asking whether you can see this very message has the answer Yes.`,
+    ...ordered].join('\n');
 }
 
 function messageTime(summary) {
@@ -63,7 +65,7 @@ export async function feishuJevApiKey() {
 }
 
 export async function classifyFeishuQuickParticipation(context, {
-  fetchImpl = fetch, key, timeoutMs = JEV_TIMEOUT_MS, includeHandoff = true,
+  fetchImpl = fetch, key, timeoutMs = JEV_TIMEOUT_MS, includeHandoff = true, newestText = '',
 } = {}) {
   const token = key || await feishuJevApiKey();
   if (!token) return { decision: 'unknown', reason: 'missing_key', latencyMs: 0 };
@@ -80,7 +82,7 @@ export async function classifyFeishuQuickParticipation(context, {
         questions: {
           participation: {
             type: 'choice',
-            instructions: 'Decide whether the Feishu group assistant should send a useful reply to the newest message now. Read the whole recent discussion and resolve what the newest message refers to, regardless of whether it @ mentions the assistant. Choose reply for a direct request, a concrete unanswered question about this assistant, its behavior, implementation, deployment or current work, or feedback that identifies a problem to investigate or fix. A follow-up such as "why did it react that way?", "how does Jev do this?", "can we roll this out?", "how many groups have this bot?" or "why did it stop replying?" needs an answer even without an @ mention. Bug reports like "that sentence was misread as criticism" and follow-up requests like "investigate it further" also need a reply when they refer to the assistant just discussed. Choose silent for human-to-human conversation, acknowledgements, status reports without a request, repeated information, a question already answered by a person, or a test phrase that merely names an emotion or mentions the assistant. A bare mention asks you to reconsider the preceding unanswered discussion; a mention alone does not authorize work. Judge the newest message in context, including Chinese text.'
+            instructions: 'Decide whether the Feishu group assistant should send a useful reply to the NEWEST message now. Older lines only clarify it; never answer an older question instead. Choose reply for a direct request, a concrete unanswered question about this assistant, its behavior, implementation, deployment or current work, or feedback that identifies a problem to investigate or fix. A follow-up such as "why did it react that way?", "how does Jev do this?", "can we roll this out?", "how many groups have this bot?", "why did it stop replying?" or "咋不理我啊" needs an answer even without an @ mention. A question proposing action, such as "是不是该把这个 bug 修了？", is a work request. A newest question like "你能不能看到这条消息" needs a simple Yes answer. A negative test result like "看来是不中" alone is criticism, not a new work request. Choose silent for human-to-human conversation, acknowledgements, status reports without a request, repeated information, a question already answered by a person, or a test phrase that merely names an emotion or mentions the assistant. A bare mention asks you to reconsider the preceding unanswered discussion; a mention alone does not authorize work. Judge the newest message in context, including Chinese text.'
               + (includeHandoff ? '' : ' A direct @ mention that only praises, criticizes, or rejects the assistant or its past answer, without asking for a new answer, explanation, or concrete fix, should be silent. The separate emotion question handles that reaction.'),
             criteria: {
               reply: 'The assistant should respond or act now; silence would miss a clear request or useful contribution.',
@@ -89,11 +91,19 @@ export async function classifyFeishuQuickParticipation(context, {
           },
           ...(!includeHandoff ? { emotion: {
             type: 'choice',
-            instructions: 'Only for a newest message that will not start work, decide whether it clearly praises or compliments this assistant or its work, clearly criticizes or rejects this assistant or its work, or needs no reaction. Use the recent discussion to resolve what the message refers to. Ordinary thanks, acknowledgements, neutral updates, human-to-human discussion, ambiguous sentiment, sad news and another person\'s misfortune need no reaction. This question never decides whether to start work.',
+            instructions: 'Only for a newest message that will not start work, decide whether it clearly praises or compliments this assistant or its work, clearly criticizes or rejects this assistant or its work, or needs no reaction. Use the recent discussion to resolve what the message refers to. After testing this assistant, "看来是不中" or "看来不行" criticizes its failed response. After "挨骂也会回，你试下", "用户彻底怒了" describes criticism of this assistant. Ordinary thanks, acknowledgements, neutral updates, human-to-human discussion, ambiguous sentiment, sad news and another person\'s misfortune need no reaction. This question never decides whether to start work.',
             criteria: {
               praise: 'The newest message explicitly praises or compliments this assistant or its work. React with surprise (WOW).',
               criticism: 'The newest message explicitly criticizes or rejects this assistant or its work without asking for an explanation or fix. React with TOASTED (飞书表情「衰」).',
               none: 'No clear praise or criticism of this assistant or its work. Send no reaction.',
+            },
+          }, binaryAnswer: {
+            type: 'choice',
+            instructions: 'Can the assistant answer the NEWEST message fully and correctly with only Yes or No, using the received message and recent discussion, without tools or guessing? Never answer a question in an older line. This message is durably received: if the newest asks "你能不能看到这条消息", answer Yes; if it asks "你是不是没看到这条消息", answer No. If it says "看来是不中" or asks "咋不理我啊", choose none. Choose none for an ordinary request, criticism, rhetorical question, or any question whose answer needs investigation. This is an answer to a question, not a praise/criticism reaction.',
+            criteria: {
+              yes: 'A complete, reliable affirmative answer is Yes.',
+              no: 'A complete, reliable negative answer is No.',
+              none: 'A binary answer is not fully supported or would omit needed explanation.',
             },
           }, reactionOnly: {
             type: 'choice',
@@ -104,7 +114,7 @@ export async function classifyFeishuQuickParticipation(context, {
             },
           }, workMode: {
             type: 'choice',
-            instructions: 'Only if the participation answer is reply, decide where the work belongs. Choose short only when this assistant can answer accurately and completely in one brief group message using existing context, without tools, research, files, or a separate work Session. Choose complex for investigation, coding, multi-step work, uncertain facts needing verification, reports, or any task that needs tools or a dedicated Session. If in doubt choose complex. This question never changes whether to start work.',
+            instructions: 'Only if the participation answer is reply, decide where the work belongs. Choose short only when this assistant can answer accurately and completely in one brief group message using existing context, without tools, research, files, or a separate work Session. Choose complex for investigation, coding, multi-step work, uncertain facts needing verification, reports, or any task that needs tools or a dedicated Session. A complaint such as "咋不理我啊" after a missed group reply needs investigation of the received message and decision logs, so choose complex. If in doubt choose complex. This question never changes whether to start work.',
             criteria: {
               short: 'A brief, complete answer belongs in the existing group timeline Session and mainline.',
               complex: 'The task needs a new Feishu Thread and a separate work Session.',
@@ -144,15 +154,23 @@ export async function classifyFeishuQuickParticipation(context, {
     const emojiType = Number.isFinite(emotionProbability) && emotionProbability >= 0.8
       ? EXPRESSIVE_REACTIONS[emotionChoice] || null : null;
     const workModeAnswer = result?.answers?.workMode;
+    const binary = result?.answers?.binaryAnswer;
+    const binaryChoice = binary?.choice;
+    const binaryProbability = Number(binary?.probabilities?.[binaryChoice]);
+    const binaryQuestion = /[?？]|吗\s*[。！!]*$|么\s*[。！!]*$|是不是|能不能|是否|要不要/.test(newestText);
+    const binaryAnswer = !includeHandoff && !reactionOnly && binaryQuestion
+      && ['yes', 'no'].includes(binaryChoice)
+      && Number.isFinite(binaryProbability) && binaryProbability >= 0.85
+      ? (binaryChoice === 'yes' ? 'Yes' : 'No') : null;
     const workMode = !includeHandoff && decision === 'reply'
       ? (!uncertain && workModeAnswer?.choice === 'short'
         && Number(workModeAnswer.probabilities?.short) >= 0.8 ? 'short' : 'complex')
       : null;
     return {
-      decision: uncertain ? 'unknown' : decision,
+      decision: binaryAnswer ? 'reply' : uncertain ? 'unknown' : decision,
       reactionOnly,
-      emojiType,
-      ...(!includeHandoff ? { workMode } : {}),
+      emojiType: binaryAnswer || emojiType,
+      ...(!includeHandoff ? { workMode: binaryAnswer ? 'reaction' : workMode } : {}),
       handoffDecision,
       handoffProbability: Number.isFinite(offerProbability) ? offerProbability : null,
       ...(uncertain ? { reason: 'low_support' } : {}),
