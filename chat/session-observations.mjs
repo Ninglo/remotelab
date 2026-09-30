@@ -10,7 +10,7 @@ const store = createRecordStore(join(CONFIG_DIR, 'session-observations'));
 const serialize = createKeyedTaskQueue();
 const MAX_RECENT_EVENTS = 120;
 const MAX_RECENT_MESSAGES = 20;
-const MAX_RECENT_AGE_MS = 2 * 60 * 60 * 1000;
+const MAX_RECENT_AGE_MS = 4 * 60 * 60 * 1000;
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const keyFor = (sessionId, sourceMessageId) => createHash('sha256')
@@ -95,8 +95,9 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
     const workMode = trim(proposed?.workMode);
     if (!record.decision) {
       if (!['reply', 'silent'].includes(participation)
-          || (participation === 'reply' && emojiType !== 'OnIt')
-          || (participation === 'reply' && !['short', 'complex'].includes(workMode))
+          || (participation === 'reply' && !(
+            (['short', 'complex'].includes(workMode) && emojiType === 'OnIt')
+            || (workMode === 'reaction' && ['Yes', 'No'].includes(emojiType))))
           || (participation === 'silent' && workMode !== '')
           || (participation === 'silent' && emojiType !== ''
             && !['WOW', 'TOASTED'].includes(emojiType))) {

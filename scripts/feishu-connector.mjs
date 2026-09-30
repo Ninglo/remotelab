@@ -1195,13 +1195,19 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       mentioned: mentionsFeishuBot(runtime, summary),
     });
     const verdict = await (helpers.classifyJevReaction || ((context) =>
-      classifyFeishuQuickParticipation(context, { includeHandoff: false })))(context);
-    const participation = !verdict?.reactionOnly && verdict?.decision === 'reply'
-      ? 'reply' : 'silent';
-    const emojiType = participation === 'reply' ? 'OnIt'
+      classifyFeishuQuickParticipation(context, { includeHandoff: false,
+        newestText: summary.messageText || summary.textPreview || '' })))(context);
+    const mentioned = mentionsFeishuBot(runtime, summary);
+    const participation = !verdict?.reactionOnly
+      && (verdict?.decision === 'reply' || mentioned) ? 'reply' : 'silent';
+    const reactionAnswer = !mentioned && verdict?.workMode === 'reaction'
+      && ['Yes', 'No'].includes(verdict?.emojiType);
+    const emojiType = participation === 'reply'
+      ? (reactionAnswer ? verdict.emojiType : 'OnIt')
       : ['WOW', 'TOASTED'].includes(verdict?.emojiType) ? verdict.emojiType : null;
-    const workMode = participation === 'reply'
-      ? (verdict?.workMode === 'short' ? 'short' : 'complex') : null;
+    const workMode = participation !== 'reply' ? null
+      : reactionAnswer ? 'reaction'
+        : (verdict?.decision !== 'reply' || verdict?.workMode === 'short') ? 'short' : 'complex';
     const saved = await (helpers.recordJevDecision || ((sessionId, sourceMessageId, value) =>
       requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(sessionId)}/observations/decision`, {
         method: 'POST', body: { sourceMessageId, ...value },
@@ -1214,7 +1220,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
   }
 
   let workReceipt = null;
-  if (decision.participation === 'reply') {
+  if (decision.participation === 'reply' && decision.workMode !== 'reaction') {
     const legacyWork = !['short', 'complex'].includes(decision.workMode);
     const complexWork = decision.workMode === 'complex';
     const workSummary = complexWork
