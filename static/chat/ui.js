@@ -951,6 +951,7 @@ function renderEventBlockBody(body, hiddenEvents) {
 function renderHiddenBlockEventsInto(container, events) {
   if (!container) return;
   for (const event of Array.isArray(events) ? events : []) {
+    if (typeof isSessionWorkboardMessage === "function" && isSessionWorkboardMessage(event)) continue;
     switch (event?.type) {
       case "message":
         renderMessageInto(container, event);
