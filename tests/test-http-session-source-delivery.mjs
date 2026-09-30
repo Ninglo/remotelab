@@ -251,6 +251,13 @@ try {
   assert.equal(binaryDecision.status, 200);
   assert.equal(binaryDecision.body.decision.workMode, 'reaction');
   assert.equal(binaryDecision.body.decision.emojiType, 'Yes');
+  const binaryReaction = await connectorRequest('POST', '/api/source-deliveries', {
+    responseId: 'jev:observed-binary', sessionId: groupFeedId, reaction: 'Yes',
+    sourceDelivery: { ...groupFeedConversation,
+      target: { ...groupFeedConversation.target, messageId: 'observed-binary' } },
+  });
+  assert.equal(binaryReaction.status, 202);
+  assert.equal(binaryReaction.body.delivery.emojiType, 'Yes');
   const shortRun = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
     requestId: 'feishu:observed-short', text: '这个词是什么意思？', recordUserMessage: false,
     tool: 'fake-codex', model: 'fake-model',
@@ -265,7 +272,7 @@ try {
     return result.body.run?.state === 'completed';
   }, 'short group reply completion');
   const pilotDeliveries = [];
-  for (let index = 0; index < 5; index += 1) {
+  for (let index = 0; index < 6; index += 1) {
     const claim = await request('POST', '/api/source-deliveries/claim', {
       connector: 'feishu', sourceRouteId: 'pilot-bot',
     });
