@@ -10,6 +10,7 @@
     "chat/composer-store.js",
     "chat/icons.js",
     "chat/bootstrap.js",
+    "chat/pet-quota-pilot.js",
     "chat/bootstrap-session-catalog.js",
     "chat/session-http-helpers.js",
     "chat/session-http-list-state.js",
