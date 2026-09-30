@@ -16,6 +16,7 @@ assert.doesNotMatch(chatTemplateSource, /value="toggle"/, 'custom tool reasoning
 const filesToParse = [
   join(repoRoot, 'static', 'chat.js'),
   join(repoRoot, 'static', 'chat', 'i18n.js'),
+  join(repoRoot, 'static', 'chat', 'notifications.js'),
   join(repoRoot, 'static', 'chat', 'session-store.js'),
   join(repoRoot, 'static', 'chat', 'composer-store.js'),
   join(repoRoot, 'static', 'chat', 'bootstrap.js'),

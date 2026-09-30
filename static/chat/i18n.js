@@ -7,6 +7,12 @@
 
   const translations = {
     en: {
+      "notifications.title": "Notifications",
+      "notifications.clear": "Clear",
+      "notifications.empty": "No notifications",
+      "notifications.session": "Open session",
+      "notifications.sendFailed": "Message not sent: {error}",
+      "notifications.actionFailed": "Action failed: {error}",
       "delivery.issues": "Delivery issues: {count}",
       "delivery.note": "Content is saved here and later messages can continue. Check whether uncertain messages arrived before requesting a resend. Ask me to retry failed items or dismiss this notice.",
       "delivery.message": "Message",
@@ -638,6 +644,12 @@
       "workflow.status.unreadTitle": "Updated since you last reviewed this session",
     },
     "zh-CN": {
+      "notifications.title": "通知",
+      "notifications.clear": "清空",
+      "notifications.empty": "暂无通知",
+      "notifications.session": "打开会话",
+      "notifications.sendFailed": "消息未发送：{error}",
+      "notifications.actionFailed": "操作失败：{error}",
       "delivery.issues": "{count} 条消息发送异常",
       "delivery.note": "内容已保留在这里，后续消息可以继续发送。送达情况未知时，请先核对是否收到，再让我补发；也可以让我处理失败项或关闭提示。",
       "delivery.message": "消息",

@@ -7,14 +7,15 @@ const fallbackStrings = {
   "compose.inline.uploading": "Uploading attachment\u2026",
   "compose.inline.sending": "Sending\u2026",
   "compose.inline.processing": "Received, processing\u2026",
+  "notifications.sendFailed": "Message not sent: {error}",
 };
 
-function fallbackTranslate(key) {
-  return fallbackStrings[key] || key;
+function fallbackTranslate(key, vars = {}) {
+  return (fallbackStrings[key] || key).replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
 }
 
 function t(key, vars) {
-  return window.remotelabT ? window.remotelabT(key, vars) : fallbackTranslate(key);
+  return window.remotelabT ? window.remotelabT(key, vars) : fallbackTranslate(key, vars);
 }
 
 function getComposerPendingSendSnapshot() {
@@ -941,6 +942,9 @@ function sendMessage(existingRequestId) {
       if (ok) return;
     } catch (error) {
       console.error("Composer send failed:", error?.message || error);
+      if (typeof showSystemToast === "function") {
+        showSystemToast(t("notifications.sendFailed", { error: error?.message || String(error) }), "error", { sessionId });
+      }
       outboundImages = getComposerAttachmentsSnapshot(sessionId);
     }
 

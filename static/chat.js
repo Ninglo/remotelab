@@ -5,6 +5,7 @@
   const splitAssetPaths = [
     "marked.min.js",
     "chat/i18n.js",
+    "chat/notifications.js",
     "chat/session-state-model.js",
     "chat/session-store.js",
     "chat/composer-store.js",

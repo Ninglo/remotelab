@@ -1,0 +1,38 @@
+.notification-toggle { position: relative; flex-shrink: 0; }
+.notification-badge {
+  position: absolute; right: -3px; top: -3px; min-width: 15px; padding: 2px 3px;
+  border-radius: 8px; background: #b42318; color: white; font-size: 10px; line-height: 1;
+}
+.notification-panel {
+  position: fixed; z-index: 1000; top: calc(var(--safe-top, 0px) + 54px); right: 12px;
+  width: min(420px, calc(100vw - 24px)); max-height: min(70vh, 600px);
+  overflow: auto; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg); color: var(--text); box-shadow: 0 8px 30px rgba(0,0,0,.18);
+}
+.notification-panel[hidden], .notification-badge[hidden] { display: none; }
+.notification-panel-header {
+  position: sticky; top: 0; display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.notification-panel-header h2 { flex: 1; margin: 0; font-size: 15px; }
+.notification-panel button { border: 0; background: none; color: var(--text-secondary); cursor: pointer; padding: 5px; font: inherit; }
+.notification-panel button:hover { color: var(--text); }
+.notification-panel button:disabled { opacity: .4; cursor: default; }
+.notification-item { padding: 14px; border-bottom: 1px solid var(--border); border-left: 3px solid var(--notice); }
+.notification-item--error { border-left-color: #d32f2f; }
+.notification-item--warn { border-left-color: #ed6c02; }
+.notification-item time { font-size: 11px; color: var(--text-muted); }
+.notification-item p { margin: 6px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notification-item button { font-size: 12px; color: var(--notice); }
+.notification-empty { padding: 18px; margin: 0; color: var(--text-muted); font-size: 14px; }
+#system-toast-container {
+  position: fixed; top: calc(var(--safe-top, 0px) + 12px); left: 50%; transform: translateX(-50%);
+  z-index: 10000; display: flex; flex-direction: column; gap: 8px; pointer-events: none; max-width: 90vw;
+}
+.system-toast { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: 8px;
+  background: #1976d2; color: white; box-shadow: 0 2px 12px rgba(0,0,0,.25); pointer-events: auto;
+  font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.system-toast--error { background: #b42318; }
+.system-toast--warn { background: #a54e00; }
+.system-toast button { border: 0; background: none; color: white; font: inherit; cursor: pointer; padding: 0 2px; }

@@ -117,6 +117,7 @@ assert.deepEqual(
   [
     '/marked.min.js?v=build-123',
     '/chat/i18n.js?v=build-123',
+    '/chat/notifications.js?v=build-123',
     '/chat/session-state-model.js?v=build-123',
     '/chat/session-store.js?v=build-123',
     '/chat/composer-store.js?v=build-123',
@@ -163,6 +164,7 @@ assert.deepEqual(
   [
     '/marked.min.js?v=inline-build-456',
     '/chat/i18n.js?v=inline-build-456',
+    '/chat/notifications.js?v=inline-build-456',
     '/chat/session-state-model.js?v=inline-build-456',
     '/chat/session-store.js?v=inline-build-456',
     '/chat/composer-store.js?v=inline-build-456',
@@ -208,6 +210,7 @@ assert.deepEqual(
   [
     '/owner/marked.min.js?v=build-123',
     '/owner/chat/i18n.js?v=build-123',
+    '/owner/chat/notifications.js?v=build-123',
     '/owner/chat/session-state-model.js?v=build-123',
     '/owner/chat/session-store.js?v=build-123',
     '/owner/chat/composer-store.js?v=build-123',

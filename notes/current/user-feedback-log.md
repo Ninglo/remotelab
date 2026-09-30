@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-30 — Failed actions must show their reason in the product
+
+- Observed friction: a model change followed by Steer returned HTTP 409, but the frontend logged the reason only in the browser console. The user had to inspect the API to understand why the message was not sent.
+- Product implication: display action failures immediately and retain recent notifications in a visible place. Preserve rejected message text and attachments so the user can correct the setting and retry.
+- Implementation: failed HTTP actions show the server reason in an in-app toast and the header notification panel. The panel retains the latest 50 notices in this browser, scoped to the signed-in Person and product path, and survives reload. Existing runtime admission rules stay in effect.
+
 ### 2026-09-29 — Group transcripts need durable speaker attribution
 
 - Observed friction: a group Session's visible transcript stored each person's raw message without a speaker label. The short-term source context knew the current sender, but a paired project's message stream recorded human posts before profile enrichment and omitted both readable names and stable identity. Readers could mistake conflicting statements by different people for one person's changing view.
