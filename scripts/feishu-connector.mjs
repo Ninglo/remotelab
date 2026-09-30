@@ -96,6 +96,7 @@ import { normalizeFeishuReplyPolicy } from '../connectors/feishu/reply-policy.mj
 import {
   applyFeishuReplyRouting,
   buildFeishuRequestDeliveryTarget,
+  buildFeishuWorkThreadDeliveryTarget,
   buildFeishuSessionConversationTarget,
   buildFeishuSessionExternalTriggerId,
   isFeishuThreadConversation,
@@ -978,6 +979,7 @@ async function loadFeishuContextBoundary(requester, sessionId, summary) {
 
 async function submitRemoteLabRequest(runtime, summary, {
   prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
+  workReplyInThread = false,
 } = {}) {
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   if (prepared) {
@@ -1107,7 +1109,9 @@ async function submitRemoteLabRequest(runtime, summary, {
   // Session identity follows main-vs-thread topology. Each request still owns
   // an immutable delivery snapshot so delayed replies return to the location
   // selected for that inbound message.
-  const requestDeliveryTarget = buildFeishuRequestDeliveryTarget(messageSummary);
+  const requestDeliveryTarget = workReplyInThread
+    ? buildFeishuWorkThreadDeliveryTarget(messageSummary)
+    : buildFeishuRequestDeliveryTarget(messageSummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: messageSummary.logContinuation
@@ -1205,7 +1209,8 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
   let workReceipt = null;
   if (decision.participation === 'reply') {
     workReceipt = await (helpers.submitRemoteLabRequest || ((runtime, summary, options) =>
-      submitRemoteLabRequest(runtime, summary, options)))(runtime, summary, { skipUserMessage: true });
+      submitRemoteLabRequest(runtime, summary, options)))(runtime, summary,
+      { skipUserMessage: true, workReplyInThread: true });
   }
   const delivery = decision.emojiType
     ? await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(

@@ -186,6 +186,12 @@ try {
   const observedWorkRun = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
     requestId: 'feishu:observed-work', text: '请调查这个问题', recordUserMessage: false,
     tool: 'fake-codex', model: 'fake-model',
+    sourceContext: { ...observedSource, messageId: 'observed-work', feishuParticipation: 'ambient' },
+    sourceDelivery: { ...groupFeedConversation, target: {
+      ...groupFeedConversation.target, messageId: 'observed-work',
+      conversationKind: 'thread', rootId: 'observed-work', replyInThread: true,
+      sourceKind: 'ambient_thread_open',
+    } },
   });
   assert.equal(observedWorkRun.status, 202);
   await waitFor(async () => {
@@ -195,6 +201,25 @@ try {
   const afterWork = (await request('GET', `/api/sessions/${groupFeedId}/events?filter=all`)).body.events;
   assert.equal(afterWork.filter(event => event.type === 'message' && event.sourceMessageId === 'observed-work').length, 1,
     'starting Harness after observation must not duplicate its user message');
+  const pilotDeliveries = [];
+  for (let index = 0; index < 3; index += 1) {
+    const claim = await request('POST', '/api/source-deliveries/claim', {
+      connector: 'feishu', sourceRouteId: 'pilot-bot',
+    });
+    assert.equal(claim.status, 200);
+    assert(claim.body.claim?.delivery, 'the reaction, previous group reply and work reply must be queued');
+    pilotDeliveries.push(claim.body.claim.delivery);
+    assert.equal((await request('POST', `/api/source-deliveries/${claim.body.claim.delivery.id}/complete`, {
+      leaseId: claim.body.claim.leaseId, externalId: `pilot-delivery-${index}`,
+    })).status, 200);
+  }
+  const workReply = pilotDeliveries.find(delivery => delivery.target?.rootId === 'observed-work');
+  assert(workReply, 'the work reply must be published');
+  assert.equal(workReply.target.rootId, 'observed-work', JSON.stringify(pilotDeliveries.map(delivery => ({
+    kind: delivery.kind, target: delivery.target,
+  }))));
+  assert.equal(workReply.target.replyInThread, true);
+  assert.equal(workReply.target.sourceKind, 'ambient_thread_open');
   console.log('PASS: group conversation is shared for reading but only the connector can write or bind it');
   const longClaim = request('POST', '/api/source-deliveries/claim', {
     connector: 'feishu', sourceRouteId: 'long-poll-fixture', waitMs: 5000,

@@ -10,6 +10,8 @@ try {
   const { handleMessage } = await import('../scripts/feishu-connector.mjs');
   const { classifyFeishuQuickParticipation } = await import('../connectors/feishu/quick-participation.mjs');
   const { normalizeFeishuGroups, resolveFeishuGroupSettings } = await import('../connectors/feishu/group-settings.mjs');
+  const { buildFeishuWorkThreadDeliveryTarget } = await import('../connectors/feishu/reply-routing.mjs');
+  const { shouldReplyInFeishuThread } = await import('../connectors/feishu/index.mjs');
   assert.throws(() => normalizeFeishuGroups({ pilot: { jevReactions: true } }), /jevReactions requires/);
   const config = { storageDir: home, sourceRouteId: 'pilot-bot',
     responsePolicy: { group: 'all' },
@@ -22,6 +24,12 @@ try {
   assert.doesNotMatch(resolveFeishuGroupSettings(config, base).systemPrompt, /THINKING|<feishu-reaction emoji=/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread' }).jevReactions, undefined,
     'the pilot must stay on the selected group mainline');
+  const workTarget = buildFeishuWorkThreadDeliveryTarget(base);
+  assert.equal(workTarget.conversationKind, 'thread');
+  assert.equal(workTarget.rootId, base.messageId);
+  assert.equal(workTarget.messageId, base.messageId);
+  assert.equal(workTarget.sourceKind, 'ambient_thread_open');
+  assert.equal(shouldReplyInFeishuThread(workTarget), true);
 
   const classified = await classifyFeishuQuickParticipation('Ada: 你这次做得真棒', {
     key: 'fixture', includeHandoff: false, fetchImpl: async (_url, request) => {
@@ -93,7 +101,7 @@ try {
       return { decision };
     },
     submitRemoteLabRequest: async (_runtime, _summary, options) => {
-      effects.push(`run:${options.skipUserMessage}`);
+      effects.push(`run:${options.skipUserMessage}:${options.workReplyInThread}`);
       return { runId: 'work-run', requestId: 'work-request' };
     },
     enqueueJevReaction: async (_runtime, _summary, _sessionId, emojiType) => {
@@ -115,8 +123,8 @@ try {
       },
     });
   assert.equal(direct.runId, 'work-run');
-  assert.deepEqual(effects, ['observe:work', 'jev', 'decision:reply:OnIt', 'run:true', 'reaction:OnIt'],
-    'an accepted task gets OnIt after Run admission without a read reaction');
+  assert.deepEqual(effects, ['observe:work', 'jev', 'decision:reply:OnIt', 'run:true:true', 'reaction:OnIt'],
+    'an accepted task opens a Thread from its original message while keeping the group observation');
 
   effects.length = 0;
   const mentionedPraise = await handleMessage(runtime, { ...base, messageId: 'mentioned-praise',

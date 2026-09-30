@@ -38,6 +38,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: during the normal task turn, the model should infer the useful result from the user's goal, including a card for a scannable status or a real calendar/task resource for a commitment or follow-up, even when the user does not name the format. Deterministic code owns provider request shape, Bot identity, validation, compact output, readback, and post-answer display conversion. Apply this pattern to other Connectors as their repeated workflows become clear.
 - Implementation: `remotelab feishu` exposes fixed Bot actions for contacts, messages, status cards, reactions, calendars, tasks, and Base records. The native `lark-cli` remains the provider client and fallback for less common operations. The ordinary Feishu reply adapter compiles the generated answer to rich text locally, without a second model call. The Feishu guide and source prompt now describe in-turn selection by user goal. A card still sends as a separate action; the durable source-delivery reply does not yet carry a native card variant.
 
+### 2026-09-30 — Open a Feishu Thread for work admitted from a trial group
+
+- Observed friction: a substantial request in a trial group's main timeline was admitted by Jev and handed to a separate work Session, but the visible progress reply stayed in the group main timeline. The group member expected a Feishu Thread on the source message.
+- Product implication: keep observation and work admission in the shared group Session, then bind the work request's visible delivery to a Thread rooted at the inbound message. Do this in the connector so it does not depend on the Harness emitting a special reply marker. A later human reply in that Thread should resolve to its own Session.
+
 ### 2026-09-30 — Only targeted reactions when a trial group does not start work
 
 - Observed friction: the trial groups now retain every message in their main Session, and the broad no-work reaction fallback creates more visible responses than the user finds useful.

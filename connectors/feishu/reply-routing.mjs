@@ -54,6 +54,20 @@ export function buildFeishuRequestDeliveryTarget(summary) {
   });
 }
 
+export function buildFeishuWorkThreadDeliveryTarget(summary) {
+  const target = buildFeishuRequestDeliveryTarget(summary);
+  if (target.conversationKind !== 'main' || !target.chatId || !target.messageId) return target;
+  return normalizeConversationTarget({
+    ...target,
+    conversationKind: 'thread',
+    rootId: target.messageId,
+    replyInThread: true,
+    // The group timeline stays bound to the main conversation. A later human
+    // reply in this new Thread must resolve to its own Session.
+    sourceKind: 'ambient_thread_open',
+  });
+}
+
 export function buildFeishuSessionExternalTriggerId(summary, sourceRouteId = 'default') {
   const safe = value => encodeURIComponent(trimString(value) || 'unknown');
   const route = safe(sourceRouteId);

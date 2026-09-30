@@ -518,7 +518,10 @@ the outcome remains `OnIt`. The connector records every judgment in the
 Session and queues a reaction only when one was chosen. The durable
 source-delivery outbox and Feishu Bot SDK send that reaction. This path does not add a temporary
 `THINKING` or generic read reaction, and it does not ask the Harness to select
-or post the outcome. Ordinary social messages do not start a Harness Run.
+or post the outcome. When Jev admits a Run, its visible text reply opens a
+Feishu Thread rooted at the inbound message. The observation and work request
+remain in the group timeline Session; later messages inside that Thread can
+bind their own Session. Ordinary social messages do not start a Harness Run.
 Commands still use their existing script response path after entering the
 Session. Only the selected group mainline gets this policy; topics, threads,
 and other groups keep their existing behavior. Disable `jevReactions` to
