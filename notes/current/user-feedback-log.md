@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-30 — Keep per-Session Token usage quiet in the sidebar
+
+- Observed friction: a Token bar and then a colored edge marker made the Session list feel cluttered. The user preferred a small amount such as `1.2wt` at the right edge of the Session title row.
+- Product implication: test the compact number and folder hierarchy in the existing Appearance Lab before applying them to the chat UI. Keep the conversation area wide and preserve familiar navigation. Display mock values as examples; a live version must use recorded usage with a clear unit and source.
+- Pilot action: remove the rejected Session Token overlay from the one-Person chat pilot while retaining that pilot's separate pet quota display.
+
 ### 2026-09-30 — Failed actions must show their reason in the product
 
 - Observed friction: a model change followed by Steer returned HTTP 409, but the frontend logged the reason only in the browser console. The user had to inspect the API to understand why the message was not sent.
