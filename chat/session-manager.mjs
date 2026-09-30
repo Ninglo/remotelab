@@ -18,6 +18,8 @@ import {
   QUICK_SESSION_PROFILE,
 } from '../lib/quick-session-profile.mjs';
 import { getJevRoutingSettings, resolveJevChecklistGate } from '../lib/jev-auto-router.mjs';
+import { isWorkboardOptedIn, isWorkboardTurnEnabled, loadWorkboardOptIns } from '../lib/workboard-opt-in.mjs';
+import { draftWorkboardChecklist } from '../lib/workboard-checklist.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
@@ -1374,7 +1376,9 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     slots.push(createModelContextSlot(
       'session_workboard',
       'Visible checklist for this opt-in Session',
-      "Jev judged that this request needs a visible delivery checklist. At the start of execution, derive 2–5 verifiable deliverables and publish them with the existing tool. Format the full text as one short `目标：...` line stating the intended outcome and acceptance standard, immediately followed by 2–5 `[ ] Deliverable — concrete completion condition` lines. For example in Bash: remotelab assistant-message --source workboard_checklist --text $'目标：完成两项交付\\n[ ] First deliverable — Check its result.\\n[ ] Second deliverable — Check its result.'. Continue the task immediately. When a deliverable actually changes state, call the same tool with the full updated checklist and use [x] for completed items; keep the goal line and item wording stable. Do not mark an item complete before its result exists. Do not call this tool for another Session. The checklist appears as one updating message outside Thinking in the current Session. Keep Thinking expandable. The Run monitor reads native Run state automatically; do not create a separate watcher just for this view.",
+      options.workboardDraft
+        ? 'Jev selected a checklist and code already published the user-supplied goal and acceptance lines. Do not publish another initial list. Update that same list with `remotelab assistant-message --source workboard_checklist --text ...` only when a deliverable is truly done; send the final result separately.'
+        : 'Jev selected a visible checklist. In this same Run, derive 2–5 short deliverables and publish once with `remotelab assistant-message --source workboard_checklist --text ...`. Use one `目标：` line, then one `[ ] 标题 — 可核验条件` line per deliverable. Update the full list with `[x]` only when a result exists. Keep its wording stable; give the final result separately. Formatting and Feishu rendering are handled by code. Do not make a separate planning model call or watcher.',
     ));
   }
   const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
@@ -2104,6 +2108,15 @@ export async function createSession(folder, tool, name, extra = {}) {
     ? extra.viewPersonId.trim()
     : DEFAULT_PERSON_ID;
   const requestedSourceId = resolveRequestedSessionSourceId(extra);
+  const requestedWorkboard = isWorkboardOptedIn({
+    sourceId: requestedSourceId,
+    initiatedByIdentityId: requestedInitiatedByIdentityId,
+    conversation: requestedConversation,
+    groupFeed: requestedGroupFeed,
+  }, {
+    viewPersonId: requestedViewPersonId,
+    initiatedByIdentityId: requestedInitiatedByIdentityId,
+  }, await loadWorkboardOptIns());
   const requestedSourceName = resolveRequestedSessionSourceName(extra, requestedSourceId);
   const hasRequestedSourceHint = hasRequestedSessionSourceHint(extra);
   const requestedSpace = requestedGroupFeed ? '' : normalizeSessionSpace(extra.space || '');
@@ -2341,6 +2354,10 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (workflowPriority) session.workflowPriority = workflowPriority;
     if (requestedSourceName) session.sourceName = requestedSourceName;
     if (requestedInitiatedByIdentityId) session.initiatedByIdentityId = requestedInitiatedByIdentityId;
+    if (requestedWorkboard) {
+      session.workboardPilot = true;
+      session.workboardOptInPersonId = requestedViewPersonId;
+    }
     if (requestedGroupFeed) session.groupFeed = true;
     if (requestedStarterPreset) session.starterPreset = requestedStarterPreset;
     if (requestedSystemPrompt) session.systemPrompt = requestedSystemPrompt;
@@ -2516,12 +2533,18 @@ export async function updateSessionSystemPrompt(id, systemPrompt) {
   return enrichSessionMeta(result.meta);
 }
 
-export async function updateSessionWorkboardPilot(id, enabled) {
+export async function updateSessionWorkboardPilot(id, enabled, { optInPersonId = '' } = {}) {
   const result = await mutateSessionMeta(id, (session) => {
-    if ((session.workboardPilot === true) === enabled) return false;
-    if (enabled) session.workboardPilot = true;
+    if ((session.workboardPilot === true) === enabled
+      && (!enabled || (session.workboardOptInPersonId || '') === optInPersonId)) return false;
+    if (enabled) {
+      session.workboardPilot = true;
+      if (optInPersonId) session.workboardOptInPersonId = optInPersonId;
+      else delete session.workboardOptInPersonId;
+    }
     else {
       delete session.workboardPilot;
+      delete session.workboardOptInPersonId;
       delete session.workboardGate;
     }
     session.updatedAt = nowIso();
@@ -3107,13 +3130,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       : text?.trim(),
   });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
-  if (session.workboardPilot === true && !priorRequest && !options.internalOperation && options.recordUserMessage !== false) {
-    options = {
-      ...options,
-      checklistGateReceipt: await resolveJevChecklistGate(savedImages.length
-        ? `${text?.trim() || ''}\n[${savedImages.length} attachment(s)]`
-        : text?.trim()),
-    };
+  const workboardPeople = await loadWorkboardOptIns();
+  const workboardEnabled = isWorkboardTurnEnabled(session, options, workboardPeople);
+  const personOptedIn = isWorkboardOptedIn(session, options, workboardPeople);
+  if (workboardEnabled && personOptedIn && session.workboardOptInPersonId !== options.viewPersonId) {
+    session = await updateSessionWorkboardPilot(sessionId, true, {
+      optInPersonId: options.viewPersonId,
+    }) || session;
   }
   const activeRequest = requestRuntime.active(sessionId)[0];
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
@@ -3121,6 +3144,18 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (!priorRequest && activeNative && !options.internalOperation &&
     (options.freshThread || ['tool', 'model', 'effort', 'thinking'].some(key => (runtimeSelection[key] || '') !== (activeRequest.runtimeSelection?.[key] || '')))) {
     throw Object.assign(new Error('当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。'), { code: 'SESSION_BUSY' });
+  }
+  if (workboardEnabled && !priorRequest && !options.internalOperation && options.recordUserMessage !== false) {
+    const checklistGateReceipt = await resolveJevChecklistGate(savedImages.length
+      ? `${text?.trim() || ''}\n[${savedImages.length} attachment(s)]`
+      : text?.trim());
+    options = {
+      ...options,
+      checklistGateReceipt,
+      ...(checklistGateReceipt.needsChecklist === true
+        ? { workboardDraft: draftWorkboardChecklist(text) }
+        : {}),
+    };
   }
   const deliveryPlan = priorRequest
     ? normalizeSourceDeliveryPlan(priorRequest.deliveryPlan || priorRequest.options.sourceDelivery)
@@ -3170,6 +3205,14 @@ async function ensureRequestInput(record, manifest) {
     await appendEvent(record.sessionId, messageEvent('user', recordedText, buildMessageAttachmentRefs(record.images), {
       requestId: record.requestId, responseId: record.responseId, runId: record.runId,
       ...(sourceContext ? { sourceContext } : {}),
+    }));
+  }
+  if (record.options.workboardDraft && !events.some(event => event.type === 'message'
+      && event.role === 'assistant' && event.source === 'workboard_checklist'
+      && event.requestId === record.requestId)) {
+    await appendEvent(record.sessionId, messageEvent('assistant', record.options.workboardDraft, [], {
+      source: 'workboard_checklist', requestId: record.requestId,
+      responseId: record.responseId, runId: record.runId,
     }));
   }
   const visibleModelContext = typeof manifest.modelContext === 'string' && manifest.modelContext.trim()

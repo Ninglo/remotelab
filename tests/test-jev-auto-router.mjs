@@ -36,6 +36,25 @@ test('checklist gate returns a compact decision without task text or credentials
   const unavailable = await resolveJevChecklistGate('Task', { apiKey: 'private-test-key', fetchImpl: async () => ({ ok: false, status: 503 }) });
   assert.equal(unavailable.needsChecklist, null);
   assert.equal(unavailable.reason, 'http_503');
+  const weakYes = await resolveJevChecklistGate('简单问题', {
+    apiKey: 'private-test-key',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+      checklist: { choice: 'yes', confidence: 0.55, probabilities: { yes: 0.55, no: 0.45 } },
+    } }) }),
+  });
+  assert.equal(weakYes.needsChecklist, false, 'uncertain yes must not add a checklist');
+  await resolveJevChecklistGate(`Start ${'x'.repeat(10_000)} finish`, {
+    apiKey: 'private-test-key',
+    fetchImpl: async (_url, request) => {
+      const input = JSON.parse(request.body).state.task;
+      assert.ok(input.length <= 4_000);
+      assert.match(input, /^Start /);
+      assert.match(input, / finish$/);
+      return { ok: true, json: async () => ({ answers: {
+        checklist: { choice: 'no', confidence: 0.9, probabilities: { yes: 0.1, no: 0.9 } },
+      } }) };
+    },
+  });
 });
 
 function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
