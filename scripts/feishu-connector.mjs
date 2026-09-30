@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
+import { loadDailyReportMemory } from '../connectors/feishu/daily-report-memory.mjs';
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
@@ -1194,9 +1195,20 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     const context = buildFeishuSessionReactionContext(observation.recent, {
       mentioned: mentionsFeishuBot(runtime, summary),
     });
-    const verdict = await (helpers.classifyJevReaction || ((context) =>
-      classifyFeishuQuickParticipation(context, { includeHandoff: false,
-        newestText: summary.messageText || summary.textPreview || '' })))(context);
+    const newestText = summary.messageText || summary.textPreview || '';
+    const memoryStarted = performance.now();
+    const projectMemory = await loadDailyReportMemory(
+      resolveFeishuGroupSettings(runtime.config, summary).dailyReportMemory, newestText);
+    const memoryLatencyMs = Math.round(performance.now() - memoryStarted);
+    const verdict = await (helpers.classifyJevReaction || classifyFeishuQuickParticipation)(
+      context, { includeHandoff: false, newestText, projectMemory });
+    if (projectMemory) console.log('[feishu-jev-project-memory]', JSON.stringify({
+      messageId: summary.messageId, sources: projectMemory.sources,
+      excerpts: projectMemory.excerpts.length,
+      memoryLatencyMs,
+      totalLatencyMs: Math.round(performance.now() - memoryStarted),
+      jevLatencyMs: verdict?.latencyMs ?? null,
+    }));
     const mentioned = mentionsFeishuBot(runtime, summary);
     const participation = !verdict?.reactionOnly
       && (verdict?.decision === 'reply' || mentioned) ? 'reply' : 'silent';
@@ -1213,6 +1225,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
         method: 'POST', body: { sourceMessageId, ...value },
       })))(sessionId, summary.messageId, {
       participation, emojiType, workMode, reason: verdict?.reason || '',
+      ...(verdict?.contextSources ? { contextSources: verdict.contextSources } : {}),
     });
     if (saved?.response && !saved.response.ok) throw new Error(saved.json?.error || 'Unable to record Jev decision');
     decision = saved?.json?.decision || saved?.decision;

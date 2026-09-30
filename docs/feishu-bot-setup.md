@@ -537,7 +537,11 @@ return to the existing `quickReactions` flow.
 
 The observation and decision are keyed by Feishu message ID so connector
 replay reuses them. The short Jev window is an active-context limit, not a
-history deletion rule: all observed messages remain in the Session. The
+retention limit. A selected Jev group can also consume bounded, dated excerpts
+from published daily reports through the opt-in
+[daily report memory input](feishu-daily-report-memory.md).
+
+All observed messages remain in the Session. The
 group-feed nightly review preserves incremental provenance and current work
 summary. A later work turn also uses the bounded Feishu conversation window
 (at most 100 messages, 24 hours, 4-hour activity gap, and 48,000 characters).
