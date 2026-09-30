@@ -1,0 +1,80 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+
+const source = readFileSync(new URL('../static/chat/session-token-pilot.js', import.meta.url), 'utf8');
+
+function makeView(personId, usage) {
+  const titleRow = {
+    children: [{ className: 'session-item-name' }, { className: 'session-item-actions' }],
+    querySelector(selector) {
+      return this.children.find((child) => child.className === selector.slice(1)) || null;
+    },
+    insertBefore(child, before) {
+      this.children.splice(this.children.indexOf(before), 0, child);
+    },
+  };
+  const row = {
+    querySelector(selector) {
+      if (selector === '.session-action-btn[data-id]') return { dataset: { id: 'session-one' } };
+      if (selector === '.session-item-title-row') return titleRow;
+      return null;
+    },
+  };
+  const list = { querySelectorAll: () => [row] };
+  const classes = [];
+  let fetchCount = 0;
+  const context = {
+    bootstrapAuthInfo: { person: { id: personId } },
+    document: {
+      documentElement: { classList: { add: (value) => classes.push(value) } },
+      getElementById: () => list,
+      createElement: () => ({ className: '', textContent: '', title: '', setAttribute() {} }),
+      addEventListener() {},
+      hidden: false,
+    },
+    window: { setInterval() {} },
+    MutationObserver: class { observe() {} disconnect() {} },
+    queueMicrotask,
+    fetch: async () => {
+      fetchCount++;
+      return { ok: true, json: async () => ({ bySession: usage }) };
+    },
+  };
+  runInNewContext(source, context);
+  return { titleRow, classes, fetchCount: () => fetchCount };
+}
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('Session Token trial fetches usage only for the current Person', async () => {
+  const other = makeView('person_default', []);
+  await settle();
+  assert.equal(other.fetchCount(), 0);
+  assert.deepEqual(other.classes, []);
+  assert.equal(other.titleRow.children.length, 2);
+});
+
+test('compact k amount sits between the title and action buttons', async () => {
+  const view = makeView('person_8b536b37317e491d96036fc8', [
+    { sessionId: 'session-one', runCount: 1, totalTokens: 12_400 },
+  ]);
+  await settle();
+  assert.equal(view.fetchCount(), 1);
+  assert.deepEqual(view.classes, ['session-token-pilot-enabled']);
+  assert.deepEqual(view.titleRow.children.map((child) => child.className),
+    ['session-item-name', 'session-token-pilot', 'session-item-actions']);
+  assert.equal(view.titleRow.children[1].textContent, '12.4k');
+  assert.match(view.titleRow.children[1].title, /12,400 Token/);
+});
+
+test('large recorded totals remain in k and missing records stay blank', async () => {
+  const large = makeView('person_8b536b37317e491d96036fc8', [
+    { sessionId: 'session-one', runCount: 3, totalTokens: 893_316_469 },
+  ]);
+  const missing = makeView('person_8b536b37317e491d96036fc8', []);
+  await settle();
+  assert.equal(large.titleRow.children[1].textContent, '893316k');
+  assert.equal(missing.titleRow.children.length, 2);
+});

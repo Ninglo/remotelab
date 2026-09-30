@@ -1,0 +1,38 @@
+/* One-Person visual trial: keep usage on the title line and actions below it. */
+:root.session-token-pilot-enabled .session-item {
+  min-height: 44px;
+}
+
+:root.session-token-pilot-enabled .session-item-title-row {
+  align-items: flex-start;
+}
+
+:root.session-token-pilot-enabled .session-item-name {
+  align-self: center;
+}
+
+:root.session-token-pilot-enabled .session-token-pilot {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+:root.session-token-pilot-enabled .session-item.active .session-token-pilot {
+  color: var(--text-secondary);
+}
+
+:root.session-token-pilot-enabled .session-item-actions {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+}
+
+:root.session-token-pilot-enabled .session-item-description {
+  padding-right: 60px;
+}

@@ -23,9 +23,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ### 2026-09-30 — Keep per-Session Token usage quiet in the sidebar
 
-- Observed friction: a Token bar and then a colored edge marker made the Session list feel cluttered. The user preferred a small amount such as `1.2wt` at the right edge of the Session title row.
-- Product implication: test the compact number and folder hierarchy in the existing Appearance Lab before applying them to the chat UI. Keep the conversation area wide and preserve familiar navigation. Display mock values as examples; a live version must use recorded usage with a clear unit and source.
-- Pilot action: remove the rejected Session Token overlay from the one-Person chat pilot while retaining that pilot's separate pet quota display.
+- Observed friction: a Token bar and then a colored edge marker made the Session list feel cluttered. A small amount on the right edge of the Session title row fits better, but the selected row must still leave space for rename, archive, and pin actions.
+- Product implication: trial the compact amount only for the requesting Person, use `k` consistently, and keep it separate from the larger UI redesign in Appearance Lab. The live value must use recorded usage with a clear source; missing records stay blank.
+- Pilot action: show the read-only cumulative amount above the Session actions so the title-line number and selected-row buttons can coexist. The separate pet quota display remains in place.
 
 ### 2026-09-30 — Failed actions must show their reason in the product
 
