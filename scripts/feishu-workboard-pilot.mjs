@@ -10,9 +10,10 @@ import {
   publishFeishuWorkboardCycle,
 } from '../connectors/feishu/workboard-pilot.mjs';
 
-const statePath = process.argv[2];
-if (!statePath || process.argv.length !== 3) {
-  console.error('Usage: node scripts/feishu-workboard-pilot.mjs <private-state.json>');
+const disableOnly = process.argv[2] === '--disable';
+const statePath = process.argv[disableOnly ? 3 : 2];
+if (!statePath || process.argv.length !== (disableOnly ? 4 : 3)) {
+  console.error('Usage: node scripts/feishu-workboard-pilot.mjs [--disable] <private-state.json>');
   process.exit(2);
 }
 
@@ -22,20 +23,33 @@ if (!pilot.sessionId || !pilot.chatId || !pilot.senderOpenId || !pilot.sourceRou
     || !Number.isFinite(Date.parse(pilot.expiresAt))) {
   throw new Error('Incomplete Feishu workboard pilot state');
 }
-if (Date.now() >= Date.parse(pilot.expiresAt)) process.exit(0);
 pilot.cards ||= [];
 
 const botConfig = JSON.parse(await readFile(pilot.botConfigPath, 'utf8'));
 if (botConfig.botId !== pilot.sourceRouteId || !botConfig.appId || !botConfig.appSecret) {
   throw new Error('Feishu Bot config does not match this pilot route');
 }
+const remote = createRemoteLabHttpClient({ baseUrl: botConfig.chatBaseUrl });
+if (disableOnly) {
+  const path = `/api/sessions/${encodeURIComponent(pilot.sessionId)}`;
+  const current = await remote.request(path);
+  if (!current.response.ok) throw new Error(`Unable to read pilot Session (${current.response.status})`);
+  if (isFeishuWorkboardPilotSession(current.json?.session, pilot)) {
+    const result = await remote.request(path, { method: 'PATCH', body: { workboardPilot: false } });
+    if (!result.response.ok || result.json?.session?.workboardPilot !== false) {
+      throw new Error(`Unable to disable Feishu workboard pilot (${result.response.status})`);
+    }
+    console.log('[feishu-workboard] pilot disabled');
+  }
+  process.exit(0);
+}
+if (Date.now() >= Date.parse(pilot.expiresAt)) process.exit(0);
 const app = new Lark.Client({
   appId: botConfig.appId,
   appSecret: botConfig.appSecret,
   domain: botConfig.region === 'lark-global' ? Lark.Domain.Lark : Lark.Domain.Feishu,
   loggerLevel: Lark.LoggerLevel.warn,
 });
-const remote = createRemoteLabHttpClient({ baseUrl: botConfig.chatBaseUrl });
 const requestJson = async path => {
   const result = await remote.request(path);
   if (!result.response.ok) throw new Error(result.json?.error || `RemoteLab GET failed: ${result.response.status}`);
@@ -68,7 +82,7 @@ async function sync() {
       const session = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`)).session;
       if (!isFeishuWorkboardPilotSession(session, pilot)) {
         stop();
-        throw new Error('Pilot Session is disabled or no longer matches the intended private chat');
+        return;
       }
       const events = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}/events?filter=all`)).events;
       for (const cycle of collectFeishuWorkboardCycles(events, pilot)) {

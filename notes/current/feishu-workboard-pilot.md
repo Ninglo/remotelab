@@ -21,6 +21,8 @@ uncertain first send rather than risking a duplicate. The state file records
 the latest delivered revision. A completed task observed for the first time
 after its result is not backfilled out of order.
 
-Stop the dedicated service and set the Session's `workboardPilot` to `false`
-to end the trial. The worker also exits at `expiresAt`. No group or other
-private Session is watched or modified.
+Stop the dedicated service to end the trial. Configure its `ExecStopPost` to
+run the worker with `--disable <state-file>`; this clears `workboardPilot` on
+the exact bound Session after any stop, including the `expiresAt` cutoff.
+The cleanup checks the private chat binding before making that change. No
+group or other private Session is watched or modified.
