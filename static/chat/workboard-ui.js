@@ -16,7 +16,8 @@ function isSessionWorkboardMessage(event) {
 
 function parseSessionChecklistContent(content) {
   const lines = String(content || "").split(/\r?\n/);
-  const taskTitle = lines.find(line => /^\s*任务[：:]\s*\S/.test(line))?.replace(/^\s*任务[：:]\s*/, "").trim() || "";
+  const taskTitle = lines.find(line => /^\s*(?:目标|任务)[：:]\s*\S/.test(line))
+    ?.replace(/^\s*(?:目标|任务)[：:]\s*/, "").trim() || "";
   const description = lines.find(line => /^\s*说明[：:]\s*\S/.test(line))?.replace(/^\s*说明[：:]\s*/, "").trim() || "";
   const items = lines.map(line => {
     const match = /^\s*(?:[-*]\s*)?\[([ xX])\]\s+(.+?)\s*$/.exec(line);
@@ -39,7 +40,6 @@ function sessionWorkboardSnapshotInfo(events) {
 
 function projectSessionWorkboardTranscriptEvents(sessionId, events) {
   if (sessionWorkboardSession?.id !== sessionId || sessionWorkboardSession.workboardPilot !== true) return events;
-  const latestUserSeq = [...events].reverse().find(event => event?.type === "message" && event.role === "user")?.seq || 0;
   const projected = [];
   let turn = [];
   const flushTurn = () => {
@@ -52,20 +52,37 @@ function projectSessionWorkboardTranscriptEvents(sessionId, events) {
     }
     const first = updates[0];
     const latest = updates[updates.length - 1];
+    const thinkingBlocks = turn.filter(event => event?.type === "thinking_block");
+    const firstThinking = thinkingBlocks[0];
+    const lastThinking = thinkingBlocks[thinkingBlocks.length - 1];
+    const mergedThinking = firstThinking ? {
+      ...firstThinking,
+      blockStartSeq: firstThinking.blockStartSeq || firstThinking.seq,
+      blockEndSeq: lastThinking.blockEndSeq || lastThinking.seq,
+      state: lastThinking.state || firstThinking.state,
+      label: lastThinking.label || firstThinking.label,
+      hiddenEventCount: thinkingBlocks.reduce((total, block) => total + (block.hiddenEventCount || 0), 0),
+      toolNames: [...new Set(thinkingBlocks.flatMap(block => block.toolNames || []))],
+    } : null;
     const boundary = turn.reduce((max, event) => Math.max(
       max, event.displayBoundarySeq || event.blockEndSeq || event.workboardUpdateSeq || event.seq || 0,
     ), 0);
     let inserted = false;
+    let insertedThinking = false;
     for (const event of turn) {
-      // Raw revisions and thinking remain in Session history.
-      if (event.type === "thinking_block") continue;
+      // Raw revisions stay in Session history; one disclosure retains the full thinking range.
+      if (event.type === "thinking_block") {
+        if (!insertedThinking) projected.push(mergedThinking);
+        insertedThinking = true;
+        continue;
+      }
       if (isSessionWorkboardMessage(event)) {
         if (!inserted) {
           projected.push({
             ...latest,
             seq: first.seq,
             workboardUpdateSeq: latest.workboardUpdateSeq || latest.seq,
-            workboardCurrentTurn: first.seq > latestUserSeq,
+            workboardCurrentTurn: false,
           });
           inserted = true;
         }
@@ -82,7 +99,30 @@ function projectSessionWorkboardTranscriptEvents(sessionId, events) {
     turn.push(event);
   }
   flushTurn();
-  return projected;
+  // A steering message starts a new Run, but may continue the same unfinished task.
+  // Keep its revisions on the original checklist until a normal result closes it.
+  const transcript = [];
+  let activeChecklistIndex = -1;
+  for (const event of projected) {
+    if (isSessionWorkboardMessage(event)) {
+      if (activeChecklistIndex >= 0) {
+        const previous = transcript[activeChecklistIndex];
+        transcript[activeChecklistIndex] = {
+          ...event,
+          seq: previous.seq,
+          workboardUpdateSeq: event.workboardUpdateSeq || event.seq,
+        };
+      } else {
+        activeChecklistIndex = transcript.length;
+        transcript.push(event);
+      }
+      continue;
+    }
+    transcript.push(event);
+    if (event?.type === "message" && event.role === "assistant") activeChecklistIndex = -1;
+  }
+  if (activeChecklistIndex >= 0) transcript[activeChecklistIndex].workboardCurrentTurn = true;
+  return transcript;
 }
 
 function sessionWorkboardRunLabel() {
@@ -183,7 +223,7 @@ function renderSessionWorkboardMessage(container, event) {
   const heading = document.createElement("div");
   heading.className = "session-workboard-heading";
   const title = document.createElement("strong");
-  title.textContent = "任务：" + (taskTitle || "交付清单");
+  title.textContent = "目标：" + (taskTitle || "交付清单");
   heading.appendChild(title);
   const count = document.createElement("span");
   count.className = "session-workboard-count";

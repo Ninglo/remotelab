@@ -46,13 +46,15 @@ const raw = [
 ];
 assert.equal(context.updateSessionWorkboardEvents('pilot', raw), raw);
 const projected = context.projectSessionWorkboardTranscriptEvents('pilot', raw);
-assert.deepEqual(Array.from(projected, event => event.type), ['message', 'message', 'message'],
-  'a pilot turn shows the user, one inline checklist, and one result');
-assert.equal(projected[1].seq, first.seq, 'the inline checklist keeps its original position');
-assert.equal(projected[1].workboardUpdateSeq, updated.seq, 'later updates replace the same checklist');
-assert.equal(projected[1].content, updated.content);
-assert.equal(projected[2].displayBoundarySeq, result.seq);
-assert.equal(projected[1].workboardCurrentTurn, true);
+assert.deepEqual(Array.from(projected, event => event.type), ['message', 'thinking_block', 'message', 'message'],
+  'a pilot turn keeps one expandable thinking block, one checklist, and one result');
+assert.equal(projected[1].blockStartSeq, 2);
+assert.equal(projected[1].blockEndSeq, 6, 'the disclosure spans thinking before and after checklist updates');
+assert.equal(projected[2].seq, first.seq, 'the inline checklist keeps its original position');
+assert.equal(projected[2].workboardUpdateSeq, updated.seq, 'later updates replace the same checklist');
+assert.equal(projected[2].content, updated.content);
+assert.equal(projected[3].displayBoundarySeq, result.seq);
+assert.equal(projected[2].workboardCurrentTurn, false, 'the final result closes the live run badge');
 assert.equal(raw.length, 7, 'raw Session history remains unchanged');
 const serverCoalesced = context.projectSessionWorkboardTranscriptEvents('pilot', [
   user, { ...updated, seq: first.seq, workboardUpdateSeq: updated.seq },
@@ -60,17 +62,22 @@ const serverCoalesced = context.projectSessionWorkboardTranscriptEvents('pilot',
 assert.equal(serverCoalesced[1].displayBoundarySeq, updated.seq,
   'a server-coalesced update still advances the native event boundary');
 
-const card = context.renderSessionWorkboardMessage(container, projected[1]);
+const card = context.renderSessionWorkboardMessage(container, projected[2]);
 assert.equal(container.children.length, 1);
 assert.equal(card.className, 'session-workboard-inline');
-assert.equal(card.children[0].children[0].textContent, '任务：交付两项结果');
+assert.equal(card.children[0].children[0].textContent, '目标：交付两项结果');
 assert.equal(card.children[0].children[1].textContent, '1/2');
 assert.match(card.children[1].textContent, /完成后逐项核对/);
 const list = card.children.find(child => child.tagName === 'ul');
 assert.equal(list.children.length, 2, 'each deliverable starts a separate row');
 assert.equal(list.children[0].children[1].children[0].textContent, '第一项');
 assert.equal(list.children[0].children[1].children[1].textContent, ' — 核对第一份结果。');
-assert.equal(card.children.at(-1).textContent, '运行中');
+assert.equal(card.children.at(-1).tagName, 'ul', 'a completed turn has no live run badge');
+const goalCard = context.renderSessionWorkboardMessage(new Element('div'), {
+  ...projected[2],
+  content: '目标：一条可更新的清单\n[ ] 核验 — 进度可见。',
+});
+assert.equal(goalCard.children[0].children[0].textContent, '目标：一条可更新的清单');
 
 const stale = context.updateSessionWorkboardEvents('pilot', raw.slice(0, 3));
 assert.equal(stale, raw, 'a late older response cannot roll progress back');
@@ -88,6 +95,25 @@ const history = context.projectSessionWorkboardTranscriptEvents('pilot', another
 assert.equal(history.filter(event => event.source === 'workboard_checklist').length, 1);
 assert.equal(history.find(event => event.source === 'workboard_checklist').workboardCurrentTurn, false);
 assert.equal(history.at(-1).type, 'thinking_block', 'short turns without a checklist retain native display');
+
+const steered = context.projectSessionWorkboardTranscriptEvents('pilot', [
+  user,
+  { seq: 2, type: 'thinking_block', blockStartSeq: 2, blockEndSeq: 2 },
+  first,
+  { seq: 4, type: 'message', role: 'user', content: '也要能展开思考' },
+  { seq: 5, type: 'thinking_block', blockStartSeq: 5, blockEndSeq: 5 },
+  { ...updated, seq: 6 },
+]);
+assert.equal(steered.filter(event => event.source === 'workboard_checklist').length, 1,
+  'steering an unfinished task updates its original checklist');
+assert.equal(steered.find(event => event.source === 'workboard_checklist').seq, first.seq);
+assert.equal(steered.find(event => event.source === 'workboard_checklist').workboardUpdateSeq, 6);
+assert.equal(steered.find(event => event.source === 'workboard_checklist').workboardCurrentTurn, true);
+assert.equal(steered.filter(event => event.type === 'thinking_block').length, 2,
+  'each user turn retains an expandable thinking disclosure');
+const activeCard = context.renderSessionWorkboardMessage(new Element('div'),
+  steered.find(event => event.source === 'workboard_checklist'));
+assert.equal(activeCard.children.at(-1).textContent, '运行中');
 
 context.fetchJsonOrRedirect = async () => ({ run: { id: 'run-1', state: 'failed' } });
 context.updateSessionWorkboardSession({ id: 'pilot', workboardPilot: true, activity: { run: { state: 'idle' } } });
