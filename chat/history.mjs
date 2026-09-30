@@ -41,6 +41,7 @@ const metaCache = new Map();
 const contextCache = new Map();
 const forkContextCache = new Map();
 const eventCache = new Map();
+const eventMatchIndexCache = new Map();
 const bodyCache = new Map();
 const runSessionMutation = createKeyedTaskQueue();
 
@@ -293,16 +294,16 @@ async function storeEvent(sessionId, event) {
   return clone(stored);
 }
 
-async function loadStoredEvent(sessionId, seq) {
+async function loadStoredEvent(sessionId, seq, copy = true) {
   const key = eventCacheKey(sessionId, seq);
   if (eventCache.has(key)) {
-    return clone(eventCache.get(key));
+    return copy ? clone(eventCache.get(key)) : eventCache.get(key);
   }
   const stored = await readJson(eventPath(sessionId, seq), null);
   if (stored) {
     eventCache.set(key, stored);
   }
-  return clone(stored);
+  return copy ? clone(stored) : stored;
 }
 
 async function countMessageEventsAfter(sessionId, afterSeq = 0) {
@@ -402,6 +403,7 @@ async function findLatestAssistantMessageAt(sessionId, latestSeq = 0) {
 }
 
 function clearSessionCaches(sessionId) {
+  eventMatchIndexCache.delete(sessionId);
   metaCache.delete(sessionId);
   contextCache.delete(sessionId);
   forkContextCache.delete(sessionId);
@@ -427,6 +429,61 @@ export async function loadHistory(sessionId, options = {}) {
     const stored = await loadStoredEvent(sessionId, seq);
     if (!stored) continue;
     events.push(includeBodies ? await hydrateEvent(sessionId, stored) : stored);
+  }
+  return events;
+}
+
+// Reply polling needs one turn, even when a Session contains years of history.
+// Index immutable event headers once, then hydrate only the matching records.
+export async function loadHistoryMatching(sessionId, options = {}) {
+  let index = eventMatchIndexCache.get(sessionId);
+  if (!index) {
+    index = { latestSeq: 0, entries: new Map(), pending: Promise.resolve() };
+    eventMatchIndexCache.set(sessionId, index);
+  }
+  const refresh = index.pending.then(async () => {
+    const meta = await loadMeta(sessionId);
+    for (let seq = index.latestSeq + 1; seq <= meta.latestSeq; seq += 1) {
+      const event = await loadStoredEvent(sessionId, seq, false);
+      if (event) {
+        for (const field of ['runId', 'resultRunId', 'responseId', 'requestId']) {
+          const value = event[field];
+          if (!value || typeof value !== 'string') continue;
+          const key = JSON.stringify([field === 'resultRunId' ? 'runId' : field, value]);
+          if (!index.entries.has(key)) index.entries.set(key, new Set());
+          index.entries.get(key).add(seq);
+        }
+        if (event.type === 'message' && event.role === 'user') {
+          const contexts = [event.sourceContext];
+          for (const context of contexts) {
+            if (!context || typeof context !== 'object') continue;
+            for (const value of [context.requestId, context.messageId]) {
+              if (!value || typeof value !== 'string') continue;
+              const key = JSON.stringify(['sourceRequestId', value.trim()]);
+              if (!index.entries.has(key)) index.entries.set(key, new Set());
+              index.entries.get(key).add(seq);
+            }
+            for (const entry of Array.isArray(context.queuedMessages) ? context.queuedMessages : []) {
+              contexts.push(entry, entry?.sourceContext);
+            }
+          }
+        }
+      }
+      index.latestSeq = seq;
+    }
+  });
+  index.pending = refresh.catch(() => {});
+  await refresh;
+  const sequences = new Set();
+  for (const [field, values] of [['runId', options.runIds], ['responseId', options.responseIds], ['requestId', options.requestIds], ['sourceRequestId', options.sourceRequestIds]]) {
+    for (const value of Array.isArray(values) ? values : []) {
+      for (const seq of index.entries.get(JSON.stringify([field, value])) || []) sequences.add(seq);
+    }
+  }
+  const events = [];
+  for (const seq of [...sequences].sort((left, right) => left - right)) {
+    const event = await loadStoredEvent(sessionId, seq);
+    if (event) events.push(options.includeBodies === false ? event : await hydrateEvent(sessionId, event));
   }
   return events;
 }

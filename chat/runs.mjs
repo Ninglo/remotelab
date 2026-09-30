@@ -23,6 +23,20 @@ const runManifestCache = new Map();
 const runResultCache = new Map();
 const runArtifactCache = new Map();
 const runMutationQueue = createKeyedTaskQueue();
+const indexedRunIds = new Set();
+const runRequestKeys = new Map();
+const runsByRequest = new Map();
+let requestIndexRefresh = Promise.resolve();
+
+function indexRunRequest(run) {
+  const previous = runRequestKeys.get(run.id);
+  const key = JSON.stringify([run.sessionId, run.requestId]);
+  if (previous && previous !== key) runsByRequest.get(previous)?.delete(run.id);
+  if (!runsByRequest.has(key)) runsByRequest.set(key, new Set());
+  runsByRequest.get(key).add(run.id);
+  runRequestKeys.set(run.id, key);
+  indexedRunIds.add(run.id);
+}
 
 function clone(value) {
   if (value === null || value === undefined) return value;
@@ -207,6 +221,7 @@ async function getRunUnlocked(runId) {
   const run = await readJson(runStatusPath(runId), null);
   if (run) {
     runStatusCache.set(runId, run);
+    indexRunRequest(run);
   } else {
     runStatusCache.delete(runId);
   }
@@ -237,6 +252,7 @@ export async function createRun({ status, manifest }) {
     await writeJsonAtomic(runStatusPath(run.id), run);
     await writeJsonAtomic(runManifestPath(run.id), { ...(manifest || {}), id: run.id });
     runStatusCache.set(run.id, run);
+    indexRunRequest(run);
     runManifestCache.set(run.id, { ...(manifest || {}), id: run.id });
   });
   return clone(run);
@@ -259,6 +275,7 @@ export async function updateRun(runId, updater) {
     next.updatedAt = new Date().toISOString();
     await writeJsonAtomic(runStatusPath(runId), next);
     runStatusCache.set(runId, next);
+    indexRunRequest(next);
     return clone(next);
   });
 }
@@ -574,10 +591,25 @@ export async function listRunIds() {
 
 export async function findRunByRequest(sessionId, requestId) {
   if (!sessionId || !requestId) return null;
-  const runIds = (await listRunIds()).reverse();
-  for (const runId of runIds) {
+  // Recovery reads legacy status files once. Later sends discover only new
+  // directories, including Runs created by another process.
+  const refresh = requestIndexRefresh.then(async () => {
+    const missing = (await listRunIds()).filter(id => !indexedRunIds.has(id));
+    let offset = 0;
+    await Promise.all(Array.from({ length: Math.min(16, missing.length) }, async () => {
+      while (offset < missing.length) await getRun(missing[offset++]);
+    }));
+  });
+  requestIndexRefresh = refresh.catch(() => {});
+  await refresh;
+  const candidates = runsByRequest.get(JSON.stringify([sessionId, requestId])) || [];
+  for (const runId of [...candidates].sort().reverse()) {
     const run = await getRun(runId);
-    if (!run) continue;
+    if (!run) {
+      indexedRunIds.delete(runId);
+      candidates.delete(runId);
+      continue;
+    }
     if (run.sessionId === sessionId && run.requestId === requestId) {
       return run;
     }

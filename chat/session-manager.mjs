@@ -13,6 +13,7 @@ import {
   getForkContext,
   getHistorySnapshot,
   loadHistory,
+  loadHistoryMatching,
   readLastTurnEvents,
   readEventsAfter,
   setForkContext,
@@ -160,13 +161,14 @@ import {
 import {
   buildReplyPublicationPayload,
   collectReplyPublicationHistory,
+  collectReplyPublicationRunIds,
   getRunResponseIds,
   normalizeReplyPublicationResponseIds,
   resolveReplyPublicationUserEvent,
   runIncludesResponseId,
 } from './reply-publication.mjs';
 import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
-import { enqueueSourceDelivery, normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
+import { enqueueSourceDelivery, listSourceDeliveries, normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
 import { extractTaggedBlock } from './session-text-parsing.mjs';
 import { buildTurnContextHook } from './turn-context-hook.mjs';
@@ -2744,7 +2746,9 @@ async function queueTriggerSourceDelivery(sessionId, finalizedRun, manifest) {
     text = `定时任务执行失败：${trimString(finalizedRun?.failureReason) || '模型运行失败'}`;
   } else if (finalizedRun?.state === 'completed') {
     const latestRun = await getRun(finalizedRun.id) || finalizedRun;
-    const history = await loadHistory(sessionId, { includeBodies: true });
+    const history = await loadHistoryMatching(sessionId, {
+      runIds: collectReplyPublicationRunIds(latestRun), responseIds: getRunResponseIds(latestRun),
+    });
     const payloadHistory = collectReplyPublicationHistory(history, latestRun);
     const payload = buildReplyPublicationPayload(payloadHistory, latestRun);
     text = trimString(payload.text);
@@ -2853,13 +2857,25 @@ export async function startDetachedRunObservers() {
 }
 
 async function resumePendingTriggerSourceDeliveries() {
+  const deliveryKey = (entry) => JSON.stringify([
+    entry.responseId, entry.connector, entry.sourceRouteId, entry.target,
+  ]);
+  // A durable delivery already contains the result. Its own worker handles
+  // pending/retry states; rebuilding completed payloads on every restart is waste.
+  const existingDeliveries = new Set((await listSourceDeliveries()).map(deliveryKey));
   for (const runId of await listRunIds()) {
     const run = await getRun(runId);
     if (!run || !isTerminalRunState(run.state)) continue;
     const manifest = await getRunManifest(runId);
     if (trimString(manifest?.internalOperation) !== 'trigger_delivery' || !manifest?.sourceDelivery) continue;
     try {
-      await queueTriggerSourceDelivery(run.sessionId, run, manifest);
+      const plan = normalizeSourceDeliveryPlan(manifest.sourceDelivery);
+      const key = plan && deliveryKey({
+        ...plan, responseId: trimString(manifest.responseId || run.responseId || run.requestId),
+      });
+      if (key && existingDeliveries.has(key)) continue;
+      const delivery = await queueTriggerSourceDelivery(run.sessionId, run, manifest);
+      if (delivery) existingDeliveries.add(deliveryKey(delivery));
     } catch (error) {
       console.error(`[source-delivery] failed to recover ${runId}: ${error?.message || error}`);
     }
@@ -2949,7 +2965,9 @@ async function findReplyPublicationRunByResponseId(sessionId, responseId, histor
   if (!normalized) return null;
   const loadedHistory = Array.isArray(history)
     ? history
-    : await loadHistory(sessionId, { includeBodies: true });
+    : await loadHistoryMatching(sessionId, {
+      requestIds: [normalized], responseIds: [normalized], sourceRequestIds: [normalized], includeBodies: false,
+    });
   const matchedUserEvent = resolveReplyPublicationUserEvent(loadedHistory, normalized);
   if (matchedUserEvent?.runId) {
     const run = await getRun(trimString(matchedUserEvent.runId));
@@ -2984,9 +3002,6 @@ async function buildReplyPublicationFromRun(sessionId, rootRun, responseId, hist
       rootRun = resolvedRootRun;
     }
   }
-  const loadedHistory = Array.isArray(history)
-    ? history
-    : await loadHistory(sessionId, { includeBodies: true });
   const publication = rootRun.replyPublication && typeof rootRun.replyPublication === 'object'
     ? rootRun.replyPublication
     : {
@@ -3002,6 +3017,11 @@ async function buildReplyPublicationFromRun(sessionId, rootRun, responseId, hist
   });
 
   if (summary.ready) {
+    const loadedHistory = Array.isArray(history)
+      ? history
+      : await loadHistoryMatching(sessionId, {
+        runIds: collectReplyPublicationRunIds(rootRun), responseIds: getRunResponseIds(rootRun),
+      });
     const payloadHistory = collectReplyPublicationHistory(loadedHistory, rootRun);
     summary.payload = buildReplyPublicationPayload(payloadHistory, rootRun);
   }
@@ -3067,8 +3087,7 @@ export async function getSessionReplyPublication(sessionId, responseId) {
   }
 
   const reconciledRootRun = await reconcileReplyPublicationRuns(sessionId, rootRun);
-  const publicationHistory = reconciledRootRun === rootRun ? (resolved?.history || null) : null;
-  return buildReplyPublicationFromRun(sessionId, reconciledRootRun, normalized, publicationHistory);
+  return buildReplyPublicationFromRun(sessionId, reconciledRootRun, normalized);
 }
 
 export async function getRunState(runId) {
