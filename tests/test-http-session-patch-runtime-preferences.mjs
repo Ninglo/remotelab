@@ -383,6 +383,14 @@ try {
     assert.equal(following.json.session.feishuRuntimeSelection, undefined);
     assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, { feishuRuntimeSelection: selection },
       { Cookie: 'session_token=not-authorized' })).status, 401, 'unauthenticated callers cannot set an override');
+    const workboardConfig = join(home, '.config', 'remotelab', 'workboard-opt-ins.json');
+    writeFileSync(workboardConfig, JSON.stringify({ people: [{
+      personId: 'person_default', identityIds: ['identity_web_default'], feishuPrivateChats: [],
+    }] }));
+    const optedInSession = await createSession(port, 'Person workboard opt-in');
+    assert.equal(optedInSession.workboardPilot, true,
+      'new private conversations of an opted-in Person should have a workboard');
+    rmSync(workboardConfig);
     console.log('test-http-session-feishu-runtime-override: ok');
   } finally {
     await stopServer(server);

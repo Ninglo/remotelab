@@ -20,7 +20,7 @@ if (!statePath || process.argv.length !== (disableOnly ? 4 : 3)) {
 const pilot = JSON.parse(await readFile(statePath, 'utf8'));
 if (!pilot.sessionId || !pilot.chatId || !pilot.senderOpenId || !pilot.sourceRouteId
     || !pilot.botConfigPath || !Number.isInteger(pilot.startedAfterSeq)
-    || !Number.isFinite(Date.parse(pilot.expiresAt))) {
+    || (pilot.expiresAt && !Number.isFinite(Date.parse(pilot.expiresAt)))) {
   throw new Error('Incomplete Feishu workboard pilot state');
 }
 pilot.cards ||= [];
@@ -43,7 +43,8 @@ if (disableOnly) {
   }
   process.exit(0);
 }
-if (Date.now() >= Date.parse(pilot.expiresAt)) process.exit(0);
+const expired = () => Boolean(pilot.expiresAt) && Date.now() >= Date.parse(pilot.expiresAt);
+if (expired()) process.exit(0);
 const app = new Lark.Client({
   appId: botConfig.appId,
   appSecret: botConfig.appSecret,
@@ -57,10 +58,14 @@ const requestJson = async path => {
 };
 const persist = () => writeJsonAtomic(statePath, pilot, { mode: 0o600 });
 
-async function verifyMessage(messageId, content) {
+async function verifyMessage(messageId, { updated } = {}) {
   const readback = await app.im.v1.message.get({ path: { message_id: messageId } });
   const item = readback?.data?.items?.find(entry => entry.message_id === messageId);
-  if (readback?.code !== 0 || !item || item.body?.content !== content) {
+  // IM get exposes a compatibility preview for v2 cards, not the card JSON.
+  // The patch response is the content-write receipt; readback checks its
+  // identity, destination, type and updated state.
+  if (readback?.code !== 0 || !item || item.chat_id !== pilot.chatId
+      || item.msg_type !== 'interactive' || (updated && item.updated !== true)) {
     throw new Error(`Feishu workboard readback did not match message ${messageId}`);
   }
 }
@@ -73,7 +78,7 @@ let reconnectTimer = null;
 let reconnectMs = 250;
 
 async function sync() {
-  if (stopped || Date.now() >= Date.parse(pilot.expiresAt)) { stop(); return; }
+  if (stopped || expired()) { stop(); return; }
   if (syncing) { pending = true; return; }
   syncing = true;
   try {
@@ -86,7 +91,7 @@ async function sync() {
       }
       const events = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}/events?filter=all`)).events;
       for (const cycle of collectFeishuWorkboardCycles(events, pilot)) {
-        if (stopped || Date.now() >= Date.parse(pilot.expiresAt)) { stop(); break; }
+        if (stopped || expired()) { stop(); break; }
         const result = await publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage });
         if (result) console.log(`[feishu-workboard] ${result.action} anchor=${result.anchorSeq} revision=${result.revision}`);
       }
@@ -103,8 +108,10 @@ function stop() {
 }
 process.once('SIGTERM', stop);
 process.once('SIGINT', stop);
-const expiryTimer = setTimeout(stop, Math.max(1, Date.parse(pilot.expiresAt) - Date.now()));
-expiryTimer.unref();
+if (pilot.expiresAt) {
+  const expiryTimer = setTimeout(stop, Math.max(1, Date.parse(pilot.expiresAt) - Date.now()));
+  expiryTimer.unref();
+}
 
 function connect(cookie) {
   if (stopped) return;

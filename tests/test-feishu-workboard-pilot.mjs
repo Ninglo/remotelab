@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildFeishuWorkboardCard,
   collectFeishuWorkboardCycles,
   isFeishuWorkboardPilotSession,
   publishFeishuWorkboardCycle,
@@ -41,20 +42,32 @@ test('steering keeps one card while a final result closes the cycle', () => {
   assert.match(cycles[0].content, /\[x\]/);
 });
 
+test('card renderer keeps one item per row and updates its progress', () => {
+  const card = buildFeishuWorkboardCard('目标：交付两项结果\n[x] 排序 — 日期递增。\n[ ] 核验 — 每项可查。');
+  assert.equal(card.schema, '2.0');
+  assert.equal(card.config.update_multi, true);
+  assert.equal(card.body.elements[1].content, '**1/2 · 进行中**');
+  assert.equal(card.body.elements[2].text.content, '✓ 排序 — 日期递增。');
+  assert.equal(card.body.elements[3].text.content, '○ 核验 — 每项可查。');
+  const complete = buildFeishuWorkboardCard('目标：交付两项结果\n[x] 排序 — 日期递增。\n[x] 核验 — 每项可查。');
+  assert.equal(complete.header.template, 'green');
+  assert.equal(complete.body.elements[1].content, '**2/2 · 已完成**');
+});
+
 test('create once, edit the same message, and fence uncertain sends', async () => {
   const state = { ...pilot, cards: [] };
   const calls = [];
   const app = { im: { v1: { message: {
     create: async request => { calls.push(['create', request]); return { code: 0, data: { message_id: 'om-card' } }; },
-    update: async request => { calls.push(['update', request]); return { code: 0 }; },
+    patch: async request => { calls.push(['patch', request]); return { code: 0 }; },
   } } } };
   const snapshots = [];
   const options = {
     pilot: state, app,
     persist: async () => snapshots.push(structuredClone(state.cards)),
-    verifyMessage: async (id, content) => {
+    verifyMessage: async (id, { updated }) => {
       assert.equal(id, 'om-card');
-      assert.equal(JSON.parse(content).text.startsWith('目标：'), true);
+      assert.equal(typeof updated, 'boolean');
     },
   };
   const first = { anchorSeq: 12, latestSeq: 12, content: list(12).content, closed: false };
@@ -66,7 +79,10 @@ test('create once, edit the same message, and fence uncertain sends', async () =
   assert.equal((await publishFeishuWorkboardCycle(updated, options)).action, 'updated');
   assert.equal(calls.length, 2);
   assert.equal(calls[0][1].data.receive_id, 'chat-zhang');
+  assert.equal(calls[0][1].data.msg_type, 'interactive');
+  assert.equal(JSON.parse(calls[0][1].data.content).schema, '2.0');
   assert.equal(calls[1][1].path.message_id, 'om-card');
+  assert.equal(calls[1][0], 'patch');
   assert.equal(state.cards[0].latestSeq, 14);
   assert.equal(await publishFeishuWorkboardCycle({ ...first, anchorSeq: 20, closed: true }, options), null,
     'a late checklist cannot appear after its result');
