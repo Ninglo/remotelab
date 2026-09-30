@@ -2866,7 +2866,7 @@ async function resumePendingTriggerSourceDeliveries() {
   for (const runId of await listRunIds()) {
     const run = await getRun(runId);
     if (!run || !isTerminalRunState(run.state)) continue;
-    const manifest = await getRunManifest(runId);
+    const manifest = await getRunManifest(runId, { cache: false });
     if (trimString(manifest?.internalOperation) !== 'trigger_delivery' || !manifest?.sourceDelivery) continue;
     try {
       const plan = normalizeSourceDeliveryPlan(manifest.sourceDelivery);

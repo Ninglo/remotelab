@@ -280,7 +280,8 @@ export async function updateRun(runId, updater) {
   });
 }
 
-export async function getRunManifest(runId) {
+export async function getRunManifest(runId, options = {}) {
+  if (options.cache === false) return readJson(runManifestPath(runId), null);
   return getRunManifestUnlocked(runId);
 }
 
