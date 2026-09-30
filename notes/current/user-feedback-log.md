@@ -969,6 +969,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: coalesce checklist revisions across steering messages until the result closes the work, keep one expandable Thinking block per user turn, and let WebSocket invalidation refresh the inline checklist after a genuine update.
 - Follow-up: verify the current Session receives an invalidation, projects one updated card, and loads its Thinking event range; the already-open browser tab may need one refresh to load changed JavaScript.
 
+### 2026-09-30 — 单人飞书私聊试用动态交付清单
+
+- Source: direct request after the Session checklist pilot was tested.
+- Observed friction or ask: the Person wants Zhang Siyuan to test the same checklist and separate result in his Feishu conversation without changing other people's conversations.
+- Product implication: enable the checklist judgment on only his bound private Session, mirror checklist revisions by editing one Bot message, and leave the existing final source delivery as a separate reply. Keep Thinking inside RemoteLab because Feishu chat text has no native expandable Thinking block.
+- Follow-up: validate a real multi-step Feishu request, one message ID across revisions, final result delivery, and other private chats remaining unchanged.
+
 ### YYYY-MM-DD — short title
 
 - Source:
