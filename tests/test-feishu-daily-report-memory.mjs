@@ -137,11 +137,16 @@ try {
     enqueueJevReaction: async (_runtime, _summary, _session, emojiType) => {
       effects.push(emojiType); return { id: 'delivery' };
     },
-    submitRemoteLabRequest: () => { throw new Error('a report-supported binary answer must not start a Harness'); },
+    submitRemoteLabRequest: async (_runtime, _summary, options) => {
+      assert.equal(options.skipUserMessage, true);
+      assert.equal(options.legacyGroupWorkThread, undefined);
+      effects.push('run');
+      return { sessionId: 'timeline', runId: 'memory-run' };
+    },
   });
   assert.equal(outcome.decision.contextSources[0].date, actualDate);
-  assert.deepEqual(effects, ['jev', 'Yes']);
-  assert.equal(outcome.runId, undefined);
+  assert.deepEqual(effects, ['jev', 'run', 'Yes']);
+  assert.equal(outcome.runId, 'memory-run');
   assert.deepEqual(JSON.parse(await readFile(receiptPath, 'utf8')).body_sha256, receipt.body_sha256);
   console.log('test-feishu-daily-report-memory: ok');
 } finally {

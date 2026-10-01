@@ -507,30 +507,36 @@ already has `quickReactions: true`, `participationMode: "ambient"`, and
 `groupFeed: true`. Each admitted human message is first appended once to the
 same bound group Session, including messages that need no text answer. The
 connector sends the last 20 Session messages from at most the preceding two
-hours, capped at 5,000 characters, to one Jev judgment. Jev first decides
-whether text or task work is needed. For admitted work, Jev then chooses
-`short` only when one brief answer can be completed from existing context
-without tools; it stays in the group Session and replies on the group mainline.
+hours, capped at 5,000 characters, to one Jev judgment. **Temporary policy as
+of 2026-10-01: Jev does not gate Session submission.** Every admitted human
+message reaches a Harness Run, even when Jev recommends silence, a reaction-only
+answer, or returns an uncertain or failed classification. The Session model
+decides whether a useful text reply or task is needed and may stay silent.
+Jev still selects reactions and supplies the existing work-placement hint.
+`short` stays in the group Session and replies on the group mainline.
 Research, coding, multistep or uncertain work uses `complex`: the connector
 creates a separate work Session bound to a new Feishu Thread rooted at that
 message, includes recent group context, and delivers its visible result there.
-An uncertain work-mode judgment also uses `complex`. If no work starts, explicit praise of the
+An uncertain work-mode judgment for a Jev `reply` also uses `complex`.
+Jev `silent`, unknown, and reaction-only judgments reach the existing group
+Session rather than opening a work Thread. For Jev no-work judgments, explicit praise of the
 assistant or its work gets `WOW` (惊喜), explicit criticism or rejection gets
-`DULL` (衰), and all other messages get no reaction. Weak or missing emotion
-support also gets no reaction. Jev decides whether a direct @ mention needs a
-Run; an uncertain judgment with a direct @ mention retains the existing work
-fallback. An explicit request for only an emoji stays reaction-only. When a Run is admitted,
-the outcome remains `OnIt`. The connector records every judgment in the
+`TOASTED` (衰), and all other messages get no reaction. Weak or missing emotion
+support also gets no reaction. Direct mentions retain the existing `OnIt`
+fallback. A supported binary answer may still receive a `Yes` or `No` reaction,
+and an explicit emoji-only request retains its selected reaction; neither
+skips the Session model. For Jev work judgments, the outcome remains `OnIt`.
+The connector records every Jev judgment as a reaction and routing hint in the
 Session and queues a reaction only when one was chosen. The durable
 source-delivery outbox and Feishu Bot SDK send that reaction. This path does not add a temporary
 `THINKING` or generic read reaction, and it does not ask the Harness to select
 or post the outcome. The group Session retains one observation and the durable
-Jev decision for every message. A short Run uses that observation without
+Jev decision for every message. A group Run uses that observation without
 duplicating the user message; a complex Run records the task in its own Session.
 Later messages inside the new Thread continue its work Session. Ordinary social
-messages do not start a Harness Run.
+messages also reach the Session model, which can leave them without a text reply.
 Commands still use their existing script response path after entering the
-Session. Only the selected group mainline uses Jev admission; topics and threads
+Session. Only the selected group mainline uses Jev reactions; topics and threads
 use ordinary topic replies without the legacy quick-reaction prompt. Other
 groups keep their existing behavior. Disable `jevReactions` to
 return to the existing `quickReactions` flow.

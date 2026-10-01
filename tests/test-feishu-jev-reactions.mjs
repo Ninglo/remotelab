@@ -23,6 +23,8 @@ try {
     messageId: 'praise', messageText: '你这次做得真棒' };
   assert.equal(resolveFeishuGroupSettings(config, base).jevReactions, true);
   assert.doesNotMatch(resolveFeishuGroupSettings(config, base).systemPrompt, /THINKING|<feishu-reaction emoji=/);
+  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /Decide whether a useful text reply or task is needed/);
+  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /stay silent when no text contribution is needed/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread' }).jevReactions, undefined,
     'the pilot must stay on the selected group mainline');
   const workSummary = applyFeishuReplyRouting(config, {
@@ -167,8 +169,9 @@ try {
   };
   const silent = await handleMessage(runtime, base, 'test', helpers);
   assert.equal(silent.decision.emojiType, 'WOW');
-  assert.deepEqual(effects, ['observe:praise', 'jev', 'decision:silent:null:WOW', 'reaction:WOW'],
-    'a social reaction needs one Jev decision, one scripted delivery and no Harness Run');
+  assert.equal(silent.workSessionId, 'group-session');
+  assert.deepEqual(effects, ['observe:praise', 'jev', 'decision:silent:null:WOW', 'run:group:inline', 'reaction:WOW'],
+    'Jev keeps the social reaction while the Session model judges whether text is needed');
 
   effects.length = 0;
   const direct = await handleMessage(runtime, { ...base, messageId: 'work',
@@ -250,7 +253,9 @@ try {
     },
   });
   assert.equal(onlyReaction.decision.participation, 'silent');
-  assert.deepEqual(effects, ['observe:emoji-only', 'jev', 'decision:silent:null:WOW', 'reaction:WOW']);
+  assert.equal(onlyReaction.runId, 'work-run');
+  assert.deepEqual(effects, ['observe:emoji-only', 'jev', 'decision:silent:null:WOW', 'run:group:inline', 'reaction:WOW'],
+    'a reaction-only classification cannot suppress the Session model');
 
   effects.length = 0;
   const yes = await handleMessage(runtime, { ...base, messageId: 'receipt-question',
@@ -261,10 +266,11 @@ try {
       },
     });
   assert.equal(yes.decision.participation, 'reply');
-  assert.equal(yes.runId, undefined);
+  assert.equal(yes.runId, 'work-run');
+  assert.equal(yes.workSessionId, 'group-session');
   assert.deepEqual(effects, ['observe:receipt-question', 'jev',
-    'decision:reply:reaction:Yes', 'reaction:Yes'],
-    'a verified yes/no answer is a reply delivered as a single reaction without a Harness Run');
+    'decision:reply:reaction:Yes', 'run:group:inline', 'reaction:Yes'],
+    'a binary reaction is preserved and still reaches the existing Session for reply judgment');
 
   for (const [messageId, messageText, emojiType] of [
     ['criticism', '你这次答得不对', 'TOASTED'],
@@ -279,9 +285,25 @@ try {
       },
     });
     assert.equal(outcome.decision.emojiType, emojiType);
+    assert.equal(outcome.runId, 'work-run');
     assert.deepEqual(effects, ['observe:' + messageId, 'jev',
-      `decision:silent:null:${emojiType}`, ...(emojiType ? [`reaction:${emojiType}`] : [])]);
+      `decision:silent:null:${emojiType}`, 'run:group:inline', ...(emojiType ? [`reaction:${emojiType}`] : [])]);
     assert.equal('deliveryId' in outcome, Boolean(emojiType));
+  }
+
+  for (const reason of ['timeout', 'missing_key', 'low_support', 'request_error']) {
+    effects.length = 0;
+    const outcome = await handleMessage(runtime, { ...base, messageId: reason,
+      messageText: '刚才的问题还没有回答，请再看一下' }, 'test', {
+      ...helpers, classifyJevReaction: async () => {
+        effects.push('jev');
+        return { decision: 'unknown', reason };
+      },
+    });
+    assert.equal(outcome.runId, 'work-run');
+    assert.equal(outcome.workSessionId, 'group-session');
+    assert.deepEqual(effects, [`observe:${reason}`, 'jev', 'decision:silent:null:null', 'run:group:inline'],
+      'failed or uncertain Jev classification must forward an unmentioned message without a fallback reaction');
   }
 
   effects.length = 0;
@@ -291,7 +313,8 @@ try {
     classifyJevReaction: () => { throw new Error('replay must reuse the persisted decision'); },
   });
   assert.equal(replay.decision.emojiType, 'TEARS');
-  assert.deepEqual(effects, ['reaction:TEARS']);
+  assert.deepEqual(effects, ['run:group:inline', 'reaction:TEARS'],
+    'replay reuses the reaction decision while resubmitting through the idempotent Session request path');
   console.log('test-feishu-jev-reactions: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

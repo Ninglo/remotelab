@@ -26,8 +26,8 @@ const QUICK_REACTION_SESSION_PROMPT = [
 ].join('\n');
 
 const JEV_REACTION_SESSION_PROMPT = [
-  'The Feishu connector records each group message in this Session. Jev selects its outcome reaction; the connector sends OnIt after work is admitted and handles all reactions without a Harness decision.',
-  'When a task reaches you, its OnIt reaction has already been handled by the connector. Give the requested visible answer or an honest handoff; do not emit a feishu-reaction directive or choose another reaction.',
+  'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, including when an existing reaction fully answers the request.',
+  'Jev selects reactions and may suggest work placement, but its silence or reaction-only judgment never prevents you from receiving the message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
 ].join('\n');
 
 const GROUP_TIMELINE_SESSION_PROMPT = [
