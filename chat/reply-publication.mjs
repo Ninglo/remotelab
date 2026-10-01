@@ -11,7 +11,8 @@ import {
 } from '../lib/session-navigation.mjs';
 import { buildSessionDisplayEvents } from './session-display-events.mjs';
 import { parseFeishuReactionDirective } from '../lib/feishu-reaction-directive.mjs';
-import { isReplyMessage } from '../lib/assistant-message-phase.mjs';
+import { isFinalAssistantMessage, isReplyMessage } from '../lib/assistant-message-phase.mjs';
+import { parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -196,9 +197,16 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
   fullHistory = history,
   includeSessionEntry = true,
 } = {}) {
-  const replyHistory = history.filter(event => event?.type !== 'message'
-    || event.role !== 'assistant' || isReplyMessage(event));
-  const displayEvents = buildSessionDisplayEvents(replyHistory, { sessionRunning: false })
+  const candidates = history.filter(event => isReplyMessage(event) && event.source !== 'result_file_assets');
+  const explicitFinals = candidates.filter(isFinalAssistantMessage);
+  const finalMessages = new Set(explicitFinals.length ? explicitFinals : candidates.slice(-1));
+  const replyHistory = history.flatMap(event => {
+    if (event?.type !== 'message' || event.role !== 'assistant') return [event];
+    if (finalMessages.has(event)) return [event];
+    // Preserve attachment delivery without reprinting intermediate prose.
+    return getAssistantReplyAttachments(event).length ? [{ ...event, content: '', phase: 'commentary' }] : [];
+  });
+  const displayEvents = buildSessionDisplayEvents(replyHistory, { sessionRunning: false, includeSurfaceProgress: false })
     .filter((event) => event?.role === 'assistant')
     .filter((event) => event.type === 'message' || event.type === 'attachment_delivery');
   const lastAssistantMessage = [...replyHistory].reverse().find(isReplyMessage);
@@ -216,7 +224,7 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
       ? (reactionDirective.invalid
         ? ['这条消息的表情指令无效，表情未能添加。', stripHiddenBlocks(reactionDirective.text)]
           .filter(Boolean).join('\n')
-        : stripHiddenBlocks(reactionDirective.text))
+        : parseProgressMessage(reactionDirective.text).text)
       : noTextDecision ? '' : buildPayloadText(displayEvents),
   };
   if (reactionDirective?.emojiType) payload.reaction = reactionDirective.emojiType;

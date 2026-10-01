@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-01 — Show an opening, useful progress, and the final conclusion
+
+- Observed friction: Connector replies omit the first useful assistant message, while native Harness commentary mixes important findings with routine activity. Readers lack context unless they open the Web transcript.
+- Requested behavior: show a short opening and the final answer; let the Harness explicitly publish additional meaningful progress through a lightweight XML tag. Hide untagged intermediate messages in the Web process record. Use the same rule across Web and Connectors.
+- Implementation: `<progress>...</progress>` publishes only its enclosed text. A shared deterministic selector drives Web display and durable live deliveries, with restart-safe receipt IDs and a per-turn prompt for resumed threads. Simple answers can remain one message. See [the display contract](../../docs/assistant-message-visibility.md).
+
 ### 2026-10-01 — Temporarily let the Session model judge every Jev-group message
 
 - Observed friction: Jev's reply gate produces too many false negatives, leaving questions and follow-ups unanswered. Missing a needed response costs more than an occasional extra reply, especially in an intentional conversation.
