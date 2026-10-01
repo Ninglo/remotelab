@@ -1232,18 +1232,19 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     if (!decision) throw new Error('Jev decision was not durably recorded');
   }
 
-  let workReceipt = null;
-  if (decision.participation === 'reply' && decision.workMode !== 'reaction') {
-    const legacyWork = !['short', 'complex'].includes(decision.workMode);
-    const complexWork = decision.workMode === 'complex';
-    const workSummary = complexWork
-      ? { ...summary, replyModeOverride: 'thread', startThread: true }
-      : summary;
-    workReceipt = await (helpers.submitRemoteLabRequest || ((runtime, summary, options) =>
-      submitRemoteLabRequest(runtime, summary, options)))(runtime, workSummary,
-      complexWork ? { observedRecent: observation.recent }
-        : { skipUserMessage: true, ...(legacyWork ? { legacyGroupWorkThread: true } : {}) });
-  }
+  // Temporary fail-open policy: Jev still selects reactions and work placement,
+  // but every observed message reaches the Session model for reply judgment.
+  // Neither silence, a reaction-only answer, nor a failed classification blocks it.
+  const legacyWork = decision.participation === 'reply'
+    && !['short', 'complex', 'reaction'].includes(decision.workMode);
+  const complexWork = decision.workMode === 'complex';
+  const workSummary = complexWork
+    ? { ...summary, replyModeOverride: 'thread', startThread: true }
+    : summary;
+  const workReceipt = await (helpers.submitRemoteLabRequest || ((runtime, summary, options) =>
+    submitRemoteLabRequest(runtime, summary, options)))(runtime, workSummary,
+    complexWork ? { observedRecent: observation.recent }
+      : { skipUserMessage: true, ...(legacyWork ? { legacyGroupWorkThread: true } : {}) });
   const delivery = decision.emojiType
     ? await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
       runtime, summary, sessionId, decision.emojiType)

@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-01 — Temporarily let the Session model judge every Jev-group message
+
+- Observed friction: Jev's reply gate produces too many false negatives, leaving questions and follow-ups unanswered. Missing a needed response costs more than an occasional extra reply, especially in an intentional conversation.
+- Interim behavior: forward every admitted human message to the Session model, including Jev silence, reaction-only, binary-answer and classification-failure outcomes. Keep Jev's existing reaction choices and work-placement hints. The Session model chooses whether to contribute text; reaction-only classification cannot prevent it from reading the message.
+- Scope: this temporarily bypasses the `jevReactions` submission gate. Existing mute, Bot admission, topic routing and request deduplication still apply. A complete redesign remains future work.
+
 ### 2026-10-01 — Keep the accepted checklist and result behavior as a baseline
 
 - Observed friction: a Session checklist worked in the web view but Feishu split it into several cards and delayed the final result. A later model-capacity failure left a card apparently running. The user wants the repaired behavior to persist across future tasks, rather than depend on one successful turn.
