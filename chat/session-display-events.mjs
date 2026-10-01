@@ -8,7 +8,7 @@ import {
   rewriteAssistantLocalMarkdownImageTargets,
   stripAssistantArtifactDeliveryHints,
 } from './session-result-files.mjs';
-import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
+import { collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 
 const HIDDEN_EVENT_TYPES = new Set(['reasoning', 'manager_context', 'tool_use', 'tool_result', 'file_change']);
 
@@ -115,7 +115,8 @@ function isIgnoredStatusEvent(event) {
 }
 
 function isHiddenEvent(event) {
-  return HIDDEN_EVENT_TYPES.has(event?.type) || event?.messageKind === 'execution_plan';
+  return HIDDEN_EVENT_TYPES.has(event?.type) || event?.messageKind === 'execution_plan'
+    || (isAssistantMessageEvent(event) && event.messageKind !== 'session_delegate_notice');
 }
 
 function isVisibleEvent(event) {
@@ -221,6 +222,7 @@ function pushVisibleEvent(target, event, { stripAttachments = false, localMarkdo
   if (!isVisibleEvent(event)) return;
   if (!hasVisibleMessagePayload(event, { includeAttachments: !stripAttachments })) return;
   const next = stripDeferredBodyFields(event, { localMarkdownImageRewriteMapBySeq });
+  if (isAssistantMessageEvent(next)) next.content = parseProgressMessage(next.content).text;
   if (stripAttachments && next?.type === 'message') {
     delete next.attachments;
     delete next.images;
@@ -302,7 +304,7 @@ function findTurnForBlockRange(history = [], startSeq = 0, endSeq = 0) {
   };
 }
 
-function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard = false } = {}) {
+function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard = false, includeSurfaceProgress = true } = {}) {
   if (!turn?.user) return;
   target.push(stripDeferredBodyFields(turn.user));
 
@@ -317,35 +319,37 @@ function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard =
     referenceEvent: bodyEvents[bodyEvents.length - 1] || turn.user,
   });
 
-  // One user message owns one work block. A new user message closes the
-  // previous block even if that work stopped before producing a final reply.
+  // Surface messages split the expandable process record without changing
+  // the underlying history or swallowing an opening while work continues.
+  const surfaceMessages = collectAssistantSurfaceMessages(bodyEvents, {
+    includeProgress: includeSurfaceProgress, completed: !sessionRunning,
+  });
   let visibleStart = 0;
-  if (exposeWorkboard) {
-    for (let index = 0; index < bodyEvents.length; index += 1) {
-      if (!isWorkboardEvent(bodyEvents[index])) continue;
-      if (index > visibleStart) {
-        target.push(buildThinkingBlockEvent(
-          bodyEvents.slice(visibleStart, index),
-          sessionRunning ? 'running' : 'completed',
-        ));
+  for (let index = 0; index < bodyEvents.length; index += 1) {
+    const event = bodyEvents[index];
+    const surface = surfaceMessages.get(event);
+    if (!surface && !(exposeWorkboard && isWorkboardEvent(event))
+        && event.messageKind !== 'session_delegate_notice') continue;
+    if (index > visibleStart) {
+      const segment = bodyEvents.slice(visibleStart, index);
+      const lastHiddenIndex = findLastHiddenEventIndex(segment);
+      // Keep trailing context-operation notices visible as before. Other
+      // intermediate activity stays in the expandable process record.
+      const tail = segment.slice(lastHiddenIndex + 1);
+      const noticeIndex = tail.findIndex(item => item.type === 'context_operation');
+      const hiddenEnd = noticeIndex < 0 ? segment.length : lastHiddenIndex + 1 + noticeIndex;
+      if (hiddenEnd > 0) target.push(buildThinkingBlockEvent(segment.slice(0, hiddenEnd), 'completed'));
+      for (const notice of segment.slice(hiddenEnd)) {
+        if (!isAssistantMessageEvent(notice)) pushVisibleEvent(target, notice, { localMarkdownImageRewriteMapBySeq });
       }
-      pushVisibleEvent(target, bodyEvents[index], { localMarkdownImageRewriteMapBySeq });
-      visibleStart = index + 1;
     }
+    pushVisibleEvent(target, surface || event, {
+      stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+      localMarkdownImageRewriteMapBySeq,
+    });
+    visibleStart = index + 1;
   }
   const remainingEvents = bodyEvents.slice(visibleStart);
-  if (sessionRunning && remainingEvents.some(isFinalAssistantMessage)) {
-    let start = 0;
-    for (let index = 0; index < remainingEvents.length; index++) {
-      if (!isFinalAssistantMessage(remainingEvents[index])) continue;
-      if (index > start) target.push(buildThinkingBlockEvent(remainingEvents.slice(start, index), 'completed'));
-      pushVisibleEvent(target, remainingEvents[index], { localMarkdownImageRewriteMapBySeq });
-      start = index + 1;
-    }
-    if (start < remainingEvents.length) target.push(buildThinkingBlockEvent(remainingEvents.slice(start), 'running'));
-    if (deliveryEvent) target.push(deliveryEvent);
-    return;
-  }
   const lastHiddenIndex = sessionRunning ? remainingEvents.length - 1 : findLastHiddenEventIndex(remainingEvents);
   if (lastHiddenIndex >= 0) {
     target.push(buildThinkingBlockEvent(

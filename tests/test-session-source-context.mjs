@@ -144,8 +144,9 @@ try {
   assert.match(firstContext, /Source\/runtime instructions/);
   assert.match(firstContext, /Persist recordings as source material for the daily review/);
   assert.deepEqual(firstManifest.modelContextSlots.map(slot => slot.id), [
-    'remotelab_startup', 'source_runtime', 'session_instructions', 'turn_context',
+    'remotelab_startup', 'surface_messages', 'source_runtime', 'session_instructions', 'turn_context',
   ]);
+  assert.match(firstManifest.managerTurnContext, /<progress>\.\.\.<\/progress>/);
   assert.match(firstManifest.managerTurnContext, /当前发言人：Alice/);
   assert.doesNotMatch(firstManifest.managerTurnContext, /msg_source_context_1|threadId/);
 
@@ -167,8 +168,9 @@ try {
   assert.ok(secondManifest.prompt.includes(`<private>\n${secondManifest.managerTurnContext}\n</private>`));
   assert.doesNotMatch(secondContext, /RemoteLab startup context/);
   assert.deepEqual(secondManifest.modelContextSlots.map(slot => slot.id), [
-    'source_runtime', 'session_instructions', 'turn_context',
+    'surface_messages', 'source_runtime', 'session_instructions', 'turn_context',
   ]);
+  assert.match(secondManifest.managerTurnContext, /<progress>\.\.\.<\/progress>/, 'resumed turns receive the display contract');
   assert.match(secondManifest.managerTurnContext, /当前发言人：Bob/);
   assert.match(secondManifest.managerTurnContext, /long quoted context/);
   assert.ok(secondManifest.managerTurnContext.length < 10_000, 'visible source context stays bounded');

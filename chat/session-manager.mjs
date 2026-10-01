@@ -25,7 +25,8 @@ import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
-import { publishNativeFinalReplies, excludePublishedFinalReplies, prepareNativeFinalFiles } from './native-final-publication.mjs';
+import { publishLiveAssistantReplies, excludePublishedFinalReplies, prepareNativeFinalFiles } from './native-final-publication.mjs';
+import { readPromptAsset } from './prompt-asset-loader.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { join as joinRequestPath } from 'node:path';
@@ -732,14 +733,17 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   if (normalizedEvents.length > 0) {
     await appendEvents(sessionId, normalizedEvents);
     historyChanged = true;
-    if (manifest.inputMode === 'native') {
+    if (normalizedEvents.some(event => event.type === 'message' && event.role === 'assistant')) {
       const record = await requests.byRunId(run.id);
-      await publishNativeFinalReplies(record, normalizedEvents, {
-        store: requests,
-        plan: normalizeSourceDeliveryPlan(record?.deliveryPlan || record?.options?.sourceDelivery),
-        session: await findSessionMeta(sessionId),
-        prepareFinal: event => prepareNativeFinalFiles(record, event, { run, manifest }),
-      });
+      const plan = normalizeSourceDeliveryPlan(record?.deliveryPlan || record?.options?.sourceDelivery);
+      if (plan && !record.options?.suppressSourceDelivery && !record.options?.internalOperation) {
+        const history = await loadHistory(sessionId, { includeBodies: true, deferFileDiffs: true });
+        await publishLiveAssistantReplies(record, collectReplyPublicationHistory(history, run), {
+          store: requests, plan,
+          session: await findSessionMeta(sessionId),
+          prepareFinal: event => prepareNativeFinalFiles(record, event, { run, manifest }),
+        });
+      }
     }
   }
 
@@ -1403,6 +1407,8 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 
 async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
+  slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
+    await readPromptAsset('system/surface-messages.md')));
   const checklistGate = session?.workboardPilot === true ? options.checklistGateReceipt : null;
   const optedIn = session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
@@ -1666,8 +1672,9 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
     && record.options.sourceContext?.feishuExplicitMention !== true;
   const ambientWorkStarted = runHistory.some(event => event?.type === 'tool_use' && event.role === 'assistant');
-  const pendingPayload = record.streamedFinalReplyIds?.length
-    ? buildReplyPublicationPayload(excludePublishedFinalReplies(runHistory, record.streamedFinalReplyIds), run, {
+  const publishedMessageIds = [...(record.streamedFinalReplyIds || []), ...(record.streamedSurfaceMessageIds || [])];
+  const pendingPayload = publishedMessageIds.length
+    ? buildReplyPublicationPayload(excludePublishedFinalReplies(runHistory, publishedMessageIds), run, {
         session, fullHistory: history, includeSessionEntry: false,
       })
     : payload;
@@ -1679,7 +1686,9 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
     buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
       && !feishuOutcomeRequired
-      ? null : deliveryPlan, deliveryPayload, { requireFeishuOutcome: feishuOutcomeRequired })
+      ? null : deliveryPlan, deliveryPayload, { requireFeishuOutcome: feishuOutcomeRequired
+        && (!record.streamedFinalReplyIds?.length || run.state !== 'completed'
+          || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) })
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 

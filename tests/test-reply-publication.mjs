@@ -14,6 +14,22 @@ mkdirSync(configDir, { recursive: true });
 
 const fakeCodexPath = join(tempBin, 'fake-codex');
 writeFileSync(fakeCodexPath, `#!/usr/bin/env node
+(async () => {
+const visibility = process.argv.join(' ').includes('hold-progress');
+if (visibility) {
+  const fs = require('node:fs');
+  console.log(JSON.stringify({ type: 'item.completed', item: { id: 'opening', type: 'agent_message', phase: 'commentary', text: '先检查消息链路。' } }));
+  console.log(JSON.stringify({ type: 'item.completed', item: { id: 'tool', type: 'command_execution', command: 'check', aggregated_output: 'ok', exit_code: 0 } }));
+  console.log(JSON.stringify({ type: 'item.completed', item: { id: 'noise', type: 'agent_message', phase: 'commentary', text: '内部琐碎信息。' } }));
+  console.log(JSON.stringify({ type: 'item.completed', item: { id: 'progress', type: 'agent_message', phase: 'commentary', text: '隐藏前缀 <progress>原因已经找到。</progress> 隐藏后缀' } }));
+  const gate = ${JSON.stringify(join(tempHome, 'release-progress-test'))};
+  if (!fs.existsSync(gate)) await new Promise(resolve => {
+    const watcher = fs.watch(${JSON.stringify(tempHome)}, () => {
+      if (fs.existsSync(gate)) { watcher.close(); resolve(); }
+    });
+    if (fs.existsSync(gate)) { watcher.close(); resolve(); }
+  });
+}
 if (process.argv.join(' ').includes('hold-entry-notice')) {
   const fs = require('node:fs');
   while (!fs.existsSync(${JSON.stringify(join(tempHome, 'release-entry-test'))})) {
@@ -24,9 +40,10 @@ console.log(JSON.stringify({ type: 'thread.started', thread_id: 'reply-publicati
 console.log(JSON.stringify({ type: 'turn.started' }));
 console.log(JSON.stringify({
   type: 'item.completed',
-  item: { type: 'agent_message', text: '主 Harness 已经直接完成并交付结果。' },
+  item: { type: 'agent_message', ...(visibility ? { id: 'final', phase: 'final_answer' } : {}), text: '主 Harness 已经直接完成并交付结果。' },
 }));
 console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
+})().catch(error => { console.error(error); process.exitCode = 1; });
 `, 'utf8');
 chmodSync(fakeCodexPath, 0o755);
 
@@ -53,6 +70,7 @@ const {
   getSession,
   updateSessionRuntimePreferences,
   getSessionReplyPublication,
+  buildPrompt,
   killAll,
   sendMessage,
   submitHttpMessage,
@@ -85,6 +103,40 @@ try {
   });
   assert.deepEqual(probe.streamedFinalReplyIds, ['ready-text'], 'failed asset preparation does not freeze observation or other final replies');
   assert.equal(probe.deliveries.length, 1);
+  const visibilitySession = await createSession(tempHome, 'fake-codex', 'Visibility integration');
+  const visibilityPrompt = await buildPrompt(visibilitySession.id, await getSession(visibilitySession.id),
+    'Check it.', 'fake-codex', 'fake-codex');
+  assert.match(visibilityPrompt, /Message visibility on RemoteLab surfaces/);
+  assert.match(visibilityPrompt, /<progress>\.\.\.<\/progress>/);
+  const visibilityOutcome = await sendMessage(visibilitySession.id, 'hold-progress 检查投递。', [], {
+    tool: 'fake-codex', model: 'fake-model', effort: 'low',
+    sourceContext: { feishuOutcomeRequired: true },
+    sourceDelivery: { connector: 'feishu', sourceRouteId: 'visibility-test',
+      target: { chatId: 'visibility-chat', messageId: 'incoming', threadId: 'visibility-topic' } },
+  });
+  for (const expected of ['先检查消息链路。', '原因已经找到。']) {
+    let claim;
+    await waitFor(async () => {
+      claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
+      return !!claim;
+    }, 'visible progress delivery while model is blocked');
+    assert.equal(claim.delivery.text, expected);
+    assert.equal(claim.delivery.target.threadId, 'visibility-topic');
+    assert.equal((await requests.byRunId(visibilityOutcome.run.id)).result, null, 'opening and progress precede the result');
+    await completeSourceDelivery(claim.delivery.id, claim.leaseId, { externalId: `visible-${expected}` });
+  }
+  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' }), null, 'untagged commentary is never queued');
+  writeFileSync(join(tempHome, 'release-progress-test'), 'continue');
+  await waitFor(async () => (await getSessionReplyPublication(visibilitySession.id, visibilityOutcome.response.id))?.state === 'ready', 'visibility run finalization');
+  const visibilityPublication = await getSessionReplyPublication(visibilitySession.id, visibilityOutcome.response.id);
+  assert.equal(visibilityPublication.payload.text, '主 Harness 已经直接完成并交付结果。');
+  const visibilityReaction = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
+  assert.equal(visibilityReaction.delivery.kind, 'reaction', 'outcome is queued only when the final answer arrives');
+  await completeSourceDelivery(visibilityReaction.delivery.id, visibilityReaction.leaseId, { externalId: 'visibility-outcome' });
+  const visibilityFinal = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
+  assert.equal(visibilityFinal.delivery.text, '主 Harness 已经直接完成并交付结果。');
+  await completeSourceDelivery(visibilityFinal.delivery.id, visibilityFinal.leaseId, { externalId: 'visibility-final' });
+  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' }), null, 'settlement does not resend streamed replies');
   const taggedSession = await createSession(tempHome, 'fake-codex', 'Explicit task result');
   await appendEvent(taggedSession.id, { type: 'message', role: 'assistant', source: 'workboard_checklist',
     workboard: { taskId: 'result-task', revision: 1, goal: '结果', status: 'blocked', reason: '等待输入',

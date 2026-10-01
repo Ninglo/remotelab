@@ -346,10 +346,11 @@ const interruptedHistory = [
 ];
 for (const sessionRunning of [true, false]) {
   const display = buildSessionDisplayEvents(interruptedHistory, { sessionRunning });
-  assert.deepEqual(display.map(event => event.type), ['message', 'thinking_block'],
-    'an unfinished turn keeps one block whether running or interrupted');
+  assert.deepEqual(display.map(event => event.type), ['message', 'thinking_block', 'message', 'thinking_block'],
+    'an unfinished turn exposes its opening and keeps the process expandable');
   assert.equal(display[1].blockStartSeq, 2);
-  assert.equal(display[1].blockEndSeq, 12);
+  assert.equal(display[1].blockEndSeq, 3);
+  assert.equal(display[3].blockEndSeq, 12);
   assert.deepEqual(buildEventBlockEvents(interruptedHistory, 2, 12), interruptedHistory.slice(1),
     'the single block preserves commentary, tools, usage and reasoning in order');
 }
@@ -360,14 +361,13 @@ const steeredHistory = [...interruptedHistory,
 ];
 for (const sessionRunning of [true, false]) {
   const display = buildSessionDisplayEvents(steeredHistory, { sessionRunning });
-  assert.deepEqual(display.map(event => event.type), sessionRunning
-    ? ['message', 'thinking_block', 'message', 'thinking_block']
-    : ['message', 'thinking_block', 'message', 'thinking_block', 'message'],
-  'new input closes one block and starts the next user turn without fragmenting the old turn');
-  assert.equal(display[1].blockEndSeq, 12, 'the previous block cannot swallow the interrupting user input');
+  assert.deepEqual(display.map(event => event.type),
+    ['message', 'thinking_block', 'message', 'thinking_block', 'message', 'thinking_block', 'message'],
+  'new input starts its own visible opening and cannot swallow the previous process record');
+  assert.equal(display[3].blockEndSeq, 12, 'the previous block cannot swallow the interrupting user input');
 }
 const cancelledHistory = [...interruptedHistory, { seq: 13, type: 'status', content: 'Cancelled' }];
-assert.deepEqual(buildSessionDisplayEvents(cancelledHistory).map(event => event.type), ['message', 'thinking_block', 'status'],
+assert.deepEqual(buildSessionDisplayEvents(cancelledHistory).map(event => event.type), ['message', 'thinking_block', 'message', 'thinking_block', 'status'],
   'cancellation stays visible without splitting the turn into tool fragments');
 
 

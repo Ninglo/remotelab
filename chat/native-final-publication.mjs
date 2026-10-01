@@ -1,4 +1,6 @@
 import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
+import { assistantSurfaceMessageId, collectAssistantSurfaceMessages } from '../lib/assistant-surface-messages.mjs';
+import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
 import { appendDeliveries } from './requests.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { buildReplyPublicationPayload } from './reply-publication.mjs';
@@ -31,38 +33,46 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
   return next;
 }
 
-// A completed final message is a delivery boundary even when native steering
-// keeps the same Run alive. Commit its receipt key and outbox parts together.
-export async function publishNativeFinalReplies(record, events, { store, plan, session, prepareFinal = async event => event } = {}) {
+// Openings, explicit progress, and completed finals enter the same durable
+// outbox. Selection and receipt keys survive observer replay and restarts.
+export async function publishLiveAssistantReplies(record, events, { store, plan, session, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
-      || plan?.connector !== 'feishu') return;
-  for (const event of events || []) {
-    if (!isFinalAssistantMessage(event) || !event.providerMessageId) continue;
-    if ((await store.get(record.key))?.streamedFinalReplyIds?.includes(event.providerMessageId)) continue;
+      || !plan) return;
+  for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
+    const messageId = assistantSurfaceMessageId(event);
+    if (!messageId) continue;
+    const stored = await store.get(record.key);
+    if (stored?.streamedSurfaceMessageIds?.includes(messageId)
+        || stored?.streamedFinalReplyIds?.includes(messageId)) continue;
+    const final = isFinalAssistantMessage(event);
     let prepared;
-    try { prepared = await prepareFinal(event); }
+    try { prepared = await prepareFinal(final ? event : surface); }
     catch (error) {
       // Asset transport failure must not freeze Run observation or other final
       // messages. The terminal asset path still owns this deferred answer.
-      console.error(`[native-final-publication] deferred ${event.providerMessageId}: ${error.message}`);
+      console.error(`[live-reply-publication] deferred ${messageId}: ${error.message}`);
       continue;
     }
     if (!prepared) continue;
-    const payload = buildReplyPublicationPayload([prepared], {
+    const payload = final ? buildReplyPublicationPayload([prepared], {
       id: record.runId, responseId: record.responseId,
-    }, { session, includeSessionEntry: false });
+    }, { session, includeSessionEntry: false }) : {
+      text: prepared.content, attachments: getAssistantReplyAttachments(prepared),
+    };
     const parts = buildReplyDeliveries(resolveAmbientFeishuReplyPlan(record, plan, [event]), payload, {
-      requireFeishuOutcome: record.options?.sourceContext?.feishuOutcomeRequired === true,
+      requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
     if (!parts.length) continue;
     await store.mutate(record.key, current => {
       if (!current || current.result
-          || current.streamedFinalReplyIds?.includes(event.providerMessageId)) return current;
+          || current.streamedSurfaceMessageIds?.includes(messageId)
+          || current.streamedFinalReplyIds?.includes(messageId)) return current;
       return {
         ...current,
-        streamedFinalReplyIds: [...(current.streamedFinalReplyIds || []), event.providerMessageId],
+        streamedSurfaceMessageIds: [...(current.streamedSurfaceMessageIds || []), messageId],
+        ...(final ? { streamedFinalReplyIds: [...(current.streamedFinalReplyIds || []), messageId] } : {}),
         deliveries: appendDeliveries(current, parts.map(part => ({
-          ...part, providerMessageId: event.providerMessageId,
+          ...part, providerMessageId: messageId, surfaceKind: surface.surfaceKind,
           providerPartCount: parts.filter(part => ['content', 'attachment'].includes(part.kind)).length,
           triggerId: current.options?.triggerId || '',
           scheduleId: current.options?.scheduleId || '',
@@ -73,9 +83,17 @@ export async function publishNativeFinalReplies(record, events, { store, plan, s
   }
 }
 
+// Compatibility for existing callers and already persisted final receipts.
+export const publishNativeFinalReplies = publishLiveAssistantReplies;
+
 export function excludePublishedFinalReplies(history, publishedIds = []) {
   if (!publishedIds.length) return history;
   const published = new Set(publishedIds);
+  // Terminal asset collection may append a phase-less fallback for files
+  // already attached to a streamed final. Keep the original final-only
+  // behavior in that case, while retaining legacy finals after progress.
+  const finalPublished = history.some(event => isFinalAssistantMessage(event)
+    && published.has(assistantSurfaceMessageId(event)));
   return history.filter(event => event?.type !== 'message' || event.role !== 'assistant'
-    || (isFinalAssistantMessage(event) && !published.has(event.providerMessageId)));
+    || (!published.has(assistantSurfaceMessageId(event)) && (!finalPublished || isFinalAssistantMessage(event))));
 }

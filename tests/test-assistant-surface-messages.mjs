@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict';
+import { collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
+import { buildSessionDisplayEvents, buildEventBlockEvents } from '../chat/session-display-events.mjs';
+import { buildReplyPublicationPayload } from '../chat/reply-publication.mjs';
+import { publishLiveAssistantReplies, excludePublishedFinalReplies } from '../chat/native-final-publication.mjs';
+
+const user = { seq: 1, type: 'message', role: 'user', content: 'Fix it' };
+const message = (seq, phase, content) => ({ seq, type: 'message', role: 'assistant', phase,
+  content, providerMessageId: `m${seq}` });
+const history = [user, message(2, 'commentary', 'I will check the delivery path.'),
+  { seq: 3, type: 'tool_use', role: 'assistant', toolName: 'shell', toolInput: 'check' },
+  message(4, 'commentary', 'Routine internal update'),
+  message(5, 'commentary', 'Unpublished context <progress>Found the cause.</progress> Hidden suffix'),
+  { seq: 6, type: 'tool_result', role: 'system', output: 'ok' },
+  message(7, 'commentary', 'Another routine update'),
+  message(8, 'final_answer', 'Fixed and verified.')];
+const expected = ['I will check the delivery path.', 'Found the cause.', 'Fixed and verified.'];
+assert.deepEqual([...collectAssistantSurfaceMessages(history).values()].map(event => event.content), expected);
+for (const sessionRunning of [true, false]) {
+  const display = buildSessionDisplayEvents(history, { sessionRunning });
+  assert.deepEqual(display.filter(event => event.role === 'assistant' && event.type === 'message')
+    .map(event => event.content), expected);
+  assert.ok(display.some(event => event.type === 'thinking_block'));
+  const details = display.filter(event => event.type === 'thinking_block').flatMap(event =>
+    buildEventBlockEvents(history, event.blockStartSeq, event.blockEndSeq));
+  assert.ok(details.some(event => event.content === 'Routine internal update'));
+  assert.ok(details.some(event => event.content === 'Another routine update'));
+}
+const inFlight = buildSessionDisplayEvents(history.slice(0, -1), { sessionRunning: true });
+assert.deepEqual(inFlight.filter(event => event.role === 'assistant' && event.type === 'message')
+  .map(event => event.content), expected.slice(0, 2), 'opening and tagged progress appear before finalization');
+assert.equal(inFlight.at(-1).state, 'running');
+assert.equal(history[4].content, 'Unpublished context <progress>Found the cause.</progress> Hidden suffix', 'raw history stays intact');
+
+assert.deepEqual(parseProgressMessage('<progress>One</progress> hidden <progress>Two</progress>'),
+  { progress: 'One\n\nTwo', text: 'One hidden Two' });
+assert.equal(parseProgressMessage('<private><progress>Secret</progress></private><progress>Public</progress>').progress, 'Public');
+for (const example of ['`<progress>example</progress>`', '```xml\n<progress>example</progress>\n```',
+  '~~~xml\n<progress>example</progress>\n~~~', '<progress>unfinished']) {
+  assert.equal(parseProgressMessage(example).progress, '', 'examples and incomplete tags cannot publish progress');
+}
+const codeExample = message(9, 'final_answer', 'Use `<progress>example</progress>` next time.');
+assert.equal([...collectAssistantSurfaceMessages([codeExample]).values()][0].content, codeExample.content);
+const hiddenFirst = [message(1, 'commentary', '<private>Secret</private>'), ...history.slice(1)];
+assert.equal([...collectAssistantSurfaceMessages(hiddenFirst).values()][0].surfaceKind, 'opening');
+const literal = message(9, 'commentary', '`<progress>example</progress>`');
+assert.equal(collectAssistantSurfaceMessages([...history, literal]).has(literal), false);
+const reasoning = { seq: 9, type: 'reasoning', role: 'assistant', content: '<progress>secret reasoning</progress>' };
+assert.equal(collectAssistantSurfaceMessages([...history, reasoning]).has(reasoning), false);
+const nextOpening = message(10, 'commentary', 'I will check the next request.');
+assert.equal(collectAssistantSurfaceMessages([...history, { ...user, seq: 9 }, nextOpening])
+  .get(nextOpening).surfaceKind, 'opening', 'a new human message resets the opening');
+const publication = buildReplyPublicationPayload(history, { id: 'r', responseId: 'response' }, { includeSessionEntry: false });
+assert.equal(publication.text, 'Fixed and verified.', 'terminal publication contains the conclusion only');
+const legacy = [user, message(2, undefined, 'Opening'), message(3, undefined, 'internal'), message(4, undefined, 'Conclusion')];
+assert.equal(buildReplyPublicationPayload(legacy, {}, { includeSessionEntry: false }).text, 'Conclusion');
+const fileFallback = { ...message(5, undefined, 'Generated file ready to download.'), source: 'result_file_assets',
+  attachments: [{ assetId: 'asset', originalName: 'result.txt' }] };
+const filePublication = buildReplyPublicationPayload([...legacy, fileFallback], {}, { includeSessionEntry: false });
+assert.ok(filePublication.text.startsWith('Conclusion'), 'an attachment fallback must not replace the actual conclusion');
+assert.equal(filePublication.attachments.length, 1);
+assert.equal(collectAssistantSurfaceMessages([message(2, undefined, 'Result\n\nArtifacts:\n- /tmp/result.txt')]).size, 0,
+  'phase-less artifact answers wait for terminal attachment publication');
+
+for (const connector of ['feishu', 'wechat', 'email']) {
+  let record = { key: 'k', runId: 'r', responseId: 'response', options: { sourceContext: { feishuOutcomeRequired: true } }, deliveries: [] };
+  const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
+  const options = { store, session: { sourceId: connector }, plan: { connector, sourceRouteId: 'test',
+    target: { chatId: 'chat', messageId: 'inbound', threadId: 'topic', to: 'person@example.test' } } };
+  await publishLiveAssistantReplies(record, history.slice(0, -1), options);
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), expected.slice(0, 2));
+  assert.equal(record.deliveries.some(part => part.kind === 'reaction'), false, 'progress never finishes the temporary outcome reaction');
+  record = JSON.parse(JSON.stringify(record)); // Restart/replay uses durable receipt state.
+  await publishLiveAssistantReplies(record, history, options);
+  await publishLiveAssistantReplies(record, history, options);
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), expected);
+  assert.deepEqual(record.streamedSurfaceMessageIds, ['m2', 'm5', 'm8']);
+  assert.deepEqual(record.streamedFinalReplyIds, ['m8']);
+  assert.ok(record.deliveries.every(part => part.target.threadId === 'topic'));
+  const pending = excludePublishedFinalReplies(history, record.streamedSurfaceMessageIds);
+  assert.equal(buildReplyPublicationPayload(pending, {}, { includeSessionEntry: false }).text, '', 'settlement does not repeat streamed messages');
+}
+console.log('test-assistant-surface-messages: ok');
