@@ -510,6 +510,8 @@ An explicitly published task result through `POST /api/source-deliveries` can in
 
 The UI and Feishu publisher consume the same projection. Native execution plans never replace public acceptance criteria. Explicit task identity resumes the same card across Runs; a new identity creates a new card. Task outcomes (`running`, `partial`, `blocked`, `failed`, `cancelled`, `completed`) are separate from Run termination and delivery status. Commentary and final explanations do not imply success; runtime failure/cancellation preserve verified items, and an ended Run without a task outcome is shown as unconfirmed. Every unseen checkpoint is replayed on the original message ID, with revision guards and a migration fence preventing historical sends. A creation with uncertain outcome is held for inspection; patches can safely retry. Result-channel delivery failures do not change verified work or force re-execution.
 
+Maintain the [accepted Person-scoped workboard baseline](../notes/current/feishu-workboard-pilot.md) with `npm run test:workboard`, which is included in normal `npm test` / required CI. That note retains activation limits, durable worker settings and the boundary between isolated regression coverage and actual provider delivery.
+
 ---
 
 ## 9. Normalization rules for connectors

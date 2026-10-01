@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-01 — Keep the accepted checklist and result behavior as a baseline
+
+- Observed friction: a Session checklist worked in the web view but Feishu split it into several cards and delayed the final result. A later model-capacity failure left a card apparently running. The user wants the repaired behavior to persist across future tasks, rather than depend on one successful turn.
+- Accepted behavior: one task retains one card across Runs; publish the initial deliverables before investigation and update each verified item immediately. A task may remain incomplete after a Run ends and must still deliver its explanation. Work completion and result delivery use separate state and receipts. Ordinary commentary, final text and internal execution plans cannot overwrite acceptance conditions or close the task.
+- Implementation and maintenance: both surfaces project the same Session snapshots; durable card IDs, revision guards, creation fences and task-bound result receipts support restart recovery. The scoped worker has no expiry or stop-time opt-out. Keep Person/Bot opt-in limits. The [current baseline](feishu-workboard-pilot.md) and `npm run test:workboard` are the maintenance entry; required CI runs it, including previously omitted activation, frontend and HTTP/CLI scenarios.
+- Evidence boundary: original-card updates, cross-Run continuation, restart recovery and a separate final receipt were verified in a real Feishu topic. Native streaming/files and failure scenarios also have isolated integration coverage. Legacy phase-less adapters still publish results at Run end; activation was not expanded to all people or groups.
+
 ### 2026-09-30 — Failed actions must show their reason in the product
 
 - Observed friction: a model change followed by Steer returned HTTP 409, but the frontend logged the reason only in the browser console. The user had to inspect the API to understand why the message was not sent.

@@ -80,7 +80,7 @@
     "observer:instance": "./scripts/proactive-observer-instance.sh start",
     "transcript:measure": "node scripts/measure-transcript-overhead.mjs",
     "lint:filesize": "node scripts/report-oversized-files.mjs",
-    "test": "npm run test:antigravity && npm run test:quick && npm run test:github-workspace && npm run test:session-preflight && npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:display && npm run test:feishu-actions && npm run test:smoke",
+    "test": "npm run test:antigravity && npm run test:quick && npm run test:github-workspace && npm run test:session-preflight && npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:display && npm run test:feishu-actions && npm run test:smoke && npm run test:workboard",
     "test:feishu-actions": "node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-action-command.mjs",
     "test:github-workspace": "node scripts/run-with-clean-instance-env.mjs node tests/test-github-workspace-command.mjs",
     "test:display": "node scripts/run-with-clean-instance-env.mjs node tests/test-display-status-state.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-display-sidecar.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-display-main-routes.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-display-settings-ui.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-chat-session-instructions-visibility.mjs",
@@ -110,7 +110,9 @@
     "test:session-preflight": "node scripts/run-with-clean-instance-env.mjs node tests/test-session-start-preflight.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-native-session-start-preflight.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-session-start-preflight-integration.mjs",
     "test:native-harness": "node scripts/run-with-clean-instance-env.mjs npm run test:native-harness:raw",
     "test:native-harness:raw": "node tests/test-native-codex.mjs && node tests/test-native-pi.mjs && node tests/test-native-claude.mjs && node tests/test-native-input-transport.mjs && node tests/test-native-request-dispatch.mjs && node tests/test-native-harness-integration.mjs && node tests/test-native-host-jsonl-framing.mjs && node tests/test-native-review-cancellation.mjs && node tests/test-native-review-host-settlement.mjs && node tests/test-native-review-duplicate-admission.mjs && node tests/test-native-review-source-replies.mjs",
-    "test:native-installed": "node scripts/run-with-clean-instance-env.mjs node --test tests/test-native-installed-codex.mjs tests/test-native-installed-harnesses.mjs"
+    "test:native-installed": "node scripts/run-with-clean-instance-env.mjs node --test tests/test-native-installed-codex.mjs tests/test-native-installed-harnesses.mjs",
+    "test:workboard": "node scripts/run-with-clean-instance-env.mjs npm run test:workboard:raw",
+    "test:workboard:raw": "node tests/test-workboard-opt-in.mjs && node tests/test-workboard-checklist.mjs && node tests/test-workboard-state.mjs && node tests/test-feishu-workboard-pilot.mjs && node tests/test-session-manager-build-prompt.mjs && node tests/test-session-display-events.mjs && node tests/test-chat-workboard-ui.mjs && node tests/test-http-assistant-message-command.mjs && node tests/test-reply-publication.mjs && node tests/test-native-harness-integration.mjs"
   },
   "dependencies": {
     "@larksuite/cli": "1.0.61",
