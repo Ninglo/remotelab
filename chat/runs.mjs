@@ -37,17 +37,38 @@ function runMutationLockPath(runId) {
 async function acquireRunMutationLock(runId) {
   await ensureDir(runDir(runId));
   const lockPath = runMutationLockPath(runId);
+  const ownerPath = join(lockPath, 'owner.json');
+  const token = randomBytes(12).toString('hex');
   const deadline = Date.now() + RUN_MUTATION_LOCK_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
       await mkdir(lockPath);
-      return async () => {
+      try {
+        await writeJsonAtomic(ownerPath, { pid: process.pid, token });
+      } catch (error) {
         await rm(lockPath, { recursive: true, force: true });
+        throw error;
+      }
+      return async () => {
+        if ((await readJson(ownerPath, null))?.token === token) {
+          await rm(lockPath, { recursive: true, force: true });
+        }
       };
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       const lockStats = await statOrNull(lockPath);
-      if (lockStats && Date.now() - lockStats.mtimeMs >= RUN_MUTATION_LOCK_STALE_MS) {
+      const owner = await readJson(ownerPath, null);
+      let deadOwner = false;
+      if (Number.isInteger(owner?.pid) && owner.pid > 0) {
+        try { process.kill(owner.pid, 0); }
+        catch (error) { deadOwner = error?.code === 'ESRCH'; }
+      }
+      // A controller can die while committing a projection checkpoint. Reclaim
+      // its lock immediately; age alone must never evict a living writer.
+      const legacyStale = !owner?.pid && lockStats
+        && Date.now() - lockStats.mtimeMs >= RUN_MUTATION_LOCK_STALE_MS;
+      const currentOwner = deadOwner ? await readJson(ownerPath, null) : null;
+      if ((deadOwner && currentOwner?.token === owner.token) || legacyStale) {
         await rm(lockPath, { recursive: true, force: true }).catch(() => {});
         continue;
       }
