@@ -100,7 +100,7 @@ try {
   const starts = (await readFile(join(root, 'starts'), 'utf8')).trim().split('\n');
   assert.equal(starts.filter(x => x === accepted.run.id).length, 1, 'recovery must not execute AI twice');
   const claim = await rpc('claim', { connector: 'feishu' });
-  assert.equal(claim.delivery.text, 'durable answer');
+  assert.equal(claim.delivery.text, '【交付】\n\ndurable answer');
   await rpc('complete', claim.delivery.id, claim.leaseId, { externalId: 'confirmed-feishu-message' });
   await kill();
   await boot();
