@@ -552,20 +552,21 @@
           </div>
           <div class="input-row">
             <textarea id="msgInput" placeholder="{{INPUT_PLACEHOLDER_TEXT}}" data-i18n-placeholder="{{INPUT_PLACEHOLDER_I18N_KEY}}" disabled></textarea>
-            <button class="mobile-voice-hold" id="mobileVoiceHold" type="button" hidden disabled data-i18n="voice.mobile.hold">Hold to talk · release to send</button>
+            <button class="mobile-voice-hold" id="mobileVoiceHold" type="button" hidden disabled><span class="img-btn-icon" data-icon="mic" aria-hidden="true"></span><span id="mobileVoiceHoldLabel" data-i18n="voice.mobile.hold">Hold to talk</span></button>
           </div>
-          <div class="mobile-voice-panel" id="mobileVoicePanel" hidden role="status" aria-live="polite">
-            <div class="mobile-voice-heading"><span id="mobileVoiceStatus"></span><span class="mobile-voice-level" aria-hidden="true"><i></i><i></i><i></i></span><span id="mobileVoiceDuration" aria-hidden="true"></span></div>
+          <div class="mobile-voice-panel" id="mobileVoicePanel" hidden role="group" aria-label="Voice input" data-i18n-aria-label="action.voiceInput">
+            <div class="mobile-voice-heading"><span class="mobile-voice-live-dot" aria-hidden="true"></span><span id="mobileVoiceStatus" role="status" aria-live="polite"></span><span id="mobileVoiceDuration" aria-hidden="true"></span></div>
+            <div class="mobile-voice-level" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
             <p class="mobile-voice-transcript" id="mobileVoiceTranscript" aria-live="off"></p>
             <div class="mobile-voice-choices">
-              <button id="mobileVoiceCancel" type="button" data-i18n="voice.mobile.cancel">Cancel</button>
+              <button id="mobileVoiceCancel" type="button"><span class="img-btn-icon" data-icon="close" aria-hidden="true"></span><span data-i18n="voice.mobile.cancel">Cancel</span></button>
               <span id="mobileVoiceRelease"></span>
-              <button id="mobileVoiceEdit" type="button" data-i18n="voice.mobile.edit">Edit text</button>
+              <button id="mobileVoiceEdit" type="button"><span class="img-btn-icon" data-icon="edit" aria-hidden="true"></span><span data-i18n="voice.mobile.edit">Edit before sending</span></button>
             </div>
           </div>
           <div class="input-actions-row">
             <div class="input-actions-group">
-              <button class="composer-action-btn mobile-voice-mode" id="mobileVoiceMode" type="button" hidden aria-label="Type instead" data-i18n-aria-label="voice.mobile.keyboard">⌨</button>
+              <button class="composer-action-btn mobile-voice-mode" id="mobileVoiceMode" type="button" hidden aria-label="Type instead" data-i18n-aria-label="voice.mobile.keyboard"><span class="img-btn-icon" data-icon="keyboard" aria-hidden="true"></span></button>
               <div class="composer-file-picker">
                 <input type="file" id="imgFileInput" class="composer-file-input" accept="*/*" multiple disabled title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
                 <button class="composer-action-btn composer-action-btn--upload" id="imgBtn" type="button" disabled tabindex="-1" aria-hidden="true" title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">

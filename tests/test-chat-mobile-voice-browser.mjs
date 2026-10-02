@@ -78,6 +78,8 @@ try {
   assert.equal((await context.request.patch(`${baseUrl}/api/people/alpha`, { data: { mobileInputMode: 'invalid' } })).status(), 400);
   await page.reload(); await page.waitForFunction(() => !!window.remotelabRefreshMobileVoiceUi); await installTransport();
   assert.equal(await page.locator('#mobileVoiceHold').isVisible(), true, 'saved voice mode survives a real page reload');
+  assert.ok((await page.locator('.input-wrapper').boundingBox()).height <= 85, 'voice mode is one compact composer row');
+  assert.equal(await page.locator('#sendBtn').isVisible(), false, 'release is the send action in empty voice mode');
   await page.screenshot({ path: join(artifacts, 'mobile-voice-ready.png') });
   await startHold('#mobileVoiceHold');
   assert.equal(await page.locator('#mobileVoicePanel').isVisible(), true);
@@ -86,7 +88,7 @@ try {
   await page.screenshot({ path: join(artifacts, 'mobile-voice-recording.png') });
   await endHold(); await page.waitForFunction(() => window.__voiceStop === true);
   await page.evaluate(() => window.__voiceSocket.emit('message', { type: 'transcript', transcript: '检查' }));
-  await page.locator('#sendBtn').tap();
+  await page.evaluate(() => document.getElementById('sendBtn').click());
   assert.equal(await page.evaluate(() => window.__sent.length), 0);
   await final('请帮我检查任务状态'); await page.waitForFunction(() => window.__sent.length === 1);
 
@@ -101,12 +103,52 @@ try {
   assert.equal(await page.locator('#msgInput').inputValue(), '先改字再发送');
   assert.equal(await page.evaluate(() => window.__sent.length), 1);
   await page.screenshot({ path: join(artifacts, 'mobile-voice-edit.png') });
+  for (const size of [{ width: 320, height: 568, scheme: 'light' }, { width: 390, height: 844, scheme: 'light' },
+    { width: 430, height: 932, scheme: 'dark' }, { width: 320, height: 568, scheme: 'dark' }]) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await page.emulateMedia({ colorScheme: size.scheme });
+    await page.locator('#msgInput').fill('');
+    const suffix = `${size.width}-${size.scheme}`;
+    await page.screenshot({ path: join(artifacts, `voice-ready-${suffix}.png`) });
+    await startHold('#mobileVoiceHold');
+    const spoken = '请帮我把手机端的语音输入整理得简洁一些，取消和改字入口都要清楚，长内容也能看得下。';
+    await page.evaluate(text => window.__voiceSocket.emit('message', { type: 'transcript', transcript: text }), spoken);
+    for (const selector of ['#mobileVoicePanel', '#mobileVoiceHold', '#mobileVoiceCancel', '#mobileVoiceEdit']) {
+      const bounds = await page.locator(selector).boundingBox();
+      assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= size.width + 1
+        && bounds.y + bounds.height <= size.height + 1, `${selector} fits ${suffix}`);
+      if (selector !== '#mobileVoicePanel') assert.ok(bounds.height >= 44, `${selector} retains a touch target`);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await page.screenshot({ path: join(artifacts, `voice-recording-${suffix}.png`) });
+    const choice = await page.locator('#mobileVoiceEdit').boundingBox();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: choice.x + choice.width / 2, y: choice.y + choice.height / 2 }] });
+    await endHold();
+    await page.screenshot({ path: join(artifacts, `voice-recognizing-${suffix}.png`) });
+    await final(spoken); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
+    assert.equal(await page.locator('#msgInput').inputValue(), spoken);
+    assert.equal(await page.evaluate(() => window.__sent.length), 1, 'sliding to edit keeps text for an explicit send');
+    await page.screenshot({ path: join(artifacts, `voice-edit-${suffix}.png`) });
+  }
+  await page.locator('#msgInput').fill('');
+  await page.locator('#mobileVoiceMode').tap();
+  await page.waitForFunction(() => document.getElementById('mobileVoiceHold').hidden && !document.getElementById('mobileVoiceMode').disabled);
+  assert.equal(await page.locator('#msgInput').isVisible(), true);
+  await startHold('#voiceBtn'); await endHold();
+  await page.locator('#mobileVoiceEdit').tap();
+  await final('文字模式也能改字'); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
+  assert.equal(await page.locator('#msgInput').inputValue(), '文字模式也能改字');
+  assert.equal(await page.evaluate(() => window.__sent.length), 1);
+  await page.locator('#msgInput').fill('');
+  await page.locator('#voiceBtn').tap();
+  await page.waitForFunction(() => !document.getElementById('mobileVoiceHold').hidden && !document.getElementById('mobileVoiceMode').disabled);
   await page.setViewportSize({ width: 1050, height: 850 });
+  await page.waitForFunction(() => !document.getElementById('msgInput').hidden);
   assert.equal(await page.locator('#msgInput').isVisible(), true);
   assert.equal(await page.locator('#mobileVoiceHold').isVisible(), false);
   assert.equal(await page.locator('#mobileVoiceMode').isVisible(), false);
   assert.deepEqual(errors, []);
-  console.log('test-chat-mobile-voice-browser: real touch, audio capture with simulated recognition, auto-send, slide cancellation, editing, persisted mode and ownership passed');
+  console.log('test-chat-mobile-voice-browser: compact composer, 320/390/430px light/dark layouts, native touch cancel/edit, audio capture with simulated recognition, auto-send and persisted mode passed');
 } finally {
   await browser.close();
   server.kill('SIGTERM'); if (server.exitCode === null && server.signalCode === null) await once(server, 'exit');
