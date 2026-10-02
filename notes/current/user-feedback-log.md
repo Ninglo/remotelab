@@ -28,6 +28,8 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: keep short taps and holds predictable. A temporary hold does not change the default mode; explicitly choosing the wide voice control persists for that Person's phone view, independently of desktop.
 - Implementation: reuse the recognizer and optional personal transcript cleanup, then send once after final recognition. Sliding or tapping Cancel discards the capture; Edit keeps a draft. Existing text or attachments require an explicit Send. Permission delays, interrupted touches, navigation, backgrounding, and stale recognition results cannot trigger a later automatic send.
 - Evidence boundary: automated touch/browser checks use a real browser audio-capture path with simulated recognition. Physical microphone quality, recognition accuracy, and thumb comfort still need a phone trial.
+- First phone-trial feedback: speech reaches the conversation, but the recording surface looks cluttered and editing after automatic submission is unavailable. The user requested a visual refinement.
+- Refinement: one compact voice composer with a proper keyboard icon, an integrated recording surface, live audio bars, readable transcription, and explicit Cancel / Edit first choices. Editing still happens before submission; this slice does not introduce historical message editing. Browser acceptance covers 320/390/430px, light/dark, long text, and native slide gestures.
 
 ### 2026-10-02 — Reuse independent hardware discussion recording on every instance
 

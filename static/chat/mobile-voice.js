@@ -4,6 +4,7 @@
   const doc = globalScope.document;
   const mic = doc?.getElementById("voiceBtn");
   const hold = doc?.getElementById("mobileVoiceHold");
+  const holdLabel = doc?.getElementById("mobileVoiceHoldLabel") || hold;
   const modeButton = doc?.getElementById("mobileVoiceMode");
   const panel = doc?.getElementById("mobileVoicePanel");
   const status = doc?.getElementById("mobileVoiceStatus");
@@ -51,12 +52,21 @@
     if (capture && !isCurrent(capture)) { discardGesture(); cancelCapture(); return; }
     if (capture && hasAttachments()) capture.autoSend = false;
     const mobile = isMobile();
-    mic.closest(".input-wrapper")?.classList.toggle("has-mobile-voice-capture", mobile && !!capture);
+    const wrapper = mic.closest(".input-wrapper");
+    wrapper?.classList.toggle("has-mobile-voice-capture", mobile && !!capture);
     const voiceMode = mobile && mode === "voice"
       && (capture ? !capture.baseText.trim() && !capture.hadAttachments : !msgInput.value.trim() && !hasAttachments());
     hold.hidden = !voiceMode;
+    wrapper?.classList.toggle("has-mobile-voice-mode", voiceMode);
+    mic.closest(".input-area")?.classList.toggle("has-mobile-voice-mode", voiceMode);
     hold.disabled = mic.disabled || !!capture?.released;
-    hold.textContent = t(capture?.released ? "voice.mobile.recognizing" : "voice.mobile.hold");
+    const state = controller.getState();
+    const holdKey = !capture ? "voice.mobile.hold" : capture.released ? "voice.mobile.recognizing"
+      : state.phase !== "recording" && !capture.completed ? "voice.mobile.preparing"
+      : capture.choice === "cancel" ? "voice.mobile.releaseCancel"
+      : capture.choice === "edit" || !capture.autoSend ? "voice.mobile.releaseEdit" : "voice.mobile.releaseSend";
+    setText(holdLabel, t(holdKey));
+    hold.setAttribute("aria-label", t(capture ? holdKey : "voice.mobile.holdHint"));
     msgInput.hidden = voiceMode;
     modeButton.hidden = !mobile || mode !== "voice";
     modeButton.disabled = savingMode || !!capture;
@@ -67,16 +77,20 @@
     }
     panel.hidden = !mobile || !capture;
     if (!capture) return;
-    const state = controller.getState();
     panel.style.setProperty("--voice-level", String(Math.min(1, Math.max(0, Number(state.voiceLevel) || 0))));
     const ready = state.phase === "recording" || capture.completed;
+    panel.classList.toggle("is-preparing", !ready && !capture.released);
+    panel.classList.toggle("is-recognizing", capture.released);
+    panel.classList.toggle("is-cancelling", capture.choice === "cancel");
     const key = !ready && !capture.released ? "voice.mobile.preparing"
       : capture.released ? "voice.mobile.recognizing"
       : capture.choice === "cancel" ? "voice.mobile.releaseCancel"
-      : capture.choice === "edit" || !capture.autoSend ? "voice.mobile.releaseEdit" : "voice.mobile.releaseSend";
+      : capture.choice === "edit" || !capture.autoSend ? "voice.mobile.releaseEdit" : "voice.mobile.recording";
     setText(status, t(key));
     duration.textContent = capture.startedAt ? `${Math.floor(((capture.stoppedAt || Date.now()) - capture.startedAt) / 1000)}s` : "";
-    setText(transcript, msgInput.value.slice(capture.baseText.length).trim() || t("voice.mobile.listening"));
+    const spoken = msgInput.value.slice(capture.baseText.length).trim();
+    setText(transcript, spoken || t("voice.mobile.listening"));
+    transcript.classList.toggle("is-empty", !spoken);
     setText(release, t(capture.released ? "voice.mobile.wait" : "voice.mobile.slide"));
     cancel.classList.toggle("selected", capture.choice === "cancel");
     edit.classList.toggle("selected", capture.choice === "edit");
