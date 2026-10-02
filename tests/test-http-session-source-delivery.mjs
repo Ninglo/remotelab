@@ -531,6 +531,14 @@ try {
   assert.deepEqual(new Set(queuedReplies.map(reply => reply.runId)), new Set(admitted.map(item => item.run.id)));
   assert.deepEqual(new Set(queuedReplies.map(reply => reply.target.inReplyTo)), new Set(['<first@example.test>', '<follow-up@example.test>']));
   assert(queuedReplies.every(reply => reply.state === 'pending'), 'sender downtime retains every completed email reply');
+  // Publication can precede durable Request settlement. Observe that boundary
+  // before asserting that terminal requests no longer produce typing activity.
+  const { createRequestStore } = await import('../chat/requests.mjs');
+  const requestStore = createRequestStore(join(config, 'requests'));
+  await waitFor(async () => {
+    const records = await Promise.all(['first', 'follow-up'].map(suffix => requestStore.byRequest(emailSessionId, `email-${suffix}`)));
+    return records.every(record => record?.result?.state === 'completed');
+  }, 'queued email requests durably settled');
   const settledActivity = await request('GET', '/api/source-deliveries?connector=email&sourceRouteId=queued-mailbox&includeActivity=true');
   assert.deepEqual(settledActivity.body.activity, [], 'terminal requests stop typing even while final delivery is pending');
   console.log('PASS: Feishu, WeChat and Email JSON/multipart admission preserve sourceDelivery; queued emails each create a reply while sender is offline; no external sends');
