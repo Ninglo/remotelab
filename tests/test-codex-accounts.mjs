@@ -43,6 +43,13 @@ try {
   assert.equal(await realpath(join(backup.home, 'config.toml')), join(home, 'config.toml'));
   const originalAuth = await readFile(join(home, 'auth.json'), 'utf8');
   await pool.refresh(backup.id, 'fake'); await pool.policy(true);
+  let rotation = true;
+  pool.query = async options => {
+    if (rotation) { rotation = false; throw new Error('Codex account changed; check status again'); }
+    return query(options);
+  };
+  assert.equal((await pool.refresh(backup.id, 'fake')).usage.status, 'ready', 'a refreshed authorization is reread once in place');
+  pool.query = query;
   let slot = await pool.acquireForRun({ command: 'fake' });
   assert.equal(slot.id, backup.id, 'exhausted subscription switches to an independently authenticated account');
   assert.equal((await pool.read()).activeId, backup.id);
