@@ -21,11 +21,11 @@ const seed = async (directory, id, fail, tool = false) => {
 try {
   const backup = await pool.add('backup'); await seed(backup.home, 'backup', null);
   await pool.refresh(backup.id, command); await pool.policy(true);
-  const run = async (native = false) => {
+  const run = async (native = false, codexThreadId = null) => {
     const record = await createRun({ status: { sessionId: 'quota-session', requestId: 'quota-request', tool: 'quota-fixture' },
       manifest: { sessionId: 'quota-session', requestId: 'quota-request', tool: 'quota-fixture', folder: root,
         inputMode: native ? 'native' : 'batch', prompt: 'Perform one synthetic action then complete.',
-        options: { model: 'fixture', skipSessionStartPreflight: true } } });
+        options: { model: 'fixture', codexThreadId, skipSessionStartPreflight: true } } });
     const child = spawn(process.execPath, ['chat/runner-sidecar.mjs', record.id], { cwd: repo, env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'] });
     let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
@@ -33,23 +33,28 @@ try {
     const exit = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }); clearTimeout(timer);
     return { exit, record: await getRun(record.id), output };
   };
-  await seed(home, 'initial', 'usage_limit_reached', true);
-  const success = await run(); assert.equal(success.exit, 0, success.output);
-  assert.equal(success.record.state, 'completed'); assert.equal(success.record.codexAccount.id, backup.id);
-  const calls = (await readFile(join(config, 'failover-invocations.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.deepEqual(calls.map(c => c.account), ['initial', 'backup']);
-  assert.ok(calls[1].args.includes('00000000-0000-4000-8000-000000000001'));
-  assert.equal(await readFile(join(config, 'external-effect.txt'), 'utf8'), 'once\n', 'completed actions are not replayed on another account');
-  await pool.mutate(data => { data.activeId = 'default'; delete data.accounts[0].blockedUntil; });
-  const native = await run(true); assert.equal(native.exit, 0, native.output);
-  assert.equal(native.record.codexAccount.id, backup.id);
-  const nativeCalls = (await readFile(join(config, 'failover-invocations.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(nativeCalls[3].resumeId, '00000000-0000-4000-8000-000000000001');
-  assert.equal(await readFile(join(config, 'external-effect.txt'), 'utf8'), 'once\nonce\n');
-  await pool.mutate(data => { data.activeId = 'default'; delete data.accounts[0].blockedUntil; });
+  const calls = async () => (await readFile(join(config, 'failover-invocations.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  for (const native of [false, true]) {
+    await seed(home, 'initial', 'usage_limit_reached', true);
+    await pool.refresh('default', command); await pool.select('default');
+    const before = native ? 2 : 0;
+    const failed = await run(native); assert.notEqual(failed.exit, 0, failed.output);
+    assert.equal(failed.record.codexAccount.id, 'default'); assert.equal(failed.record.state, 'failed');
+    assert.equal((await calls()).length, before + 1, 'an exhausted run is never automatically restarted');
+    assert.equal((await pool.read()).activeId, backup.id, 'the failure selects the default for the next request');
+    const next = await run(native, failed.record.codexThreadId);
+    assert.equal(next.exit, 0, next.output); assert.equal(next.record.state, 'completed');
+    assert.equal(next.record.codexAccount.id, backup.id);
+    const after = await calls(); assert.deepEqual(after.slice(before).map(c => c.account), ['initial', 'backup']);
+    if (native) assert.equal(after.at(-1).resumeId, failed.record.codexThreadId);
+    else assert.ok(after.at(-1).args.includes(failed.record.codexThreadId));
+    assert.equal(await readFile(join(config, 'external-effect.txt'), 'utf8'), native ? 'once\nonce\n' : 'once\n', 'subsequent conversation preserves completed actions');
+  }
   await seed(home, 'initial', '401 Unauthorized');
+  await pool.refresh('default', command); await pool.select('default');
   const failed = await run(); assert.notEqual(failed.exit, 0);
-  const after = (await readFile(join(config, 'failover-invocations.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(after.length, 5, 'authentication failures must not rotate through subscriptions');
-  console.log('Batch and native Codex exhaustion failover, saved-thread continuation, single external effect and non-quota failures passed');
+  assert.equal((await calls()).length, 5, 'authentication errors are not retried on other accounts');
+  assert.equal((await pool.read()).activeId, 'default', 'authentication errors never change the default');
+  console.log('Batch and native requests keep their account, never replay after exhaustion, and resume subsequent requests on the background-selected default');
+
 } finally { await rm(root, { recursive: true, force: true }); }

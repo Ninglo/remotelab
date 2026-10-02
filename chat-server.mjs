@@ -19,6 +19,7 @@ const [
   tools,
   { ensureDir },
   guestWeChatConnectorStartup,
+  codexAccountMonitor,
 ] = await Promise.all([
   import('./lib/config.mjs'),
   import('./chat/router.mjs'),
@@ -33,6 +34,7 @@ const [
   import('./lib/tools.mjs'),
   import('./chat/fs-utils.mjs'),
   import('./lib/guest-wechat-connector-startup.mjs'),
+  import('./chat/codex-account-monitor.mjs'),
 ]);
 
 let ready = false;
@@ -74,6 +76,7 @@ recurringSchedules.startRecurringScheduleScheduler({
 });
 sessionAutoArchive.startSessionAutoArchive();
 groupFeedReview.startGroupFeedReview();
+const stopCodexAccountMonitor = codexAccountMonitor.startCodexAccountMonitor();
 
 const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
   createSession: sessionManager.createSession,
@@ -94,6 +97,7 @@ async function shutdown() {
   recurringSchedules.stopRecurringScheduleScheduler();
   sessionAutoArchive.stopSessionAutoArchive();
   groupFeedReview.stopGroupFeedReview();
+  stopCodexAccountMonitor();
   await sessionManager.killAll();
   process.exit(0);
 }
