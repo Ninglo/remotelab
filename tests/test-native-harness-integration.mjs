@@ -66,7 +66,7 @@ try {
   await until(async () => (await rpc('history', earlySession.id)).some(event => event.phase === 'final_answer'), 'final phase reaches durable history');
   assert.equal((await rpc('response', earlySession.id, 'early-final-root')).state, 'running');
   const earlyClaim = await rpc('claim', { connector: 'feishu' });
-  assert.equal(earlyClaim.delivery.text, 'durable native answer', 'final delivery is ready before the steered Run exits');
+  assert.equal(earlyClaim.delivery.text, '【交付】\n\ndurable native answer', 'final delivery is ready before the steered Run exits');
   await rpc('complete', earlyClaim.delivery.id, earlyClaim.leaseId, { externalId: 'early-final-message' });
   await killController(); await boot();
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'controller recovery cannot resend an already published final');
@@ -122,7 +122,7 @@ try {
   assert.equal(history.filter(event => event.type === 'message' && event.role === 'user').length, 3);
   assert.equal(history.filter(event => event.type === 'message' && event.role === 'assistant' && event.content === 'durable native answer').length, 1);
   const claim = await rpc('claim', { connector: 'feishu' });
-  assert.equal(claim.delivery.text, 'durable native answer');
+  assert.equal(claim.delivery.text, '【交付】\n\ndurable native answer');
   await rpc('complete', claim.delivery.id, claim.leaseId, { externalId: 'one-final-reply' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'same conversation gets one final publication for all steered messages');
   await evidence('PASS: SIGKILL/controller recovery preserved one execution and one copy of each accepted input; all three response addresses share one final answer and one Feishu publication.');

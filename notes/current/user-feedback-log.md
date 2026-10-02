@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-02 — Distinguish progress from delivered results in Feishu
+
+- Observed friction: useful additional messages still require readers to inspect every body to tell whether work continues or a result has arrived.
+- Requested behavior: try shared labels for the small current user group, rather than adding a personal preference. Iterate after actual use.
+- Implementation: the Feishu outbox prefixes openings and published progress with `【进展】`, and turn results with `【交付】`. An explicit `【待你确认】` survives when the reader must act. Reuse existing phase selection and receipt deduplication; do not add a classifier or increase message frequency.
+- Evidence boundary: message publication phase does not establish task completion. Partial, blocked, failed, and background work must be stated by the Harness. Automated coverage checks live publication, terminal fallback, replay, and other connectors; reader comfort remains a trial.
+
 ### 2026-10-02 — Route by engineering depth and latency, with Sol xhigh as the default
 
 - User preference: GPT-6.1 Sol xhigh is sufficient for most tasks at an acceptable cost. Routine work should keep that reasoning effort; lower tiers should serve an explicit need rather than automatic token savings.

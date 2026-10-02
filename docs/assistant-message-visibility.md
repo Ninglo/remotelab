@@ -17,6 +17,12 @@ Only complete progress blocks in assistant messages are recognized. Multiple blo
 
 Web display and the Connector outbox use `lib/assistant-surface-messages.mjs` for selection. Live publication queues the opening, tagged progress, and phase-marked finals before the Run ends. Receipt IDs and delivery parts are committed together in the Request record, so observer replay and restart do not enqueue the same message twice. Existing thread targets, attachment transport, final reactions, and failed-Run notices remain part of the normal delivery path. An intermediate message is never a task-completion receipt.
 
-For adapters without message phases, only a first reply before tool execution is treated as an opening; their last answer uses terminal publication. Existing stored history is projected on read rather than rewritten. An updated per-turn prompt teaches the format to both fresh and resumed Harness threads.
+For adapters without message phases, Web can show a first reply before tool execution as an opening. Feishu publication waits for the terminal answer unless the Harness explicitly marks progress: a phase-less direct answer cannot safely be classified as an opening while execution continues. Existing stored history is projected on read rather than rewritten. An updated per-turn prompt teaches the format to both fresh and resumed Harness threads.
 
 Verification: `tests/test-assistant-surface-messages.mjs`, `tests/test-session-display-events.mjs`, and `tests/test-reply-publication.mjs`. The integration fixture holds execution until the opening and tagged progress are claimed, then releases the final answer and verifies there are no duplicate deliveries.
+
+## Shared Feishu message labels (trial)
+
+Feishu assistant replies receive a deterministic prefix in the durable outbox: `【进展】` for an opening or published progress, and `【交付】` for the final result of the turn, including terminal fallback publication and replies fanned out to another destination. The trial applies to all readers, with no personal setting. Original history, Web message text, other connectors, manually queued notices, reactions, and attachment-only deliveries retain their existing behavior.
+
+`【交付】` identifies a result message; it is not a task-success receipt. The Harness must say in the first sentence when the requested work is partial, blocked, failed, or still running in the background. If the reader must act, the Harness can start the public text with `【待你确认】`, which takes precedence over the phase label. Existing phase prefixes are normalized rather than doubled. Labels do not publish hidden commentary or justify additional messages.

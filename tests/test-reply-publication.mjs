@@ -120,7 +120,7 @@ try {
       claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
       return !!claim;
     }, 'visible progress delivery while model is blocked');
-    assert.equal(claim.delivery.text, expected);
+    assert.equal(claim.delivery.text, `【进展】\n\n${expected}`);
     assert.equal(claim.delivery.target.threadId, 'visibility-topic');
     assert.equal((await requests.byRunId(visibilityOutcome.run.id)).result, null, 'opening and progress precede the result');
     await completeSourceDelivery(claim.delivery.id, claim.leaseId, { externalId: `visible-${expected}` });
@@ -134,7 +134,7 @@ try {
   assert.equal(visibilityReaction.delivery.kind, 'reaction', 'outcome is queued only when the final answer arrives');
   await completeSourceDelivery(visibilityReaction.delivery.id, visibilityReaction.leaseId, { externalId: 'visibility-outcome' });
   const visibilityFinal = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
-  assert.equal(visibilityFinal.delivery.text, '主 Harness 已经直接完成并交付结果。');
+  assert.equal(visibilityFinal.delivery.text, '【交付】\n\n主 Harness 已经直接完成并交付结果。');
   await completeSourceDelivery(visibilityFinal.delivery.id, visibilityFinal.leaseId, { externalId: 'visibility-final' });
   assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' }), null, 'settlement does not resend streamed replies');
   const taggedSession = await createSession(tempHome, 'fake-codex', 'Explicit task result');
@@ -264,7 +264,7 @@ try {
   assert.equal(firstConnectorPublication?.payload?.text, '主 Harness 已经直接完成并交付结果。', 'final reply does not repeat the early entry');
   const finalClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' });
   assert.equal(finalClaim?.delivery?.kind, 'content');
-  assert.equal(finalClaim.delivery.text, firstConnectorPublication.payload.text);
+  assert.equal(finalClaim.delivery.text, `【交付】\n\n${firstConnectorPublication.payload.text}`);
   await completeSourceDelivery(finalClaim.delivery.id, finalClaim.leaseId, { externalId: 'final-reply-message' });
 
   await waitFor(async () => (await getRunState(queuedOutcome.run.id))?.state === 'completed', 'queued run completion');

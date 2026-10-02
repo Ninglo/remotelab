@@ -1,5 +1,5 @@
 import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
-import { assistantSurfaceMessageId, collectAssistantSurfaceMessages } from '../lib/assistant-surface-messages.mjs';
+import { assistantSurfaceMessageId, collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
 import { appendDeliveries } from './requests.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
@@ -39,6 +39,10 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
+    // Without a phase, a direct answer is indistinguishable from an opening.
+    // Wait for terminal publication unless the Harness explicitly marks progress.
+    if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'
+        && !parseProgressMessage(event.content).progress) continue;
     const messageId = assistantSurfaceMessageId(event);
     if (!messageId) continue;
     const stored = await store.get(record.key);
@@ -60,6 +64,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       text: prepared.content, attachments: getAssistantReplyAttachments(prepared),
     };
     const parts = buildReplyDeliveries(resolveAmbientFeishuReplyPlan(record, plan, [event]), payload, {
+      surfaceKind: surface.surfaceKind,
       requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
     if (!parts.length) continue;

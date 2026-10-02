@@ -68,7 +68,7 @@ try {
       deliveries.push(claim.delivery);
       await rpc('complete', claim.delivery.id, claim.leaseId, { externalId: `reply-${name}-${deliveries.length}` });
     }
-    assert.equal(deliveries.filter(item => item.text === 'durable native answer').length, 1,
+    assert.equal(deliveries.filter(item => item.text === '【交付】\n\ndurable native answer').length, 1,
       `${name}: root/thread aliases or mainline quotes must not publish duplicate final replies into one conversation`);
   }
   const conversation = { connector: 'feishu', sourceRouteId: 'bound-bot', target: { chatId: 'chat', rootId: 'root', replyInThread: true } };
@@ -86,7 +86,7 @@ try {
     published.push(claim.delivery);
     await rpc('complete', claim.delivery.id, claim.leaseId, { externalId: `bound-${published.length}` });
   }
-  assert.equal(published.filter(item => item.text === 'durable native answer').length, 1,
+  assert.equal(published.filter(item => item.text === '【交付】\n\ndurable native answer').length, 1,
     'coalesced browser and connector inputs publish one final reply through the Session binding');
   assert.ok(published.every(item => item.target.rootId === 'root'));
   console.log('native source replies: legacy aliases and bound Session inputs retain one final publication');
