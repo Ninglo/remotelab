@@ -13,7 +13,7 @@ for (let i = 0; i < args.length; i += 2) {
   options[args[i].slice(2)] = args[i + 1];
 }
 if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !options['file-token']) {
-  console.log('Usage: node scripts/feishu-document-bindings.mjs bind|status|unbind --config <connector-config> --file-token <docx-token> [--session <id> --url <url> --base-url <instance-url>]');
+  console.log('Usage: node scripts/feishu-document-bindings.mjs bind|status|unbind --config <connector-config> --file-token <docx-token> [--session <id> --url <url> --base-url <instance-url> --reply-mode comment|conversation]');
   process.exitCode = 1;
 } else {
   const config = JSON.parse(await readFile(options.config, 'utf8'));
@@ -37,6 +37,9 @@ if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !optio
       console.log(JSON.stringify({ ok: true, enabled: false }));
     } else {
       if (!options.session || !options.url) throw new Error('--session and --url required');
+      if (options['reply-mode'] && !['comment', 'conversation'].includes(options['reply-mode'])) {
+        throw new Error('--reply-mode must be comment or conversation');
+      }
       const client = createRemoteLabHttpClient({ baseUrl: options['base-url'] || config.chatBaseUrl });
       const result = await client.request(`/api/sessions/${options.session}`);
       const session = result.json?.session;
@@ -51,7 +54,9 @@ if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !optio
         if (existing.sessionId !== session.id) throw new Error('Document already has a different review Session; explicit migration required');
         // Idempotent publication must never reset the cursor or replay old input.
         if (!existing.enabled) throw new Error('Binding disabled; explicit resumption required');
-        console.log(JSON.stringify({ ok: true, binding: existing, reused: true }));
+        const binding = options['reply-mode'] ? { ...existing, replyMode: options['reply-mode'] } : existing;
+        if (binding.replyMode !== existing.replyMode) await writeBindingJson(path, binding);
+        console.log(JSON.stringify({ ok: true, binding, reused: true }));
       } else {
         const url = new URL(options.url);
         if (url.protocol !== 'https:' || !url.pathname.endsWith(`/docx/${options['file-token']}`)) throw new Error('Expected matching HTTPS docx URL');
@@ -59,6 +64,7 @@ if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !optio
           version: 1, generation: randomUUID(), enabled: true,
           fileToken: options['file-token'], fileType: 'docx', documentUrl: url.href,
           sessionId: session.id, sourceRouteId: route, conversation: session.conversation,
+          replyMode: options['reply-mode'] || 'comment',
           since: new Date(Math.floor(Date.now() / 1000) * 1000).toISOString(),
         };
         await writeBindingJson(path, binding);

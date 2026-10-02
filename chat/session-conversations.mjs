@@ -50,6 +50,23 @@ export function resolveSessionDeliveryPlan(session, options) {
   if (options.sourceContext?.feishuParticipation === 'feedback') return null;
   if (options.suppressSourceDelivery === true) return null;
   const bound = normalizeConversation(session.conversation);
+  const context = options.sourceContext;
+  if (context?.documentBinding === true && context.documentReplyMode === 'comment') {
+    // A document shares the Session's context, not its chat reply address.
+    // Only the exact admitted comment on the same Bot may override that address.
+    if (context.connector !== 'feishu' || context.conversationKind !== 'document_comment'
+        || !bound || bound.connector !== 'feishu' || !explicit || explicit.connector !== 'feishu'
+        || explicit.sourceRouteId !== bound.sourceRouteId
+        || context.sourceRouteId !== bound.sourceRouteId
+        || !context.fileToken || !context.fileType || !context.commentId
+        || explicit.target.chatId || explicit.target.conversationKind !== 'document_comment'
+        || explicit.target.fileToken !== context.fileToken
+        || explicit.target.fileType !== context.fileType
+        || explicit.target.commentId !== context.commentId) {
+      throw new Error('Bound document reply must match the admitted comment and Session source route');
+    }
+    return explicit;
+  }
   if (options.internalOperation && options.internalOperation !== 'trigger_delivery') return explicit;
   if (!bound) return explicit;
   if (!explicit) return bound;
