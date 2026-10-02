@@ -14,6 +14,8 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 > 同一套系统可以从桌面、手机，以及飞书 / 邮件这类接入面进入。
 
+可选的[讨论录音能力](docs/platform-skills/hardware-recording.md)支持在 macOS/Linux 上绑定小键盘和多台 USB 接收器：每场独立开始、结束并交给 RemoteLab 处理。每台机器首次需要授权，并配置音源、按键与交付位置。
+
 ## 快速安装
 
 > **已有实例准备升级？** 2026-09-07 的 Request 状态变更需要先停机转换，不能直接更新后重启。请先读[升级与恢复说明](docs/request-state-upgrade.md)；共享这份源码的其他实例也要分别检查。

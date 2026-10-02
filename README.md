@@ -14,6 +14,8 @@ It does not care much whether the control surface is a phone, tablet, or desktop
 
 > Reach the same system from desktop, phone, and integration surfaces like Feishu or email-driven flows.
 
+Optional [hardware discussion recording](docs/platform-skills/hardware-recording.md) connects explicitly bound keypads and multiple USB receivers to independent recordings and RemoteLab Sessions on macOS/Linux. Each host needs one-time permissions and source/delivery configuration.
+
 ## Quick install
 
 > **Upgrading an existing instance?** The 2026-09-07 Request state change requires offline conversion before restart. Read the [upgrade notice and recovery procedure](docs/request-state-upgrade.md) first, including for instances sharing this source tree.

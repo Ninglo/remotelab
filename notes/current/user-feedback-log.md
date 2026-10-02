@@ -29,6 +29,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Implementation: reuse the recognizer and optional personal transcript cleanup, then send once after final recognition. Sliding or tapping Cancel discards the capture; Edit keeps a draft. Existing text or attachments require an explicit Send. Permission delays, interrupted touches, navigation, backgrounding, and stale recognition results cannot trigger a later automatic send.
 - Evidence boundary: automated touch/browser checks use a real browser audio-capture path with simulated recognition. Physical microphone quality, recognition accuracy, and thumb comfort still need a phone trial.
 
+### 2026-10-02 — Reuse independent hardware discussion recording on every instance
+
+- Requested behavior: an ordinary office computer should continue normal use while several independent discussions start/stop from hardware buttons and automatically enter RemoteLab. Adding receivers must add separate sources, rather than sharing one global left/right namespace.
+- Implementation: an optional macOS/Linux recording component binds receiver identity plus channel to a lane and keypad command. Local WAV segments and submission manifests survive interruption; the existing Session/asset/message path owns analysis and delivery. It ships disabled and requires one-time software, permission, source and delivery configuration. See [the activation guide](../../docs/platform-skills/hardware-recording.md).
+- Evidence boundary: automated multi-stream capture and real HTTP submission tests use synthetic PCM and a fake Harness; CI compiles the macOS helper. Physical receiver/keypad compatibility and remote transcription are separate acceptance items, not inferred from these tests.
+
 ### 2026-10-01 — Show an opening, useful progress, and the final conclusion
 
 - Observed friction: Connector replies omit the first useful assistant message, while native Harness commentary mixes important findings with routine activity. Readers lack context unless they open the Web transcript.

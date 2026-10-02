@@ -3,6 +3,10 @@
 This document describes the shipped `v1` architecture. Historical proposals in
 `notes/` are useful context, but they do not override this contract.
 
+## Optional hardware recording
+
+`remotelab recording` provides instance-local keypad control and multi-receiver PCM capture on macOS/Linux. Each source is a receiver identity plus its channel, with an independent recording lifetime. `lib/recording/` owns private segmented WAV files, recovery, a local control socket, bounded submission retries and a user service; the included Swift/evdev helpers read only configured keypad events. The component ships disabled and uses the existing asset upload and Session message API, without adding a read/write execution capability to the read-only local-helper bridge. It records analysis admission as `submitted`, leaving Run completion and conversation delivery with the normal control plane. See [activation and host acceptance](platform-skills/hardware-recording.md).
+
 ## Product model
 
 RemoteLab has one interactive work object: the **Session**.
