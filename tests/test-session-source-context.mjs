@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from 'fs';
+import { rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -187,5 +188,6 @@ try {
   console.log('test-session-source-context: ok');
 } finally {
   await killAll();
-  rmSync(home, { recursive: true, force: true });
+  // Final background writes can race directory removal; retry only filesystem errors.
+  await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
