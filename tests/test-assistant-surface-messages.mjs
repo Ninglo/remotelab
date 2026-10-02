@@ -3,6 +3,7 @@ import { collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/as
 import { buildSessionDisplayEvents, buildEventBlockEvents } from '../chat/session-display-events.mjs';
 import { buildReplyPublicationPayload } from '../chat/reply-publication.mjs';
 import { publishLiveAssistantReplies, excludePublishedFinalReplies } from '../chat/native-final-publication.mjs';
+import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 
 const user = { seq: 1, type: 'message', role: 'user', content: 'Fix it' };
 const message = (seq, phase, content) => ({ seq, type: 'message', role: 'assistant', phase,
@@ -67,17 +68,43 @@ for (const connector of ['feishu', 'wechat', 'email']) {
   const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
   const options = { store, session: { sourceId: connector }, plan: { connector, sourceRouteId: 'test',
     target: { chatId: 'chat', messageId: 'inbound', threadId: 'topic', to: 'person@example.test' } } };
+  const deliveryExpected = connector === 'feishu'
+    ? expected.map((text, index) => `【${index === 2 ? '交付' : '进展'}】\n\n${text}`) : expected;
   await publishLiveAssistantReplies(record, history.slice(0, -1), options);
-  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), expected.slice(0, 2));
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected.slice(0, 2));
   assert.equal(record.deliveries.some(part => part.kind === 'reaction'), false, 'progress never finishes the temporary outcome reaction');
   record = JSON.parse(JSON.stringify(record)); // Restart/replay uses durable receipt state.
   await publishLiveAssistantReplies(record, history, options);
   await publishLiveAssistantReplies(record, history, options);
-  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), expected);
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected);
   assert.deepEqual(record.streamedSurfaceMessageIds, ['m2', 'm5', 'm8']);
   assert.deepEqual(record.streamedFinalReplyIds, ['m8']);
   assert.ok(record.deliveries.every(part => part.target.threadId === 'topic'));
   const pending = excludePublishedFinalReplies(history, record.streamedSurfaceMessageIds);
   assert.equal(buildReplyPublicationPayload(pending, {}, { includeSessionEntry: false }).text, '', 'settlement does not repeat streamed messages');
 }
+const feishuPlan = { connector: 'feishu', target: { chatId: 'chat' } };
+let legacyRecord = { key: 'legacy', runId: 'r', responseId: 'legacy-response', options: {}, deliveries: [] };
+await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, 'A direct answer')], {
+  store: { get: async () => legacyRecord, mutate: async (_key, fn) => { legacyRecord = fn(legacyRecord); } },
+  plan: feishuPlan,
+});
+assert.equal(legacyRecord.deliveries.length, 0, 'a phase-less direct answer waits for terminal result publication');
+await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, '<progress>Explicit progress</progress>')], {
+  store: { get: async () => legacyRecord, mutate: async (_key, fn) => { legacyRecord = fn(legacyRecord); } },
+  plan: feishuPlan,
+});
+assert.equal(legacyRecord.deliveries[0].text, '【进展】\n\nExplicit progress', 'explicit progress can still stream without a native phase');
+for (const surfaceKind of ['opening', 'progress', 'final']) {
+  const label = surfaceKind === 'final' ? '交付' : '进展';
+  assert.equal(buildReplyDeliveries(feishuPlan, { text: '【待你确认】\n请选择目标。' }, { surfaceKind })[0].text,
+    '【待你确认】\n请选择目标。', 'required input remains distinct from progress and results');
+  assert.equal(buildReplyDeliveries(feishuPlan, { text: '【交付】\n仍在迁移。' }, { surfaceKind })[0].text,
+    `【${label}】\n\n仍在迁移。`, 'the actual phase wins without duplicate labels');
+}
+assert.equal(buildReplyDeliveries(feishuPlan, { text: '' }, { surfaceKind: 'final' }).length, 0,
+  'empty answers never become label-only messages');
+assert.equal(buildReplyDeliveries(feishuPlan, { text: '通知' })[0].text, '通知', 'manual notices have no inferred phase');
+assert.equal(buildReplyDeliveries(feishuPlan, { text: '仍未完成。' }, { surfaceKind: 'final' })[0].text,
+  '【交付】\n\n仍未完成。', 'result publication never rewrites the task outcome');
 console.log('test-assistant-surface-messages: ok');

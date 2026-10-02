@@ -1686,7 +1686,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
     buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
       && !feishuOutcomeRequired
-      ? null : deliveryPlan, deliveryPayload, { requireFeishuOutcome: feishuOutcomeRequired
+      ? null : deliveryPlan, deliveryPayload, { surfaceKind: 'final', requireFeishuOutcome: feishuOutcomeRequired
         && (!record.streamedFinalReplyIds?.length || run.state !== 'completed'
           || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) })
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
@@ -1724,7 +1724,7 @@ async function settleNativeRequest(record, run) {
     await requests.mutate(root.key, current => {
       if ((current.nativeReplyDestinations || []).includes(ownDestination)) return current;
       return { ...current, nativeReplyDestinations: [...(current.nativeReplyDestinations || []), ownDestination],
-        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, destinationPayload)) };
+        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, destinationPayload, { surfaceKind: 'final' })) };
     });
     await requestRuntime.refresh(root.key);
   }
