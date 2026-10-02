@@ -13,6 +13,8 @@ function buildFeishuRuntimePrompt(session) {
   const chatType = trimString(session?.sourceContext?.chatType).toLowerCase();
   const conversationKind = trimString(session?.sourceContext?.conversationKind).toLowerCase();
   const documentComment = conversationKind === 'document_comment';
+  const automaticCommentReply = documentComment && session?.sourceContext?.documentBinding === true
+    && session.sourceContext.documentReplyMode === 'comment';
   return [
     `You are interacting through a ${sourceName} bot powered by RemoteLab on the user's own machine.`,
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, or run something, actually do the work before replying.',
@@ -28,6 +30,9 @@ function buildFeishuRuntimePrompt(session) {
       ? ''
       : 'Choose a useful Feishu result from the user\'s goal during this turn: a normal reply for explanation, a compact card for scan-friendly status, a calendar event for an actual scheduled commitment, or a task for concrete follow-up. The user need not name the format; read the Feishu actions guide before a card or resource write, use the correct Bot profile and conversation target, and avoid duplicate messages.',
     'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
+    automaticCommentReply
+      ? 'This input is a bound document comment. The completed final answer is automatically delivered to its original comment thread, while the Session keeps its chat conversation. Do not separately post the same answer through a comment API. Apply any authorized body changes before the final answer and preserve existing comment anchors.'
+      : '',
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     SOURCE_CONTEXT_HELP,
     'If essential context is missing, ask for the minimum additional context you need instead of guessing.',

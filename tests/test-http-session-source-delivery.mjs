@@ -366,6 +366,35 @@ try {
   }, 'request-scoped group-root reply');
   assert.deepEqual(currentRootReply.target, currentRootDelivery.target,
     'the durable request snapshot must retain the selected mode instead of the old Session topic');
+  const documentTarget = { connector: 'feishu', sourceRouteId: 'bound-bot', target: {
+    conversationKind: 'document_comment', fileToken: 'bound-doc', fileType: 'docx', commentId: 'bound-comment', replyId: 'human-reply',
+  } };
+  const documentInput = {
+    requestId: 'bound-document-reply', text: 'Answer this document comment in plain text.',
+    tool: 'fake-codex', model: 'fake-model', sourceDelivery: documentTarget,
+    sourceContext: { connector: 'feishu', sourceRouteId: 'bound-bot',
+      conversationKind: 'document_comment', documentBinding: true, documentReplyMode: 'comment',
+      fileToken: 'bound-doc', fileType: 'docx', commentId: 'bound-comment', replyId: 'human-reply' },
+  };
+  const documentSubmitted = await connectorRequest('POST', `/api/sessions/${boundId}/messages`, documentInput);
+  assert.equal(documentSubmitted.status, 202);
+  const documentReply = await waitFor(async () => {
+    const result = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
+    return result.body.deliveries.find(item => item.runId === documentSubmitted.body.run.id && item.kind === 'content');
+  }, 'bound document final reply');
+  assert.deepEqual(documentReply.target, documentTarget.target, 'completed model output addresses the original document comment');
+  assert.equal(documentReply.text, 'fixture reply for delivery');
+  assert.deepEqual((await request('GET', `/api/sessions/${boundId}`)).body.session.conversation, conversation,
+    'comment processing keeps the same Session and its chat conversation');
+  const documentReplay = await connectorRequest('POST', `/api/sessions/${boundId}/messages`, documentInput);
+  assert.equal(documentReplay.body.duplicate, true);
+  assert.equal(documentReplay.body.run.id, documentSubmitted.body.run.id);
+  const documentWrongTarget = await connectorRequest('POST', `/api/sessions/${boundId}/messages`, {
+    ...documentInput, requestId: 'bound-document-wrong-target',
+    sourceDelivery: { ...documentTarget, target: { ...documentTarget.target, commentId: 'other-comment' } },
+  });
+  assert.equal(documentWrongTarget.status, 400, 'document admission cannot reply to a different comment');
+  console.log('PASS: bound document input executes in the original Session and publishes only to its comment');
   const crossed = await request('POST', `/api/sessions/${boundId}/messages`, {
     requestId: 'crossed-route', text: 'Do not move the conversation.',
     sourceDelivery: { ...conversation, sourceRouteId: 'different-bot' },

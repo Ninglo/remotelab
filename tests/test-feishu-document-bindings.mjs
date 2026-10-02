@@ -25,6 +25,18 @@ assert.match(candidates[0].payload.text, /Meta ID：feishu-comment:[a-f0-9]{24}/
 assert.doesNotMatch(candidates[0].payload.text, /commentId|replyId|fileToken|\"relation\"|human|bot/);
 assert.equal(candidates[0].payload.requestId, candidates[0].payload.sourceContext.commentMetaId);
 assert.equal(candidates[0].payload.sourceContext.commentId, 'c');
+const automatic = commentCandidates({ ...binding, replyMode: 'comment' }, comments, { seen: {} }, { openId: 'bot' });
+assert.equal(automatic.length, 1);
+assert.deepEqual(automatic[0].payload.sourceDelivery, {
+  connector: 'feishu', sourceRouteId: 'bot', target: {
+    conversationKind: 'document_comment', fileToken: 'doc', fileType: 'docx', commentId: 'c', replyId: 'new',
+  },
+});
+assert.equal(automatic[0].payload.sourceContext.documentReplyMode, 'comment');
+assert.match(automatic[0].payload.text, /文档：https:\/\/example.feishu.cn\/docx\/doc/);
+assert.match(automatic[0].payload.text, /不要另行调用评论回复 API/);
+assert.match(automatic[0].payload.text, /保留评论锚点/);
+assert.equal(candidates[0].payload.sourceDelivery, undefined, 'legacy manual-reply bindings retain their route');
 assert.ok(state.seen['c:old']);
 assert.ok(state.seen['c:own']);
 assert.throws(() => commentCandidates(binding, comments, state, {}), /identity/);

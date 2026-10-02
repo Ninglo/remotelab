@@ -1423,7 +1423,9 @@ async function buildManagerTurnContextSlots(session, options = {}) {
       + (priorBoards.length ? `Recent task snapshots (resume only if the current user request continues that task): ${JSON.stringify(priorBoards.map(task => task.board))}` : ''),
     ));
   }
-  const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
+  const sourceRuntimePrompt = buildSourceRuntimePrompt({ ...session,
+    sourceContext: normalizeSourceContext(options.sourceContext, Infinity) || session.sourceContext,
+  });
   if (sourceRuntimePrompt) {
     slots.push(createModelContextSlot(
       'source_runtime',

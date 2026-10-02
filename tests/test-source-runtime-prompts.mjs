@@ -18,6 +18,14 @@ const feishuCommentPrompt = buildSourceRuntimePrompt({
 assert.match(feishuCommentPrompt, /document-comment reply/i);
 assert.match(feishuCommentPrompt, /markdown formatting is not rendered/i);
 assert.doesNotMatch(feishuCommentPrompt, /standard LaTeX/i);
+const automaticCommentPrompt = buildSourceRuntimePrompt({
+  sourceId: 'feishu', sourceContext: { conversationKind: 'document_comment',
+    documentBinding: true, documentReplyMode: 'comment' },
+});
+assert.match(automaticCommentPrompt, /automatically delivered to its original comment thread/);
+assert.match(automaticCommentPrompt, /Do not separately post/);
+assert.doesNotMatch(feishuCommentPrompt, /automatically delivered/,
+  'legacy manual comment workflows keep their existing reply contract');
 
 const wechatPrompt = buildSourceRuntimePrompt({ sourceId: 'wechat', sourceName: 'WeChat' });
 assert.match(wechatPrompt, /WeChat/, 'wechat source id should map to the WeChat runtime prompt');

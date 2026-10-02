@@ -65,6 +65,16 @@ const baseSession = {
 
 const memoryRootPattern = String.raw`(?:~\/\.remotelab\/memory|\/.*\/\.remotelab\/instances\/[^/\s]+\/memory)`;
 
+const boundCommentPrompt = await buildPrompt('bound-comment-prompt', {
+  ...baseSession, sourceId: 'feishu', sourceContext: { chatType: 'group' },
+}, '解释原文中的指标。', 'codex', 'codex', null, {
+  sourceContext: { conversationKind: 'document_comment', documentBinding: true, documentReplyMode: 'comment' },
+});
+assert.match(boundCommentPrompt, /document-comment reply/);
+assert.match(boundCommentPrompt, /automatically delivered to its original comment thread/);
+assert.doesNotMatch(boundCommentPrompt, /markdown will be rendered as Feishu\/Lark rich text/,
+  'the current document input must select its reply surface even inside a group Session');
+
 const freshPrompt = await buildPrompt(
   'session-test-1',
   baseSession,
