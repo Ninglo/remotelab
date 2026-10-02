@@ -1,4 +1,55 @@
 /* ---- Input area ---- */
+.mobile-voice-hold, .composer-action-btn.mobile-voice-mode, .mobile-voice-panel { display: none; }
+#msgInput[hidden], .mobile-voice-mode[hidden] { display: none; }
+@media (max-width: 767px) {
+  .input-wrapper.has-mobile-voice-capture { overflow: visible; }
+  .voice-btn, .mobile-voice-hold {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .voice-btn { min-width: 44px; min-height: 44px; }
+  .voice-btn.mobile-voice-hidden { display: none; }
+  .mobile-voice-hold:not([hidden]) {
+    display: block;
+    width: 100%;
+    min-height: 56px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    color: var(--text);
+    font: inherit;
+    font-weight: 500;
+  }
+  .mobile-voice-hold:active:not(:disabled) { background: var(--border); }
+  .mobile-voice-hold:disabled { opacity: 0.55; }
+  .mobile-voice-mode:not([hidden]) { display: inline-flex; min-width: 44px; min-height: 44px; font-size: 22px; }
+  .mobile-voice-panel:not([hidden]) {
+    display: block;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg);
+    box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+  }
+  .mobile-voice-heading { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; font-weight: 500; }
+  .mobile-voice-level { display: flex; align-items: center; gap: 3px; height: 20px; margin-left: auto; }
+  .mobile-voice-level i { width: 3px; height: calc(4px + var(--voice-level, 0) * 12px); border-radius: 2px; background: var(--text-secondary); transition: height 0.1s; }
+  .mobile-voice-level i:nth-child(2) { height: calc(4px + var(--voice-level, 0) * 16px); }
+  #mobileVoiceDuration { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .mobile-voice-transcript { margin: 10px 0; max-height: 96px; overflow: auto; white-space: pre-wrap; color: var(--text-secondary); font-size: 14px; }
+  .mobile-voice-choices { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+  .mobile-voice-choices button { min-height: 48px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary); color: var(--text); font: inherit; font-size: 14px; }
+  .mobile-voice-choices button.selected { border-color: var(--accent); background: var(--border); }
+  #mobileVoiceRelease { color: var(--text-muted); font-size: 12px; text-align: center; }
+}
+
 .input-area {
   flex-shrink: 0;
   padding: 0 var(--chat-gutter) 10px;

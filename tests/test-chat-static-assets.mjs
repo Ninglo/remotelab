@@ -430,6 +430,18 @@ async function main() {
       voiceShortcut: { enabled: true, binding: 'Ctrl+Shift+KeyV' },
     });
     assert.equal(crossPersonVoicePatch.status, 403, 'one Person must not change another Person’s voice shortcut');
+    const ownMobileMode = await request(port, 'PATCH', '/api/people/person_alpha', { mobileInputMode: 'voice' });
+    assert.equal(ownMobileMode.status, 200);
+    const modePeople = JSON.parse(ownMobileMode.text).people;
+    assert.equal(modePeople.find((person) => person.id === 'person_alpha').preferences.mobileInputMode, 'voice');
+    assert.equal(modePeople.find((person) => person.id === 'person_beta').preferences.mobileInputMode, 'text');
+    assert.equal((await request(port, 'PATCH', '/api/people/person_alpha', { mobileInputMode: 'voice' },
+      { Cookie: secondPersonCookie })).status, 403, 'mobile mode belongs to the authenticated Person');
+    assert.equal((await request(port, 'PATCH', '/api/people/person_alpha', { mobileInputMode: 'invalid' })).status, 400);
+    const modeReadback = await request(port, 'GET', '/api/people');
+    assert.equal(JSON.parse(modeReadback.text).people.find((person) => person.id === 'person_alpha').preferences.mobileInputMode, 'voice');
+    const typedMode = await request(port, 'PATCH', '/api/people/person_alpha', { mobileInputMode: 'text' });
+    assert.equal(JSON.parse(typedMode.text).people.find((person) => person.id === 'person_alpha').preferences.mobileInputMode, 'text');
     const invalidVoicePatch = await request(port, 'PATCH', '/api/people/person_alpha', {
       voiceShortcut: { enabled: true, binding: 'KeyV' },
     });

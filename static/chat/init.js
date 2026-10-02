@@ -365,6 +365,7 @@ async function initApp() {
 
   const authInfo = await resolveInitialAuthInfo();
   currentPerson = authInfo?.person ? { ...authInfo.person } : currentPerson;
+  window.remotelabRefreshMobileVoiceUi?.({ preferences: true });
 
   syncAddToolModal();
   syncForkButton();
