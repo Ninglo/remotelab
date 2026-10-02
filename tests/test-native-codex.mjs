@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { createCodexDriver } from '../chat/native/codex.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function harness(options = {}) {
+function harness(options = {}, onQuestion) {
   const sent = [], events = [], settled = [], errors = [];
-  const driver = createCodexDriver({ send: value => sent.push(value), onEvent: value => events.push(value), onSettled: value => settled.push(value), onError: error => errors.push(error), options, cwd: '/tmp' });
+  const driver = createCodexDriver({ send: value => sent.push(value), onEvent: value => events.push(value), onSettled: value => settled.push(value), onError: error => errors.push(error), onQuestion, options, cwd: '/tmp' });
   const reply = (method, result, error) => {
     const request = sent.findLast(value => value.method === method);
     assert.ok(request, `expected ${method}`);
@@ -89,6 +89,7 @@ function harness(options = {}) {
   h.driver.handle({ id: 901, method: 'item/permissions/requestApproval', params: {} });
   assert.deepEqual(h.sent.find(value => value.id === 901)?.result.permissions, {});
   h.driver.handle({ id: 902, method: 'item/tool/requestUserInput', params: {} });
+  await tick();
   assert.deepEqual(h.sent.find(value => value.id === 902)?.result, { answers: {} });
   h.driver.handle({ id: 903, method: 'execCommandApproval', params: {} });
   assert.equal(h.sent.find(value => value.id === 903)?.result.decision, 'abort', 'legacy approval must use a valid native denial');
@@ -116,6 +117,40 @@ function harness(options = {}) {
   assert.equal(h.settled.length, 0, 'child thread completion must not finish the parent');
   h.notify('turn/completed', { turn: { id: 'turn-1', status: 'interrupted', items: [] } });
   assert.equal(h.settled[0].status, 'interrupted');
+  h.driver.close();
+}
+{
+  let reply, request;
+  const h = harness({}, value => { request = value; return new Promise(resolve => { reply = resolve; }); });
+  await h.start();
+  h.driver.handle({ id: 910, method: 'item/tool/requestUserInput', params: { questions: [{ id: 'format', question: 'Format?' }] } });
+  await tick();
+  assert.equal(h.sent.some(m => m.id === 910), false, 'question must remain pending until user answer or bounded fallback');
+  assert.equal(request.protocol, 'codex');
+  reply({ answers: { format: ['Detailed'] } }); await tick();
+  assert.deepEqual(h.sent.find(m => m.id === 910).result, { answers: { format: { answers: ['Detailed'] } } });
+  assert.equal(h.errors.length, 0);
+  h.driver.close();
+}
+{
+  let resolveAnswer;
+  const h = harness({}, () => new Promise(resolve => { resolveAnswer = resolve; }));
+  await h.start();
+  const questionItem = { id: 'async-question', type: 'agentMessage', delivery: 'async', phase: 'final_answer',
+    text: 'Format?', questions: [{ title: 'Format?', options: ['Brief', 'Detailed'] }] };
+  h.notify('item/started', { item: questionItem });
+  h.notify('item/completed', { item: questionItem });
+  h.notify('item/completed', { item: questionItem });
+  await tick();
+  assert.ok(!h.events.some(e => e.item?.id === 'async-question'), 'async questions use the structured question projection, not a duplicate final');
+  h.notify('turn/completed', { turn: { id: 'turn-1', status: 'completed', items: [] } });
+  assert.equal(h.settled.length, 0, 'native host must stay alive for the question even after async inference finishes');
+  resolveAnswer({ answers: { '0': ['Detailed'] }, resolutions: [{ key: '0', origin: 'user' }] }); await tick();
+  const followup = h.sent.findLast(e => e.method === 'turn/start');
+  assert.match(followup.params.input[0].text, /Format\?: Detailed/);
+  h.reply('turn/start', { turn: { id: 'turn-2', status: 'inProgress' } }); await tick();
+  h.notify('turn/completed', { turn: { id: 'turn-2', status: 'completed', items: [] } }); await tick();
+  assert.equal(h.settled.length, 1);
   h.driver.close();
 }
 console.log('test-native-codex: ok');

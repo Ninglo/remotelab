@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequestStore } from '../chat/requests.mjs';
 import { createNativeInputServer } from '../chat/native-input-transport.mjs';
-import { createNativeRequestDispatcher } from '../chat/native-request-dispatch.mjs';
+import { canForwardNativeRequest, createNativeRequestDispatcher } from '../chat/native-request-dispatch.mjs';
+
+assert.equal(canForwardNativeRequest({ key: 'reply', options: { nativeQuestionId: 'question' } }, { key: 'head', options: { internalOperation: 'trigger_delivery' } }), true, 'explicit answers may return to a question raised during internal work');
+assert.equal(canForwardNativeRequest({ key: 'reply', options: {} }, { key: 'head', options: { internalOperation: 'trigger_delivery' } }), false);
 
 const root = await mkdtemp(join(tmpdir(), 'native-dispatch-test-'));
 const store = createRequestStore(join(root, 'requests'));

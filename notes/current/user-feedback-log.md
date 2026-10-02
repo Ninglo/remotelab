@@ -23,10 +23,10 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ### 2026-10-02 — Expose native questions with a bounded fallback
 
-- Requested behavior: users should see the agent's question and options and have a chance to answer. A configurable timeout/default strategy should let ordinary work continue when nobody responds, rather than keeping it pending indefinitely.
-- Current evidence: the Codex native driver immediately returns empty `answers` for `item/tool/requestUserInput`; the Claude argument builder disables `AskUserQuestion`. This is not an existing frontend choice workflow, and no fixed first-option selection rule was found in these paths.
-- Design proposal, not implementation: project one durable question event to Web and the bound chat, accept a choice or free text, show the default and deadline before waiting, and resolve exactly once from a user answer or timeout. Report timeout choices as defaults, never as a human answer. Without an explicit default, return a timeout outcome rather than inventing a choice; authorization requests must not gain consent through silence.
-- Scope: inspection and product discussion only. Native question handling, frontend controls, timeout duration, and Feishu buttons remain unimplemented. Keep this separate from the simple rule-based message-label trial.
+- Requested behavior: display numbered native question options in the existing conversation. Exact in-range numbers select options; all other text is a custom answer. Use a fixed five-minute timeout for this first trial and support both Codex and Claude.
+- Implementation: the detached native host publishes questions to Web and the bound chat, captures answers before ordinary steering, and returns them through each Harness's native protocol. Codex Plan-mode blocking requests and Default-mode async question messages share the same resolver; Claude uses the stdio `can_use_tool` callback for `AskUserQuestion` only. Other permission requests remain denied.
+- Fallback: disclose option 1 and the deadline before waiting. Each unanswered question defaults after five minutes; a question without options returns unanswered. Persist whether the answer came from a user or timeout, and identify timeout values to the Harness as system defaults rather than user consent. Multiple questions appear in order; Claude multi-select accepts `1,2`. Native secret inputs are not collected through ordinary chat.
+- Evidence: real installed Codex and Claude CLIs against local model fixtures accept numbered and custom answers. Scenario coverage checks the bound Feishu conversation, visible Web projection, durable origins, timeout/cancellation races, controller restart, reply replay and exactly one native answer. Ordinary group usability still needs the trial; no new buttons, per-person settings, label prompts or question classifiers were added.
 
 ### 2026-10-02 — Distinguish progress from delivered results in Feishu
 

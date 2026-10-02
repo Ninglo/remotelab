@@ -2,6 +2,7 @@ import { requireConversation, resolveSessionDeliveryPlan } from './session-conve
 import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
 import { canForwardNativeRequest, createNativeRequestDispatcher } from './native-request-dispatch.mjs';
+import { readNativeQuestion } from './native-user-questions.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
 import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
@@ -3117,6 +3118,7 @@ const deliveryIssueObserver = createSourceDeliveryIssueObserver();
 const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
   prepareInput: async (record, manifest) => {
+    if (record.options?.nativeQuestionId) return { text: record.text, context: '' };
     const attachments = await materializeFileAssetAttachments(record.images || []);
     const session = await findSessionMeta(record.sessionId);
     const tool = await getToolDefinitionAsync(manifest.tool);
@@ -3172,13 +3174,25 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   options = applyQuickSessionRuntime(session, options);
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
-  const runtimeSelection = await resolveSessionRuntimeSelection(session, {
-    ...options,
-    autoRoutingText: savedImages.length
-      ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
-      : text?.trim(),
-  });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  const activeRequest = requestRuntime.active(sessionId)[0];
+  const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
+  const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
+  if (priorRequest?.options?.nativeQuestionId) options = { ...options, nativeQuestionId: priorRequest.options.nativeQuestionId };
+  else if (!priorRequest && activeNative && !options.internalOperation && !savedImages.length) {
+    const question = await readNativeQuestion(runDir(activeRequest.runId));
+    if (question?.state === 'pending') options = { ...options, nativeQuestionId: question.id };
+  }
+  // A question answer belongs to the awaiting Harness. It must not invoke Auto
+  // routing or switch models just because the reply is a short number.
+  const runtimeSelection = options.nativeQuestionId && (priorRequest || activeRequest)?.runtimeSelection
+    ? { ...(priorRequest || activeRequest).runtimeSelection }
+    : await resolveSessionRuntimeSelection(session, {
+      ...options,
+      autoRoutingText: savedImages.length
+        ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
+        : text?.trim(),
+    });
   const workboardPeople = await loadWorkboardOptIns();
   const workboardEnabled = isWorkboardTurnEnabled(session, options, workboardPeople);
   const personOptedIn = isWorkboardOptedIn(session, options, workboardPeople);
@@ -3187,14 +3201,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       optInPersonId: options.viewPersonId,
     }) || session;
   }
-  const activeRequest = requestRuntime.active(sessionId)[0];
-  const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
-  const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
   if (!priorRequest && activeNative && !options.internalOperation &&
     (options.freshThread || ['tool', 'model', 'effort', 'thinking'].some(key => (runtimeSelection[key] || '') !== (activeRequest.runtimeSelection?.[key] || '')))) {
     throw Object.assign(new Error('当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。'), { code: 'SESSION_BUSY' });
   }
-  if (workboardEnabled && !priorRequest && !options.internalOperation && options.recordUserMessage !== false) {
+  if (workboardEnabled && !priorRequest && !options.internalOperation && !options.nativeQuestionId && options.recordUserMessage !== false) {
     const checklistGateReceipt = await resolveJevChecklistGate(savedImages.length
       ? `${text?.trim() || ''}\n[${savedImages.length} attachment(s)]`
       : text?.trim());

@@ -8,8 +8,9 @@ const now = () => new Date().toISOString();
 export function canForwardNativeRequest(record, head) {
   if (!record || !head || record.key === head.key || record.preparedAt
       || record.options?.freshThread || head.cancelRequestedAt
-      || record.options?.sourceContext?.documentBinding || head.options?.sourceContext?.documentBinding
-      || record.options?.internalOperation || head.options?.internalOperation) return false;
+      || record.options?.internalOperation) return false;
+  if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding
+      || head.options?.sourceContext?.documentBinding || head.options?.internalOperation)) return false;
   const a = record.runtimeSelection || {};
   const b = head.runtimeSelection || {};
   return ['tool', 'model', 'effort', 'thinking'].every(key => (a[key] || '') === (b[key] || ''));
@@ -64,7 +65,9 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         const text = typeof prepared === 'string' ? prepared : prepared.text;
         const context = typeof prepared === 'string' ? '' : prepared.context || '';
         record = await store.mutate(record.key, current => ({ ...current,
-          nativeDispatchRunId: head.runId, nativeInput: { id: record.requestId, text }, nativeContext: context,
+          nativeDispatchRunId: head.runId, nativeInput: { id: record.requestId, text,
+            ...(record.options?.nativeQuestionId ? { questionId: record.options.nativeQuestionId, answerText: record.text } : {}),
+          }, nativeContext: context,
           nativeInputBaseSeq: current.nativeInputBaseSeq ?? manifest.forkBaseSeq ?? 0,
         }));
         await changed(record.key);

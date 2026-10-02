@@ -13,10 +13,10 @@ test('Claude adapter projects RemoteLab preflight activity into the thought bloc
   assert.equal(events[0]?.content, 'Session start preflight passed.');
 });
 
-function harness(options = {}) {
+function harness(options = {}, onQuestion) {
   const sent = [], events = [], settled = [], errors = [];
   const driver = createClaudeDriver({ send: (m) => sent.push(m), onEvent: (m) => events.push(m),
-    onSettled: (m) => settled.push(m), onError: (e) => errors.push(e), options });
+    onSettled: (m) => settled.push(m), onError: (e) => errors.push(e), onQuestion, options });
   const queued = (input) => driver.handle({ type: 'command_lifecycle', command_uuid: input.uuid, state: 'queued' });
   const replay = (input) => driver.handle({ ...input, isReplay: true });
   const result = (input, extra = {}) => driver.handle({ type: 'result', subtype: 'success', is_error: false,
@@ -145,4 +145,25 @@ test('Claude complete thinking blocks do not repeat streamed thinking or lose a 
   adapter = restored;
   feed({ type: 'assistant', message: { id: 'm', content: [{ type: 'thinking', thinking: 'Think carefully now' }] } });
   assert.equal(parsed.filter((e) => e.type === 'reasoning').map((e) => e.content).join(''), 'Think carefully now');
+});
+
+
+test('Claude native questions wait and return native updatedInput without approving other tools', async () => {
+  let resolveAnswer;
+  const h = harness({}, () => new Promise(resolve => { resolveAnswer = resolve; }));
+  assert.equal(h.driver.args[h.driver.args.indexOf('--permission-prompts') + 1], 'host');
+  assert.ok(!h.driver.args.includes('--disallowedTools'));
+  const questions = [{ question: 'Format?', options: [{ label: 'Brief' }, { label: 'Long' }] }];
+  h.driver.handle({ type: 'control_request', request_id: 'ask', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions } } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.sent.length, 0);
+  resolveAnswer({ answers: { 'Format?': ['Custom reply'] } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.sent[0], { type: 'control_response', response: { subtype: 'success', request_id: 'ask', response: {
+    behavior: 'allow', updatedInput: { questions, answers: { 'Format?': 'Custom reply' } },
+  } } });
+  h.driver.handle({ type: 'control_request', request_id: 'permission', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'rm example' } } });
+  assert.equal(h.sent.at(-1).response.response.behavior, 'deny');
+  assert.equal(h.errors.length, 0);
+  h.driver.close();
 });

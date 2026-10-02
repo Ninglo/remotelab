@@ -1,18 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { buildClaudeArgs } from '../adapters/claude.mjs';
+import { nativeQuestionAnswers } from '../native-user-questions.mjs';
 
 // Official streaming-input transport. Current CLIs acknowledge immediately via
 // command_lifecycle; --replay-user-messages is the older consumption receipt.
 // Result UUIDs (not queued_turn_count alone) decide whether all inputs drained.
 // https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode
-export function createClaudeDriver({ send, onEvent = () => {}, onSettled = () => {}, onError = () => {}, options = {} }) {
+export function createClaudeDriver({ send, onEvent = () => {}, onSettled = () => {}, onError = () => {}, onQuestion = async () => ({ answers: {} }), options = {} }) {
   const args = buildClaudeArgs('', {
     ...options,
+    nativeQuestions: true,
     resume: options.claudeSessionId,
     dangerouslySkipPermissions: String(process.env.IS_SANDBOX || '').trim() === '1' && options.dangerouslySkipPermissions,
   });
   args.splice(1, 1);
-  args.push('--input-format', 'stream-json', '--replay-user-messages', '--include-partial-messages');
+  args.push('--input-format', 'stream-json', '--replay-user-messages', '--include-partial-messages', '--permission-prompt-tool', 'stdio');
   const inputs = new Map();
   const byUuid = new Map();
   const controls = new Map();
@@ -82,6 +84,20 @@ export function createClaudeDriver({ send, onEvent = () => {}, onSettled = () =>
         return;
       }
       if (message.type === 'control_request') {
+        if (message.request?.subtype === 'can_use_tool') {
+          const respond = response => { if (!closed) send({ type: 'control_response', response: { subtype: 'success', request_id: message.request_id, response } }); };
+          if (message.request.tool_name === 'AskUserQuestion') {
+            const input = message.request.input || {};
+            void Promise.resolve().then(() => onQuestion({ id: message.request_id, protocol: 'claude', questions: input.questions }))
+              .then(result => result.cancelled ? null : respond({ behavior: 'allow', updatedInput: { ...input,
+                answers: Object.fromEntries(Object.entries(nativeQuestionAnswers(result)).map(([key, values]) => [key, values.join(', ')])),
+              } })).catch(error => { if (!closed) onError(error); });
+          } else {
+            // Enabling the question callback must not grant other tool permissions.
+            respond({ behavior: 'deny', message: 'RemoteLab does not provide interactive tool approval.' });
+          }
+          return;
+        }
         // Permissions and other interactive requests must never be silently
         // approved by the transport. Existing unattended permission flags still
         // apply; an unexpected interactive request is surfaced as unsupported.

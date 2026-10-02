@@ -59,6 +59,34 @@ async function awaitAnswer(sessionId, requestId) {
 }
 try {
   await boot();
+  const questionSession = await rpc('create');
+  const questioning = await accept(questionSession.id, 'question-root', 'ASK_NATIVE_QUESTION');
+  let questionClaim;
+  await until(async () => { questionClaim = await rpc('claim', { connector: 'feishu' }); return questionClaim; }, 'native question is published in same Feishu conversation');
+  assert.match(questionClaim.delivery.text, /^【进展】/);
+  assert.match(questionClaim.delivery.text, /1\. 简短/);
+  assert.match(questionClaim.delivery.text, /5 分钟/);
+  assert.equal(questionClaim.delivery.target.chatId, 'same-chat');
+  await rpc('complete', questionClaim.delivery.id, questionClaim.leaseId, { externalId: 'question-message' });
+  await killController(); await boot();
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'restart must not republish the pending question');
+  const questionReplyOptions = { ...options('question-answer'), model: 'irrelevant-auto-snapshot' };
+  await rpc('accept', questionSession.id, '2', [], questionReplyOptions);
+  await until(async () => (await receipt(questioning.run.id, 'question-answer'))?.state === 'accepted', 'native question answer gets a durable receipt');
+  const answerReceipt = await receipt(questioning.run.id, 'question-answer');
+  assert.equal(answerReceipt.result.mode, 'question_answer');
+  assert.deepEqual((await logs()).find(e => e.kind === 'question-answer').result, { answers: { format: { answers: ['详细'] } } });
+  assert.equal((await logs()).filter(e => e.runId === questioning.run.id && e.kind === 'turn/steer').length, 0, 'numeric answer returns to the question tool, not turn/steer');
+  assert.equal((await rpc('accept', questionSession.id, '2', [], questionReplyOptions)).duplicate, true, 'answer replay retains admission fingerprint after question expires');
+  await awaitAnswer(questionSession.id, 'question-root');
+  await killController(); await boot();
+  assert.equal((await logs()).filter(e => e.kind === 'question-answer').length, 1, 'restart cannot repeat the native tool response');
+  let questionFinal;
+  await until(async () => { questionFinal = await rpc('claim', { connector: 'feishu' }); return questionFinal; }, 'question run delivers its result');
+  assert.equal(questionFinal.delivery.text, '【交付】\n\ndurable native answer');
+  await rpc('complete', questionFinal.delivery.id, questionFinal.leaseId, { externalId: 'question-result' });
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null);
+  await evidence('PASS: numbered question shown in same Feishu chat; controller restart preserves pending choice, and duplicate reply reaches native tool exactly once.');
   const earlySession = await rpc('create');
   const early = await accept(earlySession.id, 'early-final-root', 'Keep the native execution open');
   await until(async () => (await logs()).some(event => event.runId === early.run.id && event.kind === 'turn/start'), 'early-final turn started');

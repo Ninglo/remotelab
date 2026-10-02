@@ -23,6 +23,7 @@ lines.on('line', line => {
   const request = JSON.parse(line);
   const { method, params = {}, id } = request;
   const text = (params.input || []).map(value => value.text || '').join('\n');
+  if (id === 'question-request' && request.result) { log({ kind: 'question-answer', result: request.result }); finish(); return; }
   log({ kind: method, text, clientId: params.clientUserMessageId || null, expectedTurnId: params.expectedTurnId });
   if (method === 'initialize') emit({ id, result: {} });
   else if (method === 'thread/start' || method === 'thread/resume') emit({ id, result: { thread: { id: 'native-thread' } } });
@@ -30,6 +31,10 @@ lines.on('line', line => {
     activeTurn = `turn-${++nextTurn}`;
     emit({ id, result: { turn: { id: activeTurn, status: 'inProgress' } } });
     notify('turn/started', { turn: { id: activeTurn, status: 'inProgress' } });
+    if (text.includes('ASK_NATIVE_QUESTION')) emit({ id: 'question-request', method: 'item/tool/requestUserInput', params: {
+      threadId: 'native-thread', turnId: activeTurn, itemId: 'question-tool', isBlocking: true,
+      questions: [{ id: 'format', question: '选择输出形式？', header: '形式', options: [{ label: '简短', description: '摘要' }, { label: '详细', description: '完整内容' }] }],
+    } });
   } else if (method === 'turn/steer') {
     if (text.includes('REJECT_NATIVE_INPUT')) {
       emit({ id, error: { code: -32602, message: 'Input exceeds maximum length' } });

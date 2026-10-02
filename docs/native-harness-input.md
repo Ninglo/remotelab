@@ -32,6 +32,38 @@ visible in the Session queue, and can be removed until execution or native
 handoff starts. Admission and dispatch share the request compatibility checks;
 native capability alone does not mean a follow-up can join the active request.
 
+## Answering native questions
+
+Codex and Claude questions use the existing Web conversation and bound chat,
+without a separate selection widget. Reply `1`, `2`, or `3` to select an in-range
+option. Any other text, including an out-of-range number, is a custom answer.
+Claude multi-select questions also accept comma-separated numbers such as `1,2`.
+A request with several questions presents them in order.
+
+Each question states its first option as the fallback before waiting. After five
+minutes without an answer, the native host chooses that option, publishes the
+timeout outcome, and records it as a system default rather than a user answer.
+A question without options returns unanswered. Native tool replies also identify
+timeout defaults, so silence cannot be mistaken for user consent. Native secret
+inputs are not accepted through ordinary chat. Permission approval requests are
+separate from question tools and remain denied.
+
+Codex Plan-mode `item/tool/requestUserInput` requests receive JSON-RPC answers.
+Default-mode `request_user_input_async` emits an async `agentMessage` with
+structured questions; its answers are delivered as native user input, using
+steering while running or a new turn after inference finishes. Claude
+`AskUserQuestion` uses the stdio `can_use_tool` callback with `updatedInput.answers`.
+The native host remains available until questions and their resulting work finish.
+No instructions asking the model to manage these surfaces are added.
+
+The detached host owns the deadline and `native-question.json` pointer, and
+journals answers in `native-questions/`. Controller restarts preserve the waiting
+question and deadline. Input receipt identity prevents a repeated reply from
+answering twice; captured answers arriving after their question expires are not
+forwarded as unrelated instructions. Stopping the run cancels pending questions.
+These guarantees cover controller restart, not replaying tools after a native
+process crash.
+
 ## Ownership and recovery
 
 The main process owns request identity, source context, attachments, history and
@@ -118,7 +150,9 @@ REMOTELAB_NATIVE_CLAUDE_BIN=/path/to/claude \
 npm run test:native-installed
 ```
 
-Validated versions include Codex CLI 0.153.4, Pi 0.85.0, Claude Code 2.1.267,
+Question handling is additionally validated against Codex CLI 0.159.2 and
+Claude Code 2.1.282 with loopback model fixtures. General input validation
+includes Codex CLI 0.153.4, Pi 0.85.0, Claude Code 2.1.267,
 and Antigravity CLI 1.2.7 (installed and auth-gated on 2026-09-20). Tests
 establish actual CLI protocol behavior against simulated model responses; they
 are not production Feishu or live-model acceptance tests.
@@ -126,8 +160,7 @@ Older Claude versions can acknowledge at the replay/consumption boundary rather
 than immediately; the driver still writes later inputs without waiting on that
 acknowledgement. Older CLI versions in general are not certified by these tests.
 
-Production activation is intentionally deferred for this change. No active
-service or connector was restarted during implementation. Before activation,
+Activation is an instance-specific step. Before activation,
 retain the known-working checkout and a maintenance shell, advance the intended
 instance to the verified main commit, restart only that instance, and check a
 real follow-up while its Harness is running. Do not treat publishing the source
@@ -137,5 +170,6 @@ Official protocol references:
 
 - [Codex App Server](https://developers.openai.com/codex/app-server)
 - [Pi RPC](https://pi.dev/docs/latest/rpc)
+- [Claude native questions](https://code.claude.com/docs/en/agent-sdk/user-input)
 - [Claude streaming input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)
 - [Antigravity headless mode](https://antigravity.google/docs/cli/headless/)
