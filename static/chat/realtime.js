@@ -486,6 +486,7 @@ function handleWsMessage(msg) {
       if (typeof requestPeople === "function") {
         requestPeople().then(() => {
           if (typeof renderPeopleSettings === "function") void renderPeopleSettings();
+          window.remotelabRefreshMobileVoiceUi?.({ preferences: true });
         }).catch((error) => {
           console.warn("[people_updated] failed to refresh people:", error?.message || error);
         });

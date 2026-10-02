@@ -43,6 +43,8 @@ vm.runInContext(source, context);
 assert.equal(button.disabled, false, 'configured voice should work in an enabled new-Session composer');
 listeners.get('click')();
 assert.equal(micRequests, 1, 'new-Session voice input should request the microphone');
+await window.remotelabVoiceCapture.cancel();
+assert.equal(window.remotelabVoiceCapture.getState().phase, 'idle', 'permission requests must be cancellable');
 
 sessionId = 'session-1';
 session = { id: sessionId };

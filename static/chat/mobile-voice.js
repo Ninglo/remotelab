@@ -1,0 +1,325 @@
+"use strict";
+
+(function attachMobileVoice(globalScope) {
+  const doc = globalScope.document;
+  const mic = doc?.getElementById("voiceBtn");
+  const hold = doc?.getElementById("mobileVoiceHold");
+  const modeButton = doc?.getElementById("mobileVoiceMode");
+  const panel = doc?.getElementById("mobileVoicePanel");
+  const status = doc?.getElementById("mobileVoiceStatus");
+  const duration = doc?.getElementById("mobileVoiceDuration");
+  const transcript = doc?.getElementById("mobileVoiceTranscript");
+  const cancel = doc?.getElementById("mobileVoiceCancel");
+  const edit = doc?.getElementById("mobileVoiceEdit");
+  const release = doc?.getElementById("mobileVoiceRelease");
+  const preferenceStatus = doc?.getElementById("mobileVoicePreferenceStatus");
+  const controller = globalScope.remotelabVoiceCapture;
+  if (!mic || !hold || !modeButton || !panel || !controller || typeof msgInput === "undefined") return;
+  const media = globalScope.matchMedia("(max-width: 767px)");
+  let personId = "";
+  let mode = "text";
+  let savingMode = false;
+  let gesture = null;
+  let capture = null;
+  let clock = null;
+  let ignoreClickUntil = 0;
+  const t = (key) => globalScope.remotelabT ? globalScope.remotelabT(key) : key;
+  const currentPersonId = () => typeof currentPerson !== "undefined" ? currentPerson?.id || "" : "";
+  const sessionId = () => typeof currentSessionId !== "undefined" ? currentSessionId || "" : "";
+  const isMobile = () => media.matches && !(typeof shareSnapshotMode !== "undefined" && shareSnapshotMode);
+  const hasAttachments = () => typeof getComposerAttachmentsSnapshot === "function"
+    && getComposerAttachmentsSnapshot(typeof resolveActiveComposerSessionId === "function" ? resolveActiveComposerSessionId() : sessionId()).length > 0;
+  const setText = (element, text) => { if (element.textContent !== text) element.textContent = text; };
+
+  function savedMode() {
+    const people = typeof getPeopleDirectory === "function" ? getPeopleDirectory() : [];
+    const person = people.find((entry) => entry.id === currentPersonId())
+      || (typeof currentPerson !== "undefined" ? currentPerson : null);
+    return person?.preferences?.mobileInputMode === "voice" ? "voice" : "text";
+  }
+
+  function showNotice(message = "") {
+    preferenceStatus.textContent = message;
+    preferenceStatus.hidden = !message;
+  }
+
+  function render({ preferences = false } = {}) {
+    if (personId !== currentPersonId() || (preferences && !savingMode)) {
+      personId = currentPersonId();
+      mode = savedMode();
+    }
+    if (capture && !isCurrent(capture)) { discardGesture(); cancelCapture(); return; }
+    if (capture && hasAttachments()) capture.autoSend = false;
+    const mobile = isMobile();
+    mic.closest(".input-wrapper")?.classList.toggle("has-mobile-voice-capture", mobile && !!capture);
+    const voiceMode = mobile && mode === "voice"
+      && (capture ? !capture.baseText.trim() && !capture.hadAttachments : !msgInput.value.trim() && !hasAttachments());
+    hold.hidden = !voiceMode;
+    hold.disabled = mic.disabled || !!capture?.released;
+    hold.textContent = t(capture?.released ? "voice.mobile.recognizing" : "voice.mobile.hold");
+    msgInput.hidden = voiceMode;
+    modeButton.hidden = !mobile || mode !== "voice";
+    modeButton.disabled = savingMode || !!capture;
+    mic.classList.toggle("mobile-voice-hidden", voiceMode);
+    if (mobile && !capture && controller.getState().phase === "idle") {
+      mic.title = t("voice.mobile.shortcut");
+      mic.setAttribute("aria-label", mic.title);
+    }
+    panel.hidden = !mobile || !capture;
+    if (!capture) return;
+    const state = controller.getState();
+    panel.style.setProperty("--voice-level", String(Math.min(1, Math.max(0, Number(state.voiceLevel) || 0))));
+    const ready = state.phase === "recording" || capture.completed;
+    const key = !ready && !capture.released ? "voice.mobile.preparing"
+      : capture.released ? "voice.mobile.recognizing"
+      : capture.choice === "cancel" ? "voice.mobile.releaseCancel"
+      : capture.choice === "edit" || !capture.autoSend ? "voice.mobile.releaseEdit" : "voice.mobile.releaseSend";
+    setText(status, t(key));
+    duration.textContent = capture.startedAt ? `${Math.floor(((capture.stoppedAt || Date.now()) - capture.startedAt) / 1000)}s` : "";
+    setText(transcript, msgInput.value.slice(capture.baseText.length).trim() || t("voice.mobile.listening"));
+    setText(release, t(capture.released ? "voice.mobile.wait" : "voice.mobile.slide"));
+    cancel.classList.toggle("selected", capture.choice === "cancel");
+    edit.classList.toggle("selected", capture.choice === "edit");
+  }
+
+  async function selectMode(next) {
+    if (!isMobile() || capture || savingMode || !currentPersonId()) return;
+    const previous = mode;
+    const owner = currentPersonId();
+    mode = next;
+    savingMode = true;
+    showNotice();
+    if (mode === "voice") msgInput.blur();
+    render();
+    try {
+      const result = await fetchJsonOrRedirect(`/api/people/${encodeURIComponent(owner)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobileInputMode: next }),
+      });
+      if (typeof replacePeopleDirectory === "function") replacePeopleDirectory(result.people);
+    } catch {
+      if (owner === currentPersonId()) {
+        mode = previous;
+        showNotice(t("voice.mobile.saveFailed"));
+      }
+    } finally {
+      savingMode = false;
+      render();
+      if (mode === "text" && owner === currentPersonId()) msgInput.focus({ preventScroll: true });
+    }
+  }
+
+  function isCurrent(target) {
+    return capture === target && target.personId === currentPersonId() && target.sessionId === sessionId()
+      && !doc.hidden && isMobile() && !msgInput.disabled;
+  }
+
+  function clearCapture() {
+    if (capture?.deadline) globalScope.clearTimeout(capture.deadline);
+    capture = null;
+    if (clock) globalScope.clearInterval(clock);
+    clock = null;
+    render();
+  }
+
+  function cancelCapture({ restore = false, notice = "" } = {}) {
+    const target = capture;
+    if (!target) return;
+    const text = target.baseText;
+    const sameComposer = target.sessionId === sessionId() && target.personId === currentPersonId();
+    clearCapture();
+    void controller.cancel();
+    if (restore && sameComposer) {
+      msgInput.value = text;
+      msgInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (notice) showNotice(notice);
+  }
+
+  async function finish(target) {
+    if (!isCurrent(target) || !target.completed || !target.released || target.finishing) return;
+    target.finishing = true;
+    const before = msgInput.value;
+    const review = globalScope.remotelabWaitForVoiceReview?.();
+    let result;
+    try {
+      if (review) result = await review;
+      // The final transcript event is emitted just before audio cleanup starts.
+      await Promise.resolve();
+      await controller.whenIdle();
+    } catch {
+      if (isCurrent(target)) cancelCapture({ notice: t("voice.mobile.failed") });
+      return;
+    }
+    if (!isCurrent(target)) return;
+    if (msgInput.value !== before && msgInput.value !== result?.after) {
+      cancelCapture();
+      return;
+    }
+    const shouldSend = target.autoSend && target.choice === "send" && msgInput.value.trim()
+      && !hasAttachments();
+    clearCapture();
+    if (shouldSend && typeof sendMessage === "function") sendMessage();
+    else {
+      msgInput.hidden = false;
+      msgInput.dispatchEvent(new Event("input", { bubbles: true }));
+      msgInput.focus({ preventScroll: true });
+    }
+  }
+
+  function beginCapture(targetGesture) {
+    if (gesture !== targetGesture || controller.getState().phase !== "idle") return;
+    targetGesture.started = true;
+    capture = {
+      personId: currentPersonId(), sessionId: sessionId(), baseText: msgInput.value,
+      hadAttachments: hasAttachments(), autoSend: !msgInput.value.trim() && !hasAttachments(),
+      choice: "send", released: false, completed: false, captureId: 0, startedAt: 0,
+    };
+    const target = capture;
+    showNotice();
+    msgInput.blur();
+    const starting = controller.start();
+    target.captureId = controller.getState().captureId;
+    void Promise.resolve(starting).catch(() => {
+      if (isCurrent(target)) cancelCapture({ notice: t("voice.mobile.failed") });
+    });
+    clock = globalScope.setInterval(render, 250);
+    render();
+  }
+
+  function discardGesture() {
+    if (gesture?.timer) globalScope.clearTimeout(gesture.timer);
+    gesture = null;
+  }
+
+  function pointerDown(event) {
+    if (!isMobile() || event.isPrimary === false || event.button > 0 || mic.disabled
+      || capture || controller.getState().phase !== "idle") return;
+    event.preventDefault();
+    ignoreClickUntil = 0;
+    const target = { pointerId: event.pointerId, element: event.currentTarget, started: false };
+    gesture = target;
+    try { target.element.setPointerCapture(event.pointerId); } catch {}
+    target.timer = globalScope.setTimeout(() => beginCapture(target), 300);
+  }
+
+  function inRegion(element, event) {
+    const rect = element.getBoundingClientRect();
+    return event.clientX >= rect.left - 12 && event.clientX <= rect.right + 12
+      && event.clientY >= rect.top - 12 && event.clientY <= rect.bottom + 12;
+  }
+
+  function pointerMove(event) {
+    if (gesture?.pointerId !== event.pointerId || !capture) return;
+    event.preventDefault();
+    capture.choice = inRegion(cancel, event) ? "cancel" : inRegion(edit, event) ? "edit" : "send";
+    render();
+  }
+
+  function pointerUp(event) {
+    if (gesture?.pointerId !== event.pointerId) return;
+    const wasLong = gesture.started;
+    discardGesture();
+    if (!wasLong) return;
+    event.preventDefault();
+    ignoreClickUntil = Date.now() + 800;
+    const target = capture;
+    if (!target) return;
+    if (target.choice === "cancel") return cancelCapture({ restore: true });
+    if (!target.completed && controller.getState().phase !== "recording") {
+      return cancelCapture({ restore: true, notice: t("voice.mobile.tryAgain") });
+    }
+    target.released = true;
+    target.stoppedAt = Date.now();
+    if (!target.completed) target.deadline = globalScope.setTimeout(() => {
+      if (capture === target) cancelCapture({ notice: t("voice.mobile.failed") });
+    }, 30000);
+    if (target.completed) void finish(target);
+    else void controller.stop().catch(() => {
+      if (isCurrent(target)) cancelCapture({ notice: t("voice.mobile.failed") });
+    });
+    render();
+  }
+
+  function pointerCancel(event) {
+    if (gesture?.pointerId !== event.pointerId) return;
+    discardGesture();
+    ignoreClickUntil = Date.now() + 800;
+    cancelCapture({ restore: true });
+  }
+
+  for (const button of [mic, hold]) {
+    button.addEventListener("pointerdown", pointerDown);
+    button.addEventListener("pointermove", pointerMove);
+    button.addEventListener("pointerup", pointerUp);
+    button.addEventListener("pointercancel", pointerCancel);
+    button.addEventListener("lostpointercapture", pointerCancel);
+    button.addEventListener("contextmenu", (event) => { if (isMobile()) event.preventDefault(); });
+    button.addEventListener("click", (event) => {
+      if (!isMobile()) return;
+      if (button === mic && !capture && controller.getState().phase !== "idle") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (Date.now() < ignoreClickUntil || capture) return;
+      if (button === mic) void selectMode("voice");
+      // Keyboard and screen-reader activation offers editable dictation without a hold gesture.
+      else if (event.detail === 0) void controller.start().catch(() => showNotice(t("voice.mobile.failed")));
+    }, true);
+  }
+  modeButton.addEventListener("click", () => { void selectMode("text"); });
+  cancel.addEventListener("click", () => { discardGesture(); cancelCapture({ restore: true }); });
+  edit.addEventListener("click", () => {
+    if (!capture) return;
+    capture.choice = "edit";
+    if (capture.released) render();
+  });
+  doc.getElementById("sendBtn")?.addEventListener("click", (event) => {
+    if (capture) { event.preventDefault(); event.stopImmediatePropagation(); }
+  }, true);
+  msgInput.addEventListener("keydown", (event) => {
+    if (capture && event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault(); event.stopImmediatePropagation();
+    }
+  });
+  msgInput.addEventListener("input", (event) => {
+    if (capture && event.isTrusted) cancelCapture();
+    render();
+  });
+
+  globalScope.addEventListener("remotelab:voice-state-change", (event) => {
+    if (capture) {
+      if (!isCurrent(capture)) {
+        discardGesture();
+        cancelCapture();
+      } else if (event.detail.phase === "recording" && !capture.startedAt) {
+        capture.startedAt = Date.now();
+        globalScope.navigator.vibrate?.(15);
+      } else if (event.detail.phase === "idle" && !capture.completed) {
+        cancelCapture({ notice: t("voice.mobile.failed") });
+      }
+    }
+    render();
+  });
+  globalScope.addEventListener("remotelab:voice-transcript-complete", (event) => {
+    const target = capture;
+    if (!target || target.captureId !== event.detail?.captureId || !isCurrent(target)) return;
+    target.completed = true;
+    if (target.deadline) globalScope.clearTimeout(target.deadline);
+    if (target.released) void finish(target);
+    render();
+  });
+  function interrupt() {
+    discardGesture();
+    cancelCapture();
+  }
+  doc.addEventListener("visibilitychange", () => { if (doc.hidden) interrupt(); });
+  doc.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && capture) { event.preventDefault(); discardGesture(); cancelCapture({ restore: true }); }
+  });
+  globalScope.addEventListener("pagehide", interrupt);
+  globalScope.addEventListener("blur", interrupt);
+  globalScope.addEventListener("remotelab:localechange", render);
+  media.addEventListener("change", () => { if (!isMobile()) interrupt(); render(); });
+  globalScope.remotelabRefreshMobileVoiceUi = render;
+  render();
+})(window);

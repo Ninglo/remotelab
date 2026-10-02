@@ -28,6 +28,7 @@
     "chat/instance-settings.js",
     "chat/voice-input.js",
     "chat/voice-review.js",
+    "chat/mobile-voice.js",
     "chat/settings-ui.js",
     "chat/task-center.js",
     "chat/sidebar-ui.js",

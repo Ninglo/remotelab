@@ -33,6 +33,7 @@
     clientReady: false,
   });
   const activeVoiceCapture = {
+    captureId: 0,
     sessionId: "",
     phase: "idle",
     baseText: "",
@@ -58,6 +59,13 @@
     bufferedAudioBytes: 0,
   };
   let voiceButtonFlashTimer = null;
+  let voiceRequestGeneration = 0;
+  let voiceCleanupPromise = null;
+
+  function getVoiceCaptureState() {
+    const { captureId, sessionId, phase, baseText, transcript, voiceLevel } = activeVoiceCapture;
+    return { captureId, sessionId, phase, baseText, transcript, voiceLevel };
+  }
 
   const voiceBtn = globalScope.document?.getElementById("voiceBtn") || null;
   const voiceAvailabilityStatus = globalScope.document?.getElementById("voiceAvailabilityStatus") || null;
@@ -286,7 +294,7 @@
   }
 
   function isLiveVoiceCapturePhase(phase = activeVoiceCapture.phase) {
-    return phase === "connecting" || phase === "recording" || phase === "stopping";
+    return phase === "requesting" || phase === "connecting" || phase === "recording" || phase === "stopping";
   }
 
   function hasVoiceInputSupport() {
@@ -329,6 +337,7 @@
 
   function getVoiceButtonLabel() {
     switch (activeVoiceCapture.phase) {
+      case "requesting":
       case "connecting":
         return t("voice.button.connecting");
       case "recording":
@@ -387,6 +396,9 @@
     voiceBtn.setAttribute("aria-label", buttonLabel);
     syncVoiceButtonIcon();
     updateVoiceButtonText();
+    if (typeof globalScope.dispatchEvent === "function" && typeof CustomEvent === "function") {
+      globalScope.dispatchEvent(new CustomEvent("remotelab:voice-state-change", { detail: getVoiceCaptureState() }));
+    }
   }
 
   function resolveVoiceRelayUrl() {
@@ -491,6 +503,7 @@
     if (!transcript || !msgInput) return;
     globalScope.dispatchEvent(new CustomEvent("remotelab:voice-transcript-complete", {
       detail: {
+        captureId: activeVoiceCapture.captureId,
         transcript,
         composerText: msgInput.value,
         displayedTranscript: formatTranscriptForComposer(transcript),
@@ -727,6 +740,7 @@
   }
 
   function resetVoiceCaptureState() {
+    activeVoiceCapture.captureId = 0;
     activeVoiceCapture.sessionId = "";
     activeVoiceCapture.phase = "idle";
     activeVoiceCapture.baseText = "";
@@ -749,18 +763,20 @@
   }
 
   async function cleanupVoiceCapture() {
+    if (voiceCleanupPromise) return voiceCleanupPromise;
+    voiceRequestGeneration += 1;
     const relaySocket = activeVoiceCapture.relaySocket;
     activeVoiceCapture.relaySocket = null;
     if (relaySocket && relaySocket.readyState <= 1) {
       try { relaySocket.close(); } catch {}
     }
-    await disposeVoiceNodes();
-    resetVoiceCaptureState();
+    voiceCleanupPromise = disposeVoiceNodes().then(resetVoiceCaptureState);
+    try { await voiceCleanupPromise; } finally { voiceCleanupPromise = null; }
   }
 
   function markVoiceTransportReady() {
     activeVoiceCapture.relayReady = true;
-    if (!activeVoiceCapture.stopRequested && activeVoiceCapture.phase === "connecting") {
+    if (!activeVoiceCapture.stopRequested && activeVoiceCapture.phase === "connecting" && activeVoiceCapture.audioContext) {
       activeVoiceCapture.phase = "recording";
     }
     flushBufferedAudioFrames();
@@ -824,16 +840,19 @@
 
   function attachGatewayDirectSocketHandlers(gatewaySocket, config) {
     gatewaySocket.addEventListener("open", () => {
+      if (gatewaySocket !== activeVoiceCapture.relaySocket) return;
       const payload = buildGatewayDirectSessionUpdatePayload(config);
       console.info("[voice] Gateway direct socket opened", summarizeVoiceConfig(config));
       gatewaySocket.send(JSON.stringify(payload));
     });
 
     gatewaySocket.addEventListener("message", (event) => {
+      if (gatewaySocket !== activeVoiceCapture.relaySocket) return;
       void handleGatewayDirectVoiceMessage(event);
     });
 
     gatewaySocket.addEventListener("close", async (event) => {
+      if (gatewaySocket !== activeVoiceCapture.relaySocket) return;
       console.info("[voice] Gateway direct socket closed", {
         code: event?.code,
         reason: trimString(event?.reason),
@@ -846,6 +865,7 @@
     });
 
     gatewaySocket.addEventListener("error", async (event) => {
+      if (gatewaySocket !== activeVoiceCapture.relaySocket) return;
       console.error("[voice] Gateway direct socket transport error", event);
       if (!activeVoiceCapture.lastErrorMessage) {
         reportVoiceInputRuntimeStatus(t("voice.error.relayClosed"));
@@ -856,6 +876,7 @@
 
   async function startAudioStreaming() {
     if (!activeVoiceCapture.mediaStream) return;
+    const captureId = activeVoiceCapture.captureId;
     const AudioContextCtor = getAudioContextConstructor();
     if (!AudioContextCtor) {
       throw new Error("Voice input is not supported in this browser");
@@ -873,7 +894,7 @@
     if (hasAudioWorkletSupport() && typeof audioContext.audioWorklet?.addModule === "function") {
       try {
         await audioContext.audioWorklet.addModule(resolveVoiceWorkletModulePath());
-        if (!isLiveVoiceCapturePhase()) {
+        if (captureId !== activeVoiceCapture.captureId || !isLiveVoiceCapturePhase()) {
           try { await audioContext.close(); } catch {}
           return;
         }
@@ -918,6 +939,10 @@
       }
     }
 
+    if (captureId !== activeVoiceCapture.captureId || !isLiveVoiceCapturePhase()) {
+      try { await audioContext.close(); } catch {}
+      return;
+    }
     if (!captureNode) {
       if (typeof audioContext.createScriptProcessor !== "function") {
         throw new Error("Voice input audio processing is not supported in this browser");
@@ -951,9 +976,15 @@
       await audioContext.resume().catch(() => {});
     }
 
+    if (captureId !== activeVoiceCapture.captureId || !isLiveVoiceCapturePhase()) {
+      try { sourceNode.disconnect(); captureNode.disconnect(); await audioContext.close(); } catch {}
+      return;
+    }
+
     activeVoiceCapture.audioContext = audioContext;
     activeVoiceCapture.sourceNode = sourceNode;
     activeVoiceCapture.silenceNode = silenceNode;
+    if (activeVoiceCapture.relayReady && activeVoiceCapture.phase === "connecting") activeVoiceCapture.phase = "recording";
     refreshVoiceButtonUi();
   }
 
@@ -986,19 +1017,36 @@
     const config = readStoredVoiceInputConfig();
     if (getVoiceUnavailableReason(config)) return;
     const sessionId = typeof currentSessionId === "string" ? currentSessionId : "";
-
-    const mediaStream = await globalScope.navigator.mediaDevices.getUserMedia({
+    const baseText = msgInput.value || "";
+    const captureId = ++voiceRequestGeneration;
+    activeVoiceCapture.captureId = captureId;
+    activeVoiceCapture.sessionId = sessionId;
+    activeVoiceCapture.baseText = baseText;
+    activeVoiceCapture.phase = "requesting";
+    refreshVoiceButtonUi();
+    let mediaStream;
+    try { mediaStream = await globalScope.navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
         noiseSuppression: true,
         echoCancellation: true,
         autoGainControl: true,
       },
-    });
+    }); } catch (error) {
+      if (captureId !== voiceRequestGeneration) return;
+      await cleanupVoiceCapture();
+      throw error;
+    }
+    if (captureId !== voiceRequestGeneration || sessionId !== (typeof currentSessionId === "string" ? currentSessionId : "")
+      || msgInput.disabled || msgInput.value !== baseText) {
+      for (const track of mediaStream.getTracks()) track.stop();
+      if (captureId === voiceRequestGeneration) await cleanupVoiceCapture();
+      return;
+    }
 
     activeVoiceCapture.sessionId = sessionId;
     activeVoiceCapture.phase = "connecting";
-    activeVoiceCapture.baseText = msgInput.value || "";
+    activeVoiceCapture.baseText = baseText;
     activeVoiceCapture.transcript = "";
     activeVoiceCapture.lastErrorMessage = "";
     activeVoiceCapture.mediaStream = mediaStream;
@@ -1026,11 +1074,13 @@
       activeVoiceCapture.relaySocket = relaySocket;
 
       relaySocket.addEventListener("open", () => {
+        if (relaySocket !== activeVoiceCapture.relaySocket) return;
         console.info("[voice] Relay socket opened");
         relaySocket.send(JSON.stringify({ type: "start" }));
       });
 
       relaySocket.addEventListener("message", async (event) => {
+        if (relaySocket !== activeVoiceCapture.relaySocket) return;
         let payload = null;
         try {
           payload = JSON.parse(String(event?.data || ""));
@@ -1081,6 +1131,7 @@
       });
 
       relaySocket.addEventListener("close", async (event) => {
+        if (relaySocket !== activeVoiceCapture.relaySocket) return;
         console.info("[voice] Relay socket closed", {
           code: event?.code,
           reason: trimString(event?.reason),
@@ -1093,6 +1144,7 @@
       });
 
       relaySocket.addEventListener("error", async (event) => {
+        if (relaySocket !== activeVoiceCapture.relaySocket) return;
         console.error("[voice] Relay socket transport error", event);
         if (!activeVoiceCapture.lastErrorMessage) {
           reportVoiceInputRuntimeStatus(t("voice.error.relayClosed"));
@@ -1102,6 +1154,7 @@
     }
 
     void startAudioStreaming().catch((error) => {
+      if (captureId !== activeVoiceCapture.captureId) return;
       console.warn("[voice] Failed to start audio streaming:", error?.message || error);
       reportVoiceInputRuntimeStatus(trimString(error?.message) || t("voice.error.relayClosed"));
       void cleanupVoiceCapture();
@@ -1122,6 +1175,13 @@
   }
 
   globalScope.remotelabGetVoiceInputConfig = readStoredVoiceInputConfig;
+  globalScope.remotelabVoiceCapture = {
+    getState: getVoiceCaptureState,
+    start: startVoiceCapture,
+    stop: stopVoiceCapture,
+    cancel: () => stopVoiceCapture({ abandon: true }),
+    whenIdle: () => voiceCleanupPromise || Promise.resolve(),
+  };
   globalScope.remotelabSetVoiceInputConfig = writeStoredVoiceInputConfig;
   globalScope.remotelabNormalizeVoiceInputConfig = normalizeVoiceInputConfig;
   globalScope.remotelabGetVoiceInputLanguageOptions = getVoiceInputLanguageOptions;

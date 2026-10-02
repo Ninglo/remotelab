@@ -21,6 +21,14 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-02 — Hold to speak and send on phones
+
+- Source: a direct mobile voice-input request followed by approval to try the researched interaction.
+- Observed friction: starting dictation, stopping it, and then sending are separate taps; the user wants to hold, speak, and release to submit recognized text.
+- Product implication: keep short taps and holds predictable. A temporary hold does not change the default mode; explicitly choosing the wide voice control persists for that Person's phone view, independently of desktop.
+- Implementation: reuse the recognizer and optional personal transcript cleanup, then send once after final recognition. Sliding or tapping Cancel discards the capture; Edit keeps a draft. Existing text or attachments require an explicit Send. Permission delays, interrupted touches, navigation, backgrounding, and stale recognition results cannot trigger a later automatic send.
+- Evidence boundary: automated touch/browser checks use a real browser audio-capture path with simulated recognition. Physical microphone quality, recognition accuracy, and thumb comfort still need a phone trial.
+
 ### 2026-10-02 — Reuse independent hardware discussion recording on every instance
 
 - Requested behavior: an ordinary office computer should continue normal use while several independent discussions start/stop from hardware buttons and automatically enter RemoteLab. Adding receivers must add separate sources, rather than sharing one global left/right namespace.

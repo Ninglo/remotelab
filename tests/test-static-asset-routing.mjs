@@ -90,8 +90,15 @@ async function startServer({ home, port }) {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  let startupOutput = '';
+  const collectOutput = (chunk) => { startupOutput = (startupOutput + chunk).slice(-8192); };
+  child.stdout.on('data', collectOutput);
+  child.stderr.on('data', collectOutput);
 
   await waitFor(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`Server exited before startup: ${child.exitCode ?? child.signalCode}\n${startupOutput}`);
+    }
     try {
       const res = await request(port, '/login', { Cookie: '' });
       return res.status === 200;
