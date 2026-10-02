@@ -39,6 +39,7 @@ ${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-sp
 - User Gmail and Agent Mailbox: \`remotelab gmail status --json\`, \`remotelab gmail --help\`, \`remotelab mail --help\`.
 - Bound connector actions: \`remotelab connector list --json\`.
 - Linked local helper: \`remotelab local-bridge status --json\` and \`remotelab local-bridge status --help\`.
+- Hardware recording: \`remotelab recording --help\`; setup guide \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/hardware-recording.md\`. Optional macOS/Linux capability; explicit receiver/channel/keypad bindings and device permissions are required.
 - Session and run inspection: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/session-debug.md\`.
 - Other installed capabilities: \`remotelab --help\`.
 
