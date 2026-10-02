@@ -13,6 +13,7 @@
   const cancel = doc?.getElementById("mobileVoiceCancel");
   const edit = doc?.getElementById("mobileVoiceEdit");
   const release = doc?.getElementById("mobileVoiceRelease");
+  const bars = Array.from(panel?.querySelectorAll(".mobile-voice-level i") || []);
   const preferenceStatus = doc?.getElementById("mobileVoicePreferenceStatus");
   const controller = globalScope.remotelabVoiceCapture;
   if (!mic || !hold || !modeButton || !panel || !controller || typeof msgInput === "undefined") return;
@@ -23,6 +24,7 @@
   let gesture = null;
   let capture = null;
   let clock = null;
+  let waveformFrame = null;
   let ignoreClickUntil = 0;
   const t = (key) => globalScope.remotelabT ? globalScope.remotelabT(key) : key;
   const currentPersonId = () => typeof currentPerson !== "undefined" ? currentPerson?.id || "" : "";
@@ -50,7 +52,6 @@
       mode = savedMode();
     }
     if (capture && !isCurrent(capture)) { discardGesture(); cancelCapture(); return; }
-    if (capture && hasAttachments()) capture.autoSend = false;
     const mobile = isMobile();
     const wrapper = mic.closest(".input-wrapper");
     wrapper?.classList.toggle("has-mobile-voice-capture", mobile && !!capture);
@@ -64,7 +65,7 @@
     const holdKey = !capture ? "voice.mobile.hold" : capture.released ? "voice.mobile.recognizing"
       : state.phase !== "recording" && !capture.completed ? "voice.mobile.preparing"
       : capture.choice === "cancel" ? "voice.mobile.releaseCancel"
-      : capture.choice === "edit" || !capture.autoSend ? "voice.mobile.releaseEdit" : "voice.mobile.releaseSend";
+      : capture.choice === "edit" ? "voice.mobile.releaseEdit" : "voice.mobile.releaseReview";
     setText(holdLabel, t(holdKey));
     hold.setAttribute("aria-label", t(capture ? holdKey : "voice.mobile.holdHint"));
     msgInput.hidden = voiceMode;
@@ -77,7 +78,6 @@
     }
     panel.hidden = !mobile || !capture;
     if (!capture) return;
-    panel.style.setProperty("--voice-level", String(Math.min(1, Math.max(0, Number(state.voiceLevel) || 0))));
     const ready = state.phase === "recording" || capture.completed;
     panel.classList.toggle("is-preparing", !ready && !capture.released);
     panel.classList.toggle("is-recognizing", capture.released);
@@ -85,7 +85,7 @@
     const key = !ready && !capture.released ? "voice.mobile.preparing"
       : capture.released ? "voice.mobile.recognizing"
       : capture.choice === "cancel" ? "voice.mobile.releaseCancel"
-      : capture.choice === "edit" || !capture.autoSend ? "voice.mobile.releaseEdit" : "voice.mobile.recording";
+      : capture.choice === "edit" ? "voice.mobile.releaseEdit" : "voice.mobile.recording";
     setText(status, t(key));
     duration.textContent = capture.startedAt ? `${Math.floor(((capture.stoppedAt || Date.now()) - capture.startedAt) / 1000)}s` : "";
     const spoken = msgInput.value.slice(capture.baseText.length).trim();
@@ -128,9 +128,45 @@
       && !doc.hidden && isMobile() && !msgInput.disabled;
   }
 
+  function stopWaveform() {
+    if (waveformFrame !== null) globalScope.cancelAnimationFrame(waveformFrame);
+    waveformFrame = null;
+  }
+
+  function startWaveform(target) {
+    if (!bars.length || !globalScope.requestAnimationFrame) return;
+    // A short history of microphone volume flows left; no generated pulse or random motion.
+    const history = Array(bars.length + 1).fill(0);
+    let previous = null, elapsed = 0, envelope = 0;
+    const draw = (time) => {
+      waveformFrame = null;
+      if (capture !== target || target.released) return;
+      const delta = Math.min(50, previous === null ? 16 : time - previous);
+      previous = time;
+      const state = controller.getState();
+      const volume = state.phase === "recording" ? Math.min(1, Math.max(0, Number(state.voiceLevel) || 0)) : 0;
+      const level = Math.max(0, (volume - 0.035) / 0.965);
+      envelope += (level - envelope) * (1 - Math.exp(-delta / (level > envelope ? 45 : 100)));
+      elapsed += delta;
+      while (elapsed >= 50) {
+        history.shift();
+        history.push(envelope);
+        elapsed -= 50;
+      }
+      bars.forEach((bar, index) => {
+        const amplitude = history[index] + (history[index + 1] - history[index]) * elapsed / 50;
+        bar.style.setProperty("--voice-bar-height", `${(4 + amplitude * 26).toFixed(2)}px`);
+      });
+      waveformFrame = globalScope.requestAnimationFrame(draw);
+    };
+    bars.forEach((bar) => bar.style.setProperty("--voice-bar-height", "4px"));
+    waveformFrame = globalScope.requestAnimationFrame(draw);
+  }
+
   function clearCapture() {
     if (capture?.deadline) globalScope.clearTimeout(capture.deadline);
     capture = null;
+    stopWaveform();
     if (clock) globalScope.clearInterval(clock);
     clock = null;
     render();
@@ -170,15 +206,10 @@
       cancelCapture();
       return;
     }
-    const shouldSend = target.autoSend && target.choice === "send" && msgInput.value.trim()
-      && !hasAttachments();
     clearCapture();
-    if (shouldSend && typeof sendMessage === "function") sendMessage();
-    else {
-      msgInput.hidden = false;
-      msgInput.dispatchEvent(new Event("input", { bubbles: true }));
-      msgInput.focus({ preventScroll: true });
-    }
+    msgInput.dispatchEvent(new Event("input", { bubbles: true }));
+    // Default review keeps the phone keyboard closed. Explicit Edit opens it.
+    if (target.choice === "edit") msgInput.focus({ preventScroll: true });
   }
 
   function beginCapture(targetGesture) {
@@ -186,8 +217,8 @@
     targetGesture.started = true;
     capture = {
       personId: currentPersonId(), sessionId: sessionId(), baseText: msgInput.value,
-      hadAttachments: hasAttachments(), autoSend: !msgInput.value.trim() && !hasAttachments(),
-      choice: "send", released: false, completed: false, captureId: 0, startedAt: 0,
+      hadAttachments: hasAttachments(),
+      choice: "review", released: false, completed: false, captureId: 0, startedAt: 0,
     };
     const target = capture;
     showNotice();
@@ -198,6 +229,7 @@
       if (isCurrent(target)) cancelCapture({ notice: t("voice.mobile.failed") });
     });
     clock = globalScope.setInterval(render, 250);
+    startWaveform(target);
     render();
   }
 
@@ -226,7 +258,7 @@
   function pointerMove(event) {
     if (gesture?.pointerId !== event.pointerId || !capture) return;
     event.preventDefault();
-    capture.choice = inRegion(cancel, event) ? "cancel" : inRegion(edit, event) ? "edit" : "send";
+    capture.choice = inRegion(cancel, event) ? "cancel" : inRegion(edit, event) ? "edit" : "review";
     render();
   }
 
@@ -244,6 +276,7 @@
       return cancelCapture({ restore: true, notice: t("voice.mobile.tryAgain") });
     }
     target.released = true;
+    stopWaveform();
     target.stoppedAt = Date.now();
     if (!target.completed) target.deadline = globalScope.setTimeout(() => {
       if (capture === target) cancelCapture({ notice: t("voice.mobile.failed") });

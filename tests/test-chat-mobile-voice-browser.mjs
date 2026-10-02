@@ -23,12 +23,27 @@ await writeFile(join(config, 'auth-sessions.json'), JSON.stringify({
 const probe = net.createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
 const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
 const baseUrl = `http://127.0.0.1:${port}`;
+// Chromium reads real varying-volume PCM through getUserMedia and the AudioWorklet.
+const audioFile = join(root, 'voice-envelope.wav');
+const sampleRate = 48000, audioFrames = sampleRate * 3;
+const audio = Buffer.alloc(44 + audioFrames * 2);
+audio.write('RIFF', 0); audio.writeUInt32LE(audio.length - 8, 4); audio.write('WAVEfmt ', 8);
+audio.writeUInt32LE(16, 16); audio.writeUInt16LE(1, 20); audio.writeUInt16LE(1, 22);
+audio.writeUInt32LE(sampleRate, 24); audio.writeUInt32LE(sampleRate * 2, 28);
+audio.writeUInt16LE(2, 32); audio.writeUInt16LE(16, 34); audio.write('data', 36); audio.writeUInt32LE(audioFrames * 2, 40);
+for (let index = 0; index < audioFrames; index++) {
+  const time = index / sampleRate;
+  const envelope = time < 0.4 || time > 1.5 ? 0 : 0.12 * Math.sin(Math.PI * (time - 0.4) / 1.1) ** 2;
+  audio.writeInt16LE(Math.round(32767 * envelope * Math.sin(2 * Math.PI * 220 * time)), 44 + index * 2);
+}
+await writeFile(audioFile, audio);
 const server = spawn(process.execPath, ['chat-server.mjs'], { cwd: resolve('.'), env: { ...process.env,
   CHAT_PORT: String(port), REMOTELAB_INSTANCE_ROOT: root, REMOTELAB_CONFIG_DIR: config,
   REMOTELAB_MEMORY_DIR: join(root, 'memory'), REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER: '1', SECURE_COOKIES: '0',
 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let serverOutput = '';
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-fake-device-for-media-stream',
+  '--use-fake-ui-for-media-stream', `--use-file-for-fake-audio-capture=${audioFile}`] });
 try {
   await new Promise((resolve, reject) => {
     const deadline = setTimeout(() => reject(new Error(`Server startup timeout: ${serverOutput}`)), 15000);
@@ -79,18 +94,38 @@ try {
   await page.reload(); await page.waitForFunction(() => !!window.remotelabRefreshMobileVoiceUi); await installTransport();
   assert.equal(await page.locator('#mobileVoiceHold').isVisible(), true, 'saved voice mode survives a real page reload');
   assert.ok((await page.locator('.input-wrapper').boundingBox()).height <= 85, 'voice mode is one compact composer row');
-  assert.equal(await page.locator('#sendBtn').isVisible(), false, 'release is the send action in empty voice mode');
+  assert.equal(await page.locator('#sendBtn').isVisible(), false, 'an empty voice composer has no text to send');
   await page.screenshot({ path: join(artifacts, 'mobile-voice-ready.png') });
   await startHold('#mobileVoiceHold');
   assert.equal(await page.locator('#mobileVoicePanel').isVisible(), true);
   const visiblePanel = await page.locator('#mobileVoicePanel').boundingBox();
   assert.ok(visiblePanel.y > 0 && visiblePanel.width <= 390);
+  const waveform = await page.evaluate(() => new Promise(resolve => {
+    const samples = []; let start;
+    function sample(time) {
+      start ??= time;
+      samples.push(Array.from(document.querySelectorAll('.mobile-voice-level i'), bar => parseFloat(getComputedStyle(bar).height)));
+      if (time - start >= 3200) resolve(samples); else requestAnimationFrame(sample);
+    }
+    requestAnimationFrame(sample);
+  }));
+  assert.ok(waveform.some(heights => Math.max(...heights) > 12), 'real captured sound raises the waveform');
+  assert.ok(waveform.some(heights => Math.max(...heights) - Math.min(...heights) > 5), 'volume history gives different bar heights');
+  assert.ok(waveform.some(heights => Math.max(...heights) < 4.5), 'captured silence settles to a quiet baseline');
   await page.screenshot({ path: join(artifacts, 'mobile-voice-recording.png') });
   await endHold(); await page.waitForFunction(() => window.__voiceStop === true);
   await page.evaluate(() => window.__voiceSocket.emit('message', { type: 'transcript', transcript: '检查' }));
   await page.evaluate(() => document.getElementById('sendBtn').click());
   assert.equal(await page.evaluate(() => window.__sent.length), 0);
-  await final('请帮我检查任务状态'); await page.waitForFunction(() => window.__sent.length === 1);
+  await final('请帮我检查任务状态'); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
+  assert.equal(await page.evaluate(() => window.__sent.length), 0, 'the final result waits for the user to check it');
+  assert.equal(await page.locator('#msgInput').inputValue(), '请帮我检查任务状态');
+  assert.equal(await page.evaluate(() => document.activeElement.id === 'msgInput'), false, 'review keeps the keyboard closed');
+  assert.equal(await page.locator('#sendBtn').isVisible(), true);
+  await page.screenshot({ path: join(artifacts, 'mobile-voice-review.png') });
+  await page.locator('#msgInput').fill('请帮我检查服务状态');
+  await page.locator('#sendBtn').tap();
+  assert.deepEqual(await page.evaluate(() => window.__sent), ['请帮我检查服务状态']);
 
   await startHold('#mobileVoiceHold');
   const cancelBox = await page.locator('#mobileVoiceCancel').boundingBox();
@@ -148,7 +183,7 @@ try {
   assert.equal(await page.locator('#mobileVoiceHold').isVisible(), false);
   assert.equal(await page.locator('#mobileVoiceMode').isVisible(), false);
   assert.deepEqual(errors, []);
-  console.log('test-chat-mobile-voice-browser: compact composer, 320/390/430px light/dark layouts, native touch cancel/edit, audio capture with simulated recognition, auto-send and persisted mode passed');
+  console.log('test-chat-mobile-voice-browser: real audio volume history, review/edit before manual send, 320/390/430px light/dark layouts, native touch cancel/edit and persisted mode passed (recognition simulated)');
 } finally {
   await browser.close();
   server.kill('SIGTERM'); if (server.exitCode === null && server.signalCode === null) await once(server, 'exit');

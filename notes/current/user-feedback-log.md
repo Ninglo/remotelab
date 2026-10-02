@@ -21,15 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
-### 2026-10-02 — Hold to speak and send on phones
+### 2026-10-02 — Hold to speak, review, and send on phones
 
 - Source: a direct mobile voice-input request followed by approval to try the researched interaction.
-- Observed friction: starting dictation, stopping it, and then sending are separate taps; the user wants to hold, speak, and release to submit recognized text.
+- Observed friction: starting and stopping dictation requires separate taps; the user initially wanted to hold, speak, and release to submit recognized text, then changed this to review before sending after the phone trial.
 - Product implication: keep short taps and holds predictable. A temporary hold does not change the default mode; explicitly choosing the wide voice control persists for that Person's phone view, independently of desktop.
-- Implementation: reuse the recognizer and optional personal transcript cleanup, then send once after final recognition. Sliding or tapping Cancel discards the capture; Edit keeps a draft. Existing text or attachments require an explicit Send. Permission delays, interrupted touches, navigation, backgrounding, and stale recognition results cannot trigger a later automatic send.
+- Implementation: reuse the recognizer and optional personal transcript cleanup, then keep the final text as an editable draft until explicit Send. Sliding or tapping Cancel discards the capture; Edit opens the draft for typing. Existing text and attachments stay in the composer. Permission delays, interrupted touches, navigation, backgrounding, and stale recognition results are guarded.
 - Evidence boundary: automated touch/browser checks use a real browser audio-capture path with simulated recognition. Physical microphone quality, recognition accuracy, and thumb comfort still need a phone trial.
 - First phone-trial feedback: speech reaches the conversation, but the recording surface looks cluttered and editing after automatic submission is unavailable. The user requested a visual refinement.
 - Refinement: one compact voice composer with a proper keyboard icon, an integrated recording surface, live audio bars, readable transcription, and explicit Cancel / Edit first choices. Editing still happens before submission; this slice does not introduce historical message editing. Browser acceptance covers 320/390/430px, light/dark, long text, and native slide gestures.
+- Follow-up phone feedback supersedes automatic submission: release should leave the recognized text in the composer for checking or editing, and only explicit Send submits it. Default review keeps the phone keyboard closed; choosing Edit opens it. Replace the synchronized bar scaling with a smoothly moving history of actual microphone volume; silence stays quiet. Automated checks cover varying-volume PCM through real browser capture, with recognition simulated.
 
 ### 2026-10-02 — Reuse independent hardware discussion recording on every instance
 
