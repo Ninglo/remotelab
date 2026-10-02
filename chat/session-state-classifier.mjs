@@ -4,6 +4,7 @@ import { readLastTurnEvents } from './history.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
 import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
+import { codexAccounts } from '../lib/codex-accounts.mjs';
 import {
   normalizeGeneratedSessionTitle,
   normalizeSessionDescription,
@@ -168,6 +169,12 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
   subEnv = applyProviderRuntimeEnv(tool, subEnv, {
     runtimeFamily,
   });
+  const account = runtimeFamily === 'codex-json'
+    ? await codexAccounts.acquireForRun({ command: resolvedCmd, model }) : null;
+  if (account) {
+    subEnv.CODEX_HOME = account.home;
+    if (account.id !== 'default') args.unshift('-c', 'cli_auth_credentials_store="file"');
+  }
 
   return new Promise((resolve, reject) => {
     const proc = spawn(resolvedCmd, args, {
@@ -175,6 +182,8 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
       env: subEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    account?.lease.setToolProcessId(proc.pid).catch(() => {});
+    proc.once('close', () => { account?.lease.release().catch(() => {}); });
     proc.stdin.end();
 
     const rl = createInterface({ input: proc.stdout });

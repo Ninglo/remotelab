@@ -3,6 +3,7 @@ import assert from 'assert/strict';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { Readable } from 'node:stream';
 
 import { handleCodexAuthRoutes } from '../chat/router-codex-auth-routes.mjs';
 
@@ -61,8 +62,9 @@ assert.equal(logoutCalls, 2, 'every authenticated person has full instance contr
 
 let switchCalls = 0;
 const switchResponse = createResponseCapture();
+const switchRequest = Readable.from([]); switchRequest.method = 'POST';
 await handleCodexAuthRoutes({
-  req: { method: 'POST' },
+  req: switchRequest,
   res: switchResponse.res,
   pathname: '/api/codex-auth/switch-account',
   authSession: { personId: 'person_primary' },
@@ -80,7 +82,7 @@ assert.equal(switchCalls, 1, 'account switch should be one server-side auth tran
 
 const settingsSource = readFileSync(join(repoRoot, 'static', 'chat', 'settings-ui.js'), 'utf8');
 assert.match(settingsSource, /id="settingsCodexAuthSwitchBtn"/);
-assert.match(settingsSource, /window\.confirm\(copy\.switchConfirm\)/);
+assert.doesNotMatch(settingsSource.slice(0, settingsSource.indexOf('function getPiAuthCopy()')), /window\.confirm\(copy\.switchConfirm\)/, 'switching saved accounts must not ask to clear credentials');
 assert.match(settingsSource, /fetchJsonOrRedirect\("\/api\/codex-auth\/switch-account"/);
 assert.match(settingsSource, /CODEX_AUTH_MUTATION_TIMEOUT_MS/);
 assert.match(settingsSource, /refreshCodexAuthStatus\(\{ force: true, includeUsage: false \}\)/);
