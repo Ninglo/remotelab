@@ -112,5 +112,39 @@ try {
   const secondJob = await pool.acquireForRun({ command: 'fake' });
   assert.notEqual(firstJob.id, secondJob.id, 'a free authorization runs concurrently instead of waiting behind a busy account');
   await firstJob.lease.release(); await secondJob.lease.release();
+
+  const waitingPool = new CodexAccounts({ root: join(root, 'waiting-pool'), defaultHome: home, query, now: () => now });
+  const waitingBackup = await waitingPool.add('Waiting backup');
+  responses.set(home, usage(100));
+  await waitingPool.policy(true);
+  const heldFirst = await waitingPool.acquireForRun({ command: 'fake' });
+  const heldSecond = await waitingPool.acquireForRun({ command: 'fake' });
+  assert.equal(heldSecond.id, waitingBackup.id);
+  await waitingPool.select(heldFirst.id);
+  let notifyWaiting;
+  const waiting = new Promise(resolve => { notifyWaiting = resolve; });
+  let cancelled = false;
+  const nextJob = waitingPool.acquireForRun({ command: 'fake', isCancelled: () => cancelled,
+    onWait: notifyWaiting });
+  await waiting;
+  // Keep the first account occupied and release only the other account after
+  // admission. The former waitForId path would remain stuck behind the first.
+  await heldSecond.lease.release();
+  let deadline;
+  try {
+    const resumed = await Promise.race([nextJob,
+      new Promise((_, reject) => { deadline = setTimeout(() => {
+        cancelled = true;
+        reject(new Error('Waiting job did not take the newly free account'));
+      }, 1000); })]);
+    assert.equal(resumed.id, heldSecond.id);
+    await resumed.lease.release();
+  } finally {
+    clearTimeout(deadline);
+    cancelled = true;
+    await heldFirst.lease.release();
+  }
+  await assert.rejects(waitingPool.acquireForRun({ command: 'fake', isCancelled: () => true }),
+    { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
   console.log('Codex account persistence, independent authorization, quota admission, retry classification and credential ownership passed');
 } finally { await rm(root, { recursive: true, force: true }); }

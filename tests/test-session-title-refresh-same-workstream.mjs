@@ -18,7 +18,8 @@ const fakeCodexPath = join(tempBin, 'fake-codex');
 writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
-const prompt = process.argv[process.argv.length - 1] || '';
+const promptArg = process.argv[process.argv.length - 1] || '';
+const prompt = promptArg === '-' ? require('fs').readFileSync(0, 'utf8') : promptArg;
 const isLabelPrompt = prompt.includes('You are naming a developer session');
 const isWorkstreamPrompt = prompt.includes('You are RemoteLab\\'s hidden workstream assessor for the CURRENT session');
 const wantsTitle = prompt.includes('"title"');

@@ -53,7 +53,8 @@ writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
 const fs = require('fs');
-const prompt = process.argv[process.argv.length - 1] || '';
+const promptArg = process.argv[process.argv.length - 1] || '';
+const prompt = promptArg === '-' ? require('fs').readFileSync(0, 'utf8') : promptArg;
 if (process.env.PROMPT_LOG_FILE) {
   fs.appendFileSync(process.env.PROMPT_LOG_FILE, prompt + String.fromCharCode(10) + '---PROMPT---' + String.fromCharCode(10), 'utf8');
 }
