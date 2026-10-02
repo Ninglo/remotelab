@@ -81,7 +81,12 @@ try {
       async stopActiveLogin() {}, async logout() { logoutCalls++; },
     }) });
   const adding = await facade.switchAccount(); assert.equal(adding.deviceLoginActive, true);
-  const completed = await facade.getStatus(); assert.equal(completed.loggedIn, true);
+  const beforeCompletion = queries;
+  const [completed, secondStatus, thirdStatus] = await Promise.all([facade.getStatus(), facade.getStatus(), facade.getStatus()]);
+  assert.equal(queries - beforeCompletion, 1, "concurrent polling completes one login once");
+  assert.equal(completed.accountRevision, secondStatus.accountRevision);
+  assert.equal(secondStatus.accountRevision, thirdStatus.accountRevision);
+  assert.equal(completed.loggedIn, true);
   const current = await pool.account();
   assert.equal(completed.accountRevision, codexAccountRevision((await readCodexAuthMetadata(current.home)).revision, current.account));
   await pool.observeUsage(current.id, usage(75));

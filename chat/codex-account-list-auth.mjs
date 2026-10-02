@@ -5,8 +5,14 @@ import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
 export function createCodexAccountListAuthManager({ createManager, pool = codexAccounts,
   resolveCommand = () => resolveToolCommandPathAsync('codex') } = {}) {
   let login = null;
+  let operationTail = Promise.resolve();
+  const serialize = operation => {
+    const result = operationTail.then(operation, operation);
+    operationTail = result.catch(() => {});
+    return result;
+  };
   const withList = async status => ({ ...status, accountList: await pool.list() });
-  async function getStatus() {
+  async function readStatus() {
     if (login) {
       const status = await login.manager.getStatus();
       if (status.loggedIn) {
@@ -14,7 +20,7 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
         await pool.inspect(await pool.account(completed.id), await resolveCommand(), completed.lease);
         await pool.select(completed.id);
         login = null; await completed.lease.release();
-        return getStatus();
+        return readStatus();
       }
       if (!status.deviceLoginActive) { await login.lease.release(); login = null; }
       return withList(status);
@@ -29,8 +35,8 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
       account: loggedIn ? current.account : null, accountRevision: codexAccountRevision(metadata.revision, current.account),
       checkedAt: current.checkedAt || new Date().toISOString(), error: '' });
   }
-  async function startDeviceLogin({ label = '', accountId, restart = false } = {}) {
-    if (login && !restart) return getStatus();
+  async function startLogin({ label = '', accountId, restart = false } = {}) {
+    if (login && !restart) return readStatus();
     if (login) { await login.manager.stopActiveLogin(); await login.lease.release(); login = null; }
     const account = accountId ? await pool.account(accountId) : await pool.add(label);
     const lease = await pool.lease(account, { wait: false });
@@ -43,7 +49,8 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     catch (error) { login = null; await lease.release(); throw error; }
   }
   return {
-    getStatus, startDeviceLogin,
+    getStatus: () => serialize(readStatus),
+    startDeviceLogin: options => serialize(() => startLogin(options)),
     async getRateLimits() {
       if (login) return { status: 'unavailable', buckets: [], accountRevision: '' };
       const account = await pool.refresh(null, await resolveCommand());
@@ -51,18 +58,18 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     },
     async listAccounts({ refresh = false } = {}) { return pool.list({ refresh, command: await resolveCommand() }); },
     async setAccountPolicy(autoSwitch) { return pool.policy(autoSwitch); },
-    async switchAccount({ accountId } = {}) {
-      if (!accountId) return startDeviceLogin({ restart: true });
-      await pool.select(accountId); return getStatus();
-    },
-    async logout() {
+    switchAccount: ({ accountId } = {}) => serialize(async () => {
+      if (!accountId) return startLogin({ restart: true });
+      await pool.select(accountId); return readStatus();
+    }),
+    logout: () => serialize(async () => {
       const account = await pool.account(); const lease = await pool.lease(account, { wait: false });
       if (!lease) throw new Error('这个账号正在执行任务，请等任务结束后退出');
       try {
         const manager = createManager({ resolveHome: () => account.home, resolveCommand,
           credentialStore: account.id === 'default' ? undefined : 'file' });
-        await manager.logout(); await pool.inspect(account, await resolveCommand(), lease); return getStatus();
+        await manager.logout(); await pool.inspect(account, await resolveCommand(), lease); return readStatus();
       } finally { await lease.release(); }
-    },
+    }),
   };
 }
