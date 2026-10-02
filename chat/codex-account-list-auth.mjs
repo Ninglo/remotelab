@@ -1,5 +1,5 @@
 import { codexAccounts } from '../lib/codex-accounts.mjs';
-import { readCodexAuthMetadata } from '../lib/codex-account-status.mjs';
+import { readCodexAuthMetadata, codexAccountRevision } from '../lib/codex-account-status.mjs';
 import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
 
 export function createCodexAccountListAuthManager({ createManager, pool = codexAccounts,
@@ -26,7 +26,7 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     const loggedIn = !!current.account && (!!metadata.revision || current.id === 'default');
     return withList({ available: Boolean(await resolveCommand()), loggedIn,
       phase: loggedIn ? 'authenticated' : 'idle', deviceLoginActive: false,
-      account: loggedIn ? current.account : null, accountRevision: metadata.revision || current.usage?.accountRevision || '',
+      account: loggedIn ? current.account : null, accountRevision: codexAccountRevision(metadata.revision, current.account),
       checkedAt: current.checkedAt || new Date().toISOString(), error: '' });
   }
   async function startDeviceLogin({ label = '', accountId, restart = false } = {}) {
@@ -36,6 +36,7 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     const lease = await pool.lease(account, { wait: false });
     if (!lease) throw new Error('这个账号正在执行任务，请等任务结束后重新登录');
     const manager = createManager({ resolveHome: () => account.home, resolveCommand,
+      onProcess: child => lease.setToolProcessId(child.pid),
       credentialStore: account.id === 'default' ? undefined : 'file' });
     login = { id: account.id, manager, lease };
     try { return withList(await manager.startDeviceLogin({ restart: true })); }

@@ -118,6 +118,7 @@ export function createCodexAuthManager({
   baseEnv = () => process.env,
   now = () => Date.now(),
   credentialStore,
+  onProcess,
 } = {}) {
   let activeChild = null;
   let generation = 0;
@@ -162,6 +163,7 @@ export function createCodexAuthManager({
     return {
       command,
       credentialStore,
+      onProcess,
       env: {
         ...baseEnv(),
         HOME: resolveMachineAccountHomeDir(),
@@ -295,6 +297,7 @@ export function createCodexAuthManager({
           env: runtime.env,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
+        await onProcess?.(activeChild);
       } catch (error) {
         activeChild = null;
         state = { ...state, phase: 'failed', error: error.message || 'Failed to start Codex login' };

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexAccounts, subscriptionAvailability, isSubscriptionExhausted } from '../lib/codex-accounts.mjs';
 import { createCodexAccountListAuthManager } from '../chat/codex-account-list-auth.mjs';
+import { codexAccountRevision, readCodexAuthMetadata } from '../lib/codex-account-status.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'remotelab-account-list-'));
 const home = join(root, 'legacy'); await mkdir(join(home, 'sessions'), { recursive: true });
@@ -30,8 +31,9 @@ const query = async ({ env, includeRateLimits, credentialStore }) => {
   if (env.CODEX_HOME !== home) assert.equal(credentialStore, 'file');
   const limits = responses.get(env.CODEX_HOME);
   if (limits instanceof Error) throw limits;
-  return { account: { type: 'chatgpt', name: 'Test', email: 'test@example.invalid', planType: 'pro' },
-    usage: limits || usage(100), accountRevision: 'revision', checkedAt: stamp };
+  const account = { type: 'chatgpt', name: 'Test', email: 'test@example.invalid', planType: 'pro' };
+  return { account, usage: limits || usage(100),
+    accountRevision: codexAccountRevision((await readCodexAuthMetadata(env.CODEX_HOME)).revision, account), checkedAt: stamp };
 };
 const pool = new CodexAccounts({ root: join(root, 'pool'), defaultHome: home, query, now: () => now });
 try {
@@ -80,6 +82,11 @@ try {
     }) });
   const adding = await facade.switchAccount(); assert.equal(adding.deviceLoginActive, true);
   const completed = await facade.getStatus(); assert.equal(completed.loggedIn, true);
+  const current = await pool.account();
+  assert.equal(completed.accountRevision, codexAccountRevision((await readCodexAuthMetadata(current.home)).revision, current.account));
+  await pool.observeUsage(current.id, usage(75));
+  assert.equal((await facade.getRateLimits()).accountRevision, (await facade.getStatus()).accountRevision,
+    'live quota and the saved account share the same credential revision');
   assert.equal(logoutCalls, 0, 'adding a second account never logs out the first');
   await facade.switchAccount({ accountId: backup.id }); assert.equal(logoutCalls, 0);
   assert.equal((await pool.read()).activeId, backup.id);
