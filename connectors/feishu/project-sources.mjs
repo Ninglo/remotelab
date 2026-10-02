@@ -32,7 +32,16 @@ export async function loadProjectSources(runtime, chatId) {
     || !/^https:\/\/[^\s<>]+$/.test(trim(resource.url)))) {
     throw new Error('项目关联资料登记无效。');
   }
-  return { ...source, link, tasks, resources, bindingVersion: projectDigest({ source, link }) };
+  const materials = source.materials || [];
+  if (!Array.isArray(materials) || materials.length > 6 || materials.some(item =>
+    !/^[a-z][a-z0-9-]{0,39}$/.test(item.alias) || !trim(item.name) || !isAbsolute(trim(item.path))
+    || !item.fields || typeof item.fields !== 'object' || Array.isArray(item.fields)
+    || Object.keys(item.fields).length > 12 || Object.entries(item.fields).some(([field, label]) =>
+      !/^[a-zA-Z][a-zA-Z0-9]*$/.test(field) || !trim(label)))
+    || new Set(materials.map(item => item.alias)).size !== materials.length) {
+    throw new Error('项目审计材料登记无效。');
+  }
+  return { ...source, link, tasks, resources, materials, bindingVersion: projectDigest({ source, link }) };
 }
 
 export function projectMemorySection(text, heading) {
@@ -94,12 +103,30 @@ export async function readProjectTask(request, registration) {
 
 export async function readProjectView(runtime, chatId, request) {
   const source = await loadProjectSources(runtime, chatId);
+  const materialText = value => {
+    if (value === 'proposal_not_implemented') return '方案尚未实施';
+    if (value === 'completed') return '本项已完成';
+    if (Array.isArray(value)) return value.map(item => materialText(item)).join('\n');
+    if (value && typeof value === 'object') return Object.entries(value)
+      .map(([key, item]) => `${key}：${materialText(item)}`).join('\n');
+    return value === undefined ? '来源没有登记此项' : String(value);
+  };
+  const materialReads = source.materials.map(async item => {
+    const content = await readFile(item.path, 'utf8');
+    if (Buffer.byteLength(content) > 1024 * 1024) throw new Error('材料来源过大');
+    const json = JSON.parse(content);
+    const text = Object.entries(item.fields).map(([field, label]) => `${label}\n${materialText(json[field])}`).join('\n\n');
+    return { alias: item.alias, name: item.name, version: projectDigest(content), pages: projectPages(text) };
+  });
   const results = await Promise.allSettled([readProjectMemory(source),
-    ...source.tasks.map(task => readProjectTask(request, task))]);
+    ...source.tasks.map(task => readProjectTask(request, task)), ...materialReads]);
   return { source, readAt: new Date().toISOString(),
     memory: results[0].status === 'fulfilled' ? results[0].value : { error: '记忆来源当前不可读；没有使用旧副本。' },
-    tasks: results.slice(1).map((result, index) => result.status === 'fulfilled'
-      ? result.value : { ...source.tasks[index], error: '当前状态不可核实，暂不提供修改。' }) };
+    tasks: results.slice(1, 1 + source.tasks.length).map((result, index) => result.status === 'fulfilled'
+      ? result.value : { ...source.tasks[index], error: '当前状态不可核实，暂不提供修改。' }),
+    materials: results.slice(1 + source.tasks.length).map((result, index) => result.status === 'fulfilled'
+      ? result.value : { alias: source.materials[index].alias, name: source.materials[index].name,
+        error: '原始材料当前不可读；没有使用旧副本。' }) };
 }
 
 export async function projectMemoryCorrection(runtime, summary, correction) {
