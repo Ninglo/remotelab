@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -23,6 +23,11 @@ writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
 const fs = require('fs');
+const input = fs.readFileSync(0, 'utf8');
+if (process.argv.at(-1) !== '-' || !input.includes('single post-turn session-state classifier')) {
+  console.error('Classifier prompt was not supplied on stdin');
+  process.exit(1);
+}
 const outputPath = process.env.REMOTELAB_TEST_CODEX_HOME_CAPTURE;
 const codexHome = process.env.CODEX_HOME || '';
 if (outputPath) {
@@ -150,6 +155,27 @@ const capturedCodexHome = readFileSync(envCapturePath, 'utf8').trim();
 assert.equal(result?.ok, true, 'Session-state classifier should complete through the background Codex run');
 assert.equal(result?.title, 'Codex Home Test');
 assert.equal(capturedCodexHome, machineCodexHome, 'background Codex runs should use the machine Codex home');
+
+await appendEvent(session.id, messageEvent('assistant', 'Long completed output '.repeat(10000)));
+const longResult = await triggerSessionStateSuggestion({ id: session.id, folder: session.folder,
+  name: session.name || '', tool: fakeToolId });
+assert.equal(longResult.ok, true, 'large turn text reaches Codex on stdin without an argv-size failure');
+
+process.env.REMOTELAB_TEST_OVERSIZED_SPAWN_ENV = 'x'.repeat(150000);
+try {
+  const failed = await triggerSessionStateSuggestion({ id: session.id, folder: session.folder,
+    name: session.name || '', tool: fakeToolId });
+  assert.equal(failed.ok, false, 'a synchronous process-launch failure is reported');
+  assert.match(failed.error, /E2BIG/);
+} finally { delete process.env.REMOTELAB_TEST_OVERSIZED_SPAWN_ENV; }
+const lockDirs = readdirSync(join(tempConfig, 'codex-accounts', 'locks'));
+for (const directory of lockDirs) {
+  assert.equal(readdirSync(join(tempConfig, 'codex-accounts', 'locks', directory)).includes('active.lock'), false,
+    'process-launch failure releases the account even though the controller stays alive');
+}
+const recovered = await triggerSessionStateSuggestion({ id: session.id, folder: session.folder,
+  name: session.name || '', tool: fakeToolId });
+assert.equal(recovered.ok, true, 'the next classification can acquire the released authorization');
 
 await killAll();
 rmSync(tempHome, { recursive: true, force: true });

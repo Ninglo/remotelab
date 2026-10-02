@@ -43,7 +43,8 @@ writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
 const fs = require('fs');
-const prompt = process.argv[process.argv.length - 1] || '';
+const promptArg = process.argv[process.argv.length - 1] || '';
+const prompt = promptArg === '-' ? require('fs').readFileSync(0, 'utf8') : promptArg;
 const isLabelPrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
 const delayMs = isLabelPrompt ? 50 : 220;
 

@@ -18,7 +18,8 @@ const fakeCodexPath = join(tempBin, 'fake-codex');
 writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
-const prompt = process.argv[process.argv.length - 1] || '';
+const promptArg = process.argv[process.argv.length - 1] || '';
+const prompt = promptArg === '-' ? require('fs').readFileSync(0, 'utf8') : promptArg;
 const isSessionStatePrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
 const workSummary = {
   mode: 'project',

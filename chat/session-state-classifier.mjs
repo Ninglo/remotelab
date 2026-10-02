@@ -176,53 +176,69 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     if (account.id !== 'default') args.unshift('-c', 'cli_auth_credentials_store="file"');
   }
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn(resolvedCmd, args, {
-      cwd: resolvedFolder,
-      env: subEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    account?.lease.setToolProcessId(proc.pid).catch(() => {});
-    proc.once('close', () => { account?.lease.release().catch(() => {}); });
-    proc.stdin.end();
+  // A completed turn can contain more text than the OS permits in one argv
+  // entry. Codex accepts its prompt on stdin; keep it out of execve arguments.
+  const stdinPrompt = runtimeFamily === 'codex-json' ? args.pop() : null;
+  if (stdinPrompt !== null) args.push('-');
+  try {
+    return await new Promise((resolve, reject) => {
+      const proc = spawn(resolvedCmd, args, {
+        cwd: resolvedFolder,
+        env: subEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      account?.lease.setToolProcessId(proc.pid).catch(() => {});
+      let processError = null;
+      proc.stdin.on('error', error => {
+        processError ||= error;
+        proc.kill('SIGTERM');
+      });
+      proc.stdin.end(stdinPrompt ?? undefined);
 
-    const rl = createInterface({ input: proc.stdout });
-    const textParts = [];
-    let latestUsageEvent = null;
+      const rl = createInterface({ input: proc.stdout });
+      const textParts = [];
+      let latestUsageEvent = null;
 
-    rl.on('line', (line) => {
-      const events = adapter.parseLine(line);
-      for (const evt of events) {
-        if (evt.type === 'message' && evt.role === 'assistant') {
-          textParts.push(evt.content || '');
-        } else if (evt.type === 'usage') {
-          latestUsageEvent = evt;
+      rl.on('line', (line) => {
+        const events = adapter.parseLine(line);
+        for (const evt of events) {
+          if (evt.type === 'message' && evt.role === 'assistant') {
+            textParts.push(evt.content || '');
+          } else if (evt.type === 'usage') {
+            latestUsageEvent = evt;
+          }
         }
-      }
-    });
+      });
 
-    proc.stderr.on('data', (chunk) => {
-      const text = chunk.toString().trim();
-      if (text) console.log(`[session-state] stderr: ${text.slice(0, 200)}`);
-    });
+      proc.stderr.on('data', (chunk) => {
+        const text = chunk.toString().trim();
+        if (text) console.log(`[session-state] stderr: ${text.slice(0, 200)}`);
+      });
 
-    proc.on('error', (err) => {
-      console.error(`[session-state] ${tool} structured prompt error for ${sessionId.slice(0, 8)}: ${err.message}`);
-      reject(err);
-    });
+      proc.on('error', (err) => {
+        console.error(`[session-state] ${tool} structured prompt error for ${sessionId.slice(0, 8)}: ${err.message}`);
+        processError ||= err;
+      });
 
-    proc.on('exit', (code) => {
-      if (latestUsageEvent && usageTracking) {
-        appendSummarizerUsage(sessionMeta, latestUsageEvent, usageTracking, code === 0 ? 'completed' : 'failed');
-      }
-      const raw = textParts.join('\n').trim();
-      if (code !== 0 && !raw) {
-        reject(new Error(`${tool} exited with code ${code}`));
-        return;
-      }
-      resolve(raw);
+      proc.on('close', (code) => {
+        if (processError) {
+          reject(processError);
+          return;
+        }
+        if (latestUsageEvent && usageTracking) {
+          appendSummarizerUsage(sessionMeta, latestUsageEvent, usageTracking, code === 0 ? 'completed' : 'failed');
+        }
+        const raw = textParts.join('\n').trim();
+        if (code !== 0 && !raw) {
+          reject(new Error(`${tool} exited with code ${code}`));
+          return;
+        }
+        resolve(raw);
+      });
     });
-  });
+  } finally {
+    await account?.lease.release();
+  }
 }
 
 function parseJsonObject(modelText) {
