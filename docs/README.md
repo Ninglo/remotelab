@@ -69,6 +69,8 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Focused Integrations
 
+- [Hardware discussion recording](platform-skills/hardware-recording.md) — optional macOS/Linux keypad and multi-receiver capture, durable audio submission and host acceptance boundary
+
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
 - `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector
 - [Person-scoped workboard baseline](../notes/current/feishu-workboard-pilot.md) — accepted checklist/result behavior, opt-in scope, durable operation and isolated regression entry

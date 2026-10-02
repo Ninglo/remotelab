@@ -43,3 +43,12 @@ jobs:
 
       - name: Report oversized source files
         run: npm run lint:filesize -- --github-actions
+
+  recording-macos:
+    name: recording macOS adapter
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compile device-specific keypad adapter (no device access)
+        run: swiftc scripts/recording-input-macos.swift -o "$RUNNER_TEMP/remotelab-recording-input"
