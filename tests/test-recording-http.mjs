@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import WebSocket from 'ws';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
+import { normalizeAuthDocument } from '../lib/auth-config.mjs';
 import { normalizeRecordingConfig } from '../lib/recording/config.mjs';
 import { WavWriter } from '../lib/recording/pcm.mjs';
 import { recordDir, saveRecord, loadRecord } from '../lib/recording/store.mjs';
@@ -45,7 +46,7 @@ test('saved audio enters the real RemoteLab asset/message/Run path and a lost re
   const configDir = join(root, 'config'), bin = join(root, 'bin'), promptPath = join(root, 'prompt.txt');
   await mkdir(configDir); await mkdir(bin);
   const token = '0123456789abcdef'.repeat(4);
-  await writeFile(join(configDir, 'auth.json'), JSON.stringify({ token }));
+  await writeFile(join(configDir, 'auth.json'), JSON.stringify({ ...normalizeAuthDocument({ token: 'c'.repeat(64) }), serviceToken: token }));
   await writeFile(join(configDir, 'tools.json'), JSON.stringify([{ id: 'fake-codex', name: 'Recording test', command: join(bin, 'fake-codex'), runtimeFamily: 'codex-json', models: [{ id: 'fake-model', label: 'Fake model', defaultEffort: 'low' }], reasoning: { kind: 'enum', levels: ['low'], default: 'low' } }]));
   await writeFile(join(bin, 'fake-codex'), `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -106,4 +107,18 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
   const prompt = await readFile(promptPath, 'utf8');
   assert.match(prompt, /独立讨论 A/); assert.match(prompt, /audio\/wav|\.wav/); assert.match(prompt, /远端转写/);
   assert.ok(prompt.includes(saved.segments[0].assetId) || prompt.includes(record.id), 'Harness must receive the recording attachment source');
+  const bound = { ...record, id: 'rec_' + 'b'.repeat(32), laneId: 'b', channel: 1, label: '独立讨论 B', status: 'pending',
+    destination: { conversation: { connector: 'feishu', sourceRouteId: 'recording-test-route', target: {
+      chatId: 'recording-test-chat', conversationKind: 'topic', threadId: 'recording-thread', rootId: 'recording-root',
+    } } }, segments: [{ filename: '00000.wav' }] };
+  delete bound.sessionId; delete bound.requestId; delete bound.runId; delete bound.submittedAt;
+  await saveRecord(spool, bound);
+  const second = new WavWriter(join(recordDir(spool, bound.id), '00000.wav')); await second.start(); await second.append(Buffer.from([42, 0])); await second.finish();
+  await submitRecording(spool, bound, { config, client });
+  assert.notEqual(bound.sessionId, saved.sessionId);
+  const boundRun = await terminalRun(client, ws, bound.runId); assert.equal(boundRun.state, 'completed', output);
+  const delivery = (await client.request('/api/source-deliveries?connector=feishu&sourceRouteId=recording-test-route')).json.deliveries.find((d) => d.runId === bound.runId && d.kind === 'content');
+  assert.ok(delivery, 'Completed analysis must retain the lane-bound delivery');
+  assert.equal(delivery.target.chatId, 'recording-test-chat'); assert.equal(delivery.target.threadId, 'recording-thread');
+  assert.equal(delivery.state, 'pending', 'No real Connector sends are performed in this test');
 });
