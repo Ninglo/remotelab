@@ -34,15 +34,19 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
       await settle(record, run);
       return;
     }
-    if (run?.cancelRequested && !receipt) { await clear(record); return; }
+    const expiredQuestion = () => reject(record, '这道问题已结束，这条回答未应用；请说明要修改哪项选择。');
+    if (run?.cancelRequested && !receipt) {
+      if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record);
+      return;
+    }
     if (terminal(run)) {
-      if (!receipt) { await clear(record); return; }
+      if (!receipt) { if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record); return; }
       await reject(record, receipt.error || 'Native input acknowledgement was lost; automatic replay was suppressed.');
       return;
     }
     try {
       const result = await submitNativeInput(runDirectory(rootId), record.nativeInput);
-      if (!result?.accepted) { await clear(record); return; }
+      if (!result?.accepted) { if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record); return; }
       record = await store.mutate(record.key, current => ({ ...current, nativeReceipt: result, preparedAt: current.preparedAt || now() }));
       await settle(record, await getRun(rootId));
     } catch (error) {

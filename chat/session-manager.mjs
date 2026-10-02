@@ -3132,8 +3132,9 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
   settle: settleNativeRequest,
   reject: async (record, error) => {
     const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
+    const run = await getRun(record.nativeDispatchRunId);
     await requests.settle(record.key, { state: 'failed', payload: null, error },
-      buildReplyDeliveries(plan, { text: `消息未能交给当前 Harness：${error}`, attachments: [] }));
+      buildReplyDeliveries(plan, { text: `消息未能交给当前 Harness：${error}`, attachments: [] }, { running: !isTerminalRunState(run?.state) }));
     await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
     await requests.archiveFinished(record.key);
   },

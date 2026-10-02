@@ -150,6 +150,9 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
       return serial(async () => {
         if (!active || input.questionId !== `${active.id}:${active.index}` || now() >= active.deadline) {
           if (active && now() >= active.deadline) await answerCurrent(null, 'timeout');
+          onEvent({ type: 'remotelab.user_question', messageId: `question-expired:${input.id}`,
+            questionId: input.questionId, state: 'expired', origin: 'user',
+            content: '这条回答对应的问题已结束，未应用这条回答。需要修改时，请直接说明新的选择。' });
           return { accepted: true, id: input.id, mode: 'question_expired', questionId: input.questionId };
         }
         return answerCurrent(input, 'user');

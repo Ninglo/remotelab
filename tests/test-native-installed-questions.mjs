@@ -10,8 +10,12 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const pathEnv = process.env.PATH;
 const binaries = { codex: process.env.REMOTELAB_NATIVE_CODEX_BIN, claude: process.env.REMOTELAB_NATIVE_CLAUDE_BIN };
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
-for (const [family, binary] of Object.entries(binaries)) {
-  test(`installed ${family}: numbered and custom answers return to native question tool`, { skip: !binary, timeout: 45_000 }, async () => {
+const cases = Object.entries(binaries).flatMap(([family, binary]) => [
+  { family, binary, mode: 'answers' }, { family, binary, mode: 'timeout' },
+  ...(family === 'claude' ? [{ family, binary, mode: 'bypass' }] : []),
+]);
+for (const { family, binary, mode } of cases) {
+  test(`installed ${family}: ${mode} returns through native question protocol`, { skip: !binary, timeout: 45_000 }, async () => {
     const home = await mkdtemp(join(tmpdir(), `installed-question-${family}-`));
     setIsolatedTestHome(home);
     const { runNativeHost } = await import('../chat/native-host.mjs');
@@ -20,7 +24,8 @@ for (const [family, binary] of Object.entries(binaries)) {
     const config = join(home, 'provider'), directory = join(home, 'run');
     await mkdir(config); await mkdir(directory);
     const bodies = [], events = [], errors = [], rawFrames = [];
-    let child, questionReady;
+    let child, questionReady, expire;
+    let clock = 1000;
     const shown = new Promise(resolve => { questionReady = resolve; });
     const questions = [
       { id: 'format', header: 'Format', question: 'Which format?', options: [{ label: 'Brief', description: 'Summary' }, { label: 'Detailed', description: 'Full result' }] },
@@ -72,28 +77,40 @@ for (const [family, binary] of Object.entries(binaries)) {
     if (family === 'codex') await writeFile(join(config, 'config.toml'), `model = "gpt-5.4"\nmodel_provider = "fixture"\ncheck_for_update_on_startup = false\nweb_search = "disabled"\n[model_providers.fixture]\nname = "Local fixture"\nbase_url = "${baseUrl}/v1"\nenv_key = "CODEX_FIXTURE_API_KEY"\nwire_api = "responses"\nsupports_websockets = false\nrequires_openai_auth = false\nrequest_max_retries = 0\nstream_max_retries = 0\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n`);
     else {
       command = join(home, 'harness');
-      await writeFile(command, `#!/bin/sh\nexec ${quote(binary)} --safe-mode --permission-mode manual --tools AskUserQuestion "$@"\n`);
+      await writeFile(command, `#!/bin/sh\nexec ${quote(binary)} --safe-mode --permission-mode ${mode === 'bypass' ? 'bypassPermissions' : 'manual'} --tools AskUserQuestion "$@"\n`);
       await chmod(command, 0o700);
     }
     const running = runNativeHost({ directory, command, runtimeFamily: family === 'codex' ? 'codex-json' : 'claude-stream-json',
       options: { model: family === 'codex' ? 'gpt-5.4' : 'claude-sonnet-4-6', effort: 'low', disableApps: true }, prompt: 'Ask which output format and language to use.', cwd: home, env,
-      onProcess: proc => { child = proc; proc.stdout.on('data', chunk => rawFrames.push(String(chunk))); }, onStdout: line => { const event = JSON.parse(line); events.push(event); if (event.type === 'remotelab.user_question' && event.state === 'pending') questionReady(event); }, onStderr: line => errors.push(line) });
+      ...(mode === 'timeout' ? { questionOptions: { now: () => clock, setTimer: callback => { expire = callback; return callback; }, clearTimer: () => {} } } : {}),
+      onProcess: proc => { child = proc; proc.stdout.on('data', chunk => rawFrames.push(String(chunk))); }, onStdout: line => { const event = JSON.parse(line); events.push(event); if (event.type === 'remotelab.user_question' && event.state === 'pending') {
+        questionReady(event);
+        if (mode === 'timeout') { clock += 300_000; expire(); }
+      } }, onStderr: line => errors.push(line) });
     const earlyExit = running.then(result => { throw new Error(`Harness exited before question: ${result.error?.message}\n${errors.join('\n')}\n${JSON.stringify(events.map(e => ({ type: e.type, state: e.state, content: e.content })))}\nRAW: ${rawFrames.join('').split('\n').filter(x => /requestUserInput|request_user_input|control_request|question/.test(x)).join('\n').slice(0,4000)}\nOUTPUT: ${JSON.stringify((bodies[1]?.input || bodies[1]?.messages || []).filter(x => ['function_call_output', 'user'].includes(x.type || x.role))).slice(-3000)}`); });
     try {
       await Promise.race([shown, earlyExit]);
-      let next;
-      const secondShown = new Promise(resolve => { next = resolve; });
-      questionReady = next;
-      const firstId = (await readNativeQuestion(directory)).id;
-      const receipt = await submitNativeInput(directory, { id: 'numbered', text: '2', questionId: firstId });
-      assert.equal(receipt.mode, 'question_answer');
-      await Promise.race([secondShown, earlyExit]);
-      await submitNativeInput(directory, { id: 'custom', text: '请用中文并保留英文术语', questionId: (await readNativeQuestion(directory)).id });
+      if (mode !== 'timeout') {
+        let next;
+        const secondShown = new Promise(resolve => { next = resolve; });
+        questionReady = next;
+        const firstId = (await readNativeQuestion(directory)).id;
+        const receipt = await submitNativeInput(directory, { id: 'numbered', text: '2', questionId: firstId });
+        assert.equal(receipt.mode, 'question_answer');
+        await Promise.race([secondShown, earlyExit]);
+        await submitNativeInput(directory, { id: 'custom', text: '请用中文并保留英文术语', questionId: (await readNativeQuestion(directory)).id });
+      }
       const result = await running;
       assert.equal(result.code, 0, `${result.error?.message}\n${errors.join('\n')}`);
       const followup = JSON.stringify(bodies.at(-1).input || bodies.at(-1).messages);
-      assert.match(followup, /Detailed/);
-      assert.match(followup, /请用中文并保留英文术语/);
+      if (mode === 'timeout') {
+        assert.match(followup, /Brief/);
+        assert.match(followup, /system timeout fallback; not a user response/);
+        assert.equal(events.filter(e => e.state === 'timeout').length, 2);
+      } else {
+        assert.match(followup, /Detailed/);
+        assert.match(followup, /请用中文并保留英文术语/);
+      }
       if (family === 'claude') assert.equal(bodies.length, 2, 'blocking question answers are tool results, not extra conversational turns');
       else assert.ok(bodies.length >= 2, 'Codex async questions return through its documented user-input contract');
     } finally {

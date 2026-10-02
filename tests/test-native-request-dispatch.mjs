@@ -53,5 +53,11 @@ try {
   await dispatcher.forward(await store.get(uncertain.key)); await dispatcher.idle();
   assert.match((await store.get(uncertain.key)).result.error, /acknowledgement was lost/);
   assert.equal(received.filter(id => id === 'uncertain').length, 1);
+  const expired = await accepted('expired-question');
+  const captured = await store.mutate(expired.key, current => ({ ...current, options: { nativeQuestionId: 'question-one' } }));
+  state = 'completed';
+  await dispatcher.forward(captured, head); await dispatcher.idle();
+  assert.match((await store.get(expired.key)).result.error, /问题已结束/);
+  assert.ok(!received.includes('expired-question'), 'a captured late answer cannot become an unrelated model turn after native host settlement');
   console.log('native dispatch: overlapping input, durable run linkage, shared result, uncertain receipt without replay passed');
 } finally { unblock(); await dispatcher.idle(); await server.close(); await rm(root, { force: true, recursive: true }); }
