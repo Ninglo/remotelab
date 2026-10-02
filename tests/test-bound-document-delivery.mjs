@@ -40,6 +40,10 @@ for (const changedTarget of [
 assert.throws(() => resolveSessionDeliveryPlan(session, {
   ...options, sourceDelivery: { ...sourceDelivery, sourceRouteId: 'other-bot' },
 }), /match the admitted comment/);
+assert.throws(() => resolveSessionDeliveryPlan(session, {
+  ...options, sourceDelivery: { ...sourceDelivery, connector: 'wechat',
+    target: { ...sourceDelivery.target, accountId: 'other-account', peerUserId: 'other-user' } },
+}), /match the admitted comment/, 'a bound Feishu comment cannot redirect to another connector');
 assert.throws(() => resolveSessionDeliveryPlan(session, { sourceContext }), /match the admitted comment/);
 assert.throws(() => resolveSessionDeliveryPlan(session, {
   ...options, sourceContext: { ...sourceContext, commentId: '' },

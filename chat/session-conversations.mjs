@@ -55,7 +55,7 @@ export function resolveSessionDeliveryPlan(session, options) {
     // A document shares the Session's context, not its chat reply address.
     // Only the exact admitted comment on the same Bot may override that address.
     if (context.connector !== 'feishu' || context.conversationKind !== 'document_comment'
-        || !bound || bound.connector !== 'feishu' || !explicit
+        || !bound || bound.connector !== 'feishu' || !explicit || explicit.connector !== 'feishu'
         || explicit.sourceRouteId !== bound.sourceRouteId
         || context.sourceRouteId !== bound.sourceRouteId
         || !context.fileToken || !context.fileType || !context.commentId
