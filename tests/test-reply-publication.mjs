@@ -98,6 +98,7 @@ try {
     type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId, content: 'ready reply',
   })), {
     store: { get: async () => probe, mutate: async (key, fn) => { probe = fn(probe); } },
+    running: false,
     plan: { connector: 'feishu', target: { chatId: 'probe-chat' } },
     prepareFinal: async event => { if (event.providerMessageId === 'unready-assets') throw new Error('asset transport unavailable'); return event; },
   });
@@ -108,6 +109,8 @@ try {
     'Check it.', 'fake-codex', 'fake-codex');
   assert.match(visibilityPrompt, /Message visibility on RemoteLab surfaces/);
   assert.match(visibilityPrompt, /<progress>\.\.\.<\/progress>/);
+  assert.doesNotMatch(visibilityPrompt, /Feishu replies use shared message labels|【待你确认】/,
+    'message labels remain transparent to the AI');
   const visibilityOutcome = await sendMessage(visibilitySession.id, 'hold-progress 检查投递。', [], {
     tool: 'fake-codex', model: 'fake-model', effort: 'low',
     sourceContext: { feishuOutcomeRequired: true },
