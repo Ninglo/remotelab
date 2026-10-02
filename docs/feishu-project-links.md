@@ -42,7 +42,11 @@ in the current conversation. It does not create a new AI Session. Tabs show
 project links, the exact memory section in pages, actual schedule state and
 execution rules, and the durable audit of operations through this entry.
 `/project memory`, `/project tasks`, and `/project audit` also work without
-buttons. Read times and source versions are visible. Directory notifications
+buttons. Optional `materials` register existing JSON source files with an
+`alias`, `name`, absolute `path`, and a `fields` object mapping allowed top-level
+field names to display labels. `/project material <alias> [page]` and card buttons
+read those original audit/context fields inside Feishu; unregistered fields are
+excluded. Read times and source versions are visible. Directory notifications
 cover atomic file replacement; source changes update the original card. A
 missing or ambiguous memory source is marked unavailable, never replaced with
 an old copy. No source directory scan or new memory store is introduced.

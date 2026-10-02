@@ -13,13 +13,16 @@ try {
   const { handleMessage } = await import('../scripts/feishu-connector.mjs');
   const memoryPath = join(home, 'projects.md');
   const registryPath = join(home, 'project-sources.json');
+  const auditPath = join(home, 'audit.json');
   const taskId = `sch_${'a'.repeat(24)}`;
   const registry = { schema: 1, projects: { example: {
     name: 'Example', memory: { path: memoryPath, heading: '## Project' },
     tasks: [{ id: taskId, alias: 'daily', scope: '与其他项目共用，暂停影响所有关联项目' }],
     resources: [{ name: '原讨论', url: 'https://example.com/source' }],
+    materials: [{ alias: 'memory-audit', name: '原记忆审计', path: auditPath, fields: { status: '实施状态', preserve: '保留部分' } }],
   } } };
   await writeFile(registryPath, JSON.stringify(registry));
+  await writeFile(auditPath, JSON.stringify({ status: 'proposal_not_implemented', preserve: ['原控制面'], privateField: 'DO NOT SHOW' }));
   await writeFile(memoryPath, '# Ledger\n\n## Project\n\nOriginal fact\n\n## Other\n\nPRIVATE OTHER PROJECT');
   assert.throws(() => projectMemorySection('## Project\n## Project', '## Project'), /重复/);
   const runtime = { config: { storageDir: join(home, 'state'), projectSurfacesPath: registryPath,
@@ -76,6 +79,12 @@ try {
   await surface.command({ ...summary, messageId: 'later-human-message' });
   assert.equal(created, 1, 'one card per project conversation');
   assert(content().includes('原讨论'));
+  await surface.command(summary, 'material memory-audit');
+  assert(content().includes('方案尚未实施'));
+  assert(!content().includes('DO NOT SHOW'), 'materials expose only explicitly registered fields');
+  await writeFile(auditPath, JSON.stringify({ status: 'completed', preserve: ['原控制面'] }));
+  await surface.refresh();
+  assert(content().includes('本项已完成'), 'audit material reads are also bound to their original source');
   await surface.command(summary, 'memory');
   assert(content().includes('Original fact'));
   assert(!content().includes('PRIVATE OTHER PROJECT'), 'only the explicitly registered section is exposed');

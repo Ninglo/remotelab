@@ -11,7 +11,7 @@ const dateName = value => value && Number.isFinite(Date.parse(value))
     timeStyle: 'medium', hourCycle: 'h23' }).format(new Date(value)) + '（北京时间）' : '未安排';
 
 export function buildProjectCard(record, view, audit = []) {
-  const { source, memory, tasks } = view;
+  const { source, memory, tasks, materials } = view;
   const button = (label, action, extra = {}) => ({ tag: 'button', type: 'default',
     text: { tag: 'plain_text', content: label }, behaviors: [{ type: 'callback', value: {
       namespace: 'project', cardKey: record.key, bindingVersion: source.bindingVersion,
@@ -62,6 +62,19 @@ export function buildProjectCard(record, view, audit = []) {
       text(`项目来源登记版本：${source.bindingVersion}\n记忆内容版本：${memory.version || '不可读'}`),
       ...audit.slice(-12).reverse().map(item => text(`${dateName(item.at)} · ${item.actor}\n${item.label}\n${item.result}`)),
       ...(!audit.length ? [text('尚无入口配置操作。')] : []));
+    for (const material of materials) elements.push(row([button(material.name, 'material', { alias: material.alias })]));
+  } else if (tab === 'material') {
+    const material = materials.find(item => item.alias === record.alias);
+    if (!material || material.error) elements.push(text(material?.error || '原始材料未登记。'));
+    else {
+      const index = Math.max(0, Math.min(record.page || 0, material.pages.length - 1));
+      elements.push(text(`${material.name}\n材料短名：${material.alias}\n原材料版本 ${material.version} · 第 ${index + 1}/${material.pages.length} 页`),
+        text(material.pages[index]));
+      if (material.pages.length > 1) elements.push(row([
+        ...(index > 0 ? [button('上一页', 'material', { alias: material.alias, page: index - 1 })] : []),
+        ...(index + 1 < material.pages.length ? [button('下一页', 'material', { alias: material.alias, page: index + 1 })] : []),
+      ]));
+    }
   } else if (tab === 'edit-help') {
     elements.push(text('记忆补充或纠正：在本话题发送 /project memory 修改说明。会交给当前对话核对、写回原记忆并给出结果；提交不代表已经写入。'),
       text('任务执行规则：在本话题直接说明要修改哪个任务、怎么改。暂停和恢复可在“自动任务”页直接操作。'),
@@ -71,6 +84,7 @@ export function buildProjectCard(record, view, audit = []) {
       markdown(`[${safeName(source.link.discussionChatName || '讨论群')}](${chatLink(source.link.discussionChatId)}) · `
         + `[${safeName(source.link.workChatName || '干活群')}](${chatLink(source.link.workChatId)})`),
       ...source.resources.map(resource => markdown(`[${safeName(resource.name)}](${resource.url})`)),
+      ...materials.flatMap(material => [text(`原材料：${material.alias}`), row([button(material.name, 'material', { alias: material.alias })])]),
       text(`关联自动任务：${tasks.map(task => `${task.alias} ${task.error ? '待核实' : stateName(task.state)}`).join('；') || '未登记'}`),
       text(`项目记忆：${source.memory.label || source.memory.heading}\n${memory.error || `当前版本 ${memory.version}`}`),
       text('查看记忆、核对执行规则、暂停或恢复任务都可以在此卡片完成。记忆纠正在原话题继续。\n输入 /project 可重新读取并更新这张卡片。'));

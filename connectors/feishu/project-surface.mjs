@@ -8,7 +8,7 @@ import { buildProjectCard } from './project-card.mjs';
 import { loadProjectSources, projectDigest, projectMemoryCorrection, projectPages,
   projectRequest, readProjectTask, readProjectView } from './project-sources.mjs';
 
-const ACTIONS = new Set(['home', 'memory', 'tasks', 'audit', 'task', 'edit-help', 'pause', 'resume']);
+const ACTIONS = new Set(['home', 'memory', 'tasks', 'audit', 'task', 'material', 'edit-help', 'pause', 'resume']);
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const warn = error => console.warn(`[feishu-project] ${error.message}`);
 
@@ -38,6 +38,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
   const getView = async record => {
     const view = await readProjectView(runtime, record.source.chatId, request);
     observe(view.source.memory.path);
+    for (const material of view.source.materials) observe(material.path);
     for (const task of view.tasks) task.promptPages = projectPages(task.prompt || '未提供执行规则。');
     return view;
   };
@@ -48,7 +49,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     const audit = await auditFor(view.source.link.projectId);
     // A fresh read time alone is not a content change.
     const digest = projectDigest({ tab: record.tab, page: record.page, alias: record.alias,
-      notice: record.notice, source: view.source, memory: view.memory, tasks: view.tasks, audit });
+      notice: record.notice, source: view.source, memory: view.memory, tasks: view.tasks, materials: view.materials, audit });
     if (!force && record.messageId && digest === record.digest) return record;
     const card = buildProjectCard(record, view, audit);
     let messageId = record.messageId;
@@ -79,18 +80,21 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
       return { taskText: await projectMemoryCorrection(runtime, summary, correction) };
     }
     const match = value.match(/^(home|memory|tasks|audit)?(?:\s+(\d+))?$/);
-    if (!match || (match[2] && match[1] !== 'memory')) return {
-      text: '用法：/project；/project memory [页码]；/project tasks；/project audit。\n补充或纠正记忆：/project memory 修改说明。',
+    const material = value.match(/^material ([a-z][a-z0-9-]{0,39})(?: (\d+))?$/);
+    if (!material && (!match || (match[2] && match[1] !== 'memory'))) return {
+      text: '用法：/project；/project memory [页码]；/project tasks；/project audit；/project material 材料短名 [页码]。\n补充或纠正记忆：/project memory 修改说明。',
     };
     // Read/validate registration before creating any delivery state.
-    await loadProjectSources(runtime, summary.chatId);
+    const source = await loadProjectSources(runtime, summary.chatId);
+    if (material && !source.materials.some(item => item.alias === material[1])) return { text: '该材料没有登记到此项目。' };
     const key = keyFor(summary);
     return exclusive(key, async () => {
       const record = await cards.mutate(key, current => ({ ...current,
         source: current?.source || { chatId: summary.chatId, messageId: summary.messageId,
           threadId: buildFeishuTopicId(summary) },
         controlEpoch: current?.controlEpoch || 0,
-        tab: match[1] || 'home', page: Math.max(0, Number(match[2] || 1) - 1) }));
+        tab: material ? 'material' : match[1] || 'home', alias: material?.[1] || '',
+        page: Math.max(0, Number((material ? material[2] : match[2]) || 1) - 1) }));
       const receipt = await publish(record, await getView(record), true);
       return { cardMessageId: receipt.messageId };
     });
@@ -110,6 +114,9 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     if (source.bindingVersion !== action.bindingVersion) throw new Error('项目关联已变更，请先用 /project 刷新。');
     if (['pause', 'resume', 'task'].includes(action.action)
       && !source.tasks.some(task => task.alias === action.alias)) throw new Error('该任务没有登记到此项目。');
+    if (action.action === 'material' && !source.materials.some(item => item.alias === action.alias)) {
+      throw new Error('该材料没有登记到此项目。');
+    }
     if (['pause', 'resume'].includes(action.action)
       && (!/^[a-f0-9]{24}$/.test(action.taskVersion || '')
         || !Number.isInteger(action.controlEpoch))) throw new Error('任务操作版本缺失，请刷新。');
