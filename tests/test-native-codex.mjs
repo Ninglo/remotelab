@@ -179,4 +179,26 @@ function harness(options = {}, onQuestion) {
   assert.equal(h.settled.length, 1);
   h.driver.close();
 }
+{
+  const h = harness(); await h.start();
+  h.notify('item/started', { item: { id: 'large-command', type: 'commandExecution', command: 'rg', status: 'inProgress' } });
+  const chunk = 'x'.repeat(40 * 1024);
+  for (let index = 0; index < 1024; index++) {
+    h.notify('item/commandExecution/outputDelta', { itemId: 'large-command', delta: chunk });
+  }
+  const previews = h.events.filter(event => event.type === 'item.updated');
+  assert.equal(previews.length, 1024);
+  assert.ok(previews.every(event => event.item.aggregated_output.length <= 4096),
+    '40 MiB of output must not produce growing snapshots for the host write queue');
+  assert.equal(previews.at(-1).item.output_bytes, chunk.length * 1024);
+  assert.equal(previews.at(-1).item.output_preview, true);
+  assert.equal(h.events.find(event => event.type === 'item.started').item.aggregated_output, '',
+    'streaming previews cannot mutate the already announced start');
+  const completeOutput = chunk.repeat(1024) + '\ncomplete';
+  h.notify('item/completed', { item: { id: 'large-command', type: 'commandExecution', command: 'rg',
+    status: 'completed', aggregatedOutput: completeOutput, exitCode: 0 } });
+  assert.equal(h.events.at(-1).item.aggregated_output, completeOutput,
+    'the authoritative completed output remains intact');
+  h.driver.close();
+}
 console.log('test-native-codex: ok');

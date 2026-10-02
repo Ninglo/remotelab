@@ -218,8 +218,14 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       reasoningParts.set(id, parts);
       item.text = parts.join('\n\n');
     } else if (method === 'item/commandExecution/outputDelta') {
-      item ||= { id, type: 'command_execution', command: '', status: 'in_progress', aggregated_output: '' };
-      item.aggregated_output += params.delta || '';
+      // The completed item carries authoritative output. Keep only a bounded
+      // live tail here: copying the growing transcript for every chunk turns a
+      // large search into quadratic serialization and a blocked write queue.
+      const delta = params.delta || '';
+      const previous = item || { id, type: 'command_execution', command: '', status: 'in_progress', aggregated_output: '' };
+      item = { ...previous, aggregated_output: (previous.aggregated_output + delta).slice(-4096),
+        output_bytes: (previous.output_bytes ?? Buffer.byteLength(previous.aggregated_output)) + Buffer.byteLength(delta),
+        output_preview: true };
     } else return;
     items.set(id, item);
     onEvent({ type: 'item.updated', native_stream: true, item: { ...item } });

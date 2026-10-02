@@ -81,7 +81,27 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   const maybeStop = () => {
     if (started && nativeResult && submissions === 0 && !server?.pending && !questions.pending) stop();
   };
-  const emit = event => queueWrite(() => onStdout(JSON.stringify(event)));
+  const outputUpdates = new Map();
+  const emit = event => {
+    if (event.type === 'item.updated' && event.native_stream && event.item?.type === 'command_execution') {
+      // While disk writes are busy, one pending preview per command is enough.
+      // Lifecycle events below form ordering barriers, so a completion cannot
+      // be overtaken or overwrite a preview from an earlier command segment.
+      const id = event.item.id;
+      const pending = outputUpdates.get(id);
+      if (pending) { pending.event = event; return; }
+      const entry = { event };
+      outputUpdates.set(id, entry);
+      queueWrite(async () => {
+        if (outputUpdates.get(id) === entry) outputUpdates.delete(id);
+        await onStdout(JSON.stringify(entry.event));
+      });
+      return;
+    }
+    outputUpdates.clear();
+    const line = JSON.stringify(event);
+    queueWrite(() => onStdout(line));
+  };
   const questions = createNativeQuestionBroker({ ...questionOptions, directory, onEvent: emit,
     onError: error => { fatalError ||= error; stop(); }, onIdle: () => queueMicrotask(maybeStop) });
   const driver = createDriver({ options, cwd,
