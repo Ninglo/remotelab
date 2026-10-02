@@ -2,7 +2,7 @@ import { requireConversation, resolveSessionDeliveryPlan } from './session-conve
 import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
 import { canForwardNativeRequest, createNativeRequestDispatcher } from './native-request-dispatch.mjs';
-import { readNativeQuestion } from './native-user-questions.mjs';
+import { readNativeQuestion, nativeQuestionReplyText } from './native-user-questions.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
 import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
@@ -3118,7 +3118,7 @@ const deliveryIssueObserver = createSourceDeliveryIssueObserver();
 const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
   prepareInput: async (record, manifest) => {
-    if (record.options?.nativeQuestionId) return { text: record.text, context: '' };
+    if (record.options?.nativeQuestionId) return { text: nativeQuestionReplyText(record), context: '' };
     const attachments = await materializeFileAssetAttachments(record.images || []);
     const session = await findSessionMeta(record.sessionId);
     const tool = await getToolDefinitionAsync(manifest.tool);

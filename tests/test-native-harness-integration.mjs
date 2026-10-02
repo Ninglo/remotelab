@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, writeFile, appendFile, readFile, copyFile, chmod, rm } 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildAttributedFeishuMessage } from '../connectors/feishu/index.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'remotelab-native-integration-'));
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -71,13 +72,14 @@ try {
   await killController(); await boot();
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'restart must not republish the pending question');
   const questionReplyOptions = { ...options('question-answer'), model: 'irrelevant-auto-snapshot' };
-  await rpc('accept', questionSession.id, '2', [], questionReplyOptions);
+  const attributedChoice = buildAttributedFeishuMessage({ chatType: 'topic', sender: { name: '嘉年' }, messageText: '2' });
+  await rpc('accept', questionSession.id, attributedChoice, [], questionReplyOptions);
   await until(async () => (await receipt(questioning.run.id, 'question-answer'))?.state === 'accepted', 'native question answer gets a durable receipt');
   const answerReceipt = await receipt(questioning.run.id, 'question-answer');
   assert.equal(answerReceipt.result.mode, 'question_answer');
   assert.deepEqual((await logs()).find(e => e.kind === 'question-answer').result, { answers: { format: { answers: ['详细'] } } });
   assert.equal((await logs()).filter(e => e.runId === questioning.run.id && e.kind === 'turn/steer').length, 0, 'numeric answer returns to the question tool, not turn/steer');
-  assert.equal((await rpc('accept', questionSession.id, '2', [], questionReplyOptions)).duplicate, true, 'answer replay retains admission fingerprint after question expires');
+  assert.equal((await rpc('accept', questionSession.id, attributedChoice, [], questionReplyOptions)).duplicate, true, 'answer replay retains admission fingerprint after question expires');
   await awaitAnswer(questionSession.id, 'question-root');
   await killController(); await boot();
   assert.equal((await logs()).filter(e => e.kind === 'question-answer').length, 1, 'restart cannot repeat the native tool response');
@@ -87,6 +89,20 @@ try {
   await rpc('complete', questionFinal.delivery.id, questionFinal.leaseId, { externalId: 'question-result' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null);
   await evidence('PASS: numbered question shown in same Feishu chat; controller restart preserves pending choice, and duplicate reply reaches native tool exactly once.');
+  const customSession = await rpc('create');
+  const customQuestion = await accept(customSession.id, 'custom-question-root', 'ASK_NATIVE_QUESTION');
+  let customClaim;
+  await until(async () => { customClaim = await rpc('claim', { connector: 'feishu' }); return customClaim; }, 'custom-answer question appears');
+  await rpc('complete', customClaim.delivery.id, customClaim.leaseId, { externalId: 'custom-question-message' });
+  const customText = '请用中文\n保留代码例子';
+  const attributedCustom = buildAttributedFeishuMessage({ chatType: 'group', sender: { name: '嘉年' }, messageText: customText });
+  await accept(customSession.id, 'custom-question-answer', attributedCustom);
+  await until(async () => (await receipt(customQuestion.run.id, 'custom-question-answer'))?.state === 'accepted', 'Feishu custom answer gets a receipt');
+  assert.deepEqual((await logs()).find(e => e.runId === customQuestion.run.id && e.kind === 'question-answer').result, { answers: { format: { answers: [customText] } } });
+  await awaitAnswer(customSession.id, 'custom-question-root');
+  await until(async () => { customClaim = await rpc('claim', { connector: 'feishu' }); return customClaim; }, 'custom answer final response');
+  await rpc('complete', customClaim.delivery.id, customClaim.leaseId, { externalId: 'custom-question-result' });
+  await evidence('PASS: real Feishu speaker envelope is removed for numeric shortcuts and multiline custom answers while the transcript retains attribution.');
   const earlySession = await rpc('create');
   const early = await accept(earlySession.id, 'early-final-root', 'Keep the native execution open');
   await until(async () => (await logs()).some(event => event.runId === early.run.id && event.kind === 'turn/start'), 'early-final turn started');

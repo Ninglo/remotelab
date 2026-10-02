@@ -7,6 +7,16 @@ export const QUESTION_TIMEOUT_MS = 5 * 60_000;
 const currentPath = directory => join(directory, 'native-question.json');
 export const readNativeQuestion = directory => readRecord(currentPath(directory));
 
+// Feishu adds a speaker envelope to the conversation transcript. Keep that
+// attribution in history, but return only the user's reply to the native tool.
+export function nativeQuestionReplyText(record) {
+  const recorded = record.options?.recordedUserText;
+  const text = typeof recorded === 'string' && recorded.trim() ? recorded : record.text;
+  const feishu = record.options?.sourceContext?.connector === 'feishu'
+    || record.options?.sourceDelivery?.connector === 'feishu';
+  return feishu ? text.replace(/^【飞书群消息｜发言人：[^\r\n]*】\r?\n/, '') : text;
+}
+
 export function normalizeNativeQuestions(questions, protocol) {
   if (!Array.isArray(questions)) return [];
   return questions.filter(q => q && typeof q.question === 'string' && q.question.trim()).map(q => ({
