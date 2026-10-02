@@ -1,4 +1,5 @@
 import { buildCodexArgs } from '../adapters/codex.mjs';
+import { normalizeLimits } from '../../lib/codex-account-status.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 
@@ -60,6 +61,18 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   const pending = new Map(), completedTurns = new Set(), startedTurns = new Set(), items = new Map();
   const reasoningParts = new Map();
   const announcedThreads = new Set();
+  let usageTimer = null, usagePending = false;
+  const observeUsage = result => {
+    if (!options.observeCodexUsage) return;
+    const buckets = normalizeLimits(result);
+    if (buckets.length) onEvent({ type: 'remotelab.codex_usage', usage: { status: 'ready', buckets } });
+  };
+  const refreshUsage = async () => {
+    if (closed || usagePending) return;
+    usagePending = true;
+    try { observeUsage(await request('account/rateLimits/read', {})); } catch { /* Keep the last sample visibly dated. */ }
+    finally { usagePending = false; }
+  };
 
   function request(method, params) {
     if (closed) return Promise.reject(closed);
@@ -188,6 +201,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       const params = message.params || {};
       if (params.threadId && threadId && params.threadId !== threadId) return;
       switch (message.method) {
+        case 'account/rateLimits/updated': observeUsage(params); break;
         case 'thread/started':
           // A child thread's start is not this session's resume identity.
           if (params.thread?.id === threadId) announceThread(threadId);
@@ -237,6 +251,9 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     initialization = inputOperation(async () => {
       await request('initialize', { clientInfo: { name: 'remotelab', version: '1.0.0' } });
       send({ method: 'initialized' });
+      if (options.observeCodexUsage) {
+        usageTimer = setInterval(() => void refreshUsage(), 30_000); usageTimer.unref?.();
+      }
       const resumeId = configuredOptions.threadId;
       const result = await request(resumeId ? 'thread/resume' : 'thread/start', {
         approvalPolicy: 'never', sandbox,
@@ -274,6 +291,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       return request('turn/interrupt', { threadId, turnId: activeTurnId });
     },
     close(error = new Error('Codex driver closed')) {
+      clearInterval(usageTimer);
       if (closed) return;
       closed = error;
       for (const callback of pending.values()) callback.reject(error);

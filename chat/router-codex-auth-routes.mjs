@@ -12,6 +12,22 @@ export async function handleCodexAuthRoutes({
   if (!pathname.startsWith('/api/codex-auth')) return false;
   res.setHeader?.('Cache-Control', 'private, no-store');
 
+  if (pathname === '/api/codex-auth/accounts' && req.method === 'GET') {
+    try {
+      const refresh = new URL(req.url || pathname, 'http://localhost').searchParams.get('refresh') === '1';
+      writeJson(res, 200, { accountList: await authManager.listAccounts({ refresh }) });
+    } catch { writeJson(res, 500, { error: 'Failed to read Codex account list' }); }
+    return true;
+  }
+
+  if (pathname === '/api/codex-auth/accounts/policy' && req.method === 'POST') {
+    try {
+      const body = JSON.parse(await readBody(req, 4096) || '{}');
+      writeJson(res, 200, { accountList: await authManager.setAccountPolicy(body.autoSwitch) });
+    } catch { writeJson(res, 400, { error: 'Invalid Codex account policy' }); }
+    return true;
+  }
+
   if (pathname === '/api/codex-auth/status' && req.method === 'GET') {
     try {
       writeJson(res, 200, { codexAuth: await authManager.getStatus() });
@@ -42,7 +58,9 @@ export async function handleCodexAuthRoutes({
 
   if (pathname === '/api/codex-auth/switch-account' && req.method === 'POST') {
     try {
-      writeJson(res, 200, { codexAuth: await authManager.switchAccount() });
+      const raw = await readBody(req, 4096);
+      const payload = raw ? JSON.parse(raw) : {};
+      writeJson(res, 200, { codexAuth: await authManager.switchAccount({ accountId: payload.accountId }) });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to switch Codex account' });
     }
@@ -61,6 +79,8 @@ export async function handleCodexAuthRoutes({
     try {
       const codexAuth = await authManager.startDeviceLogin({
         restart: payload?.restart === true,
+        accountId: payload?.accountId,
+        label: payload?.label,
       });
       writeJson(res, 200, { codexAuth });
     } catch (error) {

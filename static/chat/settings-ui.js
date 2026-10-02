@@ -584,9 +584,10 @@ function getCodexAuthCopy() {
     open: "打开登录页",
     copy: "复制验证码",
     copied: "已复制",
-    switchAccount: "更换账号",
-    switching: "正在退出…",
-    switchConfirm: "将清除当前实例的 Codex 登录，并立即生成新的登录码。确定继续吗？",
+    switchAccount: "添加账号",
+    switching: "正在切换…",
+    autoSwitch: "订阅额度用尽时自动切换",
+    select: "切换", current: "当前", signIn: "登录", unknownQuota: "额度待查询",
     logoutFailed: "Codex 退出失败",
     switchTimedOut: "切换请求超时，正在重新读取登录状态…",
     account: "当前账号",
@@ -616,9 +617,10 @@ function getCodexAuthCopy() {
     open: "Open login page",
     copy: "Copy code",
     copied: "Copied",
-    switchAccount: "Switch account",
-    switching: "Signing out…",
-    switchConfirm: "This clears the Codex login for this instance and immediately generates a new login code. Continue?",
+    switchAccount: "Add account",
+    switching: "Switching…",
+    autoSwitch: "Switch automatically when subscription limits are reached",
+    select: "Switch", current: "Current", signIn: "Sign in", unknownQuota: "Usage not checked",
     logoutFailed: "Codex logout failed",
     switchTimedOut: "Account switch timed out. Reloading login status…",
     account: "Current account",
@@ -651,6 +653,10 @@ function ensureCodexAuthSection() {
     </div>
     <div class="settings-codex-account" id="settingsCodexAuthAccount" hidden></div>
     <div class="settings-app-empty settings-codex-usage" id="settingsCodexAuthUsage" aria-live="polite" hidden></div>
+    <div id="settingsCodexAccountList" hidden></div>
+    <label class="settings-app-empty" id="settingsCodexAutoSwitchLabel" hidden>
+      <input id="settingsCodexAutoSwitch" type="checkbox"><span id="settingsCodexAutoSwitchText"></span>
+    </label>
     <div class="settings-app-actions">
       <button class="settings-app-btn" id="settingsCodexAuthCheckBtn" type="button"></button>
       <button class="settings-app-btn" id="settingsCodexAuthLoginBtn" type="button"></button>
@@ -676,6 +682,17 @@ function ensureCodexAuthSection() {
   });
   document.getElementById("settingsCodexAuthSwitchBtn")?.addEventListener("click", () => {
     void switchCodexAccount();
+  });
+  document.getElementById("settingsCodexAutoSwitch")?.addEventListener("change", async (event) => {
+    const checkbox = event.currentTarget; checkbox.disabled = true;
+    try {
+      const data = await fetchJsonOrRedirect("/api/codex-auth/accounts/policy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoSwitch: checkbox.checked }), revalidate: false,
+      });
+      codexAuthState.accountList = data.accountList; renderCodexSavedAccounts();
+    } catch (error) { checkbox.checked = !checkbox.checked; if (typeof showToast === "function") showToast(error.message); }
+    finally { checkbox.disabled = false; }
   });
   document.getElementById("settingsCodexAuthCopyBtn")?.addEventListener("click", async (event) => {
     const code = String(codexAuthState?.userCode || "");
@@ -717,6 +734,7 @@ function renderCodexAuthPanel({ checking = false } = {}) {
   const accountInfo = document.getElementById("settingsCodexAuthAccount");
   const usageInfo = document.getElementById("settingsCodexAuthUsage");
   const awaiting = !state.loggedIn && state.deviceLoginActive && state.userCode;
+  renderCodexSavedAccounts();
 
   title.textContent = copy.title;
   checkBtn.textContent = copy.check;
@@ -784,10 +802,45 @@ function formatCodexUsage(usage, copy) {
   return lines.join("\n");
 }
 
+function renderCodexSavedAccounts() {
+  const list = document.getElementById("settingsCodexAccountList");
+  const label = document.getElementById("settingsCodexAutoSwitchLabel");
+  const data = codexAuthState?.accountList;
+  if (!list || !data) { if (list) list.hidden = true; if (label) label.hidden = true; return; }
+  const copy = getCodexAuthCopy();
+  list.hidden = false; label.hidden = false;
+  document.getElementById("settingsCodexAutoSwitch").checked = data.autoSwitch === true;
+  document.getElementById("settingsCodexAutoSwitchText").textContent = copy.autoSwitch;
+  list.replaceChildren();
+  for (const account of data.accounts || []) {
+    const row = document.createElement("div"); row.className = "settings-app-card";
+    const name = document.createElement("div"); name.className = "settings-app-name";
+    name.textContent = `${account.active ? `${copy.current} · ` : ""}${account.label}`;
+    const usage = document.createElement("div"); usage.className = "settings-app-empty";
+    const bucket = account.usage?.buckets?.find(item => item.id === "codex");
+    const remaining = [bucket?.primary, bucket?.secondary].filter(Boolean)
+      .filter(item => Number.isFinite(item.remainingPercent)).map(item => item.remainingPercent);
+    usage.textContent = account.availability === "unknown" || !remaining.length
+      ? copy.unknownQuota : `${account.account?.planType || "Codex"} · ${copy.remaining} ${Math.min(...remaining)}%`;
+    const button = document.createElement("button"); button.className = "settings-app-btn"; button.type = "button";
+    button.textContent = !account.account ? copy.signIn : account.active ? copy.current : copy.select;
+    button.disabled = account.active && !!account.account;
+    button.addEventListener("click", () => {
+      if (account.account) void switchCodexAccount(account.id);
+      else void startCodexDeviceLogin(account.id);
+    });
+    row.append(name, usage, button); list.append(row);
+  }
+}
+
 async function refreshCodexUsage(requestId, { force = false } = {}) {
   if (!codexAuthState?.loggedIn || requestId !== codexAuthRequestId) return;
   try {
     const data = await fetchJsonOrRedirect(`/api/codex-auth/rate-limits${force ? "?refresh=1" : ""}`, { cache: "no-store", revalidate: false });
+    if (force && requestId === codexAuthRequestId) {
+      const saved = await fetchJsonOrRedirect("/api/codex-auth/accounts?refresh=1", { cache: "no-store", revalidate: false });
+      if (requestId === codexAuthRequestId && saved?.accountList) codexAuthState.accountList = saved.accountList;
+    }
     if (requestId !== codexAuthRequestId) return;
     const usage = data?.codexUsage;
     codexAuthState.usage = usage?.accountRevision === codexAuthState.accountRevision ? usage : { status: "unavailable" };
@@ -818,7 +871,7 @@ async function refreshCodexAuthStatus({ silent = false, force = false, includeUs
   if (includeUsage) await refreshCodexUsage(requestId, { force });
 }
 
-async function startCodexDeviceLogin() {
+async function startCodexDeviceLogin(accountId) {
   const requestId = ++codexAuthRequestId;
   const loginBtn = document.getElementById("settingsCodexAuthLoginBtn");
   if (loginBtn) loginBtn.disabled = true;
@@ -826,7 +879,7 @@ async function startCodexDeviceLogin() {
     const data = await fetchJsonOrRedirect("/api/codex-auth/device-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ restart: true }),
+      body: JSON.stringify({ restart: true, ...(accountId ? { accountId } : {}) }),
       revalidate: false,
     });
     if (requestId !== codexAuthRequestId) return;
@@ -839,9 +892,8 @@ async function startCodexDeviceLogin() {
   await refreshCodexUsage(requestId);
 }
 
-async function switchCodexAccount() {
+async function switchCodexAccount(accountId) {
   const copy = getCodexAuthCopy();
-  if (!window.confirm(copy.switchConfirm)) return;
   const requestId = ++codexAuthRequestId;
   stopCodexAuthPolling();
   codexAuthState = null;
@@ -856,6 +908,8 @@ async function switchCodexAccount() {
   try {
     const data = await fetchJsonOrRedirect("/api/codex-auth/switch-account", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(accountId ? { accountId } : {}),
       signal: controller.signal,
       revalidate: false,
     });

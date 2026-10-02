@@ -4,6 +4,7 @@ import { resolveCodexHomeDir, resolveMachineAccountHomeDir } from '../lib/codex-
 import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
 import { ensureDir } from './fs-utils.mjs';
 import { readCodexAccountStatus, readCodexAuthMetadata } from '../lib/codex-account-status.mjs';
+import { createCodexAccountListAuthManager } from './codex-account-list-auth.mjs';
 
 const DEVICE_LOGIN_TTL_MS = 15 * 60 * 1000;
 const STATUS_TIMEOUT_MS = 10 * 1000;
@@ -116,6 +117,7 @@ export function createCodexAuthManager({
   readAccountStatus = readCodexAccountStatus,
   baseEnv = () => process.env,
   now = () => Date.now(),
+  credentialStore,
 } = {}) {
   let activeChild = null;
   let generation = 0;
@@ -155,10 +157,11 @@ export function createCodexAuthManager({
   async function resolveRuntime() {
     const command = await resolveCommand();
     if (!command) return null;
-    const codexHome = resolveHome();
+    const codexHome = await resolveHome();
     await ensureDir(codexHome);
     return {
       command,
+      credentialStore,
       env: {
         ...baseEnv(),
         HOME: resolveMachineAccountHomeDir(),
@@ -283,7 +286,8 @@ export function createCodexAuthManager({
 
       let combinedOutput = '';
       try {
-        activeChild = spawnProcess(runtime.command, ['login', '--device-auth'], {
+        activeChild = spawnProcess(runtime.command, ['login', '--device-auth',
+          ...(credentialStore === 'file' ? ['-c', 'cli_auth_credentials_store="file"'] : [])], {
           env: runtime.env,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -345,7 +349,8 @@ export function createCodexAuthManager({
         return createPublicState(state, { available: false, loggedIn: false });
       }
 
-      const result = await waitForProcess(runtime.command, ['logout'], {
+      const result = await waitForProcess(runtime.command, ['logout',
+        ...(credentialStore === 'file' ? ['-c', 'cli_auth_credentials_store="file"'] : [])], {
         env: runtime.env,
         timeoutMessage: 'Codex logout timed out',
         spawnProcess,
@@ -384,4 +389,4 @@ export function createCodexAuthManager({
   };
 }
 
-export const codexAuthManager = createCodexAuthManager();
+export const codexAuthManager = createCodexAccountListAuthManager({ createManager: createCodexAuthManager });
