@@ -1,5 +1,85 @@
 # Feishu project-linked context pilot
 
+## Native project entry
+
+Operator prompt: “Enable `/project` for this existing project link. Register the
+canonical memory file and exact heading, authorized resource links, and the IDs
+and scopes of its existing schedules. Reuse those sources and the current Bot
+callback connection. Verify scoped reads, controls, restart recovery, and actual
+card delivery without changing production schedules for a test.”
+
+The operator supplies one source packet: the existing project/chat pair, a
+canonical memory path and exact Markdown heading, existing recurring schedule
+IDs with short aliases and their actual shared scope, and authorized resource
+links. Set `projectSurfacesPath` in the Connector config to an instance-local
+registry:
+
+```json
+{
+  "schema": 1,
+  "projects": {
+    "example-project": {
+      "name": "Example project",
+      "description": "Current project purpose",
+      "memory": {
+        "path": "/absolute/path/to/canonical-project-ledger.md",
+        "heading": "## Example project",
+        "label": "Project memory; maintained in the original ledger"
+      },
+      "tasks": [{
+        "id": "sch_0123456789abcdef01234567",
+        "alias": "daily",
+        "scope": "Shared daily review; controls affect all projects it covers"
+      }],
+      "resources": [{ "name": "Original project discussion", "url": "https://example.com/source" }]
+    }
+  }
+}
+```
+
+`/project` reads the registered sources and creates or updates one native card
+in the current conversation. It does not create a new AI Session. Tabs show
+project links, the exact memory section in pages, actual schedule state and
+execution rules, and the durable audit of operations through this entry.
+`/project memory`, `/project tasks`, and `/project audit` also work without
+buttons. Optional `materials` register existing JSON source files with an
+`alias`, `name`, absolute `path`, and a `fields` object mapping allowed top-level
+field names to display labels. `/project material <alias> [page]` and card buttons
+read those original audit/context fields inside Feishu; unregistered fields are
+excluded. Read times and source versions are visible. Directory notifications
+cover atomic file replacement; source changes update the original card. A
+missing or ambiguous memory source is marked unavailable, never replaced with
+an old copy. No source directory scan or new memory store is introduced.
+
+Pause/resume buttons operate only on explicitly registered recurring schedules.
+The callback must match the stored card, chat, source binding, and current
+Connector access policy. Shared scope is shown beside every control. Before a
+write the entry checks the current configuration version; scheduler counters
+and execution timestamps are not configuration changes. Writes have durable
+operation receipts, readback, and replay protection. An uncertain outcome stays
+uncertain; restart inspects interrupted receipts without repeating a write.
+Pause prevents future admissions and does not stop already running work.
+This is not a transaction across independent clients modifying the scheduler.
+
+`/project memory <correction>` continues the current Harness conversation with
+the exact canonical source, registered heading, observed version, and the
+human's original request. The Harness rechecks evidence and concurrent edits,
+writes the original memory through its normal workflow, and replies with what
+was actually adopted. Submission is not a successful write. The card then reads
+that same source; it never maintains a synchronized editable copy. Arbitrary
+task-rule edits similarly use the original conversation and existing schedule
+tools. `/status`, `/model`, `/effort`, `/tier`, `/mute`, and `/unmute` retain their
+existing conversation scope.
+
+This entry is a bounded view over existing sources. It does not implement the
+separate memory governance proposal, approve organizational consensus, discover
+all possible tasks, or claim client click acceptance from API delivery alone.
+The installed Bot must already have a configured `card.action.trigger`
+subscription; enabling that subscription in Feishu's console is a human step
+only if it is absent.
+
+## Linked conversation context
+
 An instance may explicitly pair one discussion chat with one work chat in its
 Feishu Connector config:
 
