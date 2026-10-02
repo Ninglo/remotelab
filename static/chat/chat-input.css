@@ -77,9 +77,7 @@
   .mobile-voice-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
   .is-preparing .mobile-voice-live-dot, .is-recognizing .mobile-voice-live-dot { background: var(--text-muted); }
   .mobile-voice-level { display: flex; align-items: center; justify-content: center; gap: 4px; height: 32px; margin-top: 10px; }
-  .mobile-voice-level i { width: 3px; height: calc(5px + var(--voice-level, 0) * 12px); border-radius: 3px; background: var(--accent); transition: height 0.12s; }
-  .mobile-voice-level i:nth-child(3n) { height: calc(8px + var(--voice-level, 0) * 22px); }
-  .mobile-voice-level i:nth-child(3n + 2) { height: calc(12px + var(--voice-level, 0) * 16px); }
+  .mobile-voice-level i { width: 3px; height: var(--voice-bar-height, 4px); border-radius: 3px; background: var(--accent); }
   .is-recognizing .mobile-voice-level { opacity: 0.35; }
   #mobileVoiceDuration { margin-left: auto; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .mobile-voice-transcript { margin: 8px 0 16px; max-height: 76px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font-size: 17px; line-height: 1.5; text-align: center; }
