@@ -102,5 +102,10 @@ try {
   assert.equal(logoutCalls, 0, 'adding a second account never logs out the first');
   await facade.switchAccount({ accountId: backup.id }); assert.equal(logoutCalls, 0);
   assert.equal((await pool.read()).activeId, backup.id);
+  responses.set(backup.home, usage(100)); await pool.policy(true);
+  const firstJob = await pool.acquireForRun({ command: 'fake' });
+  const secondJob = await pool.acquireForRun({ command: 'fake' });
+  assert.notEqual(firstJob.id, secondJob.id, 'a free authorization runs concurrently instead of waiting behind a busy account');
+  await firstJob.lease.release(); await secondJob.lease.release();
   console.log('Codex account persistence, independent authorization, quota admission, retry classification and credential ownership passed');
 } finally { await rm(root, { recursive: true, force: true }); }
