@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-02 — Expose native questions with a bounded fallback
+
+- Requested behavior: users should see the agent's question and options and have a chance to answer. A configurable timeout/default strategy should let ordinary work continue when nobody responds, rather than keeping it pending indefinitely.
+- Current evidence: the Codex native driver immediately returns empty `answers` for `item/tool/requestUserInput`; the Claude argument builder disables `AskUserQuestion`. This is not an existing frontend choice workflow, and no fixed first-option selection rule was found in these paths.
+- Design proposal, not implementation: project one durable question event to Web and the bound chat, accept a choice or free text, show the default and deadline before waiting, and resolve exactly once from a user answer or timeout. Report timeout choices as defaults, never as a human answer. Without an explicit default, return a timeout outcome rather than inventing a choice; authorization requests must not gain consent through silence.
+- Scope: inspection and product discussion only. Native question handling, frontend controls, timeout duration, and Feishu buttons remain unimplemented. Keep this separate from the simple rule-based message-label trial.
+
 ### 2026-10-02 — Distinguish progress from delivered results in Feishu
 
 - Observed friction: useful additional messages still require readers to inspect every body to tell whether work continues or a result has arrived.
