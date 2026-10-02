@@ -587,7 +587,7 @@ function getCodexAuthCopy() {
     switchAccount: "添加账号",
     switching: "正在切换…",
     autoSwitch: "订阅额度用尽时自动切换",
-    select: "切换", current: "当前", signIn: "登录", unknownQuota: "额度待查询",
+    select: "切换", current: "当前", signIn: "登录", reauthorize: "重新登录", unknownQuota: "额度待查询",
     logoutFailed: "Codex 退出失败",
     switchTimedOut: "切换请求超时，正在重新读取登录状态…",
     account: "当前账号",
@@ -829,7 +829,13 @@ function renderCodexSavedAccounts() {
       if (account.account) void switchCodexAccount(account.id);
       else void startCodexDeviceLogin(account.id);
     });
-    row.append(name, usage, button); list.append(row);
+    row.append(name, usage, button);
+    if (account.account) {
+      const reauthorize = document.createElement("button"); reauthorize.className = "settings-app-btn";
+      reauthorize.type = "button"; reauthorize.textContent = copy.reauthorize || "Sign in again";
+      reauthorize.addEventListener("click", () => void startCodexDeviceLogin(account.id)); row.append(reauthorize);
+    }
+    list.append(row);
   }
 }
 

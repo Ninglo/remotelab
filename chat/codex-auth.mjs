@@ -192,6 +192,10 @@ export function createCodexAuthManager({
       });
     }
 
+    // A reauthorization may still have its previous cache. It is complete only
+    // when the device-login process exits, not when the old identity is read.
+    if (activeChild) return createPublicState(state, { available: true, loggedIn: false });
+
     let result;
     try {
       result = await readAccountStatus({ ...runtime, spawnProcess });

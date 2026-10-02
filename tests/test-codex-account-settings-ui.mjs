@@ -70,4 +70,5 @@ context.selected = null;
 run('switchCodexAccount = async id => { selected = id; }; startCodexDeviceLogin = async id => { selected = id; }');
 rows[1].children[2].click(); assert.equal(context.selected, 'b');
 rows[2].children[2].click(); assert.equal(context.selected, 'c');
+rows[0].children[3].click(); assert.equal(context.selected, 'a', 'existing authorization can be renewed independently');
 console.log('Codex settings identity, quota, localization and stale-response tests passed');
