@@ -8,8 +8,9 @@ const now = () => new Date().toISOString();
 export function canForwardNativeRequest(record, head) {
   if (!record || !head || record.key === head.key || record.preparedAt
       || record.options?.freshThread || head.cancelRequestedAt
-      || record.options?.sourceContext?.documentBinding || head.options?.sourceContext?.documentBinding
-      || record.options?.internalOperation || head.options?.internalOperation) return false;
+      || record.options?.internalOperation) return false;
+  if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding
+      || head.options?.sourceContext?.documentBinding || head.options?.internalOperation)) return false;
   const a = record.runtimeSelection || {};
   const b = head.runtimeSelection || {};
   return ['tool', 'model', 'effort', 'thinking'].every(key => (a[key] || '') === (b[key] || ''));
@@ -33,15 +34,19 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
       await settle(record, run);
       return;
     }
-    if (run?.cancelRequested && !receipt) { await clear(record); return; }
+    const expiredQuestion = () => reject(record, '这道问题已结束，这条回答未应用；请说明要修改哪项选择。');
+    if (run?.cancelRequested && !receipt) {
+      if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record);
+      return;
+    }
     if (terminal(run)) {
-      if (!receipt) { await clear(record); return; }
+      if (!receipt) { if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record); return; }
       await reject(record, receipt.error || 'Native input acknowledgement was lost; automatic replay was suppressed.');
       return;
     }
     try {
       const result = await submitNativeInput(runDirectory(rootId), record.nativeInput);
-      if (!result?.accepted) { await clear(record); return; }
+      if (!result?.accepted) { if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record); return; }
       record = await store.mutate(record.key, current => ({ ...current, nativeReceipt: result, preparedAt: current.preparedAt || now() }));
       await settle(record, await getRun(rootId));
     } catch (error) {
@@ -64,7 +69,9 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         const text = typeof prepared === 'string' ? prepared : prepared.text;
         const context = typeof prepared === 'string' ? '' : prepared.context || '';
         record = await store.mutate(record.key, current => ({ ...current,
-          nativeDispatchRunId: head.runId, nativeInput: { id: record.requestId, text }, nativeContext: context,
+          nativeDispatchRunId: head.runId, nativeInput: { id: record.requestId, text,
+            ...(record.options?.nativeQuestionId ? { questionId: record.options.nativeQuestionId, answerText: record.text } : {}),
+          }, nativeContext: context,
           nativeInputBaseSeq: current.nativeInputBaseSeq ?? manifest.forkBaseSeq ?? 0,
         }));
         await changed(record.key);

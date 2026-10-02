@@ -5,6 +5,7 @@ import { createCodexDriver } from './native/codex.mjs';
 import { createPiDriver } from './native/pi.mjs';
 import { createClaudeDriver } from './native/claude.mjs';
 import { createAntigravityDriver } from './native/antigravity.mjs';
+import { createNativeQuestionBroker } from './native-user-questions.mjs';
 import {
   classifySessionStartPreflightAnswer,
   createSessionStartPreflightCapture,
@@ -42,7 +43,7 @@ function createLfLineReader(stream, onLine) {
 
 // The detached sidecar owns the bidirectional native process. The controller
 // can disappear without closing stdin or losing the Harness's active tools.
-export async function runNativeHost({ directory, command, runtimeFamily, options, prompt, cwd, env, onStdout, onStderr, onProcess, onControl, isCancelled = async () => false, startPreflight = null, onPreflightResult = async () => {} }) {
+export async function runNativeHost({ directory, command, runtimeFamily, options, prompt, cwd, env, onStdout, onStderr, onProcess, onControl, isCancelled = async () => false, startPreflight = null, onPreflightResult = async () => {}, questionOptions = {} }) {
   const createDriver = factories[runtimeFamily];
   if (!createDriver) throw new Error(`Unsupported native Harness ${runtimeFamily}`);
   const preflight = startPreflight?.prompt
@@ -78,10 +79,13 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     killTimer = setTimeout(() => proc?.kill('SIGKILL'), 5000);
   };
   const maybeStop = () => {
-    if (started && nativeResult && submissions === 0 && !server?.pending) stop();
+    if (started && nativeResult && submissions === 0 && !server?.pending && !questions.pending) stop();
   };
   const emit = event => queueWrite(() => onStdout(JSON.stringify(event)));
+  const questions = createNativeQuestionBroker({ ...questionOptions, directory, onEvent: emit,
+    onError: error => { fatalError ||= error; stop(); }, onIdle: () => queueMicrotask(maybeStop) });
   const driver = createDriver({ options, cwd,
+    onQuestion: request => questions.ask(request),
     send: message => {
       if (!proc || proc.stdin.destroyed || closing) throw Object.assign(new Error('Native Harness input channel is closed'), { code: 'NATIVE_UNCERTAIN' });
       proc.stdin.write(`${JSON.stringify(message)}\n`);
@@ -164,7 +168,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   stderr.on('line', line => { stderrLines.push(line); queueWrite(() => onStderr(line)); });
   try {
     await onProcess(proc);
-    onControl?.({ interrupt: () => { interruptRequested = true; return driver.interrupt(); } });
+    onControl?.({ interrupt: async () => { interruptRequested = true; const [, result] = await Promise.all([questions.cancel(), driver.interrupt()]); return result; } });
     // The endpoint becomes visible before starting the first model call. It
     // accepts follow-ups as soon as the protocol initialization has completed.
     server = await createNativeInputServer({ directory,
@@ -174,6 +178,8 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
         submissions++;
         const before = settlementRevision;
         try {
+          const answer = await questions.answer({ id: input.id, text: input.answerText || input.text, questionId: input.questionId });
+          if (answer) return answer;
           const receipt = await driver.submit(input);
           // A definite rejection must not erase an already settled turn. A
           // successful input needs another completion unless its driver emitted
@@ -202,6 +208,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   } finally {
     clearTimeout(closeTimer); clearTimeout(killTimer);
     driver.close(fatalError || new Error('Native Harness host closed'));
+    await questions.close();
     if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL');
     await server?.close();
     onControl?.(null);

@@ -2,6 +2,7 @@ import { buildCodexArgs } from '../adapters/codex.mjs';
 import { normalizeLimits } from '../../lib/codex-account-status.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
+import { nativeQuestionAnswers } from '../native-user-questions.mjs';
 
 const nativeStatus = value => value === 'inProgress' ? 'in_progress' : value === 'declined' ? 'failed' : value;
 const textInput = text => [{ type: 'text', text: String(text), text_elements: [] }];
@@ -35,7 +36,7 @@ function execItem(item) {
  * durable transport; this driver serializes only RPC acknowledgements, never
  * model execution. The native turn owns steering and tool scheduling.
  */
-export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => {}, onError = () => {}, options = {}, cwd } = {}) {
+export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => {}, onError = () => {}, onQuestion = async () => ({ answers: {} }), options = {}, cwd } = {}) {
   if (typeof send !== 'function') throw new TypeError('Codex driver requires send');
   const configuredOptions = { ...options, model: normalizeCodexModelId(options.model), threadId: options.threadId || options.codexThreadId,
     reasoningEffort: clampReasoningEffort(options.reasoningEffort || options.effort) };
@@ -61,6 +62,29 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   const pending = new Map(), completedTurns = new Set(), startedTurns = new Set(), items = new Map();
   const reasoningParts = new Map();
   const announcedThreads = new Set();
+  const asyncQuestions = new Set();
+
+  function askAsync(item) {
+    if (asyncQuestions.has(item.id)) return;
+    asyncQuestions.add(item.id);
+    const questions = item.questions.map((q, index) => ({ id: String(index), question: q.title, header: '',
+      options: q.options?.map(label => ({ label, description: '' })),
+    }));
+    inputsInFlight += 1;
+    // Codex's Default-mode question tool is an async agentMessage, not a
+    // server RPC. Its native contract delivers answers as a new user input.
+    void Promise.resolve().then(() => onQuestion({ id: `async:${item.id}`, protocol: 'codex', questions }))
+      .then(result => result.cancelled ? null : inputOperation(() => submitInput({ id: `question:${item.id}`, text: [
+        'Answers to the previous questions:',
+        ...questions.map(q => {
+          const origin = result.resolutions?.find(r => r.key === q.id)?.origin;
+          const value = result.answers[q.id]?.join(', ') || 'No answer';
+          return `${q.question}: ${value}${origin === 'timeout' ? ' [system timeout fallback; not a user response]' : ''}`;
+        }),
+      ].join('\n') })))
+      .catch(error => { if (!closed) onError(error); })
+      .finally(() => { inputsInFlight -= 1; maybeSettle(); });
+  }
   let usageTimer = null, usagePending = false;
   const observeUsage = result => {
     if (!options.observeCodexUsage) return;
@@ -146,6 +170,15 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   }
   function respondToServer(message) {
     const { id, method } = message;
+    if (method === 'item/tool/requestUserInput') {
+      inputsInFlight += 1;
+      void Promise.resolve().then(() => onQuestion({ id: String(id), protocol: 'codex', questions: message.params?.questions }))
+        .then(result => {
+          if (!closed && !result.cancelled) send({ id, result: { answers: Object.fromEntries(Object.entries(nativeQuestionAnswers(result)).map(([key, values]) => [key, { answers: values }])) } });
+        }).catch(error => { if (!closed) onError(error); })
+        .finally(() => { inputsInFlight -= 1; maybeSettle(); });
+      return;
+    }
     let result;
     switch (method) {
       case 'item/commandExecution/requestApproval':
@@ -153,7 +186,6 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       case 'execCommandApproval':
       case 'applyPatchApproval': result = { decision: 'abort' }; break;
       case 'item/permissions/requestApproval': result = { permissions: {}, scope: 'turn' }; break;
-      case 'item/tool/requestUserInput': result = { answers: {} }; break;
       case 'mcpServer/elicitation/request': result = { action: 'cancel' }; break;
       case 'item/tool/call': result = { success: false, contentItems: [{ type: 'inputText', text: 'RemoteLab does not provide client-side dynamic tools.' }] }; break;
       default:
@@ -222,6 +254,10 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
         }
         case 'item/started':
         case 'item/completed': {
+          if (params.item?.type === 'agentMessage' && params.item.delivery === 'async' && params.item.questions?.length) {
+            if (message.method === 'item/completed') askAsync(params.item);
+            break;
+          }
           const item = execItem(params.item);
           if (!item) break;
           items.set(item.id, item);

@@ -3,6 +3,7 @@ import {
   reasoningEvent, statusEvent, usageEvent,
 } from '../normalizer.mjs';
 import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
+import { nativeQuestionEvent } from '../native-user-questions.mjs';
 
 /**
  * Claude Code adapter.
@@ -35,6 +36,9 @@ export function createClaudeAdapter() {
       } catch {
         return [];
       }
+
+      const questionEvent = nativeQuestionEvent(obj);
+      if (questionEvent) return [questionEvent];
 
       const events = [];
 
@@ -209,9 +213,9 @@ export function buildClaudeArgs(prompt, options = {}) {
   const args = [
     '-p', prompt,
     '--output-format', 'stream-json', '--verbose',
-    '--permission-prompts', 'none',
-    '--disallowedTools', 'AskUserQuestion',
+    '--permission-prompts', options.nativeQuestions ? 'host' : 'none',
   ];
+  if (!options.nativeQuestions) args.push('--disallowedTools', 'AskUserQuestion');
 
   if (options.maxTurns) {
     args.push('--max-turns', String(options.maxTurns));

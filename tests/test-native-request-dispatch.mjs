@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequestStore } from '../chat/requests.mjs';
 import { createNativeInputServer } from '../chat/native-input-transport.mjs';
-import { createNativeRequestDispatcher } from '../chat/native-request-dispatch.mjs';
+import { canForwardNativeRequest, createNativeRequestDispatcher } from '../chat/native-request-dispatch.mjs';
+
+assert.equal(canForwardNativeRequest({ key: 'reply', options: { nativeQuestionId: 'question' } }, { key: 'head', options: { internalOperation: 'trigger_delivery' } }), true, 'explicit answers may return to a question raised during internal work');
+assert.equal(canForwardNativeRequest({ key: 'reply', options: {} }, { key: 'head', options: { internalOperation: 'trigger_delivery' } }), false);
 
 const root = await mkdtemp(join(tmpdir(), 'native-dispatch-test-'));
 const store = createRequestStore(join(root, 'requests'));
@@ -50,5 +53,11 @@ try {
   await dispatcher.forward(await store.get(uncertain.key)); await dispatcher.idle();
   assert.match((await store.get(uncertain.key)).result.error, /acknowledgement was lost/);
   assert.equal(received.filter(id => id === 'uncertain').length, 1);
+  const expired = await accepted('expired-question');
+  const captured = await store.mutate(expired.key, current => ({ ...current, options: { nativeQuestionId: 'question-one' } }));
+  state = 'completed';
+  await dispatcher.forward(captured, head); await dispatcher.idle();
+  assert.match((await store.get(expired.key)).result.error, /问题已结束/);
+  assert.ok(!received.includes('expired-question'), 'a captured late answer cannot become an unrelated model turn after native host settlement');
   console.log('native dispatch: overlapping input, durable run linkage, shared result, uncertain receipt without replay passed');
 } finally { unblock(); await dispatcher.idle(); await server.close(); await rm(root, { force: true, recursive: true }); }

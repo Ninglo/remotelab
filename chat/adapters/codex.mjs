@@ -10,6 +10,7 @@ import {
 import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
+import { nativeQuestionEvent } from '../native-user-questions.mjs';
 
 /**
  * Codex CLI adapter.
@@ -64,6 +65,9 @@ export function createCodexAdapter() {
       } catch {
         return [];
       }
+
+      const questionEvent = nativeQuestionEvent(obj);
+      if (questionEvent) return [questionEvent];
 
       const events = [];
 
