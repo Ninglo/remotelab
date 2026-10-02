@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
-import { resolveSessionDeliveryPlan } from '../chat/session-conversations.mjs';
-import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
-import { withSessionsMetaMutation, findSessionMeta } from '../chat/session-meta-store.mjs';
-import { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery } from '../chat/source-deliveries.mjs';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
+
+setIsolatedTestHome(await mkdtemp(join(tmpdir(), 'bound-document-delivery-')));
+const { resolveSessionDeliveryPlan } = await import('../chat/session-conversations.mjs');
+const { buildReplyDeliveries } = await import('../lib/reply-deliveries.mjs');
+const { withSessionsMetaMutation, findSessionMeta } = await import('../chat/session-meta-store.mjs');
+const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
 
 const conversation = { connector: 'feishu', sourceRouteId: 'bound-doc-bot', target: {
   chatId: 'review-chat', tenantKey: 'tenant', conversationKind: 'thread',
