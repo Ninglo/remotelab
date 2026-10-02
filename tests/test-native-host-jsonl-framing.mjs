@@ -50,7 +50,9 @@ try {
     prompt: 'test',
     cwd: root,
     env: { PATH: process.env.PATH },
-    onProcess: async proc => { proc.once('exit', releaseOutput); },
+    // exit may precede the last stdout data callback; close waits for all
+    // streams, so the blocked writer sees one complete notification burst.
+    onProcess: async proc => { proc.once('close', releaseOutput); },
     onStdout: async line => { await outputBlocked; events.push(JSON.parse(line)); },
     onStderr: async () => {},
   });
