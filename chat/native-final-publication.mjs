@@ -35,7 +35,7 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
 
 // Openings, explicit progress, and completed finals enter the same durable
 // outbox. Selection and receipt keys survive observer replay and restarts.
-export async function publishLiveAssistantReplies(record, events, { store, plan, session, prepareFinal = async event => event } = {}) {
+export async function publishLiveAssistantReplies(record, events, { store, plan, session, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
@@ -49,6 +49,12 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (stored?.streamedSurfaceMessageIds?.includes(messageId)
         || stored?.streamedFinalReplyIds?.includes(messageId)) continue;
     const final = isFinalAssistantMessage(event);
+    // An early final is not a stopped execution. Feishu sends the result once
+    // execution stops, rather than announcing delivery while work continues.
+    if (plan.connector === 'feishu' && final && running) continue;
+    // Cold recovery of a stopped execution publishes its result, not stale
+    // openings or intermediate updates labeled as separate deliveries.
+    if (plan.connector === 'feishu' && !final && !running) continue;
     let prepared;
     try { prepared = await prepareFinal(final ? event : surface); }
     catch (error) {
@@ -64,7 +70,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       text: prepared.content, attachments: getAssistantReplyAttachments(prepared),
     };
     const parts = buildReplyDeliveries(resolveAmbientFeishuReplyPlan(record, plan, [event]), payload, {
-      surfaceKind: surface.surfaceKind,
+      running,
       requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
     if (!parts.length) continue;

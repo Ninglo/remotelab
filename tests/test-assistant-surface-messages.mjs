@@ -75,7 +75,12 @@ for (const connector of ['feishu', 'wechat', 'email']) {
   assert.equal(record.deliveries.some(part => part.kind === 'reaction'), false, 'progress never finishes the temporary outcome reaction');
   record = JSON.parse(JSON.stringify(record)); // Restart/replay uses durable receipt state.
   await publishLiveAssistantReplies(record, history, options);
-  await publishLiveAssistantReplies(record, history, options);
+  if (connector === 'feishu') {
+    assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected.slice(0, 2),
+      'a model final cannot announce delivery while execution is running');
+  }
+  await publishLiveAssistantReplies(record, history, { ...options, running: false });
+  await publishLiveAssistantReplies(record, history, { ...options, running: false });
   assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected);
   assert.deepEqual(record.streamedSurfaceMessageIds, ['m2', 'm5', 'm8']);
   assert.deepEqual(record.streamedFinalReplyIds, ['m8']);
@@ -84,6 +89,13 @@ for (const connector of ['feishu', 'wechat', 'email']) {
   assert.equal(buildReplyPublicationPayload(pending, {}, { includeSessionEntry: false }).text, '', 'settlement does not repeat streamed messages');
 }
 const feishuPlan = { connector: 'feishu', target: { chatId: 'chat' } };
+let stoppedRecord = { key: 'stopped', runId: 'r', responseId: 'stopped-response', options: {}, deliveries: [] };
+await publishLiveAssistantReplies(stoppedRecord, history, {
+  store: { get: async () => stoppedRecord, mutate: async (_key, fn) => { stoppedRecord = fn(stoppedRecord); } },
+  plan: feishuPlan, running: false,
+});
+assert.deepEqual(stoppedRecord.deliveries.map(part => part.text), ['【交付】\n\nFixed and verified.'],
+  'cold recovery of stopped execution does not publish stale progress as deliveries');
 let legacyRecord = { key: 'legacy', runId: 'r', responseId: 'legacy-response', options: {}, deliveries: [] };
 await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, 'A direct answer')], {
   store: { get: async () => legacyRecord, mutate: async (_key, fn) => { legacyRecord = fn(legacyRecord); } },
@@ -95,16 +107,16 @@ await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, '<p
   plan: feishuPlan,
 });
 assert.equal(legacyRecord.deliveries[0].text, '【进展】\n\nExplicit progress', 'explicit progress can still stream without a native phase');
-for (const surfaceKind of ['opening', 'progress', 'final']) {
-  const label = surfaceKind === 'final' ? '交付' : '进展';
-  assert.equal(buildReplyDeliveries(feishuPlan, { text: '【待你确认】\n请选择目标。' }, { surfaceKind })[0].text,
-    '【待你确认】\n请选择目标。', 'required input remains distinct from progress and results');
-  assert.equal(buildReplyDeliveries(feishuPlan, { text: '【交付】\n仍在迁移。' }, { surfaceKind })[0].text,
-    `【${label}】\n\n仍在迁移。`, 'the actual phase wins without duplicate labels');
+for (const running of [true, false]) {
+  const label = running ? '进展' : '交付';
+  assert.equal(buildReplyDeliveries(feishuPlan, { text: '【待你确认】\n请选择目标。' }, { running })[0].text,
+    `【${label}】\n\n请选择目标。`, 'model-chosen labels cannot override execution state');
+  assert.equal(buildReplyDeliveries(feishuPlan, { text: '【交付】\n仍在迁移。' }, { running })[0].text,
+    `【${label}】\n\n仍在迁移。`, 'the actual execution state wins without duplicate labels');
 }
-assert.equal(buildReplyDeliveries(feishuPlan, { text: '' }, { surfaceKind: 'final' }).length, 0,
+assert.equal(buildReplyDeliveries(feishuPlan, { text: '' }, { running: false }).length, 0,
   'empty answers never become label-only messages');
 assert.equal(buildReplyDeliveries(feishuPlan, { text: '通知' })[0].text, '通知', 'manual notices have no inferred phase');
-assert.equal(buildReplyDeliveries(feishuPlan, { text: '仍未完成。' }, { surfaceKind: 'final' })[0].text,
+assert.equal(buildReplyDeliveries(feishuPlan, { text: '仍未完成。' }, { running: false })[0].text,
   '【交付】\n\n仍未完成。', 'result publication never rewrites the task outcome');
 console.log('test-assistant-surface-messages: ok');

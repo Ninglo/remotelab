@@ -25,8 +25,8 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Observed friction: useful additional messages still require readers to inspect every body to tell whether work continues or a result has arrived.
 - Requested behavior: try shared labels for the small current user group, rather than adding a personal preference. Iterate after actual use.
-- Implementation: the Feishu outbox prefixes openings and published progress with `【进展】`, and turn results with `【交付】`. An explicit `【待你确认】` survives when the reader must act. Reuse existing phase selection and receipt deduplication; do not add a classifier or increase message frequency.
-- Evidence boundary: message publication phase does not establish task completion. Partial, blocked, failed, and background work must be stated by the Harness. Automated coverage checks live publication, terminal fallback, replay, and other connectors; reader comfort remains a trial.
+- Follow-up correction: keep the first trial a pure rule system that is transparent to the AI. No third label and no prompt instructions asking the model to control labels. Running execution maps to `【进展】`; stopped execution maps to `【交付】`. Hold an early final for terminal publication so it cannot claim delivery while execution continues. Reuse receipt deduplication; do not add a classifier or increase message frequency.
+- Evidence boundary: stopped execution does not establish task success. Automated coverage checks running and stopped publication, terminal fallback, replay, and other connectors; reader comfort remains a trial.
 
 ### 2026-10-02 — Route by engineering depth and latency, with Sol xhigh as the default
 
