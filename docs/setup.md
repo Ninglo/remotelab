@@ -78,16 +78,22 @@ selection unless the user changes it; they do not run Jev again. The next new
 Session starts in Auto again. The default tier mappings are:
 
 - `quick`: GPT-6.1 Sol with `low` reasoning and a short-answer developer prompt
-  for self-contained, low-risk requests that need no tools or current facts.
-- `balanced`: GPT-6.1 Sol with `medium` reasoning for clearly bounded,
-  low-consequence routine work.
-- `quality`: GPT-6.1 Sol with `xhigh` reasoning. This is the conservative default
-  for serious work, research, development, debugging, and contextual tasks.
-- `sota`: GPT-6 Astra with `xhigh` reasoning. Jev may choose it only when the
-  user explicitly requests the strongest/SOTA model, maximum reasoning, or
-  explicitly marks the task as extremely important and asks for top quality.
-- `economy`: GPT-6 Luna with `low` reasoning only when the user explicitly
-  prioritizes the lowest cost for casual, low-risk work.
+  for focused, low-risk requests that clearly prioritize fast turnaround.
+  Straightforward reads or lookups can use tools; urgency does not justify
+  less reasoning for complex or consequential work.
+- `balanced`: GPT-6.1 Sol with `medium` reasoning, retained for an explicit
+  medium-reasoning preference. Routine work does not automatically use it.
+- `quality`: GPT-6.1 Sol with `xhigh` reasoning is the default for the vast
+  majority of requests, including routine tasks, research, ordinary development,
+  debugging, and tool use. A task seeming easy is not a reason to downgrade.
+- `sota`: GPT-6 Astra with `xhigh` reasoning for large engineering projects
+  requiring serious architecture design or implementation, coupled components,
+  and difficult system tradeoffs. Jev can choose it from the task itself without
+  an explicit upgrade request. Explicit strongest/SOTA requests also qualify;
+  requesting `xhigh` alone does not mean Astra.
+- `economy`: GPT-6 Luna with `low` reasoning is exceptional, used only for an
+  explicit Luna or absolute-lowest-cost preference on a trivial, low-risk task.
+  Asking for speed selects Quick when appropriate.
 
 RemoteLab persists the concrete model and effort on the Session, so later turns
 keep the same native provider context. A user-selected concrete model always

@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-02 — Route by engineering depth and latency, with Sol xhigh as the default
+
+- User preference: GPT-6.1 Sol xhigh is sufficient for most tasks at an acceptable cost. Routine work should keep that reasoning effort; lower tiers should serve an explicit need rather than automatic token savings.
+- Product implication: proactively select Astra xhigh for large projects with serious architecture design and implementation. Use Sol low for focused tasks that prioritize fast turnaround, retain medium for explicit preference, and reserve Luna for exceptional explicit Luna or absolute-lowest-cost requests. Ordinary debugging and local features remain Sol xhigh; asking for xhigh alone does not imply Astra.
+- Scope: this changes new Auto Session routing. Concrete model selections and existing Sessions retain their runtime; independent background metadata helpers keep their own policies.
+
 ### 2026-10-02 — Hold to speak, review, and send on phones
 
 - Source: a direct mobile voice-input request followed by approval to try the researched interaction.
