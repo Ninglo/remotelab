@@ -170,7 +170,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     runtimeFamily,
   });
   const account = runtimeFamily === 'codex-json'
-    ? await codexAccounts.acquireForRun({ command: resolvedCmd, model }) : null;
+    ? await codexAccounts.acquireForRun() : null;
   if (account) {
     subEnv.CODEX_HOME = account.home;
     if (account.id !== 'default') args.unshift('-c', 'cli_auth_credentials_store="file"');

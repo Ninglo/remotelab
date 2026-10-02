@@ -511,9 +511,7 @@ async function main() {
   const captureRun = await getRun(runId);
   const fileChangeCapture = createCodexFileChangeCapture({ startedAt: captureRun.startedAt || captureRun.createdAt });
   let lastCodexFailure = '';
-  let codexHadToolActivity = false;
   let codexAccount = null;
-  const attemptedCodexAccounts = [];
   const recordStdoutLine = async (line) => {
     lastOutputAt = Date.now();
     let parsed = null;
@@ -522,7 +520,6 @@ async function main() {
     } catch {}
     if (codexAccount && parsed?.type === 'remotelab.codex_usage') await codexAccounts.observeUsage(codexAccount.id, parsed.usage);
     if (initialInvocation.isCodexFamily && parsed?.type === 'turn.failed') lastCodexFailure = parsed.error?.message || '';
-    if (initialInvocation.isCodexFamily && ['command_execution', 'mcp_tool_call', 'file_change'].includes(parsed?.item?.type)) codexHadToolActivity = true;
     if (initialInvocation.isCodexFamily && parsed?.item?.type === 'file_change') {
       const current = await getRun(runId);
       parsed = await fileChangeCapture.enrich(parsed, current?.codexThreadId);
@@ -804,10 +801,8 @@ async function main() {
     await acquireProviderLease();
 
     if (initialInvocation.isCodexFamily) {
-      codexAccount = await codexAccounts.acquireForRun({ command: await resolveCommand(initialInvocation.command),
-        model: invocationOptions.model, runId, isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
+      codexAccount = await codexAccounts.acquireForRun({ runId, isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
       spawnEnv.CODEX_HOME = codexAccount.home;
-      attemptedCodexAccounts.push(codexAccount.id);
       await updateRun(runId, draft => ({ ...draft, codexAccount: { id: codexAccount.id,
         label: codexAccount.label, switched: codexAccount.switched, selectedAt: nowIso() } }));
     }
@@ -963,30 +958,10 @@ async function main() {
       attempt = await runToolAttempt(freshInvocation);
       current = await getRun(runId) || current;
     }
-    while (codexAccount?.autoSwitch && attempt.code !== 0 && current.cancelRequested !== true
+    if (codexAccount?.autoSwitch && attempt.code !== 0 && current.cancelRequested !== true
       && isSubscriptionExhausted(attempt.error || lastCodexFailure || attempt.stderrText)) {
-      const resumeId = current.codexThreadId || manifest.options?.codexThreadId;
-      // Never replay already executed tools without the saved native thread.
-      if (codexHadToolActivity && !resumeId) break;
+      // Update the default for later requests. Never restart or replay this run.
       await codexAccounts.markExhausted(codexAccount.id, invocationOptions.model);
-      await codexAccount.lease.release(); codexAccount = null;
-      codexAccount = await codexAccounts.acquireForRun({ command: await resolveCommand(initialInvocation.command),
-        model: invocationOptions.model, exclude: attemptedCodexAccounts, runId,
-        isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
-      attemptedCodexAccounts.push(codexAccount.id); spawnEnv.CODEX_HOME = codexAccount.home;
-      await updateRun(runId, draft => ({ ...draft, codexAccount: { id: codexAccount.id,
-        label: codexAccount.label, switched: true, selectedAt: nowIso(), attemptedIds: attemptedCodexAccounts } }));
-      await appendRunSpoolRecord(runId, { ts: nowIso(), stream: 'activity', activity: {
-        type: 'status', content: '订阅额度已用尽，已切换到下一个可用账号并继续当前任务。' } });
-      const retryPrompt = resumeId
-        ? 'Continue the interrupted request from the saved conversation. Preserve completed work and do not repeat completed actions.'
-        : prompt;
-      const retryOptions = { ...invocationOptions, codexThreadId: resumeId || null };
-      const retryInvocation = await createToolInvocation(manifest.tool, retryPrompt, retryOptions);
-      lastCodexFailure = '';
-      attempt = await runToolAttempt(retryInvocation, 0, { skipSessionStartPreflight: true,
-        prompt: retryPrompt, invocationOptions: retryOptions });
-      current = await getRun(runId) || current;
     }
   } finally {
     await codexAccount?.lease.release();

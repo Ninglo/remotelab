@@ -99,6 +99,13 @@ const capturedCodexHome = readFileSync(envCapturePath, 'utf8').trim();
 assert.equal(response, 'Detached helper ok');
 assert.equal(capturedCodexHome, machineCodexHome, 'detached assistant Codex runs should use the machine Codex home');
 
+const { codexAccounts } = await import(pathToFileURL(join(repoRoot, 'lib', 'codex-accounts.mjs')).href);
+process.env.REMOTELAB_TEST_OVERSIZED_SPAWN_ENV = 'x'.repeat(150000);
+try {
+  await assert.rejects(runDetachedAssistantPrompt({ id: 'session_detached', folder: tempHome, tool: fakeToolId }, 'Launch failure'), /E2BIG/);
+} finally { delete process.env.REMOTELAB_TEST_OVERSIZED_SPAWN_ENV; }
+assert.equal(await codexAccounts.inUse(await codexAccounts.account()), false, 'failed helper launches release liveness');
+
 rmSync(tempHome, { recursive: true, force: true });
 
 console.log('test-detached-assistant-codex-home: ok');

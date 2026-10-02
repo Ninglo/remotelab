@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, realpath, rm } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexAccounts, subscriptionAvailability, isSubscriptionExhausted } from '../lib/codex-accounts.mjs';
+import { pollCodexAccounts } from '../chat/codex-account-monitor.mjs';
 import { createCodexAccountListAuthManager } from '../chat/codex-account-list-auth.mjs';
 import { codexAccountRevision, readCodexAuthMetadata } from '../lib/codex-account-status.mjs';
 
@@ -55,34 +56,79 @@ try {
   };
   assert.equal((await pool.refresh(backup.id, 'fake')).usage.status, 'ready', 'a refreshed authorization is reread once in place');
   pool.query = query;
-  let slot = await pool.acquireForRun({ command: 'fake' });
-  assert.equal(slot.id, backup.id, 'exhausted subscription switches to an independently authenticated account');
-  assert.equal((await pool.read()).activeId, backup.id);
-  assert.equal(await readFile(join(home, 'auth.json'), 'utf8'), originalAuth, 'switching never clears or rewrites another authorization');
+  await pool.refresh('default', 'fake');
+  let slot = await pool.acquireForRun();
+  assert.equal(slot.id, backup.id, 'the background sample switches an exhausted default');
+  assert.equal(await readFile(join(home, 'auth.json'), 'utf8'), originalAuth, 'switching never rewrites another authorization');
   const count = queries; await pool.refresh(backup.id, 'fake');
-  assert.equal(queries, count, 'monitoring does not compete with an active credential owner');
+  assert.equal(queries, count, 'idle monitoring skips active requests');
+  assert.equal(await pool.lease(await pool.account(), { wait: false }), null, 'logout and login cannot mutate an active authorization');
   assert.equal((await pool.list()).accounts.some(a => 'home' in a), false, 'public list has no credential paths');
   await slot.lease.release();
+  assert.equal(await pool.inUse(await pool.account()), false, 'completed requests release their liveness records');
   const restarted = new CodexAccounts({ root: pool.root, defaultHome: home, query, now: () => now });
   assert.equal((await restarted.read()).activeId, backup.id);
-  assert.equal((await restarted.read()).autoSwitch, true, 'selection and policy survive restart');
-  responses.set(backup.home, usage(0));
-  await assert.rejects(pool.acquireForRun({ command: 'fake' }), { code: 'CODEX_ACCOUNTS_EXHAUSTED' });
-  responses.set(backup.home, usage(100));
-  await pool.markExhausted(backup.id);
-  await assert.rejects(pool.acquireForRun({ command: 'fake' }), { code: 'CODEX_ACCOUNTS_EXHAUSTED' });
-  await pool.refresh(backup.id, 'fake');
-  responses.set(backup.home, new Error('temporary network failure'));
-  const refreshed = await pool.refresh(backup.id, 'fake');
-  assert.equal(refreshed.usage.status, 'unavailable');
-  await pool.policy(false);
-  slot = await pool.acquireForRun({ command: 'fake' }); assert.equal(slot.id, backup.id); await slot.lease.release();
+  assert.equal((await restarted.read()).autoSwitch, true);
+
+  responses.set(home, usage(100)); await pool.refresh('default', 'fake');
+  await pool.select('default');
+  const running = await pool.acquireForRun();
+  await pool.observeUsage('default', usage(10));
+  assert.equal((await pool.read()).activeId, backup.id, '10% reserve changes only the default for subsequent requests');
+  assert.equal(running.home, home, 'an ongoing request keeps its original authorization');
+  const later = await pool.acquireForRun(); assert.equal(later.id, backup.id);
+  await later.lease.release(); await running.lease.release();
+
+  await pool.select('default'); await pool.observeUsage('default', usage(11));
+  assert.equal((await pool.read()).activeId, 'default', '11% remains on the current account');
+  await pool.observeUsage('default', { status: 'unavailable', buckets: [] });
+  assert.equal((await pool.read()).activeId, 'default', 'unavailable quota never means exhausted');
+  await pool.mutate(data => {
+    data.accounts.find(a => a.id === 'default').usage = usage(0, 61_000);
+  });
+  await pool.policy(true); assert.equal((await pool.read()).activeId, 'default', 'stale quota does not trigger switching');
   await pool.mutate(data => { for (const a of data.accounts) a.identityId = 'e'.repeat(64); });
-  await pool.policy(true);
-  await assert.rejects(pool.acquireForRun({ command: 'fake', exclude: ['default'] }), { code: 'CODEX_ACCOUNTS_EXHAUSTED' },
-    'another login for the same subscription is not a fallback');
+  await pool.observeUsage('default', usage(0));
+  assert.equal((await pool.read()).activeId, 'default', 'a second login for the same subscription is not a backup');
   await pool.mutate(data => { for (const a of data.accounts) a.identityId = ''; });
+  await pool.markExhausted('default');
+  assert.equal((await pool.read()).activeId, backup.id, 'a confirmed failure updates the next request even without a zero quota sample');
+  responses.set(backup.home, new Error('temporary network failure'));
+  assert.equal((await pool.refresh(backup.id, 'fake')).usage.status, 'unavailable');
+  assert.equal((await pool.read()).activeId, backup.id);
+
+  for (const autoSwitch of [true, false]) {
+    await pool.policy(autoSwitch);
+    const monitor = await pool.lease(await pool.account(), { wait: false });
+    assert.ok(monitor);
+    const before = queries;
+    let foregroundQueries = 0;
+    pool.query = async () => { foregroundQueries++; throw new Error('Foreground must never query quota'); };
+    let timer;
+    const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Foreground waited for an account')), 3000); });
+    let first, second;
+    try {
+      [first, second] = await Promise.race([Promise.all([pool.acquireForRun(), pool.acquireForRun()]), deadline]);
+      assert.equal(first.id, backup.id); assert.equal(second.id, backup.id, 'same-account requests remain concurrent');
+      assert.equal(queries, before);
+      assert.equal(foregroundQueries, 0, 'foreground selection performs zero quota RPCs, even while monitoring is busy');
+    } finally {
+      clearTimeout(timer); await first?.lease.release(); await second?.lease.release(); await monitor.release(); pool.query = query;
+    }
+  }
+  responses.set(home, usage(9)); responses.set(backup.home, usage(100));
+  await pool.mutate(data => {
+    data.activeId = 'default'; data.autoSwitch = true;
+    for (const account of data.accounts) { account.usage = usage(100, 31_000); delete account.blockedUntil; }
+  });
+  const beforeBackground = queries;
+  await pollCodexAccounts({ pool, resolveCommand: async () => 'fake' });
+  assert.equal((await pool.read()).activeId, backup.id, 'the instance background monitor switches the default without an external fleet service');
+  assert.equal(queries - beforeBackground, 2);
+  await pollCodexAccounts({ pool, resolveCommand: async () => 'fake' });
+  assert.equal(queries - beforeBackground, 2, 'background cycles reuse fresh quota from any observer');
   await pool.policy(false);
+  await pollCodexAccounts({ pool, resolveCommand: async () => { throw new Error('Disabled policy must not resolve or query Codex'); } });
 
   let logoutCalls = 0;
   const facade = createCodexAccountListAuthManager({ pool, resolveCommand: async () => 'fake',
@@ -107,44 +153,11 @@ try {
   assert.equal(logoutCalls, 0, 'adding a second account never logs out the first');
   await facade.switchAccount({ accountId: backup.id }); assert.equal(logoutCalls, 0);
   assert.equal((await pool.read()).activeId, backup.id);
-  responses.set(backup.home, usage(100)); await pool.policy(true);
+  responses.set(backup.home, usage(100)); await pool.refresh(backup.id, 'fake'); await pool.policy(true);
   const firstJob = await pool.acquireForRun({ command: 'fake' });
   const secondJob = await pool.acquireForRun({ command: 'fake' });
-  assert.notEqual(firstJob.id, secondJob.id, 'a free authorization runs concurrently instead of waiting behind a busy account');
+  assert.equal(firstJob.id, secondJob.id, 'ordinary concurrency does not change the selected account');
   await firstJob.lease.release(); await secondJob.lease.release();
-
-  const waitingPool = new CodexAccounts({ root: join(root, 'waiting-pool'), defaultHome: home, query, now: () => now });
-  const waitingBackup = await waitingPool.add('Waiting backup');
-  responses.set(home, usage(100));
-  await waitingPool.policy(true);
-  const heldFirst = await waitingPool.acquireForRun({ command: 'fake' });
-  const heldSecond = await waitingPool.acquireForRun({ command: 'fake' });
-  assert.equal(heldSecond.id, waitingBackup.id);
-  await waitingPool.select(heldFirst.id);
-  let notifyWaiting;
-  const waiting = new Promise(resolve => { notifyWaiting = resolve; });
-  let cancelled = false;
-  const nextJob = waitingPool.acquireForRun({ command: 'fake', isCancelled: () => cancelled,
-    onWait: notifyWaiting });
-  await waiting;
-  // Keep the first account occupied and release only the other account after
-  // admission. The former waitForId path would remain stuck behind the first.
-  await heldSecond.lease.release();
-  let deadline;
-  try {
-    const resumed = await Promise.race([nextJob,
-      new Promise((_, reject) => { deadline = setTimeout(() => {
-        cancelled = true;
-        reject(new Error('Waiting job did not take the newly free account'));
-      }, 1000); })]);
-    assert.equal(resumed.id, heldSecond.id);
-    await resumed.lease.release();
-  } finally {
-    clearTimeout(deadline);
-    cancelled = true;
-    await heldFirst.lease.release();
-  }
-  await assert.rejects(waitingPool.acquireForRun({ command: 'fake', isCancelled: () => true }),
-    { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
-  console.log('Codex account persistence, independent authorization, quota admission, retry classification and credential ownership passed');
+  await assert.rejects(pool.acquireForRun({ isCancelled: () => true }), { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
+  console.log('Codex background reserve switching, concurrent request startup without quota RPCs, persistence and independent login passed');
 } finally { await rm(root, { recursive: true, force: true }); }

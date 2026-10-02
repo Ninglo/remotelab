@@ -63,21 +63,23 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
     runtimeFamily: invocation.runtimeFamily,
   });
   const account = invocation.runtimeFamily === 'codex-json'
-    ? await codexAccounts.acquireForRun({ command: resolvedCmd, model: options.model ?? model }) : null;
+    ? await codexAccounts.acquireForRun() : null;
   if (account) {
     env.CODEX_HOME = account.home;
     if (account.id !== 'default') invocation.args.unshift('-c', 'cli_auth_credentials_store="file"');
   }
 
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const proc = spawn(resolvedCmd, invocation.args, {
+  let proc;
+  try {
+    proc = spawn(resolvedCmd, invocation.args, {
       cwd: resolvedFolder,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+  } catch (error) { await account?.lease.release(); throw error; }
+  return new Promise((resolve, reject) => {
+    let settled = false;
     account?.lease.setToolProcessId(proc.pid).catch(() => {});
-    proc.once('close', () => { account?.lease.release().catch(() => {}); });
     proc.stdin.end();
 
     const timer = setTimeout(() => {
@@ -112,8 +114,9 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
       reject(err);
     });
 
-    proc.on('exit', (code) => {
+    proc.on('close', async (code) => {
       clearTimeout(timer);
+      await account?.lease.release().catch(() => {});
       if (settled) return;
       settled = true;
       if (latestUsageEvent && options.usageTracking) {

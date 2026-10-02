@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -168,11 +168,9 @@ try {
   assert.equal(failed.ok, false, 'a synchronous process-launch failure is reported');
   assert.match(failed.error, /E2BIG/);
 } finally { delete process.env.REMOTELAB_TEST_OVERSIZED_SPAWN_ENV; }
-const lockDirs = readdirSync(join(tempConfig, 'codex-accounts', 'locks'));
-for (const directory of lockDirs) {
-  assert.equal(readdirSync(join(tempConfig, 'codex-accounts', 'locks', directory)).includes('active.lock'), false,
-    'process-launch failure releases the account even though the controller stays alive');
-}
+const { codexAccounts } = await import(pathToFileURL(join(repoRoot, 'lib', 'codex-accounts.mjs')).href);
+assert.equal(await codexAccounts.inUse(await codexAccounts.account()), false,
+  'process-launch failure releases its liveness record even though the controller stays alive');
 const recovered = await triggerSessionStateSuggestion({ id: session.id, folder: session.folder,
   name: session.name || '', tool: fakeToolId });
 assert.equal(recovered.ok, true, 'the next classification can acquire the released authorization');

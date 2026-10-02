@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-02 — Keep account switching out of request startup
+
+- Observed friction: the first account-pool implementation queried quota before each request and held an exclusive account lock for the full run. Both added avoidable waiting to the normal conversation flow, including background metadata helpers.
+- Requested behavior: preserve the original startup and concurrency. Leave a 10% quota reserve for running tasks; background samples select another independently authenticated account for subsequent requests.
+- Implementation: foreground requests read the saved default and register their own liveness without quota RPCs or shared execution locks. Idle monitoring and native usage updates change the default at 10% or below only when another subscription has fresh quota above that reserve. Ongoing runs remain on their original account; a confirmed exhaustion updates the next default without restarting the run. Unknown or stale quota and network/authentication failures do not trigger rotation.
+- Evidence boundary: scenario tests cover concurrent startup while the monitor holds its control lock, zero foreground quota queries, reserve selection, ongoing-run isolation, and batch/native conversation continuation. The reserve reduces the chance of exhaustion during work; it cannot guarantee that every long task fits.
+
 ### 2026-10-02 — Expose native questions with a bounded fallback
 
 - Requested behavior: display numbered native question options in the existing conversation. Exact in-range numbers select options; all other text is a custom answer. Use a fixed five-minute timeout for this first trial and support both Codex and Claude.
