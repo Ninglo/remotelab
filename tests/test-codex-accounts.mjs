@@ -37,6 +37,11 @@ const query = async ({ env, includeRateLimits, credentialStore }) => {
 };
 const pool = new CodexAccounts({ root: join(root, 'pool'), defaultHome: home, query, now: () => now });
 try {
+  const cleanBase = join(root, 'fresh-default');
+  const freshPool = new CodexAccounts({ root: join(root, 'fresh-pool'), defaultHome: cleanBase, query });
+  const firstFreshAccount = await freshPool.add();
+  assert.equal(await realpath(join(firstFreshAccount.home, 'sessions')), join(cleanBase, 'sessions'),
+    'new installations share conversation storage before the first account creates a thread');
   const backup = await pool.add('<img src=x onerror=alert(1)>');
   await writeFile(join(backup.home, 'auth.json'), '{"tokens":{"account_id":"synthetic"}}');
   assert.equal(await realpath(join(backup.home, 'sessions')), join(home, 'sessions'));
