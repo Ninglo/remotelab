@@ -36,6 +36,24 @@ function harness(options = {}, onQuestion) {
   h.driver.close();
 }
 {
+  const h = harness({ observeCodexUsage: true });
+  const setInterval = globalThis.setInterval;
+  globalThis.setInterval = () => { throw new Error('Native turns must not own quota polling timers'); };
+  try { await h.start(); } finally { globalThis.setInterval = setInterval; }
+  const one = h.driver.readUsage(), two = h.driver.readUsage();
+  await tick();
+  assert.equal(h.sent.filter(value => value.method === 'account/rateLimits/read').length, 1,
+    'concurrent observers share one read-only RPC');
+  const steer = h.driver.submit({ id: 'while-quota-pending', text: 'continue normally' });
+  await tick(); h.reply('turn/steer', { turnId: 'turn-1' }); await steer;
+  h.notify('turn/completed', { turn: { id: 'turn-1', status: 'completed' } });
+  assert.equal(h.settled.length, 1, 'pending quota read cannot postpone model settlement');
+  h.reply('account/rateLimits/read', { rateLimits: { primary: { usedPercent: 91, windowDurationMins: 300 } } });
+  assert.equal((await one).buckets[0].primary.remainingPercent, 9);
+  assert.deepEqual(await two, await one);
+  h.driver.close();
+}
+{
   const h = harness({ model: 'gpt-test', reasoningEffort: 'high', developerInstructions: 'Keep native rules.', disableApps: true });
   assert.deepEqual(h.driver.args.slice(0, 3), ['app-server', '--listen', 'stdio://']);
   assert.ok(h.driver.args.includes('developer_instructions="Keep native rules."'));
@@ -159,6 +177,28 @@ function harness(options = {}, onQuestion) {
   h.reply('turn/start', { turn: { id: 'turn-2', status: 'inProgress' } }); await tick();
   h.notify('turn/completed', { turn: { id: 'turn-2', status: 'completed', items: [] } }); await tick();
   assert.equal(h.settled.length, 1);
+  h.driver.close();
+}
+{
+  const h = harness(); await h.start();
+  h.notify('item/started', { item: { id: 'large-command', type: 'commandExecution', command: 'rg', status: 'inProgress' } });
+  const chunk = 'x'.repeat(40 * 1024);
+  for (let index = 0; index < 1024; index++) {
+    h.notify('item/commandExecution/outputDelta', { itemId: 'large-command', delta: chunk });
+  }
+  const previews = h.events.filter(event => event.type === 'item.updated');
+  assert.equal(previews.length, 1024);
+  assert.ok(previews.every(event => event.item.aggregated_output.length <= 4096),
+    '40 MiB of output must not produce growing snapshots for the host write queue');
+  assert.equal(previews.at(-1).item.output_bytes, chunk.length * 1024);
+  assert.equal(previews.at(-1).item.output_preview, true);
+  assert.equal(h.events.find(event => event.type === 'item.started').item.aggregated_output, '',
+    'streaming previews cannot mutate the already announced start');
+  const completeOutput = chunk.repeat(1024) + '\ncomplete';
+  h.notify('item/completed', { item: { id: 'large-command', type: 'commandExecution', command: 'rg',
+    status: 'completed', aggregatedOutput: completeOutput, exitCode: 0 } });
+  assert.equal(h.events.at(-1).item.aggregated_output, completeOutput,
+    'the authoritative completed output remains intact');
   h.driver.close();
 }
 console.log('test-native-codex: ok');

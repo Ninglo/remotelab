@@ -518,7 +518,6 @@ async function main() {
     try {
       parsed = JSON.parse(line);
     } catch {}
-    if (codexAccount && parsed?.type === 'remotelab.codex_usage') await codexAccounts.observeUsage(codexAccount.id, parsed.usage);
     if (initialInvocation.isCodexFamily && parsed?.type === 'turn.failed') lastCodexFailure = parsed.error?.message || '';
     if (initialInvocation.isCodexFamily && parsed?.item?.type === 'file_change') {
       const current = await getRun(runId);
@@ -560,7 +559,7 @@ async function main() {
     if (manifest.inputMode === 'native') return runNativeHost({
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: { ...invocationOptions, ...(options.invocationOptions || {}),
-        observeCodexUsage: codexAccount?.autoSwitch === true,
+        observeCodexUsage: Boolean(codexAccount),
         ...(codexAccount && codexAccount.id !== 'default' ? { codexConfigOverrides: [
           ...(invocationOptions.codexConfigOverrides || []), 'cli_auth_credentials_store="file"'] } : {}) },
       prompt: options.prompt ?? prompt, cwd: resolvedFolder.cwd, env: spawnEnv,
@@ -958,10 +957,12 @@ async function main() {
       attempt = await runToolAttempt(freshInvocation);
       current = await getRun(runId) || current;
     }
-    if (codexAccount?.autoSwitch && attempt.code !== 0 && current.cancelRequested !== true
+    if (codexAccount && attempt.code !== 0 && current.cancelRequested !== true
       && isSubscriptionExhausted(attempt.error || lastCodexFailure || attempt.stderrText)) {
-      // Update the default for later requests. Never restart or replay this run.
-      await codexAccounts.markExhausted(codexAccount.id, invocationOptions.model);
+      // The controller consumes this durable observation in the background.
+      // Quota-cache writes never delay output, completion, or failed-run delivery.
+      await recordStdoutLine(JSON.stringify({ type: 'remotelab.codex_quota_exhausted',
+        model: invocationOptions.model || '' }));
     }
   } finally {
     await codexAccount?.lease.release();

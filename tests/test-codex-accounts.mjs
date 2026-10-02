@@ -128,7 +128,11 @@ try {
   await pollCodexAccounts({ pool, resolveCommand: async () => 'fake' });
   assert.equal(queries - beforeBackground, 2, 'background cycles reuse fresh quota from any observer');
   await pool.policy(false);
-  await pollCodexAccounts({ pool, resolveCommand: async () => { throw new Error('Disabled policy must not resolve or query Codex'); } });
+  await pool.mutate(data => { for (const account of data.accounts) account.usage = usage(80, 31_000); });
+  const beforeDisabledMonitoring = queries;
+  await pollCodexAccounts({ pool, resolveCommand: async () => 'fake' });
+  assert.equal(queries - beforeDisabledMonitoring, 2, 'quota sampling continues when automatic switching is disabled');
+  assert.equal((await pool.read()).activeId, backup.id, 'disabled switching never changes the selected account');
 
   let logoutCalls = 0;
   const facade = createCodexAccountListAuthManager({ pool, resolveCommand: async () => 'fake',
