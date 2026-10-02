@@ -2,6 +2,7 @@ const COMMANDS = Object.freeze({
   help: { args: 'none' },
   status: { args: 'none' },
   log: { args: 'query' },
+  project: { args: 'query' },
   harness: { args: 'optional' },
   model: { args: 'optional', aliases: ['m'] },
   effort: { args: 'optional' },
@@ -126,7 +127,7 @@ export function parseFeishuCommandBlock(input) {
     if (!name && commands.length === 0) return { commands: [], body: text.trim() };
     if (!name) return { commands: [], body: '', error: `未知命令：/${enteredName}（第 ${index + 1} 行）` };
     if (commandDefinition(name)?.args === 'query') {
-      if (commands.length) return { commands: [], body: '', error: '/log 请单独使用，后面写要排查的问题。' };
+      if (commands.length) return { commands: [], body: '', error: `/${name} 请单独使用，后面写要排查的问题。` };
       return { commands: [{ name, value: [match[2] || '', ...lines.slice(index + 1)].join('\n') }], body: '' };
     }
     if (commandDefinition(name)?.task) {

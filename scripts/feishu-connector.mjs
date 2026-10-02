@@ -77,6 +77,7 @@ import {
 } from '../connectors/feishu/quick-participation.mjs';
 import { createFeishuReadReactionStore } from '../connectors/feishu/read-reactions.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
+import { createProjectSurface } from '../connectors/feishu/project-surface.mjs';
 import { summarizeFeishuReactionFeedback } from '../connectors/feishu/reaction-mute.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
@@ -376,6 +377,8 @@ async function loadConfig(pathname) {
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
+    projectSurfacesPath: trimString(parsed?.projectSurfacesPath)
+      ? resolve(configDir, parsed.projectSurfacesPath) : '',
     replyPolicy: normalizeFeishuReplyPolicy(parsed?.replyPolicy),
     botHandoffPolicy: normalizeFeishuBotHandoffPolicy(parsed?.botHandoffPolicy),
     accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
@@ -1655,6 +1658,24 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 
 async function processFeishuMessage(runtime, summary, command, helpers) {
   const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
+  const projectCommand = command?.commands?.find(entry => entry.name === 'project');
+  if (projectCommand) {
+    const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+    if (command.commands.length !== 1) return enqueue(runtime, summary, '/project 请单独使用。');
+    if (!runtime.projectSurface && runtime.config.projectSurfacesPath) runtime.projectSurface = createProjectSurface(runtime, {
+      request: helpers.requestRemoteLab || runtime.requestRemoteLab,
+      authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
+    });
+    if (!runtime.projectSurface) return enqueue(runtime, summary, '当前群尚未启用项目入口。');
+    let result;
+    try { result = await runtime.projectSurface.command(summary, projectCommand.value); }
+    catch (error) { return enqueue(runtime, summary, /^[\u3400-\u9fff]/.test(error.message)
+      ? error.message : '项目入口来源暂时不可核实，请刷新后重试。'); }
+    if (result.text) return enqueue(runtime, summary, result.text);
+    if (!result.taskText) return result;
+    summary = { ...summary, messageText: result.taskText, textPreview: result.taskText };
+    command = null;
+  }
   const jevObservation = groupSettings.jevReactions
     ? await (helpers.observeRemoteLabMessage || ((runtime, summary) =>
       submitRemoteLabRequest(runtime, summary, { observeOnly: true })))(runtime, summary)
@@ -1856,6 +1877,9 @@ async function main() {
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths);
+  if (config.projectSurfacesPath) runtime.projectSurface = createProjectSurface(runtime, {
+    authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+  });
   // Identity is also required for self-message suppression and bot handoff mentions in group=all.
   runtime.botIdentity = await withTimeout(
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
@@ -1922,6 +1946,7 @@ async function main() {
     if (closed) return;
     closed = true;
     stopSourceDeliveryPoller(runtime);
+    runtime.projectSurface?.stop();
     void documentPoller?.stop();
     inbox.stop();
     console.log(`[feishu-connector] closing connection (${reason})`);
@@ -1984,6 +2009,12 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
     'card.action.trigger': async raw => {
+      const projectFeedback = await runtime.projectSurface?.actionFeedback(raw);
+      if (projectFeedback) {
+        if (projectFeedback.accepted) void runtime.projectSurface.handleAction(raw).catch(error =>
+          console.warn(`[feishu-project] card action failed: ${error.message}`));
+        return { toast: projectFeedback.toast };
+      }
       const feedback = await discussionHandoff.actionFeedback(raw);
       if (feedback.accepted) {
         void discussionHandoff.handleAction(raw).catch(error =>
@@ -1996,6 +2027,8 @@ async function main() {
   });
   inbox.start();
   await wsClient.start({ eventDispatcher });
+  void runtime.projectSurface?.restore().catch(error =>
+    console.warn(`[feishu-project] restore failed: ${error.message}`));
   void discussionHandoff.restore().catch(error =>
     console.warn(`[feishu-handoff] restore failed: ${error?.message || error}`));
   startSourceDeliveryPoller(runtime);

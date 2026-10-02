@@ -16,6 +16,7 @@ const HELP = [
   '普通聊天群支持 inline/thread；话题群固定使用 Thread。Quick 是独立执行模式，不改变回复位置。',
   '短名：/m model、/q quick。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
+  '/project — 查看当前群的项目入口；memory 查看记忆，tasks 查看自动任务，audit 查看修改记录',
   '/log [问题] — 在当前 Session 继续对话，核实上一 Run 的 LangSmith 记录并回答问题',
   '/harness [名称] — 查看或修改当前任务使用的 Harness',
   '/model [模型 ID] — 查看或修改当前任务使用的模型',
