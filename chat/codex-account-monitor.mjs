@@ -4,13 +4,14 @@ import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
 export async function pollCodexAccounts({ pool = codexAccounts,
   resolveCommand = () => resolveToolCommandPathAsync('codex') } = {}) {
   const data = await pool.read();
-  if (!data.autoSwitch || data.accounts.length < 2) return;
+  if (!data.accounts.some(account => account.account?.type === 'chatgpt')) return;
   const command = await resolveCommand();
   if (command) await pool.list({ refresh: 'stale', command });
 }
 
-// Optional quota work runs outside HTTP admission and foreground execution.
-// Fresh samples from native turns or fleet monitoring are reused.
+// One instance timer samples accounts independently of the switching policy.
+// Fresh native notifications/fleet samples are reused; active accounts are read
+// through one existing App Server. No per-run quota timer or foreground query.
 export function startCodexAccountMonitor(options = {}) {
   let pending = false, stopped = false;
   const poll = async () => {

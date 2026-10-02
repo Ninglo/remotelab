@@ -85,17 +85,22 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       .catch(error => { if (!closed) onError(error); })
       .finally(() => { inputsInFlight -= 1; maybeSettle(); });
   }
-  let usageTimer = null, usagePending = false;
+  let usagePending = null;
   const observeUsage = result => {
     if (!options.observeCodexUsage) return;
     const buckets = normalizeLimits(result);
     if (buckets.length) onEvent({ type: 'remotelab.codex_usage', usage: { status: 'ready', buckets } });
   };
-  const refreshUsage = async () => {
-    if (closed || usagePending) return;
-    usagePending = true;
-    try { observeUsage(await request('account/rateLimits/read', {})); } catch { /* Keep the last sample visibly dated. */ }
-    finally { usagePending = false; }
+  const readUsage = async () => {
+    if (!initialization) throw new Error('Codex driver has not started');
+    await initialization;
+    // The instance sampler chooses one native process per account. Overlapping
+    // reads share this RPC without joining the model-input acknowledgement tail.
+    usagePending ||= request('account/rateLimits/read', {}).then(result => {
+      const buckets = normalizeLimits(result);
+      return { status: buckets.length ? 'ready' : 'unavailable', buckets };
+    }).finally(() => { usagePending = null; });
+    return usagePending;
   };
 
   function request(method, params) {
@@ -287,9 +292,6 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     initialization = inputOperation(async () => {
       await request('initialize', { clientInfo: { name: 'remotelab', version: '1.0.0' } });
       send({ method: 'initialized' });
-      if (options.observeCodexUsage) {
-        usageTimer = setInterval(() => void refreshUsage(), 30_000); usageTimer.unref?.();
-      }
       const resumeId = configuredOptions.threadId;
       const result = await request(resumeId ? 'thread/resume' : 'thread/start', {
         approvalPolicy: 'never', sandbox,
@@ -306,7 +308,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     return initialization;
   }
   return {
-    args, start, handle,
+    args, start, handle, readUsage,
     submit(input) {
       if (!initialization) return Promise.reject(new Error('Codex driver has not started'));
       return inputOperation(async () => {
@@ -327,7 +329,6 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       return request('turn/interrupt', { threadId, turnId: activeTurnId });
     },
     close(error = new Error('Codex driver closed')) {
-      clearInterval(usageTimer);
       if (closed) return;
       closed = error;
       for (const callback of pending.values()) callback.reject(error);

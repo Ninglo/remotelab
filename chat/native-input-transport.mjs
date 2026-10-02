@@ -20,7 +20,7 @@ function replay(receipt, input) {
 
 // This journal records transport outcomes, never schedules model turns. The
 // sidecar survives controller restart and is the only writer of these receipts.
-export async function createNativeInputServer({ directory, submit, isAccepting, onIdle = () => {} }) {
+export async function createNativeInputServer({ directory, submit, isAccepting, readUsage, onIdle = () => {} }) {
   const socketPath = address(directory);
   const parent = join(socketPath, '..');
   await mkdir(parent, { recursive: true, mode: 0o700 });
@@ -73,7 +73,15 @@ export async function createNativeInputServer({ directory, submit, isAccepting, 
       const end = buffer.indexOf('\n');
       if (end < 0) return;
       socket.removeAllListeners('data');
-      void Promise.resolve().then(() => dispatch(JSON.parse(buffer.slice(0, end))))
+      void Promise.resolve().then(() => {
+        const input = JSON.parse(buffer.slice(0, end));
+        // Read-only observation never enters the input journal or turn scheduler.
+        if (input.operation === 'read-usage') {
+          if (closed || !readUsage) throw fault('Native quota observation is unavailable', 'NATIVE_UNAVAILABLE');
+          return readUsage();
+        }
+        return dispatch(input);
+      })
         .then(result => socket.end(`${JSON.stringify({ result })}\n`), error => socket.end(`${JSON.stringify({ error: error.message, code: error.code || 'NATIVE_UNCERTAIN' })}\n`));
     });
   });
@@ -94,6 +102,14 @@ export async function createNativeInputServer({ directory, submit, isAccepting, 
 export async function submitNativeInput(directory, input, { timeoutMs = 30_000 } = {}) {
   const receipt = await readNativeInputReceipt(directory, input.id);
   if (receipt?.state === 'accepted' || receipt?.state === 'rejected') return replay(receipt, input);
+  return requestNativeControl(directory, input, { timeoutMs, receipt });
+}
+
+export function readNativeUsage(directory, { timeoutMs = 5_000 } = {}) {
+  return requestNativeControl(directory, { operation: 'read-usage' }, { timeoutMs });
+}
+
+function requestNativeControl(directory, input, { timeoutMs, receipt } = {}) {
   return new Promise((resolve, reject) => {
     const socket = createConnection(address(directory));
     let connected = false;

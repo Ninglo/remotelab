@@ -172,6 +172,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     // The endpoint becomes visible before starting the first model call. It
     // accepts follow-ups as soon as the protocol initialization has completed.
     server = await createNativeInputServer({ directory,
+      ...(driver.readUsage ? { readUsage: () => driver.readUsage() } : {}),
       isAccepting: async () => { const cancelled = await isCancelled(); return started && acceptingExternalInputs && !closing && !interruptRequested && !cancelled; },
       onIdle: () => queueMicrotask(maybeStop),
       submit: async input => {

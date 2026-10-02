@@ -36,6 +36,24 @@ function harness(options = {}, onQuestion) {
   h.driver.close();
 }
 {
+  const h = harness({ observeCodexUsage: true });
+  const setInterval = globalThis.setInterval;
+  globalThis.setInterval = () => { throw new Error('Native turns must not own quota polling timers'); };
+  try { await h.start(); } finally { globalThis.setInterval = setInterval; }
+  const one = h.driver.readUsage(), two = h.driver.readUsage();
+  await tick();
+  assert.equal(h.sent.filter(value => value.method === 'account/rateLimits/read').length, 1,
+    'concurrent observers share one read-only RPC');
+  const steer = h.driver.submit({ id: 'while-quota-pending', text: 'continue normally' });
+  await tick(); h.reply('turn/steer', { turnId: 'turn-1' }); await steer;
+  h.notify('turn/completed', { turn: { id: 'turn-1', status: 'completed' } });
+  assert.equal(h.settled.length, 1, 'pending quota read cannot postpone model settlement');
+  h.reply('account/rateLimits/read', { rateLimits: { primary: { usedPercent: 91, windowDurationMins: 300 } } });
+  assert.equal((await one).buckets[0].primary.remainingPercent, 9);
+  assert.deepEqual(await two, await one);
+  h.driver.close();
+}
+{
   const h = harness({ model: 'gpt-test', reasoningEffort: 'high', developerInstructions: 'Keep native rules.', disableApps: true });
   assert.deepEqual(h.driver.args.slice(0, 3), ['app-server', '--listen', 'stdio://']);
   assert.ok(h.driver.args.includes('developer_instructions="Keep native rules."'));

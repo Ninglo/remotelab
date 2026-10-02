@@ -12,7 +12,14 @@ const command = join(root, 'codex-fixture');
 await copyFile(new URL('./fixtures/codex-account-failover.cjs', import.meta.url), command); await chmod(command, 0o755);
 await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'quota-fixture', name: 'Quota fixture', command, runtimeFamily: 'codex-json' }]));
 const { codexAccounts: pool } = await import('../lib/codex-accounts.mjs');
-const { createRun, getRun } = await import('../chat/runs.mjs');
+const { createRun, getRun, getRunManifest, readRunSpoolRecords } = await import('../chat/runs.mjs');
+const { createRunProjectionService } = await import('../chat/run-projection.mjs');
+const { createToolInvocation } = await import('../chat/process-runner.mjs');
+const { codexUsageUpdates } = await import('../lib/codex-usage-updates.mjs');
+const projection = createRunProjectionService({ createToolInvocation,
+  readRunSpoolRecords, materializeRunSpoolLine: async (_, record) => record.line,
+  normalizeRunEvents: (_, events) => events, clipPreview: text => text,
+  readLatestCodexSessionMetrics: async () => null, buildCodexContextMetricsPayload: () => null });
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
 const seed = async (directory, id, fail, tool = false) => {
   await writeFile(join(directory, 'auth.json'), '{"tokens":{}}');
@@ -31,7 +38,10 @@ try {
     let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
     const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
     const exit = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }); clearTimeout(timer);
-    return { exit, record: await getRun(record.id), output };
+    const finished = await getRun(record.id);
+    await projection.collectNormalizedRunEvents(finished, await getRunManifest(record.id));
+    await codexUsageUpdates.flush();
+    return { exit, record: finished, output };
   };
   const calls = async () => (await readFile(join(config, 'failover-invocations.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   for (const native of [false, true]) {
