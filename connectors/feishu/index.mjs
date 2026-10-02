@@ -92,7 +92,8 @@ export function trimString(value) {
 export function isFeishuDocumentCommentSummary(summary) {
   return trimString(summary?.sourceKind) === 'document_comment'
     || (
-      trimString(summary?.messageType) === 'comment'
+      (trimString(summary?.messageType) === 'comment'
+        || trimString(summary?.conversationKind) === 'document_comment')
       && Boolean(trimString(summary?.fileToken))
       && Boolean(trimString(summary?.commentId))
     );

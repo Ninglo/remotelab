@@ -248,6 +248,18 @@ await sendFeishuText(runtime, hydrated, '建议补充预期结果和失败回滚
 assert.equal(commentCreatePayloads.length, 2);
 assert.equal(commentCreatePayloads[1].data.content.elements[0].text_run.text, '建议补充预期结果和失败回滚条件。');
 
+// Durable bound-comment plans carry the canonical conversation address rather
+// than a hydrated inbound event. They must still use the Drive reply API.
+const boundTarget = { conversationKind: 'document_comment', fileType: 'docx',
+  fileToken: 'docx_comment_1', commentId: 'comment_1', replyId: 'reply_current_1' };
+const boundReply = await sendFeishuText(runtime, boundTarget, '原评论串的自动答复。');
+assert.equal(commentCreatePayloads.length, 3);
+assert.deepEqual(commentCreatePayloads[2].path, {
+  file_token: 'docx_comment_1', comment_id: 'comment_1',
+});
+assert.equal(commentCreatePayloads[2].data.content.elements[0].text_run.text, '原评论串的自动答复。');
+assert.ok(boundReply.reply_id, 'the native comment reply must return a provider receipt');
+
 const unmentioned = summarizeFeishuDocumentCommentEvent({
   ...rawEvent,
   event_id: 'evt_comment_2',
