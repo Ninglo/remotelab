@@ -28,6 +28,14 @@ function harness(options = {}, onQuestion) {
 }
 
 {
+  const h = harness({ observeCodexUsage: true }); await h.start();
+  h.notify('account/rateLimits/updated', { rateLimits: { primary: { usedPercent: 25, windowDurationMins: 300 } } });
+  const usage = h.events.find(event => event.type === 'remotelab.codex_usage');
+  assert.equal(usage.usage.buckets[0].primary.remainingPercent, 75);
+  assert.ok(!JSON.stringify(usage).includes('threadId'), 'quota publishes only public fields');
+  h.driver.close();
+}
+{
   const h = harness({ model: 'gpt-test', reasoningEffort: 'high', developerInstructions: 'Keep native rules.', disableApps: true });
   assert.deepEqual(h.driver.args.slice(0, 3), ['app-server', '--listen', 'stdio://']);
   assert.ok(h.driver.args.includes('developer_instructions="Keep native rules."'));

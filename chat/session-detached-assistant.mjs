@@ -3,6 +3,7 @@ import { createInterface } from 'readline';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
 import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
+import { codexAccounts } from '../lib/codex-accounts.mjs';
 import { appendUsageLedgerRecord, buildDetachedUsageLedgerRecord } from './usage-ledger.mjs';
 
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
@@ -61,6 +62,12 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
   env = applyProviderRuntimeEnv(tool, env, {
     runtimeFamily: invocation.runtimeFamily,
   });
+  const account = invocation.runtimeFamily === 'codex-json'
+    ? await codexAccounts.acquireForRun({ command: resolvedCmd, model: options.model ?? model }) : null;
+  if (account) {
+    env.CODEX_HOME = account.home;
+    if (account.id !== 'default') invocation.args.unshift('-c', 'cli_auth_credentials_store="file"');
+  }
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -69,6 +76,8 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    account?.lease.setToolProcessId(proc.pid).catch(() => {});
+    proc.once('close', () => { account?.lease.release().catch(() => {}); });
     proc.stdin.end();
 
     const timer = setTimeout(() => {

@@ -82,6 +82,7 @@ export async function acquireProviderRuntimeLease({
   isCancelled = () => false,
   isProcessAlive = processIsAlive,
   onWait = null,
+  wait = true,
 } = {}) {
   const normalizedKey = sanitizePathPart(queueKey);
   if (!normalizedKey) return null;
@@ -120,6 +121,7 @@ export async function acquireProviderRuntimeLease({
         await rm(lockDir, { recursive: true, force: true });
         continue;
       }
+      if (!wait) return null;
       if (!waitNotified) {
         waitNotified = true;
         await onWait?.({ queueKey, runId });

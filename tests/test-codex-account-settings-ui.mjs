@@ -4,13 +4,17 @@ import vm from 'node:vm';
 
 const source = await readFile(new URL('../static/chat/settings-ui.js', import.meta.url), 'utf8');
 const nodes = new Map();
+const element = () => ({ textContent: '', hidden: false, disabled: false, children: [],
+  addEventListener(type, listener) { this[type] = listener; },
+  append(...children) { this.children.push(...children); },
+  replaceChildren(...children) { this.children = children; } });
 const node = id => {
-  if (!nodes.has(id)) nodes.set(id, { textContent: '', hidden: false, disabled: false, addEventListener() {} });
+  if (!nodes.has(id)) nodes.set(id, element());
   return nodes.get(id);
 };
 const context = vm.createContext({
   console, settingsPanel: {}, canManageInstanceSettingsFromUi: () => true,
-  document: { documentElement: { lang: 'zh-CN' }, getElementById: node },
+  document: { documentElement: { lang: 'zh-CN' }, getElementById: node, createElement: element },
   window: { setInterval: () => 1, clearInterval() {}, confirm: () => true },
 });
 vm.runInContext(source.slice(0, source.indexOf('function getPiAuthCopy()')), context);
@@ -51,4 +55,20 @@ context.fetchJsonOrRedirect = async url => url.includes('rate-limits')
 await run('refreshCodexAuthStatus()');
 assert.match(node('settingsCodexAuthUsage').textContent, /temporarily unavailable/, 'different account revisions cannot be combined');
 assert.doesNotMatch(node('settingsCodexAuthUsage').textContent, /75%/);
+context.accountList = { activeId: 'a', autoSwitch: true, accounts: [
+  { id: 'a', label: '<script>alert(1)</script>', active: true, account, availability: 'available', usage: quota },
+  { id: 'b', label: '备用', account, availability: 'unknown' },
+  { id: 'c', label: '待登录', account: null, availability: 'unknown' },
+] };
+run('codexAuthState.accountList = accountList; renderCodexSavedAccounts()');
+const rows = node('settingsCodexAccountList').children;
+assert.equal(rows.length, 3);
+assert.ok(rows[0].children[0].textContent.includes('<script>'), 'saved labels remain literal text');
+assert.equal(rows[0].children[2].disabled, true);
+assert.equal(node('settingsCodexAutoSwitch').checked, true);
+context.selected = null;
+run('switchCodexAccount = async id => { selected = id; }; startCodexDeviceLogin = async id => { selected = id; }');
+rows[1].children[2].click(); assert.equal(context.selected, 'b');
+rows[2].children[2].click(); assert.equal(context.selected, 'c');
+rows[0].children[3].click(); assert.equal(context.selected, 'a', 'existing authorization can be renewed independently');
 console.log('Codex settings identity, quota, localization and stale-response tests passed');
