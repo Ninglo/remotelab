@@ -16,6 +16,7 @@ lines.on('line', line => {
   if (message.method === 'thread/start') emit({ id: message.id, result: { thread: { id: 'thread-jsonl' } } });
   if (message.method === 'turn/start') {
     emit({ id: message.id, result: { turn: { id: 'turn-jsonl', status: 'inProgress' } } });
+    emit({ method: 'turn/started', params: { threadId: 'thread-jsonl', turn: { id: 'turn-jsonl', status: 'inProgress' } } });
     emit({ method: 'item/started', params: { threadId: 'thread-jsonl', item: {
       id: 'command-jsonl', type: 'commandExecution', command: 'printf', status: 'inProgress',
     } } });
