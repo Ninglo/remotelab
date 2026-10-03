@@ -220,9 +220,9 @@ Session / Request → 后置后台；承担者：独立 Session 状态分类器�
 
 可见与证据：标题或摘要可能稍后刷新；不应再发一遍最终答复。
 
-### 飞书 · 非 Jev 路径
+### 飞书 · 常规接入分支
 
-配置决定分支。常规群不是统一的开关组合。先看接入策略和回复模式；这一分支描述未启用 jevReactions 的入口，不能拿它代替试验群的真实顺序。
+未启用 Jev observation；Quick 可另用 Jev。常规群不是统一的开关组合。这一分支未启用 jevReactions，但 Quick participation 仍可另调 Jev；等待位置与新的观察快判路径不同。
 
 #### 1. 事件落盘与接入检查
 
@@ -240,15 +240,27 @@ Session / Request → 后置后台；承担者：独立 Session 状态分类器�
 
 Connector → 用户 / 飞书；承担者：quickParticipation 或固定 processing reaction；交接方式：conditional。
 
-quickReactions 分支尝试先发送已读表情并等其回执；另一些配置只把 processing reaction 异步发出。quickParticipation 可以做自己的快判。这些都不是 Jev observation 路径。
+quickReactions 分支启动已读表情，并发启动 Quick Jev 快判；Connector 只等待已读表情回执，再继续提交工作。另一些配置只把 processing reaction 异步发出。这不是 Jev observation 路径。
 
 交接：输入：消息与分支开关。输出：表情尝试 / 回执。
 
-等待：具体是否等待回执取决于分支；不能统称所有入口都无等待。
+等待：Quick 分支等表情回执，不等其 Jev 判断；另一些 processing reaction 配置异步发送。
 
 可见与证据：表情与后续任务答复仍是不同证据。
 
-#### 3. 接纳可执行请求
+#### 3. 并行的 Quick Jev 快判
+
+Connector → Jev；承担者：旧 Quick participation 的 Jev 调用；交接方式：async。
+
+启用 Quick participation 时，它与已读表情同一轮并发启动，记录参与方式和可能的工作交接建议；建议由 discussionHandoff 接口承接。
+
+交接：输入：有限的群消息上下文。输出：Quick 判定日志和条件发生的交接建议。
+
+等待：Connector 不 await 本次判定完成才提交执行请求；不能把它画成 observation 快判那样的前置串行门槛。
+
+可见与证据：这里也使用 Jev，但当前主模型工作不以该判断结束为启动条件。
+
+#### 4. 接纳可执行请求
 
 Connector → Session / Request；承担者：RemoteLab 接纳层；交接方式：sync。
 
@@ -260,7 +272,7 @@ Connector 提交带稳定 requestId、文本、附件和本条回复位置的请
 
 可见与证据：接纳成功说明工作进入系统；还不能证明已经开始，更不能证明完成。
 
-#### 4. 启动、续接或排队
+#### 5. 启动、续接或排队
 
 Session / Request → Harness / Run；承担者：RemoteLab 调度器 + 原生 Harness；交接方式：async。
 
@@ -272,7 +284,7 @@ Session / Request → Harness / Run；承担者：RemoteLab 调度器 + 原生 H
 
 可见与证据：此时才是模型真正承接执行。Session 是持久工作间，Run 是一次运行。
 
-#### 5. 形成有信息量的开场
+#### 6. 形成有信息量的开场
 
 Harness / Run → Session / Request；承担者：执行 Harness 写内容；RemoteLab 保存事件；交接方式：sync。
 
@@ -284,7 +296,7 @@ Harness / Run → Session / Request；承担者：执行 Harness 写内容；Rem
 
 可见与证据：飞书显示【开始处理】和会话入口；这里首次让人知道模型准备怎样解决问题。
 
-#### 6. 按工作量建立任务快照
+#### 7. 按工作量建立任务快照
 
 Harness / Run → Session / Request；承担者：执行 Harness 决定并验收；平台校验结构；交接方式：sync。
 
@@ -296,7 +308,7 @@ Harness / Run → Session / Request；承担者：执行 Harness 决定并验收
 
 可见与证据：网页可直接投影快照；飞书卡片 Worker 稍后创建一张卡。
 
-#### 7. 投递开场、创建或更新卡
+#### 8. 投递开场、创建或更新卡
 
 Session / Request → 输出 Worker；承担者：两条独立输出程序；交接方式：async。
 
@@ -308,7 +320,7 @@ Session / Request → 输出 Worker；承担者：两条独立输出程序；交
 
 可见与证据：这说明为何“模型已经开工”与“卡片刚弹出来”可能有间隔。
 
-#### 8. 飞书显示开场与首卡
+#### 9. 飞书显示开场与首卡
 
 输出 Worker → 用户 / 飞书；承担者：文本 Connector 与卡片 Worker 各自发送；交接方式：async。
 
@@ -320,7 +332,7 @@ Session / Request → 输出 Worker；承担者：两条独立输出程序；交
 
 可见与证据：这里才是表面交付，保存开场事件或快照本身还不算送达。
 
-#### 9. 进度更新原卡
+#### 10. 进度更新原卡
 
 Harness / Run → Session / Request；承担者：Harness 输出实际发现；卡片 Worker 更新表面；交接方式：sync。
 
@@ -332,7 +344,7 @@ Harness / Run → Session / Request；承担者：Harness 输出实际发现；�
 
 可见与证据：保留一张推进卡，目标在上、交付项居中、实际进度在下。
 
-#### 10. 卡片 Worker 编辑原卡
+#### 11. 卡片 Worker 编辑原卡
 
 输出 Worker → 用户 / 飞书；承担者：个人试验卡片 Worker；交接方式：async。
 
@@ -344,7 +356,7 @@ Harness / Run → Session / Request；承担者：Harness 输出实际发现；�
 
 可见与证据：群里不新增另一条进度消息，也不另发一张全部完成清单。
 
-#### 11. 保存并投递最终答复
+#### 12. 保存并投递最终答复
 
 Harness / Run → Session / Request；承担者：Harness 写结果；RemoteLab 保存；Connector 发送；交接方式：sync。
 
@@ -356,7 +368,7 @@ Harness 给出本轮结果、已完成部分及真实剩余阻塞。平台标记
 
 可见与证据：【最终答复】表示这轮回答结束；任务卡仍可以是部分完成、等待或失败。
 
-#### 12. 最终结果进入 outbox
+#### 13. 最终结果进入 outbox
 
 Session / Request → 输出 Worker；承担者：RemoteLab 输出投影；交接方式：async。
 
@@ -368,7 +380,7 @@ Session / Request → 输出 Worker；承担者：RemoteLab 输出投影；交�
 
 可见与证据：还不能仅凭 outbox 记录声称群里已收到。
 
-#### 13. 飞书显示最终答复
+#### 14. 飞书显示最终答复
 
 输出 Worker → 用户 / 飞书；承担者：Connector 调提供方 API；交接方式：async。
 
@@ -380,7 +392,7 @@ Session / Request → 输出 Worker；承担者：RemoteLab 输出投影；交�
 
 可见与证据：用户获得这轮结果；它可以说明任务仍是部分完成。
 
-#### 14. 保存各部分送达回执
+#### 15. 保存各部分送达回执
 
 输出 Worker → Session / Request；承担者：Connector + 持久交付记录；交接方式：sync。
 
@@ -392,7 +404,7 @@ Session / Request → 输出 Worker；承担者：RemoteLab 输出投影；交�
 
 可见与证据：提供方接受不证明真人已读；完整体验仍需要真实入口验收。
 
-#### 15. 后台整理与归集
+#### 16. 后台整理与归集
 
 Session / Request → 后置后台；承担者：独立 Session 状态分类器与记忆流程；交接方式：async。
 

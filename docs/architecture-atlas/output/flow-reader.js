@@ -1,4 +1,4 @@
-import { audit, actors, sources, scenarios, feedback, testCases } from './flow-data.js?v=20261003c';
+import { audit, actors, sources, scenarios, feedback, testCases } from './flow-data.js?v=20261003d';
 const byId=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels={sync:'等待本次交接回执',async:'异步独立推进',conditional:'按条件发生'};
@@ -39,7 +39,7 @@ byId('reader-version').textContent=audit.version;byId('reader-commit').textConte
 byId('feedback-rows').innerHTML=feedback.map(([kind,current,goal,ref])=>`<tr><td>${esc(kind)}</td><td>${esc(current)}${sourceLinks([ref])}</td><td>${esc(goal)}</td></tr>`).join('');
 byId('test-rows').innerHTML=testCases.map(row=>`<tr>${row.map(cell=>`<td>${esc(cell)}</td>`).join('')}</tr>`).join('');
 document.querySelectorAll('[data-sources]').forEach(e=>e.innerHTML=sourceLinks(e.dataset.sources.split(' ')));
-const sourceNames={inbox:'接入与耐久 inbox',observation:'第一次 Session 交接：观察历史',jev:'群 Jev 判断',handoff:'路由与第二次 Session 交接',admission:'可执行 Request 接纳',auto:'条件 Auto 路由',native:'追加输入与原生控制',run:'脱离前台的执行',opening:'开场与会话入口',card:'任务快照、原卡进度与卡片范围',delivery:'文本、表情与结果投递',question:'待答题、自动绑定与超时',after:'后置整理'};
+const sourceNames={inbox:'接入与耐久 inbox',observation:'第一次 Session 交接：观察历史',jev:'群 Jev 判断',quick:'常规 Quick 表情与并行 Jev',handoff:'路由与第二次 Session 交接',admission:'可执行 Request 接纳',auto:'条件 Auto 路由',native:'追加输入与原生控制',run:'脱离前台的执行',opening:'开场与会话入口',card:'任务快照、原卡进度与卡片范围',delivery:'文本、表情与结果投递',question:'待答题、自动绑定与超时',after:'后置整理'};
 byId('all-sources').innerHTML=Object.entries(sources).map(([key])=>`<div class="source-group"><strong>${sourceNames[key]}</strong>${sourceLinks([key])}</div>`).join('');
 byId('expand-details').addEventListener('click',()=>{const b=byId('expand-details'),open=b.getAttribute('aria-expanded')!=='true';document.querySelectorAll('details[data-technical]').forEach(d=>d.open=open);b.setAttribute('aria-expanded',String(open));b.textContent=open?'收起技术细节':'展开技术细节';});
 if('IntersectionObserver'in window){const observer=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting){document.querySelectorAll('.contents nav a').forEach(a=>a.classList.toggle('active',a.hash==='#'+e.target.id));}},{rootMargin:'-10% 0px -70% 0px'});document.querySelectorAll('main>section,header').forEach(s=>observer.observe(s));}

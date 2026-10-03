@@ -5,8 +5,8 @@
 <meta name="color-scheme" content="light">
 <meta name="description" content="按一条消息的真实先后顺序说明 RemoteLab：同步等待、异步执行、Session 两次交接、Jev 职责、飞书任务卡和当前待验边界。">
 <title>RemoteLab · 一条消息如何变成工作和交付</title>
-<link rel="stylesheet" href="./reading.css?v=20261003c">
-<script type="module" src="./flow-reader.js?v=20261003c"></script>
+<link rel="stylesheet" href="./reading.css?v=20261003d">
+<script type="module" src="./flow-reader.js?v=20261003d"></script>
 </head>
 <body>
 <a class="skip" href="#main">跳到正文</a>
@@ -30,7 +30,7 @@
 <p>默认选中实际 Jev 试验路径。切换入口后，时序图、步骤说明和等待条件一起变化；目标方案是独立选项，不混进现状。</p>
 <div id="scene-tabs" class="tabs" role="group" aria-label="选择入口与现状"></div>
 <div class="scene-lead"><span id="scene-status" class="tag"></span><p id="scene-intro"></p></div>
-<figure><div class="diagram-scroll" tabindex="0" aria-label="时序图；窄屏可以横向滚动"><div id="flow-sequence"></div></div><figcaption>前置调用按依赖向下；浅蓝区是接纳后的并行支路，编号用于阅读，不是全局到达顺序。实线：等待本次交接回执；虚线：独立执行 / 投递；点线：条件发生。点击箭头或步骤看“交了什么、等什么”。</figcaption></figure>
+<figure><div class="diagram-scroll" tabindex="0" aria-label="时序图；窄屏可以横向滚动"><div id="flow-sequence"></div></div><figcaption>前置实线调用按依赖向下；虚线支路可独立推进，浅蓝区是接纳后的并行区域，编号用于阅读，不是全局到达顺序。实线：等待本次交接回执；虚线：独立执行 / 投递；点线：条件发生。点击箭头或步骤看“交了什么、等什么”。</figcaption></figure>
 <div class="step-reader"><div id="step-list" class="step-list" role="group" aria-label="逐步阅读"></div><div class="step-content"><div id="step-detail" aria-live="polite"></div><div class="step-nav"><button id="step-prev" type="button">← 上一步</button><span id="step-count"></span><button id="step-next" type="button">下一步 →</button></div></div></div>
 <p class="note small">同一消息的接入处理有先后依赖，但后面的模型与投递会并行推进。飞书表面可能稍后追上 Session 里的最新事实；图里的写入顺序不是客户端到达顺序保证。</p>
 </section>
@@ -60,13 +60,14 @@
 <p>Jev 返回的是判断结果。固定程序把结果变成路由或投递请求；真正的调查、工具操作、任务拆分和结果写作交给当前 Harness。</p>
 <div class="table-scroll"><table><thead><tr><th>位置</th><th>Jev 做什么</th><th>当前是否等待</th><th>后续由谁承接</th></tr></thead><tbody>
 <tr><td>飞书 Jev 试验入口</td><td>建议参与方式、表情、短答 / 复杂工作位置</td><td>是。观察收录之后、执行请求提交之前 await</td><td>Connector 保存决定、准备工作位置，提交 Request；Harness 决定实际是否回复</td></tr>
+<tr><td>常规接入的 Quick participation</td><td>另一次 Jev 快判，记录参与方式和可能的交接建议</td><td>不等 Jev 判定。收到表情与它并发启动；Connector 只等已读表情回执再提交工作</td><td>Quick 日志与条件交接建议由固定程序承接；它不是新 observation 路径的串行 gate</td></tr>
 <tr><td>Auto 运行档位</td><td>只在选择 Auto 时做运行档位路由</td><td>条件发生，在 Request 接纳前解析</td><td>调度器把已选定的执行快照交给原生运行器；固定档位不用这次路由</td></tr>
 <tr><td>是否需要任务卡</td><td>旧 Jev 清单 gate 已退出入口</td><td>没有额外清单模型调用</td><td>可建卡、已启用的工作 Session 中由 Harness 按实际工作量决定</td></tr>
 <tr><td>飞书表情 / 文本发送</td><td>不直接发送</td><td>Jev 返回后才可能排入投递</td><td>Connector 调提供方 API；返回真实 reactionId / messageId</td></tr>
 <tr><td>后置标题与摘要</td><td>另有 Session 状态分类器，不是群 Jev 快判</td><td>不阻塞最终答复</td><td>独立后台流程整理元数据；不是任务验收人</td></tr>
 </tbody></table></div>
 <div class="note"><strong>Jev 的静默建议目前不阻止已观察消息进模型。</strong><p>当前代码采用临时 fail-open：保留表情和位置建议，把已观察消息交给 Session 模型自行判断答复。但 <code>groupFeed</code> 旁听 Session 被排除在任务卡范围外；位置判断仍会间接影响有没有新卡。不能把“清单 gate 移除”理解成所有群消息都能建卡。</p></div>
-<details data-technical><summary>展开判断输出与成本边界</summary><div class="detail-body"><p>保存的决定包含 <code>participation</code>、<code>emojiType</code>、<code>workMode</code> 和理由。Jev 上下文是有边界的近期消息与可用记忆摘录，不是整个公司的全部对话。</p><p>群快判、Auto 路由、主 Harness 执行是不同调用。飞书 API 显示一个表情，并不意味着只发生了一次 API 或没有模型成本。当前没有用新的外部事件机制自动替代这些职责。</p><div data-sources="jev auto card after"></div></div></details>
+<details data-technical><summary>展开判断输出与成本边界</summary><div class="detail-body"><p>保存的决定包含 <code>participation</code>、<code>emojiType</code>、<code>workMode</code> 和理由。Jev 上下文是有边界的近期消息与可用记忆摘录，不是整个公司的全部对话。</p><p>群快判、Auto 路由、主 Harness 执行是不同调用。飞书 API 显示一个表情，并不意味着只发生了一次 API 或没有模型成本。当前没有用新的外部事件机制自动替代这些职责。</p><div data-sources="jev quick auto card after"></div></div></details>
 </section>
 
 <section id="entries"><h2><span class="part">05 / 分开看入口</span>试验入口、常规入口与飞书</h2>
@@ -74,7 +75,7 @@
 <tr><td>网页 · 个人试验</td><td>当前 Session 的 HTTP 接纳层</td><td>结构校验；Auto 仅条件启用。没有飞书群快判</td><td>网页读取规范化历史和个人启用的 workboard 投影</td></tr>
 <tr><td>网页 · 常规</td><td>同一 Session / Request 底座</td><td>同一运行规则，任务卡是否可用看部署和个人开关</td><td>普通会话投影；不能由“常规端口”推断已升级了任务卡</td></tr>
 <tr><td>飞书 · Jev 群试验</td><td>Connector 的耐久 inbox</td><td>先观察收录，再等 Jev，提交工作后排表情</td><td>文本 outbox + 独立卡片 Worker；复杂工作可开话题</td></tr>
-<tr><td>飞书 · 非 Jev 配置</td><td>同一 Connector inbox</td><td>按访问、@、回复模式和 quickReactions 分支处理</td><td>原消息 / 原话题；符合试验范围才有卡片 Worker</td></tr>
+<tr><td>飞书 · 常规接入分支</td><td>同一 Connector inbox</td><td>按访问、@、回复模式和 quickReactions 分支处理；Quick 可另用并行 Jev</td><td>原消息 / 原话题；符合试验范围才有卡片 Worker</td></tr>
 </tbody></table></div>
 <p>“没有 @ 也能唤醒”是已配置群的能力，不代表任意群、任意机器人消息都触发工作。现有群旁听与话题工作 Session 也不是一回事。</p>
 <p>话题内后续消息沿已绑定 Session 续接。群主线发起复杂工作时，Connector 保存原消息回复目标；首条 Bot 回复创建或取得话题，再记下绑定，后续回同一位置。</p>

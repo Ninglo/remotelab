@@ -1,5 +1,5 @@
 import { meta, references, nodes, overviewGraphs, actors, sequences, feedbackGraph, feedbackDetails,
-  questionLevels, states, simulations, openings, rollout, contracts, invariants } from './guide-data.js?v=20261003c';
+  questionLevels, states, simulations, openings, rollout, contracts, invariants } from './guide-data.js?v=20261003d';
 
 const el = id => document.getElementById(id);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

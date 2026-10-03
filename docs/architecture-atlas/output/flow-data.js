@@ -9,6 +9,7 @@ export const sources = {
   inbox: ['lib/connector-inbox.mjs', 'scripts/feishu-connector.mjs#L1778'],
   observation: ['chat/session-observations.mjs#L50', 'scripts/feishu-connector.mjs#L1079'],
   jev: ['scripts/feishu-connector.mjs#L1188', 'connectors/feishu/quick-participation.mjs#L68'],
+  quick: ['scripts/feishu-connector.mjs#L1740', 'connectors/feishu/quick-participation.mjs#L286'],
   handoff: ['scripts/feishu-connector.mjs#L984', 'connectors/feishu/session-flow.mjs'],
   admission: ['chat/session-manager.mjs#L3159', 'chat/requests.mjs'],
   auto: ['chat/session-runtime-selection.mjs#L17', 'lib/jev-auto-router.mjs'],
@@ -111,15 +112,18 @@ export const scenarios = {
     ],
   },
   standard: {
-    label:'飞书 · 非 Jev 路径', status:'配置决定分支',
-    intro:'常规群不是统一的开关组合。先看接入策略和回复模式；这一分支描述未启用 jevReactions 的入口，不能拿它代替试验群的真实顺序。',
+    label:'飞书 · 常规接入分支', status:'未启用 Jev observation；Quick 可另用 Jev',
+    intro:'常规群不是统一的开关组合。这一分支未启用 jevReactions，但 Quick participation 仍可另调 Jev；等待位置与新的观察快判路径不同。',
     steps:[
       step('事件落盘与接入检查','user','connector','sync','Connector + inbox',
         '可靠保存并去重消息，再检查访问范围、群触发策略、命令以及主线 / 话题路由。ambient 与必须 @ 的群，接入行为不同。',
         '输入：飞书来源事件。输出：可处理消息及其路由。','等待本地保存和结构处理，不等待最终答案。','只有被接入策略接纳的消息进入后续工作。','inbox'),
       step('按该分支尝试收到表情','connector','user','conditional','quickParticipation 或固定 processing reaction',
-        'quickReactions 分支尝试先发送已读表情并等其回执；另一些配置只把 processing reaction 异步发出。quickParticipation 可以做自己的快判。这些都不是 Jev observation 路径。',
-        '输入：消息与分支开关。输出：表情尝试 / 回执。','具体是否等待回执取决于分支；不能统称所有入口都无等待。','表情与后续任务答复仍是不同证据。','inbox'),
+        'quickReactions 分支启动已读表情，并发启动 Quick Jev 快判；Connector 只等待已读表情回执，再继续提交工作。另一些配置只把 processing reaction 异步发出。这不是 Jev observation 路径。',
+        '输入：消息与分支开关。输出：表情尝试 / 回执。','Quick 分支等表情回执，不等其 Jev 判断；另一些 processing reaction 配置异步发送。','表情与后续任务答复仍是不同证据。','quick'),
+      step('并行的 Quick Jev 快判','connector','jev','async','旧 Quick participation 的 Jev 调用',
+        '启用 Quick participation 时，它与已读表情同一轮并发启动，记录参与方式和可能的工作交接建议；建议由 discussionHandoff 接口承接。',
+        '输入：有限的群消息上下文。输出：Quick 判定日志和条件发生的交接建议。','Connector 不 await 本次判定完成才提交执行请求；不能把它画成 observation 快判那样的前置串行门槛。','这里也使用 Jev，但当前主模型工作不以该判断结束为启动条件。','quick'),
       ...execution,
     ],
   },
@@ -192,7 +196,7 @@ for (const key of ['pilot','standard']) {
 // In particular the Run may start before reaction enqueue, and post-turn
 // metadata may finish before the final message's delivery receipt.
 scenarios.pilot.parallelStart = 4;
-scenarios.standard.parallelStart = 3;
+scenarios.standard.parallelStart = 4;
 scenarios.web.parallelStart = 3;
 scenarios.goal.parallelStart = 4;
 
