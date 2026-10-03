@@ -80,8 +80,13 @@ text+=table([['演示输入项','假设值'],['---','---'],...guide.tokenExample
 for(const [label,rows] of [['如何验证',guide.evaluation],['测量字段（待增加或补齐）',guide.measurementFields],['准入要求（尚未通过）',guide.releaseGates],['失败与纠正',guide.failureRules]]){
   text+='### '+label+'\n\n';for(const [title,body] of rows)text+='- **'+title+'：** '+body+'\n';text+='\n';
 }
+text+='## 铺开前的风险与实际准备（v2.2）\n\n'+guide.preoperation.finding+'\n\n'+guide.preoperation.current+'\n\n';
+for(const [label,rows] of [['这一轮的风险',guide.preoperation.risks],['已经执行与验证',guide.preoperation.controls],['后续实际接入条件',guide.preoperation.next]]){
+  text+='### '+label+'\n\n';for(const [title,body] of rows)text+='- **'+title+'：** '+body+'\n';text+='\n';
+}
+text+=guide.preoperation.tool+'\n\n'+guide.preoperation.boundary+'\n\n';
 text+='## 当前依据\n\n';for(const r of guide.references){
-  const revision=/^(chat|lib|connectors|scripts)\//.test(r.path)?guide.mainBaseline:'main';
+  const revision=r.revision || (/^(chat|lib|connectors|scripts)\//.test(r.path)?guide.mainBaseline:'main');
   text+='- ['+r.title+'](https://github.com/Ninglo/remotelab/blob/'+revision+'/'+r.path+')：'+r.use+'。\n';
 }
 text+='\n## 外部参考\n\n';for(const r of guide.external)text+='- ['+r.title+']('+r.url+')：'+r.use+'\n';
