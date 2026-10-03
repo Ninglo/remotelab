@@ -1,7 +1,8 @@
 /* ---- Desktop (>= 768px) ---- */
 @media (min-width: 768px) {
   :root {
-    --chat-column-width: 70%;
+    --chat-column-width: min(calc(100% - 48px), 1280px);
+    --sidebar-row-height: 32px;
   }
 
   .header #menuBtn { display: none; }
@@ -25,12 +26,17 @@
     box-shadow: none;
     transition: none;
   }
-  .sidebar-primary-nav { padding-top: 10px; }
+  .sidebar-primary-nav { padding-top: 6px; padding-bottom: 4px; }
+  .sidebar-nav-button { padding-top: 6px; padding-bottom: 6px; }
+  .sidebar-footer-nav { padding-bottom: 6px; }
+  .session-item { padding-top: 3px; padding-bottom: 3px; }
+  .session-item-meta { margin-top: 1px; line-height: 1.25; }
+  .folder-group-header { padding-top: 4px; padding-bottom: 4px; }
   .sidebar-overlay.open .sidebar { left: auto; }
   .sidebar-close-btn { display: none; }
 
-  /* Desktop: strip side padding from containers; 70% width on inner elements */
-  .messages { padding: 28px 0; }
+  /* Keep a small gutter and a readable maximum, using the available desktop width. */
+  .messages { padding: 16px 0; }
   .messages-inner,
   .queued-panel,
   .input-stack {
@@ -38,9 +44,23 @@
     margin-left: auto;
     margin-right: auto;
   }
-  .queued-panel { margin-bottom: 10px; }
-  .input-area { padding: 0 0 14px; padding-bottom: calc(14px + var(--safe-bottom)); }
-  .input-resize-handle { margin: 0 0 10px; }
+  .msg-user { margin-bottom: 14px; }
+  .msg-user-bubble { padding: 9px 14px; }
+  .msg-assistant { margin-bottom: 16px; line-height: 1.6; }
+  .md-content p,
+  .md-content ul,
+  .md-content ol { margin-bottom: 0.6em; }
+  .md-content h1, .md-content h2, .md-content h3,
+  .md-content h4, .md-content h5, .md-content h6 { margin-top: 0.85em; }
+  .md-content > :first-child { margin-top: 0; }
+  .md-content p:last-child { margin-bottom: 0; }
+  .session-workboard-inline { max-width: 100%; margin-bottom: 12px; padding: 10px 12px; }
+  .queued-panel { margin-bottom: 6px; }
+  .input-area { padding: 0 0 10px; padding-bottom: calc(10px + var(--safe-bottom)); }
+  .input-resize-handle { height: 12px; margin: 0 0 6px; }
+  .input-row { padding-top: 10px; }
+  .input-row textarea { min-height: calc(1.55em * 2); }
+  .input-actions-row { padding-top: 6px; padding-bottom: 8px; }
   .modal-backdrop { padding-left: calc(var(--sidebar-width) + 24px); }
 }
 

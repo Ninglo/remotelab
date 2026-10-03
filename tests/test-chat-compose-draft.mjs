@@ -260,7 +260,7 @@ function loadComposeContext(context) {
 const context = createContext();
 loadComposeContext(context);
 
-assert.equal(context.msgInput.style.height, '72px', 'composer should default to a 3-line height');
+assert.equal(context.msgInput.style.height, '72px', 'composer should retain the three-line fallback when CSS is unavailable');
 assert.equal(context.layoutSubscribers.length, 1, 'composer should subscribe to the shared layout controller');
 assert.equal(context.windowResizeListeners.length, 0, 'composer should not attach its own window resize listener when the shared layout controller exists');
 assert.equal(context.visualViewportResizeListeners.length, 0, 'composer should not attach its own visual viewport resize listener when the shared layout controller exists');
@@ -328,6 +328,23 @@ assert.equal(detachedComposerSends.length, 1, 'the detached draft should be sent
 assert.equal(detachedComposerSends[0]?.sessionId, 'session-created-from-composer');
 assert.equal(detachedComposerSends[0]?.text, 'start from this draft');
 assert.equal(detachedComposerSends[0]?.images?.[0]?.originalName, 'sample.csv', 'detached attachments should move onto the created session before sending');
+
+const responsiveContext = createContext();
+let responsiveMinHeight = '48px';
+responsiveContext.getComputedStyle = () => ({ lineHeight: '24', minHeight: responsiveMinHeight });
+loadComposeContext(responsiveContext);
+assert.equal(responsiveContext.msgInput.style.height, '48px', 'empty desktop composer should use the compact CSS minimum');
+responsiveContext.msgInput.scrollHeight = 168;
+responsiveContext.autoResizeInput();
+assert.equal(responsiveContext.msgInput.style.height, '168px', 'a compact composer should still grow for a long draft');
+responsiveContext.msgInput.scrollHeight = 12;
+responsiveMinHeight = '72px';
+responsiveContext.syncInputHeightForLayout();
+assert.equal(responsiveContext.msgInput.style.height, '72px', 'changing to a mobile layout should use its larger CSS minimum');
+responsiveContext.setManualInputHeight(220);
+responsiveMinHeight = '48px';
+responsiveContext.syncInputHeightForLayout();
+assert.equal(responsiveContext.msgInput.style.height, '220px', 'a responsive minimum must preserve an explicit manual height');
 
 const manualContext = createContext();
 loadComposeContext(manualContext);
