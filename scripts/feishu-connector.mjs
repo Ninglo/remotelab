@@ -2,6 +2,7 @@
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { loadDailyReportMemory } from '../connectors/feishu/daily-report-memory.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
+import { handleFeishuProgressPolicyAction } from '../connectors/feishu/progress-policy-actions.mjs';
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
@@ -1792,7 +1793,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     };
     command = null;
   }
-  if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute'].includes(name))) {
+  if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute', 'progress'].includes(name))) {
     return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');
   }
   if (command && !taskCommand && !command.body) {
@@ -2119,6 +2120,11 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
     'card.action.trigger': async raw => {
+      const progressFeedback = await handleFeishuProgressPolicyAction(runtime, raw, {
+        request: (path, options) => requestRemoteLab(runtime, path, options),
+        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+      });
+      if (progressFeedback) return progressFeedback;
       const participationFeedback = await runtime.participation?.action(raw);
       if (participationFeedback) return participationFeedback;
       const projectFeedback = await runtime.projectSurface?.actionFeedback(raw);

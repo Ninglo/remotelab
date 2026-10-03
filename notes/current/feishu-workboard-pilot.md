@@ -230,3 +230,11 @@ have isolated integration coverage; this is not a claim that every provider or
 Feishu client variant has been tested live. Future changes must retain the
 contract, pass CI and verify a real opted-in task's original card and result
 receipts before claiming live delivery.
+
+## Session progress preferences
+
+The instance default remains card plus separate useful progress messages. A Session can opt into card-only progress through its card controls or `/progress card`; `/progress messages` enables both, and `/progress default` restores inheritance. `/progress` and `/status` show the shared setting. This changes presentation only, including running Requests, and does not change Harness execution, group participation, opening/question/final publication or another Session. No concurrency-triggered override is applied. Switching to message delivery fences quiet history rather than replaying it. Old revisions cannot overwrite newer choices, and retries retain a durable change identity.
+
+Both task and unlisted-progress cards offer these controls and a collapsed panel of the ten most recent earlier updates, with bounded excerpts and a full-history link when a public base URL is configured. The source history is untouched. Controls validate the Bot route, actual persisted card receipt, destination, access policy and Session revision. The existing `card.action.trigger` handler handles callbacks; it requires the app callback configuration already used by other interactive cards. Deployments with a nonstandard worker state directory must pass that directory to the callback handler. Disabling cards automatically returns to message delivery.
+
+`tests/test-session-progress-policy.mjs` covers a running publisher holding stale Session data, restart persistence, no quiet-history replay, retries, stale actions, query/mutation without model calls, receipt/authorization validation, history limits and same-card updates. The HTTP runtime preference test covers authentication, API persistence, concurrent revisions, server restart and missing-card rejection.

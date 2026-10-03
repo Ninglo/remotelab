@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
+import { progressCardControls, progressCardHistory } from './progress-card-controls.mjs';
 import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '../../lib/workboard-state.mjs';
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
 import { projectProgressStreams, progressExecutionLabel } from '../../lib/progress-stream.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
-export function buildFeishuWorkboardCard(text, board = null, progress = null) {
+export function buildFeishuWorkboardCard(text, board = null, progress = null, cycle = {}) {
   const lines = String(text || '').split(/\r?\n/).map(trim).filter(Boolean);
   const goal = lines.find(line => /^目标[：:]/.test(line)) || '目标：完成当前任务并核对结果。';
   const parsedItems = lines.flatMap(line => {
@@ -26,6 +27,8 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null) {
     })) : [{ tag: 'div', text: { tag: 'plain_text',
       content: lines.filter(line => line !== goal).join('\n') || trim(text) } }]),
     { tag: 'hr' },
+    ...progressCardControls(cycle),
+    ...progressCardHistory(cycle),
     { tag: 'markdown', content: '**目前进展**' },
     { tag: 'markdown', content: board ? workboardProgressText(board, progress) : progress?.content || '暂无进度更新' },
   ];
@@ -42,6 +45,8 @@ export function buildFeishuProgressCard(cycle) {
     header: { template: 'blue', title: { tag: 'plain_text', content: '本轮进展' } },
     body: { elements: [
       { tag: 'markdown', content: cycle.progress?.content || '暂无进度更新' },
+      ...progressCardHistory(cycle),
+      ...progressCardControls(cycle),
       { tag: 'hr' },
       { tag: 'markdown', content: progressExecutionLabel(cycle.executionState) },
     ] } };
@@ -165,15 +170,16 @@ function collectAuthorizedCycles(events, pilot, session = null) {
       && ['final', 'final_answer'].includes(event.phase)
       && event.seq > task.anchorSeq
       && (!anchor.runId || event.runId === anchor.runId));
-    return { ...task, closed: final,
+    return { ...task, closed: final, sessionId: session?.id || pilot.sessionId,
+      progressPolicy: { feishuProgressMode: session?.feishuProgressMode, feishuProgressRevision: session?.feishuProgressRevision || 0 },
       ...(target?.conversationKind === 'thread' ? { replyMessageId: anchors.get(task.anchorSeq)?.replyMessageId || allowed.get(anchor.runId) } : {}) };
   });
 }
 export function collectFeishuGroupWorkboardCycles(events, pilot, session) {
   return isFeishuWorkboardGroupSession(session, pilot) ? collectAuthorizedCycles(events, pilot, session) : [];
 }
-export function collectFeishuWorkboardCycles(events, pilot) {
-  return collectAuthorizedCycles(events, pilot);
+export function collectFeishuWorkboardCycles(events, pilot, session) {
+  return collectAuthorizedCycles(events, pilot, session);
 }
 // Replay each verified checkpoint rather than collapsing a burst to all-done.
 export function expandFeishuWorkboardUpdates(cycles) {
@@ -184,7 +190,7 @@ export function expandFeishuWorkboardUpdates(cycles) {
 
 export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage }) {
   const content = JSON.stringify(cycle.progressOnly
-    ? buildFeishuProgressCard(cycle) : buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress));
+    ? buildFeishuProgressCard(cycle) : buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress, cycle));
   const contentHash = createHash('sha256').update(content).digest('hex');
   let card = pilot.cards.find(item => item.anchorSeq === cycle.anchorSeq)
     || pilot.cards.find(item => cycle.taskId && item.taskId === cycle.taskId);

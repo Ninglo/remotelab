@@ -1222,3 +1222,5 @@ settings are separate from verified live deployment and delivery.
 - Diagrams: show the main work flow with separate in-run feedback and memory continuation, and a concept map for Session, Request, Run, Harness, Connector and Person. Preserve existing interactive chapter diagrams and technical disclosures.
 - Canonical rule: the 20261003k revision in `docs/architecture-atlas/README.md` supersedes the preceding visual reference. The prior feedback entry records the earlier decision, while current maintenance follows this revision.
 - Acceptance: inspect actual font loading and chart labels, desktop/mobile reading, diagram controls, original section anchors, public asset readback and restoration of the same published site. Runtime feature acceptance remains separate.
+
+- 2026-10-03: Progress must remain noticeable across parallel work and recoverable when readers return. Keep card plus useful progress messages as the initial default; add collapsed recent history and explicit per-Session controls, retaining manual choice instead of automatically overriding quiet mode based on concurrency.

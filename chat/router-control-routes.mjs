@@ -88,6 +88,7 @@ import {
 import { queryUsageLedger } from './usage-ledger.mjs';
 import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
+import { updateSessionProgressPolicy } from './session-progress-policy.mjs';
 import {
   buildClientInstanceSettings,
   loadInstanceSettings,
@@ -1080,6 +1081,20 @@ export async function handleControlRoutes({
       writeJson(res, 200, await readMonitoringOverview({ days: Number(parsedUrl?.query?.days) || 7 }));
     } catch {
       writeJson(res, 503, { error: 'Monitoring information is temporarily unavailable' });
+    }
+    return true;
+  }
+
+  const progressPolicyMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/progress-policy$/);
+  if (progressPolicyMatch && req.method === 'POST') {
+    const id = progressPolicyMatch[1];
+    if (!await requireSessionAccess(res, authSession, id)) return true;
+    try {
+      const patch = JSON.parse(await readBody(req, 4096));
+      await updateSessionProgressPolicy(id, patch);
+      writeJson(res, 200, { session: await getSessionForClient(id) });
+    } catch (error) {
+      writeJson(res, error.status || 400, { error: error.message });
     }
     return true;
   }

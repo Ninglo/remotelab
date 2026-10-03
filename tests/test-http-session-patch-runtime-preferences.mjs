@@ -383,6 +383,34 @@ try {
     assert.equal(following.json.session.feishuRuntimeSelection, undefined);
     assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, { feishuRuntimeSelection: selection },
       { Cookie: 'session_token=not-authorized' })).status, 401, 'unauthenticated callers cannot set an override');
+    const progressSession = (await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot, tool: 'codex', name: 'Feishu progress policy',
+      conversation: { connector: 'feishu', sourceRouteId: 'policy-bot',
+        target: { chatId: 'policy-chat', chatType: 'p2p', conversationKind: 'main' } },
+    })).json.session;
+    const policyPath = `/api/sessions/${progressSession.id}/progress-policy`;
+    const setPolicy = (mode, expectedRevision, changeId) => request(port, 'POST', policyPath, { mode, expectedRevision, changeId });
+    assert.equal((await setPolicy('card', 0, 'no-card')).status, 400, 'do not hide progress when no card is enabled');
+    assert.equal((await request(port, 'PATCH', `/api/sessions/${progressSession.id}`, { workboardPilot: true })).status, 200);
+    const quietPolicy = await setPolicy('card', 0, 'http-quiet');
+    assert.equal(quietPolicy.status, 200);
+    assert.equal(quietPolicy.json.session.feishuProgressMode, 'card');
+    assert.equal(quietPolicy.json.session.feishuProgressRevision, 1);
+    assert.equal(quietPolicy.json.session.feishuProgressChanges, undefined, 'internal retry identities are not user metadata');
+    assert.equal((await setPolicy('messages', 0, 'http-stale')).status, 409, 'concurrent stale changes cannot overwrite newer choices');
+    assert.equal((await request(port, 'POST', policyPath, { mode: 'messages', expectedRevision: 1, changeId: 'http-unauth' },
+      { Cookie: 'session_token=not-authorized' })).status, 401);
+    assert.equal((await request(port, 'POST', `/api/sessions/${older.id}/progress-policy`, {
+      mode: 'card', expectedRevision: 0, changeId: 'web' })).status, 400, 'this policy cannot quietly change unrelated Web Sessions');
+    await stopServer(server);
+    server = await startServer({ home, port });
+    assert.equal((await request(port, 'GET', `/api/sessions/${progressSession.id}?view=summary`)).json.session.feishuProgressMode, 'card');
+    assert.equal((await request(port, 'GET', `/api/sessions/${newer.id}`)).json.session.feishuProgressMode, undefined);
+    assert.equal((await setPolicy('card', 0, 'http-quiet')).status, 200, 'retry deduplication survives server restart');
+    assert.equal((await setPolicy('default', 1, 'http-reset')).json.session.feishuProgressMode, undefined);
+    await setPolicy('card', 2, 'quiet-before-disabling');
+    const withoutCards = await request(port, 'PATCH', `/api/sessions/${progressSession.id}`, { workboardPilot: false });
+    assert.equal(withoutCards.json.session.feishuProgressMode, undefined, 'disabling cards restores message delivery');
     const workboardConfig = join(home, '.config', 'remotelab', 'workboard-opt-ins.json');
     writeFileSync(workboardConfig, JSON.stringify({ people: [{
       personId: 'person_default', identityIds: ['identity_web_default'], feishuPrivateChats: [],

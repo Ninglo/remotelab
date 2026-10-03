@@ -2,6 +2,7 @@ import { buildExternalTriggerId } from './index.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 import { buildFeishuSessionConversationTarget, isFeishuThreadConversation } from './reply-routing.mjs';
 import { describeFeishuMuteSetting } from './conversation-settings.mjs';
+import { describeSessionProgressPolicy, FEISHU_PROGRESS_MODES } from '../../lib/session-progress-policy.mjs';
 import { isQuickSession } from '../../lib/quick-session-profile.mjs';
 import {
   completeRuntimeProfile,
@@ -16,6 +17,7 @@ const HELP = [
   '普通聊天群支持 inline/thread；话题群固定使用 Thread。Quick 是独立执行模式，不改变回复位置。',
   '短名：/m model、/q quick。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
+  '/progress [messages|card|default] — 查看进展提示，切换卡片＋新消息、仅卡片或恢复全局默认；只影响当前 Session',
   '/project — 查看当前群的项目入口；memory 查看记忆，tasks 查看自动任务，audit 查看修改记录',
   '/log [问题] — 在当前 Session 继续对话，核实上一 Run 的 LangSmith 记录并回答问题',
   '/harness [名称] — 查看或修改当前任务使用的 Harness',
@@ -135,6 +137,20 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   const inputCommands = normalizeCommands(rawCommands);
   const validationError = validateCommandSet(inputCommands);
   if (validationError) return { error: validationError, text: validationError, operations: [] };
+  if (inputCommands.some(command => command.name === 'progress')) {
+    const fail = text => ({ error: text, text, operations: [] });
+    if (taskMode || inputCommands.length !== 1) return fail('/progress 请单独发送，不与任务正文或其他命令组合。');
+    const session = summary?.startThread ? null : await findCommandSession(runtime, summary, request);
+    if (!session) return fail('请在已有会话中发送 /progress；这个命令不会新建任务。');
+    const mode = inputCommands[0].value.toLowerCase();
+    if (mode && !FEISHU_PROGRESS_MODES.has(mode)) return fail('用法：/progress messages（卡片＋新消息）、/progress card（仅卡片）、/progress default（恢复全局默认）。');
+    if (mode === 'card' && session.workboardPilot !== true) return fail('当前会话未启用进展卡片，请继续使用新消息提示。');
+    return { commands: inputCommands, sessionId: session.id, operations: mode ? [{
+      scope: 'session-progress', sessionId: session.id, mode,
+      expectedRevision: session.feishuProgressRevision || 0,
+      changeId: `command:${summary.messageId}`,
+    }] : [], text: `${describeSessionProgressPolicy(session)}\n作用范围：当前 Session（含后续轮次），其他会话继续沿用各自设置。\n/progress messages：卡片＋新进展消息\n/progress card：只更新卡片\n/progress default：恢复全局默认\n需要你回复的问题和最终结果仍会发消息；恢复新消息提示时不会补发此前进展。` };
+  }
   // Resolve the shortcut through the same configurable preset and durable
   // command plan as /tier sota, including existing-Session and retry handling.
   const commands = inputCommands.map(command => command.name === 'sota'
@@ -169,12 +185,12 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
     }
     if (command.name === 'status') {
       if (isQuickSession(session)) {
-        notes.push(`模式：Quick（创建后固定）\n${await describeFeishuMuteSetting(runtime, summary)}`);
+        notes.push(`模式：Quick（创建后固定）\n${describeSessionProgressPolicy(session)}\n${await describeFeishuMuteSetting(runtime, summary)}`);
         continue;
       }
       catalog = catalog || await catalogFor(selection.tool);
       selection = completeSelection(selection, catalog);
-      notes.push(`${describe(selection)}\n${await describeFeishuMuteSetting(runtime, summary)}`);
+      notes.push(`${describe(selection)}\n${describeSessionProgressPolicy(session)}\n${await describeFeishuMuteSetting(runtime, summary)}`);
       continue;
     }
     if (!CONFIG_COMMANDS.has(command.name)) continue;
@@ -270,7 +286,15 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
 }
 
 export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
+  let text = plan.text;
   for (const operation of plan.operations || []) {
+    if (operation.scope === 'session-progress') {
+      const { session } = await requestJson(request, `/api/sessions/${encodeURIComponent(operation.sessionId)}/progress-policy`, {
+        method: 'POST', body: { mode: operation.mode, expectedRevision: operation.expectedRevision, changeId: operation.changeId },
+      });
+      text = `已保存当前 Session 的进展设置。\n${describeSessionProgressPolicy(session)}\n仅影响这个会话的后续进展；已排队的消息可能继续送达。需要你回复的问题和最终结果仍会发消息，旧进展不会补发。`;
+      continue;
+    }
     const { session } = await requestJson(request, `/api/sessions/${encodeURIComponent(operation.sessionId)}`, {
       method: 'PATCH',
       body: operation.runtimeTier
@@ -284,7 +308,7 @@ export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
     if (persisted?.tool !== operation.selection.tool || (persisted?.model || '') !== (operation.selection.model || '')
       || (persisted?.effort || '') !== (operation.selection.effort || '')) throw new Error('RemoteLab did not persist the requested Session runtime selection');
   }
-  return plan.text;
+  return text;
 }
 
 export async function handleFeishuRuntimeCommands(runtime, summary, commands, options) {

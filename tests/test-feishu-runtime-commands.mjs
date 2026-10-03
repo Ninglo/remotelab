@@ -41,6 +41,11 @@ try {
       sessionUrl: 'https://remote.example/?session=s1&tab=sessions',
       langsmithUrl: 'https://smith.langchain.com/o/workspace/projects/p/project/r/run',
       langsmithEntryUrl: 'https://remote.example/api/sessions/s1/langsmith' };
+    else if (path === '/api/sessions/s1/progress-policy') {
+      session.feishuProgressMode = options.body.mode === 'default' ? undefined : options.body.mode;
+      session.feishuProgressRevision = (session.feishuProgressRevision || 0) + 1;
+      json = { session: structuredClone(session) };
+    }
     else if (path === '/api/sessions/s1') {
       if (options.method === 'PATCH') {
         if (Object.prototype.hasOwnProperty.call(options.body, 'runtimeTier')) {
@@ -163,6 +168,19 @@ try {
       return { sessionId: 's1', runId: `run_log_${aiCalls}` };
     },
   };
+  session.workboardPilot = true;
+  const beforeProgressSelection = structuredClone(session.feishuRuntimeSelection);
+  await handleMessage(runtime, { ...summary, messageId: 'progress-control', messageText: '/progress card' }, 'test', helpers);
+  assert.match(replies.at(-1), /只更新卡片/);
+  assert.equal(session.feishuProgressMode, 'card');
+  assert.deepEqual(session.feishuRuntimeSelection, beforeProgressSelection, 'display control must not change runtime settings');
+  await handleMessage(runtime, { ...summary, messageId: 'progress-query', messageText: '/progress' }, 'test', helpers);
+  assert.match(replies.at(-1), /作用范围：当前 Session/);
+  await handleMessage(runtime, { ...summary, messageId: 'progress-with-task', messageText: '/progress messages\n\n不要执行这段正文' }, 'test', helpers);
+  assert.match(replies.at(-1), /正文/);
+  assert.equal(session.feishuProgressMode, 'card', 'invalid task combinations must not partly mutate the setting');
+  assert.equal(aiCalls, 0, 'display controls must never call the Harness');
+  replies.length = 0;
   await handleMessage(runtime, { ...summary, messageText: '/status' }, 'test', helpers);
   assert.match(replies.at(-1), /当前 Session/);
   await handleMessage(runtime, { ...summary, messageId: 'm2', messageText: '/help' }, 'test', helpers);

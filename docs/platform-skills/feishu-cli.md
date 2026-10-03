@@ -129,3 +129,7 @@ contact visibility, resource ACL and returned API code separately. For a missing
 Bot application scope use
 [`feishu-auth-request`](../../skills/feishu-auth-request/SKILL.md). Do not print
 App Secrets or tokens.
+
+### Per-Session progress controls
+
+Use the progress/task card buttons or send a standalone `/progress`: `messages` keeps the card and new progress messages, `card` updates only the card for progress, and `default` restores the global default (card plus new messages). The shared preference lasts across turns and restarts in that Session only. Questions and final results still arrive as messages. Card history can be expanded to read recent intermediate updates. Switching back to messages never replays older quiet progress; concurrency does not override a manual choice.

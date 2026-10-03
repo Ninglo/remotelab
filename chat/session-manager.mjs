@@ -90,6 +90,8 @@ import {
   buildSessionWorkState,
 } from './session-control-state.mjs';
 import { broadcastAll } from './ws-clients.mjs';
+import { withSessionProgressPolicy } from './session-progress-policy.mjs';
+import { getHistoryHeadSeq } from './history.mjs';
 import {
   buildTemporarySessionName,
   DEFAULT_SESSION_NAME,
@@ -2599,25 +2601,33 @@ export async function updateSessionSystemPrompt(id, systemPrompt) {
 }
 
 export async function updateSessionWorkboardPilot(id, enabled, { optInPersonId = '' } = {}) {
-  const result = await mutateSessionMeta(id, (session) => {
-    if ((session.workboardPilot === true) === enabled
-      && (!enabled || (session.workboardOptInPersonId || '') === optInPersonId)) return false;
-    if (enabled) {
-      session.workboardPilot = true;
-      if (optInPersonId) session.workboardOptInPersonId = optInPersonId;
-      else delete session.workboardOptInPersonId;
-    }
-    else {
-      delete session.workboardPilot;
-      delete session.workboardOptInPersonId;
-      delete session.workboardGate;
-    }
-    session.updatedAt = nowIso();
-    return true;
+  return withSessionProgressPolicy(id, async () => {
+    const progressHead = enabled ? 0 : await getHistoryHeadSeq(id);
+    const result = await mutateSessionMeta(id, (session) => {
+      if ((session.workboardPilot === true) === enabled
+        && (!enabled || (session.workboardOptInPersonId || '') === optInPersonId)) return false;
+      if (enabled) {
+        session.workboardPilot = true;
+        if (optInPersonId) session.workboardOptInPersonId = optInPersonId;
+        else delete session.workboardOptInPersonId;
+      }
+      else {
+        delete session.workboardPilot;
+        delete session.workboardOptInPersonId;
+        delete session.workboardGate;
+        if (session.feishuProgressMode === 'card') {
+          delete session.feishuProgressMode;
+          session.feishuProgressAfterSeq = progressHead;
+          session.feishuProgressRevision = (session.feishuProgressRevision || 0) + 1;
+        }
+      }
+      session.updatedAt = nowIso();
+      return true;
+    });
+    if (!result.meta) return null;
+    if (result.changed) broadcastSessionInvalidation(id);
+    return enrichSessionMeta(result.meta);
   });
-  if (!result.meta) return null;
-  if (result.changed) broadcastSessionInvalidation(id);
-  return enrichSessionMeta(result.meta);
 }
 
 export async function updateSessionInitiatorIdentity(id, initiatedByIdentityId) {

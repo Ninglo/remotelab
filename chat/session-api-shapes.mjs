@@ -13,6 +13,7 @@ function stripSessionShape(session, {
   delete cloned.delegatedFromSessionId;
   delete cloned.delegatedAt;
   delete cloned.titleLocked;
+  delete cloned.feishuProgressChanges;
   if (!includeQueuedMessages) {
     delete cloned.queuedMessages;
     delete cloned.deliveryIssues;

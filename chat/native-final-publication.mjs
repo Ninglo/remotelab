@@ -14,6 +14,9 @@ import {
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
 import { normalizeConversation } from '../lib/conversation-target.mjs';
+import { shouldPublishSessionProgress } from '../lib/session-progress-policy.mjs';
+import { withSessionProgressPolicy } from './session-progress-policy.mjs';
+import { findSessionMeta } from './session-meta-store.mjs';
 
 export async function prepareNativeFinalFiles(record, event, { run, manifest, publishAsset = publishLocalFileAssetFromPath } = {}) {
   const references = [...extractAssistantArtifactBlockReferences(event.content), ...extractAssistantLocalMarkdownImageReferences(event.content)];
@@ -40,6 +43,8 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
+  const progressPolicy = plan.connector === 'feishu'
+    ? await findSessionMeta(record.sessionId || session?.id) || session : null;
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
     if (event.runId && event.runId !== record.runId) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
@@ -52,6 +57,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     // A rollout can fence progress previously suppressed by card grouping.
     // This is not a delivery receipt; old card text must not be announced again.
     if (surface.surfaceKind === 'progress' && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
+    if (plan.connector === 'feishu' && surface.surfaceKind === 'progress'
+        && !shouldPublishSessionProgress(progressPolicy, event.seq)) continue;
     if (stored?.streamedSurfaceMessageIds?.includes(messageId)
         || stored?.streamedFinalReplyIds?.includes(messageId)) continue;
     const final = isFinalAssistantMessage(event);
@@ -86,7 +93,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
     if (!parts.length) continue;
-    await store.mutate(record.key, current => {
+    const admit = () => store.mutate(record.key, current => {
       if (!current || current.result
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;
@@ -104,6 +111,12 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
         }))),
       };
     });
+    if (plan.connector === 'feishu' && surface.surfaceKind === 'progress') {
+      await withSessionProgressPolicy(record.sessionId || session?.id, async () => {
+        const latest = await findSessionMeta(record.sessionId || session?.id) || session;
+        if (shouldPublishSessionProgress(latest, event.seq)) await admit();
+      });
+    } else await admit();
   }
 }
 

@@ -107,7 +107,7 @@ async function syncPrivate() {
     pilot.protocolAfterSeq = migrating ? Math.max(0, ...events.map(event => event.seq || 0)) : 0;
     await persist();
   }
-  for (const cycle of expandFeishuWorkboardUpdates(collectFeishuWorkboardCycles(events, pilot), events)) {
+  for (const cycle of expandFeishuWorkboardUpdates(collectFeishuWorkboardCycles(events, pilot, session), events)) {
     if (stopped || expired()) { stop(); break; }
     const result = await publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage });
     if (result) console.log(`[feishu-workboard] ${result.action} session=${pilot.sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
