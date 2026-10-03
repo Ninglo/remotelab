@@ -69,7 +69,7 @@ export async function readService(item, execute = exec) {
 export function analyzeResources({ accounts, disks, automations, services }) {
   const attention = [];
   for (const disk of disks) if (disk.status === 'critical' || disk.status === 'warning') attention.push({ kind: 'disk', severity: disk.status,
-    subject: disk.label, availableBytes: disk.availableBytes, usedPercent: disk.usedPercent, inodeUsedPercent: disk.inodeUsedPercent });
+    id: disk.path, subject: disk.label, availableBytes: disk.availableBytes, usedPercent: disk.usedPercent, inodeUsedPercent: disk.inodeUsedPercent });
   const available = accounts.filter(account => account.status === 'available');
   const exhausted = accounts.filter(account => account.status === 'exhausted');
   if (exhausted.length) attention.push({ kind: 'quota', severity: !available.length || exhausted.some(account => account.active) ? 'critical' : 'warning',
@@ -79,7 +79,7 @@ export function analyzeResources({ accounts, disks, automations, services }) {
   for (const task of automations.items) if (!['completed', 'cancelled', 'paused'].includes(task.state)
     && (task.lastExecution?.state === 'failed' || task.lastError)) attention.push({ kind: 'automation',
     severity: 'warning', subject: task.title, id: task.id, sessionId: task.lastExecution?.sessionId || null });
-  for (const service of services) if (service.status === 'failed') attention.push({ kind: 'service', severity: 'critical', subject: service.label });
+  for (const service of services) if (service.status === 'failed') attention.push({ kind: 'service', severity: 'critical', id: service.unit, subject: service.label });
   const capacity = available.filter(account => account.windows.some(window => Math.abs(window.minutes - 10080) <= 60 && window.remainingPercent >= 50));
   const opportunities = capacity.length ? [{ kind: 'capacity', accounts: capacity.map(account => ({ label: account.label,
     ...account.windows.find(window => Math.abs(window.minutes - 10080) <= 60) })) }] : [];

@@ -56,6 +56,15 @@ test('the existing incident can be baselined without a deployment-time group mes
   await dispatchMonitoringAlerts({ ...f.options, snapshot: snapshot([disk]) }); assert.equal(f.getSends(), 0);
 });
 
+test('a disk leaving the critical range rearms a later critical event with a new delivery key', async () => {
+  const f = fixture(), keys = [];
+  const options = { ...f.options, send: async (_events, _config, key) => { keys.push(key); return 'om_batch'; } };
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([disk]) });
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([{ ...disk, severity: 'warning' }]) });
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([disk]) });
+  assert.equal(keys.length, 2); assert.notEqual(keys[0], keys[1]);
+});
+
 test('daily Markdown includes the actual observation range and retains uncertainty without publishing', () => {
   const value = snapshot([disk]); value.disks = [{ label: 'Missing', status: 'unknown', observedAt: value.generatedAt }];
   value.coverage.gaps = [{ source: 'disk', code: 'ENOENT' }];
