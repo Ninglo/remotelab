@@ -85,6 +85,7 @@ import {
   resolveUserVisiblePathInput,
 } from './instance-visible-paths.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
+import { readMonitoringOverview } from './monitoring.mjs';
 import {
   buildClientInstanceSettings,
   loadInstanceSettings,
@@ -1044,6 +1045,15 @@ export async function handleControlRoutes({
       model,
     });
     writeJsonCached(req, res, summary);
+    return true;
+  }
+
+  if (pathname === '/api/monitoring/overview' && req.method === 'GET') {
+    try {
+      writeJson(res, 200, await readMonitoringOverview({ days: Number(parsedUrl?.query?.days) || 7 }));
+    } catch {
+      writeJson(res, 503, { error: 'Monitoring information is temporarily unavailable' });
+    }
     return true;
   }
 

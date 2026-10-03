@@ -1,6 +1,6 @@
-# Automations (formerly Task Center) v1
+# Monitoring and Automations v1
 
-The user-facing name is **Automations** (自动化). It manages RemoteLab's scheduled and triggered AI work. Feishu's project task list tracks actions assigned to people and is a separate system. Existing `tasks` tab URLs, component IDs, and `/api/automation-tasks` paths remain stable.
+The sidebar entry is **Monitoring** (监管), with **Overview** and **Automations** tabs. Automations remains the default and retains its existing controls. Overview joins resource and runtime observations; see [Monitoring](monitoring.md). Project tasks and daily reports stay in their existing Markdown and publication workflows, without another application entry. Existing `tasks` tab URLs, component IDs, and `/api/automation-tasks` paths remain stable.
 
 This is the authenticated control surface for RemoteLab's durable automated tasks. It is a top-level application workspace, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
 
@@ -16,7 +16,7 @@ RemoteLab owns generic automation mechanics:
 
 The execution Session still interprets the instruction and decides the concrete work. Task Center does not know evaluation, GPU, report, inbox, or other domain semantics.
 
-Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Automations sit above the Session list, while Settings sits below it. Selecting a Session, Automations, or Settings swaps the main workspace inside the same application document; there is no second application rail and no template-management destination. Automations and Settings share the same flat, readable main-canvas geometry and never insert management cards into a Session transcript. The sidebar shows the product brand only in the global header, keeps origin filtering next to the Session list, and does not spend primary space on build metadata. The URL query remains shareable/restorable UI state rather than a separate page load.
+Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Monitoring sit above the Session list, while Settings sits below it. Selecting a Session, Monitoring, or Settings swaps the main workspace inside the same application document; there is no second application rail and no template-management destination. Monitoring and Settings share the same flat, readable main-canvas geometry and never insert management cards into a Session transcript. The sidebar shows the product brand only in the global header, keeps origin filtering next to the Session list, and does not spend primary space on build metadata. The URL query remains shareable/restorable UI state rather than a separate page load.
 
 There is no per-Session template selector or preferred-template browser state. New Sessions start from the selected tool/runtime only. Interactive template objects and shared-guest routes do not exist in the v1 product model.
 

@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-03 — Resource monitoring and routine reports
+
+- Source: direct operator feedback after separate account, disk, skill and project notifications accumulated.
+- Ask: monitoring should first show urgent interruptions and capacity that can support useful work. Retain Settings and familiar automation controls; add Overview above Automations under Monitoring. Project tasks and daily reports belong in local Markdown and existing report publication, without separate UI entries.
+- Delivery implication: put routine monitoring into the existing daily report. A new dashboard, image or Base is optional presentation, not another required information source. Only urgent new incidents warrant separate group notifications; batch related events and preserve delivery receipts.
+- Evidence boundary: a full allowance does not prove waste, unknown reads do not prove health, and fixed test requests are not project output. Scope observations to connected sources. The earlier dedicated Base remains historical and is no longer the daily output contract.
+
 Status: active evidence log as of 2026-03-26
 
 Companion operating note: `notes/current/product-mainline.md`
