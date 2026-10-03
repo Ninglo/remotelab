@@ -983,10 +983,7 @@ function getInputLineHeight() {
 }
 
 function getAutoInputMinH() {
-  const cssMinHeight = parseFloat(getComputedStyle(msgInput).minHeight);
-  return Number.isFinite(cssMinHeight) && cssMinHeight > 0
-    ? cssMinHeight
-    : getInputLineHeight() * INPUT_MIN_LINES;
+  return getInputLineHeight() * INPUT_MIN_LINES;
 }
 
 function getAutoInputMaxH() {

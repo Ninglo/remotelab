@@ -42,12 +42,6 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
-### 2026-10-03 — Increase Session information density on desktop
-
-- Observed friction: too little conversation fits in one screen. The user referenced AIHOT as a denser layout; the current Session view reserved 30% of the content area as side margins and three lines for an empty composer.
-- Change: use the available desktop width with a 1280px reading limit, tighter transcript and sidebar spacing, and a two-line minimum composer that still grows and can be resized. Retain normal text size and existing mobile controls.
-- Verification boundary: compare the same synthetic transcript and Session rows at desktop and tablet widths; check mobile overflow and composer resizing. This is a layout change, without new Session organization or altered task behavior.
-
 ### 2026-10-03 — Amber 固定展示实例额度与会话 Token
 
 - 用户验收了紧凑用量样式，并明确要求：任何人选 Amber 都看到宠物旁的额度与会话标题右侧的 `k` 单位 Token；其他主题不显示。
