@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 const hash = data => createHash('sha256').update(data).digest('hex');
 const labelPattern = /^[a-z0-9_-]{1,64}$/;
 const hashPattern = /^[a-f0-9]{64}$/;
+const maxSourceBytes = 5 * 1024 * 1024;
+const maxBaselineBytes = 50 * 1024 * 1024;
+const maxSources = 128;
 const permissions = ['collection', 'foregroundRetrieval', 'formalWrites', 'delivery', 'skillPromotion', 'businessActions'];
 const resources = ['modelCalls', 'workerConcurrency', 'backfillTokens', 'dailyTokens'];
 const activationBlockedReasons = [
@@ -74,6 +77,7 @@ export function validatePreparationPolicy(policy) {
 async function regularFile(path) {
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error('Snapshot files must be regular, independent files.');
+  if (info.size > maxSourceBytes) throw new Error('Preparation file exceeds the 5 MiB limit.');
 }
 
 async function newFile(path, data) {
@@ -84,7 +88,7 @@ async function newFile(path, data) {
 
 export async function prepareMemoryWorkspace({ workspace, protectedRoots, sources }) {
   const { root, protectedPaths } = await validateWorkspace(workspace, protectedRoots);
-  if (!Array.isArray(sources) || !sources.length) throw new Error('Explicit baseline sources are required.');
+  if (!Array.isArray(sources) || !sources.length || sources.length > maxSources) throw new Error('Preparation requires 1 to 128 explicit baseline sources.');
   const labels = new Set();
   const normalized = [];
   for (const source of sources) {
@@ -102,10 +106,13 @@ export async function prepareMemoryWorkspace({ workspace, protectedRoots, source
   await chmod(root, 0o700);
   await mkdir(join(root, 'baseline'), { mode: 0o700 });
   const entries = [];
+  let capturedBytes = 0;
   for (const source of normalized) {
     let data;
     try {
       const before = await stat(source.path);
+      if (!before.isFile()) throw new Error('Baseline source must be a regular file: ' + source.label);
+      if (before.size > maxSourceBytes || capturedBytes + before.size > maxBaselineBytes) throw new Error('Preparation baseline size limit exceeded.');
       data = await readFile(source.path);
       const after = await stat(source.path);
       if (!before.isFile() || before.size !== after.size || before.mtimeMs !== after.mtimeMs || data.length !== after.size) {
@@ -115,6 +122,7 @@ export async function prepareMemoryWorkspace({ workspace, protectedRoots, source
       if (error.code !== 'ENOENT') throw error;
       entries.push({ ...source, missing: true }); continue;
     }
+    capturedBytes += data.length;
     const sha256 = hash(data);
     await newFile(join(root, 'baseline', source.label + '-' + sha256 + '.blob'), data);
     entries.push({ ...source, missing: false, sha256, bytes: data.length, capturedAt: new Date().toISOString() });
@@ -138,13 +146,14 @@ export async function checkMemoryWorkspace({ workspace, protectedRoots }) {
   const policy = JSON.parse(await readFile(join(root, 'policy.json'), 'utf8'));
   validatePreparationPolicy(policy);
   const baseline = JSON.parse(await readFile(join(root, 'baseline.json'), 'utf8'));
-  if (baseline.schemaVersion !== 1 || baseline.workspace !== root || !Array.isArray(baseline.entries) || !baseline.entries.length) {
+  if (baseline.schemaVersion !== 1 || baseline.workspace !== root || !Array.isArray(baseline.entries) || !baseline.entries.length || baseline.entries.length > maxSources) {
     throw new Error('Invalid baseline manifest.');
   }
   if (!baseline.entries.some(e => e.missing === false)) throw new Error('Baseline has no captured source.');
   const dir = await lstat(join(root, 'baseline'));
   if (!dir.isDirectory() || dir.isSymbolicLink()) throw new Error('Baseline directory cannot be a link.');
   const changedSources = [], missingSources = [], seen = new Set();
+  let capturedBytes = 0;
   for (const entry of baseline.entries) {
     if (!labelPattern.test(entry.label || '') || seen.has(entry.label)) throw new Error('Invalid baseline label.');
     seen.add(entry.label);
@@ -156,12 +165,17 @@ export async function checkMemoryWorkspace({ workspace, protectedRoots }) {
       catch (error) { if (error.code !== 'ENOENT') throw error; }
       continue;
     }
-    if (!hashPattern.test(entry.sha256 || '') || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0) throw new Error('Invalid baseline fingerprint.');
+    if (!hashPattern.test(entry.sha256 || '') || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || entry.bytes > maxSourceBytes) throw new Error('Invalid baseline fingerprint.');
+    capturedBytes += entry.bytes;
+    if (capturedBytes > maxBaselineBytes) throw new Error('Preparation baseline size limit exceeded.');
     const blob = join(root, 'baseline', entry.label + '-' + entry.sha256 + '.blob');
     await regularFile(blob);
     const data = await readFile(blob);
     if (data.length !== entry.bytes || hash(data) !== entry.sha256) throw new Error('Baseline snapshot integrity failed.');
-    try { if (hash(await readFile(entry.path)) !== entry.sha256) changedSources.push(entry.label); }
+    try {
+      const current = await stat(entry.path);
+      if (!current.isFile() || current.size !== entry.bytes || hash(await readFile(entry.path)) !== entry.sha256) changedSources.push(entry.label);
+    }
     catch (error) { if (error.code === 'ENOENT') changedSources.push(entry.label); else throw error; }
   }
   return {

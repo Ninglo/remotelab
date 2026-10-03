@@ -29,6 +29,12 @@ try {
   }
   await assert.rejects(validateWorkspace('relative-path', [production]), /absolute/);
   await assert.rejects(validateWorkspace(join(root, 'other'), []), /Protected/);
+  await assert.rejects(prepareMemoryWorkspace({ ...args, workspace: join(root, 'directory-source'), sources: [{ label: 'directory', path: production }] }), /regular file/);
+  const oversized = join(production, 'oversized');
+  await writeFile(oversized, Buffer.alloc(5 * 1024 * 1024 + 1));
+  await assert.rejects(prepareMemoryWorkspace({ ...args, workspace: join(root, 'oversized-source'), sources: [{ label: 'oversized', path: oversized }] }), /size limit/);
+  await unlink(oversized);
+  await assert.rejects(prepareMemoryWorkspace({ ...args, sources: Array.from({ length: 129 }, () => ({ label: 'projects', path: source })) }), /128/);
   const alias = join(root, 'prod-alias');
   await symlink(production, alias, 'dir');
   await assert.rejects(validateWorkspace(join(alias, 'new'), [production]), /overlap/);
@@ -55,6 +61,9 @@ try {
   const drift = await checkMemoryWorkspace(args);
   assert.equal(drift.ok, false); assert.deepEqual(drift.changedSources, ['projects']);
   assert.equal(await readFile(source, 'utf8'), 'A newer real project update must survive.\n');
+  await unlink(source); await mkdir(source);
+  assert.deepEqual((await checkMemoryWorkspace(args)).changedSources, ['projects']);
+  await rm(source, { recursive: true });
   await writeFile(source, before);
   await writeFile(missing, '{}');
   assert.deepEqual((await checkMemoryWorkspace(args)).changedSources, ['registry']);
@@ -80,5 +89,5 @@ try {
   await assert.rejects(run(process.execPath, [modulePath, 'check', '--workspace', workspace, '--activate', 'true'], { env }), e => e.code === 2);
   assert.deepEqual(await readFile(source), before);
   assert.equal((await checkMemoryWorkspace(args)).ok, true);
-  console.log('test-memory-governance-preflight: ok; 14 policy mutations, production/ancestor/symlink paths, tampered and linked snapshots, source drift and unsupported activation rejected; production untouched');
+  console.log('test-memory-governance-preflight: ok; 14 policy mutations, production/ancestor/symlink paths, file type/size/count limits, tampered and linked snapshots, source drift and unsupported activation rejected; production untouched');
 } finally { await rm(root, { recursive: true, force: true }); }
