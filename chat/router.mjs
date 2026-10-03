@@ -88,6 +88,7 @@ import {
 } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { handleSiteFeedbackRoutes } from './router-site-feedback-routes.mjs';
+import { handleQianyanRoutes } from './router-qianyan-routes.mjs';
 import { getBootstrapInstanceSettings } from './instance-settings.mjs';
 import {
   buildFileAssetDirectUrl,
@@ -1374,6 +1375,8 @@ export async function handleRequest(req, res) {
     }
     return;
   }
+
+  if (await handleQianyanRoutes({ req, res, pathname, writeJson })) return;
 
   if (await handleCalendarFeedRoute({ req, res, pathname })) {
     return;
