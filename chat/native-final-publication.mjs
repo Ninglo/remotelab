@@ -62,7 +62,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     // openings or intermediate updates labeled as separate deliveries.
     if (plan.connector === 'feishu' && !final && !running) continue;
     let prepared;
-    try { prepared = await prepareFinal(final ? event : surface); }
+    try { prepared = await prepareFinal(surface); }
     catch (error) {
       // Asset transport failure must not freeze Run observation or other final
       // messages. The terminal asset path still owns this deferred answer.

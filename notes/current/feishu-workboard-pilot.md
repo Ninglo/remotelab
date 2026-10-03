@@ -94,6 +94,9 @@ decides whether the work satisfies the user's goal.
   unready assets defer publication. Preserve automatic-delivery preferences on
   local continuations; separately authorized outbox results use explicit task
   and revision tags.
+  Repeated completion events for the same provider item and Run replace its
+  original reply position. Terminal recovery retains one answer and one file
+  delivery, without appending attachment fallback names to an existing answer.
 
 The canonical snapshot and receipt contract is in
 [External Message Protocol](../../docs/external-message-protocol.md#8-reading-normalized-events).
