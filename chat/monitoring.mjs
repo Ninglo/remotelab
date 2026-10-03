@@ -52,15 +52,16 @@ export function projectAccounts(runtime, fleet, now = Date.now()) {
   });
 }
 
-export async function readService(item) {
+export async function readService(item, execute = exec) {
   if (!/^[\w@.-]+\.(service|timer)$/.test(item.unit || '') || !['user', 'system'].includes(item.scope)) throw new Error('INVALID_UNIT');
-  const { stdout } = await exec('systemctl', [...(item.scope === 'user' ? ['--user'] : []), 'show', item.unit,
+  const { stdout } = await execute('systemctl', [...(item.scope === 'user' ? ['--user'] : []), 'show', item.unit,
     '--property=LoadState,ActiveState,SubState,Result,Type,ExecMainStatus,ExecMainStartTimestamp,LastTriggerUSec'], { timeout: 3000, maxBuffer: 8192 });
   const state = Object.fromEntries(stdout.trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
   const known = state.LoadState === 'loaded';
   const neverRan = state.Type === 'oneshot' && state.ActiveState === 'inactive' && !state.ExecMainStartTimestamp;
   const healthy = known && (state.ActiveState === 'active' || !neverRan && state.Type === 'oneshot' && state.ActiveState === 'inactive' && state.Result === 'success');
-  return { label: text(item.label || item.unit), unit: item.unit, status: !known || neverRan ? 'unknown' : healthy ? 'healthy' : 'failed',
+  const starting = known && state.ActiveState === 'activating' && state.Result === 'success';
+  return { label: text(item.label || item.unit), unit: item.unit, status: !known || neverRan ? 'unknown' : healthy ? 'healthy' : starting ? 'running' : 'failed',
     state: state.ActiveState, lastResult: state.Result || null, lastRunAt: state.ExecMainStartTimestamp || state.LastTriggerUSec || null,
     observedAt: new Date().toISOString() };
 }

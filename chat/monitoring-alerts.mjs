@@ -37,7 +37,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   const current = new Set(), due = [];
   // An unreadable source cannot establish recovery and rearm the same incident.
   for (const item of [...snapshot.disks.map(item => ({ ...item, kind: 'disk' })), ...snapshot.services.map(item => ({ ...item, kind: 'service' }))]) {
-    if (item.status === 'unknown') current.add(hash(`${item.kind}:${item.label}`));
+    if (['unknown', 'running', 'starting'].includes(item.status)) current.add(hash(`${item.kind}:${item.label}`));
   }
   if (snapshot.coverage.gaps.some(gap => gap.source === 'automations')) {
     for (const [key, incident] of Object.entries(state.incidents)) if (incident.kind === 'automation') current.add(key);

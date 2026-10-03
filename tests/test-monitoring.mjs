@@ -1,12 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMonitoringReader, projectAccounts, analyzeResources } from '../chat/monitoring.mjs';
+import { createMonitoringReader, projectAccounts, analyzeResources, readService } from '../chat/monitoring.mjs';
 
 const now = Date.parse('2026-10-03T06:00:00Z');
 const at = new Date(now).toISOString();
 const quota = remainingPercent => [{ id: 'codex', primary: { remainingPercent, windowDurationMins: 10080, resetsAt: '2026-10-07T00:00:00Z' } }];
 const sample = (remainingPercent, overrides = {}) => ({ identityId: 'account', label: 'owner@example.com', status: 'ready', quota: quota(remainingPercent), observedAt: at, ...overrides });
 const entry = subscriptions => ({ receivedAt: at, snapshot: { subscriptions } });
+
+test('oneshot execution in progress is not a service fault, and a never-run or failed unit is not healthy', async () => {
+  const item = { unit: 'test.service', scope: 'user' };
+  const observe = (active, result, started = at) => readService(item, async () => ({ stdout:
+    `LoadState=loaded\nType=oneshot\nActiveState=${active}\nResult=${result}\nExecMainStartTimestamp=${started}\n` }));
+  assert.equal((await observe('activating', 'success')).status, 'running');
+  assert.equal((await observe('inactive', 'success')).status, 'healthy');
+  assert.equal((await observe('inactive', 'success', '')).status, 'unknown');
+  assert.equal((await observe('failed', 'exit-code')).status, 'failed');
+  assert.equal((await observe('activating', 'exit-code')).status, 'failed');
+});
 
 test('quotas deduplicate sources without letting a stale or paused source override a valid observation', () => {
   const fleet = { adapters: { fresh: entry([sample(70)]), old: entry([sample(0, { status: 'paused', observedAt: '2026-09-30T00:00:00Z' })]) } };
