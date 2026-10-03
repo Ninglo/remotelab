@@ -67,6 +67,7 @@ export async function feishuJevApiKey() {
 
 export async function classifyFeishuQuickParticipation(context, {
   fetchImpl = fetch, key, timeoutMs = JEV_TIMEOUT_MS, includeHandoff = true, newestText = '', projectMemory = null,
+  participationState = null,
 } = {}) {
   const token = key || await feishuJevApiKey();
   if (!token) return { decision: 'unknown', reason: 'missing_key', latencyMs: 0 };
@@ -80,8 +81,26 @@ export async function classifyFeishuQuickParticipation(context, {
       body: JSON.stringify({
         model: JEV_MODEL,
         state: { discussion: context,
+          ...(participationState ? { agent_participation: { mode: participationState.mode,
+            topic_anchor: participationState.topicAnchor || '' } } : {}),
           ...(!includeHandoff && projectMemory ? { project_memory: projectMemory } : {}) },
         questions: {
+          ...(participationState ? { participationControl: {
+            type: 'choice',
+            instructions: 'Interpret only the newest human message in context. Is it a direct present instruction to change THIS assistant participation mode? Read natural Chinese intent, not keywords. Quoted examples, hypothetical rules, product design discussion, negation, messages directed to another person, and mixed work requests are none. Asking for one answer or noting a new subject is not permission to restore autonomous participation. A request to keep receiving but stop speaking/working is listening; a request not to read/receive future messages is paused; explicit permission to resume autonomous participation is active.',
+            criteria: { active: 'Explicitly restore autonomous participation.',
+              listening: 'Explicitly continue receiving, but only respond when invited.',
+              paused: 'Explicitly stop reading future ordinary messages until restored.',
+              none: 'No clear present mode change for this assistant.' },
+          }, ...(participationState.mode === 'listening' ? { invitation: {
+            type: 'choice',
+            instructions: 'While THIS assistant is listening, is the newest message clearly inviting it to answer or do this specific thing? A direct question to the assistant can invite it without an @; a human-to-human question, a bare new subject, or useful unsolicited contribution cannot. Permission is for this one turn only; the mode stays listening.',
+            criteria: { yes: 'A clear invitation to this assistant now.', no: 'No clear invitation.' },
+          }, topicChange: {
+            type: 'choice',
+            instructions: 'Compare the newest discussion with agent_participation.topic_anchor and recent non-control human messages. Is it a clearly different subject or task, rather than a follow-up, correction, acknowledgement, mode command, or quoted example? If no usable previous subject exists choose no. This only changes a quiet status-card hint; it never restores participation.',
+            criteria: { yes: 'A clear new subject.', no: 'The same subject, unclear, or no comparison basis.' },
+          } } : {}) } : {}),
           participation: {
             type: 'choice',
             instructions: 'Decide whether the Feishu group assistant should send a useful reply to the NEWEST message now. Older lines only clarify it; never answer an older question instead. Choose reply for a direct request, a concrete unanswered question about this assistant, its behavior, implementation, deployment or current work, or feedback that identifies a problem to investigate or fix. A follow-up such as "why did it react that way?", "how does Jev do this?", "can we roll this out?", "how many groups have this bot?", "why did it stop replying?" or "咋不理我啊" needs an answer even without an @ mention. A question proposing action, such as "是不是该把这个 bug 修了？", is a work request. A newest question like "你能不能看到这条消息" needs a simple Yes answer. A negative test result like "看来是不中" alone is criticism, not a new work request. Choose silent for human-to-human conversation, acknowledgements, status reports without a request, repeated information, a question already answered by a person, or a test phrase that merely names an emotion or mentions the assistant. A bare mention asks you to reconsider the preceding unanswered discussion; a mention alone does not authorize work. Judge the newest message in context, including Chinese text.'
@@ -182,6 +201,15 @@ export async function classifyFeishuQuickParticipation(context, {
         && Number(workModeAnswer.probabilities?.short) >= 0.8 ? 'short' : 'complex')
       : null;
     return {
+      ...(participationState ? {
+        controlMode: ['active', 'listening', 'paused'].includes(result.answers?.participationControl?.choice)
+          && Number(result.answers.participationControl.probabilities?.[result.answers.participationControl.choice]) >= 0.95
+          ? result.answers.participationControl.choice : null,
+        invited: result.answers?.invitation?.choice === 'yes'
+          && Number(result.answers.invitation.probabilities?.yes) >= 0.9,
+        topicChanged: result.answers?.topicChange?.choice === 'yes'
+          && Number(result.answers.topicChange.probabilities?.yes) >= 0.9,
+      } : {}),
       decision: binaryAnswer ? 'reply' : uncertain ? 'unknown' : decision,
       reactionOnly,
       emojiType: binaryAnswer || emojiType,
@@ -253,7 +281,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
     })).filter(message => message.text).slice(-MAX_MESSAGES));
   }
 
-  async function restore(eventsPath) {
+  async function restore(eventsPath, { shouldRemember = async () => true } = {}) {
     const content = await readFile(eventsPath, 'utf8').catch(() => '');
     const now = Date.now();
     const active = new Map();
@@ -262,6 +290,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
       try {
         const event = JSON.parse(line);
         if (event.allowed && now - messageTime(event.summary) <= MAX_AGE_MS
+          && await shouldRemember(event.summary)
           && remember(event.summary)) active.set(conversationKey(event.summary), event.summary);
       } catch { /* A partial final log line is ignored. */ }
     }

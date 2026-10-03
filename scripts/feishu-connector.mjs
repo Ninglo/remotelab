@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { loadDailyReportMemory } from '../connectors/feishu/daily-report-memory.mjs';
+import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
@@ -1089,10 +1090,16 @@ async function submitRemoteLabRequest(runtime, summary, {
     if (!observed.response.ok) throw new Error(observed.json?.error || 'Unable to record Feishu message in Session');
     return { sessionId: session.id, externalTriggerId, observation: observed.json };
   }
+  const participationStatus = participationEnabled(runtime, effectiveSummary)
+    ? await participationController(runtime).state(effectiveSummary) : null;
   const [attachmentResolution, conversationContext, linkedProjectContext] = await Promise.all([
     resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
     loadFeishuContextBoundary(requester, session.id, effectiveSummary)
-      .then((boundary) => loadFeishuConversationContext(runtime, effectiveSummary, boundary || {}))
+      .then((boundary) => loadFeishuConversationContext(runtime, effectiveSummary, {
+        ...boundary,
+        ...(participationStatus?.contextAfterMs ? { sinceTimeMs: Math.max(boundary?.sinceTimeMs || 0,
+          participationStatus.contextAfterMs) } : {}),
+      }))
       .catch((error) => {
         console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
         return null;
@@ -1157,6 +1164,13 @@ async function submitRemoteLabRequest(runtime, summary, {
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
   };
+  if (effectiveSummary.participationOnce) {
+    payload.text = '[当前状态：旁听。用户仅邀请你处理这一次；完成后保持旁听，不自行恢复主动参与。]\n' + payload.text;
+    payload.sourceContext.feishuParticipationMode = 'listening';
+  } else if (participationStatus) {
+    payload.text = `[群参与状态：${participationStatus.mode}。状态由连接器执行并同步卡片；本条没有执行状态切换，不要宣称已切换。自然文字“先旁听”“暂停接收消息”“恢复参与”可切换。]\n` + payload.text;
+    payload.sourceContext.feishuParticipationMode = participationStatus.mode;
+  }
   const handoff = { sessionId: session.id, payload, receipt: {
     externalTriggerId, attachmentCount: attachmentResolution.attachments.length,
     attachmentDownloadFailureCount: attachmentResolution.failures.length,
@@ -1187,6 +1201,10 @@ async function enqueueJevOutcomeReaction(runtime, summary, sessionId, emojiType)
 async function handleJevObservedMessage(runtime, summary, observationReceipt, helpers = {}) {
   const { sessionId, externalTriggerId, observation } = observationReceipt;
   if (!observation?.eventSeq) throw new Error('Feishu message was not recorded in Session');
+  const controller = participationEnabled(runtime, summary) ? participationController(runtime, helpers) : null;
+  const participationState = controller ? await controller.remember(summary, sessionId, observation.recent) : null;
+  if (participationState?.mode === 'paused') return { sessionId, observedOnly: true };
+  let permission = participationState?.mode !== 'listening';
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId });
   if (runtime.storagePaths?.messageIndexPath) {
     await recordFeishuMessageSession(runtime, summary, sessionId, { externalTriggerId });
@@ -1204,7 +1222,14 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       resolveFeishuGroupSettings(runtime.config, summary).dailyReportMemory, newestText);
     const memoryLatencyMs = Math.round(performance.now() - memoryStarted);
     const verdict = await (helpers.classifyJevReaction || classifyFeishuQuickParticipation)(
-      context, { includeHandoff: false, newestText, projectMemory });
+      context, { includeHandoff: false, newestText, projectMemory, participationState });
+    if (controller && verdict?.controlMode && (!summary.mentions?.length || mentionsFeishuBot(runtime, summary))) {
+      await controller.change(summary, verdict.controlMode, { sessionId });
+      return { sessionId, participationControl: true, mode: verdict.controlMode };
+    }
+    if (controller) permission = await controller.assess(summary, verdict, {
+      mentioned: mentionsFeishuBot(runtime, summary), taskCommand: Boolean(summary.commandBlock?.body),
+    });
     if (projectMemory) console.log('[feishu-jev-project-memory]', JSON.stringify({
       messageId: summary.messageId, sources: projectMemory.sources,
       excerpts: projectMemory.excerpts.length,
@@ -1213,7 +1238,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       jevLatencyMs: verdict?.latencyMs ?? null,
     }));
     const mentioned = mentionsFeishuBot(runtime, summary);
-    const participation = !verdict?.reactionOnly
+    const participation = permission && !verdict?.reactionOnly
       && (verdict?.decision === 'reply' || mentioned) ? 'reply' : 'silent';
     const reactionAnswer = !mentioned && verdict?.workMode === 'reaction'
       && ['Yes', 'No'].includes(verdict?.emojiType);
@@ -1233,6 +1258,15 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     if (saved?.response && !saved.response.ok) throw new Error(saved.json?.error || 'Unable to record Jev decision');
     decision = saved?.json?.decision || saved?.decision;
     if (!decision) throw new Error('Jev decision was not durably recorded');
+  }
+
+  // Listening always keeps observations, but suppresses model runs, reactions,
+  // attachment work and task handoff unless this exact message invites us.
+  if (controller && participationState.mode === 'listening') {
+    const latest = await controller.state(summary);
+    permission = latest.mode === 'active' || latest.invitedMessages?.includes(summary.messageId);
+    if (!permission) return { sessionId, externalTriggerId, decision, observedOnly: true };
+    summary = { ...summary, participationOnce: true };
   }
 
   // Temporary fail-open policy: Jev still selects reactions and work placement,
@@ -1417,6 +1451,15 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const delivery = claim.delivery;
   const summary = { ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice' };
   return withFeishuHandoffLock(runtime, summary, async () => {
+    if (participationEnabled(runtime, summary)) {
+      const status = await participationController(runtime, helpers).state(summary);
+      if (status.mode !== 'active' && !status.invitedMessages?.includes(summary.messageId)) {
+        const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
+          body: { state: 'cancelled', reason: `Group participation is ${status.mode}` } });
+        if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to cancel paused group delivery');
+        return resolved.json?.delivery;
+      }
+    }
     let sent;
     try {
       sent = delivery.kind === 'reaction'
@@ -1571,9 +1614,51 @@ async function submitFeishuFeedback(runtime, summary, kind, sessionId = '') {
   });
 }
 
+function participationController(runtime, helpers = {}) {
+  if (runtime.participation) return runtime.participation;
+  const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
+  runtime.participation = createParticipationController(runtime, {
+    authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
+    interpretControl: async (text, status) => {
+      const verdict = await classifyFeishuQuickParticipation(`NEWEST MESSAGE TO CLASSIFY: ${text}`, {
+        includeHandoff: false, newestText: text, participationState: status,
+      });
+      return verdict.controlMode;
+    },
+    resolveSession: async summary => {
+      const binding = await findFeishuThreadSessionBinding(runtime, summary);
+      if (binding?.sessionId) return binding.sessionId;
+      const routed = applyFeishuReplyRouting(runtime.config, summary);
+      const result = await request('/api/session-conversations/resolve', { method: 'POST', body: {
+        conversation: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
+          target: buildFeishuSessionConversationTarget(routed) },
+      } });
+      if (!result.response.ok) throw new Error(result.json?.error || 'Unable to resolve participation Session');
+      return result.json?.sessionId || '';
+    },
+    cancelSession: async sessionId => {
+      const snapshot = await request(`/api/sessions/${encodeURIComponent(sessionId)}`);
+      if (snapshot.response.status === 404) return;
+      if (!snapshot.response.ok) throw new Error(snapshot.json?.error || 'Unable to read participation Session');
+      for (const queued of snapshot.json?.session?.queuedMessages || []) {
+        if (!queued.requestId) continue;
+        const removed = await request(`/api/sessions/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queued.requestId)}`, { method: 'DELETE' });
+        if (!removed.response.ok && ![404, 409].includes(removed.response.status)) throw new Error('Unable to cancel queued group turn');
+      }
+      const result = await request(`/api/sessions/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST' });
+      if (!result.response.ok && result.response.status !== 404) throw new Error(result.json?.error || 'Unable to stop current group turn');
+    },
+  });
+  return runtime.participation;
+}
+
 async function handleFeishuReactionMute(runtime, summary, helpers = {}) {
   if (summary.sourceKind !== 'reaction_mute') return { ignored: true };
   if (summary.sender?.openId === runtime.botIdentity?.openId) return { ignored: true, reason: 'self_reaction' };
+  if (participationEnabled(runtime, summary)) {
+    await participationController(runtime, helpers).change(summary, 'listening', { sessionId: summary.feedbackSessionId });
+    return { mode: 'listening', chatId: summary.chatId, threadId: summary.threadId || '' };
+  }
   await setFeishuConversationMuted(runtime, summary, true);
   await (helpers.submitFeishuFeedback || submitFeishuFeedback)(
     runtime, summary, 'mute_reaction', summary.feedbackSessionId);
@@ -1605,6 +1690,10 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
     return { receipt: { ignored: true, reason: 'merge_forward_context_only' } };
   }
   summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
+  if (participationEnabled(runtime, summary)) {
+    const control = await participationController(runtime, helpers).intake(summary);
+    if (control) return { receipt: control };
+  }
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
   if (command && !command.error && !commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name))
@@ -1676,7 +1765,9 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     summary = { ...summary, messageText: result.taskText, textPreview: result.taskText };
     command = null;
   }
-  const jevObservation = groupSettings.jevReactions
+  const listening = participationEnabled(runtime, summary)
+    && (await participationController(runtime, helpers).state(summary)).mode === 'listening';
+  const jevObservation = groupSettings.jevReactions || listening
     ? await (helpers.observeRemoteLabMessage || ((runtime, summary) =>
       submitRemoteLabRequest(runtime, summary, { observeOnly: true })))(runtime, summary)
     : null;
@@ -1884,6 +1975,9 @@ async function main() {
   runtime.botIdentity = await withTimeout(
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
   );
+  if (Object.values(config.groups || {}).some(group => group.participationControls)) {
+    await participationController(runtime).restore();
+  }
   const discussionHandoff = createDiscussionHandoffPilot(runtime, {
     submitWork: async (proposal, found) => {
       const source = proposal.source;
@@ -1915,13 +2009,24 @@ async function main() {
     react: createQuickParticipationReaction(runtime),
     onHandoffCandidate: summary => discussionHandoff.offerCandidate(summary),
   });
-  const activePilotConversations = await quickParticipation.restore(storagePaths.eventsLogPath);
+  const activePilotConversations = await quickParticipation.restore(storagePaths.eventsLogPath, {
+    shouldRemember: async summary => {
+      if (!participationEnabled(runtime, summary)) return true;
+      const status = await participationController(runtime).state(summary);
+      const at = Number(summary.createTime);
+      const time = at < 10_000_000_000 ? at * 1000 : at;
+      return status.mode !== 'paused' && (!status.contextAfterMs || time >= status.contextAfterMs);
+    },
+  });
   await Promise.all(activePilotConversations.map(async summary => {
     try {
+      const status = participationEnabled(runtime, summary) ? await participationController(runtime).state(summary) : null;
+      if (status?.mode === 'paused') return;
       const context = await loadFeishuConversationContext(runtime,
         { ...summary, messageId: '', createTime: String(Date.now()) },
         { maxMessages: 30, maxAgeMs: 2 * 60 * 60 * 1000, maxCharacters: 10_000,
-          timeoutMs: 1_800, includeMetadata: true });
+          timeoutMs: 1_800, includeMetadata: true,
+          ...(status?.contextAfterMs ? { sinceTimeMs: status.contextAfterMs } : {}) });
       if (context?.messages?.length) quickParticipation.seedConversation(summary, context.messages);
     } catch (error) {
       console.warn(`[feishu-quick-participation] history refresh failed: ${error.message}`);
@@ -1974,13 +2079,18 @@ async function main() {
     if (summary.fileToken && await documentPoller.accept(summary)) return {};
     const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
     if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {
+      if (participationEnabled(runtime, summary) && (
+        (await participationController(runtime).state(summary)).mode !== 'active'
+        || parseParticipationText(summary.messageText || summary.textPreview))) return {};
       const routed = await shouldRouteFeishuMessageToRemoteLab(runtime, summary,
         { explicitCommand: !!extractLocalCommand(summary) });
       if (routed && !resolveFeishuGroupSettings(config, summary).jevReactions) {
         quickParticipation.handle(summary, { receivedAt });
       }
       else if (discussionHandoffLink(runtime, summary)
-        && !(await getFeishuConversationSettings(runtime, summary)).muted) {
+        && !(await getFeishuConversationSettings(runtime, summary)).muted
+        && (!participationEnabled(runtime, summary)
+          || (await participationController(runtime).state(summary)).mode !== 'paused')) {
         // Unbound discussion-thread replies still provide handoff signals and
         // context. Scan without suggesting that the Bot will answer the thread.
         quickParticipation.handle(summary, { receivedAt, reactionMode: 'none' });
@@ -2009,6 +2119,8 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
     'card.action.trigger': async raw => {
+      const participationFeedback = await runtime.participation?.action(raw);
+      if (participationFeedback) return participationFeedback;
       const projectFeedback = await runtime.projectSurface?.actionFeedback(raw);
       if (projectFeedback) {
         if (projectFeedback.accepted) void runtime.projectSurface.handleAction(raw).catch(error =>
