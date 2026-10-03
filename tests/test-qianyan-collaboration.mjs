@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { createQianyanCollaboration } from '../knowledge/qianyan-collaboration.mjs';
+import { createQianyanIdentity } from '../knowledge/qianyan-identity.mjs';
+import { query } from '../knowledge/qianyan.mjs';
+
+const dir = await mkdtemp(join(tmpdir(), 'qianyan-collaboration-'));
+try {
+  const documentsPath = join(dir, 'documents.json'), publicDataPath = join(dir, 'public.json'), corpusPath = join(dir, 'corpus.json');
+  const first = { id: 'methods', title: '内部具身研究', summary: '方法比较', markdown: '世界模型与 VLA 的比较：internal-canary', revision: 'v2', updated_at: '2026-10-03T00:00:00Z', source_refs: [], versions: [{ revision: 'v1', updated_at: '2026-09-29T00:00:00Z', markdown: '旧版判断', title: '旧版具身研究', summary: '旧版', source_refs: [] }] };
+  await writeFile(documentsPath, JSON.stringify({ documents: [first] }));
+  await writeFile(publicDataPath, JSON.stringify({ events: [{ id: 'paper:one', revision: 'paper-v2', title: '论文一' }], external: [], meta: { content_revision: 'global-v2' } }));
+  const publicCorpus = { schema_version: 1, meta: { corpus_revision: 'test' }, records: [], history: [], limitations: [] };
+  await writeFile(corpusPath, JSON.stringify(publicCorpus));
+  const api = createQianyanCollaboration({ configDir: dir, documentsPath, publicDataPath, corpusPath });
+  const a = { id: 'staff-a', name: '员工甲', auth_kind: 'remotelab' }, b = { id: 'staff-b', name: '员工乙', auth_kind: 'feishu' }, service = { ...a, auth_kind: 'service' };
+  let seq = 0; const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
+  const target = { kind: 'document', id: 'methods', revision: 'v1' };
+  const comment = { client_id: id(), target, comment: '旧版本这里需要核对训练数据', stage: 'analysis', author: { id: b.id, name: b.name } };
+  const saved = await api.addComment(a, comment);
+  assert.equal(saved.comment.author.id, a.id, 'client cannot forge author');
+  assert.equal((await api.addComment(a, comment)).duplicate, true);
+  await assert.rejects(api.addComment(a, { ...comment, comment: 'changed' }), e => e.status === 409);
+  const shared = await api.comments({ kind: 'document', id: 'methods' }, b);
+  assert.equal(shared.comments[0].comment, comment.comment, 'second employee sees first employee comment');
+  assert.equal(shared.comments[0].target.revision, 'v1', 'old comment remains attached to old content');
+  assert.equal(shared.target.revision, 'v2');
+  const reply = await api.addComment(b, { client_id: id(), target: { ...target, revision: 'v2' }, parent_id: saved.comment.id, stage: 'analysis', comment: '我补了原始数据出处' });
+  await assert.rejects(api.remove(b, 'comment', saved.comment.id), e => e.status === 403);
+  await api.remove(a, 'comment', saved.comment.id);
+  assert.equal((await api.comments({kind:'document',id:'methods'},b)).comments[0].comment, '（作者已撤回）');
+  assert.equal((await api.readDocument('methods', 'v1')).markdown, '旧版判断');
+  await assert.rejects(api.vote(a, { client_id: id(), target: { kind: 'event', id: 'paper:one', revision: 'paper-v1' }, usefulness: 'useful' }), e => e.status === 409);
+  for (const v of ['useful', 'not_useful']) await api.vote(a, {client_id:id(),target:{...target,revision:'v2'},stage:'analysis',usefulness:v});
+  const votes = await api.comments({kind:'document',id:'methods'},b);
+  assert.equal(votes.votes.length,1);assert.equal(votes.counts.not_useful,1);assert.equal(votes.counts.useful,0);
+  assert.equal(votes.own_votes.length,0);
+  const url = 'https://arxiv.org/abs/2610.00781v2?utm_source=test';
+  const submission = await api.submit(a, {client_id:id(),url,reason:'值得看跨本体条件'});
+  await api.submit(b, {client_id:id(),url:'https://arxiv.org/abs/2610.00781',reason:'与我们的任务有关'});
+  const rows=(await api.submissions()).submissions;assert.equal(rows.length,1);assert.equal(rows[0].recommendations.length,2);
+  assert.equal(rows[0].status,'pending');
+  await assert.rejects(api.submit(a,{client_id:id(),url:'https://127.0.0.1/private'}));
+  await assert.rejects(api.review(b,{id:submission.submission.id,status:'included'}),e=>e.status===403);
+  await api.review(service,{id:submission.submission.id,status:'included',reason:'原文已审读',item_id:'arxiv:2610.00781'});
+  assert.equal((await api.submissions()).submissions[0].item_id,'arxiv:2610.00781');
+  const pack=await api.exportFeedback(service);assert.equal(pack.analysis_feedback.length,3);assert.equal(pack.selection_feedback.length,0);
+  const search=await api.researchQuery('search',{query:'世界模型',limit:5});assert.equal(search.meta.visibility,'internal');assert.equal(search.results[0].id,'document:methods');
+  const mcp=await api.researchQuery('mcp',{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'qianyan_search',arguments:{query:'世界模型'}}});assert.equal(mcp.result.structuredContent.meta.visibility,'internal');
+  const exact=await api.researchQuery('read',{id:'document:methods',revision:'v1'});assert.equal(exact.record.markdown,'旧版判断');
+  const privateRecord={...first,id:'document:methods',kind:'research_document',visibility:'internal'};
+  assert.equal(query({...publicCorpus,records:[privateRecord]},'qianyan_search',{query:'具身'}).total,0,'public query cannot read internal docs');
+
+  await writeFile(join(dir,'app.json'),JSON.stringify({appId:'app-test',appSecret:'secret-test'}));
+  await writeFile(join(dir,'qianyan-internal.json'),JSON.stringify({realm:'bot-2',tenantKey:'company-a',personIds:[a.id],feishuConfigPath:join(dir,'app.json')}));
+  let clock=100000,tokenCalls=0,userTenant='company-a',registered=[];
+  const fetchImpl=async url=>{
+    let value;if(url.includes('device_authorization'))value={device_code:'private-device',verification_uri_complete:'https://accounts.feishu.cn/confirm?code=test',expires_in:600,interval:5};
+    else if(url.includes('/oauth/token'))value=++tokenCalls===1?{error:'authorization_pending'}:{access_token:'private-user-token'};
+    else value={code:0,data:{open_id:'verified-open-id',tenant_key:userTenant,name:'员工甲'}};
+    return {ok:!value.error,json:async()=>value};
+  };
+  const people={people:[{id:a.id,name:a.name,identities:[]},{id:b.id,name:b.name,identities:[{kind:'feishu',realm:'bot-2',subjectId:'verified-open-id'}]}]};
+  const identity=createQianyanIdentity({configDir:dir,now:()=>clock,authDocument:async()=>people,registerIdentity:async v=>{registered.push(v);return b;},fetchImpl});
+  const req={headers:{'x-forwarded-proto':'https'},socket:{}};
+  assert.equal((await identity.member(req,{personId:a.id})).id,a.id);
+  assert.equal((await identity.member(req,{personId:a.id,authKind:'service'})).id,'agent:rowan','agent feedback does not overwrite employee taste');
+  assert.equal(await identity.member(req,{personId:'external-person'}),null);
+  const begun=await identity.begin(req);assert.match(begun.cookie,/HttpOnly.*Secure/);assert.ok(!JSON.stringify(begun).includes('private-device'));
+  req.headers.cookie=begun.cookie.split(';')[0];
+  assert.equal((await identity.poll(req)).state,'pending');assert.equal(tokenCalls,0,'respect provider interval');
+  clock+=5000;assert.equal((await identity.poll(req)).state,'pending');clock+=5000;
+  const connected=await identity.poll(req);assert.equal(connected.state,'connected');assert.equal(registered[0].openId,'verified-open-id');
+  req.headers.cookie=connected.cookies[0].split(';')[0];assert.equal((await identity.member(req,null)).id,b.id);
+  assert.ok(!req.headers.cookie.includes('session_token='),'site login does not issue RemoteLab credential');
+  clock+=31*86400000;assert.equal(await identity.member(req,null),null,'expired site session rejected');
+  req.headers.cookie='';tokenCalls=1;userTenant='another-company';const next=await identity.begin(req);req.headers.cookie=next.cookie.split(';')[0];clock+=5000;
+  assert.equal((await identity.poll(req)).state,'wrong_company');assert.equal(registered.length,1,'foreign tenant cannot create employee');
+
+  const {createQianyanInternalHandler}=await import('../chat/router-qianyan-internal-routes.mjs');
+  const handler=createQianyanInternalHandler({collaborationService:api,identityService:{member:async r=>r.person},remoteSession:async()=>null});
+  async function request(method,path,person,payload,origin='http://example.test') {
+    const r=Readable.from(payload?JSON.stringify(payload):[]);r.method=method;r.url='/api/qianyan/internal/'+path;r.headers={host:'example.test',origin};r.person=person;
+    const headers={};let output;await handler({req:r,res:{setHeader:(k,v)=>headers[k]=v},pathname:new URL(r.url,'http://example.test').pathname,writeJson:(_,status,data)=>output={status,data,headers}});return output;
+  }
+  assert.equal((await request('GET','documents',null)).status,401);
+  assert.equal((await request('GET','comments?kind=document&id=methods',b)).status,200);
+  assert.equal((await request('POST','comments',b,{client_id:id(),target,comment:'bad'},'https://other.test')).status,403);
+  assert.equal((await request('GET','search?query=世界模型',a)).headers['Cache-Control'],'private, no-store');
+  console.log('qianyan collaboration: two employees share comments; verified author, version history, replies, retraction, idempotency, URL dedupe, separate feedback, internal/public query boundary, scoped Feishu identity, expiry, wrong tenant, CSRF and anonymous rejection PASS');
+} finally { await rm(dir,{recursive:true,force:true}); }
