@@ -1,9 +1,9 @@
-import { guide, calculateTokenScenario } from './guide-data.js?v=2.1';
+import { guide, calculateTokenScenario } from './guide-data.js?v=2.2';
 
 const el = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const repo = 'https://github.com/Ninglo/remotelab/blob/';
-const referenceUrl = ref => repo + (/^(chat|lib|connectors|scripts)\//.test(ref.path) ? guide.mainBaseline : 'main') + '/' + ref.path;
+const referenceUrl = ref => repo + (ref.revision || (/^(chat|lib|connectors|scripts)\//.test(ref.path) ? guide.mainBaseline : 'main')) + '/' + ref.path;
 const refs = Object.fromEntries(guide.references.map(r => [r.id, r]));
 const badge = (text, proposed = false) => '<span class="badge' + (proposed ? ' proposed' : '') + '">' + escape(text) + '</span>';
 const paths = values => values?.length ? '<div class="path-list">' + values.map(p => '<code>' + escape(p) + '</code>').join('') + '</div>' : '';
@@ -217,3 +217,5 @@ renderControls('token-presets',guide.tokenExample.presets.map(p=>[p.id,p.label])
   renderTokenEstimate();
 });
 renderTokenEstimate();
+for(const [id,rows] of [['preparation-risks',guide.preoperation.risks],['preparation-controls',guide.preoperation.controls],['preparation-next',guide.preoperation.next]])definition(id,rows);
+for(const key of ['finding','current','tool','boundary'])el('preparation-'+key).textContent=guide.preoperation[key];
