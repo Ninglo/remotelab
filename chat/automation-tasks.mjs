@@ -14,6 +14,8 @@ import {
 import { getRun } from './runs.mjs';
 import { requests } from './requests.mjs';
 import { getSession, getRunState } from './session-manager.mjs';
+import { createHash } from 'node:crypto';
+import { summarizeAutomationExecutions, automationDay } from './automation-execution-summary.mjs';
 import { scheduledRuntimeIntent } from '../lib/scheduled-runtime-policy.mjs';
 
 const RECENT_EXECUTION_LIMIT = 5;
@@ -195,6 +197,7 @@ async function projectOneTimeTask(trigger) {
     lastExecution: execution,
     recentExecutions: execution ? [execution] : [],
     executionCount: execution ? 1 : 0,
+    summary: summarizeAutomationExecutions(execution ? [execution] : [], { timezone: trigger.sessionTemplate?.reuseTimezone || 'Asia/Shanghai' }),
     health: executionHealth(execution ? [execution] : []),
     sourceSessionId: trigger.sourceSessionId,
     createdByIdentityId,
@@ -209,6 +212,11 @@ async function projectRecurringTask(schedule, occurrences) {
     .sort((a, b) => timestamp(b.scheduledAt) - timestamp(a.scheduledAt));
   const projected = await Promise.all(selected.map(projectExecution));
   const recentExecutions = projected.slice(0, RECENT_EXECUTION_LIMIT);
+  const timezone = schedule.timezone || schedule.sessionTemplate?.reuseTimezone || 'Asia/Shanghai';
+  const summary = summarizeAutomationExecutions(projected, { timezone });
+  summary.today.checked = automationDay(schedule.lastCheckAt, timezone) === summary.day;
+  summary.today.checkFailed = Boolean(schedule.lastError)
+    && automationDay(schedule.lastErrorAt || schedule.lastCheckAt, timezone) === summary.day;
   const resultDelivery = projectNotification(schedule);
   const admittedExecutions = occurrences.filter((trigger) => trigger.status === 'delivered').length;
   const pendingAdmissions = occurrences.filter((trigger) => ['pending', 'delivering'].includes(trigger.status)).length;
@@ -250,6 +258,7 @@ async function projectRecurringTask(schedule, occurrences) {
     lastExecution: recentExecutions[0] || null,
     recentExecutions,
     executionCount: occurrences.length,
+    summary,
     health: executionHealth(projected, { lastError: schedule.lastError || '', lastErrorAt: schedule.lastErrorAt || '' }),
     check: { at: schedule.lastCheckAt || '', reason: schedule.lastGateReason || '',
       error: schedule.lastError || '', errorAt: schedule.lastErrorAt || '' },
@@ -275,7 +284,20 @@ function taskSort(left, right) {
 // Read-only lineage: follow-ups made inside an execution stay with its parent
 // automation. Independent schedules remain separate even in the same source Session.
 async function automationPackages(schedules, triggers) {
+  const sessionNames = new Map();
+  await Promise.all([...new Set([...schedules, ...triggers].map(item => trimString(item.sourceSessionId)).filter(Boolean))]
+    .map(async id => sessionNames.set(id, trimString((await getSession(id))?.name))));
   const schedulesById = new Map(schedules.map(item => [item.id, item]));
+  const scheduleOrigins = new Map(), definitions = new Map();
+  // Recreated definitions of the same task share history; independent purposes,
+  // destinations and owners in a setup conversation remain separate.
+  for (const schedule of [...schedules].sort((a, b) => timestamp(a.createdAt) - timestamp(b.createdAt) || a.id.localeCompare(b.id))) {
+    const key = JSON.stringify([schedule.sourceSessionId, schedule.title, schedule.text,
+      projectTarget(schedule), projectNotification(schedule), schedule.createdByIdentityId, schedule.timezone]);
+    let origin = definitions.get(key);
+    if (!origin) { origin = { id: schedule.id, title: schedule.title, sourceSessionId: schedule.sourceSessionId }; definitions.set(key, origin); }
+    scheduleOrigins.set(schedule.id, origin);
+  }
   const executionParents = new Map();
   for (const trigger of triggers) {
     const sessionId = trimString(trigger.executionSessionId);
@@ -286,10 +308,14 @@ async function automationPackages(schedules, triggers) {
   const resolved = new Map();
   function resolve(trigger, path = new Set()) {
     const schedule = schedulesById.get(trimString(trigger.scheduleId));
-    if (schedule) return { id: schedule.id, title: schedule.title, sourceSessionId: schedule.sourceSessionId };
+    if (schedule) return scheduleOrigins.get(schedule.id);
     const sourceSessionId = trimString(trigger.sourceSessionId);
-    const fallback = { id: sourceSessionId ? `session:${sourceSessionId}` : trigger.id,
-      title: '', sourceSessionId };
+    const sourceName = sessionNames.get(sourceSessionId) || '';
+    const genericConversation = /^(?:Feishu|Lark)\s*(?:私聊|群聊|chat|p2p|group)$|^(?:New Session|新会话)$/i.test(sourceName);
+    const purpose = genericConversation ? trimString(trigger.title) || trimString(trigger.text) : '';
+    const suffix = purpose ? ':' + createHash('sha256').update(purpose).digest('hex').slice(0, 12) : '';
+    const fallback = { id: sourceSessionId ? `session:${sourceSessionId}${suffix}` : trigger.id,
+      title: purpose ? trimString(trigger.title) : sourceName, sourceSessionId };
     if (path.has(trigger.id)) return fallback;
     if (resolved.has(trigger.id)) return resolved.get(trigger.id);
     const parents = executionParents.get(sourceSessionId) || [];
@@ -302,18 +328,20 @@ async function automationPackages(schedules, triggers) {
     const origin = origins.size === 1 ? [...origins.values()][0] : fallback;
     resolved.set(trigger.id, origin); return origin;
   }
-  const byTask = new Map(schedules.map(item => [item.id,
-    { id: item.id, title: item.title, sourceSessionId: item.sourceSessionId }]));
+  const byTask = new Map(scheduleOrigins);
   for (const trigger of triggers) byTask.set(trigger.id, resolve(trigger));
-  const sourceTitles = new Map();
-  await Promise.all([...new Set([...byTask.values()].filter(item => item.id.startsWith('session:'))
-    .map(item => item.sourceSessionId))].map(async id => {
-    const session = await getSession(id); sourceTitles.set(id, trimString(session?.name));
-  }));
-  for (const info of byTask.values()) {
-    if (info.id.startsWith('session:')) info.title = sourceTitles.get(info.sourceSessionId) || '';
-  }
   return byTask;
+}
+
+function attachPackage(task, packages, schedules) {
+  task.package = packages.get(task.id);
+  if (task.kind === 'one_time') {
+    const parent = schedules.find(item => item.id === task.package?.id);
+    if (parent) task.summary = summarizeAutomationExecutions(task.recentExecutions, {
+      timezone: parent.timezone || parent.sessionTemplate?.reuseTimezone || 'Asia/Shanghai',
+    });
+  }
+  return task;
 }
 
 export async function listAutomationTasks() {
@@ -341,7 +369,7 @@ export async function listAutomationTasks() {
     ...oneTimeTriggers.map(projectOneTimeTask),
   ]);
   const packages = await automationPackages(schedules, triggers);
-  for (const task of tasks) task.package = packages.get(task.id);
+  for (const task of tasks) attachPackage(task, packages, schedules);
   return tasks.sort(taskSort);
 }
 
@@ -389,14 +417,15 @@ export async function getAutomationTask(taskId) {
   if (id.startsWith('sch_')) {
     const schedule = await getRecurringSchedule(id);
     if (!schedule) return null;
-    return { ...await projectRecurringTask(schedule, await listTriggers({ scheduleId: id })),
-      package: { id: schedule.id, title: schedule.title, sourceSessionId: schedule.sourceSessionId } };
+    const packages = await automationPackages(await listRecurringSchedules(), []);
+    return { ...await projectRecurringTask(schedule, await listTriggers({ scheduleId: id })), package: packages.get(id) };
   }
   if (id.startsWith('trg_')) {
     const trigger = await getTrigger(id);
     if (!trigger) return null;
-    const packages = await automationPackages(await listRecurringSchedules(), await listTriggers());
-    return { ...await projectOneTimeTask(trigger), package: packages.get(id) };
+    const schedules = await listRecurringSchedules();
+    const packages = await automationPackages(schedules, await listTriggers());
+    return attachPackage(await projectOneTimeTask(trigger), packages, schedules);
   }
   return null;
 }

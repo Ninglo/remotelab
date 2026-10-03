@@ -52,7 +52,8 @@
   let loadError = "";
   const openTaskIds = new Set();
   const executionHistory = new Map();
-  let visibleTaskLimit = 40;
+  const visibleTaskLimits = new Map();
+  const openLifecycleSections = new Set();
 
   function translate(key, fallback = key, vars = undefined) {
     const value = typeof globalScope.remotelabT === "function"
@@ -225,14 +226,29 @@
   }
 
   function taskScheduleText(task) {
-    if (task?.kind === "recurring") {
-      if (task.schedule?.type === "interval") {
-        const seconds = task.schedule?.everySeconds || "—";
-        return translate("tasks.schedule.interval", `Every ${seconds}s`, { seconds });
-      }
-      return `${task.schedule?.cron || "—"} · ${task.schedule?.timezone || "—"}`;
+    if (task?.kind !== "recurring") return task.members?.length > 1
+      ? translate("tasks.summary.followup", "Follow-ups for this task") : formatDateTime(task?.schedule?.scheduledAt);
+    if (task.schedule?.type === "interval") {
+      const seconds = task.schedule.everySeconds;
+      const [count, unit] = seconds % 86400 === 0 ? [seconds / 86400, "days"]
+        : seconds % 3600 === 0 ? [seconds / 3600, "hours"]
+          : seconds % 60 === 0 ? [seconds / 60, "minutes"] : [seconds, "seconds"];
+      return translate(`tasks.summary.every.${unit}`, `Every ${count} ${unit}`, { count });
     }
-    return formatDateTime(task?.schedule?.scheduledAt);
+    const [minute, hours, date, month, weekdays] = (task.schedule?.cron || "").split(/\s+/);
+    const simpleTimes = /^\d+$/.test(minute) && /^\d+(?:,\d+)*$/.test(hours) && date === "*" && month === "*";
+    const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const withZone = text => task.schedule?.timezone && task.schedule.timezone !== localZone ? `${text} · ${task.schedule.timezone}` : text;
+    if (simpleTimes) {
+      const times = hours.split(",").map(hour => `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`).join(" / ");
+      if (weekdays === "*") return withZone(translate("tasks.summary.daily", "Daily at {times}", { times }));
+      if (weekdays === "1-5") return withZone(translate("tasks.summary.weekdays", "Weekdays at {times}", { times }));
+      if (/^[0-7](?:,[0-7])*$/.test(weekdays)) {
+        const days = weekdays.split(",").map(day => translate(`tasks.summary.day.${Number(day) % 7}`, day)).join(" / ");
+        return withZone(translate("tasks.summary.weekly", "{days} at {times}", { days, times }));
+      }
+    }
+    return translate("tasks.summary.customSchedule", "Custom schedule");
   }
 
   function taskTargetText(task) {
@@ -365,7 +381,7 @@
   function isCurrentTask(task) {
     if (task.kind === "recurring") return ["active", "paused"].includes(task.state);
     if (["admitted", "accepted"].includes(task.state) && task.lastExecution?.runAvailable === false) return false;
-    if (task.state === "failed") return (task.health?.failedExecutions || 0) > 0;
+    if (task.state === "failed") return false;
     return ["scheduled", "starting", "running", "accepted", "admitted", "paused"].includes(task.state);
   }
 
@@ -377,8 +393,9 @@
       const members = groups.get(key) || []; members.push(task); groups.set(key, members);
     }
     return [...groups.entries()].map(([id, members]) => {
-      if (members.length === 1) return members[0];
-      const parent = members.find(item => item.kind === "recurring") || members[0];
+      const parent = members.find(item => item.kind === "recurring" && item.state === "active")
+        || members.find(item => item.kind === "recurring" && item.state === "paused")
+        || members.find(item => item.kind === "recurring") || members[0];
       const latest = members.map(item => item.lastExecution).filter(Boolean)
         .sort((a, b) => Date.parse(b.scheduledAt) - Date.parse(a.scheduledAt))[0];
       const next = members.map(item => item.nextRunAt).filter(Boolean).sort()[0] || "";
@@ -388,6 +405,16 @@
         prompt: parent.kind === "recurring" ? parent.prompt : original.prompt,
         lastExecution: latest, nextRunAt: next,
         executionCount: members.reduce((sum, item) => sum + (item.executionCount || 0), 0),
+        summary: {
+          day: parent.summary?.day, timezone: parent.summary?.timezone,
+          totalRuns: members.reduce((sum, item) => sum + (item.summary?.totalRuns || 0), 0),
+          failedRuns: members.reduce((sum, item) => sum + (item.summary?.failedRuns || 0), 0),
+          today: Object.fromEntries(["runs", "completed", "failed", "running", "cancelled", "unverified"]
+            .map(key => [key, members.reduce((sum, item) => sum + (item.summary?.today?.[key] || 0), 0)]).concat([
+              ["checked", members.some(item => item.summary?.today?.checked)],
+              ["checkFailed", members.some(item => item.summary?.today?.checkFailed)],
+            ])),
+        },
         actions: parent.kind === "recurring" ? parent.actions : [],
         health: { ...parent.health, recordedFailures: members.reduce((sum, item) => sum + (item.health?.recordedFailures || 0), 0) } };
     });
@@ -482,29 +509,45 @@
     return root;
   }
 
-  function createTaskCard(task) {
-    const card = createNode("article", "task-card");
-    card.dataset.state = task.state || "unknown";
-    card.dataset.taskId = task.id;
+  function lifecycle(task) {
+    const members = task.members || [task];
+    if (members.some(item => item.kind === "recurring" && item.state === "active")) return "recurring";
+    if (members.some(item => isCurrentTask(item) && item.state !== "paused")) return "one_time";
+    if (members.some(item => item.state === "paused")) return "paused";
+    const recurring = members.filter(item => item.kind === "recurring");
+    if ((recurring.length && recurring.every(item => item.state === "cancelled"))
+      || members.every(item => item.state === "cancelled")) return "cancelled";
+    return "history";
+  }
+
+  function todayText(task) {
+    const today = task.summary?.today;
+    if (!today) return "—";
+    const parts = [];
+    for (const key of ["completed", "failed", "running", "cancelled", "unverified"]) {
+      if (today[key]) parts.push(translate(`tasks.summary.today.${key}`, `${key}: ${today[key]}`, { count: today[key] }));
+    }
+    if (today.checkFailed) parts.push(translate("tasks.summary.checkFailed", "Check failed"));
+    if (!parts.length) return translate(today.checked ? "tasks.summary.checked" : "tasks.summary.notRun",
+      today.checked ? "Checked; no execution triggered" : "Not run today");
+    return parts.join(" · ");
+  }
+
+  function createTaskDefinition(task) {
+    const root = createNode("section", "task-definition-content");
     const main = createNode("div", "task-card-main");
     const heading = createNode("div", "task-card-heading");
-    heading.appendChild(createNode("div", "task-card-title", taskTitle(task)));
-    const failures = task.health?.recordedFailures || 0;
-    if (failures) heading.appendChild(createNode("span", "task-package-failure",
-      translate("tasks.package.failures", "{count} failed", { count: failures })));
-    heading.appendChild(createNode("span", "task-state-pill", stateLabel(task.state)));
+    heading.append(createNode("h4", "task-card-title", taskTitle(task)), createNode("span", "task-state-pill", stateLabel(task.state)));
     main.appendChild(heading);
     if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
-
     const meta = createNode("div", "task-card-meta");
     const creator = creatorName(task.createdByIdentityId);
     if (creator) addMetaRow(meta, translate("tasks.meta.creator", "Creator"), creator);
     addMetaRow(
       meta,
       translate("tasks.meta.schedule", "Schedule"),
-      task.members && task.kind !== "recurring"
-        ? translate("tasks.package.triggers", "{count} triggers", { count: task.executionCount })
-        : taskScheduleText(task),
+      task.kind === "recurring" && task.schedule?.cron
+        ? `${task.schedule.cron} · ${task.schedule.timezone}` : taskScheduleText(task),
     );
     addMetaRow(
       meta,
@@ -534,20 +577,8 @@
         : {},
     );
     main.appendChild(meta);
-    const detail = createNode("details", "task-trigger-history");
-    detail.appendChild(createNode("summary", "", translate("tasks.package.timeline", "Trigger history ({count})", { count: task.executionCount || 0 })));
-    if (openTaskIds.has(task.id)) {
-      detail.open = true; detail.appendChild(createHistory(task));
-      if (!executionHistory.has(task.id)) queueMicrotask(() => void loadExecutionHistory(task));
-    }
-    detail.addEventListener("toggle", () => {
-      if (!detail.isConnected || detail.open === openTaskIds.has(task.id)) return;
-      if (detail.open) openTaskIds.add(task.id); else openTaskIds.delete(task.id);
-      renderTasks();
-    });
-    main.appendChild(detail);
-    card.appendChild(main);
-
+    if (execution?.error || task.lastError) addMetaRow(meta, translate("tasks.meta.error", "Error"), execution?.error || task.lastError);
+    root.appendChild(main);
     if (Array.isArray(task.actions) && task.actions.length > 0) {
       const actions = createNode("div", "task-card-actions");
       if (runtime?.runtimePolicy === "fixed") {
@@ -564,18 +595,62 @@
         button.addEventListener("click", () => void applyAction(task, action));
         actions.appendChild(button);
       }
-      card.appendChild(actions);
+      root.appendChild(actions);
     }
-    return card;
+    return root;
   }
 
-  function matchesFilter(task) {
-    const filter = filterSelect?.value || "all";
-    const members = task.members || [task];
-    if (filter === "active") return members.some(item => isCurrentTask(item) && item.state !== "paused");
-    if (filter === "paused") return members.some(item => item.state === "paused");
-    if (filter === "history") return !members.some(isCurrentTask);
-    return true;
+  function createTaskCard(task) {
+    const category = lifecycle(task);
+    const card = createNode("article", "task-card");
+    card.dataset.state = category === "recurring" ? "active" : category === "one_time" ? "scheduled" : category === "paused" ? "paused" : "completed";
+    card.dataset.taskId = task.id;
+    const main = createNode("div", "task-card-main");
+    const heading = createNode("div", "task-card-heading");
+    heading.appendChild(createNode("div", "task-card-title", taskTitle(task)));
+    if ((task.summary?.failedRuns || 0) > 0 || (task.members || [task]).some(item => item.check?.error)) {
+      const dot = createNode("span", "task-package-failure-dot");
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", translate("tasks.summary.hasFailures", "Failure records available"));
+      dot.title = translate("tasks.summary.hasFailures", "Failure records available"); heading.appendChild(dot);
+    }
+    heading.appendChild(createNode("span", "task-state-pill", translate(`tasks.lifecycle.${category}`, category)));
+    main.appendChild(heading);
+    main.appendChild(createNode("p", "task-summary-plan", taskScheduleText(task)));
+    const stats = createNode("dl", "task-summary-stats");
+    const fields = [
+      ["today", todayText(task)],
+      ["next", task.nextRunAt ? formatDateTime(task.nextRunAt) : translate(category === "paused" ? "tasks.summary.pausedNext" : "tasks.time.none", category === "paused" ? "Paused" : "Not scheduled")],
+      ["total", task.summary ? translate("tasks.summary.count", "{count} runs", { count: task.summary.totalRuns }) : "—"],
+      ["failures", task.summary ? translate("tasks.summary.count", "{count} runs", { count: task.summary.failedRuns }) : "—"],
+    ];
+    for (const [key, value] of fields) {
+      const field = createNode("div", "task-summary-stat"); field.dataset.metric = key;
+      field.append(createNode("dt", "", translate(`tasks.summary.${key}`, key)), createNode("dd", "", value)); stats.appendChild(field);
+    }
+    main.appendChild(stats);
+    const detail = createNode("details", "task-trigger-history");
+    detail.appendChild(createNode("summary", "", translate("tasks.summary.details", "Records and settings")));
+    if (openTaskIds.has(task.id)) {
+      detail.open = true; detail.appendChild(createHistory(task));
+      detail.appendChild(createNode("p", "task-history-note", translate("tasks.summary.countNote", "Counts actual execution attempts; future plans and cancellation before execution are excluded.")));
+      const definitions = createNode("details", "task-definition");
+      definitions.appendChild(createNode("summary", "", translate("tasks.history.settings", "Task settings")));
+      const members = task.members || [task];
+      const recurring = members.filter(item => item.kind === "recurring");
+      const current = members.filter(item => item.actions?.length || ["starting", "running"].includes(item.state));
+      const configured = recurring.length ? [...recurring, ...current.filter(item => item.kind !== "recurring")]
+        : current.length ? current : [members[0]];
+      for (const member of configured) definitions.appendChild(createTaskDefinition(member));
+      detail.appendChild(definitions);
+      if (!executionHistory.has(task.id)) queueMicrotask(() => void loadExecutionHistory(task));
+    }
+    detail.addEventListener("toggle", () => {
+      if (!detail.isConnected || detail.open === openTaskIds.has(task.id)) return;
+      if (detail.open) openTaskIds.add(task.id); else openTaskIds.delete(task.id);
+      renderTasks();
+    });
+    main.appendChild(detail); card.appendChild(main); return card;
   }
 
   function renderTasks() {
@@ -583,16 +658,37 @@
     list.replaceChildren();
     if (loading && !loaded) { list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…"))); return; }
     if (loadError && tasks.length === 0) { list.appendChild(createNode("div", "task-center-empty", loadError)); return; }
-    const visible = displayTasks().filter(matchesFilter);
-    if (!visible.length) {
-      list.appendChild(createNode("div", "task-center-empty", translate(tasks.length ? "tasks.emptyFiltered" : "tasks.empty", tasks.length ? "No automations match this filter." : "No automations yet.")));
-      return;
+    const filter = filterSelect?.value || "all";
+    const grouped = displayTasks();
+    let visibleCount = 0;
+    for (const category of ["recurring", "one_time", "paused", "history", "cancelled"]) {
+      if (filter !== "all" && filter !== category && !(filter === "history" && category === "cancelled")) continue;
+      const visible = grouped.filter(task => lifecycle(task) === category);
+      if (!visible.length) continue;
+      visibleCount += visible.length;
+      const folded = filter === "all" && ["paused", "history", "cancelled"].includes(category);
+      const section = createNode(folded ? "details" : "section", "task-lifecycle-section"); section.dataset.category = category;
+      const title = translate(`tasks.lifecycle.${category}`, category) + ` (${visible.length})`;
+      section.appendChild(createNode(folded ? "summary" : "h3", "task-lifecycle-heading", title));
+      if (!folded || openLifecycleSections.has(category)) {
+        if (folded) section.open = true;
+        const cards = createNode("div", "task-lifecycle-cards");
+        const limit = visibleTaskLimits.get(category) || 40;
+        for (const task of visible.slice(0, limit)) cards.appendChild(createTaskCard(task));
+        if (visible.length > limit) {
+          const more = createNode("button", "task-center-secondary", translate("tasks.history.moreTasks", "More tasks")); more.type = "button";
+          more.addEventListener("click", () => { visibleTaskLimits.set(category, limit + 40); renderTasks(); }); cards.appendChild(more);
+        }
+        section.appendChild(cards);
+      }
+      if (folded) section.addEventListener("toggle", () => {
+        if (!section.isConnected || section.open === openLifecycleSections.has(category)) return;
+        if (section.open) openLifecycleSections.add(category); else openLifecycleSections.delete(category);
+        renderTasks();
+      });
+      list.appendChild(section);
     }
-    for (const task of visible.slice(0, visibleTaskLimit)) list.appendChild(createTaskCard(task));
-    if (visible.length > visibleTaskLimit) {
-      const more = createNode("button", "task-center-secondary", translate("tasks.history.moreTasks", "More tasks")); more.type = "button";
-      more.addEventListener("click", () => { visibleTaskLimit += 40; renderTasks(); }); list.appendChild(more);
-    }
+    if (!visibleCount) list.appendChild(createNode("div", "task-center-empty", translate(tasks.length ? "tasks.emptyFiltered" : "tasks.empty", tasks.length ? "No automations match this filter." : "No automations yet.")));
   }
 
   async function refreshTasks({ force = false } = {}) {
@@ -727,7 +823,7 @@
   lifetimeSelect?.addEventListener("change", syncLifetimeFields);
   gateModeSelect?.addEventListener("change", syncGateFields);
   targetModeSelect?.addEventListener("change", syncTargetFields);
-  filterSelect?.addEventListener("change", () => { visibleTaskLimit = 40; renderTasks(); });
+  filterSelect?.addEventListener("change", () => { visibleTaskLimits.clear(); renderTasks(); });
   refreshButton?.addEventListener("click", () => void refreshTasks({ force: true }));
   form?.addEventListener("submit", (event) => void submitTask(event));
   globalScope.addEventListener("remotelab:localechange", () => {

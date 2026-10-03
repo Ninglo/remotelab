@@ -1130,6 +1130,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Delivery preference: routine changes to this website are reviewed by refreshing the website; do not send additional Feishu preview messages, including private screenshots. The previously accepted resource summary in the normal daily report remains a separate workflow.
 - Refresh diagnosis: the supplied screenshot already contained the new Trigger history entry; a familiar card appearance alone does not prove that old assets are being served. Verify the actual instance and both language labels before declaring deployment complete.
 
+### 2026-10-03 — Automation summaries must describe the parent task's operation
+
+- Correction: adding collapsed trigger history while leaving the original configuration dump outside did not meet the goal. The outer view is for understanding one business task, its plan, today's outcome, next run, total attempts and failures. A familiar card appearance is not evidence that this information is clear.
+- Response: retain the existing card borders, type and colours; show those four runtime fields with a readable plan and a small red dot for retained failures. Move prompts, runtime/delivery configuration and lifecycle controls inside. Group repeated triggers by the task's source and execution ancestry, and recreated identical schedule definitions by business purpose. A shared generic Feishu chat must not merge unrelated tasks.
+- Lifecycle: ongoing and one-off tasks are visible; paused, finished and disabled task sections start folded. Preserve producer order within each section, without moving failures to the front. Actions still operate on actual schedules or triggers, never on a synthetic package.
+- Evidence: count attempted executions, not future plans or cancellation before execution; separate today's verified successes, failures, live executions and unavailable old outcomes in the task's timezone. Validate desktop and phone layout, nested records/settings, older failures and pagination, then the actual website. Do not send additional Feishu previews.
+
 ## 2026-10-03 — Avoid task cards for one straightforward delivery
 
 An opted-in user reported that project renames and similar small changes were
