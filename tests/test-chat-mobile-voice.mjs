@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../static/chat/mobile-voice.js', import.meta.url), 'utf8');
-function fixture({ mobile = true, mode = 'text', base = '', attachments = false, permission = true } = {}) {
+function fixture({ mobile = true, mode = 'text', base = '', attachments = false, permission = true, authorized = true } = {}) {
   let now = 1000, nextId = 0, starts = 0, stops = 0, cancels = 0, sends = 0, owner = 'alpha', session = 'session-a';
-  let pendingReview = null, failSave = false;
+  let pendingReview = null, failSave = false, grantPreparation;
   const timers = new Map(), frames = new Map(), globalListeners = new Map(), requests = [];
   const people = [{ id: 'alpha', preferences: { mobileInputMode: mode } }, { id: 'beta', preferences: { mobileInputMode: 'text' } }];
   function element(id) {
@@ -25,7 +25,7 @@ function fixture({ mobile = true, mode = 'text', base = '', attachments = false,
     };
   }
   const elements = Object.fromEntries(['msgInput', 'voiceBtn', 'mobileVoiceHold', 'mobileVoiceMode', 'mobileVoicePanel',
-    'mobileVoiceStatus', 'mobileVoiceDuration', 'mobileVoiceTranscript', 'mobileVoiceCancel', 'mobileVoiceEdit',
+    'mobileVoiceStatus', 'mobileVoiceDuration', 'mobileVoiceTranscript', 'mobileVoiceCancel',
     'mobileVoiceRelease', 'mobileVoicePreferenceStatus', 'sendBtn'].map(id => [id, element(id)]));
   const bars = Array.from({ length: 13 }, (_, index) => element(`bar-${index}`));
   elements.mobileVoicePanel.querySelectorAll = () => bars;
@@ -33,11 +33,19 @@ function fixture({ mobile = true, mode = 'text', base = '', attachments = false,
   const doc = element('document'); doc.hidden = false; doc.getElementById = id => elements[id];
   const media = { matches: mobile, addEventListener(type, fn) { this.change = fn; } };
   const emit = (type, detail) => { for (const fn of globalListeners.get(type) || []) fn({ detail }); };
-  let state = { captureId: 0, phase: 'idle' };
+  let state = { captureId: 0, phase: 'idle', microphoneAuthorized: authorized };
   const change = phase => { state.phase = phase; emit('remotelab:voice-state-change', { ...state }); };
   const controller = {
     getState: () => ({ ...state }),
-    start() { starts++; state = { captureId: starts, phase: permission ? 'recording' : 'requesting' }; change(state.phase); return Promise.resolve(); },
+    prepare() {
+      if (state.microphoneAuthorized) return Promise.resolve({});
+      state.microphonePreparing = true;
+      return new Promise(resolve => { grantPreparation = resolve; }).then(stream => {
+        state.microphonePreparing = false; state.microphoneAuthorized = true; change('idle'); return stream;
+      });
+    },
+    releaseMicrophone() {},
+    start() { starts++; state = { captureId: starts, phase: permission ? 'recording' : 'requesting', microphoneAuthorized: true }; change(state.phase); return Promise.resolve(); },
     stop() { stops++; change('stopping'); return Promise.resolve(); },
     cancel() { cancels++; change('idle'); return Promise.resolve(); },
     whenIdle: () => Promise.resolve(),
@@ -78,9 +86,19 @@ function fixture({ mobile = true, mode = 'text', base = '', attachments = false,
     review(value) { pendingReview = value; }, switchSession(value) { session = value; browser.remotelabRefreshMobileVoiceUi(); },
     switchOwner(value) { owner = value; browser.remotelabRefreshMobileVoiceUi({ preferences: true }); },
     failSave() { failSave = true; }, attachments(value) { attachments = value; },
+    grant() { grantPreparation({}); },
   };
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
+
+let first = fixture({ mode: 'voice', authorized: false });
+assert.equal(first.elements.mobileVoiceHold.textContent, 'voice.mobile.enable');
+first.hold(); first.release();
+assert.equal(first.counts.starts, 0, 'the first permission gesture does not pretend to record');
+first.grant(); await flush();
+assert.equal(first.elements.mobileVoiceHold.textContent, 'voice.mobile.hold');
+first.hold(); first.release(); first.finish('授权后再说话'); await flush();
+assert.equal(first.counts.starts, 1); assert.equal(first.counts.sends, 0);
 
 let f = fixture();
 f.elements.voiceBtn.emit('pointerdown'); f.tick(100); f.release(); f.tick(300);
@@ -114,14 +132,20 @@ assert.equal(f.counts.sends, 0, 'attachments require an explicit Send');
 f = fixture(); f.hold(); f.attachments(true); f.release(); f.finish('新附件'); await flush(); assert.equal(f.counts.sends, 0);
 
 f = fixture({ base: '保留草稿' }); f.hold(); f.input.value = '保留草稿 临时语音';
-f.elements.voiceBtn.emit('pointermove', { clientX: 50, clientY: 25 }); f.release();
+f.elements.voiceBtn.emit('pointermove', { clientX: 150, clientY: 70 }); f.release();
 assert.equal(f.input.value, '保留草稿'); assert.equal(f.counts.cancels, 1);
-f = fixture(); f.hold(); f.elements.voiceBtn.emit('pointermove', { clientX: 250, clientY: 25 });
-f.release(); f.finish('改字再发'); await flush(); assert.equal(f.counts.sends, 0); assert.equal(f.input.value, '改字再发');
-assert.equal(f.input.focused, true, 'an explicit Edit gesture opens the editable draft');
+f = fixture(); f.hold(); f.elements.voiceBtn.emit('pointermove', { clientX: 250, clientY: 150 });
+f.release(); f.finish('左右滑动不改变结果'); await flush(); assert.equal(f.input.value, '左右滑动不改变结果');
+assert.equal(f.counts.sends, 0); assert.equal(f.input.focused, false);
+f = fixture(); f.hold(); f.elements.voiceBtn.emit('pointermove', { clientY: 70 });
+f.elements.voiceBtn.emit('pointermove', { clientY: 105 }); f.release(); f.finish('滑回来继续保留'); await flush();
+assert.equal(f.input.value, '滑回来继续保留'); assert.equal(f.counts.cancels, 0, 'dragging back down restores review');
 
 f = fixture({ permission: false }); f.hold(); f.release();
 assert.equal(f.counts.cancels, 1); assert.equal(f.counts.stops, 0, 'release while permission is pending cancels the attempt');
+f = fixture({ permission: false }); f.hold();
+assert.equal(f.elements.mobileVoiceTranscript.textContent, 'voice.mobile.preparing', 'preparation never tells the user to speak');
+f.release();
 f = fixture(); f.hold(); f.elements.voiceBtn.emit('pointercancel'); assert.equal(f.counts.cancels, 1);
 f = fixture(); f.hold(); f.release(); f.doc.hidden = true; f.doc.emit('visibilitychange');
 f.finish('后台迟到结果'); await flush(); assert.equal(f.counts.sends, 0);
