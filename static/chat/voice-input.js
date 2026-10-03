@@ -1071,6 +1071,7 @@
     activeVoiceCapture.phase = "stopping";
     refreshVoiceButtonUi();
     await flushPendingWorkletAudio();
+    if (activeVoiceCapture.processorNode) activeVoiceCapture.processorNode.onaudioprocess = null;
     for (const track of activeVoiceCapture.mediaStream?.getTracks() || []) track.enabled = false;
     try { activeVoiceCapture.sourceNode?.disconnect(); } catch {}
     if (relaySocket.readyState !== WebSocket.OPEN || activeVoiceCapture.relayReady !== true) {
