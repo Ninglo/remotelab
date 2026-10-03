@@ -123,6 +123,7 @@ assert.deepEqual(
     '/chat/composer-store.js?v=build-123',
     '/chat/icons.js?v=build-123',
     '/chat/bootstrap.js?v=build-123',
+    '/chat/pet-quota-pilot.js?v=build-123',
     '/chat/bootstrap-session-catalog.js?v=build-123',
     '/chat/session-http-helpers.js?v=build-123',
     '/chat/session-http-list-state.js?v=build-123',
@@ -146,6 +147,7 @@ assert.deepEqual(
     '/chat/compose.js?v=build-123',
     '/chat/gestures.js?v=build-123',
     '/chat/init.js?v=build-123',
+    '/chat/session-token-pilot.js?v=build-123',
   ],
   'compatibility loader should version-pin the full split frontend asset chain',
 );
@@ -171,6 +173,7 @@ assert.deepEqual(
     '/chat/composer-store.js?v=inline-build-456',
     '/chat/icons.js?v=inline-build-456',
     '/chat/bootstrap.js?v=inline-build-456',
+    '/chat/pet-quota-pilot.js?v=inline-build-456',
     '/chat/bootstrap-session-catalog.js?v=inline-build-456',
     '/chat/session-http-helpers.js?v=inline-build-456',
     '/chat/session-http-list-state.js?v=inline-build-456',
@@ -194,6 +197,7 @@ assert.deepEqual(
     '/chat/compose.js?v=inline-build-456',
     '/chat/gestures.js?v=inline-build-456',
     '/chat/init.js?v=inline-build-456',
+    '/chat/session-token-pilot.js?v=inline-build-456',
   ],
   'compatibility loader should reuse inline build info to keep split assets on the same version',
 );
@@ -218,6 +222,7 @@ assert.deepEqual(
     '/owner/chat/composer-store.js?v=build-123',
     '/owner/chat/icons.js?v=build-123',
     '/owner/chat/bootstrap.js?v=build-123',
+    '/owner/chat/pet-quota-pilot.js?v=build-123',
     '/owner/chat/bootstrap-session-catalog.js?v=build-123',
     '/owner/chat/session-http-helpers.js?v=build-123',
     '/owner/chat/session-http-list-state.js?v=build-123',
@@ -241,6 +246,7 @@ assert.deepEqual(
     '/owner/chat/compose.js?v=build-123',
     '/owner/chat/gestures.js?v=build-123',
     '/owner/chat/init.js?v=build-123',
+    '/owner/chat/session-token-pilot.js?v=build-123',
   ],
   'compatibility loader should keep split assets inside the forwarded product scope',
 );

@@ -21,6 +21,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-03 — Amber 固定展示实例额度与会话 Token
+
+- 用户验收了紧凑用量样式，并明确要求：任何人选 Amber 都看到宠物旁的额度与会话标题右侧的 `k` 单位 Token；其他主题不显示。
+- 数值仍须分清实例 Codex 额度和 Session 累计 Token。会话用量改为简短接口，避免扩大用户范围后反复下载完整账单。实现及范围见 `notes/current/amber-usage.md`。
+
 ### 2026-10-02 — Keep account switching out of request startup
 
 - Observed friction: the first account-pool implementation queried quota before each request and held an exclusive account lock for the full run. Both added avoidable waiting to the normal conversation flow, including background metadata helpers.

@@ -970,7 +970,7 @@ export async function queryUsageLedger(options = {}) {
     byOperationCategory: sortBuckets(byOperationCategory, top),
     byDay: sortBuckets(byDay, top),
     bySession: sortBuckets(bySession, top),
-    topRuns: records.slice(0, top).map(summarizeTopRun),
+    topRuns: options.includeTopRuns === false ? [] : records.slice(0, top).map(summarizeTopRun),
   };
 }
 

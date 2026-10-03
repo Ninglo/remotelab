@@ -224,6 +224,14 @@ async function main() {
     assert.equal(summary.byOperationCategory.find((entry) => entry.key === 'user_chat')?.totalTokens, 1280, 'normal chat runs should be categorized as user chat');
     assert.equal(summary.topRuns.find((entry) => entry.operation === 'user_turn')?.contextTokens, 1950, 'top runs should expose latest current context');
 
+    const sessionTotals = await request(port, 'GET', '/api/usage/session-totals');
+    assert.equal(sessionTotals.status, 200, 'Amber Session totals should be available to authenticated users');
+    const row = sessionTotals.json?.bySession?.find((entry) => entry.sessionId === session.id);
+    assert.equal(row?.totalTokens, 1280, 'compact Session totals should preserve recorded usage');
+    assert.equal(row?.runCount, 1);
+    assert.equal(sessionTotals.json.topRuns, undefined, 'compact endpoint must not send full run details');
+    assert.equal(sessionTotals.json.byIdentity, undefined, 'compact endpoint must not send identity breakdowns');
+
     const ledgerDir = join(configDir, 'usage-ledger');
     assert.equal(existsSync(ledgerDir), true, 'usage ledger directory should be created');
 
