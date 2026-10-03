@@ -205,8 +205,38 @@ try {
   assert.equal(await page.locator('#msgInput').isVisible(), true);
   assert.equal(await page.locator('#mobileVoiceHold').isVisible(), false);
   assert.equal(await page.locator('#mobileVoiceMode').isVisible(), false);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#mobileVoiceHold').waitFor({ state: 'visible' });
+  await page.evaluate(() => {
+    window.remotelabVoiceCapture.releaseMicrophone();
+    const Audio = window.AudioContext;
+    window.__restoreAudio = () => { window.AudioContext = Audio; };
+    window.AudioContext = class extends Audio {
+      get state() { return 'suspended'; }
+      resume() { return new Promise(() => {}); }
+    };
+    const acquire = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = (...args) => acquire(...args).then(stream => {
+      window.__startupTrack = stream.getTracks()[0]; return stream;
+    });
+  });
+  const retryBox = await page.locator('#mobileVoiceHold').boundingBox();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: retryBox.x + retryBox.width / 2, y: retryBox.y + retryBox.height / 2 }] });
+  await page.waitForFunction(() => window.remotelabVoiceCapture.getState().phase === 'requesting');
+  await page.waitForFunction(() => window.remotelabVoiceCapture.getState().phase === 'idle'
+    && document.getElementById('mobileVoicePreferenceStatus').textContent === window.remotelabT('voice.mobile.audioPaused'));
+  assert.equal(await page.locator('#mobileVoiceHold').isEnabled(), true, 'a stalled audio engine unlocks the hold button');
+  assert.equal(await page.locator('#mobileVoicePanel').isVisible(), false);
+  assert.equal(await page.evaluate(() => window.__startupTrack.readyState), 'ended', 'startup timeout releases the real captured device');
+  await endHold();
+  await page.evaluate(() => window.__restoreAudio());
+  await startHold('#mobileVoiceHold'); await endHold();
+  await final('启动超时后重新按住'); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
+  assert.equal(await page.locator('#msgInput').inputValue(), '启动超时后重新按住');
+  assert.equal(await page.evaluate(() => window.__sent.length), 1, 'retry still requires an explicit Send');
   assert.deepEqual(errors, []);
-  console.log('test-chat-mobile-voice-browser: real audio volume history, review/edit before manual send, 320/390/430px light/dark layouts, native upward cancellation, single microphone acquisition and persisted mode passed (recognition simulated)');
+  console.log('test-chat-mobile-voice-browser: stalled audio timeout/retry, real audio volume history, review/edit before manual send, mobile layouts, native cancellation and persisted mode passed (recognition simulated)');
 } finally {
   await browser.close();
   server.kill('SIGTERM'); if (server.exitCode === null && server.signalCode === null) await once(server, 'exit');

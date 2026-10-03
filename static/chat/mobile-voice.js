@@ -249,7 +249,7 @@
       showNotice(t("voice.mobile.authorizing"));
       void controller.prepare().then((stream) => {
         if (stream && owner === currentPersonId() && isMobile() && !doc.hidden) showNotice();
-      }).catch(() => { if (owner === currentPersonId()) showNotice(t("voice.mobile.permissionFailed")); }).finally(() => {
+      }).catch(() => { if (owner === currentPersonId()) showNotice(controller.getState().microphoneError || t("voice.mobile.permissionFailed")); }).finally(() => {
         ignoreClickUntil = Date.now() + 800;
         render();
       });
@@ -261,7 +261,7 @@
     const target = { pointerId: event.pointerId, element: event.currentTarget, started: false, startY: event.clientY };
     gesture = target;
     if (controller.prepare) void controller.prepare().catch(() => {
-      if (gesture === target) { discardGesture(); showNotice(t("voice.mobile.permissionFailed")); }
+      if (gesture === target) { discardGesture(); showNotice(controller.getState().microphoneError || t("voice.mobile.permissionFailed")); }
     });
     try { target.element.setPointerCapture(event.pointerId); } catch {}
     target.timer = globalScope.setTimeout(() => beginCapture(target), 300);
@@ -351,7 +351,7 @@
         capture.startedAt = Date.now();
         globalScope.navigator.vibrate?.(15);
       } else if (event.detail.phase === "idle" && !capture.completed) {
-        cancelCapture({ notice: t("voice.mobile.failed") });
+        cancelCapture({ notice: event.detail.microphoneError || t("voice.mobile.failed") });
       }
     }
     render();

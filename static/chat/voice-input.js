@@ -8,6 +8,7 @@
   const VOICE_SAMPLE_RATE = 16000;
   const VOICE_WORKLET_CHUNK_FRAMES = 2048;
   const VOICE_WORKLET_FLUSH_TIMEOUT_MS = 120;
+  const VOICE_AUDIO_START_TIMEOUT_MS = 5000;
   const VOICE_LEVEL_MULTIPLIER = 8;
   const MAX_BUFFERED_AUDIO_BYTES = VOICE_SAMPLE_RATE * 2 * 10;
   const DEFAULT_GATEWAY_URL = "wss://ai-gateway.vei.volces.com/v1/realtime";
@@ -64,6 +65,8 @@
   let microphoneStream = null;
   let microphoneContext = null;
   let microphonePreparation = null;
+  let cancelMicrophonePreparation = null;
+  let microphoneError = "";
   let microphoneExpiry = null;
   let microphoneEpoch = 0;
   let microphoneAuthorized = false;
@@ -73,6 +76,8 @@
     globalScope.clearTimeout(microphoneExpiry);
     microphoneExpiry = null;
     microphonePreparation = null;
+    cancelMicrophonePreparation?.();
+    cancelMicrophonePreparation = null;
     for (const track of microphoneStream?.getTracks() || []) track.stop();
     microphoneStream = null;
     void microphoneContext?.close().catch(() => {});
@@ -89,46 +94,58 @@
   function prepareMicrophone() {
     if (getVoiceUnavailableReason()) return Promise.reject(new Error(getVoiceUnavailableReason()));
     globalScope.clearTimeout(microphoneExpiry);
-    if (microphoneStream?.getTracks().some((track) => track.readyState === "ended")) releaseMicrophone();
+    if (microphoneContext?.state === "interrupted"
+      || microphoneStream?.getTracks().some((track) => track.readyState === "ended")) releaseMicrophone();
+    // The hold timer shares the preparation begun in pointerdown; it must not resume audio again.
+    if (microphonePreparation) return microphonePreparation;
+    microphoneError = "";
     // Create and resume in the actual user gesture, before the hold timer or permission promise.
     if (!microphoneContext || microphoneContext.state === "closed") {
       microphoneContext = new (getAudioContextConstructor())();
     }
-    const resuming = microphoneContext.resume?.() || Promise.resolve();
-    if (microphoneStream) {
-      const stream = microphoneStream;
-      const epoch = microphoneEpoch;
-      return Promise.resolve(resuming).then(() => {
-        if (epoch !== microphoneEpoch) return null;
-        if (activeVoiceCapture.phase === "idle") keepMicrophoneQuiet();
-        return stream;
-      });
-    }
-    if (microphonePreparation) {
-      const preparation = microphonePreparation;
-      return Promise.resolve(resuming).then(() => preparation);
-    }
+    const resuming = microphoneContext.state === "running" ? Promise.resolve()
+      : microphoneContext.resume?.() || Promise.resolve();
     const epoch = microphoneEpoch;
     const resumed = Promise.resolve(resuming).then(() => null, (error) => error);
-    const pending = globalScope.navigator.mediaDevices.getUserMedia({
+    let cancel, deadline;
+    const cancelled = new Promise((resolve) => { cancel = () => resolve(null); });
+    cancelMicrophonePreparation = cancel;
+    const acquiring = microphoneStream ? Promise.resolve(microphoneStream) : globalScope.navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, noiseSuppression: true, echoCancellation: true, autoGainControl: true },
-    }).then(async (stream) => {
-      const resumeError = await resumed;
-      if (resumeError) { for (const track of stream.getTracks()) track.stop(); throw resumeError; }
+    });
+    const preparing = acquiring.then(async (stream) => {
       if (epoch !== microphoneEpoch || globalScope.document?.hidden) {
         for (const track of stream.getTracks()) track.stop();
         return null;
       }
+      // Own and silence the device before awaiting audio startup so cancellation can always release it.
       microphoneStream = stream;
       microphoneAuthorized = true;
-      keepMicrophoneQuiet();
+      for (const track of stream.getTracks()) track.enabled = false;
+      const timeout = new Promise((resolve) => {
+        deadline = globalScope.setTimeout(() => {
+          const error = new Error(t("voice.mobile.audioPaused"));
+          error.code = "VOICE_AUDIO_START_TIMEOUT";
+          resolve(error);
+        }, VOICE_AUDIO_START_TIMEOUT_MS);
+      });
+      // Wait for permission without a timer; only audio startup after the grant has a deadline.
+      const resumeError = await Promise.race([resumed, cancelled, timeout]);
+      if (epoch !== microphoneEpoch) return null;
+      if (resumeError) throw resumeError;
+      if (activeVoiceCapture.phase === "idle") keepMicrophoneQuiet();
       return stream;
-    }).catch((error) => {
+    });
+    const pending = Promise.race([preparing, cancelled]).catch((error) => {
+      if (epoch !== microphoneEpoch) return null;
       if (error?.name === "NotAllowedError" || error?.name === "SecurityError") microphoneAuthorized = false;
-      if (epoch === microphoneEpoch) releaseMicrophone();
+      if (error?.code === "VOICE_AUDIO_START_TIMEOUT") microphoneError = error.message;
+      releaseMicrophone();
       throw error;
     }).finally(() => {
+      globalScope.clearTimeout(deadline);
       if (microphonePreparation === pending) microphonePreparation = null;
+      if (cancelMicrophonePreparation === cancel) cancelMicrophonePreparation = null;
       refreshVoiceButtonUi();
     });
     microphonePreparation = pending;
@@ -138,7 +155,7 @@
   function getVoiceCaptureState() {
     const { captureId, sessionId, phase, baseText, transcript, voiceLevel } = activeVoiceCapture;
     return { captureId, sessionId, phase, baseText, transcript, voiceLevel,
-      microphoneAuthorized, microphonePreparing: !!microphonePreparation };
+      microphoneAuthorized, microphonePreparing: !!microphonePreparation, microphoneError };
   }
 
   const voiceBtn = globalScope.document?.getElementById("voiceBtn") || null;
