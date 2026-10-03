@@ -29,6 +29,14 @@ async function copyTree(source, target) {
     if (entry.isDirectory()) await copyTree(from, to);
     else if (entry.isFile() && allowed.has(path.extname(entry.name))) {
       await cp(from, to);
+      if (entry.name === 'memory-reader.js' && source === path.join(atlas, 'output')) {
+        const script = await readFile(to, 'utf8');
+        await writeFile(to, script.replaceAll('../../memory-architecture/', '../memory/'));
+      }
+      if (entry.name === 'index.html' && source === path.join(atlas, 'output')) {
+        const html = await readFile(to, 'utf8');
+        await writeFile(to, html.replace('href="../../memory-architecture/index.html" data-memory-chapter', 'href="../memory/index.html" data-memory-chapter'));
+      }
       if (entry.name === 'index.html' && source === path.join(root, 'docs/memory-architecture')) {
         const html = await readFile(to, 'utf8');
         await writeFile(to, html.replace('href="../architecture-atlas/project.html" data-project-home', 'href="../project.html" data-project-home'));

@@ -1,5 +1,5 @@
 async function renderChapters() {
-  const response = await fetch(new URL('./project.json?v=20261003a', import.meta.url));
+  const response = await fetch(new URL('./project.json?v=20261003e', import.meta.url));
   if (!response.ok) throw new Error('项目目录暂时不可用');
   const project = await response.json();
   const articles = project.chapters.map(chapter => {

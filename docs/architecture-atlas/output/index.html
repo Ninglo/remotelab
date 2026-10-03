@@ -4,26 +4,27 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
 <meta name="description" content="按一条消息的真实先后顺序说明 RemoteLab：同步等待、异步执行、Session 两次交接、Jev 职责、飞书任务卡和当前待验边界。">
-<title>RemoteLab · 一条消息如何变成工作和交付</title>
-<link rel="stylesheet" href="./reading.css?v=20261003d">
-<script type="module" src="./flow-reader.js?v=20261003d"></script>
+<title>RemoteLab · 从一次工作到长期项目认识</title>
+<link rel="stylesheet" href="./reading.css?v=20261003e">
+<script type="module" src="./flow-reader.js?v=20261003e"></script>
+<script type="module" src="./memory-reader.js?v=20261003e"></script>
 </head>
 <body>
 <a class="skip" href="#main">跳到正文</a>
 <div class="book">
 <aside class="contents"><a class="brand" href="../project.html">RemoteLab <span>整体说明 · 返回项目入口</span></a>
-<nav aria-label="阅读目录"><a href="#start">先看结论与读法</a><a href="#journey">01 一条消息的一生</a><a href="#handoff">02 谁交给谁，交什么</a><a href="#async">03 同步与异步</a><a href="#jev">04 Jev 到底做什么</a><a href="#entries">05 三类入口有何不同</a><a href="#output">06 用户看到什么</a><a href="#feedback">07 运行中用户再说一句</a><a href="#testing">08 怎么测试，哪些待验</a><a href="#evidence">来源与版本</a></nav>
+<nav aria-label="阅读目录"><a href="#start">先看结论与读法</a><a href="#journey">01 一条消息的一生</a><a href="#handoff">02 谁交给谁，交什么</a><a href="#async">03 同步与异步</a><a href="#jev">04 Jev 到底做什么</a><a href="#entries">05 三类入口有何不同</a><a href="#output">06 用户看到什么</a><a href="#feedback">07 运行中用户再说一句</a><a href="#testing">08 怎么测试，哪些待验</a><a href="#memory">09 开工与记忆的一生</a><a href="#memory-storage">10 存在哪里，怎样归类</a><a href="#project-memory">11 项目共识与实际进度</a><a href="#memory-timeline">12 把事件串成项目进程</a><a href="#background-memory">13 个人与公司背景</a><a href="#instance-memory">14 登录看实际记录</a><a href="#evidence">来源与版本</a></nav>
 <button id="expand-details" type="button" aria-expanded="false">展开技术细节</button><a class="small appendix-link" href="./reference.html">目标交互图与演示附录 ↗</a>
 </aside>
 <main id="main">
 <header id="start" class="hero">
-<p class="eyebrow">消息接入、异步执行与用户输出 · 阅读版</p>
-<h1>一条消息，怎样变成工作和交付？</h1>
-<p class="lede">先可靠收录，再把工作交给模型；模型推进任务，输出程序把开场、卡片和结果送回用户。</p>
+<p class="eyebrow">执行、交付与持续记忆 · 阅读版</p>
+<h1>一次工作，怎样留下可接续的项目认识？</h1>
+<p class="lede">先可靠接入和执行，再把有依据的结果归回项目。下一次开工沿指针找到相关记忆，日报收回人的纠正。</p>
 <p>关键是区分两次交接：<strong>写进 Session 历史，还不等于启动模型；提交可执行 Request，才进入运行调度。</strong>Jev 在部分入口参与快判，实际任务由所选 Harness 理解、执行和验收。</p>
 <p class="metadata"><span id="reader-version"></span> · 源码与现有配置快照；现场状态不会自动更新</p>
 <div class="note"><strong>现在不能说整条飞书体验已经验收通过。</strong><p>上一轮修复已有回归与部署证据。新的真实复杂任务收发仍待验证；即时表情前置、跨输出 Worker 的到达顺序、提问分级与打断处理还有明确缺口。下面先解释<strong>现在怎么跑</strong>，再单独标出<strong>目标怎么改</strong>。</p></div>
-<p class="reading-guide">读法：先走 01 的一个场景，再看 02–04 的交接和等待；只关心使用时，可直接跳到 06–08。技术细节和源码折叠在对应位置。图里的时间表示先后，不承诺秒数。</p>
+<p class="reading-guide">读法：先走 01 的一个场景，再看 02–04 的交接和等待；只关心工作展示，可直接跳到 06–08；记忆治理从 09 开始，14 可登录读取本实例实际记录。技术细节和源码折叠在对应位置。图里的时间表示先后，不承诺秒数。</p>
 </header>
 
 <section id="journey"><h2><span class="part">01 / 顺着时间走</span>一条飞书消息的一生</h2>
@@ -106,7 +107,58 @@
 <div class="table-scroll"><table><thead><tr><th>场景</th><th>实际看什么</th><th>当前边界</th></tr></thead><tbody id="test-rows"></tbody></table></div>
 <h3 class="subhead">这轮已经改的，与还要改的</h3>
 <ul class="plain-list"><li><strong>已改：</strong>移除 Jev 清单 gate；新工作由已启用的执行 Harness 判断卡片需求；有用开场合入入口；有卡时进度更新原卡；最终答复与任务完成分开。</li><li><strong>仍待：</strong>收到表情从可靠接收点立即触发；两条 Worker 保证客户端开场与首卡顺序；问题等级与持久待答；自由文本停止、插问与问题答案的区分；旁听 Session 中工作变长时的任务卡接续规则。</li><li><strong>还没拿到：</strong>部署后新的真人复杂任务，从消息接入、首卡、原卡进度到最终答复的完整飞书验收证据。</li></ul>
-<p>本页这次交付的是<strong>说明网站与事实核对</strong>。它不会把上面待改能力自动部署，也不会改变之前尚未通过的飞书端到端验收状态。</p>
+<p>前八节交付的是<strong>消息机制的说明与事实核对</strong>，不改变尚未通过的飞书端到端验收状态。本轮记忆接入与背景资料的执行度在09–14单独核对。</p>
+</section>
+
+<section id="memory"><h2><span class="part">09 / 开工、读取、归集与反馈</span>记忆怎样接上一次工作？</h2>
+<p class="answer">沿原有指针找本次相关内容，沿原有主账更新认识。群、话题和个人 Session 是来源，项目、个人与公司资料按用途并列维护。</p>
+<p>下面五步把记忆接到前八节的执行链路。点击查看承担者、读取、落点与下一次使用；箭头表示关系，不承诺时间或自动验收。</p>
+<div id="memory-flow" class="memory-flow" role="group" aria-label="选择记忆步骤"></div>
+<div id="memory-step" class="memory-detail" aria-live="polite"></div>
+<p class="note small">新 Session 与新原生线程不是同一概念。继续原线程会保留已读上下文；关闭新增指针不会清除它已经读入的旧内容。正文实际读取仍由 Harness 按本次任务决定。</p>
+</section>
+<section id="memory-storage"><h2><span class="part">10 / 原文、认识、背景与规则</span>每类记忆到底放在哪里？</h2>
+<p>每个 Session 留过程，每个项目维护相应认识。讨论与干活群可以挂到同一项目；新话题保留自己的工作上下文，不再另建一份项目主账。</p>
+<div id="memory-store-tabs" class="tabs" role="group" aria-label="选择存储对象"></div><div id="memory-store-detail" aria-live="polite"></div>
+<h3 class="subhead">一条信息该归哪里</h3><div id="memory-class-tabs" class="tabs" role="group" aria-label="选择记忆类型"></div><div id="memory-class-detail" aria-live="polite"></div>
+<details data-technical><summary>展开不同开工入口的读取顺序</summary><div class="detail-body"><div id="memory-read-tabs" class="tabs" role="group" aria-label="选择开工场景"></div><div id="memory-read-detail"></div></div></details>
+</section>
+<section id="project-memory"><h2><span class="part">11 / 项目→视图→人的反馈</span>已有功能、已接入规则与待验效果分别是什么？</h2>
+<p>群范围确定项目入口，同一项目可有讨论群与干活群。个人 Session 的事项明确涉及项目时引用进去；普通个人聊天不按名字或标题整批挂靠。跨项目事项可以关联多个项目，状态仍按具体事项核对。</p>
+<div class="chain memory-chain"><span>群／话题／相关个人 Session</span><b>→</b><span>原项目主账</span><b>→</b><span>项目／个人／组织日报</span><b>→</b><span>按职责反馈，回原事项</span></div>
+<p>总日报可以同时包含确定事实、待核事项和观察建议。项目负责人确认范围与优先级，相关个人确认自己的承诺／偏好，验收人确认交付标准与结果；不要求所有人签过每条事实才可更新，也不把没人回复当共识。</p>
+<div class="table-scroll"><table><thead><tr><th>板块</th><th>当前执行度</th><th>已经发生的事</th><th>还不能推出什么</th></tr></thead><tbody id="memory-execution-rows"></tbody></table></div>
+<p class="small muted">这是2026-10-03的公开脱敏快照。登记数量不是活跃项目数。下面的登录读取可查看最新登记与原资料；业务正在运行、已验收和人的认可仍依各自原始证据。</p>
+</section>
+<section id="memory-timeline"><h2><span class="part">12 / 记忆有日期，还要串起前后变化</span>从零散条目走到项目进程</h2>
+<p class="answer">先问“何时发生了什么，哪个事项从什么状态变成什么状态，由谁推进、谁确认”，再问“项目现在怎样”。只读最新摘要会丢掉中间的失败、调整和被替代结论。</p>
+<div id="memory-timeline-example" class="timeline"></div><p class="small muted">上面是虚构示例。真实项目时间线在14登录查看；原主账仍是唯一认识入口，时间线是可刷新、带出处和缺口的派生视图。</p>
+<div class="table-scroll"><table><thead><tr><th>要区分的记录</th><th>怎样解释</th></tr></thead><tbody id="memory-time-rows"></tbody></table></div>
+<p>倒序摘要便于看现状，正序时间线便于理解演变；两者指向同一来源。关联更正和状态变化时保留前一版本；同一会议被多个 Session 引用，不算多个独立证据。来源有新版本而视图未重建，页面会明确提示落后，不能继续把快照叫“最新”。</p>
+</section>
+<section id="background-memory"><h2><span class="part">13 / 让协作记得人，也了解公司</span>个人偏好与公司背景按用途读取</h2>
+<p>真实身份、产品设置和自然语言偏好是三种不同信息。个人侧栏属于谁，不等于所有内容都写入了其长期偏好；机器共用的旧身份文件也不能代表每个登录人。</p>
+<div class="table-scroll"><table><thead><tr><th>内容</th><th>读取与处理</th><th>具体边界</th></tr></thead><tbody id="memory-background-rows"></tbody></table></div>
+<p>本轮已经按真实 Person 登记一项明确称呼偏好，并补入公司公共背景入口。公开页只讲机制；具体称呼、办公地点和习惯在下一节登录读取。完整写作偏好、全员项目责任、团队常去餐厅尚未逐项整理。</p>
+<p class="note small">本实例当前是共享认证工作区，认证成员能访问共享工作资料；按Person分类并没有新增个人保密权限。若以后需要个人私密区，必须另做明确的访问边界，不能靠目录名承诺隔离。</p>
+</section>
+<section id="instance-memory"><h2><span class="part">14 / 按需读回，不把私人内容写进公开网页</span>查看本实例的项目、个人和公司记录</h2>
+<p>点击后通过当前实例的认证接口读取。公开HTML不打包真实人员名单、项目正文、称呼偏好或公司地址；没有登录只给登录提示。此处只读，刷新不会修改记忆或启动任务。</p>
+<button id="memory-load" class="memory-load" type="button">读取登录实例的实际记录</button><a class="small" href="/" target="_blank" rel="noopener">打开RemoteLab登录 ↗</a>
+<p id="memory-instance-status" class="small muted" role="status">尚未读取实例资料。</p>
+<div id="memory-private" hidden>
+<p id="memory-runtime-status"></p>
+<label>项目 <select id="memory-project-select" aria-label="选择实际项目"></select></label>
+<p id="memory-project-state" class="small muted"></p>
+<label>个人 <select id="memory-person-select" aria-label="选择实际人员"></select></label>
+<p class="small muted">选择个人只查看其明确登记的偏好；时间线按原事件的明确参与者筛选，被提及不自动成为负责人。</p>
+<h3 class="subhead">项目进程：带日期、当时状态与出处</h3><p id="memory-chronology-status" class="small muted"></p>
+<div id="memory-actual-timeline" class="timeline"></div>
+<details><summary>当前项目索引与主账原文</summary><div class="detail-body"><p>这是原资料读回，未自动推断新的项目归属。项目下拉显示登记和来源数量，原文保留自己的时间与判断边界。</p><pre id="memory-project-index" class="memory-raw"></pre><pre id="memory-project-ledger" class="memory-raw"></pre></div></details>
+<details open><summary>所选人的明确偏好与依据</summary><div class="detail-body"><div id="memory-person-body" class="memory-document"></div></div></details>
+<details open><summary>公司公共背景、就餐与出行线索</summary><div class="detail-body"><div id="memory-company-body" class="memory-document"></div></div></details>
+</div>
+<details data-technical><summary>展开本次记忆章节的源码与维护边界</summary><div class="detail-body"><p id="memory-audit"></p><div id="memory-sources" class="source-links"></div><p>深层机制与成本比较继续维护在<a href="../../memory-architecture/index.html" data-memory-chapter>记忆章节</a>的同一内容源；本阅读页引用它，统一构建进入原网站，不再复制另一份说明。私人记录由实际实例维护，公开站点只解释范围和状态。</p></div></details>
 </section>
 
 <section id="evidence"><h2><span class="part">来源 / 版本 / 维护</span>按源码说清楚，按真实体验验收</h2>
@@ -115,7 +167,7 @@
 <div id="all-sources" class="all-sources"></div>
 <p class="small"><a href="./README.md">同目录维护参考文本</a> · <a href="./reference.html">目标交互图与演示附录</a> · <a href="../index.html">回到架构图谱</a></p>
 </section>
-<footer>RemoteLab 消息与任务输出 · 当前事实和目标方案分开维护 · <a href="#start">回到开头 ↑</a></footer>
+<footer>RemoteLab 执行与持续记忆 · 当前事实、记录与待验效果分开维护 · <a href="#start">回到开头 ↑</a></footer>
 </main></div>
 <noscript><p class="no-js">正文可以直接阅读；交互时序图需要 JavaScript。完整步骤见<a href="./README.md">维护参考文本</a>。</p></noscript>
 </body></html>
