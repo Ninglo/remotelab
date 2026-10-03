@@ -46,7 +46,7 @@
     return link;
   }
   function alertDetail(item) {
-    if (item.kind === "disk") return t("diskRisk", { free: bytes(item.availableBytes), used: percent(item.usedPercent) });
+    if (item.kind === "disk") return t("diskRisk", { free: bytes(item.availableBytes), used: percent(item.usedPercent), inodes: percent(item.inodeUsedPercent) });
     if (item.kind === "quota") return t("quotaRisk", { count: item.availableAccounts });
     if (item.kind === "lowQuota") return t("lowQuotaRisk");
     return t(item.kind === "automation" ? "automationRisk" : "serviceRisk");
@@ -86,6 +86,7 @@
         const pair = node("div"); pair.appendChild(node("dt", label)); pair.appendChild(node("dd", text)); metrics.appendChild(pair);
       }
       usage.appendChild(metrics); usage.appendChild(node("p", t("costNote"), "monitoring-note"));
+      usage.appendChild(node("p", `${time(value.usage.window.start)} — ${time(value.usage.window.end)}`, "monitoring-note"));
       table(usage, [t("model"), t("tokens")], (value.usage.byModel || []).map(item => [item.model || item.key || "—", number(item.totalTokens)]));
       table(usage, [t("operation"), t("tokens")], (value.usage.byOperationGroup || []).map(item => [
         (item.operationGroup || item.key) === "background" ? t("background") : (item.operationGroup || item.key) === "foreground" ? t("foreground") : item.label || item.operationGroup || item.key || "—", number(item.totalTokens)]));

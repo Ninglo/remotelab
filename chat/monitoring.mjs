@@ -40,7 +40,8 @@ export function projectAccounts(runtime, fleet, now = Date.now()) {
     const conflicts = usable.some(other => other.quota.filter(bucket => bucket.id === 'codex').flatMap(bucket => [bucket.primary, bucket.secondary]).filter(Boolean)
       .some(window => rawWindows.some(current => current.windowDurationMins === window.windowDurationMins
         && Math.abs(current.remainingPercent - window.remainingPercent) > 5)));
-    const valid = rawWindows.length > 0 && !conflicts && rawWindows.every(window => Number.isFinite(window.remainingPercent)
+    const valid = rawWindows.length > 0 && !conflicts && rawWindows.every(window => Number.isFinite(window.windowDurationMins) && window.windowDurationMins > 0
+      && Number.isFinite(window.remainingPercent)
       && window.remainingPercent >= 0 && window.remainingPercent <= 100
       && (!window.resetsAt || dateMs(window.resetsAt) > now));
     const windows = valid ? rawWindows.map(window => ({ minutes: window.windowDurationMins,

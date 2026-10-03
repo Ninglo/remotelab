@@ -14,7 +14,7 @@ const errorCode = error => error.code || 'DELIVERY_UNCERTAIN';
 export async function sendMonitoringAlert(events, config, batchId) {
   if (!/^oc_[\w]+$/.test(config.chatId || '') || !/^[\w.-]+$/.test(config.profile || '')) throw new Error('INVALID_RECIPIENT');
   const rows = events.map(item => `| ${cell(item.subject)} | ${item.kind === 'disk'
-    ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%` : '运行持续异常，请核对原执行记录'} |`).join('\n');
+    ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}` : '运行持续异常，请核对原执行记录'} |`).join('\n');
   const message = `**监管：需要及时处理**\n\n| 对象 | 当前问题 |\n|---|---|\n${rows}\n\n${config.overviewUrl || ''}\n日常状态继续并入日报，本条只报告新出现的紧急问题。`;
   const { stdout } = await promisify(execFile)('lark-cli', ['--profile', config.profile, 'im', '+messages-send',
     '--chat-id', config.chatId, '--as', 'bot', '--markdown', message, '--idempotency-key', batchId], {

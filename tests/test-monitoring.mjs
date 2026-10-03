@@ -23,6 +23,8 @@ test('missing, expired and unrelated quota windows never become zero or availabl
   assert.deepEqual(projectAccounts({ activeId: 'default', accounts: [{ id: 'default', account: null, usage: null }] }, null, now), []);
   const fleet = { adapters: { test: entry([sample(0, { observedAt: '2026-09-30T00:00:00Z' })]) } };
   assert.equal(projectAccounts(null, fleet, now)[0].status, 'unknown');
+  fleet.adapters.test = entry([sample(100, { quota: [{ id: 'codex', primary: { remainingPercent: 100 } }] })]);
+  assert.equal(projectAccounts(null, fleet, now)[0].status, 'unknown');
   fleet.adapters.test = entry([sample(0, { quota: [{ id: 'codex', primary: { remainingPercent: 0, windowDurationMins: 10080, resetsAt: '2026-10-02T00:00:00Z' } }] })]);
   assert.equal(projectAccounts(null, fleet, now)[0].status, 'unknown');
   fleet.adapters.test = entry([sample(100, { quota: [{ id: 'other', primary: { remainingPercent: 100, windowDurationMins: 10080 } }] })]);
