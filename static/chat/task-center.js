@@ -693,6 +693,7 @@
     card.dataset.state = category === "recurring" ? "active" : task.state;
     card.dataset.taskId = task.id;
     const main = createNode("div", "task-card-main");
+    main.classList.add("task-summary-main");
     const heading = createNode("div", "task-card-heading");
     heading.appendChild(createNode("div", "task-card-title", taskTitle(task)));
     const failureCount = (task.summary?.failedRuns || 0) + (task.summary?.inspection?.failed || 0);
