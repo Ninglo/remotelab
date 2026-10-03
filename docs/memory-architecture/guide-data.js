@@ -1,12 +1,12 @@
 // Human and Agent reference share this content source. Proposed and enabled parts remain distinct.
 export const guide = {
-  "version": "2.7",
+  "version": "2.8",
   "verifiedAt": "2026-10-03",
   "auditedCommit": "751388fc（冻结旧运行版）",
   "mainBaseline": "0ef09dc2",
   "title": "RemoteLab 记忆治理：从一次工作到项目共识",
   "goal": "让 Agent 在多人、多项目、多信源的工作中形成可追溯、经相应职责认可的组织认识；从同一份认识生成项目与个人视图，持续发现进展、风险和值得复用的方法。",
-  "boundary": "2026-10-03 按用户要求沿原链路全范围接入项目记忆增强：匹配来源／明确 Session 的开工指针、同一主账的项目索引和原日报增强规则；已冻结旧版并保留总开关与分项开关。登记范围不等于全组织已完整覆盖，运行配置不等于人的认可。真实回复质量、速度与成本继续从实际使用确认。网页案例均为虚构，不展示真实人员、群 ID、公司地址或聊天正文。",
+  "boundary": "2026-10-03 按用户要求沿原链路全范围接入项目记忆增强：匹配来源／明确 Session 的开工指针、同一主账的项目索引和原日报增强规则；已冻结旧版并保留总开关与分项开关。登记范围不等于全组织已完整覆盖，运行配置不等于人的认可。真实回复质量、速度与成本继续从实际使用确认。本轮已对正常入口可达的旧正文做受控备份、段落映射与归位，替换矛盾默认入口；未知来源继续待核，暂停不恢复，未认证全部原聊天史。网页案例均为虚构，不展示真实人员、群 ID、公司地址或聊天正文。",
   "findings": [
     [
       "一份项目记忆，多种信源",
@@ -169,7 +169,8 @@ export const guide = {
         "paths": [
           "reference/current/",
           "reference/topics/",
-          "model-context/preferences.md",
+          "reference/people/<personId>.md",
+          "reference/company.md",
           "tasks/",
           "项目文档与 Skills",
           "project-knowledge/projects.md"
