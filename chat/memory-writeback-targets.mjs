@@ -3,7 +3,6 @@ import { homedir } from 'os';
 import { basename, join, relative, resolve } from 'path';
 
 import { MEMORY_DIR, SYSTEM_MEMORY_DIR } from '../lib/config.mjs';
-import { readJson } from './fs-utils.mjs';
 import {
   AUTO_SYSTEM_MEMORY_FILE,
   AUTO_USER_MEMORY_FILE,
@@ -218,9 +217,22 @@ function normalizeConfiguredTarget(rawTarget = {}) {
 }
 
 async function readMemoryWritebackTargetsConfig() {
-  const config = await readJson(MEMORY_WRITEBACK_TARGETS_FILE, null);
-  if (!config || typeof config !== 'object') return null;
+  let config;
+  try {
+    config = JSON.parse(await readFile(MEMORY_WRITEBACK_TARGETS_FILE, 'utf8'));
+    if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Invalid memory targets config');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    // A broken/unreadable existing policy must not reopen the legacy defaults.
+    return { allowedTargetIds: [], disableDefaultTargetIds: [], extraTargets: [] };
+  }
   return {
+    // An explicit allowlist also excludes future discovered task files and
+    // fallback targets. Missing field preserves the existing catalogue.
+    allowedTargetIds: Object.hasOwn(config, 'allowedTargetIds')
+      ? (Array.isArray(config.allowedTargetIds)
+        ? config.allowedTargetIds.map((entry) => normalizeTargetId(entry)).filter(Boolean) : [])
+      : null,
     disableDefaultTargetIds: Array.isArray(config.disableDefaultTargetIds)
       ? config.disableDefaultTargetIds.map((entry) => normalizeTargetId(entry)).filter(Boolean)
       : [],
@@ -234,6 +246,8 @@ export async function loadMemoryWritebackTargets() {
   const defaults = await buildDefaultTargets();
   const config = await readMemoryWritebackTargetsConfig();
   const disabledDefaults = new Set(config?.disableDefaultTargetIds || []);
+  const allowedIds = config?.allowedTargetIds === null || !config
+    ? null : new Set(config.allowedTargetIds);
   const targets = [];
 
   for (const target of defaults) {
@@ -259,6 +273,7 @@ export async function loadMemoryWritebackTargets() {
   const seen = new Set();
   return targets.filter((target) => {
     if (!target?.id || !target?.path) return false;
+    if (allowedIds && !allowedIds.has(target.id)) return false;
     if (seen.has(target.id)) return false;
     seen.add(target.id);
     return true;
@@ -287,7 +302,9 @@ export function resolveMemoryWritebackTarget(targets = [], learning = {}) {
     return null;
   }
   const requestedTarget = targetMap.get(normalizedTargetId);
-  if (requestedTarget && requestedTarget.layer === learning?.layer) {
+  if (requestedTarget && requestedTarget.layer === learning?.layer
+    && (!requestedTarget.categories?.length || requestedTarget.categories.includes(learning?.category))
+    && !(learning?.layer === 'system' && learning?.category === 'preference')) {
     return requestedTarget;
   }
   return null;

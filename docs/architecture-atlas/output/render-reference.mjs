@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { meta, references, nodes, overviewGraphs, sequences, actors, questionLevels, states, rollout, contracts, invariants, openings } from './guide-data.js';
 import { audit, scenarios, actors as flowActors, feedback, testCases } from './flow-data.js';
-import { memoryAudit, memorySteps, executionRows, timeRules, backgroundCases } from '../../memory-architecture/reader-data.js';
+import { memoryAudit, memorySteps, executionRows, timeRules, backgroundCases, memoryFileMap, filingIncident, filingRisks } from '../../memory-architecture/reader-data.js';
 
 const actorLabels = Object.fromEntries(flowActors.map(a => [a.id, a.label]));
 const readerLines = [
@@ -27,6 +27,12 @@ for (const [kind, check, boundary] of testCases) readerLines.push(`- **${kind}**
 readerLines.push('', '## 一次工作如何形成可接续的记忆', '', memoryAudit.scope, '');
 for (const item of memorySteps) readerLines.push(`### ${item.title}`, '', `承担者：${item.owner}`, '', item.action, '', `读取：${item.read}`, '', `存储：${item.write}`, '', `边界：${item.next}`, '');
 readerLines.push('## 记忆治理的实际执行度', '');
+readerLines.push('## 记忆文件名、位置与维护规则', '',
+  '记忆目录默认~/.remotelab/memory；配置目录默认~/.config/remotelab。项目目录和连接器storageDir按实际配置。公开页列命名规则，登录只读视图列本实例绝对路径与有效写回目标。', '',
+  '| 区域 | 文件名 | 位置 | 保存什么 | 维护边界 |', '| --- | --- | --- | --- | --- |',
+  ...memoryFileMap.map(row=>'| '+row.map(cell=>cell.replaceAll('|','／')).join(' | ')+' |'), '',
+  '## 分档错误与纠正', '', filingIncident.cause, '', filingIncident.correction, '', filingIncident.recurrence, '',
+  ...filingRisks.map(([risk,cause,fix])=>`- **${risk}**：${cause} ${fix}`), '');
 for (const [name, status, done, boundary] of executionRows) readerLines.push(`### ${name}：${status}`, '', done, '', `边界：${boundary}`, '');
 readerLines.push('## 项目进程的时间与状态', '');
 for (const [name, rule] of timeRules) readerLines.push(`- **${name}**：${rule}`);

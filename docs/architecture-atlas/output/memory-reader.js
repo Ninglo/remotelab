@@ -1,5 +1,5 @@
-import { guide } from '../../memory-architecture/guide-data.js?v=2.6';
-import { memoryAudit, memorySteps, executionRows, timeRules, timelineExample, backgroundCases } from '../../memory-architecture/reader-data.js?v=20261003f';
+import { guide } from '../../memory-architecture/guide-data.js?v=2.7';
+import { memoryAudit, memorySteps, executionRows, timeRules, timelineExample, backgroundCases, memoryFileMap, filingIncident, filingRisks } from '../../memory-architecture/reader-data.js?v=20261003g';
 const el=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rows=list=>list.map(row=>`<tr>${row.map(cell=>`<td>${esc(cell)}</td>`).join('')}</tr>`).join('');
@@ -16,17 +16,22 @@ tabs('memory-store-tabs',guide.storageCases,item=>{el('memory-store-detail').inn
 tabs('memory-class-tabs',guide.classificationCases,item=>{el('memory-class-detail').innerHTML=`<h3>${esc(item.label)}</h3><p>例子：${esc(item.example)}</p><p><strong>归入：${esc(item.target)}</strong> · ${esc(item.type)}</p><p>${esc(item.rule)}</p><p class="small muted">${item.paths.map(path=>esc(path)).join(' · ')}。${esc(item.other)}</p>`;});
 tabs('memory-read-tabs',guide.readingCases,item=>{el('memory-read-detail').innerHTML=`<ol>${item.steps.map(([title,text])=>`<li><strong>${esc(title)}</strong>：${esc(text)}</li>`).join('')}</ol><p class="small muted">通常不读：${esc(item.skip)}</p>`;});
 el('memory-execution-rows').innerHTML=rows(executionRows);el('memory-time-rows').innerHTML=rows(timeRules);el('memory-background-rows').innerHTML=rows(backgroundCases);
+el('memory-filing-cause').textContent=filingIncident.cause;el('memory-filing-correction').textContent=filingIncident.correction;el('memory-filing-recurrence').textContent=filingIncident.recurrence;el('memory-filing-risks').innerHTML=rows(filingRisks);
+const fileKinds=['全部',...new Set(memoryFileMap.map(row=>row[0]))];
+el('memory-file-kind').innerHTML=fileKinds.map(kind=>`<option>${esc(kind)}</option>`).join('');
+function showFileMap(){const kind=el('memory-file-kind').value,query=el('memory-file-query').value.trim().toLowerCase();const list=memoryFileMap.filter(row=>(kind==='全部'||row[0]===kind)&&(!query||row.join(' ').toLowerCase().includes(query)));el('memory-file-rows').innerHTML=rows(list);el('memory-file-count').textContent=`${list.length}类文件位置；占位符表示具体人员、Session、Run或日期。实际已存在的文件与完整路径在14登录读回。`;}
+el('memory-file-kind').addEventListener('change',showFileMap);el('memory-file-query').addEventListener('input',showFileMap);showFileMap();
 el('memory-timeline-example').innerHTML=timelineExample.map(([date,status,text])=>`<article><time>${esc(date)}</time><h3>${esc(status)}</h3><p>${esc(text)}</p></article>`).join('');
 el('memory-audit').textContent=`${memoryAudit.version}；底座${memoryAudit.commit}。${memoryAudit.scope}`;
 el('memory-sources').innerHTML=memoryAudit.sources.map(path=>`<a href="https://github.com/Ninglo/remotelab/blob/main/${esc(path)}" target="_blank" rel="noopener">${esc(path)}</a>`).join('');
 const names={available:'已记录', 'not-recorded':'尚未登记',unavailable:'暂不可读取','too-large-or-not-file':'文件过大或格式不适用','select-person':'先选择实际Person',invalid:'视图格式不适用'};
 let snapshot;
-const clearPrivate=()=>{snapshot=undefined;el('memory-private').hidden=true;for(const id of ['memory-project-select','memory-person-select','memory-actual-timeline'])el(id).replaceChildren();for(const id of ['memory-project-index','memory-project-ledger','memory-person-body','memory-company-body'])el(id).textContent='';};
+const clearPrivate=()=>{snapshot=undefined;el('memory-private').hidden=true;for(const id of ['memory-project-select','memory-person-select','memory-actual-timeline'])el(id).replaceChildren();for(const id of ['memory-project-index','memory-project-ledger','memory-person-body','memory-company-body','memory-actual-files'])el(id).textContent='';};
 function textDocument(id,doc){
  const root=el(id);root.replaceChildren();
  if(doc?.status!=='available'){root.textContent=`${names[doc?.status]||'尚未读取'}。未登记表示尚未整理，不代表没有相关信息。`;return;}
- if(id==='memory-project-index'||id==='memory-project-ledger'){root.textContent=`文件更新时间${doc.modifiedAt} · 内容版本 ${doc.hash}\n\n${doc.text}`;return;}
- const metadata=document.createElement('p');metadata.className='small muted';metadata.textContent=`文件更新时间${doc.modifiedAt} · 内容版本${doc.hash}`;root.append(metadata);
+ if(id==='memory-project-index'||id==='memory-project-ledger'){root.textContent=`位置：${doc.path||'当前服务器未提供位置'}\n文件更新时间${doc.modifiedAt} · 内容版本 ${doc.hash}\n\n${doc.text}`;return;}
+ const metadata=document.createElement('p');metadata.className='small muted';metadata.textContent=`位置：${doc.path||'当前服务器未提供位置'} · 文件更新时间${doc.modifiedAt} · 内容版本${doc.hash}`;root.append(metadata);
  const inline=(node,text)=>{
   const pattern=/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;let offset=0;
   for(const match of text.matchAll(pattern)){node.append(document.createTextNode(text.slice(offset,match.index)));const a=document.createElement('a');a.textContent=match[1];a.href=match[2];a.target='_blank';a.rel='noopener noreferrer';node.append(a);offset=match.index+match[0].length;}
@@ -63,7 +68,10 @@ async function load(personId=null){
   el('memory-project-select').innerHTML='<option value="">全部项目节点</option>'+(rt.projects||[]).map(item=>`<option value="${esc(item.id)}">${esc(labels.get(item.id)||item.id)}</option>`).join('');
   if((rt.projects||[]).some(item=>item.id===project))el('memory-project-select').value=project;
   el('memory-person-select').innerHTML='<option value="">全部人员事件／未选个人档案</option>'+data.people.map(person=>`<option value="${esc(person.id)}">${esc(person.name||person.id)}</option>`).join('');el('memory-person-select').value=data.personId||'';
-  textDocument('memory-project-index',data.projectIndex);textDocument('memory-project-ledger',data.projectLedger);textDocument('memory-person-body',data.personal);textDocument('memory-company-body',data.company);el('memory-private').hidden=false;showTimeline();
+  textDocument('memory-project-index',data.projectIndex);textDocument('memory-project-ledger',data.projectLedger);textDocument('memory-person-body',data.personal);textDocument('memory-company-body',data.company);
+  const catalogue=data.fileCatalog;
+  el('memory-actual-files').innerHTML=catalogue?`<p>以下是本次实际枚举的文件名及固定位置，只列元数据。归档正文、日志、隐藏目录、符号链接扫描和Harness原生文件未遍历；路径模板不表示已枚举全部历史。${catalogue.truncated?'扫描达到上限，下面不是完整清单。':''}</p><div class="table-scroll"><table><thead><tr><th>文件名</th><th>完整位置</th><th>用途区域</th><th>边界</th></tr></thead><tbody>${rows(catalogue.files.map(file=>[file.name,file.path,file.region,[names[file.status]||'已枚举',file.resolvedPath?`链接到 ${file.resolvedPath}`:'',file.note].filter(Boolean).join('；')]))}</tbody></table></div><h3 class="subhead">实际目录下的变动文件名</h3><div class="table-scroll"><table><thead><tr><th>路径模板</th><th>用途</th></tr></thead><tbody>${rows(catalogue.patterns.map(item=>[item.path,item.note]))}</tbody></table></div><h3 class="subhead">当前自动写回真正允许的目标</h3><div class="table-scroll"><table><thead><tr><th>目标</th><th>实际文件</th><th>范围</th><th>允许类别</th></tr></thead><tbody>${rows((catalogue.writeback||[]).map(item=>[item.id,item.path,item.layer,(item.categories||[]).join('、')]))}</tbody></table></div><p class="small muted">文件存在不表示已核事实或默认规则。${catalogue.issues.length?`有${catalogue.issues.length}项目录或写回读取缺口。`:''}</p>`:'服务器尚未提供文件清单；不能用静态位置冒充实际读回。';
+  el('memory-private').hidden=false;showTimeline();
  }catch{clearPrivate();el('memory-instance-status').textContent='未能读取实例记录，未用静态示例冒充最新数据；请登录后重试。';}finally{button.disabled=false;el('memory-person-select').disabled=false;}
 }
 el('memory-load').addEventListener('click',()=>load());el('memory-project-select').addEventListener('change',showTimeline);el('memory-person-select').addEventListener('change',()=>load(el('memory-person-select').value));
