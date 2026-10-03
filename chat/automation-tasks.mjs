@@ -12,6 +12,7 @@ import {
   updateRecurringSchedule,
 } from './recurring-schedules.mjs';
 import { getRun } from './runs.mjs';
+import { requests } from './requests.mjs';
 import { getSession, getRunState } from './session-manager.mjs';
 import { scheduledRuntimeIntent } from '../lib/scheduled-runtime-policy.mjs';
 
@@ -107,21 +108,26 @@ async function projectExecution(trigger) {
   if (!trigger) return null;
   const runId = trimString(trigger.runId);
   const storedRun = runId ? await getRun(runId) : null;
-  const run = storedRun || (runId ? await getRunState(runId) : null);
+  const receipt = !storedRun && runId ? await requests.byRunId(runId) : null;
+  const run = storedRun || (receipt?.nativeDispatchRunId ? await getRunState(runId)
+    : receipt?.result ? { state: receipt.result.state, sessionId: receipt.sessionId,
+      completedAt: receipt.settledAt, failureReason: receipt.result.error } : null);
+  const runAvailable = Boolean(storedRun || run?.createdAt || ['completed', 'failed', 'cancelled'].includes(run?.state));
   return {
     id: trigger.id,
-    state: projectExecutionState(trigger, run),
+    state: projectExecutionState(trigger, runAvailable ? run : null),
     triggerStatus: trigger.status,
     scheduledAt: trigger.scheduledAt,
     attemptedAt: trigger.lastAttemptAt || '',
     admittedAt: trigger.deliveredAt || '',
     completedAt: run?.completedAt || '',
     runId,
-    runAvailable: Boolean(storedRun || run?.createdAt || ['completed', 'failed', 'cancelled'].includes(run?.state)),
+    runAvailable,
     sessionId: trimString(trigger.executionSessionId) || trimString(run?.sessionId),
     runtime: trigger.executionRuntime || null,
     error: trimString(run?.failureReason) || trimString(run?.error?.message)
-      || trimString(run?.error) || trimString(trigger.lastError),
+      || trimString(run?.error) || trimString(receipt?.result?.error?.message)
+      || trimString(receipt?.result?.error) || trimString(trigger.lastError),
   };
 }
 

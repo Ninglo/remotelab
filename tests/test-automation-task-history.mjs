@@ -8,6 +8,7 @@ const fixture = await mkdtemp(join(tmpdir(), 'remotelab-task-history-'));
 setIsolatedTestHome(fixture);
 const { createRecurringSchedule } = await import('../chat/recurring-schedules.mjs');
 const { createTrigger } = await import('../chat/triggers.mjs');
+const { requests } = await import('../chat/requests.mjs');
 const { createRun } = await import('../chat/runs.mjs');
 const { getAutomationTask, listAutomationTasks, listAutomationTaskExecutions } = await import('../chat/automation-tasks.mjs');
 const { CHAT_TRIGGERS_FILE, CONFIG_DIR } = await import('../lib/config.mjs');
@@ -61,6 +62,16 @@ try {
   const unverified = await getAutomationTask(foreign.id);
   assert.equal(unverified.lastExecution.runAvailable, false, 'old admissions without execution evidence cannot be live jobs');
   assert.equal(unverified.health.failedExecutions, 0);
+  const accepted = await requests.accept({ sessionId: 'logical-request', requestId: 'no-retained-run',
+    text: 'Fixture only', runId: 'run_' + 'f'.repeat(24) });
+  const admittedOnly = await getAutomationTask(foreign.id);
+  assert.equal(admittedOnly.lastExecution.state, 'admitted', 'a Request receipt alone must not turn old admissions into active jobs');
+  assert.equal(admittedOnly.lastExecution.runAvailable, false);
+  await requests.settle(accepted.record.key, { state: 'failed', error: 'Retained request failure without a physical Run' }, []);
+  const retainedFailure = await getAutomationTask(foreign.id);
+  assert.equal(retainedFailure.lastExecution.state, 'failed');
+  assert.match(retainedFailure.lastExecution.error, /Retained request failure/);
+
   const listed = await listAutomationTasks();
   assert.equal(listed.filter(item => item.kind === 'recurring').length, 1);
   assert.ok(!listed.some(item => ids.includes(item.id)), 'schedule occurrences must remain nested beneath their task');
