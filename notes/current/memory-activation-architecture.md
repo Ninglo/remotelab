@@ -69,12 +69,41 @@ A prose rule saying "inbox only" does not establish the effective boundary. Insp
 the catalogue in the target instance environment. Candidate eligibility does not
 establish factual acceptance.
 
-## Governance direction
+## Governance direction (guide v2; not enabled)
 
-The guide proposes full-project source coverage, typed claims, project/Person
-relationships, validity time, conflicts, version-bound role confirmation and
-project/individual views. Start in an isolated collection/test-report layer;
-production writes, delivery, Skills and business actions activate separately.
+Keep the pointer-first skeleton: project index -> project entry -> one project
+memory plus topic/source pointers. A discussion chat, work chat and related
+personal Sessions are inputs to one logical project, not separate consensus
+ledgers. Topic agreements stay local; promote a project-wide agreement only with
+clear scope and the relevant role's recognition. Source, time, execution state,
+verification, version and recognition are attributes of an entry, not extra
+document hierarchies. Reports and organization/Person views are derived from the
+same project entries; corrections return to the original entry/version.
+
+Initially retain the instance-local `project-knowledge/projects.md` ledger and
+its project sections. The proposed config-directory `project-registry.json`
+holds stable project IDs, source bindings, Session associations and roles; the
+existing memory index and connector configuration become projections of it.
+This registry is a design choice, not an existing production file or new
+interactive product object. Per-Person sidebar groups are not authoritative
+project associations. An ambiguous association remains pending; mixed Sessions
+associate individual entries with the appropriate projects.
+
+Personal collaboration preferences and company facts are parallel, task-relevant
+background, not another level above project consensus. Proposed
+`reference/people/<personId>.md` and `reference/company.md` locations are not
+created or enabled by this documentation change. Existing Person product
+settings retain their current purpose. AGENTS.md holds applicable stable
+operation rules and pointers; Skills/WORKFLOW hold reusable methods. Project
+status, personal tastes and office locations remain in their own maintenance
+locations. Native Harness loading rules still determine instruction activation.
+
+Start with all registered projects in an isolated collection/test-report area,
+consuming existing source outputs rather than adding a second group consumer.
+Runtime-enforced write isolation, version-aware correction, role recognition and
+coverage accounting must be implemented and tested before integration. Formal
+writes, individual delivery, Skills promotion and business actions activate
+separately. This task only updates the guide and its static publication.
 
 Keep ordinary task interpretation and planning with the Harness. Do not make an
 all-project prompt bundle or second semantic gate mandatory on every turn. See

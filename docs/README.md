@@ -59,6 +59,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - [Native Harness input](native-harness-input.md) — active input transport, native lifecycle, recovery and validation
 - [Session start preflight](session-start-preflight.md) — optional fresh-provider knowledge probe, replacement retry, and daily outcome statistics
 - [Memory and organizational collaboration](memory-architecture/README.md) — shared human/Agent reference and [interactive diagrams](memory-architecture/index.html) for actual startup retrieval, post-turn collection, memory scopes, and the separately labeled organization-governance proposal
+- [Message and task output architecture](architecture-atlas/output/README.md) — planning reference and [interactive diagrams](architecture-atlas/output/index.html) for intake ownership, asynchronous execution/delivery, progress cards, user feedback and separate task/run/delivery states; the proposed changes are not a deployment claim
 
 ### Supporting Internal Contracts
 
