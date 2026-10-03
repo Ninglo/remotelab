@@ -108,6 +108,7 @@ assert.equal(lastTrack.readyState, 'ended', 'late authorization cannot retain a 
 stallAudio = true;
 const beforeResumeCalls = resumeCalls;
 let stalled = capture.prepare();
+audioContexts.at(-1).state = 'interrupted';
 assert.equal(capture.prepare(), stalled, 'the hold timer shares the gesture preparation');
 assert.equal(resumeCalls - beforeResumeCalls, 1, 'one preparation resumes audio only once');
 assert.equal(startupTimers.size, 0, 'the permission prompt has no audio-start deadline');

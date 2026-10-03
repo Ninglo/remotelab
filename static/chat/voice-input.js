@@ -94,10 +94,10 @@
   function prepareMicrophone() {
     if (getVoiceUnavailableReason()) return Promise.reject(new Error(getVoiceUnavailableReason()));
     globalScope.clearTimeout(microphoneExpiry);
-    if (microphoneContext?.state === "interrupted"
-      || microphoneStream?.getTracks().some((track) => track.readyState === "ended")) releaseMicrophone();
     // The hold timer shares the preparation begun in pointerdown; it must not resume audio again.
     if (microphonePreparation) return microphonePreparation;
+    if (microphoneContext?.state === "interrupted"
+      || microphoneStream?.getTracks().some((track) => track.readyState === "ended")) releaseMicrophone();
     microphoneError = "";
     // Create and resume in the actual user gesture, before the hold timer or permission promise.
     if (!microphoneContext || microphoneContext.state === "closed") {
