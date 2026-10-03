@@ -1103,3 +1103,10 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction or ask: consumption and opportunity prose separated urgent issues from allowance readings. People want issues first, allowance second, and lower-priority details below; the same top section should be readable as a group snapshot.
 - Product implication: sort urgent issues before warnings, show account percentages and reset times with meters, retain explicit unknown readings, and put the visual snapshot in the existing daily message rather than adding another routine notification.
 - Verification: desktop and phone views, snapshot source timestamp, native inline-image delivery in one Feishu post, and real instance readback.
+
+
+### 2026-10-03 — Name the resource and runtime view; browse automation failures by task
+
+- User goal: know which resources remain and whether anything needs attention, then inspect an automation only when diagnosing its triggers or failures. A flat list of each historical admission obscures this purpose.
+- Response: call the destination Operations (运行中心), and the exported summary Operations overview (运行概览). Keep the Overview / Automations switch. Current tasks use compact summaries; opening one reveals a trigger timeline, failure-only filter, full retained error and execution-log link, with configuration below.
+- Evidence boundary: task enablement, a failed trigger, a later successful run and an old admission without execution evidence are distinct states. Historical records stay available; grouping cannot cancel or rewrite their producers. Test previews are private to the requesting person until accepted for production delivery.

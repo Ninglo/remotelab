@@ -12,10 +12,11 @@ import {
   updateRecurringSchedule,
 } from './recurring-schedules.mjs';
 import { getRun } from './runs.mjs';
-import { getSession } from './session-manager.mjs';
+import { getSession, getRunState } from './session-manager.mjs';
 import { scheduledRuntimeIntent } from '../lib/scheduled-runtime-policy.mjs';
 
 const RECENT_EXECUTION_LIMIT = 5;
+const HEALTH_WINDOW_DAYS = 7;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -105,7 +106,8 @@ function projectExecutionState(trigger, run) {
 async function projectExecution(trigger) {
   if (!trigger) return null;
   const runId = trimString(trigger.runId);
-  const run = runId ? await getRun(runId) : null;
+  const storedRun = runId ? await getRun(runId) : null;
+  const run = storedRun || (runId ? await getRunState(runId) : null);
   return {
     id: trigger.id,
     state: projectExecutionState(trigger, run),
@@ -115,10 +117,27 @@ async function projectExecution(trigger) {
     admittedAt: trigger.deliveredAt || '',
     completedAt: run?.completedAt || '',
     runId,
-    sessionId: trimString(trigger.executionSessionId),
+    runAvailable: Boolean(storedRun || run?.createdAt || ['completed', 'failed', 'cancelled'].includes(run?.state)),
+    sessionId: trimString(trigger.executionSessionId) || trimString(run?.sessionId),
     runtime: trigger.executionRuntime || null,
     error: trimString(run?.failureReason) || trimString(run?.error?.message)
       || trimString(run?.error) || trimString(trigger.lastError),
+  };
+}
+
+function executionHealth(executions, { lastError = '', lastErrorAt = '' } = {}) {
+  const cutoff = Date.now() - HEALTH_WINDOW_DAYS * 86400000;
+  const failed = executions.filter(item => item.state === 'failed'
+    && timestamp(item.completedAt || item.attemptedAt || item.scheduledAt) >= cutoff);
+  const latest = executions[0];
+  return {
+    windowDays: HEALTH_WINDOW_DAYS,
+    failedExecutions: failed.length,
+    lastFailure: failed[0] || null,
+    needsAttention: latest?.state === 'failed' || Boolean(lastError),
+    error: lastError || (latest?.state === 'failed' ? latest.error : ''),
+    errorAt: lastErrorAt || (latest?.state === 'failed'
+      ? latest.completedAt || latest.attemptedAt || latest.scheduledAt : ''),
   };
 }
 
@@ -166,6 +185,7 @@ async function projectOneTimeTask(trigger) {
     nextRunAt: trigger.status === 'pending' ? trigger.scheduledAt : '',
     lastExecution: execution,
     recentExecutions: execution ? [execution] : [],
+    health: executionHealth(execution ? [execution] : []),
     sourceSessionId: trigger.sourceSessionId,
     createdByIdentityId,
     createdAt: trigger.createdAt,
@@ -178,7 +198,12 @@ async function projectRecurringTask(schedule, occurrences) {
   const recentTriggers = [...occurrences]
     .sort((left, right) => timestamp(right.scheduledAt) - timestamp(left.scheduledAt))
     .slice(0, RECENT_EXECUTION_LIMIT);
-  const recentExecutions = await Promise.all(recentTriggers.map(projectExecution));
+  const cutoff = Date.now() - HEALTH_WINDOW_DAYS * 86400000;
+  const healthTriggers = [...occurrences].filter(trigger => timestamp(trigger.lastAttemptAt || trigger.scheduledAt) >= cutoff);
+  const selected = [...new Map([...recentTriggers, ...healthTriggers].map(trigger => [trigger.id, trigger])).values()]
+    .sort((a, b) => timestamp(b.scheduledAt) - timestamp(a.scheduledAt));
+  const projected = await Promise.all(selected.map(projectExecution));
+  const recentExecutions = projected.slice(0, RECENT_EXECUTION_LIMIT);
   const resultDelivery = projectNotification(schedule);
   const admittedExecutions = occurrences.filter((trigger) => trigger.status === 'delivered').length;
   const pendingAdmissions = occurrences.filter((trigger) => ['pending', 'delivering'].includes(trigger.status)).length;
@@ -219,6 +244,9 @@ async function projectRecurringTask(schedule, occurrences) {
     nextRunAt: schedule.status === 'active' ? schedule.nextRunAt : '',
     lastExecution: recentExecutions[0] || null,
     recentExecutions,
+    health: executionHealth(projected, { lastError: schedule.lastError || '', lastErrorAt: schedule.lastErrorAt || '' }),
+    check: { at: schedule.lastCheckAt || '', reason: schedule.lastGateReason || '',
+      error: schedule.lastError || '', errorAt: schedule.lastErrorAt || '' },
     sourceSessionId: schedule.sourceSessionId,
     createdByIdentityId,
     createdAt: schedule.createdAt,
@@ -263,6 +291,38 @@ export async function listAutomationTasks() {
     ...oneTimeTriggers.map(projectOneTimeTask),
   ]);
   return tasks.sort(taskSort);
+}
+
+// Browse a task's durable occurrences without making each trigger a top-level task.
+export async function listAutomationTaskExecutions(taskId, { cursor = '', limit = 25, status = 'all' } = {}) {
+  const pageSize = Number(limit);
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('limit must be between 1 and 100');
+  if (!['all', 'failed'].includes(status)) throw new Error('Unsupported execution status');
+  const id = trimString(taskId);
+  let occurrences;
+  if (id.startsWith('sch_')) {
+    if (!await getRecurringSchedule(id)) return null;
+    occurrences = await listTriggers({ scheduleId: id });
+  } else if (id.startsWith('trg_')) {
+    const trigger = await getTrigger(id);
+    if (!trigger) return null;
+    occurrences = [trigger];
+  } else return null;
+  occurrences.sort((a, b) => timestamp(b.scheduledAt) - timestamp(a.scheduledAt) || b.id.localeCompare(a.id));
+  const cursorIndex = cursor ? occurrences.findIndex(item => item.id === cursor) : -1;
+  if (cursor && cursorIndex === -1) throw new Error('Cursor does not belong to this task');
+  const pending = occurrences.slice(cursorIndex + 1);
+  const executions = [];
+  // A failed-only view must look beyond the first page of successful triggers.
+  let hasMore = false;
+  for (const trigger of pending) {
+    const execution = await projectExecution(trigger);
+    if (status === 'failed' && execution.state !== 'failed') continue;
+    if (executions.length === pageSize) { hasMore = true; break; }
+    executions.push(execution);
+  }
+  return { executions, totalOccurrences: occurrences.length, status,
+    nextCursor: hasMore ? executions.at(-1).id : '', limit: pageSize };
 }
 
 export async function getAutomationTask(taskId) {

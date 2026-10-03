@@ -1,8 +1,18 @@
-# Monitoring and Automations v1
+# Operations and Automations v1
 
-The sidebar entry is **Monitoring** (监管), with **Overview** and **Automations** tabs. Automations remains the default and retains its existing controls. Overview joins resource and runtime observations; see [Monitoring](monitoring.md). Project tasks and daily reports stay in their existing Markdown and publication workflows, without another application entry. Existing `tasks` tab URLs, component IDs, and `/api/automation-tasks` paths remain stable.
+The sidebar entry is **Operations** (运行中心), with **Overview** and **Automations** tabs. Automations remains the default and retains its existing controls. Overview joins resource and runtime observations; see [Monitoring](monitoring.md). Project tasks and daily reports stay in their existing Markdown and publication workflows, without another application entry. Existing `tasks` tab URLs, component IDs, and `/api/automation-tasks` paths remain stable.
 
 This is the authenticated control surface for RemoteLab's durable automated tasks. It is a top-level application workspace, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
+
+## Task browsing and failure diagnosis
+
+The default automation list shows **current tasks**, with compact summaries of cadence, next trigger, last execution and failures in the last seven days. Task enablement and execution health are separate: an enabled schedule can have a failed run, while a successful latest run does not erase earlier failures. Attention and recent failures sort first; the failure filter includes both. A historical admission without a retained Run is unverified, not an active job.
+
+Open a task to see its newest-first trigger timeline. The read-only `GET /api/automation-tasks/:id/executions?limit=25&cursor=trg_...&status=all|failed` paginates durable triggers with a stable cursor and can scan past successful pages to find failures. Every row retains its scheduled time, actual state, full recorded error, Run ID and execution Session link for logs. Check errors before admission appear separately using the latest retained scheduler error; the application does not invent a history of checks the store did not retain. Settings and lifecycle controls remain inside each task.
+
+Historical one-time triggers with an identical source Session, title, instruction, execution target, result destination and creator may be folded into one display group. The original records remain intact; current one-time triggers and distinct schedules are never merged. Display groups never receive lifecycle actions. History and all-task filters retain access to old records with progressive loading.
+
+The sidebar uses **Operations / 运行中心** and exported allowance snapshots use **Operations overview / 运行概览**. Existing Overview and Automations tabs, `tasks` URLs and API paths remain stable. Test previews must go to the requesting person or the current conversation; group delivery uses only the separately accepted production workflow.
 
 ## Product boundary
 
@@ -16,7 +26,7 @@ RemoteLab owns generic automation mechanics:
 
 The execution Session still interprets the instruction and decides the concrete work. Task Center does not know evaluation, GPU, report, inbox, or other domain semantics.
 
-Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Monitoring sit above the Session list, while Settings sits below it. Selecting a Session, Monitoring, or Settings swaps the main workspace inside the same application document; there is no second application rail and no template-management destination. Monitoring and Settings share the same flat, readable main-canvas geometry and never insert management cards into a Session transcript. The sidebar shows the product brand only in the global header, keeps origin filtering next to the Session list, and does not spend primary space on build metadata. The URL query remains shareable/restorable UI state rather than a separate page load.
+Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Operations sit above the Session list, while Settings sits below it. Selecting a Session, Operations, or Settings swaps the main workspace inside the same application document; there is no second application rail and no template-management destination. Operations and Settings share the same flat, readable main-canvas geometry and never insert management cards into a Session transcript. The sidebar shows the product brand only in the global header, keeps origin filtering next to the Session list, and does not spend primary space on build metadata. The URL query remains shareable/restorable UI state rather than a separate page load.
 
 There is no per-Session template selector or preferred-template browser state. New Sessions start from the selected tool/runtime only. Interactive template objects and shared-guest routes do not exist in the v1 product model.
 

@@ -185,6 +185,14 @@ async function main() {
       return response.json?.task?.state === 'completed' ? response.json.task : false;
     }, 'fixed Session task completion');
     assert.equal(completedFixed.lastExecution.sessionId, fixedSession.id, 'fixed mode must wake the selected Session');
+    const fixedHistory = await request(port, 'GET', `/api/automation-tasks/${fixedCreate.json.task.id}/executions`);
+    assert.equal(fixedHistory.status, 200, fixedHistory.text);
+    assert.equal(fixedHistory.json.executions.length, 1);
+    assert.equal(fixedHistory.json.executions[0].state, 'completed');
+    assert.equal((await request(port, 'GET', `/api/automation-tasks/${fixedCreate.json.task.id}/executions`, null, '')).status, 401);
+    assert.equal((await request(port, 'GET', `/api/automation-tasks/${fixedCreate.json.task.id}/executions?limit=101`)).status, 400);
+    assert.equal((await request(port, 'GET', '/api/automation-tasks/sch_ffffffffffffffffffffffff/executions')).status, 404);
+
     const deliveries = await request(port, 'GET', '/api/source-deliveries');
     assert.equal(deliveries.status, 200);
     assert.equal(deliveries.json.deliveries.length, 0, 'RemoteLab-only delivery must not inherit the fixed Session conversation');

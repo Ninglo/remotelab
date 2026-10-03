@@ -55,6 +55,7 @@ import {
   createAutomationTask,
   getAutomationTask,
   listAutomationTasks,
+  listAutomationTaskExecutions,
 } from './automation-tasks.mjs';
 import {
   buildSourceDeliveryPlan,
@@ -603,6 +604,19 @@ export async function handleControlRoutes({
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create automation task' });
     }
+    return true;
+  }
+
+  const executionHistoryMatch = /^\/api\/automation-tasks\/((?:trg|sch)_[a-f0-9]{24})\/executions$/.exec(pathname);
+  if (executionHistoryMatch && req.method === 'GET') {
+    try {
+      const history = await listAutomationTaskExecutions(executionHistoryMatch[1], {
+        cursor: parsedUrl.query.cursor || '', limit: Number(parsedUrl.query.limit || 25),
+        status: parsedUrl.query.status || 'all',
+      });
+      if (!history) writeJson(res, 404, { error: 'Automation task not found' });
+      else writeJson(res, 200, history);
+    } catch (error) { writeJson(res, 400, { error: error.message }); }
     return true;
   }
 
