@@ -42,7 +42,8 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   if (snapshot.coverage.gaps.some(gap => gap.source === 'automations')) {
     for (const [key, incident] of Object.entries(state.incidents)) if (incident.kind === 'automation') current.add(key);
   }
-  for (const item of snapshot.attention.filter(item => ['disk', 'service', 'automation'].includes(item.kind))) {
+  for (const item of snapshot.attention.filter(item => ['disk', 'service', 'automation'].includes(item.kind)
+    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id)))) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     const count = previous?.active ? previous.observations + 1 : 1;
