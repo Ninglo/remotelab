@@ -8,7 +8,7 @@ const table = rows => rows.map(row => '| ' + row.map(v => String(v).replaceAll('
 const target = fileURLToPath(new URL('./README.md',import.meta.url));
 let text = '# ' + guide.title + '\n\n<!-- Generated from guide-data.js by render-reference.mjs; edit the content source. -->\n\n';
 text += '版本 '+guide.version+'；核对日期 '+guide.verifiedAt+'；运行源码 '+inline(guide.auditedCommit)+'；主线基线 '+inline(guide.mainBaseline)+'。核对的 10 个核心路径、读取与写回文件一致；不声称全部运行源码相同。\n\n';
-text += guide.goal+'\n\n'+guide.boundary+' 未逐条复审全部历史业务事实；治理测试运行层尚未实施。\n\n';
+text += guide.goal+'\n\n'+guide.boundary+' 未逐条复审全部历史业务事实；本轮手动隔离采集已实现；正式认可与运行接入仍未实施。\n\n';
 text += '交互入口：[index.html](index.html)。真实人数通过网页按钮在登录后读当前实例，不保存真实名单或私人偏好。\n\n';
 text += '## 方案骨架\n\n';
 for(const [title,body] of guide.findings)text+='**'+title+'。** '+body+'\n\n';
@@ -62,7 +62,7 @@ text+='### 测试隔离\n\n'+guide.isolation+'\n\n';
 text+='### 迁移现有结构\n\n';for(const [title,body] of guide.migration)text+='- **'+title+'：** '+body+'\n';
 text+='\n### 场景验收\n\n';for(const [title,body] of guide.acceptanceCases)text+='- **'+title+'：** '+body+'\n';
 text+='\n### 实施前补齐的信息\n\n';for(const [title,body] of guide.prerequisites)text+='- **'+title+'：** '+body+'\n';
-text+='\n本次交付仅更新说明与静态网页，未启用采集、推送、正式记忆写入或偏好迁移。\n\n';
+text+='\n本次已实现私有区手动测试采集与来源底稿；未启用正式推送、前台检索、记忆写回或偏好迁移。\n\n';
 text+=table([['最终效果','评估内容'],['---','---'],...guide.metrics])+'\n\n';
 text+='## 与现有机制、成熟产品的比较\n\n'+guide.comparison.conclusion+'\n\n'+guide.comparison.evidence+'\n\n';
 text+=table([['比较项','现有机制','拟实施方案'],['---','---','---'],...guide.comparison.rows])+'\n\n';
@@ -80,7 +80,7 @@ text+=table([['演示输入项','假设值'],['---','---'],...guide.tokenExample
 for(const [label,rows] of [['如何验证',guide.evaluation],['测量字段（待增加或补齐）',guide.measurementFields],['准入要求（尚未通过）',guide.releaseGates],['失败与纠正',guide.failureRules]]){
   text+='### '+label+'\n\n';for(const [title,body] of rows)text+='- **'+title+'：** '+body+'\n';text+='\n';
 }
-text+='## 铺开前的风险与实际准备（v2.2）\n\n'+guide.preoperation.finding+'\n\n'+guide.preoperation.current+'\n\n';
+text+='## 铺开前的风险与实际测试（v2.3）\n\n'+guide.preoperation.finding+'\n\n'+guide.preoperation.current+'\n\n';
 for(const [label,rows] of [['这一轮的风险',guide.preoperation.risks],['已经执行与验证',guide.preoperation.controls],['后续实际接入条件',guide.preoperation.next]]){
   text+='### '+label+'\n\n';for(const [title,body] of rows)text+='- **'+title+'：** '+body+'\n';text+='\n';
 }
