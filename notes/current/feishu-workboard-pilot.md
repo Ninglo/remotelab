@@ -86,7 +86,13 @@ decides whether the work satisfies the user's goal.
   updates; the Feishu worker patches the original message with the latest text.
   These updates do not enter the separate message outbox. Openings, native user
   questions and final results remain separate. Without a card, explicit progress
-  retains its normal message behavior. Progress never changes deliverable
+  uses one compact progress panel per Run, without acceptance items. Later
+  progress patches that same position/message; Web retains expandable progress
+  history. If the Harness subsequently creates a real task, its acceptance list
+  upgrades the original progress position/message. The opening, questions and
+  final answer remain separate. New Feishu progress starts at a durable route
+  upgrade fence; old delivered chat messages are never replayed or recalled.
+  Progress never changes deliverable
   acceptance or proves completion, and follows the card's sender/Run scope.
   Explicit completion, partial, blocked, failed or cancelled outcomes replace
   stale running text in the current progress area. Earlier progress remains in

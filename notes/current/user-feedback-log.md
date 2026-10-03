@@ -67,6 +67,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: proactively select Astra xhigh for large projects with serious architecture design and implementation. Use Sol low for focused tasks that prioritize fast turnaround, retain medium for explicit preference, and reserve Luna for exceptional explicit Luna or absolute-lowest-cost requests. Ordinary debugging and local features remain Sol xhigh; asking for xhigh alone does not imply Astra.
 - Scope: this changes new Auto Session routing. Concrete model selections and existing Sessions retain their runtime; independent background metadata helpers keep their own policies.
 
+### 2026-10-03 — Group useful progress even without an acceptance checklist
+
+- Observed friction: an enabled web conversation received the current rules, but its progress still appeared as separate chat messages because no task checklist existed. The user experienced this presentation gap as a partial rollout.
+- Requested behavior: useful progress belongs in one place. Keep simple deliveries free of acceptance checklists; presentation must not depend on the Harness creating one.
+- Implementation: a deterministic progress panel per Run reuses the existing Web renderer and Feishu route worker. Later updates patch the original place, and a later real acceptance list upgrades it. Openings, user questions and final answers remain separate. Original history remains intact; old delivered Feishu messages are not replayed or recalled.
+- Acceptance boundary: verify the reported web conversation on read, multiple progress updates, replay/restart, recipient isolation and upgrading to a real task. No model classifier or additional model call is introduced.
+
 ### 2026-10-02 — Hold to speak, review, and send on phones
 
 - Source: a direct mobile voice-input request followed by approval to try the researched interaction.

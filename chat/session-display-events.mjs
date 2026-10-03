@@ -328,7 +328,7 @@ function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard =
   for (let index = 0; index < bodyEvents.length; index += 1) {
     const event = bodyEvents[index];
     const surface = surfaceMessages.get(event);
-    if (!surface && !(exposeWorkboard && isWorkboardEvent(event))
+    if (!surface && !(exposeWorkboard && (isWorkboardEvent(event) || event.messageKind === 'progress_panel'))
         && event.messageKind !== 'session_delegate_notice') continue;
     if (index > visibleStart) {
       const segment = bodyEvents.slice(visibleStart, index);

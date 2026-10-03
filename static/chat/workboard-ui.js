@@ -11,7 +11,7 @@ function isSessionWorkboardMessage(event) {
   return sessionWorkboardSession?.workboardPilot === true
     && sessionWorkboardSession.id === currentSessionId
     && event?.type === "message" && event.role === "assistant"
-    && (event.messageKind === "todo_list" || event.source === "workboard_checklist");
+    && (event.messageKind === "todo_list" || event.source === "workboard_checklist" || event.messageKind === "progress_panel");
 }
 
 function parseSessionChecklistContent(content) {
@@ -41,7 +41,7 @@ function sessionWorkboardSnapshotInfo(events) {
 
 function projectSessionWorkboardTranscriptEvents(sessionId, events) {
   if (sessionWorkboardSession?.id !== sessionId || sessionWorkboardSession.workboardPilot !== true) return events;
-  if (events.some(event => event.workboard)) {
+  if (events.some(event => event.workboard || event.messageKind === "progress_panel")) {
     // The server already projects task identities, outcomes and revisions.
     return events.filter(event => event.messageKind !== "todo_list").map(event => event.workboard
       ? { ...event, workboardCurrentTurn: event.workboardLastRunId === (sessionWorkboardRun?.id || sessionWorkboardSession?.activeRunId) }
@@ -221,6 +221,7 @@ function updateSessionWorkboardEvents(sessionId, events) {
 }
 
 function renderSessionWorkboardMessage(container, event) {
+  const progressOnly = event.messageKind === "progress_panel";
   const { taskTitle, description, items } = event.workboard ? {
     taskTitle: event.workboard.goal, description: event.workboard.reason,
     items: event.workboard.items.map(item => ({ ...item, done: item.status === "done", detail: item.condition })),
@@ -235,12 +236,12 @@ function renderSessionWorkboardMessage(container, event) {
   const heading = document.createElement("div");
   heading.className = "session-workboard-heading";
   const title = document.createElement("strong");
-  title.textContent = "目标：" + (taskTitle || "交付清单");
+  title.textContent = progressOnly ? "本轮进展" : "目标：" + (taskTitle || "交付清单");
   heading.appendChild(title);
   const count = document.createElement("span");
   count.className = "session-workboard-count";
   count.textContent = items.filter(item => item.done).length + "/" + items.length;
-  heading.appendChild(count);
+  if (!progressOnly) heading.appendChild(count);
   card.appendChild(heading);
 
   if (description) {
@@ -272,7 +273,7 @@ function renderSessionWorkboardMessage(container, event) {
     row.appendChild(copy);
     list.appendChild(row);
   }
-  card.appendChild(list);
+  if (!progressOnly) card.appendChild(list);
   const progress = document.createElement("section");
   progress.className = "session-workboard-progress";
   progress.setAttribute("aria-label", "目前进展");
@@ -304,7 +305,7 @@ function renderSessionWorkboardMessage(container, event) {
     progress.appendChild(history);
   }
   card.appendChild(progress);
-  if (event.workboard || event.workboardCurrentTurn) {
+  if (event.workboard || event.workboardCurrentTurn || progressOnly) {
     const status = document.createElement("div");
     status.className = "session-workboard-run-state";
     if (event.workboard) status.dataset.taskState = event.workboard.status;

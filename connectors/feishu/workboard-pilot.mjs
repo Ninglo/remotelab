@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '../../lib/workboard-state.mjs';
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
+import { projectProgressStreams, progressExecutionLabel } from '../../lib/progress-stream.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -34,6 +35,16 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null) {
       title: { tag: 'plain_text', content: board?.goal || goal.replace(/^目标[：:]\s*/, '') } },
     body: { elements },
   };
+}
+
+export function buildFeishuProgressCard(cycle) {
+  return { schema: '2.0', config: { update_multi: true },
+    header: { template: 'blue', title: { tag: 'plain_text', content: '本轮进展' } },
+    body: { elements: [
+      { tag: 'markdown', content: cycle.progress?.content || '暂无进度更新' },
+      { tag: 'hr' },
+      { tag: 'markdown', content: progressExecutionLabel(cycle.executionState) },
+    ] } };
 }
 
 export function isFeishuWorkboardPilotSession(session, pilot) {
@@ -112,7 +123,14 @@ function collectAuthorizedCycles(events, pilot, session = null) {
       // group Runs must not update an opted-in Person's existing card.
       const progress = event.type === 'message' && event.role === 'assistant'
         && !['final', 'final_answer'].includes(event.phase) && parseProgressMessage(event.content).progress;
-      if (!progress || (event.runId ? allowed.has(event.runId) || localRuns.has(event.runId) : authorizedUser)) history.push(event);
+      if (!progress || (event.runId ? allowed.has(event.runId) || localRuns.has(event.runId) : authorizedUser)) {
+        history.push(event);
+        if (progress && allowed.has(event.runId)) anchors.set(event.seq, {
+          replyMessageId: allowed.get(event.runId),
+          admitted: history.some(inbound => inbound.type === 'message' && inbound.role === 'user'
+            && inbound.runId === event.runId && inbound.workboardAdmission),
+        });
+      }
     }
     else {
       const ownSource = event.runId ? allowed.has(event.runId) : authorizedUser;
@@ -131,7 +149,14 @@ function collectAuthorizedCycles(events, pilot, session = null) {
       }
     }
   }
-  return projectWorkboards(history).filter(task => pilot.scope !== 'instance'
+  const tasks = projectWorkboards(history);
+  const usedProgress = new Set(tasks.flatMap(task => task.progressHistory.map(progress => progress.seq)));
+  const progressHistory = history.filter(event => !(event.type === 'message' && event.role === 'assistant'
+    && parseProgressMessage(event.content).progress) || (event.timestamp || 0) >= pilot.progressStartedAt);
+  const streams = projectProgressStreams(progressHistory, usedProgress).filter(stream =>
+    anchors.get(stream.anchorSeq)?.admitted
+    && Number.isFinite(pilot.progressStartedAt));
+  return [...tasks, ...streams].filter(task => pilot.scope !== 'instance'
     || anchors.get(task.anchorSeq)?.admitted
     || pilot.cards.some(card => card.anchorSeq === task.anchorSeq || card.taskId === task.taskId
       || task.aliases?.includes(card.taskId))).map(task => {
@@ -153,11 +178,13 @@ export function collectFeishuWorkboardCycles(events, pilot) {
 // Replay each verified checkpoint rather than collapsing a burst to all-done.
 export function expandFeishuWorkboardUpdates(cycles) {
   return cycles.flatMap(cycle => cycle.updates.map(update => ({ ...cycle,
-    latestSeq: update.seq, content: update.content, board: update.workboard, progress: update.progress })));
+    latestSeq: update.seq, content: update.content, board: update.workboard, progress: update.progress,
+    progressOnly: !update.workboard, executionState: update.executionState || cycle.executionState })));
 }
 
 export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage }) {
-  const content = JSON.stringify(buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress));
+  const content = JSON.stringify(cycle.progressOnly
+    ? buildFeishuProgressCard(cycle) : buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress));
   const contentHash = createHash('sha256').update(content).digest('hex');
   let card = pilot.cards.find(item => item.anchorSeq === cycle.anchorSeq)
     || pilot.cards.find(item => cycle.taskId && item.taskId === cycle.taskId);

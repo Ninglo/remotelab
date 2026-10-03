@@ -93,6 +93,16 @@ const progressCard = context.renderSessionWorkboardMessage(new Element('div'), {
   workboardProgressHistory: [{ seq: 6, content: '已定位重复任务 ID' }, { seq: 8, content: '验证已通过，正在推送' }],
 });
 const progressArea = progressCard.children.find(child => child.className === 'session-workboard-progress');
+const standaloneProgress = { seq: 9, type: 'message', role: 'assistant', messageKind: 'progress_panel',
+  workboardProgress: { seq: 11, content: '最新核验结果' },
+  workboardProgressHistory: [{ seq: 9, content: '之前的发现' }, { seq: 11, content: '最新核验结果' }],
+  workboardStatusLabel: '执行已结束，结果见最终答复' };
+assert.equal(context.isSessionWorkboardMessage(standaloneProgress), true);
+const standaloneCard = context.renderSessionWorkboardMessage(new Element('div'), standaloneProgress);
+assert.equal(standaloneCard.children[0].children[0].textContent, '本轮进展');
+assert.equal(standaloneCard.children[0].children.length, 1, 'no fabricated acceptance count');
+assert.equal(standaloneCard.children.some(child => child.tagName === 'ul'), false, 'no fabricated checklist');
+assert.equal(standaloneCard.children.at(-1).textContent, standaloneProgress.workboardStatusLabel);
 assert.equal(progressArea.children[1].textContent, '验证已通过，正在推送');
 assert.equal(progressArea.children[2].tagName, 'details');
 assert.equal(progressArea.children[2].children[1].textContent, '已定位重复任务 ID');

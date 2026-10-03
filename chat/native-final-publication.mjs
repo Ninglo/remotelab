@@ -35,17 +35,29 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
   return next;
 }
 
-// Openings, questions, progress without a card, and finals use the durable
-// outbox. Selection and receipt keys survive observer replay and restarts.
+// Admitted Feishu progress uses its durable route worker, with or without an
+// acceptance list. Openings, questions and finals retain the normal outbox.
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
   const cardProgressSeqs = session?.workboardPilot === true
     ? new Set(projectWorkboards(fullHistory).flatMap(task => task.progressHistory.map(progress => progress.seq))) : new Set();
+  const groupedProgress = plan.connector === 'feishu' && session?.workboardPilot === true
+    && fullHistory.some(event => event.type === 'message' && event.role === 'user' && event.runId === record.runId
+      && event.workboardAdmission?.personId && event.workboardAdmission?.identityId
+      && event.workboardAdmission.sourceRouteId === session.conversation?.sourceRouteId
+      && event.sourceContext?.connector === 'feishu'
+      && event.sourceContext?.sourceRouteId === session.conversation?.sourceRouteId
+      && event.sourceContext?.chatType === session.conversation?.target?.chatType
+      && event.sourceContext?.chatId === session.conversation?.target?.chatId
+      && plan.target?.chatId === session.conversation?.target?.chatId
+      && (!session.conversation?.target?.tenantKey || event.sourceContext?.tenantKey === session.conversation.target.tenantKey)
+      && event.workboardAdmission.senderOpenId === event.sourceContext?.sender?.openId);
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
     // The same history drives the card publisher. A card update is never also
     // queued as a separate chat message; openings, questions and finals remain.
     if (cardProgressSeqs.has(event.seq)) continue;
+    if (groupedProgress && surface.surfaceKind === 'progress') continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
     if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'

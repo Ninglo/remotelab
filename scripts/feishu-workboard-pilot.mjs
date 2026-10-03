@@ -72,6 +72,11 @@ const requestJson = async path => {
 };
 const persistQueue = createSerialTaskQueue();
 const persist = () => persistQueue(() => writeJsonAtomic(statePath, pilot, { mode: 0o600 }));
+if (instanceScope && !Number.isFinite(pilot.progressStartedAt)) {
+  // Durable route-wide upgrade fence, including Sessions discovered later.
+  pilot.progressStartedAt = Date.now();
+  await persist();
+}
 
 async function verifyMessage(messageId, { updated } = {}, chatId = pilot.chatId) {
   const readback = await app.im.v1.message.get({ path: { message_id: messageId } });
