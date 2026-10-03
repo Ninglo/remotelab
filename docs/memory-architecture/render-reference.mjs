@@ -7,8 +7,8 @@ const inline = text => q + text + q;
 const table = rows => rows.map(row => '| ' + row.map(v => String(v).replaceAll('|','／').replaceAll('\n',' ')).join(' | ') + ' |').join('\n');
 const target = fileURLToPath(new URL('./README.md',import.meta.url));
 let text = '# ' + guide.title + '\n\n<!-- Generated from guide-data.js by render-reference.mjs; edit the content source. -->\n\n';
-text += '版本 '+guide.version+'；核对日期 '+guide.verifiedAt+'；运行源码 '+inline(guide.auditedCommit)+'；主线基线 '+inline(guide.mainBaseline)+'。核对的 10 个核心路径、读取与写回文件一致；不声称全部运行源码相同。\n\n';
-text += guide.goal+'\n\n'+guide.boundary+' 未逐条复审全部历史业务事实；本轮手动隔离采集已实现；正式认可与运行接入仍未实施。\n\n';
+text += '版本 '+guide.version+'；核对日期 '+guide.verifiedAt+'；运行源码 '+inline(guide.auditedCommit)+'；主线基线 '+inline(guide.mainBaseline)+'。旧版已冻结；项目钩子新增指针投影，其余正文读取仍由 Harness 选择。实际部署版本以实例 build-info 为准。\n\n';
+text += guide.goal+'\n\n'+guide.boundary+' 未逐条复审全部历史业务事实；运行接入和实际效果、人按职责认可分别验收。\n\n';
 text += '交互入口：[index.html](index.html)。真实人数通过网页按钮在登录后读当前实例，不保存真实名单或私人偏好。\n\n';
 text += '## 方案骨架\n\n';
 for(const [title,body] of guide.findings)text+='**'+title+'。** '+body+'\n\n';
@@ -17,12 +17,12 @@ for(const [title,body] of guide.principles)text+='- **'+title+'：** '+body+'\n'
 text += '\n## 存储地图：现状与方案\n\n配置目录默认 '+inline('~/.config/remotelab')+'，记忆目录默认 '+inline('~/.remotelab/memory')+'；实例环境变量可覆盖。连接器 '+inline('storageDir')+' 由其配置决定，'+inline('project-knowledge/')+' 为独立项目知识目录。Session ID 为稳定身份。Harness 原生会话／记忆在运行配置选定的 provider home，平台保存恢复标识；平台事件不等于全部原生上下文。\n\n';
 for(const item of guide.storageCases){
   text+='### '+item.label+'：'+item.question+'\n\n';
-  for(const [mode,label] of [['current','目前实际存储'],['target','本次治理方案，待实施']]){
+  for(const [mode,label] of [['current','目前实际存储'],['target','治理方案（分项实施）']]){
     const s=item[mode];
     text+='**'+label+'**\n\n入口：'+s.paths.map(inline).join('、')+'。\n\n'+s.body+'\n\n读取：'+s.read+'\n\n写入：'+s.write+'\n\n';
   }
 }
-text+='## 项目归属规则（拟实施）\n\n';
+text+='## 项目归属规则（已接入导航，未知关联待核）\n\n';
 for(const [title,body] of guide.scopeRules)text+='- **'+title+'：** '+body+'\n';
 text+='\n范围登记是一份后台关联关系，生成导航和连接器绑定，不新增交互式项目产品；认识仍在主账。\n\n'+table([['登记字段','保存内容'],['---','---'],...guide.registryFields])+'\n\n';
 for(const c of guide.routeExamples)text+='\n### '+c.label+'（虚构）\n\n'+c.input+'\n\n归属：'+c.route+'\n\n依据：'+c.basis+'\n\n写入：'+c.store+'\n\n开工读取：'+c.read+'\n';
@@ -38,7 +38,7 @@ for(const scenario of Object.values(guide.scenarios))text+='### '+scenario.label
 text += table([['区域','何时提供或读取','用途'],['---','---','---'],...guide.startGraph.nodes.map(n=>[n.title,n.tag,n.text])])+'\n\n';
 text += '补充：Harness 自身的指令、工作区 AGENTS.md 和原生记忆有各自加载链路。连接器上下文由配置和来源决定；已出版日报只在配置的 Jev 路径选择有界片段。可选启动知识探测不等于本地记忆检索。RemoteLab Context 记录证明平台投影，工具读取记录才能证明本轮打开了正文。\n\n';
 function graphSection(graph){
-  let out=graph.intro+'\n\n'+q.repeat(3)+'mermaid\nflowchart LR\n';
+  let out=(graph.intro ? graph.intro+'\n\n' : '')+q.repeat(3)+'mermaid\nflowchart LR\n';
   for(const n of graph.nodes)out+='  '+n.id+'["'+n.title+'"]\n';
   for(const [a,b,label] of graph.edges)out+='  '+a+(label?' -. '+label+' .-> ':' --> ')+b+'\n';
   out+=q.repeat(3)+'\n\n';
@@ -62,7 +62,7 @@ text+='### 测试隔离\n\n'+guide.isolation+'\n\n';
 text+='### 迁移现有结构\n\n';for(const [title,body] of guide.migration)text+='- **'+title+'：** '+body+'\n';
 text+='\n### 场景验收\n\n';for(const [title,body] of guide.acceptanceCases)text+='- **'+title+'：** '+body+'\n';
 text+='\n### 实施前补齐的信息\n\n';for(const [title,body] of guide.prerequisites)text+='- **'+title+'：** '+body+'\n';
-text+='\n本次已实现私有区手动测试采集与来源底稿；未启用正式推送、前台检索、记忆写回或偏好迁移。\n\n';
+text+='\n本次沿原链路接入匹配项目指针与日报增强规则；未扩展业务执行、投递目标、个人偏好或公司信息。\n\n';
 text+=table([['最终效果','评估内容'],['---','---'],...guide.metrics])+'\n\n';
 text+='## 与现有机制、成熟产品的比较\n\n'+guide.comparison.conclusion+'\n\n'+guide.comparison.evidence+'\n\n';
 text+=table([['比较项','现有机制','拟实施方案'],['---','---','---'],...guide.comparison.rows])+'\n\n';
@@ -77,10 +77,10 @@ for(const [title,body] of guide.costRules)text+='- **'+title+'：** '+body+'\n';
 text+='\n### token 演示账本（不是实测）\n\n'+guide.tokenExample.boundary+'\n\n'+guide.tokenExample.formula+'\n\n';
 const example=calculateTokenScenario(Object.fromEntries(guide.tokenExample.fields.map(f=>[f.id,f.value])));
 text+=table([['演示输入项','假设值'],['---','---'],...guide.tokenExample.fields.map(f=>[f.label,f.value])])+'\n\n以上初始假设：当前 '+example.current.toLocaleString('zh-CN')+' token／日，治理后 '+example.proposed.toLocaleString('zh-CN')+'；净新增后台 '+example.extraBackground.toLocaleString('zh-CN')+'。'+(example.cheaperFrom===null?'前台每任务量没有降低，无法靠复用降低本式总量。':'每天至少 '+example.cheaperFrom+' 次使用才使总量更低。')+'交互网页可更改全部假设；不同模型、缓存与真实价格需另核算。\n\n';
-for(const [label,rows] of [['如何验证',guide.evaluation],['测量字段（待增加或补齐）',guide.measurementFields],['准入要求（尚未通过）',guide.releaseGates],['失败与纠正',guide.failureRules]]){
+for(const [label,rows] of [['如何验证',guide.evaluation],['测量字段（待增加或补齐）',guide.measurementFields],['真实使用中的观察与调优要求',guide.releaseGates],['失败与纠正',guide.failureRules]]){
   text+='### '+label+'\n\n';for(const [title,body] of rows)text+='- **'+title+'：** '+body+'\n';text+='\n';
 }
-text+='## 铺开前的风险与实际测试（v2.3）\n\n'+guide.preoperation.finding+'\n\n'+guide.preoperation.current+'\n\n';
+text+='## 全范围增强、回退与待验证效果（v2.4）\n\n'+guide.preoperation.finding+'\n\n'+guide.preoperation.current+'\n\n';
 for(const [label,rows] of [['这一轮的风险',guide.preoperation.risks],['已经执行与验证',guide.preoperation.controls],['后续实际接入条件',guide.preoperation.next]]){
   text+='### '+label+'\n\n';for(const [title,body] of rows)text+='- **'+title+'：** '+body+'\n';text+='\n';
 }

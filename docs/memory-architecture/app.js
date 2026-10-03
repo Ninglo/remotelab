@@ -1,4 +1,4 @@
-import { guide, calculateTokenScenario } from './guide-data.js?v=2.3';
+import { guide, calculateTokenScenario } from './guide-data.js?v=2.4';
 
 const el = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -75,7 +75,7 @@ function drawGraph(rootId, detailId, graph, options = {}) {
       b.classList.toggle('selected', selected); b.setAttribute('aria-pressed',String(selected));
     });
     const links = (node.refs || []).map(id => refs[id]).filter(Boolean).map(r => '<a href="' + referenceUrl(r) + '" target="_blank" rel="noopener">' + escape(r.title) + ' ↗</a>').join('');
-    el(detailId).innerHTML = '<div><h3>' + escape(node.title) + '</h3><div class="detail-state">' + escape(!active.has(node.id) ? '此场景未自动提供；点击仍可了解机制。' : proposed ? '治理目标；尚未实施。' : node.tag) + '</div></div><div><p>' + escape(node.text) + '</p>' + paths(node.paths) + (links ? '<div class="source-links">依据：' + links + '</div>' : '') + '</div>';
+    el(detailId).innerHTML = '<div><h3>' + escape(node.title) + '</h3><div class="detail-state">' + escape(!active.has(node.id) ? '此场景未自动提供；点击仍可了解机制。' : proposed ? '治理架构；实际启用边界见当前状态。' : node.tag) + '</div></div><div><p>' + escape(node.text) + '</p>' + paths(node.paths) + (links ? '<div class="source-links">依据：' + links + '</div>' : '') + '</div>';
   }
   selectNode(index[options.defaultNode] || graph.nodes[0]);
 }
