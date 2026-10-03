@@ -5,8 +5,8 @@ export class QueryError extends Error {
 const aliases = [
   ['遥操作','teleoperation','teleoperat','retargeting','重定向'], ['灵巧手','dexterous','dexterity','dex'],
   ['触觉','tactile','haptic'], ['人形','humanoid','whole-body','全身'], ['世界模型','world model','wam','world-action'],
-  ['视觉语言动作','vla','vision-language-action'], ['扩散策略','diffusion policy'], ['人类视频','human video','egocentric','第一视角'],
-  ['仿真','simulation','simulator','sim2real'], ['开源','open-source','github','代码'], ['数据集','dataset','data collection','数据采集'],
+  ['视觉语言动作','vla','vision-language-action'], ['扩散策略','扩散','diffusion policy','diffusion'], ['人类视频','human video','egocentric','第一视角'],
+  ['仿真','simulation','simulator','sim2real'], ['开源','open-source','github','代码'], ['数据集','dataset','data collection','数据采集'], ['跨本体','cross-embodiment','multi-embodiment','embodiment'], ['UMI','umi','universal manipulation interface','手持'],
   ['导航','navigation','vln'], ['评测','benchmark','evaluation'], ['推理加速','latency','inference','异步','asynchronous'],
   ['强化学习','reinforcement learning','rl'], ['蒸馏','distillation'], ['安全','safety'], ['鲁棒','robust'],
 ];
@@ -27,7 +27,7 @@ function tokens(q) {
   }
   // Chinese questions contain particles: overlapping bigrams give graceful lexical fallback.
   for (const w of q.match(/[\u4e00-\u9fff]{3,}/g)||[]) for(let i=0;i<w.length-1;i++) groups.push([w.slice(i,i+2)]);
-  return groups;
+  return groups.filter((g,i)=>groups.findIndex(h=>h.join('|')===g.join('|'))===i);
 }
 function metadata(corpus) {
   return {...corpus.meta, visibility:'public', limitations:corpus.limitations,
@@ -50,18 +50,26 @@ export function search(corpus, args={}) {
   const offset=integer(args.offset,0,100000,'offset'),limit=integer(args.limit,8,30,'limit');
   const entity=text(args.entity,'entity').toLowerCase();
   const found=[];
-  for(const r of corpus.records) {
+  const profiles=corpus.records.map(r=>({r,title:(r.title+' '+(r.aliases||[]).join(' ')).toLowerCase(),body:(r.search_text||JSON.stringify(r)).toLowerCase()}));
+  const match=(field,w)=>w.length<=3&&/^[a-z]+$/.test(w)?new RegExp('\\b'+w+'\\b','i').test(field):field.includes(w);
+  const weights=groups.map(g=>Math.log(1+(profiles.length+1)/(profiles.filter(p=>g.some(w=>match(p.body,w)||match(p.title,w))).length+1)));
+  const named=(q.match(/[a-z][a-z0-9_.+-]{2,}/g)||[]).filter(w=>!['the','and','with','from','for','robot','robotics','policy','data','world','model','simulation','evaluation'].includes(w));
+  const foundational=/最早|基础|原始论文|foundational/.test(q);
+  for(const profile of profiles) {
+    const r=profile.r;
     if(direction && r.direction!==direction) continue;
     if(kind&&r.kind!==kind)continue;if(evidence&&r.evidence_status!==evidence)continue;
     if(since&&(r.date||'')<since)continue;if(until&&(r.date||'')>until)continue;
-    const title=(r.title+' '+(r.aliases||[]).join(' ')).toLowerCase();
-    const body=(r.search_text||JSON.stringify(r)).toLowerCase();
+    const title=profile.title,body=profile.body;
     if(entity&&!title.includes(entity)&&!(r.entity_ids||[]).some(e=>e.toLowerCase().includes(entity)))continue;
     let score=title.includes(q)?100:0;let matched=0;
-    for(const g of groups) {
-      if(g.some(w=>title.includes(w))){score+=8;matched++;}
-      else if(g.some(w=>body.includes(w))){score+=2;matched++;}
+    for(let i=0;i<groups.length;i++) {const g=groups[i];
+      if(g.some(w=>match(title,w))){score+=8*weights[i];matched++;}
+      else if(g.some(w=>match(body,w))){score+=2*weights[i];matched++;}
     }
+    score+=named.filter(w=>match(title,w)).length*70;
+    if(foundational&&r.kind==='paper')score*=1.7;
+    if(r.kind==='entity')score*=0.5;
     if(!score)continue;
     // Relevance first; dates break ties, never exclude foundational work.
     score+=matched/Math.max(groups.length,1);
