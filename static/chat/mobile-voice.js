@@ -6,6 +6,8 @@
   const hold = doc?.getElementById("mobileVoiceHold");
   const holdLabel = doc?.getElementById("mobileVoiceHoldLabel") || hold;
   const modeButton = doc?.getElementById("mobileVoiceMode");
+  const modeIcon = doc?.getElementById("mobileVoiceModeIcon");
+  const draft = doc?.getElementById("mobileVoiceDraft");
   const panel = doc?.getElementById("mobileVoicePanel");
   const status = doc?.getElementById("mobileVoiceStatus");
   const duration = doc?.getElementById("mobileVoiceDuration");
@@ -20,6 +22,9 @@
   let personId = "";
   let mode = "text";
   let savingMode = false;
+  let requestedVoice = false;
+  let composerSession = null;
+  let modeIconName = "";
   let gesture = null;
   let capture = null;
   let clock = null;
@@ -46,7 +51,9 @@
   }
 
   function render({ preferences = false } = {}) {
+    if (composerSession !== sessionId()) { composerSession = sessionId(); requestedVoice = false; }
     if (personId !== currentPersonId() || (preferences && !savingMode)) {
+      if (personId !== currentPersonId()) requestedVoice = false;
       if (personId && personId !== currentPersonId()) controller.releaseMicrophone?.();
       personId = currentPersonId();
       mode = savedMode();
@@ -56,7 +63,10 @@
     const wrapper = mic.closest(".input-wrapper");
     wrapper?.classList.toggle("has-mobile-voice-capture", mobile && !!capture);
     const voiceMode = mobile && mode === "voice"
-      && (capture ? !capture.baseText.trim() && !capture.hadAttachments : !msgInput.value.trim() && !hasAttachments());
+      && (requestedVoice || (capture ? !capture.baseText.trim() && !capture.hadAttachments : !msgInput.value.trim() && !hasAttachments()));
+    const showDraft = voiceMode && !capture && !!msgInput.value.trim();
+    if (draft) { draft.hidden = !showDraft; setText(draft, showDraft ? msgInput.value : ""); }
+    wrapper?.classList.toggle("has-mobile-voice-draft", showDraft);
     hold.hidden = !voiceMode;
     wrapper?.classList.toggle("has-mobile-voice-mode", voiceMode);
     mic.closest(".input-area")?.classList.toggle("has-mobile-voice-mode", voiceMode);
@@ -71,8 +81,18 @@
     setText(holdLabel, t(holdKey));
     hold.setAttribute("aria-label", t(capture ? holdKey : "voice.mobile.holdHint"));
     msgInput.hidden = voiceMode;
-    modeButton.hidden = !mobile || mode !== "voice";
-    modeButton.disabled = savingMode || !!capture;
+    modeButton.hidden = !mobile;
+    modeButton.disabled = savingMode || !!capture || (!voiceMode && mic.disabled);
+    const switchKey = voiceMode ? "voice.mobile.keyboard" : "voice.mobile.switchVoice";
+    modeButton.title = t(switchKey);
+    modeButton.setAttribute("aria-label", modeButton.title);
+    modeButton.setAttribute("data-i18n-aria-label", switchKey);
+    const iconName = voiceMode ? "keyboard" : "mic";
+    if (modeIcon && modeIconName !== iconName) {
+      modeIconName = iconName;
+      modeIcon.setAttribute("data-icon", iconName);
+      if (globalScope.RemoteLabIcons?.render) modeIcon.innerHTML = globalScope.RemoteLabIcons.render(iconName);
+    }
     mic.classList.toggle("mobile-voice-hidden", voiceMode);
     if (mobile && !capture && controller.getState().phase === "idle") {
       mic.title = t("voice.mobile.shortcut");
@@ -100,8 +120,10 @@
   async function selectMode(next) {
     if (!isMobile() || capture || savingMode || !currentPersonId()) return;
     const previous = mode;
+    const previousRequest = requestedVoice;
     const owner = currentPersonId();
     mode = next;
+    requestedVoice = next === "voice";
     savingMode = true;
     showNotice();
     if (mode === "voice") msgInput.blur();
@@ -116,6 +138,7 @@
     } catch {
       if (owner === currentPersonId()) {
         mode = previous;
+        requestedVoice = previousRequest;
         showNotice(t("voice.mobile.saveFailed"));
       }
     } finally {
@@ -177,6 +200,7 @@
   function cancelCapture({ restore = false, notice = "" } = {}) {
     const target = capture;
     if (!target) return;
+    requestedVoice = false;
     const text = target.baseText;
     const sameComposer = target.sessionId === sessionId() && target.personId === currentPersonId();
     clearCapture();
@@ -208,6 +232,7 @@
       cancelCapture();
       return;
     }
+    requestedVoice = false;
     clearCapture();
     msgInput.dispatchEvent(new Event("input", { bubbles: true }));
     // Review keeps the phone keyboard closed; tap the text to edit normally.
@@ -327,7 +352,7 @@
       else if (event.detail === 0) void controller.start().catch(() => showNotice(t("voice.mobile.failed")));
     }, true);
   }
-  modeButton.addEventListener("click", () => { void selectMode("text"); });
+  modeButton.addEventListener("click", () => { void selectMode(hold.hidden ? "voice" : "text"); });
   cancel.addEventListener("click", () => { discardGesture(); cancelCapture({ restore: true }); });
   doc.getElementById("sendBtn")?.addEventListener("click", (event) => {
     if (capture) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -338,6 +363,7 @@
     }
   });
   msgInput.addEventListener("input", (event) => {
+    if (event.isTrusted) requestedVoice = false;
     if (capture && event.isTrusted) cancelCapture();
     render();
   });

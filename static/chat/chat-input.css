@@ -1,5 +1,5 @@
 /* ---- Input area ---- */
-.mobile-voice-hold, .composer-action-btn.mobile-voice-mode, .mobile-voice-panel { display: none; }
+.mobile-voice-hold, .composer-action-btn.mobile-voice-mode, .mobile-voice-panel, .mobile-voice-draft { display: none; }
 #msgInput[hidden], .mobile-voice-mode[hidden] { display: none; }
 @media (max-width: 767px) {
   .input-area.has-mobile-voice-mode .input-resize-handle { display: none; }
@@ -18,8 +18,12 @@
   .has-mobile-voice-mode .mobile-voice-mode { grid-column: 1; grid-row: 1; }
   .has-mobile-voice-mode .composer-file-picker { grid-column: 3; grid-row: 1; width: 44px; height: 44px; }
   .has-mobile-voice-mode .input-actions-group.right,
-  .has-mobile-voice-mode .img-preview-strip,
   .has-mobile-voice-mode .session-mode-banner { display: none; }
+  .has-mobile-voice-mode .img-preview-strip { grid-column: 1 / -1; }
+  .mobile-voice-draft:not([hidden]) { display: block; grid-column: 1 / -1; grid-row: 1; max-height: 76px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 8px; color: var(--text); font-size: 15px; line-height: 1.5; }
+  .has-mobile-voice-draft .input-row,
+  .has-mobile-voice-draft .mobile-voice-mode,
+  .has-mobile-voice-draft .composer-file-picker { grid-row: 2; }
   .has-mobile-voice-mode .voice-review-panel,
   .has-mobile-voice-mode .voice-availability-status { grid-column: 1 / -1; }
   .has-mobile-voice-capture .input-row,
@@ -58,7 +62,7 @@
     background: var(--accent); color: var(--bg);
   }
   .mobile-voice-hold:disabled { opacity: 0.65; }
-  .mobile-voice-mode:not([hidden]) { display: inline-flex; min-width: 44px; min-height: 44px; border: 0; background: transparent; }
+  .mobile-voice-mode:not([hidden]) { display: inline-flex; width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-width: 44px; max-height: 44px; flex: 0 0 44px; align-self: center; border: 0; background: transparent; }
   .has-mobile-voice-mode .composer-action-btn--upload { width: 44px; height: 44px; border: 0; background: transparent; }
   .mobile-voice-panel:not([hidden]) {
     display: block;

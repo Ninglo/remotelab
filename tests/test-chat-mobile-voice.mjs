@@ -24,7 +24,7 @@ function fixture({ mobile = true, mode = 'text', base = '', attachments = false,
         clientX: 150, clientY: 150, detail: 1, preventDefault() {}, stopImmediatePropagation() { this.stopped = true; }, ...extra }); },
     };
   }
-  const elements = Object.fromEntries(['msgInput', 'voiceBtn', 'mobileVoiceHold', 'mobileVoiceMode', 'mobileVoicePanel',
+  const elements = Object.fromEntries(['msgInput', 'voiceBtn', 'mobileVoiceHold', 'mobileVoiceMode', 'mobileVoiceModeIcon', 'mobileVoiceDraft', 'mobileVoicePanel',
     'mobileVoiceStatus', 'mobileVoiceDuration', 'mobileVoiceTranscript', 'mobileVoiceCancel',
     'mobileVoiceRelease', 'mobileVoicePreferenceStatus', 'sendBtn'].map(id => [id, element(id)]));
   const bars = Array.from({ length: 13 }, (_, index) => element(`bar-${index}`));
@@ -109,6 +109,14 @@ assert.equal(f.elements.mobileVoiceHold.hidden, false);
 assert.equal(f.input.hidden, true);
 f.elements.mobileVoiceMode.emit('click'); await flush();
 assert.equal(f.people[0].preferences.mobileInputMode, 'text');
+assert.equal(f.elements.mobileVoiceMode.hidden, false, 'typing keeps the left switch available');
+f.input.value = '已经打好的文字'; f.input.emit('input', { isTrusted: true });
+f.elements.mobileVoiceMode.emit('click'); await flush();
+assert.equal(f.elements.mobileVoiceHold.hidden, false, 'the same switch restores hold-to-talk with an existing draft');
+assert.equal(f.input.value, '已经打好的文字', 'switching preserves the draft');
+assert.equal(f.elements.mobileVoiceDraft.textContent, f.input.value);
+f.elements.mobileVoiceMode.emit('click'); await flush();
+assert.equal(f.input.hidden, false); assert.equal(f.elements.mobileVoiceDraft.hidden, true);
 
 f = fixture(); f.hold(); f.release();
 assert.equal(f.counts.stops, 1); assert.equal(f.counts.sends, 0);
@@ -179,6 +187,8 @@ f = fixture(); f.hold(); f.doc.hidden = true; f.doc.emit('visibilitychange');
 assert.equal(f.frameCount, 0, 'backgrounding clears the animation handle');
 
 f = fixture({ mode: 'voice' }); assert.equal(f.elements.mobileVoiceHold.hidden, false);
+f.elements.voiceBtn.disabled = true; f.browser.remotelabRefreshMobileVoiceUi();
+assert.equal(f.elements.mobileVoiceMode.disabled, false, 'unavailable voice input still allows switching back to typing');
 f.switchOwner('beta'); assert.equal(f.elements.mobileVoiceHold.hidden, true, 'another Person starts in their own mode');
 f = fixture({ mobile: false, mode: 'voice' }); assert.equal(f.input.hidden, false); f.elements.voiceBtn.emit('click');
 assert.equal(f.requests.length, 0, 'the mobile preference does not change desktop click behavior');

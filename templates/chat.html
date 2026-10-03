@@ -569,6 +569,7 @@
             <div class="session-mode-banner-title" data-i18n="shareSnapshot.bannerTitle">Shared snapshot</div>
             <div class="session-mode-banner-body" data-i18n="shareSnapshot.bannerBody">This page is read-only. You can open and download shared files here, but you can't send messages from this link.</div>
           </div>
+          <div class="mobile-voice-draft" id="mobileVoiceDraft" hidden></div>
           <div class="input-row">
             <textarea id="msgInput" placeholder="{{INPUT_PLACEHOLDER_TEXT}}" data-i18n-placeholder="{{INPUT_PLACEHOLDER_I18N_KEY}}" disabled></textarea>
             <button class="mobile-voice-hold" id="mobileVoiceHold" type="button" hidden disabled><span class="img-btn-icon" data-icon="mic" aria-hidden="true"></span><span id="mobileVoiceHoldLabel" data-i18n="voice.mobile.hold">Hold to talk</span></button>
@@ -584,7 +585,7 @@
           </div>
           <div class="input-actions-row">
             <div class="input-actions-group">
-              <button class="composer-action-btn mobile-voice-mode" id="mobileVoiceMode" type="button" hidden aria-label="Type instead" data-i18n-aria-label="voice.mobile.keyboard"><span class="img-btn-icon" data-icon="keyboard" aria-hidden="true"></span></button>
+              <button class="composer-action-btn mobile-voice-mode" id="mobileVoiceMode" type="button" hidden aria-label="Type instead" data-i18n-aria-label="voice.mobile.keyboard"><span class="img-btn-icon" id="mobileVoiceModeIcon" data-icon="keyboard" aria-hidden="true"></span></button>
               <div class="composer-file-picker">
                 <input type="file" id="imgFileInput" class="composer-file-input" accept="*/*" multiple disabled title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
                 <button class="composer-action-btn composer-action-btn--upload" id="imgBtn" type="button" disabled tabindex="-1" aria-hidden="true" title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
