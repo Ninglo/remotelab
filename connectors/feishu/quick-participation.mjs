@@ -206,7 +206,7 @@ export async function classifyFeishuQuickParticipation(context, {
           && Number(result.answers.participationControl.probabilities?.[result.answers.participationControl.choice]) >= 0.95
           ? result.answers.participationControl.choice : null,
         invited: result.answers?.invitation?.choice === 'yes'
-          && Number(result.answers.invitation.probabilities?.yes) >= 0.9,
+          && Number(result.answers.invitation.probabilities?.yes) >= 0.85,
         topicChanged: result.answers?.topicChange?.choice === 'yes'
           && Number(result.answers.topicChange.probabilities?.yes) >= 0.9,
       } : {}),

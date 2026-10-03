@@ -102,6 +102,12 @@ try {
     namespace: 'participation', key: card.key, mode: 'active', epoch: card.epoch - 1 }, },
     context: { open_chat_id: 'misc', open_message_id: card.cardMessageId }, operator: { open_id: 'human' } } });
   assert.equal(rejected.toast.type, 'error', 'stale buttons cannot reverse newer state');
+  const accepted = await runtime.participation.action({ event: { action: { value: {
+    namespace: 'participation', key: card.key, mode: 'active', epoch: card.epoch } },
+    context: { open_chat_id: 'misc', open_message_id: card.cardMessageId }, operator: { open_id: 'human' } } });
+  assert.equal(accepted.toast.type, 'info');
+  await runtime.participation.idle();
+  assert.equal((await runtime.participation.state(base)).mode, 'active', 'accepted card action changes the same durable state');
 
   const result = await classifyFeishuQuickParticipation('换个话题，聊一下打印机', {
     key: 'fixture', includeHandoff: false, participationState: { mode: 'listening', topicAnchor: '预算' },

@@ -219,5 +219,6 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       else await publish(record);
     }
   }
-  return { state, remember, change, assess, intake, action, restore, publish };
+  return { state, remember, change, assess, intake, action, restore, publish,
+    idle: async () => { await Promise.all([...queues.values()].map(queue => queue.idle())); await records.idle(); } };
 }
