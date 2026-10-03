@@ -343,6 +343,7 @@ async function automationPackages(schedules, triggers) {
   }
   const byTask = new Map(scheduleOrigins);
   for (const trigger of triggers) byTask.set(trigger.id, resolve(trigger));
+  for (const origin of byTask.values()) origin.sourceSessionName = sessionNames.get(origin.sourceSessionId) || '';
   return byTask;
 }
 

@@ -245,13 +245,12 @@
           <div class="task-center-feedback" id="taskCenterFormStatus" role="status" aria-live="polite"></div>
         </form>
         <div class="task-center-toolbar">
-          <select id="taskCenterFilter" aria-label="Filter automations" data-i18n-aria-label="tasks.filter.ariaLabel">
-            <option value="all" data-i18n="tasks.filter.all">All automations</option>
-            <option value="recurring" data-i18n="tasks.lifecycle.recurring">Ongoing tasks</option>
-            <option value="one_time" data-i18n="tasks.lifecycle.one_time">One-off tasks</option>
-            <option value="paused" data-i18n="tasks.filter.paused">Paused</option>
-            <option value="history" data-i18n="tasks.filter.history">History</option>
-          </select>
+          <div id="taskCenterFilter" class="task-filter-buttons" role="group" aria-label="Filter automations" data-i18n-aria-label="tasks.filter.ariaLabel">
+            <button type="button" data-task-filter="recurring" aria-pressed="true" data-i18n="tasks.overview.recurring">Regular automations</button>
+            <button type="button" data-task-filter="one_time" aria-pressed="false" data-i18n="tasks.overview.one_time">One-time automations</button>
+            <button type="button" data-task-filter="stopped" aria-pressed="false" data-i18n="tasks.overview.stopped">Stopped</button>
+            <button type="button" data-task-filter="all" aria-pressed="false" data-i18n="tasks.filter.all">All automations</button>
+          </div>
           <button class="task-center-icon-btn" id="taskCenterRefresh" type="button" title="Refresh automations" aria-label="Refresh automations" data-i18n-title="tasks.refresh" data-i18n-aria-label="tasks.refresh" data-icon="refresh"></button>
         </div>
         <div class="task-center-list" id="taskCenterList">
@@ -754,6 +753,7 @@
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/auto-routing-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/display-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/automation-overview.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/task-center.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/monitoring.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

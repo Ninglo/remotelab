@@ -178,6 +178,8 @@ try {
   const weekly = await createTrigger({ sourceSessionId: chat.id, sessionTemplate: template,
     title: 'Weekly research', text: 'Different business task', scheduledAt: new Date(now + 10800000).toISOString(), enabled: false });
   const chatTasks = await listAutomationTasks();
+  assert.equal(chatTasks.find(item => item.id === daily.id).package.sourceSessionName, 'Feishu 私聊',
+    'archived or unloaded source Sessions retain a readable origin in the view projection');
   const chatPackage = id => chatTasks.find(item => item.id === id).package.id;
   assert.equal(chatPackage(daily.id), chatPackage(dailyAgain.id));
   assert.notEqual(chatPackage(daily.id), chatPackage(weekly.id), 'a common Feishu chat is not a parent business task');

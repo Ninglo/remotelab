@@ -53,7 +53,13 @@
   const openTaskIds = new Set();
   const executionHistory = new Map();
   const visibleTaskLimits = new Map();
-  const openLifecycleSections = new Set();
+  const closedPurposeSections = new Set();
+  const openDayIds = new Set();
+  const openExecutionIds = new Set();
+  const openSettingsIds = new Set();
+  const openDefinitionIds = new Set();
+  let selectedFilter = "recurring";
+  const overview = globalScope.RemoteLabAutomationOverview;
 
   function translate(key, fallback = key, vars = undefined) {
     const value = typeof globalScope.remotelabT === "function"
@@ -268,13 +274,22 @@
     });
   }
 
-  function notificationText(task) {
+  function notificationText(task, { compact = false } = {}) {
     const notification = task?.resultDelivery || task?.notification || {};
     if (notification.mode !== "conversation") {
       return translate("tasks.notification.remotelab", "RemoteLab only");
     }
     const connector = notification.connector || translate("tasks.notification.external", "External source");
-    return `${connector}${notification.sourceRouteId ? ` · ${notification.sourceRouteId}` : ""}`;
+    const target = notification.target || {};
+    const destination = target.chatName || target.name || target.label || target.chatId || target.openId || target.email || "";
+    if (compact) {
+      const provider = translate(`tasks.notification.${connector}`, connector);
+      const named = target.chatName || target.name || target.label || target.email;
+      const address = named || (target.chatId ? translate("tasks.notification.chat", "Chat")
+        + ` · …${target.chatId.slice(-8)}` : destination);
+      return [provider, address, target.threadId ? translate("tasks.notification.thread", "Topic") : ""].filter(Boolean).join(" · ");
+    }
+    return [connector, destination, target.threadId, notification.sourceRouteId].filter(Boolean).join(" · ");
   }
 
   function lifetimeText(task) {
@@ -378,13 +393,6 @@
     return translate(`tasks.action.${action}`, action);
   }
 
-  function isCurrentTask(task) {
-    if (task.kind === "recurring") return ["active", "paused"].includes(task.state);
-    if (["admitted", "accepted"].includes(task.state) && task.lastExecution?.runAvailable === false) return false;
-    if (task.state === "failed") return false;
-    return ["scheduled", "starting", "running", "accepted", "admitted", "paused"].includes(task.state);
-  }
-
   function displayTasks() {
     const groups = new Map();
     // Preserve the original list order; failures do not change package placement.
@@ -436,25 +444,45 @@
 
   function createExecutionRow(execution) {
     const row = createNode("li", "task-execution"); row.dataset.state = execution.state;
+    const detail = createNode("details", "task-execution-detail");
+    const toggle = createNode("summary", "task-execution-heading");
+    toggle.append(createNode("time", "", formatDateTime(execution.attemptedAt || execution.admittedAt || execution.scheduledAt)),
+      createNode("span", "task-state-pill", executionText(execution)));
+    detail.appendChild(toggle);
+    detail.open = openExecutionIds.has(execution.id);
+    detail.addEventListener("toggle", () => {
+      if (detail.open) openExecutionIds.add(execution.id); else openExecutionIds.delete(execution.id);
+    });
+    const content = createNode("div", "task-execution-content");
     const heading = createNode("div", "task-execution-heading");
     const date = createNode("time", "", formatDateTime(execution.scheduledAt));
     if (execution.scheduledAt) date.dateTime = execution.scheduledAt;
     heading.append(date, createNode("span", "task-state-pill", executionText(execution)));
-    row.appendChild(heading);
-    if (execution.title) row.appendChild(createNode("p", "task-history-note", execution.title));
-    if (execution.attemptedAt) row.appendChild(createNode("p", "task-history-note", translate("tasks.history.attempted", "Trigger attempted") + " · " + formatDateTime(execution.attemptedAt)));
-
-    if (execution.error && execution.state === "failed") {
-      row.appendChild(createNode("pre", "task-execution-error", execution.error));
+    content.appendChild(heading);
+    if (execution.title) content.appendChild(createNode("p", "task-history-note", execution.title));
+    const meta = createNode("div", "task-card-meta");
+    for (const [key, value] of [["scheduled", execution.scheduledAt], ["attempted", execution.attemptedAt],
+      ["admitted", execution.admittedAt], ["completed", execution.completedAt]]) {
+      if (value) addMetaRow(meta, translate(`tasks.record.${key}`, key), formatDateTime(value));
     }
-    if (execution.runId) row.appendChild(createNode("div", "task-execution-id", execution.runId));
+    if (execution.runtime) addMetaRow(meta, translate("tasks.runtime.last", "Run configuration"),
+      [execution.runtime.tool, execution.runtime.model, execution.runtime.effort].filter(Boolean).join(" · "));
+    if (execution.id) addMetaRow(meta, translate("tasks.record.triggerId", "Trigger ID"), execution.id);
+    if (execution.taskId) addMetaRow(meta, translate("tasks.record.taskId", "Task ID"), execution.taskId);
+    if (execution.runId) addMetaRow(meta, translate("tasks.record.runId", "Run ID"), execution.runId);
+    if (execution.sessionId) addMetaRow(meta, translate("tasks.record.sessionId", "Session ID"), execution.sessionId);
+    content.appendChild(meta);
+
+    if (execution.error) {
+      content.appendChild(createNode("pre", "task-execution-error", execution.error));
+    }
     if (execution.sessionId) {
       const link = createNode("a", "task-execution-link", translate("tasks.history.logs", "Open execution Session and logs"));
       const path = `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions`;
       link.href = globalScope.remotelabResolveProductPath?.(path) || path;
-      row.appendChild(link);
+      content.appendChild(link);
     } else if (execution.triggerStatus === "delivered") {
-      row.appendChild(createNode("p", "task-history-note", translate("tasks.history.noLogs", "No retained execution Session; completion cannot be verified.")));
+      content.appendChild(createNode("p", "task-history-note", translate("tasks.history.noLogs", "No retained execution Session; completion cannot be verified.")));
     }
     const producer = tasks.find(item => item.id === execution.taskId && item.kind === "one_time");
     if (producer?.actions?.length) {
@@ -464,8 +492,9 @@
         button.type = "button"; button.disabled = Boolean(actionTaskId);
         button.addEventListener("click", () => void applyAction(producer, action)); actions.appendChild(button);
       }
-      row.appendChild(actions);
+      content.appendChild(actions);
     }
+    detail.appendChild(content); row.appendChild(detail);
     return row;
   }
 
@@ -515,7 +544,31 @@
     }
     const entries = history?.entries || [];
     const timeline = createNode("ol", "task-execution-timeline");
-    entries.forEach(execution => timeline.appendChild(createExecutionRow(execution)));
+    const timezone = task.summary?.timezone || task.schedule?.timezone || "Asia/Shanghai";
+    root.appendChild(createNode("p", "task-history-note", translate("tasks.history.dayScope",
+      "Dates use {timezone}; {count} records loaded. Earlier records remain available below.", { timezone, count: entries.length })));
+    for (const group of overview.days(entries, timezone)) {
+      const dayRow = createNode("li", "task-history-day");
+      const detail = createNode("details", "task-day-detail");
+      const key = `${task.id}:${group.day}`;
+      detail.dataset.day = group.day; detail.open = openDayIds.has(key);
+      const counts = new Map();
+      for (const execution of group.records) {
+        const state = ["accepted", "admitted"].includes(execution.state) && !execution.runAvailable ? "unverified" : execution.state;
+        counts.set(state, (counts.get(state) || 0) + 1);
+      }
+      const outcomes = [...counts].map(([state, count]) => `${state === "unverified" ? translate("tasks.execution.unverified", "Unverified") : stateLabel(state)} ${count}`).join(" · ");
+      const heading = createNode("summary", "task-day-heading");
+      heading.append(createNode("span", "", group.day === "unknown" ? translate("tasks.record.unknownDate", "Date not recorded") : group.day),
+        createNode("span", "task-day-outcomes", translate(history?.nextCursor ? "tasks.history.loadedCount" : "tasks.history.recordCount",
+          "{count} records", { count: group.records.length }) + " · " + outcomes));
+      detail.appendChild(heading);
+      const records = createNode("ol", "task-execution-timeline");
+      group.records.forEach(execution => records.appendChild(createExecutionRow(execution)));
+      detail.appendChild(records);
+      detail.addEventListener("toggle", () => { if (detail.open) openDayIds.add(key); else openDayIds.delete(key); });
+      dayRow.appendChild(detail); timeline.appendChild(dayRow);
+    }
     root.appendChild(timeline);
     if (!entries.length) root.appendChild(createNode("p", "task-history-note", translate(history?.loading ? "tasks.loading" : failedOnly ? "tasks.history.noFailures" : "tasks.execution.none", history?.loading ? "Loading…" : failedOnly ? "No recorded failed triggers." : "No execution yet")));
     if (history?.error) root.appendChild(createNode("p", "task-execution-error", history.error));
@@ -529,14 +582,7 @@
   }
 
   function lifecycle(task) {
-    const members = task.members || [task];
-    if (members.some(item => item.kind === "recurring" && item.state === "active")) return "recurring";
-    if (members.some(item => isCurrentTask(item) && item.state !== "paused")) return "one_time";
-    if (members.some(item => item.state === "paused")) return "paused";
-    const recurring = members.filter(item => item.kind === "recurring");
-    if ((recurring.length && recurring.every(item => item.state === "cancelled"))
-      || members.every(item => item.state === "cancelled")) return "cancelled";
-    return "history";
+    return overview.category(task);
   }
 
   function executionTime(execution) {
@@ -571,7 +617,12 @@
     if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
     const meta = createNode("div", "task-card-meta");
     const creator = creatorName(task.createdByIdentityId);
-    if (creator) addMetaRow(meta, translate("tasks.meta.creator", "Creator"), creator);
+    addMetaRow(meta, translate("tasks.meta.creator", "Creator"), creator || translate("tasks.meta.notRecorded", "Not recorded"));
+    if (task.createdAt) addMetaRow(meta, translate("tasks.meta.created", "Created"), formatDateTime(task.createdAt));
+    if (task.updatedAt) addMetaRow(meta, translate("tasks.meta.updated", "Updated"), formatDateTime(task.updatedAt));
+    if (task.sourceSessionId) addMetaRow(meta, translate("tasks.meta.source", "Source"), sessionName(task.sourceSessionId),
+      { link: `/?session=${encodeURIComponent(task.sourceSessionId)}&tab=sessions` });
+    addMetaRow(meta, translate("tasks.record.taskId", "Task ID"), task.id);
     addMetaRow(
       meta,
       translate("tasks.meta.schedule", "Schedule"),
@@ -593,7 +644,14 @@
     if (task.kind === "recurring") {
       addMetaRow(meta, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
       addMetaRow(meta, translate("tasks.meta.admission", "Admission"), gateText(task));
+      if (task.gate?.mode === "script") {
+        addMetaRow(meta, translate("tasks.meta.gateSnapshot", "Condition snapshot"), task.gate.snapshotSha256 || "—");
+        addMetaRow(meta, translate("tasks.meta.gateTimeout", "Condition timeout"), `${task.gate.timeoutSeconds}s`);
+        addMetaRow(meta, translate("tasks.meta.gateCooldown", "Condition cooldown"), `${task.gate.cooldownSeconds}s`);
+      }
     }
+    addMetaRow(meta, translate("tasks.meta.alerts", "Alerts"), [task.alerts?.mode,
+      ...(task.alerts?.on || []).map(event => translate(`tasks.alert.${event}`, event))].filter(Boolean).join(" · ") || "—");
     const execution = task.lastExecution;
     if (execution?.runtime) addMetaRow(meta, translate("tasks.runtime.last", "Last run configuration"),
       [execution.runtime.tool, execution.runtime.model, execution.runtime.effort].filter(Boolean).join(" · "));
@@ -632,7 +690,7 @@
   function createTaskCard(task) {
     const category = lifecycle(task);
     const card = createNode("article", "task-card");
-    card.dataset.state = category === "recurring" ? "active" : category === "one_time" ? "scheduled" : category === "paused" ? "paused" : "completed";
+    card.dataset.state = category === "recurring" ? "active" : task.state;
     card.dataset.taskId = task.id;
     const main = createNode("div", "task-card-main");
     const heading = createNode("div", "task-card-heading");
@@ -644,14 +702,27 @@
       dot.setAttribute("aria-label", translate("tasks.summary.hasFailures", "Failure records available"));
       dot.title = translate("tasks.summary.hasFailures", "Failure records available"); heading.appendChild(dot);
     }
-    heading.appendChild(createNode("span", "task-state-pill", translate(`tasks.lifecycle.${category}`, category)));
+    heading.appendChild(createNode("span", "task-state-pill", stateLabel(task.state)));
     main.appendChild(heading);
+    const brief = (task.prompt || "").split(/\n/).map(line => line.trim()).find(line => line && !/^#|^</.test(line));
+    if (brief) main.appendChild(createNode("p", "task-summary-description", brief.split(/[。！？]/)[0].slice(0, 120)));
     main.appendChild(createNode("p", "task-summary-plan", taskScheduleText(task)));
+    const context = createNode("div", "task-summary-context");
+    const members = task.members || [task];
+    const creators = [...new Set(members.map(member => creatorName(member.createdByIdentityId)
+      || translate("tasks.meta.notRecorded", "Not recorded")))];
+    addMetaRow(context, translate("tasks.overview.initiator", "Initiator"), creators.join(" · "));
+    const sourceId = task.package?.sourceSessionId || task.sourceSessionId;
+    addMetaRow(context, translate("tasks.meta.source", "Source"), task.package?.sourceSessionName || sessionName(sourceId),
+      sourceId ? { link: `/?session=${encodeURIComponent(sourceId)}&tab=sessions` } : {});
+    addMetaRow(context, translate("tasks.overview.delivery", "Results go to"), [...new Set(members.map(member => notificationText(member, { compact: true })))].join(" · "));
+    if (task.kind === "recurring" && task.lifetime?.mode === "bounded") addMetaRow(context, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
+    main.appendChild(context);
     const stats = createNode("dl", "task-summary-stats");
     const latest = latestActivity(task);
     const fields = [
       ["latest", latest ? formatDateTime(latest.at) : translate("tasks.summary.noRecords", "No execution records")],
-      ["next", task.nextRunAt ? formatDateTime(task.nextRunAt) : translate(category === "paused" ? "tasks.summary.pausedNext" : "tasks.time.none", category === "paused" ? "Paused" : "Not scheduled")],
+      ["next", task.nextRunAt ? formatDateTime(task.nextRunAt) : translate(task.state === "paused" ? "tasks.summary.pausedNext" : "tasks.time.none", task.state === "paused" ? "Paused" : "Not scheduled")],
       ["total", cumulativeText(task)],
       ["failures", task.summary && (task.summary.totalRuns || task.summary.inspection?.total) ? translate("tasks.summary.count", "{count} runs", { count: failureCount }) : "—"],
     ];
@@ -670,12 +741,23 @@
       if (task.summary?.firstRunAt) detail.appendChild(createNode("p", "task-history-note", translate("tasks.summary.historySince", "First retained execution: {time}", { time: formatDateTime(task.summary.firstRunAt) })));
       const definitions = createNode("details", "task-definition");
       definitions.appendChild(createNode("summary", "", translate("tasks.history.settings", "Task settings")));
-      const members = task.members || [task];
-      const recurring = members.filter(item => item.kind === "recurring");
-      const current = members.filter(item => item.actions?.length || ["starting", "running"].includes(item.state));
-      const configured = recurring.length ? [...recurring, ...current.filter(item => item.kind !== "recurring")]
-        : current.length ? current : [members[0]];
-      for (const member of configured) definitions.appendChild(createTaskDefinition(member));
+      definitions.open = openSettingsIds.has(task.id);
+      for (const member of members) {
+        const setting = createNode("details", "task-definition-record");
+        setting.dataset.definitionId = member.id;
+        setting.appendChild(createNode("summary", "", `${taskTitle(member)} · ${stateLabel(member.state)}`));
+        const content = createNode("div", ""); setting.appendChild(content);
+        if (members.length === 1 || openDefinitionIds.has(member.id)) {
+          setting.open = true; content.appendChild(createTaskDefinition(member));
+        }
+        setting.addEventListener("toggle", () => {
+          if (!setting.isConnected) return;
+          if (setting.open) { openDefinitionIds.add(member.id); if (!content.childElementCount) content.appendChild(createTaskDefinition(member)); }
+          else openDefinitionIds.delete(member.id);
+        });
+        definitions.appendChild(setting);
+      }
+      definitions.addEventListener("toggle", () => { if (!definitions.isConnected) return; if (definitions.open) openSettingsIds.add(task.id); else openSettingsIds.delete(task.id); });
       detail.appendChild(definitions);
       if (!executionHistory.has(task.id)) queueMicrotask(() => void loadExecutionHistory(task));
     }
@@ -692,32 +774,36 @@
     list.replaceChildren();
     if (loading && !loaded) { list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…"))); return; }
     if (loadError && tasks.length === 0) { list.appendChild(createNode("div", "task-center-empty", loadError)); return; }
-    const filter = filterSelect?.value || "all";
+    const filter = selectedFilter;
     const grouped = displayTasks();
+    for (const button of filterSelect?.querySelectorAll("[data-task-filter]") || []) {
+      const value = button.dataset.taskFilter;
+      const count = grouped.filter(task => value === "all" || lifecycle(task) === value).length;
+      button.textContent = translate(value === "all" ? "tasks.filter.all" : `tasks.overview.${value}`, value) + ` (${count})`;
+      button.setAttribute("aria-pressed", String(value === filter));
+    }
     let visibleCount = 0;
-    for (const category of ["recurring", "one_time", "paused", "history", "cancelled"]) {
-      if (filter !== "all" && filter !== category && !(filter === "history" && category === "cancelled")) continue;
-      const visible = grouped.filter(task => lifecycle(task) === category);
+    for (const purpose of ["review", "inspection", "report", "reminder", "other"]) {
+      const visible = grouped.filter(task => (filter === "all" || lifecycle(task) === filter) && overview.purpose(task) === purpose);
       if (!visible.length) continue;
       visibleCount += visible.length;
-      const folded = filter === "all" && ["paused", "history", "cancelled"].includes(category);
-      const section = createNode(folded ? "details" : "section", "task-lifecycle-section"); section.dataset.category = category;
-      const title = translate(`tasks.lifecycle.${category}`, category) + ` (${visible.length})`;
-      section.appendChild(createNode(folded ? "summary" : "h3", "task-lifecycle-heading", title));
-      if (!folded || openLifecycleSections.has(category)) {
-        if (folded) section.open = true;
+      const section = createNode("details", "task-lifecycle-section"); section.dataset.purpose = purpose;
+      const title = translate(`tasks.purpose.${purpose}`, purpose) + ` (${visible.length})`;
+      section.appendChild(createNode("summary", "task-lifecycle-heading", title));
+      if (!closedPurposeSections.has(purpose)) {
+        section.open = true;
         const cards = createNode("div", "task-lifecycle-cards");
-        const limit = visibleTaskLimits.get(category) || 40;
+        const limit = visibleTaskLimits.get(purpose) || 40;
         for (const task of visible.slice(0, limit)) cards.appendChild(createTaskCard(task));
         if (visible.length > limit) {
           const more = createNode("button", "task-center-secondary", translate("tasks.history.moreTasks", "More tasks")); more.type = "button";
-          more.addEventListener("click", () => { visibleTaskLimits.set(category, limit + 40); renderTasks(); }); cards.appendChild(more);
+          more.addEventListener("click", () => { visibleTaskLimits.set(purpose, limit + 40); renderTasks(); }); cards.appendChild(more);
         }
         section.appendChild(cards);
       }
-      if (folded) section.addEventListener("toggle", () => {
-        if (!section.isConnected || section.open === openLifecycleSections.has(category)) return;
-        if (section.open) openLifecycleSections.add(category); else openLifecycleSections.delete(category);
+      section.addEventListener("toggle", () => {
+        if (!section.isConnected || section.open === !closedPurposeSections.has(purpose)) return;
+        if (section.open) closedPurposeSections.delete(purpose); else closedPurposeSections.add(purpose);
         renderTasks();
       });
       list.appendChild(section);
@@ -857,7 +943,9 @@
   lifetimeSelect?.addEventListener("change", syncLifetimeFields);
   gateModeSelect?.addEventListener("change", syncGateFields);
   targetModeSelect?.addEventListener("change", syncTargetFields);
-  filterSelect?.addEventListener("change", () => { visibleTaskLimits.clear(); renderTasks(); });
+  for (const button of filterSelect?.querySelectorAll("[data-task-filter]") || []) {
+    button.addEventListener("click", () => { selectedFilter = button.dataset.taskFilter; visibleTaskLimits.clear(); renderTasks(); });
+  }
   refreshButton?.addEventListener("click", () => void refreshTasks({ force: true }));
   form?.addEventListener("submit", (event) => void submitTask(event));
   globalScope.addEventListener("remotelab:localechange", () => {
