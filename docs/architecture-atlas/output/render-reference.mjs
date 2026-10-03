@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { meta, references, nodes, overviewGraphs, sequences, actors, questionLevels, states, rollout, contracts, invariants, openings } from './guide-data.js';
 import { audit, scenarios, actors as flowActors, feedback, testCases } from './flow-data.js';
-import { memoryAudit, memorySteps, executionRows, timeRules, backgroundCases, memoryFileMap, filingIncident, filingRisks } from '../../memory-architecture/reader-data.js';
+import { memoryAudit, memorySteps, executionRows, timeRules, backgroundCases, memoryPurposes, memorySupport, memoryFileMap, filingIncident, filingRisks } from '../../memory-architecture/reader-data.js';
 
 const actorLabels = Object.fromEntries(flowActors.map(a => [a.id, a.label]));
 const readerLines = [
@@ -27,6 +27,10 @@ for (const [kind, check, boundary] of testCases) readerLines.push(`- **${kind}**
 readerLines.push('', '## 一次工作如何形成可接续的记忆', '', memoryAudit.scope, '');
 for (const item of memorySteps) readerLines.push(`### ${item.title}`, '', `承担者：${item.owner}`, '', item.action, '', `读取：${item.read}`, '', `存储：${item.write}`, '', `边界：${item.next}`, '');
 readerLines.push('## 记忆治理的实际执行度', '');
+readerLines.push('## 三个并列的业务档案', '', '项目记事情，人员记怎样合作，公司记共同背景；入口、来源、规则、核验状态和存储格式各有用途，不并列作为业务分类。', '');
+for (const item of memoryPurposes) readerLines.push(`### ${item.label}`, '', item.content, '', `正文：${item.path}。读取：${item.read}`, '', item.example, '');
+for (const [role,names,purpose] of memorySupport) readerLines.push(`- **${role}**：${names}。${purpose}`);
+readerLines.push('', '新话题沿小型入口定位，按需读本话题约定、相关项目章和已核人员偏好；公司资料与问题相关时才读。日报和时间线是派生视图，历史资料仍需逐条核归属，不因改说明就变成已认可记录。', '');
 readerLines.push('## 记忆文件名、位置与维护规则', '',
   '记忆目录默认~/.remotelab/memory；配置目录默认~/.config/remotelab。项目目录和连接器storageDir按实际配置。公开页列命名规则，登录只读视图列本实例绝对路径与有效写回目标。', '',
   '| 区域 | 文件名 | 位置 | 保存什么 | 维护边界 |', '| --- | --- | --- | --- | --- |',
