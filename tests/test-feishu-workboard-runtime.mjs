@@ -21,9 +21,11 @@ test('route-wide state migration preserves private/group receipts, fences and un
 
 test('managed route service remains enabled across logout, crash and restart without a stop-time disable', () => {
   const text = buildFeishuWorkboardService({ node: '/bin/node', projectRoot: '/work/my project',
-    statePath: '/config/route.json', configDir: '/config' });
+    statePath: '/config/route.json', configDir: '/config', sourceFreezePath: '/etc/source-frozen' });
   assert.match(text, /Restart=on-failure/);
   assert.match(text, /RuntimeMaxSec=infinity/);
+  assert.match(text, /WorkingDirectory=\/work\/my project\n/);
+  assert.match(text, /ConditionPathExists=!\/etc\/source-frozen\n/);
   assert.match(text, /WantedBy=default.target/);
   assert.match(text, /UMask=0077/);
   assert.match(text, /REMOTELAB_CONFIG_DIR=\/config/);

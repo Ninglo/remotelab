@@ -269,5 +269,7 @@ if (!instanceScope) await syncPrivate(); // Read state before waiting for notifi
 for (const id of await discoverGroupSessions()) await syncOne(id);
 pilot.protocolVersion = 2;
 migrating = false;
+pilot.runtime = { pid: process.pid, readyAt: new Date().toISOString() };
 await persist();
 connect(await remote.ensureAuthCookie());
+console.log(`[feishu-workboard] ready route=${pilot.sourceRouteId} scope=${instanceScope ? 'instance' : 'person'}`);
