@@ -1,8 +1,34 @@
 import { writeFile } from 'node:fs/promises';
 import { meta, references, nodes, overviewGraphs, sequences, actors, questionLevels, states, rollout, contracts, invariants, openings } from './guide-data.js';
+import { audit, scenarios, actors as flowActors, feedback, testCases } from './flow-data.js';
+
+const actorLabels = Object.fromEntries(flowActors.map(a => [a.id, a.label]));
+const readerLines = [
+  '# RemoteLab：一条消息如何变成工作和交付', '',
+  `版本：${audit.version}。源码快照：\`${audit.commit}\`。`, '',
+  '阅读入口：[当前流程与交接](index.html)；[目标图与交互演示附录](reference.html)。', '',
+  audit.scope, '',
+  '先可靠收录，再提交可执行 Request。写入 Session 观察历史不启动 Run；Jev 在部分入口参与前置快判，实际任务由 Harness 执行和验收。当前飞书新复杂任务完整收发仍待验收。即时表情前置、跨 Worker 到达顺序和问题分级仍待实施。', '',
+  '## 当前流程与独立目标', '', '前置调用按依赖顺序推进；接纳后的模型、投递与后置支路并行，编号供阅读，不构成全局到达顺序保证。', '',
+];
+for (const scenario of Object.values(scenarios)) {
+  readerLines.push(`### ${scenario.label}`, '', `${scenario.status}。${scenario.intro}`, '');
+  scenario.steps.forEach((s, i) => readerLines.push(
+    `#### ${i + 1}. ${s.title}`, '',
+    `${actorLabels[s.from]} → ${actorLabels[s.to]}；承担者：${s.owner}；交接方式：${s.kind}。`, '',
+    s.action, '', `交接：${s.handoff}`, '', `等待：${s.wait}`, '', `可见与证据：${s.visible}`, '',
+  ));
+}
+readerLines.push('## 运行中用户反馈：当前与目标', '');
+for (const [kind, current, goal] of feedback) readerLines.push(`### ${kind}`, '', `当前：${current}`, '', `目标：${goal}`, '');
+readerLines.push('## 真实体验验收', '');
+for (const [kind, check, boundary] of testCases) readerLines.push(`- **${kind}**：${check} 当前边界：${boundary}。`);
+readerLines.push('', '## 下文是目标图与演示的维护参考', '',
+  '以下时序、交互卡与状态扩展分别标明规划；不能把目标交互的演示当成当前所有入口的实现。真实路径、Jev 的串行等待以及 groupFeed 的卡片排除规则以上文为准。', '');
 
 const lines = [
-  '# RemoteLab 消息与任务输出架构规划', '',
+  ...readerLines,
+  '## RemoteLab 消息与任务输出架构规划附录', '',
   `版本：${meta.version}。状态：${meta.status}。`, '', meta.boundary, '',
   '人类阅读入口：[交互架构网站](index.html)。本目录作为既有架构图谱的“消息与任务输出”专题，沿用其样式和证据边界；不把既有全站视图的旧基线改称最新。', '',
   '## 目标与职责边界', '',

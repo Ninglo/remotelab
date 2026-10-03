@@ -1110,3 +1110,10 @@ Directional synthesis: `notes/directional/product-vision.md`
 - User goal: know which resources remain and whether anything needs attention, then inspect an automation only when diagnosing its triggers or failures. A flat list of each historical admission obscures this purpose.
 - Response: call the destination Operations (运行中心), and the exported summary Operations overview (运行概览). Keep the Overview / Automations switch. Current tasks use compact summaries; opening one reveals a trigger timeline, failure-only filter, full retained error and execution-log link, with configuration below.
 - Evidence boundary: task enablement, a failed trigger, a later successful run and an old admission without execution evidence are distinct states. Historical records stay available; grouping cannot cancel or rewrite their producers. Test previews are private to the requesting person until accepted for production delivery.
+
+### 2026-10-03 — Output architecture needs a readable chronology and explicit handoffs
+
+- Source: direct follow-up with a supplied reference webpage after reviewing the output architecture diagram.
+- Observed friction: the overview mixed desired behavior with current execution and did not identify synchronous waits, asynchronous workers, the two Session handoffs, or Jev's remaining responsibilities. A source/CI pass had also been mistaken for acceptance of the real Feishu experience.
+- Change: make the stable output page a chronological reading guide with selectable actual entry paths, numbered swimlanes, per-step ownership/input/output/waiting facts, and folded source details. Keep proposed interactions in a separately named appendix and scenario. Explain observation versus executable admission, conditional Auto routing, the groupFeed card exclusion, pending-question text binding, and the two independent delivery workers.
+- Acceptance boundary: website delivery is separate from live message-flow acceptance. Immediate receive reactions, cross-worker arrival ordering, question levels and interruption semantics remain explicit gaps; a new real complex-task delivery sample is still required.
