@@ -30,6 +30,8 @@ assert.match(template, /id="taskCenterLifetime"[\s\S]*value="continuous"[\s\S]*v
 assert.match(template, /id="taskCenterGateMode"[\s\S]*value="direct"[\s\S]*value="script"/, 'UI must offer direct and script-gated admission');
 assert.match(template, /id="taskCenterGateSource"/, 'UI must expose the snapshotted condition script');
 assert.match(template, /id="taskCenterFilter"/, 'UI must expose task lifecycle filtering');
+assert.match(template, /data-task-filter="recurring"[\s\S]*data-task-filter="one_time"[\s\S]*data-task-filter="stopped"/,
+  'types must be directly selectable without a dropdown');
 
 assert.match(css, /\.task-center-panel\s*\{[^}]*padding:\s*clamp\(22px,\s*4vw,\s*48px\)/s, 'Task Center should use the shared workspace canvas inset');
 assert.match(template, /class="workspace-page-header task-center-header"/, 'Task Center should share the Settings page header hierarchy');

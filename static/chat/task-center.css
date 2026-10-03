@@ -239,7 +239,15 @@
   width: min(100%, 880px);
   margin: 0 auto;
   padding: 0;
+  align-items: flex-start;
+  justify-content: space-between;
 }
+
+.task-filter-buttons { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.task-filter-buttons button { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); color: var(--text-secondary); font: inherit; font-size: 11px; cursor: pointer; }
+.task-filter-buttons button[aria-pressed="true"] { background: var(--bg-secondary); border-color: var(--accent); color: var(--text); font-weight: 650; }
+.task-filter-buttons button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-center-toolbar .task-center-icon-btn { flex: 0 0 auto; }
 
 .task-center-toolbar select {
   width: min(260px, calc(100% - 44px));
@@ -434,6 +442,11 @@
 details.task-lifecycle-section > summary { cursor: pointer; }
 .task-lifecycle-cards { display: grid; gap: 10px; }
 .task-summary-plan { margin: 7px 0 14px; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+.task-summary-description { margin: 8px 0; color: var(--text-secondary); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.task-summary-context { display: grid; gap: 6px; margin: 0 0 16px; }
+.task-summary-context .task-meta-row { grid-template-columns: 72px minmax(0, 1fr); font-size: 11px; }
+.task-definition-record { margin-top: 12px; }
+.task-definition-record > summary { cursor: pointer; color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
 .task-summary-stats { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, .7fr) minmax(0, .7fr); gap: 12px; margin: 0; }
 .task-summary-stat { min-width: 0; }
 .task-summary-stat dt { font-size: 10px; color: var(--text-muted); }
@@ -458,6 +471,15 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-history-toolbar h3 { margin: 0; font-size: 13px; }
 .task-history-toolbar button[aria-pressed="true"] { color: var(--danger, #c2413c); background: color-mix(in srgb, var(--danger, #c2413c) 8%, var(--bg)); }
 .task-execution-timeline { list-style: none; margin: 18px 0 8px; padding: 0; }
+.task-history-day { margin: 0 0 12px; }
+.task-day-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
+.task-day-heading > span:first-child::before { content: "▸ "; color: var(--text-muted); }
+.task-day-detail[open] > .task-day-heading > span:first-child::before { content: "▾ "; }
+.task-day-outcomes { font-size: 10px; color: var(--text-muted); overflow-wrap: anywhere; }
+.task-execution-detail > summary { cursor: pointer; }
+.task-execution-detail > summary::before { content: "▸"; color: var(--text-muted); }
+.task-execution-detail[open] > summary::before { content: "▾"; }
+.task-execution-content { padding-top: 8px; }
 .task-execution { position: relative; margin-left: 5px; padding: 0 0 20px 19px; border-left: 1px solid var(--border); }
 .task-execution::before { content: ""; position: absolute; top: 5px; left: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
 .task-execution[data-state="failed"]::before { background: var(--danger, #c2413c); }

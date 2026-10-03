@@ -30,6 +30,7 @@
     "chat/voice-review.js",
     "chat/mobile-voice.js",
     "chat/settings-ui.js",
+    "chat/automation-overview.js",
     "chat/task-center.js",
     "chat/sidebar-ui.js",
     "chat/compose.js",

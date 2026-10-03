@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-03 — Organize automations without reducing retained information
+
+- User goal: see one business automation, fold its repeated records by calendar date, and switch directly between regular, one-time and stopped work. Completed one-time work must remain discoverable as one-time work.
+- Presentation: fold purpose sections for reviews, checks, reports, reminders and other work. Show the recorded initiator, source Session and result destination alongside cadence and actual execution totals. Preserve full instructions, all historical child definitions, configuration, controls, errors, identifiers and log links inside the appropriate details.
+- Evidence boundary: purpose and calendar grouping are read-only views. Partial history pages label loaded record counts; check totals remain separate from AI executions. Missing attribution stays unrecorded. Never apply producer actions to a synthetic group or feed grouped IDs into monitoring.
+- Verification: isolated categorization/history and monitoring regressions plus real desktop/mobile rendering. Browsing must issue no mutations; deployment must retain native producer definitions and alert policy.
+
 ### 2026-10-03 — Verify the complete Feishu reply flow
 
 - Observed friction: a short question required several minutes of investigation but received a fixed creation notice, two separate progress posts and a final post, with no task card.
