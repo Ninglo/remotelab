@@ -1124,6 +1124,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product response: retain the original card layout, lifecycle filter, metadata and controls. Follow the source Session and execution ancestry to collect the parent automation; show only a red dot and failure count outside, then chronological records, full errors and individual child controls inside. Never reorder packages because one child failed or apply a lifecycle action to a synthetic group. Independent schedules from the same setup Session stay separate.
 - Acceptance: verify different-title follow-ups, active children, recurring execution follow-ups, retained older failures, timeline pagination and phone layout. Test previews go only to the requesting person.
 
+### 2026-10-03 — Use Monitor as the navigation name; inspect UI changes on the website
+
+- Feedback: Operations / 运行中心 was harder to understand than 监控器. Use Monitor / 监控器 for the navigation and page heading, retaining the Overview / Automations switch and original card appearance.
+- Delivery preference: routine changes to this website are reviewed by refreshing the website; do not send additional Feishu preview messages, including private screenshots. The previously accepted resource summary in the normal daily report remains a separate workflow.
+- Refresh diagnosis: the supplied screenshot already contained the new Trigger history entry; a familiar card appearance alone does not prove that old assets are being served. Verify the actual instance and both language labels before declaring deployment complete.
 
 ## 2026-10-03 — Avoid task cards for one straightforward delivery
 

@@ -281,6 +281,28 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .settings-group-body {
   border-top: 1px solid var(--border);
 }
+.settings-guide-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+.settings-guide-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.settings-guide-footer a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.settings-guide-footer a:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
 .workspace-page-kicker {
   margin-bottom: 7px;
   color: var(--text-muted);
