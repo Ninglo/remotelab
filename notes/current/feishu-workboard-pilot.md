@@ -132,6 +132,9 @@ historical sends. Persist a known card ID before readback, acknowledge only afte
 verification, and safely retry patches. An uncertain creation stays fenced for
 inspection instead of sending another card. Card failures do not block the
 separate result channel, and result failures do not invalidate verified work.
+An acknowledged content hash lets a renderer upgrade refresh an existing card
+once even when its event sequence has not changed. Older snapshots remain
+fenced; this patches the known message and never creates a historical test card.
 
 For a durable Linux worker, verify service enablement, user lingering when using
 a user service, restart-on-failure, `RuntimeMaxSec=infinity`, no stop hook that

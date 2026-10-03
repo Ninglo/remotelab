@@ -123,7 +123,8 @@ export function expandFeishuWorkboardUpdates(cycles) {
 }
 
 export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage }) {
-  const contentFor = text => JSON.stringify(buildFeishuWorkboardCard(text, cycle.board, cycle.progress));
+  const content = JSON.stringify(buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress));
+  const contentHash = createHash('sha256').update(content).digest('hex');
   let card = pilot.cards.find(item => item.anchorSeq === cycle.anchorSeq)
     || pilot.cards.find(item => cycle.taskId && item.taskId === cycle.taskId);
   if (cycle.latestSeq <= (pilot.protocolAfterSeq || 0)) return null;
@@ -138,11 +139,11 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
     const response = cycle.replyMessageId
       ? await app.im.v1.message.reply({
         path: { message_id: cycle.replyMessageId },
-        data: { msg_type: 'interactive', content: contentFor(cycle.content), reply_in_thread: true, uuid },
+        data: { msg_type: 'interactive', content, reply_in_thread: true, uuid },
       })
       : await app.im.v1.message.create({
         params: { receive_id_type: 'chat_id' },
-        data: { receive_id: pilot.chatId, msg_type: 'interactive', content: contentFor(cycle.content), uuid },
+        data: { receive_id: pilot.chatId, msg_type: 'interactive', content, uuid },
       });
     if (response?.code !== 0 || !response.data?.message_id) {
       throw new Error(response?.msg || 'Feishu workboard create failed');
@@ -152,21 +153,25 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
     await persist();
     await verifyMessage(card.messageId, { updated: false });
     card.latestSeq = cycle.latestSeq;
+    card.contentHash = contentHash;
     await persist();
     return { action: 'created', anchorSeq: card.anchorSeq, revision: card.latestSeq };
   }
   if (!card.messageId) {
     throw new Error(`Feishu workboard create outcome is unknown for anchor ${card.anchorSeq}; inspect before retrying`);
   }
-  if (cycle.latestSeq <= card.latestSeq) return null;
+  if (cycle.latestSeq < card.latestSeq || (cycle.latestSeq === card.latestSeq && card.contentHash === contentHash)) return null;
+  // A renderer upgrade may change the same acknowledged snapshot. Patch its
+  // existing message once, then persist the hash so restart cannot repeat it.
   const response = await app.im.v1.message.patch({
     path: { message_id: card.messageId },
-    data: { content: contentFor(cycle.content) },
+    data: { content },
   });
   if (response?.code !== 0) throw new Error(response?.msg || 'Feishu workboard update failed');
   await verifyMessage(card.messageId, { updated: true });
   card.latestSeq = cycle.latestSeq;
   card.taskId = cycle.taskId;
+  card.contentHash = contentHash;
   await persist();
   return { action: 'updated', anchorSeq: card.anchorSeq, revision: card.latestSeq };
 }

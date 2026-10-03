@@ -132,7 +132,7 @@ test('progress commentary and each verified item keep one group card across repl
   for (const update of expandFeishuWorkboardUpdates(cycles, events)) {
     await publishFeishuWorkboardCycle(update, { ...options, pilot: replayPilot });
   }
-  assert.deepEqual(calls, ['patch', 'patch', 'patch'], 'recovery replays each unseen item update on the original card');
+  assert.deepEqual(calls, ['patch', 'patch', 'patch', 'patch'], 'recovery upgrades the known card format once, then replays each unseen item update');
 });
 
 test('private progress commentary does not split a checklist', () => {

@@ -265,3 +265,19 @@ test('a group sender outside the opt-in cannot supply progress on the same Run',
   assert.equal(cycles[0].latestSeq, 2);
   assert.equal(cycles[0].progress, undefined);
 });
+
+test('renderer upgrades patch an existing card once without creating or replaying older snapshots', async () => {
+  const cycle = { taskId: 'task-1', anchorSeq: 2, latestSeq: 8, board: make(), content: '目标：交付结果',
+    progress: { seq: 8, content: '当前验证进展' } };
+  const state = { ...structuredClone(pilot), cards: [{ taskId: 'task-1', anchorSeq: 2, latestSeq: 8, messageId: 'existing-card' }] };
+  const calls = [];
+  const options = { pilot: state, persist: async () => {}, verifyMessage: async () => {}, app: { im: { v1: { message: {
+    patch: async request => { calls.push(request); assert.equal(request.path.message_id, 'existing-card'); return { code: 0 }; },
+  } } } } };
+  assert.equal(await publishFeishuWorkboardCycle({ ...cycle, latestSeq: 4 }, options), null);
+  assert.equal((await publishFeishuWorkboardCycle(cycle, options)).action, 'updated');
+  assert.equal(JSON.parse(calls[0].data.content).body.elements.at(-1).content, '当前验证进展');
+  assert.equal(await publishFeishuWorkboardCycle(cycle, { ...options, pilot: structuredClone(state) }), null);
+  assert.equal(calls.length, 1);
+  assert.equal(state.cards.length, 1);
+});
