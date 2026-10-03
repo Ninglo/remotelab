@@ -98,7 +98,12 @@ export function createQianyanCollaboration({ configDir, documentsPath, publicDat
   }
   async function addComment(person, input) {
     const t = await target(input.target), body = text(input.comment, 4000), s = stage(input.stage, t.kind);
-    const evidence = input.evidence_url ? canonicalSubmissionUrl(input.evidence_url) : '';
+    let evidence = '';
+    if (input.evidence_url) {
+      const original = text(input.evidence_url, 2048);
+      canonicalSubmissionUrl(original); // Validate without changing a citation's version or section.
+      evidence = new URL(original).toString();
+    }
     if (!body) throw new CollaborationError('请写一句评价或补充');
     return mutate(state => receipt(state, person, input, () => {
       if (input.parent_id && !state.comments.some(c => c.id === input.parent_id && c.target.kind === t.kind && c.target.id === t.id)) throw new CollaborationError('回复对象不在这篇文章下');
