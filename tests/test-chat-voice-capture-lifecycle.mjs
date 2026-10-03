@@ -63,6 +63,7 @@ const old = sockets[0];
 assert.equal(capture.getState().phase, 'recording', 'local recording starts while the recognizer is connecting');
 processors.at(-1).onaudioprocess({ inputBuffer: { sampleRate: 16000, getChannelData: () => new Float32Array([0.1, 0.2, 0.3]) } });
 await capture.stop(); assert.equal(capture.getState().phase, 'stopping', 'release preserves audio when the socket is still connecting');
+assert.equal(processors.at(-1).onaudioprocess, null, 'the fallback processor cannot stream silence after release');
 assert.equal(lastTrack.enabled, false, 'release silences the microphone immediately');
 old.readyState = 1; await old.emit('open'); await old.emit('message', { type: 'status', phase: 'ready' });
 assert.ok(old.sent.some(data => data instanceof ArrayBuffer), 'early PCM is buffered and delivered when recognition is ready');
