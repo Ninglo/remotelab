@@ -22,7 +22,24 @@ el('memory-sources').innerHTML=memoryAudit.sources.map(path=>`<a href="https://g
 const names={available:'已记录', 'not-recorded':'尚未登记',unavailable:'暂不可读取','too-large-or-not-file':'文件过大或格式不适用','select-person':'先选择实际Person',invalid:'视图格式不适用'};
 let snapshot;
 const clearPrivate=()=>{snapshot=undefined;el('memory-private').hidden=true;for(const id of ['memory-project-select','memory-person-select','memory-actual-timeline'])el(id).replaceChildren();for(const id of ['memory-project-index','memory-project-ledger','memory-person-body','memory-company-body'])el(id).textContent='';};
-function textDocument(id,doc){el(id).textContent=doc?.status==='available'?`${doc.modifiedAt} · 内容版本 ${doc.hash}\n\n${doc.text}`:`${names[doc?.status]||'尚未读取'}。未登记不等于此人没有偏好。`;}
+function textDocument(id,doc){
+ const root=el(id);root.replaceChildren();
+ if(doc?.status!=='available'){root.textContent=`${names[doc?.status]||'尚未读取'}。未登记表示尚未整理，不代表没有相关信息。`;return;}
+ if(id==='memory-project-index'||id==='memory-project-ledger'){root.textContent=`文件更新时间${doc.modifiedAt} · 内容版本 ${doc.hash}\n\n${doc.text}`;return;}
+ const metadata=document.createElement('p');metadata.className='small muted';metadata.textContent=`文件更新时间${doc.modifiedAt} · 内容版本${doc.hash}`;root.append(metadata);
+ const inline=(node,text)=>{
+  const pattern=/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;let offset=0;
+  for(const match of text.matchAll(pattern)){node.append(document.createTextNode(text.slice(offset,match.index)));const a=document.createElement('a');a.textContent=match[1];a.href=match[2];a.target='_blank';a.rel='noopener noreferrer';node.append(a);offset=match.index+match[0].length;}
+  node.append(document.createTextNode(text.slice(offset)));
+ };
+ for(const block of doc.text.split(/\n\s*\n/)){
+  const lines=block.split('\n');
+  if(/^#{1,4} /.test(block)&&lines.length===1){const heading=document.createElement('h3');heading.className='subhead';heading.textContent=block.replace(/^#{1,4} /,'');root.append(heading);}
+  else if(lines.length>2&&lines[0].startsWith('|')&&/^\|[- :|]+\|$/.test(lines[1])){const container=document.createElement('div');container.className='table-scroll';const table=document.createElement('table');for(const [i,line]of lines.entries()){if(i===1)continue;const tr=document.createElement('tr');for(const value of line.split('|').slice(1,-1)){const cell=document.createElement(i===0?'th':'td');inline(cell,value.trim());tr.append(cell);}table.append(tr);}container.append(table);root.append(container);}
+  else if(lines.every(line=>line.startsWith('- '))){const list=document.createElement('ul');for(const line of lines){const item=document.createElement('li');inline(item,line.slice(2));list.append(item);}root.append(list);}
+  else{const paragraph=document.createElement('p');inline(paragraph,block);root.append(paragraph);}
+ }
+}
 function showTimeline(){
  const project=el('memory-project-select').value,person=el('memory-person-select').value;
  const chronology=snapshot?.chronology;
@@ -42,7 +59,8 @@ async function load(personId=null){
   const data=await response.json();if(!Array.isArray(data.people)||!data.runtime)throw new Error('实例返回格式不适用');snapshot=data;
   el('memory-instance-status').textContent=`实际读取：${data.generatedAt}；${data.people.length}个Person身份，不等于已整理同等数量的偏好档案。`;
   const rt=data.runtime;el('memory-runtime-status').textContent=rt.status==='available'?`项目记忆${rt.release}：${rt.enabled?'开启':'关闭'}；开工指针${rt.contextEnabled?'开启':'关闭'}；日报增强${rt.reviewEnabled?'开启':'关闭'}；${rt.projects.length}个登记节点，${rt.sourceGroups}个绑定来源群，配置版本${rt.hash}。`:'项目增强配置暂不可读取；旧记忆入口仍需核对。';
-  el('memory-project-select').innerHTML='<option value="">全部项目节点</option>'+(rt.projects||[]).map(item=>`<option value="${esc(item.id)}">${esc(item.id)}</option>`).join('');
+  const labels=new Map((data.projectIndex?.text||'').split('\n').filter(line=>line.startsWith('|')).map(line=>line.split('|').slice(1).map(cell=>cell.trim())).map(cells=>[cells[0],cells[1]]));
+  el('memory-project-select').innerHTML='<option value="">全部项目节点</option>'+(rt.projects||[]).map(item=>`<option value="${esc(item.id)}">${esc(labels.get(item.id)||item.id)}</option>`).join('');
   if((rt.projects||[]).some(item=>item.id===project))el('memory-project-select').value=project;
   el('memory-person-select').innerHTML='<option value="">全部人员事件／未选个人档案</option>'+data.people.map(person=>`<option value="${esc(person.id)}">${esc(person.name||person.id)}</option>`).join('');el('memory-person-select').value=data.personId||'';
   textDocument('memory-project-index',data.projectIndex);textDocument('memory-project-ledger',data.projectLedger);textDocument('memory-person-body',data.personal);textDocument('memory-company-body',data.company);el('memory-private').hidden=false;showTimeline();
