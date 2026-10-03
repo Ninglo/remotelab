@@ -25,8 +25,8 @@
     const key = value === "active" ? "enabled" : value === "failed" ? "failedState" : value === "started" ? "running" : value || "unknown";
     const result = t(key); return result === `monitoring.${key}` ? String(value || "—") : result;
   };
-  function section(title) {
-    const root = node("section", "", "monitoring-section"); root.appendChild(node("h3", title)); content.appendChild(root); return root;
+  function section(title, parent = content) {
+    const root = node("section", "", "monitoring-section"); root.appendChild(node("h3", title)); parent.appendChild(root); return root;
   }
   function table(root, headings, rows) {
     const wrap = node("div", "", "monitoring-table-wrap"), table = node("table");
@@ -51,30 +51,73 @@
     if (item.kind === "lowQuota") return t("lowQuotaRisk");
     return t(item.kind === "automation" ? "automationRisk" : "serviceRisk");
   }
-  function quotaWindow(window) {
-    const duration = window.minutes >= 1440 ? t("days", { count: Math.round(window.minutes / 1440) })
+  function quotaDuration(window) {
+    return window.minutes >= 1440 ? t("days", { count: Math.round(window.minutes / 1440) })
       : window.minutes >= 60 ? t("hours", { count: Math.round(window.minutes / 60) }) : t("minutes", { count: window.minutes });
-    return `${duration} ${percent(window.remainingPercent)}`;
+  }
+  function accountCard(account) {
+    const card = node("article", "", "monitoring-account"); card.dataset.status = account.status;
+    const header = node("header", "", "monitoring-account-header");
+    header.appendChild(node("h4", account.label));
+    header.appendChild(node("span", status(account.status), "monitoring-account-status")); card.appendChild(header);
+    if (account.active) card.appendChild(node("span", t("active"), "monitoring-account-default"));
+    const windows = account.windows.slice().sort((a, b) => (account.status === "exhausted" ? a.remainingPercent - b.remainingPercent : 0)
+      || (b.minutes === 10080) - (a.minutes === 10080) || b.minutes - a.minutes);
+    if (!windows.length) card.appendChild(node("p", t("quotaUnknown"), "monitoring-quota-unknown"));
+    windows.forEach((window, index) => {
+      const quota = node("div", "", "monitoring-quota");
+      quota.dataset.primary = String(index === 0);
+      quota.dataset.band = account.status === "unknown" || account.status === "conflicting" ? "unknown"
+        : window.remainingPercent <= 10 ? "low" : window.remainingPercent <= 30 ? "limited" : "available";
+      const label = node("div", "", "monitoring-quota-label");
+      label.appendChild(node("span", t("windowRemaining", { window: quotaDuration(window) })));
+      label.appendChild(node("strong", percent(window.remainingPercent))); quota.appendChild(label);
+      if (Number.isFinite(window.remainingPercent)) {
+        const meter = node("meter"); meter.min = 0; meter.max = 100; meter.value = window.remainingPercent;
+        meter.setAttribute("aria-label", `${account.label} · ${quotaDuration(window)} · ${t("remaining")} ${percent(window.remainingPercent)}`);
+        quota.appendChild(meter);
+      }
+      quota.appendChild(node("p", t("windowReset", { time: time(window.resetsAt) }), "monitoring-quota-reset")); card.appendChild(quota);
+    });
+    card.appendChild(node("p", t("accountObserved", { time: time(account.observedAt) }), "monitoring-account-observed"));
+    return card;
   }
   function render() {
     content.replaceChildren();
     if (!value) { content.appendChild(node("p", t(loading ? "loading" : "failed"), "monitoring-note")); return; }
-    content.appendChild(node("p", t("updated", { time: time(value.generatedAt) }), "monitoring-note"));
-    const attention = section(t("attention"));
+    const snapshot = node("div", "", "monitoring-snapshot"); snapshot.id = "monitoringSnapshot"; content.appendChild(snapshot);
+    snapshot.appendChild(node("h2", t("snapshotTitle"), "monitoring-snapshot-heading"));
+    snapshot.appendChild(node("p", t("updated", { time: time(value.generatedAt) }), "monitoring-note"));
+    const attention = section(t("attention"), snapshot); attention.dataset.section = "attention";
     if (!value.attention.length) attention.appendChild(node("p", t("clear"), "monitoring-note"));
-    else value.attention.forEach(item => {
+    else value.attention.slice().sort((a, b) => (b.severity === "critical") - (a.severity === "critical")).forEach(item => {
       const row = node("div", "", "monitoring-alert"); row.dataset.severity = item.severity;
       row.appendChild(node("span", t(item.severity === "critical" ? "critical" : "warning"), "monitoring-alert-label"));
       const detail = node("div"); detail.appendChild(item.kind === "automation" ? executionLink(item) : node("strong", item.subject));
       detail.appendChild(node("p", alertDetail(item))); row.appendChild(detail); attention.appendChild(row);
     });
-    const opportunities = section(t("opportunities"));
-    if (!value.opportunities.length) opportunities.appendChild(node("p", t("noCapacity"), "monitoring-note"));
+    const accounts = section(t("accounts"), snapshot); accounts.dataset.section = "accounts";
+    if (!value.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
+    else {
+      const summary = node("div", "", "monitoring-account-summary");
+      for (const state of ["available", "exhausted", "unknown"]) {
+        const count = value.accounts.filter(account => state === "unknown" ? !["available", "exhausted"].includes(account.status) : account.status === state).length;
+        const badge = node("span", `${status(state)} ${count}`, "monitoring-account-status"); badge.dataset.status = state; summary.appendChild(badge);
+      }
+      accounts.appendChild(summary);
+      const grid = node("div", "", "monitoring-account-grid");
+      value.accounts.slice().sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)))
+        .forEach(account => grid.appendChild(accountCard(account)));
+      accounts.appendChild(grid);
+      accounts.appendChild(node("p", t("quotaNote"), "monitoring-note"));
+    }
+    if (!value.opportunities.length) accounts.appendChild(node("p", t("noCapacity"), "monitoring-note"));
     else value.opportunities.forEach(item => {
-      opportunities.appendChild(node("p", t("capacity", { count: item.accounts.length })));
-      opportunities.appendChild(node("p", item.accounts.map(account => `${account.label} ${percent(account.remainingPercent)}`).join(" · "), "monitoring-note"));
-      opportunities.appendChild(node("p", t("capacityNote"), "monitoring-note"));
+      accounts.appendChild(node("p", `${t("capacity", { count: item.accounts.length })} ${t("capacityNote")}`, "monitoring-note"));
     });
+    const disks = section(t("disks")); disks.dataset.section = "disks";
+    table(disks, [t("resource"), t("used"), t("free"), t("inodes")], value.disks.map(disk => [disk.label, percent(disk.usedPercent), bytes(disk.availableBytes), percent(disk.inodeUsedPercent)]));
+    value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
     const usage = section(t("usage"));
     if (!value.usage) usage.appendChild(node("p", t("noUsage"), "monitoring-note"));
     else {
@@ -100,16 +143,6 @@
         row.appendChild(meter); row.appendChild(node("span", number(day.totalTokens))); trend.appendChild(row);
       }); usage.appendChild(trend);
     }
-    const accounts = section(t("accounts"));
-    if (!value.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
-    else table(accounts, [t("account"), t("remaining"), t("reset"), t("observed")], value.accounts.map(account => [
-      `${account.label}${account.active ? ` · ${t("active")}` : ""}`,
-      account.windows.length ? account.windows.map(quotaWindow).join(" · ") : status(account.status),
-      account.windows.map(window => time(window.resetsAt)).join(" · ") || "—", time(account.observedAt),
-    ]));
-    const disks = section(t("disks"));
-    table(disks, [t("resource"), t("used"), t("free"), t("inodes")], value.disks.map(disk => [disk.label, percent(disk.usedPercent), bytes(disk.availableBytes), percent(disk.inodeUsedPercent)]));
-    value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
     const operations = section(t("operations")); operations.appendChild(node("p", t("jobs", { count: value.automations.active }), "monitoring-note"));
     table(operations, [t("job"), t("status"), t("lastRun"), t("nextRun")], [
       ...value.services.map(service => [service.label, status(service.status), time(service.lastRunAt), "—"]),

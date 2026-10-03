@@ -82,7 +82,7 @@
     "observer:instance": "./scripts/proactive-observer-instance.sh start",
     "transcript:measure": "node scripts/measure-transcript-overhead.mjs",
     "lint:filesize": "node scripts/report-oversized-files.mjs",
-    "test": "npm run test:monitoring && npm run test:antigravity && npm run test:quick && npm run test:github-workspace && npm run test:session-preflight && npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:display && npm run test:feishu-actions && npm run test:smoke && npm run test:workboard && npm run test:recording && npm run test:site-feedback && npm run test:memory-governance",
+    "test": "npm run test:monitoring && npm run test:antigravity && npm run test:quick && npm run test:github-workspace && npm run test:session-preflight && npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:display && npm run test:feishu-actions && npm run test:smoke && npm run test:workboard && npm run test:recording && npm run test:site-feedback && npm run test:memory-governance && npm run test:qianyan",
     "test:memory-governance": "node scripts/run-with-clean-instance-env.mjs node tests/test-memory-governance-preflight.mjs && node scripts/run-with-clean-instance-env.mjs node --test tests/test-memory-governance-collection.mjs",
     "test:feishu-actions": "node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-action-command.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-project-surface.mjs",
     "test:github-workspace": "node scripts/run-with-clean-instance-env.mjs node tests/test-github-workspace-command.mjs",
@@ -118,7 +118,8 @@
     "test:workboard:raw": "node tests/test-workboard-opt-in.mjs && node tests/test-workboard-checklist.mjs && node tests/test-workboard-state.mjs && node tests/test-feishu-workboard-pilot.mjs && node tests/test-session-manager-build-prompt.mjs && node tests/test-session-display-events.mjs && node tests/test-chat-workboard-ui.mjs && node tests/test-http-assistant-message-command.mjs && node tests/test-reply-publication.mjs && node tests/test-native-harness-integration.mjs",
     "test:recording": "node scripts/run-with-clean-instance-env.mjs node --test tests/test-recording.mjs tests/test-recording-http.mjs",
     "test:monitoring": "node scripts/run-with-clean-instance-env.mjs node --test tests/test-monitoring.mjs tests/test-monitoring-alerts.mjs && node tests/test-task-center-ui.mjs && node tests/test-application-shell-ui.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-http-automation-tasks.mjs",
-    "test:site-feedback": "node scripts/run-with-clean-instance-env.mjs node tests/test-site-feedback-routes.mjs"
+    "test:site-feedback": "node scripts/run-with-clean-instance-env.mjs node tests/test-site-feedback-routes.mjs",
+    "test:qianyan": "node scripts/run-with-clean-instance-env.mjs node tests/test-qianyan-query.mjs"
   },
   "dependencies": {
     "@larksuite/cli": "1.0.61",
