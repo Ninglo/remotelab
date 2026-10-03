@@ -1,80 +1,121 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <meta name="description" content="RemoteLab 消息接入、异步任务、进度卡、用户反馈与正式结果的架构规划。职责图、时序图与可操作演示，区分现状和待实施方案。">
-  <title>RemoteLab · 消息与任务输出架构</title>
-  <link rel="stylesheet" href="./styles.css?v=20261003b">
-  <script type="module" src="./app.js?v=20261003b"></script>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="description" content="按一条消息的真实先后顺序说明 RemoteLab：同步等待、异步执行、Session 两次交接、Jev 职责、飞书任务卡和当前待验边界。">
+<title>RemoteLab · 一条消息如何变成工作和交付</title>
+<link rel="stylesheet" href="./reading.css?v=20261003d">
+<script type="module" src="./flow-reader.js?v=20261003d"></script>
 </head>
 <body>
-  <a class="skip" href="#architecture">跳到架构图</a>
-  <header class="topbar"><a class="brand" href="../index.html">RemoteLab <span>架构图谱</span></a><div class="top-links"><a href="/public-pages/remotelab-memory-architecture/index.html">记忆与组织协作 ↗</a><a href="./README.md">规划参考文本 ↗</a></div></header>
-  <main>
-    <section class="hero">
-      <div class="eyebrow">消息接入 / 异步协作 / 输出架构</div>
-      <h1>消息到达后，谁接住，谁继续？</h1>
-      <p class="lede">让用户知道消息已收到、工作是否开始、当前进展、是否在等自己，以及结果是否真的送达。</p>
-      <div class="meta"><span id="architecture-status" class="badge proposed"></span><span id="version"></span><span>图示可点击展开</span></div>
-    </section>
-    <nav class="toc" aria-label="架构规划导航"><a href="#architecture">01 职责全景</a><a href="#async">02 异步时序</a><a href="#feedback">03 用户反馈</a><a href="#experience">04 卡片体验</a><a href="#states">05 三种状态</a><a href="#implementation">06 现状与落地</a></nav>
+<a class="skip" href="#main">跳到正文</a>
+<div class="book">
+<aside class="contents"><a class="brand" href="../index.html">RemoteLab <span>架构图谱</span></a>
+<nav aria-label="阅读目录"><a href="#start">先看结论与读法</a><a href="#journey">01 一条消息的一生</a><a href="#handoff">02 谁交给谁，交什么</a><a href="#async">03 同步与异步</a><a href="#jev">04 Jev 到底做什么</a><a href="#entries">05 三类入口有何不同</a><a href="#output">06 用户看到什么</a><a href="#feedback">07 运行中用户再说一句</a><a href="#testing">08 怎么测试，哪些待验</a><a href="#evidence">来源与版本</a></nav>
+<button id="expand-details" type="button" aria-expanded="false">展开技术细节</button><a class="small appendix-link" href="./reference.html">目标交互图与演示附录 ↗</a>
+</aside>
+<main id="main">
+<header id="start" class="hero">
+<p class="eyebrow">消息接入、异步执行与用户输出 · 阅读版</p>
+<h1>一条消息，怎样变成工作和交付？</h1>
+<p class="lede">先可靠收录，再把工作交给模型；模型推进任务，输出程序把开场、卡片和结果送回用户。</p>
+<p>关键是区分两次交接：<strong>写进 Session 历史，还不等于启动模型；提交可执行 Request，才进入运行调度。</strong>Jev 在部分入口参与快判，实际任务由所选 Harness 理解、执行和验收。</p>
+<p class="metadata"><span id="reader-version"></span> · 源码与现有配置快照；现场状态不会自动更新</p>
+<div class="note"><strong>现在不能说整条飞书体验已经验收通过。</strong><p>上一轮修复已有回归与部署证据。新的真实复杂任务收发仍待验证；即时表情前置、跨输出 Worker 的到达顺序、提问分级与打断处理还有明确缺口。下面先解释<strong>现在怎么跑</strong>，再单独标出<strong>目标怎么改</strong>。</p></div>
+<p class="reading-guide">读法：先走 01 的一个场景，再看 02–04 的交接和等待；只关心使用时，可直接跳到 06–08。技术细节和源码折叠在对应位置。图里的时间表示先后，不承诺秒数。</p>
+</header>
 
-    <section id="architecture" class="section">
-      <div class="section-head"><div><div class="eyebrow">01 / 谁承接每一步</div><h2>确认收到、推进工作、更新表面，独立承接。</h2></div><div id="overview-controls" class="segmented" role="group" aria-label="选择现状或目标架构"></div></div>
-      <p id="overview-intro" class="intro" aria-live="polite"></p>
-      <div class="legend"><span><i class="key surface"></i>用户表面</span><span><i class="key code"></i>固定程序</span><span><i class="key model"></i>主模型 / Harness</span><span><i class="key external"></i>工具与外部系统</span><span class="line-key">实线：直接承接</span><span class="line-key dashed">虚线：异步事件 / 独立支路</span></div>
-      <div class="diagram-wrap"><div id="overview-graph" class="diagram" aria-label="消息与任务输出职责图"></div></div>
-      <p class="graph-hint">点击节点，或用 Tab 与 Enter 查看职责。窄屏可左右滑动关系图。</p>
-      <div id="overview-detail" class="node-detail" aria-live="polite"></div>
-      <div class="boundary"><strong>任务理解只由当前 Harness 承担。</strong><p>RemoteLab 保存请求、运行和事件，处理结构校验、恢复与投递。任务卡是 Session 内工作的投影，不新增第二个规划器或全局任务系统。</p></div>
-    </section>
+<section id="journey"><h2><span class="part">01 / 顺着时间走</span>一条飞书消息的一生</h2>
+<p>默认选中实际 Jev 试验路径。切换入口后，时序图、步骤说明和等待条件一起变化；目标方案是独立选项，不混进现状。</p>
+<div id="scene-tabs" class="tabs" role="group" aria-label="选择入口与现状"></div>
+<div class="scene-lead"><span id="scene-status" class="tag"></span><p id="scene-intro"></p></div>
+<figure><div class="diagram-scroll" tabindex="0" aria-label="时序图；窄屏可以横向滚动"><div id="flow-sequence"></div></div><figcaption>前置实线调用按依赖向下；虚线支路可独立推进，浅蓝区是接纳后的并行区域，编号用于阅读，不是全局到达顺序。实线：等待本次交接回执；虚线：独立执行 / 投递；点线：条件发生。点击箭头或步骤看“交了什么、等什么”。</figcaption></figure>
+<div class="step-reader"><div id="step-list" class="step-list" role="group" aria-label="逐步阅读"></div><div class="step-content"><div id="step-detail" aria-live="polite"></div><div class="step-nav"><button id="step-prev" type="button">← 上一步</button><span id="step-count"></span><button id="step-next" type="button">下一步 →</button></div></div></div>
+<p class="note small">同一消息的接入处理有先后依赖，但后面的模型与投递会并行推进。飞书表面可能稍后追上 Session 里的最新事实；图里的写入顺序不是客户端到达顺序保证。</p>
+</section>
 
-    <section id="async" class="section">
-      <div class="section-head"><div><div class="eyebrow">02 / 先后与异步</div><h2>模型继续做事，卡片和结果独立送达。</h2></div><span class="badge proposed">目标时序</span></div>
-      <div id="sequence-controls" class="segmented" role="group" aria-label="选择异步场景"></div>
-      <p id="sequence-intro" class="intro" aria-live="polite"></p>
-      <div class="diagram-wrap"><div id="sequence-graph" class="diagram sequence" aria-label="消息接入和投递的异步时序图"></div></div>
-      <div id="sequence-detail" class="event-detail" aria-live="polite"></div>
-      <p class="caption">时间向下。箭头表示消息、事件或控制交接；没有固定时长承诺。后置标题整理与记忆归集另走后台支路，不进入答案的等待条件。</p>
-    </section>
+<section id="handoff"><h2><span class="part">02 / 交接点与职责</span>“交给 Session”有两种含义</h2>
+<p class="answer">Session 是持久工作间，Request 是一条被接纳的输入，Run 才是一次实际执行。它们不是三个模型，也不必一一对应。</p>
+<div class="handoffs"><article><p class="eyebrow">交接 A · 只收录</p><h3>Connector → Session 观察历史</h3><p>消息、来源和近期上下文进入 observations。返回 <code>sessionId</code>、<code>eventSeq</code>、<code>recent</code>。<strong>此处不启动 Run。</strong>Jev 接下来可以据此快判。</p></article><article><p class="eyebrow">交接 B · 可以执行</p><h3>Connector → Request 接纳层</h3><p>提交正文、附件、执行设置和固定的回复位置。保存 Request 后启动、续接或排队。返回请求 / 运行身份；调用方不等最终答案。</p></article></div>
+<p>Jev 建议复杂工作时，Connector 可以切到工作话题 Session；否则常见做法是续接原群 Session。话题绑定采用实际飞书回执，不能把“准备了话题目标”说成“用户已看到话题”。</p>
+<details data-technical><summary>展开每个对象留下什么</summary><div class="detail-body table-scroll"><table><thead><tr><th>对象</th><th>谁维护</th><th>留下的事实</th><th>不能据此推出什么</th></tr></thead><tbody>
+<tr><td>inbox</td><td>Connector</td><td>来源事件、去重键、处理 / 重试状态</td><td>不能推出模型已启动</td></tr>
+<tr><td>Session</td><td>RemoteLab</td><td>规范化历史、来源绑定、原生继续标识</td><td>不能推出每条收录消息都有 Run</td></tr>
+<tr><td>Request</td><td>接纳与调度层</td><td>稳定 requestId、输入快照、回复位置、接纳回执</td><td>不能推出新增信息已被模型采用</td></tr>
+<tr><td>Run</td><td>调度器与原生运行器</td><td>运行状态、原生事件、结果、追加输入回执</td><td>结束不能推出任务全部完成</td></tr>
+<tr><td>workboard</td><td>Harness 提交；平台校验 / 投影</td><td>Session 内稳定 taskId、revision、验收项、进度和证据</td><td>不替模型制定计划，不靠 Run 结束自动打勾</td></tr>
+<tr><td>delivery / 卡片回执</td><td>各输出程序</td><td>发送状态、messageId / reactionId、版本、提供方回执</td><td>API 成功不等于真人已读；单个分片成功不等于全部交付</td></tr>
+</tbody></table><div data-sources="observation admission card delivery"></div></div></details>
+</section>
 
-    <section id="feedback" class="section">
-      <div class="section-head"><div><div class="eyebrow">03 / 用户在运行中再说一句</div><h2>停止、提问、回答和补充，走不同分支。</h2></div><span class="badge proposed">输入处理规划</span></div>
-      <p class="intro">明确的停止控制先处理；绑定问题的答案先核对；其他自由文本送入原生会话，由主 Harness 理解其作用。不是所有新文字都等于“回答当前问题”。</p>
-      <div class="diagram-wrap"><div id="feedback-graph" class="diagram" aria-label="运行中用户反馈处理分支图"></div></div>
-      <div id="feedback-detail" class="event-detail" aria-live="polite"></div>
-      <div class="subsection"><h3>Agent 问用户时，卡片明确回答等级。</h3><div id="question-levels" class="question-levels"></div><p class="caption">现状：普通选择题统一五分钟处理，有选项默认首项，无选项返回未答。目标：只对有合理默认的可选题使用该策略；必要补充和明确授权没有自动首选。</p></div>
-    </section>
+<section id="async"><h2><span class="part">03 / 等什么，不等什么</span>“用了 async”不代表用户不用等</h2>
+<p>JavaScript 的 <code>async / await</code> 是写法。这里要看业务依赖：<strong>Jev 调用虽是异步网络调用，Connector 仍然等它返回才提交执行请求；Run 和输出投递则可以在接纳后独立继续。</strong></p>
+<div class="parallel"><article><span class="rail-label">前置串行 · 当前 Jev 试验路径</span><div class="chain"><span>inbox 落盘</span><b>→</b><span>Session 观察收录</span><b>→</b><span>等 Jev</span><b>→</b><span>执行请求接纳</span><b>→</b><span>排表情</span></div><p>每一步依赖前一步的事实。即时收到确认尚未从这条链路里移出。</p></article><article><span class="rail-label">接纳之后 · 独立推进</span><div class="fork-lines"><p><strong>执行：</strong>Harness → 工具 → 发现 / 验收 → 最终结果</p><p><strong>文本与表情：</strong>事件 → source-delivery outbox → Connector → 飞书回执</p><p><strong>任务卡：</strong>workboard / progress → 个人试验 Worker → create / patch 原卡</p><p><strong>后置：</strong>运行结束 → 条件触发摘要整理 / 记忆归集</p></div><p>模型不等卡片 Worker 的飞书回执才继续干活；最终答复不等标题和记忆整理。</p></article></div>
+<p>文本 outbox 与卡片 Worker 是两条独立程序，所以现在只能说<strong>开场事件先形成</strong>，不能承诺<strong>开场一定先于卡片在飞书客户端出现</strong>。如果产品要求严格先后，需要补持久的投递依赖。</p>
+<details data-technical><summary>断线、重启和发送失败怎么接住</summary><div class="detail-body"><p>接纳和运行身份保存在耐久记录中；执行脱离浏览器连接。重启按原身份恢复观察和请求，不靠再次发一遍用户消息。</p><p>发送失败沿既有结果与分片身份重试投递。发送状态不确定时应先核对回执 / 读回；卡片首次 create 的结果未知时，不能无条件再创建第二张。</p><p>网页 WS 是“有变化了”的通知，重连后从 HTTP / 持久历史重新读事实，不能把 WS 消息当唯一完成证据。</p><div data-sources="inbox run delivery card after"></div></div></details>
+</section>
 
-    <section id="experience" class="section">
-      <div class="section-head"><div><div class="eyebrow">04 / 用户真正看到什么</div><h2>开场先到，进度留在原卡，交互单独出现。</h2></div><span class="badge">演示 · 不触发真实工作</span></div>
-      <div id="simulation-controls" class="segmented" role="group" aria-label="选择用户体验场景"></div>
-      <div class="simulation">
-        <aside class="simulation-nav"><div class="eyebrow">手动推进事件</div><ol id="frame-list"></ol><div class="step-controls"><button id="previous-frame" type="button">← 上一步</button><button id="next-frame" type="button">下一步 →</button></div><p id="frame-note" class="caption" aria-live="polite"></p></aside>
-        <div class="conversation"><div class="conversation-head"><strong>原会话 / 唯一工作话题</strong><span id="run-indicator"></span></div><div id="conversation-body" aria-live="polite"></div></div>
-      </div>
-      <details class="opening-lab"><summary>开场怎样才有信息量？</summary><div class="opening-comparison"><div><span class="example-label">仅仅复述请求</span><p id="weak-opening"></p></div><div><span class="example-label useful">本轮已有事实与判断</span><p id="useful-opening"></p></div></div><p id="opening-rule"></p><p class="caption">示例基于本轮已经核对的代码事实。初次接触任务时，可以说明真正待判的分叉与核查理由，不能伪造“已经发现”的结论。内容由主模型生成，固定程序只负责送达。</p></details>
-    </section>
+<section id="jev"><h2><span class="part">04 / 判断与发送分别是谁</span>Jev 不只选表情，也不执行任务</h2>
+<p>Jev 返回的是判断结果。固定程序把结果变成路由或投递请求；真正的调查、工具操作、任务拆分和结果写作交给当前 Harness。</p>
+<div class="table-scroll"><table><thead><tr><th>位置</th><th>Jev 做什么</th><th>当前是否等待</th><th>后续由谁承接</th></tr></thead><tbody>
+<tr><td>飞书 Jev 试验入口</td><td>建议参与方式、表情、短答 / 复杂工作位置</td><td>是。观察收录之后、执行请求提交之前 await</td><td>Connector 保存决定、准备工作位置，提交 Request；Harness 决定实际是否回复</td></tr>
+<tr><td>常规接入的 Quick participation</td><td>另一次 Jev 快判，记录参与方式和可能的交接建议</td><td>不等 Jev 判定。收到表情与它并发启动；Connector 只等已读表情回执再提交工作</td><td>Quick 日志与条件交接建议由固定程序承接；它不是新 observation 路径的串行 gate</td></tr>
+<tr><td>Auto 运行档位</td><td>只在选择 Auto 时做运行档位路由</td><td>条件发生，在 Request 接纳前解析</td><td>调度器把已选定的执行快照交给原生运行器；固定档位不用这次路由</td></tr>
+<tr><td>是否需要任务卡</td><td>旧 Jev 清单 gate 已退出入口</td><td>没有额外清单模型调用</td><td>可建卡、已启用的工作 Session 中由 Harness 按实际工作量决定</td></tr>
+<tr><td>飞书表情 / 文本发送</td><td>不直接发送</td><td>Jev 返回后才可能排入投递</td><td>Connector 调提供方 API；返回真实 reactionId / messageId</td></tr>
+<tr><td>后置标题与摘要</td><td>另有 Session 状态分类器，不是群 Jev 快判</td><td>不阻塞最终答复</td><td>独立后台流程整理元数据；不是任务验收人</td></tr>
+</tbody></table></div>
+<div class="note"><strong>Jev 的静默建议目前不阻止已观察消息进模型。</strong><p>当前代码采用临时 fail-open：保留表情和位置建议，把已观察消息交给 Session 模型自行判断答复。但 <code>groupFeed</code> 旁听 Session 被排除在任务卡范围外；位置判断仍会间接影响有没有新卡。不能把“清单 gate 移除”理解成所有群消息都能建卡。</p></div>
+<details data-technical><summary>展开判断输出与成本边界</summary><div class="detail-body"><p>保存的决定包含 <code>participation</code>、<code>emojiType</code>、<code>workMode</code> 和理由。Jev 上下文是有边界的近期消息与可用记忆摘录，不是整个公司的全部对话。</p><p>群快判、Auto 路由、主 Harness 执行是不同调用。飞书 API 显示一个表情，并不意味着只发生了一次 API 或没有模型成本。当前没有用新的外部事件机制自动替代这些职责。</p><div data-sources="jev quick auto card after"></div></div></details>
+</section>
 
-    <section id="states" class="section">
-      <div class="section-head"><div><div class="eyebrow">05 / 谁维护什么状态</div><h2>执行结束、任务完成、答复送达，分别有证据。</h2></div></div>
-      <div id="state-lanes" class="state-lanes"></div>
-      <div class="state-example"><strong>一个完全可能的组合</strong><p>本次 Run 已结束 · 任务等待你补充 · 已有部分结果已送达。</p><p class="caption">也可能是：任务已验收完成 · Run 已结束 · 正式结果发送失败。此时只恢复投递，不重跑工作。</p></div>
-    </section>
+<section id="entries"><h2><span class="part">05 / 分开看入口</span>试验入口、常规入口与飞书</h2>
+<div class="table-scroll"><table><thead><tr><th>入口</th><th>谁先接收</th><th>哪些判断在前面</th><th>输出怎么回去</th></tr></thead><tbody>
+<tr><td>网页 · 个人试验</td><td>当前 Session 的 HTTP 接纳层</td><td>结构校验；Auto 仅条件启用。没有飞书群快判</td><td>网页读取规范化历史和个人启用的 workboard 投影</td></tr>
+<tr><td>网页 · 常规</td><td>同一 Session / Request 底座</td><td>同一运行规则，任务卡是否可用看部署和个人开关</td><td>普通会话投影；不能由“常规端口”推断已升级了任务卡</td></tr>
+<tr><td>飞书 · Jev 群试验</td><td>Connector 的耐久 inbox</td><td>先观察收录，再等 Jev，提交工作后排表情</td><td>文本 outbox + 独立卡片 Worker；复杂工作可开话题</td></tr>
+<tr><td>飞书 · 常规接入分支</td><td>同一 Connector inbox</td><td>按访问、@、回复模式和 quickReactions 分支处理；Quick 可另用并行 Jev</td><td>原消息 / 原话题；符合试验范围才有卡片 Worker</td></tr>
+</tbody></table></div>
+<p>“没有 @ 也能唤醒”是已配置群的能力，不代表任意群、任意机器人消息都触发工作。现有群旁听与话题工作 Session 也不是一回事。</p>
+<p>话题内后续消息沿已绑定 Session 续接。群主线发起复杂工作时，Connector 保存原消息回复目标；首条 Bot 回复创建或取得话题，再记下绑定，后续回同一位置。</p>
+<details data-technical><summary>展开回复位置为什么不会跟着新消息跑偏</summary><div class="detail-body"><p>每条 Request 保存自己的 <code>sourceDelivery</code>，包含 Connector 路由和该输入的回复目的地。即使后来 Session 又接到另一条消息，延迟结果仍按原 Request 的位置交付。</p><p>Session 绑定、inbox 去重、Request 去重、文本投递身份与任务卡 messageId 分别维护。它们互相衔接，但不能只凭 Session 存在就判定群里已经回过话。</p><div data-sources="handoff admission delivery"></div></div></details>
+</section>
 
-    <section id="implementation" class="section">
-      <div class="section-head"><div><div class="eyebrow">06 / 现状、契约与验收</div><h2>复用运行底座，补齐输出与互动契约。</h2></div><span class="badge proposed">已实现与待改动分别验收</span></div>
-      <p id="audit-boundary" class="intro"></p>
-      <div id="rollout-list" class="rollout-list"></div>
-      <details class="contract-panel"><summary>展开事件与数据契约：交接时要留下什么</summary><p class="caption">下列事件名是规划名称，不宣称已有这些 API。现有 workboard.status 不直接改名；拟扩展 progress、waiting 和明确输出意图。</p><div class="table-scroll"><table><thead><tr><th>事件 / 快照</th><th>谁写入</th><th>留下的事实</th><th>谁消费</th></tr></thead><tbody id="contract-rows"></tbody></table></div></details>
-      <div class="subsection"><h3>这份规划始终保留的边界</h3><ul id="invariants" class="invariants"></ul></div>
-      <details class="source-panel"><summary>展开现状依据与源码入口</summary><p>现状对照：主线源码 <code id="main-commit"></code>；本次核对的试验实例运行版本 <code id="pilot-commit"></code>。源码、配置、运行样本和实际送达分别核对，静态网站不会自动更新部署状态。</p><div id="source-list" class="source-list"></div><p class="caption">原有架构图谱的其余视图保留原版日期与源码基线，不因为增加这一页而宣称全站已刷新。</p></details>
-      <div class="native-note"><h3>原生机制承担什么，Jev 留在哪里？</h3><p>Codex 的事件流、用户提问、<code>turn/steer</code> 和 <code>turn/interrupt</code> 承载输出与输入。现有追加输入与停止可复用；问题级别、任务卡内容和开场质量仍由当前 Harness 与平台契约定义。</p><p>目标输出主线不依赖 Jev。现状中的表情与群消息分流、清单 Gate 要分别调整；Auto 模型档位选择作为独立功能另评估。</p><p>DevDay 的 MCP Events 是外部事件订阅与唤醒能力。它不会自动生成这里的任务卡和反馈规则；现有飞书接入不因本规划自动更换。</p><div class="external-links"><a href="https://learn.chatgpt.com/docs/app-server" target="_blank" rel="noopener noreferrer">Codex 原生接口 ↗</a><a href="https://developers.openai.com/plugins/build/mcp-events" target="_blank" rel="noopener noreferrer">MCP Events ↗</a></div></div>
-    </section>
-  </main>
-  <footer><a href="../index.html">← 架构图谱</a><span>RemoteLab · 消息与任务输出规划</span><a href="#architecture">回到图示 ↑</a></footer>
-  <noscript><div class="noscript">图示交互需要 JavaScript。可读取同目录的 <a href="./README.md">完整规划参考文本</a>。</div></noscript>
-</body>
-</html>
+<section id="output"><h2><span class="part">06 / 用户看到的过程</span>一次开场，一张推进卡，一个本轮结果</h2>
+<p>快速任务直接给完整结果。较长且可建卡的任务，先让用户知道具体怎样着手，再用同一张卡跟进工作。需要用户回答的问题单独出现。</p>
+<div class="surface-example"><div class="chat-opening"><small>【开始处理】 · 模型形成具体内容</small><p>这条链路要先分清“消息已记录”和“模型已启动”。我先核对 observations、请求提交及表情排队的顺序，再看卡片由哪个 Worker 更新。</p><span class="small muted">会话入口合在这条有用开场里；不另发固定创建通知。</span></div>
+<article class="task-example"><div class="task-head"><div><small>任务目标</small><h3>让用户看清消息如何变成工作</h3></div><span class="tag">进行中</span></div><ul><li>✓ 核对接入与 Session 交接 <small>已验收</small></li><li>○ 画清同步、异步与职责 <small>进行中</small></li><li>○ 核对真实飞书收发 <small>待验收</small></li></ul><div class="card-progress"><small>实际进度 · 更新这一区域</small><p>已确认 Jev 试验路径先观察收录，后等快判；表情在执行请求提交之后才排队。正在把两条输出 Worker 分开画。</p></div></article>
+<div class="question-example"><small>【待你回复】 · 单独问题</small><p>当前问题能力可以单独展示文字与选项；按必要程度分级的交互卡仍是目标，不能从本示例推断已实现。</p></div>
+<div class="chat-final"><small>【最终答复】 · 本轮结束</small><p>交接与图解已完成；真实飞书收发还未验收，任务保留部分完成。这个标识不会把主卡自动改成“全部完成”。</p></div></div>
+<p class="small muted">这是解释界面的静态示例，不发送消息，不创建真实任务。需要操作式目标演示，可打开<a href="./reference.html#experience">交互附录</a>；其中必要问题卡等场景仍标为规划。</p>
+<h3 class="subhead">三种状态各有维护者</h3>
+<div class="state-lines"><p><strong>Run 状态：</strong>调度器 / 原生运行器记录接受、运行、停止或结束。</p><p><strong>任务状态：</strong>Harness 按验收证据记录进行中、部分完成、等待、失败或完成。</p><p><strong>交付状态：</strong>输出程序按真实回执记录待发送、部分送达、失败或全部送达。</p></div>
+<p>完全可能同时出现：<strong>Run 已结束 · 任务部分完成 · 本轮最终答复已送达。</strong>也可能任务已经验收完成，但最终附件尚未送达；此时恢复投递，不重复执行任务。</p>
+</section>
+
+<section id="feedback"><h2><span class="part">07 / 运行中又收到一条消息</span>停止、插问、补充和回答不能混为一谈</h2>
+<p>底座支持原生追加输入与停止，但目前并没有把所有自然语言反馈可靠分成独立业务事件。尤其是<strong>正在等选择题时，新文字可能被当作题目答案</strong>。这一点必须单独测试。</p>
+<div class="table-scroll"><table><thead><tr><th>用户动作</th><th>当前机制</th><th>目标与缺口</th></tr></thead><tbody id="feedback-rows"></tbody></table></div>
+<p class="note">超时选择是系统回退，不是用户回复，更不是授权。现有统一五分钟策略与目标的“可选 / 必要输入 / 授权”分级不等价；目标的持久待答、问题版本和独立交互卡还需要实现。</p>
+<details data-technical><summary>为什么“已接纳补充”不等于“补充已采用”</summary><div class="detail-body"><p>HTTP 接纳证明输入被可靠记录。原生输入回执证明它送到当前执行。模型随后解释“我已采用这条信息，因此把 A 改为 B”，并重新验证受影响结果，才说明它进入了实际方案。</p><p>原生追加输入不能自动保证插问后继续原任务，也不能替代验收。Harness 需要说明原任务的去向，并用原 taskId 更新已有卡。</p><div data-sources="native question card"></div></div></details>
+</section>
+
+<section id="testing"><h2><span class="part">08 / 可以去测，但不能先宣布都通过</span>把体验验收落到实际收发</h2>
+<p>你可以现在测试。建议先测“复杂任务无 @”和“运行中插问”；有选择题时，再分别测试停止按钮与普通文字。验收看真人入口、真实投递回执与实际卡片更新，不用静态图或 CI 代替。</p>
+<div class="table-scroll"><table><thead><tr><th>场景</th><th>实际看什么</th><th>当前边界</th></tr></thead><tbody id="test-rows"></tbody></table></div>
+<h3 class="subhead">这轮已经改的，与还要改的</h3>
+<ul class="plain-list"><li><strong>已改：</strong>移除 Jev 清单 gate；新工作由已启用的执行 Harness 判断卡片需求；有用开场合入入口；有卡时进度更新原卡；最终答复与任务完成分开。</li><li><strong>仍待：</strong>收到表情从可靠接收点立即触发；两条 Worker 保证客户端开场与首卡顺序；问题等级与持久待答；自由文本停止、插问与问题答案的区分；旁听 Session 中工作变长时的任务卡接续规则。</li><li><strong>还没拿到：</strong>部署后新的真人复杂任务，从消息接入、首卡、原卡进度到最终答复的完整飞书验收证据。</li></ul>
+<p>本页这次交付的是<strong>说明网站与事实核对</strong>。它不会把上面待改能力自动部署，也不会改变之前尚未通过的飞书端到端验收状态。</p>
+</section>
+
+<section id="evidence"><h2><span class="part">来源 / 版本 / 维护</span>按源码说清楚，按真实体验验收</h2>
+<p id="reader-scope"></p><p>本页按你提供的网页采用“先走一次真实场景 → 再逐块拆开 → 最后展开技术细节”的阅读结构。引用其表达方式，RemoteLab 的事实仍以自己的源码和运行证据为准。</p>
+<p class="small muted">源码快照：<code id="reader-commit"></code>。部署版本、群配置和实际送达是另外的证据；本站为静态快照，不作自动刷新承诺。</p>
+<div id="all-sources" class="all-sources"></div>
+<p class="small"><a href="./README.md">同目录维护参考文本</a> · <a href="./reference.html">目标交互图与演示附录</a> · <a href="../index.html">回到架构图谱</a></p>
+</section>
+<footer>RemoteLab 消息与任务输出 · 当前事实和目标方案分开维护 · <a href="#start">回到开头 ↑</a></footer>
+</main></div>
+<noscript><p class="no-js">正文可以直接阅读；交互时序图需要 JavaScript。完整步骤见<a href="./README.md">维护参考文本</a>。</p></noscript>
+</body></html>

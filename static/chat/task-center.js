@@ -50,6 +50,9 @@
   let loading = false;
   let actionTaskId = "";
   let loadError = "";
+  const openTaskIds = new Set();
+  const executionHistory = new Map();
+  let visibleTaskLimit = 40;
 
   function translate(key, fallback = key, vars = undefined) {
     const value = typeof globalScope.remotelabT === "function"
@@ -315,6 +318,9 @@
 
   function executionText(execution) {
     if (!execution) return translate("tasks.execution.none", "No execution yet");
+    if (execution.triggerStatus === "delivered" && execution.runAvailable === false && ["admitted", "accepted"].includes(execution.state)) {
+      return translate("tasks.execution.unverified", "Execution state not verified");
+    }
     const stamp = execution.completedAt || execution.admittedAt || execution.attemptedAt || execution.scheduledAt;
     return `${stateLabel(execution.state)} · ${formatDateTime(stamp)}`;
   }
@@ -355,109 +361,249 @@
     return translate(`tasks.action.${action}`, action);
   }
 
+  function isCurrentTask(task) {
+    if (task.kind === "recurring") return ["active", "paused"].includes(task.state);
+    if (["admitted", "accepted"].includes(task.state) && task.lastExecution?.runAvailable === false) return false;
+    if (task.state === "failed") return (task.health?.failedExecutions || 0) > 0;
+    return ["scheduled", "starting", "running", "accepted", "admitted", "paused"].includes(task.state);
+  }
+
+  function displayTasks() {
+    const grouped = new Map(), result = [];
+    for (const task of tasks) {
+      // Only fold historical one-time records with the same instruction and origin.
+      // Never merge schedules by title or apply a lifecycle action to a display group.
+      if (task.kind !== "one_time" || isCurrentTask(task) || !task.sourceSessionId || !task.prompt) {
+        result.push(task); continue;
+      }
+      const key = JSON.stringify([task.sourceSessionId, task.title, task.prompt, task.target,
+        task.resultDelivery, task.createdByIdentityId]);
+      const members = grouped.get(key) || []; members.push(task); grouped.set(key, members);
+    }
+    for (const members of grouped.values()) {
+      if (members.length === 1) { result.push(members[0]); continue; }
+      members.sort((a, b) => Date.parse(b.lastExecution?.scheduledAt || b.createdAt)
+        - Date.parse(a.lastExecution?.scheduledAt || a.createdAt));
+      const latest = members[0];
+      result.push({ ...latest, id: `history:${members.at(-1).id}`, members, actions: [],
+        health: { ...latest.health, failedExecutions: members.reduce((sum, item) => sum + (item.health?.failedExecutions || 0), 0) } });
+    }
+    return result;
+  }
+
+  function taskTitle(task) {
+    if (task.title && !["One-time task", "Recurring task"].includes(task.title)) return task.title;
+    return (task.prompt || translate("tasks.untitled", "Untitled automation")).slice(0, 70);
+  }
+
+  function createExecutionRow(execution) {
+    const row = createNode("li", "task-execution"); row.dataset.state = execution.state;
+    const heading = createNode("div", "task-execution-heading");
+    const date = createNode("time", "", formatDateTime(execution.scheduledAt));
+    if (execution.scheduledAt) date.dateTime = execution.scheduledAt;
+    heading.append(date, createNode("span", "task-state-pill", executionText(execution)));
+    row.appendChild(heading);
+    if (execution.attemptedAt) row.appendChild(createNode("p", "task-history-note", translate("tasks.history.attempted", "Trigger attempted") + " · " + formatDateTime(execution.attemptedAt)));
+
+    if (execution.error && execution.state === "failed") {
+      row.appendChild(createNode("pre", "task-execution-error", execution.error));
+    }
+    if (execution.runId) row.appendChild(createNode("div", "task-execution-id", execution.runId));
+    if (execution.sessionId) {
+      const link = createNode("a", "task-execution-link", translate("tasks.history.logs", "Open execution Session and logs"));
+      const path = `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions`;
+      link.href = globalScope.remotelabResolveProductPath?.(path) || path;
+      row.appendChild(link);
+    } else if (execution.triggerStatus === "delivered") {
+      row.appendChild(createNode("p", "task-history-note", translate("tasks.history.noLogs", "No retained execution Session; completion cannot be verified.")));
+    }
+    return row;
+  }
+
+  async function loadExecutionHistory(task, { more = false, failedOnly = false } = {}) {
+    let history = executionHistory.get(task.id);
+    if (history?.loading) return;
+    const status = failedOnly ? "failed" : "all";
+    if (!more || history?.status !== status) history = { entries: [], nextCursor: "", status };
+    executionHistory.set(task.id, history); history.loading = true; history.error = "";
+    renderTasks();
+    try {
+      if (task.members) {
+        const entries = task.members.map(item => item.lastExecution).filter(Boolean)
+          .filter(item => status !== "failed" || item.state === "failed");
+        const offset = more ? history.entries.length : 0;
+        history.entries.push(...entries.slice(offset, offset + 25));
+        history.nextCursor = history.entries.length < entries.length ? String(history.entries.length) : "";
+      } else {
+        const query = new URLSearchParams({ limit: "25", status });
+        if (more && history.nextCursor) query.set("cursor", history.nextCursor);
+        const payload = await fetchJsonOrRedirect(`/api/automation-tasks/${encodeURIComponent(task.id)}/executions?${query}`, { revalidate: false, cache: "no-store" });
+        const seen = new Set(history.entries.map(item => item.id));
+        history.entries.push(...(payload.executions || []).filter(item => !seen.has(item.id)));
+        history.nextCursor = payload.nextCursor || "";
+      }
+      history.loaded = true;
+    } catch (error) { history.error = error.message || translate("tasks.history.failed", "Could not load execution history."); }
+    finally { history.loading = false; renderTasks(); }
+  }
+
+  function createHistory(task) {
+    const root = createNode("section", "task-history");
+    const toolbar = createNode("div", "task-history-toolbar");
+    toolbar.appendChild(createNode("h3", "", translate("tasks.history.title", "Trigger timeline")));
+    const history = executionHistory.get(task.id);
+    const failedOnly = history?.status === "failed";
+    const filter = createNode("button", "task-center-action", translate("tasks.history.failures", "Failures only"));
+    filter.type = "button"; filter.setAttribute("aria-pressed", String(failedOnly));
+    filter.disabled = Boolean(history?.loading);
+    filter.addEventListener("click", () => void loadExecutionHistory(task, { failedOnly: !failedOnly }));
+    toolbar.appendChild(filter); root.appendChild(toolbar);
+    if (task.check?.error) {
+      root.appendChild(createNode("p", "task-history-note", translate("tasks.history.checkError", "Latest scheduler/check error") + " · " + formatDateTime(task.check.errorAt)));
+      root.appendChild(createNode("pre", "task-execution-error", task.check.error));
+    }
+    const entries = history?.entries || [];
+    const timeline = createNode("ol", "task-execution-timeline");
+    entries.forEach(execution => timeline.appendChild(createExecutionRow(execution)));
+    root.appendChild(timeline);
+    if (!entries.length) root.appendChild(createNode("p", "task-history-note", translate(history?.loading ? "tasks.loading" : failedOnly ? "tasks.history.noFailures" : "tasks.execution.none", history?.loading ? "Loading…" : failedOnly ? "No recorded failed triggers." : "No execution yet")));
+    if (history?.error) root.appendChild(createNode("p", "task-execution-error", history.error));
+    if (history?.nextCursor || history?.error) {
+      const more = createNode("button", "task-center-action", translate(history.error ? "tasks.history.retry" : "tasks.history.more", history.error ? "Retry" : "Earlier triggers"));
+      more.type = "button"; more.disabled = Boolean(history.loading);
+      more.addEventListener("click", () => void loadExecutionHistory(task, { more: Boolean(history.nextCursor), failedOnly }));
+      root.appendChild(more);
+    }
+    return root;
+  }
+
   function createTaskCard(task) {
-    const card = createNode("article", "task-card");
-    card.dataset.state = task.state || "unknown";
-    const main = createNode("div", "task-card-main");
+    const card = createNode("article", "task-card"); card.dataset.state = task.state || "unknown";
+    card.dataset.taskId = task.id;
+    const detail = createNode("details", "task-detail");
+    const summary = createNode("summary", "task-summary");
     const heading = createNode("div", "task-card-heading");
-    heading.appendChild(createNode("div", "task-card-title", task.title || translate("tasks.untitled", "Untitled automation")));
-    heading.appendChild(createNode("span", "task-state-pill", stateLabel(task.state)));
-    main.appendChild(heading);
-    if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
+    heading.appendChild(createNode("div", "task-card-title", taskTitle(task)));
+    const health = task.health || {};
+    card.dataset.attention = String(Boolean(health.needsAttention));
+    const badge = health.needsAttention && isCurrentTask(task) ? translate("tasks.health.attention", "Needs attention") : stateLabel(task.state);
+    heading.appendChild(createNode("span", `task-state-pill${health.needsAttention ? " task-health-error" : ""}`, badge));
+    summary.appendChild(heading);
+    const info = createNode("div", "task-summary-meta");
+    info.appendChild(createNode("span", "", task.members
+      ? translate("tasks.history.groupCount", `${task.members.length} historical triggers`, { count: task.members.length }) : taskScheduleText(task)));
+    if (task.nextRunAt) info.appendChild(createNode("span", "", translate("tasks.meta.next", "Next") + " · " + formatDateTime(task.nextRunAt)));
+    info.appendChild(createNode("span", "", translate("tasks.meta.lastRun", "Last run") + " · " + executionText(task.lastExecution)));
+    summary.appendChild(info);
+    if (health.failedExecutions) summary.appendChild(createNode("div", "task-failure-summary", translate("tasks.health.failures", `${health.failedExecutions} failures in the last 7 days`, { count: health.failedExecutions })
+      + (!health.needsAttention && task.lastExecution?.state === "completed" ? " · " + translate("tasks.health.recovered", "Latest run succeeded") : "")));
+    detail.appendChild(summary);
+    if (openTaskIds.has(task.id)) {
+      detail.open = true;
+      detail.appendChild(createHistory(task));
+      const definition = createNode("details", "task-definition");
+      definition.appendChild(createNode("summary", "", translate("tasks.history.settings", "Task settings")));
+      const main = createNode("div", "task-card-main");
+      if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
 
-    const meta = createNode("div", "task-card-meta");
-    const creator = creatorName(task.createdByIdentityId);
-    if (creator) addMetaRow(meta, translate("tasks.meta.creator", "Creator"), creator);
-    addMetaRow(
-      meta,
-      translate("tasks.meta.schedule", "Schedule"),
-      taskScheduleText(task),
-    );
-    addMetaRow(
-      meta,
-      translate("tasks.meta.next", "Next"),
-      task.nextRunAt ? formatDateTime(task.nextRunAt) : translate("tasks.time.none", "Not scheduled"),
-    );
-    addMetaRow(meta, translate("tasks.meta.execution", "Execution"), taskTargetText(task));
-    const runtime = task.runtime;
-    addMetaRow(meta, translate("tasks.runtime.label", "Model policy"),
-      runtime?.runtimePolicy === "auto" || runtime?.runtimePolicy === "follow_default"
-        ? translate("tasks.runtime.follow", "Auto for each new Session") + " · " + translate("tasks.runtime.help", "Each new Session starts from Auto. Reused Sessions keep their own runtime.")
-        : translate("tasks.runtime.fixed", "Fixed") + " · " + [runtime?.tool, runtime?.model, runtime?.effort].filter(Boolean).join(" · "));
-    addMetaRow(meta, translate("tasks.meta.delivery", "Delivery"), notificationText(task));
-    if (task.kind === "recurring") {
-      addMetaRow(meta, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
-      addMetaRow(meta, translate("tasks.meta.admission", "Admission"), gateText(task));
-    }
-    const execution = task.lastExecution;
-    if (execution?.runtime) addMetaRow(meta, translate("tasks.runtime.last", "Last run configuration"),
-      [execution.runtime.tool, execution.runtime.model, execution.runtime.effort].filter(Boolean).join(" · "));
-    addMetaRow(
-      meta,
-      translate("tasks.meta.lastRun", "Last run"),
-      executionText(execution),
-      execution?.sessionId
-        ? { link: `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions` }
-        : {},
-    );
-    if (execution?.error || task.lastError) {
-      addMetaRow(meta, translate("tasks.meta.error", "Error"), execution?.error || task.lastError);
-    }
-    main.appendChild(meta);
-    card.appendChild(main);
+      const meta = createNode("div", "task-card-meta");
+      const creator = creatorName(task.createdByIdentityId);
+      if (creator) addMetaRow(meta, translate("tasks.meta.creator", "Creator"), creator);
+      addMetaRow(
+        meta,
+        translate("tasks.meta.schedule", "Schedule"),
+        taskScheduleText(task),
+      );
+      addMetaRow(
+        meta,
+        translate("tasks.meta.next", "Next"),
+        task.nextRunAt ? formatDateTime(task.nextRunAt) : translate("tasks.time.none", "Not scheduled"),
+      );
+      addMetaRow(meta, translate("tasks.meta.execution", "Execution"), taskTargetText(task));
+      const runtime = task.runtime;
+      addMetaRow(meta, translate("tasks.runtime.label", "Model policy"),
+        runtime?.runtimePolicy === "auto" || runtime?.runtimePolicy === "follow_default"
+          ? translate("tasks.runtime.follow", "Auto for each new Session") + " · " + translate("tasks.runtime.help", "Each new Session starts from Auto. Reused Sessions keep their own runtime.")
+          : translate("tasks.runtime.fixed", "Fixed") + " · " + [runtime?.tool, runtime?.model, runtime?.effort].filter(Boolean).join(" · "));
+      addMetaRow(meta, translate("tasks.meta.delivery", "Delivery"), notificationText(task));
+      if (task.kind === "recurring") {
+        addMetaRow(meta, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
+        addMetaRow(meta, translate("tasks.meta.admission", "Admission"), gateText(task));
+      }
+      const execution = task.lastExecution;
+      if (execution?.runtime) addMetaRow(meta, translate("tasks.runtime.last", "Last run configuration"),
+        [execution.runtime.tool, execution.runtime.model, execution.runtime.effort].filter(Boolean).join(" · "));
+      addMetaRow(
+        meta,
+        translate("tasks.meta.lastRun", "Last run"),
+        executionText(execution),
+        execution?.sessionId
+          ? { link: `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions` }
+          : {},
+      );
+      if (execution?.error || task.lastError) {
+        addMetaRow(meta, translate("tasks.meta.error", "Error"), execution?.error || task.lastError);
+      }
+      main.appendChild(meta);
+      definition.appendChild(main);
 
-    if (Array.isArray(task.actions) && task.actions.length > 0) {
-      const actions = createNode("div", "task-card-actions");
-      if (runtime?.runtimePolicy === "fixed") {
-        const useAuto = createNode("button", "task-center-action", translate("tasks.runtime.useAuto", "Use Auto for future new Sessions"));
-        useAuto.type = "button";
-        useAuto.disabled = Boolean(actionTaskId);
-        useAuto.addEventListener("click", () => void useAutoRuntime(task));
-        actions.appendChild(useAuto);
+      if (Array.isArray(task.actions) && task.actions.length > 0) {
+        const actions = createNode("div", "task-card-actions");
+        if (runtime?.runtimePolicy === "fixed") {
+          const useAuto = createNode("button", "task-center-action", translate("tasks.runtime.useAuto", "Use Auto for future new Sessions"));
+          useAuto.type = "button";
+          useAuto.disabled = Boolean(actionTaskId);
+          useAuto.addEventListener("click", () => void useAutoRuntime(task));
+          actions.appendChild(useAuto);
+        }
+        for (const action of task.actions) {
+          const button = createNode("button", `task-center-action${action === "cancel" ? " danger" : ""}`, actionLabel(action));
+          button.type = "button";
+          button.disabled = Boolean(actionTaskId);
+          button.addEventListener("click", () => void applyAction(task, action));
+          actions.appendChild(button);
+        }
+        definition.appendChild(actions);
       }
-      for (const action of task.actions) {
-        const button = createNode("button", `task-center-action${action === "cancel" ? " danger" : ""}`, actionLabel(action));
-        button.type = "button";
-        button.disabled = Boolean(actionTaskId);
-        button.addEventListener("click", () => void applyAction(task, action));
-        actions.appendChild(button);
-      }
-      card.appendChild(actions);
+      detail.appendChild(definition);
+      if (!executionHistory.has(task.id)) queueMicrotask(() => void loadExecutionHistory(task));
     }
+    detail.addEventListener("toggle", () => {
+      if (!detail.isConnected) return;
+      if (detail.open === openTaskIds.has(task.id)) return;
+      if (detail.open) openTaskIds.add(task.id); else openTaskIds.delete(task.id);
+      renderTasks();
+    });
+    card.appendChild(detail);
     return card;
   }
 
   function matchesFilter(task) {
-    const filter = filterSelect?.value || "all";
-    if (filter === "active") return ["active", "scheduled", "starting", "running", "accepted", "admitted"].includes(task.state);
+    const filter = filterSelect?.value || "current";
+    if (filter === "current") return isCurrentTask(task);
+    if (filter === "failed") return task.health?.failedExecutions > 0 || (task.health?.needsAttention && isCurrentTask(task));
+    if (filter === "active") return isCurrentTask(task) && task.state !== "paused";
     if (filter === "paused") return task.state === "paused";
-    if (filter === "history") return ["completed", "failed", "cancelled"].includes(task.state);
+    if (filter === "history") return !isCurrentTask(task);
     return true;
   }
 
   function renderTasks() {
     if (!list) return;
     list.replaceChildren();
-    if (loading && !loaded) {
-      list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…")));
+    if (loading && !loaded) { list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…"))); return; }
+    if (loadError && tasks.length === 0) { list.appendChild(createNode("div", "task-center-empty", loadError)); return; }
+    const visible = displayTasks().filter(matchesFilter).sort((a, b) => Number(Boolean(b.health?.needsAttention)) - Number(Boolean(a.health?.needsAttention))
+      || Number(Boolean(b.health?.failedExecutions)) - Number(Boolean(a.health?.failedExecutions)));
+    if (!visible.length) {
+      list.appendChild(createNode("div", "task-center-empty", translate(tasks.length ? "tasks.emptyFiltered" : "tasks.empty", tasks.length ? "No automations match this filter." : "No automations yet.")));
       return;
     }
-    if (loadError && tasks.length === 0) {
-      list.appendChild(createNode("div", "task-center-empty", loadError));
-      return;
+    for (const task of visible.slice(0, visibleTaskLimit)) list.appendChild(createTaskCard(task));
+    if (visible.length > visibleTaskLimit) {
+      const more = createNode("button", "task-center-secondary", translate("tasks.history.moreTasks", "More tasks")); more.type = "button";
+      more.addEventListener("click", () => { visibleTaskLimit += 40; renderTasks(); }); list.appendChild(more);
     }
-    const visible = tasks.filter(matchesFilter);
-    if (visible.length === 0) {
-      list.appendChild(createNode(
-        "div",
-        "task-center-empty",
-        tasks.length === 0
-          ? translate("tasks.empty", "No automations yet. Create one here or schedule work from a Session.")
-          : translate("tasks.emptyFiltered", "No automations match this filter."),
-      ));
-      return;
-    }
-    for (const task of visible) list.appendChild(createTaskCard(task));
   }
 
   async function refreshTasks({ force = false } = {}) {
@@ -472,6 +618,7 @@
         revalidate: false,
       });
       tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
+      executionHistory.clear();
       loaded = true;
       return tasks;
     } catch (error) {
@@ -591,7 +738,7 @@
   lifetimeSelect?.addEventListener("change", syncLifetimeFields);
   gateModeSelect?.addEventListener("change", syncGateFields);
   targetModeSelect?.addEventListener("change", syncTargetFields);
-  filterSelect?.addEventListener("change", renderTasks);
+  filterSelect?.addEventListener("change", () => { visibleTaskLimit = 40; renderTasks(); });
   refreshButton?.addEventListener("click", () => void refreshTasks({ force: true }));
   form?.addEventListener("submit", (event) => void submitTask(event));
   globalScope.addEventListener("remotelab:localechange", () => {

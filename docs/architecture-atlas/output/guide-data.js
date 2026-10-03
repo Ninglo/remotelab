@@ -1,9 +1,9 @@
 export const meta = {
-  version: 'v2 · 2026-10-03',
-  status: '任务卡输出已实现；提问分级与接收确认前置仍待实施',
-  mainCommit: '1dc8fbae612c54d624c75838ddc75ec8de67d9c8',
-  pilotCommit: 'b95073aaa8e407249d0718e9c0530414b2b7d3c7',
-  boundary: '源码与实例核对截止 2026-10-03。v2 已修正短问题被 Jev 否决任务卡的链路；本页把已实现输出与仍待改动的提问、接收确认分开展示；图中交互是演示，不会创建真实任务、发消息或执行工具。常规部署实例没有据此自动升级。',
+  version: 'v3 · 2026-10-03',
+  status: '目标演示附录；真实流程见阅读主线；飞书新任务仍待验收',
+  mainCommit: '2e300793188aeabddba720df872c3ac4f1c0a5f2',
+  pilotCommit: '751388fc16435e2ef5c636958924a9160e442d2b',
+  boundary: '源码与实例核对截止 2026-10-03。此页保留目标图与交互演示；真实流程和等待条件以阅读主线为准。清单 gate 已退出，但 groupFeed 不建卡；接收确认前置、问题分级与跨 Worker 到达顺序仍待改。常规实例未因本页发布自动升级。',
 };
 
 export const references = {
@@ -34,7 +34,7 @@ export const nodes = {
   visible: { title: '用户可见结果', owner: '网页 / 飞书表面', role: 'surface', status: '目标体验', summary: '看到是否收到、是否开工、做到哪、是否等自己、结果是否送达。', input: '可公开展示的任务投影与正式结果。', output: '清楚区分进行中、待补充、暂停、完成、失败和取消。', stored: '展示不另造一份任务事实。', async: '离开页面后任务继续；恢复查看同一卡片与结果位置。', evidence: '工作完成与答复送达分别显示；停止执行不自动勾完交付项。', refs: 'projection' },
   background: { title: '后置整理与归集', owner: '独立后台支路', role: 'code', status: '已有独立支路', summary: '维护会话标题、工作摘要及有条件的长期记忆归集。', input: '已结束轮次的历史和可复用信息。', output: 'Session 元数据及符合条件的归集记录。', stored: 'workSummary 与记忆相关记录。', async: '与正式答案投递独立；用户不为元数据整理等待。', evidence: '分类器不是任务验收者，不改写答案，也不负责生成这张任务卡。记忆细节见既有记忆架构说明。', refs: 'background' },
   jev: { title: 'Jev 快速判定', owner: '试验快速模型', role: 'model', status: '现状分支', summary: '当前仍选表情和工作位置，另有独立 Auto 选档位；已不再判定任务卡。', input: '群消息、上下文和对应配置。', output: '反应 / 路由判定，或独立 Auto 模型档位。', stored: '判定与相关运行记录。', async: '现有试验流程先等待快判，再提交工作并排表情；目标输出主线移除这段等待。', evidence: '这些是按配置启用的不同用途。当前群试验还有 fail-open 提交策略；不能从源码断言所有入口都开了这些功能。Auto 单独评估。', refs: 'jev' },
-  gate: { title: 'Harness 判断是否建卡', owner: '当前执行 Harness', role: 'model', status: '已实现', summary: '每个已启用的工作输入均带任务卡规则，按实际工作量决定；短问题也可能要调查。', input: '用户输入、已有事实、实际需要的工作。', output: '短答直接交付；复杂工作生成可验收任务卡。', stored: 'Session 中的任务快照；旧 Jev 判定只作历史。', async: '没有额外清单模型调用；工作变长时在进一步进度前建卡。', evidence: '原来的短文本 Jev gate 已退出任务卡入口；每个新任务仍保持稳定身份。', refs: 'workboard' },
+  gate: { title: 'Harness 判断是否建卡', owner: '当前执行 Harness', role: 'model', status: '已实现', summary: '可建卡、已启用的工作 Session 带任务卡规则；groupFeed 旁听 Session 排除在外。', input: '用户输入、已有事实、实际需要的工作。', output: '短答直接交付；复杂工作生成可验收任务卡。', stored: 'Session 中的任务快照；旧 Jev 判定只作历史。', async: '没有额外清单模型调用；工作变长时在进一步进度前建卡。', evidence: '原来的短文本 Jev gate 已退出；工作位置仍影响建卡范围。真实新复杂任务链路尚待验收。', refs: 'workboard' },
   currentSurface: { title: '现行文本与清单', owner: '现行输出投影', role: 'code', status: '现状已核', summary: '有效开场包含会话入口；任务卡含当前进度与验收状态；最终答复独立。', input: 'commentary、progress 标记、user_question、final 与 workboard。', output: '开场、原卡进度、普通问题文字、验收状态和最终答复。', stored: '原始事件保留；表面按规则筛选。', async: '飞书开场标开始处理，问题标待你回复；执行停止后标最终答复。任务完成由验收事实决定。', evidence: '普通选择题默认五分钟：有选项选第一项，无选项返回未答；没有偏好 / 关键输入等级。现有这些标签不等于任务成功。', refs: 'projection' },
 };
 
@@ -235,7 +235,7 @@ export const openings = {
 
 export const rollout = [
   {id:'receipt',status:'开场已实现，接收确认前置待做',title:'接收与开场',owner:'接入层 + Harness + 输出适配器',now:'Jev 试验分支先快判再提交，表情排在之后；会话入口已合入有内容的开场，无固定创建通知。',change:'可靠收录后前置确认；主模型给有依据的开场；群内开场同时作为唯一工作话题入口。',acceptance:'无 @ 的接入消息能确认收到；未接单不假报开工；快速答案不会被迟到开场和卡片打断。'},
-  {id:'progress',status:'代码已实现，真人新任务待验',title:'一张任务卡承载进度',owner:'Harness 写事实；持久层与 Web / 飞书投影',now:'卡片有目标、验收项和总体状态；进度区已实现，同一任务更新原卡；长短任务已改由执行 Harness 判断。',change:'扩展 progress 与 waiting；标题用目标；按真实变化更新原卡，保留必要历史。',acceptance:'同一 taskId 跨 Run 仍是一张卡；普通进度不产生新消息；重连恢复最新版本，不重发旧历史。'},
+  {id:'progress',status:'代码已实现，真人新任务待验',title:'一张任务卡承载进度',owner:'Harness 写事实；持久层与 Web / 飞书投影',now:'卡片有目标、验收项和总体状态；进度区已实现，同一任务更新原卡；可建卡 Session 中由执行 Harness 判断；groupFeed 旁听 Session 被排除。',change:'扩展 progress 与 waiting；标题用目标；按真实变化更新原卡，保留必要历史。',acceptance:'同一 taskId 跨 Run 仍是一张卡；普通进度不产生新消息；重连恢复最新版本，不重发旧历史。'},
   {id:'interaction',title:'分级问题与续作',owner:'Harness 定等级；问题 Broker 保存与路由',now:'普通有选项提问五分钟后默认首项；必要性没有单独字段，表面仍是问题文字。',change:'交互卡注明级别、未答政策、影响范围与对象；必要问题持久待答，不超时强选。',acceptance:'必要补充无回复保持等待；可选题的默认标记非用户回答；跨 Run 的迟到答案正确接回原任务。'},
   {id:'input',title:'停止、插问、补充与纠正',owner:'原生输入通道 + Harness + 结构化控制',now:'已有原生追加输入和停止底座；存在待答问题时把新文字作为候选答案的路径。',change:'停止控制优先，答案绑定具体问题；自由文本交给 Harness 分类处理，实际采用后写进度。',acceptance:'待答时说停止不被吞成答案；插问不结束任务；纠正影响的标准重新验收，收到与采用可区分。'},
   {id:'publication',status:'输出已实现，续作竞态持续验收',title:'完成与送达分别展示',owner:'Harness 验收 + publication / outbox Worker',now:'已有独立投递与回执底座；开场、问题和最终答复分别标识；最终答复不宣称任务完成，结束后不补发新卡。',change:'明确正式结果输出意图和完成程度；卡片同步工作状态与答复状态，竞态中阻止迟到创建与过期结论。',acceptance:'Run 结束不自动宣布成功；发送失败只补投递；结果前有新纠正先校验，结果后续作有修订记录。'},
