@@ -1089,3 +1089,10 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction or ask: people expect the same parallel conversation behavior as before saved accounts; a 10% reserve should permit asynchronous selection of the next account without a quota lookup or account queue on the request path. The operator requested implementation first and explicitly deferred deployment until a later hands-on test.
 - Product implication: quota persistence and collection are observational background work. They must not delay replies, change successful task results, or impose per-account model concurrency limits. Coalesce passive observations and sample one existing native connection per account rather than adding a timer to every conversation. Keep current tasks pinned to their selected account and change only future requests.
 - Follow-up: keep this candidate out of the live checkout until the later acceptance session; verify concurrent visible replies, cache-failure isolation, and next-request rotation before rollout.
+
+### 2026-10-03 — Monitoring should foreground issues and account allowance
+
+- Source: direct follow-up after using the first monitoring overview.
+- Observed friction or ask: consumption and opportunity prose separated urgent issues from allowance readings. People want issues first, allowance second, and lower-priority details below; the same top section should be readable as a group snapshot.
+- Product implication: sort urgent issues before warnings, show account percentages and reset times with meters, retain explicit unknown readings, and put the visual snapshot in the existing daily message rather than adding another routine notification.
+- Verification: desktop and phone views, snapshot source timestamp, native inline-image delivery in one Feishu post, and real instance readback.
