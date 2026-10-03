@@ -15,7 +15,9 @@ try {
   await writeFile(publicDataPath, JSON.stringify({ events: [{ id: 'paper:one', revision: 'paper-v2', title: '论文一' }], external: [], meta: { content_revision: 'global-v2' } }));
   const publicCorpus = { schema_version: 1, meta: { corpus_revision: 'test' }, records: [], history: [], limitations: [] };
   await writeFile(corpusPath, JSON.stringify(publicCorpus));
-  const api = createQianyanCollaboration({ configDir: dir, documentsPath, publicDataPath, corpusPath });
+  const sourceCatalogPath=join(dir,'sources.json');
+  await writeFile(sourceCatalogPath,JSON.stringify({sources:[{name:'internal-source-canary',url:'https://example.org/internal-table'}]}));
+  const api = createQianyanCollaboration({ configDir: dir, documentsPath, publicDataPath, corpusPath, sourceCatalogPath });
   const a = { id: 'staff-a', name: '员工甲', auth_kind: 'remotelab' }, b = { id: 'staff-b', name: '员工乙', auth_kind: 'feishu' }, service = { ...a, auth_kind: 'service' };
   let seq = 0; const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
   const target = { kind: 'document', id: 'methods', revision: 'v1' };
@@ -49,6 +51,27 @@ try {
   await api.review(service,{id:submission.submission.id,status:'included',reason:'原文已审读',item_id:'arxiv:2610.00781'});
   assert.equal((await api.submissions()).submissions[0].item_id,'arxiv:2610.00781');
   const pack=await api.exportFeedback(service);assert.equal(pack.analysis_feedback.length,3);assert.equal(pack.selection_feedback.length,0);
+  const keywordInput={client_id:id(),kind:'keyword',value:'World  Action Model',reason:'找世界动作模型'};
+  const keyword=await api.proposeSource(a,keywordInput);
+  assert.equal((await api.proposeSource(a,keywordInput)).duplicate,true);
+  await api.proposeSource(b,{client_id:id(),kind:'keyword',value:' world action model ',reason:'补充搜索范围'});
+  const source=await api.proposeSource(a,{client_id:id(),kind:'source',value:'https://example.org/feed?utm_source=test',reason:''});
+  await api.proposeSource(b,{client_id:id(),kind:'source',value:'https://example.org/feed',reason:'公开 RSS'});
+  await api.proposeSource(a,{client_id:id(),kind:'source',value:'青稞具身智能',reason:''});
+  const proposals=(await api.sourceProposals()).proposals;
+  assert.equal(proposals.length,3);assert.equal(proposals.find(p=>p.id===keyword.proposal.id).recommendations.length,2);
+  assert.equal(proposals.find(p=>p.id===source.proposal.id).recommendations.length,2);
+  assert.equal((await api.submissions()).submissions.length,1,'source suggestions never become article submissions');
+  await assert.rejects(api.proposeSource(a,{...keywordInput,value:'different'}),e=>e.status===409);
+  for(const value of ['https://127.0.0.1/private','https://localhost/test','http://example.org'])await assert.rejects(api.proposeSource(a,{client_id:id(),kind:'source',value}));
+  await assert.rejects(api.proposeSource(a,{client_id:id(),kind:'keyword',value:' '}));
+  await assert.rejects(api.proposeSource(a,{client_id:id(),kind:'keyword',value:'x'.repeat(301)}));
+  await assert.rejects(api.reviewSource(b,{id:keyword.proposal.id,status:'adopted',reason:'采用',config_ref:'config/search_policy.json'}),e=>e.status===403);
+  await assert.rejects(api.reviewSource(service,{id:keyword.proposal.id,status:'adopted',reason:'采用'}));
+  await api.reviewSource(service,{id:keyword.proposal.id,status:'adopted',reason:'已写入检索策略',config_ref:'config/search_policy.json'});
+  assert.equal((await api.exportFeedback(service)).source_proposals.length,3);
+  const reopened=createQianyanCollaboration({ configDir: dir, documentsPath, publicDataPath, corpusPath, sourceCatalogPath });
+  assert.equal((await reopened.sourceProposals()).proposals.find(p=>p.id===keyword.proposal.id).status,'adopted','proposal status survives restart');
   const search=await api.researchQuery('search',{query:'世界模型',limit:5});assert.equal(search.meta.visibility,'internal');assert.equal(search.results[0].id,'document:methods');
   const mcp=await api.researchQuery('mcp',{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'qianyan_search',arguments:{query:'世界模型'}}});assert.equal(mcp.result.structuredContent.meta.visibility,'internal');
   const exact=await api.researchQuery('read',{id:'document:methods',revision:'v1'});assert.equal(exact.record.markdown,'旧版判断');
@@ -88,8 +111,14 @@ try {
     const headers={};let output;await handler({req:r,res:{setHeader:(k,v)=>headers[k]=v},pathname:new URL(r.url,'http://example.test').pathname,writeJson:(_,status,data)=>output={status,data,headers}});return output;
   }
   assert.equal((await request('GET','documents',null)).status,401);
+  for(const path of ['source-catalog','source-proposals'])assert.equal((await request('GET',path,null)).status,401);
+  assert.equal((await request('GET','source-catalog',b)).data.sources[0].name,'internal-source-canary');
+  assert.equal((await request('POST','source-proposals',null,{client_id:id(),kind:'keyword',value:'robot'})).status,401);
+  assert.equal((await request('POST','source-proposals',b,{client_id:id(),kind:'keyword',value:'robot'})).status,201);
+  assert.equal((await request('POST','source-proposals',b,{client_id:id(),kind:'keyword',value:'robot'},'https://other.test')).status,403);
+  assert.equal((await request('GET','source-proposals',a)).data.proposals.length,4);
   assert.equal((await request('GET','comments?kind=document&id=methods',b)).status,200);
   assert.equal((await request('POST','comments',b,{client_id:id(),target,comment:'bad'},'https://other.test')).status,403);
   assert.equal((await request('GET','search?query=世界模型',a)).headers['Cache-Control'],'private, no-store');
-  console.log('qianyan collaboration: two employees share comments; verified author, version history, replies, retraction, idempotency, URL dedupe, separate feedback, internal/public query boundary, scoped Feishu identity, expiry, wrong tenant, CSRF and anonymous rejection PASS');
+  console.log('qianyan collaboration: shared comments and source proposals; verified author, restart persistence, idempotency, source/keyword normalization and dedupe, separate article queue, service review, private catalogue, scoped identity, CSRF and anonymous rejection PASS');
 } finally { await rm(dir,{recursive:true,force:true}); }

@@ -26,6 +26,7 @@ const identity = createQianyanIdentity({ configDir: CONFIG_DIR,
   authDocument: async () => getCachedAuthDocument() || await loadAuthDocument(), registerIdentity });
 const collaboration = createQianyanCollaboration({ configDir: CONFIG_DIR,
   documentsPath: join(project, 'private/pipeline/research_documents.json'), publicDataPath: join(project, 'build/data.json'),
+  sourceCatalogPath: join(project, 'private/pipeline/source_catalog.json'),
   corpusPath: process.env.REMOTELAB_QIANYAN_CORPUS || join(project, 'private/pipeline/agent_corpus.json') });
 
 function sameOrigin(req) {
@@ -72,6 +73,10 @@ export function createQianyanInternalHandler({ identityService = identity, colla
       else if (action === 'submissions' && req.method === 'GET') send(200, await api.submissions());
       else if (action === 'submissions' && req.method === 'POST') send(201, await api.submit(person, body));
       else if (action === 'submissions/review' && req.method === 'POST') send(200, await api.review(person, body));
+      else if (action === 'source-catalog' && req.method === 'GET') send(200, await api.sourceCatalog());
+      else if (action === 'source-proposals' && req.method === 'GET') send(200, await api.sourceProposals());
+      else if (action === 'source-proposals' && req.method === 'POST') send(201, await api.proposeSource(person, body));
+      else if (action === 'source-proposals/review' && req.method === 'POST') send(200, await api.reviewSource(person, body));
       else if (action === 'export' && req.method === 'GET') send(200, await api.exportFeedback(person));
       else if (['comments', 'submissions'].includes(action) && req.method === 'DELETE') send(200, await api.remove(person, action === 'comments' ? 'comment' : 'submission', params.get('id')));
       else if (['search', 'read', 'context', 'updates'].includes(action) && req.method === 'GET') send(200, await api.researchQuery(action, Object.fromEntries(params)));

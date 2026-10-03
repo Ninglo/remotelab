@@ -22,7 +22,7 @@ export function canonicalSubmissionUrl(value) {
   u.searchParams.sort(); return u.toString();
 }
 
-export function createQianyanCollaboration({ configDir, documentsPath, publicDataPath, corpusPath, now = () => new Date().toISOString() }) {
+export function createQianyanCollaboration({ configDir, documentsPath, publicDataPath, corpusPath, sourceCatalogPath, now = () => new Date().toISOString() }) {
   const directory = join(configDir, 'qianyan-collaboration'), path = join(directory, 'state.json');
   let queue = Promise.resolve();
   async function load() {
@@ -139,6 +139,42 @@ export function createQianyanCollaboration({ configDir, documentsPath, publicDat
     }));
   }
   async function submissions() { return { submissions: (await load()).submissions.slice().reverse().slice(0, 200), visibility: 'company' }; }
+  async function sourceCatalog() {
+    if (!sourceCatalogPath) return { sources: [], visibility: 'company' };
+    try { return { ...JSON.parse(await readFile(sourceCatalogPath, 'utf8')), visibility: 'company' }; }
+    catch (e) { if (e.code === 'ENOENT') return { sources: [], visibility: 'company' }; throw e; }
+  }
+  async function sourceProposals() {
+    return { proposals: ((await load()).source_proposals || []).slice().reverse().slice(0, 200), visibility: 'company' };
+  }
+  async function proposeSource(person, input) {
+    if (!['source', 'keyword'].includes(input.kind)) throw new CollaborationError('请选择信源或搜索词');
+    const raw = text(input.value, input.kind === 'keyword' ? 300 : 2048), reason = text(input.reason || '', 2000);
+    if (!raw || reason === null) throw new CollaborationError('请填写信源或搜索词，说明不超过 2000 字');
+    const value = raw.normalize('NFKC').replace(/\s+/g, ' ').trim();
+    const normalized = input.kind === 'source' && /^https?:\/\//i.test(value) ? canonicalSubmissionUrl(value) : value.toLocaleLowerCase('en-US');
+    if (/^[a-z]+:\/\//i.test(value) && input.kind === 'source' && !/^https:\/\//i.test(value)) throw new CollaborationError('请使用公开 HTTPS 信源链接或账号名称');
+    return mutate(state => receipt(state, person, input, () => {
+      state.source_proposals ||= [];
+      let row = state.source_proposals.find(r => r.kind === input.kind && r.normalized === normalized);
+      if (!row) { row = { id: 'source_proposal_' + hash(input.kind + ':' + normalized).slice(0, 20), kind: input.kind, value, normalized,
+        status: 'pending', status_reason: '', config_ref: '', created_at: now(), recommendations: [] }; state.source_proposals.push(row); }
+      if (!row.recommendations.some(r => r.author.id === person.id && r.reason === reason)) row.recommendations.push({ author: author(person), reason, created_at: now() });
+      return { proposal: row };
+    }));
+  }
+  async function reviewSource(person, input) {
+    if (person.auth_kind !== 'service') throw new CollaborationError('请由信源整理流程更新状态', 403);
+    const reason = text(input.reason || '', 2000), reference = text(input.config_ref || '', 256);
+    if (!['pending', 'reading', 'adopted', 'declined'].includes(input.status) || reason === null || reference === null ||
+        ['adopted', 'declined'].includes(input.status) && !reason || input.status === 'adopted' && !reference) throw new CollaborationError('采用时需注明配置位置和理由，暂不采用也需说明理由');
+    return mutate(state => {
+      const row = (state.source_proposals || []).find(r => r.id === input.id);
+      if (!row) throw new CollaborationError('信源建议不存在', 404);
+      row.status = input.status; row.status_reason = reason; row.config_ref = reference; row.reviewed_at = now();
+      return { proposal: row };
+    });
+  }
   async function review(person, input) {
     if (person.auth_kind !== 'service') throw new CollaborationError('请由整理流程更新收录状态', 403);
     if (!['pending', 'reading', 'included', 'declined'].includes(input.status) || !text(input.reason || '', 2000) && input.status === 'declined') throw new CollaborationError('状态或理由无效');
@@ -171,9 +207,9 @@ export function createQianyanCollaboration({ configDir, documentsPath, publicDat
   async function exportFeedback(person) {
     if (person.auth_kind !== 'service') throw new CollaborationError('此入口供本站整理流程使用', 403);
     const state = await load(), signals = [...state.comments, ...Object.values(state.votes)];
-    return { schema_version: 1, submissions: state.submissions,
+    return { schema_version: 1, submissions: state.submissions, source_proposals: state.source_proposals || [],
       selection_feedback: signals.filter(s => s.stage === 'selection'), analysis_feedback: signals.filter(s => s.stage === 'analysis'),
       policy: '人工推荐影响选题与审读优先级；事实可靠性仍由原始证据判断。两类反馈独立保留，未经评测不自动修改策略。' };
   }
-  return { listDocuments, readDocument, comments, addComment, vote, reactions, submit, submissions, review, remove, researchQuery, exportFeedback };
+  return { listDocuments, readDocument, comments, addComment, vote, reactions, submit, submissions, sourceCatalog, sourceProposals, proposeSource, reviewSource, review, remove, researchQuery, exportFeedback };
 }
