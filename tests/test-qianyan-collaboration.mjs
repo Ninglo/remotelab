@@ -19,9 +19,10 @@ try {
   const a = { id: 'staff-a', name: '员工甲', auth_kind: 'remotelab' }, b = { id: 'staff-b', name: '员工乙', auth_kind: 'feishu' }, service = { ...a, auth_kind: 'service' };
   let seq = 0; const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
   const target = { kind: 'document', id: 'methods', revision: 'v1' };
-  const comment = { client_id: id(), target, comment: '旧版本这里需要核对训练数据', stage: 'analysis', author: { id: b.id, name: b.name } };
+  const comment = { client_id: id(), target, comment: '旧版本这里需要核对训练数据', stage: 'analysis', evidence_url: 'https://arxiv.org/abs/2610.00781v2#section2', author: { id: b.id, name: b.name } };
   const saved = await api.addComment(a, comment);
   assert.equal(saved.comment.author.id, a.id, 'client cannot forge author');
+  assert.equal(saved.comment.evidence_url, comment.evidence_url, 'citations preserve the original version and section');
   assert.equal((await api.addComment(a, comment)).duplicate, true);
   await assert.rejects(api.addComment(a, { ...comment, comment: 'changed' }), e => e.status === 409);
   const shared = await api.comments({ kind: 'document', id: 'methods' }, b);
