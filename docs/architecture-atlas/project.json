@@ -15,10 +15,10 @@
     },
     {
       "id": "message",
-      "title": "一条消息的执行与交付",
+      "title": "一次工作、交付与长期记忆",
       "source": "docs/architecture-atlas/output",
       "route": "output/index.html",
-      "description": "看清 Connector、Session、Jev、Harness 谁先做什么，哪些串行等待，哪些异步推进，以及进度、提问和结果如何送达。"
+      "description": "沿真实消息执行读到记忆：Session与群存储、项目挂靠、时间线、个人偏好和公司背景；登录后按需查看实际记录。"
     },
     {
       "id": "memory",

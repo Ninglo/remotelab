@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { readMemoryContextView } from '../chat/memory-context-view.mjs';
+
+const dir = await mkdtemp(join(tmpdir(), 'memory-context-view-'));
+const configPath = join(dir, 'runtime.json');
+const people = [{ id: 'person-a', name: 'Colleague A', credentials: ['DO_NOT_EXPOSE'] }, { id: 'person-b', name: 'Colleague B' }];
+const read = personId => readMemoryContextView({ people, personId, memoryDir: dir, configPath });
+try {
+  await mkdir(join(dir, 'reference', 'people'), { recursive: true });
+  const ledger = 'Original project state; no acceptance yet.';
+  await writeFile(join(dir, 'ledger.md'), ledger);
+  await writeFile(join(dir, 'index.md'), 'Project entry');
+  await writeFile(join(dir, 'reference', 'people', 'person-a.md'), 'Only A prefers their full name.');
+  await writeFile(join(dir, 'reference', 'company.md'), '<script>private but inert text</script>');
+  await writeFile(configPath, JSON.stringify({ schemaVersion: 1, enabled: true, contextEnabled: true, reviewEnabled: true, releaseId: 'v1', indexPath: join(dir,'index.md'), ledgerPath: join(dir,'ledger.md'), workflowPath: join(dir,'workflow.md'), projects: [{id:'alpha'}], groups: [{sourceRouteId:'bot-a',chatId:'PRIVATE_CHAT_ID',projectIds:['alpha']}], sessionBindings: [] }));
+  const chronology = { schemaVersion: 1, ledgerHash: createHash('sha256').update(ledger).digest('hex').slice(0,16), events:[{ id:'event-a', projectIds:['alpha'], summary:'Historical state', time:{kind:'event-day',value:'2026-09-16'}, actors:[], source:{path:'ledger.md'} }] };
+  await writeFile(join(dir,'chronology.json'), JSON.stringify(chronology));
+  let result = await read('person-a');
+  assert.match(result.personal.text, /Only A/); assert.equal(result.chronology.stale, false);
+  assert.equal(result.runtime.projects[0].sourceGroups, 1);
+  assert.doesNotMatch(JSON.stringify(result), /DO_NOT_EXPOSE|PRIVATE_CHAT_ID/);
+  result = await read('person-b'); assert.equal(result.personal.status, 'not-recorded');
+  assert.doesNotMatch(JSON.stringify(result.personal), /Only A/);
+  result = await read(''); assert.equal(result.personal.status,'select-person');
+  await assert.rejects(read('../person-a'), /Unknown Person/);
+  await assert.rejects(read('person-unknown'), /Unknown Person/);
+  await writeFile(join(dir, 'ledger.md'), 'Newer state');
+  assert.equal((await read('person-a')).chronology.stale, true);
+  await writeFile(join(dir, 'reference', 'company.md'), 'x'.repeat(32769));
+  assert.equal((await read('person-a')).company.status,'too-large-or-not-file');
+  await writeFile(join(dir,'chronology.json'), JSON.stringify({...chronology,events:[{...chronology.events[0],projectIds:['invented']}]}));
+  assert.equal((await read('person-a')).chronology.status,'invalid');
+  await rm(configPath); result=await read('person-a');
+  assert.equal(result.runtime.status,'unavailable'); assert.match(result.personal.text,/Only A/);
+  console.log('MEMORY_CONTEXT_VIEW_VERIFIED: per-Person lookup without identity inheritance; no credential/group-ID projection; invalid IDs and oversized files refused; missing runtime degrades; changed ledger marks timeline stale; private text remains inert data.');
+} finally { await rm(dir, { recursive: true, force: true }); }
