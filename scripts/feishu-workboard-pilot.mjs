@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import WebSocket from 'ws';
 import * as Lark from '@larksuiteoapi/node-sdk';
-import { writeJsonAtomic } from '../chat/fs-utils.mjs';
+import { createSerialTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import {
   collectFeishuWorkboardCycles,
@@ -70,7 +70,8 @@ const requestJson = async path => {
   if (!result.response.ok) throw new Error(result.json?.error || `RemoteLab GET failed: ${result.response.status}`);
   return result.json;
 };
-const persist = () => writeJsonAtomic(statePath, pilot, { mode: 0o600 });
+const persistQueue = createSerialTaskQueue();
+const persist = () => persistQueue(() => writeJsonAtomic(statePath, pilot, { mode: 0o600 }));
 
 async function verifyMessage(messageId, { updated } = {}, chatId = pilot.chatId) {
   const readback = await app.im.v1.message.get({ path: { message_id: messageId } });
@@ -255,8 +256,7 @@ function scheduleReconnect() {
     reconnectTimer = null;
     try {
       // HTTP refreshes an expired cookie before the next WebSocket handshake.
-      await requestJson(instanceScope ? '/api/build-info' : `/api/sessions/${encodeURIComponent(pilot.sessionId)}`);
-      connect(await remote.ensureAuthCookie());
+      await initialize();
     } catch (error) {
       console.error(`[feishu-workboard] reconnect: ${error.message}`);
       scheduleReconnect();
@@ -265,11 +265,28 @@ function scheduleReconnect() {
   reconnectMs = Math.min(5000, reconnectMs * 2);
 }
 
-if (!instanceScope) await syncPrivate(); // Read state before waiting for notifications.
-for (const id of await discoverGroupSessions()) await syncOne(id);
-pilot.protocolVersion = 2;
-migrating = false;
-pilot.runtime = { pid: process.pid, readyAt: new Date().toISOString() };
-await persist();
-connect(await remote.ensureAuthCookie());
-console.log(`[feishu-workboard] ready route=${pilot.sourceRouteId} scope=${instanceScope ? 'instance' : 'person'}`);
+async function initialize() {
+  if (instanceScope) {
+    for (const id of await discoverGroupSessions()) pending.add(id);
+    // A fenced uncertain send in one Session must not stop other cards or
+    // bring down the route worker. The serial drain isolates those failures.
+    await drain();
+  } else {
+    await syncPrivate();
+    for (const id of await discoverGroupSessions()) await syncOne(id);
+  }
+  pilot.protocolVersion = 2;
+  migrating = false;
+  pilot.runtime = { pid: process.pid, readyAt: new Date().toISOString() };
+  await persist();
+  connect(await remote.ensureAuthCookie());
+  console.log(`[feishu-workboard] ready route=${pilot.sourceRouteId} scope=${instanceScope ? 'instance' : 'person'}`);
+}
+
+try { await initialize(); } // Read state before waiting for notifications.
+catch (error) {
+  // The controller can start later at boot. Stay alive and reconnect rather
+  // than exhausting systemd's restart limit before it is ready.
+  console.error(`[feishu-workboard] startup: ${error.message}`);
+  scheduleReconnect();
+}

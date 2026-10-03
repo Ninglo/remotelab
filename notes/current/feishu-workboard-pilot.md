@@ -153,7 +153,9 @@ legacy cards, pending uncertain creates, acknowledged sequences and migration
 floors. Unknown historical cards lack the new admission receipt and cannot be
 created. A known legacy sender is accepted only to maintain known cards.
 The worker reads state before listening to WebSocket invalidations, reconnects
-after controller restart, and serializes publication/state writes. Cards in a
+after controller restart, stays alive when the controller starts later at boot,
+and serializes publication/state writes. An uncertain send in one Session
+cannot stop the route's other cards. Cards in a
 group thread reply to the originating message; private cards remain in their
 original private chat. IM readback confirms destination, message ID, card type
 and update state; its content is a compatibility preview, so visual acceptance
@@ -199,6 +201,8 @@ inside the normal `npm test` / required CI check. Existing scenarios cover:
   text-to-JSON task IDs, historical projection, and stale progress responses;
 - HTTP and CLI snapshots, concurrent updates and exact retries;
 - card patch failure, uncertain creation, restart replay and migration fences;
+- a real worker process with delayed controller startup and WebSocket reconnect,
+  retaining its PID/state without contacting the Feishu provider;
 - native final delivery after Run end, ready assets, restart/terminal dedupe,
   task-bound multi-part receipts and reused provider IDs.
 
