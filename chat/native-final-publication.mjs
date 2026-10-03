@@ -12,6 +12,7 @@ import {
   rewriteAssistantLocalMarkdownImageTargets,
 } from './session-result-files.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
+import { projectWorkboards } from '../lib/workboard-state.mjs';
 
 export async function prepareNativeFinalFiles(record, event, { run, manifest, publishAsset = publishLocalFileAssetFromPath } = {}) {
   const references = [...extractAssistantArtifactBlockReferences(event.content), ...extractAssistantLocalMarkdownImageReferences(event.content)];
@@ -33,12 +34,17 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
   return next;
 }
 
-// Openings, explicit progress, and completed finals enter the same durable
+// Openings, questions, progress without a card, and finals use the durable
 // outbox. Selection and receipt keys survive observer replay and restarts.
-export async function publishLiveAssistantReplies(record, events, { store, plan, session, running = true, prepareFinal = async event => event } = {}) {
+export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
+  const cardProgressSeqs = session?.workboardPilot === true
+    ? new Set(projectWorkboards(fullHistory).flatMap(task => task.progressHistory.map(progress => progress.seq))) : new Set();
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
+    // The same history drives the card publisher. A card update is never also
+    // queued as a separate chat message; openings, questions and finals remain.
+    if (cardProgressSeqs.has(event.seq)) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
     if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'
@@ -56,7 +62,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     // openings or intermediate updates labeled as separate deliveries.
     if (plan.connector === 'feishu' && !final && !running) continue;
     let prepared;
-    try { prepared = await prepareFinal(final ? event : surface); }
+    try { prepared = await prepareFinal(surface); }
     catch (error) {
       // Asset transport failure must not freeze Run observation or other final
       // messages. The terminal asset path still owns this deferred answer.

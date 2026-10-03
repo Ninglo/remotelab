@@ -151,6 +151,8 @@ function collectPayloadAttachments(events = []) {
 }
 
 function buildPayloadText(displayEvents = []) {
+  const hasAnswer = displayEvents.some(event => event?.type === 'message' && event.role === 'assistant'
+    && stripHiddenBlocks(event.content || ''));
   const parts = [];
   for (const event of displayEvents) {
     if (event?.type === 'message' && event.role === 'assistant') {
@@ -160,7 +162,7 @@ function buildPayloadText(displayEvents = []) {
       }
       continue;
     }
-    if (event?.type === 'attachment_delivery') {
+    if (event?.type === 'attachment_delivery' && !hasAnswer) {
       const fallback = buildAssistantReplyAttachmentFallbackText(event);
       if (fallback) {
         parts.push(fallback);

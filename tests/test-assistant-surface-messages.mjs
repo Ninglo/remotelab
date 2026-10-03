@@ -53,6 +53,19 @@ assert.equal(collectAssistantSurfaceMessages([...history, { ...user, seq: 9 }, n
   .get(nextOpening).surfaceKind, 'opening', 'a new human message resets the opening');
 const publication = buildReplyPublicationPayload(history, { id: 'r', responseId: 'response' }, { includeSessionEntry: false });
 assert.equal(publication.text, 'Fixed and verified.', 'terminal publication contains the conclusion only');
+const replayedFinals = [user, message(2, 'final_answer', '文件已准备好。'),
+  { ...message(3, 'final_answer', '文件已准备好。'), providerMessageId: 'm2',
+    attachments: [{ assetId: 'file-ready', originalName: 'early-result.txt' }] }];
+const replayedDisplay = buildSessionDisplayEvents(replayedFinals);
+assert.equal(replayedDisplay.filter(event => event.surfaceKind === 'final').length, 1,
+  'a provider repeating its completed final item keeps one answer at its original position');
+assert.equal(replayedDisplay.find(event => event.surfaceKind === 'final').messageUpdateSeq, 3);
+const replayedPayload = buildReplyPublicationPayload(replayedFinals, {}, { includeSessionEntry: false });
+assert.equal(replayedPayload.text, '文件已准备好。', 'terminal recovery does not append a second answer or attachment-name fallback');
+assert.equal(replayedPayload.attachments.length, 1);
+const reusedAcrossRuns = replayedFinals.map((event, index) => ({ ...event, runId: index === 2 ? 'run-2' : 'run-1' }));
+assert.equal(buildSessionDisplayEvents(reusedAcrossRuns).filter(event => event.surfaceKind === 'final').length, 2,
+  'different Runs may reuse a provider item ID without merging their answers');
 const legacy = [user, message(2, undefined, 'Opening'), message(3, undefined, 'internal'), message(4, undefined, 'Conclusion')];
 assert.equal(buildReplyPublicationPayload(legacy, {}, { includeSessionEntry: false }).text, 'Conclusion');
 const fileFallback = { ...message(5, undefined, 'Generated file ready to download.'), source: 'result_file_assets',

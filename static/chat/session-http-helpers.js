@@ -340,7 +340,8 @@ function getEventBoundarySeq(event) {
   if (Number.isInteger(event?.blockEndSeq) && event.blockEndSeq > 0) {
     return event.blockEndSeq;
   }
-  return Number.isInteger(event?.seq) ? event.seq : 0;
+  return Math.max(...[event?.seq, event?.workboardUpdateSeq, event?.messageUpdateSeq]
+    .filter(Number.isInteger), 0);
 }
 
 function getNormalizedEventRenderType(event) {
@@ -379,6 +380,9 @@ function getEventRenderBaseKey(event) {
   const type = getNormalizedEventRenderType(event);
   if (event?.type === "message" && Number.isInteger(event.workboardUpdateSeq)) {
     return `${seq}:${type}:workboard:${event.workboardUpdateSeq}`;
+  }
+  if (event?.type === "message" && Number.isInteger(event.messageUpdateSeq)) {
+    return `${seq}:${type}:message:${event.messageUpdateSeq}`;
   }
   if (type === "thinking_block") {
     const state = typeof event?.state === "string" ? event.state : "";

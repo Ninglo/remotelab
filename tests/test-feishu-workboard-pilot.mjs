@@ -77,12 +77,14 @@ test('card renderer keeps one item per row and updates its progress', () => {
   const card = buildFeishuWorkboardCard('目标：交付两项结果\n[x] 排序 — 日期递增。\n[ ] 核验 — 每项可查。');
   assert.equal(card.schema, '2.0');
   assert.equal(card.config.update_multi, true);
-  assert.equal(card.body.elements[1].content, '**1/2 · 进行中**');
-  assert.equal(card.body.elements[2].text.content, '✓ 排序 — 日期递增。');
-  assert.equal(card.body.elements[3].text.content, '○ 核验 — 每项可查。');
+  assert.equal(card.header.title.content, '交付两项结果');
+  assert.equal(card.body.elements[0].content, '**1/2 · 进行中**');
+  assert.equal(card.body.elements[1].text.content, '✓ 排序 — 日期递增。');
+  assert.equal(card.body.elements[2].text.content, '○ 核验 — 每项可查。');
+  assert.equal(card.body.elements.at(-1).content, '暂无进度更新');
   const complete = buildFeishuWorkboardCard('目标：交付两项结果\n[x] 排序 — 日期递增。\n[x] 核验 — 每项可查。');
   assert.equal(complete.header.template, 'green');
-  assert.equal(complete.body.elements[1].content, '**2/2 · 已完成**');
+  assert.equal(complete.body.elements[0].content, '**2/2 · 已完成**');
 });
 
 test('progress commentary and each verified item keep one group card across replay', async () => {
@@ -130,7 +132,7 @@ test('progress commentary and each verified item keep one group card across repl
   for (const update of expandFeishuWorkboardUpdates(cycles, events)) {
     await publishFeishuWorkboardCycle(update, { ...options, pilot: replayPilot });
   }
-  assert.deepEqual(calls, ['patch', 'patch', 'patch'], 'recovery replays each unseen item update on the original card');
+  assert.deepEqual(calls, ['patch', 'patch', 'patch', 'patch'], 'recovery upgrades the known card format once, then replays each unseen item update');
 });
 
 test('private progress commentary does not split a checklist', () => {

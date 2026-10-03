@@ -72,7 +72,7 @@ const list = card.children.find(child => child.tagName === 'ul');
 assert.equal(list.children.length, 2, 'each deliverable starts a separate row');
 assert.equal(list.children[0].children[1].children[0].textContent, '第一项');
 assert.equal(list.children[0].children[1].children[1].textContent, ' — 核对第一份结果。');
-assert.equal(card.children.at(-1).tagName, 'ul', 'a completed turn has no live run badge');
+assert.equal(card.children.at(-1).className, 'session-workboard-progress', 'the progress area follows the list without a live run badge');
 const goalCard = context.renderSessionWorkboardMessage(new Element('div'), {
   ...projected[2],
   content: '目标：一条可更新的清单\n[ ] 核验 — 进度可见。',
@@ -88,6 +88,27 @@ assert.equal(structuredProjection.length, 2, 'native steps never replace a struc
 const blockedCard = context.renderSessionWorkboardMessage(new Element('div'), structuredProjection[1]);
 assert.equal(blockedCard.children[0].children[1].textContent, '1/2');
 assert.equal(blockedCard.children.at(-1).textContent, '等待条件：等待权限');
+const progressCard = context.renderSessionWorkboardMessage(new Element('div'), {
+  ...structured, workboardProgress: { seq: 8, content: '验证已通过，正在推送' },
+  workboardProgressHistory: [{ seq: 6, content: '已定位重复任务 ID' }, { seq: 8, content: '验证已通过，正在推送' }],
+});
+const progressArea = progressCard.children.find(child => child.className === 'session-workboard-progress');
+assert.equal(progressArea.children[1].textContent, '验证已通过，正在推送');
+assert.equal(progressArea.children[2].tagName, 'details');
+assert.equal(progressArea.children[2].children[1].textContent, '已定位重复任务 ID');
+assert.equal(progressCard.dataset.taskId, 'task-fixed');
+assert.equal(progressCard.dataset.anchorSeq, String(first.seq));
+
+const earlyCardUpdate = { ...structured, workboardUpdateSeq: 25 };
+const newerTaskAnchor = { ...structured, seq: 10, workboardUpdateSeq: 20, workboard: { ...structured.workboard, taskId: 'later-task' } };
+const currentSnapshot = [user, earlyCardUpdate, newerTaskAnchor];
+context.updateSessionWorkboardEvents('pilot', currentSnapshot);
+assert.equal(context.updateSessionWorkboardEvents('pilot', [user, { ...earlyCardUpdate, workboardUpdateSeq: 24 }, newerTaskAnchor]), currentSnapshot,
+  'a stale response cannot undo progress on an earlier card when another task follows it');
+// Restore the earlier fixture for the legacy snapshot checks below.
+context.updateSessionWorkboardSession({ id: 'other', workboardPilot: false, activity: { run: { state: 'idle' } } });
+context.updateSessionWorkboardSession({ id: 'pilot', workboardPilot: true, activity: { run: { state: 'running', startedAt: new Date(now).toISOString() } } });
+context.updateSessionWorkboardEvents('pilot', raw);
 
 const stale = context.updateSessionWorkboardEvents('pilot', raw.slice(0, 3));
 assert.equal(stale, raw, 'a late older response cannot roll progress back');
