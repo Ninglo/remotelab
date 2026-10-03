@@ -316,5 +316,6 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Autonomous Execution | `notes/directional/autonomous-execution.md` | P2 background execution vision |
 | Message Transport Architecture | `notes/message-transport-architecture.md` | Historical transport/runtime rationale after the HTTP-first architecture landed |
 | Memory Activation Architecture | `notes/current/memory-activation-architecture.md` | Pointer-first memory loading, routing layers, pruning rules |
+| Memory and Organization Guide | `docs/memory-architecture/README.md` | Human/Agent reference and interactive diagrams; actual read/write flow versus the unimplemented organization-governance proposal |
 | Setup Guide | `docs/setup.md` | Installation, service setup (LaunchAgent/systemd) |
 | System Memory | `memory/system.md` | Cross-deployment learnings (context continuity, testing strategy) |
