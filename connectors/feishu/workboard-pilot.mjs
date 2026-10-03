@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { projectWorkboards, workboardStatusLabel } from '../../lib/workboard-state.mjs';
+import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
-export function buildFeishuWorkboardCard(text, board = null) {
+export function buildFeishuWorkboardCard(text, board = null, progress = null) {
   const lines = String(text || '').split(/\r?\n/).map(trim).filter(Boolean);
   const goal = lines.find(line => /^目标[：:]/.test(line)) || '目标：完成当前任务并核对结果。';
   const parsedItems = lines.flatMap(line => {
@@ -16,7 +17,6 @@ export function buildFeishuWorkboardCard(text, board = null) {
   const items = board ? board.items.map(item => ({ ...item, done: item.status === 'done' })) : completeParse ? parsedItems : [];
   const completed = items.filter(item => item.done).length;
   const elements = [
-    { tag: 'div', text: { tag: 'plain_text', content: goal } },
     ...(items.length ? [{ tag: 'markdown',
       content: `**${completed}/${items.length} · ${board ? workboardStatusLabel(board) : completed === items.length ? '已完成' : '进行中'}**` }] : []),
     ...(items.length ? items.map(item => ({
@@ -24,11 +24,14 @@ export function buildFeishuWorkboardCard(text, board = null) {
         content: `${item.done ? '✓' : '○'} ${item.title} — ${item.condition}` },
     })) : [{ tag: 'div', text: { tag: 'plain_text',
       content: lines.filter(line => line !== goal).join('\n') || trim(text) } }]),
+    { tag: 'hr' },
+    { tag: 'markdown', content: '**目前进展**' },
+    { tag: 'markdown', content: progress?.content || '暂无进度更新' },
   ];
   return {
     schema: '2.0', config: { update_multi: true },
     header: { template: (board ? board.status === 'completed' : items.length && completed === items.length) ? 'green' : 'blue',
-      title: { tag: 'plain_text', content: '交付清单' } },
+      title: { tag: 'plain_text', content: board?.goal || goal.replace(/^目标[：:]\s*/, '') } },
     body: { elements },
   };
 }
@@ -79,7 +82,13 @@ function collectAuthorizedCycles(events, pilot, session = null) {
         else allowed.delete(event.runId);
       }
       history.push(event);
-    } else if (event.source !== 'workboard_checklist') history.push(event);
+    } else if (event.source !== 'workboard_checklist') {
+      // Progress has the same sender boundary as the task card. Unrelated
+      // group Runs must not update an opted-in Person's existing card.
+      const progress = event.type === 'message' && event.role === 'assistant'
+        && !['final', 'final_answer'].includes(event.phase) && parseProgressMessage(event.content).progress;
+      if (!progress || (event.runId ? allowed.has(event.runId) || localRuns.has(event.runId) : authorizedUser)) history.push(event);
+    }
     else {
       const ownSource = event.runId ? allowed.has(event.runId) : authorizedUser;
       // A Session owner can resume an existing explicitly identified task from
@@ -110,12 +119,13 @@ export function collectFeishuWorkboardCycles(events, pilot) {
 // Replay each verified checkpoint rather than collapsing a burst to all-done.
 export function expandFeishuWorkboardUpdates(cycles) {
   return cycles.flatMap(cycle => cycle.updates.map(update => ({ ...cycle,
-    latestSeq: update.seq, content: update.content, board: update.workboard })));
+    latestSeq: update.seq, content: update.content, board: update.workboard, progress: update.progress })));
 }
 
 export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage }) {
-  const contentFor = text => JSON.stringify(buildFeishuWorkboardCard(text, cycle.board));
-  let card = pilot.cards.find(item => (cycle.taskId && item.taskId === cycle.taskId) || item.anchorSeq === cycle.anchorSeq);
+  const contentFor = text => JSON.stringify(buildFeishuWorkboardCard(text, cycle.board, cycle.progress));
+  let card = pilot.cards.find(item => item.anchorSeq === cycle.anchorSeq)
+    || pilot.cards.find(item => cycle.taskId && item.taskId === cycle.taskId);
   if (cycle.latestSeq <= (pilot.protocolAfterSeq || 0)) return null;
   if (!card) {
     // A completed Run that finished before this worker observed it has already

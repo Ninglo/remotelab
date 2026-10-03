@@ -56,6 +56,18 @@ decides whether the work satisfies the user's goal.
   acceptance conditions. Internal execution steps cannot replace them.
 - Keep `taskId`, item IDs and conditions stable. Continuing the same task across
   Runs reuses the original card; a new task gets a new ID, even within one Run.
+  A text-created initial list already has an ID; JSON updates must reuse it.
+  A second ID for identical deliverables in the same unfinished Run is rejected
+  with the existing ID and next revision. Historical default-ID duplicates with
+  unchanged goals and conditions are projected onto their first card position;
+  different tasks and completed work remain separate. Raw history is preserved.
+- After a task card exists, explicit `<progress>` messages update its
+  **目前进展** area. The web card shows the latest update and expandable earlier
+  updates; the Feishu worker patches the original message with the latest text.
+  These updates do not enter the separate message outbox. Openings, native user
+  questions and final results remain separate. Without a card, explicit progress
+  retains its normal message behavior. Progress never changes deliverable
+  acceptance or proves completion, and follows the card's sender/Run scope.
 - After each deliverable passes acceptance, immediately submit the full next
   snapshot with `remotelab assistant-message --workboard-file <json-path>`.
   `done` requires actual verification event references. Withdrawing completion
@@ -72,8 +84,8 @@ decides whether the work satisfies the user's goal.
   delivered. A delivered blocker explanation is still a blocked task. A new
   revision cannot borrow an old revision's delivery receipts.
 - Keep one card per task and send the final answer separately. Native Codex
-  `final_answer` messages with ready assets may enter the outbox while the Run
-  remains active. Provider identities are scoped to the Run and task, so
+  `final_answer` messages with ready assets wait until execution stops before
+  Feishu publishes the result. Provider identities are scoped to the Run and task, so
   steering, restart and terminal settlement cannot resend the same answer.
   Legacy adapters without explicit message phases still settle at Run end;
   unready assets defer publication. Preserve automatic-delivery preferences on
@@ -137,9 +149,11 @@ inside the normal `npm test` / required CI check. Existing scenarios cover:
 - commentary, blocked/partial outcomes, failure/cancellation, cross-Run resume
   and new-task separation;
 - shared web/card state without internal-plan overwrites;
+- in-card progress with separate openings/questions/results, duplicate
+  text-to-JSON task IDs, historical projection, and stale progress responses;
 - HTTP and CLI snapshots, concurrent updates and exact retries;
 - card patch failure, uncertain creation, restart replay and migration fences;
-- native final delivery before Run end, ready assets, restart/terminal dedupe,
+- native final delivery after Run end, ready assets, restart/terminal dedupe,
   task-bound multi-part receipts and reused provider IDs.
 
 The 2026-09-30 live acceptance confirmed an original Feishu topic card updating
