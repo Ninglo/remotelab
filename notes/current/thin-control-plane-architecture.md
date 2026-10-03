@@ -57,7 +57,7 @@ One model call updates together:
 
 This replaces separate title/group, workstream-assessment, workflow-state, task-card, and global Project-organizer calls. It does not critique or continue the answer and does not block reply publication.
 
-The persisted `workSummary` is projected as `workState.summary` and injected on later turns regardless of Harness. Legacy `taskCard` data is migrated into this field on load.
+The persisted `workSummary` is projected as queryable `workState.summary`. The current normal turn hook does not replay classifier summaries as fresh execution evidence; fresh-provider continuity uses available normalized history and existing continuation records. Legacy `taskCard` data is migrated into this field on load. See [the memory guide](../../docs/memory-architecture/README.md) for the actual activation paths.
 
 ## Shared cross-Harness memory
 

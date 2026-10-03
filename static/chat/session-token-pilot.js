@@ -1,8 +1,7 @@
 "use strict";
 
-// Read-only Session usage trial for the requesting Person on this instance.
+// Amber shows recorded Session usage to authenticated People on this instance.
 (function initSessionTokenPilot() {
-  if (bootstrapAuthInfo?.person?.id !== "person_8b536b37317e491d96036fc8") return;
   const list = document.getElementById("sessionList");
   if (!list) return;
   document.documentElement.classList.add("session-token-pilot-enabled");
@@ -62,8 +61,7 @@
     if (refreshing || !isAmber()) return;
     refreshing = true;
     try {
-      // The existing summary is sufficient for this single-Person trial.
-      const response = await fetch("/api/usage/summary?days=3650&top=5000", {
+      const response = await fetch("/api/usage/session-totals", {
         credentials: "same-origin", cache: "no-store",
       });
       if (!response.ok) throw new Error("usage unavailable");

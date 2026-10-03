@@ -1,109 +1,81 @@
 # Memory Activation Architecture
 
-Related broader prompt topology: `notes/current/prompt-layer-topology.md`.
+Verified against the production call paths on 2026-10-03. The shared human/Agent
+explanation is [Memory and organizational collaboration](../../docs/memory-architecture/README.md),
+with [interactive diagrams](../../docs/memory-architecture/index.html).
+Its organization-governance proposal is not an enabled runtime feature.
 
-## Problem
+## Storage and activation are separate
 
-RemoteLab already has storage tiers, but the old startup contract eagerly told the agent to read memory at session start. That mixes up two different concerns:
+A file's presence does not prove its contents entered the current Harness context.
+Keep substantial memory on disk and activate only relevant material:
 
-- storage: where memory lives
-- activation: when memory should enter the current context
+- Fresh provider threads receive memory paths and a capability directory from
+  chat/system-prompt.mjs, which checks existence rather than loading memory bodies.
+- Resumed threads reuse native context; startup pointers are not reinjected on
+  every message. Updating files does not remove previously retained native context.
+- Fresh threads with usable prior Session history can receive bounded continuation
+  from normalized history or existing continuation records. Hidden provider state
+  cannot be fully reconstructed.
+- Source/runtime instructions, Session instructions, source snapshots, explicit
+  agreements and local-bridge state are projected for the applicable turn.
+- workSummary is queryable Session metadata. The normal turn hook deliberately
+  does not replay classifier summaries as fresh execution evidence. Execution
+  router and related-Session import helpers have no production caller in this
+  audited baseline; helper existence does not establish an active input path.
 
-The result is predictable: memory can be large on disk, but unrelated task notes still leak into generic conversations.
+Harness-native instructions, repository AGENTS.md, provider memory and Skills
+have their own activation. manager_context records RemoteLab-owned delivered
+slots, not every source the Harness sees. See [connector Context](../../docs/connector-turn-context.md).
 
-## Design Goal
+## Available regions
 
-Keep total memory large, but keep active context small and relevant.
+| Region | Purpose | Activation |
+| --- | --- | --- |
+| bootstrap.md | Small machine/instance navigation | Fresh-provider pointer; body when useful |
+| user projects.md, skills.md | Domain and method routing | Task-relevant retrieval |
+| preferences.md, reference/ | Local preferences, environment and domain background | Matching scope; current-source checks |
+| tasks/ and project documents | Work, decisions and recovery evidence | Relevant task only |
+| repo memory/system.md | Stable cross-deployment platform lessons | Relevant platform question or curation |
+| candidate queues | Unverified extraction candidates | Explicit governance and curation |
+| Session history and resume IDs | Work continuity | Native resume or bounded reconstruction |
+| instance project ledger and daily reports | Cross-source understanding and dated views | Configured project review or relevant task |
+| archives and original sources | History and attribution | Traceback when needed |
 
-The system should load only a tiny startup layer at session start, then progressively retrieve deeper memory after the current task is clear.
+The local user tier is machine/instance-scoped by default. It is not one namespace
+per authenticated Person. personViews organizes shared Sessions for individuals;
+it does not establish preference ownership or Session access control.
+Person.preferences already stores some product settings, including input mode
+and voice shortcuts. Normalized defaults do not establish explicit user agreement;
+collaboration preferences still need attributed sources and applicability.
 
-## Core Model
+## Actual automatic writeback
 
-### 1. Startup Index
+Normal nontrivial turns can trigger a background memory review independently of
+Session classification. Internal operations and group-feed Sessions are skipped.
+The reviewer gets bounded user/assistant text, not the complete execution evidence.
+It appends short entries with exact-line deduplication; provenance, semantic
+supersession and acceptance require further governance.
 
-Always-on memory must stay tiny. It should contain:
+memory-writeback-targets.mjs builds the actual catalogue: defaults include up to
+24 discovered task Markdown files, stable local targets and user/system fallbacks.
+writeback-targets.json disables named defaults and can replace fallback paths.
+Disabling old task IDs does not disable newly discovered tasks. Both fallback
+IDs remain enabled in the default catalogue. The default user path is
+model-context/auto-user-memory.md; configuration may redirect it to reference/inbox.md.
+The system candidate queue is memory/auto-system-memory.md before curation.
 
-- machine basics
-- stable collaboration defaults
-- key directories
-- high-level project pointers
+A prose rule saying "inbox only" does not establish the effective boundary. Inspect
+the catalogue in the target instance environment. Candidate eligibility does not
+establish factual acceptance.
 
-This lives in `~/.remotelab/memory/bootstrap.md`.
+## Governance direction
 
-### 2. Scope Router Catalog
+The guide proposes full-project source coverage, typed claims, project/Person
+relationships, validity time, conflicts, version-bound role confirmation and
+project/individual views. Start in an isolated collection/test-report layer;
+production writes, delivery, Skills and business actions activate separately.
 
-Scope routing needs its own layer. It should contain:
-
-- repo path
-- recurring non-repo domain pointers
-- one-line summary
-- trigger phrases / task clues
-- the next file, skill, or path to open
-
-This lives in `~/.remotelab/memory/projects.md`.
-
-This layer is for scope selection, not deep context loading.
-
-### 3. Detailed Task Memory
-
-Once the task scope is clear, the agent can open:
-
-- `~/.remotelab/memory/tasks/`
-- project docs
-- repo-local notes
-- KM / wiki / internal docs
-
-This layer should never be mandatory startup context.
-
-### 4. Shared System Learnings
-
-Repo-shared memory in `memory/system.md` stays available, but should be loaded selectively when:
-
-- the current task benefits from prior platform learnings
-- the agent is updating shared memory
-- architecture/debugging history matters
-
-It should not be loaded wholesale for every new session.
-
-## Retrieval Flow
-
-1. Read `bootstrap.md`.
-2. Read `projects.md` only if scope routing is needed.
-3. Read `skills.md` only if capability selection matters.
-4. Infer task scope when obvious.
-5. Ask a clarifying question only when scope is genuinely ambiguous.
-6. Load only the matching detailed memory.
-7. After the task, write back only durable lessons worth reusing.
-
-## Governance Rules
-
-- Reflection is mandatory; writeback is selective.
-- Prefer merging/updating existing entries instead of appending near-duplicates.
-- Automatic writeback should route through a safe target catalog; the model may choose among valid targets, but it should not invent arbitrary file paths.
-- Prune memory lightly but regularly: daily during intense debugging, weekly otherwise.
-- Archive or delete stale task notes once they stop helping future work.
-
-## Implementation Surface
-
-- `chat/system-prompt.mjs`: project the pointer-first memory map and RemoteLab capabilities
-- `chat/turn-context-hook.mjs`: reproject stable pointers with explicit session agreements and work state
-- `chat/session-memory-writeback.mjs`: post-turn durable learning extraction and persistence
-- `chat/memory-writeback-targets.mjs`: writeback target catalog, config parsing, and safe routing
-- `~/.remotelab/memory/bootstrap.md`: tiny startup layer
-- `~/.remotelab/memory/projects.md`: scope-routing layer
-- `~/.remotelab/memory/writeback-targets.json`: optional operator-owned overrides for writeback targets
-- `~/.remotelab/memory/model-context/auto-user-memory.md`: mandatory user fallback sink for automatic durable learning promotion
-- `memory/auto-system-memory.md`: mandatory system fallback sink for automatic cross-deployment learnings
-- `memory/system.md`: shared principles about activation, writeback, and pruning
-
-## Prompt Projection Boundary
-
-The startup prompt exposes memory locations and their roles. It does not prescribe a global retrieval workflow, reply style, planning policy, or writeback ritual. Those decisions belong to the selected Harness, explicit user/session agreements, and task-specific context.
-
-Cross-user behavioral defaults must not be reintroduced as another always-on startup slice. Stable preferences belong in user memory; specialized behavior belongs in Agent templates, repo instructions, or on-demand skills.
-
-## Important Non-Goal
-
-This architecture does not require explicit confirmation on every request.
-
-If the user says something specific like "fix PK V2 in intelligent-app4", the scope is already clear enough to load the relevant memory. Clarification is only for genuinely ambiguous cases.
+Keep ordinary task interpretation and planning with the Harness. Do not make an
+all-project prompt bundle or second semantic gate mandatory on every turn. See
+[the thin control-plane boundary](thin-control-plane-architecture.md).

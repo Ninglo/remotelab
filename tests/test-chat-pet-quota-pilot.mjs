@@ -43,10 +43,11 @@ function renderForPerson(personId, getPayload, initialTheme = 'amber') {
     setTheme(value) { theme = value; windowEvents['remotelab:themechange']?.(); } };
 }
 
-test('quota pilot is not created for other People', () => {
+test('Amber quota is available to another authenticated Person', async () => {
   const view = renderForPerson('person_other', () => ({}));
-  assert.equal(view.workspace.children.length, 0);
-  assert.equal(view.fetchCount(), 0);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(view.workspace.children.length, 1);
+  assert.equal(view.fetchCount(), 2);
 });
 
 test('pilot shows fresh weekly remaining quota for the same Codex account', async () => {
@@ -73,9 +74,9 @@ test('pilot hides quota from an account mismatch', async () => {
   assert.equal(view.workspace.children[0].children[0].textContent, '本周额度 · 暂不可用');
 });
 
-test('quota data loads only while Amber is selected', async () => {
+test('quota data loads only while Amber is selected for any Person', async () => {
   const revision = 'same-account';
-  const view = renderForPerson('person_8b536b37317e491d96036fc8', (url) =>
+  const view = renderForPerson('person_other', (url) =>
     url.endsWith('/status')
       ? { codexAuth: { loggedIn: true, accountRevision: revision } }
       : { codexUsage: { status: 'ready', accountRevision: revision, checkedAt: new Date().toISOString(),

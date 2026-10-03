@@ -35,6 +35,7 @@
     "chat/compose.js",
     "chat/gestures.js",
     "chat/init.js",
+    "chat/session-token-pilot.js",
   ];
 
   function getBaseHref() {

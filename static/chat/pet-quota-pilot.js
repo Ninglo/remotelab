@@ -1,10 +1,7 @@
 "use strict";
 
-// Small, read-only pilot. This Person ID controls visibility, not the Codex account.
+// Amber shows this instance's Codex account quota to authenticated People.
 (function initPetQuotaPilot() {
-  const pilotPersonId = "person_8b536b37317e491d96036fc8";
-  if (bootstrapAuthInfo?.person?.id !== pilotPersonId) return;
-
   const workspace = document.getElementById("sessionWorkspace");
   if (!workspace) return;
 

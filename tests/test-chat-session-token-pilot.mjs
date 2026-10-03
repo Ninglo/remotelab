@@ -52,12 +52,14 @@ function makeView(personId, usage, initialTheme = 'amber') {
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-test('Session Token trial fetches usage only for the current Person', async () => {
-  const other = makeView('person_default', []);
+test('Session Token usage is available to another authenticated Person on Amber', async () => {
+  const other = makeView('person_default', [
+    { sessionId: 'session-one', runCount: 1, totalTokens: 2_500 },
+  ]);
   await settle();
-  assert.equal(other.fetchCount(), 0);
-  assert.deepEqual(other.classes, []);
-  assert.equal(other.titleRow.children.length, 2);
+  assert.equal(other.fetchCount(), 1);
+  assert.deepEqual(other.classes, ['session-token-pilot-enabled']);
+  assert.equal(other.titleRow.children[1].textContent, '2.5k');
 });
 
 test('compact k amount sits between the title and action buttons', async () => {
@@ -84,7 +86,7 @@ test('large recorded totals remain in k and missing records stay blank', async (
 });
 
 test('Session Token usage waits for Amber and loads after theme change', async () => {
-  const view = makeView('person_8b536b37317e491d96036fc8', [
+  const view = makeView('person_default', [
     { sessionId: 'session-one', runCount: 1, totalTokens: 8_700 },
   ], 'light');
   await settle();

@@ -1,4 +1,4 @@
-/* Amber usage pilot for one Person: quota by the pet, recorded tokens by Session. */
+/* Amber usage: instance quota by the pet, recorded tokens by Session. */
 .pet-quota-pilot,
 .session-token-pilot { display: none; }
 

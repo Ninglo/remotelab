@@ -147,6 +147,7 @@ assert.deepEqual(
     '/chat/compose.js?v=build-123',
     '/chat/gestures.js?v=build-123',
     '/chat/init.js?v=build-123',
+    '/chat/session-token-pilot.js?v=build-123',
   ],
   'compatibility loader should version-pin the full split frontend asset chain',
 );
@@ -196,6 +197,7 @@ assert.deepEqual(
     '/chat/compose.js?v=inline-build-456',
     '/chat/gestures.js?v=inline-build-456',
     '/chat/init.js?v=inline-build-456',
+    '/chat/session-token-pilot.js?v=inline-build-456',
   ],
   'compatibility loader should reuse inline build info to keep split assets on the same version',
 );
@@ -244,6 +246,7 @@ assert.deepEqual(
     '/owner/chat/compose.js?v=build-123',
     '/owner/chat/gestures.js?v=build-123',
     '/owner/chat/init.js?v=build-123',
+    '/owner/chat/session-token-pilot.js?v=build-123',
   ],
   'compatibility loader should keep split assets inside the forwarded product scope',
 );
