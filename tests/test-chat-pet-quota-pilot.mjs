@@ -56,7 +56,7 @@ test('pilot shows fresh weekly remaining quota for the same Codex account', asyn
     url.endsWith('/status')
       ? { codexAuth: { loggedIn: true, accountRevision: revision } }
       : { codexUsage: { status: 'ready', accountRevision: revision, checkedAt: new Date().toISOString(),
-        buckets: [{ primary: { remainingPercent: 67.4, windowDurationMins: 10080,
+        buckets: [{ id: 'codex', primary: { remainingPercent: 67.4, windowDurationMins: 10080,
           resetsAt: new Date(Date.now() + 86400000).toISOString() } }] } });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(view.workspace.children.length, 1);
@@ -69,7 +69,7 @@ test('pilot hides quota from an account mismatch', async () => {
     url.endsWith('/status')
       ? { codexAuth: { loggedIn: true, accountRevision: 'new' } }
       : { codexUsage: { status: 'ready', accountRevision: 'old', checkedAt: new Date().toISOString(),
-        buckets: [{ primary: { remainingPercent: 90, windowDurationMins: 10080 } }] } });
+        buckets: [{ id: 'codex', primary: { remainingPercent: 90, windowDurationMins: 10080 } }] } });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(view.workspace.children[0].children[0].textContent, '本周额度 · 暂不可用');
 });
@@ -80,7 +80,7 @@ test('quota data loads only while Amber is selected for any Person', async () =>
     url.endsWith('/status')
       ? { codexAuth: { loggedIn: true, accountRevision: revision } }
       : { codexUsage: { status: 'ready', accountRevision: revision, checkedAt: new Date().toISOString(),
-        buckets: [{ primary: { remainingPercent: 67.4, windowDurationMins: 10080,
+        buckets: [{ id: 'codex', primary: { remainingPercent: 67.4, windowDurationMins: 10080,
           resetsAt: new Date(Date.now() + 86400000).toISOString() } }] } }, 'light');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(view.fetchCount(), 0);
@@ -89,4 +89,32 @@ test('quota data loads only while Amber is selected for any Person', async () =>
   assert.equal(view.fetchCount(), 2);
   view.setTheme('light');
   assert.equal(view.workspace.children[0].children[1].hidden, true);
+});
+
+test('Amber shows Codex quota when a full model reserve arrives in either order', async () => {
+  const revision = 'same-account';
+  const codex = { id: 'codex', primary: { remainingPercent: 73, windowDurationMins: 10080 } };
+  const reserve = { id: 'base_model_inference', name: 'gpt-reserve',
+    primary: { remainingPercent: 100, windowDurationMins: 10080 } };
+  for (const buckets of [[reserve, codex], [codex, reserve]]) {
+    const view = renderForPerson('person_other', (url) => url.endsWith('/status')
+      ? { codexAuth: { loggedIn: true, accountRevision: revision } }
+      : { codexUsage: { status: 'ready', accountRevision: revision,
+        checkedAt: new Date().toISOString(), buckets } });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(view.workspace.children[0].children[0].textContent, '本周剩余 73%');
+    const details = view.workspace.children[0].children[1].children.map(row => row.textContent);
+    assert.equal(details.some(text => text.includes('100%')), false);
+  }
+});
+
+test('Amber does not substitute a model reserve when Codex quota is unavailable', async () => {
+  const revision = 'same-account';
+  const view = renderForPerson('person_other', (url) => url.endsWith('/status')
+    ? { codexAuth: { loggedIn: true, accountRevision: revision } }
+    : { codexUsage: { status: 'ready', accountRevision: revision,
+      checkedAt: new Date().toISOString(), buckets: [{ id: 'base_model_inference',
+        primary: { remainingPercent: 100, windowDurationMins: 10080 } }] } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(view.workspace.children[0].children[0].textContent, '本周额度 · 暂不可用');
 });
