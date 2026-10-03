@@ -1152,3 +1152,14 @@ on-demand evidence lookup, while preserving immediate per-deliverable updates.
 - Correction: today's outcome made a long-running task appear unused on a quiet day. The four outer fields are latest execution time and result, next run, cumulative executions and historical failures. Future plans and pre-execution cancellation do not supply a latest run or inflate totals. Missing records say no retained execution records instead of claiming an all-time zero.
 - Counting boundary: direct schedules use all retained actual attempts across days. Conditional script automations keep exact persisted check totals, clearly labelled as checks; show their AI execution totals separately inside. Neither substitute the number of AI launches for script checks nor add both phases as independent runs. Preserve historical gate errors as well as retained AI failures without fabricating per-check history.
 - Live evidence: the existing daily-report schedule retains executions from September 2, including migration-era trigger IDs; the newly created daily feedback-review schedule is a different business task with its first run still pending at inspection time. Verify both the source ledger and actual website, without sending another Feishu preview.
+
+## 2026-10-03 — Instance-wide task-card rollout after stability review
+
+A pilot user asked to roll the mechanism out to all members of the current
+instance, including Feishu and web, after checking stability and persistence.
+The clarified scope is this instance only. The policy must include future
+registered members without a static enrollment list, keep bounded small tasks
+as direct deliveries, and preserve strong Harness interpretation. Route-wide
+Feishu publication must replace the Person-only worker without duplicate cards
+or historical backfill. Canonical rules, isolated regression and durable service
+settings are separate from verified live deployment and delivery.

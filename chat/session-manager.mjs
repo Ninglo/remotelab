@@ -19,7 +19,7 @@ import {
   QUICK_SESSION_PROFILE,
 } from '../lib/quick-session-profile.mjs';
 import { getJevRoutingSettings } from '../lib/jev-auto-router.mjs';
-import { isWorkboardOptedIn, isWorkboardTurnEnabled, loadWorkboardOptIns } from '../lib/workboard-opt-in.mjs';
+import { isWorkboardOptedIn, isWorkboardTurnEnabled, loadWorkboardOptIns, workboardAdmission } from '../lib/workboard-opt-in.mjs';
 import { draftWorkboardChecklist } from '../lib/workboard-checklist.mjs';
 import { normalizeWorkboardUpdate, normalizeWorkboardPatch, formatWorkboard, projectWorkboards } from '../lib/workboard-state.mjs';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
@@ -1421,7 +1421,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
   slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
     await readPromptAsset('system/surface-messages.md')));
-  const optedIn = session?.workboardPilot === true
+  const optedIn = options.workboardEnabled === true || session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
   const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true })) : null;
   if ((optedIn && options.workboardEnabled !== false) || taskContext?.activeTasks.length) {
@@ -1456,6 +1456,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     'Per-turn context',
     await buildTurnContextHook(session, {
     sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
+    personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
     }),
   ));
   return slots.filter(Boolean);
@@ -3286,6 +3287,7 @@ async function ensureRequestInput(record, manifest) {
     await appendEvent(record.sessionId, messageEvent('user', recordedText, buildMessageAttachmentRefs(record.images), {
       requestId: record.requestId, responseId: record.responseId, runId: record.runId,
       ...(sourceContext ? { sourceContext } : {}),
+      ...(workboardAdmission(record.options) ? { workboardAdmission: workboardAdmission(record.options) } : {}),
     }));
   }
   if (record.options.workboardDraft && !events.some(event => event.type === 'message'

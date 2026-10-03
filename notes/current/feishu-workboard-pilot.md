@@ -1,51 +1,64 @@
-# Person-scoped workboard baseline
+# Workboard activation and durable delivery
 
-Status: accepted contract, 2026-10-01. Activation remains an explicit Person
-opt-in. The worker and state file retain their `pilot` names for compatibility;
-those names do not imply automatic expiry or permission to enable more people.
+Status: accepted contract, 2026-10-03. Activation is instance-local: explicit
+Person opt-ins remain supported, and an operator can enable all registered and
+future members of one instance. The `pilot` file names remain for compatibility;
+activation on one instance never automatically activates another.
 
 ## Operator handoff
 
-> Keep the opted-in workboard on its accepted baseline: one task keeps one
-> card, every verified deliverable updates it immediately, and the final result
-> is delivered separately. Check the current Person/Bot scope, durable worker
-> settings and card receipts. Run `npm run test:workboard` in an isolated test
-> environment before changing this path. Preserve incomplete outcomes and the
-> original task identity when work resumes. Do not replay historical messages
-> or broaden opt-in scope as part of maintenance.
+> Verify and enable task cards for all members of this one RemoteLab instance.
+> Keep bounded small deliveries direct, preserve strong Harness judgment and
+> every verified checkpoint, retain original card IDs, and keep final replies
+> separate. Inspect current policy, Bot routes, workers and source commit; run
+> `npm run test:workboard` in isolation. Use the managed rollout script to retire
+> the old writer and migrate receipts before enabling the default. Verify the
+> original live card, restart recovery and result delivery after deployment.
+> Never backfill historical cards or send unsolicited test cards to groups.
 
-Supply the instance, selected Person, Bot route and existing opt-in/state paths
-in one handoff. The AI reads the actual IDs and service settings locally; shared
-source must not contain private IDs or credentials.
+Supply instance config directory, base URL, verified main source checkout,
+active Bot config paths, any old pilot state/service, and any source-freeze
+marker in one handoff. The agent resolves actual local IDs and credentials;
+shared source contains none. The rollout script is
+`scripts/configure-instance-workboards.mjs`; `--help` lists inputs, the default
+prints a read-only plan, and `--apply` performs the already-authorized rollout.
+It validates the selected Bots belong to the supplied instance, stops old
+writers before copying receipts, installs enabled user services and saves
+private backups. The caller verifies lingering, worker readiness and delivery;
+`is-active` alone is not delivery acceptance. Preserve an existing migration
+freeze marker with `--source-freeze-path` when applicable.
 
 ## Activation and scope
 
-This opt-in is for one Person's own RemoteLab chat Sessions, one exact Feishu
-Bot private chat, and that Person's own messages in groups reached by the same
-Bot. Configure `~/.config/remotelab/workboard-opt-ins.json` with a `people`
-array. Each entry has `personId`, `identityIds`, optional
-`feishuPrivateChats` entries containing `sourceRouteId` and `chatId`, and
-optional `feishuGroupSenders` entries containing `sourceRouteId` and the
-Person's Feishu `openId`. The instance-local file holds real IDs; shared
-source does not. Private chat turns check the original Session initiator.
-Group turns check the resolved Person, connector-authenticated source message,
-exact sender open ID, Bot route, group chat and delivery target on every turn.
-The shared group timeline itself is excluded; substantial ambient work runs in
-its separate thread Session. Other members' messages cannot start a checklist
-even in a Session that previously held this Person's workboard. Removing the
-Person entry stops future checklist decisions; old checklists remain in history.
+`workboard-opt-ins.json` in the instance config directory remains the activation
+source. `defaultEnabled: true` resolves registered People and their current
+identities on every future admission, including newly discovered members.
+System work and the shared group timeline are excluded. Web turns use the
+actual authenticated web identity; Feishu turns require the authenticated
+connector, resolved Person/identity, matching Bot realm and sender open ID,
+source chat/type/tenant/message, and actual delivery destination. New private
+chats and group task threads do not require manually adding every chat ID.
+No user intent classification is added by this activation check.
 
-The executing Harness decides whether actual work needs a card. A brief answer
-or straightforward action needs no card; substantial investigation, extended
-work or multiple stages do. A short-looking question can require long work.
-Every opted-in turn receives this rule, including turns with an old negative
-Jev receipt. There is no separate checklist classification call or hard Jev
-gate. When a user supplied a `目标：` line and 2–5 `[ ] 标题 — 完成条件` lines,
-code reuses them directly. Otherwise the same Harness Run derives the short
-checklist before substantial work or further progress; there is no second
-planner or model call. A local Session continuation can update an existing
-opted-in Feishu task by its explicit ID; it cannot create a new Feishu task or
-grant another Feishu sender access to that task.
+Keep `excludedPersonIds` or a `people` entry with `enabled: false` for explicit
+opt-outs. With the default off, the original `people` opt-in contract is
+unchanged: `personId`, `identityIds`, exact `feishuPrivateChats` (`sourceRouteId`,
+`chatId`) and `feishuGroupSenders` (`sourceRouteId`, `openId`). Group turns
+follow their actual sender, not the Session's creator or last owner. Removing
+an opt-in stops future card decisions; existing cards and evidence remain.
+To return to the pilot scope, set `defaultEnabled: false` and retain the
+original entries. Keep the route workers running for existing task updates;
+do not restore an old receipt file over newer acknowledgements.
+
+The executing Harness decides whether actual work needs a card. A single
+bounded delivery defaults to direct execution and final reply. Routine
+inspection, editing, testing and reporting are steps, not separate deliverables.
+Actual scope, uncertainty or duration must make independent intermediate
+outcomes useful before a card is created. A short-looking request can grow in
+scope and then receive a card. Supplied 2–5-item goal/acceptance lists can be
+reused directly. There is no separate classifier, hard Jev gate or second
+planner. Simple-task suppression is a semantic Harness rule, not a guarantee
+from keyword matching; evaluate real behaviour alongside token use.
 
 ## Accepted behavior
 
@@ -124,35 +137,35 @@ decides whether the work satisfies the user's goal.
 The canonical snapshot and receipt contract is in
 [External Message Protocol](../../docs/external-message-protocol.md#8-reading-normalized-events).
 
-The Feishu worker mirrors the exact private Session and the opted-in Person's
-group work Sessions to one v2 message card per task, then patches that card in
-place. Group thread cards reply to the originating message in its thread;
-main timeline cards remain in that group. The worker correlates group checklist
-events with the same Run's verified inbound sender and ignores other members'
-Runs. It uses the same
-`目标` and per-item completion lines, adds a deterministic completed count,
-and changes the header on completion. Normal source delivery sends the final
-result as a separate message. The worker first reads Session state, then
-listens for WebSocket invalidations. It fences an uncertain first send and
-does not backfill a checklist after its final result. IM readback confirms
-message identity, destination, card type, and update state; IM's card content
-field is only a compatibility preview, so visual acceptance still needs a
-real Feishu client check.
+One worker per Bot route mirrors all enabled private/group task Sessions of
+that instance, with the same web projection and one original card per task.
+Each new Feishu inbound turn durably records its admission Person/identity and
+sender/route. The publisher validates it against the Session destination rather
+than a mutable last-owner flag. A steered Run keeps the original task's reply
+anchor. Local continuations can update an explicitly identified existing task;
+they do not create a new unsolicited Feishu card.
 
 ## Durable operation
 
-The worker's private state stores `sessionId`, `chatId`, `senderOpenId`,
-`sourceRouteId`, `botConfigPath`, `startedAfterSeq`, and `cards: []` with mode
-`0600`. `groupEnabled: true` and `personId` enable the same Bot's group mirror;
-`groupSessions` keeps per-Session card receipts. It reads matching Sessions on
-startup and follows WebSocket invalidations. `expiresAt` is optional for a
-bounded trial. A durable Person pilot keeps the dedicated service running
-without `ExecStopPost --disable` or a `RuntimeMaxSec` cutoff. Stop that service
-and remove the Person opt-in to stop new work; clear the exact private
-Session's `workboardPilot` flag when retiring its mirror. Enabling another
-Person or Bot route requires a separate opt-in and readback. Do not send an
-unsolicited test card to a group; verify actual delivery when the opted-in
-Person sends a real complex task there.
+Route state uses `scope: "instance"`, `sourceRouteId`, `botConfigPath`, and a
+`sessions` map of destination and card receipts. A migrated state retains known
+legacy cards, pending uncertain creates, acknowledged sequences and migration
+floors. Unknown historical cards lack the new admission receipt and cannot be
+created. A known legacy sender is accepted only to maintain known cards.
+The worker reads state before listening to WebSocket invalidations, reconnects
+after controller restart, stays alive when the controller starts later at boot,
+and serializes publication/state writes. An uncertain send in one Session
+cannot stop the route's other cards. Cards in a
+group thread reply to the originating message; private cards remain in their
+original private chat. IM readback confirms destination, message ID, card type
+and update state; its content is a compatibility preview, so visual acceptance
+still requires a real Feishu client.
+
+Old Person-scoped state remains supported: `sessionId`, `chatId`,
+`senderOpenId`, `sourceRouteId`, `botConfigPath`, `startedAfterSeq`, optional
+`groupEnabled`/`personId`, and card receipts. A replacement worker must preserve
+these receipts before retiring the old writer. Do not run both route and
+Person workers against the same conversations.
 
 Protocol v2 persists each task's original card ID and acknowledged update
 sequence. It replays every unseen checkpoint after restart; it does not collapse
@@ -168,15 +181,18 @@ fenced; this patches the known message and never creates a historical test card.
 For a durable Linux worker, verify service enablement, user lingering when using
 a user service, restart-on-failure, `RuntimeMaxSec=infinity`, no stop hook that
 disables opt-in, and no `expiresAt` in private state. Preserve these settings
-when changing the source checkout. Other instances and opted-out people remain
-outside this baseline's activation scope.
+when changing the source checkout. Other instances and explicitly opted-out people remain outside the selected
+instance's activation scope.
 
 ## Regression and evidence boundary
 
 `npm run test:workboard` is the fixed isolated acceptance entry point and runs
 inside the normal `npm test` / required CI check. Existing scenarios cover:
 
-- activation boundaries and task context despite old negative Jev receipts;
+- explicit and instance-default activation, future-member discovery, opt-outs,
+  sender/destination validation and task context despite old negative Jev receipts;
+- shared-topic member changes, immutable reply anchors, migration without
+  historical sends, and managed service settings;
 - evidence, revision conflicts, scope changes and withdrawing completion;
 - commentary, blocked/partial outcomes, failure/cancellation, cross-Run resume
   and new-task separation;
@@ -185,6 +201,8 @@ inside the normal `npm test` / required CI check. Existing scenarios cover:
   text-to-JSON task IDs, historical projection, and stale progress responses;
 - HTTP and CLI snapshots, concurrent updates and exact retries;
 - card patch failure, uncertain creation, restart replay and migration fences;
+- a real worker process with delayed controller startup and WebSocket reconnect,
+  retaining its PID/state without contacting the Feishu provider;
 - native final delivery after Run end, ready assets, restart/terminal dedupe,
   task-bound multi-part receipts and reused provider IDs.
 

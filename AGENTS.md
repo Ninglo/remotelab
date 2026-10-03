@@ -225,6 +225,11 @@ Post-turn memory writeback review uses an independent `gpt-6-sol` / `low` select
   - `projects.md`: project pointer catalog
   - `tasks/` and deeper docs: load only after task scope is clear
 - Goal: large total memory on disk, small relevant context in-session
+- Personal forms of address, writing style and collaboration preferences belong
+  in `reference/people/<personId>.md` under the instance memory directory. Shared
+  AGENTS files hold common operating rules and routing pointers, never an
+  employee's preferences. The current request's verified Person/identity selects
+  the pointer; Session creators and machine usernames are not author evidence.
 
 ---
 
