@@ -42,6 +42,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-03 — Resume monitoring safely after an automation source change
+
+- Observed friction: changing the automation task source led to continued alerts, so the independent resource observer was stopped. The user wants the original important-task coverage retained and reliable observation restored.
+- Change: retain native task IDs and the existing delivery destination; require positive recovery evidence before rearming an incident, show missing monitored IDs as coverage gaps, and support a read-only notification preview and a reviewed resumption baseline.
+- Verification boundary: reproduce source disappearance, renamed tasks, unfinished retries, repeated observations and restart; verify genuine recovery still allows a new alert. A quiet test does not prove that every future alert will be correct.
+
 ### 2026-10-03 — Increase Session information density on desktop
 
 - Observed friction: too little conversation fits in one screen. The user referenced AIHOT as a denser layout; the current Session view reserved 30% of the content area as side margins and three lines for an empty composer.

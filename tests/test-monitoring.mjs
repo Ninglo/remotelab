@@ -96,3 +96,16 @@ test('historical admission records without a Run are not represented as hundreds
   assert.ok(!value.automations.items.some(item => item.id === 'trg_old'));
   assert.ok(value.automations.items.some(item => item.id === 'trg_recent'));
 });
+
+test('a configured important automation missing after a source change is an explicit coverage gap', async () => {
+  const reader = createMonitoringReader({ now: () => now,
+    read: async () => JSON.stringify({ criticalAutomationIds: ['sch_kept', 'sch_missing'] }),
+    getUsage: async () => null, getAccounts: async () => null,
+    getTasks: async () => [{ id: 'sch_kept', kind: 'recurring', state: 'active', check: { at, reason: 'no_match' } }],
+    getFs: async () => ({ blocks: 100, bsize: 1024 ** 3, bfree: 80, bavail: 80, files: 0, ffree: 0 }), getStat: async () => ({ dev: 1 }),
+  });
+  const value = await reader();
+  assert.deepEqual(value.coverage.gaps, [{ source: 'automation:sch_missing', code: 'NOT_FOUND' }]);
+  assert.deepEqual(value.automations.items[0].check, { at, reason: 'no_match' });
+  assert.equal(value.attention.filter(item => item.kind === 'automation').length, 0);
+});

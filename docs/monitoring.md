@@ -75,6 +75,10 @@ Keep the observer's own service and timer visible in Overview, but list them in 
 
 During migration, `--baseline` records already-known critical incidents without repeating a group notification. Recovery rearms a recurrence; unreadable sources cannot establish recovery. The observer persists sending intent before delivery, then saves the shared verified message receipt. Interrupted or uncertain delivery becomes `needs_review` and requires readback before retrying. Preserve state across restarts. This observer does not replace task result delivery.
 
+Before resuming after a task-source change, verify that all configured important native task IDs still resolve. Missing IDs are coverage gaps, not recovered incidents. A missing item, an unavailable read or an unfinished retry cannot rearm an already reported failure; an explicit healthy observation or stopped task is required. Names and page groups do not change incident identity. Important tasks still require three failed observations before a new alert.
+
+Use `scripts/monitoring-alerts.mjs --dry-run` against the target instance environment to preview eligible notifications without sending or changing durable observer state. Once the current problems have been reviewed, run `--baseline` with the timer stopped, then enable the existing timer and verify its natural execution. The baseline also acknowledges existing important-task failures before they reach three observations, while preserving previous sending receipts. Known problems remain visible in Overview and the report; a later verified recovery allows a new failure to alert again.
+
 ## Verification
 
 `npm run test:monitoring` covers account freshness/deduplication, partial reads, shared filesystems, incident/recovery behavior, uncertain delivery, report boundaries, UI defaults and authenticated HTTP access. Complete normal CI before main delivery, then verify real desktop/mobile views, unchanged automation controls, source coverage and timer execution on the target instance. Saved schedules or passing tests do not establish that a future report reached its group.

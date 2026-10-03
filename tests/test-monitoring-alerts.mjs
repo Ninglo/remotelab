@@ -21,7 +21,9 @@ test('normal observations are silent; simultaneous urgent issues send once and s
   const value = snapshot([disk, { kind: 'service', subject: 'Service', severity: 'critical' }]);
   assert.equal((await dispatchMonitoringAlerts({ ...f.options, snapshot: value })).sent, 2);
   await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 1);
-  await dispatchMonitoringAlerts({ ...f.options, snapshot: snapshot([]) });
+  const recovered = snapshot([]); recovered.disks = [{ label: disk.subject, status: 'healthy' }];
+  recovered.services = [{ label: 'Service', status: 'healthy' }];
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: recovered });
   await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 2);
 });
 
@@ -48,6 +50,53 @@ test('only configured important automations escalate after persistent failed obs
   const options = { ...f.options, config: { criticalAutomationIds: ['sch_daily'] }, snapshot: value };
   await dispatchMonitoringAlerts(options); await dispatchMonitoringAlerts(options); assert.equal(f.getSends(), 0);
   await dispatchMonitoringAlerts(options); assert.equal(f.getSends(), 1);
+});
+
+test('a missing or renamed source does not rearm an already reported automation failure', async () => {
+  const f = fixture(), config = { criticalAutomationIds: ['sch_daily'] };
+  const failed = snapshot([{ kind: 'automation', id: 'sch_daily', subject: 'Daily', severity: 'warning' }]);
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  assert.equal(f.getSends(), 1);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: snapshot([]) });
+  const unavailable = snapshot([]); unavailable.coverage.gaps = [{ source: 'automations', code: 'UNAVAILABLE' }];
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: unavailable });
+  failed.attention[0].subject = 'Renamed daily review';
+  for (let i = 0; i < 5; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  assert.equal(f.getSends(), 1);
+  const recovered = snapshot([]);
+  recovered.automations.items = [{ id: 'sch_daily', state: 'active', lastExecution: { state: 'completed' } }];
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: recovered });
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  assert.equal(f.getSends(), 2, 'a real recovery rearms a later failure');
+});
+
+test('an unfinished retry and a disappeared service or disk are not recovery', async () => {
+  const f = fixture(), config = { criticalAutomationIds: ['sch_daily'] };
+  const failed = snapshot([disk, { kind: 'service', id: 'app.service', subject: 'App', severity: 'critical' },
+    { kind: 'automation', id: 'sch_daily', subject: 'Daily', severity: 'warning' }]);
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  const sends = f.getSends(), retry = snapshot([]);
+  retry.automations.items = [{ id: 'sch_daily', state: 'active', check: { at: '2026-10-03T07:00:00Z', reason: 'match' }, lastExecution: { state: 'running' } }];
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: retry });
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  assert.equal(f.getSends(), sends);
+});
+
+test('resuming with a baseline also acknowledges important failures below the three-observation threshold', async () => {
+  const f = fixture(), config = { criticalAutomationIds: ['sch_daily'] };
+  const failed = snapshot([{ kind: 'automation', id: 'sch_daily', subject: 'Daily', severity: 'warning' }]);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed, baseline: true });
+  for (let i = 0; i < 6; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  assert.equal(f.getSends(), 0, 'old failures are not resent on the third observation after resume');
+  assert.equal(Object.values(f.getState().incidents)[0].status, 'baseline');
+});
+
+test('a read-only dry run predicts a notification without saving state or sending', async () => {
+  const f = fixture(); let saves = 0;
+  const result = await dispatchMonitoringAlerts({ ...f.options, snapshot: snapshot([disk]), dryRun: true,
+    save: async () => { saves++; } });
+  assert.equal(result.wouldSend, 1); assert.equal(result.sent, 0);
+  assert.equal(f.getSends(), 0); assert.equal(saves, 0); assert.equal(f.getState(), null);
 });
 
 test('the existing incident can be baselined without a deployment-time group message', async () => {
