@@ -364,7 +364,8 @@
   function isCurrentTask(task) {
     if (task.kind === "recurring") return ["active", "paused"].includes(task.state);
     if (["admitted", "accepted"].includes(task.state) && task.lastExecution?.runAvailable === false) return false;
-    return ["scheduled", "starting", "running", "accepted", "admitted", "paused", "failed"].includes(task.state);
+    if (task.state === "failed") return (task.health?.failedExecutions || 0) > 0;
+    return ["scheduled", "starting", "running", "accepted", "admitted", "paused"].includes(task.state);
   }
 
   function displayTasks() {
@@ -485,7 +486,7 @@
     heading.appendChild(createNode("div", "task-card-title", taskTitle(task)));
     const health = task.health || {};
     card.dataset.attention = String(Boolean(health.needsAttention));
-    const badge = health.needsAttention ? translate("tasks.health.attention", "Needs attention") : stateLabel(task.state);
+    const badge = health.needsAttention && isCurrentTask(task) ? translate("tasks.health.attention", "Needs attention") : stateLabel(task.state);
     heading.appendChild(createNode("span", `task-state-pill${health.needsAttention ? " task-health-error" : ""}`, badge));
     summary.appendChild(heading);
     const info = createNode("div", "task-summary-meta");
@@ -580,7 +581,7 @@
   function matchesFilter(task) {
     const filter = filterSelect?.value || "current";
     if (filter === "current") return isCurrentTask(task);
-    if (filter === "failed") return task.health?.needsAttention || task.health?.failedExecutions > 0;
+    if (filter === "failed") return task.health?.failedExecutions > 0 || (task.health?.needsAttention && isCurrentTask(task));
     if (filter === "active") return isCurrentTask(task) && task.state !== "paused";
     if (filter === "paused") return task.state === "paused";
     if (filter === "history") return !isCurrentTask(task);
