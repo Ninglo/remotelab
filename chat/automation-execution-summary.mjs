@@ -31,8 +31,11 @@ export function summarizeAutomationExecutions(executions, { timezone = DEFAULT_T
     else if (LIVE_STATES.has(item.state) && item.runAvailable) today.running += 1;
     else today.unverified += 1;
   }
+  const ordered = [...attempted].sort((a, b) => Date.parse(activityTime(b)) - Date.parse(activityTime(a)));
   return {
     day, timezone, today,
+    latestExecution: ordered[0] || null,
+    firstRunAt: ordered.length ? activityTime(ordered.at(-1)) : '',
     totalRuns: attempted.length,
     failedRuns: attempted.filter(item => item.state === 'failed').length,
     unverifiedRuns: attempted.filter(item => !item.runAvailable && item.state !== 'failed').length,

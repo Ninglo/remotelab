@@ -407,6 +407,15 @@
         executionCount: members.reduce((sum, item) => sum + (item.executionCount || 0), 0),
         summary: {
           day: parent.summary?.day, timezone: parent.summary?.timezone,
+          latestExecution: members.map(item => item.summary?.latestExecution).filter(Boolean)
+            .sort((a, b) => Date.parse(executionTime(b)) - Date.parse(executionTime(a)))[0] || null,
+          firstRunAt: members.map(item => item.summary?.firstRunAt).filter(Boolean).sort()[0] || "",
+          inspection: members.some(item => item.summary?.inspection) ? {
+            total: members.reduce((sum, item) => sum + (item.summary?.inspection?.total || 0), 0),
+            failed: members.reduce((sum, item) => sum + (item.summary?.inspection?.failed || 0), 0),
+            latest: members.map(item => item.summary?.inspection?.latest).filter(Boolean)
+              .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0] || null,
+          } : null,
           totalRuns: members.reduce((sum, item) => sum + (item.summary?.totalRuns || 0), 0),
           failedRuns: members.reduce((sum, item) => sum + (item.summary?.failedRuns || 0), 0),
           today: Object.fromEntries(["runs", "completed", "failed", "running", "cancelled", "unverified"]
@@ -490,6 +499,16 @@
     filter.disabled = Boolean(history?.loading);
     filter.addEventListener("click", () => void loadExecutionHistory(task, { failedOnly: !failedOnly }));
     toolbar.appendChild(filter); root.appendChild(toolbar);
+    if (task.summary?.inspection?.total) {
+      root.appendChild(createNode("p", "task-history-note", translate("tasks.summary.inspectionScope",
+        "{checks} checks ({checkFailures} failed); {runs} AI executions ({runFailures} failed). Checks keep totals and their latest result; the timeline below lists AI executions.", {
+          checks: task.summary.inspection.total, checkFailures: task.summary.inspection.failed,
+          runs: task.summary.totalRuns, runFailures: task.summary.failedRuns,
+        })));
+      const check = task.summary.inspection.latest;
+      if (check) root.appendChild(createNode("p", "task-history-note", translate("tasks.summary.latestCheck", "Latest check") + " · " + formatDateTime(check.at)));
+      if (check?.error && check.error !== task.check?.error) root.appendChild(createNode("pre", "task-execution-error", check.error));
+    }
     if (task.check?.error) {
       root.appendChild(createNode("p", "task-history-note", translate("tasks.history.checkError", "Latest scheduler/check error") + " · " + formatDateTime(task.check.errorAt)));
       root.appendChild(createNode("pre", "task-execution-error", task.check.error));
@@ -520,17 +539,27 @@
     return "history";
   }
 
-  function todayText(task) {
-    const today = task.summary?.today;
-    if (!today) return "—";
-    const parts = [];
-    for (const key of ["completed", "failed", "running", "cancelled", "unverified"]) {
-      if (today[key]) parts.push(translate(`tasks.summary.today.${key}`, `${key}: ${today[key]}`, { count: today[key] }));
+  function executionTime(execution) {
+    return execution?.attemptedAt || execution?.admittedAt || execution?.scheduledAt || "";
+  }
+
+  function latestActivity(task) {
+    const execution = task.summary?.latestExecution;
+    const inspection = task.summary?.inspection?.latest;
+    if (inspection && (!execution || Date.parse(inspection.at) > Date.parse(executionTime(execution)))) {
+      return { at: inspection.at, result: translate(inspection.state === "failed" ? "tasks.summary.checkFailed" : "tasks.summary.checkCompleted", "Check completed") };
     }
-    if (today.checkFailed) parts.push(translate("tasks.summary.checkFailed", "Check failed"));
-    if (!parts.length) return translate(today.checked ? "tasks.summary.checked" : "tasks.summary.notRun",
-      today.checked ? "Checked; no execution triggered" : "Not run today");
-    return parts.join(" · ");
+    return execution ? { at: executionTime(execution), result: ["admitted", "accepted"].includes(execution.state) && !execution.runAvailable
+      ? translate("tasks.execution.unverified", "Execution state not verified") : stateLabel(execution.state) } : null;
+  }
+
+  function cumulativeText(task) {
+    const summary = task.summary;
+    if (!summary) return "—";
+    const checks = summary.inspection?.total || 0;
+    if (checks) return translate("tasks.summary.checkCount", "{count} checks", { count: checks });
+    return summary.totalRuns ? translate("tasks.summary.count", "{count} runs", { count: summary.totalRuns })
+      : translate("tasks.summary.noRecords", "No execution records");
   }
 
   function createTaskDefinition(task) {
@@ -608,7 +637,8 @@
     const main = createNode("div", "task-card-main");
     const heading = createNode("div", "task-card-heading");
     heading.appendChild(createNode("div", "task-card-title", taskTitle(task)));
-    if ((task.summary?.failedRuns || 0) > 0 || (task.members || [task]).some(item => item.check?.error)) {
+    const failureCount = (task.summary?.failedRuns || 0) + (task.summary?.inspection?.failed || 0);
+    if (failureCount > 0 || (task.members || [task]).some(item => item.check?.error)) {
       const dot = createNode("span", "task-package-failure-dot");
       dot.setAttribute("role", "img");
       dot.setAttribute("aria-label", translate("tasks.summary.hasFailures", "Failure records available"));
@@ -618,22 +648,26 @@
     main.appendChild(heading);
     main.appendChild(createNode("p", "task-summary-plan", taskScheduleText(task)));
     const stats = createNode("dl", "task-summary-stats");
+    const latest = latestActivity(task);
     const fields = [
-      ["today", todayText(task)],
+      ["latest", latest ? formatDateTime(latest.at) : translate("tasks.summary.noRecords", "No execution records")],
       ["next", task.nextRunAt ? formatDateTime(task.nextRunAt) : translate(category === "paused" ? "tasks.summary.pausedNext" : "tasks.time.none", category === "paused" ? "Paused" : "Not scheduled")],
-      ["total", task.summary ? translate("tasks.summary.count", "{count} runs", { count: task.summary.totalRuns }) : "—"],
-      ["failures", task.summary ? translate("tasks.summary.count", "{count} runs", { count: task.summary.failedRuns }) : "—"],
+      ["total", cumulativeText(task)],
+      ["failures", task.summary && (task.summary.totalRuns || task.summary.inspection?.total) ? translate("tasks.summary.count", "{count} runs", { count: failureCount }) : "—"],
     ];
     for (const [key, value] of fields) {
       const field = createNode("div", "task-summary-stat"); field.dataset.metric = key;
-      field.append(createNode("dt", "", translate(`tasks.summary.${key}`, key)), createNode("dd", "", value)); stats.appendChild(field);
+      const amount = createNode("dd", "", value);
+      if (key === "latest" && latest) amount.appendChild(createNode("span", "task-summary-result", latest.result));
+      field.append(createNode("dt", "", translate(`tasks.summary.${key}`, key)), amount); stats.appendChild(field);
     }
     main.appendChild(stats);
     const detail = createNode("details", "task-trigger-history");
     detail.appendChild(createNode("summary", "", translate("tasks.summary.details", "Records and settings")));
     if (openTaskIds.has(task.id)) {
       detail.open = true; detail.appendChild(createHistory(task));
-      detail.appendChild(createNode("p", "task-history-note", translate("tasks.summary.countNote", "Counts actual execution attempts; future plans and cancellation before execution are excluded.")));
+      detail.appendChild(createNode("p", "task-history-note", translate("tasks.summary.countNote", "Counts all retained executions; future plans and cancellation before execution are excluded.")));
+      if (task.summary?.firstRunAt) detail.appendChild(createNode("p", "task-history-note", translate("tasks.summary.historySince", "First retained execution: {time}", { time: formatDateTime(task.summary.firstRunAt) })));
       const definitions = createNode("details", "task-definition");
       definitions.appendChild(createNode("summary", "", translate("tasks.history.settings", "Task settings")));
       const members = task.members || [task];

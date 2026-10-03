@@ -217,6 +217,19 @@ async function projectRecurringTask(schedule, occurrences) {
   summary.today.checked = automationDay(schedule.lastCheckAt, timezone) === summary.day;
   summary.today.checkFailed = Boolean(schedule.lastError)
     && automationDay(schedule.lastErrorAt || schedule.lastCheckAt, timezone) === summary.day;
+  // Script checks are real automation work even when they do not admit an AI Run.
+  // Keep their exact persisted counter separate from AI attempts; never add the
+  // matched AI Run again to its own check or infer missing historical checks.
+  if (schedule.gate?.mode === 'script' || schedule.gateErrorCount) summary.inspection = {
+    total: schedule.checkCount || 0,
+    failed: schedule.gateErrorCount || 0,
+    latest: schedule.lastCheckAt ? {
+      at: schedule.lastCheckAt,
+      state: schedule.lastGateReason === 'gate_error' ? 'failed' : 'checked',
+      error: schedule.lastGateReason === 'gate_error' ? schedule.lastError || '' : '',
+    } : null,
+  };
+
   const resultDelivery = projectNotification(schedule);
   const admittedExecutions = occurrences.filter((trigger) => trigger.status === 'delivered').length;
   const pendingAdmissions = occurrences.filter((trigger) => ['pending', 'delivering'].includes(trigger.status)).length;

@@ -438,6 +438,7 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-summary-stat { min-width: 0; }
 .task-summary-stat dt { font-size: 10px; color: var(--text-muted); }
 .task-summary-stat dd { margin: 5px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.task-summary-result { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; }
 .task-package-failure-dot { flex: 0 0 auto; width: 6px; height: 6px; margin: 6px 0 0 auto; border-radius: 50%; background: var(--danger, #c2413c); }
 .task-definition { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
 .task-definition > summary { cursor: pointer; color: var(--text-secondary); font-size: 11px; }

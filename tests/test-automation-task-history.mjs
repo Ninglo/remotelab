@@ -12,7 +12,7 @@ const { createTrigger } = await import('../chat/triggers.mjs');
 const { requests } = await import('../chat/requests.mjs');
 const { createRun } = await import('../chat/runs.mjs');
 const { getAutomationTask, listAutomationTasks, listAutomationTaskExecutions } = await import('../chat/automation-tasks.mjs');
-const { CHAT_TRIGGERS_FILE, CONFIG_DIR } = await import('../lib/config.mjs');
+const { CHAT_TRIGGERS_FILE, CHAT_RECURRING_SCHEDULES_FILE, CONFIG_DIR } = await import('../lib/config.mjs');
 const { ensureRequestSchema } = await import('../lib/request-schema.mjs');
 await ensureRequestSchema(CONFIG_DIR);
 const template = { folder: fixture, tool: 'codex', name: 'History fixture' };
@@ -40,6 +40,8 @@ try {
   const counts = summarizeAutomationExecutions(actual, { now: clock, timezone: 'Asia/Shanghai' });
   assert.equal(counts.totalRuns, 6, 'planned and pre-execution cancelled/paused triggers are not executions');
   assert.equal(counts.failedRuns, 1);
+  assert.equal(counts.latestExecution, actual[8], 'latest uses actual attempt time and excludes future plans');
+  assert.equal(counts.firstRunAt, '2026-10-02T23:00:00Z');
   assert.deepEqual(counts.today, { runs: 6, completed: 2, failed: 1, running: 1, cancelled: 1, unverified: 1 });
   assert.equal(summarizeAutomationExecutions(actual, { now: clock, timezone: 'UTC' }).today.completed, 1,
     'today uses the task timezone and actual attempt date, not a delayed scheduled date');
@@ -61,6 +63,8 @@ try {
   const summary = await getAutomationTask(task.id);
   assert.equal(summary.summary.totalRuns, 38);
   assert.equal(summary.summary.failedRuns, 2);
+  assert.equal(summary.summary.latestExecution.id, ids[0]);
+  assert.equal(summary.summary.firstRunAt, fixtureTriggers[37].scheduledAt, 'totals and date range include retained older runs');
   assert.equal(summary.recentExecutions.length, 5);
   assert.equal(summary.lastExecution.state, 'completed');
   assert.equal(summary.health.failedExecutions, 2, 'summary must not hide failures older than the last five triggers');
@@ -147,6 +151,24 @@ try {
     latestDefinitions.find(item => item.id === task.id).package.id, 'recreated business definitions share one task package');
   assert.notEqual(latestDefinitions.find(item => item.id === independent.id).package.id,
     latestDefinitions.find(item => item.id === task.id).package.id, 'different business definitions remain separate');
+  // Conditional automations do useful script work without launching an AI Run.
+  // The persisted check ledger and retained AI history must stay separate.
+  const observer = await createRecurringSchedule({ sourceSessionId: 'observer-source', sessionTemplate: template,
+    title: 'Conditional observer', text: 'Inspect only on changes', cron: '0 3 1 1 *', timezone: 'UTC',
+    gate: { mode: 'script', runtime: 'node', source: 'console.log(JSON.stringify({trigger:false}))' } });
+  const checkAt = new Date(now - 60000).toISOString();
+  const scheduleRows = JSON.parse(await readFile(CHAT_RECURRING_SCHEDULES_FILE, 'utf8'));
+  await writeFile(CHAT_RECURRING_SCHEDULES_FILE, JSON.stringify(scheduleRows.map(row => row.id === observer.id
+    ? { ...row, checkCount: 10, gateErrorCount: 1, lastCheckAt: checkAt, lastGateReason: 'gate_error', lastError: 'Fixture script check failed' } : row)));
+  await utimes(CHAT_RECURRING_SCHEDULES_FILE, new Date(), new Date(Date.now() + 1000));
+  const observed = await getAutomationTask(observer.id);
+  assert.equal(observed.summary.totalRuns, 0, 'checks do not invent AI Runs');
+  assert.equal(observed.summary.latestExecution, null);
+  assert.equal(observed.summary.inspection.total, 10);
+  assert.equal(observed.summary.inspection.failed, 1);
+  assert.deepEqual(observed.summary.inspection.latest, { at: checkAt, state: 'failed', error: 'Fixture script check failed' });
+  assert.equal((await listAutomationTaskExecutions(observer.id)).executions.length, 0, 'aggregate check counters do not fabricate historical timestamps');
+  assert.equal((await getAutomationTask(task.id)).summary.totalRuns, 38, 'ordinary schedule totals use retained executions, not scheduler check counters');
   const { createSession } = await import('../chat/session-manager.mjs');
   const chat = await createSession(fixture, 'codex', 'Feishu 私聊');
   const daily = await createTrigger({ sourceSessionId: chat.id, sessionTemplate: template,
@@ -159,5 +181,5 @@ try {
   const chatPackage = id => chatTasks.find(item => item.id === id).package.id;
   assert.equal(chatPackage(daily.id), chatPackage(dailyAgain.id));
   assert.notEqual(chatPackage(daily.id), chatPackage(weekly.id), 'a common Feishu chat is not a parent business task');
-  console.log('Automation packages and history: actual attempt totals, daily timezone outcomes, parent lineage, recreated definitions, generic chat isolation, older failures and pagination passed.');
+  console.log('Automation packages and history: actual attempt totals, latest actual execution, separate script check counts, daily timezone outcomes, parent lineage, recreated definitions, generic chat isolation, older failures and pagination passed.');
 } finally { await rm(fixture, { recursive: true, force: true }); }
