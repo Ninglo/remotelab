@@ -78,8 +78,24 @@ decides whether the work satisfies the user's goal.
   Explicit completion, partial, blocked, failed or cancelled outcomes replace
   stale running text in the current progress area. Earlier progress remains in
   history; no inferred completion is taken from that text.
-- After each deliverable passes acceptance, immediately submit the full next
-  snapshot with `remotelab assistant-message --workboard-file <json-path>`.
+- A single bounded delivery (a project/title rename, one field change, small
+  edit, direct export or focused answer) defaults to direct completion without a
+  task card. Inspecting, editing, testing and reporting do not turn that one
+  delivery into independent checklist items. The Harness decides from actual
+  scope, uncertainty, duration and useful intermediate outcomes; no extra
+  classifier or keyword gate makes this decision.
+- After each deliverable passes acceptance, immediately submit its state change
+  with `remotelab workboard update --task <id> --item <id> --status done
+  --evidence <seq> --json`. The server serializes mutations, keeps criteria and
+  IDs, assigns revisions, validates references and returns a compact receipt.
+  An identical retry adds no revision. `--revision` is an optional optimistic
+  precondition. Full snapshots via `assistant-message --workboard-file` remain
+  supported for scope changes.
+- `remotelab workboard show --task <id> --json` returns the selected full
+  snapshot and a bounded recent evidence index; it avoids returning the whole
+  Session history. Completed cards enter the turn context as a short task index,
+  while unfinished cards retain their criteria. Original history and evidence
+  remain available. The Harness still judges semantic acceptance.
   `done` requires actual verification event references. Withdrawing completion
   or changing scope requires a reason; changed completed criteria need fresh
   evidence. Plain checklist text is only the initial unchecked-list interface.

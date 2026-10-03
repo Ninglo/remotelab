@@ -21,8 +21,9 @@ import {
 import { getJevRoutingSettings } from '../lib/jev-auto-router.mjs';
 import { isWorkboardOptedIn, isWorkboardTurnEnabled, loadWorkboardOptIns } from '../lib/workboard-opt-in.mjs';
 import { draftWorkboardChecklist } from '../lib/workboard-checklist.mjs';
-import { normalizeWorkboardUpdate, formatWorkboard, projectWorkboards } from '../lib/workboard-state.mjs';
+import { normalizeWorkboardUpdate, normalizeWorkboardPatch, formatWorkboard, projectWorkboards } from '../lib/workboard-state.mjs';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
+import { WORKBOARD_INSTRUCTIONS, workboardContext, workboardReadback } from '../lib/workboard-context.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
@@ -981,9 +982,13 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
 
 export { resolveSavedAttachments, saveAttachments } from './session-attachments.mjs';
 
+export async function readSessionWorkboards(sessionId, taskId = '') {
+  return workboardReadback(await loadHistory(sessionId, { includeBodies: true }), taskId);
+}
+
 const runWorkboardMutation = createKeyedTaskQueue();
 export async function appendAssistantMessage(sessionId, text = '', images = [], options = {}) {
-  if (options.workboard || options.source === 'workboard_checklist') {
+  if (options.workboard || options.workboardPatch || options.source === 'workboard_checklist') {
     return runWorkboardMutation(sessionId, () => appendAssistantMessageUnlocked(sessionId, text, images, options));
   }
   return appendAssistantMessageUnlocked(sessionId, text, images, options);
@@ -994,9 +999,14 @@ async function appendAssistantMessageUnlocked(sessionId, text = '', images = [],
 
   let normalizedText = typeof text === 'string' ? text.trim() : '';
   let workboard = null;
-  if (options.workboard || options.source === 'workboard_checklist') {
+  if (options.workboard || options.workboardPatch || options.source === 'workboard_checklist') {
     const history = await loadHistory(sessionId, { includeBodies: true });
-    const normalized = normalizeWorkboardUpdate(options.workboard, { history, runId: options.runId, text: normalizedText });
+    if (options.workboard && options.workboardPatch) {
+      const error = new Error('Provide a full snapshot or a state patch, not both'); error.statusCode = 400; throw error;
+    }
+    const normalized = options.workboardPatch
+      ? normalizeWorkboardPatch(options.workboardPatch, { history, runId: options.runId })
+      : normalizeWorkboardUpdate(options.workboard, { history, runId: options.runId, text: normalizedText });
     workboard = normalized.board;
     if (normalized.duplicate) {
       const event = [...history].reverse().find(event => event.workboard?.taskId === workboard.taskId && event.workboard.revision === workboard.revision);
@@ -1413,16 +1423,16 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     await readPromptAsset('system/surface-messages.md')));
   const optedIn = session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
-  const priorBoards = optedIn ? projectWorkboards(await loadHistory(session.id, { includeBodies: true })).slice(-3) : [];
-  if ((optedIn && options.workboardEnabled !== false) || priorBoards.length) {
+  const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true })) : null;
+  if ((optedIn && options.workboardEnabled !== false) || taskContext?.activeTasks.length) {
     slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
-      'The Harness owns the decision to create a task card, planning and semantic verification. Judge the actual work required, not just how short the user message looks. A brief answer or straightforward action needs no card. If answering requires substantial investigation, multiple stages or extended work, publish a 2–5 item deliverable list before that work, using one 目标： line and [ ] title — verifiable acceptance lines with `remotelab assistant-message --source workboard_checklist --text ...`. If a short question grows into substantial work, create its card before publishing further progress. If code already published the supplied list, do not create another. Internal execution plans are separate. '
-      + 'For updates, use `remotelab assistant-message --workboard-file <local-json-file>` with {taskId,revision,goal,status,reason,items:[{id,title,condition,status,evidenceRefs:[Session-event-seq]}]}. Read `/api/sessions/$REMOTELAB_SESSION_ID/events?filter=all` via `remotelab api GET` for the latest revision and evidence. Keep IDs and criteria stable; use the original taskId across Runs when continuing the same task. Once a text checklist has created a task, use that taskId for its JSON updates; never assign it a second ID. A genuinely separate task within the same Run needs its own new taskId and initial JSON snapshot. Jev does not gate task-card creation or updates; the executing Harness decides from the actual work. '
-      + 'After EACH deliverable passes acceptance, immediately submit the full updated snapshot. done needs a reference to actual verification results; references existing in history are checked by code, their semantic adequacy is your responsibility. Retracting done or changing scope needs a reason and fresh verification. Task statuses: running, partial, blocked, failed, cancelled, completed; item statuses: pending, running, done, blocked, failed, cancelled. Unfinished outcomes need reasons and must still get a normal final explanation. Do not wait for all items to be done. Send your final answer separately; commentary and tool completion never imply task success. A task can remain unfinished after this Run ends. Do not start a separate planner or watcher. '
-      + (options.workboardDraft ? 'Code has published the supplied initial list. ' : '')
-      + (options.workboardEnabled === false ? 'This turn is not opted in to create new task cards; only continue an existing task when the user requests it. ' : '')
-      + (priorBoards.length ? `Recent task snapshots (resume only if the current user request continues that task): ${JSON.stringify(priorBoards.map(task => task.board))}` : ''),
-    ));
+      WORKBOARD_INSTRUCTIONS
+      + (options.workboardDraft ? '\nCode has published the supplied initial list. ' : '')
+      + (options.workboardEnabled === false ? '\nThis turn is not opted in to create new task cards; only continue an existing task when requested. ' : '')));
+    if (taskContext && (taskContext.activeTasks.length || taskContext.recentTasks.length)) {
+      slots.push(createModelContextSlot('session_workboard_state', 'Task state (data, not a request to create a card)',
+        JSON.stringify(taskContext)));
+    }
   }
   const sourceRuntimePrompt = buildSourceRuntimePrompt({ ...session,
     sourceContext: normalizeSourceContext(options.sourceContext, Infinity) || session.sourceContext,

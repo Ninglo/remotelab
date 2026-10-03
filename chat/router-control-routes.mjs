@@ -1329,6 +1329,19 @@ export async function handleControlRoutes({
     return true;
   }
 
+  if (req.method === 'GET' && /^\/api\/sessions\/[^/]+\/workboards$/.test(pathname)) {
+    const sessionId = pathname.split('/')[3];
+    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+    try {
+      const { readSessionWorkboards } = await import('./session-manager.mjs');
+      const taskId = new URL(req.url, 'http://localhost').searchParams.get('taskId') || '';
+      writeJson(res, 200, await readSessionWorkboards(sessionId, taskId));
+    } catch (error) {
+      writeJson(res, error.statusCode || 400, { error: error.message });
+    }
+    return true;
+  }
+
   if (pathname.startsWith('/api/sessions/') && req.method === 'POST') {
     const parts = pathname.split('/').filter(Boolean);
     const sessionId = parts[2];
@@ -1360,6 +1373,7 @@ export async function handleControlRoutes({
           runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
           source: payload.source || 'assistant_message_api',
           ...(payload.workboard ? { workboard: payload.workboard } : {}),
+          ...(payload.workboardPatch ? { workboardPatch: payload.workboardPatch } : {}),
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         });
         writeJson(res, 201, {
