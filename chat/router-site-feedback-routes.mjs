@@ -140,6 +140,7 @@ async function listFeedback(personId) {
     const key = `${record.target?.kind}:${record.target?.id}`;
     if (!quickState[key]) quickState[key] = {
       usefulness: record.usefulness, id: record.id, received_at: record.received_at,
+      revision: record.target.revision || '', display_version: record.display_version || '',
     };
   }
   return { feedback: own.slice(0, 50), quick_state: quickState };

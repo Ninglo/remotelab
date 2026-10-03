@@ -68,6 +68,8 @@ try {
   assert.equal((await request('POST', changed)).status, 201);
   const latest = await request('GET');
   assert.equal(latest.data.quick_state['source:x:123'].usefulness, 'not_useful');
+  assert.equal(latest.data.quick_state['source:x:123'].revision, 'content-v1');
+  assert.equal(latest.data.quick_state['source:x:123'].display_version, 'daily-v1');
   assert.equal(latest.data.feedback.length, 3);
   assert.equal((await request('GET', undefined, {}, 'person_other')).data.quick_state['source:x:123'], undefined);
 
