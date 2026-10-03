@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
 import { buildFeishuTopicId } from './index.mjs';
 import { getFeishuConversationSettings, setFeishuConversationMuted } from './conversation-settings.mjs';
+import { recordFeishuOutboundMessageSession } from './session-flow.mjs';
 
 const MODES = new Set(['active', 'listening', 'paused']);
 const LABELS = { active: '主动参与', listening: '旁听', paused: '暂停接收' };
@@ -110,11 +111,22 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       // Commit the successful send before pinning; retry cannot duplicate it.
       record = await records.mutate(record.key, current => ({ ...current,
         cardMessageId: messageId, cardCreatedAt: Date.now(), pinPending: !record.source.topicId }));
+      // A retried idempotent create may return the card from an earlier
+      // uncertain send. Bring that exact message to the current durable state.
+      const updated = await runtime.appClient.im.v1.message.patch({ path: { message_id: messageId },
+        data: { content: JSON.stringify(card) } });
+      if (updated?.code) throw new Error(updated.msg || 'Agent status card update failed');
     }
     if (record.pinPending) {
       const result = await runtime.appClient.im.v1.chatTopNotice.putTopNotice({ path: { chat_id: record.source.chatId },
         data: { chat_top_notice: [{ action_type: '1', message_id: messageId }] } });
       if (result?.code) throw new Error(result.msg || 'Agent status card pin failed');
+    }
+    if (runtime.storagePaths?.messageIndexPath && record.sessionId) {
+      await recordFeishuOutboundMessageSession(runtime, { ...record.source, chatType: 'group',
+        conversationKind: record.source.topicId ? 'thread' : 'main',
+        ...(record.source.topicId ? { threadId: record.source.topicId, rootId: record.source.topicId } : {}),
+      }, record.sessionId, messageId);
     }
     return records.mutate(record.key, current => ({ ...current, cardMessageId: messageId,
       cardCreatedAt: current.cardCreatedAt || createdAt, cardDigest: digest, pinPending: false }));
