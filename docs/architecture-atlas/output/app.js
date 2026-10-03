@@ -158,6 +158,7 @@ el('next-frame').addEventListener('click',()=>renderSimulation(state.simulation,
 
 function renderReference() {
   el('version').textContent=meta.version;
+  el('architecture-status').textContent=meta.status;
   el('audit-boundary').textContent=meta.boundary;
   el('weak-opening').textContent=openings.weak;
   el('useful-opening').textContent=openings.useful;
@@ -165,7 +166,7 @@ function renderReference() {
   el('main-commit').textContent=meta.mainCommit.slice(0,8);
   el('pilot-commit').textContent=meta.pilotCommit.slice(0,8);
   el('state-lanes').innerHTML=states.map(lane=>`<article class="state-lane"><h3>${escape(lane.label)}</h3><div class="state-owner">维护者：${escape(lane.owner)}</div><ol class="state-track">${lane.states.map(status=>`<li>${escape(status)}</li>`).join('')}</ol><p>${escape(lane.meaning)}</p></article>`).join('');
-  el('rollout-list').innerHTML=rollout.map((item,i)=>`<article class="rollout-item"><div><span class="eyebrow">${String(i+1).padStart(2,'0')} / 待实施</span><h3>${escape(item.title)}</h3><div class="owner">承接：${escape(item.owner)}</div></div><dl><div><dt>已核对现状</dt><dd>${escape(item.now)}</dd></div><div><dt>目标改动</dt><dd>${escape(item.change)}</dd></div><div class="acceptance"><dt>真实入口验收</dt><dd>${escape(item.acceptance)}</dd></div></dl></article>`).join('');
+  el('rollout-list').innerHTML=rollout.map((item,i)=>`<article class="rollout-item"><div><span class="eyebrow">${String(i+1).padStart(2,'0')} / ${escape(item.status||'待实施')}</span><h3>${escape(item.title)}</h3><div class="owner">承接：${escape(item.owner)}</div></div><dl><div><dt>已核对现状</dt><dd>${escape(item.now)}</dd></div><div><dt>目标改动</dt><dd>${escape(item.change)}</dd></div><div class="acceptance"><dt>真实入口验收</dt><dd>${escape(item.acceptance)}</dd></div></dl></article>`).join('');
   el('contract-rows').innerHTML=contracts.map(item=>`<tr><td>${escape(item.name)}<div class="caption">${escape(item.status)}</div></td><td>${escape(item.writer)}</td><td>${escape(item.fact)}</td><td>${escape(item.consumer)}</td></tr>`).join('');
   el('invariants').innerHTML=invariants.map(text=>`<li>${escape(text)}</li>`).join('');
   const labels={ingress:'入口与群话题',admission:'接纳与会话',runtime:'原生输入与停止',execution:'脱离网页的执行',projection:'表面输出选择',workboard:'稳定任务卡',questions:'普通提问 Broker',delivery:'结果投递与回执',jev:'现有 Jev 分支',background:'后置独立整理'};

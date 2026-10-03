@@ -272,17 +272,20 @@ try {
     return result.body.run?.state === 'completed';
   }, 'short group reply completion');
   const pilotDeliveries = [];
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 10; index += 1) {
     const claim = await request('POST', '/api/source-deliveries/claim', {
       connector: 'feishu', sourceRouteId: 'pilot-bot',
     });
     assert.equal(claim.status, 200);
-    assert(claim.body.claim?.delivery, 'the reaction, previous group reply and work reply must be queued');
+    if (!claim.body.claim) break;
     pilotDeliveries.push(claim.body.claim.delivery);
     assert.equal((await request('POST', `/api/source-deliveries/${claim.body.claim.delivery.id}/complete`, {
       leaseId: claim.body.claim.leaseId, externalId: `pilot-delivery-${index}`,
     })).status, 200);
   }
+  assert.equal(pilotDeliveries.filter(item => item.kind === 'reaction').length, 2);
+  assert.equal(pilotDeliveries.filter(item => item.kind === 'content').length, 3);
+  assert.ok(pilotDeliveries.every(item => item.kind !== 'session_entry'), 'no fixed Feishu creation message');
   const workReply = pilotDeliveries.find(delivery => delivery.target?.rootId === 'observed-work');
   assert(workReply, 'the work reply must be published');
   assert.equal(workReply.target.rootId, 'observed-work', JSON.stringify(pilotDeliveries.map(delivery => ({
@@ -450,6 +453,9 @@ try {
   const publishedSession = (await request('GET', `/api/sessions/${publishedId}`)).body.session;
   assert.equal(publishedSession.conversation.target.rootId, 'published-root', 'send receipt completes Session binding');
   assert.equal(publishedSession.conversation.target.threadId, 'published-thread');
+  await request('POST', `/api/sessions/${publishedId}/messages`, {
+    requestId: 'new-topic-followup', text: 'Continue in the original topic.', sourceDelivery: newTopic,
+  });
   const contentClaim = await waitFor(async () => {
     const result = await request('POST', '/api/source-deliveries/claim', { connector: 'feishu', sourceRouteId: 'new-topic-bot' });
     return result.body.claim;

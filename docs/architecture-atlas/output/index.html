@@ -17,7 +17,7 @@
       <div class="eyebrow">消息接入 / 异步协作 / 输出架构</div>
       <h1>消息到达后，谁接住，谁继续？</h1>
       <p class="lede">让用户知道消息已收到、工作是否开始、当前进展、是否在等自己，以及结果是否真的送达。</p>
-      <div class="meta"><span class="badge proposed">架构规划 · 待实施</span><span id="version"></span><span>图示可点击展开</span></div>
+      <div class="meta"><span id="architecture-status" class="badge proposed"></span><span id="version"></span><span>图示可点击展开</span></div>
     </section>
     <nav class="toc" aria-label="架构规划导航"><a href="#architecture">01 职责全景</a><a href="#async">02 异步时序</a><a href="#feedback">03 用户反馈</a><a href="#experience">04 卡片体验</a><a href="#states">05 三种状态</a><a href="#implementation">06 现状与落地</a></nav>
 
@@ -65,7 +65,7 @@
     </section>
 
     <section id="implementation" class="section">
-      <div class="section-head"><div><div class="eyebrow">06 / 现状、契约与验收</div><h2>复用运行底座，补齐输出与互动契约。</h2></div><span class="badge proposed">以下改动尚待实施</span></div>
+      <div class="section-head"><div><div class="eyebrow">06 / 现状、契约与验收</div><h2>复用运行底座，补齐输出与互动契约。</h2></div><span class="badge proposed">已实现与待改动分别验收</span></div>
       <p id="audit-boundary" class="intro"></p>
       <div id="rollout-list" class="rollout-list"></div>
       <details class="contract-panel"><summary>展开事件与数据契约：交接时要留下什么</summary><p class="caption">下列事件名是规划名称，不宣称已有这些 API。现有 workboard.status 不直接改名；拟扩展 progress、waiting 和明确输出意图。</p><div class="table-scroll"><table><thead><tr><th>事件 / 快照</th><th>谁写入</th><th>留下的事实</th><th>谁消费</th></tr></thead><tbody id="contract-rows"></tbody></table></div></details>

@@ -105,7 +105,8 @@ function collectAuthorizedCycles(events, pilot, session = null) {
     const anchor = history.find(event => event.seq === task.anchorSeq);
     const final = history.some(event => event.type === 'message' && event.role === 'assistant'
       && ['final', 'final_answer'].includes(event.phase)
-      && (anchor.runId ? event.runId === anchor.runId : event.seq > task.latestSeq));
+      && event.seq > task.anchorSeq
+      && (!anchor.runId || event.runId === anchor.runId));
     return { ...task, closed: final,
       ...(target?.conversationKind === 'thread' ? { replyMessageId: allowed.get(anchor.runId) } : {}) };
   });
@@ -131,7 +132,7 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
   if (!card) {
     // A completed Run that finished before this worker observed it has already
     // sent its result. Never place a late checklist after that result.
-    if (cycle.closed && (!cycle.board || cycle.board.legacy)) return null;
+    if (cycle.closed) return null;
     const uuid = `rl_wb_${createHash('sha256').update(`${pilot.sessionId}:${cycle.anchorSeq}`).digest('hex').slice(0, 32)}`;
     card = { taskId: cycle.taskId, anchorSeq: cycle.anchorSeq, uuid, messageId: '', pendingCreate: true, latestSeq: 0 };
     pilot.cards.push(card);

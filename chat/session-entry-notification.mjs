@@ -7,9 +7,9 @@ export function buildSessionEntryDeliveries(session, snapshot, options = {}) {
   if (['ambient', 'feedback'].includes(options.sourceContext?.feishuParticipation)) return [];
   if (options.internalOperation || options.recordUserMessage === false || snapshot.userMessageCount > 0) return [];
   const plan = normalizeSourceDeliveryPlan(options.sourceDelivery);
-  // Email has one final message per request, not a separate creation email.
-  // The first result can still include the usual session navigation footer.
-  if (plan?.connector === 'email') return [];
+  // Email has one result; Feishu puts navigation in the useful model opening
+  // (or its final reply when no opening exists), without a template notice.
+  if (['email', 'feishu'].includes(plan?.connector)) return [];
   const entry = buildSessionEntry(session);
   if (!plan || !entry) return [];
   const text = [

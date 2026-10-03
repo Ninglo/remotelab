@@ -166,3 +166,35 @@ Directories and namespaces do not provide private-person ACLs. Introduce actual
 source-aware authorization before activating any private-memory expectation.
 This documentation update does not implement those runtime guards, start source
 collection, change existing writers, or enable the proposed governance.
+
+## Preparation tool (guide v2.2; manually verified, no runtime integration)
+
+`scripts/memory-governance-preflight.mjs` is a manual local preparation tool,
+not a new Harness planner, startup hook, collector or runtime admission system.
+`prepare` snapshots explicitly selected protected files into an empty isolated
+workspace; `check` verifies the closed policy, snapshot hashes and changes to
+original files. Protected locations include instance config/memory, native
+Codex memory, the relevant source roots and the project-knowledge directory.
+It rejects overlapping/ancestor roots, unsafe linked snapshots, activation
+flags, extra worker/token budgets, unsupported stages and command fields.
+It never launches an Agent, calls a model, delivers a message, changes original
+memory or restores a directory. Preparation remains `readyForCollection=false`.
+
+The actual instance preparation captured 12 selected entry/memory files and
+recorded the absent project registry as a gap. This is an entry/config baseline,
+not a full organizational source archive or an atomic database-wide snapshot.
+Snapshots retain individual file versions. A newer original is reported as
+drift and is not overwritten. Private snapshot output stays outside Git and
+public publication with local directory/file modes 0700/0600; those modes do
+not separate Agents sharing the same machine identity.
+
+Current automatic writeback still offers three task-note targets plus user and
+system candidates. The preparation tool does not alter those existing writers.
+A future collector must not inherit them. Its actual execution boundary must
+deny production writes and unwanted delivery, enforce foreground-priority
+resource budgets, reuse existing consumers and establish one writer per source.
+File pointers or a closed JSON policy alone cannot constrain an unrestricted
+Agent. Verify that execution boundary, complete registered-project coverage,
+version-aware updates, fallback and matched evaluation before starting collection
+or enabling formal integration. An unverified preparation policy cannot serve
+as evidence that any of those runtime capabilities already exist.
