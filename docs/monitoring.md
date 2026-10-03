@@ -1,6 +1,6 @@
 # Monitoring
 
-Monitoring helps people avoid interruptions and choose useful work for available resources. The existing `?tab=tasks` workspace now has Overview and Automations; Automations is the default. Overview (`?tab=tasks&monitor=overview`) shows urgent issues, available capacity, consumption, account allowances, storage and execution health. Settings keeps its current controls. Project tasks and daily reports stay in their existing local Markdown and publication workflows.
+Monitoring helps people avoid interruptions and choose useful work for available resources. The existing `?tab=tasks` workspace now has Overview and Automations; Automations is the default. Overview (`?tab=tasks&monitor=overview`) starts with urgent issues, then account allowance cards with percentages, meters, resets and observation times. Storage, consumption and execution details follow. Exhausted accounts foreground their depleted window; unknown readings have no invented meter. Allowances across different plans are never added together. Settings keeps its current controls. Project tasks and daily reports stay in their existing local Markdown and publication workflows.
 
 ## Activate on an instance
 
@@ -49,7 +49,25 @@ Connect only explicit owned units, not unrelated users' services. Scope is `syst
 
 ## Reports and urgent alerts
 
-`scripts/monitoring-report.mjs --output <prefix> --base-url <instance> --days 1` writes local JSON and a compact Markdown section. It publishes and sends nothing. The established daily workflow reads this source, incorporates actual maintenance and gaps, commits its Markdown and reuses its publisher and group delivery. No separate routine image or Base is needed.
+`scripts/monitoring-report.mjs --output <prefix> --base-url <instance> --days 1` writes local JSON and a compact Markdown section. It publishes and sends nothing. The established daily workflow reads this source, incorporates actual maintenance and gaps, commits its Markdown and reuses its publisher and group delivery. No separate routine message or Base is needed.
+
+When a visual snapshot is authorized, enable the optional browser capability in the same instance configuration:
+
+```json
+{
+  "snapshot": {
+    "playwrightModule": "/path/to/installed/playwright/index.mjs",
+    "browserExecutable": "/path/to/chromium",
+    "profile": "approved-daily-bot",
+    "cliConfigDir": "/path/to/lark-config",
+    "overviewUrl": "https://instance.example/?tab=tasks&monitor=overview"
+  }
+}
+```
+
+Use `scripts/monitoring-snapshot.mjs --output <prefix> --base-url <instance> --days 1 --upload` before the existing daily reply. It captures only the top issues and account cards from the shipped authenticated UI, at twice the display resolution. The PNG and source JSON share one observation. The service token stays in-process and is forwarded only to the selected instance origin. Optional `libraryPath` and `noSandbox` support a host's existing browser installation; no new runtime dependency is imposed on the workbench.
+
+`--upload` uploads as the explicitly configured Bot and writes a Markdown image-key block plus a receipt; it does not send. Include that block in the existing daily summary. The Feishu converter embeds a standalone `![label](img_key)` as a native image in that same post. It does not fetch remote URLs or local paths, and fenced examples stay literal. Keep the full editable table in the original report. Capture or upload failures must be reported as a snapshot gap and retain the ordinary daily text, not reuse an older image as today's observation.
 
 An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches new critical disk/service incidents and important native task failures persisting for three observations. Account exhaustion and account-observation loss remain with the account observer. Normal, restored and lower-priority states go into the report.
 

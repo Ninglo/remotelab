@@ -64,7 +64,7 @@ try {
   const questioning = await accept(questionSession.id, 'question-root', 'ASK_NATIVE_QUESTION');
   let questionClaim;
   await until(async () => { questionClaim = await rpc('claim', { connector: 'feishu' }); return questionClaim; }, 'native question is published in same Feishu conversation');
-  assert.match(questionClaim.delivery.text, /^【进展】/);
+  assert.match(questionClaim.delivery.text, /^【待你回复】/);
   assert.match(questionClaim.delivery.text, /1\. 简短/);
   assert.match(questionClaim.delivery.text, /5 分钟/);
   assert.equal(questionClaim.delivery.target.chatId, 'same-chat');
@@ -85,7 +85,7 @@ try {
   assert.equal((await logs()).filter(e => e.kind === 'question-answer').length, 1, 'restart cannot repeat the native tool response');
   let questionFinal;
   await until(async () => { questionFinal = await rpc('claim', { connector: 'feishu' }); return questionFinal; }, 'question run delivers its result');
-  assert.equal(questionFinal.delivery.text, '【交付】\n\ndurable native answer');
+  assert.equal(questionFinal.delivery.text, '【最终答复】\n\ndurable native answer');
   await rpc('complete', questionFinal.delivery.id, questionFinal.leaseId, { externalId: 'question-result' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null);
   await evidence('PASS: numbered question shown in same Feishu chat; controller restart preserves pending choice, and duplicate reply reaches native tool exactly once.');
@@ -116,7 +116,7 @@ try {
   await writeFile(join(root, `${early.run.id}.release`), '');
   await until(async () => (await rpc('response', earlySession.id, 'early-final-root')).state === 'ready', 'early-final execution finishes');
   const earlyClaim = await rpc('claim', { connector: 'feishu' });
-  assert.equal(earlyClaim.delivery.text, '【交付】\n\ndurable native answer', 'delivery occurs once execution has stopped');
+  assert.equal(earlyClaim.delivery.text, '【最终答复】\n\ndurable native answer', 'delivery occurs once execution has stopped');
   await rpc('complete', earlyClaim.delivery.id, earlyClaim.leaseId, { externalId: 'early-final-message' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'terminal settlement cannot duplicate the final or send commentary');
   await evidence('PASS: an early model final waits for stopped execution; controller recovery and terminal settlement keep one delivery.');
@@ -133,7 +133,7 @@ try {
   await until(async () => (await rpc('response', fileSession.id, 'early-file-root')).state === 'ready', 'file execution ends');
   let fileClaim;
   await until(async () => { fileClaim = await rpc('claim', { connector: 'feishu' }); return fileClaim; }, 'stopped execution publishes file result');
-  assert.ok(fileClaim.delivery.text.startsWith('【交付】'));
+  assert.ok(fileClaim.delivery.text.startsWith('【最终答复】'));
   assert.match(fileClaim.delivery.text, /文件已准备好/);
   assert.doesNotMatch(fileClaim.delivery.text, /Artifacts|early-result.txt/);
   await rpc('complete', fileClaim.delivery.id, fileClaim.leaseId, { externalId: 'early-file-text' });
@@ -174,7 +174,7 @@ try {
   assert.equal(history.filter(event => event.type === 'message' && event.role === 'user').length, 3);
   assert.equal(history.filter(event => event.type === 'message' && event.role === 'assistant' && event.content === 'durable native answer').length, 1);
   const claim = await rpc('claim', { connector: 'feishu' });
-  assert.equal(claim.delivery.text, '【交付】\n\ndurable native answer');
+  assert.equal(claim.delivery.text, '【最终答复】\n\ndurable native answer');
   await rpc('complete', claim.delivery.id, claim.leaseId, { externalId: 'one-final-reply' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'same conversation gets one final publication for all steered messages');
   await evidence('PASS: SIGKILL/controller recovery preserved one execution and one copy of each accepted input; all three response addresses share one final answer and one Feishu publication.');

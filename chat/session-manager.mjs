@@ -18,7 +18,7 @@ import {
   normalizeSessionExecutionProfile,
   QUICK_SESSION_PROFILE,
 } from '../lib/quick-session-profile.mjs';
-import { getJevRoutingSettings, resolveJevChecklistGate } from '../lib/jev-auto-router.mjs';
+import { getJevRoutingSettings } from '../lib/jev-auto-router.mjs';
 import { isWorkboardOptedIn, isWorkboardTurnEnabled, loadWorkboardOptIns } from '../lib/workboard-opt-in.mjs';
 import { draftWorkboardChecklist } from '../lib/workboard-checklist.mjs';
 import { normalizeWorkboardUpdate, formatWorkboard, projectWorkboards } from '../lib/workboard-state.mjs';
@@ -1411,16 +1411,16 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
   slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
     await readPromptAsset('system/surface-messages.md')));
-  const checklistGate = session?.workboardPilot === true ? options.checklistGateReceipt : null;
   const optedIn = session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
   const priorBoards = optedIn ? projectWorkboards(await loadHistory(session.id, { includeBodies: true })).slice(-3) : [];
-  if ((checklistGate?.status === 'decided' && checklistGate.needsChecklist === true) || priorBoards.length) {
+  if ((optedIn && options.workboardEnabled !== false) || priorBoards.length) {
     slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
-      'The Harness owns planning and semantic verification. For new work, publish a 2–5 item deliverable list immediately, before investigation, using one 目标： line and [ ] title — verifiable acceptance lines with `remotelab assistant-message --source workboard_checklist --text ...`. If code already published the supplied list, do not create another. Internal execution plans are separate. '
-      + 'For updates, use `remotelab assistant-message --workboard-file <local-json-file>` with {taskId,revision,goal,status,reason,items:[{id,title,condition,status,evidenceRefs:[Session-event-seq]}]}. Read `/api/sessions/$REMOTELAB_SESSION_ID/events?filter=all` via `remotelab api GET` for the latest revision and evidence. Keep IDs and criteria stable; use the original taskId across Runs when continuing the same task. Once a text checklist has created a task, use that taskId for its JSON updates; never assign it a second ID. A genuinely separate task within the same Run needs its own new taskId and initial JSON snapshot. Jev gates only new checklist creation, never updates to an existing task. '
+      'The Harness owns the decision to create a task card, planning and semantic verification. Judge the actual work required, not just how short the user message looks. A brief answer or straightforward action needs no card. If answering requires substantial investigation, multiple stages or extended work, publish a 2–5 item deliverable list before that work, using one 目标： line and [ ] title — verifiable acceptance lines with `remotelab assistant-message --source workboard_checklist --text ...`. If a short question grows into substantial work, create its card before publishing further progress. If code already published the supplied list, do not create another. Internal execution plans are separate. '
+      + 'For updates, use `remotelab assistant-message --workboard-file <local-json-file>` with {taskId,revision,goal,status,reason,items:[{id,title,condition,status,evidenceRefs:[Session-event-seq]}]}. Read `/api/sessions/$REMOTELAB_SESSION_ID/events?filter=all` via `remotelab api GET` for the latest revision and evidence. Keep IDs and criteria stable; use the original taskId across Runs when continuing the same task. Once a text checklist has created a task, use that taskId for its JSON updates; never assign it a second ID. A genuinely separate task within the same Run needs its own new taskId and initial JSON snapshot. Jev does not gate task-card creation or updates; the executing Harness decides from the actual work. '
       + 'After EACH deliverable passes acceptance, immediately submit the full updated snapshot. done needs a reference to actual verification results; references existing in history are checked by code, their semantic adequacy is your responsibility. Retracting done or changing scope needs a reason and fresh verification. Task statuses: running, partial, blocked, failed, cancelled, completed; item statuses: pending, running, done, blocked, failed, cancelled. Unfinished outcomes need reasons and must still get a normal final explanation. Do not wait for all items to be done. Send your final answer separately; commentary and tool completion never imply task success. A task can remain unfinished after this Run ends. Do not start a separate planner or watcher. '
       + (options.workboardDraft ? 'Code has published the supplied initial list. ' : '')
+      + (options.workboardEnabled === false ? 'This turn is not opted in to create new task cards; only continue an existing task when the user requests it. ' : '')
       + (priorBoards.length ? `Recent task snapshots (resume only if the current user request continues that task): ${JSON.stringify(priorBoards.map(task => task.board))}` : ''),
     ));
   }
@@ -1661,7 +1661,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const payload = buildReplyPublicationPayload(runHistory, run, {
     session, fullHistory: history,
     includeSessionEntry: record.options.sourceContext?.feishuParticipation !== 'ambient'
-      && !record.deliveries.some(delivery => delivery.kind === 'session_entry'),
+      && !record.deliveries.some(delivery => delivery.kind === 'session_entry' || delivery.sessionEntryIncluded),
   });
   if (run.state === 'completed' && record.options.sourceContext?.feishuParticipation === 'ambient') {
     const notice = buildFeishuAmbientIncompleteWorkNotice(runHistory, payload, session);
@@ -3210,16 +3210,23 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     throw Object.assign(new Error('当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。'), { code: 'SESSION_BUSY' });
   }
   if (workboardEnabled && !priorRequest && !options.internalOperation && !options.nativeQuestionId && options.recordUserMessage !== false) {
-    const checklistGateReceipt = await resolveJevChecklistGate(savedImages.length
-      ? `${text?.trim() || ''}\n[${savedImages.length} attachment(s)]`
-      : text?.trim());
     options = {
       ...options,
-      checklistGateReceipt,
-      ...(checklistGateReceipt.needsChecklist === true
-        ? { workboardDraft: draftWorkboardChecklist(text) }
-        : {}),
+      workboardEnabled: true,
+      checklistGateReceipt: { status: 'harness', needsChecklist: null, reason: 'actual_execution_scope' },
+      workboardDraft: draftWorkboardChecklist(text),
     };
+  } else if (!priorRequest) {
+    options = { ...options, workboardEnabled: false };
+  }
+  if (priorRequest) {
+    // These are admission-time projections, not user input. A retry keeps the
+    // original policy/draft (including old Jev receipts) and its fingerprint.
+    options = { ...options };
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft']) {
+      if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
+      else delete options[key];
+    }
   }
   const deliveryPlan = priorRequest
     ? normalizeSourceDeliveryPlan(priorRequest.deliveryPlan || priorRequest.options.sourceDelivery)

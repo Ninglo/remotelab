@@ -51,7 +51,7 @@ export const DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT = [
 export const MAX_FEISHU_TEXT_LENGTH = 5000;
 export const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
 
-const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;
+const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\](?!\()/gu;
 const UNICODE_EMOJI_PATTERN = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?)*)/gu;
 const FEISHU_CODE_BLOCK_LANGUAGES = new Set([
   'BASH',
@@ -1042,9 +1042,16 @@ export async function buildFeishuPostContent(text, mentions, options = {}) {
     .sort((left, right) => Math.max(right.token.length, right.displayName.length) - Math.max(left.token.length, left.displayName.length));
   const document = await buildFeishuMathDocument(normalized, options);
   const content = [];
+  let literalFence = null;
   for (let index = 0; index < document.blocks.length; index += 1) {
     const block = document.blocks[index];
     if (block.type === 'line') {
+      const line = getFeishuDocumentLineText(block);
+      if (literalFence) {
+        pushFeishuDocumentLine(content, block, mentionEntries);
+        if (isMarkdownFenceEnd(line, literalFence)) literalFence = null;
+        continue;
+      }
       const codeBlock = consumeFeishuCodeBlock(document.blocks, index);
       if (codeBlock) {
         content.push([{
@@ -1053,6 +1060,14 @@ export async function buildFeishuPostContent(text, mentions, options = {}) {
           text: codeBlock.text,
         }]);
         index = codeBlock.endIndex;
+        continue;
+      }
+      literalFence = parseMarkdownFenceStart(line);
+      // Pre-uploaded Bot image keys can be embedded in the same daily post.
+      // Keep paths, remote URLs and inline/fenced examples literal; no fetch.
+      const image = !literalFence && line?.match(/^\s{0,3}!\[[^\]\n]*\]\((img_[\w-]+)\)\s*$/);
+      if (image) {
+        content.push([{ tag: 'img', image_key: image[1] }]);
         continue;
       }
       pushFeishuDocumentLine(content, block, mentionEntries);

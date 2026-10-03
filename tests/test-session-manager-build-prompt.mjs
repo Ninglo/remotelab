@@ -51,7 +51,20 @@ const workboardPrompt = await buildPrompt('existing-workboard', {
 }, '继续原任务', 'codex', 'codex', null, { checklistGateReceipt: { status: 'decided', needsChecklist: false } });
 assert.match(workboardPrompt, /stable-task/);
 assert.match(workboardPrompt, /--workboard-file/);
-assert.match(workboardPrompt, /Jev gates only new checklist creation/);
+assert.match(workboardPrompt, /Jev does not gate task-card creation or updates/);
+for (const receipt of [{ status: 'decided', needsChecklist: false }, { status: 'unavailable', needsChecklist: null }]) {
+  const prompt = await buildPrompt('new-opted-in-question', {
+    id: 'new-opted-in-question', workboardPilot: true, systemPrompt: '',
+  }, '实验中的信息回复机制现在是什么样的？', 'codex', 'codex', null, { checklistGateReceipt: receipt });
+  assert.match(prompt, /Visible checklist for this opt-in Session/,
+    'an initial short question still gives the Harness the card rule when real investigation is necessary');
+  assert.match(prompt, /brief answer or straightforward action needs no card/);
+}
+const optedOutPrompt = await buildPrompt('new-opted-out-question', {
+  id: 'new-opted-out-question', workboardPilot: true, workboardOptInPersonId: 'other-person', systemPrompt: '',
+}, '调查输出链路', 'codex', 'codex', null, { viewPersonId: 'current-person' });
+assert.doesNotMatch(optedOutPrompt, /Visible checklist for this opt-in Session/);
+
 
 const baseSession = {
   systemPrompt: '',

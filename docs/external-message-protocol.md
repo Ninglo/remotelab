@@ -302,13 +302,15 @@ configuration and recently used models only enrich the model catalog. Explicit
 Harness/model/effort profiles remain supported. Feishu continues to inherit the
 synced WebUI profile unless configured in pinned mode.
 
-The first durable connector admission notice includes the session link, model,
-effort and Harness from that same snapshot. Unknown provider defaults are shown
-as delegated to the Harness rather than guessed. Starting an ordinary user run
-also saves its complete Harness/model/effort profile on the Session for the
-WebUI. Later turns do not repeat the creation notice; internal operations do not
-replace user preferences.
-Email retains its single final-message behavior.
+Feishu includes the Session link in the first useful Harness opening, or the
+final reply when no opening exists. It sends no separate fixed creation notice
+or model/effort/Harness settings. Other connectors that support an admission
+notice retain their existing snapshot-based notice. Starting an ordinary user
+run saves its complete Harness/model/effort profile on the Session for the
+WebUI; internal operations do not replace user preferences. Feishu labels
+openings `开始处理`, native questions `待你回复`, and stopped-Run results
+`最终答复`. Task completion comes from verified workboard outcomes, not these
+message labels. Email retains its single final-message behavior.
 
 Example:
 

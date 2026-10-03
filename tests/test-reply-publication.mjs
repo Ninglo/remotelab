@@ -69,6 +69,7 @@ const {
   getRunState,
   getSession,
   updateSessionRuntimePreferences,
+  updateSessionWorkboardPilot,
   getSessionReplyPublication,
   buildPrompt,
   killAll,
@@ -93,6 +94,27 @@ async function waitFor(predicate, description, timeoutMs = 6000) {
 }
 
 try {
+  const firstHistory = [
+    { seq: 1, type: 'message', role: 'user', content: '核查消息接入逻辑' },
+    { seq: 2, type: 'message', role: 'assistant', phase: 'commentary', providerMessageId: 'opening',
+      content: '我先对照群内收到的消息，检查进度是否更新了原卡。' },
+    { seq: 3, type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId: 'result', content: '核查结果。' },
+  ];
+  let openingRecord = { key: 'first-opening', runId: 'opening-run', options: {}, deliveries: [] };
+  const openingOptions = { session: { id: 'first-feishu-session', sourceId: 'feishu' },
+    plan: { connector: 'feishu', target: { chatId: 'original-chat', threadId: 'original-thread' } },
+    store: { get: async () => openingRecord, mutate: async (_key, fn) => { openingRecord = fn(openingRecord); } } };
+  await publishNativeFinalReplies(openingRecord, firstHistory.slice(0, 2), openingOptions);
+  assert.equal(openingRecord.deliveries.length, 1);
+  assert.match(openingRecord.deliveries[0].text, /^【开始处理】\n\n我先对照群内收到的消息/);
+  assert.match(openingRecord.deliveries[0].text, /\?session=first-feishu-session&tab=sessions/);
+  assert.doesNotMatch(openingRecord.deliveries[0].text, /会话已创建|模型：|Harness：/);
+  openingRecord = JSON.parse(JSON.stringify(openingRecord));
+  await publishNativeFinalReplies(openingRecord, firstHistory, { ...openingOptions, running: false });
+  await publishNativeFinalReplies(openingRecord, firstHistory, { ...openingOptions, running: false });
+  assert.deepEqual(openingRecord.deliveries.map(item => item.text.split('\n')[0]), ['【开始处理】', '【最终答复】']);
+  assert.equal(openingRecord.deliveries[1].text, '【最终答复】\n\n核查结果。');
+  assert.ok(openingRecord.deliveries.every(item => item.target.threadId === 'original-thread'));
   let probe = { key: 'probe', runId: 'probe-run', responseId: 'probe-response', options: {}, deliveries: [] };
   await publishNativeFinalReplies(probe, ['unready-assets', 'ready-text'].map(providerMessageId => ({
     type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId, content: 'ready reply',
@@ -123,7 +145,7 @@ try {
       claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
       return !!claim;
     }, 'visible progress delivery while model is blocked');
-    assert.equal(claim.delivery.text, `【进展】\n\n${expected}`);
+    assert.equal(claim.delivery.text, `【${expected === '先检查消息链路。' ? '开始处理' : '进展'}】\n\n${expected}`);
     assert.equal(claim.delivery.target.threadId, 'visibility-topic');
     assert.equal((await requests.byRunId(visibilityOutcome.run.id)).result, null, 'opening and progress precede the result');
     await completeSourceDelivery(claim.delivery.id, claim.leaseId, { externalId: `visible-${expected}` });
@@ -137,7 +159,7 @@ try {
   assert.equal(visibilityReaction.delivery.kind, 'reaction', 'outcome is queued only when the final answer arrives');
   await completeSourceDelivery(visibilityReaction.delivery.id, visibilityReaction.leaseId, { externalId: 'visibility-outcome' });
   const visibilityFinal = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
-  assert.equal(visibilityFinal.delivery.text, '【交付】\n\n主 Harness 已经直接完成并交付结果。');
+  assert.equal(visibilityFinal.delivery.text, '【最终答复】\n\n主 Harness 已经直接完成并交付结果。');
   await completeSourceDelivery(visibilityFinal.delivery.id, visibilityFinal.leaseId, { externalId: 'visibility-final' });
   assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' }), null, 'settlement does not resend streamed replies');
   const taggedSession = await createSession(tempHome, 'fake-codex', 'Explicit task result');
@@ -206,12 +228,15 @@ try {
     sourceId: 'feishu',
     sourceName: 'Feishu',
     externalTriggerId: 'feishu:topic:chat-1:thread-1',
+    initiatedByIdentityId: 'workboard-test-owner',
   });
+  await updateSessionWorkboardPilot(connectorSession.id, true);
   const connectorOptions = {
     requestId: 'connector-first',
     tool: 'fake-codex',
     model: 'fake-model',
     effort: 'low',
+    initiatedByIdentityId: 'workboard-test-owner',
     sourceDelivery: { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'test-chat', messageId: 'first-message', threadId: 'test-thread' } },
   };
   assert.deepEqual(buildSessionEntryDeliveries(connectorSession, { userMessageCount: 1 }, connectorOptions), [], 'pre-existing history never gets a retroactive notice');
@@ -221,14 +246,12 @@ try {
   const firstConnectorOutcome = await submitHttpMessage(connectorSession.id, 'hold-entry-notice 首轮消息。', [], connectorOptions);
   const expectedSessionUrl = `https://remote.example.test/?session=${connectorSession.id}&tab=sessions`;
   const earlyClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' });
-  assert.equal(earlyClaim?.delivery?.kind, 'session_entry', 'entry can be sent while the first model response is still pending');
-  assert.ok(earlyClaim.delivery.text.includes(expectedSessionUrl));
-  assert.match(earlyClaim.delivery.text, /模型：fake-model/);
-  assert.match(earlyClaim.delivery.text, /Effort：low/);
-  assert.match(earlyClaim.delivery.text, /Harness：fake-codex/);
+  assert.equal(earlyClaim, null, 'Feishu sends no separate fixed creation notice while waiting for the useful opening');
   await waitFor(async () => (await getSession(connectorSession.id)).model === 'fake-model', 'session metadata to reflect the admitted runtime');
   assert.equal((await getSession(connectorSession.id)).effort, 'low');
   const admitted = await requests.byResponse(connectorSession.id, firstConnectorOutcome.response.id);
+  assert.equal(admitted.options.checklistGateReceipt.status, 'harness',
+    'the card decision stays with the executing Harness instead of a message-only classifier');
   assert.equal(admitted.runtimeSelection.model, 'fake-model');
   assert.equal(admitted.runtimeSelection.effort, 'low');
   const queuedOptions = { requestId: 'connector-queued-defaults' };
@@ -249,9 +272,7 @@ try {
   const commandReplay = await submitHttpMessage(connectorSession.id, 'Pinned command choice.', [], commandOptions);
   assert.equal(commandReplay.duplicate, true);
   assert.deepEqual((await requests.byResponse(connectorSession.id, commandOutcome.response.id)).runtimeSelection, commandSelection, '/follow does not rewrite queued or replayed inputs');
-  assert.equal(earlyClaim.delivery.target.threadId, 'test-thread');
   assert.equal((await requests.byResponse(connectorSession.id, firstConnectorOutcome.response.id)).result, null);
-  await completeSourceDelivery(earlyClaim.delivery.id, earlyClaim.leaseId, { externalId: 'early-entry-message' });
   assert.equal((await submitHttpMessage(connectorSession.id, 'hold-entry-notice 首轮消息。', [], connectorOptions)).duplicate, true);
   assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' }), null, 'replayed submission does not resend the link');
   writeFileSync(join(tempHome, 'release-entry-test'), 'continue');
@@ -263,11 +284,11 @@ try {
     connectorSession.id,
     firstConnectorOutcome.response?.id,
   );
-  assert.equal(firstConnectorPublication?.payload?.sessionEntry, undefined);
-  assert.equal(firstConnectorPublication?.payload?.text, '主 Harness 已经直接完成并交付结果。', 'final reply does not repeat the early entry');
+  assert.equal(firstConnectorPublication?.payload?.sessionEntry?.url, expectedSessionUrl);
+  assert.equal(firstConnectorPublication?.payload?.text, `主 Harness 已经直接完成并交付结果。\n\n查看会话详情和进度：${expectedSessionUrl}`, 'a reply without an opening retains one usable Session entry');
   const finalClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' });
   assert.equal(finalClaim?.delivery?.kind, 'content');
-  assert.equal(finalClaim.delivery.text, `【交付】\n\n${firstConnectorPublication.payload.text}`);
+  assert.equal(finalClaim.delivery.text, `【最终答复】\n\n${firstConnectorPublication.payload.text}`);
   await completeSourceDelivery(finalClaim.delivery.id, finalClaim.leaseId, { externalId: 'final-reply-message' });
 
   await waitFor(async () => (await getRunState(queuedOutcome.run.id))?.state === 'completed', 'queued run completion');

@@ -35,13 +35,15 @@ its separate thread Session. Other members' messages cannot start a checklist
 even in a Session that previously held this Person's workboard. Removing the
 Person entry stops future checklist decisions; old checklists remain in history.
 
-Jev makes a compact yes/no decision only for a new delegated, multi-stage task.
-Uncertain yes, timeout, or unavailable Jev adds no checklist. The decision
-request is capped at 4,000 characters and does not generate checklist text.
-When a user supplied a `目标：` line and 2–5 `[ ] 标题 — 完成条件` lines, code reuses
-them directly. Otherwise the same Harness Run derives the short checklist
-before investigation; there is no second planner or model call. Jev never gates
-updates to an existing task. A local Session continuation can update an existing
+The executing Harness decides whether actual work needs a card. A brief answer
+or straightforward action needs no card; substantial investigation, extended
+work or multiple stages do. A short-looking question can require long work.
+Every opted-in turn receives this rule, including turns with an old negative
+Jev receipt. There is no separate checklist classification call or hard Jev
+gate. When a user supplied a `目标：` line and 2–5 `[ ] 标题 — 完成条件` lines,
+code reuses them directly. Otherwise the same Harness Run derives the short
+checklist before substantial work or further progress; there is no second
+planner or model call. A local Session continuation can update an existing
 opted-in Feishu task by its explicit ID; it cannot create a new Feishu task or
 grant another Feishu sender access to that task.
 
@@ -54,6 +56,11 @@ decides whether the work satisfies the user's goal.
 
 - Publish the initial 2–5 deliverables immediately, with a goal and checkable
   acceptance conditions. Internal execution steps cannot replace them.
+- Feishu sends one task-specific model opening, with the new Session entry in
+  that message. It no longer sends a separate model/effort/Harness creation
+  notice. If no opening exists, the final reply carries the entry. Openings
+  are labelled `开始处理`, native questions `待你回复`, and stopped-Run results
+  `最终答复`; these labels do not assert task acceptance or completion.
 - Keep `taskId`, item IDs and conditions stable. Continuing the same task across
   Runs reuses the original card; a new task gets a new ID, even within one Run.
   A text-created initial list already has an ID; JSON updates must reuse it.
@@ -153,7 +160,7 @@ outside this baseline's activation scope.
 `npm run test:workboard` is the fixed isolated acceptance entry point and runs
 inside the normal `npm test` / required CI check. Existing scenarios cover:
 
-- activation boundaries and task context surviving a negative creation gate;
+- activation boundaries and task context despite old negative Jev receipts;
 - evidence, revision conflicts, scope changes and withdrawing completion;
 - commentary, blocked/partial outcomes, failure/cancellation, cross-Run resume
   and new-task separation;

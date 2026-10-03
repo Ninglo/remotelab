@@ -13,6 +13,7 @@ import {
 } from './session-result-files.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
+import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
 
 export async function prepareNativeFinalFiles(record, event, { run, manifest, publishAsset = publishLocalFileAssetFromPath } = {}) {
   const references = [...extractAssistantArtifactBlockReferences(event.content), ...extractAssistantLocalMarkdownImageReferences(event.content)];
@@ -70,13 +71,19 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       continue;
     }
     if (!prepared) continue;
+    const includeEntry = plan.connector === 'feishu' && Boolean(session?.id)
+      && ['opening', 'final'].includes(surface.surfaceKind)
+      && fullHistory.filter(item => item.type === 'message' && item.role === 'user').length === 1
+      && !stored?.deliveries?.some(item => item.kind === 'session_entry' || item.sessionEntryIncluded);
+    const entry = includeEntry ? buildSessionEntry(session) : null;
     const payload = final ? buildReplyPublicationPayload([prepared], {
       id: record.runId, responseId: record.responseId,
-    }, { session, includeSessionEntry: false }) : {
-      text: prepared.content, attachments: getAssistantReplyAttachments(prepared),
+    }, { session, includeSessionEntry: Boolean(entry) }) : {
+      text: appendSessionEntryFooter(prepared.content, entry), attachments: getAssistantReplyAttachments(prepared),
     };
     const parts = buildReplyDeliveries(resolveAmbientFeishuReplyPlan(record, plan, [event]), payload, {
       running,
+      surfaceKind: surface.surfaceKind,
       requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
     if (!parts.length) continue;
@@ -90,6 +97,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
         ...(final ? { streamedFinalReplyIds: [...(current.streamedFinalReplyIds || []), messageId] } : {}),
         deliveries: appendDeliveries(current, parts.map(part => ({
           ...part, providerMessageId: messageId, surfaceKind: surface.surfaceKind,
+          ...(entry && part.kind === 'content' ? { sessionEntryIncluded: true } : {}),
           providerPartCount: parts.filter(part => ['content', 'attachment'].includes(part.kind)).length,
           triggerId: current.options?.triggerId || '',
           scheduleId: current.options?.scheduleId || '',
