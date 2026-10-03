@@ -79,7 +79,7 @@ for (const [routeId, route] of routes) {
 }
 await execFile('systemctl', ['--user', 'daemon-reload']);
 for (const route of routes.values()) {
-  await execFile('systemctl', ['--user', 'enable', '--now', route.unit]);
+  await execFile('systemctl', ['--user', 'enable', route.unit]);
   await execFile('systemctl', ['--user', 'restart', route.unit]);
   await execFile('systemctl', ['--user', 'is-active', route.unit]);
 }
