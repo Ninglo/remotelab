@@ -148,6 +148,14 @@ async function main() {
     const secondPerson = await request(port, 'GET', '/api/automation-tasks', null, secondPersonCookie);
     assert.equal(secondPerson.status, 200, 'Task Center must be available to every authenticated Person');
 
+    const overview = await request(port, 'GET', '/api/monitoring/overview?days=1', null, secondPersonCookie);
+    assert.equal(overview.status, 200, overview.text);
+    assert.equal(overview.json.windowDays, 1);
+    assert.ok(Array.isArray(overview.json.disks));
+    assert.ok(Array.isArray(overview.json.attention));
+    assert.equal((await request(port, 'GET', '/api/monitoring/overview', null, '')).status, 401,
+      'Monitoring must retain the same authentication boundary as automation controls');
+
     const fixedSession = await createSession(port, 'Fixed automation home');
     const templateSession = await createSession(port, 'Independent execution template');
     const bind = await request(port, 'PATCH', `/api/sessions/${fixedSession.id}`, {

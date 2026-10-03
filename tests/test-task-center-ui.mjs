@@ -9,6 +9,7 @@ const template = readFileSync(join(repoRoot, 'templates', 'chat.html'), 'utf8');
 const css = readFileSync(join(repoRoot, 'static', 'chat', 'task-center.css'), 'utf8');
 const script = readFileSync(join(repoRoot, 'static', 'chat', 'task-center.js'), 'utf8');
 const compose = readFileSync(join(repoRoot, 'static', 'chat', 'compose.js'), 'utf8');
+const monitoring = readFileSync(join(repoRoot, 'static', 'chat', 'monitoring.js'), 'utf8');
 
 assert.match(template, /class="sidebar-nav-button" id="tabTasks"[^>]*>[\s\S]*data-i18n="nav\.tasks"/, 'Tasks must be a first-class row in the Session sidebar');
 assert.match(template, /<aside class="sidebar"[^>]*>[\s\S]*id="tabTasks"[\s\S]*id="sessionList"[\s\S]*id="newSessionBtn"[\s\S]*id="tabSettings"[\s\S]*<\/aside>/, 'Task Center and Settings should share one classic sidebar with Sessions');
@@ -49,5 +50,9 @@ assert.match(script, /maxExecutions:\s*Number/, 'finite lifetime must submit its
 assert.match(script, /mode:\s*"script"[\s\S]*runtime:[\s\S]*source:/, 'script gate configuration must be submitted explicitly');
 assert.match(script, /globalScope\.confirm/, 'terminal cancellation needs a user confirmation');
 assert.doesNotMatch(script, /\.innerHTML\s*=/, 'task content should not be rendered through innerHTML');
+assert.match(template, /id="monitoringOverviewTab"[\s\S]*id="monitoringAutomationsTab"[^>]*aria-selected="true"/, 'Monitoring preserves the default automation view');
+assert.match(template, /id="monitoringOverview"[^>]*hidden/, 'Overview is a switchable view, not another navigation destination');
+assert.match(monitoring, /\/api\/monitoring\/overview/, 'Overview uses the shared monitoring source');
+assert.doesNotMatch(monitoring, /\.innerHTML\s*=/, 'Monitoring data must be rendered as text');
 
 console.log('Task Center UI structure and responsive visual contract tests passed.');

@@ -88,6 +88,12 @@
 .session-workboard-item-detail { color: var(--text-secondary); }
 .session-workboard-list li.done { color: var(--text-secondary); }
 .session-workboard-run-state { color: var(--text-secondary); border-top: 1px solid var(--border); padding-top: 8px; }
+.session-workboard-progress { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; min-width: 0; }
+.session-workboard-progress-current { margin-top: 6px; overflow-wrap: anywhere; line-height: 1.55; }
+.session-workboard-progress .md-content > :first-child { margin-top: 0; }
+.session-workboard-progress-history { color: var(--text-secondary); margin: 8px 0; }
+.session-workboard-progress-history summary { cursor: pointer; }
+.session-workboard-progress-history .md-content { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
 .empty-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   height: 100%; color: var(--text-muted); text-align: center; padding: 48px 24px;

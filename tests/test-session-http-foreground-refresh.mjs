@@ -523,5 +523,9 @@ await secondContext.refreshRealtimeViews({ forceFresh: true, viewportIntent: 'se
 assert.equal(secondContext.attachCalls.length, 1, 'recovery refresh should restore a pending notification target once the latest session list arrives');
 assert.equal(secondContext.attachCalls[0]?.id, 'fresh-session', 'recovery refresh should attach the newly available notification target session');
 assert.equal(secondContext.currentSessionId, 'fresh-session', 'recovery refresh should leave the fresh target as the active session');
+assert.equal(secondContext.getLatestEventSeq([
+  { seq: 2, type: 'message', workboardUpdateSeq: 8 },
+  { seq: 3, type: 'message', messageUpdateSeq: 9 },
+]), 9, 'updates at an original card or reply position advance the observed history boundary');
 
 console.log('test-session-http-foreground-refresh: ok');

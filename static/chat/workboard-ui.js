@@ -34,8 +34,9 @@ function parseSessionChecklistContent(content) {
 
 function sessionWorkboardSnapshotInfo(events) {
   const latestUserSeq = [...events].reverse().find(event => event?.type === "message" && event.role === "user")?.seq || 0;
-  const latest = [...events].reverse().find(isSessionWorkboardMessage);
-  return { latestUserSeq, updateSeq: latest?.workboardUpdateSeq || latest?.seq || 0 };
+  const updateSeq = events.filter(isSessionWorkboardMessage).reduce((seq, event) =>
+    Math.max(seq, event.workboardUpdateSeq || event.seq || 0), 0);
+  return { latestUserSeq, updateSeq };
 }
 
 function projectSessionWorkboardTranscriptEvents(sessionId, events) {
@@ -226,7 +227,9 @@ function renderSessionWorkboardMessage(container, event) {
   } : parseSessionChecklistContent(event.content);
   const card = document.createElement("section");
   card.className = "session-workboard-inline";
-  card.setAttribute("aria-label", "交付清单");
+  card.setAttribute("aria-label", "任务进度");
+  if (event.workboard?.taskId) card.dataset.taskId = event.workboard.taskId;
+  card.dataset.anchorSeq = String(event.seq || 0);
   if (event.workboardCurrentTurn) card.dataset.currentTurn = "true";
 
   const heading = document.createElement("div");
@@ -270,6 +273,37 @@ function renderSessionWorkboardMessage(container, event) {
     list.appendChild(row);
   }
   card.appendChild(list);
+  const progress = document.createElement("section");
+  progress.className = "session-workboard-progress";
+  progress.setAttribute("aria-label", "目前进展");
+  const progressTitle = document.createElement("strong");
+  progressTitle.textContent = "目前进展";
+  progress.appendChild(progressTitle);
+  const current = document.createElement("div");
+  current.className = "session-workboard-progress-current md-content";
+  current.setAttribute("aria-live", "polite");
+  const content = event.workboardProgress?.content || "暂无进度更新";
+  if (typeof renderMarkdownIntoNode === "function") renderMarkdownIntoNode(current, content);
+  else current.textContent = content;
+  progress.appendChild(current);
+  const previousProgress = (event.workboardProgressHistory || []).filter(update =>
+    event.workboardProgress?.derivedFromOutcome || update.seq !== event.workboardProgress?.seq);
+  if (previousProgress.length) {
+    const history = document.createElement("details");
+    history.className = "session-workboard-progress-history";
+    const summary = document.createElement("summary");
+    summary.textContent = "之前的进展（" + previousProgress.length + "）";
+    history.appendChild(summary);
+    for (const update of previousProgress) {
+      const entry = document.createElement("div");
+      entry.className = "md-content";
+      if (typeof renderMarkdownIntoNode === "function") renderMarkdownIntoNode(entry, update.content);
+      else entry.textContent = update.content;
+      history.appendChild(entry);
+    }
+    progress.appendChild(history);
+  }
+  card.appendChild(progress);
   if (event.workboard || event.workboardCurrentTurn) {
     const status = document.createElement("div");
     status.className = "session-workboard-run-state";
