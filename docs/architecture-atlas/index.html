@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>RemoteLab 架构图谱</title>
-  <link rel="stylesheet" href="./styles.css?v=20260929h">
-  <link rel="stylesheet" href="./reading.css?v=20260929h">
-  <link rel="stylesheet" href="./situations.css?v=20260929h">
-<link rel="stylesheet" href="./guide.css?v=20261003k">
-<script type="module" src="./guide-shell.js?v=20261003k"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261003l">
+  <link rel="stylesheet" href="./reading.css?v=20261003l">
+  <link rel="stylesheet" href="./situations.css?v=20261003l">
+<link rel="stylesheet" href="./guide.css?v=20261003l">
+<script type="module" src="./guide-shell.js?v=20261003l"></script>
 </head>
 <body data-guide-page="index.html" data-guide-chapter="system">
   <div class="app-shell">
@@ -26,12 +26,12 @@
       </div>
       <div class="side-label">浏览方式</div>
       <nav class="view-nav" aria-label="浏览方式">
-        <a class="nav-button" href="./project.html?v=20261003k" style="text-decoration:none">项目总入口 · 阅读路线 ↗</a>
+        <a class="nav-button" href="./project.html?v=20261003l" style="text-decoration:none">消息全程 ↗</a>
         <button class="nav-button is-active" type="button" data-view="experience"><span>01</span> 事件与状态</button>
         <button class="nav-button" type="button" data-view="paths"><span>02</span> 输入路径</button>
         <button class="nav-button" type="button" data-view="map"><span>03</span> 机制索引</button>
         <button class="nav-button" type="button" data-view="evidence"><span>04</span> 资源与证据</button>
-        <a class="nav-button" href="./output/index.html?v=20261003k" style="text-decoration:none"><span>05</span> 一条消息的执行与交付 ↗</a>
+        <a class="nav-button" href="./output/index.html?v=20261003l" style="text-decoration:none"><span>05</span> 一条消息的执行与交付 ↗</a>
               <a class="nav-button" href="./memory/index.html" style="text-decoration:none"><span>06</span> 记忆与组织协作 ↗</a>
       </nav>
       <div class="side-label map-only">机制区域 <span id="domain-count"></span></div>
@@ -56,6 +56,7 @@
           <p class="hero-meta">本站按源码基线 1ab6305d 与本实例已核对的配置和运行样本整理。每种情形都连接用户体验、程序或模型、状态位置、资源与源码；运行事实和待核边界分开标记。</p>
           <details data-technical class="guide-chapter-context"><summary>文件与源码</summary><p>内容位于<code>docs/architecture-atlas/</code>的<code>atlas-data.js</code>、<code>situation-data.js</code>、<code>journey-data.js</code>和<code>experience-data.js</code>；网页引用这些原始条目。</p></details><div class="hero-legend"><span><i class="dot code"></i>源码实现</span><span><i class="dot config"></i>实例配置</span><span><i class="dot observed"></i>运行样本</span><span><i class="dot unknown"></i>待核验</span></div>
           <div class="state-question"><strong>拿“Session 发生重大变化”举例</strong><ol><li>原对话和当前工作摘要是否更新？</li><li>另一次长期记忆审阅是否真的写入文件？</li><li>下一次工作是否读取并使用了它？</li></ol><p>这是三个需要分别核对的事件。一次模型答复、一个 Session 字段和一条跨会话记忆不能画成同一个方框。</p><button type="button" data-case="material-session-change">看代码中的这条分支 ↗</button></div>
+          <p class="section-lede">本页是主流程的状态索引：<a href="./project.html?v=20261003l">从一条消息开始</a>。主体保留2026-09-29基线与资源样本；Jev静默机制已按2026-10-03更正，各源码链接保留自己的版本。</p>
           <div id="group-overview" class="group-overview" aria-label="情形总览"></div>
         </header>
         <section id="state-section" class="article-section" aria-labelledby="state-title">
@@ -71,7 +72,7 @@
         </section>
         <section id="journey-section" class="article-section" aria-labelledby="journey-title">
           <div class="section-heading"><span>PART C</span><h2 id="journey-title">一次输入的处理过程</h2></div>
-          <p class="section-lede">这条时间线适合追某次消息或日报从发起到返回的顺序。上面的场景和状态层说明它为什么不能代替系统全貌。</p>
+          <p class="section-lede">从<a href="./project.html?v=20261003l#mechanisms">消息全程</a>进入后，可在这里查不同来源写了哪些状态。各入口的阶段编号是阅读坐标；并行读取与投递见主流程，不用编号推断全系统串行。</p>
           <div id="journey-route-tabs" class="journey-route-tabs" role="tablist" aria-label="选择输入路径"></div>
           <div id="journey-lead" class="journey-lead"></div>
           <div id="journey-stages" class="journey-stages"></div>
@@ -123,6 +124,6 @@
       <div class="detail-empty"><div class="empty-glyph">◎</div><h2>选择一个机制</h2><p>点击左侧地图中的节点，查看它负责什么、连接到哪里，以及当前证据和源码入口。</p></div>
     </aside>
   </div>
-  <script type="module" src="./app.js?v=20261003k"></script>
+  <script type="module" src="./app.js?v=20261003l"></script>
 </body>
 </html>

@@ -1,10 +1,10 @@
 # RemoteLab：一条消息如何变成工作和交付
 
-版本：v3 · 2026-10-03。源码快照：`2e300793188aeabddba720df872c3ac4f1c0a5f2`。
+版本：v3.1 · 2026-10-03 · 主流程核对。源码快照：`78bb28e5afd3903e4df90325a41c98f77a20b4b2`。
 
 阅读入口：[当前流程与交接](index.html)；[目标图与交互演示附录](reference.html)。
 
-主线源码；7696 的现有个人任务卡试验；已启用 Jev / ambient / groupFeed 的飞书群。其他部署实例需要单独核对。
+主线源码复核；各分支仅在相应开关和参与范围内启用。实例覆盖、真实收发及历史样本保留原验收范围，未由文档更新扩展。
 
 先可靠收录，再提交可执行 Request。写入 Session 观察历史不启动 Run；Jev 在部分入口参与前置快判，实际任务由 Harness 执行和验收。当前飞书新复杂任务完整收发仍待验收。即时表情前置、跨 Worker 到达顺序和问题分级仍待实施。
 
@@ -50,7 +50,7 @@ Connector 收集有限的最近上下文，必要时读取已配置的项目记�
 
 等待：这一步当前确实 await Jev，是执行请求提交前的串行等待。快判失败有回退路径，但平台错误仍可能阻塞。
 
-可见与证据：当前临时 fail-open：即便 Jev 建议静默或只回表情，也把已观察消息交给 Session 模型决定是否答复。
+可见与证据：当前临时fail-open：获准参与的观察消息即便被建议静默或只回表情，仍交给Harness判断答复；暂停和未获邀请的监听继续只观察。
 
 #### 4. 决定工作位置并提交任务
 
@@ -725,7 +725,7 @@ Session / Request → 后置后台；承担者：独立 Session 状态分类器�
 
 ## 一次工作如何形成可接续的记忆
 
-本次补核项目指针v2、人员档案、旧偏好入口、实际自动写回目标及文件位置。旧消息章节和系统总览保留各自基线；不把本次核对日期当成全站重新验收。
+本轮实际处理正常入口仍指向的旧正文：受控备份、段落映射、旧默认入口替换和现行读取核对。项目指针v2与两个候选写回目标保持；原聊天史和未知身份未全量认证，旧消息章节及系统总览保留各自基线。
 
 ### 识别这次工作是谁、来自哪里
 
@@ -840,9 +840,9 @@ Session / Request → 后置后台；承担者：独立 Session 状态分类器�
 | 人员 | <personId>.md | 记忆目录/reference/people/<personId>.md | 这个人的称呼、写作、协作习惯、适用范围、本人来源与变更日期。 | 本人明确表达可更新原条；转述、推断和身份不清先待核；只对该人适用。当前用一个档案，不再嵌套每人一份preferences.md。 |
 | 人员 | auth.json → Person.preferences | 配置目录/auth.json | 真实Person/identity映射及产品设置，如输入模式、语音快捷键。 | 由产品身份与设置流程维护；默认值不是本人表态。不把自然语言偏好或凭据复制到公开说明。 |
 | 背景 | company.md | 记忆目录/reference/company.md | 办公地点、公共出行入口、团队确认的常用地点与来源。 | 相关话题按需读；个人忌口归本人，餐厅营业和实际路线行动前查询。 |
-| 背景 | hosts.md；robodojo-platform.md | 记忆目录/reference/current/ | 主机与评测平台当前事实入口。 | 事实修改需核当前部署/API；不把旧记录的机器状态当实时状态。 |
-| 背景 | advisor.md；evaluation.md；foundation-model-training.md；remotelab.md；robotics.md；tools.md；training.md；work-management.md | 记忆目录/reference/topics/ | 已有领域资料、局部约定和方法背景。 | 只在命中领域时读；有来源和适用范围。旧“用户要求”未核Person前不转成全员偏好。 |
-| 任务 | index.md；<任务名>.md；daily-unresolved-feishu.json | 记忆目录/tasks/ | 任务入口、局部决定、恢复资料和未处理事项。 | 先核真正任务/Run/验收系统；新建任务文件不会因文件存在自动获得记忆写回权限。登录清单列出实际任务文件名。 |
+| 背景 | hosts.md；robodojo-platform.md | 记忆目录/reference/current/ | 主机定位和评测项目／操作入口。 | 主机带核验日期；旧评测快照已退出当前正文，项目状态回原主账，部署与Run现场核对。 |
+| 背景 | advisor.md；evaluation.md；foundation-model-training.md；remotelab.md；robotics.md；tools.md；training.md；work-management.md | 记忆目录/reference/topics/ | 现行项目／方法入口与受控历史导航。 | 旧混合正文已备份并映射，不另维护第二份项目状态或方法；原任务约定保留，未知Person的旧倾向仍待核。 |
+| 任务 | index.md；<任务名>.md；daily-unresolved-feishu.json | 记忆目录/tasks/ | 任务入口、局部决定、恢复资料和未处理事项。 | 手工状态与原决定保留；旧无来源自动段移到受控原件待核，不覆盖已有效结果或暂停状态。新任务文件不自动获得写回权限。 |
 | 项目 | project-runtime.json | 记忆目录/project-runtime.json | 项目、群与明确Session的关联及开关、索引/主账/审阅规则路径。 | 精确来源或显式绑定；侧栏分组、标题相似和提到某项目不足以挂靠。 |
 | 项目 | project-index.md；projects.md | 项目知识目录/project-index.md；项目知识目录/projects.md | 索引与唯一项目认识主账，讨论群、干活群和相关个人工作供给同一认识。 | 原链路增量更新，事实/承诺/验收/观察分开；稳定事项及引用连回来源。 |
 | 项目 | <YYYY-MM-DD>.md | 项目知识目录/daily/<YYYY-MM-DD>.md | 项目、个人和总日报的日期投影。 | 从同一原认识生成；人的反馈回原事项，不另起竞争主账。 |
@@ -857,14 +857,14 @@ Session / Request → 后置后台；承担者：独立 Session 状态分类器�
 | 来源 | events.jsonl；connector-message-index.json；<项目hash>.jsonl | 连接器storageDir/；其project-message-streams/ | 群原文事件、消息索引和项目关联消息流。 | 两个群可供给同一项目；关联文本有限额，不保证全群历史已语义检索。登录后显示已登记storageDir，不重新启动采集器。 |
 | 历史 | preferences.md | 记忆目录/model-context/preferences.md → 记忆目录/archive/people-boundary-20261003/preferences.md | 你记得的旧Preferences文件。现行文件保留历史导航，原混合正文已完整归档。 | 旧版机器级入口混合公共规则、局部约定和未核人的倾向；不作为全员偏好、不批量归给当前人。 |
 | 历史 | auto-user-memory.md；global.md；automation.md | 记忆目录/model-context/auto-user-memory.md；记忆目录/global.md；记忆目录/automation.md | 旧索引与历史路由。auto-user-memory这个默认文件名已被本实例写回配置替换为inbox。 | 文件还存在不等于仍接收自动写入。只追溯原文，不恢复旧自动化授权或过期能力。 |
-| 历史 | identity.md；migration-manifest.json；progress-tracker.md；group-eval-submissions.md | 记忆目录/reference/personal/identity.md；reference/topics/migration-manifest.json；model-context/ | 旧共享身份、迁移出处和领域跟踪资料。 | 旧身份不是当前Person；跟踪记录不是实时状态。归档在archive/<批次>/，原文保留但不自动成为新规则。 |
+| 历史 | identity.md；migration-manifest.json；progress-tracker.md；group-eval-submissions.md | 记忆目录/reference/personal/identity.md；reference/topics/migration-manifest.json；model-context/ | 旧共享身份、迁移出处和领域跟踪资料。 | 旧共享identity已改历史导航，原文只留受控归档；未知自然人不归名。跟踪记录不是实时状态，原文与段落映射可追溯。 |
 | 原生 | AGENTS.md；MEMORY.md；memory_summary.md；原生会话/Skills | Harness运行配置选定的provider home；Codex常见于CODEX_HOME下 | Harness自身指令、检索记忆、压缩摘要、会话与方法；独立于RemoteLab人员区。 | 由Harness控制加载。本次未批量改写原生记忆；其中旧路径/个人表述可能残留，发现后以已核Person和当前原档案纠正。平台指针不能抹除已加载上下文。 |
 
 ## 分档错误与纠正
 
 第一次把个人称呼写进公共AGENTS，是人工把“长期需要记住”误当成“所有Session共同规则”。后来虽建立人员档案，我又保留了“全局兼容”副本；这是错误的例外，让个人正文和公共入口并存。本轮自动写回器不能直接写AGENTS，这次并非它自动分到了AGENTS。
 
-个人正文只维护在对应Person档案；公共AGENTS保留读取入口。当前消息Person/identity匹配后投影该人的路径。旧preferences入口改为历史导航，原文完整归档；旧共享identity明确不代表当前作者。
+个人正文只维护在对应Person档案；公共AGENTS保留读取入口。当前消息Person/identity匹配后投影该人的路径。旧preferences入口改为历史导航，原文完整归档；旧共享identity改历史导航。memory-layout顶部不再指向旧偏好默认入口，bootstrap的临时试行标明窗口结束；有效持续授权回现行共同规则与领域方法。
 
 仍有可能：Agent有手动文件编辑能力，语义可能判断错；原生旧线程或Harness记忆可能保留过时内容。我们缩小自动写入口、校验目标与类别、保留出处、纠正原条并核新一轮读取；没有宣称操作系统已经禁止所有人工错写。
 
@@ -872,6 +872,7 @@ Session / Request → 后置后台；承担者：独立 Session 状态分类器�
 - **自动写入新任务**：旧配置只禁用了当时已知任务ID，新建的三份笔记仍出现在有效写回目录。 改为显式目标允许列表；用新增任务、额外目标与空列表做拒绝测试，配置之后再核实际目录。
 - **个人偏好进入跨部署候选**：过去目标categories只有提示作用。 代码校验目标类别并拒绝system+preference；误标workflow仍需内容审阅，不能证明绝无语义错分。
 - **候选失去出处**：旧自动条目只有短句和“用户”，未记独立来源。 新写入关联Session/Run/原用户事件与时间；旧条目不伪造时间/作者，不直接认可或迁移。
+- **默认入口互相矛盾**：旧分层表仍把preferences当稳定默认，后文却要求按Person；临时试行过期后仍在启动入口。 替换冲突正文，保留旧授权来源及当前workflow；到期不当完成、不自动延长，也不撤销持续授权。
 - **旧上下文继续生效**：改文件不会删除已经读入原生线程的内容；原生记忆也由Harness管理。 在当前轮说明更正，核新消息Person指针和原档案；真正需要重建线程时保留有用工作证据。
 - **领域约定或观察被升级为事实**：主题文件中的历史习惯、项目建议、日期日报和运行状态用途不同。 先标来源、适用人员/项目、时间及确认状态；候选不覆盖正式决定，实时事实现场查证。
 
@@ -904,6 +905,12 @@ Session / Request → 后置后台；承担者：独立 Session 状态分类器�
 复用既有04:00／18:00流程、同一主账和原反馈出口，未加第二个消费者。
 
 边界：规则进入原链路不代表下一轮执行已验；正式文档、发送和人认可各有证据。
+
+### 旧入口治理：已实施有限范围
+
+旧主题、共享身份和混合任务自动段退出当前正文；原文在受控归档，来源与有效状态记录在迁移映射。
+
+边界：只处理正常入口可达的旧正文；未知作者／事实仍待核，历史原文不公开，已暂停任务不恢复。
 
 ### 个人背景：开始按人登记
 

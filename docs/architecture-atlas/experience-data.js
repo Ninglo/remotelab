@@ -3,20 +3,20 @@ export const measuredAt = '2026-09-29 13:07 中国时间';
 
 // Counts describe the inspected instance configuration, not a rollout guarantee.
 export const feishuRules = {
-  checkedAt: '2026-09-29 · 本实例配置与一条已落盘的 silent 记录',
+  checkedAt: '配置／silent样本：2026-09-29；静默机制更正：2026-10-03',
   modes: [
     {
-      name: '旧规则 · quickReactions', scope: '当前配置：2 个群',
+      name: '旧规则 · quickReactions', scope: '2026-09-29配置快照：2个群',
       visible: '先出现临时 THINKING；随后可能有 Harness 选择的结果表情和文字。',
       decision: '连接器并行调用 Jev，记录快速判断与交接候选；已接纳的消息仍按原路径提交 Harness，快速判断本身不拦截工作 Run。',
       model: '快速 Jev 调用 + 正常任务的 Harness token；程序发送 THINKING 和最终投递，使用飞书 API。',
       writes: '连接器 inbox/快速判断日志；正常任务的 Session、Request、Run、用量记录及投递回执。',
     },
     {
-      name: '新规则 · jevReactions', scope: '当前配置：1 个试验群的主线',
-      visible: '不加临时 THINKING；Jev 判定 silent 时只在原消息上加结果表情，判定 reply 时加 OnIt 并启动答复。',
-      decision: '先把消息写入绑定的 group-feed Session，再用近期 Session 消息调用 Jev；silent 跳过工作 Run，reply 复用已写入的用户事件提交任务。',
-      model: '每条进入判断的消息有一次快速 Jev 调用；只有 reply 再产生 Harness token。结果表情由固定程序经飞书 API 发送。',
+      name: '新规则 · jevReactions', scope: '2026-09-29配置快照：1个试验群主线；当前覆盖另核',
+      visible: '观察路径不加临时THINKING；Jev建议表情和工作位置，Harness决定实际回复，表情和文字分别看投递。',
+      decision: '先观察并等待Jev；当前获准参与的silent／reaction建议仍采用fail-open提交Harness。暂停、未获邀请的监听仍只观察。',
+      model: '快判与Harness是不同调用；silent建议不再保证没有Harness成本。结果表情仍由固定程序投递。',
       writes: 'Session 用户事件、观察去重/决策记录、决策事件；silent 仍产生 delivery-only Request 和 outbox 回执。',
     },
   ],
@@ -24,18 +24,18 @@ export const feishuRules = {
     ['① 接收', '飞书 WebSocket → 连接器 inbox；核对群主线配置及消息路由。'],
     ['② 观察', '连接器 POST /api/sessions/{id}/observations；同一群绑定的 group-feed Session 追加 type=message、role=user、source=feishu_observation。'],
     ['③ 判断', 'Jev 读取该 Session 最近最多 20 条、最多 2 小时的消息，总上下文限 5,000 字符；决策写入 session-observations/，并追加 type=reaction_decision、role=system。'],
-    ['④ silent', '不创建正式工作 Run；outbox 创建 delivery-only Request，连接器调用飞书 reaction OpenAPI。原始用户事件仍在 chat-history/{sessionId}/。'],
+    ['④ 当前更正', '获准参与的silent消息仍提交Harness；有emoji决定时在提交执行之后排表情。旧“不创建Run”是历史样本规则，不再用于解释当前入口。'],
   ],
   boundaries: [
     '试验范围只覆盖选定群主线；该群话题、Thread 和其他群沿各自原有规则。旧规则不是所有群的统一规则。',
     '无正文的本地命令先进入观察 Session，然后走现有命令脚本；不会进入普通 Jev 参与判断。',
     '当前网页按普通用户消息气泡渲染观察事件，没有显示“已观察但未回复”的标记或飞书发送者；reaction_decision 也未在普通事件视图单独渲染。',
-    '观察分支在附件解析前返回，用户事件只含文字/预览，没有附件资产；原始历史长期留存不等于附件已保存。',
+    '观察记录先于附件准备，只有文字／预览；随后提交工作才准备附件，暂停或未获邀请的监听不继续。原始历史不证明附件保存。',
     '近期 Jev 上下文是有界窗口；完整 Session 历史仍在磁盘。被保存并不等于下一次 Harness 一定会把原始事件全文作为提示读取。',
   ],
   sources: [
     { path: 'connectors/feishu/group-settings.mjs', line: 52, note: '启用条件和主线范围' },
-    { path: 'scripts/feishu-connector.mjs', line: 1587, note: '先观察、命令分叉和 Jev 判断' },
+    { path: 'scripts/feishu-connector.mjs', line: 1201, commit: '78bb28e5afd3903e4df90325a41c98f77a20b4b2', note: '当前观察、快判、参与控制与fail-open' },
     { path: 'chat/session-observations.mjs', line: 49, note: '用户事件、去重与近期上下文' },
     { path: 'chat/session-observations.mjs', line: 88, note: '决策记录和系统事件' },
     { path: 'chat/source-deliveries.mjs', line: 99, note: 'delivery-only 投递' },
@@ -64,7 +64,7 @@ export const experiences = [
     tags: ['完整任务模型 + 可选快速模型', '接入与发送由程序处理'], model: '完整 Harness：接纳为任务后会调用；快速参与判断视群配置可能额外调用', local: '接收、去重、会话绑定、投递和飞书接口发送由连接器与控制面程序处理', storage: '飞书 inbox/事件/索引 + Request/Run/历史 + 文字、表情、附件各自的投递与回执',
     stages: [
       ['固定程序', '飞书长连接送来事件；连接器按群规则、静默状态、@ 与话题绑定判断是否接纳。'],
-      ['可能的额外模型', '启用 quickReactions 的非 Jev 群会并行调用快速参与模型；Jev 模式先记观察，再调用模型决定是否只发表情或提交任务。'],
+      ['可能的额外模型', '启用 quickReactions 的非 Jev 群会并行调用快速参与模型；Jev模式先观察并等待快判；当前获准参与的消息仍交Harness决定回复。'],
       ['模型调用', '真正的任务进入 Request 和 Run，由 Harness 阅读上下文、执行工具和生成内容。'],
       ['固定程序', '结果拆成文字、附件、结果表情等投递部分；连接器用飞书 OpenAPI 发送并写回回执。'],
     ],

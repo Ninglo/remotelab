@@ -1,7 +1,7 @@
-import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20260929h';
-import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20260929h';
-import { journeyRoutes, journeyStages } from './journey-data.js?v=20260929h';
-import { stateLayers, situationGroups, situations } from './situation-data.js?v=20260929h';
+import { sourceCommit, statusNames, domains, nodes, paths, findings } from './atlas-data.js?v=20261003l';
+import { experiences, feishuRules, resourceSnapshot, missingDimensions } from './experience-data.js?v=20261003l';
+import { journeyRoutes, journeyStages } from './journey-data.js?v=20261003l';
+import { stateLayers, situationGroups, situations } from './situation-data.js?v=20261003l';
 
 const byId = new Map(nodes.map((node) => [node.id, node]));
 const elements = {
@@ -140,7 +140,7 @@ function renderJourneyMatrix() {
 }
 
 function renderFeishuRules() {
-  elements.feishuRules.innerHTML = `<div class="policy-heading"><div><div class="eyebrow">FEISHU POLICY SPLIT</div><h3>飞书的两套规则</h3><p>先看同一条群消息在两种规则下的用户体验、模型调用和存储位置。</p></div><span class="policy-snapshot">${escapeHtml(feishuRules.checkedAt)}</span></div>
+  elements.feishuRules.innerHTML = `<div class="policy-heading"><div><div class="eyebrow">FEISHU POLICY SPLIT</div><h3>飞书参与分支与历史配置</h3><p>先分清收录、快判与实际回复。下列群数保留2026-09-29快照，静默机制按2026-10-03更正。</p></div><span class="policy-snapshot">${escapeHtml(feishuRules.checkedAt)}</span></div>
     <div class="policy-grid">${feishuRules.modes.map((mode) => `<article class="policy-card"><div class="policy-card-head"><h4>${escapeHtml(mode.name)}</h4><span>${escapeHtml(mode.scope)}</span></div>
       <dl><div><dt>用户看到</dt><dd>${escapeHtml(mode.visible)}</dd></div><div><dt>谁决定</dt><dd>${escapeHtml(mode.decision)}</dd></div><div><dt>模型与接口</dt><dd>${escapeHtml(mode.model)}</dd></div><div><dt>写入哪里</dt><dd>${escapeHtml(mode.writes)}</dd></div></dl></article>`).join('')}</div>
     <details class="policy-deep-dive"><summary><span><strong>Jev 判断“不回复”后，消息在 Session 哪里？</strong><small>展开事件顺序、磁盘位置和代码入口</small></span><span class="expand-mark" aria-hidden="true">⌄</span></summary>
@@ -177,7 +177,7 @@ function renderExperiences() {
 
 function sourceMarkup(source) {
   const reference = `${source.path}${source.line ? `:${source.line}` : ''}`;
-  const url = source.instance ? null : `https://github.com/Ninglo/remotelab/blob/${sourceCommit}/${source.path}${source.line ? `#L${source.line}` : ''}`;
+  const url = source.instance ? null : `https://github.com/Ninglo/remotelab/blob/${source.commit || sourceCommit}/${source.path}${source.line ? `#L${source.line}` : ''}`;
   return `<div class="source-item"><code>${escapeHtml(reference)}</code><span>${escapeHtml(source.note)}${source.instance ? ' · 本实例，未公开源码链接' : ''}</span><div class="source-actions"><button type="button" data-copy="${escapeHtml(reference)}">复制路径</button>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">查看源码 ↗</a>` : ''}</div></div>`;
 }
 

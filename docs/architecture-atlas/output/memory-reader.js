@@ -1,4 +1,4 @@
-import { guide } from '../../memory-architecture/guide-data.js?v=20261003k';
+import { guide } from '../../memory-architecture/guide-data.js?v=20261003l';
 import { memoryAudit, memorySteps, executionRows, timeRules, timelineExample, backgroundCases, memoryPurposes, memorySupport, memoryFileMap, filingIncident, filingRisks } from '../../memory-architecture/reader-data.js?v=20261003i';
 const el=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

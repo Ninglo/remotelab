@@ -1,25 +1,25 @@
 // Reader-facing facts are pinned to the audited source, not to a moving branch.
 export const audit = {
-  version: 'v3 · 2026-10-03',
-  commit: '2e300793188aeabddba720df872c3ac4f1c0a5f2',
-  scope: '主线源码；7696 的现有个人任务卡试验；已启用 Jev / ambient / groupFeed 的飞书群。其他部署实例需要单独核对。',
+  version: 'v3.1 · 2026-10-03 · 主流程核对',
+  commit: '78bb28e5afd3903e4df90325a41c98f77a20b4b2',
+  scope: '主线源码复核；各分支仅在相应开关和参与范围内启用。实例覆盖、真实收发及历史样本保留原验收范围，未由文档更新扩展。',
 };
 
 export const sources = {
-  inbox: ['lib/connector-inbox.mjs', 'scripts/feishu-connector.mjs#L1778'],
-  observation: ['chat/session-observations.mjs#L50', 'scripts/feishu-connector.mjs#L1079'],
-  jev: ['scripts/feishu-connector.mjs#L1188', 'connectors/feishu/quick-participation.mjs#L68'],
-  quick: ['scripts/feishu-connector.mjs#L1740', 'connectors/feishu/quick-participation.mjs#L286'],
-  handoff: ['scripts/feishu-connector.mjs#L984', 'connectors/feishu/session-flow.mjs'],
-  admission: ['chat/session-manager.mjs#L3159', 'chat/requests.mjs'],
-  auto: ['chat/session-runtime-selection.mjs#L17', 'lib/jev-auto-router.mjs'],
+  inbox: ['lib/connector-inbox.mjs', 'scripts/feishu-connector.mjs'],
+  observation: ['chat/session-observations.mjs', 'scripts/feishu-connector.mjs'],
+  jev: ['scripts/feishu-connector.mjs', 'connectors/feishu/quick-participation.mjs'],
+  quick: ['scripts/feishu-connector.mjs', 'connectors/feishu/quick-participation.mjs'],
+  handoff: ['scripts/feishu-connector.mjs', 'connectors/feishu/session-flow.mjs'],
+  admission: ['chat/session-manager.mjs', 'chat/requests.mjs'],
+  auto: ['chat/session-runtime-selection.mjs', 'lib/jev-auto-router.mjs'],
   native: ['chat/native-request-dispatch.mjs', 'chat/native-input-transport.mjs', 'docs/native-harness-input.md'],
   run: ['chat/run-launcher.mjs', 'chat/runner-sidecar.mjs', 'chat/run-projection.mjs'],
-  opening: ['chat/session-entry-notification.mjs', 'chat/native-final-publication.mjs#L35'],
-  card: ['chat/session-manager.mjs#L1417', 'lib/workboard-state.mjs', 'connectors/feishu/workboard-pilot.mjs'],
-  delivery: ['chat/native-final-publication.mjs', 'lib/reply-deliveries.mjs', 'scripts/feishu-connector.mjs#L1400'],
-  question: ['chat/session-manager.mjs#L3183', 'chat/native-user-questions.mjs#L133'],
-  after: ['chat/session-turn-completion.mjs#L212', 'chat/session-state-classifier.mjs'],
+  opening: ['chat/session-entry-notification.mjs', 'chat/native-final-publication.mjs'],
+  card: ['chat/session-manager.mjs', 'lib/workboard-state.mjs', 'connectors/feishu/workboard-pilot.mjs'],
+  delivery: ['chat/native-final-publication.mjs', 'lib/reply-deliveries.mjs', 'scripts/feishu-connector.mjs'],
+  question: ['chat/session-manager.mjs', 'chat/native-user-questions.mjs'],
+  after: ['chat/session-turn-completion.mjs', 'chat/session-state-classifier.mjs'],
 };
 
 export const actors = [
@@ -97,7 +97,7 @@ export const scenarios = {
         'Connector 收集有限的最近上下文，必要时读取已配置的项目记忆，再调用 Jev。它建议表情与工作位置、短答或复杂工作；判断会被保存。',
         '输入：最近消息、是否 @、最新正文、可用记忆摘录。输出：participation / emojiType / workMode / reason。',
         '这一步当前确实 await Jev，是执行请求提交前的串行等待。快判失败有回退路径，但平台错误仍可能阻塞。',
-        '当前临时 fail-open：即便 Jev 建议静默或只回表情，也把已观察消息交给 Session 模型决定是否答复。','jev'),
+        '当前临时fail-open：获准参与的观察消息即便被建议静默或只回表情，仍交给Harness判断答复；暂停和未获邀请的监听继续只观察。','jev'),
       step('决定工作位置并提交任务','connector','session','sync','Connector 选路由；Session 接纳可执行请求',
         'Jev 建议 complex 时，Connector 选择话题工作路径，并携带近期群上下文；其他情况通常续接原 Session。准备附件、上下文和本条 sourceDelivery，提交执行请求。',
         '输入：判断结果 + sessionId + 正文 + sourceDelivery。输出：可执行 Request、Run 身份与回复目标。',

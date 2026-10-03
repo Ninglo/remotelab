@@ -183,18 +183,18 @@ export const nodes = [
   },
   {
     id: 'quick-participation', domain: 'integration', title: '飞书快速参与判断', summary: '有些群在正式答复之外另有快速模型判断；思考中表情自身由程序发送。', owner: '飞书连接器与外部快速判断服务', status: ['code', 'config'],
-    contract: '旧 quickReactions 路径会在正常任务之外并行调用快速判断，不以它拦截 Run；新 jevReactions 先记录消息，再据 Jev 决定是否提交正式工作。新规则只在选定群主线试验。',
+    contract: '旧 quickReactions 路径会在正常任务之外并行调用快速判断，不以它拦截 Run；jevReactions先观察并等待快判；2026-10-03获准参与的消息采用临时fail-open，继续交Harness判断实际回复。配置覆盖另核。',
     reads: '群配置、近期上下文和是否 @ Bot。', writes: '旧规则的 THINKING 与快速判断日志；新规则的观察/决定与结果表情投递。', related: ['feishu-ingress', 'feishu-observation', 'harness', 'outbox', 'usage-ledger'],
-    sources: [{ path: 'connectors/feishu/quick-participation.mjs', line: 1, note: '外部快速模型及条件' }, { path: 'scripts/feishu-connector.mjs', line: 1150, note: 'Jev 决定与提交分叉' }, { path: 'scripts/feishu-connector.mjs', line: 1648, note: '非 Jev 并行路径' }],
+    sources: [{ path: 'connectors/feishu/quick-participation.mjs', line: 1, note: '外部快速模型及条件' }, { path: 'scripts/feishu-connector.mjs', line: 1201, commit: '78bb28e5afd3903e4df90325a41c98f77a20b4b2', note: '当前快判、控制与fail-open' }, { path: 'scripts/feishu-connector.mjs', line: 1648, note: '非 Jev 并行路径' }],
     open: '逐群测量快速判断次数、模型用量、延迟和它是否改变最终参与；当前仅见判断时延日志，未见用量纳入统一账本。',
   },
   {
     id: 'feishu-observation', domain: 'integration', title: '飞书群消息观察', summary: '新规则把不需回答的群消息也写入同一 group-feed Session，随后单独保存 Jev 决策。', owner: '飞书连接器 + Session 历史服务', status: ['code', 'config', 'observed'],
-    contract: '当前只对选定群主线启用。消息先追加为 user/message/feishu_observation；silent 不启动工作 Run，但结果表情仍有 delivery-only Request。一次已落盘的 silent 记录及两个事件已核。',
+    contract: '消息先追加为user/message/feishu_observation。2026-10-03更正：获准参与的silent建议仍提交Harness；暂停和未获邀请的监听另受控制。2026-09-29已核silent记录保留为历史样本。',
     reads: '绑定群的 Session、来源上下文、近期最多 20 条且最多 2 小时的消息；Jev 输入总量最多 5,000 字符。',
-    writes: 'chat-history/{sessionId}/ 的用户和决策事件、session-observations/ 去重与决策记录、结果表情投递。观察分支不解析附件资产。',
+    writes: 'chat-history/{sessionId}/ 的用户和决策事件、session-observations/ 去重与决策记录、结果表情投递。观察记录先于附件准备；后续工作提交才准备，是否保存另核。',
     related: ['session', 'history', 'quick-participation', 'outbox', 'usage-ledger'],
-    sources: [{ path: 'scripts/feishu-connector.mjs', line: 1051, note: '观察请求早于附件解析' }, { path: 'chat/session-observations.mjs', line: 49, note: '事件落盘与近期窗口' }, { path: 'chat/session-observations.mjs', line: 88, note: '决策落盘' }, { path: 'static/chat/ui.js', line: 710, note: '网页用户气泡' }],
+    sources: [{ path: 'scripts/feishu-connector.mjs', line: 1079, commit: '78bb28e5afd3903e4df90325a41c98f77a20b4b2', note: '观察先于后续附件准备' }, { path: 'chat/session-observations.mjs', line: 49, note: '事件落盘与近期窗口' }, { path: 'chat/session-observations.mjs', line: 88, note: '决策落盘' }, { path: 'static/chat/ui.js', line: 710, note: '网页用户气泡' }],
     open: '增加“观察未回复”和发送者的界面标识；确认图片/文件预览与下轮 Harness 上下文的实际覆盖，并按消息串联 Jev 调用、投递回执与成本。',
   },
   {

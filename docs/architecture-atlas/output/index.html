@@ -5,17 +5,17 @@
 <meta name="color-scheme" content="light">
 <meta name="description" content="按一条消息的真实先后顺序说明 RemoteLab：同步等待、异步执行、Session 两次交接、Jev 职责、飞书任务卡和当前待验边界。">
 <title>RemoteLab · 从一次工作到长期项目认识</title>
-<link rel="stylesheet" href="./reading.css?v=20261003k">
-<script type="module" src="./flow-reader.js?v=20261003k"></script>
-<script type="module" src="./memory-reader.js?v=20261003k"></script>
-<link rel="stylesheet" href="../guide.css?v=20261003k">
-<script type="module" src="../guide-shell.js?v=20261003k"></script>
+<link rel="stylesheet" href="./reading.css?v=20261003l">
+<script type="module" src="./flow-reader.js?v=20261003l"></script>
+<script type="module" src="./memory-reader.js?v=20261003l"></script>
+<link rel="stylesheet" href="../guide.css?v=20261003l">
+<script type="module" src="../guide-shell.js?v=20261003l"></script>
 </head>
 <body data-guide-page="output/index.html" data-guide-chapter="message">
 <a class="skip" href="#main">跳到正文</a>
 <div class="book">
 <aside class="contents"><a class="brand" href="../project.html">RemoteLab <span>整体说明 · 返回项目入口</span></a>
-<nav aria-label="阅读目录"><a href="#start">先看结论与读法</a><a href="#journey">01 一条消息的一生</a><a href="#handoff">02 谁交给谁，交什么</a><a href="#async">03 同步与异步</a><a href="#jev">04 Jev 到底做什么</a><a href="#entries">05 三类入口有何不同</a><a href="#output">06 用户看到什么</a><a href="#feedback">07 运行中用户再说一句</a><a href="#testing">08 怎么测试，哪些待验</a><a href="#memory">09 开工与记忆的一生</a><a href="#memory-storage">10 存在哪里，怎样归类</a><a href="#memory-files">文件名与分档纠错</a><a href="#project-memory">11 项目共识与实际进度</a><a href="#memory-timeline">12 把事件串成项目进程</a><a href="#background-memory">13 个人与公司背景</a><a href="#instance-memory">14 登录看实际记录</a><a href="#evidence">来源与版本</a></nav>
+<nav aria-label="阅读目录"><a href="#start">执行机制与范围</a><a href="#journey">01 一条消息的一生</a><a href="#handoff">02 谁交给谁，交什么</a><a href="#async">03 同步与异步</a><a href="#jev">04 Jev 到底做什么</a><a href="#entries">05 三类入口有何不同</a><a href="#output">06 用户看到什么</a><a href="#feedback">07 运行中用户再说一句</a><a href="#testing">08 怎么测试，哪些待验</a><a href="#memory">09 开工与记忆的一生</a><a href="#memory-storage">10 存在哪里，怎样归类</a><a href="#memory-files">文件名与分档纠错</a><a href="#project-memory">11 项目共识与实际进度</a><a href="#memory-timeline">12 把事件串成项目进程</a><a href="#background-memory">13 个人与公司背景</a><a href="#instance-memory">14 登录看实际记录</a><a href="#evidence">来源与版本</a></nav>
 <button id="expand-details" type="button" aria-expanded="false">展开技术细节</button><a class="small appendix-link" href="./reference.html">目标交互图与演示附录 ↗</a>
 </aside>
 <main id="main">
@@ -26,7 +26,7 @@
 <p>写入 Session 历史只是收录消息。可执行的 Request 被接纳后，才进入运行调度。部分入口由 Jev 先判断参与方式，实际任务交给所选 Harness。</p>
 <p class="metadata"><span id="reader-version"></span> · 源码与现有配置快照；现场状态不会自动更新</p>
 <p class="note">飞书收发仍有待验证的部分：已有修复通过回归和部署核对，但真实复杂任务的收发、即时表情前置、跨输出 Worker 到达顺序、提问分级和打断处理还没有全部完成验收。各节分别列出当前行为与目标。</p>
-<p class="reading-guide">选择下方的入口，看时序图和相应步骤。图中的时间表示先后；技术细节在展开项里。记忆部分从<a href="#memory">开工读取</a>继续讲，<a href="#instance-memory">实例记录</a>需要登录后主动读取。</p>
+<p>这里展开<a href="../project.html?v=20261003l#mechanisms">消息全程</a>中的组件交接与等待位置。下方时序图按来源查看；开工上下文在主流程中与执行相连，具体文件仍引用原记忆内容源。</p>
 <details data-technical class="guide-chapter-context"><summary>文件与源码</summary><p>本章页面：<code>docs/architecture-atlas/output/index.html</code>；执行内容：<code>flow-data.js</code>；记忆内容：<code>docs/memory-architecture/reader-data.js</code>与<code>guide-data.js</code>。各内容源保留自己的核对基线。</p></details></header>
 
 <section id="journey"><h2>消息的执行流程</h2>
