@@ -602,6 +602,7 @@
   globalScope.RemoteLabTaskCenter = {
     refresh: refreshTasks,
     onTabShown() {
+      if (globalScope.RemoteLabMonitoring?.isOverview()) return globalScope.RemoteLabMonitoring.onTabShown();
       renderSessionOptions();
       if (!loaded) return refreshTasks();
       renderTasks();
