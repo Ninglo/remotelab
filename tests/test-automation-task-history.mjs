@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -16,6 +16,12 @@ const { ensureRequestSchema } = await import('../lib/request-schema.mjs');
 await ensureRequestSchema(CONFIG_DIR);
 const template = { folder: fixture, tool: 'codex', name: 'History fixture' };
 const now = Date.now();
+async function writeFixtureTriggers(rows) {
+  await writeFile(CHAT_TRIGGERS_FILE, JSON.stringify(rows));
+  // This fixture bypasses the producer API to retain arbitrary execution states.
+  // Give the store an unambiguous external revision even on coarse mtime filesystems.
+  await utimes(CHAT_TRIGGERS_FILE, new Date(), new Date(Date.now() + 1000));
+}
 try {
   const task = await createRecurringSchedule({ sourceSessionId: 'history-source', sessionTemplate: template,
     title: 'Task with older failures', text: 'Fixture only', cron: '0 0 1 1 *', timezone: 'UTC' });
@@ -30,7 +36,7 @@ try {
     fixtureTriggers.push({ ...trigger, status: 'delivered', runId: run.id, executionSessionId: 'history-execution' });
     ids.push(trigger.id);
   }
-  await writeFile(CHAT_TRIGGERS_FILE, JSON.stringify(fixtureTriggers));
+  await writeFixtureTriggers(fixtureTriggers);
   const summary = await getAutomationTask(task.id);
   assert.equal(summary.recentExecutions.length, 5);
   assert.equal(summary.lastExecution.state, 'completed');
@@ -57,8 +63,8 @@ try {
   await assert.rejects(listAutomationTaskExecutions(task.id, { status: 'completed' }), /status/);
   assert.equal(await listAutomationTaskExecutions('sch_' + 'f'.repeat(24)), null);
   const stored = JSON.parse(await readFile(CHAT_TRIGGERS_FILE, 'utf8'));
-  await writeFile(CHAT_TRIGGERS_FILE, JSON.stringify(stored.map(item => item.id === foreign.id
-    ? { ...item, status: 'delivered', runId: 'run_' + 'f'.repeat(24) } : item)));
+  await writeFixtureTriggers(stored.map(item => item.id === foreign.id
+    ? { ...item, status: 'delivered', runId: 'run_' + 'f'.repeat(24) } : item));
   const unverified = await getAutomationTask(foreign.id);
   assert.equal(unverified.lastExecution.runAvailable, false, 'old admissions without execution evidence cannot be live jobs');
   assert.equal(unverified.health.failedExecutions, 0);
