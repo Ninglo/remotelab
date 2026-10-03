@@ -108,6 +108,10 @@ test('late acceptance list upgrades the original progress position and message',
   assert.equal(display.filter(event => event.workboard).length, 1);
   assert.equal(display.find(event => event.workboard).seq, 3);
   assert.equal(display.filter(event => event.messageKind === 'progress_panel').length, 0);
+  const separate = [...start, msg(4, '上一个问题的结果', { phase: 'final_answer' }),
+    msg(5, '目标：新的交付', { source: 'workboard_checklist', workboard: { ...board, taskId: 'next-task' } })];
+  assert.equal(projectWorkboards(separate)[0].anchorSeq, 5,
+    'a prior final closes the upgrade window; a new task cannot claim the old progress message');
 });
 
 test('admitted progress never also enters the message outbox', async () => {
