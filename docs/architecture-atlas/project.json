@@ -1,0 +1,31 @@
+{
+  "id": "remotelab-system-guide",
+  "title": "RemoteLab 整体说明",
+  "purpose": "梳理系统如何工作，为持续自优化和新人快速了解、适应提供共同入口。",
+  "entry": "project.html",
+  "publishSlug": "remotelab-architecture-atlas",
+  "maintenance": "README.md",
+  "chapters": [
+    {
+      "id": "system",
+      "title": "系统总览：事件、状态与输入路径",
+      "source": "docs/architecture-atlas",
+      "route": "index.html",
+      "description": "先认识系统里的对象、状态和入口，再沿机制索引追到源码。历史基线和资源快照保留各自日期。"
+    },
+    {
+      "id": "message",
+      "title": "一条消息的执行与交付",
+      "source": "docs/architecture-atlas/output",
+      "route": "output/index.html",
+      "description": "看清 Connector、Session、Jev、Harness 谁先做什么，哪些串行等待，哪些异步推进，以及进度、提问和结果如何送达。"
+    },
+    {
+      "id": "memory",
+      "title": "记忆与组织协作",
+      "source": "docs/memory-architecture",
+      "route": "memory/index.html",
+      "description": "理解开工读取、工作后归集、项目共识和多人视图。当前机制与治理方案分别标明，源码沿用原维护目录。"
+    }
+  ]
+}

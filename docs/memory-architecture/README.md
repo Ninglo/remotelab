@@ -8,7 +8,7 @@
 
 2026-10-03 按用户要求沿原链路全范围接入项目记忆增强：匹配来源／明确 Session 的开工指针、同一主账的项目索引和原日报增强规则；已冻结旧版并保留总开关与分项开关。登记范围不等于全组织已完整覆盖，运行配置不等于人的认可。真实回复质量、速度与成本继续从实际使用确认。网页案例均为虚构，不展示真实人员、群 ID、公司地址或聊天正文。 未逐条复审全部历史业务事实；运行接入和实际效果、人按职责认可分别验收。
 
-交互入口：[index.html](index.html)。真实人数通过网页按钮在登录后读当前实例，不保存真实名单或私人偏好。
+本章属于 [RemoteLab 整体说明项目](../architecture-atlas/README.md)，统一目录和发布规则在该项目维护。交互入口：[index.html](index.html)。真实人数通过网页按钮在登录后读当前实例，不保存真实名单或私人偏好。
 
 ## 方案骨架
 
@@ -970,4 +970,4 @@ flowchart LR
 - 用真实问题验证治理效果，并记录仍未证明的部分；这份说明会随目标和实现继续修订。
 - 本轮接入项目记忆指针与原日报增强规则；逐人偏好、公司资料、全面角色登记及业务动作仍各自按授权推进。源码交付与部署核验分开，当前服务版本以实例 build-info 为准。
 
-编辑 `guide-data.js` 后运行 `node docs/memory-architecture/render-reference.mjs`；用 `--check` 检查参考文本是否同步。发布仅包括 `index.html`、`style.css`、`app.js`、`guide-data.js` 和 `README.md`。
+编辑 `guide-data.js` 后运行 `node docs/memory-architecture/render-reference.mjs`；用 `--check` 检查参考文本是否同步。发布仅包括 `index.html`、`style.css`、`app.js`、`guide-data.js` 和 `README.md`。本章由 `docs/architecture-atlas/assemble-site.mjs` 纳入整体说明的 `memory/` 子目录；后续统一发布和备份，不另外维护平行网站。

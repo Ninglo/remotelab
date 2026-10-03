@@ -37,6 +37,10 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 - Keep raw identifying details out of shared notes; record sanitized product evidence and promote stable conclusions into canonical docs.
 - See `notes/current/product-mainline.md` and `notes/current/user-feedback-log.md`.
 
+## Unified RemoteLab Explanation Project
+
+Human-facing system and feature explanations belong to the single RemoteLab explanation project at `docs/architecture-atlas/README.md`, with the shared entry `docs/architecture-atlas/project.html` and catalog `project.json`. Its purpose is system understanding, continuous self-improvement, and newcomer onboarding. Extend an existing chapter or add a cataloged chapter, include it in the same assembled publication and backup, and retain source/deployment/acceptance boundaries. Do not create a separate overlapping explanation website. Focused API, setup, and operational docs keep their existing canonical sources and are linked from the shared site. Read the project README before changing or publishing these explanations.
+
 ## Documentation Rule
 
 For setup, deployment, integration, and feature-activation docs, use a model-first, prompt-first shape:

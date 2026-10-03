@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="RemoteLab 整体说明的统一入口：了解系统、快速上手，并依据实际工作持续优化。">
+  <title>RemoteLab · 整体说明</title>
+  <link rel="stylesheet" href="./output/reading.css?v=20261003d">
+  <link rel="stylesheet" href="./project.css?v=20261003a">
+  <script type="module" src="./project-home.js?v=20261003a"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="book">
+  <aside class="contents">
+    <a class="brand" href="./project.html">RemoteLab <span>整体说明 · 持续维护</span></a>
+    <nav aria-label="项目目录"><a href="#purpose">这个项目解决什么</a><a href="#chapters">统一章节入口</a><a href="#newcomer">新人从哪里开始</a><a href="#improve">如何帮助自优化</a><a href="#maintain">下一份说明写在哪里</a></nav>
+    <a class="small appendix-link" href="./README.md">维护规则与备份方法 ↗</a>
+  </aside>
+  <main id="main">
+    <header class="hero" id="purpose">
+      <div class="eyebrow">ONE SYSTEM · ONE SHARED GUIDE</div>
+      <h1>把 RemoteLab 讲清楚，<br>也把下一轮改进接起来。</h1>
+      <p class="lede">这是 RemoteLab 整体说明的共同入口：帮助我们梳理系统、持续自优化，也让新人快速了解和适应。</p>
+      <p>现有架构图谱、消息执行与交付、记忆与组织协作归入同一个项目。后续类似功能说明继续补入这里，更新章节和导航，共同发布、共同备份。</p>
+      <p class="metadata">项目登记：2026-10-03 · 每个章节保留自己的核对日期、源码基线和验收边界。</p>
+    </header>
+    <section id="chapters">
+      <h2><span class="part">01 / 统一入口</span>先找到问题，再沿章节看完整链路。</h2>
+      <div id="chapter-list" class="chapter-list">
+        <article><h3><a href="./index.html">系统总览：事件、状态与输入路径 →</a></h3><p>系统里的对象、入口和状态如何连接。</p></article>
+        <article><h3><a href="./output/index.html">一条消息的执行与交付 →</a></h3><p>谁承接、谁判断、谁执行，哪些等待，哪些并行。</p></article>
+        <article><h3><a href="./memory/index.html">记忆与组织协作 →</a></h3><p>开工如何读取，工作结束后如何形成长期认识。</p></article>
+      </div>
+      <p class="small muted">网页说明用于理解系统。代码存在、实例已加载、真实任务通过验收分别需要证据；网站发布不代表相关功能已全部验收。</p>
+    </section>
+    <section id="newcomer">
+      <h2><span class="part">02 / 新人阅读路线</span>从“一条消息”开始，再理解系统和长期协作。</h2>
+      <ol class="route-list">
+        <li><strong><a href="./output/index.html#journey">先走一次消息的完整路径。</a></strong><span>把用户输入、Session 收录、Jev 判断、Harness 执行和交付的先后关系串起来；切换不同入口，看它们哪里不同。</span></li>
+        <li><strong><a href="./index.html">再对照系统总览。</a></strong><span>认识 Request、Run、状态和机制索引，知道遇到问题去哪里找依据。</span></li>
+        <li><strong><a href="./memory/index.html#reading">最后看持续工作如何接续。</a></strong><span>理解下一轮开工读什么、认识存在哪里、怎样被纠正，避免把历史记录当成当前事实。</span></li>
+      </ol>
+      <p>安装、配置和具体操作沿章节中的原始指南继续查。它们仍由各自的代码邻近文档维护，本站负责把理解路线接起来。</p>
+    </section>
+    <section id="improve">
+      <h2><span class="part">03 / 持续自优化</span>把真实体验与系统机制放在一起对照。</h2>
+      <div class="improve-flow" aria-label="持续优化流程"><span>真实场景与反馈</span><b aria-hidden="true">→</b><span>对照链路与证据</span><b aria-hidden="true">→</b><span>修改和验收</span><b aria-hidden="true">→</b><span>更新同一章节</span></div>
+      <p>我们先明确用户遇到了什么，再沿输入、判断、执行、存储、交付定位责任与缺口。修改后用真实案例核对，再把变化和仍未验收的部分写回对应章节。</p>
+      <p>项目反馈、待办与运行状态留在原来的反馈记录和任务系统中。网站解释这些事实与机制，并提供来源；不会生成另一套不同步的完成清单。</p>
+    </section>
+    <section id="maintain">
+      <h2><span class="part">04 / 后续说明归集</span>同一项目扩展章节，保持一个说明入口。</h2>
+      <p>写新的功能说明前，先查本项目目录：已有章节能覆盖的，更新原章；确需新章节的，在这个项目下增加页面，登记目录、互相链接并纳入同一发布包和备份。</p>
+      <p>每一章至少讲清触发条件、负责的人或组件、输入和交接内容、先后与并行、用户看到什么、异常和补充反馈怎么处理。当前实现、拟议改动和待验证部分分别标明。</p>
+      <p class="small">维护者从 <a href="./README.md">项目维护规则</a> 开始。阅读网站时，从这里进入；恢复备份时，保留源码、版本清单和恢复说明。</p>
+    </section>
+    <footer>RemoteLab 整体说明 · 一个项目，共同理解，持续修订。</footer>
+  </main>
+</div>
+</body>
+</html>

@@ -50,6 +50,8 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Current Core
 
+- [RemoteLab unified explanation project](architecture-atlas/README.md) — the [shared website entry](architecture-atlas/project.html) for system understanding, continuous self-improvement, and newcomer onboarding. Existing and future feature explanations join this project's catalog, assembled publication, and backup; focused implementation guides remain canonical references.
+
 - `project-architecture.md` — top-down map of the shipped system
 - `cpolar-setup.md` — model-first cpolar setup for mainland-friendly direct access without a VPN
 - `setup.md` — model-first setup contract, one-round input handoff, human checkpoints, and target state

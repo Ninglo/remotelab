@@ -9,7 +9,7 @@ const target = fileURLToPath(new URL('./README.md',import.meta.url));
 let text = '# ' + guide.title + '\n\n<!-- Generated from guide-data.js by render-reference.mjs; edit the content source. -->\n\n';
 text += '版本 '+guide.version+'；核对日期 '+guide.verifiedAt+'；运行源码 '+inline(guide.auditedCommit)+'；主线基线 '+inline(guide.mainBaseline)+'。旧版已冻结；项目钩子新增指针投影，其余正文读取仍由 Harness 选择。实际部署版本以实例 build-info 为准。\n\n';
 text += guide.goal+'\n\n'+guide.boundary+' 未逐条复审全部历史业务事实；运行接入和实际效果、人按职责认可分别验收。\n\n';
-text += '交互入口：[index.html](index.html)。真实人数通过网页按钮在登录后读当前实例，不保存真实名单或私人偏好。\n\n';
+text += '本章属于 [RemoteLab 整体说明项目](../architecture-atlas/README.md)，统一目录和发布规则在该项目维护。交互入口：[index.html](index.html)。真实人数通过网页按钮在登录后读当前实例，不保存真实名单或私人偏好。\n\n';
 text += '## 方案骨架\n\n';
 for(const [title,body] of guide.findings)text+='**'+title+'。** '+body+'\n\n';
 text += graphSection(guide.architectureGraph);
@@ -91,7 +91,7 @@ text+='## 当前依据\n\n';for(const r of guide.references){
 }
 text+='\n## 外部参考\n\n';for(const r of guide.external)text+='- ['+r.title+']('+r.url+')：'+r.use+'\n';
 text+='\n## 维护\n\n';for(const t of guide.maintenance)text+='- '+t+'\n';
-text+='\n编辑 '+inline('guide-data.js')+' 后运行 '+inline('node docs/memory-architecture/render-reference.mjs')+'；用 '+inline('--check')+' 检查参考文本是否同步。发布仅包括 '+inline('index.html')+'、'+inline('style.css')+'、'+inline('app.js')+'、'+inline('guide-data.js')+' 和 '+inline('README.md')+'。\n';
+text+='\n编辑 '+inline('guide-data.js')+' 后运行 '+inline('node docs/memory-architecture/render-reference.mjs')+'；用 '+inline('--check')+' 检查参考文本是否同步。发布仅包括 '+inline('index.html')+'、'+inline('style.css')+'、'+inline('app.js')+'、'+inline('guide-data.js')+' 和 '+inline('README.md')+'。本章由 '+inline('docs/architecture-atlas/assemble-site.mjs')+' 纳入整体说明的 '+inline('memory/')+' 子目录；后续统一发布和备份，不另外维护平行网站。\n';
 if(process.argv.includes('--check')){
   if(await readFile(target,'utf8')!==text)throw new Error('Reference text differs from guide-data.js; regenerate it.');
   console.log('Reference text matches shared content source.');
