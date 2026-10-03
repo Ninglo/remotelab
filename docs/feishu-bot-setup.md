@@ -709,3 +709,30 @@ If you need deeper implementation or rollout context after the setup is working:
 - `notes/feishu-bot-operator-checklist.md`
 - `notes/feishu-bot-setup-lessons.md`
 - `docs/external-message-protocol.md`
+
+## Instance-local card actions
+
+A trusted local integration can handle one card-action namespace through the
+existing Bot connection. Configure `cardActionHandlers` in that Bot's private
+configuration; no additional event consumer is needed:
+
+```json
+{
+  "cardActionHandlers": {
+    "example_summary": {
+      "argv": ["python3", "/private/integration/summary_card.py", "action"],
+      "allowedChatIds": ["oc_result_group"]
+    }
+  }
+}
+```
+
+The fixed executable receives the callback JSON on stdin and returns a JSON
+`toast`, optionally with `card: {type: "raw", data: ...}`. It has two seconds
+and a 64 KiB output limit. No shell is used. The Connector checks the callback
+actor against `accessPolicy` and the configured group allowlist first. The
+integration must additionally validate the originating card, task ownership
+and current result version before persisting any acknowledgment. Failures
+return an explicit retry notice. Keep network requests out of this callback.
+Shared cards should set `config.update_multi=true`; sending, readback and
+periodic repair remain the integration's responsibility.

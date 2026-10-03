@@ -2,6 +2,7 @@
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { loadDailyReportMemory } from '../connectors/feishu/daily-report-memory.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
+import { normalizeCardActionHandlers, handleConfiguredCardAction } from '../connectors/feishu/card-action-handlers.mjs';
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
@@ -377,6 +378,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
+    cardActionHandlers: normalizeCardActionHandlers(parsed?.cardActionHandlers),
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     projectSurfacesPath: trimString(parsed?.projectSurfacesPath)
       ? resolve(configDir, parsed.projectSurfacesPath) : '',
@@ -2119,6 +2121,11 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
     'card.action.trigger': async raw => {
+      const configuredFeedback = await handleConfiguredCardAction(raw, {
+        handlers: config.cardActionHandlers,
+        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+      });
+      if (configuredFeedback) return configuredFeedback;
       const participationFeedback = await runtime.participation?.action(raw);
       if (participationFeedback) return participationFeedback;
       const projectFeedback = await runtime.projectSurface?.actionFeedback(raw);
