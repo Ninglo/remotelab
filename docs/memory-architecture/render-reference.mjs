@@ -1,6 +1,7 @@
 import { writeFile, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { guide, calculateTokenScenario } from './guide-data.js';
+import { memoryFileMap, filingIncident, filingRisks } from './reader-data.js';
 
 const q = String.fromCharCode(96);
 const inline = text => q + text + q;
@@ -23,6 +24,10 @@ for(const item of guide.storageCases){
   }
 }
 text+='## 项目归属规则（已接入导航，未知关联待核）\n\n';
+text+='## 文件命名、实际位置和分档纠错\n\n[原阅读页的完整文件地图](../architecture-atlas/output/index.html#memory-files)与本表来自同一内容源；登录该页14可读本实例文件名、绝对路径和当前有效写回目标。\n\n';
+text+=table([['区域','文件名','位置','内容','维护边界'],['---','---','---','---','---'],...memoryFileMap])+'\n\n';
+text+=filingIncident.cause+'\n\n'+filingIncident.correction+'\n\n'+filingIncident.recurrence+'\n\n';
+for(const [risk,cause,fix]of filingRisks)text+='- **'+risk+'**：'+cause+' '+fix+'\n';
 for(const [title,body] of guide.scopeRules)text+='- **'+title+'：** '+body+'\n';
 text+='\n范围登记是一份后台关联关系，生成导航和连接器绑定，不新增交互式项目产品；认识仍在主账。\n\n'+table([['登记字段','保存内容'],['---','---'],...guide.registryFields])+'\n\n';
 for(const c of guide.routeExamples)text+='\n### '+c.label+'（虚构）\n\n'+c.input+'\n\n归属：'+c.route+'\n\n依据：'+c.basis+'\n\n写入：'+c.store+'\n\n开工读取：'+c.read+'\n';

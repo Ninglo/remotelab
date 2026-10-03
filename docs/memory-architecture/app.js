@@ -1,4 +1,4 @@
-import { guide, calculateTokenScenario } from './guide-data.js?v=2.6';
+import { guide, calculateTokenScenario } from './guide-data.js?v=2.7';
 
 const el = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -180,7 +180,7 @@ el('load-instance').addEventListener('click',async()=>{
   finally{button.disabled=false;}
 });
 
-el('audit-boundary').textContent = '说明 v'+guide.version+'，核对于 '+guide.verifiedAt+'。当前运行源码 '+guide.auditedCommit+'，本次文档主线基线 '+guide.mainBaseline+'；核对的 10 个核心路径、读取与写回文件一致，代码链接定位到主线基线。'+guide.boundary+'本次没有逐条复审全部历史业务事实，也没有启用治理运行层。';
+el('audit-boundary').textContent = '说明 v'+guide.version+'，核对于 '+guide.verifiedAt+'。当前运行源码 '+guide.auditedCommit+'，本次文档主线基线 '+guide.mainBaseline+'；核对的 10 个核心路径、读取与写回文件一致，代码链接定位到主线基线。'+guide.boundary+'本次没有逐条复审全部历史业务事实。各项启用与验收范围依原阅读页中的分项证据。';
 el('reference-list').innerHTML = guide.references.map(r=>'<div><a href="'+referenceUrl(r)+'" target="_blank" rel="noopener">'+escape(r.title)+' ↗</a><p>'+escape(r.use)+'</p><code>'+escape(r.path)+'</code></div>').join('');
 el('external-list').innerHTML = guide.external.map(r=>'<div><a href="'+escape(r.url)+'" target="_blank" rel="noopener">'+escape(r.title)+' ↗</a><p>'+escape(r.use)+'</p></div>').join('');
 el('maintenance').innerHTML = guide.maintenance.map(t=>'<li>'+escape(t)+'</li>').join('');

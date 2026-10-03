@@ -147,6 +147,44 @@ const routedMemory = await readFile(
 assert.match(routedMemory, /## Auto-Promoted Learnings/, 'custom targets should receive a dedicated auto-promoted learnings section');
 assert.match(routedMemory, /The user maintains a stable personal profile for repeated self-introductions\./);
 
+// Regression: blacklisting old task IDs allowed later task files to become
+// automatic write targets. An allowlist must apply to discovered and extra
+// targets, both fallbacks, and fail closed for an empty/malformed list.
+const { loadMemoryWritebackTargets, resolveMemoryWritebackTarget } = await import('../chat/memory-writeback-targets.mjs');
+const memoryRoot = join(tempHome, '.remotelab', 'memory');
+const targetsFile = join(memoryRoot, 'writeback-targets.json');
+await mkdir(join(memoryRoot, 'tasks'), { recursive: true });
+await writeFile(join(memoryRoot, 'tasks', 'new-task.md'), '# New task\nUntouched original.\n');
+const strictConfig = { allowedTargetIds: ['user_auto_memory', 'system_auto_memory'],
+  extraTargets: [{ id: 'custom_task', path: join(memoryRoot, 'tasks', 'new-task.md'), layer: 'user', description: 'Extra task target', categories: ['workflow'] }] };
+await writeFile(targetsFile, JSON.stringify(strictConfig));
+let targets = await loadMemoryWritebackTargets();
+assert.deepEqual(targets.map(target => target.id).sort(), ['system_auto_memory', 'user_auto_memory']);
+assert.equal(resolveMemoryWritebackTarget(targets, {targetId:'system_auto_memory', layer:'system', category:'preference'}), null);
+assert.equal(resolveMemoryWritebackTarget(targets, {targetId:'user_auto_memory', layer:'system', category:'workflow'}), null);
+const newTaskBefore = await readFile(join(memoryRoot,'tasks','new-task.md'), 'utf8');
+const strictResult = await maybeRunMemoryWriteback({sessionId:'sess_strict', run:{id:'run_strict'}, userMessage:'Remember this', sourceEventSeq:42,
+  assistantTurnText:'A substantive completed response that exceeds the memory review minimum length and exercises several refused and allowed target choices.',
+  runPrompt: async()=>'<hide>{"shouldWrite":true,"learnings":[{"targetId":"task_tasks_new-task_md","layer":"user","category":"workflow","content":"Must not alter task"},{"targetId":"custom_task","layer":"user","category":"workflow","content":"Must not alter extra target"},{"targetId":"system_auto_memory","layer":"system","category":"preference","content":"Must not become system preference"},{"targetId":"user_auto_memory","layer":"user","category":"preference","content":"A candidate with an attributed source to verify"}]}</hide>'});
+assert.equal(strictResult.promotedCount,1);
+assert.equal(await readFile(join(memoryRoot,'tasks','new-task.md'),'utf8'),newTaskBefore);
+const sourced = await readFile(join(memoryRoot,'model-context','auto-user-memory.md'),'utf8');
+assert.match(sourced, /"sessionId":"sess_strict"/); assert.match(sourced, /"runId":"run_strict"/);
+assert.match(sourced, /"eventSeq":42/); assert.match(sourced, /"recordedAt":/);
+assert.match(sourced, /"personAttribution":"verify-source-message"/);
+await writeFile(targetsFile,JSON.stringify({...strictConfig,allowedTargetIds:[]}));
+assert.deepEqual(await loadMemoryWritebackTargets(),[]);
+await writeFile(targetsFile,JSON.stringify({...strictConfig,allowedTargetIds:'invalid'}));
+assert.deepEqual(await loadMemoryWritebackTargets(),[]);
+await writeFile(targetsFile,'{broken json');
+assert.deepEqual(await loadMemoryWritebackTargets(),[], 'broken existing config must not restore default writers');
+await writeFile(targetsFile,JSON.stringify({...strictConfig,allowedTargetIds:['system_auto_memory']}));
+const rejectedCategory = await maybeRunMemoryWriteback({ sessionId:'sess_bad_category', run:{id:'run_bad_category'}, userMessage:'Remember this',
+  assistantTurnText:'A substantive response that exceeds the minimum length and confirms rejected preferences do not count as a successful memory write.',
+  runPrompt:async()=>'<hide>{"shouldWrite":true,"learnings":[{"targetId":"system_auto_memory","layer":"system","category":"preference","content":"Refused preference"}]}</hide>' });
+assert.equal(rejectedCategory.written,false); assert.equal(rejectedCategory.promotedCount,0);
+console.log('WRITEBACK_ALLOWLIST_VERIFIED: new tasks and configured extras refused; system preferences refused; empty/malformed allowlists fail closed; source recorded without guessed Person; no-write result remains false.');
+
 process.env.REMOTELAB_MEMORY_WRITEBACK = 'off';
 const explicitOffResult = await maybeRunMemoryWriteback({
   sessionId: 'sess_memory_disabled',

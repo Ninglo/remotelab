@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -21,6 +21,15 @@ try {
   await writeFile(join(dir,'chronology.json'), JSON.stringify(chronology));
   let result = await read('person-a');
   assert.match(result.personal.text, /Only A/); assert.equal(result.chronology.stale, false);
+  assert.equal(result.personal.path,join(dir,'reference','people','person-a.md'));
+  assert.ok(result.fileCatalog.files.some(file=>file.path===result.personal.path));
+  assert.doesNotMatch(JSON.stringify(result.fileCatalog), /Only A|private but inert text|Original project state/);
+  await mkdir(join(dir,'archive'),{recursive:true});
+  await writeFile(join(dir,'archive','excluded-history.md'),'Historical body');
+  await symlink(join(dir,'archive'),join(dir,'symlink-outside'));
+  const catalogue = (await read('person-a')).fileCatalog;
+  assert.ok(!catalogue.files.some(file=>/excluded-history|symlink-outside/.test(file.path)));
+  assert.ok(catalogue.patterns.some(item=>item.path.endsWith('events/<seq>.json')));
   assert.equal(result.runtime.projects[0].sourceGroups, 1);
   assert.doesNotMatch(JSON.stringify(result), /DO_NOT_EXPOSE|PRIVATE_CHAT_ID/);
   result = await read('person-b'); assert.equal(result.personal.status, 'not-recorded');

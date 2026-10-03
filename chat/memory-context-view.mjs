@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { MEMORY_DIR } from '../lib/config.mjs';
 import { loadProjectMemoryRuntime } from './project-memory-runtime.mjs';
+import { readMemoryFileCatalog } from './memory-file-catalog.mjs';
 
 async function document(path, limit) {
   let handle;
@@ -20,7 +21,7 @@ async function document(path, limit) {
     }
     if (size > limit) return { status: 'too-large-or-not-file' };
     const text = buffer.subarray(0, size).toString('utf8');
-    return { status: 'available', text, modifiedAt: stat.mtime.toISOString(), hash: createHash('sha256').update(text).digest('hex').slice(0, 16) };
+    return { status: 'available', path, text, modifiedAt: stat.mtime.toISOString(), hash: createHash('sha256').update(text).digest('hex').slice(0, 16) };
   } catch (error) {
     return { status: error.code === 'ENOENT' ? 'not-recorded' : 'unavailable' };
   } finally { await handle?.close(); }
@@ -32,9 +33,11 @@ export async function readMemoryContextView({ people = [], personId = '', memory
     const error = new Error('Unknown Person'); error.statusCode = 400; throw error;
   }
   let runtime = { status: 'unavailable' };
+  let projectConfig;
   let projectIndex = { status: 'unavailable' }, projectLedger = { status: 'unavailable' }, chronology = { status: 'not-recorded' };
   try {
     const { config, hash } = await loadProjectMemoryRuntime(configPath);
+    projectConfig = config;
     runtime = {
       status: 'available', release: config.releaseId, enabled: config.enabled,
       contextEnabled: config.contextEnabled, reviewEnabled: config.reviewEnabled, hash: hash.slice(0,16),
@@ -60,7 +63,8 @@ export async function readMemoryContextView({ people = [], personId = '', memory
     document(join(memoryDir, 'reference', 'company.md'), 32 * 1024),
     personId ? document(join(memoryDir, 'reference', 'people', `${personId}.md`), 16 * 1024) : Promise.resolve({ status: 'select-person' }),
   ]);
+  const fileCatalog = await readMemoryFileCatalog({ memoryDir, projectConfig });
   return { generatedAt: new Date().toISOString(), runtime, projectIndex, projectLedger, chronology,
-    people: people.map(({ id, name }) => ({ id, name })), personId, personal, company,
+    people: people.map(({ id, name }) => ({ id, name })), personId, personal, company, fileCatalog,
     boundary: 'Authenticated instance view. Registration is not complete coverage; file contents are recorded knowledge, not live business state or personal ownership certification.' };
 }

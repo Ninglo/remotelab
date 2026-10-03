@@ -1977,6 +1977,7 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
         session,
         run: finalizedRun,
         userMessage: userMessage?.content || '',
+        sourceEventSeq: userMessage?.seq,
         assistantTurnText,
         runPrompt: (prompt) => runDetachedAssistantPrompt({
           ...session,
@@ -1996,8 +1997,8 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
           operation: 'write_memory',
           phase: 'applied',
           trigger: 'automatic',
-          title: 'Durable memory updated',
-          summary: `RemoteLab promoted ${result.promotedCount} durable learning(s) for reuse in later turns.`,
+          title: 'Memory entries saved',
+          summary: `RemoteLab saved ${result.promotedCount} memory entry(s). Target-specific review and acceptance remain separate.`,
           reason: paths.length > 0 ? `Updated: ${paths.join(', ')}` : '',
         }));
       }

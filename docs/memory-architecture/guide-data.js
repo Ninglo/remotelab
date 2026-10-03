@@ -1,6 +1,6 @@
 // Human and Agent reference share this content source. Proposed and enabled parts remain distinct.
 export const guide = {
-  "version": "2.6",
+  "version": "2.7",
   "verifiedAt": "2026-10-03",
   "auditedCommit": "751388fc（冻结旧运行版）",
   "mainBaseline": "0ef09dc2",
@@ -1295,7 +1295,7 @@ export const guide = {
           "~/.remotelab/memory/model-context/preferences.md",
           "Session.personViews"
         ],
-        "body": "Person.preferences 已有输入模式、语音快捷键等产品设置。旧 preferences.md 默认按机器／实例维护，不能当作每个人的偏好。personViews 是侧栏排列；默认值也不等于本人明确表达。 2026-10-03已核真实Person并登记一项本人明确称呼偏好，bootstrap提供按需入口；机器共用旧personal/identity.md不代表所有同事。",
+        "body": "Person.preferences 已有输入模式、语音快捷键等产品设置。旧 preferences.md 曾按机器／实例维护且混合了多种范围；现为历史导航，原正文完整归档，不能当作每个人的偏好。personViews 是侧栏排列；默认值也不等于本人明确表达。 2026-10-03已核真实Person并登记一项本人明确称呼偏好，bootstrap提供按需入口；机器共用旧personal/identity.md不代表所有同事。",
         "read": "产品设置由界面使用；本轮已核消息身份提供对应Person档案指针，Harness在称呼、写作或协作需要时读取。文件存在与内容不会被指针自动认证；身份不清不继承Session创建者或其他人员档案。",
         "write": "本人设置与已有人工维护；本轮开始按真实Person登记明确偏好，未完成全员归类，也未新增自动学习偏好机制。"
       },

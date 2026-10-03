@@ -35,7 +35,9 @@ slots, not every source the Harness sees. See [connector Context](../../docs/con
 | --- | --- | --- |
 | bootstrap.md | Small machine/instance navigation | Fresh-provider pointer; body when useful |
 | user projects.md, skills.md | Domain and method routing | Task-relevant retrieval |
-| preferences.md, reference/ | Local preferences, environment and domain background | Matching scope; current-source checks |
+| reference/people/<personId>.md | Attributed personal collaboration preferences | Current message identity or explicitly verified colleague |
+| reference/company.md, current/, topics/ | Company, environment and domain background | Matching scope; current-source checks |
+| model-context/preferences.md | Legacy instance-wide preference entry | Historical navigation; never inherit for all People |
 | tasks/ and project documents | Work, decisions and recovery evidence | Relevant task only |
 | repo memory/system.md | Stable cross-deployment platform lessons | Relevant platform question or curation |
 | candidate queues | Unverified extraction candidates | Explicit governance and curation |
@@ -55,14 +57,22 @@ collaboration preferences still need attributed sources and applicability.
 Normal nontrivial turns can trigger a background memory review independently of
 Session classification. Internal operations and group-feed Sessions are skipped.
 The reviewer gets bounded user/assistant text, not the complete execution evidence.
-It appends short entries with exact-line deduplication; provenance, semantic
-supersession and acceptance require further governance.
+It appends short entries with exact-line deduplication. New automatic entries carry
+recorded time, Session/Run IDs and the original user-event sequence when known.
+Person attribution is verified from the source, never guessed from a Session
+creator; old entries do not acquire invented provenance. Semantic supersession
+and acceptance remain curation responsibilities.
 
 memory-writeback-targets.mjs builds the actual catalogue: defaults include up to
 24 discovered task Markdown files, stable local targets and user/system fallbacks.
 writeback-targets.json disables named defaults and can replace fallback paths.
-Disabling old task IDs does not disable newly discovered tasks. Both fallback
-IDs remain enabled in the default catalogue. The default user path is
+Disabling old task IDs does not disable newly discovered tasks. An optional
+`allowedTargetIds` applies after discovery and configured extras, including both
+fallbacks: unlisted targets never reach the reviewer or writer. Empty/malformed
+lists or a broken existing configuration fail closed; a missing configuration
+retains legacy defaults. Target categories are enforced and system-layer
+preference entries are refused even if explicitly configured. Content mislabeled
+as workflow still requires semantic review. The default user path is
 model-context/auto-user-memory.md; configuration may redirect it to reference/inbox.md.
 The system candidate queue is memory/auto-system-memory.md before curation.
 
@@ -92,9 +102,9 @@ project associations. An ambiguous association remains pending; mixed Sessions
 associate individual entries with the appropriate projects.
 
 Personal collaboration preferences and company facts are parallel, task-relevant
-background, not another level above project consensus. Proposed
-`reference/people/<personId>.md` and `reference/company.md` locations are not
-created or enabled by this documentation change. Existing Person product
+background, not another level above project consensus. This instance now uses
+`reference/people/<personId>.md` and `reference/company.md`; file existence and
+current-request pointer delivery are verified separately. Existing Person product
 settings retain their current purpose. AGENTS.md holds applicable stable
 operation rules and pointers; Skills/WORKFLOW hold reusable methods. Project
 status, personal tastes and office locations remain in their own maintenance
@@ -105,7 +115,8 @@ consuming existing source outputs rather than adding a second group consumer.
 Runtime-enforced write isolation, version-aware correction, role recognition and
 coverage accounting must be implemented and tested before integration. Formal
 writes, individual delivery, Skills promotion and business actions activate
-separately. This task only updates the guide and its static publication.
+separately. Static publication does not itself activate a write policy: inspect
+the effective catalogue after deploying code and configuring the instance.
 
 Keep ordinary task interpretation and planning with the Harness. Do not make an
 all-project prompt bundle or second semantic gate mandatory on every turn. See
