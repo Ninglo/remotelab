@@ -5,11 +5,13 @@
 <meta name="color-scheme" content="light">
 <meta name="description" content="按一条消息的真实先后顺序说明 RemoteLab：同步等待、异步执行、Session 两次交接、Jev 职责、飞书任务卡和当前待验边界。">
 <title>RemoteLab · 从一次工作到长期项目认识</title>
-<link rel="stylesheet" href="./reading.css?v=20261003i">
-<script type="module" src="./flow-reader.js?v=20261003i"></script>
-<script type="module" src="./memory-reader.js?v=20261003i"></script>
+<link rel="stylesheet" href="./reading.css?v=20261003j">
+<script type="module" src="./flow-reader.js?v=20261003j"></script>
+<script type="module" src="./memory-reader.js?v=20261003j"></script>
+<link rel="stylesheet" href="../guide.css?v=20261003j">
+<script type="module" src="../guide-shell.js?v=20261003j"></script>
 </head>
-<body>
+<body data-guide-page="output/index.html" data-guide-chapter="message">
 <a class="skip" href="#main">跳到正文</a>
 <div class="book">
 <aside class="contents"><a class="brand" href="../project.html">RemoteLab <span>整体说明 · 返回项目入口</span></a>
@@ -19,13 +21,13 @@
 <main id="main">
 <header id="start" class="hero">
 <p class="eyebrow">执行、交付与持续记忆 · 阅读版</p>
-<h1>一次工作，怎样留下可接续的项目认识？</h1>
-<p class="lede">先可靠接入和执行，再把有依据的结果归回项目。下一次开工沿指针找到相关记忆，日报收回人的纠正。</p>
+<h1>一次工作如何执行、交付，<br>再接上下一次？</h1>
+<p class="lede">先收下消息，再执行任务、验证结果和交付。与项目有关的认识回到项目主账，下一次开工沿指针读取，人的纠正更新原条目。</p>
 <p>关键是区分两次交接：<strong>写进 Session 历史，还不等于启动模型；提交可执行 Request，才进入运行调度。</strong>Jev 在部分入口参与快判，实际任务由所选 Harness 理解、执行和验收。</p>
 <p class="metadata"><span id="reader-version"></span> · 源码与现有配置快照；现场状态不会自动更新</p>
 <div class="note"><strong>现在不能说整条飞书体验已经验收通过。</strong><p>上一轮修复已有回归与部署证据。新的真实复杂任务收发仍待验证；即时表情前置、跨输出 Worker 的到达顺序、提问分级与打断处理还有明确缺口。下面先解释<strong>现在怎么跑</strong>，再单独标出<strong>目标怎么改</strong>。</p></div>
 <p class="reading-guide">读法：先走 01 的一个场景，再看 02–04 的交接和等待；只关心工作展示，可直接跳到 06–08；记忆治理从 09 开始，14 可登录读取本实例实际记录。技术细节和源码折叠在对应位置。图里的时间表示先后，不承诺秒数。</p>
-</header>
+<div class="guide-chapter-context"><p><strong>读完这一章：</strong>知道消息到了哪一步、当前在等谁、结果存在哪里，以及下一轮如何接续。</p><p><strong>研发查阅：</strong>时序图保留交接数据和等待条件；各节可展开源码。存储位置见<a href="#memory-files">文件地图</a>，实际记录仅在<a href="#instance-memory">登录后主动读取</a>。</p><p>本章页面：<code>docs/architecture-atlas/output/index.html</code>；执行内容：<code>flow-data.js</code>；记忆内容：<code>docs/memory-architecture/reader-data.js</code>与<code>guide-data.js</code>。各内容源保留自己的核对基线。</p></div></header>
 
 <section id="journey"><h2><span class="part">01 / 顺着时间走</span>一条飞书消息的一生</h2>
 <p>默认选中实际 Jev 试验路径。切换入口后，时序图、步骤说明和等待条件一起变化；目标方案是独立选项，不混进现状。</p>
@@ -124,7 +126,7 @@
 <div class="chain memory-chain"><span>群／话题／相关个人Session等原来源</span><b>→</b><span>提取具体事项，归相应档案</span><b>→</b><span>按项目／人员／组织生成视图</span></div>
 <p>同一条消息可以涉及不同归属：项目进展写项目，本人偏好写人员，办公地点写公司。日报和时间线从原记录生成；来源、时间、人员角色和确认状态随条目保存，不各自再建一层记忆。</p>
 <p class="note">新话题开工先沿小型入口定位，读取本话题有效约定、相关项目章节，以及已核当前人的适用偏好；公司资料在问题相关时读。读取顺序由任务决定，不把全项目、全员和全部日报装进每一次开工。</p>
-<details><summary>来源、指针、规则和候选分别起什么作用？</summary><div class="detail-body"><div class="table-scroll"><table><thead><tr><th>配套部分</th><th>有哪些</th><th>与三个档案的关系</th></tr></thead><tbody id="memory-support-rows"></tbody></table></div><p>Markdown、JSON、JSONL和TXT是存储格式；AGENTS是操作规则；“待核”是认可状态。这些都不能与“项目／人员／公司”的归属并列当业务分类。现有文件仍有历史包袱，本次理顺说明与查询入口，尚未把所有旧资料逐条迁移为已认可记录。</p></div></details>
+<details><summary>来源、指针、规则和候选分别起什么作用？</summary><div class="detail-body"><div class="table-scroll"><table><thead><tr><th>配套部分</th><th>有哪些</th><th>与三个档案的关系</th></tr></thead><tbody id="memory-support-rows"></tbody></table></div><p>Markdown、JSON、JSONL和TXT是存储格式；AGENTS是操作规则；“待核”是认可状态。这些都不能与“项目／人员／公司”的归属并列当业务分类。现有文件仍有历史包袱，本轮已备份并治理正常入口可达的旧正文，未知身份和无来源条目保留待核；没有把所有历史自动认证为当前事实。</p></div></details>
 <details><summary>查看Session、群与具体归档例子</summary><div class="detail-body">
 <p>每个Session保留过程，每个项目维护相应认识。讨论与干活群可以挂到同一项目；新话题保留自己的工作上下文，不再另建一份项目主账。</p>
 <div id="memory-store-tabs" class="tabs" role="group" aria-label="选择存储对象"></div><div id="memory-store-detail" aria-live="polite"></div>

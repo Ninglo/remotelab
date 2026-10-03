@@ -6,16 +6,18 @@
   <meta name="color-scheme" content="light">
   <meta name="description" content="RemoteLab 消息接入、异步任务、进度卡、用户反馈与正式结果的架构规划。职责图、时序图与可操作演示，区分现状和待实施方案。">
   <title>RemoteLab · 目标交互图与演示附录</title>
-  <link rel="stylesheet" href="./styles.css?v=20261003d">
-  <script type="module" src="./app.js?v=20261003d"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261003j">
+  <script type="module" src="./app.js?v=20261003j"></script>
+<link rel="stylesheet" href="../guide.css?v=20261003j">
+<script type="module" src="../guide-shell.js?v=20261003j"></script>
 </head>
-<body>
+<body data-guide-page="output/reference.html" data-guide-chapter="message">
   <a class="skip" href="#architecture">跳到架构图</a>
   <header class="topbar"><a class="brand" href="../project.html">RemoteLab <span>整体说明</span></a><div class="top-links"><a href="../memory/index.html">记忆与组织协作 ↗</a><a href="./README.md">规划参考文本 ↗</a></div></header>
   <main>
     <section class="hero">
       <div class="eyebrow">目标交互图与演示附录 · <a href="./index.html">先读真实流程与时序 →</a></div>
-      <h1>消息到达后，谁接住，谁继续？</h1>
+      <h1>交互目标与演示，<br>哪些还需要验证？</h1>
       <p class="lede">让用户知道消息已收到、工作是否开始、当前进展、是否在等自己，以及结果是否真的送达。</p>
       <div class="meta"><span id="architecture-status" class="badge proposed"></span><span id="version"></span><span>图示可点击展开</span></div>
     </section>
@@ -68,9 +70,9 @@
       <div class="section-head"><div><div class="eyebrow">06 / 现状、契约与验收</div><h2>复用运行底座，补齐输出与互动契约。</h2></div><span class="badge proposed">已实现与待改动分别验收</span></div>
       <p id="audit-boundary" class="intro"></p>
       <div id="rollout-list" class="rollout-list"></div>
-      <details class="contract-panel"><summary>展开事件与数据契约：交接时要留下什么</summary><p class="caption">下列事件名是规划名称，不宣称已有这些 API。现有 workboard.status 不直接改名；拟扩展 progress、waiting 和明确输出意图。</p><div class="table-scroll"><table><thead><tr><th>事件 / 快照</th><th>谁写入</th><th>留下的事实</th><th>谁消费</th></tr></thead><tbody id="contract-rows"></tbody></table></div></details>
+      <details class="contract-panel" data-technical><summary>展开事件与数据契约：交接时要留下什么</summary><p class="caption">下列事件名是规划名称，不宣称已有这些 API。现有 workboard.status 不直接改名；拟扩展 progress、waiting 和明确输出意图。</p><div class="table-scroll"><table><thead><tr><th>事件 / 快照</th><th>谁写入</th><th>留下的事实</th><th>谁消费</th></tr></thead><tbody id="contract-rows"></tbody></table></div></details>
       <div class="subsection"><h3>这份规划始终保留的边界</h3><ul id="invariants" class="invariants"></ul></div>
-      <details class="source-panel"><summary>展开现状依据与源码入口</summary><p>现状对照：主线源码 <code id="main-commit"></code>；本次核对的试验实例运行版本 <code id="pilot-commit"></code>。源码、配置、运行样本和实际送达分别核对，静态网站不会自动更新部署状态。</p><div id="source-list" class="source-list"></div><p class="caption">原有架构图谱的其余视图保留原版日期与源码基线，不因为增加这一页而宣称全站已刷新。</p></details>
+      <details class="source-panel" data-technical><summary>展开现状依据与源码入口</summary><p>现状对照：主线源码 <code id="main-commit"></code>；本次核对的试验实例运行版本 <code id="pilot-commit"></code>。源码、配置、运行样本和实际送达分别核对，静态网站不会自动更新部署状态。</p><div id="source-list" class="source-list"></div><p class="caption">原有架构图谱的其余视图保留原版日期与源码基线，不因为增加这一页而宣称全站已刷新。</p></details>
       <div class="native-note"><h3>原生机制承担什么，Jev 留在哪里？</h3><p>Codex 的事件流、用户提问、<code>turn/steer</code> 和 <code>turn/interrupt</code> 承载输出与输入。现有追加输入与停止可复用；问题级别、任务卡内容和开场质量仍由当前 Harness 与平台契约定义。</p><p>真实流程见阅读主线：群 Jev 仍选表情和工作位置；清单 Gate 已退出，groupFeed 旁听 Session 仍不可建卡；Auto 路由按条件启用。接收确认前置与提问分级仍是目标。</p><p>DevDay 的 MCP Events 是外部事件订阅与唤醒能力。它不会自动生成这里的任务卡和反馈规则；现有飞书接入不因本规划自动更换。</p><div class="external-links"><a href="https://learn.chatgpt.com/docs/app-server" target="_blank" rel="noopener noreferrer">Codex 原生接口 ↗</a><a href="https://developers.openai.com/plugins/build/mcp-events" target="_blank" rel="noopener noreferrer">MCP Events ↗</a></div></div>
     </section>
   </main>

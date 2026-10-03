@@ -1,6 +1,7 @@
 import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderGuideShell } from './guide-shell-template.js';
 
 const atlas = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(atlas, '../..');
@@ -65,6 +66,19 @@ for (const chapter of catalog.chapters) {
 }
 for (const route of [catalog.entry, ...catalog.chapters.map(chapter => chapter.route)]) {
   if (!files.includes(route)) throw new Error(`Missing project entry: ${route}`);
+}
+// Static navigation remains usable without JavaScript. Chapter facts and
+// interactive diagrams keep their existing authoritative content sources.
+for (const page of catalog.pages || []) {
+  if (!files.includes(page.route)) throw new Error(`Missing guide page: ${page.route}`);
+  const target = path.join(destination, page.route);
+  const prefix = '../'.repeat(page.route.split('/').length - 1) || './';
+  let html = await readFile(target, 'utf8');
+  html = html.replaceAll('../architecture-atlas/guide.css', '../guide.css')
+    .replaceAll('../architecture-atlas/guide-shell.js', '../guide-shell.js');
+  html = html.replace(/<body([^>]*)>/, (_, attributes) => `<body${attributes}>\n${renderGuideShell(catalog, page, prefix)}`);
+  html = html.replace(/(<main[^>]*>)/, '$1<span id="guide-main" tabindex="-1"></span>');
+  await writeFile(target, html);
 }
 files.sort();
 await writeFile(path.join(destination, 'site-files.json'), `${JSON.stringify({ projectId: catalog.id, entry: catalog.entry, chapters: catalog.chapters.map(({ id, route }) => ({ id, route })), files }, null, 2)}\n`);

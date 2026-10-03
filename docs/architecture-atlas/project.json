@@ -8,24 +8,254 @@
   "chapters": [
     {
       "id": "system",
-      "title": "系统总览：事件、状态与输入路径",
+      "title": "系统如何工作",
       "source": "docs/architecture-atlas",
       "route": "index.html",
-      "description": "先认识系统里的对象、状态和入口，再沿机制索引追到源码。历史基线和资源快照保留各自日期。"
+      "description": "认识对象、事件和状态，再通过输入路径与机制索引查到实现。旧源码及资源样本保留原核对日期。",
+      "navTitle": "系统如何工作"
     },
     {
       "id": "message",
-      "title": "一次工作、交付与长期记忆",
+      "title": "一次工作如何执行与交付",
       "source": "docs/architecture-atlas/output",
       "route": "output/index.html",
-      "description": "沿真实消息执行读到记忆：Session与群存储、项目挂靠、时间线、个人偏好和公司背景；登录后按需查看实际记录。"
+      "description": "沿接入、Request接纳、Harness执行、用户反馈和结果交付理解一次工作；继续查文件地图与本实例按需读取。",
+      "navTitle": "执行与交付"
     },
     {
       "id": "memory",
-      "title": "记忆与组织协作",
+      "title": "记忆如何保存与接续",
       "source": "docs/memory-architecture",
       "route": "memory/index.html",
-      "description": "理解开工读取、工作后归集、项目共识和多人视图。当前机制与治理方案分别标明，源码沿用原维护目录。"
+      "description": "理解项目、人员、公司归属，按需读取、候选归集、人的反馈与成本边界；已接入与待验证分别说明。",
+      "navTitle": "记忆与协作"
+    }
+  ],
+  "edition": "20261003j",
+  "readingConvention": "正文先讲用户看到的事情；机制、位置、格式和证据在相应章节完整保留，研发细节按需展开。",
+  "pages": [
+    {
+      "route": "project.html",
+      "chapter": "guide",
+      "reference": "README.md",
+      "sections": [
+        [
+          "purpose",
+          "这份说明讲什么"
+        ],
+        [
+          "how-to-read",
+          "两层读法"
+        ],
+        [
+          "chapters",
+          "按问题进入章节"
+        ],
+        [
+          "objects",
+          "先认识六个对象"
+        ],
+        [
+          "mechanisms",
+          "一次工作的完整机制"
+        ],
+        [
+          "document-files",
+          "文档在哪里、怎样维护"
+        ],
+        [
+          "newcomer",
+          "从使用走到研发"
+        ],
+        [
+          "improve",
+          "怎样判断完成"
+        ],
+        [
+          "maintain",
+          "后续如何保持一致"
+        ]
+      ]
+    },
+    {
+      "route": "index.html",
+      "chapter": "system",
+      "reference": "README.md",
+      "sections": [
+        [
+          "overview",
+          "系统全貌"
+        ],
+        [
+          "state-section",
+          "状态放在哪里"
+        ],
+        [
+          "situations-section",
+          "按情况查机制"
+        ],
+        [
+          "journey-section",
+          "输入如何流转"
+        ],
+        [
+          "longer-loops",
+          "跨轮接续"
+        ]
+      ]
+    },
+    {
+      "route": "output/index.html",
+      "chapter": "message",
+      "reference": "output/README.md",
+      "sections": [
+        [
+          "start",
+          "本章读法"
+        ],
+        [
+          "journey",
+          "消息的完整路径"
+        ],
+        [
+          "handoff",
+          "两次交接"
+        ],
+        [
+          "async",
+          "同步与异步"
+        ],
+        [
+          "jev",
+          "Jev 的职责"
+        ],
+        [
+          "entries",
+          "不同入口"
+        ],
+        [
+          "output",
+          "用户看到的过程"
+        ],
+        [
+          "feedback",
+          "运行中的补充输入"
+        ],
+        [
+          "testing",
+          "体验与验收"
+        ],
+        [
+          "memory",
+          "开工与记忆读取"
+        ],
+        [
+          "memory-storage",
+          "内容的业务归属"
+        ],
+        [
+          "memory-files",
+          "文件名与维护位置"
+        ],
+        [
+          "memory-filing",
+          "历史归档与更正"
+        ],
+        [
+          "project-memory",
+          "项目主账与反馈"
+        ],
+        [
+          "memory-timeline",
+          "可追溯时间线"
+        ],
+        [
+          "background-memory",
+          "人员与公司背景"
+        ],
+        [
+          "instance-memory",
+          "登录后按需读回"
+        ],
+        [
+          "evidence",
+          "依据与版本"
+        ]
+      ]
+    },
+    {
+      "route": "memory/index.html",
+      "chapter": "memory",
+      "reference": "memory/README.md",
+      "sections": [
+        [
+          "architecture",
+          "项目记忆的骨架"
+        ],
+        [
+          "storage",
+          "存储与格式"
+        ],
+        [
+          "scope",
+          "如何确定项目归属"
+        ],
+        [
+          "reading",
+          "开工怎样读取"
+        ],
+        [
+          "classification",
+          "内容归到哪里"
+        ],
+        [
+          "collecting",
+          "从来源形成认识"
+        ],
+        [
+          "organization",
+          "接入与实施状态"
+        ],
+        [
+          "comparison",
+          "成本与防退化"
+        ],
+        [
+          "evidence",
+          "依据与维护"
+        ]
+      ]
+    },
+    {
+      "route": "output/reference.html",
+      "chapter": "message",
+      "reference": "output/README.md",
+      "sections": [
+        [
+          "architecture",
+          "职责图"
+        ],
+        [
+          "async",
+          "异步时序"
+        ],
+        [
+          "feedback",
+          "反馈分支"
+        ],
+        [
+          "experience",
+          "交付演示"
+        ],
+        [
+          "states",
+          "三种状态"
+        ],
+        [
+          "implementation",
+          "现状与目标边界"
+        ]
+      ]
     }
   ]
 }

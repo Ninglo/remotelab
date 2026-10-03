@@ -8,23 +8,25 @@
   <title>RemoteLab · 记忆与组织协作</title>
   <link rel="stylesheet" href="./style.css?v=2.8">
   <script type="module" src="./app.js?v=2.8"></script>
+<link rel="stylesheet" href="../architecture-atlas/guide.css?v=20261003j">
+<script type="module" src="../architecture-atlas/guide-shell.js?v=20261003j"></script>
 </head>
-<body data-guide-id="remotelab-memory-governance-v2">
+<body data-guide-id="remotelab-memory-governance-v2" data-guide-page="memory/index.html" data-guide-chapter="memory">
   <a class="skip" href="#architecture">跳到方案总图</a>
   <header class="top"><a class="brand" href="../architecture-atlas/project.html" data-project-home>RemoteLab <span>整体说明 · 返回项目入口</span></a><a class="plain-link" href="./README.md">Agent 参考文本 ↗</a></header>
   <main id="top">
     <section class="hero">
       <div class="eyebrow">记忆治理 v2 / 从一次工作到项目共识</div>
-      <h1>每次工作有来处，<br>每个项目有共识。</h1>
+      <h1>记忆保存在哪里，<br>下一次怎样用起来？</h1>
       <p id="goal" class="lead">让 Agent 在多人、多项目、多信源的工作中形成可追溯的组织认识，并从同一份认识生成项目与个人视图。</p>
-      <div class="hero-meta"><span class="badge">现状已核实</span><span class="badge proposed">治理方案待实施</span><span id="version" class="muted"></span></div>
-    </section>
+      <div class="hero-meta"><span class="badge">已接入部分按项说明</span><span class="badge proposed">效果与后续能力待验证</span><span id="version" class="muted"></span></div>
+    <div class="guide-chapter-context"><p><strong>读完这一章：</strong>能分清项目、人员、公司各自保存什么，什么是原始来源，什么还在待核，什么时候应读取。</p><p><strong>研发查阅：</strong>关系图可点选；存储、开工和归集分别说明读写路径。对比表与成本试算保留假设，未实测的数字保持待验证。</p><p>内容唯一维护于<code>docs/memory-architecture/guide-data.js</code>，由<code>render-reference.mjs</code>生成同目录参考文本；它通过统一构建发布到<code>memory/</code>，发布副本不直接编辑。</p></div></section>
     <nav class="toc" aria-label="说明导航">
       <a href="#architecture">01 方案总图</a><a href="#storage">02 存在哪里</a><a href="#scope">03 归哪个项目</a><a href="#reading">04 开工怎么读</a><a href="#classification">05 什么存到哪里</a><a href="#collecting">06 如何形成共识</a><a href="#organization">07 如何实施</a><a href="#comparison">08 对比与防退化</a><a href="#evidence">09 依据与维护</a>
     </nav>
     <div id="findings" class="finding-row"></div>
     <section id="architecture" class="section">
-      <div class="section-heading"><div><div class="eyebrow">01 / 方案的骨架</div><h2>索引带路，项目记忆汇总，细节沿指针追溯。</h2></div><span class="badge proposed">本次方案 · 待实施</span></div>
+      <div class="section-heading"><div><div class="eyebrow">01 / 方案的骨架</div><h2>索引带路，项目记忆汇总，细节沿指针追溯。</h2></div><span class="badge proposed">治理框架 · 分项接入</span></div>
       <p class="intro">保留原有指针结构。讨论群、干活群与个人 Session 是来源，话题约定留在话题；项目形成一份共同认识，日报和不同视图从它派生。个人、公司与操作方法按用途引用。</p>
       <div class="diagram-shell"><div id="architecture-graph" class="graph" aria-label="记忆治理方案总图"></div></div>
       <div id="architecture-detail" class="node-detail" aria-live="polite"></div>
