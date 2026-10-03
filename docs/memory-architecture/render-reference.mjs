@@ -1,7 +1,7 @@
 import { writeFile, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { guide, calculateTokenScenario } from './guide-data.js';
-import { memoryFileMap, filingIncident, filingRisks } from './reader-data.js';
+import { memoryPurposes, memorySupport, memoryFileMap, filingIncident, filingRisks } from './reader-data.js';
 
 const q = String.fromCharCode(96);
 const inline = text => q + text + q;
@@ -24,6 +24,10 @@ for(const item of guide.storageCases){
   }
 }
 text+='## 项目归属规则（已接入导航，未知关联待核）\n\n';
+text+='## 三个并列的业务档案\n\n项目记事情，人员记怎样合作，公司记共同背景；来源、入口、规则、状态与格式不再和业务归属混成层级。\n\n';
+for(const item of memoryPurposes)text+='### '+item.label+'\n\n'+item.content+'\n\n正文：'+item.path+'。读取：'+item.read+'\n\n'+item.example+'\n\n';
+for(const [role,names,purpose]of memorySupport)text+='- **'+role+'**：'+names+'。'+purpose+'\n';
+text+='\n日报与时间线是派生视图；现有历史文件尚未全部迁移或逐条认可。\n\n';
 text+='## 文件命名、实际位置和分档纠错\n\n[原阅读页的完整文件地图](../architecture-atlas/output/index.html#memory-files)与本表来自同一内容源；登录该页14可读本实例文件名、绝对路径和当前有效写回目标。\n\n';
 text+=table([['区域','文件名','位置','内容','维护边界'],['---','---','---','---','---'],...memoryFileMap])+'\n\n';
 text+=filingIncident.cause+'\n\n'+filingIncident.correction+'\n\n'+filingIncident.recurrence+'\n\n';

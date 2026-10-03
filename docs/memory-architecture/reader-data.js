@@ -1,6 +1,6 @@
 // Canonical editorial explanation; the atlas reader imports this chapter.
 export const memoryAudit = {
-  version: '记忆阅读版 1.2 · 2026-10-03', commit: 'ebc76e1e（本轮基线）',
+  version: '记忆阅读版 1.3 · 2026-10-03', commit: 'f788b4bc（运行底座；本次整理说明）',
   scope: '本次补核项目指针v2、人员档案、旧偏好入口、实际自动写回目标及文件位置。旧消息章节和系统总览保留各自基线；不把本次核对日期当成全站重新验收。',
   sources: ['chat/project-memory-runtime.mjs', 'chat/turn-context-hook.mjs', 'chat/system-prompt.mjs', 'chat/session-memory-writeback.mjs', 'chat/memory-writeback-targets.mjs', 'chat/memory-context-view.mjs', 'chat/memory-file-catalog.mjs', 'chat/person-memory-context.mjs', 'docs/project-memory-rollout.md'],
 };
@@ -41,6 +41,19 @@ export const backgroundCases = [
   ['公司位置／常用地点','读公司公共背景→按当次人数、预算、目的地补实时查询。','办公楼是稳定背景；团队常去餐厅需真实反馈，个人忌口归本人。'],
   ['杂事群中的介入','按既有唤醒与消息规则进入工作→核对讨论现状→有有用增量再建议。','谈午餐时可给近处候选和路程；不因饭点固定插话，不自动订餐或改日程。'],
   ['AGENTS.md 的边界','工作区／仓库的共同操作规则与简短入口；包含如何按身份读取人员区，不包含任何员工的个人偏好。','完整个人资料、地址、任务进度和餐厅表留专属资料；不把全员偏好堆成全局指令。'],
+];
+
+// Business ownership is independent of sources, instructions, formats and status.
+export const memoryPurposes = [
+  {id:'project',label:'项目：事情怎样推进',question:'这个项目的目标、决定、进展和待解决问题是什么？',content:'项目范围、事项前后变化、人员职责、交付与验收、风险和可复用经验。相关个人工作记在项目事项里；人员视图按参与关系读取这些事项。',path:'project-knowledge/project-index.md → projects.md 的对应项目章节',read:'涉及该项目时沿索引读相应章节，需要细节再追溯话题、任务或结果。',example:'“某同事完成了项目转换脚本”归项目事项；不把同一进度复制进那个人的偏好档案。'},
+  {id:'person',label:'人员：怎样与这个人合作',question:'这个人是谁，怎样称呼、沟通和协作更合适？',content:'本人明确的称呼、写作和协作偏好，以及有依据且适用的个人背景。项目职责通过项目条目关联，不在个人档案另维护一套进度。',path:'reference/people/index.md → reference/people/<personId>.md',read:'当前消息身份核实后读对应档案；明确涉及另一位同事时核其身份再读。',example:'“请使用我的全名”归这个人的档案；不会因此给所有同事统一改称呼。'},
+  {id:'company',label:'公司：共同背景是什么',question:'组织里大家共用的办公与环境信息是什么？',content:'办公地点、公共出行入口、团队确认的常用地点与其他明确的共同背景。当前只登记了一部分信息，公司档案还不完整。',path:'reference/company.md',read:'涉及办公、就餐、出行等问题时读；营业、路线和耗时再查当时的实时信息。',example:'“公司搬了办公室”更新公司背景；“某同事不吃辣”归那个人，餐厅营业时间保留查询日期。'},
+];
+export const memorySupport = [
+  ['来源','群、话题、个人Session、任务与结果系统','保存原始经过，按事项供给相关档案；群绑定帮助确定项目，不把全部私人聊天整批归项目。'],
+  ['入口','bootstrap、项目索引、人员索引','指向相关正文。指针承担导航，不复制一份正文。'],
+  ['规则和方法','AGENTS.md、Skill、WORKFLOW','告诉Agent怎么工作、怎么找资料；不汇总员工口味、办公地址和项目进度。'],
+  ['核验状态与历史','待核候选、确认记录、旧版本与归档','来源和范围不清先待核；认可、撤回和被替代是条目的状态。旧文件退出默认入口，原文留作追溯。'],
 ];
 
 // Paths are public naming rules. Exact instance paths and real Person filenames
