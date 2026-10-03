@@ -1,6 +1,6 @@
 import { writeFile, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { guide } from './guide-data.js';
+import { guide, calculateTokenScenario } from './guide-data.js';
 
 const q = String.fromCharCode(96);
 const inline = text => q + text + q;
@@ -64,6 +64,22 @@ text+='\n### 场景验收\n\n';for(const [title,body] of guide.acceptanceCases)t
 text+='\n### 实施前补齐的信息\n\n';for(const [title,body] of guide.prerequisites)text+='- **'+title+'：** '+body+'\n';
 text+='\n本次交付仅更新说明与静态网页，未启用采集、推送、正式记忆写入或偏好迁移。\n\n';
 text+=table([['最终效果','评估内容'],['---','---'],...guide.metrics])+'\n\n';
+text+='## 与现有机制、成熟产品的比较\n\n'+guide.comparison.conclusion+'\n\n'+guide.comparison.evidence+'\n\n';
+text+=table([['比较项','现有机制','拟实施方案'],['---','---','---'],...guide.comparison.rows])+'\n\n';
+for(const p of guide.comparison.products){
+  text+='### '+p.label+'\n\n'+p.position+'\n\n';
+  for(const [title,body] of p.rows)text+='- **'+title+'：** '+body+'\n';
+  text+='\n依据：'+p.sources.map(([title,url])=>'['+title+']('+url+')').join('、')+'。\n\n';
+}
+for(const [title,body] of guide.comparison.lessons)text+='- **'+title+'：** '+body+'\n';
+text+='\n### 前台与后台的成本\n\n'+graphSection(guide.costGraph);
+for(const [title,body] of guide.costRules)text+='- **'+title+'：** '+body+'\n';
+text+='\n### token 演示账本（不是实测）\n\n'+guide.tokenExample.boundary+'\n\n'+guide.tokenExample.formula+'\n\n';
+const example=calculateTokenScenario(Object.fromEntries(guide.tokenExample.fields.map(f=>[f.id,f.value])));
+text+=table([['演示输入项','假设值'],['---','---'],...guide.tokenExample.fields.map(f=>[f.label,f.value])])+'\n\n以上初始假设：当前 '+example.current.toLocaleString('zh-CN')+' token／日，治理后 '+example.proposed.toLocaleString('zh-CN')+'；净新增后台 '+example.extraBackground.toLocaleString('zh-CN')+'。'+(example.cheaperFrom===null?'前台每任务量没有降低，无法靠复用降低本式总量。':'每天至少 '+example.cheaperFrom+' 次使用才使总量更低。')+'交互网页可更改全部假设；不同模型、缓存与真实价格需另核算。\n\n';
+for(const [label,rows] of [['如何验证',guide.evaluation],['测量字段（待增加或补齐）',guide.measurementFields],['准入要求（尚未通过）',guide.releaseGates],['失败与纠正',guide.failureRules]]){
+  text+='### '+label+'\n\n';for(const [title,body] of rows)text+='- **'+title+'：** '+body+'\n';text+='\n';
+}
 text+='## 当前依据\n\n';for(const r of guide.references){
   const revision=/^(chat|lib|connectors|scripts)\//.test(r.path)?guide.mainBaseline:'main';
   text+='- ['+r.title+'](https://github.com/Ninglo/remotelab/blob/'+revision+'/'+r.path+')：'+r.use+'。\n';
