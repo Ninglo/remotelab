@@ -5,11 +5,11 @@
 <meta name="color-scheme" content="light">
 <meta name="description" content="按一条消息的真实先后顺序说明 RemoteLab：同步等待、异步执行、Session 两次交接、Jev 职责、飞书任务卡和当前待验边界。">
 <title>RemoteLab · 从一次工作到长期项目认识</title>
-<link rel="stylesheet" href="./reading.css?v=20261003j">
-<script type="module" src="./flow-reader.js?v=20261003j"></script>
-<script type="module" src="./memory-reader.js?v=20261003j"></script>
-<link rel="stylesheet" href="../guide.css?v=20261003j">
-<script type="module" src="../guide-shell.js?v=20261003j"></script>
+<link rel="stylesheet" href="./reading.css?v=20261003k">
+<script type="module" src="./flow-reader.js?v=20261003k"></script>
+<script type="module" src="./memory-reader.js?v=20261003k"></script>
+<link rel="stylesheet" href="../guide.css?v=20261003k">
+<script type="module" src="../guide-shell.js?v=20261003k"></script>
 </head>
 <body data-guide-page="output/index.html" data-guide-chapter="message">
 <a class="skip" href="#main">跳到正文</a>
@@ -21,16 +21,16 @@
 <main id="main">
 <header id="start" class="hero">
 <p class="eyebrow">执行、交付与持续记忆 · 阅读版</p>
-<h1>一次工作如何执行、交付，<br>再接上下一次？</h1>
-<p class="lede">先收下消息，再执行任务、验证结果和交付。与项目有关的认识回到项目主账，下一次开工沿指针读取，人的纠正更新原条目。</p>
-<p>关键是区分两次交接：<strong>写进 Session 历史，还不等于启动模型；提交可执行 Request，才进入运行调度。</strong>Jev 在部分入口参与快判，实际任务由所选 Harness 理解、执行和验收。</p>
+<h1>执行与交付</h1>
+<p class="lede">消息进入 RemoteLab 后，连接器或网页先留下记录，再按入口规则提交执行请求。这里跟着一条消息，看工作怎样开始、怎样接收你的补充要求，以及结果怎样送回。</p>
+<p>写入 Session 历史只是收录消息。可执行的 Request 被接纳后，才进入运行调度。部分入口由 Jev 先判断参与方式，实际任务交给所选 Harness。</p>
 <p class="metadata"><span id="reader-version"></span> · 源码与现有配置快照；现场状态不会自动更新</p>
-<div class="note"><strong>现在不能说整条飞书体验已经验收通过。</strong><p>上一轮修复已有回归与部署证据。新的真实复杂任务收发仍待验证；即时表情前置、跨输出 Worker 的到达顺序、提问分级与打断处理还有明确缺口。下面先解释<strong>现在怎么跑</strong>，再单独标出<strong>目标怎么改</strong>。</p></div>
-<p class="reading-guide">读法：先走 01 的一个场景，再看 02–04 的交接和等待；只关心工作展示，可直接跳到 06–08；记忆治理从 09 开始，14 可登录读取本实例实际记录。技术细节和源码折叠在对应位置。图里的时间表示先后，不承诺秒数。</p>
-<div class="guide-chapter-context"><p><strong>读完这一章：</strong>知道消息到了哪一步、当前在等谁、结果存在哪里，以及下一轮如何接续。</p><p><strong>研发查阅：</strong>时序图保留交接数据和等待条件；各节可展开源码。存储位置见<a href="#memory-files">文件地图</a>，实际记录仅在<a href="#instance-memory">登录后主动读取</a>。</p><p>本章页面：<code>docs/architecture-atlas/output/index.html</code>；执行内容：<code>flow-data.js</code>；记忆内容：<code>docs/memory-architecture/reader-data.js</code>与<code>guide-data.js</code>。各内容源保留自己的核对基线。</p></div></header>
+<p class="note">飞书收发仍有待验证的部分：已有修复通过回归和部署核对，但真实复杂任务的收发、即时表情前置、跨输出 Worker 到达顺序、提问分级和打断处理还没有全部完成验收。各节分别列出当前行为与目标。</p>
+<p class="reading-guide">选择下方的入口，看时序图和相应步骤。图中的时间表示先后；技术细节在展开项里。记忆部分从<a href="#memory">开工读取</a>继续讲，<a href="#instance-memory">实例记录</a>需要登录后主动读取。</p>
+<details data-technical class="guide-chapter-context"><summary>文件与源码</summary><p>本章页面：<code>docs/architecture-atlas/output/index.html</code>；执行内容：<code>flow-data.js</code>；记忆内容：<code>docs/memory-architecture/reader-data.js</code>与<code>guide-data.js</code>。各内容源保留自己的核对基线。</p></details></header>
 
-<section id="journey"><h2><span class="part">01 / 顺着时间走</span>一条飞书消息的一生</h2>
-<p>默认选中实际 Jev 试验路径。切换入口后，时序图、步骤说明和等待条件一起变化；目标方案是独立选项，不混进现状。</p>
+<section id="journey"><h2>消息的执行流程</h2>
+<p>默认显示 Jev 试验入口的实际路径。切换入口时，时序图和等待条件随之更新；目标方案有单独的选项。</p>
 <div id="scene-tabs" class="tabs" role="group" aria-label="选择入口与现状"></div>
 <div class="scene-lead"><span id="scene-status" class="tag"></span><p id="scene-intro"></p></div>
 <figure><div class="diagram-scroll" tabindex="0" aria-label="时序图；窄屏可以横向滚动"><div id="flow-sequence"></div></div><figcaption>前置实线调用按依赖向下；虚线支路可独立推进，浅蓝区是接纳后的并行区域，编号用于阅读，不是全局到达顺序。实线：等待本次交接回执；虚线：独立执行 / 投递；点线：条件发生。点击箭头或步骤看“交了什么、等什么”。</figcaption></figure>
@@ -38,7 +38,7 @@
 <p class="note small">同一消息的接入处理有先后依赖，但后面的模型与投递会并行推进。飞书表面可能稍后追上 Session 里的最新事实；图里的写入顺序不是客户端到达顺序保证。</p>
 </section>
 
-<section id="handoff"><h2><span class="part">02 / 交接点与职责</span>“交给 Session”有两种含义</h2>
+<section id="handoff"><h2>消息记录与请求接纳</h2>
 <p class="answer">Session 是持久工作间，Request 是一条被接纳的输入，Run 才是一次实际执行。它们不是三个模型，也不必一一对应。</p>
 <div class="handoffs"><article><p class="eyebrow">交接 A · 只收录</p><h3>Connector → Session 观察历史</h3><p>消息、来源和近期上下文进入 observations。返回 <code>sessionId</code>、<code>eventSeq</code>、<code>recent</code>。<strong>此处不启动 Run。</strong>Jev 接下来可以据此快判。</p></article><article><p class="eyebrow">交接 B · 可以执行</p><h3>Connector → Request 接纳层</h3><p>提交正文、附件、执行设置和固定的回复位置。保存 Request 后启动、续接或排队。返回请求 / 运行身份；调用方不等最终答案。</p></article></div>
 <p>Jev 建议复杂工作时，Connector 可以切到工作话题 Session；否则常见做法是续接原群 Session。话题绑定采用实际飞书回执，不能把“准备了话题目标”说成“用户已看到话题”。</p>
@@ -52,14 +52,14 @@
 </tbody></table><div data-sources="observation admission card delivery"></div></div></details>
 </section>
 
-<section id="async"><h2><span class="part">03 / 等什么，不等什么</span>“用了 async”不代表用户不用等</h2>
+<section id="async"><h2>同步等待与异步执行</h2>
 <p>JavaScript 的 <code>async / await</code> 是写法。这里要看业务依赖：<strong>Jev 调用虽是异步网络调用，Connector 仍然等它返回才提交执行请求；Run 和输出投递则可以在接纳后独立继续。</strong></p>
 <div class="parallel"><article><span class="rail-label">前置串行 · 当前 Jev 试验路径</span><div class="chain"><span>inbox 落盘</span><b>→</b><span>Session 观察收录</span><b>→</b><span>等 Jev</span><b>→</b><span>执行请求接纳</span><b>→</b><span>排表情</span></div><p>每一步依赖前一步的事实。即时收到确认尚未从这条链路里移出。</p></article><article><span class="rail-label">接纳之后 · 独立推进</span><div class="fork-lines"><p><strong>执行：</strong>Harness → 工具 → 发现 / 验收 → 最终结果</p><p><strong>文本与表情：</strong>事件 → source-delivery outbox → Connector → 飞书回执</p><p><strong>任务卡：</strong>workboard / progress → 个人试验 Worker → create / patch 原卡</p><p><strong>后置：</strong>运行结束 → 条件触发摘要整理 / 记忆归集</p></div><p>模型不等卡片 Worker 的飞书回执才继续干活；最终答复不等标题和记忆整理。</p></article></div>
 <p>文本 outbox 与卡片 Worker 是两条独立程序，所以现在只能说<strong>开场事件先形成</strong>，不能承诺<strong>开场一定先于卡片在飞书客户端出现</strong>。如果产品要求严格先后，需要补持久的投递依赖。</p>
 <details data-technical><summary>断线、重启和发送失败怎么接住</summary><div class="detail-body"><p>接纳和运行身份保存在耐久记录中；执行脱离浏览器连接。重启按原身份恢复观察和请求，不靠再次发一遍用户消息。</p><p>发送失败沿既有结果与分片身份重试投递。发送状态不确定时应先核对回执 / 读回；卡片首次 create 的结果未知时，不能无条件再创建第二张。</p><p>网页 WS 是“有变化了”的通知，重连后从 HTTP / 持久历史重新读事实，不能把 WS 消息当唯一完成证据。</p><div data-sources="inbox run delivery card after"></div></div></details>
 </section>
 
-<section id="jev"><h2><span class="part">04 / 判断与发送分别是谁</span>Jev 不只选表情，也不执行任务</h2>
+<section id="jev"><h2>Jev 的判断与后续执行</h2>
 <p>Jev 返回的是判断结果。固定程序把结果变成路由或投递请求；真正的调查、工具操作、任务拆分和结果写作交给当前 Harness。</p>
 <div class="table-scroll"><table><thead><tr><th>位置</th><th>Jev 做什么</th><th>当前是否等待</th><th>后续由谁承接</th></tr></thead><tbody>
 <tr><td>飞书 Jev 试验入口</td><td>建议参与方式、表情、短答 / 复杂工作位置</td><td>是。观察收录之后、执行请求提交之前 await</td><td>Connector 保存决定、准备工作位置，提交 Request；Harness 决定实际是否回复</td></tr>
@@ -73,7 +73,7 @@
 <details data-technical><summary>展开判断输出与成本边界</summary><div class="detail-body"><p>保存的决定包含 <code>participation</code>、<code>emojiType</code>、<code>workMode</code> 和理由。Jev 上下文是有边界的近期消息与可用记忆摘录，不是整个公司的全部对话。</p><p>群快判、Auto 路由、主 Harness 执行是不同调用。飞书 API 显示一个表情，并不意味着只发生了一次 API 或没有模型成本。当前没有用新的外部事件机制自动替代这些职责。</p><div data-sources="jev quick auto card after"></div></div></details>
 </section>
 
-<section id="entries"><h2><span class="part">05 / 分开看入口</span>试验入口、常规入口与飞书</h2>
+<section id="entries"><h2>不同入口的处理方式</h2>
 <div class="table-scroll"><table><thead><tr><th>入口</th><th>谁先接收</th><th>哪些判断在前面</th><th>输出怎么回去</th></tr></thead><tbody>
 <tr><td>网页 · 个人试验</td><td>当前 Session 的 HTTP 接纳层</td><td>结构校验；Auto 仅条件启用。没有飞书群快判</td><td>网页读取规范化历史和个人启用的 workboard 投影</td></tr>
 <tr><td>网页 · 常规</td><td>同一 Session / Request 底座</td><td>同一运行规则，任务卡是否可用看部署和个人开关</td><td>普通会话投影；不能由“常规端口”推断已升级了任务卡</td></tr>
@@ -85,7 +85,7 @@
 <details data-technical><summary>展开回复位置为什么不会跟着新消息跑偏</summary><div class="detail-body"><p>每条 Request 保存自己的 <code>sourceDelivery</code>，包含 Connector 路由和该输入的回复目的地。即使后来 Session 又接到另一条消息，延迟结果仍按原 Request 的位置交付。</p><p>Session 绑定、inbox 去重、Request 去重、文本投递身份与任务卡 messageId 分别维护。它们互相衔接，但不能只凭 Session 存在就判定群里已经回过话。</p><div data-sources="handoff admission delivery"></div></div></details>
 </section>
 
-<section id="output"><h2><span class="part">06 / 用户看到的过程</span>一次开场，一张推进卡，一个本轮结果</h2>
+<section id="output"><h2>用户看到的工作过程</h2>
 <p>快速任务直接给完整结果。较长且可建卡的任务，先让用户知道具体怎样着手，再用同一张卡跟进工作。需要用户回答的问题单独出现。</p>
 <div class="surface-example"><div class="chat-opening"><small>【开始处理】 · 模型形成具体内容</small><p>这条链路要先分清“消息已记录”和“模型已启动”。我先核对 observations、请求提交及表情排队的顺序，再看卡片由哪个 Worker 更新。</p><span class="small muted">会话入口合在这条有用开场里；不另发固定创建通知。</span></div>
 <article class="task-example"><div class="task-head"><div><small>任务目标</small><h3>让用户看清消息如何变成工作</h3></div><span class="tag">进行中</span></div><ul><li>✓ 核对接入与 Session 交接 <small>已验收</small></li><li>○ 画清同步、异步与职责 <small>进行中</small></li><li>○ 核对真实飞书收发 <small>待验收</small></li></ul><div class="card-progress"><small>实际进度 · 更新这一区域</small><p>已确认 Jev 试验路径先观察收录，后等快判；表情在执行请求提交之后才排队。正在把两条输出 Worker 分开画。</p></div></article>
@@ -97,14 +97,14 @@
 <p>完全可能同时出现：<strong>Run 已结束 · 任务部分完成 · 本轮最终答复已送达。</strong>也可能任务已经验收完成，但最终附件尚未送达；此时恢复投递，不重复执行任务。</p>
 </section>
 
-<section id="feedback"><h2><span class="part">07 / 运行中又收到一条消息</span>停止、插问、补充和回答不能混为一谈</h2>
+<section id="feedback"><h2>运行中的补充输入</h2>
 <p>底座支持原生追加输入与停止，但目前并没有把所有自然语言反馈可靠分成独立业务事件。尤其是<strong>正在等选择题时，新文字可能被当作题目答案</strong>。这一点必须单独测试。</p>
 <div class="table-scroll"><table><thead><tr><th>用户动作</th><th>当前机制</th><th>目标与缺口</th></tr></thead><tbody id="feedback-rows"></tbody></table></div>
 <p class="note">超时选择是系统回退，不是用户回复，更不是授权。现有统一五分钟策略与目标的“可选 / 必要输入 / 授权”分级不等价；目标的持久待答、问题版本和独立交互卡还需要实现。</p>
 <details data-technical><summary>为什么“已接纳补充”不等于“补充已采用”</summary><div class="detail-body"><p>HTTP 接纳证明输入被可靠记录。原生输入回执证明它送到当前执行。模型随后解释“我已采用这条信息，因此把 A 改为 B”，并重新验证受影响结果，才说明它进入了实际方案。</p><p>原生追加输入不能自动保证插问后继续原任务，也不能替代验收。Harness 需要说明原任务的去向，并用原 taskId 更新已有卡。</p><div data-sources="native question card"></div></div></details>
 </section>
 
-<section id="testing"><h2><span class="part">08 / 可以去测，但不能先宣布都通过</span>把体验验收落到实际收发</h2>
+<section id="testing"><h2>收发测试与未完成的验证</h2>
 <p>你可以现在测试。建议先测“复杂任务无 @”和“运行中插问”；有选择题时，再分别测试停止按钮与普通文字。验收看真人入口、真实投递回执与实际卡片更新，不用静态图或 CI 代替。</p>
 <div class="table-scroll"><table><thead><tr><th>场景</th><th>实际看什么</th><th>当前边界</th></tr></thead><tbody id="test-rows"></tbody></table></div>
 <h3 class="subhead">这轮已经改的，与还要改的</h3>
@@ -112,14 +112,14 @@
 <p>前八节交付的是<strong>消息机制的说明与事实核对</strong>，不改变尚未通过的飞书端到端验收状态。本轮记忆接入与背景资料的执行度在09–14单独核对。</p>
 </section>
 
-<section id="memory"><h2><span class="part">09 / 开工、读取、归集与反馈</span>记忆怎样接上一次工作？</h2>
+<section id="memory"><h2>工作中的记忆读取</h2>
 <p class="answer">沿原有指针找本次相关内容，沿原有主账更新认识。群、话题和个人 Session 是来源，项目、个人与公司资料按用途并列维护。</p>
 <p>下面五步把记忆接到前八节的执行链路。点击查看承担者、读取、落点与下一次使用；箭头表示关系，不承诺时间或自动验收。</p>
 <div id="memory-flow" class="memory-flow" role="group" aria-label="选择记忆步骤"></div>
 <div id="memory-step" class="memory-detail" aria-live="polite"></div>
 <p class="note small">新 Session 与新原生线程不是同一概念。继续原线程会保留已读上下文；关闭新增指针不会清除它已经读入的旧内容。正文实际读取仍由 Harness 按本次任务决定。</p>
 </section>
-<section id="memory-storage"><h2><span class="part">10 / 先理解归属，再查文件</span>业务记忆先看三个并列档案</h2>
+<section id="memory-storage"><h2>项目、人员与公司资料</h2>
 <p class="answer">项目记事情，人员记怎样合作，公司记共同背景。三个档案并列，通过事项、身份和指针关联；没有“个人偏好再升到公司、再升到AGENTS”的晋级关系。</p>
 <p>上一版把用途、来源、规则、候选、历史文件与存储格式排在同一张大表里，让人以为这些都是需要记住的层级。下面先讲实际使用的主关系；完整文件地图保留在展开项。</p>
 <div id="memory-purpose-tabs" class="tabs" role="group" aria-label="选择业务记忆归属"></div><div id="memory-purpose-detail" class="memory-detail" aria-live="polite"></div>
@@ -134,39 +134,39 @@
 <details data-technical><summary>展开不同开工入口的读取顺序</summary><div class="detail-body"><div id="memory-read-tabs" class="tabs" role="group" aria-label="选择开工场景"></div><div id="memory-read-detail"></div></div></details>
 </div></details>
 <details id="memory-file-reference"><summary>查看完整文件名、位置与写入边界</summary><div class="detail-body">
-<h3 class="subhead" id="memory-files">逐个文件：名字、位置与写入边界</h3>
+<h3 class="subhead" id="memory-files">文件名、位置与写入规则</h3>
 <p>人员档案叫 <code>reference/people/&lt;personId&gt;.md</code>；你记得的旧文件叫 <code>model-context/preferences.md</code>，不是每名员工的档案。旧混合正文已归档，现行旧文件只保留导航。<code>auth.json</code> 的 <code>Person.preferences</code> 是产品设置，也不是那份个人文字档案。</p>
 <p class="small muted">下表的“记忆目录”默认 <code>~/.remotelab/memory</code>；“配置目录”默认 <code>~/.config/remotelab</code>，实例配置可以覆盖。项目目录依 <code>project-runtime.json</code> 的实际路径；连接器依 <code>storageDir</code>。需要本实例的完整绝对路径，在14点击登录读回；公开网页不打包私人路径、姓名和正文。</p>
 <div class="memory-controls"><label>按用途<select id="memory-file-kind"></select></label><label>查文件或用途<input id="memory-file-query" type="search" placeholder="如 preferences、AGENTS、公司"></label></div><p id="memory-file-count" class="small muted" aria-live="polite"></p>
 <div class="table-scroll"><table><thead><tr><th>区域</th><th>文件名</th><th>位置</th><th>保存什么</th><th>读取／维护规则</th></tr></thead><tbody id="memory-file-rows"></tbody></table></div>
 </div></details>
 <details id="memory-filing-reference"><summary>查看这次误分的原因、修正及剩余风险</summary><div class="detail-body">
-<h3 class="subhead" id="memory-filing">这次为什么放错，下一次靠什么减少误分？</h3>
+<h3 class="subhead" id="memory-filing">归档错误与修正</h3>
 <p id="memory-filing-cause"></p><p id="memory-filing-correction"></p><p id="memory-filing-recurrence" class="note"></p>
 <div class="table-scroll"><table><thead><tr><th>同类风险</th><th>发现的原因</th><th>处理与仍需核验</th></tr></thead><tbody id="memory-filing-risks"></tbody></table></div>
 <p>归档时先回答：谁的、影响哪些人或项目、属于事实／偏好／规则／观察哪一类、谁明确认可、何时发生和记录、原文在哪里。身份或范围缺失就留候选；已核的本人表达可直接更新原档案。纠错改原维护位置，不再用一个全局“兼容副本”掩盖冲突。</p>
 </div></details>
 </section>
-<section id="project-memory"><h2><span class="part">11 / 项目→视图→人的反馈</span>已有功能、已接入规则与待验效果分别是什么？</h2>
+<section id="project-memory"><h2>项目记录、视图与反馈</h2>
 <p>群范围确定项目入口，同一项目可有讨论群与干活群。个人 Session 的事项明确涉及项目时引用进去；普通个人聊天不按名字或标题整批挂靠。跨项目事项可以关联多个项目，状态仍按具体事项核对。</p>
 <div class="chain memory-chain"><span>群／话题／相关个人 Session</span><b>→</b><span>原项目主账</span><b>→</b><span>项目／个人／组织日报</span><b>→</b><span>按职责反馈，回原事项</span></div>
 <p>总日报可以同时包含确定事实、待核事项和观察建议。项目负责人确认范围与优先级，相关个人确认自己的承诺／偏好，验收人确认交付标准与结果；不要求所有人签过每条事实才可更新，也不把没人回复当共识。</p>
 <div class="table-scroll"><table><thead><tr><th>板块</th><th>当前执行度</th><th>已经发生的事</th><th>还不能推出什么</th></tr></thead><tbody id="memory-execution-rows"></tbody></table></div>
 <p class="small muted">这是2026-10-03的公开脱敏快照。登记数量不是活跃项目数。下面的登录读取可查看最新登记与原资料；业务正在运行、已验收和人的认可仍依各自原始证据。</p>
 </section>
-<section id="memory-timeline"><h2><span class="part">12 / 记忆有日期，还要串起前后变化</span>从零散条目走到项目进程</h2>
+<section id="memory-timeline"><h2>项目时间线</h2>
 <p class="answer">先问“何时发生了什么，哪个事项从什么状态变成什么状态，由谁推进、谁确认”，再问“项目现在怎样”。只读最新摘要会丢掉中间的失败、调整和被替代结论。</p>
 <div id="memory-timeline-example" class="timeline"></div><p class="small muted">上面是虚构示例。真实项目时间线在14登录查看；原主账仍是唯一认识入口，时间线是可刷新、带出处和缺口的派生视图。</p>
 <div class="table-scroll"><table><thead><tr><th>要区分的记录</th><th>怎样解释</th></tr></thead><tbody id="memory-time-rows"></tbody></table></div>
 <p>倒序摘要便于看现状，正序时间线便于理解演变；两者指向同一来源。关联更正和状态变化时保留前一版本；同一会议被多个 Session 引用，不算多个独立证据。来源有新版本而视图未重建，页面会明确提示落后，不能继续把快照叫“最新”。</p>
 </section>
-<section id="background-memory"><h2><span class="part">13 / 让协作记得人，也了解公司</span>个人偏好与公司背景按用途读取</h2>
+<section id="background-memory"><h2>个人偏好与公司背景</h2>
 <p>真实身份、产品设置和自然语言偏好是三种不同信息。个人侧栏属于谁，不等于所有内容都写入了其长期偏好；机器共用的旧身份文件也不能代表每个登录人。</p>
 <div class="table-scroll"><table><thead><tr><th>内容</th><th>读取与处理</th><th>具体边界</th></tr></thead><tbody id="memory-background-rows"></tbody></table></div>
 <p>个人称呼、写作和协作偏好集中在人员区，每个真实 Person 一个档案；公共 AGENTS.md 只说明如何找到这些档案。本轮已移除误放的个人称呼条目，开工按当前消息身份提供对应档案指针，并补入公司公共背景入口。公开页只讲机制；具体称呼、办公地点和习惯在下一节登录读取。完整写作偏好、全员项目责任、团队常去餐厅尚未逐项整理。</p>
 <p class="note small">本实例当前是共享认证工作区，认证成员能访问共享工作资料；按Person分类并没有新增个人保密权限。若以后需要个人私密区，必须另做明确的访问边界，不能靠目录名承诺隔离。</p>
 </section>
-<section id="instance-memory"><h2><span class="part">14 / 按需读回，不把私人内容写进公开网页</span>查看本实例的项目、个人和公司记录</h2>
+<section id="instance-memory"><h2>登录后查看本实例记录</h2>
 <p>点击后通过当前实例的认证接口读取。公开HTML不打包真实人员名单、项目正文、称呼偏好或公司地址；没有登录只给登录提示。此处只读，刷新不会修改记忆或启动任务。</p>
 <button id="memory-load" class="memory-load" type="button">读取登录实例的实际记录</button><a class="small" href="/" target="_blank" rel="noopener">打开RemoteLab登录 ↗</a>
 <p id="memory-instance-status" class="small muted" role="status">尚未读取实例资料。</p>
@@ -186,13 +186,13 @@
 <details data-technical><summary>展开本次记忆章节的源码与维护边界</summary><div class="detail-body"><p id="memory-audit"></p><div id="memory-sources" class="source-links"></div><p>深层机制与成本比较继续维护在<a href="../../memory-architecture/index.html" data-memory-chapter>记忆章节</a>的同一内容源；本阅读页引用它，统一构建进入原网站，不再复制另一份说明。私人记录由实际实例维护，公开站点只解释范围和状态。</p></div></details>
 </section>
 
-<section id="evidence"><h2><span class="part">来源 / 版本 / 维护</span>按源码说清楚，按真实体验验收</h2>
-<p id="reader-scope"></p><p>本页按你提供的网页采用“先走一次真实场景 → 再逐块拆开 → 最后展开技术细节”的阅读结构。引用其表达方式，RemoteLab 的事实仍以自己的源码和运行证据为准。</p>
+<section id="evidence"><h2>来源与维护</h2>
+<p id="reader-scope"></p><p>流程说明以 RemoteLab 的源码和运行记录为依据。交互目标与演示见附录，仍需按真实收发分别验收。</p>
 <p class="small muted">源码快照：<code id="reader-commit"></code>。部署版本、群配置和实际送达是另外的证据；本站为静态快照，不作自动刷新承诺。</p>
 <div id="all-sources" class="all-sources"></div>
 <p class="small"><a href="./README.md">同目录维护参考文本</a> · <a href="./reference.html">目标交互图与演示附录</a> · <a href="../index.html">回到架构图谱</a></p>
 </section>
-<footer>RemoteLab 执行与持续记忆 · 当前事实、记录与待验效果分开维护 · <a href="#start">回到开头 ↑</a></footer>
+<footer>RemoteLab 文档 · <a href="#start">回到开头 ↑</a></footer>
 </main></div>
 <noscript><p class="no-js">正文可以直接阅读；交互时序图需要 JavaScript。完整步骤见<a href="./README.md">维护参考文本</a>。</p></noscript>
 </body></html>

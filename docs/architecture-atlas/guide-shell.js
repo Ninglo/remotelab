@@ -1,10 +1,10 @@
-import { renderGuideShell } from './guide-shell-template.js?v=20261003j';
+import { renderGuideShell } from './guide-shell-template.js?v=20261003k';
 
 async function initializeGuide() {
   const route = document.body.dataset.guidePage;
   if (!route) return;
   if (!document.querySelector('.guide-masthead')) {
-    const response = await fetch(new URL('./project.json?v=20261003j', import.meta.url));
+    const response = await fetch(new URL('./project.json?v=20261003k', import.meta.url));
     if (!response.ok) throw new Error('说明目录暂时不可读取');
     const catalog = await response.json();
     const page = catalog.pages.find(item => item.route === route);

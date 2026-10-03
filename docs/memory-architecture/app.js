@@ -1,4 +1,4 @@
-import { guide, calculateTokenScenario } from './guide-data.js?v=2.8';
+import { guide, calculateTokenScenario } from './guide-data.js?v=20261003k';
 
 const el = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

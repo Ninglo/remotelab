@@ -1,7 +1,7 @@
 {
   "id": "remotelab-system-guide",
   "title": "RemoteLab 整体说明",
-  "purpose": "梳理系统如何工作，为持续自优化和新人快速了解、适应提供共同入口。",
+  "purpose": "了解 RemoteLab 怎样处理工作，查阅实现与维护位置。",
   "entry": "project.html",
   "publishSlug": "remotelab-architecture-atlas",
   "maintenance": "README.md",
@@ -11,7 +11,7 @@
       "title": "系统如何工作",
       "source": "docs/architecture-atlas",
       "route": "index.html",
-      "description": "认识对象、事件和状态，再通过输入路径与机制索引查到实现。旧源码及资源样本保留原核对日期。",
+      "description": "消息、定时任务和状态变化从哪些入口进来，分别读写哪些记录。",
       "navTitle": "系统如何工作"
     },
     {
@@ -19,7 +19,7 @@
       "title": "一次工作如何执行与交付",
       "source": "docs/architecture-atlas/output",
       "route": "output/index.html",
-      "description": "沿接入、Request接纳、Harness执行、用户反馈和结果交付理解一次工作；继续查文件地图与本实例按需读取。",
+      "description": "跟着一条消息看请求接纳、实际执行、补充输入和结果投递。",
       "navTitle": "执行与交付"
     },
     {
@@ -27,12 +27,12 @@
       "title": "记忆如何保存与接续",
       "source": "docs/memory-architecture",
       "route": "memory/index.html",
-      "description": "理解项目、人员、公司归属，按需读取、候选归集、人的反馈与成本边界；已接入与待验证分别说明。",
+      "description": "项目、人员和公司资料各存在哪里，Agent 何时读取，人的纠正怎样更新原记录。",
       "navTitle": "记忆与协作"
     }
   ],
-  "edition": "20261003j",
-  "readingConvention": "正文先讲用户看到的事情；机制、位置、格式和证据在相应章节完整保留，研发细节按需展开。",
+  "edition": "20261003k",
+  "readingConvention": "先看流程和关系图；实现细节在对应位置展开。",
   "pages": [
     {
       "route": "project.html",
@@ -41,39 +41,39 @@
       "sections": [
         [
           "purpose",
-          "这份说明讲什么"
+          "使用与机制"
         ],
         [
           "how-to-read",
-          "两层读法"
+          "从哪里开始"
         ],
         [
           "chapters",
-          "按问题进入章节"
-        ],
-        [
-          "objects",
-          "先认识六个对象"
+          "章节"
         ],
         [
           "mechanisms",
-          "一次工作的完整机制"
+          "工作流程"
+        ],
+        [
+          "objects",
+          "工作对象"
         ],
         [
           "document-files",
-          "文档在哪里、怎样维护"
+          "文档与维护"
         ],
         [
           "newcomer",
-          "从使用走到研发"
+          "问题排查"
         ],
         [
           "improve",
-          "怎样判断完成"
+          "状态标记"
         ],
         [
           "maintain",
-          "后续如何保持一致"
+          "更新说明"
         ]
       ]
     },

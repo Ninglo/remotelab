@@ -1,5 +1,5 @@
 async function renderChapters() {
-  const response = await fetch(new URL('./project.json?v=20261003j', import.meta.url));
+  const response = await fetch(new URL('./project.json?v=20261003k', import.meta.url));
   if (!response.ok) throw new Error('项目目录暂时不可用');
   const project = await response.json();
   const articles = project.chapters.map(chapter => {
@@ -7,7 +7,7 @@ async function renderChapters() {
     const heading = document.createElement('h3');
     const link = document.createElement('a');
     link.href = chapter.route;
-    link.textContent = `${chapter.title} →`;
+    link.textContent = chapter.navTitle || chapter.title;
     heading.append(link);
     const description = document.createElement('p');
     description.textContent = chapter.description;

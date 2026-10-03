@@ -8,8 +8,8 @@
   <link rel="stylesheet" href="./styles.css?v=20260929h">
   <link rel="stylesheet" href="./reading.css?v=20260929h">
   <link rel="stylesheet" href="./situations.css?v=20260929h">
-<link rel="stylesheet" href="./guide.css?v=20261003j">
-<script type="module" src="./guide-shell.js?v=20261003j"></script>
+<link rel="stylesheet" href="./guide.css?v=20261003k">
+<script type="module" src="./guide-shell.js?v=20261003k"></script>
 </head>
 <body data-guide-page="index.html" data-guide-chapter="system">
   <div class="app-shell">
@@ -26,12 +26,12 @@
       </div>
       <div class="side-label">浏览方式</div>
       <nav class="view-nav" aria-label="浏览方式">
-        <a class="nav-button" href="./project.html?v=20261003j" style="text-decoration:none">项目总入口 · 阅读路线 ↗</a>
+        <a class="nav-button" href="./project.html?v=20261003k" style="text-decoration:none">项目总入口 · 阅读路线 ↗</a>
         <button class="nav-button is-active" type="button" data-view="experience"><span>01</span> 事件与状态</button>
         <button class="nav-button" type="button" data-view="paths"><span>02</span> 输入路径</button>
         <button class="nav-button" type="button" data-view="map"><span>03</span> 机制索引</button>
         <button class="nav-button" type="button" data-view="evidence"><span>04</span> 资源与证据</button>
-        <a class="nav-button" href="./output/index.html?v=20261003j" style="text-decoration:none"><span>05</span> 一条消息的执行与交付 ↗</a>
+        <a class="nav-button" href="./output/index.html?v=20261003k" style="text-decoration:none"><span>05</span> 一条消息的执行与交付 ↗</a>
               <a class="nav-button" href="./memory/index.html" style="text-decoration:none"><span>06</span> 记忆与组织协作 ↗</a>
       </nav>
       <div class="side-label map-only">机制区域 <span id="domain-count"></span></div>
@@ -51,33 +51,33 @@
       <section id="experience-view" class="view is-active" aria-labelledby="experience-heading">
         <header id="overview" class="article-hero">
           <div class="eyebrow">REMOTELAB · ARCHITECTURE ATLAS</div>
-          <h2 id="experience-heading">系统如何工作，<br>每一步留下什么状态？</h2>
-          <p class="hero-lede"><strong>消息、Session 状态变化、定时任务、压缩和外部投递，走的是不同分支。</strong>读架构要同时追踪：谁触发、谁判断、哪里执行、写入哪层状态、何时再读，以及用户是否真的看见。</p>
+          <h2 id="experience-heading">系统如何工作</h2>
+          <p class="hero-lede">一条消息、一次定时任务和一次状态变化，会进入不同的处理分支。下面的图把它们与保存的记录连起来；选择具体情况，可以继续查执行位置、读取方式和源码。</p>
           <p class="hero-meta">本站按源码基线 1ab6305d 与本实例已核对的配置和运行样本整理。每种情形都连接用户体验、程序或模型、状态位置、资源与源码；运行事实和待核边界分开标记。</p>
-          <div class="guide-chapter-context"><p><strong>读完这一章：</strong>知道 Session、Request、Run 与投递各负责什么，遇到问题能沿事件找到状态与原因。</p><p><strong>研发查阅：</strong>左侧可切换输入路径、机制索引和资源证据；节点链接到源码。本文保留原图谱基线与日期，历史样本不代表当前实例全量验收。</p><p>内容位于<code>docs/architecture-atlas/</code>的<code>atlas-data.js</code>、<code>situation-data.js</code>、<code>journey-data.js</code>和<code>experience-data.js</code>；网页引用这些原始条目。</p></div><div class="hero-legend"><span><i class="dot code"></i>源码实现</span><span><i class="dot config"></i>实例配置</span><span><i class="dot observed"></i>运行样本</span><span><i class="dot unknown"></i>待核验</span></div>
+          <details data-technical class="guide-chapter-context"><summary>文件与源码</summary><p>内容位于<code>docs/architecture-atlas/</code>的<code>atlas-data.js</code>、<code>situation-data.js</code>、<code>journey-data.js</code>和<code>experience-data.js</code>；网页引用这些原始条目。</p></details><div class="hero-legend"><span><i class="dot code"></i>源码实现</span><span><i class="dot config"></i>实例配置</span><span><i class="dot observed"></i>运行样本</span><span><i class="dot unknown"></i>待核验</span></div>
           <div class="state-question"><strong>拿“Session 发生重大变化”举例</strong><ol><li>原对话和当前工作摘要是否更新？</li><li>另一次长期记忆审阅是否真的写入文件？</li><li>下一次工作是否读取并使用了它？</li></ol><p>这是三个需要分别核对的事件。一次模型答复、一个 Session 字段和一条跨会话记忆不能画成同一个方框。</p><button type="button" data-case="material-session-change">看代码中的这条分支 ↗</button></div>
           <div id="group-overview" class="group-overview" aria-label="情形总览"></div>
         </header>
         <section id="state-section" class="article-section" aria-labelledby="state-title">
-          <div class="section-heading"><span>PART A</span><h2 id="state-title">状态放在哪里，下一次谁会读取</h2></div>
+          <div class="section-heading"><span>PART A</span><h2 id="state-title">持久状态与读取</h2></div>
           <p class="section-lede">这里是架构的坐标。Session 历史、当前工作状态、执行记录、长期记忆、项目主账和外部投递是不同的存储层。点击一层，查看写入条件、读取时机与源码。</p>
           <div id="state-layers" class="state-layers"></div>
         </section>
         <section id="situations-section" class="article-section" aria-labelledby="situations-title">
-          <div class="section-heading"><span>PART B</span><h2 id="situations-title">各种情况，逐一沿状态追踪</h2></div>
+          <div class="section-heading"><span>PART B</span><h2 id="situations-title">不同情况的处理分支</h2></div>
           <p class="section-lede">每个情形先给结论；展开后对照用户看到的结果、判断者、读写层、成本、未来复用和代码。读写标记可跳回上面的状态层。</p>
           <div id="situation-list" class="situation-list"></div>
           <details class="comparison-appendix"><summary>展开“情形 × 状态层”交叉矩阵 <span aria-hidden="true">⌄</span></summary><div id="situation-matrix" class="situation-matrix"></div></details>
         </section>
         <section id="journey-section" class="article-section" aria-labelledby="journey-title">
-          <div class="section-heading"><span>PART C</span><h2 id="journey-title">再看一次输入的具体过程</h2></div>
+          <div class="section-heading"><span>PART C</span><h2 id="journey-title">一次输入的处理过程</h2></div>
           <p class="section-lede">这条时间线适合追某次消息或日报从发起到返回的顺序。上面的场景和状态层说明它为什么不能代替系统全貌。</p>
           <div id="journey-route-tabs" class="journey-route-tabs" role="tablist" aria-label="选择输入路径"></div>
           <div id="journey-lead" class="journey-lead"></div>
           <div id="journey-stages" class="journey-stages"></div>
         </section>
         <section id="longer-loops" class="article-section" aria-labelledby="loops-title">
-          <div class="section-heading"><span>PART D</span><h2 id="loops-title">跨轮流程继续展开</h2></div>
+          <div class="section-heading"><span>PART D</span><h2 id="loops-title">跨轮工作</h2></div>
           <p class="section-lede">记忆、日报和 Skill 并非每条消息都会依次经过的步骤。它们有自己的触发条件、读写位置和核验边界。</p>
           <div id="loop-preview" class="loop-preview"></div>
         </section>
@@ -85,7 +85,7 @@
       </section>
 
       <section id="paths-view" class="view" aria-labelledby="paths-heading">
-        <div class="page-heading"><div><div class="eyebrow">SAME STEPS, DIFFERENT ROUTES</div><h2 id="paths-heading">入口之间在哪里分叉</h2><p>先读飞书新旧规则的关键差异，再按用户动作展开场景。完整阶段表放在下方，便于定位每一步的程序、模型和持久状态。</p></div></div>
+        <div class="page-heading"><div><div class="eyebrow">SAME STEPS, DIFFERENT ROUTES</div><h2 id="paths-heading">输入路径</h2><p>先读飞书新旧规则的关键差异，再按用户动作展开场景。完整阶段表放在下方，便于定位每一步的程序、模型和持久状态。</p></div></div>
         <div id="feishu-rules"></div>
         <details class="comparison-appendix"><summary>展开六条路径的完整阶段对照表 <span aria-hidden="true">⌄</span></summary><div id="journey-matrix" class="journey-matrix"></div></details>
         <div class="resource-heading"><div class="eyebrow">SCENARIO DETAIL</div><h3>按用户动作继续展开</h3></div>
@@ -97,7 +97,7 @@
 
       <section id="map-view" class="view" aria-labelledby="map-heading">
         <div class="page-heading">
-          <div><div class="eyebrow">MECHANISM INDEX</div><h2 id="map-heading">按责任找到实现</h2><p>这里是机制索引，便于定位代码。机制之间的顺序以“消息主线”为准。</p></div>
+          <div><div class="eyebrow">MECHANISM INDEX</div><h2 id="map-heading">机制与源码</h2><p>这里是机制索引，便于定位代码。机制之间的顺序以“消息主线”为准。</p></div>
           <div class="heading-stat"><strong id="node-count">—</strong><span>个可展开机制</span></div>
         </div>
         <div class="boundary-note"><strong>阅读原则</strong><span>同一机制可以出现在多个阶段；点击节点查看责任、输入输出与源码。源码存在、实例配置和实际运行分别标记。</span></div>
@@ -106,7 +106,7 @@
       </section>
 
       <section id="evidence-view" class="view" aria-labelledby="evidence-heading">
-        <div class="page-heading"><div><div class="eyebrow">RESOURCE & EVIDENCE</div><h2 id="evidence-heading">资源和证据怎么核算</h2><p>每步成本见主线；这里汇总当前实例的目录和 Run 用量，再保留尚未闭合的判断。</p></div></div>
+        <div class="page-heading"><div><div class="eyebrow">RESOURCE & EVIDENCE</div><h2 id="evidence-heading">资源与依据</h2><p>每步成本见主线；这里汇总当前实例的目录和 Run 用量，再保留尚未闭合的判断。</p></div></div>
         <div class="meaning-note"><strong>两个不同的 token</strong><p><b>模型 token</b> 是输入、缓存输入和输出的用量；<b>飞书应用 access token</b> 是 API 授权凭据。固定程序本身不消耗模型 token；程序若调用 Jev 或 Harness 则另计，发飞书消息还使用接口配额。</p></div>
         <div class="resource-heading"><div class="eyebrow">RESOURCE SNAPSHOT</div><h3>当前存储和模型用量</h3><p>这是一次测量快照，不是单条消息的成本。逐步归因请回到消息主线。</p></div>
         <div id="resource-summary"></div>
@@ -123,6 +123,6 @@
       <div class="detail-empty"><div class="empty-glyph">◎</div><h2>选择一个机制</h2><p>点击左侧地图中的节点，查看它负责什么、连接到哪里，以及当前证据和源码入口。</p></div>
     </aside>
   </div>
-  <script type="module" src="./app.js?v=20261003j"></script>
+  <script type="module" src="./app.js?v=20261003k"></script>
 </body>
 </html>

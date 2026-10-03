@@ -1205,3 +1205,11 @@ settings are separate from verified live deployment and delivery.
 - Direction: update the existing guide and publication, using Anthropic Engineering and Claude Blog as visual references. Keep a shared navigation, warm reading surface and restrained hierarchy; explain the user-facing event before its implementation, with relevant technical detail progressively disclosed.
 - Canonical maintenance: `docs/architecture-atlas/README.md` defines the guide's writing and visual rules. `project.json` owns chapter/page routing, and the common guide stylesheet and shell serve all five reading and appendix pages. Existing mechanism data and private instance records retain their own sources and dates.
 - Acceptance: verify the same navigation and typography across chapters, original anchors and diagrams, mobile overflow, keyboard and no-script reading, explicit-only private requests, original-slug publication and a restorable source/site backup. Documentation delivery does not establish runtime feature acceptance.
+
+## 2026-10-03 — System guide tone and RemoteLab styling correction
+
+- Follow-up feedback: the preceding redesign imitated Claude too closely, and its prose felt mechanical. The user requested a writing skill to edit it, then specified RemoteLab styling, Smiley Sans, and more flowcharts and mind maps for information flow.
+- Revision: use the workbench light-theme tokens and locally hosted official Smiley Sans v2.0.1. Rewrite chapter openings and headings with the Humanizer review method; explain actors and actions, trim repeated instructions and summaries, and keep implementation details with their original sources.
+- Diagrams: show the main work flow with separate in-run feedback and memory continuation, and a concept map for Session, Request, Run, Harness, Connector and Person. Preserve existing interactive chapter diagrams and technical disclosures.
+- Canonical rule: the 20261003k revision in `docs/architecture-atlas/README.md` supersedes the preceding visual reference. The prior feedback entry records the earlier decision, while current maintenance follows this revision.
+- Acceptance: inspect actual font loading and chart labels, desktop/mobile reading, diagram controls, original section anchors, public asset readback and restoration of the same published site. Runtime feature acceptance remains separate.

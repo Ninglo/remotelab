@@ -3,93 +3,71 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
-<meta name="description" content="RemoteLab 系统说明：先理解一次工作，再查文件位置、执行机制、记忆归属与源码。普通读者和研发读者使用同一套说明。">
-<title>RemoteLab · 系统说明</title>
-<link rel="stylesheet" href="./project.css?v=20261003j">
-<link rel="stylesheet" href="./guide.css?v=20261003j">
-<script type="module" src="./project-home.js?v=20261003j"></script>
-<script type="module" src="./guide-shell.js?v=20261003j"></script>
+<meta name="description" content="RemoteLab 使用与机制：用流程图认识消息、执行和交付，查阅文件位置、记忆和源码。">
+<title>RemoteLab · 使用与机制</title>
+<link rel="stylesheet" href="./project.css?v=20261003k">
+<link rel="stylesheet" href="./guide.css?v=20261003k">
+<script type="module" src="./project-home.js?v=20261003k"></script>
+<script type="module" src="./guide-shell.js?v=20261003k"></script>
 </head>
 <body data-guide-page="project.html" data-guide-chapter="guide">
 <main id="main">
 <header class="hero" id="purpose">
-<p class="eyebrow">阅读指南 / 统一说明版 · 2026-10-03</p>
-<h1>把事情讲明白，<br>也把系统讲清楚。</h1>
-<p class="lede">RemoteLab 把对话、机器执行和持续工作的记录接在一起。这份说明从你看到的事情出发，继续解释谁负责、文件在哪里，以及下一次怎样接续。</p>
-<p>你可以只沿正文理解工作，也可以展开交接数据、存储格式、源码和验收依据。两种读法使用同一份内容：解释不会停在比喻，技术细节也不会取代事情本身。</p>
-<p class="metadata">本轮统一的是说明结构与 UI。各机制沿用自己的来源、核对日期和实现状态；网站修订日期不代表所有运行能力重新验收。</p>
+<p class="eyebrow">RemoteLab 文档</p><h1>使用与机制</h1>
+<p class="lede">在 RemoteLab 里，你通过对话把工作交给 Agent。它在真实机器上使用工具，保留工作记录，再把结果送回你发起任务的地方。</p>
+<p>一次工作可能从“帮我整理这份资料”开始，中途又加了一个条件。你离开页面以后，还要能回来查看进展和结果。沿这条工作路径往下看，可以找到消息记录、实际执行和交付各自的位置。</p>
 </header>
-<section id="how-to-read">
-<h2><span class="part">01 / 两层读法</span>先知道发生什么，再知道怎样做到。</h2>
-<p>每个主题的正文先回答一个实际问题，例如“发来的消息有没有被收下”“任务还在执行吗”“写进记忆后，下次会不会使用”。然后按理解所需的顺序解释触发条件、负责组件、输入输出、先后与并行、结果和例外。</p>
-<p>涉及实现时，展开项保留字段、文件、接口、调用关系和来源。左侧的“展开研发细节”可一次打开这类说明；“逐节阅读”恢复按需展开。功能演示、假设试算和真实记录仍各自标明性质。</p>
-<details data-technical><summary>研发读者应从说明里查到哪些信息？</summary><div class="detail-body"><p>从用户动作追到 Request 与 Run，从组件职责追到输入输出，从持久状态追到文件或接口；还要能分清程序写入、模型生成、人的确认和下一轮读取。源码链接使用该条目的核对基线；复核运行状态时，另查实例 build-info、配置、业务记录与实际回执。</p><p>本文中的<code>配置目录</code>和<code>记忆目录</code>是逻辑位置。通常分别为<code>~/.config/remotelab</code>与<code>~/.remotelab/memory</code>，可由实例环境覆盖。公开网页解释结构；完整实例路径和个人资料只在登录后主动读取。</p></div></details>
-</section>
-<section id="chapters">
-<h2><span class="part">02 / 按问题进入</span>三个章节，一条共同主线。</h2>
+<section id="how-to-read"><h2>从哪里开始</h2>
+<p>第一次看，先顺着下面的工作流程走一遍，再进入执行章。排查问题时，可以直接用章节目录找相应环节。需要字段、接口或源码时，打开段落旁的展开项；左侧的“展开研发细节”能一次打开它们。</p>
+<details data-technical><summary>研发查阅与实例路径</summary><div class="detail-body"><p>说明里的源码链接对应各条目自己的核对基线。查看当前运行状态，还要读实例的 build-info、配置、业务记录和投递回执。各章保留自己的日期；网页改版没有重新验证所有运行功能。</p><p><code>配置目录</code>和<code>记忆目录</code>通常分别是<code>~/.config/remotelab</code>与<code>~/.remotelab/memory</code>，实例环境可以覆盖。完整实例路径和私人资料在登录后主动读取。</p></div></details></section>
+<section id="chapters"><h2>章节</h2>
 <div id="chapter-list" class="chapter-list">
-<article><h3><a href="./index.html?v=20261003j">系统如何工作 →</a></h3><p>认识对象、事件和状态；按输入路径与机制索引找到实现。</p></article>
-<article><h3><a href="./output/index.html?v=20261003j">一次工作如何执行与交付 →</a></h3><p>沿消息接入、任务执行、运行中反馈和结果交付继续查到记忆。</p></article>
-<article><h3><a href="./memory/index.html?v=20261003j">记忆如何保存与接续 →</a></h3><p>项目、人员、公司分别存什么，下一轮怎样读取，人的纠正如何回来。</p></article>
-</div>
-<p class="small">只查文件：去<a href="./output/index.html?v=20261003j#memory-files">完整文件地图</a>。只查当前实例：去<a href="./output/index.html?v=20261003j#instance-memory">登录后的按需读回</a>。目标交互与可操作示意保留在<a href="./output/reference.html?v=20261003j">演示附录</a>，不会混成当前运行事实。</p>
-</section>
-<section id="objects">
-<h2><span class="part">03 / 先认识对象</span>对话、请求、执行和交付各有职责。</h2>
-<p>这些名字描述工作的不同部分。发来一条消息，可能只被记录，也可能产生一次执行；一次执行结束，结果还需要验证和交付。</p>
-<dl class="guide-terms">
-<dt>Session · 工作话题</dt><dd>持续保存一段工作的对话、状态和恢复入口。它可以包含多次输入、多次执行；它的创建者不能代替本轮消息作者。</dd>
-<dt>Request · 一次请求</dt><dd>把本次输入及其来源、回复位置、执行选项固定下来。消息已收录与请求已被执行调度接纳，是两个不同的交接点。</dd>
-<dt>Run · 一次执行</dt><dd>运行 Harness 和工具，留下状态、日志、结果与产物。Run 结束只证明这次执行结束，任务是否完成要看实际验收。</dd>
-<dt>Harness · 执行工具</dt><dd>例如所选的 Codex、Claude 或 Pi。它理解任务、规划、使用工具并判断验收；RemoteLab 提供传输、机器运行和持久上下文。</dd>
-<dt>Connector · 外部接入</dt><dd>连接飞书等来源，接收和路由消息，再把结果送回原请求的位置。接收记录、Session 关联和外部投递分别留痕。</dd>
-<dt>Person · 已核人员</dt><dd>用于本轮作者归因、个人视图和相应偏好选择。它不是 Session 的访问隔离；共享机器用户名也不是人的身份凭据。</dd>
-</dl>
-</section>
-<section id="mechanisms">
-<h2><span class="part">04 / 完整机制</span>一次工作，沿六个交接点走。</h2>
-<ol class="guide-process">
-<li><strong>收下输入，留下来源。</strong><p>网页或连接器接收消息，保存相应事件和来源。群快判、命令或不同入口有各自分支；不是每条消息都会启动模型。</p></li>
-<li><strong>关联工作话题，接纳可执行请求。</strong><p>先区分写入 Session 历史与提交 Request。执行选项、原输入及结果应回复的位置随请求保存，避免后来输入改变旧结果的去向。</p></li>
-<li><strong>Harness 理解任务，使用机器和工具。</strong><p>Run 独立推进。同步交接需要等当前回执；异步分支继续推进，但仍有自己的依赖、失败记录和完成条件。</p></li>
-<li><strong>处理补充输入与需要你回答的问题。</strong><p>停止、插问、补充条件和问题回答是不同意图。输入被可靠接纳，还需要实际执行采用它，再检查受影响的结果。</p></li>
-<li><strong>验证工作，再交付结果。</strong><p>任务卡表示工作验收，投递回执表示结果送达，Run 状态表示执行状态。三者可以不同，不能互相替代。</p></li>
-<li><strong>整理候选，按用途保存，下一轮按需读。</strong><p>原始过程留在来源；已确认的项目事实回主账，人员偏好与公司背景各回原档案。候选仍待核，指针帮助下一次找到相关内容。</p></li>
-</ol>
-<p>具体数据、等待条件和分支见<a href="./output/index.html?v=20261003j#journey">交互时序</a>；不同事件怎样修改状态，见<a href="./index.html?v=20261003j#state-section">状态地图</a>。</p>
-</section>
-<section id="document-files">
-<h2><span class="part">05 / 位置、形式与更新机制</span>说明有原件，网站是统一生成的阅读版本。</h2>
-<p>下面列的是这份说明项目的维护位置。运行事件、业务主账和私有档案有各自的位置，继续查<a href="./output/index.html?v=20261003j#memory-files">业务文件地图</a>；不会因为统一网站就搬进公开文档。</p>
-<div class="guide-file-map" tabindex="0" role="region" aria-label="说明文件位置，可横向滚动"><table><thead><tr><th>用途与形式</th><th>唯一维护位置</th><th>如何变成阅读内容</th></tr></thead><tbody>
-<tr><td>目录与通用规范<br>JSON / Markdown</td><td><code>docs/architecture-atlas/project.json</code><code>docs/architecture-atlas/README.md</code></td><td>目录登记章节和稳定路径；README规定写法、版式、发布与恢复。全站引用同一目录。</td></tr>
-<tr><td>阅读指南<br>HTML</td><td><code>docs/architecture-atlas/project.html</code></td><td>解释读法、概念和维护入口。发布后仍是<code>project.html</code>。</td></tr>
-<tr><td>系统与状态<br>JavaScript 数据 / HTML</td><td><code>docs/architecture-atlas/{atlas,situation,journey,experience}-data.js</code></td><td>同一条目生成场景、状态和机制视图；ID把相关解释连起来。发布到<code>index.html</code>。</td></tr>
-<tr><td>执行与交付<br>JavaScript 数据 / HTML</td><td><code>docs/architecture-atlas/output/flow-data.js</code><code>output/index.html</code></td><td>数据驱动时序、交接说明和源码链接；目标演示在同目录<code>reference.html</code>，单独标明状态。</td></tr>
-<tr><td>记忆与协作<br>JavaScript 数据 / Markdown</td><td><code>docs/memory-architecture/guide-data.js</code><code>docs/memory-architecture/reader-data.js</code></td><td>记忆章和消息章引用同一内容源。<code>render-reference.mjs</code>生成记忆参考文本，构建时映射到<code>memory/</code>。</td></tr>
-<tr><td>通用 UI<br>CSS / JavaScript 模板</td><td><code>docs/architecture-atlas/guide.css</code><code>guide-shell-template.js</code><code>guide-shell.js</code></td><td>统一颜色、字体、间距、导航和研发细节控制。构建时写入静态导航；浏览器仅增强阅读交互。</td></tr>
-<tr><td>构建、发布与备份<br>脚本 / 版本清单 / 校验和</td><td><code>docs/architecture-atlas/assemble-site.mjs</code><code>实例受控位置/project-backups/&lt;版本&gt;/</code></td><td>组合各章为一个发布包，覆盖原静态地址；备份同时保留源码和站点，并验证可重新构建。发布副本不直接改。</td></tr>
+<article><h3><a href="./index.html?v=20261003k">系统如何工作</a></h3><p>消息、定时任务和状态变化从哪些入口进来，分别读写哪些记录。</p></article>
+<article><h3><a href="./output/index.html?v=20261003k">执行与交付</a></h3><p>跟着一条消息看请求接纳、实际执行、补充输入和结果投递。</p></article>
+<article><h3><a href="./memory/index.html?v=20261003k">记忆与协作</a></h3><p>项目、人员和公司资料各存在哪里，Agent 何时读取，人的纠正怎样更新原记录。</p></article></div>
+<p class="small">查路径可以直接打开<a href="./output/index.html?v=20261003k#memory-files">文件地图</a>；查当前资料可以在<a href="./output/index.html?v=20261003k#instance-memory">登录后读回本实例记录</a>。<a href="./output/reference.html?v=20261003k">交互演示</a>单独标明现状与目标。</p></section>
+<section id="mechanisms"><h2>一次工作怎样进行</h2>
+<p>从输入到交付，先看下面的主流程。图中的方框表示职责，箭头表示交接顺序；详细分支和等待条件在<a href="./output/index.html?v=20261003k#journey">执行章的时序图</a>里。</p>
+<figure class="guide-workflow" aria-label="一次工作的流程图"><ol class="guide-process">
+<li><h3>接收输入</h3><p>网页或连接器保存消息和来源。群快判、命令等入口有自己的分支，有些消息只记录，不启动模型。</p></li>
+<li><h3>接纳请求</h3><p>先关联 Session，再提交可执行的 Request。原输入、执行选项和回复位置随请求保存。</p></li>
+<li><h3>执行工作</h3><p>Run 记录一次执行；所选 Harness 理解任务、使用机器和工具。同步交接等待回执，异步分支按各自依赖继续推进。</p></li>
+<li><h3>验证与交付</h3><p>检查工作结果，再送回请求指定的位置。任务卡记录验收情况，投递回执记录是否送达；Run 则记录执行状态。</p></li></ol>
+<div class="guide-feedback-branch"><span class="guide-branch-label">运行中</span><p>停止、插问、补充条件和问题回答会送回正在执行的工作。接收成功后，还要确认执行采用了新要求，并检查受影响的结果。</p><a href="./output/index.html?v=20261003k#feedback">查看输入分支</a></div>
+<div class="guide-memory-branch"><span class="guide-branch-label">接续工作</span><p>原始过程留在来源。经确认的项目事实回主账，人员偏好与公司背景回各自档案；待核候选保留原状态。下一次按任务需要沿指针读取。</p><a href="./memory/index.html?v=20261003k#reading">查看记忆读取</a></div>
+<figcaption>执行中可以继续交流。任务验收、执行结束和结果送达各有记录，查问题时要分别核对。</figcaption></figure>
+<p>事件怎样改变持久状态，见<a href="./index.html?v=20261003k#state-section">状态地图</a>。</p></section>
+<section id="objects"><h2>这些名字指什么</h2>
+<p>流程里会遇到下面几个名字。Session 可以包含多次 Request 和 Run；Connector、Harness 和 Person 则说明消息从哪里来、由谁执行、是谁提出要求。</p>
+<figure class="guide-mindmap" aria-label="RemoteLab 工作对象关系图"><div class="guide-mindmap-root">一次工作</div><dl class="guide-terms">
+<div><dt>Session · 工作话题</dt><dd>保存持续工作的对话、状态和恢复入口。话题创建者与本轮消息作者可能是不同的人。</dd></div>
+<div><dt>Request · 一次请求</dt><dd>固定本次输入、来源、回复位置和执行选项。写入消息历史与接纳执行请求是两个步骤。</dd></div>
+<div><dt>Run · 一次执行</dt><dd>保存执行状态、日志、结果和产物。执行结束后，仍需核对任务验收。</dd></div>
+<div><dt>Harness · 执行工具</dt><dd>例如 Codex、Claude 或 Pi。它理解任务、规划、使用工具和验收；RemoteLab 提供传输、机器运行与持久上下文。</dd></div>
+<div><dt>Connector · 外部接入</dt><dd>接入飞书等消息来源，路由输入并把结果送回。接收、Session 关联和外部投递分别留记录。</dd></div>
+<div><dt>Person · 人员身份</dt><dd>用于作者归因、个人视图和对应偏好。共享机器用户名不能证明作者身份；Person 分类也没有给 Session 增加访问隔离。</dd></div></dl></figure></section>
+<section id="document-files"><h2>文档位置与更新方式</h2>
+<p>说明的源码在仓库中，网站由这些文件构建。修改时回到下面的维护位置。运行事件、业务主账和私人档案另见<a href="./output/index.html?v=20261003k#memory-files">业务文件地图</a>。</p>
+<div class="guide-file-map" tabindex="0" role="region" aria-label="说明文件位置，可横向滚动"><table><thead><tr><th>内容与格式</th><th>维护位置</th><th>读取与更新</th></tr></thead><tbody>
+<tr><td>目录与规范<br>JSON / Markdown</td><td><code>docs/architecture-atlas/project.json</code><code>docs/architecture-atlas/README.md</code></td><td>目录登记章节和稳定路径。README保存写法、样式、发布与恢复约定。</td></tr>
+<tr><td>阅读入口<br>HTML</td><td><code>docs/architecture-atlas/project.html</code></td><td>说明概念和阅读路线，发布后路径仍为<code>project.html</code>。</td></tr>
+<tr><td>系统与状态<br>JavaScript 数据 / HTML</td><td><code>docs/architecture-atlas/{atlas,situation,journey,experience}-data.js</code></td><td>数据条目生成场景、状态和机制视图；稳定ID连接相关解释，入口为<code>index.html</code>。</td></tr>
+<tr><td>执行与交付<br>JavaScript 数据 / HTML</td><td><code>docs/architecture-atlas/output/flow-data.js</code><code>output/index.html</code></td><td>时序、交接说明和源码链接引用同一数据源。目标演示在<code>reference.html</code>，与现状分开标注。</td></tr>
+<tr><td>记忆与协作<br>JavaScript 数据 / Markdown</td><td><code>docs/memory-architecture/guide-data.js</code><code>docs/memory-architecture/reader-data.js</code></td><td>记忆章和执行章引用同一内容源。<code>render-reference.mjs</code>生成参考文本，构建时映射到<code>memory/</code>。</td></tr>
+<tr><td>界面与字体<br>CSS / JavaScript / WOFF2</td><td><code>docs/architecture-atlas/guide.css</code><code>guide-shell-template.js</code><code>guide-shell.js</code><code>fonts/</code></td><td>全站复用样式和导航。得意黑随站点托管；构建器写入静态目录，浏览器增强展开和定位。</td></tr>
+<tr><td>构建与恢复<br>脚本 / 版本清单 / 校验和</td><td><code>docs/architecture-atlas/assemble-site.mjs</code><code>实例受控位置/project-backups/&lt;版本&gt;/</code></td><td>组合各章后覆盖原网站。备份保留源码和站点，并验证能够重新构建。发布副本不直接改。</td></tr>
 </tbody></table></div>
-<details data-technical><summary>从一次编辑到发布，具体经过哪些步骤？</summary><div class="detail-body"><ol><li>修改原内容源；生成型README运行对应<code>render-reference.mjs</code>更新。普通维护README直接编辑。</li><li>运行<code>node docs/architecture-atlas/assemble-site.mjs &lt;空输出目录&gt;</code>。它复制允许的静态资产，重写外置记忆章的相对路径，并从同一目录生成五个页面的通用导航。</li><li>检查链接、章节交互、桌面和手机阅读、无脚本导航与公开信息边界，再按仓库main／CI规则交付。</li><li>使用<code>remotelab publish static --source &lt;输出目录&gt; --slug remotelab-architecture-atlas --replace --json</code>覆盖原网站，匿名回读实际页面。</li><li>保留<code>source/</code>、<code>site/</code>、<code>manifest.json</code>、<code>SHA256SUMS</code>与<code>RESTORE.md</code>；从备份恢复后重新构建，核对输出一致。</li></ol><p>JavaScript 数据文件是说明的数据源，不是记忆数据库。Markdown是可维护、可供Agent阅读的文本，JSON是结构化配置，JSONL是逐行事件流；文件格式与项目／人员／公司归属是不同的问题。</p></div></details>
-</section>
-<section id="newcomer">
-<h2><span class="part">06 / 从使用走到研发</span>用一个真实问题，走完整条路。</h2>
-<p>新读者先把“一条消息”走完，知道接入、执行和交付分别发生什么；再看系统总览里的状态位置；最后看记忆怎样让后续工作接续。维护者可以反过来，从具体问题和文件定位开始。</p>
-<ol class="route-list"><li><strong><a href="./output/index.html?v=20261003j#journey">消息是否收下、执行是否开始？</a></strong><span>沿两次交接查Request和Run，不把收录当成执行。</span></li><li><strong><a href="./output/index.html?v=20261003j#output">工作完成，为什么还没看到结果？</a></strong><span>分别查任务验收与投递回执，保留原请求的回复位置。</span></li><li><strong><a href="./memory/index.html?v=20261003j#reading">这件事记住了，下一次会不会读？</a></strong><span>查正常指针、当前身份和项目范围，再核对实际读取。</span></li></ol>
-</section>
-<section id="improve">
-<h2><span class="part">07 / 事实与验收</span>状态要说明“证明到了哪一步”。</h2>
-<p><strong>源码已核</strong>证明代码里有实现；<strong>配置已核</strong>证明某实例某时刻的设置；<strong>运行样本</strong>证明一条具体链路发生过。目标方案和待核项继续明确标注，不因图画得完整就变成上线事实。</p>
-<p>反馈推动改进：先描述用户遇到的事情，再沿链路定位责任，修改后验证受影响部分，最后更新同一章。旧样本保留日期，被替代的判断保留原因；任务状态和业务事实仍回原系统维护。</p>
-<details data-technical><summary>哪些验证需要分开做？</summary><div class="detail-body"><p>代码测试、部署版本、真实输入、工具或业务结果、外部回执，以及用户是否按结果完成目的，分别有证据。只改说明网站时，检查文档和网页的交付；不把它说成无关运行功能的验收。</p></div></details>
-</section>
-<section id="maintain">
-<h2><span class="part">08 / 持续维护</span>后续更新，沿同一套写法和 UI。</h2>
-<p>已有主题更新原章；确需独立主题，登记到同一目录、复用通用 UI、进入同一发布包和备份。术语首次出现解释含义，正文先说明事情，研发细节继续完整保留。</p>
-<p>通用规范维护在<a href="./README.md">项目README</a>，通用样式维护在<code>guide.css</code>。各章自己的样式只承接图、表和演示布局，不再另定一套颜色、标题或导航。</p>
-<p class="small">视觉参考：<a href="https://www.anthropic.com/engineering" target="_blank" rel="noopener">Anthropic Engineering</a>与<a href="https://claude.com/blog" target="_blank" rel="noopener">Claude Blog</a>。采用暖纸色、清晰文字层级、克制分隔和留白；使用本地字体，不依赖品牌字体或外部字体请求。</p>
-</section>
-<footer class="guide-footer">RemoteLab 系统说明 · 一份内容，两层读法，持续核对。<a href="#purpose">回到开头 ↑</a></footer>
-</main>
-</body>
-</html>
+<details data-technical><summary>编辑、发布和恢复的具体步骤</summary><div class="detail-body"><ol><li>修改原内容源。生成型README用对应<code>render-reference.mjs</code>更新；维护规范README直接编辑。</li><li>运行<code>node docs/architecture-atlas/assemble-site.mjs &lt;空输出目录&gt;</code>。它复制允许的静态文件，调整外置记忆章的相对路径，再从目录生成五个页面的导航。</li><li>检查链接、图表交互、桌面与手机阅读、无脚本导航和公开信息范围。按仓库main／CI规则交付源码。</li><li>运行<code>remotelab publish static --source &lt;输出目录&gt; --slug remotelab-architecture-atlas --replace --json</code>更新原网站，然后匿名回读页面。</li><li>备份<code>source/</code>、<code>site/</code>、<code>manifest.json</code>、<code>SHA256SUMS</code>与<code>RESTORE.md</code>。从备份源码重新构建，检查输出一致。</li></ol><p>JavaScript 数据文件保存说明条目，不是记忆数据库。Markdown适合维护可读文字；JSON保存结构化配置；JSONL保存逐行事件。文件格式与项目、人员、公司等业务归属是不同维度。</p></div></details></section>
+<section id="newcomer"><h2>遇到问题时怎么查</h2><ul class="guide-questions">
+<li><a href="./output/index.html?v=20261003k#journey">消息发出后没有动静</a>：先看输入是否收录，再查 Request 是否被接纳、Run 是否开始。</li>
+<li><a href="./output/index.html?v=20261003k#output">工作做完了，却没看到结果</a>：核对任务验收和投递回执，检查结果应回复的位置。</li>
+<li><a href="./memory/index.html?v=20261003k#reading">明明记过，下次还是没用上</a>：查读取入口、当前身份和项目范围，再看本轮是否读过正文。</li></ul></section>
+<section id="improve"><h2>怎样看待状态标记</h2>
+<p>“源码已核”说明代码中有实现，“配置已核”说明某个实例当时有这项设置，“运行样本”说明一个具体案例发生过。目标方案和待核项保留各自标记，不能从一张完整的图推断功能已经上线。</p>
+<p>实际使用发现问题，就沿对应环节修正。旧样本保留日期，被替代的判断保留修改原因。任务状态和业务事实仍在原系统维护。</p>
+<details data-technical><summary>验收时分别需要哪些证据</summary><div class="detail-body"><p>代码测试、部署版本、真实输入、工具或业务结果、外部回执，以及用户是否达成目的，各有对应证据。说明网站的检查覆盖文档与网页交付，不能替代运行功能的验收。</p></div></details></section>
+<section id="maintain"><h2>维护这份说明</h2>
+<p>已有主题修改原章。新增主题登记到同一目录，使用公共样式和导航，进入同一发布包与备份。API、安装和运维资料继续在原权威文档维护，由这里链接过去。</p>
+<p>写作和界面约定见<a href="./README.md">项目README</a>。<code>guide.css</code>负责全站样式，各章自己的CSS负责图、表和演示内部布局。字体来源与许可见<a href="./fonts/README.md">得意黑说明</a>。</p></section>
+<footer class="guide-footer">RemoteLab 文档 <a href="#purpose">回到顶部</a></footer>
+</main></body></html>
