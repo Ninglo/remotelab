@@ -6,26 +6,53 @@
   <meta name="color-scheme" content="light">
   <meta name="description" content="RemoteLab 记忆读取、归集与多人多项目治理的交互说明。区分当前机制和后续目标。">
   <title>RemoteLab · 记忆与组织协作</title>
-  <link rel="stylesheet" href="./style.css">
-  <script type="module" src="./app.js"></script>
+  <link rel="stylesheet" href="./style.css?v=2.0">
+  <script type="module" src="./app.js?v=2.0"></script>
 </head>
-<body data-guide-id="remotelab-memory-governance-v1">
-  <a class="skip" href="#reading">跳到读取关系图</a>
+<body data-guide-id="remotelab-memory-governance-v2">
+  <a class="skip" href="#architecture">跳到方案总图</a>
   <header class="top"><a class="brand" href="#top">RemoteLab <span>架构说明</span></a><a class="plain-link" href="./README.md">Agent 参考文本 ↗</a></header>
   <main id="top">
     <section class="hero">
-      <div class="eyebrow">记忆治理 / 共同的目标</div>
-      <h1>记住工作，<br>形成组织认识。</h1>
+      <div class="eyebrow">记忆治理 v2 / 从一次工作到项目共识</div>
+      <h1>每次工作有来处，<br>每个项目有共识。</h1>
       <p id="goal" class="lead">让 Agent 在多人、多项目、多信源的工作中形成可追溯的组织认识，并从同一份认识生成项目与个人视图。</p>
       <div class="hero-meta"><span class="badge">现状已核实</span><span class="badge proposed">治理方案待实施</span><span id="version" class="muted"></span></div>
     </section>
     <nav class="toc" aria-label="说明导航">
-      <a href="#reading">01 开工怎么读</a><a href="#collecting">02 收尾怎么归集</a><a href="#layers">03 分层怎么治理</a><a href="#organization">04 组织协作目标</a><a href="#evidence">05 依据与维护</a>
+      <a href="#architecture">01 方案总图</a><a href="#storage">02 存在哪里</a><a href="#scope">03 归哪个项目</a><a href="#reading">04 开工怎么读</a><a href="#classification">05 什么存到哪里</a><a href="#collecting">06 如何形成共识</a><a href="#organization">07 如何实施</a><a href="#evidence">08 依据与维护</a>
     </nav>
     <div id="findings" class="finding-row"></div>
+    <section id="architecture" class="section">
+      <div class="section-heading"><div><div class="eyebrow">01 / 方案的骨架</div><h2>索引带路，项目记忆汇总，细节沿指针追溯。</h2></div><span class="badge proposed">本次方案 · 待实施</span></div>
+      <p class="intro">保留原有指针结构。讨论群、干活群与个人 Session 是来源，话题约定留在话题；项目形成一份共同认识，日报和不同视图从它派生。个人、公司与操作方法按用途引用。</p>
+      <div class="diagram-shell"><div id="architecture-graph" class="graph" aria-label="记忆治理方案总图"></div></div>
+      <div id="architecture-detail" class="node-detail" aria-live="polite"></div>
+      <div id="principles" class="editorial-list subsection"></div>
+    </section>
+    <section id="storage" class="section">
+      <div class="section-heading"><div><div class="eyebrow">02 / 存储地图</div><h2>一个 Session、一个群，分别留下什么？</h2></div></div>
+      <p class="intro">选择对象，再对照现状与方案。下列是路径规则和维护位置，示例中的 ID 是占位符；没有将真实会话或群名单公开。</p>
+      <div class="path-key"><p><strong>路径怎么读：</strong>“配置目录”默认是 <code>~/.config/remotelab</code>；“记忆目录”默认是 <code>~/.remotelab/memory</code>。实例环境变量可以覆盖这两个位置。“连接器 storageDir”由该连接器配置决定；<code>project-knowledge/</code> 是独立的项目知识目录。<code>&lt;sessionId&gt;</code> 指具体 Session 的稳定 ID。</p><p>Harness 原生会话和记忆保存在其运行配置选定的 provider home，RemoteLab 保存恢复标识。平台事件、原生上下文和长期认识各有职责；查看完整执行证据时还要查对应 Run 和工具产物。</p></div>
+      <div id="storage-controls" class="segmented" role="group" aria-label="选择存储对象"></div>
+      <h3 id="storage-question" class="control-heading"></h3>
+      <div id="storage-detail" class="compare-grid" aria-live="polite"></div>
+    </section>
+    <section id="scope" class="section">
+      <div class="section-heading"><div><div class="eyebrow">03 / 项目归属</div><h2>先知道这件事属于谁，再决定写入哪里。</h2></div><span class="badge proposed">归属规则 · 待实施</span></div>
+      <p class="intro">群与项目的绑定给出默认范围；个人 Session 可以关联项目，同一个 Session 也可以涉及多个项目。侧栏分组方便查找，不能替代有依据的项目归属。</p>
+      <div id="scope-rules" class="editorial-list"></div>
+      <div class="subsection"><h3>范围登记最少保留什么？</h3><div id="registry-fields" class="definition-grid"></div><p class="caption">登记是一份后台关联关系：生成导航和连接器绑定，不新增一套独立的交互式项目产品。业务认识仍在项目主账，原始来源仍在原处。</p></div>
+      <div class="walkthrough subsection"><div class="demo-head"><h3>四种开工方式，走一遍归属</h3><span class="badge proposed">虚构案例</span></div><div id="route-controls" class="segmented" role="group" aria-label="归属案例"></div><div id="route-detail" aria-live="polite"></div></div>
+    </section>
     <section id="reading" class="section">
-      <div class="section-heading"><div><div class="eyebrow">01 / 现有读取机制</div><h2>每次开工，哪些内容会进来？</h2></div><span class="badge">已核实的调用链</span></div>
-      <p class="intro">先区分新线程、续接与重建。实线表示自动提供或复用；虚线表示 Harness 根据当前任务读取。点击节点查看它的用途和来源。</p>
+      <div class="section-heading"><div><div class="eyebrow">04 / 按当前工作读取</div><h2>新话题开工，该读哪些内容？</h2></div><span class="badge proposed">任务读取方案</span></div>
+      <p class="intro">前台围绕本次工作取相关内容，组织巡检才看全项目。这里只定义用途和定位顺序，不设计短卡片、长卡片或另一套必经规划器。</p>
+      <div id="reading-controls" class="segmented" role="group" aria-label="任务读取场景"></div>
+      <div id="reading-detail" class="reading-plan" aria-live="polite"></div>
+      <div class="subsection"><h3>指针怎么避免“找得到入口，找不到重点”？</h3><div id="pointer-rules" class="editorial-list"></div></div>
+      <details class="aside-note current-mechanism"><summary>查看目前已经运行的加载链路：新线程、续接和重建</summary>
+      <p class="intro">自动提供位置与本轮来源，正文仍由 Harness 按需读取。实线表示自动提供或复用；虚线表示条件关系。点击节点可查代码依据。</p>
       <div class="segmented" id="scenario-controls" role="group" aria-label="开工场景"></div>
       <p id="scenario-summary" class="scenario-summary" aria-live="polite"></p>
       <div class="diagram-shell"><div id="start-graph" class="graph" aria-label="Session 开工记忆关系图"></div></div>
@@ -34,25 +61,33 @@
         <p>Harness 自身的系统指令、工作区 AGENTS.md 和原生记忆属于另一条加载链路。RemoteLab 不声称完整捕获这些内容。平台 Context 事件证明传入的内容；工具读取记录证明本轮读过正文，文件存在或启动指针存在都不能替代读取证据。</p>
         <p>连接器可按配置附加近期讨论、关联项目消息。配置的 Jev 路径还可从有出版回执与正文 hash 的日报选择有界片段。它们都不是所有 Session 的固定输入。可选的启动知识探测也不是本地记忆检索。</p>
       </details>
+      </details>
+    </section>
+    <section id="classification" class="section">
+      <div class="section-heading"><div><div class="eyebrow">05 / 写入分类</div><h2>同一场对话，内容可以去不同的维护位置。</h2></div><span class="badge proposed">分类规则与实例</span></div>
+      <p class="intro">按内容的用途、适用范围和生效条件分类。不是把整个 Session 复制到一个文件，也不是所有有用信息都写入 AGENTS.md。选择案例，查看目标位置与保留边界。</p>
+      <div id="classification-controls" class="segmented" role="group" aria-label="选择记忆类型"></div>
+      <div id="classification-detail" class="classification-detail" aria-live="polite"></div>
+      <div class="subsection"><h3>写入与生效遵守这些规则</h3><div id="write-rules" class="editorial-list"></div></div>
+      <details id="layers" class="aside-note"><summary>这些维护位置之间是什么关系？</summary>
+      <p>它们按用途分工：导航、工作过程、项目认识、背景、操作方法和依据。不是六本逐级重复抄写的共识文档；日报也不是新的一层记忆。</p>
+      <div class="filter-row"><div class="segmented" id="layer-controls" role="group" aria-label="筛选记忆区域"></div><label class="search-label">查找入口<input id="layer-search" type="search" placeholder="如：偏好、任务、AGENTS" autocomplete="off"></label></div>
+      <div id="layer-list" class="layer-list" aria-live="polite"></div>
+      </details>
     </section>
     <section id="collecting" class="section">
-      <div class="section-heading"><div><div class="eyebrow">02 / 归集与认知变化</div><h2>信息留下之后，怎样形成共识？</h2></div><span class="badge proposed">现状 / 目标可切换</span></div>
+      <div class="section-heading"><div><div class="eyebrow">06 / 归集、认可与反馈</div><h2>把来源形成认识，再把纠正送回原处。</h2></div><span class="badge proposed">现状 / 方案可切换</span></div>
       <div class="segmented" id="collect-controls" role="group" aria-label="归集机制"></div>
       <p id="collect-summary" class="intro" aria-live="polite"></p>
       <div class="diagram-shell"><div id="collect-graph" class="graph" aria-label="信息归集关系图"></div></div>
       <div id="collect-detail" class="node-detail" aria-live="polite"></div>
       <p class="caption">项目主账汇总和解释事实。任务系统、训练或评测系统、现实验收继续维护各自的实际状态。</p>
-    </section>
-    <section id="layers" class="section">
-      <div class="section-heading"><div><div class="eyebrow">03 / 存储、作用范围与生效状态</div><h2>分层治理，不只是分文件夹。</h2></div></div>
-      <p class="intro">存在哪里、影响谁、什么时候读、谁能写、是否已经确认，是五个不同的问题。个人和项目是多对多关系；临时任务要求不能自然变成组织通用偏好。</p>
-      <div class="filter-row"><div class="segmented" id="layer-controls" role="group" aria-label="筛选记忆区域"></div><label class="search-label">查找入口<input id="layer-search" type="search" placeholder="如：偏好、任务、inbox" autocomplete="off"></label></div>
-      <div id="layer-list" class="layer-list" aria-live="polite"></div>
       <div class="subsection"><h3>每条认识需要保留什么</h3><div id="record-fields" class="definition-grid"></div></div>
+      <div class="subsection"><h3>一个条目如何从日报反馈中被修正</h3><ol id="feedback-story" class="phases"></ol></div>
       <div class="subsection"><h3>这次优先修正的缺口</h3><div id="gap-list" class="editorial-list"></div></div>
     </section>
     <section id="organization" class="section">
-      <div class="section-heading"><div><div class="eyebrow">04 / 长期目标</div><h2>像 PMO 一样看进展，也看工作的方法。</h2></div><span class="badge proposed">目标与示意，尚未上线</span></div>
+      <div class="section-heading"><div><div class="eyebrow">07 / 从方案到持续治理</div><h2>覆盖全部项目，分步接入正式工作。</h2></div><span class="badge proposed">治理运行层尚未上线</span></div>
       <p class="intro">PMO 是跨项目协调与推进的职责。Agent 持续核对真实进展、找遗漏与依赖、发现重复工作和优秀方法，并向对应负责人提出有依据的建议。人的优先级取舍、责任承诺与现实验收分别保留。</p>
       <div class="instance-panel">
         <div><div class="eyebrow">当前实例 / 按需读回</div><h3>我们登记了多少个人？</h3><p>可在登录后读取当前实例的登记数量。本页不保存或发布真实名单与私人偏好。登记 Person 数量不等于去重后的组织人数或活跃用户数。</p></div>
@@ -67,10 +102,13 @@
       </div>
       <div class="subsection roles"><div><h3>认可由谁来确认？</h3><p>按事项性质选择相应职责，不让每个人逐条点所有内容。确认与条目版本绑定，无回应保留待确认。</p><dl id="roles"></dl></div><div class="version-demo"><div class="eyebrow">版本确认 / 示意</div><label>查看条目版本<select id="confirmation-version"><option value="1">v1 · 原承诺</option><option value="2">v2 · 交付范围变化</option></select></label><div id="confirmation-result" aria-live="polite"></div></div></div>
       <div class="subsection"><h3>全覆盖，分步启用。</h3><p>第一阶段就归集全部已登记项目；业务动作后续启用。验收可抽查质量，采集覆盖保持全项目。</p><ol id="phases" class="phases"></ol><details class="aside-note"><summary>测试层怎样不影响正在工作的 Agent？</summary><p id="isolation"></p></details></div>
+      <div class="subsection"><h3>从现有结构迁移，哪些保留、哪些调整？</h3><div id="migration" class="editorial-list"></div></div>
+      <div class="subsection"><h3>验收用真实场景来判断</h3><div id="acceptance-cases" class="definition-grid"></div></div>
+      <div class="subsection"><h3>实施前还需要补齐的真实信息</h3><div id="prerequisites" class="editorial-list"></div><p class="caption">本次先交付可审阅的方案与说明，未启动采集、推送、偏好迁移或正式记忆写入。页面中“拟议”路径用于明确下一步维护位置。</p></div>
       <div class="subsection"><h3>每轮优化都回到同一个目标</h3><div id="metrics" class="definition-grid"></div></div>
     </section>
     <section id="evidence" class="section">
-      <div class="eyebrow">05 / 可复查、可维护</div><h2>这份说明也要跟着现实更新。</h2>
+      <div class="eyebrow">08 / 可复查、可维护</div><h2>这份说明也要跟着现实更新。</h2>
       <p id="audit-boundary" class="intro"></p>
       <div id="reference-list" class="reference-list"></div>
       <details class="aside-note"><summary>外部参考：采用哪些思路</summary><div id="external-list" class="reference-list"></div></details>
