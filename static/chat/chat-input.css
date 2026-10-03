@@ -82,13 +82,12 @@
   #mobileVoiceDuration { margin-left: auto; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .mobile-voice-transcript { margin: 8px 0 16px; max-height: 76px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font-size: 17px; line-height: 1.5; text-align: center; }
   .mobile-voice-transcript.is-empty { color: var(--text-muted); font-size: 14px; }
-  .mobile-voice-choices { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 8px 20px; }
-  .mobile-voice-choices button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px; border: 1px solid transparent; border-radius: 14px; background: var(--bg-secondary); color: var(--text-secondary); font: inherit; font-size: 13px; }
+  .mobile-voice-choices { display: grid; justify-items: center; gap: 8px; }
+  .mobile-voice-choices button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; min-width: 120px; padding: 8px; border: 1px solid transparent; border-radius: 14px; background: var(--bg-secondary); color: var(--text-secondary); font: inherit; font-size: 13px; }
   .mobile-voice-choices .rl-icon { width: 16px; height: 16px; }
   .mobile-voice-choices button.selected { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
   #mobileVoiceCancel.selected { background: var(--error-bg); color: var(--error); border-color: var(--error); }
   .mobile-voice-panel.is-cancelling { border-color: var(--error); }
-  #mobileVoiceEdit { grid-column: 2; grid-row: 1; }
   #mobileVoiceRelease { grid-column: 1 / -1; grid-row: 2; color: var(--text-muted); font-size: 11px; text-align: center; }
 }
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 const source = readFileSync(new URL('../static/chat/voice-input.js', import.meta.url), 'utf8');
-const permissions = [], sockets = [], events = [];
+const permissions = [], sockets = [], events = [], processors = [], idleTimers = new Map(), listeners = new Map();
 let session = 'a', stoppedTracks = 0;
 const input = { value: '', disabled: false, dispatchEvent() {} };
 const button = { dataset: {}, classList: { toggle() {} }, style: { setProperty() {} }, querySelector() {},
@@ -16,20 +16,23 @@ class Socket {
   close() { this.readyState = 3; void this.emit('close', { code: 1000 }); }
 }
 class Audio {
-  constructor() { this.sampleRate = 16000; this.destination = {}; }
+  constructor() { this.sampleRate = 16000; this.destination = {}; this.state = 'suspended'; }
   createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
   createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
-  createScriptProcessor() { return { connect() {}, disconnect() {} }; }
-  resume() { return Promise.resolve(); }
-  close() { return Promise.resolve(); }
+  createScriptProcessor() { const node = { connect() {}, disconnect() {} }; processors.push(node); return node; }
+  resume() { this.state = 'running'; return Promise.resolve(); }
+  close() { this.state = 'closed'; return Promise.resolve(); }
 }
+const doc = { hidden: false, getElementById(id) { return id === 'voiceBtn' ? button : null; },
+  addEventListener(type, fn) { listeners.set(type, fn); } };
 const browser = {
-  document: { getElementById(id) { return id === 'voiceBtn' ? button : null; } },
+  document: doc,
   location: { protocol: 'https:', host: 'test.example' }, WebSocket: Socket, AudioContext: Audio,
   navigator: { mediaDevices: { getUserMedia: () => new Promise((resolve, reject) => permissions.push({ resolve, reject })) } },
   remotelabGetVoiceInputInstanceSettings: () => ({ provider: 'doubao', appId: 'fixture', accessToken: 'fixture', resourceId: 'fixture' }),
   remotelabT: key => key, addEventListener() {}, dispatchEvent(event) { events.push(event); },
-  setTimeout, clearTimeout,
+  setTimeout(fn, ms) { if (ms === 60000) { const id = {}; idleTimers.set(id, fn); return id; } return setTimeout(fn, ms); },
+  clearTimeout(id) { idleTimers.delete(id); clearTimeout(id); },
 };
 const context = vm.createContext({ window: browser, msgInput: input, get currentSessionId() { return session; },
   getCurrentSession: () => ({ id: session }), WebSocket: Socket,
@@ -39,7 +42,9 @@ const context = vm.createContext({ window: browser, msgInput: input, get current
 });
 vm.runInContext(source, context);
 const capture = browser.remotelabVoiceCapture;
-const stream = () => ({ getTracks: () => [{ stop() { stoppedTracks++; } }] });
+let lastTrack;
+const stream = () => { const track = { enabled: true, readyState: 'live', stop() { stoppedTracks++; this.readyState = 'ended'; } };
+  lastTrack = track; return { getTracks: () => [track] }; };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 let starting = capture.start(); assert.equal(capture.getState().phase, 'requesting');
@@ -54,10 +59,17 @@ input.value = ''; starting = capture.start(); permissions.shift().reject(new Err
 await assert.rejects(starting, /denied/); assert.equal(capture.getState().phase, 'idle');
 
 starting = capture.start(); permissions.shift().resolve(stream()); await starting; await flush();
-const old = sockets[0]; old.readyState = 1; await old.emit('open');
-await old.emit('message', { type: 'status', phase: 'ready' }); assert.equal(capture.getState().phase, 'recording');
+const old = sockets[0];
+assert.equal(capture.getState().phase, 'recording', 'local recording starts while the recognizer is connecting');
+processors.at(-1).onaudioprocess({ inputBuffer: { sampleRate: 16000, getChannelData: () => new Float32Array([0.1, 0.2, 0.3]) } });
+await capture.stop(); assert.equal(capture.getState().phase, 'stopping', 'release preserves audio when the socket is still connecting');
+assert.equal(lastTrack.enabled, false, 'release silences the microphone immediately');
+old.readyState = 1; await old.emit('open'); await old.emit('message', { type: 'status', phase: 'ready' });
+assert.ok(old.sent.some(data => data instanceof ArrayBuffer), 'early PCM is buffered and delivered when recognition is ready');
+assert.equal(JSON.parse(old.sent.at(-1)).type, 'stop', 'buffered audio precedes the stop signal');
 await capture.cancel();
-starting = capture.start(); permissions.shift().resolve(stream()); await starting; await flush();
+starting = capture.start(); await starting; await flush();
+assert.equal(permissions.length, 0, 'a consecutive take reuses the existing microphone stream');
 const active = sockets[1]; active.readyState = 1; await active.emit('open');
 await active.emit('message', { type: 'status', phase: 'ready' });
 await old.emit('message', { type: 'transcript', transcript: '旧录音迟到结果' });
@@ -71,4 +83,18 @@ const completed = events.filter(event => event.type === 'remotelab:voice-transcr
 assert.equal(completed.length, 1); assert.equal(completed[0].detail.captureId, id);
 await active.emit('message', { type: 'done', transcript: '重复结果' });
 assert.equal(input.value, '最终文字');
-console.log('test-chat-voice-capture-lifecycle: late permission, session changes, denial, old sockets and duplicate finals passed');
+assert.equal(lastTrack.enabled, false, 'a retained stream never listens between takes');
+for (const expire of idleTimers.values()) expire();
+assert.equal(lastTrack.readyState, 'ended', 'idle expiry releases the device');
+
+input.value = ''; const preparing = capture.prepare();
+permissions.shift().resolve(stream()); await preparing;
+assert.equal(capture.getState().phase, 'idle', 'first authorization does not start dictation');
+assert.equal(lastTrack.enabled, false); assert.equal(sockets.length, 2);
+doc.hidden = true; listeners.get('visibilitychange')(); await flush();
+assert.equal(lastTrack.readyState, 'ended', 'backgrounding releases the retained microphone');
+doc.hidden = false;
+const latePreparation = capture.prepare(); capture.releaseMicrophone();
+permissions.shift().resolve(stream()); await latePreparation;
+assert.equal(lastTrack.readyState, 'ended', 'late authorization cannot retain a microphone after leaving');
+console.log('test-chat-voice-capture-lifecycle: quiet microphone reuse, gesture-resumed audio, buffered startup, idle/background release, late permission, session changes and stale finals passed');

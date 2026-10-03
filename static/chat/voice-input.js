@@ -61,10 +61,84 @@
   let voiceButtonFlashTimer = null;
   let voiceRequestGeneration = 0;
   let voiceCleanupPromise = null;
+  let microphoneStream = null;
+  let microphoneContext = null;
+  let microphonePreparation = null;
+  let microphoneExpiry = null;
+  let microphoneEpoch = 0;
+  let microphoneAuthorized = false;
+
+  function releaseMicrophone() {
+    microphoneEpoch += 1;
+    globalScope.clearTimeout(microphoneExpiry);
+    microphoneExpiry = null;
+    microphonePreparation = null;
+    for (const track of microphoneStream?.getTracks() || []) track.stop();
+    microphoneStream = null;
+    void microphoneContext?.close().catch(() => {});
+    microphoneContext = null;
+  }
+
+  function keepMicrophoneQuiet() {
+    for (const track of microphoneStream?.getTracks() || []) track.enabled = false;
+    globalScope.clearTimeout(microphoneExpiry);
+    // Reuse only during consecutive takes on this visible page; never in the background.
+    microphoneExpiry = globalScope.setTimeout(releaseMicrophone, 60000);
+  }
+
+  function prepareMicrophone() {
+    if (getVoiceUnavailableReason()) return Promise.reject(new Error(getVoiceUnavailableReason()));
+    globalScope.clearTimeout(microphoneExpiry);
+    if (microphoneStream?.getTracks().some((track) => track.readyState === "ended")) releaseMicrophone();
+    // Create and resume in the actual user gesture, before the hold timer or permission promise.
+    if (!microphoneContext || microphoneContext.state === "closed") {
+      microphoneContext = new (getAudioContextConstructor())();
+    }
+    const resuming = microphoneContext.resume?.() || Promise.resolve();
+    if (microphoneStream) {
+      const stream = microphoneStream;
+      const epoch = microphoneEpoch;
+      return Promise.resolve(resuming).then(() => {
+        if (epoch !== microphoneEpoch) return null;
+        if (activeVoiceCapture.phase === "idle") keepMicrophoneQuiet();
+        return stream;
+      });
+    }
+    if (microphonePreparation) {
+      const preparation = microphonePreparation;
+      return Promise.resolve(resuming).then(() => preparation);
+    }
+    const epoch = microphoneEpoch;
+    const resumed = Promise.resolve(resuming).then(() => null, (error) => error);
+    const pending = globalScope.navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+    }).then(async (stream) => {
+      const resumeError = await resumed;
+      if (resumeError) { for (const track of stream.getTracks()) track.stop(); throw resumeError; }
+      if (epoch !== microphoneEpoch || globalScope.document?.hidden) {
+        for (const track of stream.getTracks()) track.stop();
+        return null;
+      }
+      microphoneStream = stream;
+      microphoneAuthorized = true;
+      keepMicrophoneQuiet();
+      return stream;
+    }).catch((error) => {
+      if (error?.name === "NotAllowedError" || error?.name === "SecurityError") microphoneAuthorized = false;
+      if (epoch === microphoneEpoch) releaseMicrophone();
+      throw error;
+    }).finally(() => {
+      if (microphonePreparation === pending) microphonePreparation = null;
+      refreshVoiceButtonUi();
+    });
+    microphonePreparation = pending;
+    return pending;
+  }
 
   function getVoiceCaptureState() {
     const { captureId, sessionId, phase, baseText, transcript, voiceLevel } = activeVoiceCapture;
-    return { captureId, sessionId, phase, baseText, transcript, voiceLevel };
+    return { captureId, sessionId, phase, baseText, transcript, voiceLevel,
+      microphoneAuthorized, microphonePreparing: !!microphonePreparation };
   }
 
   const voiceBtn = globalScope.document?.getElementById("voiceBtn") || null;
@@ -726,15 +800,10 @@
       activeVoiceCapture.silenceNode = null;
     }
     if (activeVoiceCapture.mediaStream) {
-      for (const track of activeVoiceCapture.mediaStream.getTracks()) {
-        try { track.stop(); } catch {}
-      }
+      keepMicrophoneQuiet();
       activeVoiceCapture.mediaStream = null;
     }
     if (activeVoiceCapture.audioContext) {
-      try {
-        await activeVoiceCapture.audioContext.close();
-      } catch {}
       activeVoiceCapture.audioContext = null;
     }
   }
@@ -881,7 +950,10 @@
     if (!AudioContextCtor) {
       throw new Error("Voice input is not supported in this browser");
     }
-    const audioContext = new AudioContextCtor();
+    const audioContext = microphoneContext;
+    if (!audioContext || (audioContext.state && audioContext.state !== "running")) {
+      throw new Error(t("voice.mobile.audioPaused"));
+    }
     const sourceNode = audioContext.createMediaStreamSource(activeVoiceCapture.mediaStream);
     const silenceNode = typeof audioContext.createGain === "function"
       ? audioContext.createGain()
@@ -895,7 +967,7 @@
       try {
         await audioContext.audioWorklet.addModule(resolveVoiceWorkletModulePath());
         if (captureId !== activeVoiceCapture.captureId || !isLiveVoiceCapturePhase()) {
-          try { await audioContext.close(); } catch {}
+          try { sourceNode.disconnect(); } catch {}
           return;
         }
         const workletNode = new globalScope.AudioWorkletNode(
@@ -940,7 +1012,7 @@
     }
 
     if (captureId !== activeVoiceCapture.captureId || !isLiveVoiceCapturePhase()) {
-      try { await audioContext.close(); } catch {}
+      try { sourceNode.disconnect(); captureNode?.disconnect(); } catch {}
       return;
     }
     if (!captureNode) {
@@ -972,29 +1044,26 @@
     } else {
       captureNode.connect(audioContext.destination);
     }
-    if (typeof audioContext.resume === "function") {
-      await audioContext.resume().catch(() => {});
-    }
-
     if (captureId !== activeVoiceCapture.captureId || !isLiveVoiceCapturePhase()) {
-      try { sourceNode.disconnect(); captureNode.disconnect(); await audioContext.close(); } catch {}
+      try { sourceNode.disconnect(); captureNode.disconnect(); } catch {}
       return;
     }
 
     activeVoiceCapture.audioContext = audioContext;
     activeVoiceCapture.sourceNode = sourceNode;
     activeVoiceCapture.silenceNode = silenceNode;
-    if (activeVoiceCapture.relayReady && activeVoiceCapture.phase === "connecting") activeVoiceCapture.phase = "recording";
+    if (activeVoiceCapture.phase === "connecting") activeVoiceCapture.phase = "recording";
     refreshVoiceButtonUi();
   }
 
   async function stopVoiceCapture({ abandon = false } = {}) {
+    if (abandon && activeVoiceCapture.phase === "requesting") releaseMicrophone();
     const relaySocket = activeVoiceCapture.relaySocket;
     if (!relaySocket) {
       await cleanupVoiceCapture();
       return;
     }
-    if (abandon || relaySocket.readyState !== WebSocket.OPEN) {
+    if (abandon || relaySocket.readyState > WebSocket.OPEN) {
       await cleanupVoiceCapture();
       return;
     }
@@ -1002,6 +1071,8 @@
     activeVoiceCapture.phase = "stopping";
     refreshVoiceButtonUi();
     await flushPendingWorkletAudio();
+    for (const track of activeVoiceCapture.mediaStream?.getTracks() || []) track.enabled = false;
+    try { activeVoiceCapture.sourceNode?.disconnect(); } catch {}
     if (relaySocket.readyState !== WebSocket.OPEN || activeVoiceCapture.relayReady !== true) {
       return;
     }
@@ -1009,6 +1080,7 @@
   }
 
   async function startVoiceCapture() {
+    if (voiceCleanupPromise) await voiceCleanupPromise;
     if (activeVoiceCapture.phase !== "idle") {
       await stopVoiceCapture();
       return;
@@ -1025,22 +1097,16 @@
     activeVoiceCapture.phase = "requesting";
     refreshVoiceButtonUi();
     let mediaStream;
-    try { mediaStream = await globalScope.navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        noiseSuppression: true,
-        echoCancellation: true,
-        autoGainControl: true,
-      },
-    }); } catch (error) {
+    try { mediaStream = await prepareMicrophone(); } catch (error) {
       if (captureId !== voiceRequestGeneration) return;
       await cleanupVoiceCapture();
       throw error;
     }
-    if (captureId !== voiceRequestGeneration || sessionId !== (typeof currentSessionId === "string" ? currentSessionId : "")
+    if (captureId !== voiceRequestGeneration) return;
+    if (!mediaStream || sessionId !== (typeof currentSessionId === "string" ? currentSessionId : "")
       || msgInput.disabled || msgInput.value !== baseText) {
-      for (const track of mediaStream.getTracks()) track.stop();
-      if (captureId === voiceRequestGeneration) await cleanupVoiceCapture();
+      releaseMicrophone();
+      await cleanupVoiceCapture();
       return;
     }
 
@@ -1050,6 +1116,8 @@
     activeVoiceCapture.transcript = "";
     activeVoiceCapture.lastErrorMessage = "";
     activeVoiceCapture.mediaStream = mediaStream;
+    globalScope.clearTimeout(microphoneExpiry);
+    for (const track of mediaStream.getTracks()) track.enabled = true;
     activeVoiceCapture.relayReady = false;
     activeVoiceCapture.stopRequested = false;
     activeVoiceCapture.stopSignalSent = false;
@@ -1178,6 +1246,8 @@
   globalScope.remotelabVoiceCapture = {
     getState: getVoiceCaptureState,
     start: startVoiceCapture,
+    prepare: prepareMicrophone,
+    releaseMicrophone,
     stop: stopVoiceCapture,
     cancel: () => stopVoiceCapture({ abandon: true }),
     whenIdle: () => voiceCleanupPromise || Promise.resolve(),
@@ -1193,5 +1263,19 @@
 
   globalScope.addEventListener("remotelab:instancesettingschange", refreshVoiceButtonUi);
   globalScope.addEventListener("remotelab:localechange", refreshVoiceButtonUi);
+  globalScope.document?.addEventListener?.("visibilitychange", () => {
+    if (globalScope.document.hidden) { void stopVoiceCapture({ abandon: true }); releaseMicrophone(); }
+  });
+  globalScope.addEventListener("pagehide", () => { void stopVoiceCapture({ abandon: true }); releaseMicrophone(); });
+  // Read the browser's real permission; a saved app preference is not a grant.
+  void globalScope.navigator.permissions?.query({ name: "microphone" }).then((permission) => {
+    const update = () => {
+      microphoneAuthorized = permission.state === "granted";
+      if (permission.state === "denied") { void stopVoiceCapture({ abandon: true }); releaseMicrophone(); }
+      refreshVoiceButtonUi();
+    };
+    permission.addEventListener("change", update);
+    update();
+  }).catch(() => {});
   refreshVoiceButtonUi();
 })(window);

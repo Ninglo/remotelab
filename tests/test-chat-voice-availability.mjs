@@ -23,7 +23,7 @@ const button = {
 };
 const window = {
   document: { getElementById(id) { return id === 'voiceBtn' ? button : id === 'voiceAvailabilityStatus' ? status : null; } },
-  WebSocket: class {}, AudioContext: class {}, isSecureContext: true,
+  WebSocket: class {}, AudioContext: class { resume() { return Promise.resolve(); } close() { return Promise.resolve(); } }, isSecureContext: true,
   navigator: { mediaDevices: { getUserMedia() { micRequests += 1; return new Promise(() => {}); } } },
   remotelabGetVoiceInputInstanceSettings: () => ({
     provider: 'doubao', appId: configured ? 'configured-app' : '',
@@ -31,6 +31,7 @@ const window = {
   }),
   remotelabT: (key) => key,
   addEventListener() {},
+  setTimeout, clearTimeout,
 };
 const context = vm.createContext({
   window,

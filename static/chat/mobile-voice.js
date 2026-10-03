@@ -11,7 +11,6 @@
   const duration = doc?.getElementById("mobileVoiceDuration");
   const transcript = doc?.getElementById("mobileVoiceTranscript");
   const cancel = doc?.getElementById("mobileVoiceCancel");
-  const edit = doc?.getElementById("mobileVoiceEdit");
   const release = doc?.getElementById("mobileVoiceRelease");
   const bars = Array.from(panel?.querySelectorAll(".mobile-voice-level i") || []);
   const preferenceStatus = doc?.getElementById("mobileVoicePreferenceStatus");
@@ -48,6 +47,7 @@
 
   function render({ preferences = false } = {}) {
     if (personId !== currentPersonId() || (preferences && !savingMode)) {
+      if (personId && personId !== currentPersonId()) controller.releaseMicrophone?.();
       personId = currentPersonId();
       mode = savedMode();
     }
@@ -60,12 +60,14 @@
     hold.hidden = !voiceMode;
     wrapper?.classList.toggle("has-mobile-voice-mode", voiceMode);
     mic.closest(".input-area")?.classList.toggle("has-mobile-voice-mode", voiceMode);
-    hold.disabled = mic.disabled || !!capture?.released;
     const state = controller.getState();
-    const holdKey = !capture ? "voice.mobile.hold" : capture.released ? "voice.mobile.recognizing"
+    hold.disabled = mic.disabled || !!capture?.released || state.microphonePreparing;
+    const holdKey = !capture ? state.microphonePreparing ? "voice.mobile.authorizing"
+      : state.microphoneAuthorized === false ? "voice.mobile.enable" : "voice.mobile.hold"
+      : capture.released ? "voice.mobile.recognizing"
       : state.phase !== "recording" && !capture.completed ? "voice.mobile.preparing"
       : capture.choice === "cancel" ? "voice.mobile.releaseCancel"
-      : capture.choice === "edit" ? "voice.mobile.releaseEdit" : "voice.mobile.releaseReview";
+      : "voice.mobile.releaseReview";
     setText(holdLabel, t(holdKey));
     hold.setAttribute("aria-label", t(capture ? holdKey : "voice.mobile.holdHint"));
     msgInput.hidden = voiceMode;
@@ -85,15 +87,14 @@
     const key = !ready && !capture.released ? "voice.mobile.preparing"
       : capture.released ? "voice.mobile.recognizing"
       : capture.choice === "cancel" ? "voice.mobile.releaseCancel"
-      : capture.choice === "edit" ? "voice.mobile.releaseEdit" : "voice.mobile.recording";
+      : "voice.mobile.recording";
     setText(status, t(key));
     duration.textContent = capture.startedAt ? `${Math.floor(((capture.stoppedAt || Date.now()) - capture.startedAt) / 1000)}s` : "";
     const spoken = msgInput.value.slice(capture.baseText.length).trim();
-    setText(transcript, spoken || t("voice.mobile.listening"));
+    setText(transcript, spoken || t(ready ? "voice.mobile.listening" : "voice.mobile.preparing"));
     transcript.classList.toggle("is-empty", !spoken);
     setText(release, t(capture.released ? "voice.mobile.wait" : "voice.mobile.slide"));
     cancel.classList.toggle("selected", capture.choice === "cancel");
-    edit.classList.toggle("selected", capture.choice === "edit");
   }
 
   async function selectMode(next) {
@@ -104,6 +105,7 @@
     savingMode = true;
     showNotice();
     if (mode === "voice") msgInput.blur();
+    if (mode === "text") controller.releaseMicrophone?.();
     render();
     try {
       const result = await fetchJsonOrRedirect(`/api/people/${encodeURIComponent(owner)}`, {
@@ -208,8 +210,7 @@
     }
     clearCapture();
     msgInput.dispatchEvent(new Event("input", { bubbles: true }));
-    // Default review keeps the phone keyboard closed. Explicit Edit opens it.
-    if (target.choice === "edit") msgInput.focus({ preventScroll: true });
+    // Review keeps the phone keyboard closed; tap the text to edit normally.
   }
 
   function beginCapture(targetGesture) {
@@ -242,23 +243,36 @@
     if (!isMobile() || event.isPrimary === false || event.button > 0 || mic.disabled
       || capture || controller.getState().phase !== "idle") return;
     event.preventDefault();
+    if (controller.getState().microphoneAuthorized === false && controller.prepare) {
+      const owner = currentPersonId();
+      if (event.currentTarget === mic) void selectMode("voice");
+      showNotice(t("voice.mobile.authorizing"));
+      void controller.prepare().then((stream) => {
+        if (stream && owner === currentPersonId() && isMobile() && !doc.hidden) showNotice();
+      }).catch(() => { if (owner === currentPersonId()) showNotice(t("voice.mobile.permissionFailed")); }).finally(() => {
+        ignoreClickUntil = Date.now() + 800;
+        render();
+      });
+      render();
+      return;
+    }
+    // Prime audio inside pointerdown, rather than the 300ms hold timer (Safari).
     ignoreClickUntil = 0;
-    const target = { pointerId: event.pointerId, element: event.currentTarget, started: false };
+    const target = { pointerId: event.pointerId, element: event.currentTarget, started: false, startY: event.clientY };
     gesture = target;
+    if (controller.prepare) void controller.prepare().catch(() => {
+      if (gesture === target) { discardGesture(); showNotice(t("voice.mobile.permissionFailed")); }
+    });
     try { target.element.setPointerCapture(event.pointerId); } catch {}
     target.timer = globalScope.setTimeout(() => beginCapture(target), 300);
-  }
-
-  function inRegion(element, event) {
-    const rect = element.getBoundingClientRect();
-    return event.clientX >= rect.left - 12 && event.clientX <= rect.right + 12
-      && event.clientY >= rect.top - 12 && event.clientY <= rect.bottom + 12;
   }
 
   function pointerMove(event) {
     if (gesture?.pointerId !== event.pointerId || !capture) return;
     event.preventDefault();
-    capture.choice = inRegion(cancel, event) ? "cancel" : inRegion(edit, event) ? "edit" : "review";
+    const distance = gesture.startY - event.clientY;
+    // A small deadband prevents finger jitter; dragging back down restores the take.
+    capture.choice = distance >= (capture.choice === "cancel" ? 48 : 64) ? "cancel" : "review";
     render();
   }
 
@@ -315,11 +329,6 @@
   }
   modeButton.addEventListener("click", () => { void selectMode("text"); });
   cancel.addEventListener("click", () => { discardGesture(); cancelCapture({ restore: true }); });
-  edit.addEventListener("click", () => {
-    if (!capture) return;
-    capture.choice = "edit";
-    if (capture.released) render();
-  });
   doc.getElementById("sendBtn")?.addEventListener("click", (event) => {
     if (capture) { event.preventDefault(); event.stopImmediatePropagation(); }
   }, true);
@@ -358,6 +367,7 @@
   function interrupt() {
     discardGesture();
     cancelCapture();
+    if (doc.hidden || !isMobile()) controller.releaseMicrophone?.();
   }
   doc.addEventListener("visibilitychange", () => { if (doc.hidden) interrupt(); });
   doc.addEventListener("keydown", (event) => {
