@@ -29,6 +29,7 @@ Optional instance-local `CONFIG_DIR/monitoring.json`:
     "profile": "approved-bot-profile",
     "configDir": "/path/to/lark-config",
     "chatId": "oc_approved_group",
+    "ignoreUnits": ["own-observer.service", "own-observer.timer"],
     "overviewUrl": "https://instance.example/?tab=tasks&monitor=overview"
   }
 }
@@ -51,6 +52,8 @@ Connect only explicit owned units, not unrelated users' services. Scope is `syst
 `scripts/monitoring-report.mjs --output <prefix> --base-url <instance> --days 1` writes local JSON and a compact Markdown section. It publishes and sends nothing. The established daily workflow reads this source, incorporates actual maintenance and gaps, commits its Markdown and reuses its publisher and group delivery. No separate routine image or Base is needed.
 
 An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches new critical disk/service incidents and important native task failures persisting for three observations. Account exhaustion and account-observation loss remain with the account observer. Normal, restored and lower-priority states go into the report.
+
+Keep the observer's own service and timer visible in Overview, but list them in `alertDelivery.ignoreUnits`: it cannot reliably supervise its own absence, and an explicit maintenance pause must not notify as a new outage. Their health remains inspectable from the application and daily report.
 
 During migration, `--baseline` records already-known critical incidents without repeating a group notification. Recovery rearms a recurrence; unreadable sources cannot establish recovery. The observer persists sending intent before delivery, then saves the shared verified message receipt. Interrupted or uncertain delivery becomes `needs_review` and requires readback before retrying. Preserve state across restarts. This observer does not replace task result delivery.
 
