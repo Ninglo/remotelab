@@ -28,19 +28,24 @@ export async function sendMonitoringAlert(events, config, batchId) {
 }
 
 export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = join(CONFIG_DIR, 'monitoring-alerts.json'),
-  send = sendMonitoringAlert, load = readRecord, save = writeDurableJson, now = Date.now(), baseline = false }) {
+  send = sendMonitoringAlert, load = readRecord, save = writeDurableJson, now = Date.now(), baseline = false, dryRun = false }) {
   const state = await load(stateFile) || { version: 1, incidents: {}, batches: {} };
   for (const batch of Object.values(state.batches)) if (batch.status === 'sending') {
     batch.status = 'needs_review';
     for (const key of batch.keys) if (state.incidents[key]) state.incidents[key].status = 'needs_review';
   }
-  const current = new Set(), due = [];
-  // An unreadable source cannot establish recovery and rearm the same incident.
-  for (const item of [...snapshot.disks.map(item => ({ ...item, kind: 'disk' })), ...snapshot.services.map(item => ({ ...item, kind: 'service' }))]) {
-    if (['unknown', 'running', 'starting'].includes(item.status)) current.add(hash(`${item.kind}:${item.path || item.unit || item.label}`));
-  }
-  if (snapshot.coverage.gaps.some(gap => gap.source === 'automations')) {
-    for (const [key, incident] of Object.entries(state.incidents)) if (incident.kind === 'automation') current.add(key);
+  const current = new Set(), recovered = new Set(), due = [];
+  // Absence after a source change, an unreadable source and an unfinished Run
+  // are not recovery. Rearm only an explicitly observed healthy or stopped item.
+  for (const item of snapshot.disks) if (item.status === 'healthy') recovered.add(hash(`disk:${item.path || item.label}`));
+  for (const item of snapshot.services) if (item.status === 'healthy') recovered.add(hash(`service:${item.unit || item.label}`));
+  if (!snapshot.coverage.gaps.some(gap => gap.source === 'automations')) {
+    for (const item of snapshot.automations.items || []) {
+      const stopped = ['paused', 'cancelled', 'completed'].includes(item.state);
+      const succeeded = item.lastExecution?.state === 'completed';
+      const checked = !item.lastExecution && item.check?.at && item.check.reason && item.check.reason !== 'gate_error';
+      if (stopped || !item.lastError && (succeeded || checked)) recovered.add(hash(`automation:${item.id}`));
+    }
   }
   for (const item of snapshot.attention.filter(item => ['disk', 'service', 'automation'].includes(item.kind)
     && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id)))) {
@@ -53,13 +58,16 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     if (!critical && incident.lastCritical) { incident.status = 'observing'; incident.cycle++; }
     Object.assign(incident, { observations: count, active: true, subject: item.subject, kind: item.kind });
     incident.lastCritical = critical;
-    if (baseline && critical) incident.status = 'baseline';
+    if (baseline && (critical || item.kind === 'automation' && (config.criticalAutomationIds || []).includes(item.id))
+      && !['sent', 'needs_review'].includes(incident.status)) incident.status = 'baseline';
     if (critical && incident.status === 'observing') incident.status = 'pending';
     state.incidents[key] = incident;
     if (critical && incident.status === 'pending') due.push({ key, ...item, cycle: incident.cycle });
   }
-  for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key)) incident.active = false;
+  for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key) && recovered.has(key)) incident.active = false;
   state.observedAt = new Date(now).toISOString();
+  if (dryRun) return { sent: 0, dryRun: true, baseline, wouldSend: baseline ? 0 : due.length,
+    subjects: baseline ? [] : due.map(item => item.subject), observedAt: state.observedAt };
   if (!due.length || baseline) { await save(stateFile, state); return { sent: 0, baseline, observedAt: state.observedAt }; }
   const batchId = hash(due.map(item => `${item.key}:${item.cycle}`).sort().join('\n'));
   const batch = { status: 'sending', keys: due.map(item => item.key), startedAt: state.observedAt };
@@ -76,12 +84,12 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   return { sent: batch.status === 'sent' ? due.length : 0, status: batch.status, messageId: batch.messageId || null };
 }
 
-export async function runMonitoringAlerts({ baseline = false } = {}) {
+export async function runMonitoringAlerts({ baseline = false, dryRun = false } = {}) {
   let config;
   try { config = JSON.parse(await readFile(join(CONFIG_DIR, 'monitoring.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return { enabled: false }; throw error; }
   if (!config.alertDelivery) return { enabled: false };
   // This independent observer needs no model and no running HTTP server.
   const snapshot = await createMonitoringReader({ getUsage: async () => null })({ days: 1 });
-  return dispatchMonitoringAlerts({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds }, snapshot, baseline });
+  return dispatchMonitoringAlerts({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds }, snapshot, baseline, dryRun });
 }

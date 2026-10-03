@@ -42,6 +42,18 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-10-03 — Increase automation overview information per screen
+
+- Observed friction: even after automation grouping, tall cards show too few tasks in a viewport. The user asked to reference AIHOT's denser list while retaining the earlier requirement to keep full information.
+- Change: widen the desktop list, place source and initiator metadata horizontally, align cadence alongside the brief, compact the run metrics and reduce gaps. Preserve purpose groups, date disclosures, full definitions, history and mobile wrapping.
+- Verification boundary: at 1440px the first two folded cards shrink from roughly 276–297px to 147px, with five cards at least partly visible instead of two. Check the same desktop/mobile filters and full execution details without mutating production tasks. The reference site's browser request was blocked; its public page structure and official feed source were inspected instead.
+
+### 2026-10-03 — Resume monitoring safely after an automation source change
+
+- Observed friction: changing the automation task source led to continued alerts, so the independent resource observer was stopped. The user wants the original important-task coverage retained and reliable observation restored.
+- Change: retain native task IDs and the existing delivery destination; require positive recovery evidence before rearming an incident, show missing monitored IDs as coverage gaps, and support a read-only notification preview and a reviewed resumption baseline.
+- Verification boundary: reproduce source disappearance, renamed tasks, unfinished retries, repeated observations and restart; verify genuine recovery still allows a new alert. A quiet test does not prove that every future alert will be correct.
+
 ### 2026-10-03 — Amber 固定展示实例额度与会话 Token
 
 - 用户验收了紧凑用量样式，并明确要求：任何人选 Amber 都看到宠物旁的额度与会话标题右侧的 `k` 单位 Token；其他主题不显示。

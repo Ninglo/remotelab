@@ -147,11 +147,15 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     const activeStates = ['active', 'accepted', 'running', 'starting', 'scheduled', 'pending'];
     const recent = value => dateMs(value) <= now() && now() - dateMs(value) < 24 * 3600_000;
     const unverifiedAdmissions = tasks.filter(task => task.kind === 'one_time' && task.state === 'admitted').length;
+    if (!gaps.some(gap => gap.source === 'automations')) for (const id of config.criticalAutomationIds || []) {
+      if (!tasks.some(task => task.id === id)) gaps.push({ source: `automation:${id}`, code: 'NOT_FOUND' });
+    }
     const liveTasks = tasks.filter(task => task.kind === 'recurring' || activeStates.includes(task.state)
       || task.state === 'admitted' && recent(task.lastExecution?.admittedAt || task.lastExecution?.scheduledAt)
       || task.lastExecution?.state === 'failed' && recent(task.lastExecution.completedAt || task.lastExecution.attemptedAt || task.updatedAt));
     const automations = { total: tasks.length, active: liveTasks.filter(task => activeStates.includes(task.state)).length,
       items: liveTasks.map(task => ({ id: task.id, title: text(task.title), state: task.state, nextRunAt: task.nextRunAt,
+        check: task.check ? { at: task.check.at, reason: task.check.reason } : null,
         lastError: task.lastError ? text(task.lastError) : null, lastExecution: task.lastExecution ? {
           state: task.lastExecution.state, completedAt: task.lastExecution.completedAt, sessionId: task.lastExecution.sessionId,
           scheduledAt: task.lastExecution.scheduledAt, error: task.lastExecution.error ? text(task.lastExecution.error) : null } : null })) };
