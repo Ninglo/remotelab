@@ -14,6 +14,7 @@ import {
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
+import { normalizeConversation } from '../lib/conversation-target.mjs';
 
 export async function prepareNativeFinalFiles(record, event, { run, manifest, publishAsset = publishLocalFileAssetFromPath } = {}) {
   const references = [...extractAssistantArtifactBlockReferences(event.content), ...extractAssistantLocalMarkdownImageReferences(event.content)];
@@ -122,6 +123,41 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
 
 // Compatibility for existing callers and already persisted final receipts.
 export const publishNativeFinalReplies = publishLiveAssistantReplies;
+
+// Terminal settlement can publish a final before the live observer sees it.
+// Preserve the same answer identity and multipart count on that fallback path.
+// Ambiguous bundles cannot borrow one answer's receipt for another task.
+export function annotateTerminalReplyDeliveries(parts, payload) {
+  const finals = (payload?.displayEvents || []).filter(isFinalAssistantMessage);
+  const ids = new Set(finals.map(assistantSurfaceMessageId).filter(Boolean));
+  if (ids.size !== 1) return parts;
+  const providerMessageId = [...ids][0];
+  const providerPartCount = parts.filter(part => ['content', 'attachment'].includes(part.kind)).length;
+  return parts.map(part => ['content', 'attachment'].includes(part.kind)
+    ? { ...part, providerMessageId, providerPartCount, surfaceKind: 'final' } : part);
+}
+
+// Recover old terminal receipts only from an exact retained payload match.
+// This associates evidence; it neither sends nor changes a delivery outcome.
+export function recoverTerminalReplyReceipt(record, delivery) {
+  if (delivery.providerMessageId || delivery.workboardTaskId || delivery.surfaceKind
+      || record.result?.state !== 'completed' || !record.result.payload
+      || !['content', 'attachment'].includes(delivery.kind)) return null;
+  const plan = normalizeConversation(record.deliveryPlan || record.options?.sourceDelivery);
+  const parts = annotateTerminalReplyDeliveries(buildReplyDeliveries(plan, record.result.payload, { running: false }), record.result.payload);
+  const matches = part => part.kind === delivery.kind && part.text === delivery.text
+    && part.connector === delivery.connector && part.sourceRouteId === delivery.sourceRouteId
+    && part.target?.chatId === delivery.target?.chatId
+    && part.target?.commentId === delivery.target?.commentId
+    && part.target?.to === delivery.target?.to
+    && part.target?.peerUserId === delivery.target?.peerUserId
+    && JSON.stringify(part.attachment) === JSON.stringify(delivery.attachment);
+  const candidates = parts.filter(matches);
+  if (candidates.length !== 1 || !candidates[0].providerMessageId
+      || record.deliveries.filter(matches).length !== 1) return null;
+  const { providerMessageId, providerPartCount } = candidates[0];
+  return { providerMessageId, providerPartCount, receiptRecovered: true };
+}
 
 export function excludePublishedFinalReplies(history, publishedIds = []) {
   if (!publishedIds.length) return history;

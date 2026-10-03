@@ -27,7 +27,7 @@ import { WORKBOARD_INSTRUCTIONS, workboardContext, workboardReadback } from '../
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
-import { publishLiveAssistantReplies, excludePublishedFinalReplies, prepareNativeFinalFiles } from './native-final-publication.mjs';
+import { publishLiveAssistantReplies, excludePublishedFinalReplies, prepareNativeFinalFiles, annotateTerminalReplyDeliveries } from './native-final-publication.mjs';
 import { readPromptAsset } from './prompt-asset-loader.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -1699,11 +1699,11 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
     attachments: [],
   };
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
-    buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
+    annotateTerminalReplyDeliveries(buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
       && !feishuOutcomeRequired
       ? null : deliveryPlan, deliveryPayload, { running: false, requireFeishuOutcome: feishuOutcomeRequired
         && (!record.streamedFinalReplyIds?.length || run.state !== 'completed'
-          || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) })
+          || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) }), run.state === 'completed' ? pendingPayload : null)
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 

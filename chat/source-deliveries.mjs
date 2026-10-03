@@ -12,6 +12,7 @@ import { serialQueue } from '../lib/durable-records.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { appendEvent, loadHistory } from './history.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
+import { recoverTerminalReplyReceipt } from './native-final-publication.mjs';
 import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
 import {
   getSourceDeliverySignalVersion,
@@ -162,18 +163,21 @@ async function mutateDelivery(id, update) {
     }
     return next;
   });
-  const updated = record.deliveries[index];
+  const entry = record.deliveries[index];
+  const updated = { ...entry, ...recoverTerminalReplyReceipt(record, entry) };
   // Keep the delivery receipt in canonical history, including after Request
   // archival. Both public workboard surfaces can then distinguish work from delivery.
   if ((updated.providerMessageId || updated.workboardTaskId) && ['content', 'attachment'].includes(updated.kind)
       && await findSessionMeta(record.sessionId)) {
     const history = await loadHistory(record.sessionId, { includeBodies: false });
     const prior = [...history].reverse().find(event => event.type === 'source_delivery' && event.deliveryId === updated.id);
-    if (!prior || prior.state !== updated.state || prior.externalId !== updated.externalId) {
+    if (!prior || prior.state !== updated.state || prior.externalId !== updated.externalId
+        || prior.providerMessageId !== updated.providerMessageId) {
       await appendEvent(record.sessionId, { type: 'source_delivery', runId: record.runId,
         deliveryId: updated.id, providerMessageId: updated.providerMessageId,
         workboardTaskId: updated.workboardTaskId, workboardRevision: updated.workboardRevision,
         kind: updated.kind, state: updated.state, providerPartCount: updated.providerPartCount || 1,
+        ...(updated.receiptRecovered ? { receiptRecovered: true } : {}),
         externalId: updated.externalId || '' });
     }
   }

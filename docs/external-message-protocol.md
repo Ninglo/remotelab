@@ -504,7 +504,16 @@ Current normalized event types include:
 
 Normalized events support observation and debugging. Production source-delivery consumers send the committed request reply payload rather than selecting a session's latest assistant event: another request may already be running by then. The shared reply-selection logic excludes commentary and visible workboard checklists from final reply content, while retaining the fallback for older adapters without explicit message phases.
 
-Native Codex messages retain their provider item identity and `commentary` or `final_answer` phase. A completed final answer with ready assets can enter the Feishu outbox while steering keeps the Run alive. The request atomically records the item identity and its deliveries; restart replay and terminal settlement cannot send that final twice. Declared files and local image references are materialized before early publication; a missing or unready asset defers that answer to terminal settlement. No-phase legacy adapters retain terminal settlement. Delivery receipts are retained in Session history after Request archival.
+Native Codex messages retain their provider item identity and `commentary` or `final_answer` phase. Feishu final answers wait for the actual Run to stop, including when steering keeps execution alive. The request atomically records the item identity and its deliveries; restart replay and terminal settlement cannot send that final twice. Declared files and local image references are materialized before publication; a missing or unready asset defers the answer. No-phase legacy adapters retain terminal settlement. Delivery receipts are retained in Session history after Request archival.
+
+Terminal fallback publication retains an unambiguous final's provider identity
+and result-part count, just like live observation. Every text/file part must be
+confirmed before a task result is marked delivered. A duplicate acknowledgement
+can recover an old missing history receipt from an exact retained terminal
+payload and destination match; it does not resend content or alter the delivery
+outcome. Ambiguous payloads, openings and unmatched destinations remain
+unassociated. Without external receipt evidence the task says `工作完成`, not
+`答复待送达`; Web-only results do not imply a pending external publication.
 
 An enabled workboard has two independent outputs from the same Harness execution: one card with verified deliverables, and the normal final result message. The append-only Session events hold snapshots `{taskId,revision,goal,status,reason,items:[{id,title,condition,status,evidenceRefs}]}`. Submit them with `remotelab assistant-message --workboard-file <json-path>`; plain text remains available for the initial unchecked list. Revisions are checked and serialized, exact retries return the original event, completed items require existing evidence event sequences, and withdrawing completion or changing scope requires a reason. The Harness owns semantic acceptance; the publisher validates references and deterministically projects state, without another AI planner.
 

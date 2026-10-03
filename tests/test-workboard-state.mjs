@@ -3,7 +3,7 @@ import test from 'node:test';
 import { normalizeWorkboardUpdate, projectWorkboards, workboardStatusLabel, workboardProgressText } from '../lib/workboard-state.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
 import { collectFeishuGroupWorkboardCycles, expandFeishuWorkboardUpdates, publishFeishuWorkboardCycle } from '../connectors/feishu/workboard-pilot.mjs';
-import { publishLiveAssistantReplies } from '../chat/native-final-publication.mjs';
+import { publishLiveAssistantReplies, annotateTerminalReplyDeliveries, recoverTerminalReplyReceipt } from '../chat/native-final-publication.mjs';
 
 const make = (overrides = {}) => ({ taskId: 'task-1', revision: 1, goal: '交付结果', status: 'running', reason: '',
   items: [{ id: 'a', title: '结果', condition: '结果可读', status: 'pending', evidenceRefs: [] },
@@ -18,6 +18,43 @@ const pilot = { groupEnabled: true, personId: 'person', senderOpenId: 'authorize
   sessionId: 'session', chatId: 'group', startedAfterSeq: 0, cards: [] };
 const session = { workboardPilot: true, workboardOptInPersonId: 'person', conversation: {
   connector: 'feishu', sourceRouteId: 'bot-2', target: { chatType: 'group', chatId: 'group', conversationKind: 'thread' } } };
+
+test('terminal fallback receipts require every result part and cannot settle a later task revision', () => {
+  const final = { seq: 3, type: 'message', role: 'assistant', phase: 'final_answer', runId: 'run-1', providerMessageId: 'answer' };
+  const parts = annotateTerminalReplyDeliveries([{ kind: 'reaction' }, { kind: 'content' }, { kind: 'attachment' }], { displayEvents: [final] });
+  assert.deepEqual(parts[0], { kind: 'reaction' });
+  assert.equal(parts[1].providerMessageId, 'answer');
+  assert.equal(parts[2].providerPartCount, 2);
+  const history = [event(2, make({ status: 'completed' })), final,
+    { ...parts[1], seq: 4, type: 'source_delivery', runId: 'run-1', deliveryId: 'text', state: 'delivered', externalId: 'om-text' }];
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, 'pending');
+  history.push({ ...parts[2], seq: 5, type: 'source_delivery', runId: 'run-1', deliveryId: 'file', state: 'delivered', externalId: 'om-file' });
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, 'delivered');
+  history.push(event(6, make({ status: 'completed', revision: 2 })));
+  assert.equal(projectWorkboards(history)[0].board.deliveryState, undefined);
+  const ambiguous = [{ kind: 'content' }];
+  assert.deepEqual(annotateTerminalReplyDeliveries(ambiguous, { displayEvents: [final, { ...final, providerMessageId: 'other-answer' }] }), ambiguous);
+  assert.deepEqual(annotateTerminalReplyDeliveries(ambiguous, null), ambiguous);
+});
+
+test('work completion alone cannot imply an external delivery is pending or confirmed', () => {
+  assert.equal(workboardStatusLabel(make({ status: 'completed' })), '工作完成');
+  assert.match(workboardStatusLabel(make({ status: 'completed', deliveryState: 'pending' })), /答复待送达/);
+  assert.match(workboardStatusLabel(make({ status: 'completed', deliveryState: 'delivered' })), /答复已送达/);
+  assert.match(workboardStatusLabel(make({ status: 'completed', deliveryState: 'failed' })), /答复投递异常/);
+});
+
+test('legacy receipt recovery needs one exact terminal payload and never borrows an opening or ambiguous result', () => {
+  const payload = { text: '结果', attachments: [], displayEvents: [{ type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId: 'final' }] };
+  const delivery = { kind: 'content', connector: 'feishu', sourceRouteId: 'bot', target: { chatId: 'group' }, text: '【最终答复】\n\n结果' };
+  const record = { options: { sourceDelivery: { connector: 'feishu', sourceRouteId: 'bot', target: { chatId: 'group' } } }, result: { state: 'completed', payload }, deliveries: [delivery] };
+  assert.deepEqual(recoverTerminalReplyReceipt(record, delivery), { providerMessageId: 'final', providerPartCount: 1, receiptRecovered: true });
+  assert.equal(recoverTerminalReplyReceipt(record, { ...delivery, surfaceKind: 'opening' }), null);
+  assert.equal(recoverTerminalReplyReceipt(record, { ...delivery, text: '不相同' }), null);
+  assert.equal(recoverTerminalReplyReceipt(record, { ...delivery, target: { chatId: 'other' } }), null);
+  assert.equal(recoverTerminalReplyReceipt({ ...record, deliveries: [delivery, delivery] }, delivery), null);
+  assert.equal(recoverTerminalReplyReceipt({ ...record, result: { ...record.result, state: 'cancelled' } }, delivery), null);
+});
 
 test('done requires existing successful evidence, scope edits need fresh verification', () => {
   const initial = normalizeWorkboardUpdate(make()).board;

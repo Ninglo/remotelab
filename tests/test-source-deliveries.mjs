@@ -219,4 +219,28 @@ await failSourceDelivery(other.id, independent.leaseId, 'no receipt');
 await assert.rejects(resolveSourceDelivery(other.id, { state: 'delivered' }), /actual messageId/);
 await resolveSourceDelivery(other.id, { state: 'delivered', messageId: 'operator-root', externalId: 'operator-root' });
 assert.equal((await findSessionMeta('opening-b')).conversation.target.rootId, 'operator-root');
+
+// An old already-confirmed terminal result can regain its missing canonical
+// receipt through the original acknowledgement, including after archival.
+const { loadHistory } = await import('../chat/history.mjs');
+const retainedPlan = { connector: 'feishu', sourceRouteId: 'receipt-recovery', target: { chatId: 'retained-chat', chatType: 'p2p', conversationKind: 'main' } };
+await withSessionsMetaMutation(async (metas, save) => {
+  metas.push({ id: 'retained-session', conversation: retainedPlan }); await save(metas);
+});
+const retained = (await requests.accept({ sessionId: 'retained-session', requestId: 'retained-result', text: 'request',
+  options: { sourceDelivery: retainedPlan }, result: { state: 'completed', payload: { text: '已交付', attachments: [],
+    displayEvents: [{ type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId: 'retained-final' }] } },
+  plans: [{ ...retainedPlan, kind: 'content', text: '【最终答复】\n\n已交付' }] })).record;
+const retainedDelivery = retained.deliveries[0];
+await requests.mutate(retained.key, current => ({ ...current, postCompletionPending: false,
+  deliveries: current.deliveries.map(part => ({ ...part, state: 'delivered', externalId: 'om-retained', receiptLeaseId: 'original-lease' })) }));
+await requests.archiveFinished(retained.key);
+await completeSourceDelivery(retainedDelivery.id, 'original-lease', { externalId: 'om-retained' });
+await completeSourceDelivery(retainedDelivery.id, 'original-lease', { externalId: 'om-retained' });
+const recovered = (await loadHistory('retained-session')).filter(event => event.type === 'source_delivery');
+assert.equal(recovered.length, 1, 'duplicate acknowledgements recover one history receipt without sending');
+assert.equal(recovered[0].providerMessageId, 'retained-final');
+assert.equal(recovered[0].externalId, 'om-retained');
+assert.equal(recovered[0].receiptRecovered, true);
+assert.equal((await requests.get(retained.key)).deliveries[0].attempts, 0, 'recovery cannot create another send attempt');
 console.log('SourceDelivery outbox tests passed.');

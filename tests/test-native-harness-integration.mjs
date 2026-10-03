@@ -117,7 +117,12 @@ try {
   await until(async () => (await rpc('response', earlySession.id, 'early-final-root')).state === 'ready', 'early-final execution finishes');
   const earlyClaim = await rpc('claim', { connector: 'feishu' });
   assert.equal(earlyClaim.delivery.text, '【最终答复】\n\ndurable native answer', 'delivery occurs once execution has stopped');
+  const earlyAnswer = (await rpc('history', earlySession.id)).find(event => event.phase === 'final_answer');
+  assert.equal(earlyClaim.delivery.providerMessageId, earlyAnswer.providerMessageId, 'terminal fallback retains the actual final identity');
   await rpc('complete', earlyClaim.delivery.id, earlyClaim.leaseId, { externalId: 'early-final-message' });
+  assert.ok((await rpc('history', earlySession.id)).some(event => event.type === 'source_delivery'
+    && event.providerMessageId === earlyAnswer.providerMessageId && event.state === 'delivered'
+    && event.externalId === 'early-final-message'), 'confirmed terminal delivery reaches canonical history');
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'terminal settlement cannot duplicate the final or send commentary');
   await evidence('PASS: an early model final waits for stopped execution; controller recovery and terminal settlement keep one delivery.');
   const fileSession = await rpc('create');
@@ -139,6 +144,8 @@ try {
   await rpc('complete', fileClaim.delivery.id, fileClaim.leaseId, { externalId: 'early-file-text' });
   const attachmentClaim = await rpc('claim', { connector: 'feishu' });
   assert.equal(attachmentClaim.delivery.kind, 'attachment');
+  assert.equal(attachmentClaim.delivery.providerMessageId, fileClaim.delivery.providerMessageId);
+  assert.equal(attachmentClaim.delivery.providerPartCount, 2, 'text alone cannot confirm a multipart result');
   assert.equal(attachmentClaim.delivery.attachment.originalName, 'early-result.txt');
   assert.ok(attachmentClaim.delivery.attachment.assetId);
   assert.equal((await rpc('response', fileSession.id, 'early-file-root')).state, 'ready');
