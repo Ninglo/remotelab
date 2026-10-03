@@ -286,7 +286,8 @@ test('ordinary progress updates the original card; openings, questions and final
   record = { ...record, deliveries: [], streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
   await publishLiveAssistantReplies(record, history.slice(0, -1), { ...options, running: true });
   assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text),
-    ['【开始处理】\n\n核对原卡更新和重复任务 ID', '【待你回复】\n\n请选择部署窗口']);
+    ['【开始处理】\n\n核对原卡更新和重复任务 ID', '【进展】\n\n发现两个 ID 对应相同验收条件',
+      '【待你回复】\n\n请选择部署窗口', '【进展】\n\n修复已通过验证，正在推送']);
   const state = structuredClone(pilot), cards = [];
   const publishing = { pilot: state, persist: async () => {}, verifyMessage: async () => {}, app: { im: { v1: { message: {
     reply: async input => { cards.push(['create', JSON.parse(input.data.content)]); return { code: 0, data: { message_id: 'one-card' } }; },
@@ -307,9 +308,12 @@ test('continuation progress uses full Session history and stale prior Runs canno
   const stale = { ...progress, seq: 6, runId: 'run-1', content: '<progress>过期进展</progress>' };
   const history = [user(), initial, user(3, 'run-2'), resumed, progress, stale];
   assert.equal(projectWorkboards(history)[0].progress.seq, 5);
-  const record = { key: 'resumed', runId: 'run-2', options: {}, deliveries: [] };
-  await publishLiveAssistantReplies(record, [progress], { session, fullHistory: history,
-    plan: { connector: 'feishu', target: { chatId: 'group' } }, store: { get: async () => record, mutate: async () => assert.fail('card progress must not enter the message outbox') } });
+  let record = { key: 'resumed', runId: 'run-2', options: {}, deliveries: [] };
+  await publishLiveAssistantReplies(record, [progress, stale], { session, fullHistory: history,
+    plan: { connector: 'feishu', target: { chatId: 'group' } }, store: {
+      get: async () => record, mutate: async (_key, fn) => { record = fn(record); } } });
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text),
+    ['【进展】\n\n继续核验原任务']);
 });
 
 test('a group sender outside the opt-in cannot supply progress on the same Run', () => {

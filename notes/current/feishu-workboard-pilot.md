@@ -86,7 +86,10 @@ decides whether the work satisfies the user's goal.
 - After a task card exists, explicit `<progress>` messages update its
   **目前进展** area. The web card shows the latest update and expandable earlier
   updates; the Feishu worker patches the original message with the latest text.
-  These updates do not enter the separate message outbox. Openings, native user
+  Each useful progress update also enters the Feishu message outbox, returning
+  to the original conversation or topic as a new message. This global default
+  lets concurrent tasks notify readers and retains the intermediate message
+  history; per-Session strategy controls are deferred. Openings, native user
   questions and final results remain separate. Without a card, explicit progress
   uses one compact progress panel per Run, without acceptance items. Later
   progress patches that same position/message; Web retains expandable progress
@@ -94,6 +97,10 @@ decides whether the work satisfies the user's goal.
   upgrades the original progress position/message. The opening, questions and
   final answer remain separate. New Feishu progress starts at a durable route
   upgrade fence; old delivered chat messages are never replayed or recalled.
+  When upgrading an unfinished Request from card-only publication, preserve
+  its record and fence already-stored progress with `progressMessageAfterSeq`
+  while the control-plane writer is stopped. This boundary is not a delivery
+  receipt; new progress retains the normal durable message identities.
   Progress never changes deliverable
   acceptance or proves completion, and follows the card's sender/Run scope.
   Explicit completion, partial, blocked, failed or cancelled outcomes replace

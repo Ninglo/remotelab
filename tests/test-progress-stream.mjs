@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { projectProgressStreams } from '../lib/progress-stream.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
 import { collectFeishuInstanceWorkboardCycles, expandFeishuWorkboardUpdates,
   publishFeishuWorkboardCycle } from '../connectors/feishu/workboard-pilot.mjs';
 import { publishLiveAssistantReplies } from '../chat/native-final-publication.mjs';
+import { createRequestStore } from '../chat/requests.mjs';
 
 const session = { id: 'session', workboardPilot: true, conversation: { connector: 'feishu', sourceRouteId: 'bot',
   target: { chatType: 'group', chatId: 'group', conversationKind: 'thread' } } };
@@ -119,15 +123,69 @@ test('late acceptance list upgrades the original progress position and message',
     'a prior final closes the upgrade window; a new task cannot claim the old progress message');
 });
 
-test('admitted progress never also enters the message outbox', async () => {
+test('progress messages remain visible with and without card admission; replay queues no duplicates', async () => {
   let record = { key: 'request', runId: 'run', options: {}, deliveries: [] };
   const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
   await publishLiveAssistantReplies(record, history.slice(0, -2), {
     store, session, fullHistory: history, plan: { connector: 'feishu', target: { chatId: 'group' } } });
-  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.surfaceKind), ['opening', 'question']);
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.surfaceKind),
+    ['opening', 'progress', 'question', 'progress']);
+  assert.deepEqual(record.deliveries.filter(part => part.surfaceKind === 'progress').map(part => part.text),
+    ['【进展】\n\n分组规则已核对', '【进展】\n\n已定位显示问题']);
+  const published = structuredClone(record);
+  await publishLiveAssistantReplies(published, history.slice(0, -2), {
+    store, session, fullHistory: history, plan: { connector: 'feishu', target: { chatId: 'group' } } });
+  assert.deepEqual(record, published, 'durable message identities survive observer replay/restart');
   record = { ...record, deliveries: [], streamedSurfaceMessageIds: [] };
   const unadmitted = structuredClone(history); delete unadmitted[0].workboardAdmission;
   await publishLiveAssistantReplies(record, unadmitted.slice(0, -2), {
     store, session, fullHistory: unadmitted, plan: { connector: 'feishu', target: { chatId: 'group' } } });
   assert.equal(record.deliveries.filter(part => part.surfaceKind === 'progress').length, 2);
+});
+
+test('rollout fence preserves old card progress without resending it; new progress keeps its thread', async () => {
+  let record = { key: 'request', runId: 'run', options: {}, deliveries: [], progressMessageAfterSeq: 3 };
+  const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
+  const plan = { connector: 'feishu', sourceRouteId: 'bot',
+    target: { chatId: 'group', chatType: 'group', conversationKind: 'thread', messageId: 'root', replyInThread: true } };
+  await publishLiveAssistantReplies(record, history.slice(0, -2), { store, session, fullHistory: history, plan });
+  const updates = record.deliveries.filter(part => part.surfaceKind === 'progress');
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].text, '【进展】\n\n已定位显示问题');
+  assert.deepEqual(updates[0].target, plan.target);
+  assert.equal(record.streamedSurfaceMessageIds.includes('message-3'), false,
+    'a suppression fence cannot masquerade as a sent message');
+  const before = structuredClone(record);
+  await publishLiveAssistantReplies(record, history, { store, session, fullHistory: history, plan, running: false });
+  assert.equal(record.deliveries.filter(part => part.surfaceKind === 'progress').length, 1,
+    'cold terminal recovery never backfills intermediate progress');
+  assert.deepEqual(record.deliveries.slice(0, before.deliveries.length), before.deliveries);
+});
+
+test('concurrent progress keeps each private chat or task topic and durable deduplication', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'progress-publication-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const store = createRequestStore(directory);
+  const cases = [
+    { chatId: 'private', chatType: 'p2p', conversationKind: 'main' },
+    { chatId: 'group', chatType: 'group', conversationKind: 'thread', messageId: 'task-a', replyInThread: true },
+    { chatId: 'group', chatType: 'group', conversationKind: 'thread', messageId: 'task-b', replyInThread: true },
+  ];
+  const inputs = await Promise.all(cases.map(async (target, index) => {
+    const plan = { connector: 'feishu', sourceRouteId: 'bot', target };
+    const { record } = await store.accept({ sessionId: `session-${index}`, requestId: `request-${index}`, text: '任务',
+      deliveryPlan: plan });
+    const event = progress(3, `任务 ${index} 有新进展`, { runId: record.runId });
+    return { record, event, plan };
+  }));
+  const publish = ({ record, event, plan }) => publishLiveAssistantReplies(record, [event], { store, session, plan });
+  await Promise.all(inputs.flatMap(input => [publish(input), publish(input)]));
+  for (const { record, plan } of inputs) {
+    const stored = await store.get(record.key);
+    assert.equal(stored.deliveries.length, 1);
+    assert.equal(stored.deliveries[0].surfaceKind, 'progress');
+    assert.deepEqual(stored.deliveries[0].target, plan.target);
+    assert.deepEqual(stored.streamedSurfaceMessageIds, ['message-3'],
+      'the same provider message identity in another Request cannot consume this delivery');
+  }
 });
