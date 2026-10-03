@@ -1456,6 +1456,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     'Per-turn context',
     await buildTurnContextHook(session, {
     sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
+    personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
     }),
   ));
   return slots.filter(Boolean);

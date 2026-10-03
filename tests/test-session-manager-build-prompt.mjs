@@ -387,4 +387,27 @@ assert.match(bareUserContinuationPrompt, /记住 13 这个数/, 'bare-user promp
 assert.match(bareUserContinuationPrompt, /Got it\. 13\./, 'bare-user prompt must include assistant reply from history');
 assert.match(bareUserContinuationPrompt, /刚才是啥/, 'bare-user prompt must include current user message');
 
+// A shared Session may be continued by another person. Route only that request
+// identity; neither its creator nor an inherited sidebar view selects a profile.
+const { AUTH_FILE } = await import('../lib/config.mjs');
+const { loadAuthDocument } = await import('../lib/auth-config.mjs');
+await fs.writeFile(AUTH_FILE, JSON.stringify({ version: 2, serviceToken: 'isolated-service-token', people: [
+  { id: 'person_alpha', name: 'Alpha', identities: [{ id: 'identity_alpha', kind: 'web', subjectId: 'alpha' }] },
+  { id: 'person_beta', name: 'Beta', identities: [{ id: 'identity_beta', kind: 'web', subjectId: 'beta' }] },
+] }));
+await loadAuthDocument({ persistMigration: false });
+for (const resumed of [false, true]) {
+  const prompt = await buildPrompt('shared-person-test', {
+    ...baseSession, initiatedByIdentityId: 'identity_alpha',
+    codexThreadId: resumed ? 'native-thread' : null,
+  }, '继续工作', 'codex', 'codex', null, {
+    viewPersonId: 'person_beta', initiatedByIdentityId: 'identity_beta', skipSessionContinuation: true,
+  });
+  assert.match(prompt, /reference\/people\/person_beta\.md/);
+  assert.doesNotMatch(prompt, /reference\/people\/person_alpha\.md/);
+}
+const ambiguousPersonPrompt = await buildPrompt('ambiguous-person-test', {
+  ...baseSession, initiatedByIdentityId: 'identity_alpha',
+}, '继续工作', 'codex', 'codex', null, { viewPersonId: 'person_alpha', skipSessionContinuation: true });
+assert.doesNotMatch(ambiguousPersonPrompt, /Person memory pointer/);
 console.log('test-session-manager-build-prompt: ok');

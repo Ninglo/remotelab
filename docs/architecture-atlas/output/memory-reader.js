@@ -1,5 +1,5 @@
-import { guide } from '../../memory-architecture/guide-data.js';
-import { memoryAudit, memorySteps, executionRows, timeRules, timelineExample, backgroundCases } from '../../memory-architecture/reader-data.js';
+import { guide } from '../../memory-architecture/guide-data.js?v=2.6';
+import { memoryAudit, memorySteps, executionRows, timeRules, timelineExample, backgroundCases } from '../../memory-architecture/reader-data.js?v=20261003f';
 const el=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rows=list=>list.map(row=>`<tr>${row.map(cell=>`<td>${esc(cell)}</td>`).join('')}</tr>`).join('');

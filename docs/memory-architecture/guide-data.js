@@ -1,6 +1,6 @@
 // Human and Agent reference share this content source. Proposed and enabled parts remain distinct.
 export const guide = {
-  "version": "2.5",
+  "version": "2.6",
   "verifiedAt": "2026-10-03",
   "auditedCommit": "751388fc（冻结旧运行版）",
   "mainBaseline": "0ef09dc2",
@@ -621,7 +621,7 @@ export const guide = {
       ],
       "read": "按 Harness 加载规则与本次方法需求",
       "write": "范围明确的稳定规则；有验证的方法改善",
-      "rule": "AGENTS.md 放操作约束与入口，Skill 放方法。业务进展、公司位置、个人偏好不挤入这里。 已有明确个人称呼约束保留兼容入口，完整资料仍按Person维护。"
+      "rule": "AGENTS.md 只放共同操作约束和读取入口，Skill 放方法。个人称呼、写作与协作偏好统一位于人员区对应Person的档案；没有个人称呼的全局兼容例外。业务进展和公司信息分别回其专属位置。"
     },
     {
       "id": "evidence",
@@ -1296,7 +1296,7 @@ export const guide = {
           "Session.personViews"
         ],
         "body": "Person.preferences 已有输入模式、语音快捷键等产品设置。旧 preferences.md 默认按机器／实例维护，不能当作每个人的偏好。personViews 是侧栏排列；默认值也不等于本人明确表达。 2026-10-03已核真实Person并登记一项本人明确称呼偏好，bootstrap提供按需入口；机器共用旧personal/identity.md不代表所有同事。",
-        "read": "产品设置由界面使用；协作偏好需判断究竟是谁、适用于什么。",
+        "read": "产品设置由界面使用；本轮已核消息身份提供对应Person档案指针，Harness在称呼、写作或协作需要时读取。文件存在与内容不会被指针自动认证；身份不清不继承Session创建者或其他人员档案。",
         "write": "本人设置与已有人工维护；本轮开始按真实Person登记明确偏好，未完成全员归类，也未新增自动学习偏好机制。"
       },
       "target": {
