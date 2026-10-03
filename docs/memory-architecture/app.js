@@ -1,9 +1,9 @@
-import { guide } from './guide-data.js';
+import { guide } from './guide-data.js?v=2.0';
 
 const el = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const repo = 'https://github.com/Ninglo/remotelab/blob/';
-const referenceUrl = ref => repo + (/^(chat|lib)\//.test(ref.path) ? guide.auditedCommit : 'main') + '/' + ref.path;
+const referenceUrl = ref => repo + (/^(chat|lib|connectors|scripts)\//.test(ref.path) ? guide.mainBaseline : 'main') + '/' + ref.path;
 const refs = Object.fromEntries(guide.references.map(r => [r.id, r]));
 const badge = (text, proposed = false) => '<span class="badge' + (proposed ? ' proposed' : '') + '">' + escape(text) + '</span>';
 const paths = values => values?.length ? '<div class="path-list">' + values.map(p => '<code>' + escape(p) + '</code>').join('') + '</div>' : '';
@@ -51,7 +51,7 @@ function drawGraph(rootId, detailId, graph, options = {}) {
   const marker = rootId + '-arrow';
   let svg = '<svg class="graph-svg" viewBox="0 0 1000 ' + graph.height + '" aria-hidden="true"><defs><marker id="' + marker + '" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#9b9ba2" stroke-width="1.2"/></marker></defs>';
   for (const [a, b, label] of graph.edges) {
-    const g = edgeGeometry(index[a], index[b]), muted = !active.has(a) || !active.has(b);
+    const g = graph.routes?.[a+':'+b] || edgeGeometry(index[a], index[b]), muted = !active.has(a) || !active.has(b);
     svg += '<path class="graph-line' + (label ? ' conditional' : '') + (muted ? ' inactive' : '') + '" d="' + g.path + '" marker-end="url(#' + marker + ')"/>';
     if (label && !muted) svg += '<text class="graph-line-label" x="' + g.x + '" y="' + g.y + '" text-anchor="middle">' + escape(label) + '</text>';
   }
@@ -66,6 +66,9 @@ function drawGraph(rootId, detailId, graph, options = {}) {
     button.addEventListener('click', () => selectNode(node));
     root.append(button);
   }
+  const relations=document.createElement('details');relations.className='graph-relations';
+  relations.innerHTML='<summary>查看图中连接关系</summary><ul>'+graph.edges.filter(([a,b])=>active.has(a)&&active.has(b)).map(([a,b,label])=>'<li>'+escape(index[a].title)+' <span aria-label="指向">→</span> '+escape(index[b].title)+(label?' <small>（'+escape(label)+'）</small>':'')+'</li>').join('')+'</ul>';
+  root.append(relations);
   function selectNode(node) {
     root.querySelectorAll('.graph-node').forEach(b => {
       const selected = b.dataset.node === node.id;
@@ -76,6 +79,43 @@ function drawGraph(rootId, detailId, graph, options = {}) {
   }
   selectNode(index[options.defaultNode] || graph.nodes[0]);
 }
+
+drawGraph('architecture-graph','architecture-detail',guide.architectureGraph,{proposed:true,defaultNode:'memory'});
+function definition(id, rows) { el(id).innerHTML = rows.map(([title,text])=>'<div><h4>'+escape(title)+'</h4><p>'+escape(text)+'</p></div>').join(''); }
+for (const [id, rows] of [
+  ['principles',guide.principles],['scope-rules',guide.scopeRules],['registry-fields',guide.registryFields],['pointer-rules',guide.pointerRules],
+  ['write-rules',guide.writeRules],['migration',guide.migration],['acceptance-cases',guide.acceptanceCases],['prerequisites',guide.prerequisites]
+]) definition(id,rows);
+
+function renderStorage(key) {
+  const item=guide.storageCases.find(item=>item.id===key);
+  el('storage-question').textContent=item.question;
+  el('storage-detail').innerHTML=['current','target'].map(mode=>{
+    const s=item[mode];
+    return '<article data-storage-mode="'+mode+'"><h4>'+ (mode==='current'?'目前实际存储':'本次治理方案') +'</h4>'+badge(mode==='current'?'现状已核对':'拟议位置与规则',mode==='target')+paths(s.paths)+'<p>'+escape(s.body)+'</p><dl class="compact-dl"><dt>何时读</dt><dd>'+escape(s.read)+'</dd><dt>怎样写</dt><dd>'+escape(s.write)+'</dd></dl></article>';
+  }).join('');
+}
+renderControls('storage-controls',guide.storageCases.map(c=>[c.id,c.label]),'session',renderStorage);
+renderStorage('session');
+
+function renderRoute(key) {
+  const c=guide.routeExamples.find(c=>c.id===key);
+  el('route-detail').innerHTML='<p class="example-text">'+escape(c.input)+'</p><dl class="walkthrough-dl">'+[['归属',c.route],['依据',c.basis],['写入',c.store],['开工读取',c.read]].map(([t,v])=>'<dt>'+escape(t)+'</dt><dd>'+escape(v)+'</dd>').join('')+'</dl>';
+}
+renderControls('route-controls',guide.routeExamples.map(c=>[c.id,c.label]),'group-topic',renderRoute);renderRoute('group-topic');
+
+function renderReading(key) {
+  const c=guide.readingCases.find(c=>c.id===key);
+  el('reading-detail').innerHTML='<ol class="read-steps">'+c.steps.map(([title,body])=>'<li><h4>'+escape(title)+'</h4><p>'+escape(body)+'</p></li>').join('')+'</ol><p class="reading-skip"><strong>通常无需读：</strong>'+escape(c.skip)+'</p>';
+}
+renderControls('reading-controls',guide.readingCases.map(c=>[c.id,c.label]),'new-group',renderReading);renderReading('new-group');
+
+function renderClassification(key) {
+  const c=guide.classificationCases.find(c=>c.id===key);
+  el('classification-detail').innerHTML='<div class="classification-example"><div class="eyebrow">'+escape(c.type)+'</div><blockquote>'+escape(c.example)+'</blockquote></div><div><h3>存到：'+escape(c.target)+'</h3>'+paths(c.paths)+'<p>'+escape(c.rule)+'</p><p class="caption">'+escape(c.other)+'</p></div>';
+}
+renderControls('classification-controls',guide.classificationCases.map(c=>[c.id,c.label]),'project-state',renderClassification);renderClassification('project-state');
+el('feedback-story').innerHTML=guide.feedbackStory.map(([title,body])=>'<li><h4>'+escape(title)+'</h4><p>'+escape(body)+'</p></li>').join('');
 
 function selectScenario(key) {
   const scenario = guide.scenarios[key];
@@ -89,8 +129,8 @@ function selectCollect(key) {
   el('collect-summary').textContent = graph.intro;
   drawGraph('collect-graph','collect-detail',graph,{proposed:key==='target'});
 }
-renderControls('collect-controls',Object.entries(guide.collectGraphs).map(([k,v])=>[k,v.label]),'current',selectCollect);
-selectCollect('current');
+renderControls('collect-controls',Object.entries(guide.collectGraphs).map(([k,v])=>[k,v.label]),'target',selectCollect);
+selectCollect('target');
 
 let layerGroup = 'all';
 function renderLayers() {
@@ -100,7 +140,6 @@ function renderLayers() {
 }
 renderControls('layer-controls',[['all','全部'],['session','会话'],['knowledge','长期知识'],['project','项目与人'],['methods','经验方法']],'all',key => {layerGroup=key;renderLayers();});
 el('layer-search').addEventListener('input',renderLayers); renderLayers();
-function definition(id, rows) { el(id).innerHTML = rows.map(([title,text])=>'<div><h4>'+escape(title)+'</h4><p>'+escape(text)+'</p></div>').join(''); }
 definition('record-fields',guide.recordFields); definition('gap-list',guide.gaps); definition('metrics',guide.metrics);
 el('roles').innerHTML = guide.roles.map(([role,text])=>'<dt>'+escape(role)+'</dt><dd>'+escape(text)+'</dd>').join('');
 el('isolation').textContent = guide.isolation;
@@ -141,7 +180,7 @@ el('load-instance').addEventListener('click',async()=>{
   finally{button.disabled=false;}
 });
 
-el('audit-boundary').textContent = '说明 v'+guide.version+'，核对于 '+guide.verifiedAt+'。运行源码基线 '+guide.auditedCommit+'，主线基线 '+guide.mainBaseline+'；本页涉及的主要读取与写回文件在两者间一致。'+guide.boundary+'未逐条复审全部历史业务事实，也未把治理目标声明为已上线。';
+el('audit-boundary').textContent = '说明 v'+guide.version+'，核对于 '+guide.verifiedAt+'。当前运行源码 '+guide.auditedCommit+'，本次文档主线基线 '+guide.mainBaseline+'；核对的 10 个核心路径、读取与写回文件一致，代码链接定位到主线基线。'+guide.boundary+'本次没有逐条复审全部历史业务事实，也没有启用治理运行层。';
 el('reference-list').innerHTML = guide.references.map(r=>'<div><a href="'+referenceUrl(r)+'" target="_blank" rel="noopener">'+escape(r.title)+' ↗</a><p>'+escape(r.use)+'</p><code>'+escape(r.path)+'</code></div>').join('');
 el('external-list').innerHTML = guide.external.map(r=>'<div><a href="'+escape(r.url)+'" target="_blank" rel="noopener">'+escape(r.title)+' ↗</a><p>'+escape(r.use)+'</p></div>').join('');
 el('maintenance').innerHTML = guide.maintenance.map(t=>'<li>'+escape(t)+'</li>').join('');
