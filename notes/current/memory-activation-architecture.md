@@ -108,3 +108,61 @@ separately. This task only updates the guide and its static publication.
 Keep ordinary task interpretation and planning with the Harness. Do not make an
 all-project prompt bundle or second semantic gate mandatory on every turn. See
 [the thin control-plane boundary](thin-control-plane-architecture.md).
+
+## Comparison and non-regression requirements (guide v2.1; not enabled)
+
+Governance completeness is not a demonstrated latency, token or answer-quality
+gain. The current path already uses pointers and native continuation; do not
+replace that baseline with a full-history straw comparison. Current provider
+token records expose input, cached input and output, but do not identify the
+cost of each memory source. No matched performance experiment has been run.
+Commercial collaboration/search product documentation is capability evidence,
+not a matched benchmark against this instance.
+
+Keep ordinary tasks on the current path with zero new mandatory model calls and
+zero unrelated project-body injection. Build incremental project understanding
+and reports in the background, reusing existing source consumption. Background
+work still shares CPU, I/O, networking and account limits: use separate queues,
+budgets and foreground priority. For overlapping sources, establish one writer
+before replacing an existing classifier or memory-review operation. Never run
+two competing project ledgers or silently double the same extraction workload.
+
+Account for foreground, retained background, incremental extraction, conflict
+checks, indexing, reports, backfill and retries. Cached input is already part of
+input; reasoning is already part of output when that is the provider's schema.
+Token counts, subscription capacity, model-price estimates and invoiced cost
+are separate measurements. Include human confirmation and correction time.
+
+Evaluate isolated A=current, B=governance and C=attribution/version-only variants
+using the same source cutoff, task, Harness, model and settings, without shared
+answers or future-source leakage. Cover every registered project plus ordinary
+non-project tasks; stratify fresh/resumed/rebuilt contexts and cold/warm caches.
+Measure evidence recall, attribution/state/time correctness, answer grounding,
+appropriate uncertainty and actual task success separately. Report useful-first
+response and full-task P50/P95 with sample counts and uncertainty; a greeting
+does not count as useful output. Do not offset an ordinary-task regression with
+a gain in organization-report scores.
+
+Proposed initial release targets are zero extra required foreground model calls,
+ordinary routing/read P95 overhead <=100ms, and useful-first/full-task P95 no
+greater than 1.05 times the matched baseline. These are targets, not results;
+calibrate and declare them before looking at the new variant's scores. Quality
+evidence must support non-regression per task class; serious acceptance-state,
+access, cross-Person writing or revoked-fact errors block integration. Foreground
+tokens and net-added background cost have separate predeclared limits. Insufficient
+evidence keeps the new path isolated.
+
+Prove independent retrieval/write/delivery/action switches and fallback in a
+test environment using timeouts, broken pointers, conflicting versions, revoked
+sources/permissions and quota exhaustion. Versioned atomic writes prevent stale
+feedback or simultaneous updates from corrupting the project ledger. Each source
+needs a visible watermark and collection gap; current business state is checked
+against its original system. Expired or withdrawn facts invalidate derived views
+and indexes. Deleting a memory file cannot erase already loaded native context;
+explicit correction or thread reconstruction needs its own verification.
+
+The shared instance currently grants authenticated People shared Session access.
+Directories and namespaces do not provide private-person ACLs. Introduce actual
+source-aware authorization before activating any private-memory expectation.
+This documentation update does not implement those runtime guards, start source
+collection, change existing writers, or enable the proposed governance.

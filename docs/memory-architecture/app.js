@@ -1,4 +1,4 @@
-import { guide } from './guide-data.js?v=2.0';
+import { guide, calculateTokenScenario } from './guide-data.js?v=2.1';
 
 const el = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -184,3 +184,36 @@ el('audit-boundary').textContent = '说明 v'+guide.version+'，核对于 '+guid
 el('reference-list').innerHTML = guide.references.map(r=>'<div><a href="'+referenceUrl(r)+'" target="_blank" rel="noopener">'+escape(r.title)+' ↗</a><p>'+escape(r.use)+'</p><code>'+escape(r.path)+'</code></div>').join('');
 el('external-list').innerHTML = guide.external.map(r=>'<div><a href="'+escape(r.url)+'" target="_blank" rel="noopener">'+escape(r.title)+' ↗</a><p>'+escape(r.use)+'</p></div>').join('');
 el('maintenance').innerHTML = guide.maintenance.map(t=>'<li>'+escape(t)+'</li>').join('');
+
+el('comparison-conclusion').textContent = guide.comparison.conclusion;
+el('comparison-evidence').textContent = guide.comparison.evidence;
+el('comparison-table').innerHTML = '<thead><tr><th scope="col">比较什么</th><th scope="col">现有机制</th><th scope="col">拟实施方案</th></tr></thead><tbody>' + guide.comparison.rows.map(([name,current,proposed])=>'<tr><th scope="row">'+escape(name)+'</th><td>'+escape(current)+'</td><td>'+escape(proposed)+'</td></tr>').join('') + '</tbody>';
+function renderProduct(key) {
+  const p=guide.comparison.products.find(item=>item.id===key);
+  el('product-detail').innerHTML='<h3>'+escape(p.label)+'</h3><p>'+escape(p.position)+'</p><dl class="product-dl">'+p.rows.map(([title,text])=>'<dt>'+escape(title)+'</dt><dd>'+escape(text)+'</dd>').join('')+'</dl><div class="source-links">'+p.sources.map(([title,url])=>'<a href="'+escape(url)+'" target="_blank" rel="noopener">'+escape(title)+' ↗</a>').join('')+'</div>';
+}
+renderControls('product-controls',guide.comparison.products.map(p=>[p.id,p.label]),'claude-tag',renderProduct);
+renderProduct('claude-tag');
+for(const [id,rows] of [['comparison-lessons',guide.comparison.lessons],['cost-rules',guide.costRules],['evaluation',guide.evaluation],['measurement-fields',guide.measurementFields],['release-gates',guide.releaseGates],['failure-rules',guide.failureRules]])definition(id,rows);
+drawGraph('cost-graph','cost-detail',guide.costGraph,{proposed:true,defaultNode:'work'});
+el('token-boundary').textContent=guide.tokenExample.boundary;
+el('token-formula').textContent=guide.tokenExample.formula;
+el('token-fields').innerHTML=guide.tokenExample.fields.map(f=>'<label for="token-'+f.id+'">'+escape(f.label)+'<input id="token-'+f.id+'" name="'+f.id+'" type="number" min="0" max="'+f.max+'" step="1" required value="'+f.value+'"></label>').join('');
+const formatToken = n => n.toLocaleString('zh-CN');
+function renderTokenEstimate() {
+  const inputs=[...el('token-fields').querySelectorAll('input')];
+  if(!inputs.every(input=>input.checkValidity())){
+    el('token-result').textContent='请填写范围内的非负整数；空白或无效输入无法计算。'; return;
+  }
+  const result=calculateTokenScenario(Object.fromEntries(inputs.map(input=>[input.name,Number(input.value)])));
+  const direction=result.delta>0?'增加':result.delta<0?'减少':'相同';
+  const ratio=result.change===null?'（当前为 0，比例不适用）':result.delta===0?'':'（'+(Math.abs(result.change)*100).toFixed(1)+'%）';
+  el('token-result').innerHTML='<div><span>当前总量／日</span><strong>'+formatToken(result.current)+'</strong></div><div><span>治理后总量／日</span><strong>'+formatToken(result.proposed)+'</strong></div><div><span>净新增后台／日</span><strong>'+formatToken(result.extraBackground)+'</strong></div><p class="token-verdict">按上述假设，总 token '+direction+(result.delta===0?'':' '+formatToken(Math.abs(result.delta)))+' '+ratio+'。'+(result.cheaperFrom===null?'每次前台量没有减少，增加复用次数也不会让本式总量更低。':'维持其余假设不变，每天至少 '+formatToken(result.cheaperFrom)+' 次前台使用，总量才比当前低。')+'</p>';
+}
+el('token-fields').addEventListener('input',renderTokenEstimate);
+renderControls('token-presets',guide.tokenExample.presets.map(p=>[p.id,p.label]),'',key=>{
+  const preset=guide.tokenExample.presets.find(p=>p.id===key);
+  for(const [id,value] of Object.entries(preset.values))el('token-'+id).value=String(value);
+  renderTokenEstimate();
+});
+renderTokenEstimate();
