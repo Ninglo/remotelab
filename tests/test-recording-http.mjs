@@ -50,7 +50,10 @@ test('saved audio enters the real RemoteLab asset/message/Run path and a lost re
   await writeFile(join(configDir, 'tools.json'), JSON.stringify([{ id: 'fake-codex', name: 'Recording test', command: join(bin, 'fake-codex'), runtimeFamily: 'codex-json', models: [{ id: 'fake-model', label: 'Fake model', defaultEffort: 'low' }], reasoning: { kind: 'enum', levels: ['low'], default: 'low' } }]));
   await writeFile(join(bin, 'fake-codex'), `#!/usr/bin/env node
 const fs = require('node:fs');
-fs.writeFileSync(process.env.REMOTELAB_FAKE_PROMPT_FILE, process.argv[process.argv.length - 1] || '');
+const prompt = process.argv[process.argv.length - 1] || '';
+// The post-turn classifier passes its prompt on stdin ('-'). Its background
+// invocation must not overwrite the foreground recording prompt under test.
+if (prompt !== '-') fs.writeFileSync(process.env.REMOTELAB_FAKE_PROMPT_FILE, prompt);
 console.log(JSON.stringify({type:'thread.started', thread_id:'recording-test-thread'}));
 console.log(JSON.stringify({type:'turn.started'}));
 console.log(JSON.stringify({type:'item.completed', item:{type:'agent_message', text:'录音附件已进入测试 Harness'}}));
