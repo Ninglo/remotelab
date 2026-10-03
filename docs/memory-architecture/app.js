@@ -219,3 +219,11 @@ renderControls('token-presets',guide.tokenExample.presets.map(p=>[p.id,p.label])
 renderTokenEstimate();
 for(const [id,rows] of [['preparation-risks',guide.preoperation.risks],['preparation-controls',guide.preoperation.controls],['preparation-next',guide.preoperation.next]])definition(id,rows);
 for(const key of ['finding','current','tool','boundary'])el('preparation-'+key).textContent=guide.preoperation[key];
+
+// Rendering expands the page after the browser's initial fragment positioning.
+// Resolve the existing anchor once the guide is populated so shared links land on it.
+if(location.hash){
+  let anchor;
+  try{anchor=document.getElementById(decodeURIComponent(location.hash.slice(1)));}catch{}
+  if(anchor)anchor.scrollIntoView({behavior:'instant',block:'start'});
+}
