@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-03 — Verify the complete Feishu reply flow
+
+- Observed friction: a short question required several minutes of investigation but received a fixed creation notice, two separate progress posts and a final post, with no task card.
+- Cause: a message-only Jev decision suppressed task-card guidance before the executing Harness knew the actual work. Prior acceptance verified updates of existing cards, not the new-task flow.
+- Change: the opted-in Harness decides cards from actual work; merge the Session entry into its useful opening; keep ordinary progress on the original card and distinguish questions/final replies. Do not create a late card after the final reply.
+- Evidence boundary: API patch success is not full client experience acceptance. Verify message order, card identity, scope and content; retain live acceptance as pending until an actual new task is observed.
+
 ### 2026-10-03 — Resource monitoring and routine reports
 
 - Source: direct operator feedback after separate account, disk, skill and project notifications accumulated.

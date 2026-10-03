@@ -36,7 +36,7 @@ for(const item of rollout)lines.push(`### ${item.title}`,'',`承担者：${item.
 lines.push('## 不变边界','');
 for(const item of invariants)lines.push('- '+item);
 lines.push('','## 源码与维护','','主线源码底座：`'+meta.mainCommit+'`；本次核对的试验实例：`'+meta.pilotCommit+'`。', '',
-  '现状中的 Jev 分别承担群表情与分流、清单 Gate 及独立 Auto 档位选择。目标输出主线取消对它的依赖，Auto 另行评估。复用原生输入、停止和事件；MCP Events 属于外部订阅，不自动提供本页业务规则。', '',
+  '现状中的 Jev 仍承担群表情与分流及独立 Auto 档位选择；任务卡入口已取消其 gate，由执行 Harness 判断实际工作量。接收确认前置与问题分级仍待实施，Auto 另行评估。复用原生输入、停止和事件；MCP Events 属于外部订阅，不自动提供本页业务规则。', '',
   '- 内容源为 `guide-data.js`。图、时序、体验示例与改动验收引用同一份内容。',
   '- 修改后运行 `node render-reference.mjs` 同步本参考文本，并核对桌面、窄屏、键盘操作及全部场景。',
   '- 公开内容不包含私人消息、用户身份、群 ID、Session ID、凭据或带 token 的链接。',

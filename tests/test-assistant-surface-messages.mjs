@@ -82,7 +82,7 @@ for (const connector of ['feishu', 'wechat', 'email']) {
   const options = { store, session: { sourceId: connector }, plan: { connector, sourceRouteId: 'test',
     target: { chatId: 'chat', messageId: 'inbound', threadId: 'topic', to: 'person@example.test' } } };
   const deliveryExpected = connector === 'feishu'
-    ? expected.map((text, index) => `【${index === 2 ? '交付' : '进展'}】\n\n${text}`) : expected;
+    ? expected.map((text, index) => `【${index === 2 ? '最终答复' : index === 0 ? '开始处理' : '进展'}】\n\n${text}`) : expected;
   await publishLiveAssistantReplies(record, history.slice(0, -1), options);
   assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected.slice(0, 2));
   assert.equal(record.deliveries.some(part => part.kind === 'reaction'), false, 'progress never finishes the temporary outcome reaction');
@@ -107,7 +107,7 @@ await publishLiveAssistantReplies(stoppedRecord, history, {
   store: { get: async () => stoppedRecord, mutate: async (_key, fn) => { stoppedRecord = fn(stoppedRecord); } },
   plan: feishuPlan, running: false,
 });
-assert.deepEqual(stoppedRecord.deliveries.map(part => part.text), ['【交付】\n\nFixed and verified.'],
+assert.deepEqual(stoppedRecord.deliveries.map(part => part.text), ['【最终答复】\n\nFixed and verified.'],
   'cold recovery of stopped execution does not publish stale progress as deliveries');
 let legacyRecord = { key: 'legacy', runId: 'r', responseId: 'legacy-response', options: {}, deliveries: [] };
 await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, 'A direct answer')], {
@@ -121,7 +121,7 @@ await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, '<p
 });
 assert.equal(legacyRecord.deliveries[0].text, '【进展】\n\nExplicit progress', 'explicit progress can still stream without a native phase');
 for (const running of [true, false]) {
-  const label = running ? '进展' : '交付';
+  const label = running ? '进展' : '最终答复';
   assert.equal(buildReplyDeliveries(feishuPlan, { text: '【待你确认】\n请选择目标。' }, { running })[0].text,
     `【${label}】\n\n请选择目标。`, 'model-chosen labels cannot override execution state');
   assert.equal(buildReplyDeliveries(feishuPlan, { text: '【交付】\n仍在迁移。' }, { running })[0].text,
@@ -131,5 +131,5 @@ assert.equal(buildReplyDeliveries(feishuPlan, { text: '' }, { running: false }).
   'empty answers never become label-only messages');
 assert.equal(buildReplyDeliveries(feishuPlan, { text: '通知' })[0].text, '通知', 'manual notices have no inferred phase');
 assert.equal(buildReplyDeliveries(feishuPlan, { text: '仍未完成。' }, { running: false })[0].text,
-  '【交付】\n\n仍未完成。', 'result publication never rewrites the task outcome');
+  '【最终答复】\n\n仍未完成。', 'result publication never rewrites the task outcome');
 console.log('test-assistant-surface-messages: ok');

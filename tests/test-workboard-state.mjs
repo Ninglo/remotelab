@@ -135,6 +135,24 @@ test('migration fence never replays old cards, and other senders cannot mutate t
   assert.equal(cycles[0].latestSeq, 2);
   assert.equal(await publishFeishuWorkboardCycle(cycles[0], { pilot: { ...pilot, protocolAfterSeq: 4 } }), null);
 });
+test('a finished canonical task never creates a late card after its final reply', async () => {
+  const history = [user(), event(2, make()),
+    { seq: 3, type: 'message', role: 'assistant', runId: 'run-1', phase: 'final_answer', content: '本轮答复' }];
+  const cycles = collectFeishuGroupWorkboardCycles(history, pilot, session);
+  const state = { ...pilot, cards: [] };
+  for (const update of expandFeishuWorkboardUpdates(cycles)) {
+    assert.equal(await publishFeishuWorkboardCycle(update, { pilot: state,
+      app: { im: { v1: { message: { reply: async () => assert.fail('no late card send') } } } },
+      persist: async () => assert.fail('no late card receipt') }), null);
+  }
+  assert.equal(state.cards.length, 0);
+});
+test('an earlier final in a steered Run cannot suppress a genuinely new task card', () => {
+  const cycles = collectFeishuGroupWorkboardCycles([user(), event(2, make()),
+    { seq: 3, type: 'message', role: 'assistant', runId: 'run-1', phase: 'final_answer', content: '第一项结果' },
+    user(4), event(5, make({ taskId: 'second-task', goal: '新的工作' }))], pilot, session);
+  assert.deepEqual(cycles.map(item => [item.taskId, item.closed]), [['task-1', true], ['second-task', false]]);
+});
 test('local Session continuation updates an existing opted-in card without creating a new task', () => {
   const history = [user(), event(2, make()),
     { seq: 3, type: 'message', role: 'user', runId: 'local-run', content: '再看看' },
@@ -220,18 +238,18 @@ test('ordinary progress updates the original card; openings, questions and final
   assert.deepEqual(display.filter(e => e.type === 'message' && e.role === 'assistant' && !e.workboard).map(e => e.seq), [2, 5, 7]);
   assert.equal(display.find(e => e.workboard).workboardProgress.seq, 6);
   assert.match(history[3].content, /hidden <progress>/, 'durable history retains the complete original');
-  const cycles = collectFeishuGroupWorkboardCycles(history, pilot, session);
+  const cycles = collectFeishuGroupWorkboardCycles(history.slice(0, -1), pilot, session);
   const updates = expandFeishuWorkboardUpdates(cycles);
   assert.deepEqual(updates.map(update => update.latestSeq), [3, 4, 6]);
   let record = { key: 'request', runId: 'run-1', responseId: 'response', options: {}, deliveries: [] };
   const options = { store: { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } },
     session, plan: { connector: 'feishu', target: { chatId: 'group' } }, running: false };
   await publishLiveAssistantReplies(record, history, options);
-  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), ['【交付】\n\n修复已交付']);
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), ['【最终答复】\n\n修复已交付']);
   record = { ...record, deliveries: [], streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
   await publishLiveAssistantReplies(record, history.slice(0, -1), { ...options, running: true });
   assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text),
-    ['【进展】\n\n核对原卡更新和重复任务 ID', '【进展】\n\n请选择部署窗口']);
+    ['【开始处理】\n\n核对原卡更新和重复任务 ID', '【待你回复】\n\n请选择部署窗口']);
   const state = structuredClone(pilot), cards = [];
   const publishing = { pilot: state, persist: async () => {}, verifyMessage: async () => {}, app: { im: { v1: { message: {
     reply: async input => { cards.push(['create', JSON.parse(input.data.content)]); return { code: 0, data: { message_id: 'one-card' } }; },
