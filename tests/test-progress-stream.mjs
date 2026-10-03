@@ -36,6 +36,9 @@ test('unlisted work keeps one progress position, history, opening, question and 
   assert.deepEqual(projectWorkboards(history), [], 'display progress creates no acceptance task');
   assert.deepEqual(display.filter(e => e.type === 'message' && e.role === 'assistant').map(e => e.seq), [2, 3, 5, 7]);
   assert.deepEqual(history, raw, 'raw history and evidence are untouched');
+  const withInternalPlan = [...history.slice(0, 2), msg(2.5, '[ ] 内部检查步骤', { messageKind: 'todo_list' }), ...history.slice(2)];
+  assert.equal(buildSessionDisplayEvents(withInternalPlan, { exposeWorkboard: true })
+    .filter(event => event.messageKind === 'todo_list').length, 0, 'a native execution plan never becomes a public acceptance list');
   assert.deepEqual(buildSessionDisplayEvents(structuredClone(history), { exposeWorkboard: true }), display);
   assert.equal(projectProgressStreams([inbound(), msg(2, '直接回答', { phase: 'final_answer' })]).length, 0);
   assert.equal(buildSessionDisplayEvents(history).filter(e => e.surfaceKind === 'progress').length, 2,
