@@ -44,4 +44,15 @@ assert.deepEqual(await rows(`${table}\n\n$$x^2$$\n\n完成。`, [], {
   [{ tag: 'md', text: '完成。' }],
 ], 'display formula images keep their own paragraph between Markdown blocks');
 
-console.log('ok - Feishu preserves GFM blocks, native mentions, code, and formula boundaries');
+assert.deepEqual(await rows(`日报摘要\n\n![监管快照](img_v3_snapshot-key)\n\n${table}`), [
+  [{ tag: 'md', text: '日报摘要' }],
+  [{ tag: 'img', image_key: 'img_v3_snapshot-key' }],
+  [{ tag: 'md', text: table }],
+], 'an uploaded snapshot must share one daily post with its summary and table');
+for (const literal of ['![远程](https://example.test/a.png)', '![本地](./a.png)', '`![示例](img_test)`', '```\n![示例](img_test)']) {
+  assert.deepEqual(await rows(literal), [[{ tag: 'md', text: literal }]], 'URLs, paths and code examples must not upload or embed images');
+}
+assert.deepEqual(await rows('```md\n![示例](img_test)\n```'), [[{ tag: 'code_block', text: '![示例](img_test)' }]],
+  'image syntax inside a closed code fence must remain literal');
+
+console.log('ok - Feishu preserves GFM blocks, mentions, code, formula boundaries and uploaded daily snapshots');
