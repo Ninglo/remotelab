@@ -1,0 +1,66 @@
+// Explicit, authenticated inspection only; never a prompt or background reader.
+import { open } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { createHash } from 'node:crypto';
+import { MEMORY_DIR } from '../lib/config.mjs';
+import { loadProjectMemoryRuntime } from './project-memory-runtime.mjs';
+
+async function document(path, limit) {
+  let handle;
+  try {
+    handle = await open(path, 'r');
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > limit) return { status: 'too-large-or-not-file' };
+    const buffer = Buffer.alloc(limit + 1);
+    let size = 0;
+    while (size <= limit) {
+      const result = await handle.read(buffer, size, buffer.length - size, null);
+      if (!result.bytesRead) break;
+      size += result.bytesRead;
+    }
+    if (size > limit) return { status: 'too-large-or-not-file' };
+    const text = buffer.subarray(0, size).toString('utf8');
+    return { status: 'available', text, modifiedAt: stat.mtime.toISOString(), hash: createHash('sha256').update(text).digest('hex').slice(0, 16) };
+  } catch (error) {
+    return { status: error.code === 'ENOENT' ? 'not-recorded' : 'unavailable' };
+  } finally { await handle?.close(); }
+}
+
+export async function readMemoryContextView({ people = [], personId = '', memoryDir = MEMORY_DIR, configPath } = {}) {
+  // Validate against actual Person records, never a caller-provided file path.
+  if (personId && (!/^[a-zA-Z0-9_-]{1,100}$/.test(personId) || !people.some(person => person.id === personId))) {
+    const error = new Error('Unknown Person'); error.statusCode = 400; throw error;
+  }
+  let runtime = { status: 'unavailable' };
+  let projectIndex = { status: 'unavailable' }, projectLedger = { status: 'unavailable' }, chronology = { status: 'not-recorded' };
+  try {
+    const { config, hash } = await loadProjectMemoryRuntime(configPath);
+    runtime = {
+      status: 'available', release: config.releaseId, enabled: config.enabled,
+      contextEnabled: config.contextEnabled, reviewEnabled: config.reviewEnabled, hash: hash.slice(0,16),
+      projects: config.projects.map(({ id }) => ({ id, sourceGroups: config.groups.filter(group => group.projectIds.includes(id)).length,
+        declaredSessions: config.sessionBindings.filter(binding => binding.projectIds.includes(id)).length })),
+      sourceGroups: config.groups.length, declaredSessions: config.sessionBindings.length,
+    };
+    [projectIndex, projectLedger, chronology] = await Promise.all([document(config.indexPath, 64 * 1024), document(config.ledgerPath, 1024 * 1024), document(join(dirname(config.workflowPath), 'chronology.json'), 128 * 1024)]);
+    if (chronology.status === 'available') {
+      try {
+        const data = JSON.parse(chronology.text);
+        if (data.schemaVersion !== 1 || !Array.isArray(data.events) || data.events.length > 512
+          || !data.events.every(event => typeof event.id === 'string' && Array.isArray(event.projectIds) && event.projectIds.every(id => config.projects.some(project => project.id === id))
+            && typeof event.summary === 'string' && event.time && typeof event.time.kind === 'string'
+            && Array.isArray(event.actors) && event.actors.every(actor => actor && typeof actor.name === 'string' && typeof actor.role === 'string')
+            && event.source && typeof event.source.path === 'string')) throw new Error('Invalid chronology');
+        const { text, ...metadata } = chronology;
+        chronology = { ...metadata, data, stale: projectLedger.status !== 'available' || data.ledgerHash !== projectLedger.hash };
+      } catch { chronology = { status: 'invalid' }; }
+    }
+  } catch { /* Inspection remains useful when this optional runtime is absent. */ }
+  const [company, personal] = await Promise.all([
+    document(join(memoryDir, 'reference', 'company.md'), 32 * 1024),
+    personId ? document(join(memoryDir, 'reference', 'people', `${personId}.md`), 16 * 1024) : Promise.resolve({ status: 'select-person' }),
+  ]);
+  return { generatedAt: new Date().toISOString(), runtime, projectIndex, projectLedger, chronology,
+    people: people.map(({ id, name }) => ({ id, name })), personId, personal, company,
+    boundary: 'Authenticated instance view. Registration is not complete coverage; file contents are recorded knowledge, not live business state or personal ownership certification.' };
+}

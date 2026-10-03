@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { meta, references, nodes, overviewGraphs, sequences, actors, questionLevels, states, rollout, contracts, invariants, openings } from './guide-data.js';
 import { audit, scenarios, actors as flowActors, feedback, testCases } from './flow-data.js';
+import { memoryAudit, memorySteps, executionRows, timeRules, backgroundCases } from '../../memory-architecture/reader-data.js';
 
 const actorLabels = Object.fromEntries(flowActors.map(a => [a.id, a.label]));
 const readerLines = [
@@ -23,7 +24,15 @@ readerLines.push('## 运行中用户反馈：当前与目标', '');
 for (const [kind, current, goal] of feedback) readerLines.push(`### ${kind}`, '', `当前：${current}`, '', `目标：${goal}`, '');
 readerLines.push('## 真实体验验收', '');
 for (const [kind, check, boundary] of testCases) readerLines.push(`- **${kind}**：${check} 当前边界：${boundary}。`);
-readerLines.push('', '## 下文是目标图与演示的维护参考', '',
+readerLines.push('', '## 一次工作如何形成可接续的记忆', '', memoryAudit.scope, '');
+for (const item of memorySteps) readerLines.push(`### ${item.title}`, '', `承担者：${item.owner}`, '', item.action, '', `读取：${item.read}`, '', `存储：${item.write}`, '', `边界：${item.next}`, '');
+readerLines.push('## 记忆治理的实际执行度', '');
+for (const [name, status, done, boundary] of executionRows) readerLines.push(`### ${name}：${status}`, '', done, '', `边界：${boundary}`, '');
+readerLines.push('## 项目进程的时间与状态', '');
+for (const [name, rule] of timeRules) readerLines.push(`- **${name}**：${rule}`);
+readerLines.push('', '时间线从原认识派生，保留来源和缺口；主账版本变化时不能当作最新。创建日期、最早存在依据和未知分开，不能拿纳入日期当立项日期。', '', '## 个人与公司背景', '');
+for (const [name, action, example] of backgroundCases) readerLines.push(`### ${name}`, '', action, '', example, '');
+readerLines.push('登录后的只读实例视图读取项目登记与原主账、按Person登记的个人偏好、公司资料和关键事件时间线。API已有认证保护；公开静态资产不打包私人内容。个人资料目录不新增保密权限，产品设置也不等于自然语言偏好。', '', '## 下文是目标图与演示的维护参考', '',
   '以下时序、交互卡与状态扩展分别标明规划；不能把目标交互的演示当成当前所有入口的实现。真实路径、Jev 的串行等待以及 groupFeed 的卡片排除规则以上文为准。', '');
 
 const lines = [
