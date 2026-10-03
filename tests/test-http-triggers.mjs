@@ -401,7 +401,8 @@ async function main() {
       return res.status === 200 && res.json.claim?.delivery ? res.json.claim : false;
     }, 'source delivery outbox job');
     assert.equal(deliveryClaim.delivery.target.chatId, 'oc_source_test');
-    assert.ok(deliveryClaim.delivery.text.startsWith('trigger run finished\n\n'));
+    assert.ok(deliveryClaim.delivery.text.startsWith('【最终答复】\n\ntrigger run finished\n\n'),
+      'scheduled replies keep the current final-answer label before their content and Session link');
     assert.ok(deliveryClaim.delivery.text.includes(`https://fixture.example.test/?session=${deliveryClaim.delivery.sessionId}&tab=sessions`));
     assert.ok(
       isolatedTriggers.some((entry) => entry.id === deliveryClaim.delivery.triggerId),

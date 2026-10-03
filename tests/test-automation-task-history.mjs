@@ -3,6 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
+import { automationDay, summarizeAutomationExecutions } from '../chat/automation-execution-summary.mjs';
 
 const fixture = await mkdtemp(join(tmpdir(), 'remotelab-task-history-'));
 setIsolatedTestHome(fixture);
@@ -23,6 +24,26 @@ async function writeFixtureTriggers(rows) {
   await utimes(CHAT_TRIGGERS_FILE, new Date(), new Date(Date.now() + 1000));
 }
 try {
+  const clock = '2026-10-03T00:30:00Z';
+  const actual = [
+    { state: 'completed', triggerStatus: 'delivered', runAvailable: true, scheduledAt: '2026-10-02T23:00:00Z' },
+    { state: 'failed', triggerStatus: 'failed', attemptedAt: '2026-10-03T00:00:00Z' },
+    { state: 'running', triggerStatus: 'delivered', runAvailable: true, admittedAt: '2026-10-03T00:01:00Z' },
+    { state: 'admitted', triggerStatus: 'delivered', runAvailable: false, admittedAt: '2026-10-03T00:02:00Z' },
+    { state: 'cancelled', triggerStatus: 'cancelled', runAvailable: true, admittedAt: '2026-10-03T00:03:00Z' },
+    { state: 'scheduled', triggerStatus: 'pending', scheduledAt: '2030-01-01T00:00:00Z' },
+    { state: 'cancelled', triggerStatus: 'cancelled', scheduledAt: '2026-10-03T00:04:00Z' },
+    { state: 'paused', triggerStatus: 'paused', scheduledAt: '2026-10-03T00:05:00Z' },
+    { state: 'completed', triggerStatus: 'delivered', runAvailable: true,
+      scheduledAt: '2026-10-02T12:00:00Z', attemptedAt: '2026-10-03T00:06:00Z' },
+  ];
+  const counts = summarizeAutomationExecutions(actual, { now: clock, timezone: 'Asia/Shanghai' });
+  assert.equal(counts.totalRuns, 6, 'planned and pre-execution cancelled/paused triggers are not executions');
+  assert.equal(counts.failedRuns, 1);
+  assert.deepEqual(counts.today, { runs: 6, completed: 2, failed: 1, running: 1, cancelled: 1, unverified: 1 });
+  assert.equal(summarizeAutomationExecutions(actual, { now: clock, timezone: 'UTC' }).today.completed, 1,
+    'today uses the task timezone and actual attempt date, not a delayed scheduled date');
+  assert.equal(automationDay('invalid'), '');
   const task = await createRecurringSchedule({ sourceSessionId: 'history-source', sessionTemplate: template,
     title: 'Task with older failures', text: 'Fixture only', cron: '0 0 1 1 *', timezone: 'UTC' });
   const ids = [], fixtureTriggers = [];
@@ -38,6 +59,8 @@ try {
   }
   await writeFixtureTriggers(fixtureTriggers);
   const summary = await getAutomationTask(task.id);
+  assert.equal(summary.summary.totalRuns, 38);
+  assert.equal(summary.summary.failedRuns, 2);
   assert.equal(summary.recentExecutions.length, 5);
   assert.equal(summary.lastExecution.state, 'completed');
   assert.equal(summary.health.failedExecutions, 2, 'summary must not hide failures older than the last five triggers');
@@ -116,5 +139,25 @@ try {
   assert.equal(schedulePackageHistory.executions.length, 2);
   await assert.rejects(listAutomationTaskExecutions(nextStep.id, { scope: 'package', cursor: foreign.id }), /does not belong/);
   await assert.rejects(listAutomationTaskExecutions(nextStep.id, { scope: 'everything' }), /scope/);
-  console.log('Automation packages and history: origin lineage, independent schedules, older failures, pagination, scope, and unverified admissions passed.');
+  assert.equal(find(scheduleFollowup.id).summary.timezone, 'UTC', 'schedule follow-ups share the parent day boundary');
+  const replacement = await createRecurringSchedule({ sourceSessionId: 'history-source', sessionTemplate: template,
+    title: 'Task with older failures', text: 'Fixture only', cron: '0 2 1 1 *', timezone: 'UTC' });
+  const latestDefinitions = await listAutomationTasks();
+  assert.equal(latestDefinitions.find(item => item.id === replacement.id).package.id,
+    latestDefinitions.find(item => item.id === task.id).package.id, 'recreated business definitions share one task package');
+  assert.notEqual(latestDefinitions.find(item => item.id === independent.id).package.id,
+    latestDefinitions.find(item => item.id === task.id).package.id, 'different business definitions remain separate');
+  const { createSession } = await import('../chat/session-manager.mjs');
+  const chat = await createSession(fixture, 'codex', 'Feishu 私聊');
+  const daily = await createTrigger({ sourceSessionId: chat.id, sessionTemplate: template,
+    title: 'Daily report', text: 'First daily run', scheduledAt: new Date(now + 3600000).toISOString(), enabled: false });
+  const dailyAgain = await createTrigger({ sourceSessionId: chat.id, sessionTemplate: template,
+    title: 'Daily report', text: 'Second daily run', scheduledAt: new Date(now + 7200000).toISOString(), enabled: false });
+  const weekly = await createTrigger({ sourceSessionId: chat.id, sessionTemplate: template,
+    title: 'Weekly research', text: 'Different business task', scheduledAt: new Date(now + 10800000).toISOString(), enabled: false });
+  const chatTasks = await listAutomationTasks();
+  const chatPackage = id => chatTasks.find(item => item.id === id).package.id;
+  assert.equal(chatPackage(daily.id), chatPackage(dailyAgain.id));
+  assert.notEqual(chatPackage(daily.id), chatPackage(weekly.id), 'a common Feishu chat is not a parent business task');
+  console.log('Automation packages and history: actual attempt totals, daily timezone outcomes, parent lineage, recreated definitions, generic chat isolation, older failures and pagination passed.');
 } finally { await rm(fixture, { recursive: true, force: true }); }

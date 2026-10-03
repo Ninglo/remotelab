@@ -41,6 +41,9 @@ jobs:
       - name: Run smoke tests
         run: npm test
 
+      - name: Run automation lifecycle checks
+        run: npm run test:triggers
+
       - name: Report oversized source files
         run: npm run lint:filesize -- --github-actions
 
