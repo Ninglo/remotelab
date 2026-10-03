@@ -2,7 +2,7 @@
 
 <!-- Generated from guide-data.js by render-reference.mjs; edit the content source. -->
 
-版本 2.4；核对日期 2026-10-03；运行源码 `751388fc（冻结旧运行版）`；主线基线 `0ef09dc2`。旧版已冻结；项目钩子新增指针投影，其余正文读取仍由 Harness 选择。实际部署版本以实例 build-info 为准。
+版本 2.5；核对日期 2026-10-03；运行源码 `751388fc（冻结旧运行版）`；主线基线 `0ef09dc2`。旧版已冻结；项目钩子新增指针投影，其余正文读取仍由 Harness 选择。实际部署版本以实例 build-info 为准。
 
 让 Agent 在多人、多项目、多信源的工作中形成可追溯、经相应职责认可的组织认识；从同一份认识生成项目与个人视图，持续发现进展、风险和值得复用的方法。
 
@@ -150,17 +150,17 @@ activeAgreements 本轮可投影，但最多 6 条、每条 240 字符；它承�
 
 **目前实际存储**
 
-入口：`配置目录/auth.json 的 Person.preferences`、`~/.remotelab/memory/model-context/preferences.md`、`Session.personViews`。
+入口：`~/.remotelab/memory/reference/people/<personId>.md`、`~/.remotelab/memory/reference/people/index.md`、`配置目录/auth.json 的 Person.preferences`、`~/.remotelab/memory/model-context/preferences.md`、`Session.personViews`。
 
-Person.preferences 已有输入模式、语音快捷键等产品设置。旧 preferences.md 默认按机器／实例维护，不能当作每个人的偏好。personViews 是侧栏排列；默认值也不等于本人明确表达。
+Person.preferences 已有输入模式、语音快捷键等产品设置。旧 preferences.md 默认按机器／实例维护，不能当作每个人的偏好。personViews 是侧栏排列；默认值也不等于本人明确表达。 2026-10-03已核真实Person并登记一项本人明确称呼偏好，bootstrap提供按需入口；机器共用旧personal/identity.md不代表所有同事。
 
 读取：产品设置由界面使用；协作偏好需判断究竟是谁、适用于什么。
 
-写入：本人设置与已有人工维护。逐人、有来源的协作偏好库尚未建成。
+写入：本人设置与已有人工维护；本轮开始按真实Person登记明确偏好，未完成全员归类，也未新增自动学习偏好机制。
 
 **治理方案（分项实施）**
 
-入口：`拟议：~/.remotelab/memory/reference/people/<personId>.md`、`产品设置继续在 Person.preferences`。
+入口：`~/.remotelab/memory/reference/people/<personId>.md`、`产品设置继续在 Person.preferences`。
 
 记录本人明确表达的写作、沟通、工作习惯和适用条件，保留来源与生效时间。根据已核对的 Person／外部身份选择；多人共用账号、机器用户名或 Session 创建者都不能自动代表每条消息的作者。
 
@@ -172,17 +172,17 @@ Person.preferences 已有输入模式、语音快捷键等产品设置。旧 pre
 
 **目前实际存储**
 
-入口：`现有相关文档或原始讨论（需核实）`。
+入口：`~/.remotelab/memory/reference/company.md`、`bootstrap.md 的按需背景指针`。
 
-本次核对的常用记忆入口中，未找到有来源、持续维护的公司信息主文档。这不代表历史讨论中从未提过。办公地址、常用集合点等现在仍需来源核对，不能凭模型猜测。
+2026-10-03已按用户提供的办公楼和有来源的外部资料补入公司公共背景，区分稳定办公事实、待核周边线索、团队常去名单与实时路线。公开网页不打包这些私人正文。
 
-读取：具体就餐或出行问题用已知事实；缺少影响方案的地点时再补问。
+读取：就餐、接待、办公室周边或出行相关时读取；营业、步行路径和公交方案按当次时间查询。
 
-写入：还没有核实到统一维护位置。
+写入：用户补充与可靠来源明确区分；缺失餐厅名单或集合点保持未知，不从一次群聊猜全公司习惯。
 
 **治理方案（分项实施）**
 
-入口：`拟议：~/.remotelab/memory/reference/company.md`。
+入口：`~/.remotelab/memory/reference/company.md`。
 
 维护公司公开名称、时区、办公室／集合点、常用场地及适用时间。事实与组织制度分开；联系人、门禁与精确敏感位置按已有实例边界保存，不进入公开说明或共享源码。
 
@@ -622,10 +622,10 @@ flowchart LR
 
 | 用途 | 范围与状态 | 入口 | 何时读／怎样写 |
 | --- | --- | --- | --- |
-| 导航：入口与指针 | 实例／项目范围；现有；范围登记拟建设 | `bootstrap.md`、`projects.md`、`skills.md`、`拟议 project-registry.json` | 定位本次相关项目与材料；登记范围，生成导航与配置投影 |
+| 导航：入口与指针 | 实例／项目范围；现有；精确来源与Session范围已接入 | `bootstrap.md`、`projects.md`、`skills.md`、`project-runtime.json（当前实例配置）` | 定位本次相关项目与材料；登记范围，生成导航与配置投影 |
 | 过程：Session 与话题 | 当前工作；现有；长期话题笔记按需 | `chat-history/<sessionId>/`、`activeAgreements`、`必要的 tasks/ 笔记` | 延续当前工作；需要追溯再读历史；事件保存过程，局部约定保持局部 |
-| 认识：项目记忆 | 一个项目；跨项目条目可引用；主账已有；条目治理拟建设 | `project-knowledge/projects.md#项目章节` | 项目相关任务；巡检读取全部登记项目；带来源、状态、版本和确认的增量修订 |
-| 背景：个人、公司与环境 | 相应的人／组织／实例；旧入口已有；个人／公司记录拟建设 | `reference/people/<personId>.md（拟议）`、`reference/company.md（拟议）`、`现有环境参考文档`、`Person.preferences` | 身份、用途与本次任务匹配时；本人表达或可靠事实来源，保留范围与时间 |
+| 认识：项目记忆 | 一个项目；跨项目条目可引用；主账已有；条目治理拟建设 | `project-knowledge/projects.md#项目章节`、`project-review/project-memory/releases/<release>/chronology.json（来源受限的时间线视图）` | 项目相关任务；巡检读取全部登记项目；带来源、状态、版本和确认的增量修订 |
+| 背景：个人、公司与环境 | 相应的人／组织／实例；旧入口已有；本轮开始逐人登记并补公司背景 | `reference/people/<personId>.md`、`reference/company.md`、`现有环境参考文档`、`Person.preferences` | 身份、用途与本次任务匹配时；本人表达或可靠事实来源，保留范围与时间 |
 | 操作：规则与方法 | 工作区／仓库／适用场景；现有 | `AGENTS.md`、`Skill／WORKFLOW`、`memory/system.md` | 按 Harness 加载规则与本次方法需求；范围明确的稳定规则；有验证的方法改善 |
 | 依据：原文、候选与历史 | 来源／事项／审阅轮次；现有；测试隔离拟建设 | `连接器来源记录`、`业务系统结果`、`project-review/`、`候选与历史版本` | 归集、核验、纠错、追溯时；保留原始出处、检查点、版本与处理结果 |
 
@@ -633,7 +633,7 @@ flowchart LR
 - **过程：Session 与话题：** 一 Session 不自动对应一个项目文件。原生上下文、平台事件和可复用认识分开。
 - **认识：项目记忆：** 每个项目一份认知主账。群、个人 Session 是信源；日报与个人／组织视图从同一版本派生。
 - **背景：个人、公司与环境：** 背景与项目记忆并列维护。产品设置不等于协作偏好，个人目录也不建立新的权限隔离。
-- **操作：规则与方法：** AGENTS.md 放操作约束与入口，Skill 放方法。业务进展、公司位置、个人偏好不挤入这里。
+- **操作：规则与方法：** AGENTS.md 放操作约束与入口，Skill 放方法。业务进展、公司位置、个人偏好不挤入这里。 已有明确个人称呼约束保留兼容入口，完整资料仍按Person维护。
 - **依据：原文、候选与历史：** 候选没有自动生效资格。来源权限与保留要求影响派生内容，旧结论不能当当前指令。
 
 ## 优先修正的缺口
@@ -968,6 +968,6 @@ flowchart LR
 - 改存储、读取、写回、来源绑定或身份模型时，更新现状核对日期与代码依据；拟议路径和未上线能力持续标清。
 - 本机审计证据、真实用户与偏好留在认证实例；共享文档只描述架构和经过脱敏的示例。
 - 用真实问题验证治理效果，并记录仍未证明的部分；这份说明会随目标和实现继续修订。
-- 本轮接入项目记忆指针与原日报增强规则；逐人偏好、公司资料、全面角色登记及业务动作仍各自按授权推进。源码交付与部署核验分开，当前服务版本以实例 build-info 为准。
+- 本轮接入项目记忆指针与原日报增强规则；全员偏好、完整公司常用地点、全面角色登记及业务动作仍各自按授权推进。源码交付与部署核验分开，当前服务版本以实例 build-info 为准。
 
 编辑 `guide-data.js` 后运行 `node docs/memory-architecture/render-reference.mjs`；用 `--check` 检查参考文本是否同步。发布仅包括 `index.html`、`style.css`、`app.js`、`guide-data.js` 和 `README.md`。本章由 `docs/architecture-atlas/assemble-site.mjs` 纳入整体说明的 `memory/` 子目录；后续统一发布和备份，不另外维护平行网站。

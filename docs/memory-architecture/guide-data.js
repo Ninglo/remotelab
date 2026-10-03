@@ -1,6 +1,6 @@
 // Human and Agent reference share this content source. Proposed and enabled parts remain distinct.
 export const guide = {
-  "version": "2.4",
+  "version": "2.5",
   "verifiedAt": "2026-10-03",
   "auditedCommit": "751388fc（冻结旧运行版）",
   "mainBaseline": "0ef09dc2",
@@ -552,12 +552,12 @@ export const guide = {
       "title": "导航：入口与指针",
       "group": "session",
       "scope": "实例／项目范围",
-      "status": "现有；范围登记拟建设",
+      "status": "现有；精确来源与Session范围已接入",
       "paths": [
         "bootstrap.md",
         "projects.md",
         "skills.md",
-        "拟议 project-registry.json"
+        "project-runtime.json（当前实例配置）"
       ],
       "read": "定位本次相关项目与材料",
       "write": "登记范围，生成导航与配置投影",
@@ -585,7 +585,8 @@ export const guide = {
       "scope": "一个项目；跨项目条目可引用",
       "status": "主账已有；条目治理拟建设",
       "paths": [
-        "project-knowledge/projects.md#项目章节"
+        "project-knowledge/projects.md#项目章节",
+        "project-review/project-memory/releases/<release>/chronology.json（来源受限的时间线视图）"
       ],
       "read": "项目相关任务；巡检读取全部登记项目",
       "write": "带来源、状态、版本和确认的增量修订",
@@ -596,10 +597,10 @@ export const guide = {
       "title": "背景：个人、公司与环境",
       "group": "knowledge",
       "scope": "相应的人／组织／实例",
-      "status": "旧入口已有；个人／公司记录拟建设",
+      "status": "旧入口已有；本轮开始逐人登记并补公司背景",
       "paths": [
-        "reference/people/<personId>.md（拟议）",
-        "reference/company.md（拟议）",
+        "reference/people/<personId>.md",
+        "reference/company.md",
         "现有环境参考文档",
         "Person.preferences"
       ],
@@ -620,7 +621,7 @@ export const guide = {
       ],
       "read": "按 Harness 加载规则与本次方法需求",
       "write": "范围明确的稳定规则；有验证的方法改善",
-      "rule": "AGENTS.md 放操作约束与入口，Skill 放方法。业务进展、公司位置、个人偏好不挤入这里。"
+      "rule": "AGENTS.md 放操作约束与入口，Skill 放方法。业务进展、公司位置、个人偏好不挤入这里。 已有明确个人称呼约束保留兼容入口，完整资料仍按Person维护。"
     },
     {
       "id": "evidence",
@@ -1019,7 +1020,7 @@ export const guide = {
     "改存储、读取、写回、来源绑定或身份模型时，更新现状核对日期与代码依据；拟议路径和未上线能力持续标清。",
     "本机审计证据、真实用户与偏好留在认证实例；共享文档只描述架构和经过脱敏的示例。",
     "用真实问题验证治理效果，并记录仍未证明的部分；这份说明会随目标和实现继续修订。",
-    "本轮接入项目记忆指针与原日报增强规则；逐人偏好、公司资料、全面角色登记及业务动作仍各自按授权推进。源码交付与部署核验分开，当前服务版本以实例 build-info 为准。"
+    "本轮接入项目记忆指针与原日报增强规则；全员偏好、完整公司常用地点、全面角色登记及业务动作仍各自按授权推进。源码交付与部署核验分开，当前服务版本以实例 build-info 为准。"
   ],
   "principles": [
     [
@@ -1288,17 +1289,19 @@ export const guide = {
       "question": "怎么保留合作中的个人特点？",
       "current": {
         "paths": [
+          "~/.remotelab/memory/reference/people/<personId>.md",
+          "~/.remotelab/memory/reference/people/index.md",
           "配置目录/auth.json 的 Person.preferences",
           "~/.remotelab/memory/model-context/preferences.md",
           "Session.personViews"
         ],
-        "body": "Person.preferences 已有输入模式、语音快捷键等产品设置。旧 preferences.md 默认按机器／实例维护，不能当作每个人的偏好。personViews 是侧栏排列；默认值也不等于本人明确表达。",
+        "body": "Person.preferences 已有输入模式、语音快捷键等产品设置。旧 preferences.md 默认按机器／实例维护，不能当作每个人的偏好。personViews 是侧栏排列；默认值也不等于本人明确表达。 2026-10-03已核真实Person并登记一项本人明确称呼偏好，bootstrap提供按需入口；机器共用旧personal/identity.md不代表所有同事。",
         "read": "产品设置由界面使用；协作偏好需判断究竟是谁、适用于什么。",
-        "write": "本人设置与已有人工维护。逐人、有来源的协作偏好库尚未建成。"
+        "write": "本人设置与已有人工维护；本轮开始按真实Person登记明确偏好，未完成全员归类，也未新增自动学习偏好机制。"
       },
       "target": {
         "paths": [
-          "拟议：~/.remotelab/memory/reference/people/<personId>.md",
+          "~/.remotelab/memory/reference/people/<personId>.md",
           "产品设置继续在 Person.preferences"
         ],
         "body": "记录本人明确表达的写作、沟通、工作习惯和适用条件，保留来源与生效时间。根据已核对的 Person／外部身份选择；多人共用账号、机器用户名或 Session 创建者都不能自动代表每条消息的作者。",
@@ -1312,15 +1315,16 @@ export const guide = {
       "question": "办公位置、时区等公共背景放哪里？",
       "current": {
         "paths": [
-          "现有相关文档或原始讨论（需核实）"
+          "~/.remotelab/memory/reference/company.md",
+          "bootstrap.md 的按需背景指针"
         ],
-        "body": "本次核对的常用记忆入口中，未找到有来源、持续维护的公司信息主文档。这不代表历史讨论中从未提过。办公地址、常用集合点等现在仍需来源核对，不能凭模型猜测。",
-        "read": "具体就餐或出行问题用已知事实；缺少影响方案的地点时再补问。",
-        "write": "还没有核实到统一维护位置。"
+        "body": "2026-10-03已按用户提供的办公楼和有来源的外部资料补入公司公共背景，区分稳定办公事实、待核周边线索、团队常去名单与实时路线。公开网页不打包这些私人正文。",
+        "read": "就餐、接待、办公室周边或出行相关时读取；营业、步行路径和公交方案按当次时间查询。",
+        "write": "用户补充与可靠来源明确区分；缺失餐厅名单或集合点保持未知，不从一次群聊猜全公司习惯。"
       },
       "target": {
         "paths": [
-          "拟议：~/.remotelab/memory/reference/company.md"
+          "~/.remotelab/memory/reference/company.md"
         ],
         "body": "维护公司公开名称、时区、办公室／集合点、常用场地及适用时间。事实与组织制度分开；联系人、门禁与精确敏感位置按已有实例边界保存，不进入公开说明或共享源码。",
         "read": "就餐、出行、访客接待和会议安排相关时读取。普通代码任务不需要公司地址。",

@@ -86,6 +86,7 @@ import {
   resolveUserVisiblePathInput,
 } from './instance-visible-paths.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
+import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
 import {
   buildClientInstanceSettings,
@@ -405,6 +406,18 @@ export async function handleControlRoutes({
 
   if (pathname === '/api/people' && req.method === 'GET') {
     writeJson(res, 200, { people: await listPeopleForClient() });
+    return true;
+  }
+
+  if (pathname === '/api/memory-context-view' && req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const people = await listPeopleForClient();
+      const personId = typeof parsedUrl.query.personId === 'string' ? parsedUrl.query.personId : authSession?.personId || '';
+      writeJson(res, 200, await readMemoryContextView({ people, personId }));
+    } catch (error) {
+      writeJson(res, error.statusCode === 400 ? 400 : 500, { error: error.statusCode === 400 ? 'Unknown Person' : 'Memory view unavailable' });
+    }
     return true;
   }
 
