@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildFeishuWorkboardCard,
+  isFeishuInstanceWorkboardSession,
+  collectFeishuInstanceWorkboardCycles,
   collectFeishuGroupWorkboardCycles,
   collectFeishuWorkboardCycles,
   expandFeishuWorkboardUpdates,
@@ -198,4 +200,49 @@ test('a group thread card replies once and patches that same message', async () 
   assert.equal(calls[0][1].data.reply_in_thread, true);
   assert.equal(calls[1][0], 'patch');
   assert.equal(calls[1][1].path.message_id, 'om-group-card');
+});
+
+
+test('instance cards follow turn admission across members and keep the original reply on steering', async () => {
+  const state = { scope: 'instance', sourceRouteId: 'bot-2', chatId: 'group-1', sessionId: 'group-session', cards: [] };
+  const group = { workboardPilot: true, workboardOptInPersonId: 'last-member', conversation: {
+    connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'group-1', chatType: 'group', conversationKind: 'thread' },
+  } };
+  const inbound = (seq, runId, sender, admitted = true) => ({ seq, type: 'message', role: 'user', runId,
+    sourceContext: { connector: 'feishu', sourceRouteId: 'bot-2', chatId: 'group-1', chatType: 'group',
+      messageId: `om-${seq}`, sender: { openId: sender } },
+    ...(admitted ? { workboardAdmission: { personId: sender, identityId: `id-${sender}`, sourceRouteId: 'bot-2', senderOpenId: sender } } : {}),
+  });
+  const checklist = (seq, runId) => ({ ...list(seq), runId });
+  const events = [inbound(1, 'a', 'open-a'), checklist(2, 'a'), inbound(3, 'a', 'open-a'),
+    inbound(4, 'b', 'open-b'), checklist(5, 'b'), inbound(6, 'untrusted', 'open-c', false), checklist(7, 'untrusted')];
+  const cycles = collectFeishuInstanceWorkboardCycles(events, state, group);
+  assert.deepEqual(cycles.map(task => [task.anchorSeq, task.replyMessageId]), [[2, 'om-1'], [5, 'om-4']]);
+  assert.equal(isFeishuInstanceWorkboardSession({ ...group, groupFeed: true }, state), false);
+  assert.equal(isFeishuInstanceWorkboardSession(group, { ...state, sourceRouteId: 'wrong' }), false);
+  const calls = [];
+  const app = { im: { v1: { message: { reply: async request => {
+    calls.push(request.path.message_id); return { code: 0, data: { message_id: `card-${calls.length}` } };
+  }, patch: async () => { calls.push('patch'); return { code: 0 }; } } } } };
+  const options = { pilot: state, app, persist: async () => {}, verifyMessage: async () => {} };
+  for (const cycle of cycles) await publishFeishuWorkboardCycle(cycle, options);
+  const restarted = JSON.parse(JSON.stringify(state));
+  for (const cycle of collectFeishuInstanceWorkboardCycles(events, restarted, group)) {
+    assert.equal(await publishFeishuWorkboardCycle(cycle, { ...options, pilot: restarted }), null);
+  }
+  assert.deepEqual(calls, ['om-1', 'om-4'], 'two members get two original cards, restart sends no duplicates');
+  assert.deepEqual(collectFeishuInstanceWorkboardCycles(events.map(event => event.role === 'user'
+    ? { ...event, sourceContext: { ...event.sourceContext, chatId: 'wrong' } } : event), state, group), []);
+});
+
+test('instance migration preserves known legacy cards but cannot create historical cards', () => {
+  const group = { workboardPilot: true, conversation: { connector: 'feishu', sourceRouteId: 'bot-2',
+    target: { chatId: 'group-1', chatType: 'group', conversationKind: 'main' } } };
+  const state = { scope: 'instance', sourceRouteId: 'bot-2', legacySenderOpenId: 'open-zhang', cards: [{ anchorSeq: 2 }] };
+  const inbound = (seq, runId) => ({ seq, type: 'message', role: 'user', runId,
+    sourceContext: { connector: 'feishu', sourceRouteId: 'bot-2', chatId: 'group-1', chatType: 'group',
+      messageId: `om-${seq}`, sender: { openId: 'open-zhang' } } });
+  const events = [inbound(1, 'old-known'), { ...list(2), runId: 'old-known' },
+    inbound(3, 'old-unknown'), { ...list(4), runId: 'old-unknown' }];
+  assert.deepEqual(collectFeishuInstanceWorkboardCycles(events, state, group).map(task => task.anchorSeq), [2]);
 });

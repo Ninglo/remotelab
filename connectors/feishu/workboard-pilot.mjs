@@ -61,10 +61,26 @@ export function isFeishuWorkboardGroupSession(session, pilot) {
     && Boolean(trim(target?.chatId));
 }
 
+export function isFeishuInstanceWorkboardSession(session, pilot) {
+  const conversation = session?.conversation;
+  const target = conversation?.target;
+  return pilot?.scope === 'instance' && session?.workboardPilot === true
+    && session?.groupFeed !== true && conversation?.connector === 'feishu'
+    && conversation.sourceRouteId === pilot.sourceRouteId
+    && Boolean(trim(target?.chatId))
+    && (target.chatType === 'p2p' ? target.conversationKind === 'main'
+      : target.chatType === 'group' && ['main', 'thread'].includes(target.conversationKind));
+}
+
+export function collectFeishuInstanceWorkboardCycles(events, pilot, session) {
+  return isFeishuInstanceWorkboardSession(session, pilot) ? collectAuthorizedCycles(events, pilot, session) : [];
+}
+
 function collectAuthorizedCycles(events, pilot, session = null) {
   const allowed = new Map();
   const localRuns = new Set();
   const authorizedTasks = new Set();
+  const anchors = new Map();
   const target = session?.conversation?.target;
   let authorizedUser = false;
   const history = [];
@@ -73,10 +89,19 @@ function collectAuthorizedCycles(events, pilot, session = null) {
     if (event.type === 'message' && event.role === 'user') {
       const source = event.sourceContext;
       if (!source && event.runId) localRuns.add(event.runId);
-      authorizedUser = trim(source?.sender?.openId) === pilot.senderOpenId
-        && (!target || (source?.connector === 'feishu' && source.chatType === 'group'
-          && source.chatId === target.chatId && source.sourceRouteId === pilot.sourceRouteId
-          && (!trim(target.tenantKey) || source.tenantKey === target.tenantKey)));
+      const admission = event.workboardAdmission;
+      const matchesTarget = source?.connector === 'feishu'
+        && source.chatType === target?.chatType && source.chatId === target?.chatId
+        && source.sourceRouteId === pilot.sourceRouteId
+        && (!trim(target?.tenantKey) || source.tenantKey === target.tenantKey);
+      authorizedUser = pilot.scope === 'instance'
+        ? matchesTarget && Boolean(trim(source.messageId)) && Boolean(trim(source.sender?.openId))
+          && ((Boolean(trim(admission?.personId)) && Boolean(trim(admission?.identityId))
+            && admission.sourceRouteId === pilot.sourceRouteId
+            && admission.senderOpenId === source.sender.openId)
+            || source.sender.openId === pilot.legacySenderOpenId)
+        : trim(source?.sender?.openId) === pilot.senderOpenId
+          && (!target || matchesTarget);
       if (event.runId) {
         if (authorizedUser) allowed.set(event.runId, source?.messageId || '');
         else allowed.delete(event.runId);
@@ -98,17 +123,25 @@ function collectAuthorizedCycles(events, pilot, session = null) {
       if (ownSource || (event.workboard && localRuns.has(event.runId) && authorizedTasks.has(taskId))) {
         history.push(event);
         authorizedTasks.add(taskId);
+        if (!anchors.has(event.seq)) anchors.set(event.seq, {
+          replyMessageId: allowed.get(event.runId),
+          admitted: pilot.scope !== 'instance' || history.some(inbound => inbound.type === 'message'
+            && inbound.role === 'user' && inbound.runId === event.runId && inbound.workboardAdmission),
+        });
       }
     }
   }
-  return projectWorkboards(history).map(task => {
+  return projectWorkboards(history).filter(task => pilot.scope !== 'instance'
+    || anchors.get(task.anchorSeq)?.admitted
+    || pilot.cards.some(card => card.anchorSeq === task.anchorSeq || card.taskId === task.taskId
+      || task.aliases?.includes(card.taskId))).map(task => {
     const anchor = history.find(event => event.seq === task.anchorSeq);
     const final = history.some(event => event.type === 'message' && event.role === 'assistant'
       && ['final', 'final_answer'].includes(event.phase)
       && event.seq > task.anchorSeq
       && (!anchor.runId || event.runId === anchor.runId));
     return { ...task, closed: final,
-      ...(target?.conversationKind === 'thread' ? { replyMessageId: allowed.get(anchor.runId) } : {}) };
+      ...(target?.conversationKind === 'thread' ? { replyMessageId: anchors.get(task.anchorSeq)?.replyMessageId || allowed.get(anchor.runId) } : {}) };
   });
 }
 export function collectFeishuGroupWorkboardCycles(events, pilot, session) {

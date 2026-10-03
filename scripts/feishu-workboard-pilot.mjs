@@ -7,6 +7,8 @@ import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import {
   collectFeishuWorkboardCycles,
   collectFeishuGroupWorkboardCycles,
+  collectFeishuInstanceWorkboardCycles,
+  isFeishuInstanceWorkboardSession,
   expandFeishuWorkboardUpdates,
   isFeishuWorkboardGroupSession,
   isFeishuWorkboardPilotSession,
@@ -21,11 +23,14 @@ if (!statePath || process.argv.length !== (disableOnly ? 4 : 3)) {
 }
 
 const pilot = JSON.parse(await readFile(statePath, 'utf8'));
-if (!pilot.sessionId || !pilot.chatId || !pilot.senderOpenId || !pilot.sourceRouteId
-    || !pilot.botConfigPath || !Number.isInteger(pilot.startedAfterSeq)
+const instanceScope = pilot.scope === 'instance';
+if (!pilot.sourceRouteId || !pilot.botConfigPath
+    || (!instanceScope && (!pilot.sessionId || !pilot.chatId || !pilot.senderOpenId
+      || !Number.isInteger(pilot.startedAfterSeq)))
     || (pilot.expiresAt && !Number.isFinite(Date.parse(pilot.expiresAt)))) {
-  throw new Error('Incomplete Feishu workboard pilot state');
+  throw new Error('Incomplete Feishu workboard state');
 }
+pilot.sessions ||= {};
 pilot.cards ||= [];
 pilot.groupSessions ||= {};
 let migrating = pilot.protocolVersion !== 2;
@@ -34,11 +39,12 @@ if (pilot.groupEnabled === true && !pilot.personId) {
 }
 
 const botConfig = JSON.parse(await readFile(pilot.botConfigPath, 'utf8'));
-if (botConfig.botId !== pilot.sourceRouteId || !botConfig.appId || !botConfig.appSecret) {
+if ((botConfig.botId || 'default') !== pilot.sourceRouteId || !botConfig.appId || !botConfig.appSecret) {
   throw new Error('Feishu Bot config does not match this pilot route');
 }
 const remote = createRemoteLabHttpClient({ baseUrl: botConfig.chatBaseUrl });
 if (disableOnly) {
+  if (instanceScope) throw new Error('Disable instance activation and stop its route services; no Session stop hook is used');
   const path = `/api/sessions/${encodeURIComponent(pilot.sessionId)}`;
   const current = await remote.request(path);
   if (!current.response.ok) throw new Error(`Unable to read pilot Session (${current.response.status})`);
@@ -104,7 +110,7 @@ async function syncPrivate() {
 
 async function syncGroup(sessionId) {
   if (!pilot.groupEnabled || ignored.has(sessionId)) return;
-  const response = await remote.request(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  const response = await remote.request(`/api/sessions/${encodeURIComponent(sessionId)}?view=summary`);
   if (response.response.status === 404) { ignored.add(sessionId); return; }
   if (!response.response.ok) throw new Error(`Group Session read failed: ${response.response.status}`);
   const session = response.json?.session;
@@ -135,21 +141,42 @@ async function syncGroup(sessionId) {
   }
 }
 
+async function syncInstance(sessionId) {
+  const response = await remote.request(`/api/sessions/${encodeURIComponent(sessionId)}?view=summary`);
+  if (response.response.status === 404) return;
+  if (!response.response.ok) throw new Error(`Workboard Session read failed: ${response.response.status}`);
+  const session = response.json?.session;
+  if (!isFeishuInstanceWorkboardSession(session, pilot)) return;
+  const target = session.conversation.target;
+  const stored = pilot.sessions[sessionId] ||= { chatId: target.chatId, cards: [], protocolAfterSeq: 0 };
+  if (stored.chatId !== target.chatId) throw new Error(`Workboard Session destination changed: ${sessionId}`);
+  const sessionPilot = { ...pilot, ...stored, sessionId };
+  const events = (await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/events?filter=all`)).events;
+  for (const cycle of expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(events, sessionPilot, session))) {
+    if (stopped || expired()) { stop(); break; }
+    const result = await publishFeishuWorkboardCycle(cycle, { pilot: sessionPilot, app, persist,
+      verifyMessage: (messageId, options) => verifyMessage(messageId, options, target.chatId) });
+    if (result) console.log(`[feishu-workboard] ${result.action} session=${sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
+  }
+}
+
 async function discoverGroupSessions() {
-  if (!pilot.groupEnabled) return [];
+  if (!instanceScope && !pilot.groupEnabled) return [];
   const list = await requestJson('/api/sessions?sourceId=feishu');
   return [...new Set([
-    ...Object.keys(pilot.groupSessions),
+    ...Object.keys(instanceScope ? pilot.sessions : pilot.groupSessions),
     ...(Array.isArray(list.sessions) ? list.sessions : [])
       .filter(session => session?.workboardPilot === true
         && session?.conversation?.connector === 'feishu'
         && session.conversation.sourceRouteId === pilot.sourceRouteId
-        && session.conversation.target?.chatType === 'group')
+        && (instanceScope ? isFeishuInstanceWorkboardSession(session, pilot)
+          : session.conversation.target?.chatType === 'group'))
       .map(session => session.id),
   ])];
 }
 
 async function syncOne(sessionId) {
+  if (instanceScope) return syncInstance(sessionId);
   if (sessionId === pilot.sessionId) return syncPrivate();
   return syncGroup(sessionId);
 }
@@ -204,14 +231,14 @@ function connect(cookie) {
   socket.on('open', () => {
     reconnectMs = 250;
     void discoverGroupSessions().then(ids => {
-      enqueue(pilot.sessionId);
+      if (!instanceScope) enqueue(pilot.sessionId);
       for (const id of ids) enqueue(id);
     }).catch(error => console.error(`[feishu-workboard] discovery: ${error.message}`));
   });
   socket.on('message', data => {
     let message;
     try { message = JSON.parse(data); } catch { return; }
-    if (message.type === 'session_invalidated' && (message.sessionId === pilot.sessionId || pilot.groupEnabled)) {
+    if (message.type === 'session_invalidated' && (instanceScope || message.sessionId === pilot.sessionId || pilot.groupEnabled)) {
       enqueue(message.sessionId);
     }
   });
@@ -228,7 +255,7 @@ function scheduleReconnect() {
     reconnectTimer = null;
     try {
       // HTTP refreshes an expired cookie before the next WebSocket handshake.
-      await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`);
+      await requestJson(instanceScope ? '/api/build-info' : `/api/sessions/${encodeURIComponent(pilot.sessionId)}`);
       connect(await remote.ensureAuthCookie());
     } catch (error) {
       console.error(`[feishu-workboard] reconnect: ${error.message}`);
@@ -238,8 +265,8 @@ function scheduleReconnect() {
   reconnectMs = Math.min(5000, reconnectMs * 2);
 }
 
-await syncPrivate(); // Read state before waiting for notifications.
-for (const id of await discoverGroupSessions()) await syncGroup(id);
+if (!instanceScope) await syncPrivate(); // Read state before waiting for notifications.
+for (const id of await discoverGroupSessions()) await syncOne(id);
 pilot.protocolVersion = 2;
 migrating = false;
 await persist();

@@ -92,6 +92,7 @@ function setupTempHome() {
     join(configDir, 'auth-sessions.json'),
     JSON.stringify({
       'test-session': { expiry: Date.now() + 60 * 60 * 1000, role: 'owner' },
+      'test-service': { expiry: Date.now() + 60 * 60 * 1000, role: 'owner', authKind: 'service' },
     }, null, 2),
     'utf8',
   );
@@ -337,6 +338,37 @@ try {
     assert.ok(index.json.tasks.some(board => board.taskId === patchTask.taskId));
     assert.ok(index.json.tasks.every(board => board.items === undefined));
     assert.equal((await request(port, 'GET', `/api/sessions/${session.id}/workboards?taskId=missing`)).status, 404);
+
+    // Enabling the instance default takes effect on future admissions, without
+    // rebuilding a static member list or relying on the Session's latest owner.
+    writeFileSync(join(home, '.config', 'remotelab', 'workboard-opt-ins.json'), JSON.stringify({ defaultEnabled: true }));
+    const allWeb = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot, tool: 'fake-codex', name: 'Future web task',
+    });
+    assert.equal(allWeb.json.session.workboardPilot, true);
+    const source = sender => ({ connector: 'feishu', sourceRouteId: 'fixture-bot', chatType: 'group',
+      chatId: 'fixture-chat', messageId: `om-${sender}`, sender: { openId: sender } });
+    const service = { Cookie: 'session_token=test-service' };
+    const group = await request(port, 'POST', '/api/sessions', { folder: repoRoot, tool: 'fake-codex',
+      sourceId: 'feishu', sourceContext: source('a'), conversation: { connector: 'feishu', sourceRouteId: 'fixture-bot',
+        target: { chatType: 'group', chatId: 'fixture-chat', conversationKind: 'thread' } },
+    }, service);
+    assert.equal(group.status, 201);
+    for (const sender of ['a', 'new-member']) {
+      const admission = await request(port, 'POST', `/api/sessions/${group.json.session.id}/messages`, {
+        requestId: `workboard-${sender}`, text: 'Generate the fixture files.', tool: 'fake-codex',
+        sourceContext: source(sender), sourceDelivery: { connector: 'feishu', sourceRouteId: 'fixture-bot',
+          target: { chatId: 'fixture-chat', replyMessageId: `om-${sender}`, replyInThread: true } },
+      }, service);
+      assert.ok([200, 202].includes(admission.status), JSON.stringify(admission.json));
+      await waitForRunTerminal(port, admission.json.run.id);
+      const read = await request(port, 'GET', `/api/sessions/${group.json.session.id}/events?filter=all`);
+      const inbound = read.json.events.find(event => event.role === 'user' && event.requestId === `workboard-${sender}`);
+      assert.equal(inbound.workboardAdmission.senderOpenId, sender);
+      assert.equal(inbound.workboardAdmission.sourceRouteId, 'fixture-bot');
+      assert.ok(inbound.workboardAdmission.personId);
+      assert.ok(inbound.workboardAdmission.identityId);
+    }
 
     for (const [index, attachment] of generated.attachments.entries()) {
       const assetRes = await request(port, 'GET', `/api/assets/${attachment.assetId}`);

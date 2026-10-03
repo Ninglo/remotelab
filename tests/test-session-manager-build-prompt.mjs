@@ -67,6 +67,12 @@ const optedOutPrompt = await buildPrompt('new-opted-out-question', {
   id: 'new-opted-out-question', workboardPilot: true, workboardOptInPersonId: 'other-person', systemPrompt: '',
 }, '调查输出链路', 'codex', 'codex', null, { viewPersonId: 'current-person' });
 assert.doesNotMatch(optedOutPrompt, /Visible checklist for this opt-in Session/);
+const admittedSharedPrompt = await buildPrompt('shared-admitted-task', {
+  id: 'shared-admitted-task', workboardPilot: true, workboardOptInPersonId: 'newer-queued-person', systemPrompt: '',
+}, '继续调查', 'codex', 'codex', null, { viewPersonId: 'actual-person', workboardEnabled: true });
+assert.match(admittedSharedPrompt, /Visible checklist for this opt-in Session/,
+  'a previously admitted Run keeps the rule after another member changes shared Session metadata');
+
 
 
 const baseSession = {
