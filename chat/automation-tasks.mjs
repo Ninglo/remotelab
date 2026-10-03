@@ -115,6 +115,8 @@ async function projectExecution(trigger) {
   const runAvailable = Boolean(storedRun || run?.createdAt || ['completed', 'failed', 'cancelled'].includes(run?.state));
   return {
     id: trigger.id,
+    taskId: trimString(trigger.scheduleId) || trigger.id,
+    title: trimString(trigger.title),
     state: projectExecutionState(trigger, runAvailable ? run : null),
     triggerStatus: trigger.status,
     scheduledAt: trigger.scheduledAt,
@@ -139,6 +141,7 @@ function executionHealth(executions, { lastError = '', lastErrorAt = '' } = {}) 
   return {
     windowDays: HEALTH_WINDOW_DAYS,
     failedExecutions: failed.length,
+    recordedFailures: executions.filter(item => item.state === 'failed').length,
     lastFailure: failed[0] || null,
     needsAttention: latest?.state === 'failed' || Boolean(lastError),
     error: lastError || (latest?.state === 'failed' ? latest.error : ''),
@@ -191,6 +194,7 @@ async function projectOneTimeTask(trigger) {
     nextRunAt: trigger.status === 'pending' ? trigger.scheduledAt : '',
     lastExecution: execution,
     recentExecutions: execution ? [execution] : [],
+    executionCount: execution ? 1 : 0,
     health: executionHealth(execution ? [execution] : []),
     sourceSessionId: trigger.sourceSessionId,
     createdByIdentityId,
@@ -201,12 +205,7 @@ async function projectOneTimeTask(trigger) {
 }
 
 async function projectRecurringTask(schedule, occurrences) {
-  const recentTriggers = [...occurrences]
-    .sort((left, right) => timestamp(right.scheduledAt) - timestamp(left.scheduledAt))
-    .slice(0, RECENT_EXECUTION_LIMIT);
-  const cutoff = Date.now() - HEALTH_WINDOW_DAYS * 86400000;
-  const healthTriggers = [...occurrences].filter(trigger => timestamp(trigger.lastAttemptAt || trigger.scheduledAt) >= cutoff);
-  const selected = [...new Map([...recentTriggers, ...healthTriggers].map(trigger => [trigger.id, trigger])).values()]
+  const selected = [...occurrences]
     .sort((a, b) => timestamp(b.scheduledAt) - timestamp(a.scheduledAt));
   const projected = await Promise.all(selected.map(projectExecution));
   const recentExecutions = projected.slice(0, RECENT_EXECUTION_LIMIT);
@@ -250,6 +249,7 @@ async function projectRecurringTask(schedule, occurrences) {
     nextRunAt: schedule.status === 'active' ? schedule.nextRunAt : '',
     lastExecution: recentExecutions[0] || null,
     recentExecutions,
+    executionCount: occurrences.length,
     health: executionHealth(projected, { lastError: schedule.lastError || '', lastErrorAt: schedule.lastErrorAt || '' }),
     check: { at: schedule.lastCheckAt || '', reason: schedule.lastGateReason || '',
       error: schedule.lastError || '', errorAt: schedule.lastErrorAt || '' },
@@ -270,6 +270,50 @@ function taskSort(left, right) {
   const leftTime = timestamp(left.nextRunAt) || timestamp(left.updatedAt) || timestamp(left.createdAt);
   const rightTime = timestamp(right.nextRunAt) || timestamp(right.updatedAt) || timestamp(right.createdAt);
   return leftRank < 2 ? leftTime - rightTime : rightTime - leftTime;
+}
+
+// Read-only lineage: follow-ups made inside an execution stay with its parent
+// automation. Independent schedules remain separate even in the same source Session.
+async function automationPackages(schedules, triggers) {
+  const schedulesById = new Map(schedules.map(item => [item.id, item]));
+  const executionParents = new Map();
+  for (const trigger of triggers) {
+    const sessionId = trimString(trigger.executionSessionId);
+    if (!sessionId || sessionId === trimString(trigger.sourceSessionId)) continue;
+    const parents = executionParents.get(sessionId) || [];
+    parents.push(trigger); executionParents.set(sessionId, parents);
+  }
+  const resolved = new Map();
+  function resolve(trigger, path = new Set()) {
+    const schedule = schedulesById.get(trimString(trigger.scheduleId));
+    if (schedule) return { id: schedule.id, title: schedule.title, sourceSessionId: schedule.sourceSessionId };
+    const sourceSessionId = trimString(trigger.sourceSessionId);
+    const fallback = { id: sourceSessionId ? `session:${sourceSessionId}` : trigger.id,
+      title: '', sourceSessionId };
+    if (path.has(trigger.id)) return fallback;
+    if (resolved.has(trigger.id)) return resolved.get(trigger.id);
+    const parents = executionParents.get(sourceSessionId) || [];
+    const nextPath = new Set(path); nextPath.add(trigger.id);
+    const origins = new Map(parents.map(parent => {
+      const origin = resolve(parent, nextPath); return [origin.id, origin];
+    }));
+    // A Session reused by several independent schedules has no unique parent.
+    // Keep those follow-ups under that Session rather than guessing a schedule.
+    const origin = origins.size === 1 ? [...origins.values()][0] : fallback;
+    resolved.set(trigger.id, origin); return origin;
+  }
+  const byTask = new Map(schedules.map(item => [item.id,
+    { id: item.id, title: item.title, sourceSessionId: item.sourceSessionId }]));
+  for (const trigger of triggers) byTask.set(trigger.id, resolve(trigger));
+  const sourceTitles = new Map();
+  await Promise.all([...new Set([...byTask.values()].filter(item => item.id.startsWith('session:'))
+    .map(item => item.sourceSessionId))].map(async id => {
+    const session = await getSession(id); sourceTitles.set(id, trimString(session?.name));
+  }));
+  for (const info of byTask.values()) {
+    if (info.id.startsWith('session:')) info.title = sourceTitles.get(info.sourceSessionId) || '';
+  }
+  return byTask;
 }
 
 export async function listAutomationTasks() {
@@ -296,13 +340,16 @@ export async function listAutomationTasks() {
     )),
     ...oneTimeTriggers.map(projectOneTimeTask),
   ]);
+  const packages = await automationPackages(schedules, triggers);
+  for (const task of tasks) task.package = packages.get(task.id);
   return tasks.sort(taskSort);
 }
 
 // Browse a task's durable occurrences without making each trigger a top-level task.
-export async function listAutomationTaskExecutions(taskId, { cursor = '', limit = 25, status = 'all' } = {}) {
+export async function listAutomationTaskExecutions(taskId, { cursor = '', limit = 25, status = 'all', scope = 'task' } = {}) {
   const pageSize = Number(limit);
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error('limit must be between 1 and 100');
+  if (!['task', 'package'].includes(scope)) throw new Error('Unsupported execution scope');
   if (!['all', 'failed'].includes(status)) throw new Error('Unsupported execution status');
   const id = trimString(taskId);
   let occurrences;
@@ -314,6 +361,12 @@ export async function listAutomationTaskExecutions(taskId, { cursor = '', limit 
     if (!trigger) return null;
     occurrences = [trigger];
   } else return null;
+  if (scope === 'package') {
+    const [schedules, triggers] = await Promise.all([listRecurringSchedules(), listTriggers()]);
+    const packages = await automationPackages(schedules, triggers);
+    const packageId = packages.get(id)?.id;
+    occurrences = triggers.filter(trigger => packages.get(trigger.id)?.id === packageId);
+  }
   occurrences.sort((a, b) => timestamp(b.scheduledAt) - timestamp(a.scheduledAt) || b.id.localeCompare(a.id));
   const cursorIndex = cursor ? occurrences.findIndex(item => item.id === cursor) : -1;
   if (cursor && cursorIndex === -1) throw new Error('Cursor does not belong to this task');
@@ -336,11 +389,14 @@ export async function getAutomationTask(taskId) {
   if (id.startsWith('sch_')) {
     const schedule = await getRecurringSchedule(id);
     if (!schedule) return null;
-    return projectRecurringTask(schedule, await listTriggers({ scheduleId: id }));
+    return { ...await projectRecurringTask(schedule, await listTriggers({ scheduleId: id })),
+      package: { id: schedule.id, title: schedule.title, sourceSessionId: schedule.sourceSessionId } };
   }
   if (id.startsWith('trg_')) {
     const trigger = await getTrigger(id);
-    return trigger ? projectOneTimeTask(trigger) : null;
+    if (!trigger) return null;
+    const packages = await automationPackages(await listRecurringSchedules(), await listTriggers());
+    return { ...await projectOneTimeTask(trigger), package: packages.get(id) };
   }
   return null;
 }

@@ -1108,7 +1108,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 ### 2026-10-03 — Name the resource and runtime view; browse automation failures by task
 
 - User goal: know which resources remain and whether anything needs attention, then inspect an automation only when diagnosing its triggers or failures. A flat list of each historical admission obscures this purpose.
-- Response: call the destination Operations (运行中心), and the exported summary Operations overview (运行概览). Keep the Overview / Automations switch. Current tasks use compact summaries; opening one reveals a trigger timeline, failure-only filter, full retained error and execution-log link, with configuration below.
+- Response: call the destination Operations (运行中心), and the exported summary Operations overview (运行概览). Keep the Overview / Automations switch. Keep the original automation card appearance and order. Repeated one-time follow-ups are grouped by their source work and execution lineage, including follow-ups with different titles or prompts; recurring schedules remain distinct. A small red dot and failure count on the package lead to a collapsed trigger timeline with retained errors and execution-log links.
 - Evidence boundary: task enablement, a failed trigger, a later successful run and an old admission without execution evidence are distinct states. Historical records stay available; grouping cannot cancel or rewrite their producers. Test previews are private to the requesting person until accepted for production delivery.
 
 ### 2026-10-03 — Output architecture needs a readable chronology and explicit handoffs
@@ -1117,3 +1117,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction: the overview mixed desired behavior with current execution and did not identify synchronous waits, asynchronous workers, the two Session handoffs, or Jev's remaining responsibilities. A source/CI pass had also been mistaken for acceptance of the real Feishu experience.
 - Change: make the stable output page a chronological reading guide with selectable actual entry paths, numbered swimlanes, per-step ownership/input/output/waiting facts, and folded source details. Keep proposed interactions in a separately named appendix and scenario. Explain observation versus executable admission, conditional Auto routing, the groupFeed card exclusion, pending-question text binding, and the two independent delivery workers.
 - Acceptance boundary: website delivery is separate from live message-flow acceptance. Immediate receive reactions, cross-worker arrival ordering, question levels and interruption semantics remain explicit gaps; a new real complex-task delivery sample is still required.
+
+### 2026-10-03 — Group the parent automation without redesigning its cards
+
+- Correction: matching identical titles and prompts missed multi-stage automations whose follow-ups change instructions. The compact summary redesign and failure-first ordering were explicitly rejected.
+- Product response: retain the original card layout, lifecycle filter, metadata and controls. Follow the source Session and execution ancestry to collect the parent automation; show only a red dot and failure count outside, then chronological records, full errors and individual child controls inside. Never reorder packages because one child failed or apply a lifecycle action to a synthetic group. Independent schedules from the same setup Session stay separate.
+- Acceptance: verify different-title follow-ups, active children, recurring execution follow-ups, retained older failures, timeline pagination and phone layout. Test previews go only to the requesting person.

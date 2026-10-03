@@ -612,7 +612,7 @@ export async function handleControlRoutes({
     try {
       const history = await listAutomationTaskExecutions(executionHistoryMatch[1], {
         cursor: parsedUrl.query.cursor || '', limit: Number(parsedUrl.query.limit || 25),
-        status: parsedUrl.query.status || 'all',
+        status: parsedUrl.query.status || 'all', scope: parsedUrl.query.scope || 'task',
       });
       if (!history) writeJson(res, 404, { error: 'Automation task not found' });
       else writeJson(res, 200, history);

@@ -81,5 +81,40 @@ try {
   const listed = await listAutomationTasks();
   assert.equal(listed.filter(item => item.kind === 'recurring').length, 1);
   assert.ok(!listed.some(item => ids.includes(item.id)), 'schedule occurrences must remain nested beneath their task');
-  console.log('Automation history: older failures, recovery, pagination, scope, and unverified admissions passed.');
+  // Titles and prompts can change at each follow-up. Origin and execution lineage
+  // define the package, including active children and follow-ups of recurring tasks.
+  const firstStep = await createTrigger({ sourceSessionId: 'package-source', sessionTemplate: template,
+    title: 'Initial checkpoint', text: 'Start the first stage', scheduledAt: new Date(now - 10 * 86400000).toISOString(), enabled: false });
+  const nextStep = await createTrigger({ sourceSessionId: 'package-source', sessionTemplate: template,
+    title: 'Check the later stage', text: 'Different instructions', scheduledAt: new Date(now + 3600000).toISOString(), enabled: false });
+  const nestedStep = await createTrigger({ sourceSessionId: 'package-step-execution', sessionTemplate: template,
+    title: 'Follow up from execution', text: 'A third prompt', scheduledAt: new Date(now + 7200000).toISOString(), enabled: false });
+  const scheduleFollowup = await createTrigger({ sourceSessionId: 'history-execution', sessionTemplate: template,
+    title: 'Continue the scheduled check', text: 'Follow-up in an execution Session', scheduledAt: new Date(now + 10800000).toISOString(), enabled: false });
+  const independent = await createRecurringSchedule({ sourceSessionId: 'history-source', sessionTemplate: template,
+    title: 'Independent recurring task', text: 'Separate schedule from the same setup conversation', cron: '0 1 1 1 *', timezone: 'UTC' });
+  const packageFailure = await createRun({ status: { sessionId: 'package-step-execution', state: 'failed',
+    completedAt: firstStep.scheduledAt, failureReason: 'An older package failure' }, manifest: {} });
+  const packageRows = JSON.parse(await readFile(CHAT_TRIGGERS_FILE, 'utf8'));
+  await writeFixtureTriggers(packageRows.map(item => item.id === firstStep.id
+    ? { ...item, status: 'delivered', runId: packageFailure.id, executionSessionId: 'package-step-execution' } : item));
+  const packaged = await listAutomationTasks();
+  const find = id => packaged.find(item => item.id === id);
+  assert.equal(find(firstStep.id).package.id, find(nextStep.id).package.id, 'different titles/prompts must fold under the same source task');
+  assert.equal(find(firstStep.id).package.id, find(nestedStep.id).package.id, 'follow-ups made in an execution inherit the original package');
+  assert.equal(find(scheduleFollowup.id).package.id, task.id, 'a recurring execution follow-up belongs to its schedule');
+  assert.notEqual(find(independent.id).package.id, task.id, 'independent schedules never merge by shared source Session');
+  assert.equal(find(firstStep.id).health.recordedFailures, 1, 'package badges include retained failures older than the recent health window');
+  assert.equal(find(firstStep.id).health.failedExecutions, 0, 'recent monitoring health retains its existing window');
+  const packageHistory = await listAutomationTaskExecutions(nextStep.id, { scope: 'package' });
+  assert.equal(packageHistory.totalOccurrences, 3);
+  assert.deepEqual(new Set(packageHistory.executions.map(item => item.id)), new Set([firstStep.id, nextStep.id, nestedStep.id]));
+  assert.match(packageHistory.executions.find(item => item.id === firstStep.id).error, /older package failure/);
+  assert.equal(packageHistory.executions.find(item => item.id === nestedStep.id).taskId, nestedStep.id);
+  const schedulePackageHistory = await listAutomationTaskExecutions(task.id, { scope: 'package', status: 'failed' });
+  assert.equal(schedulePackageHistory.totalOccurrences, 39);
+  assert.equal(schedulePackageHistory.executions.length, 2);
+  await assert.rejects(listAutomationTaskExecutions(nextStep.id, { scope: 'package', cursor: foreign.id }), /does not belong/);
+  await assert.rejects(listAutomationTaskExecutions(nextStep.id, { scope: 'everything' }), /scope/);
+  console.log('Automation packages and history: origin lineage, independent schedules, older failures, pagination, scope, and unverified admissions passed.');
 } finally { await rm(fixture, { recursive: true, force: true }); }
