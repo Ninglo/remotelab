@@ -143,10 +143,13 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       if (same) disk.sharedFilesystem = same.label;
     }
     for (const disk of disks) delete disk.device;
-    const liveTasks = tasks.filter(task => task.kind === 'recurring' || ['running', 'starting', 'scheduled', 'admitted', 'pending'].includes(task.state)
-      || task.lastExecution?.state === 'failed' && dateMs(task.lastExecution.completedAt) <= now()
-        && now() - dateMs(task.lastExecution.completedAt) < 24 * 3600_000);
-    const automations = { total: tasks.length, active: liveTasks.filter(task => ['active', 'running', 'starting', 'scheduled', 'admitted', 'pending'].includes(task.state)).length,
+    const activeStates = ['active', 'accepted', 'running', 'starting', 'scheduled', 'pending'];
+    const recent = value => dateMs(value) <= now() && now() - dateMs(value) < 24 * 3600_000;
+    const unverifiedAdmissions = tasks.filter(task => task.kind === 'one_time' && task.state === 'admitted').length;
+    const liveTasks = tasks.filter(task => task.kind === 'recurring' || activeStates.includes(task.state)
+      || task.state === 'admitted' && recent(task.lastExecution?.admittedAt || task.lastExecution?.scheduledAt)
+      || task.lastExecution?.state === 'failed' && recent(task.lastExecution.completedAt || task.lastExecution.attemptedAt || task.updatedAt));
+    const automations = { total: tasks.length, active: liveTasks.filter(task => activeStates.includes(task.state)).length,
       items: liveTasks.map(task => ({ id: task.id, title: text(task.title), state: task.state, nextRunAt: task.nextRunAt,
         lastError: task.lastError ? text(task.lastError) : null, lastExecution: task.lastExecution ? {
           state: task.lastExecution.state, completedAt: task.lastExecution.completedAt, sessionId: task.lastExecution.sessionId,
@@ -160,7 +163,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, disks, automations, services, automaticRequests, ...analysis,
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,
-        unknownAccounts: accounts.filter(account => ['unknown', 'conflicting'].includes(account.status)).length, gaps } };
+        unknownAccounts: accounts.filter(account => ['unknown', 'conflicting'].includes(account.status)).length, unverifiedAdmissions, gaps } };
   }
 }
 

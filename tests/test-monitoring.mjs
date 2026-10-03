@@ -68,3 +68,20 @@ test('stopped automations do not create failure alerts and duplicate filesystem 
   assert.equal(value.disks[0].inodeUsedPercent, null);
   assert.deepEqual(value.attention, []);
 });
+
+test('historical admission records without a Run are not represented as hundreds of active jobs', async () => {
+  const reader = createMonitoringReader({ now: () => now, read: async () => '{}',
+    getUsage: async () => null, getAccounts: async () => null,
+    getFs: async () => ({ blocks: 100, bsize: 1024 ** 3, bfree: 80, bavail: 80, files: 0, ffree: 0 }), getStat: async () => ({ dev: 1 }),
+    getTasks: async () => [
+      { id: 'sch_current', kind: 'recurring', state: 'active' },
+      { id: 'trg_live', kind: 'one_time', state: 'running' },
+      { id: 'trg_old', kind: 'one_time', state: 'admitted', lastExecution: { scheduledAt: '2026-08-01T00:00:00Z' } },
+      { id: 'trg_recent', kind: 'one_time', state: 'admitted', lastExecution: { scheduledAt: at } },
+    ],
+  });
+  const value = await reader();
+  assert.equal(value.automations.active, 2); assert.equal(value.coverage.unverifiedAdmissions, 2);
+  assert.ok(!value.automations.items.some(item => item.id === 'trg_old'));
+  assert.ok(value.automations.items.some(item => item.id === 'trg_recent'));
+});

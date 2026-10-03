@@ -125,6 +125,7 @@
     }
     const coverage = section(t("coverage")); coverage.appendChild(node("p", t("scope"), "monitoring-note"));
     if (value.coverage.unknownAccounts) coverage.appendChild(node("p", t("unknownCount", { count: value.coverage.unknownAccounts }), "monitoring-note"));
+    if (value.coverage.unverifiedAdmissions) coverage.appendChild(node("p", t("unverifiedAdmissions", { count: value.coverage.unverifiedAdmissions }), "monitoring-note"));
     if (!value.coverage.servicesConfigured) coverage.appendChild(node("p", t("noServices"), "monitoring-note"));
     value.coverage.gaps.forEach(gap => {
       const source = ({ usage: "sourceUsage", fleet: "sourceFleet", accounts: "sourceAccounts", automations: "sourceAutomation", automaticRequests: "sourceRequests" })[gap.source];
