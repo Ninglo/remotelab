@@ -49,6 +49,7 @@ Usage:
   remotelab connector                Invoke Connector capabilities (owner may target a managed guest)
   remotelab feishu                   Run reusable Bot-only Feishu office actions
   remotelab assistant-message        Append an assistant message with optional local-file attachments
+  remotelab workboard                Read task evidence and submit compact state updates
   remotelab recording                Enable device-bound hardware recording and submit saved audio
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
@@ -229,6 +230,17 @@ switch (command) {
     const { runAssistantMessageCommand } = await import(scriptPath('lib/assistant-message-command.mjs'));
     try {
       process.exitCode = await runAssistantMessageCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'workboard': {
+    const { runWorkboardCommand } = await import(scriptPath('lib/workboard-command.mjs'));
+    try {
+      process.exitCode = await runWorkboardCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

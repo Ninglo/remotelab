@@ -4,6 +4,7 @@
 
 - 项目 ID：`remotelab-system-guide`。
 - 网站总入口：[`project.html`](project.html)；公开入口为 <https://zhangyu.jiujianian.dev/public-pages/remotelab-architecture-atlas/project.html>。
+- 应用内入口：设置页最下方的“RemoteLab 整体说明”，在新标签页打开同一项目网站。
 - 唯一维护入口：本文件。机器可读章节目录：[`project.json`](project.json)。
 - 归集约定生效：2026-10-03。各章仍保留自己的核对日期、源码基线、实现与验收边界，不能把项目登记日期当成全站内容已经更新。
 

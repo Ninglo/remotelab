@@ -59,6 +59,9 @@ for (const receipt of [{ status: 'decided', needsChecklist: false }, { status: '
   assert.match(prompt, /Visible checklist for this opt-in Session/,
     'an initial short question still gives the Harness the card rule when real investigation is necessary');
   assert.match(prompt, /brief answer or straightforward action needs no card/);
+  assert.match(prompt, /renaming a project\/title/);
+  assert.match(prompt, /execution steps, not independent deliverables/);
+  assert.match(prompt, /Do not split one simple delivery/);
 }
 const optedOutPrompt = await buildPrompt('new-opted-out-question', {
   id: 'new-opted-out-question', workboardPilot: true, workboardOptInPersonId: 'other-person', systemPrompt: '',

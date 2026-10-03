@@ -36,9 +36,9 @@
       <span data-icon="plus" aria-hidden="true"></span>
       <span class="header-quick-action-label" data-i18n="sidebar.newSession">New session</span>
     </button>
-    <button class="header-quick-action" id="headerTasksBtn" type="button" title="Monitoring" aria-label="Monitoring" data-i18n-title="nav.tasks" data-i18n-aria-label="nav.tasks">
+    <button class="header-quick-action" id="headerTasksBtn" type="button" title="Monitor" aria-label="Monitor" data-i18n-title="nav.tasks" data-i18n-aria-label="nav.tasks">
       <span data-icon="tasks" aria-hidden="true"></span>
-      <span class="header-quick-action-label" data-i18n="nav.tasks">Operations</span>
+      <span class="header-quick-action-label" data-i18n="nav.tasks">Monitor</span>
     </button>
   </nav>
   <button class="header-btn notification-toggle" id="notificationToggle" type="button" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notificationPanel" data-i18n-title="notifications.title" data-i18n-aria-label="notifications.title">
@@ -73,7 +73,7 @@
       <nav class="sidebar-primary-nav" aria-label="Main actions" data-i18n-aria-label="nav.application">
         <button class="sidebar-nav-button" id="tabTasks" type="button">
           <span class="sidebar-nav-icon" data-icon="tasks" aria-hidden="true"></span>
-          <span data-i18n="nav.tasks">Operations</span>
+          <span data-i18n="nav.tasks">Monitor</span>
         </button>
       </nav>
       <div class="sidebar-filters" id="sidebarFilters">
@@ -101,12 +101,12 @@
         <header class="workspace-page-header task-center-header">
           <div>
             <div class="workspace-page-kicker" data-i18n="monitoring.kicker">Resources and operations</div>
-            <h2 data-i18n="monitoring.title">Operations</h2>
+            <h2 data-i18n="monitoring.title">Monitor</h2>
             <p data-i18n="monitoring.note">See what needs attention and which resources can move useful work forward.</p>
           </div>
           <button class="task-center-primary" id="taskCenterCreateToggle" type="button" data-i18n="tasks.new">New automation</button>
         </header>
-        <nav class="monitoring-tabs" role="tablist" aria-label="Operations views" data-i18n-aria-label="monitoring.views">
+        <nav class="monitoring-tabs" role="tablist" aria-label="Monitor views" data-i18n-aria-label="monitoring.views">
           <button type="button" role="tab" id="monitoringOverviewTab" aria-controls="monitoringOverview" aria-selected="false" tabindex="-1" data-i18n="monitoring.overview">Overview</button>
           <button type="button" role="tab" id="monitoringAutomationsTab" aria-controls="monitoringAutomations" aria-selected="true" data-i18n="monitoring.automations">Automations</button>
         </nav>
@@ -513,6 +513,12 @@
                 </div>
               </div>
             </section>
+            <footer class="settings-guide-footer">
+              <a id="settingsSystemGuideLink" href="https://zhangyu.jiujianian.dev/public-pages/remotelab-architecture-atlas/project.html" target="_blank" rel="noopener noreferrer" aria-label="RemoteLab system guide (opens in a new tab)" data-i18n-aria-label="settings.guide.ariaLabel">
+                <span data-i18n="settings.guide.title">RemoteLab system guide</span><span aria-hidden="true">↗</span>
+              </a>
+              <p class="settings-section-note" data-i18n="settings.guide.note">System architecture, feature flows, and getting started.</p>
+            </footer>
           </div>
         </div>
       </div>
