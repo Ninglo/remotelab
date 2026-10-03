@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeWorkboardUpdate, projectWorkboards, workboardStatusLabel } from '../lib/workboard-state.mjs';
+import { normalizeWorkboardUpdate, projectWorkboards, workboardStatusLabel, workboardProgressText } from '../lib/workboard-state.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
 import { collectFeishuGroupWorkboardCycles, expandFeishuWorkboardUpdates, publishFeishuWorkboardCycle } from '../connectors/feishu/workboard-pilot.mjs';
 import { publishLiveAssistantReplies } from '../chat/native-final-publication.mjs';
@@ -280,4 +280,19 @@ test('renderer upgrades patch an existing card once without creating or replayin
   assert.equal(await publishFeishuWorkboardCycle(cycle, { ...options, pilot: structuredClone(state) }), null);
   assert.equal(calls.length, 1);
   assert.equal(state.cards.length, 1);
+});
+
+test('verified task outcomes replace stale running progress and retain its history', () => {
+  const progress = { seq: 3, type: 'message', role: 'assistant', runId: 'run-1', phase: 'commentary', content: '<progress>CI 还在运行</progress>' };
+  const done = make({ revision: 2, status: 'completed', items: make().items.map(item => ({ ...item, status: 'done', evidenceRefs: [4] })) });
+  const display = buildSessionDisplayEvents([user(), event(2, make()), progress, event(5, done)], { exposeWorkboard: true });
+  const card = display.find(e => e.workboard);
+  assert.equal(card.workboardProgress.content, '全部交付项已验收。');
+  assert.equal(card.workboardProgress.derivedFromOutcome, true);
+  assert.equal(card.workboardProgressHistory[0].content, 'CI 还在运行');
+  for (const status of ['partial', 'blocked', 'failed', 'cancelled', 'unconfirmed']) {
+    const text = workboardProgressText(make({ status, reason: status === 'unconfirmed' ? '' : '当前条件' }), { content: 'CI 还在运行' });
+    assert.doesNotMatch(text, /CI 还在运行/);
+    assert.ok(text.includes(status === 'unconfirmed' ? '待确认' : '当前条件'));
+  }
 });

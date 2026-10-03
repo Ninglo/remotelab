@@ -286,7 +286,8 @@ function renderSessionWorkboardMessage(container, event) {
   if (typeof renderMarkdownIntoNode === "function") renderMarkdownIntoNode(current, content);
   else current.textContent = content;
   progress.appendChild(current);
-  const previousProgress = (event.workboardProgressHistory || []).slice(0, -1);
+  const previousProgress = (event.workboardProgressHistory || []).filter(update =>
+    event.workboardProgress?.derivedFromOutcome || update.seq !== event.workboardProgress?.seq);
   if (previousProgress.length) {
     const history = document.createElement("details");
     history.className = "session-workboard-progress-history";

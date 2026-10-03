@@ -68,6 +68,9 @@ decides whether the work satisfies the user's goal.
   questions and final results remain separate. Without a card, explicit progress
   retains its normal message behavior. Progress never changes deliverable
   acceptance or proves completion, and follows the card's sender/Run scope.
+  Explicit completion, partial, blocked, failed or cancelled outcomes replace
+  stale running text in the current progress area. Earlier progress remains in
+  history; no inferred completion is taken from that text.
 - After each deliverable passes acceptance, immediately submit the full next
   snapshot with `remotelab assistant-message --workboard-file <json-path>`.
   `done` requires actual verification event references. Withdrawing completion

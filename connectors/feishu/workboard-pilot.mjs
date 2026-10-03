@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { projectWorkboards, workboardStatusLabel } from '../../lib/workboard-state.mjs';
+import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '../../lib/workboard-state.mjs';
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
@@ -26,7 +26,7 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null) {
       content: lines.filter(line => line !== goal).join('\n') || trim(text) } }]),
     { tag: 'hr' },
     { tag: 'markdown', content: '**目前进展**' },
-    { tag: 'markdown', content: progress?.content || '暂无进度更新' },
+    { tag: 'markdown', content: board ? workboardProgressText(board, progress) : progress?.content || '暂无进度更新' },
   ];
   return {
     schema: '2.0', config: { update_multi: true },
