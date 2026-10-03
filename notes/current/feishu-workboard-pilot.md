@@ -34,7 +34,9 @@ freeze marker with `--source-freeze-path` when applicable.
 source. `defaultEnabled: true` resolves registered People and their current
 identities on every future admission, including newly discovered members.
 System work and the shared group timeline are excluded. Web turns use the
-actual authenticated web identity; Feishu turns require the authenticated
+actual authenticated web identity, including Web continuation of a Session
+originally created through Feishu or another connector. Web activation never
+provides a Feishu send admission. Feishu turns require the authenticated
 connector, resolved Person/identity, matching Bot realm and sender open ID,
 source chat/type/tenant/message, and actual delivery destination. New private
 chats and group task threads do not require manually adding every chat ID.

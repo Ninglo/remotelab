@@ -1170,3 +1170,11 @@ as direct deliveries, and preserve strong Harness interpretation. Route-wide
 Feishu publication must replace the Person-only worker without duplicate cards
 or historical backfill. Canonical rules, isolated regression and durable service
 settings are separate from verified live deployment and delivery.
+
+## Web continuation of connector-origin conversations (2026-10-03)
+
+- Feedback: after instance-wide workboard activation, continuing a Feishu conversation from Web still produced scattered progress and no task checklist for a substantial repair.
+- Verified cause: admission checked the Session's original Feishu destination against the actual Web identity, set this turn's activation false, and injected a restriction against new cards.
+- Wider audit: replaying current admission rules across 20 recently active conversations and 90 inputs found the same mismatch in 16 ordinary Web turns across three Feishu-origin conversations. This measures routing coverage, not whether every turn semantically needed a checklist.
+- Fix: instance-default activation follows the authenticated Web member even in connector-origin conversations. Group feeds and excluded members remain excluded; Web activation does not grant a Feishu send admission.
+- Acceptance: cover Web continuation of private and group-thread Sessions, identity mismatch, exclusions and unchanged connector admission; verify the actual affected conversation on the deployed service.

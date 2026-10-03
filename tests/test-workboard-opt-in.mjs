@@ -134,3 +134,26 @@ test('instance Feishu activation verifies each actual inbound sender and destina
     });
   }
 });
+
+test('authenticated Web continuation of a Feishu Session enables cards without admitting Feishu publication', () => {
+  const all = resolveWorkboardPeople({ defaultEnabled: true }, registered);
+  const webTurn = { viewPersonId: 'other', initiatedByIdentityId: 'other-web', workboardEnabled: true };
+  for (const chatType of ['p2p', 'group']) {
+    const session = { sourceId: 'feishu', initiatedByIdentityId: 'zhang-feishu', workboardPilot: true,
+      workboardOptInPersonId: 'zhang', conversation: { connector: 'feishu', sourceRouteId: 'bot-2',
+        target: { chatId: 'shared-chat', chatType, conversationKind: chatType === 'group' ? 'thread' : 'main' } } };
+    assert.equal(isWorkboardTurnEnabled(session, webTurn, all), true,
+      'the current Web member can continue a connector-origin Session');
+    assert.equal(workboardAdmission(webTurn), null, 'Web activation must not authorize a Feishu send');
+    assert.equal(isWorkboardTurnEnabled(session, { ...webTurn, viewPersonId: 'zhang' }, all), false);
+    assert.equal(isWorkboardTurnEnabled(session, { ...webTurn, initiatedByIdentityId: 'other-feishu' }, all), false);
+    assert.equal(isWorkboardTurnEnabled(session, { ...webTurn, sourceContext: { connector: 'feishu' } }, all), false,
+      'connector input still requires its verified receipt and sender');
+    assert.equal(isWorkboardTurnEnabled(session, { ...webTurn, feishuConnectorAuthenticated: true }, all), false);
+    assert.equal(isWorkboardTurnEnabled({ ...session, groupFeed: true }, webTurn, all), false);
+    assert.equal(isWorkboardTurnEnabled(session, webTurn, resolveWorkboardPeople({ defaultEnabled: true,
+      excludedPersonIds: ['other'] }, registered)), false);
+    assert.equal(isWorkboardTurnEnabled(session, webTurn, people), false,
+      'the previous personal opt-in keeps its exact-chat activation scope');
+  }
+});

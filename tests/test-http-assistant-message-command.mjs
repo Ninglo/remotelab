@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -369,6 +369,19 @@ try {
       assert.ok(inbound.workboardAdmission.personId);
       assert.ok(inbound.workboardAdmission.identityId);
     }
+
+    const webContinuation = await request(port, 'POST', `/api/sessions/${group.json.session.id}/messages`, {
+      requestId: 'web-continues-feishu', text: 'Continue this investigation from the browser.', tool: 'fake-codex',
+    });
+    assert.ok([200, 202].includes(webContinuation.status), JSON.stringify(webContinuation.json));
+    await waitForRunTerminal(port, webContinuation.json.run.id);
+    const webHistory = await request(port, 'GET', `/api/sessions/${group.json.session.id}/events?filter=all`);
+    const webInbound = webHistory.json.events.find(event => event.role === 'user' && event.requestId === 'web-continues-feishu');
+    assert.equal(webInbound.workboardAdmission, undefined, 'Web continuation cannot masquerade as a Feishu sender');
+    const webManifest = JSON.parse(readFileSync(join(home, '.config', 'remotelab', 'chat-runs', webContinuation.json.run.id, 'manifest.json'), 'utf8'));
+    assert.match(webManifest.modelContext, /Visible checklist for this opt-in Session/,
+      'the actual HTTP continuation delivers the current card rule to the Harness');
+    assert.doesNotMatch(webManifest.modelContext, /This turn is not opted in/);
 
     for (const [index, attachment] of generated.attachments.entries()) {
       const assetRes = await request(port, 'GET', `/api/assets/${attachment.assetId}`);
