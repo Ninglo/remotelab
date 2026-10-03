@@ -115,3 +115,5 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 - one-round input collection second
 - autonomous AI execution next
 - explicit `[HUMAN]` checkpoints only when unavoidable
+
+- [All-scope project memory rollout](project-memory-rollout.md) — incremental pointers, existing daily-review rules, frozen baselines, live confirmation and separate disable controls.

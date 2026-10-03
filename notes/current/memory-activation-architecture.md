@@ -3,7 +3,8 @@
 Verified against the production call paths on 2026-10-03. The shared human/Agent
 explanation is [Memory and organizational collaboration](../../docs/memory-architecture/README.md),
 with [interactive diagrams](../../docs/memory-architecture/index.html).
-Its organization-governance proposal is not an enabled runtime feature.
+Its project-pointer and existing-review enhancement is now opt-in through instance config;
+role recognition and measured benefits remain distinct from runtime enablement.
 
 ## Storage and activation are separate
 
@@ -69,7 +70,7 @@ A prose rule saying "inbox only" does not establish the effective boundary. Insp
 the catalogue in the target instance environment. Candidate eligibility does not
 establish factual acceptance.
 
-## Governance direction (guide v2; not enabled)
+## Governance direction and current incremental activation (guide v2.4)
 
 Keep the pointer-first skeleton: project index -> project entry -> one project
 memory plus topic/source pointers. A discussion chat, work chat and related
@@ -84,8 +85,9 @@ Initially retain the instance-local `project-knowledge/projects.md` ledger and
 its project sections. The proposed config-directory `project-registry.json`
 holds stable project IDs, source bindings, Session associations and roles; the
 existing memory index and connector configuration become projections of it.
-This registry is a design choice, not an existing production file or new
-interactive product object. Per-Person sidebar groups are not authoritative
+The current incremental implementation instead uses instance memory-directory
+`project-runtime.json` for pointers and exact associations; it is not a new
+interactive product object. The larger registry/role model remains incomplete. Per-Person sidebar groups are not authoritative
 project associations. An ambiguous association remains pending; mixed Sessions
 associate individual entries with the appropriate projects.
 
@@ -109,7 +111,7 @@ Keep ordinary task interpretation and planning with the Harness. Do not make an
 all-project prompt bundle or second semantic gate mandatory on every turn. See
 [the thin control-plane boundary](thin-control-plane-architecture.md).
 
-## Comparison and non-regression requirements (guide v2.1; not enabled)
+## Comparison and real-use regression observation (guide v2.4)
 
 Governance completeness is not a demonstrated latency, token or answer-quality
 gain. The current path already uses pointers and native continuation; do not
@@ -198,3 +200,31 @@ Agent. Verify that execution boundary, complete registered-project coverage,
 version-aware updates, fallback and matched evaluation before starting collection
 or enabling formal integration. An unverified preparation policy cannot serve
 as evidence that any of those runtime capabilities already exist.
+
+## 2026-10-03: all-scope rollout along the existing path
+
+The user explicitly authorized all-registered-project use, frozen baselines and
+iterative tuning, superseding the earlier isolated-comparison-before-rollout
+sequence above. Read [the actual rollout contract](../../docs/project-memory-rollout.md).
+
+`chat/project-memory-runtime.mjs` reads a bounded optional config from MEMORY_DIR.
+The normal turn hook projects version/hash and index/ledger/workflow pointers for
+exact source-group or declared Session matches. It does not read business bodies
+or invoke a model. Fresh and native-resumed preparation share the hook; missing,
+malformed or disabled config leaves the ordinary path. Bare-user context bypass
+retains its existing meaning. Current input source takes precedence over previous
+conversation metadata; title and Person views are not association proof.
+
+The instance's existing daily-review prompt consumes the enabled versioned rules
+using the same ledger, source outputs, schedule and publication target. That is a
+Harness workflow rule, not an OS permission boundary or a new consumer. Known
+source coverage can proceed while unknown bindings and roles remain explicit.
+Prepared-tool flags describe the offline tool only, not this runtime activation.
+
+Source proof, relevant human recognition and actual task usefulness are separate.
+Frozen snapshots and two summaries sharing a source cannot independently prove
+truth. Matched replay remains useful for diagnosis; live corrective feedback is
+not blocked by lack of a complete offline benchmark. Latency/token/quality gains
+remain unproven until real-use records support them. Disable only the problematic
+enhancement and correct the affected entries; do not wipe newer work or retained
+native context by claiming a full snapshot restore has undone it.
