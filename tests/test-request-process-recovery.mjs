@@ -73,8 +73,11 @@ try {
   // Simulate a prepared manifest with its user event already written but its
   // Context event missing. Recovery must use the saved projection, not rebuild it.
   const eventsDir = join(config, 'chat-history', session.id, 'events');
+  // SIGKILL can leave an empty/incomplete atomic-write staging file. Only
+  // committed event names participate in the missing-Context recovery setup.
+  await writeFile(join(eventsDir, '000000001.json.tmp-crashed-writer'), '');
   let removedContexts = 0;
-  for (const file of await readdir(eventsDir)) {
+  for (const file of (await readdir(eventsDir)).filter(name => /^\d+\.json$/.test(name))) {
     const path = join(eventsDir, file);
     const event = JSON.parse(await readFile(path, 'utf8'));
     if (event.type === 'manager_context' && event.runId === accepted.run.id) {
