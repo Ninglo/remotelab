@@ -49,7 +49,8 @@
       const sameAccount = codexAuth?.loggedIn === true && codexAuth.accountRevision
         && codexAuth.accountRevision === codexUsage?.accountRevision;
       const buckets = codexUsage?.status === "ready" && sameAccount && fresh ? codexUsage.buckets || [] : [];
-      const windows = buckets.flatMap((bucket) => [bucket.primary, bucket.secondary].filter(validWindow));
+      const windows = buckets.filter((bucket) => bucket?.id === "codex")
+        .flatMap((bucket) => [bucket.primary, bucket.secondary].filter(validWindow));
       const weekly = windows.find((window) => window.windowDurationMins === 10080);
       button.textContent = weekly ? `本周剩余 ${Number(weekly.remainingPercent.toFixed(1))}%` : "本周额度 · 暂不可用";
       details.replaceChildren();
