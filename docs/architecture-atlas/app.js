@@ -230,6 +230,15 @@ function readHash() {
   if (kind === 'node' && byId.has(value)) navigate('map', { node: value });
   else if (kind === 'route') navigate('experience', { node: null, route: journeyRoutes.some((route) => route.id === value) ? value : journeyRoutes[0].id });
   else if (kind === 'paths') navigate('paths', { node: null, path: paths.some((path) => path.id === value) ? value : paths[0].id });
+  else if (kind && document.getElementById(kind)) {
+    const fragment = window.location.hash;
+    const anchor = document.getElementById(kind);
+    const view = anchor.closest('.view')?.id.replace(/-view$/, '') || 'experience';
+    navigate(view, { node: null });
+    // A section link is a reading position, not a request to replace the route.
+    history.replaceState(null, '', fragment);
+    anchor.scrollIntoView({ block: 'start' });
+  }
   else if (kind === 'evidence') navigate('evidence', { node: null });
   else if (kind === 'map') navigate('map', { node: null });
   else navigate('experience', { node: null });
