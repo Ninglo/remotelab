@@ -38,9 +38,11 @@ test('switching during a Run is Session-scoped, durable, and never replays quiet
   assert.equal(record.deliveries.length, 1);
   await updateSessionProgressPolicy('s1', { mode: 'card', expectedRevision: 0, changeId: 'quiet' });
   events.push(await appendEvent('s1', progress(2)));
+  let quietAssetCalls = 0;
   await publishLiveAssistantReplies(record, [events.at(-1)], { store, session: staleSession,
     plan: { connector: 'feishu', target: { chatId: 'group' } },
-    prepareFinal: () => { throw new Error('quiet progress must not publish assets'); } });
+    prepareFinal: () => { quietAssetCalls++; throw new Error('quiet progress must not publish assets'); } });
+  assert.equal(quietAssetCalls, 0);
   assert.equal(record.deliveries.length, 1, 'already running publishers must re-read the policy');
   assert.equal((await findSessionMeta('s2')).feishuProgressMode, undefined);
   const child = await promisify(execFile)(process.execPath, ['--input-type=module', '-e',
