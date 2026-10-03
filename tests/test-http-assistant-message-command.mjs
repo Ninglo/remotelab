@@ -301,6 +301,43 @@ try {
     assert.equal((await once(cli, 'exit'))[0], 0, cliError);
     assert.equal(JSON.parse(cliOutput).event.workboard.revision, 4, 'CLI reaches the same validated HTTP contract');
 
+    const patchTask = { ...task, taskId: 'http-patch-task', goal: '增量清单验收' };
+    assert.equal((await request(port, 'POST', boardPath, { workboard: patchTask, runId: run.id })).status, 201);
+    const patch = items => ({ workboardPatch: { taskId: patchTask.taskId, items }, runId: run.id });
+    assert.equal((await request(port, 'POST', boardPath, patch([{ id: 'files', status: 'done' }]))).status, 400);
+    const deltas = patchTask.items.map(item => ({ id: item.id, status: 'done', evidenceRefs: [generated.seq] }));
+    const merged = await Promise.all(deltas.map(item => request(port, 'POST', boardPath, patch([item]))));
+    assert.ok(merged.every(result => result.status === 201), JSON.stringify(merged.map(result => result.json)));
+    const readback = await request(port, 'GET', `/api/sessions/${session.id}/workboards?taskId=${patchTask.taskId}`);
+    assert.equal(readback.json.task.revision, 3);
+    assert.ok(readback.json.task.items.every(item => item.status === 'done'), 'concurrent deltas preserve each other');
+    assert.equal(readback.json.session, undefined, 'readback excludes unrelated Session metadata');
+    const replayPatch = await request(port, 'POST', boardPath, patch([deltas[1]]));
+    assert.equal(replayPatch.json.event.workboard.revision, 3, 'retrying a merged delta adds no revision');
+    assert.equal((await request(port, 'POST', boardPath, {
+      workboardPatch: { taskId: patchTask.taskId, expectedRevision: 1, status: 'completed' },
+    })).status, 409);
+    const command = spawn(process.execPath, ['cli.js', 'workboard', 'update', '--task', patchTask.taskId,
+      '--task-status', 'completed', '--session', session.id, '--run-id', 'continued-run',
+      '--base-url', `http://127.0.0.1:${port}`, '--json'], {
+      cwd: repoRoot, env: { ...process.env, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let compactOutput = '', commandError = '';
+    command.stdout.on('data', value => { compactOutput += value; });
+    command.stderr.on('data', value => { commandError += value; });
+    assert.equal((await once(command, 'close'))[0], 0, commandError);
+    const receipt = JSON.parse(compactOutput);
+    assert.equal(receipt.taskId, patchTask.taskId);
+    assert.equal(receipt.revision, 4);
+    assert.equal(receipt.status, 'completed');
+    assert.ok(receipt.eventSeq);
+    assert.equal(receipt.session, undefined);
+    assert.equal(receipt.items[0].condition, undefined, 'receipt avoids repeating full criteria');
+    const index = await request(port, 'GET', `/api/sessions/${session.id}/workboards`);
+    assert.ok(index.json.tasks.some(board => board.taskId === patchTask.taskId));
+    assert.ok(index.json.tasks.every(board => board.items === undefined));
+    assert.equal((await request(port, 'GET', `/api/sessions/${session.id}/workboards?taskId=missing`)).status, 404);
+
     for (const [index, attachment] of generated.attachments.entries()) {
       const assetRes = await request(port, 'GET', `/api/assets/${attachment.assetId}`);
       assert.equal(assetRes.status, 200, 'published helper asset metadata should load');

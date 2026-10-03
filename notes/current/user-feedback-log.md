@@ -1123,3 +1123,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Correction: matching identical titles and prompts missed multi-stage automations whose follow-ups change instructions. The compact summary redesign and failure-first ordering were explicitly rejected.
 - Product response: retain the original card layout, lifecycle filter, metadata and controls. Follow the source Session and execution ancestry to collect the parent automation; show only a red dot and failure count outside, then chronological records, full errors and individual child controls inside. Never reorder packages because one child failed or apply a lifecycle action to a synthetic group. Independent schedules from the same setup Session stay separate.
 - Acceptance: verify different-title follow-ups, active children, recurring execution follow-ups, retained older failures, timeline pagination and phone layout. Test previews go only to the requesting person.
+
+
+## 2026-10-03 — Avoid task cards for one straightforward delivery
+
+An opted-in user reported that project renames and similar small changes were
+receiving deliverable lists too often. Routine inspect/edit/check steps are not
+separate user outcomes. Keep the strong Harness responsible for intent and
+acceptance; default bounded single deliveries to a direct final reply. Reduce
+mechanical card overhead through validated state deltas, compact receipts and
+on-demand evidence lookup, while preserving immediate per-deliverable updates.
