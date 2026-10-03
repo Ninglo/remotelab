@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-03 — Restore new-message notifications for useful Feishu progress
+
+- Observed friction: replacing progress posts with edits to one card removed new-message notifications. People following concurrent tasks could miss intermediate updates while away.
+- Requested behavior: restore useful progress as new messages globally first; defer slash commands or card controls for different Session policies.
+- Change: explicit progress returns through the normal durable message outbox to its original conversation or topic, with or without card activation. Existing status cards continue updating. Web retains its current card and expandable history.
+- Verification: concurrent Requests keep separate recipients, stale Runs cannot borrow a current destination, observer replay retains one delivery per message, and cold terminal recovery does not replay progress. A rollout boundary on unfinished Requests prevents old suppressed card updates from being resent.
+
 ### 2026-10-03 — Organize automations without reducing retained information
 
 - User goal: see one business automation, fold its repeated records by calendar date, and switch directly between regular, one-time and stopped work. Completed one-time work must remain discoverable as one-time work.

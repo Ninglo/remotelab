@@ -12,7 +12,6 @@ import {
   rewriteAssistantLocalMarkdownImageTargets,
 } from './session-result-files.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
-import { projectWorkboards } from '../lib/workboard-state.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
 import { normalizeConversation } from '../lib/conversation-target.mjs';
 
@@ -36,29 +35,13 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
   return next;
 }
 
-// Admitted Feishu progress uses its durable route worker, with or without an
-// acceptance list. Openings, questions and finals retain the normal outbox.
+// Useful progress remains a new message even when the route worker also
+// updates a status card. Both paths retain their own durable receipts.
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
-  const cardProgressSeqs = session?.workboardPilot === true
-    ? new Set(projectWorkboards(fullHistory).flatMap(task => task.progressHistory.map(progress => progress.seq))) : new Set();
-  const groupedProgress = plan.connector === 'feishu' && session?.workboardPilot === true
-    && fullHistory.some(event => event.type === 'message' && event.role === 'user' && event.runId === record.runId
-      && event.workboardAdmission?.personId && event.workboardAdmission?.identityId
-      && event.workboardAdmission.sourceRouteId === session.conversation?.sourceRouteId
-      && event.sourceContext?.connector === 'feishu'
-      && event.sourceContext?.sourceRouteId === session.conversation?.sourceRouteId
-      && event.sourceContext?.chatType === session.conversation?.target?.chatType
-      && event.sourceContext?.chatId === session.conversation?.target?.chatId
-      && plan.target?.chatId === session.conversation?.target?.chatId
-      && (!session.conversation?.target?.tenantKey || event.sourceContext?.tenantKey === session.conversation.target.tenantKey)
-      && event.workboardAdmission.senderOpenId === event.sourceContext?.sender?.openId);
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
-    // The same history drives the card publisher. A card update is never also
-    // queued as a separate chat message; openings, questions and finals remain.
-    if (cardProgressSeqs.has(event.seq)) continue;
-    if (groupedProgress && surface.surfaceKind === 'progress') continue;
+    if (event.runId && event.runId !== record.runId) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
     if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'
@@ -66,6 +49,9 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const messageId = assistantSurfaceMessageId(event);
     if (!messageId) continue;
     const stored = await store.get(record.key);
+    // A rollout can fence progress previously suppressed by card grouping.
+    // This is not a delivery receipt; old card text must not be announced again.
+    if (surface.surfaceKind === 'progress' && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
     if (stored?.streamedSurfaceMessageIds?.includes(messageId)
         || stored?.streamedFinalReplyIds?.includes(messageId)) continue;
     const final = isFinalAssistantMessage(event);
