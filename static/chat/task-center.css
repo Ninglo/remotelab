@@ -465,34 +465,6 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-trigger-history { margin-top: 12px; }
 .task-trigger-history > summary { cursor: pointer; color: var(--text-secondary); font-size: 11px; }
 .task-trigger-history > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-/* Keep all summary fields visible, using horizontal space before extra rows. */
-.task-center-panel { padding: 20px 24px 32px; }
-.task-center-header, .monitoring-tabs, .task-center-toolbar, .task-center-list { width: min(100%, 1180px); }
-.task-center-header { margin-bottom: 12px; }
-.monitoring-tabs { margin-bottom: 14px; }
-.task-lifecycle-section { margin-top: 3px; }
-.task-lifecycle-heading { margin: 4px 0 8px; }
-.task-lifecycle-cards { gap: 8px; }
-.task-summary-main .task-summary-description { margin: 4px 0; }
-.task-summary-main .task-summary-plan { margin: 4px 0 8px; }
-.task-summary-main .task-summary-context { display: flex; flex-wrap: wrap; gap: 5px 22px; margin-bottom: 10px; }
-.task-summary-main .task-summary-context .task-meta-row { grid-template-columns: auto minmax(0, 1fr); gap: 7px; min-width: 0; max-width: 100%; }
-.task-summary-main .task-trigger-history { margin-top: 8px; }
-@media (min-width: 900px) {
-  .task-summary-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 18px; }
-  .task-summary-main > .task-card-heading, .task-summary-main > .task-summary-context,
-  .task-summary-main > .task-summary-stats, .task-summary-main > .task-trigger-history { grid-column: 1 / -1; }
-  .task-summary-main > .task-summary-plan { grid-column: 2; grid-row: 2; text-align: right; align-self: start; }
-  .task-summary-main .task-summary-stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
-  .task-summary-main .task-summary-stat dd { margin: 0; }
-  .task-summary-main .task-summary-result { display: inline; margin-left: 6px; }
-}
-@media (max-width: 720px) {
-  .task-center-panel { padding: 16px 14px 28px; }
-  .task-summary-main .task-summary-context { gap: 5px 14px; }
-  .task-summary-main .task-summary-stats { gap: 8px 12px; }
-}
 .task-trigger-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
 .task-history { padding: 12px 0 0; }
 .task-history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
