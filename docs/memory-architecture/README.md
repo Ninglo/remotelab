@@ -2,7 +2,7 @@
 
 <!-- Generated from guide-data.js by render-reference.mjs; edit the content source. -->
 
-版本 2.0；核对日期 2026-10-03；运行源码 `0040eb00`；主线基线 `c39c5e83`。核对的 10 个核心路径、读取与写回文件一致；不声称全部运行源码相同。
+版本 2.1；核对日期 2026-10-03；运行源码 `dfeccf1f`；主线基线 `62cbfb44`。核对的 10 个核心路径、读取与写回文件一致；不声称全部运行源码相同。
 
 让 Agent 在多人、多项目、多信源的工作中形成可追溯、经相应职责认可的组织认识；从同一份认识生成项目与个人视图，持续发现进展、风险和值得复用的方法。
 
@@ -742,30 +742,174 @@ PMO 指跨项目协调与推进的职责。Agent 持续核对进展、发现遗�
 | 观察是否有用 | 工作流漏报和误报、重复工作判断准确性、跨项目依赖发现、建议被采纳及其结果 |
 | 协作是否更省力 | 职责确认负担、无效打扰、交接与复用收益、前台任务成功率、延迟和资源成本 |
 
+## 与现有机制、成熟产品的比较
+
+新版在治理规则上更完整；现有方案有已运行的快速路径。速度、总 token 与回答准确度，必须通过同条件测试才能判断。实施方向是在现有指针结构上补齐治理，保留普通任务的读取与执行方式。
+
+2026-10-03 重新核对运行版本 dfeccf1f：10 个核心记忆路径、读取与写回文件与文档主线基线一致；同时读取了本 Session 的真实 token 账本。账本能看到输入、缓存输入与输出，但没有把每个 token 分到项目记忆、历史、工具或其他来源。没有新版运行结果，也没有与商业产品的同题实测，下面不给虚假的速度、成本或准确率排名。
+
+| 比较项 | 现有机制 | 拟实施方案 |
+| --- | --- | --- |
+| 已经跑起来了吗 | 启动指针、原生线程续接、近期关联群消息和异步写回已在运行。 | 归属登记、条目版本、职责确认和反馈回写是方案；说明网页发布不等于治理功能上线。 |
+| 项目信息是否完整 | 有群绑定与项目主账，但全来源覆盖、个人 Session 挂靠和条目确认尚未形成统一闭环。 | 覆盖全部已登记项目；两群与相关 Session 汇到同一项目。已知、未确认、冲突和缺源分别标记。 |
+| 反应速度 | 新线程提供指针；续接复用原生上下文。不强制全组织检索。已有路径应作为性能基线。 | 不新增必经的模型判断或汇总。相关任务可能多一次定向读取；普通任务走原路径。后台仍可能争用机器与模型配额，必须测。 |
+| 前台 token | 指针已较轻；历史、工具结果和重复附加文本可能占较多输入。当前机制不是每次全量塞历史。 | 任务相关的项目认识可能减少重复寻找，也可能增加无用上下文。不能拿“全量历史”当唯一对手宣布节省。 |
+| 总 token 和人工成本 | 已有分类、自动写回、日报等成本需要计入。缓存输入已包含在输入中，价格估算不是实际账单。 | 新增抽取、冲突核验、索引、日报与重试都会花成本。确认会占用人的时间；复用收益要覆盖维护费用，或明确作为治理投入。 |
+| 回复准度 | 当前话题内连续性较好；跨来源归属、旧事实与验收状态仍可能混淆。尚无统一的人工标注基线。 | 证据、时间、版本与职责可降低状态越级；误挂项目、漏掉原文和过期共识也可放大错误。拟议规则不能代替真实答题验证。 |
+| 运维与权限 | 现为共享实例；Person 分类和目录不构成独立访问权限。原生线程可能继续保留已经读入的旧内容。 | 需要失败回退、原子更新、权限继承及撤回传播。要提供私人空间时，先实现真实权限检查；不能用记忆目录冒充隔离。 |
+
+### Claude Tag
+
+最适合参照群、话题与稳定约定的边界。
+
+- **官方已有：** 频道笔记、工作区笔记和独立 DM 笔记；线程工作上下文与持久记忆分工，频道成员可纠正记忆。
+- **值得借鉴：** 稳定约定留在适用频道，长手册沿可读来源查找；历史可列出会话后读取，官方说明尚不支持跨这些会话全文搜索。
+- **与本方案的区别：** 我们的项目可同时绑定讨论群、干活群和个人 Session。按职责认可条目版本及日报反馈回原处，是本组织需实现的业务规则；所查文档没有证明这些规则开箱可用。
+- **性能比较边界：** 没有同模型、同数据、同任务的 RemoteLab 对照记录。不能凭成熟产品名称判断谁更快、更省 token 或更准。
+
+依据：[记忆范围与修正](https://claude.com/docs/claude-tag/users/memory)、[频道、线程与运行](https://claude.com/docs/claude-tag/concepts/how-it-works)。
+
+### Slack AI
+
+最适合参照带出处的检索与按需日报。
+
+- **官方已有：** 对话摘要、带消息或文件引用的搜索回答，以及关注频道的每日 recap；企业搜索与部分能力取决于套餐和管理员配置。
+- **值得借鉴：** 按用户原有访问范围给出来源，可回到具体消息核对。选择关注频道并回看出处，减少反复翻群。
+- **与本方案的区别：** 摘要与引用不自动证明交付已验收。我们的目标还包括项目责任、状态变更、条目确认、跨项目观察与纠正传播；所查资料不足以证明同样的闭环已经内置。
+- **性能比较边界：** 官方描述快捷摘要体验，但没有与本实例匹配的 P50/P95、token 账本和准确率。套餐费用和集成维护应另计。
+
+依据：[Slack AI 功能与可用范围](https://slack.com/help/articles/25076892548883-Guide-to-AI-features-in-Slack)。
+
+### Glean
+
+最适合参照企业检索、来源权限与个人化；这些是我们仍要补的工程能力。
+
+- **官方已有：** 连接企业知识来源，按原权限和活动相关性检索；可用来源筛选和文档验证信号。
+- **值得借鉴：** 明确保存与自动学习的个人记忆可查看、修改、删除。记忆功能有部署条件，当前官方说明限定 GCP 与 Universal Key。
+- **与本方案的区别：** Fast、Thinking、Deep research 提供不同深度与工具范围。我们应保留简单任务的轻路径；项目 owner／本人／验收人分责确认仍需组织自己的流程。
+- **性能比较边界：** 产品功能和权限集成比我们当前的纯文件治理更完备，但不构成同题性能胜出证据。不能把私人记忆能力直接映射到共享实例中的目录。
+
+依据：[信息来源、权限与相关性](https://docs.glean.com/user-guide/assistant/how-glean-accesses-info)、[个人记忆及部署条件](https://docs.glean.com/user-guide/assistant/memory-personalization)、[响应深度与工具范围](https://docs.glean.com/user-guide/assistant/glean-chat)。
+
+- **成熟产品更完备的地方：** 权限继承、跨应用检索、引用、个人可修正记忆及运行管理已有产品支持。我们不能因为列了更多治理规则，就声称整体能力超过成熟产品。
+- **需要自己建设的部分：** 明确项目边界、区分实际工作与验收、让对应职责确认、纠正回原条目，再观察重复工作与有用方法。产品可提供底座，组织仍要定义认可标准。
+- **记忆组件不是完整 PMO：** LangGraph 的后台记忆写入是实现模式；Mem0 是记忆方案与研究。不能把组件或论文的测试成绩当作公司治理产品的交付效果。
+- **论文成绩不能套用到这里：** Mem0 的效率收益主要与其特定测试中的全上下文方法比较；本实例已有指针和原生续接。LongMemEval 可帮助设计跨会话、时序、更新和“不知道”的测试，但不检验公司的真实验收流程。
+
+### 前台与后台的成本
+
+前台执行与后台治理分别运行。后台整理好的版本可以被后续相关任务读取；没有整理好时不阻塞普通工作。
+
+```mermaid
+flowchart LR
+  ask["用户发起任务"]
+  work["沿现有指针工作"]
+  reply["给出可核对结果"]
+  delta["收取来源增量"]
+  merge["维护同一项目认识"]
+  view["派生视图与反馈"]
+  ask --> work
+  work --> reply
+  ask -. 异步增量 .-> delta
+  delta --> merge
+  merge --> view
+```
+
+- **用户发起任务（前台）：** 保留来源快照与 native thread。明确群绑定可查登记表；模糊归属暂存待定，不阻塞任务。
+- **沿现有指针工作（前台）：** 普通任务不增加治理模型调用。项目任务可读取已经发布的匹配版本；真实进展仍按需查询原业务系统。读取超时或条目失效时回原来源。
+- **给出可核对结果（前台）：** 能回答就回答。证据不足明确说明；确认属于后续治理，不能拖住每次开工。衡量第一条有用回应和完整任务完成时间。
+- **收取来源增量（后台）：** 复用已有消费结果；事件编号与内容 hash 去重，保存游标，完成的 Session 输出作为增量。初次回填单列预算，避免每轮重新扫描全组织。
+- **维护同一项目认识（后台）：** 只有有实质变化的来源才更新。串行提交同一条目，检查期望版本；冲突保留双方证据。旧新版写回对重叠来源只能有一个维护者。
+- **派生视图与反馈（后台）：** 没有变化不重复发起模型总结；日报从条目版本派生。反馈携带条目 ID、版本和职责；看见人已开工时不机械催促。
+
+- **每笔钱算在明确的地方：** 分开记录用户回复、现有分类／写回、新增归集、冲突核验、索引／embedding、日报、回填与失败重试。token 总量＝输入＋输出；缓存输入是输入的子集，reasoning 也是输出的子集，不能重复相加。各 provider 的字段口径先核对。
+- **缓存与费用分开：** 缓存命中不使上下文消失。记录输入、缓存输入、输出、实际模型和当时价格；订阅配额占用、价格估算与真实账单分别展示。不同模型的 token 数不能直接等同花的钱。
+- **一次维护，多次使用：** 事件去重、按项目合并、一次形成可追溯条目，再供各视图引用。保留指针与原文，检索只选本任务相关内容；不把组织日报或全部个人档案注入每个 Session。
+- **既有后台也要计账：** 现有自动写回和分类已是后台模型调用。新归集若接管同一来源，先明确唯一维护者，再替换重复任务；不要两套同时抽取、两套主账互相覆盖。现有任务本轮未调整。
+- **背景运行也可能变慢：** 独立进程仍共享 CPU、磁盘、网络和账号配额。设置队列、并发、每日／项目预算和前台优先；资源紧张先暂停后台，归集延迟显示为缺口，不能编造“已经全量更新”。
+- **人的确认也有成本：** 只有影响责任、范围、优先级或验收的变化才请对应职责确认；日报按变化汇总，已确认且未变化的条目不反复问。统计确认分钟、纠正次数和无用打扰，不把自动推送成功当省时。
+
+### token 演示账本（不是实测）
+
+下面所有数字都是演示假设，单位为 token，不是本实例实测、产品报价或节省承诺。单次前台量应包含完成任务所需的全部模型调用；后台更新与日报量也包括读取、生成和重试。示例假设同一种计数口径、共同后台量不变；新增后台填净新增量，替代旧任务的费用先扣除。要算费用与配额，须按实际 provider、模型、缓存和账号另外核算。
+
+当前总量＝任务数 × 当前每任务量＋共同后台；治理后总量＝任务数 × 治理后每任务量＋共同后台＋更新次数 × 更新新增量＋报告次数 × 报告新增量。
+
+| 演示输入项 | 假设值 |
+| --- | --- |
+| 每天前台任务数 | 10 |
+| 当前每任务 token | 12000 |
+| 治理后每任务 token | 9000 |
+| 两方案共同后台 token／日 | 10000 |
+| 每天新增项目更新次数 | 6 |
+| 每次更新净新增 token | 5000 |
+| 每天新增报告次数 | 1 |
+| 每次报告净新增 token | 20000 |
+
+以上初始假设：当前 130,000 token／日，治理后 150,000；净新增后台 50,000。每天至少 17 次使用才使总量更低。交互网页可更改全部假设；不同模型、缓存与真实价格需另核算。
+
+### 如何验证
+
+- **先保存真实基线：** 从当前已部署实例抽取固定证据快照，记录来源截止时间、实际 provider／Harness／模型／effort／上下文、任务成功标准与资源状态。第一次全量回填的成本与每天维护成本分开。页面核查和 CI 不是运行性能验收。
+- **A／B／C 三种对照：** A＝现有机制；B＝同模型同 Harness 的治理方案；C＝只加确定性挂靠与来源／版本字段，保持现有读取方式。A→C 检查轻改收益，C→B 检查新增检索、摘要和确认是否值得；另设“把全部文本塞入”仅作研究参照，不把它冒充旧方案。
+- **任务覆盖保持全项目：** 归集覆盖全部已登记项目并报告每个来源缺口。测试同时覆盖普通工作、已知项目、未知归属、跨项目 Session、两群矛盾、改承诺、验收失败、旧事实、撤回、断指针、偏好冲突和优秀工作流发现。某个项目样本不足时不得宣称该项目已经通过。
+- **速度不只看第一个字：** 分别测来源获取、指针查找、正文读取、模型首个输出、第一条有用回应和完整任务时间；报 P50（典型）与 P95（较慢的 5% 边界）。打招呼不能充当有用回应。新线程、续接、重建与冷／热缓存分别报；供应商或 CI 等待不可归因记忆模块。
+- **准确度有三种检查：** 检索：所需证据是否找到；理解：归属、时序、状态、角色是否读对；回答：事实是否正确、承诺与验收是否区分、引用是否支持结论，以及任务是否实际完成。人工固定答案与原始证据在测试时隔离，不能把答案写进检索内容；LLM 评分只能辅助。
+- **避免用“不知道”刷分：** 缺源时正确保留未知；证据已充分时必须回答。同时计算可回答问题的正确回答率与完成率、不可回答问题的合理保留率，严重状态越级单列。观察建议另看有用率、误报、重复工作漏报及人的确认成本。
+- **对照条件与不确定性公开：** 独立工作副本重放同一时间截面的问题，避免后一方案看到前一方案答案；交错顺序、重复试验控制缓存和时段。按项目／Session 聚合，报告样本数、差值区间和缺口，不把同一话题重复调用当独立证据。建议先积累每类数百次任务以估计慢端延迟，样本不足只报告探索结果。
+
+### 测量字段（待增加或补齐）
+
+- **识别一次任务：** 实验任务编号、A／B／C 变体、Project／Session 匿名标识、来源截止时间与版本、是否新线程／续接／重建。一次任务下的多次模型调用都关联回来。
+- **标记读了什么：** 保留平台拼装的来源类别、条目 ID、版本、正文 hash 和字符数；工具实际读取另留记录。tokenizer 给出的段落量仅为估计；provider 总输入才是该调用的计数。平台记录不覆盖原生 Harness 的全部隐藏输入。
+- **记录模型与 token：** 实际 provider、模型、effort、调用编号、输入、缓存输入、输出、重试与后台操作类别；按调用去重后汇总任务和项目每日总量。失败调用有计数也要计成本，缺失数据显式标记。
+- **区分时间：** 请求进入、平台上下文准备、排队、每次读取、首个模型输出、首个有用回应、可交付结果及超时回退。人工验收等待另计，不能算到一次记忆检索延迟里。
+- **留下质量与人力结果：** 问题是否可回答、正确证据是否找到、事实／归属／状态是否正确、任务是否完成、人工审阅依据、确认与纠正分钟、严重错误、区间估计及对应样本数。
+
+### 准入要求（尚未通过）
+
+- **普通开工路径：** 新增必经模型调用＝0；无关任务的新增项目正文注入＝0。前台与后台开关分开；日志验证这些条件。
+- **速度准入（拟定目标）：** 普通任务新增平台读取／路由 P95 ≤ 100ms；第一条有用回应和完整任务 P95 均不超过同条件旧路径的 1.05 倍。数值是上线目标，不是已测结果；取得基线后可调整，但必须在看新版结果前定下。
+- **质量准入：** 每个任务类别独立核对正确率、证据完整性和实际完成率，普通任务不能被项目任务的平均提升掩盖。对照证据不足以支持不退化时保持隔离。错认验收、无权访问、跨人误写、已撤回事实仍当已确认，属于阻止接入的严重错误；测试中为零也不证明生产风险为零。
+- **token 与预算准入：** 普通路径输入不新增治理包；项目路径统计每任务前台 token 的中位数与 P95，对比旧方案。日报与后台净新增成本单独设预算，不能用前台节省掩盖超支；不满足预先声明的全成本预算时削减重复工作或暂缓接入。
+- **回退必须真的可用：** 在测试环境注入超时、旧版本、冲突、坏指针、缺权限及资源耗尽，验证普通工作继续且未确认事实不会升格。关闭新检索即可沿旧入口工作；停止新写入，保存只读证据和待处理游标，记录恢复后的补齐。
+- **开启顺序：** 先全项目独立归集与测试日报，再离线重放对照。通过后分别接入相关任务读取、正式条目写回、个人推送和业务动作；任何阶段失败回退对应开关。不能为验证新方案直接替换正在工作的记忆入口。
+
+### 失败与纠正
+
+- **项目记忆与原系统不一致：** 当前运行状态以原业务系统为准；项目记忆记录分歧、核验时间和出处。最新说法不自动覆盖已验收结果，也不能让旧共识压过新证据。
+- **后台还没更新：** 每个来源显示水位／截止时间、最后成功时间和缺口。前台涉及最新状态就按需查原系统；历史认识标注其截至时间，不冒充实时数据。
+- **索引断了或读取超时：** 后台检查目标存在、条目版本与适用范围；前台只做有界读取，失败回原来源或明确缺证，不反复递归扫库。原始证据保留，新索引可重新生成。
+- **多处同时更新：** 以条目 ID＋期望版本提交，发现版本已变就重核并合并；写入原子化，失败不留下半份主账。日报记录本次实际用的版本，反馈不能覆盖后来已确认的新版本。
+- **误提取或来源被撤回：** 保存更正／撤回记录，失效原条目及派生检索结果，重新生成受影响视图；不将同一内容因转发重复计作独立证据。已进入原生上下文的内容不能靠删文件抹掉：需明确纠正，必要时重建线程，并核验新的读取。
+- **来源权限发生变化：** 继承源的真实可见范围，索引、缓存、项目视图与报告都检查受众；删除与撤权触发失效传播。本实例当前所有认证用户共享 Session，这个事实必须保留；私人记忆需求需真实权限能力后再启用。
+- **发现好工作流：** 先记为观察与可复用候选，保留适用条件、成功结果及反例。低频或不善表达的人也应从实际成果中被观察；候选量、消息量不当绩效排名。独立复用验证之后再晋升活动 Skill。
+
 ## 当前依据
 
-- [启动上下文](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/system-prompt.mjs)：确认只提供位置与能力，不读取记忆正文。
-- [首轮、续接与收尾入口](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/session-manager.mjs)：确认 fresh/resume、逐轮投影与后台写回调用。
-- [本轮上下文](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/turn-context-hook.mjs)：来源、桥接和显式约定；短摘要不普通每轮重注入。
+- [启动上下文](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/system-prompt.mjs)：确认只提供位置与能力，不读取记忆正文。
+- [首轮、续接与收尾入口](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/session-manager.mjs)：确认 fresh/resume、逐轮投影与后台写回调用。
+- [本轮上下文](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/turn-context-hook.mjs)：来源、桥接和显式约定；短摘要不普通每轮重注入。
 - [连接器 Context 契约](https://github.com/Ninglo/remotelab/blob/main/docs/connector-turn-context.md)：Request 来源快照和投影可观察范围。
-- [有界延续](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/session-continuation.mjs)：历史选择与截断。
-- [会话状态投影](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/session-control-state.mjs)：workSummary 的保存与延续关系。
-- [后台会话分类](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/session-state-classifier.mjs)：会话组织与业务验收的区别。
-- [个人 Session 视图](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/session-person-view.mjs)：视图归类不等于个人记忆或访问隔离。
-- [已有个人产品设置](https://github.com/Ninglo/remotelab/blob/c39c5e83/lib/auth-config.mjs)：Person.preferences 的保存与默认值规范化；不等于完整的协作偏好库。
-- [写回目标发现](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/memory-writeback-targets.mjs)：任务发现、禁用配置与候选目标。
-- [自动记忆提炼](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/session-memory-writeback.mjs)：输入范围、追加与文本去重。
+- [有界延续](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/session-continuation.mjs)：历史选择与截断。
+- [会话状态投影](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/session-control-state.mjs)：workSummary 的保存与延续关系。
+- [后台会话分类](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/session-state-classifier.mjs)：会话组织与业务验收的区别。
+- [个人 Session 视图](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/session-person-view.mjs)：视图归类不等于个人记忆或访问隔离。
+- [已有个人产品设置](https://github.com/Ninglo/remotelab/blob/62cbfb44/lib/auth-config.mjs)：Person.preferences 的保存与默认值规范化；不等于完整的协作偏好库。
+- [写回目标发现](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/memory-writeback-targets.mjs)：任务发现、禁用配置与候选目标。
+- [自动记忆提炼](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/session-memory-writeback.mjs)：输入范围、追加与文本去重。
 - [记忆激活边界](https://github.com/Ninglo/remotelab/blob/main/notes/current/memory-activation-architecture.md)：指针与正文、存储与使用分开。
 - [控制面与 Harness 分工](https://github.com/Ninglo/remotelab/blob/main/notes/current/thin-control-plane-architecture.md)：保持 Harness 对普通任务的解释与执行权。
 - [已出版日报的条件式读取](https://github.com/Ninglo/remotelab/blob/main/docs/feishu-daily-report-memory.md)：仅配置的 Jev 路径读取有回执和 hash 的有界日报片段，不代表每个 Session 都读日报。
 - [可选启动知识探测](https://github.com/Ninglo/remotelab/blob/main/docs/session-start-preflight.md)：它不是本地记忆检索或权限验收；本次实例配置未启用。
-- [Session 事件与正文存储](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/history.mjs)：事件文件、外置正文及有条件生成的上下文文件。
-- [实例数据路径](https://github.com/Ninglo/remotelab/blob/c39c5e83/lib/config.mjs)：配置、历史、Run、记忆目录的默认值和环境覆盖。
-- [话题工作约定](https://github.com/Ninglo/remotelab/blob/c39c5e83/chat/session-agreements.mjs)：最多 6 条、每条 240 字符的局部约定与本轮投影。
-- [两群项目绑定与近期片段](https://github.com/Ninglo/remotelab/blob/c39c5e83/connectors/feishu/linked-project-context.mjs)：projectId、双群绑定、项目流存储及消息选择边界。
-- [群话题与 Session 绑定](https://github.com/Ninglo/remotelab/blob/c39c5e83/connectors/feishu/session-flow.mjs)：来源消息索引、conversation 解析与旧绑定兼容。
-- [连接器日志与索引位置](https://github.com/Ninglo/remotelab/blob/c39c5e83/scripts/feishu-connector.mjs)：storageDir 下的 events.jsonl、消息索引和现有采集流程。
+- [Session 事件与正文存储](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/history.mjs)：事件文件、外置正文及有条件生成的上下文文件。
+- [实例数据路径](https://github.com/Ninglo/remotelab/blob/62cbfb44/lib/config.mjs)：配置、历史、Run、记忆目录的默认值和环境覆盖。
+- [话题工作约定](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/session-agreements.mjs)：最多 6 条、每条 240 字符的局部约定与本轮投影。
+- [两群项目绑定与近期片段](https://github.com/Ninglo/remotelab/blob/62cbfb44/connectors/feishu/linked-project-context.mjs)：projectId、双群绑定、项目流存储及消息选择边界。
+- [群话题与 Session 绑定](https://github.com/Ninglo/remotelab/blob/62cbfb44/connectors/feishu/session-flow.mjs)：来源消息索引、conversation 解析与旧绑定兼容。
+- [连接器日志与索引位置](https://github.com/Ninglo/remotelab/blob/62cbfb44/scripts/feishu-connector.mjs)：storageDir 下的 events.jsonl、消息索引和现有采集流程。
 - [仓库操作规则](https://github.com/Ninglo/remotelab/blob/main/AGENTS.md)：稳定操作约束、共享实例权限与记忆指针，不能代替项目业务认识。
+- [实际 token 账本及后台分类](https://github.com/Ninglo/remotelab/blob/62cbfb44/chat/usage-ledger.mjs)：区分输入、缓存输入、输出、前台与后台操作；聚合账本不直接标注每段记忆的成本。
 
 ## 外部参考
 
@@ -773,6 +917,12 @@ PMO 指跨项目协调与推进的职责。Agent 持续核对进展、发现遗�
 - [LangGraph：线程与跨线程记忆](https://docs.langchain.com/oss/python/concepts/memory)：借鉴当前工作与长期知识分开、按范围读取。采用这些原则，不要求替换 RemoteLab 现有 Harness 或引入框架。
 - [Zep：事实的时间属性](https://help.getzep.com/facts)：借鉴生效与失效时间、来源和事实更新。时间属性有助于判断新旧，不证明事实真实或已被人验收。
 - [Microsoft：同一维护数据的不同读取视图](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs)：借鉴主账与读取视图分工。项目、个人、组织日报从同一认识派生；先沿用文件与已有系统，不引入全套事件溯源迁移。
+- [Slack AI · 搜索引用与每日 recap](https://slack.com/help/articles/25076892548883-Guide-to-AI-features-in-Slack)：参考权限范围、引用与按需摘要；功能受套餐影响，不提供本实例的性能对照
+- [Glean · 企业知识、权限与相关性](https://docs.glean.com/user-guide/assistant/how-glean-accesses-info)：参考多信源检索、来源权限、验证与个性化，不能把文件命名当真实权限
+- [Glean · 可编辑个人记忆](https://docs.glean.com/user-guide/assistant/memory-personalization)：参考明确保存与学习的偏好及可修正性；当前存在部署可用范围
+- [Glean · 不同任务的响应深度](https://docs.glean.com/user-guide/assistant/glean-chat)：简单和复杂任务采用不同深度；所查产品文档不是同题速度实测
+- [LangGraph · 前台与后台形成记忆](https://docs.langchain.com/oss/python/concepts/memory)：参考后台形成、前台读取的取舍；更新及时性与共享资源仍需实测
+- [Mem0 · 对照范围与效率研究](https://arxiv.org/abs/2504.19413)：特定基准上的记忆方案与全上下文对照；不能直接承诺本实例的节省比例
 
 ## 维护
 
