@@ -1,10 +1,11 @@
-import { isFeishuTopicChat } from './index.mjs';
+import { buildFeishuTopicId, isFeishuTopicChat } from './index.mjs';
 import { normalizeDailyReportMemory } from './daily-report-memory.mjs';
 
 const AMBIENT_SESSION_PROMPT = [
   'This Feishu group sends its main-timeline messages to your continuing Session, including messages without an @ mention.',
   'Read the recent group discussion and decide whether your participation helps. If the newest human message explicitly @ mentions another person and not you, treat it as their conversation: observe it without using tools or doing their task, unless they explicitly invite you too. Do not acknowledge every message in text.',
   'If the newest human message explicitly @ mentions you, give a text reply unless it explicitly asks you to stay silent. For other messages, join only when you have a clear, useful contribution. If you use tools or start work, finish with a visible result or an honest handoff; never end that turn with only a reaction or an empty final answer.',
+  'A concrete unanswered question or request directed to the assistant needs a reply even without an @ mention. Do not mistake a useful question for ordinary chatter.',
   'When replying, use the normal final answer for a message on the group main timeline.',
   'If a substantial, distinct discussion should open as a Feishu Thread, put exactly <private>feishu-reply:thread</private> after any reaction directive and before visible text. RemoteLab will post the visible answer in a Thread rooted at the current inbound message. Do not use that marker for silence.',
   'A message that only mentions you asks you to reconsider recent unanswered group messages together and reply. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
@@ -12,8 +13,14 @@ const AMBIENT_SESSION_PROMPT = [
 
 const TOPIC_SESSION_PROMPT = [
   'A Feishu topic is an intentional conversation with you.',
+  'By default, the human is speaking to you in this topic; no @ mention or earlier Bot invitation is required.',
   'Reply to each human message in the current topic, including messages without an @ mention, unless the user explicitly asks you to stay silent or this topic is muted.',
   'Keep replies in the same topic.',
+].join('\n');
+
+const GROUP_SESSION_PROMPT = [
+  'Every admitted human message on this Feishu group mainline reaches your Session, including messages without an @ mention.',
+  'Use the discussion context to decide whether a reply or task is useful. A concrete unanswered question or request needs a reply; human-to-human conversation or an update needing no contribution may be left without visible text.',
 ].join('\n');
 
 const QUICK_REACTION_SESSION_PROMPT = [
@@ -70,20 +77,21 @@ export function normalizeFeishuGroups(value = {}) {
 export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const group = config.groups?.[summary.chatId] || {};
   const privateChat = ['p2p', 'private'].includes(String(summary.chatType || '').trim().toLowerCase());
-  const topic = isFeishuTopicChat(summary)
-    || (group.jevReactions === true && summary.conversationKind === 'thread');
-  const ambient = group.participationMode === 'ambient' && !privateChat
-    && !summary.threadId && !summary.topicId && summary.conversationKind !== 'thread'
-    && !isFeishuTopicChat(summary);
-  const quickReactions = group.quickReactions === true && !privateChat
-    && (group.jevReactions !== true || ambient);
+  const topic = !privateChat && (isFeishuTopicChat(summary)
+    || Boolean(buildFeishuTopicId(summary))
+    || (['topic', 'thread'].includes(summary.conversationKind)
+      && (summary.startThread !== true || group.jevReactions === true)));
+  const groupMainline = !privateChat && !topic
+    && [summary.chatType, summary.chatMode].some(value => String(value || '').toLowerCase() === 'group');
+  const legacyMentionGate = (group.responseMode ?? config.responsePolicy?.group ?? 'mention_only') === 'mention_only';
+  const ambient = !privateChat && !topic
+    && (group.participationMode === 'ambient' || (groupMainline && legacyMentionGate));
+  const quickReactions = group.quickReactions === true && !privateChat && !topic;
   return {
-    // A Feishu topic is already an intentional conversation surface. Admit its
-    // human messages by default, while retaining mention-only ordinary groups
-    // and allowing an exact chat override to narrow either behavior.
-    responseMode: group.responseMode ?? (ambient ? 'all' : topic
-      ? 'all'
-      : config.responsePolicy?.group ?? 'mention_only'),
+    // Legacy mention-only settings now select Session participation judgment,
+    // rather than dropping unmentioned human messages before the Session.
+    responseMode: topic || groupMainline ? 'all' : group.responseMode
+      ?? (ambient ? 'all' : config.responsePolicy?.group ?? 'mention_only'),
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     ...(ambient ? { participationMode: 'ambient' } : {}),
@@ -95,8 +103,10 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
     systemPrompt: [config.systemPrompt, group.systemPrompt,
       group.jevReactions === true && ambient ? JEV_REACTION_SESSION_PROMPT
         : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
-      ambient ? GROUP_TIMELINE_SESSION_PROMPT : '',
-      ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT : '']
+      ambient && (group.participationMode === 'ambient' || group.groupFeed === true)
+        ? GROUP_TIMELINE_SESSION_PROMPT : '',
+      ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT
+        : groupMainline ? GROUP_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
   };
 }

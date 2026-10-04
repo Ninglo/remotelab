@@ -148,13 +148,13 @@ try {
   await pilot.handle({ ...base, chatId: 'other', messageId: 'other' });
   await pilot.handle({ ...base, threadId: 'thread', messageId: 'thread', messageText: '话题里的问题' });
   await pilot.handle({ ...base, sender: { senderType: 'bot', openId: 'other-bot' }, messageId: 'bot' });
-  assert.equal(reactions.length, 3);
-  assert.doesNotMatch(inputs[2], /链接打不开/);
+  assert.equal(reactions.length, 2, 'topics bypass quick-participation judgment and use direct replies');
+  assert.equal(inputs.length, 2);
   const records = (await readFile(join(home, 'quick-participation.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.deepEqual(records.map(item => item.decision), ['silent', 'reply', 'reply']);
+  assert.deepEqual(records.map(item => item.decision), ['silent', 'reply']);
   await pilot.handle({ ...base, threadId: 'unbound', messageId: 'unbound', messageText: '在话题里决定开工' },
     { reactionMode: 'none' });
-  assert.equal(reactions.length, 3, 'unbound thread scanning must not add a reaction');
+  assert.equal(reactions.length, 2, 'unbound topic intake must not add a quick reaction');
 
   const eventsPath = join(home, 'events.jsonl');
   await writeFile(eventsPath, `${JSON.stringify({ allowed: true, summary: { ...base, messageId: 'restored', messageText: '早上说过报告打不开。' } })}\n`);
@@ -168,11 +168,11 @@ try {
   assert.match(restoredInput, /早上说过报告打不开/);
   assert.deepEqual(reactions.at(-1), ['restored-test', 'THINKING']);
 
-  restored.seedConversation({ ...base, threadId: 'ongoing' }, [
+  restored.seedConversation(base, [
     { messageId: 'bot-reply', timestamp: Date.now(), senderType: 'app', senderId: 'self-app',
       sender: '茵蒂克丝', text: '我可以继续处理报告链接。' },
   ]);
-  await restored.handle({ ...base, threadId: 'ongoing', messageId: 'follow-up', messageText: '那就继续处理。' });
+  await restored.handle({ ...base, messageId: 'follow-up', messageText: '那就继续处理。' });
   assert.match(restoredInput, /assistant: 我可以继续处理报告链接/);
 
   const uncertain = await classifyFeishuQuickParticipation('A: @bot', {

@@ -34,8 +34,8 @@ async function check(label, changes, expected, responsePolicy = { group: 'mentio
 }
 
 try {
-  await check('ordinary group chatter stays silent', {}, []);
-  await check('mentions of another user stay silent', { mentions: [{ openId: 'human' }] }, []);
+  await check('ordinary group chatter reaches the Session for reply judgment', {}, ['submit']);
+  await check('another human mention is context for the Session, not an intake filter', { mentions: [{ openId: 'human' }] }, ['submit']);
   await check('this Bot mention is admitted and acknowledged', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
   await check('private chat always responds immediately', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit']);
   await check('all group mode admits every message', {}, ['reaction', 'submit'], { group: 'all' });
@@ -45,19 +45,31 @@ try {
   await check('thread-type topic groups admit plain text by default', {
     groupMessageType: 'thread', messageId: 'thread-type-default-root',
   }, ['reaction', 'submit']);
-  await check('ordinary group threads still need an invitation', {
+  await check('first human reply in an ordinary group Thread needs no invitation', {
     threadId: 'ordinary-group-thread',
-  }, []);
+  }, ['reaction', 'submit']);
+  await check('topic ID alone admits the first human reply', {
+    topicId: 'script-created-topic', messageText: '目前有完成的对局吗',
+  }, ['reaction', 'submit']);
+  await check('normalized Thread identity needs no mention', {
+    conversationKind: 'thread', rootId: 'script-root',
+  }, ['reaction', 'submit']);
+  await check('normalized topic identity needs no mention', {
+    conversationKind: 'topic', rootId: 'topic-root',
+  }, ['reaction', 'submit']);
 
   runtime.config.groups = { 'group-1': { responseMode: 'all', systemPrompt: 'Group instructions' } };
   await check('group override admits plain text without a file or mention', {}, ['reaction', 'submit']);
-  await check('other groups retain global behavior', { chatId: 'group-2' }, []);
+  await check('other groups also receive the Session fallback', { chatId: 'group-2' }, ['submit']);
   await check('self remains excluded under group override', { sender: { senderType: 'app', openId: 'bot-self' } }, []);
   runtime.config.groups = { 'group-1': { responseMode: 'mention_only' } };
-  await check('group override can narrow global all', {}, [], { group: 'all' });
-  await check('group override can narrow the topic-group default', {
+  await check('legacy mention-only override now uses Session judgment', {}, ['submit'], { group: 'all' });
+  await check('mainline mention override cannot narrow native topics', {
     chatMode: 'topic', groupMessageType: 'thread', messageId: 'topic-explicit-mention-root',
-  }, []);
+  }, ['reaction', 'submit']);
+  await check('mainline mention override cannot narrow ordinary group Threads', {
+    threadId: 'report-thread',
+  }, ['reaction', 'submit']);
   delete runtime.config.groups;
 
   effects = [];
@@ -98,15 +110,28 @@ try {
     groups: { 'group-1': { responseMode: 'all', replyMode: 'thread', systemPrompt: 'Group instructions' } },
   }));
   const groupConfig = await loadConfig(configPath);
-  assert.deepEqual(resolveFeishuGroupSettings(groupConfig, base), {
-    responseMode: 'all', replyMode: 'thread', systemPrompt: 'Global instructions\n\nGroup instructions',
-  });
+  const mainlineSettings = resolveFeishuGroupSettings(groupConfig, base);
+  assert.equal(mainlineSettings.responseMode, 'all');
+  assert.equal(mainlineSettings.replyMode, 'thread');
+  assert.match(mainlineSettings.systemPrompt, /Global instructions\n\nGroup instructions/);
+  assert.match(mainlineSettings.systemPrompt, /A concrete unanswered question or request needs a reply/);
   assert.equal(resolveFeishuGroupSettings(groupConfig, { chatId: 'other' }).systemPrompt, 'Global instructions');
   const topicDefaults = resolveFeishuGroupSettings(groupConfig, {
     ...base, chatId: 'topic-chat', chatMode: 'topic', threadId: 'topic-1',
   });
   assert.equal(topicDefaults.responseMode, 'all');
   assert.match(topicDefaults.systemPrompt, /Reply to each human message in the current topic/);
+  for (const topicIdentity of [{ threadId: 'report-thread' }, { topicId: 'report-topic' },
+    { conversationKind: 'thread' }, { chatMode: 'topic', rootId: 'native-root' }]) {
+    const topicSettings = resolveFeishuGroupSettings({
+      groups: { 'group-1': { responseMode: 'mention_only', participationMode: 'ambient', quickReactions: true } },
+    }, { ...base, ...topicIdentity });
+    assert.equal(topicSettings.responseMode, 'all');
+    assert.match(topicSettings.systemPrompt, /By default, the human is speaking to you/);
+    assert.match(topicSettings.systemPrompt, /Reply to each human message in the current topic/);
+    assert.equal(topicSettings.participationMode, undefined);
+    assert.equal(topicSettings.quickReactions, undefined, 'topic replies cannot become reaction-only ambient turns');
+  }
   for (const groups of [{ 'group-1': { fileOnly: true } }, { 'group-1': { responseMode: 'typo' } }, { 'group-1': { systemPrompt: 123 } }]) {
     await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', groups }));
     await assert.rejects(loadConfig(configPath), /group|Group/);
@@ -115,7 +140,7 @@ try {
   const defaults = await loadConfig(configPath);
   assert.equal(defaults.accessPolicy.mode, 'all');
   assert.deepEqual(defaults.responsePolicy, { group: 'mention_only' });
-  await check('omitting the group setting rejects ordinary group messages', {}, [], {});
+  await check('omitting the group setting still forwards ordinary group messages', {}, ['submit'], {});
   await check('omitting the group setting admits explicit Bot mentions', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit'], {});
   await check('omitting the group setting still admits private messages', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit'], {});
 
@@ -127,19 +152,25 @@ try {
     recordFeishuMessageSession } = await import('../connectors/feishu/session-flow.mjs');
   runtime.storagePaths.messageIndexPath = join(testHome, 'bot-1', 'message-index.json');
   const thread = { threadId: 'thread-1', tenantKey: 'tenant-1' };
-  await check('an unjoined thread stays silent', thread, []);
-  await check('another mention cannot activate a thread', { ...thread, mentions: [{ openId: 'human' }] }, []);
-  await check('@all cannot activate a thread', { ...thread, mentions: [{ openId: 'all' }] }, []);
+  await check('an unjoined thread admits its first human message', thread, ['reaction', 'submit']);
+  await check('another human mention does not block a topic reply', { ...thread, mentions: [{ openId: 'human' }] }, ['reaction', 'submit']);
+  await check('@all does not block a topic reply', { ...thread, mentions: [{ openId: 'all' }] }, ['reaction', 'submit']);
   await check('explicit mention joins a thread', { ...thread, mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
   assert.equal((await findFeishuThreadSessionBinding(runtime, { ...base, ...thread })).sessionId, 'routing-session');
   await check('thread replies need no further mention', thread, ['reaction', 'submit']);
   await check('another human may continue the same thread', {
     ...thread, sender: { senderType: 'user', openId: 'another-human' },
   }, ['reaction', 'submit']);
-  await check('the rest of the group stays silent after activation', {}, []);
-  await check('sibling threads stay silent', { ...thread, threadId: 'thread-2' }, []);
-  await check('thread IDs cannot cross groups', { ...thread, chatId: 'group-2' }, []);
-  await check('thread IDs cannot cross tenants', { ...thread, tenantKey: 'tenant-2' }, []);
+  await check('the group mainline also reaches its own Session', {}, ['submit']);
+  for (const [label, identity] of [
+    ['sibling thread', { ...thread, threadId: 'thread-2' }],
+    ['same thread ID in another group', { ...thread, chatId: 'group-2' }],
+    ['same thread ID in another tenant', { ...thread, tenantKey: 'tenant-2' }],
+  ]) {
+    assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, ...identity }), null,
+      `${label} must not inherit a binding`);
+    await check(`${label} can start its own conversation`, identity, ['reaction', 'submit']);
+  }
   await check('topic ID alias can continue a joined thread', {
     tenantKey: thread.tenantKey, topicId: thread.threadId,
   }, ['reaction', 'submit']);
@@ -159,14 +190,18 @@ try {
   assert.deepEqual(effects, ['reaction', 'submit'], 'participation survives a fresh runtime');
   const firstBotIndex = runtime.storagePaths.messageIndexPath;
   runtime.storagePaths.messageIndexPath = join(testHome, 'bot-2', 'message-index.json');
-  await check('another Bot does not inherit participation', thread, []);
+  assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, ...thread }), null,
+    'another Bot does not inherit the existing Session binding');
+  await check('another Bot accepts human topic messages independently', thread, ['reaction', 'submit']);
   runtime.storagePaths.messageIndexPath = firstBotIndex;
 
   await recordFeishuMessageSession(runtime, base, 'old-group-session');
-  await check('a group session does not activate unrelated threads', { threadId: 'unjoined' }, []);
-  await check('a quoted group reply without thread identity stays silent', {
+  assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, threadId: 'unjoined' }), null,
+    'a group Session is not the unrelated Thread Session');
+  await check('unrelated threads admit messages without a group Session invitation', { threadId: 'unjoined' }, ['reaction', 'submit']);
+  await check('a group quote without topic identity remains a mainline observation', {
     rootId: base.messageId, parentId: base.messageId,
-  }, []);
+  }, ['submit']);
   await check('a topic root may invite the Bot before a thread ID exists', {
     chatMode: 'topic', messageId: 'topic-root', mentions: [{ openId: 'bot-self' }],
   }, ['reaction', 'submit']);
@@ -189,7 +224,11 @@ try {
   }, 'test', {
     ...helpers, submitRemoteLabRequest: async () => { throw new Error('submission failed'); },
   }), /submission failed/);
-  await check('failed submission does not activate a thread', { threadId: 'failed-admission' }, []);
+  assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, threadId: 'failed-admission' }), null,
+    'failed submission must not leave a Session binding');
+  await check('next topic message can recover after failed submission without an @', {
+    threadId: 'failed-admission',
+  }, ['reaction', 'submit']);
 
   console.log('Feishu access, response, durable thread continuation and processing acknowledgement tests passed');
 } finally {

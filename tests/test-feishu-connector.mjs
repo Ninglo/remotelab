@@ -154,17 +154,30 @@ const mergeForwardRoot = {
   ...summary,
   messageId: 'msg_merge_forward_root_1',
   chatType: 'group',
-  threadId: 'thread_merge_forward_1',
   messageType: 'merge_forward',
   rawContent: 'Merged and Forwarded Message',
 };
-assert.deepEqual(await handleMessage(runtime, mergeForwardRoot, 'test', {
+const forwardedMainline = await handleMessage(runtime, mergeForwardRoot, 'test', {
   submitRemoteLabRequest: async () => {
     mergeForwardSubmissions += 1;
-    return { sessionId: 'session_merge_forward_wrong' };
+    return { sessionId: 'session_merge_forward_mainline' };
   },
-}), { ignored: true, reason: 'merge_forward_context_only' });
-assert.equal(mergeForwardSubmissions, 0, 'a merge-forward root must not create a Session');
+});
+assert.equal(forwardedMainline.sessionId, 'session_merge_forward_mainline');
+assert.equal(mergeForwardSubmissions, 1, 'a mainline merge-forward reaches the Session for judgment');
+const forwardedTopic = await handleMessage(runtime, {
+  ...mergeForwardRoot, threadId: 'thread_merge_forward_1',
+}, 'test', {
+  addProcessingReaction: async () => null,
+  submitRemoteLabRequest: async (_runtime, inboundSummary) => {
+    mergeForwardSubmissions += 1;
+    assert.equal(inboundSummary.conversationKind, 'thread');
+    assert.equal(inboundSummary.replyInThread, true);
+    return { sessionId: 'session_merge_forward_topic' };
+  },
+});
+assert.equal(forwardedTopic.sessionId, 'session_merge_forward_topic');
+assert.equal(mergeForwardSubmissions, 2, 'forwarded messages inside a topic reach its Session');
 
 let mergeForwardReplySummary;
 const mergeForwardReply = await handleMessage(runtime, {
@@ -1690,8 +1703,9 @@ try {
     assert.equal(payload.effort, sotaRuntime.effort);
     assert.equal(payload.executionProfile, undefined, 'SOTA uses a Standard Session');
   }
-  assert.equal(planningCreatedPayload.conversation.target.conversationKind, 'thread');
-  assert.equal(planningSubmittedPayload.sourceDelivery.target.replyInThread, true);
+  assert.equal(planningCreatedPayload.conversation.target.conversationKind, 'main');
+  assert.equal(planningSubmittedPayload.sourceDelivery.target.replyInThread, undefined);
+  assert.equal(planningSubmittedPayload.sourceContext.feishuParticipation, 'ambient');
 } finally {
   await new Promise((resolve) => planningServer.close(resolve));
 }
@@ -1883,7 +1897,10 @@ const topicMetadataRuntime = createRuntimeContext({
   messageIndexPath: join(tempHome, 'topic-metadata-message-index.json'),
 });
 topicMetadataRuntime.appClient = {
-  im: { v1: { message: { list: async () => ({ code: 0, data: { items: [], has_more: false } }) } } },
+  im: { v1: {
+    chat: { get: async () => { throw new Error('chat metadata is already cached'); } },
+    message: { list: async () => ({ code: 0, data: { items: [], has_more: false } }) },
+  } },
 };
 topicMetadataRuntime.chatMetadataCache.set('chat_topic_metadata_1', {
   name: 'Topic Metadata Chat',

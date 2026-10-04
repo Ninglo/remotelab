@@ -1687,9 +1687,6 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 
 async function prepareFeishuMessage(runtime, summary, helpers) {
   if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
-  if (trimString(summary?.messageType).toLowerCase() === 'merge_forward') {
-    return { receipt: { ignored: true, reason: 'merge_forward_context_only' } };
-  }
   summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
   if (participationEnabled(runtime, summary)) {
     const control = await participationController(runtime, helpers).intake(summary);

@@ -1,6 +1,4 @@
-import { resolveFeishuGroupSettings } from './group-settings.mjs';
-import { normalizeFeishuMode, trimString } from './index.mjs';
-import { findFeishuThreadSessionBinding } from './session-flow.mjs';
+import { trimString } from './index.mjs';
 import { getFeishuConversationSettings } from './conversation-settings.mjs';
 
 function normalizeGroupResponseMode(value) {
@@ -58,12 +56,7 @@ export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary, { ex
   // Bot handoffs always need an explicit mention, even in private chats or group=all.
   if (isFeishuBotSender(summary)) return mentioned;
   if (!mentioned && !explicitCommand && (await getFeishuConversationSettings(runtime, summary)).muted) return false;
-  const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
-  if (modes.includes('p2p') || modes.includes('private')) return true;
-  if (!modes.some((mode) => ['group', 'topic', 'thread'].includes(mode))) return true;
-  const settings = resolveFeishuGroupSettings(runtime.config, summary);
-  if (settings.responseMode === 'all' || mentioned) return true;
-  // A durable binding means this Bot has already joined this exact thread.
-  // Never infer participation from the group session or a mention of someone else.
-  return Boolean((await findFeishuThreadSessionBinding(runtime, summary))?.sessionId);
+  // Access control and explicit quiet controls fence reception. Every other
+  // human message reaches the Session; the Harness owns reply judgment.
+  return true;
 }

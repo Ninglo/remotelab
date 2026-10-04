@@ -237,24 +237,31 @@ Notes:
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
-These are the only two message policies. `accessPolicy` decides who may use the
-Bot. `responsePolicy.group` defaults to `mention_only`: ordinary group messages
-require an explicit mention of this Bot to start a conversation. Native Feishu
-topic groups default to `all`, because each topic is already an intentional AI
-conversation surface. An exact `groups[chatId].responseMode` override can narrow
-a topic group back to `mention_only` or widen an ordinary group to `all`.
+`accessPolicy` decides who may use the Bot. After access and explicit quiet
+controls, every human message reaches a Session for interpretation, including
+unmentioned mainline messages and merge-forwards. The legacy
+`responsePolicy.group` / `groups[chatId].responseMode` values remain accepted
+for config compatibility; `mention_only` now uses the continuing mainline
+Session's participation judgment rather than filtering human input. The Session
+may leave ordinary human-to-human discussion without visible text, but a concrete
+unanswered question or request needs a reply. Native Feishu
+topics and Threads in ordinary groups always admit human messages without an
+@ mention, because each topic is an intentional AI conversation surface. This
+includes the first reply in a Thread created by a report script, before a
+Session has been bound. Group response settings do not narrow topic admission.
 
-Once the Bot has joined a Thread in an ordinary group, human replies in that
-same Thread need no further mention and continue its existing Session.
-Participation is persisted per Bot and Thread, including Threads created by a
-Bot reply; it survives connector restarts. Other Threads and ordinary group
-chatter still require a mention. An existing group Session, quoting a message
-outside a Thread, mentioning another user, or `@all` cannot activate a Thread.
+Each Thread creates or continues its own Session, scoped by Bot, tenant, chat
+and topic. The Session replies to every human message in that topic by default,
+including forwarded messages, unless explicitly told to stay silent or paused.
+An existing binding preserves Session continuity across connector restarts; it
+is not an admission requirement. Quoting a message outside a Thread does not
+create topic identity; it reaches the mainline Session instead.
 Private messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
 including stored-message replay. Mention matching uses the Bot's API identity.
-Thread continuation never bypasses sender access control or Bot loop protection.
-Access and response policies apply to the whole Connector. Session-start routing
+Session fallback never bypasses sender access control or Bot loop protection.
+Explicit mute, listening and paused state retain their existing meaning.
+Session-start routing
 can be overridden per group with `groups` below.
 
 ### Harness and model commands
@@ -496,9 +503,9 @@ commentary is not treated as a completed answer, and the notice does not claim
 the task succeeded. The reaction delivery has a durable receipt and ordered
 claim, but the reaction create call has no message-send-style idempotency UUID: an unknown
 provider outcome requires reconciliation before deliberate retry.
-For pilot groups that should admit every human message on the main timeline
-and in their topics or threads, set `responseMode: "all"` alongside
-`quickReactions: true`. An explicit @ mention normally asks for a text reply;
+Every admitted human message on the main timeline and in topics or threads
+already reaches a Session. `quickReactions: true` only enables mainline reaction
+hints; topics use direct replies. An explicit @ mention normally asks for a text reply;
 the model includes `OnIt` before a normal answer. A message asking for only a
 reaction receives no visible text after the reaction is added.
 

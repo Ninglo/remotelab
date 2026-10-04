@@ -5,7 +5,7 @@ import { resolveFeishuReplyMode } from './reply-policy.mjs';
 const trimString = value => typeof value === 'string' ? value.trim() : '';
 
 export function isFeishuThreadConversation(summary) {
-  return summary?.conversationKind === 'thread' || Boolean(buildFeishuTopicId(summary));
+  return ['topic', 'thread'].includes(summary?.conversationKind) || Boolean(buildFeishuTopicId(summary));
 }
 
 export function applyFeishuReplyRouting(config, summary) {

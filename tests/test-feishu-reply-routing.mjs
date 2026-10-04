@@ -23,7 +23,7 @@ assert.deepEqual(normalizeFeishuReplyPolicy({ group: 'inline', private: 'thread'
 for (const invalid of [null, [], { group: 'fork' }, { private: 'continue' }, { chats: [] }, { chats: { chat: 'fork' } }]) {
   assert.throws(() => normalizeFeishuReplyPolicy(invalid), /replyPolicy/);
 }
-const policy = { replyPolicy: { group: 'thread', private: 'inline', chats: { inline_group: 'inline' } } };
+const policy = { responsePolicy: { group: 'all' }, replyPolicy: { group: 'thread', private: 'inline', chats: { inline_group: 'inline' } } };
 assert.equal(resolveFeishuReplyMode(policy, { chatId: 'group', chatType: 'group' }), 'thread');
 assert.equal(resolveFeishuReplyMode(policy, { chatId: 'inline_group', chatType: 'group' }), 'inline');
 assert.equal(resolveFeishuReplyMode(policy, { chatId: 'dm', chatType: 'p2p' }), 'inline');
@@ -91,6 +91,12 @@ const server = http.createServer(async (req, res) => {
     return json(202, { response: { id: body.requestId }, run: { id: `run-${submitted.length}` }, duplicate: false, queued: false });
   }
   const sessionMatch = req.url?.match(/^\/api\/sessions\/([^/]+)$/);
+  if (req.method === 'PATCH' && sessionMatch) {
+    const session = sessions.find(item => item.id === sessionMatch[1]);
+    if (!session) return json(404, { error: 'Not found' });
+    Object.assign(session, body);
+    return json(200, { session });
+  }
   if (req.method === 'GET' && sessionMatch) {
     const session = sessions.find(item => item.id === sessionMatch[1]);
     return session ? json(200, { session }) : json(404, { error: 'Not found' });

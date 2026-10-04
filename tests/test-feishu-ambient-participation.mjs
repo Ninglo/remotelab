@@ -29,7 +29,11 @@ try {
   assert.equal(settings.responseMode, 'all');
   assert.equal(settings.replyMode, 'inline');
   assert.match(settings.systemPrompt, /feishu-reply:thread/);
-  assert.equal(resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' }).responseMode, 'mention_only');
+  assert.equal(resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' }).responseMode, 'all');
+  const fallback = resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' });
+  assert.equal(fallback.participationMode, 'ambient');
+  assert.equal(fallback.replyMode, 'inline');
+  assert.match(fallback.systemPrompt, /decide whether your participation helps/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread-1' }).participationMode, undefined);
   assert.equal(resolveFeishuGroupSettings({ ...config,
     groups: { [chatId]: { ...config.groups[chatId], responseMode: 'all' } },

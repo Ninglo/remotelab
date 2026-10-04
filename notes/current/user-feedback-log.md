@@ -1231,3 +1231,11 @@ settings are separate from verified live deployment and delivery.
 - Acceptance: inspect actual font loading and chart labels, desktop/mobile reading, diagram controls, original section anchors, public asset readback and restoration of the same published site. Runtime feature acceptance remains separate.
 
 - 2026-10-03: Progress must remain noticeable across parallel work and recoverable when readers return. Keep card plus useful progress messages as the initial default; add collapsed recent history and explicit per-Session controls, retaining manual choice instead of automatically overriding quiet mode based on concurrency.
+
+## 2026-10-04 — Let Sessions judge group participation; treat topics as direct conversations
+
+- Feedback: a plain status question under an automated report received no reply until someone mentioned the Bot. Users should not need to learn an invitation rule before speaking in a topic.
+- Evidence: ingress durably received the question, then returned `group_reply_policy` without a Session submission. The report-created Thread had not yet been bound; this was an intake gap rather than a model silence decision.
+- Direction: forward all admitted, unmuted human messages to a Session. Topics default to speaking with the assistant and require replies; the group mainline lets the Session judge whether a useful contribution is needed. Front-end classification may provide hints, but must not discard ordinary human messages before this fallback.
+- Boundary: retain sender access control, self/Bot loop protection and explicit mute/listening/paused controls. Session bindings preserve exact conversation continuity; they do not authorize or block the first human topic message.
+- Contract and verification: `notes/current/feishu-thread-continuation.md` and `docs/feishu-bot-setup.md`; source tests, running connector versions and real Request/reply receipts are separate evidence.
