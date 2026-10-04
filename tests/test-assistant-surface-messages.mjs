@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 import { buildSessionDisplayEvents, buildEventBlockEvents } from '../chat/session-display-events.mjs';
 import { buildReplyPublicationPayload } from '../chat/reply-publication.mjs';
-import { publishLiveAssistantReplies, excludePublishedFinalReplies } from '../chat/native-final-publication.mjs';
+import { publishLiveAssistantReplies, excludePublishedFinalReplies, recoverTerminalReplyReceipt } from '../chat/native-final-publication.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 
 const user = { seq: 1, type: 'message', role: 'user', content: 'Fix it' };
@@ -109,6 +109,27 @@ await publishLiveAssistantReplies(stoppedRecord, history, {
 });
 assert.deepEqual(stoppedRecord.deliveries.map(part => part.text), ['【最终答复】\n\nFixed and verified.'],
   'cold recovery of stopped execution does not publish stale progress as deliveries');
+let automationRecord = { key: 'automation', runId: 'r', responseId: 'automation-response',
+  options: { triggerId: 'trigger', automationTitle: '每日项目审阅' }, deliveries: [] };
+const automationOptions = { plan: feishuPlan, session: { name: 'Renamed execution Session' },
+  store: { get: async () => automationRecord, mutate: async (_key, fn) => { automationRecord = fn(automationRecord); } } };
+await publishLiveAssistantReplies(automationRecord, history, { ...automationOptions, running: false });
+automationRecord = JSON.parse(JSON.stringify(automationRecord));
+await publishLiveAssistantReplies(automationRecord, history, { ...automationOptions, running: false });
+assert.deepEqual(automationRecord.deliveries.map(part => part.text), ['【每日项目审阅】\n\nFixed and verified.'],
+  'restart and Session renaming preserve the accepted task title and publish one result');
+const retainedAutomationPlan = { ...feishuPlan, sourceRouteId: 'default' };
+const retainedAutomation = { ...automationRecord, deliveryPlan: retainedAutomationPlan,
+  result: { state: 'completed', payload: { text: 'Fixed and verified.', displayEvents: [history.at(-1)] } },
+  deliveries: [{ ...retainedAutomationPlan, kind: 'content', text: '【每日项目审阅】\n\nFixed and verified.' }] };
+assert.equal(recoverTerminalReplyReceipt(retainedAutomation, retainedAutomation.deliveries[0])?.providerMessageId, 'm8',
+  'receipt recovery matches the task heading without creating another delivery');
+assert.equal(buildReplyDeliveries(feishuPlan, { text: '【最终答复】\n完成。' }, {
+  running: false, automationTitle: ' 每日\n审阅 ',
+})[0].text, '【每日 审阅】\n\n完成。', 'task headings replace generic labels and stay on one line');
+assert.equal(buildReplyDeliveries({ connector: 'feishu', target: { chatId: 'chat', commentId: 'comment' } }, {
+  text: '评论答复',
+}, { running: false, automationTitle: '每日项目审阅' })[0].text, '评论答复', 'document comment replies retain their original body');
 let legacyRecord = { key: 'legacy', runId: 'r', responseId: 'legacy-response', options: {}, deliveries: [] };
 await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, 'A direct answer')], {
   store: { get: async () => legacyRecord, mutate: async (_key, fn) => { legacyRecord = fn(legacyRecord); } },

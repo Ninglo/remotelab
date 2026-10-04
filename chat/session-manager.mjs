@@ -1703,7 +1703,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
     annotateTerminalReplyDeliveries(buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
       && !feishuOutcomeRequired
-      ? null : deliveryPlan, deliveryPayload, { running: false, requireFeishuOutcome: feishuOutcomeRequired
+      ? null : deliveryPlan, deliveryPayload, { running: false, automationTitle: record.options.automationTitle, requireFeishuOutcome: feishuOutcomeRequired
         && (!record.streamedFinalReplyIds?.length || run.state !== 'completed'
           || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) }), run.state === 'completed' ? pendingPayload : null)
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
@@ -1741,7 +1741,9 @@ async function settleNativeRequest(record, run) {
     await requests.mutate(root.key, current => {
       if ((current.nativeReplyDestinations || []).includes(ownDestination)) return current;
       return { ...current, nativeReplyDestinations: [...(current.nativeReplyDestinations || []), ownDestination],
-        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, destinationPayload, { running: false })) };
+        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, destinationPayload, {
+          running: false, automationTitle: root.options.automationTitle,
+        })) };
     });
     await requestRuntime.refresh(root.key);
   }
@@ -3159,7 +3161,9 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
     const run = await getRun(record.nativeDispatchRunId);
     await requests.settle(record.key, { state: 'failed', payload: null, error },
-      buildReplyDeliveries(plan, { text: `消息未能交给当前 Harness：${error}`, attachments: [] }, { running: !isTerminalRunState(run?.state) }));
+      buildReplyDeliveries(plan, { text: `消息未能交给当前 Harness：${error}`, attachments: [] }, {
+        running: !isTerminalRunState(run?.state), automationTitle: record.options.automationTitle,
+      }));
     await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
     await requests.archiveFinished(record.key);
   },

@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-04 — Name automated Feishu results by their task
+
+- Observed friction: the generic final-answer heading left unattended reports without a clear purpose when they appeared in a group.
+- Requested behavior: use the automation's task name as its result heading. Ordinary conversation openings, progress, questions and final replies retain their existing labels.
+- Change: snapshot the trigger title, falling back to the Session template name, at request admission. Recurring occurrences and one-time tasks use the same delivery path; retries retain the accepted title and destination.
+- Verification boundary: isolated delivery and trigger lifecycle checks cover result headings, failure notices, reused conversations and ordinary human follow-ups. Production loading is checked separately from the next naturally scheduled message.
+
 ### 2026-10-03 — Restore new-message notifications for useful Feishu progress
 
 - Observed friction: replacing progress posts with edits to one card removed new-message notifications. People following concurrent tasks could miss intermediate updates while away.

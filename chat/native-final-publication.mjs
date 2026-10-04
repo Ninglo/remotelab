@@ -90,6 +90,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const parts = buildReplyDeliveries(resolveAmbientFeishuReplyPlan(record, plan, [event]), payload, {
       running,
       surfaceKind: surface.surfaceKind,
+      automationTitle: record.options?.automationTitle,
       requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
     if (!parts.length) continue;
@@ -143,7 +144,9 @@ export function recoverTerminalReplyReceipt(record, delivery) {
       || record.result?.state !== 'completed' || !record.result.payload
       || !['content', 'attachment'].includes(delivery.kind)) return null;
   const plan = normalizeConversation(record.deliveryPlan || record.options?.sourceDelivery);
-  const parts = annotateTerminalReplyDeliveries(buildReplyDeliveries(plan, record.result.payload, { running: false }), record.result.payload);
+  const parts = annotateTerminalReplyDeliveries(buildReplyDeliveries(plan, record.result.payload, {
+    running: false, automationTitle: record.options?.automationTitle,
+  }), record.result.payload);
   const matches = part => part.kind === delivery.kind && part.text === delivery.text
     && part.connector === delivery.connector && part.sourceRouteId === delivery.sourceRouteId
     && part.target?.chatId === delivery.target?.chatId

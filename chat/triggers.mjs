@@ -749,6 +749,7 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
       queueIfBusy: true,
       skipDispatch: true,
       triggerId: current.id,
+      automationTitle: current.title || current.sessionTemplate?.name || '自动化任务',
       scheduleId: current.scheduleId || undefined,
       occurrenceId: current.occurrenceId || undefined,
       ...(current.sessionTemplate?.reuse === 'fixed_session'

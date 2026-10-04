@@ -309,8 +309,11 @@ notice retain their existing snapshot-based notice. Starting an ordinary user
 run saves its complete Harness/model/effort profile on the Session for the
 WebUI; internal operations do not replace user preferences. Feishu labels
 openings `开始处理`, native questions `待你回复`, and stopped-Run results
-`最终答复`. Task completion comes from verified workboard outcomes, not these
-message labels. Email retains its single final-message behavior.
+`最终答复`. Scheduled automation results use the task's name instead, snapshotted
+from the trigger title (or Session template name) when its request is accepted;
+retries and restarts retain that name. Task completion comes from verified
+workboard outcomes, not these message labels. Email retains its single
+final-message behavior.
 
 Example:
 

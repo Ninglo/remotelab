@@ -68,6 +68,7 @@ assert.equal(result.materialized, 1);
 assert.equal(createdTriggers.length, 1);
 assert.equal(createdTriggers[0].scheduledAt, '2026-07-27T00:05:00.000Z');
 assert.equal(createdTriggers[0].scheduleId, schedule.id);
+assert.equal(createdTriggers[0].title, 'Daily date', 'recurring occurrences retain the automation title for result publication');
 assert.equal(createdTriggers[0].sourceSessionId, 'sess-recurring');
 assert.equal(createdTriggers[0].createdByIdentityId, 'identity_creator');
 assert.equal(createdTriggers[0].sessionTemplate.conversation.target.chatId, 'oc_test');

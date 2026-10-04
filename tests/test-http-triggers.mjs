@@ -307,6 +307,7 @@ async function main() {
       return value.json.claim;
     }, 'scheduled first reply');
     assert.equal(firstDelivery.delivery.kind, 'content', 'scheduled execution publishes one result without an extra opening notice');
+    assert(firstDelivery.delivery.text.startsWith('【Conversation execution】\n\n'), 'automation results use the task title');
     assert(firstDelivery.delivery.text.includes(firstOccurrence.executionSessionId), 'scheduled report includes its execution Session link');
     const published = await request(port, 'POST', `/api/source-deliveries/${firstDelivery.delivery.id}/complete`, {
       leaseId: firstDelivery.leaseId, externalId: 'scheduled-root', messageId: 'scheduled-root', threadId: 'scheduled-thread',
@@ -314,6 +315,20 @@ async function main() {
     assert.equal(published.status, 200);
     const boundSession = (await request(port, 'GET', `/api/sessions/${firstOccurrence.executionSessionId}`)).json.session;
     assert.equal(boundSession.conversation.target.rootId, 'scheduled-root');
+    const humanFollowUp = await request(port, 'POST', `/api/sessions/${boundSession.id}/messages`, {
+      text: 'Explain the report.', requestId: 'human-report-follow-up', tool: 'fake-codex', model: 'fake-model', effort: 'low',
+      sourceDelivery: boundSession.conversation,
+    });
+    assert.equal(humanFollowUp.status, 202);
+    await waitForRunTerminal(port, humanFollowUp.json.run.id);
+    const humanReply = await waitFor(async () => {
+      const value = await request(port, 'POST', '/api/source-deliveries/claim', { connector: 'feishu', sourceRouteId: 'scheduled-bot' });
+      return value.json.claim;
+    }, 'human follow-up in automation topic');
+    assert(humanReply.delivery.text.startsWith('【最终答复】\n\n'), 'human follow-ups do not inherit the automation heading');
+    await request(port, 'POST', `/api/source-deliveries/${humanReply.delivery.id}/complete`, {
+      leaseId: humanReply.leaseId, externalId: 'human-report-reply',
+    });
     const visible = (await request(port, 'GET', '/api/sessions')).json.sessions;
     assert(visible.some(item => item.id === firstOccurrence.executionSessionId), 'scheduled work is manageable in the ordinary Session list');
     const continued = await scheduleInto(boundSession.conversation);
@@ -401,8 +416,9 @@ async function main() {
       return res.status === 200 && res.json.claim?.delivery ? res.json.claim : false;
     }, 'source delivery outbox job');
     assert.equal(deliveryClaim.delivery.target.chatId, 'oc_source_test');
-    assert.ok(deliveryClaim.delivery.text.startsWith('【最终答复】\n\ntrigger run finished\n\n'),
-      'scheduled replies keep the current final-answer label before their content and Session link');
+    const deliveryTrigger = isolatedTriggers.find(entry => entry.id === deliveryClaim.delivery.triggerId);
+    assert.ok(deliveryClaim.delivery.text.startsWith(`【${deliveryTrigger.title}】\n\ntrigger run finished\n\n`),
+      'each automation carries its own task title before its content and Session link');
     assert.ok(deliveryClaim.delivery.text.includes(`https://fixture.example.test/?session=${deliveryClaim.delivery.sessionId}&tab=sessions`));
     assert.ok(
       isolatedTriggers.some((entry) => entry.id === deliveryClaim.delivery.triggerId),
@@ -442,6 +458,7 @@ async function main() {
           : false;
       }, `${testCase.marker} source delivery`);
       assert.match(outbound.text, testCase.expectedText);
+      assert(outbound.text.startsWith(`【${testCase.marker}】\n\n`), 'failed automation results also identify their task');
     }
 
     const emptyTrigger = await request(port, 'POST', '/api/triggers', {
