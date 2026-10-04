@@ -42,6 +42,14 @@ When the control plane shuts down during an active run:
 4. Validate the change through HTTP/state recovery, not socket continuity
 5. Validate the recovered state through fresh HTTP reads rather than any client-local fallback
 
+### 3. Keep standard instances on one source
+
+Owner and standard guest instances on a host use the same mainline checkout. Instance config, memory, workspaces, credentials and deployment policies remain separate. A user-specific source copy is no longer needed once its changes are in main; a deliberate product fork has its own deployment lifecycle.
+
+On Linux, `remotelab restart chat` snapshots the active guest set and validates the Owner and every active guest against the invoking checkout before restarting any service. A source mismatch stops the operation; correct the service source and its effective `REMOTELAB_PROJECT_ROOT` first. Disabled or otherwise inactive guests stay stopped. Restart errors return failure to the caller.
+
+After a source update, read `/api/build-info` on every active standard instance and require the same clean `serviceCommit`. Restart separately managed Connectors from the same source too; detached guest Connectors can retain their old process until explicitly restarted. Keep stopped instances configured for the common source so their next authorized start uses the same version.
+
 ## What the current architecture solves
 
 - repeatable single-plane restart workflow

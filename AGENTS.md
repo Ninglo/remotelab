@@ -263,6 +263,8 @@ Post-turn memory writeback review uses an independent `gpt-6-sol` / `low` select
 
 ---
 
+Standard instances on a host use one mainline source checkout; do not keep a per-user source copy after its changes are merged. Validate every active standard instance against the same clean service commit after deployment. Preserve inactive instances during fleet restarts and keep intentional product forks on their separate deployment lifecycle. See `notes/current/self-hosting-dev-restarts.md`.
+
 ## Current Priorities
 
 Current operating rule: prefer product slices that help non-expert users — especially time-valuable middle managers / owner-operators who both delegate work and still personally absorb repetitive digital admin chores — hand off repetitive digital work quickly from phone or desktop and see clear value fast. Treat multi-session orchestration, richer project structure, and broader workflow distribution as enabling layers unless they directly improve that mainstream automation path.

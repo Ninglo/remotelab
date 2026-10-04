@@ -111,16 +111,20 @@ restart_linux_unit() {
   local journal_hint
 
   if [[ "$scope" == "user" ]]; then
-    systemctl --user restart "${unit}.service" 2>/dev/null && \
-      echo "  $name: restarted" || \
-      echo "  $name: failed to restart (check: journalctl --user -u ${unit})"
+    if ! systemctl --user restart "${unit}.service"; then
+      echo "  $name: failed to restart (check: journalctl --user -u ${unit})" >&2
+      return 1
+    fi
+    echo "  $name: restarted"
     return
   fi
 
   journal_hint="journalctl -u ${unit} -n 50"
-  systemctl restart "${unit}.service" 2>/dev/null && \
-    echo "  $name: restarted" || \
-    echo "  $name: failed to restart (check: ${journal_hint})"
+  if ! systemctl restart "${unit}.service"; then
+    echo "  $name: failed to restart (check: ${journal_hint})" >&2
+    return 1
+  fi
+  echo "  $name: restarted"
 }
 
 restart_linux_chat_surfaces() {
@@ -133,29 +137,39 @@ restart_linux_chat_surfaces() {
 
   local owner_scope="${owner%%:*}"
   local owner_unit="${owner#*:}"
-  node "$SCRIPT_DIR/scripts/ensure-runtime-alignment.mjs" \
-    --mode restart \
-    --service-scope "$owner_scope" \
-    --service-unit "${owner_unit}.service"
-  restart_linux_unit "$owner_scope" "$owner_unit" "chat-server"
-
+  local guest_units=()
+  local guest_unit
   if [[ "$owner_scope" == "system" ]]; then
-    local guest_units=()
-    while IFS= read -r unit; do
-      [[ -n "$unit" ]] && guest_units+=("$unit")
+    while IFS= read -r guest_unit; do
+      [[ -n "$guest_unit" ]] || continue
+      if systemctl is-active --quiet "${guest_unit}.service"; then
+        guest_units+=("$guest_unit")
+      else
+        echo "  $guest_unit: inactive, skipping"
+      fi
     done < <({
       systemctl list-units 'remotelab-guest@*.service' --all --no-legend --plain 2>/dev/null | awk '{print $1}'
       systemctl list-unit-files 'remotelab-guest@*.service' --no-legend --plain 2>/dev/null | awk '{print $1}'
     } | sed 's/\.service$//' | grep -E '^remotelab-guest@[^[:space:]]+$' | sort -u)
-
-    if [[ "${#guest_units[@]}" -gt 0 ]]; then
-      echo "  guest chat surfaces: restarting ${#guest_units[@]} services"
-      local guest_unit
-      for guest_unit in "${guest_units[@]}"; do
-        restart_linux_unit "system" "$guest_unit" "$guest_unit"
-      done
-    fi
   fi
+
+  # Check the entire running fleet before restarting any surface.
+  node "$SCRIPT_DIR/scripts/ensure-runtime-alignment.mjs" \
+    --mode restart \
+    --service-scope "$owner_scope" \
+    --service-unit "${owner_unit}.service"
+  for guest_unit in "${guest_units[@]}"; do
+    node "$SCRIPT_DIR/scripts/ensure-runtime-alignment.mjs" \
+      --mode restart \
+      --service-scope system \
+      --service-unit "${guest_unit}.service"
+  done
+
+  restart_linux_unit "$owner_scope" "$owner_unit" "chat-server"
+  echo "  active guest chat surfaces: restarting ${#guest_units[@]} services"
+  for guest_unit in "${guest_units[@]}"; do
+    restart_linux_unit "system" "$guest_unit" "$guest_unit"
+  done
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

@@ -1239,3 +1239,9 @@ settings are separate from verified live deployment and delivery.
 - Direction: forward all admitted, unmuted human messages to a Session. Topics default to speaking with the assistant and require replies; the group mainline lets the Session judge whether a useful contribution is needed. Front-end classification may provide hints, but must not discard ordinary human messages before this fallback.
 - Boundary: retain sender access control, self/Bot loop protection and explicit mute/listening/paused controls. Session bindings preserve exact conversation continuity; they do not authorize or block the first human topic message.
 - Contract and verification: `notes/current/feishu-thread-continuation.md` and `docs/feishu-bot-setup.md`; source tests, running connector versions and real Request/reply receipts are separate evidence.
+
+## 2026-10-04 — Standard instance version alignment
+
+- Observed friction: standard users were left on separately pinned source copies even after their UI changes had merged to main, so a model upgrade omitted one user.
+- Requirement: standard instances share one mainline version; deliberate product forks keep a separate lifecycle.
+- Revision: Linux chat restart validates the whole active fleet before any service mutation, preserves inactive guests and reports restart failures. Deployment acceptance checks every active service commit and separately managed Connector source.
