@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-05 — Keep runtime information with the first Feishu reply
+
+- Observed friction: removing the fixed creation notice also removed visible model information. A second message arriving before the opening could suppress the Session link.
+- Requested behavior: keep the model explanation, Session link and useful opening together when creating a Session.
+- Change: append one compact runtime description and the link to the first opening, using the accepted Run snapshot. Identify the first turn by its message identity rather than a count of all user messages; preserve final fallback, replay suppression and silent replies.
+- Verification: cover multiple inputs before the opening, later turns, changed Session preferences and terminal recovery in the isolated reply publication tests. Live client visibility is a separate acceptance step.
+
 ### 2026-10-05 — Keep the latest phone dictation visible
 
 - Observed friction: a phone screenshot shows the PWA keyboard recovery prompt squeezed into one narrow column in voice mode. During a long hold, the recognized text overflows its bounded preview while the newest words remain out of view.

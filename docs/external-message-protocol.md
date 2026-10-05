@@ -302,9 +302,12 @@ configuration and recently used models only enrich the model catalog. Explicit
 Harness/model/effort profiles remain supported. Feishu continues to inherit the
 synced WebUI profile unless configured in pinned mode.
 
-Feishu includes the Session link in the first useful Harness opening, or the
-final reply when no opening exists. It sends no separate fixed creation notice
-or model/effort/Harness settings. Other connectors that support an admission
+Feishu includes the Session link and the accepted model/effort/Harness snapshot
+in the first useful Harness opening, or the final reply when no opening exists.
+This uses the Run's frozen runtime, even when Session preferences change before
+publication. Additional user messages arriving before the opening do not remove
+the entry; later replies and observer replay do not repeat it. Feishu sends no
+separate fixed creation notice. Other connectors that support an admission
 notice retain their existing snapshot-based notice. Starting an ordinary user
 run saves its complete Harness/model/effort profile on the Session for the
 WebUI; internal operations do not replace user preferences. Feishu labels

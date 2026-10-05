@@ -3,7 +3,7 @@ import { assistantSurfaceMessageId, collectAssistantSurfaceMessages, parseProgre
 import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
 import { appendDeliveries } from './requests.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
-import { buildReplyPublicationPayload } from './reply-publication.mjs';
+import { buildReplyPublicationPayload, isFirstUserTurnPublication } from './reply-publication.mjs';
 import { resolveAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
 import {
   extractAssistantArtifactBlockReferences, extractAssistantLocalMarkdownImageReferences,
@@ -77,14 +77,15 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       continue;
     }
     if (!prepared) continue;
+    const publicationRun = { id: record.runId, responseId: record.responseId,
+      ...(record.runtimeSelection || record.options) };
     const includeEntry = plan.connector === 'feishu' && Boolean(session?.id)
       && ['opening', 'final'].includes(surface.surfaceKind)
-      && fullHistory.filter(item => item.type === 'message' && item.role === 'user').length === 1
+      && isFirstUserTurnPublication(events, publicationRun, fullHistory)
       && !stored?.deliveries?.some(item => item.kind === 'session_entry' || item.sessionEntryIncluded);
-    const entry = includeEntry ? buildSessionEntry(session) : null;
-    const payload = final ? buildReplyPublicationPayload([prepared], {
-      id: record.runId, responseId: record.responseId,
-    }, { session, includeSessionEntry: Boolean(entry) }) : {
+    const entry = includeEntry ? buildSessionEntry(session, { runtimeSelection: publicationRun }) : null;
+    const payload = final ? buildReplyPublicationPayload([prepared], publicationRun,
+      { session, fullHistory, includeSessionEntry: Boolean(entry) }) : {
       text: appendSessionEntryFooter(prepared.content, entry), attachments: getAssistantReplyAttachments(prepared),
     };
     const parts = buildReplyDeliveries(resolveAmbientFeishuReplyPlan(record, plan, [event]), payload, {

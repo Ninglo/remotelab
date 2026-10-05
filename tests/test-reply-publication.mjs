@@ -83,6 +83,8 @@ const { appendEvent, loadHistory } = await import('../chat/history.mjs');
 const { projectWorkboards } = await import('../lib/workboard-state.mjs');
 const { buildSessionEntryDeliveries } = await import('../chat/session-entry-notification.mjs');
 const { publishNativeFinalReplies } = await import('../chat/native-final-publication.mjs');
+const { buildReplyPublicationPayload } = await import('../chat/reply-publication.mjs');
+const { appendSessionEntryFooter, buildSessionEntry } = await import('../lib/session-navigation.mjs');
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -95,26 +97,81 @@ async function waitFor(predicate, description, timeoutMs = 6000) {
 
 try {
   const firstHistory = [
-    { seq: 1, type: 'message', role: 'user', content: '核查消息接入逻辑' },
+    { seq: 1, type: 'message', role: 'user', responseId: 'first-response', content: '核查消息接入逻辑' },
     { seq: 2, type: 'message', role: 'assistant', phase: 'commentary', providerMessageId: 'opening',
       content: '我先对照群内收到的消息，检查进度是否更新了原卡。' },
     { seq: 3, type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId: 'result', content: '核查结果。' },
   ];
-  let openingRecord = { key: 'first-opening', runId: 'opening-run', options: {}, deliveries: [] };
-  const openingOptions = { session: { id: 'first-feishu-session', sourceId: 'feishu' },
+  const runtimeSelection = { tool: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' };
+  const runtimeDescription = '模型：gpt-6.1-sol · 思考强度：xhigh · 执行工具：codex';
+  let openingRecord = { key: 'first-opening', runId: 'opening-run', responseId: 'first-response', runtimeSelection, options: {}, deliveries: [] };
+  const openingOptions = { session: { id: 'first-feishu-session', sourceId: 'feishu',
+      tool: 'claude', model: 'changed-before-publication', effort: 'high' },
     plan: { connector: 'feishu', target: { chatId: 'original-chat', threadId: 'original-thread' } },
     store: { get: async () => openingRecord, mutate: async (_key, fn) => { openingRecord = fn(openingRecord); } } };
   await publishNativeFinalReplies(openingRecord, firstHistory.slice(0, 2), openingOptions);
   assert.equal(openingRecord.deliveries.length, 1);
   assert.match(openingRecord.deliveries[0].text, /^【开始处理】\n\n我先对照群内收到的消息/);
   assert.match(openingRecord.deliveries[0].text, /\?session=first-feishu-session&tab=sessions/);
-  assert.doesNotMatch(openingRecord.deliveries[0].text, /会话已创建|模型：|Harness：/);
+  assert.ok(openingRecord.deliveries[0].text.includes(runtimeDescription));
+  assert.doesNotMatch(openingRecord.deliveries[0].text, /会话已创建|changed-before-publication/,
+    'the useful opening keeps its accepted runtime instead of changed Session preferences');
   openingRecord = JSON.parse(JSON.stringify(openingRecord));
   await publishNativeFinalReplies(openingRecord, firstHistory, { ...openingOptions, running: false });
   await publishNativeFinalReplies(openingRecord, firstHistory, { ...openingOptions, running: false });
   assert.deepEqual(openingRecord.deliveries.map(item => item.text.split('\n')[0]), ['【开始处理】', '【最终答复】']);
   assert.equal(openingRecord.deliveries[1].text, '【最终答复】\n\n核查结果。');
   assert.ok(openingRecord.deliveries.every(item => item.target.threadId === 'original-thread'));
+
+  const earlyInputs = [firstHistory[0], { seq: 2, type: 'message', role: 'user',
+    responseId: 'second-response', content: '补充一项检查。' },
+    ...firstHistory.slice(1).map(event => ({ ...event, seq: event.seq + 1 }))];
+  let earlyRecord = { key: 'early-inputs', runId: 'opening-run', responseId: 'first-response',
+    runtimeSelection, options: {}, deliveries: [] };
+  const earlyOptions = { ...openingOptions, fullHistory: earlyInputs,
+    store: { get: async () => earlyRecord, mutate: async (_key, fn) => { earlyRecord = fn(earlyRecord); } } };
+  await publishNativeFinalReplies(earlyRecord, earlyInputs.slice(0, -1), earlyOptions);
+  assert.equal(earlyRecord.deliveries.length, 1);
+  assert.ok(earlyRecord.deliveries[0].text.includes(runtimeDescription));
+  assert.match(earlyRecord.deliveries[0].text, /\?session=first-feishu-session&tab=sessions/,
+    'a second input arriving before the opening cannot remove the entry');
+  earlyRecord = JSON.parse(JSON.stringify(earlyRecord));
+  await publishNativeFinalReplies(earlyRecord, earlyInputs, { ...earlyOptions, running: false });
+  await publishNativeFinalReplies(earlyRecord, earlyInputs, { ...earlyOptions, running: false });
+  assert.equal(earlyRecord.deliveries.length, 2, 'restart and replay retain exactly one opening and one final');
+  assert.equal(earlyRecord.deliveries[1].text, '【最终答复】\n\n核查结果。');
+
+  const firstRun = { id: 'opening-run', responseId: 'first-response', ...runtimeSelection };
+  const fallback = buildReplyPublicationPayload([earlyInputs.at(-1)], firstRun,
+    { session: openingOptions.session, fullHistory: earlyInputs });
+  assert.ok(fallback.text.includes(runtimeDescription), 'terminal fallback uses the same frozen runtime');
+  assert.match(fallback.text, /\?session=first-feishu-session&tab=sessions/);
+  let fallbackRecord = { key: 'fallback', runId: firstRun.id, responseId: firstRun.responseId,
+    runtimeSelection, options: {}, deliveries: [] };
+  const fallbackOptions = { ...earlyOptions, running: false,
+    store: { get: async () => fallbackRecord, mutate: async (_key, fn) => { fallbackRecord = fn(fallbackRecord); } } };
+  await publishNativeFinalReplies(fallbackRecord, [earlyInputs.at(-1)], fallbackOptions);
+  assert.ok(fallbackRecord.deliveries[0].text.includes(runtimeDescription),
+    'cold recovery with only a final delta still includes the entry');
+  const laterHistory = [earlyInputs[1], { ...earlyInputs.at(-1), seq: 5, providerMessageId: 'later-final' }];
+  const laterPayload = buildReplyPublicationPayload(laterHistory,
+    { ...firstRun, responseId: 'second-response' }, { session: openingOptions.session, fullHistory: earlyInputs });
+  assert.equal(laterPayload.text, '核查结果。', 'later turns do not repeat the creation information');
+  let laterRecord = { key: 'later', runId: 'later-run', responseId: 'second-response', runtimeSelection, options: {}, deliveries: [] };
+  await publishNativeFinalReplies(laterRecord, laterHistory, { ...earlyOptions, running: false,
+    store: { get: async () => laterRecord, mutate: async (_key, fn) => { laterRecord = fn(laterRecord); } } });
+  assert.equal(laterRecord.deliveries[0].text, '【最终答复】\n\n核查结果。');
+  const silent = buildReplyPublicationPayload([earlyInputs[0],
+    { ...earlyInputs.at(-1), content: '<private>silence</private>' }], firstRun,
+    { session: openingOptions.session, fullHistory: earlyInputs });
+  assert.equal(silent.text, '', 'creation metadata cannot turn a silent decision into a message');
+  const entry = buildSessionEntry(openingOptions.session, { runtimeSelection });
+  const alreadyLinked = appendSessionEntryFooter(`正文\n\n${entry.url}`, entry);
+  assert.ok(alreadyLinked.includes(runtimeDescription), 'a link already present does not suppress runtime information');
+  assert.equal(appendSessionEntryFooter(alreadyLinked, entry), alreadyLinked, 'appending the footer is idempotent');
+  const unknownEntry = buildSessionEntry(openingOptions.session, { runtimeSelection: { tool: 'codex', model: '', effort: '' } });
+  assert.match(unknownEntry.runtimeDescription, /模型：默认（由 Harness 决定）/,
+    'an unknown accepted provider default is never replaced by later Session settings');
   let probe = { key: 'probe', runId: 'probe-run', responseId: 'probe-response', options: {}, deliveries: [] };
   await publishNativeFinalReplies(probe, ['unready-assets', 'ready-text'].map(providerMessageId => ({
     type: 'message', role: 'assistant', phase: 'final_answer', providerMessageId, content: 'ready reply',
@@ -285,7 +342,7 @@ try {
     firstConnectorOutcome.response?.id,
   );
   assert.equal(firstConnectorPublication?.payload?.sessionEntry?.url, expectedSessionUrl);
-  assert.equal(firstConnectorPublication?.payload?.text, `主 Harness 已经直接完成并交付结果。\n\n查看会话详情和进度：${expectedSessionUrl}`, 'a reply without an opening retains one usable Session entry');
+  assert.equal(firstConnectorPublication?.payload?.text, `主 Harness 已经直接完成并交付结果。\n\n模型：fake-model · 思考强度：low · 执行工具：fake-codex\n\n查看会话详情和进度：${expectedSessionUrl}`, 'a reply without an opening retains its accepted runtime and one usable Session entry');
   const finalClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' });
   assert.equal(finalClaim?.delivery?.kind, 'content');
   assert.equal(finalClaim.delivery.text, `【最终答复】\n\n${firstConnectorPublication.payload.text}`);

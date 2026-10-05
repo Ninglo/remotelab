@@ -180,7 +180,7 @@ function sameHistoryEvent(left, right) {
   return left === right;
 }
 
-function isFirstUserTurnPublication(history, rootRun, fullHistory) {
+export function isFirstUserTurnPublication(history, rootRun, fullHistory) {
   const completeHistory = Array.isArray(fullHistory) ? fullHistory : history;
   const firstUserEvent = completeHistory.find((event) => event?.type === 'message' && event.role === 'user');
   if (!firstUserEvent) return false;
@@ -234,7 +234,7 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
 
   if (includeSessionEntry && (payload.text || payload.attachments.length)
       && isFirstUserTurnPublication(history, rootRun, fullHistory)) {
-    const sessionEntry = buildSessionEntry(session);
+    const sessionEntry = buildSessionEntry(session, { runtimeSelection: rootRun });
     if (sessionEntry) {
       payload.sessionEntry = sessionEntry;
       payload.text = appendSessionEntryFooter(payload.text, sessionEntry);
