@@ -7,6 +7,7 @@ import { prependAttachmentPaths } from './process-runner.mjs';
 import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
+import { isFeishuMainlineReply } from '../lib/reply-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { resolveAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
 import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
@@ -1671,9 +1672,11 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const history = await loadHistory(sessionId, { includeBodies: true });
   const session = await findSessionMeta(sessionId);
   const runHistory = collectReplyPublicationHistory(history, run);
+  const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
   const payload = buildReplyPublicationPayload(runHistory, run, {
     session, fullHistory: history,
-    includeSessionEntry: record.options.sourceContext?.feishuParticipation !== 'ambient'
+    includeSessionEntry: !isFeishuMainlineReply(plan)
+      && record.options.sourceContext?.feishuParticipation !== 'ambient'
       && !record.deliveries.some(delivery => delivery.kind === 'session_entry' || delivery.sessionEntryIncluded),
   });
   if (run.state === 'completed' && record.options.sourceContext?.feishuParticipation === 'ambient') {
@@ -1684,7 +1687,6 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
     }
   }
   const feishuOutcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
-  const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
   const deliveryPlan = resolveAmbientFeishuReplyPlan(record, plan, runHistory);
   const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
     && record.options.sourceContext?.feishuExplicitMention !== true;

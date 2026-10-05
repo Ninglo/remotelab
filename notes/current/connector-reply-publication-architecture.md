@@ -8,6 +8,14 @@ Historical multi-run publication design: `notes/archive/connector-reply-publicat
 
 Current boundary: `notes/current/thin-control-plane-architecture.md` and `docs/external-message-protocol.md`.
 
+Replies to human messages on a Feishu group mainline publish only the final
+answer after execution stops. Opening and progress text remain in durable
+Session history; first-turn runtime and Session-entry footers are omitted from
+these brief replies. A required interactive question may still be delivered.
+Thread work retains its existing publication lifecycle. The shared conversion,
+live observer and terminal fallback enforce the same boundary; verification is
+in `tests/test-reply-publication.mjs`.
+
 Session metadata now owns optional external conversation bindings. Requests
 snapshot either the binding or an explicit in-scope current-message destination
 and commit results and outbox parts together. Native inputs consumed in one turn publish one answer.

@@ -85,6 +85,7 @@ const { buildSessionEntryDeliveries } = await import('../chat/session-entry-noti
 const { publishNativeFinalReplies } = await import('../chat/native-final-publication.mjs');
 const { buildReplyPublicationPayload } = await import('../chat/reply-publication.mjs');
 const { appendSessionEntryFooter, buildSessionEntry } = await import('../lib/session-navigation.mjs');
+const { buildReplyDeliveries } = await import('../lib/reply-deliveries.mjs');
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -122,6 +123,35 @@ try {
   assert.deepEqual(openingRecord.deliveries.map(item => item.text.split('\n')[0]), ['【开始处理】', '【最终答复】']);
   assert.equal(openingRecord.deliveries[1].text, '【最终答复】\n\n核查结果。');
   assert.ok(openingRecord.deliveries.every(item => item.target.threadId === 'original-thread'));
+
+  let shortRecord = { ...openingRecord, key: 'short-reply', deliveries: [],
+    streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
+  const shortPlan = { connector: 'feishu', target: { chatId: 'short-chat',
+    chatType: 'group', conversationKind: 'main', messageId: 'short-source' } };
+  const shortOptions = { ...openingOptions, plan: shortPlan,
+    store: { get: async () => shortRecord, mutate: async (_key, fn) => { shortRecord = fn(shortRecord); } } };
+  const shortHistory = [firstHistory[0], firstHistory[1],
+    { ...firstHistory[1], seq: 3, providerMessageId: 'short-progress', content: '<progress>检查完了。</progress>' },
+    { ...firstHistory[2], seq: 4 }];
+  await publishNativeFinalReplies(shortRecord, shortHistory, shortOptions);
+  assert.deepEqual(shortRecord.deliveries, [], 'short replies send neither opening nor progress while running');
+  await publishNativeFinalReplies(shortRecord, shortHistory, { ...shortOptions, running: false });
+  await publishNativeFinalReplies(shortRecord, shortHistory, { ...shortOptions, running: false });
+  assert.equal(shortRecord.deliveries.length, 1, 'short reply replay publishes one final answer');
+  assert.equal(shortRecord.deliveries[0].text, '【最终答复】\n\n核查结果。');
+  assert.equal(shortRecord.deliveries[0].target.messageId, 'short-source');
+  assert.equal(shortRecord.deliveries[0].sessionEntryIncluded, undefined);
+  assert.deepEqual(buildReplyDeliveries(shortPlan, { text: '准备回复', attachments: [{ assetId: 'early-file' }] },
+    { running: true, surfaceKind: 'opening' }), [], 'early files do not bypass short reply suppression');
+  assert.equal(buildReplyDeliveries(shortPlan, { text: '缺少哪项信息？' },
+    { running: true, surfaceKind: 'question' }).length, 1, 'required user input stays reachable');
+  for (const target of [
+    { ...shortPlan.target, chatType: 'p2p' },
+    { ...shortPlan.target, conversationKind: 'thread', threadId: 'thread' },
+    { ...shortPlan.target, chatMode: 'topic' },
+    { chatId: 'announcement-chat', chatType: 'group', conversationKind: 'main' },
+  ]) assert.equal(buildReplyDeliveries({ ...shortPlan, target }, { text: '开始处理。' },
+    { running: true, surfaceKind: 'opening' }).length, 1, 'other reply surfaces retain their lifecycle');
 
   const earlyInputs = [firstHistory[0], { seq: 2, type: 'message', role: 'user',
     responseId: 'second-response', content: '补充一项检查。' },
@@ -373,6 +403,17 @@ try {
   await waitFor(async () => (await getSessionReplyPublication(legacySession.id, legacyOutcome.response.id))?.state === 'ready', 'legacy connector response');
   assert.ok((await getSessionReplyPublication(legacySession.id, legacyOutcome.response.id)).payload.sessionEntry?.url.includes(legacySession.id), 'adapters without the shared outbox retain their existing first-reply link');
   await waitFor(async () => (await getRunState(secondOutcome.run.id))?.finalizedAt, 'second request to finish');
+
+  const shortSession = await createSession(tempHome, 'fake-codex', 'Short reply terminal fallback', { sourceId: 'feishu' });
+  const shortOutcome = await submitHttpMessage(shortSession.id, '简短回复。', [], {
+    requestId: 'short-terminal', tool: 'fake-codex', model: 'fake-model', effort: 'low', sourceDelivery: shortPlan,
+  });
+  await waitFor(async () => (await requests.byRunId(shortOutcome.run.id))?.result, 'short reply terminal settlement');
+  const shortRequest = await requests.byRunId(shortOutcome.run.id);
+  assert.equal(shortRequest.result.payload.sessionEntry, undefined, 'terminal short reply adds no runtime footer');
+  assert.equal(shortRequest.deliveries.length, 1);
+  assert.equal(shortRequest.deliveries[0].text, '【最终答复】\n\n主 Harness 已经直接完成并交付结果。');
+  assert.equal(shortRequest.deliveries[0].target.messageId, 'short-source');
 } finally {
   await killAll();
   rmSync(tempHome, { recursive: true, force: true });

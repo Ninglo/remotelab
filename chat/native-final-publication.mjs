@@ -2,7 +2,7 @@ import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
 import { assistantSurfaceMessageId, collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
 import { appendDeliveries } from './requests.mjs';
-import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+import { buildReplyDeliveries, isFeishuMainlineReply } from '../lib/reply-deliveries.mjs';
 import { buildReplyPublicationPayload, isFirstUserTurnPublication } from './reply-publication.mjs';
 import { resolveAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
 import {
@@ -47,6 +47,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     ? await findSessionMeta(record.sessionId || session?.id) || session : null;
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
     if (event.runId && event.runId !== record.runId) continue;
+    if (isFeishuMainlineReply(plan) && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
     if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'
@@ -81,6 +82,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const publicationRun = { id: record.runId, responseId: record.responseId,
       ...(record.runtimeSelection || record.options) };
     const includeEntry = plan.connector === 'feishu' && Boolean(session?.id)
+      && !isFeishuMainlineReply(plan)
       && ['opening', 'final'].includes(surface.surfaceKind)
       && isFirstUserTurnPublication(events, publicationRun, fullHistory)
       && !stored?.deliveries?.some(item => item.kind === 'session_entry' || item.sessionEntryIncluded);
