@@ -1427,11 +1427,11 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       sessionId: receipt.sessionId, threadId: receipt.threadId, messageId: receipt.messageId,
     });
     if (receipt.sessionId && receipt.messageId && runtime.storagePaths?.messageIndexPath) {
-      const outboundTarget = receipt.threadId
+      const outboundTarget = receipt.threadId && receipt.target?.conversationKind !== 'main'
         ? { ...receipt.target, threadId: receipt.threadId }
         : receipt.target;
       await recordFeishuOutboundMessageSession(runtime, outboundTarget, receipt.sessionId, receipt.messageId);
-      if (receipt.target?.sourceKind !== 'ambient_thread_open') {
+      if (receipt.target?.conversationKind !== 'main' && receipt.target?.sourceKind !== 'ambient_thread_open') {
         await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
       }
     }
@@ -1490,7 +1490,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       return resolved.json?.delivery;
     }
     if (delivery.kind !== 'reaction') {
-      runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text, sent.thread_id);
+      runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text,
+        summary.conversationKind === 'main' ? '' : sent.thread_id);
     }
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || sent.reactionId || '', messageId: sent.message_id || '',

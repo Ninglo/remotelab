@@ -798,6 +798,23 @@ assert.deepEqual(JSON.parse(feishuReplyPayload?.data?.content || '{}'), {
 });
 
 const sourceDeliveryRequests = [];
+const quoteIndexPath = join(tempHome, 'quote-message-index.json');
+const quoteWorker = { ...fakeSendRuntime, config: { sourceRouteId: 'quote', storageDir: join(tempHome, 'quote-worker') },
+  storagePaths: { messageIndexPath: quoteIndexPath },
+  quickParticipation: { rememberBotReply: (_target, _messageId, _text, threadId) => {
+    assert.equal(threadId, '', 'an inline quote stays in mainline reaction context');
+  } } };
+await processSourceDeliveryOnce(quoteWorker, {
+  requestRemoteLab: async path => ({ response: { ok: true }, json: path === '/api/source-deliveries/claim'
+    ? { claim: { leaseId: 'quote-lease', delivery: { id: 'quote-delivery', kind: 'content', sessionId: 'quote-session',
+      target: { chatId: 'quote-chat', chatType: 'group', conversationKind: 'main', messageId: 'quote-source' }, text: 'quoted result' } } }
+    : { delivery: { state: 'delivered' } } }),
+});
+const quoteIndex = Object.values(JSON.parse(await readFile(quoteIndexPath, 'utf8')).records);
+assert.equal(quoteIndex.length, 1, 'a provider thread hint cannot bind the mainline Session as a Thread');
+assert.equal(quoteIndex[0].direction, 'outbound');
+assert.equal(quoteIndex[0].conversationKind, 'main');
+assert.equal(quoteIndex[0].sourceMessageId, 'quote-source');
 for (const [target, threaded, quote] of [
   [{ chatType: 'group', conversationKind: 'main', messageId: 'source' }, false, true],
   [{ chatType: 'group', conversationKind: 'thread', messageId: 'source', replyInThread: true }, true, true],
