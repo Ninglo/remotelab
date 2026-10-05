@@ -8,6 +8,16 @@ const quota = remainingPercent => [{ id: 'codex', primary: { remainingPercent, w
 const sample = (remainingPercent, overrides = {}) => ({ identityId: 'account', label: 'owner@example.com', status: 'ready', quota: quota(remainingPercent), observedAt: at, ...overrides });
 const entry = subscriptions => ({ receivedAt: at, snapshot: { subscriptions } });
 
+test('verified recovery clears only that failed Run from attention, and a later failure still alerts', () => {
+  const task = { id: 'sch_test', state: 'active', lastExecution: { state: 'failed', runId: 'run_original' } };
+  const input = { accounts: [], disks: [], services: [], automations: { items: [task] },
+    recovery: [{ kind: 'automation', id: task.id, originRunId: 'run_original', status: 'resolved' }] };
+  assert.equal(analyzeResources(input).attention.length, 0);
+  task.lastExecution.runId = 'run_later'; assert.equal(analyzeResources(input).attention.length, 1);
+  task.lastExecution.runId = 'run_original'; task.lastError = 'New gate failure';
+  assert.equal(analyzeResources(input).attention.length, 1, 'an execution repair cannot cover a separate gate failure');
+});
+
 test('oneshot execution in progress is not a service fault, and a never-run or failed unit is not healthy', async () => {
   const item = { unit: 'test.service', scope: 'user' };
   const observe = (active, result, started = at) => readService(item, async () => ({ stdout:

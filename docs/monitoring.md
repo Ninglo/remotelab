@@ -79,6 +79,35 @@ Before resuming after a task-source change, verify that all configured important
 
 Use `scripts/monitoring-alerts.mjs --dry-run` against the target instance environment to preview eligible notifications without sending or changing durable observer state. Once the current problems have been reviewed, run `--baseline` with the timer stopped, then enable the existing timer and verify its natural execution. The baseline also acknowledges existing important-task failures before they reach three observations, while preserving previous sending receipts. Known problems remain visible in Overview and the report; a later verified recovery allows a new failure to alert again.
 
+## Recovery after a failure
+
+When the operator authorizes recovery, extend the same observer instead of adding another timer. Observation, incident notification and repair have separate durable records. Reporting or baselining a problem does not resolve it. The Harness still diagnoses the error, chooses permitted work and verifies business results; this broker supplies incident identity, bounds, admission and receipt reconciliation.
+
+Add an explicit instance-local configuration:
+
+```json
+{
+  "recovery": {
+    "enabled": true,
+    "baseUrl": "http://127.0.0.1:INSTANCE_PORT",
+    "coordinatorSessionId": "EXISTING_AUTHORIZED_OPERATIONS_SESSION",
+    "automationIds": ["*"],
+    "maxAttempts": 2,
+    "maxConcurrent": 1,
+    "models": ["gpt-6-sol", "gpt-5.6-sol"],
+    "workflowPaths": {"disk:/": "/path/to/current/authorized/disk/WORKFLOW.md"}
+  }
+}
+```
+
+The default automation scope is native task failures with an actual failed Run. Use a list of task IDs to narrow it; `*` covers all such tasks. Paused, cancelled, completed, superseded or archived work is not restarted. Configured critical disk/service incidents use the existing coordinator Session; a busy coordinator is deferred. Account observation remains with its own observer. A gate failure without an admitted Run remains an alert/coverage issue and does not authorize bypassing the gate.
+
+`monitoring-recovery.json` retains each failure and its attempts through observer restarts. A current manual continuation is observed before any new work; after it ends, a bounded verification turn checks existing results. New recovery work resumes the original task Session and its original delivery route. It keeps successful inputs, comment anchors, task scope and business-write receipts, patches the actual Session model before admission, then reads back the Run model. It restores the prior preference after the attempt, preserving an intervening user change. Lost admission acknowledgements are read back and reconciled using one native request ID. They never authorize replaying an uncertain business write or message.
+
+Each repair writes a keyed acceptance receipt under `monitoring-recovery-receipts/`. Provider completion alone leaves the incident pending verification. Task evidence and acceptance are required; disk/service recovery also requires a fresh independent healthy measurement. Conversation delivery requires the original final source-delivery receipt, not an opening message; uncertain delivery is observed for up to ten minutes without resending, then remains blocked. Permission, ownership, external dependencies or exhausted attempts retain a concrete reason rather than silently disappearing. Current phases and results are visible in the existing Overview and daily report.
+
+Use `--dry-run` to inspect pending recovery without saving state, admitting work or sending. Enable on the intended instance only, check current in-flight/manual work, then observe the existing timer's first real receipt. The observer can still discover and report outages when HTTP/model access is unavailable; AI repair waits for a usable native admission path. One observer process owns this ledger; do not launch a second concurrent observer against it.
+
 ## Verification
 
-`npm run test:monitoring` covers account freshness/deduplication, partial reads, shared filesystems, incident/recovery behavior, uncertain delivery, report boundaries, UI defaults and authenticated HTTP access. Complete normal CI before main delivery, then verify real desktop/mobile views, unchanged automation controls, source coverage and timer execution on the target instance. Saved schedules or passing tests do not establish that a future report reached its group.
+`npm run test:monitoring` covers account freshness/deduplication, partial reads, shared filesystems, incident/recovery behavior, bounded model changes, lost admission acknowledgement, manual recovery adoption, independent acceptance and delivery reconciliation, report boundaries, UI defaults and authenticated HTTP access. Complete normal CI before main delivery, then verify real desktop/mobile views, unchanged automation controls, source coverage and timer execution on the target instance. Saved schedules or passing tests do not establish that a future report reached its group.

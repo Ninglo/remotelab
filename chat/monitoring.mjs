@@ -6,6 +6,8 @@ import { CONFIG_DIR } from '../lib/config.mjs';
 import { codexAccounts } from '../lib/codex-accounts.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
 import { listAutomationTasks } from './automation-tasks.mjs';
+import { readRecord } from '../lib/durable-records.mjs';
+import { RECOVERY_FILE, projectRecovery } from './monitoring-recovery.mjs';
 
 const exec = promisify(execFile);
 const GiB = 1024 ** 3;
@@ -66,7 +68,7 @@ export async function readService(item, execute = exec) {
     observedAt: new Date().toISOString() };
 }
 
-export function analyzeResources({ accounts, disks, automations, services }) {
+export function analyzeResources({ accounts, disks, automations, services, recovery = [] }) {
   const attention = [];
   for (const disk of disks) if (disk.status === 'critical' || disk.status === 'warning') attention.push({ kind: 'disk', severity: disk.status,
     id: disk.path, subject: disk.label, availableBytes: disk.availableBytes, usedPercent: disk.usedPercent, inodeUsedPercent: disk.inodeUsedPercent });
@@ -77,7 +79,9 @@ export function analyzeResources({ accounts, disks, automations, services }) {
   const low = available.filter(account => account.windows.some(window => window.remainingPercent <= 10));
   if (low.length) attention.push({ kind: 'lowQuota', severity: 'warning', subject: low.map(account => account.label).join('、') });
   for (const task of automations.items) if (!['completed', 'cancelled', 'paused'].includes(task.state)
-    && (task.lastExecution?.state === 'failed' || task.lastError)) attention.push({ kind: 'automation',
+    && (task.lastExecution?.state === 'failed' || task.lastError)
+    && !(task.lastExecution?.runId && !task.lastError && recovery.some(item => item.kind === 'automation'
+      && item.id === task.id && item.originRunId === task.lastExecution.runId && item.status === 'resolved'))) attention.push({ kind: 'automation',
     severity: 'warning', subject: task.title, id: task.id, sessionId: task.lastExecution?.sessionId || null });
   for (const service of services) if (service.status === 'failed') attention.push({ kind: 'service', severity: 'critical', id: service.unit, subject: service.label });
   const capacity = available.filter(account => account.windows.some(window => Math.abs(window.minutes - 10080) <= 60 && window.remainingPercent >= 50));
@@ -111,7 +115,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     async function observe(source, fn, fallback) {
       try { return await fn(); } catch (error) { gaps.push({ source, code: error.code || 'UNAVAILABLE' }); return fallback; }
     }
-    const [usage, tasks, runtime, fleet, requests, disks, services] = await Promise.all([
+    const [usage, tasks, runtime, fleet, requests, disks, services, recovery] = await Promise.all([
       observe('usage', () => getUsage({ days, top: Math.max(5, days + 1), includeTopRuns: false }), null),
       observe('automations', getTasks, []), observe('accounts', getAccounts, null),
       config.fleetStateFile ? observe('fleet', async () => {
@@ -137,6 +141,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       })),
       Promise.all((Array.isArray(config.services) ? config.services : []).slice(0, 20).map(item => observe(`service:${item.label || item.unit}`, () => getService(item),
         { label: text(item.label || item.unit), unit: item.unit, status: 'unknown', observedAt: generatedAt }))),
+      config.recovery?.enabled ? observe('recovery', () => readRecord(RECOVERY_FILE), null) : null,
     ]);
     const accounts = projectAccounts(runtime, fleet, now());
     for (const disk of disks) {
@@ -157,16 +162,17 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       items: liveTasks.map(task => ({ id: task.id, title: text(task.title), state: task.state, nextRunAt: task.nextRunAt,
         check: task.check ? { at: task.check.at, reason: task.check.reason } : null,
         lastError: task.lastError ? text(task.lastError) : null, lastExecution: task.lastExecution ? {
-          state: task.lastExecution.state, completedAt: task.lastExecution.completedAt, sessionId: task.lastExecution.sessionId,
+          runId: task.lastExecution.runId, state: task.lastExecution.state, completedAt: task.lastExecution.completedAt, sessionId: task.lastExecution.sessionId,
           scheduledAt: task.lastExecution.scheduledAt, error: task.lastExecution.error ? text(task.lastExecution.error) : null } : null })) };
     const automaticRequests = Object.entries(requests?.attempts || {}).map(([accountId, item]) => ({ accountId,
       label: accounts.find(account => account.id === accountId)?.label || accountId.slice(0, 8), status: item.status,
       completedAt: item.completedAt || item.startedAt, model: item.model }));
-    const analysis = analyzeResources({ accounts, disks, automations, services });
+    const recoveryItems = projectRecovery(recovery);
+    const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems });
     return { generatedAt, windowDays: days,
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
-      accounts, disks, automations, services, automaticRequests, ...analysis,
+      accounts, disks, automations, services, automaticRequests, ...analysis, recovery: recoveryItems,
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,
         unknownAccounts: accounts.filter(account => ['unknown', 'conflicting'].includes(account.status)).length, unverifiedAdmissions, gaps } };
   }

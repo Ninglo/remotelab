@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createMonitoringReader } from './monitoring.mjs';
+import { processMonitoringRecovery } from './monitoring-recovery.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('base64url');
 const cell = value => String(value || '—').replace(/\|/g, '／').replace(/[\r\n]+/g, ' ').slice(0, 180);
@@ -13,8 +14,11 @@ const errorCode = error => error.code || 'DELIVERY_UNCERTAIN';
 
 export async function sendMonitoringAlert(events, config, batchId) {
   if (!/^oc_[\w]+$/.test(config.chatId || '') || !/^[\w.-]+$/.test(config.profile || '')) throw new Error('INVALID_RECIPIENT');
-  const rows = events.map(item => `| ${cell(item.subject)} | ${item.kind === 'disk'
-    ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}` : '运行持续异常，请核对原执行记录'} |`).join('\n');
+  const rows = events.map(item => {
+    const recovery = config.recoveryIncidents?.slice().reverse().find(record => record.kind === item.kind && record.id === item.id);
+    return `| ${cell(item.subject)} | ${item.kind === 'disk'
+      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}` : '运行持续异常，请核对原执行记录'}${recovery ? `；${cell(recovery.label)}${recovery.reason ? `：${cell(recovery.reason)}` : ''}` : ''} |`;
+  }).join('\n');
   const message = `**监管：需要及时处理**\n\n| 对象 | 当前问题 |\n|---|---|\n${rows}\n\n${config.overviewUrl || ''}\n日常状态继续并入日报，本条只报告新出现的紧急问题。`;
   const { stdout } = await promisify(execFile)('lark-cli', ['--profile', config.profile, 'im', '+messages-send',
     '--chat-id', config.chatId, '--as', 'bot', '--markdown', message, '--idempotency-key', batchId], {
@@ -44,7 +48,9 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       const stopped = ['paused', 'cancelled', 'completed'].includes(item.state);
       const succeeded = item.lastExecution?.state === 'completed';
       const checked = !item.lastExecution && item.check?.at && item.check.reason && item.check.reason !== 'gate_error';
-      if (stopped || !item.lastError && (succeeded || checked)) recovered.add(hash(`automation:${item.id}`));
+      const repaired = item.lastExecution?.runId && snapshot.recovery?.some(record => record.kind === 'automation'
+        && record.id === item.id && record.originRunId === item.lastExecution.runId && record.status === 'resolved');
+      if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
   for (const item of snapshot.attention.filter(item => ['disk', 'service', 'automation'].includes(item.kind)
@@ -91,5 +97,13 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false } =
   if (!config.alertDelivery) return { enabled: false };
   // This independent observer needs no model and no running HTTP server.
   const snapshot = await createMonitoringReader({ getUsage: async () => null })({ days: 1 });
-  return dispatchMonitoringAlerts({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds }, snapshot, baseline, dryRun });
+  // Notification and recovery have separate receipts. A reported/baselined
+  // incident remains eligible for repair; an uncertain send is never replayed.
+  let recovery;
+  try { recovery = baseline ? { skipped: 'baseline' } : await processMonitoringRecovery({
+    config: { ...config.recovery, ignoreUnits: config.alertDelivery.ignoreUnits }, snapshot, dryRun }); }
+  catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
+  const alerts = await dispatchMonitoringAlerts({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds,
+    recoveryIncidents: recovery.incidents }, snapshot, baseline, dryRun });
+  return { ...alerts, recovery };
 }

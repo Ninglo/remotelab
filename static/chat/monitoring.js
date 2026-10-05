@@ -96,6 +96,16 @@
       const detail = node("div"); detail.appendChild(item.kind === "automation" ? executionLink(item) : node("strong", item.subject));
       detail.appendChild(node("p", alertDetail(item))); row.appendChild(detail); attention.appendChild(row);
     });
+    (value.recovery || []).slice(-20).forEach(item => {
+      const row = node("div", null, "monitoring-alert");
+      const detail = node("div"); detail.appendChild(node("strong", `${item.subject} · ${item.label}`));
+      detail.appendChild(node("p", item.summary || item.reason || "沿原任务检查点办理"));
+      if (item.sessionId) {
+        const link = node("a", "查看处理记录"); link.href = `/?session=${encodeURIComponent(item.sessionId)}&tab=sessions`;
+        detail.appendChild(link);
+      }
+      row.appendChild(detail); attention.appendChild(row);
+    });
     const accounts = section(t("accounts"), snapshot); accounts.dataset.section = "accounts";
     if (!value.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
     else {

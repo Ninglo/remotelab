@@ -82,6 +82,18 @@ test('an unfinished retry and a disappeared service or disk are not recovery', a
   assert.equal(f.getSends(), sends);
 });
 
+test('independently verified repair rearms the next failed Run without rewriting the historical failure', async () => {
+  const f = fixture(), config = { criticalAutomationIds: ['sch_daily'] };
+  const failed = snapshot([{ kind: 'automation', id: 'sch_daily', subject: 'Daily', severity: 'warning' }]);
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  const repaired = snapshot([]);
+  repaired.automations.items = [{ id: 'sch_daily', state: 'active', lastExecution: { state: 'failed', runId: 'run_original' } }];
+  repaired.recovery = [{ kind: 'automation', id: 'sch_daily', originRunId: 'run_original', status: 'resolved' }];
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: repaired });
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
+  assert.equal(f.getSends(), 2);
+});
+
 test('resuming with a baseline also acknowledges important failures below the three-observation threshold', async () => {
   const f = fixture(), config = { criticalAutomationIds: ['sch_daily'] };
   const failed = snapshot([{ kind: 'automation', id: 'sch_daily', subject: 'Daily', severity: 'warning' }]);
