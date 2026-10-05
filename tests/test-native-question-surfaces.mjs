@@ -29,7 +29,7 @@ try {
   const first = JSON.parse(calls[0][1].data.content);
   const optionButtons = first.body.elements.flatMap(e => e.columns || []).flatMap(e => e.elements || []);
   assert.equal(optionButtons.filter(e => e.tag === 'button').length, 2);
-  assert.equal(first.body.elements.find(e => e.tag === 'collapsible_panel').expanded, false,
+  assert.equal(first.body.elements.find(e => e.tag === 'form').elements[0].expanded, false,
     'optional custom input does not occupy phone space before the user opens it');
   assert.ok(!first.header, 'the question does not need a second large title bar');
   assert.equal(first.body.elements.filter(e => e.tag === 'markdown').map(e => e.content).join('\n'),

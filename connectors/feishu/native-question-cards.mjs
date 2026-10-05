@@ -43,7 +43,10 @@ export function buildNativeQuestionCard(identity, question) {
       { tag: 'input', name: 'answer', input_type: 'multiline_text', max_length: 1000,
         placeholder: plain('填写自己的答案') }, submit('submit_answer'),
     ] };
-    elements.push(options.length ? collapsed('填写其他答案', [customAnswer]) : customAnswer);
+    // Feishu requires forms at the body root. Fold the fields inside the
+    // form rather than nesting a form inside a collapsible panel.
+    if (options.length) customAnswer.elements = [collapsed('填写其他答案', customAnswer.elements)];
+    elements.push(customAnswer);
     elements.push(markdown(options.length ? '5 分钟未答时默认选第 1 项。' : '5 分钟未答时按未答继续。'));
   } else {
     elements.push(markdown(question.statusText));
