@@ -263,6 +263,7 @@ async function readSessionMessagePayload(req, pathname) {
     return {
       sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '',
       requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
+      nativeQuestionId: typeof payload?.nativeQuestionId === 'string' ? payload.nativeQuestionId.trim() : '',
       runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
       ...(pathname.endsWith('/assistant-messages') && payload?.workboard ? { workboard: payload.workboard } : {}),
       ...(pathname.endsWith('/assistant-messages') && payload?.workboardPatch ? { workboardPatch: payload.workboardPatch } : {}),

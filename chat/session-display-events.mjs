@@ -1,4 +1,5 @@
 import { projectWorkboardTranscript } from '../lib/workboard-state.mjs';
+import { projectNativeQuestionMessages } from '../lib/native-question-surface.mjs';
 import {
   getMessageAttachments,
   stripAttachmentSavedPath,
@@ -372,7 +373,7 @@ export function buildSessionDisplayEvents(history = [], options = {}) {
   const displayEvents = [];
   let currentTurn = null;
 
-  const input = Array.isArray(history) ? history : [];
+  const input = projectNativeQuestionMessages(Array.isArray(history) ? history : []);
   for (const event of options.exposeWorkboard ? projectWorkboardTranscript(input) : input) {
     if (event?.type === 'message' && event.role === 'user') {
       flushTurnInto(displayEvents, currentTurn, { ...options, sessionRunning: false });

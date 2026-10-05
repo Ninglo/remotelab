@@ -59,7 +59,7 @@ try {
   assert.deepEqual({ ...fallback.answers }, { format: ['Brief'] });
   assert.equal(fallback.resolutions[0].origin, 'timeout');
   assert.match(nativeQuestionAnswers(fallback).format[0], /Brief.*system timeout fallback; not a user response/);
-  assert.ok(events.some(e => e.state === 'timeout' && e.origin === 'timeout' && /超时自动选择/.test(e.content)));
+  assert.ok(events.some(e => e.state === 'timeout' && e.origin === 'timeout' && /采用系统默认/.test(e.content)));
   const journals = await readdir(join(root, 'native-questions'));
   const records = await Promise.all(journals.map(name => readRecord(join(root, 'native-questions', name))));
   assert.equal(records.find(e => e.id === 'codex:three').resolutions[0].origin, 'timeout');
@@ -82,6 +82,15 @@ try {
       { type: 'tool_use', toolName: 'Question', seq: 2 }, ...questionEvents.map((e, i) => ({ ...e, seq: i + 3 }))];
     const visible = buildSessionDisplayEvents(history, { sessionRunning: true });
     assert.ok(visible.some(e => e.messageKind === 'user_question' && /1\. Brief/.test(e.content)), 'questions must show outside the collapsed process record');
+    const ended = adapter.parseLine(JSON.stringify(events.find(e => e.questionId === events[0].questionId && e.state === 'answered')));
+    const display = buildSessionDisplayEvents([...history, { type: 'message', role: 'user', content: '2', seq: 4 },
+      { ...ended[0], seq: 5 }]);
+    const questions = display.filter(e => e.messageKind === 'user_question');
+    assert.equal(questions.length, 1, 'answers update the original question across user turns');
+    assert.equal(questions[0].questionState, 'answered');
+    assert.equal(questions[0].seq, 3);
+    assert.equal(questions[0].messageUpdateSeq, 5);
+    assert.match(questions[0].content, /Which format/);
   }
   pending = once(bus, 'pending');
   const cancelled = broker.ask({ protocol: 'codex', id: 'cancel', questions: [q] });

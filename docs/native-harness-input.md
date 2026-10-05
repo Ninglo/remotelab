@@ -34,15 +34,18 @@ native capability alone does not mean a follow-up can join the active request.
 
 ## Answering native questions
 
-Codex and Claude questions use the existing Web conversation and bound chat,
-without a separate selection widget. Reply `1`, `2`, or `3` to select an in-range
-option. Any other text, including an out-of-range number, is a custom answer.
-Claude multi-select questions also accept comma-separated numbers such as `1,2`.
-A request with several questions presents them in order.
+Codex and Claude questions appear once in the existing Web conversation and
+bound chat. Web users click an option, select several checkboxes, or type a
+custom answer in the original question. Feishu uses one interactive card with
+option buttons and a custom-answer form; multi-select questions use a dropdown.
+Replying `1`, `2`, or `3` still selects an in-range option. Other text, including
+an out-of-range number, is a custom answer. Claude multi-select also accepts
+comma-separated numbers such as `1,2`. Several questions appear in order.
 
 Each question states its first option as the fallback before waiting. After five
-minutes without an answer, the native host chooses that option, publishes the
-timeout outcome, and records it as a system default rather than a user answer.
+minutes without an answer, the native host chooses that option and updates the
+original question's state, without sending another reminder or timeout message.
+It records this choice as a system default rather than a user answer.
 A question without options returns unanswered. Native tool replies also identify
 timeout defaults, so silence cannot be mistaken for user consent. Native secret
 inputs are not accepted through ordinary chat. Permission approval requests are
@@ -63,6 +66,18 @@ answering twice; captured answers arriving after their question expires are not
 forwarded as unrelated instructions. Stopping the run cancels pending questions.
 These guarantees cover controller restart, not replaying tools after a native
 process crash.
+
+Web buttons and Feishu callbacks submit to the same messages endpoint with an
+explicit `nativeQuestionId`. An old or ended question returns HTTP 409
+(`QUESTION_EXPIRED`), never a new model task or an answer to a different question.
+Authenticated Web users can answer a pending question in a group-feed Session;
+ordinary Web writes to those Sessions remain blocked. Feishu callbacks check the
+durable card receipt, source route, original chat, tenant and actor access policy.
+Answers and timeout events remain in raw history for audit, while the transcript
+projects them onto the original question. Terminal Feishu cards remove controls.
+The Connector stores creation receipts and content hashes: restart/replay updates
+the existing card; it cannot create a late notification when no original exists.
+An uncertain creation is fenced rather than automatically sent again.
 
 ## Ownership and recovery
 

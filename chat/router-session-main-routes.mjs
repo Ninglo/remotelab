@@ -146,7 +146,7 @@ export async function handleSessionMainRoutes({
   if (req.method !== 'GET' && routeParts[0] === 'api' && routeParts[1] === 'sessions'
       && routeParts[2] && authSession?.authKind !== 'service') {
     const targetSession = await getSession(routeParts[2]);
-    if (targetSession?.groupFeed === true) {
+    if (targetSession?.groupFeed === true && !(req.method === 'POST' && routeParts.length === 4 && routeParts[3] === 'messages')) {
       writeJson(res, 403, { error: 'Group conversations are read-only here. Reply in the source chat.' });
       return true;
     }
@@ -425,6 +425,10 @@ export async function handleSessionMainRoutes({
         return true;
       }
       const payload = body;
+      if (authSession?.authKind !== 'service' && (await getSession(sessionId))?.groupFeed === true && !payload?.nativeQuestionId) {
+        writeJson(res, 403, { error: 'Group conversations are read-only here. Reply in the source chat.' });
+        return true;
+      }
       if (!payload || typeof payload !== 'object') {
         writeJson(res, 400, { error: 'Invalid request body' });
         return true;
@@ -440,6 +444,7 @@ export async function handleSessionMainRoutes({
           sessionId,
         });
         const messageOptions = {
+          ...(payload.nativeQuestionId ? { nativeQuestionId: payload.nativeQuestionId } : {}),
           tool: payload.tool || undefined,
           thinking: !!payload.thinking,
           model: payload.model || undefined,
@@ -474,7 +479,7 @@ export async function handleSessionMainRoutes({
           }) || outcome.session),
         });
       } catch (error) {
-        const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY'].includes(error?.code) ? 409 : 400;
+        const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY', 'QUESTION_EXPIRED'].includes(error?.code) ? 409 : 400;
         writeJson(res, statusCode, { error: error.message || 'Failed to submit message', ...(error.code ? { code: error.code } : {}) });
       }
       return true;

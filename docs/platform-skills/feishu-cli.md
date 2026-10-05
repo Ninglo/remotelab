@@ -93,6 +93,12 @@ workflow: the current Connector handles its own discussion handoff cards, and
 an arbitrary new button needs an explicit handler and Feishu callback setup.
 A successful static card send does not establish that its buttons work.
 
+Native Harness questions have a built-in Connector handler: the original
+interactive question card accepts option buttons or a custom-answer form, then
+updates in place on answer, timeout or cancellation. It never sends another
+timeout reminder. These controls reuse the existing `card.action.trigger`
+subscription; they do not turn arbitrary status cards into interactive forms.
+
 `base.upsert` takes a field map as task data, not generated API code. Use the
 Base field list to confirm writable names and select options before writing;
 `--create` explicitly creates a new record and must not be blindly repeated.

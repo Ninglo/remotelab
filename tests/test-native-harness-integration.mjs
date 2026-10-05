@@ -68,10 +68,12 @@ try {
   assert.match(questionClaim.delivery.text, /1\. 简短/);
   assert.match(questionClaim.delivery.text, /5 分钟/);
   assert.equal(questionClaim.delivery.target.chatId, 'same-chat');
+  assert.equal(questionClaim.delivery.nativeQuestion.state, 'pending');
   await rpc('complete', questionClaim.delivery.id, questionClaim.leaseId, { externalId: 'question-message' });
   await killController(); await boot();
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'restart must not republish the pending question');
-  const questionReplyOptions = { ...options('question-answer'), model: 'irrelevant-auto-snapshot' };
+  const questionReplyOptions = { ...options('question-answer'), model: 'irrelevant-auto-snapshot', nativeQuestionId: questionClaim.delivery.nativeQuestion.id };
+  await assert.rejects(rpc('accept', questionSession.id, '1', [], { ...options('wrong-question'), nativeQuestionId: 'old-question' }), { code: 'QUESTION_EXPIRED' });
   const attributedChoice = buildAttributedFeishuMessage({ chatType: 'topic', sender: { name: '嘉年' }, messageText: '2' });
   await rpc('accept', questionSession.id, attributedChoice, [], questionReplyOptions);
   await until(async () => (await receipt(questioning.run.id, 'question-answer'))?.state === 'accepted', 'native question answer gets a durable receipt');
@@ -85,6 +87,9 @@ try {
   assert.equal((await logs()).filter(e => e.kind === 'question-answer').length, 1, 'restart cannot repeat the native tool response');
   let questionFinal;
   await until(async () => { questionFinal = await rpc('claim', { connector: 'feishu' }); return questionFinal; }, 'question run delivers its result');
+  assert.equal(questionFinal.delivery.nativeQuestion.state, 'answered', 'state-only update targets the original card');
+  await rpc('complete', questionFinal.delivery.id, questionFinal.leaseId, { externalId: 'question-message' });
+  await until(async () => { questionFinal = await rpc('claim', { connector: 'feishu' }); return questionFinal; }, 'question final response');
   assert.equal(questionFinal.delivery.text, '【最终答复】\n\ndurable native answer');
   await rpc('complete', questionFinal.delivery.id, questionFinal.leaseId, { externalId: 'question-result' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null);
@@ -101,6 +106,9 @@ try {
   assert.deepEqual((await logs()).find(e => e.runId === customQuestion.run.id && e.kind === 'question-answer').result, { answers: { format: { answers: [customText] } } });
   await awaitAnswer(customSession.id, 'custom-question-root');
   await until(async () => { customClaim = await rpc('claim', { connector: 'feishu' }); return customClaim; }, 'custom answer final response');
+  assert.equal(customClaim.delivery.nativeQuestion.state, 'answered');
+  await rpc('complete', customClaim.delivery.id, customClaim.leaseId, { externalId: 'custom-question-message' });
+  await until(async () => { customClaim = await rpc('claim', { connector: 'feishu' }); return customClaim; }, 'custom answer final result');
   await rpc('complete', customClaim.delivery.id, customClaim.leaseId, { externalId: 'custom-question-result' });
   await evidence('PASS: real Feishu speaker envelope is removed for numeric shortcuts and multiline custom answers while the transcript retains attribution.');
   const earlySession = await rpc('create');

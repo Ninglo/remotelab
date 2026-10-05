@@ -50,6 +50,8 @@ export function nativeQuestionEvent(obj) {
     phase: 'commentary', messageKind: 'user_question', source: 'native_question',
     providerMessageId: obj.messageId, questionId: obj.questionId,
     questionState: obj.state, answerOrigin: obj.origin,
+    ...(obj.question ? { nativeQuestion: obj.question, questionDeadline: obj.deadline,
+      questionAnswers: obj.answers || [] } : {}),
   });
 }
 
@@ -69,9 +71,10 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
   const queue = [];
   let active = null, timer = null, closed = false;
   const journalPath = entry => join(directory, 'native-questions', `${createHash('sha256').update(entry.id).digest('hex').slice(0, 32)}.json`);
-  const emit = (entry, state, content, origin = '') => onEvent({
+  const emit = (entry, state, content, origin = '', answers = []) => onEvent({
     type: 'remotelab.user_question', messageId: `${entry.id}:${entry.index}:${state}`,
     questionId: `${entry.id}:${entry.index}`, state, origin, content,
+    question: entry.questions[entry.index], deadline: entry.deadline, answers,
   });
   const save = entry => writeDurableJson(journalPath(entry), {
     id: entry.id, protocol: entry.protocol, state: entry.state, index: entry.index,
@@ -135,9 +138,9 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
     if (resolved.values.length) entry.answers[q.key] = resolved.values;
     entry.resolutions.push({ key: q.key, origin, kind: resolved.kind, values: resolved.values,
       at: now(), ...(input ? { inputId: input.id } : {}) });
-    if (origin === 'timeout') emit(entry, 'timeout', q.options.length
-      ? `问题「${q.question}」5 分钟未收到回复，已超时自动选择「${q.options[0].label}」，继续处理。`
-      : `问题「${q.question}」5 分钟未收到回复，已按“超时未答”返回，继续处理。`, origin);
+    emit(entry, origin === 'timeout' ? 'timeout' : 'answered', origin === 'timeout'
+      ? (q.options.length ? `未收到回复，已采用系统默认「${q.options[0].label}」。` : '未收到回复，已按“超时未答”继续处理。')
+      : `已回答：${resolved.values.join('、')}`, origin, resolved.values);
     const questionId = `${entry.id}:${entry.index}`;
     entry.index++;
     await showQuestion();
@@ -173,6 +176,7 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
       clearTimer(timer);
       await serial(async () => {
         for (const entry of [active, ...queue].filter(Boolean)) {
+          if (entry === active) emit(entry, 'cancelled', '问题已取消。');
           entry.state = 'cancelled'; await save(entry);
           entry.resolve({ cancelled: true, answers: {}, resolutions: entry.resolutions });
         }

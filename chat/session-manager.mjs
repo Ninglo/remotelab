@@ -3191,7 +3191,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   await ensureRequestSchema(CONFIG_DIR);
   let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
-  if (session.groupFeed === true && options.allowGroupFeedWrite !== true) {
+  if (session.groupFeed === true && options.allowGroupFeedWrite !== true && !options.nativeQuestionId) {
     throw Object.assign(new Error('Group conversations accept messages only from their connector'), {
       code: 'GROUP_FEED_READ_ONLY',
     });
@@ -3209,6 +3209,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
   const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
   if (priorRequest?.options?.nativeQuestionId) options = { ...options, nativeQuestionId: priorRequest.options.nativeQuestionId };
+  else if (!priorRequest && options.nativeQuestionId) {
+    const question = activeNative ? await readNativeQuestion(runDir(activeRequest.runId)) : null;
+    if (savedImages.length || question?.state !== 'pending' || question.id !== options.nativeQuestionId
+        || Date.now() >= question.deadline) {
+      throw Object.assign(new Error('这道问题已结束，回答未应用；需要修改时请直接说明新的选择。'), { code: 'QUESTION_EXPIRED' });
+    }
+  }
   else if (!priorRequest && activeNative && !options.internalOperation && !savedImages.length) {
     const question = await readNativeQuestion(runDir(activeRequest.runId));
     if (question?.state === 'pending') options = { ...options, nativeQuestionId: question.id };

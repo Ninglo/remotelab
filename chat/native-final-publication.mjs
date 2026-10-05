@@ -67,7 +67,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (plan.connector === 'feishu' && final && running) continue;
     // Cold recovery of a stopped execution publishes its result, not stale
     // openings or intermediate updates labeled as separate deliveries.
-    if (plan.connector === 'feishu' && !final && !running) continue;
+    if (plan.connector === 'feishu' && !final && !running
+        && !(event.nativeQuestion && event.questionState !== 'pending')) continue;
     let prepared;
     try { prepared = await prepareFinal(surface); }
     catch (error) {
@@ -105,6 +106,11 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
         ...(final ? { streamedFinalReplyIds: [...(current.streamedFinalReplyIds || []), messageId] } : {}),
         deliveries: appendDeliveries(current, parts.map(part => ({
           ...part, providerMessageId: messageId, surfaceKind: surface.surfaceKind,
+          ...(event.nativeQuestion && part.kind === 'content' ? { nativeQuestion: {
+            id: event.questionId, state: event.questionState, question: event.nativeQuestion,
+            deadline: event.questionDeadline, answers: event.questionAnswers || [],
+            origin: event.answerOrigin || '', statusText: event.content,
+          } } : {}),
           ...(entry && part.kind === 'content' ? { sessionEntryIncluded: true } : {}),
           providerPartCount: parts.filter(part => ['content', 'attachment'].includes(part.kind)).length,
           triggerId: current.options?.triggerId || '',

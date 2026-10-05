@@ -718,6 +718,9 @@ function syncComposerPendingTurnFeedback() {
 function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false } = {}) {
   if (!container) return null;
   const role = evt.role || "assistant";
+  if (evt.messageKind === "user_question" && evt.nativeQuestion && evt.questionId) {
+    return renderNativeQuestionMessage(container, evt);
+  }
   if (typeof isSessionWorkboardMessage === "function" && isSessionWorkboardMessage(evt)) {
     return renderSessionWorkboardMessage(container, evt);
   }
