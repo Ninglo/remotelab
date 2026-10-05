@@ -47,7 +47,6 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     ? await findSessionMeta(record.sessionId || session?.id) || session : null;
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
     if (event.runId && event.runId !== record.runId) continue;
-    if (isFeishuMainlineReply(plan) && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
     if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'
@@ -55,6 +54,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const messageId = assistantSurfaceMessageId(event);
     if (!messageId) continue;
     const stored = await store.get(record.key);
+    const replyPlan = resolveAmbientFeishuReplyPlan(stored || record, plan, [event]);
+    if (isFeishuMainlineReply(replyPlan) && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
     // A rollout can fence progress previously suppressed by card grouping.
     // This is not a delivery receipt; old card text must not be announced again.
     if (surface.surfaceKind === 'progress' && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
@@ -82,7 +83,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const publicationRun = { id: record.runId, responseId: record.responseId,
       ...(record.runtimeSelection || record.options) };
     const includeEntry = plan.connector === 'feishu' && Boolean(session?.id)
-      && !isFeishuMainlineReply(plan)
+      && !isFeishuMainlineReply(replyPlan)
       && ['opening', 'final'].includes(surface.surfaceKind)
       && isFirstUserTurnPublication(events, publicationRun, fullHistory)
       && !stored?.deliveries?.some(item => item.kind === 'session_entry' || item.sessionEntryIncluded);
@@ -104,6 +105,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;
       const parts = buildParts(current);
+      if (!parts.length) return current;
       return {
         ...current,
         streamedSurfaceMessageIds: [...(current.streamedSurfaceMessageIds || []), messageId],

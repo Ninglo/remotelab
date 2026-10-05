@@ -102,6 +102,18 @@ try {
     await publishLiveAssistantReplies(current, [final], { store, plan, running: false });
     assert.equal(current.deliveries.length, 6, 'recovery never queues the final or file twice');
   }
+  // A Thread chosen before the first visible reply still has its normal
+  // lifecycle. Final-only suppression applies to the selected mainline route.
+  let selected = { ...record, key: 'selected', runId: 'run', deliveries: [] };
+  const selectedStore = { get: async () => selected, mutate: async (_key, update) => { selected = update(selected); } };
+  const groupPlan = { ...plan, target: { ...plan.target, chatType: 'group' } };
+  const threadOpening = { seq: 1, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary',
+    content: '<private>feishu-reply:thread</private>在话题里继续。' };
+  await publishLiveAssistantReplies(selected, [threadOpening], { store: selectedStore, plan: groupPlan });
+  assert.equal(selected.deliveries.length, 1);
+  await publishLiveAssistantReplies(selected, [{ ...threadOpening, seq: 2, content: '<progress>已核对。</progress>' }],
+    { store: selectedStore, plan: groupPlan });
+  assert.deepEqual(selected.deliveries.map(part => part.target.conversationKind), ['thread', 'thread']);
   assert.deepEqual(buildSessionEntryDeliveries({ id: 's1' }, { userMessageCount: 0 },
     { sourceDelivery: plan, sourceContext: { feishuParticipation: 'ambient' } }), []);
   assert.equal(resolveSessionDeliveryPlan({ conversation: plan },

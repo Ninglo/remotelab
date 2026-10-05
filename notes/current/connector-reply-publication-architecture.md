@@ -16,6 +16,14 @@ Thread work retains its existing publication lifecycle. The shared conversion,
 live observer and terminal fallback enforce the same boundary; verification is
 in `tests/test-reply-publication.mjs`.
 
+Mainline replies retain the Request's inbound message ID through delivery
+claiming and quote it using Feishu's reply API with `reply_in_thread: false`.
+Text, attachments and native questions use the same target. A Thread selection
+made before the first visible reply retains its normal lifecycle; the first
+durably queued visible part fixes placement for later parts and terminal
+recovery. Reactions do not choose that placement. Related messages may still
+enter separate Requests; this transport rule is not semantic task merging.
+
 Session metadata now owns optional external conversation bindings. Requests
 snapshot either the binding or an explicit in-scope current-message destination
 and commit results and outbox parts together. Native inputs consumed in one turn publish one answer.
