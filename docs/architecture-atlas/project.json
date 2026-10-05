@@ -1,11 +1,19 @@
 {
   "id": "remotelab-system-guide",
   "title": "RemoteLab 整体说明",
-  "purpose": "沿一条消息理解接入、参与、上下文准备、执行、交付与后置整理，定位调优与维护入口。",
+  "purpose": "按功能找到使用入口；沿一条消息理解接入、参与、上下文准备、执行、交付与后置整理，定位调优与维护入口。",
   "entry": "project.html",
   "publishSlug": "remotelab-architecture-atlas",
   "maintenance": "README.md",
   "chapters": [
+    {
+      "id": "features",
+      "title": "功能清单与使用说明",
+      "source": "docs/architecture-atlas",
+      "route": "features.html",
+      "description": "按用途查已有入口、使用条件与维护线索；保留作者补漏、负责人确认和覆盖缺口。",
+      "navTitle": "功能清单（初稿）"
+    },
     {
       "id": "system",
       "title": "系统如何工作",
@@ -31,9 +39,29 @@
       "navTitle": "记忆与协作"
     }
   ],
-  "edition": "20261003l",
+  "edition": "20261005features",
   "readingConvention": "从消息全程进入；具体环节内展开实现，专题引用保留原维护源和日期。",
   "pages": [
+    {
+      "route": "features.html",
+      "chapter": "features",
+      "reference": "features.md",
+      "sections": [
+        ["scope", "盘点范围与确认情况"],
+        ["start", "先从哪个入口用"],
+        ["sessions", "会话与历史"],
+        ["execution", "执行与验收"],
+        ["automation", "自动化、日历与待办"],
+        ["connections", "连接与研究资料"],
+        ["delivery", "下载、分享与预览"],
+        ["devices", "本地助手与设备"],
+        ["people-memory", "人员、记忆与设置"],
+        ["operations", "监控与部署"],
+        ["monitor-fleet", "monitor 与 fleet"],
+        ["commands", "命令覆盖对照"],
+        ["review", "作者补漏与确认"]
+      ]
+    },
     {
       "route": "project.html",
       "chapter": "guide",
