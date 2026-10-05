@@ -251,6 +251,35 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#mobileVoiceHold').waitFor({ state: 'visible' });
+  // Model iOS requiring touchend to resume audio after a stuck pointerdown attempt.
+  await page.evaluate(() => {
+    window.remotelabVoiceCapture.releaseMicrophone();
+    const Audio = window.AudioContext;
+    window.__restoreGestureAudio = () => { window.AudioContext = Audio; };
+    window.__touchEndActivated = false;
+    window.addEventListener('touchend', () => { window.__touchEndActivated = true; }, { once: true, capture: true });
+    window.AudioContext = class extends Audio {
+      get state() { return window.__touchEndActivated ? super.state : 'suspended'; }
+      resume() { return window.__touchEndActivated ? super.resume() : new Promise(() => {}); }
+    };
+    const acquire = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = (...args) => acquire(...args).then(stream => {
+      window.__warmTrack = stream.getTracks()[0]; return stream;
+    });
+    window.__requestsBeforeWarm = window.__micRequests;
+  });
+  const warmBox = await page.locator('#mobileVoiceHold').boundingBox();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: warmBox.x + warmBox.width / 2, y: warmBox.y + warmBox.height / 2 }] });
+  await page.waitForFunction(() => window.remotelabVoiceCapture.getState().phase === 'requesting');
+  await endHold();
+  await page.waitForFunction(() => window.remotelabVoiceCapture.getState().phase === 'idle'
+    && !window.remotelabVoiceCapture.getState().microphonePreparing);
+  assert.equal(await page.evaluate(() => window.__warmTrack.readyState), 'live', 'early release preserves the prepared device');
+  assert.equal(await page.evaluate(() => window.__warmTrack.enabled), false, 'the released take stays silent');
+  await startHold('#mobileVoiceHold'); await endHold(); await final('松手唤醒后再次录音');
+  await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
+  assert.equal(await page.evaluate(() => window.__micRequests - window.__requestsBeforeWarm), 1, 'retry reuses one microphone acquisition');
+  await page.evaluate(() => { window.__restoreGestureAudio(); msgInput.value = ''; msgInput.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.evaluate(() => {
     window.remotelabVoiceCapture.releaseMicrophone();
     const Audio = window.AudioContext;

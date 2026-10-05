@@ -9,6 +9,8 @@
   const VOICE_WORKLET_CHUNK_FRAMES = 2048;
   const VOICE_WORKLET_FLUSH_TIMEOUT_MS = 120;
   const VOICE_AUDIO_START_TIMEOUT_MS = 5000;
+  const VOICE_MICROPHONE_TIMEOUT_MS = 15000;
+  const VOICE_WORKLET_START_TIMEOUT_MS = 1500;
   const VOICE_LEVEL_MULTIPLIER = 8;
   const MAX_BUFFERED_AUDIO_BYTES = VOICE_SAMPLE_RATE * 2 * 10;
   const DEFAULT_GATEWAY_URL = "wss://ai-gateway.vei.volces.com/v1/realtime";
@@ -70,6 +72,7 @@
   let microphoneExpiry = null;
   let microphoneEpoch = 0;
   let microphoneAuthorized = false;
+  let activateMicrophonePreparation = null;
 
   function releaseMicrophone() {
     microphoneEpoch += 1;
@@ -78,6 +81,7 @@
     microphonePreparation = null;
     cancelMicrophonePreparation?.();
     cancelMicrophonePreparation = null;
+    activateMicrophonePreparation = null;
     for (const track of microphoneStream?.getTracks() || []) track.stop();
     microphoneStream = null;
     void microphoneContext?.close().catch(() => {});
@@ -91,11 +95,18 @@
     microphoneExpiry = globalScope.setTimeout(releaseMicrophone, 60000);
   }
 
-  function prepareMicrophone() {
+  function activateMicrophone() {
+    activateMicrophonePreparation?.();
+  }
+
+  function prepareMicrophone({ reactivate = false } = {}) {
     if (getVoiceUnavailableReason()) return Promise.reject(new Error(getVoiceUnavailableReason()));
     globalScope.clearTimeout(microphoneExpiry);
     // The hold timer shares the preparation begun in pointerdown; it must not resume audio again.
-    if (microphonePreparation) return microphonePreparation;
+    if (microphonePreparation) {
+      if (reactivate) activateMicrophone();
+      return microphonePreparation;
+    }
     if (microphoneContext?.state === "interrupted"
       || microphoneStream?.getTracks().some((track) => track.readyState === "ended")) releaseMicrophone();
     microphoneError = "";
@@ -103,17 +114,37 @@
     if (!microphoneContext || microphoneContext.state === "closed") {
       microphoneContext = new (getAudioContextConstructor())();
     }
-    const resuming = microphoneContext.state === "running" ? Promise.resolve()
-      : microphoneContext.resume?.() || Promise.resolve();
+    const audioContext = microphoneContext;
     const epoch = microphoneEpoch;
-    const resumed = Promise.resolve(resuming).then(() => null, (error) => error);
-    let cancel, deadline;
+    let resolveResume;
+    let resumed = new Promise((resolve) => { resolveResume = resolve; });
+    // A later trusted gesture can settle startup even if the original resume never returns.
+    const onStateChange = () => { if (audioContext.state === "running") resolveResume(null); };
+    audioContext.addEventListener?.("statechange", onStateChange);
+    const activate = () => {
+      if (epoch !== microphoneEpoch) return;
+      if (!audioContext.state || audioContext.state === "running") { resolveResume(null); return; }
+      try {
+        Promise.resolve(audioContext.resume?.()).then(onStateChange, resolveResume);
+      } catch (error) { resolveResume(error); }
+    };
+    activateMicrophonePreparation = activate;
+    activate();
+    let cancel, deadline, acquisitionDeadline;
     const cancelled = new Promise((resolve) => { cancel = () => resolve(null); });
     cancelMicrophonePreparation = cancel;
+    const acquisitionTimeout = new Promise((_, reject) => {
+      acquisitionDeadline = globalScope.setTimeout(() => {
+        const error = new Error(t("voice.mobile.microphoneTimeout"));
+        error.code = "VOICE_MICROPHONE_TIMEOUT";
+        reject(error);
+      }, VOICE_MICROPHONE_TIMEOUT_MS);
+    });
     const acquiring = microphoneStream ? Promise.resolve(microphoneStream) : globalScope.navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, noiseSuppression: true, echoCancellation: true, autoGainControl: true },
     });
     const preparing = acquiring.then(async (stream) => {
+      globalScope.clearTimeout(acquisitionDeadline);
       if (epoch !== microphoneEpoch || globalScope.document?.hidden) {
         for (const track of stream.getTracks()) track.stop();
         return null;
@@ -122,6 +153,11 @@
       microphoneStream = stream;
       microphoneAuthorized = true;
       for (const track of stream.getTracks()) track.enabled = false;
+      // The permission dialog itself may have interrupted an already resumed context.
+      if (audioContext.state && audioContext.state !== "running") {
+        resumed = new Promise((resolve) => { resolveResume = resolve; });
+        activate();
+      }
       const timeout = new Promise((resolve) => {
         deadline = globalScope.setTimeout(() => {
           const error = new Error(t("voice.mobile.audioPaused"));
@@ -129,23 +165,26 @@
           resolve(error);
         }, VOICE_AUDIO_START_TIMEOUT_MS);
       });
-      // Wait for permission without a timer; only audio startup after the grant has a deadline.
       const resumeError = await Promise.race([resumed, cancelled, timeout]);
       if (epoch !== microphoneEpoch) return null;
       if (resumeError) throw resumeError;
       if (activeVoiceCapture.phase === "idle") keepMicrophoneQuiet();
       return stream;
     });
-    const pending = Promise.race([preparing, cancelled]).catch((error) => {
+    const pending = Promise.race([preparing, cancelled, acquisitionTimeout]).catch((error) => {
       if (epoch !== microphoneEpoch) return null;
       if (error?.name === "NotAllowedError" || error?.name === "SecurityError") microphoneAuthorized = false;
-      if (error?.code === "VOICE_AUDIO_START_TIMEOUT") microphoneError = error.message;
+      microphoneError = error?.code === "VOICE_AUDIO_START_TIMEOUT" || error?.code === "VOICE_MICROPHONE_TIMEOUT"
+        ? error.message : t("voice.mobile.permissionFailed");
       releaseMicrophone();
       throw error;
     }).finally(() => {
       globalScope.clearTimeout(deadline);
+      globalScope.clearTimeout(acquisitionDeadline);
+      audioContext.removeEventListener?.("statechange", onStateChange);
       if (microphonePreparation === pending) microphonePreparation = null;
       if (cancelMicrophonePreparation === cancel) cancelMicrophonePreparation = null;
+      if (activateMicrophonePreparation === activate) activateMicrophonePreparation = null;
       refreshVoiceButtonUi();
     });
     microphonePreparation = pending;
@@ -982,7 +1021,15 @@
 
     if (hasAudioWorkletSupport() && typeof audioContext.audioWorklet?.addModule === "function") {
       try {
-        await audioContext.audioWorklet.addModule(resolveVoiceWorkletModulePath());
+        let workletDeadline;
+        try {
+          await Promise.race([
+            audioContext.audioWorklet.addModule(resolveVoiceWorkletModulePath()),
+            new Promise((_, reject) => {
+              workletDeadline = globalScope.setTimeout(() => reject(new Error("AudioWorklet startup timed out")), VOICE_WORKLET_START_TIMEOUT_MS);
+            }),
+          ]);
+        } finally { globalScope.clearTimeout(workletDeadline); }
         if (captureId !== activeVoiceCapture.captureId || !isLiveVoiceCapturePhase()) {
           try { sourceNode.disconnect(); } catch {}
           return;
@@ -1073,8 +1120,8 @@
     refreshVoiceButtonUi();
   }
 
-  async function stopVoiceCapture({ abandon = false } = {}) {
-    if (abandon && activeVoiceCapture.phase === "requesting") releaseMicrophone();
+  async function stopVoiceCapture({ abandon = false, keepMicrophone = false } = {}) {
+    if (abandon && !keepMicrophone && activeVoiceCapture.phase === "requesting") releaseMicrophone();
     const relaySocket = activeVoiceCapture.relaySocket;
     if (!relaySocket) {
       await cleanupVoiceCapture();
@@ -1265,9 +1312,10 @@
     getState: getVoiceCaptureState,
     start: startVoiceCapture,
     prepare: prepareMicrophone,
+    activateMicrophone,
     releaseMicrophone,
     stop: stopVoiceCapture,
-    cancel: () => stopVoiceCapture({ abandon: true }),
+    cancel: (options = {}) => stopVoiceCapture({ ...options, abandon: true }),
     whenIdle: () => voiceCleanupPromise || Promise.resolve(),
   };
   globalScope.remotelabSetVoiceInputConfig = writeStoredVoiceInputConfig;

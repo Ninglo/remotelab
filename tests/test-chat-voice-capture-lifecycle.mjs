@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 const source = readFileSync(new URL('../static/chat/voice-input.js', import.meta.url), 'utf8');
 const permissions = [], sockets = [], events = [], processors = [], idleTimers = new Map(), listeners = new Map();
-const audioContexts = [], startupTimers = new Map();
-let stallAudio = false, resumeCalls = 0;
+const audioContexts = [], startupTimers = new Map(), permissionTimers = new Map(), workletTimers = new Map();
+let stallAudio = false, resumeCalls = 0, stallWorklet = false;
 let session = 'a', stoppedTracks = 0;
 const input = { value: '', disabled: false, dispatchEvent() {} };
 const button = { dataset: {}, classList: { toggle() {} }, style: { setProperty() {} }, querySelector() {},
@@ -18,7 +18,10 @@ class Socket {
   close() { this.readyState = 3; void this.emit('close', { code: 1000 }); }
 }
 class Audio {
-  constructor() { this.sampleRate = 16000; this.destination = {}; this.state = 'suspended'; audioContexts.push(this); }
+  constructor() {
+    this.sampleRate = 16000; this.destination = {}; this.state = 'suspended'; audioContexts.push(this);
+    if (stallWorklet) this.audioWorklet = { addModule: () => new Promise(() => {}) };
+  }
   createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
   createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
   createScriptProcessor() { const node = { connect() {}, disconnect() {} }; processors.push(node); return node; }
@@ -34,11 +37,11 @@ const browser = {
   remotelabGetVoiceInputInstanceSettings: () => ({ provider: 'doubao', appId: 'fixture', accessToken: 'fixture', resourceId: 'fixture' }),
   remotelabT: key => key, addEventListener() {}, dispatchEvent(event) { events.push(event); },
   setTimeout(fn, ms) {
-    const timers = ms === 60000 ? idleTimers : ms === 5000 ? startupTimers : null;
+    const timers = ms === 60000 ? idleTimers : ms === 5000 ? startupTimers : ms === 15000 ? permissionTimers : ms === 1500 ? workletTimers : null;
     if (timers) { const id = {}; timers.set(id, fn); return id; }
     return setTimeout(fn, ms);
   },
-  clearTimeout(id) { idleTimers.delete(id); startupTimers.delete(id); clearTimeout(id); },
+  clearTimeout(id) { idleTimers.delete(id); startupTimers.delete(id); permissionTimers.delete(id); workletTimers.delete(id); clearTimeout(id); },
 };
 const context = vm.createContext({ window: browser, msgInput: input, get currentSessionId() { return session; },
   getCurrentSession: () => ({ id: session }), WebSocket: Socket,
@@ -145,4 +148,55 @@ assert.equal(await stalled, null);
 permissions.shift().resolve(stream()); await flush();
 assert.equal(lastTrack.readyState, 'ended', 'a late grant is released even if its audio resume never resolves');
 assert.equal(startupTimers.size, 0);
-console.log('test-chat-voice-capture-lifecycle: startup timeout/retry, interrupted audio, cancellable preparation, quiet microphone reuse, buffered startup, late permission, session changes and stale finals passed');
+// A microphone request can remain pending even when the browser already has permission.
+stallAudio = false;
+const hungRequest = capture.prepare();
+const requestTimedOut = assert.rejects(hungRequest, { code: 'VOICE_MICROPHONE_TIMEOUT' });
+assert.equal(permissionTimers.size, 1, 'device acquisition has a deadline before getUserMedia resolves');
+const lateGrant = permissions.shift();
+for (const expire of [...permissionTimers.values()]) expire();
+await requestTimedOut;
+assert.equal(capture.getState().microphonePreparing, false);
+lateGrant.resolve(stream()); await flush();
+assert.equal(lastTrack.readyState, 'ended', 'a timed-out request cannot later capture the microphone');
+
+// A fresh trusted gesture can wake the same context without waiting for the first resume.
+stallAudio = true;
+stalled = capture.prepare(); permissions.shift().resolve(stream()); await flush();
+const retained = lastTrack, contextCount = audioContexts.length;
+stallAudio = false;
+assert.equal(capture.prepare({ reactivate: true }), stalled);
+await stalled;
+assert.equal(audioContexts.length, contextCount, 'reactivation keeps the prepared device and context');
+assert.equal(retained.readyState, 'live');
+assert.equal(retained.enabled, false, 'warming does not record');
+capture.releaseMicrophone();
+
+// Releasing a hold before startup abandons the take but preserves its quiet preparation.
+stallAudio = true;
+starting = capture.start(); permissions.shift().resolve(stream()); await flush();
+const warming = lastTrack;
+await capture.cancel({ keepMicrophone: true });
+assert.equal(capture.getState().phase, 'idle');
+assert.equal(warming.readyState, 'live');
+stallAudio = false;
+capture.activateMicrophone(); await starting; await flush();
+assert.equal(capture.getState().phase, 'idle', 'release never starts a late recording');
+assert.equal(warming.enabled, false);
+starting = capture.start(); await starting; await flush();
+assert.equal(capture.getState().phase, 'recording', 'the next hold reuses the recovered preparation');
+assert.equal(permissions.length, 0);
+await capture.cancel(); capture.releaseMicrophone();
+assert.equal(permissionTimers.size, 0); assert.equal(startupTimers.size, 0);
+
+stallWorklet = true;
+browser.AudioWorkletNode = class {};
+starting = capture.start(); permissions.shift().resolve(stream()); await starting; await flush();
+assert.equal(capture.getState().phase, 'connecting');
+assert.equal(workletTimers.size, 1);
+for (const expire of [...workletTimers.values()]) expire();
+await flush();
+assert.equal(capture.getState().phase, 'recording', 'a stalled worklet falls back to local capture');
+assert.equal(workletTimers.size, 0);
+await capture.cancel(); capture.releaseMicrophone();
+console.log('test-chat-voice-capture-lifecycle: acquisition deadline, fresh gesture recovery, warm early release, startup timeout/retry, interrupted audio, cancellation and stale results passed');

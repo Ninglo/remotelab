@@ -1251,3 +1251,10 @@ settings are separate from verified live deployment and delivery.
 - Observed friction: standard users were left on separately pinned source copies even after their UI changes had merged to main, so a model upgrade omitted one user.
 - Requirement: standard instances share one mainline version; deliberate product forks keep a separate lifecycle.
 - Revision: Linux chat restart validates the whole active fleet before any service mutation, preserves inactive guests and reports restart failures. Deployment acceptance checks every active service commit and separately managed Connector source.
+
+## 2026-10-05 — Recover phone microphone preparation through ordinary gestures
+
+- Feedback: on an iPhone 15 Pro, voice input sometimes stayed at “preparing microphone” across several attempts. Starting another take should recover naturally.
+- Verified gaps: pending preparations ignored later activation gestures; releasing before local audio started discarded the preparation and recreated the same cold start next time. Device acquisition and AudioWorklet loading had no deadlines.
+- Revision: permit another gesture while preparing, resume pending audio on press/release and touchend, and retain only quiet preparation after an early release. Abandoned takes cannot start recording later. Bound device acquisition to 15 seconds and fall back from a stalled AudioWorklet after 1.5 seconds; preserve the 5-second audio-resume deadline. Actual cancellation, backgrounding, typing mode and idle expiry still release the device.
+- Acceptance boundary: lifecycle tests cover late grants, fresh gesture recovery, early-release reuse and worklet fallback. Browser checks use real captured PCM and simulated recognition/activation stalls. These checks do not constitute physical acceptance on the reported iPhone.

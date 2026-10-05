@@ -76,8 +76,8 @@
     wrapper?.classList.toggle("has-mobile-voice-mode", voiceMode);
     mic.closest(".input-area")?.classList.toggle("has-mobile-voice-mode", voiceMode);
     const state = controller.getState();
-    hold.disabled = mic.disabled || !!capture?.released || state.microphonePreparing;
-    const holdKey = !capture ? state.microphonePreparing ? "voice.mobile.authorizing"
+    hold.disabled = mic.disabled || !!capture?.released;
+    const holdKey = !capture ? state.microphonePreparing ? state.microphoneAuthorized ? "voice.mobile.preparing" : "voice.mobile.authorizing"
       : state.microphoneAuthorized === false ? "voice.mobile.enable" : "voice.mobile.hold"
       : capture.released ? "voice.mobile.recognizing"
       : state.phase !== "recording" && !capture.completed ? "voice.mobile.preparing"
@@ -206,14 +206,14 @@
     render();
   }
 
-  function cancelCapture({ restore = false, notice = "" } = {}) {
+  function cancelCapture({ restore = false, notice = "", keepMicrophone = false } = {}) {
     const target = capture;
     if (!target) return;
     requestedVoice = false;
     const text = target.baseText;
     const sameComposer = target.sessionId === sessionId() && target.personId === currentPersonId();
     clearCapture();
-    void controller.cancel();
+    void controller.cancel({ keepMicrophone });
     if (restore && sameComposer) {
       msgInput.value = text;
       msgInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -282,7 +282,7 @@
       const owner = currentPersonId();
       if (event.currentTarget === mic) void selectMode("voice");
       showNotice(t("voice.mobile.authorizing"));
-      void controller.prepare().then((stream) => {
+      void controller.prepare({ reactivate: true }).then((stream) => {
         if (stream && owner === currentPersonId() && isMobile() && !doc.hidden) showNotice();
       }).catch(() => { if (owner === currentPersonId()) showNotice(controller.getState().microphoneError || t("voice.mobile.permissionFailed")); }).finally(() => {
         ignoreClickUntil = Date.now() + 800;
@@ -295,9 +295,16 @@
     ignoreClickUntil = 0;
     const target = { pointerId: event.pointerId, element: event.currentTarget, started: false, startY: event.clientY };
     gesture = target;
-    if (controller.prepare) void controller.prepare().catch(() => {
-      if (gesture === target) { discardGesture(); showNotice(controller.getState().microphoneError || t("voice.mobile.permissionFailed")); }
-    });
+    if (controller.prepare) {
+      const owner = currentPersonId(), composer = sessionId();
+      void controller.prepare({ reactivate: true }).then((stream) => {
+        if (stream && owner === currentPersonId() && composer === sessionId() && !capture && !doc.hidden) showNotice();
+      }).catch(() => {
+        if (owner !== currentPersonId() || composer !== sessionId() || doc.hidden) return;
+        if (gesture === target) discardGesture();
+        if (!capture) showNotice(controller.getState().microphoneError || t("voice.mobile.permissionFailed"));
+      });
+    }
     try { target.element.setPointerCapture(event.pointerId); } catch {}
     target.timer = globalScope.setTimeout(() => beginCapture(target), 300);
   }
@@ -312,6 +319,7 @@
   }
 
   function pointerUp(event) {
+    if (isMobile()) controller.activateMicrophone?.();
     if (gesture?.pointerId !== event.pointerId) return;
     const wasLong = gesture.started;
     discardGesture();
@@ -322,7 +330,7 @@
     if (!target) return;
     if (target.choice === "cancel") return cancelCapture({ restore: true });
     if (!target.completed && controller.getState().phase !== "recording") {
-      return cancelCapture({ restore: true, notice: t("voice.mobile.tryAgain") });
+      return cancelCapture({ restore: true, notice: t("voice.mobile.tryAgain"), keepMicrophone: controller.getState().phase === "requesting" });
     }
     target.released = true;
     stopWaveform();
@@ -348,6 +356,8 @@
     button.addEventListener("pointerdown", pointerDown);
     button.addEventListener("pointermove", pointerMove);
     button.addEventListener("pointerup", pointerUp);
+    // iOS can grant audio activation on touchend rather than pointerdown.
+    button.addEventListener("touchend", () => { if (isMobile()) controller.activateMicrophone?.(); }, { passive: true });
     button.addEventListener("pointercancel", pointerCancel);
     button.addEventListener("lostpointercapture", pointerCancel);
     button.addEventListener("contextmenu", (event) => { if (isMobile()) event.preventDefault(); });

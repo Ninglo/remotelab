@@ -5,7 +5,8 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../static/chat/mobile-voice.js', import.meta.url), 'utf8');
 function fixture({ mobile = true, mode = 'text', base = '', attachments = false, permission = true, authorized = true } = {}) {
   let now = 1000, nextId = 0, starts = 0, stops = 0, cancels = 0, sends = 0, owner = 'alpha', session = 'session-a';
-  let pendingReview = null, failSave = false, grantPreparation;
+  let pendingReview = null, failSave = false, grantPreparation, activations = 0;
+  const cancelOptions = [];
   const timers = new Map(), frames = new Map(), globalListeners = new Map(), requests = [];
   const people = [{ id: 'alpha', preferences: { mobileInputMode: mode } }, { id: 'beta', preferences: { mobileInputMode: 'text' } }];
   function element(id) {
@@ -45,9 +46,10 @@ function fixture({ mobile = true, mode = 'text', base = '', attachments = false,
       });
     },
     releaseMicrophone() {},
+    activateMicrophone() { activations++; },
     start() { starts++; state = { captureId: starts, phase: permission ? 'recording' : 'requesting', microphoneAuthorized: true }; change(state.phase); return Promise.resolve(); },
     stop() { stops++; change('stopping'); return Promise.resolve(); },
-    cancel() { cancels++; change('idle'); return Promise.resolve(); },
+    cancel(options) { cancels++; cancelOptions.push(options); change('idle'); return Promise.resolve(); },
     whenIdle: () => Promise.resolve(),
   };
   const browser = {
@@ -78,7 +80,7 @@ function fixture({ mobile = true, mode = 'text', base = '', attachments = false,
     frame(level) { state.voiceLevel = level; now += 16; for (const [id, fn] of [...frames]) { frames.delete(id); fn(now); } },
     get heights() { return bars.map(bar => parseFloat(bar.style['--voice-bar-height'])); },
     get frameCount() { return frames.size; },
-    get counts() { return { starts, stops, cancels, sends }; },
+    get counts() { return { starts, stops, cancels, sends, activations }; }, cancelOptions,
     hold() { elements.voiceBtn.emit('pointerdown'); tick(300); },
     release() { elements.voiceBtn.emit('pointerup'); },
     finish(text) { input.value = base ? `${base} ${text}` : text; input.emit('input', { isTrusted: false });
@@ -95,6 +97,9 @@ let first = fixture({ mode: 'voice', authorized: false });
 assert.equal(first.elements.mobileVoiceHold.textContent, 'voice.mobile.enable');
 first.hold(); first.release();
 assert.equal(first.counts.starts, 0, 'the first permission gesture does not pretend to record');
+assert.equal(first.elements.mobileVoiceHold.disabled, false, 'preparation allows another trusted activation gesture');
+first.elements.mobileVoiceHold.emit('touchend');
+assert.ok(first.counts.activations > 0, 'touchend can wake pending audio without starting a take');
 first.grant(); await flush();
 assert.equal(first.elements.mobileVoiceHold.textContent, 'voice.mobile.hold');
 first.hold(); first.release(); first.finish('授权后再说话'); await flush();
@@ -117,6 +122,13 @@ assert.equal(f.input.value, '已经打好的文字', 'switching preserves the dr
 assert.equal(f.elements.mobileVoiceDraft.textContent, f.input.value);
 f.elements.mobileVoiceMode.emit('click'); await flush();
 assert.equal(f.input.hidden, false); assert.equal(f.elements.mobileVoiceDraft.hidden, true);
+
+f = fixture({ permission: false }); f.hold(); f.release();
+assert.equal(f.cancelOptions.at(-1).keepMicrophone, true, 'early release keeps only the quiet microphone preparation');
+assert.equal(f.counts.sends, 0);
+assert.equal(f.elements.mobileVoicePanel.hidden, true);
+f = fixture({ permission: false }); f.hold(); f.elements.voiceBtn.emit('pointercancel');
+assert.equal(f.cancelOptions.at(-1).keepMicrophone, false, 'an interrupted gesture still abandons preparation');
 
 f = fixture(); f.hold(); f.release();
 assert.equal(f.counts.stops, 1); assert.equal(f.counts.sends, 0);
