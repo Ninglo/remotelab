@@ -21,6 +21,7 @@ function fixture({ conversation = false, kind = 'automation' } = {}) {
     now: Date.parse(snapshot.generatedAt), stateFile: 'ledger',
     load: async path => structuredClone(path === 'ledger' ? state : receipts.get(path) || null),
     save: async (_path, value) => { state = structuredClone(value); },
+    readDeliveries: async () => structuredClone(deliveries),
     request: async (path, options = {}) => {
       const method = options.method || 'GET';
       if (path === '/api/sessions/session/latest-run') return { runId: latestRunId };
@@ -130,6 +131,19 @@ test('delivery uncertainty is reconciled separately; opening receipts never coun
   await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'verifying'); assert.equal(f.getAdmissions(), 1);
   f.delivery([{ runId, surfaceKind: 'final', state: 'delivered', externalId: 'om_final' }]);
   await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'resolved'); assert.equal(f.getAdmissions(), 1);
+});
+
+test('archived final receipts close recovery even after the active outbox is empty', async () => {
+  const f = fixture({ conversation: true }); await processMonitoringRecovery(f.options); f.finish();
+  const attempt = f.incident().attempts[0];
+  f.options.readDeliveries = async (sessionId, requestId) => {
+    assert.equal(sessionId, f.session.id); assert.equal(requestId, attempt.requestId);
+    return [{ responseId: requestId, surfaceKind: 'final', state: 'delivered', externalId: 'om_archived' }];
+  };
+  const request = f.options.request;
+  f.options.request = async (path, options) => path.startsWith('/api/source-deliveries') ? { deliveries: [] } : request(path, options);
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().status, 'resolved'); assert.equal(f.getAdmissions(), 1);
 });
 
 test('known delivery failures and pending delivery deadlines stay blocked without sending again', async () => {

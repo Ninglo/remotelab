@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
+import { requests } from './requests.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 24);
 const terminal = state => ['completed', 'failed', 'cancelled'].includes(state);
@@ -46,7 +47,9 @@ function promptFor(item, attempt, task, config) {
 // The existing observer owns this ledger. Persist intent before admission; the
 // native requestId deduplicates an acknowledgement lost across process restarts.
 export async function processMonitoringRecovery({ config, snapshot, stateFile = RECOVERY_FILE,
-  load = readRecord, save = writeDurableJson, request, now = Date.now(), dryRun = false } = {}) {
+  load = readRecord, save = writeDurableJson, request,
+  readDeliveries = async (sessionId, requestId) => (await requests.byRequest(sessionId, requestId))?.deliveries || [],
+  now = Date.now(), dryRun = false } = {}) {
   if (!config?.enabled) return { enabled: false };
   const client = request ? null : createRemoteLabHttpClient({ baseUrl: config.baseUrl });
   const api = request || (async (path, options = {}) => {
@@ -130,8 +133,10 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
         touch(item, 'blocked', '补救运行结束，但本轮独立观测仍未确认恢复'); continue;
       }
       if (attempt.sourceDelivery) {
-        const { deliveries } = await api(`/api/source-deliveries?sessionId=${item.sessionId}`);
-        const final = deliveries.filter(d => d.runId === runId && d.surfaceKind === 'final');
+        // Completed Requests leave the active outbox. Their durable aggregate
+        // retains verified receipts through archival and observer restarts.
+        const deliveries = await readDeliveries(item.sessionId, attempt.requestId);
+        const final = deliveries.filter(d => (d.runId === runId || d.responseId === attempt.requestId) && d.surfaceKind === 'final');
         if (!final.some(d => d.state === 'delivered' && d.externalId)) {
           attempt.deliveryDeadlineAt ||= new Date(now + 10 * 60_000).toISOString();
           touch(item, final.some(d => ['failed', 'needs_review'].includes(d.state)) || now >= stamp(attempt.deliveryDeadlineAt) ? 'blocked' : 'verifying',
