@@ -726,11 +726,11 @@ await sendFeishuText(
   'regular answer',
   'uuid-regular-1',
 );
-assert.equal(feishuReplyPayload, null, 'ordinary group replies should keep using chat-level create sends');
-assert.equal(feishuCreatePayload?.params?.receive_id_type, 'chat_id');
-assert.equal(feishuCreatePayload?.data?.receive_id, 'chat_regular_1');
-assert.equal(feishuCreatePayload?.data?.msg_type, 'post');
-assert.equal(feishuCreatePayload?.data?.uuid, 'uuid-regular-1');
+assert.equal(feishuCreatePayload, null, 'ordinary group replies quote the source instead of creating another root');
+assert.equal(feishuReplyPayload?.path?.message_id, 'msg_regular_1');
+assert.equal(feishuReplyPayload?.data?.reply_in_thread, false);
+assert.equal(feishuReplyPayload?.data?.msg_type, 'post');
+assert.equal(feishuReplyPayload?.data?.uuid, 'uuid-regular-1');
 
 feishuCreatePayload = null;
 feishuImagePayload = null;
@@ -743,7 +743,7 @@ await sendFeishuText(
 assert.equal(feishuImagePayload?.data?.image_type, 'message');
 assert.ok(Buffer.isBuffer(feishuImagePayload?.data?.image));
 assert.deepEqual(
-  JSON.parse(feishuCreatePayload?.data?.content || '{}').zh_cn.content,
+  JSON.parse(feishuReplyPayload?.data?.content || '{}').zh_cn.content,
   [[{ tag: 'img', image_key: 'img_formula_uploaded_1' }]],
 );
 
@@ -765,9 +765,12 @@ await sendFeishuAttachment(
 );
 assert.equal(feishuImagePayload?.data?.image_type, 'message');
 assert.ok(Buffer.isBuffer(feishuImagePayload?.data?.image));
-assert.equal(feishuCreatePayload?.data?.msg_type, 'image');
-assert.equal(feishuCreatePayload?.data?.uuid, 'uuid-image-attachment-1');
-assert.deepEqual(JSON.parse(feishuCreatePayload?.data?.content || '{}'), {
+assert.equal(feishuCreatePayload, null);
+assert.equal(feishuReplyPayload?.path?.message_id, 'msg_image_reply_1');
+assert.equal(feishuReplyPayload?.data?.reply_in_thread, false);
+assert.equal(feishuReplyPayload?.data?.msg_type, 'image');
+assert.equal(feishuReplyPayload?.data?.uuid, 'uuid-image-attachment-1');
+assert.deepEqual(JSON.parse(feishuReplyPayload?.data?.content || '{}'), {
   image_key: 'img_formula_uploaded_1',
 });
 
@@ -795,6 +798,28 @@ assert.deepEqual(JSON.parse(feishuReplyPayload?.data?.content || '{}'), {
 });
 
 const sourceDeliveryRequests = [];
+for (const [target, threaded, quote] of [
+  [{ chatType: 'group', conversationKind: 'main', messageId: 'source' }, false, true],
+  [{ chatType: 'group', conversationKind: 'thread', messageId: 'source', replyInThread: true }, true, true],
+  [{ chatType: 'group' }, false, false],
+  [{ chatType: 'p2p', conversationKind: 'main', messageId: 'source' }, false, false],
+  [{ chatType: 'private', messageId: 'source' }, false, false],
+]) {
+  for (const kind of ['post', 'file']) {
+    feishuCreatePayload = null; feishuReplyPayload = null;
+    const targetSummary = { chatId: 'matrix-chat', ...target };
+    if (kind === 'post') await sendFeishuText(fakeSendRuntime, targetSummary, 'quoted answer', `matrix-${kind}`);
+    else await sendFeishuAttachment(fakeSendRuntime, targetSummary,
+      { originalName: 'result.txt', mimeType: 'text/plain', data: Buffer.from('result').toString('base64') }, `matrix-${kind}`);
+    const sent = quote ? feishuReplyPayload : feishuCreatePayload;
+    assert.equal(quote ? feishuCreatePayload : feishuReplyPayload, null, 'one provider operation per part');
+    assert.equal(sent.data.msg_type, kind);
+    if (quote) {
+      assert.equal(sent.path.message_id, 'source');
+      assert.equal(sent.data.reply_in_thread, threaded);
+    } else assert.equal(sent.data.receive_id, 'matrix-chat');
+  }
+}
 // Feishu rejects an mp4/opus upload sent as a generic file (230055).
 for (const [filename, mimeType, fileType, messageType] of [
   ['clip.mp4', 'video/mp4', 'mp4', 'media'],
@@ -1124,13 +1149,14 @@ await import('./test-feishu-post-markdown.mjs');
 
 const transportTable = '| 项目 | 状态 |\n|---|---|\n| Wiki | 正常 |';
 await sendFeishuText(fakeSendRuntime, topicSummary, transportTable, 'uuid-topic-table');
+const tableThreadReply = feishuReplyPayload;
 await sendFeishuText(fakeSendRuntime, {
   chatType: 'group', chatId: 'chat_regular_1', messageId: 'msg_table_1',
 }, transportTable, 'uuid-regular-table');
-assert.equal(feishuReplyPayload.data.reply_in_thread, true);
+assert.equal(tableThreadReply.data.reply_in_thread, true);
+assert.equal(feishuReplyPayload.data.reply_in_thread, false);
 assert.equal(feishuReplyPayload.data.msg_type, 'post');
-assert.equal(feishuCreatePayload.data.msg_type, 'post');
-assert.equal(feishuReplyPayload.data.content, feishuCreatePayload.data.content,
+assert.equal(feishuReplyPayload.data.content, tableThreadReply.data.content,
   'Thread and regular group replies must use the same Markdown payload');
 assert.deepEqual(JSON.parse(feishuReplyPayload.data.content).zh_cn.content,
   [[{ tag: 'md', text: transportTable }]]);

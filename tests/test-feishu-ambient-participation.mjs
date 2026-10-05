@@ -72,6 +72,36 @@ try {
     { type: 'message', role: 'user', content: '<private>feishu-reply:thread</private>' },
     { type: 'message', role: 'assistant', content: '正常回复' },
   ]).target.conversationKind, 'main', 'user text never selects a thread');
+  const { publishLiveAssistantReplies } = await import('../chat/native-final-publication.mjs');
+  for (const threadFirst of [false, true]) {
+    let current = { ...record, key: 'request', runId: 'run', deliveries: [{ ...plan, kind: 'reaction' }] };
+    const original = current;
+    const store = { get: async () => current, mutate: async (_key, update) => { current = update(current); } };
+    const opening = { seq: 1, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary',
+      content: `${threadFirst ? '<private>feishu-reply:thread</private>' : ''}我来核对。` };
+    const events = [opening, { seq: 2, type: 'tool_use' },
+      { ...opening, seq: 3, content: '<progress>找到原因。</progress>' },
+      { ...opening, seq: 4, content: '选择方式？', messageKind: 'user_question',
+        nativeQuestion: { question: '选择方式？', options: [] }, questionId: 'question', questionState: 'pending' }];
+    await publishLiveAssistantReplies(original, events, { store, plan });
+    const final = { ...opening, seq: 5, phase: 'final_answer',
+      content: `${threadFirst ? '' : '<private>feishu-reply:thread</private>'}结果。`,
+      attachments: [{ assetId: 'result', originalName: 'result.txt' }] };
+    // Replay with a stale record as well as a fresh one. The durable queued
+    // destination, not the current event's marker, is authoritative.
+    await publishLiveAssistantReplies(original, [final], { store, plan, running: false });
+    const visible = current.deliveries.filter(part => part.kind !== 'reaction');
+    assert.deepEqual(visible.map(part => part.surfaceKind), ['opening', 'progress', 'question', 'final', 'final']);
+    for (const part of visible) {
+      assert.equal(part.target.conversationKind, threadFirst ? 'thread' : 'main');
+      assert.equal(part.target.messageId, 'question-1');
+      assert.ok(!part.text.includes('feishu-reply:'), 'routing directives stay hidden');
+    }
+    assert.equal(resolveAmbientFeishuReplyPlan(current, plan, [final]).target.conversationKind,
+      threadFirst ? 'thread' : 'main', 'terminal publication keeps the same durable choice');
+    await publishLiveAssistantReplies(current, [final], { store, plan, running: false });
+    assert.equal(current.deliveries.length, 6, 'recovery never queues the final or file twice');
+  }
   assert.deepEqual(buildSessionEntryDeliveries({ id: 's1' }, { userMessageCount: 0 },
     { sourceDelivery: plan, sourceContext: { feishuParticipation: 'ambient' } }), []);
   assert.equal(resolveSessionDeliveryPlan({ conversation: plan },

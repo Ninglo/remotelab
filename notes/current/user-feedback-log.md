@@ -1279,3 +1279,10 @@ settings are separate from verified live deployment and delivery.
 - Live evidence: the first demo timed out before the follow-up, removing its controls. A second demo received option B through a real Feishu button callback and updated the original card; the feedback then identified card size as the remaining immediate problem.
 - Revision: omit the large title bar and duplicate labels, put at most two option buttons in a row, and collapse optional custom input. Resolved questions retain a result line and collapsed original context. Required free-text input and multi-select submission remain directly available.
 - Boundary: this is a compact presentation of the existing question card. It does not merge questions into delivery checklists or change the five-minute fallback policy. Provider acceptance, code checks and human phone-layout acceptance remain separate.
+
+## 2026-10-05 — Quote the source of brief Feishu replies
+
+- Feedback: standalone short answers made the main group timeline hard to follow; related mainline and Thread investigations appeared to repeat work.
+- Evidence: bounded source messages, Request records and provider receipts showed distinct adjacent questions entering independent runs, each visible part sent once. One mainline run also published its opening and progress inline, then moved its final answer to a Thread. Claim-time Session refinement erased the mainline Request's source message ID.
+- Revision: retain each Request's source anchor; quote group replies with `message.reply` and `reply_in_thread: false` for text, attachments and questions. Keep Thread replies threaded, source-free publications and private chats on their existing send paths. The first durably queued visible part fixes the reply destination for the rest of that Request, including recovery; reactions do not choose placement.
+- Boundary: this fixes source attribution and within-turn placement. It does not merge semantically related requests or introduce a new participation dispatcher. Tests, remote delivery, loaded service versions and real Feishu acceptance are separate checks.

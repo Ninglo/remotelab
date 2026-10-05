@@ -1,6 +1,7 @@
 import {
   buildFeishuApiUuid,
   shouldReplyInFeishuThread,
+  shouldReplyToFeishuMessage,
 } from './index.mjs';
 import { feishuResponseError } from './delivery-errors.mjs';
 
@@ -195,14 +196,14 @@ export async function sendFeishuAttachment(runtime, summary, attachment, uuid = 
     ...prepared,
     uuid: buildFeishuApiUuid(uuid, summary),
   };
-  if (shouldReplyInFeishuThread(summary)) {
+  if (shouldReplyToFeishuMessage(summary)) {
     const response = await runtime.appClient.im.v1.message.reply({
       path: {
         message_id: summary.messageId,
       },
       data: {
         ...messageData,
-        reply_in_thread: true,
+        reply_in_thread: shouldReplyInFeishuThread(summary),
       },
     });
     if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {

@@ -171,7 +171,29 @@ assert.equal(reactionClaim.delivery.target.messageId, 'old-inbound');
 await completeSourceDelivery(reactionClaim.delivery.id, reactionClaim.leaseId, { externalId: 'reaction-id' });
 const textClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'reaction-route' });
 assert.equal(textClaim.delivery.kind, 'content');
+assert.equal(textClaim.delivery.target.messageId, 'old-inbound', 'text keeps the same inbound quote as its reaction');
 await completeSourceDelivery(textClaim.delivery.id, textClaim.leaseId, { externalId: 'reply-id' });
+
+const quotePlan = { connector: 'feishu', sourceRouteId: 'quote-route',
+  target: { chatId: 'quote-chat', chatType: 'group', conversationKind: 'main', messageId: 'quote-inbound' } };
+await withSessionsMetaMutation(async (metas, save) => {
+  const { messageId, ...target } = quotePlan.target;
+  metas.push({ id: 'quote-session', conversation: { ...quotePlan, target } });
+  await save(metas);
+});
+const quoteRequest = await requests.accept({ sessionId: 'quote-session', requestId: 'quote-request',
+  text: 'reply here', options: { sourceDelivery: quotePlan } });
+await requests.settle(quoteRequest.record.key, { state: 'completed' }, buildReplyDeliveries(quotePlan,
+  { text: 'quoted result', attachments: [{ assetId: 'result' }] }));
+for (const kind of ['content', 'attachment']) {
+  const claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'quote-route' });
+  assert.equal(claim.delivery.kind, kind);
+  assert.deepEqual(claim.delivery.target, quotePlan.target, 'claim retains the source anchor for every part');
+  await completeSourceDelivery(claim.delivery.id, claim.leaseId, { externalId: `quote-${kind}`,
+    messageId: `quote-${kind}`, threadId: 'provider-thread' });
+}
+assert.equal((await findSessionMeta('quote-session')).conversation.target.messageId, undefined,
+  'a quoted inline receipt leaves the shared mainline Session unanchored');
 
 const legacyThread = {
   connector: 'feishu', sourceRouteId: 'continue-route',

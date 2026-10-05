@@ -89,17 +89,19 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       { session, fullHistory, includeSessionEntry: Boolean(entry) }) : {
       text: appendSessionEntryFooter(prepared.content, entry), attachments: getAssistantReplyAttachments(prepared),
     };
-    const parts = buildReplyDeliveries(resolveAmbientFeishuReplyPlan(record, plan, [event]), payload, {
+    const buildParts = current => buildReplyDeliveries(resolveAmbientFeishuReplyPlan(current, plan, [event]), payload, {
       running,
       surfaceKind: surface.surfaceKind,
       automationTitle: record.options?.automationTitle,
       requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
+    const parts = buildParts(stored || record);
     if (!parts.length) continue;
     const admit = () => store.mutate(record.key, current => {
       if (!current || current.result
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;
+      const parts = buildParts(current);
       return {
         ...current,
         streamedSurfaceMessageIds: [...(current.streamedSurfaceMessageIds || []), messageId],

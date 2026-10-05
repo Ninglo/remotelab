@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { readRecord, serialQueue, writeDurableJson } from '../../lib/durable-records.mjs';
-import { shouldReplyInFeishuThread, buildFeishuApiUuid } from './index.mjs';
+import { shouldReplyInFeishuThread, shouldReplyToFeishuMessage, buildFeishuApiUuid } from './index.mjs';
 import { feishuResponseError } from './delivery-errors.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
@@ -79,8 +79,8 @@ export async function sendNativeQuestionCard(runtime, delivery) {
     await writeDurableJson(path, { ...identity, target, creating: true, state: 'pending',
       deadline: question.deadline, question: question.question });
     const data = { msg_type: 'interactive', content, uuid: buildFeishuApiUuid(delivery.id, target) };
-    const response = shouldReplyInFeishuThread(target)
-      ? await app.reply({ path: { message_id: target.messageId }, data: { ...data, reply_in_thread: true } })
+    const response = shouldReplyToFeishuMessage(target)
+      ? await app.reply({ path: { message_id: target.messageId }, data: { ...data, reply_in_thread: shouldReplyInFeishuThread(target) } })
       : await app.create({ params: { receive_id_type: 'chat_id' }, data: { ...data, receive_id: target.chatId } });
     if (response?.code !== 0 || !response.data?.message_id) {
       // A structured rejection proves there is no card to duplicate. Preserve

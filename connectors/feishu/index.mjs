@@ -459,6 +459,14 @@ export function shouldReplyInFeishuThread(summary) {
   return summary?.replyInThread === true || Boolean(buildFeishuTopicId(summary));
 }
 
+export function shouldReplyToFeishuMessage(summary) {
+  if (!trimString(summary?.messageId)) return false;
+  if (shouldReplyInFeishuThread(summary)) return true;
+  if (['p2p', 'private'].includes(trimString(summary?.chatType).toLowerCase())) return false;
+  return summary?.chatType === 'group' || summary?.chatMode === 'group'
+    || summary?.conversationKind === 'main';
+}
+
 export function isFeishuTopicSummary(summary) {
   return Boolean(buildFeishuTopicId(summary));
 }

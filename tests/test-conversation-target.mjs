@@ -15,6 +15,12 @@ assert.equal(sameConversation(group, group), false, 'unaddressed group publicati
 assert.equal(sameConversation(main, { ...main, target: { ...main.target, messageId: 'new-input' } }), true,
   'one chat mainline has one explicit main conversation');
 assert.equal(sameConversation(main, topic), false, 'main and thread topology never alias');
+const anchoredMain = { ...main, target: { ...main.target, chatType: 'group', messageId: 'old-inbound' } };
+assert.deepEqual(refineConversation(anchoredMain, main), anchoredMain,
+  'the unanchored Session binding must not erase an inbound quote');
+assert.deepEqual(refineConversation(anchoredMain, { ...anchoredMain,
+  target: { ...anchoredMain.target, messageId: 'new-inbound' } }), anchoredMain,
+  'a newer message in the same mainline must not take over a queued reply');
 assert.equal(sameConversation(topic, { ...group, target: { chatId: 'group', conversationKind: 'thread', rootId: 'root', replyInThread: true } }), true);
 assert.equal(sameConversation(topic, { ...group, target: { chatId: 'group', conversationKind: 'thread', topicId: 'thread' } }), true);
 assert.equal(sameConversation(topic, { ...topic, sourceRouteId: 'bot-b' }), false);

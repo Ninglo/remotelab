@@ -387,7 +387,8 @@ function createEvent(type, fields = {}) {
   assert.equal(result.state, 'delivered');
   assert.equal(createPayload?.data?.msg_type, 'post');
   assert.match(createPayload?.data?.content || '', /"tag":"md"/);
-  assert.match(createPayload?.data?.content || '', /"tag":"at"/);
+  assert.match(JSON.parse(createPayload.data.content).zh_cn.content[0][0].text,
+    /<at user_id="ou_ning_1">Ning<\/at>/);
 }
 
 {
@@ -458,6 +459,30 @@ function createEvent(type, fields = {}) {
   assert.match(calls[0].text, /本轮处理完成。/);
   assert.match(calls[0].text, /\/chat\/sess_email_1/);
   assert.equal(calls[0].attachments.length, 1);
+}
+
+for (const [target, method, threaded] of [
+  [{ chatType: 'group', conversationKind: 'main', messageId: 'source' }, 'reply', false],
+  [{ chatType: 'group', conversationKind: 'thread', messageId: 'source', replyInThread: true }, 'reply', true],
+  [{ chatType: 'group', messageId: 'source', topicId: 'topic' }, 'reply', true],
+  [{ chatType: 'group' }, 'create', undefined],
+  [{ chatType: 'p2p', conversationKind: 'main', messageId: 'source' }, 'create', undefined],
+  [{ chatType: 'private', messageId: 'source' }, 'create', undefined],
+]) {
+  const calls = [];
+  const message = Object.fromEntries(['reply', 'create'].map(name => [name, async input => {
+    calls.push([name, input]); return { code: 0, data: { message_id: 'sent' } };
+  }]));
+  const transport = createFeishuConnectorTransport({ runtime: { appClient: { im: { v1: { message } } } },
+    summary: { chatId: 'chat', ...target } });
+  const output = { kind: 'content', text: '**答复**', idempotencyKey: 'quoted-reply' };
+  assert.equal((await transport.send(output)).state, 'delivered');
+  await transport.send(output);
+  assert.equal(calls.length, 1, 'replaying one transport part does not send twice');
+  assert.equal(calls[0][0], method);
+  assert.equal(calls[0][1].data.reply_in_thread, threaded);
+  if (method === 'reply') assert.equal(calls[0][1].path.message_id, 'source');
+  else assert.equal(calls[0][1].data.receive_id, 'chat');
 }
 
 console.log('ok');

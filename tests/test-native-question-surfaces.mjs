@@ -86,6 +86,26 @@ try {
   await sendNativeQuestionCard(rejectedRuntime, delivery);
   assert.equal(rejectedCreates, 2, 'a definite rejection permits a corrected, explicitly retried delivery');
 
+  for (const [target, method, threaded] of [
+    [{ chatType: 'group', conversationKind: 'main', messageId: 'source' }, 'reply', false],
+    [{ chatType: 'group' }, 'create', undefined],
+    [{ chatType: 'p2p', conversationKind: 'main', messageId: 'source' }, 'create', undefined],
+  ]) {
+    const sent = [];
+    const app = { ...runtime.appClient.im.v1.message,
+      reply: async input => { sent.push(['reply', input]); return { code: 0, data: { message_id: 'original' } }; },
+      create: async input => { sent.push(['create', input]); return { code: 0, data: { message_id: 'original' } }; },
+    };
+    await sendNativeQuestionCard({ ...runtime, appClient: { im: { v1: { message: app } } } }, {
+      ...delivery, runId: `matrix-${target.chatType}-${method}`,
+      target: { chatId: 'chat', ...target },
+    });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0][0], method);
+    assert.equal(sent[0][1].data.reply_in_thread, threaded);
+    if (method === 'reply') assert.equal(sent[0][1].path.message_id, 'source');
+  }
+
   const multi = buildNativeQuestionCard(identity, { ...question, question: { ...question.question, multiSelect: true } });
   assert.equal(multi.body.elements.find(e => e.tag === 'form').elements[0].tag, 'multi_select_static');
   assert.equal(multi.body.elements.find(e => e.tag === 'form').elements.length, 2,

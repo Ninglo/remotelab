@@ -59,6 +59,7 @@ import {
   normalizeReplyText,
   sanitizeIdPart,
   shouldReplyInFeishuThread,
+  shouldReplyToFeishuMessage,
   summarizeFeishuEvent as summarizeEvent,
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
@@ -1359,7 +1360,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
     },
   });
   const replyUuid = buildFeishuApiUuid(uuid, summary);
-  if (shouldReplyInFeishuThread(summary)) {
+  if (shouldReplyToFeishuMessage(summary)) {
     const response = await runtime.appClient.im.v1.message.reply({
       path: {
         message_id: summary.messageId,
@@ -1367,7 +1368,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
       data: {
         msg_type: summary.deliveryNotice ? 'text' : 'post',
         content,
-        reply_in_thread: true,
+        reply_in_thread: shouldReplyInFeishuThread(summary),
         uuid: replyUuid,
       },
     });
