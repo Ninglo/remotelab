@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import { buildNativeQuestionCard, sendNativeQuestionCard, handleNativeQuestionCardAction } from '../connectors/feishu/native-question-cards.mjs';
 import { publishLiveAssistantReplies } from '../chat/native-final-publication.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
+import { processSourceDeliveryOnce } from '../scripts/feishu-connector.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'question-surfaces-'));
 const calls = [], identity = { sessionId: 'session', runId: 'run', questionId: 'question' };
@@ -130,5 +131,17 @@ try {
   context.shareSnapshotMode = true;
   panel = context.renderNativeQuestionMessage(new Element('div'), pending);
   assert.ok(panel.children.filter(c => c.tag === 'button').every(c => c.disabled));
+  const workerRuntime = { ...runtime, config: { ...runtime.config, storageDir: join(root, 'worker') } };
+  const workerCalls = calls.length;
+  let workerDelivery = delivery;
+  const workerOptions = { sendFeishuText: async () => { throw new Error('Question updates must not send a text reminder'); },
+    requestRemoteLab: async path => ({ response: { ok: true }, json: path === '/api/source-deliveries/claim'
+      ? { claim: { leaseId: `lease-${workerDelivery.id}`, delivery: workerDelivery } }
+      : { delivery: { state: 'delivered' } } }) };
+  await processSourceDeliveryOnce(workerRuntime, workerOptions);
+  workerDelivery = timeout;
+  await processSourceDeliveryOnce(workerRuntime, workerOptions);
+  assert.deepEqual(calls.slice(workerCalls).map(c => c[0]), ['create', 'patch'],
+    'the actual Connector worker routes questions to one interactive card and updates it in place');
   console.log('native question surfaces: original-card updates, no timeout resend, durable replay, actor/target checks, expired controls, Web single/multiple/custom answers passed');
 } finally { await rm(root, { recursive: true, force: true }); }
