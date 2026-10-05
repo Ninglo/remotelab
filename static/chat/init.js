@@ -177,7 +177,7 @@ function getQuickEntryLayoutState() {
 }
 
 function canAttemptQuickEntryComposerFocus() {
-  if (shareSnapshotMode || !msgInput || msgInput.disabled) {
+  if (shareSnapshotMode || !msgInput || msgInput.disabled || msgInput.hidden) {
     return false;
   }
   const layoutState = getQuickEntryLayoutState();

@@ -18,7 +18,8 @@
   .has-mobile-voice-mode .mobile-voice-mode { grid-column: 1; grid-row: 1; }
   .has-mobile-voice-mode .composer-file-picker { grid-column: 3; grid-row: 1; width: 44px; height: 44px; }
   .has-mobile-voice-mode .input-actions-group.right,
-  .has-mobile-voice-mode .session-mode-banner { display: none; }
+  .has-mobile-voice-mode .session-mode-banner,
+  .has-mobile-voice-mode .quick-entry-focus-prompt { display: none; }
   .has-mobile-voice-mode .img-preview-strip { grid-column: 1 / -1; }
   .mobile-voice-draft:not([hidden]) { display: block; grid-column: 1 / -1; grid-row: 1; max-height: 76px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 8px; color: var(--text); font-size: 15px; line-height: 1.5; }
   .has-mobile-voice-draft .input-row,

@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-05 — Keep the latest phone dictation visible
+
+- Observed friction: a phone screenshot shows the PWA keyboard recovery prompt squeezed into one narrow column in voice mode. During a long hold, the recognized text overflows its bounded preview while the newest words remain out of view.
+- Change: choosing voice dismisses keyboard recovery and prevents delayed attempts to focus the hidden text input. Updated recognition scrolls to the end while retaining the complete text; unchanged renders preserve manual scrolling. The voice-mode draft preview and final editable result also reveal their latest text without opening the keyboard.
+- Verification boundary: browser touch checks cover the reproduced prompt layout, overflowing transcripts with successive results, retained full drafts, manual scrolling, final review, and 320–430px light/dark layouts. Browser audio capture is real and recognition is simulated; the reporting iPhone still needs device acceptance after deployment.
+
 ### 2026-10-04 — Name automated Feishu results by their task
 
 - Observed friction: the generic final-answer heading left unattended reports without a clear purpose when they appeared in a group.

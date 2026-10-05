@@ -36,7 +36,11 @@
   const isMobile = () => media.matches && !(typeof shareSnapshotMode !== "undefined" && shareSnapshotMode);
   const hasAttachments = () => typeof getComposerAttachmentsSnapshot === "function"
     && getComposerAttachmentsSnapshot(typeof resolveActiveComposerSessionId === "function" ? resolveActiveComposerSessionId() : sessionId()).length > 0;
-  const setText = (element, text) => { if (element.textContent !== text) element.textContent = text; };
+  const setText = (element, text) => {
+    if (element.textContent === text) return false;
+    element.textContent = text;
+    return true;
+  };
 
   function savedMode() {
     const people = typeof getPeopleDirectory === "function" ? getPeopleDirectory() : [];
@@ -65,7 +69,8 @@
     const voiceMode = mobile && mode === "voice"
       && (requestedVoice || (capture ? !capture.baseText.trim() && !capture.hadAttachments : !msgInput.value.trim() && !hasAttachments()));
     const showDraft = voiceMode && !capture && !!msgInput.value.trim();
-    if (draft) { draft.hidden = !showDraft; setText(draft, showDraft ? msgInput.value : ""); }
+    let draftChanged = false;
+    if (draft) { draft.hidden = !showDraft; draftChanged = setText(draft, showDraft ? msgInput.value : ""); }
     wrapper?.classList.toggle("has-mobile-voice-draft", showDraft);
     hold.hidden = !voiceMode;
     wrapper?.classList.toggle("has-mobile-voice-mode", voiceMode);
@@ -81,6 +86,7 @@
     setText(holdLabel, t(holdKey));
     hold.setAttribute("aria-label", t(capture ? holdKey : "voice.mobile.holdHint"));
     msgInput.hidden = voiceMode;
+    if (voiceMode && typeof clearQuickEntryFocusRecovery === "function") clearQuickEntryFocusRecovery();
     modeButton.hidden = !mobile;
     modeButton.disabled = savingMode || !!capture || (!voiceMode && mic.disabled);
     const switchKey = voiceMode ? "voice.mobile.keyboard" : "voice.mobile.switchVoice";
@@ -99,6 +105,7 @@
       mic.setAttribute("aria-label", mic.title);
     }
     panel.hidden = !mobile || !capture;
+    if (showDraft && draftChanged) draft.scrollTop = draft.scrollHeight;
     if (!capture) return;
     const ready = state.phase === "recording" || capture.completed;
     panel.classList.toggle("is-preparing", !ready && !capture.released);
@@ -111,8 +118,10 @@
     setText(status, t(key));
     duration.textContent = capture.startedAt ? `${Math.floor(((capture.stoppedAt || Date.now()) - capture.startedAt) / 1000)}s` : "";
     const spoken = msgInput.value.slice(capture.baseText.length).trim();
-    setText(transcript, spoken || t(ready ? "voice.mobile.listening" : "voice.mobile.preparing"));
+    const transcriptChanged = setText(transcript, spoken || t(ready ? "voice.mobile.listening" : "voice.mobile.preparing"));
     transcript.classList.toggle("is-empty", !spoken);
+    // Follow new recognition results without undoing a manual scroll on timer ticks.
+    if (transcriptChanged) transcript.scrollTop = transcript.scrollHeight;
     setText(release, t(capture.released ? "voice.mobile.wait" : "voice.mobile.slide"));
     cancel.classList.toggle("selected", capture.choice === "cancel");
   }
@@ -235,6 +244,7 @@
     requestedVoice = false;
     clearCapture();
     msgInput.dispatchEvent(new Event("input", { bubbles: true }));
+    msgInput.scrollTop = msgInput.scrollHeight;
     // Review keeps the phone keyboard closed; tap the text to edit normally.
   }
 

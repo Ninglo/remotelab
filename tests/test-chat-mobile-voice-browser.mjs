@@ -87,9 +87,22 @@ try {
   }
   const endHold = () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   const final = text => page.evaluate(text => window.__voiceSocket.emit('message', { type: 'done', transcript: text }), text);
+  const assertLatestVisible = async (selector, label) => {
+    const scroll = await page.locator(selector).evaluate(element => ({
+      top: element.scrollTop, height: element.clientHeight, total: element.scrollHeight,
+    }));
+    assert.ok(scroll.total > scroll.height, `${label} exercises overflowing text`);
+    assert.ok(scroll.total - scroll.height - scroll.top <= 1, `${label} shows the latest text`);
+  };
 
+  // A PWA quick-entry keyboard prompt can still be visible when choosing voice.
+  await page.evaluate(() => { document.getElementById('quickEntryFocusPrompt').hidden = false; });
   await page.locator('#voiceBtn').tap();
   await page.waitForFunction(() => !document.getElementById('mobileVoiceHold').hidden && !document.getElementById('mobileVoiceMode').disabled);
+  await page.screenshot({ path: join(artifacts, 'mobile-voice-quick-entry.png') });
+  assert.equal(await page.locator('#quickEntryFocusPrompt').isVisible(), false, 'voice mode dismisses the keyboard recovery prompt');
+  assert.equal(await page.locator('#quickEntryFocusPrompt').evaluate(element => element.hidden), true);
+  assert.equal(await page.evaluate(() => beginQuickEntryFocusRecovery()), false, 'a delayed quick entry cannot focus the hidden text composer');
   const persisted = JSON.parse(await readFile(join(config, 'auth.json'), 'utf8'));
   assert.equal(persisted.people.find(person => person.id === 'alpha').preferences.mobileInputMode, 'voice');
   const forbidden = await context.request.patch(`${baseUrl}/api/people/beta`, { data: { mobileInputMode: 'voice' } });
@@ -168,8 +181,15 @@ try {
     const suffix = `${size.width}-${size.scheme}`;
     await page.screenshot({ path: join(artifacts, `voice-ready-${suffix}.png`) });
     await startHold('#mobileVoiceHold');
-    const spoken = '请帮我把手机端的语音输入整理得简洁一些，取消和改字入口都要清楚，长内容也能看得下。';
+    const spoken = '请帮我把手机端的语音输入整理得简洁一些，取消和改字入口都要清楚，长内容也能看得下。'.repeat(12) + '这是最新识别的一句话。';
     await page.evaluate(text => window.__voiceSocket.emit('message', { type: 'transcript', transcript: text }), spoken);
+    await assertLatestVisible('#mobileVoiceTranscript', `live transcript ${suffix}`);
+    assert.equal(await page.locator('#mobileVoiceTranscript').textContent(), spoken, 'scrolling retains the full transcript');
+    await page.locator('#mobileVoiceTranscript').evaluate(element => { element.scrollTop = 0; window.remotelabRefreshMobileVoiceUi(); });
+    assert.equal(await page.locator('#mobileVoiceTranscript').evaluate(element => element.scrollTop), 0, 'an unchanged render lets the user read earlier text');
+    const updated = spoken + '继续说话时应当跟随这一句。';
+    await page.evaluate(text => window.__voiceSocket.emit('message', { type: 'transcript', transcript: text }), updated);
+    await assertLatestVisible('#mobileVoiceTranscript', `updated transcript ${suffix}`);
     for (const selector of ['#mobileVoicePanel', '#mobileVoiceHold', '#mobileVoiceCancel']) {
       const bounds = await page.locator(selector).boundingBox();
       assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= size.width + 1
@@ -182,8 +202,9 @@ try {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: choice.x + choice.width / 2 + 40, y: choice.y + choice.height / 2 }] });
     await endHold();
     await page.screenshot({ path: join(artifacts, `voice-recognizing-${suffix}.png`) });
-    await final(spoken); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
-    assert.equal(await page.locator('#msgInput').inputValue(), spoken);
+    await final(updated); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
+    assert.equal(await page.locator('#msgInput').inputValue(), updated);
+    await assertLatestVisible('#msgInput', `final review ${suffix}`);
     assert.equal(await page.evaluate(() => window.__sent.length), 1, 'horizontal movement leaves text for normal review');
     await page.screenshot({ path: join(artifacts, `voice-edit-${suffix}.png`) });
   }
@@ -194,18 +215,20 @@ try {
   await page.waitForFunction(() => document.getElementById('mobileVoiceHold').hidden && !document.getElementById('mobileVoiceMode').disabled);
   assert.equal(await page.locator('#msgInput').isVisible(), true);
   assert.equal(await page.locator('#mobileVoiceMode').isVisible(), true, 'typing retains the same left mode switch');
-  await page.locator('#msgInput').fill('已经打好的草稿');
+  const existingDraft = '已经打好的草稿。'.repeat(80) + '草稿末尾';
+  await page.locator('#msgInput').fill(existingDraft);
   await page.evaluate(() => { msgInput.style.height = '360px'; document.querySelector('.input-area').classList.add('is-resized'); });
   await page.locator('#mobileVoiceMode').tap();
   await page.waitForFunction(() => !document.getElementById('mobileVoiceHold').hidden && !document.getElementById('mobileVoiceMode').disabled);
   assert.equal(await page.locator('#mobileVoiceDraft').isVisible(), true);
-  assert.equal(await page.locator('#mobileVoiceDraft').textContent(), '已经打好的草稿');
+  assert.equal(await page.locator('#mobileVoiceDraft').textContent(), existingDraft);
+  await assertLatestVisible('#mobileVoiceDraft', 'voice-mode draft');
   const switchBox = await page.locator('#mobileVoiceMode').boundingBox();
   assert.equal(switchBox.width, 44); assert.equal(switchBox.height, 44, 'an expanded text composer cannot stretch the switch into a tall bar');
   await page.screenshot({ path: join(artifacts, 'mobile-voice-switch-with-draft.png') });
   await startHold('#mobileVoiceHold'); await endHold();
   await final('追加口述'); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
-  assert.equal(await page.locator('#msgInput').inputValue(), '已经打好的草稿 追加口述');
+  assert.equal(await page.locator('#msgInput').inputValue(), `${existingDraft} 追加口述`);
   assert.equal(await page.locator('#msgInput').isVisible(), true, 'a completed take returns to visible text for review');
   await page.locator('#mobileVoiceMode').tap();
   await page.waitForFunction(() => !document.getElementById('mobileVoiceHold').hidden && !document.getElementById('mobileVoiceMode').disabled);
@@ -256,7 +279,7 @@ try {
   assert.equal(await page.locator('#msgInput').inputValue(), '启动超时后重新按住');
   assert.equal(await page.evaluate(() => window.__sent.length), 1, 'retry still requires an explicit Send');
   assert.deepEqual(errors, []);
-  console.log('test-chat-mobile-voice-browser: stalled audio timeout/retry, real audio volume history, review/edit before manual send, mobile layouts, native cancellation and persisted mode passed (recognition simulated)');
+  console.log('test-chat-mobile-voice-browser: keyboard prompt dismissal, long transcript/draft/review scrolling, unchanged-render scroll preservation, stalled audio timeout/retry, real audio volume history, review/edit before manual send, mobile layouts, native cancellation and persisted mode passed (recognition simulated)');
 } finally {
   await browser.close();
   server.kill('SIGTERM'); if (server.exitCode === null && server.signalCode === null) await once(server, 'exit');
