@@ -78,6 +78,7 @@ import {
   createFeishuQuickParticipationPilot,
 } from '../connectors/feishu/quick-participation.mjs';
 import { createFeishuReadReactionStore } from '../connectors/feishu/read-reactions.mjs';
+import { sendNativeQuestionCard, handleNativeQuestionCardAction, withNativeQuestionCardLock } from '../connectors/feishu/native-question-cards.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
 import { createProjectSurface } from '../connectors/feishu/project-surface.mjs';
 import { summarizeFeishuReactionFeedback } from '../connectors/feishu/reaction-mute.mjs';
@@ -1463,7 +1464,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     let sent;
     try {
-      sent = delivery.kind === 'reaction'
+      sent = delivery.nativeQuestion
+        ? await withNativeQuestionCardLock(runtime, () => sendNativeQuestionCard(runtime, delivery))
+        : delivery.kind === 'reaction'
         ? await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary, delivery.emojiType)
         : delivery.attachment
           ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
@@ -1478,6 +1481,12 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         failure: classifyFeishuDeliveryError(error) });
       await failures.flush(acknowledgeFailure, replayOptions);
       throw error;
+    }
+    if (sent?.skipped) {
+      const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
+        body: { state: 'cancelled', reason: 'Question already ended without an original card; suppressed late notification' } });
+      if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to suppress stale question delivery');
+      return resolved.json?.delivery;
     }
     if (delivery.kind !== 'reaction') {
       runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text, sent.thread_id);
@@ -2117,6 +2126,11 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
     'card.action.trigger': async raw => {
+      const questionFeedback = await handleNativeQuestionCardAction(runtime, raw, {
+        request: (path, options) => requestRemoteLab(runtime, path, options),
+        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+      });
+      if (questionFeedback) return questionFeedback;
       const progressFeedback = await handleFeishuProgressPolicyAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
         authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
