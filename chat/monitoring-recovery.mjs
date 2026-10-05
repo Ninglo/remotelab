@@ -38,6 +38,7 @@ function promptFor(item, attempt, task, config) {
     + `服务故障先辨别正常停用、启动中与真实故障，只处理本实例已配置的服务；磁盘问题只沿已授权维护流程，不泛删目录。已有诊断/维护工作进行中就保存证据并说明依赖，不再起第二份。\n`
     + (config.workflowPaths?.[`${item.kind}:${item.id}`] ? `本对象现行工作流：${config.workflowPaths[`${item.kind}:${item.id}`]}。先完整读取。\n` : '')
     + (task ? `原任务现行提示（仅原范围；新的用户决定优先）：\n${task.prompt}\n` : '')
+    + `本轮是补救或核验回报：默认不使用全员提及，不沿用原定时汇报的@所有人规则；只有用户对本次补救明确要求时才可全员提醒。此条优先于上方原任务的定时发送规则。\n`
     + `结束前写入 ${attempt.receiptFile}，JSON必须含key=${item.key}、requestId=${attempt.requestId}、status=resolved或blocked、summary、evidence（真实文件/回执/原始来源引用数组）、checks.task（实际任务验收布尔值）、checks.delivery（verified或not_required或unknown）、requiredHumanAction（若受阻，具体最小动作或外部依赖）。运行退出码0不算任务验收；模型能回复、再次提交成功不算恢复。\n`
     + `对外结果只走原绑定出口，回复说明修复了什么、如何验证、仍缺什么，不制造例行进度；原任务禁止发消息时继续禁止。资源诊断的常态结果仍并入原日报。`;
 }
