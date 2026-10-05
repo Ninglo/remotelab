@@ -96,7 +96,10 @@ A successful static card send does not establish that its buttons work.
 Native Harness questions have a built-in Connector handler: the original
 interactive question card accepts option buttons or a custom-answer form, then
 updates in place on answer, timeout or cancellation. It never sends another
-timeout reminder. These controls reuse the existing `card.action.trigger`
+timeout reminder. Phone presentation avoids a title bar and duplicate option
+lists, groups buttons two per row, and collapses optional custom input. A resolved
+question shows one result line with the original question behind an expander.
+These controls reuse the existing `card.action.trigger`
 subscription; they do not turn arbitrary status cards into interactive forms.
 
 `base.upsert` takes a field map as task data, not generated API code. Use the

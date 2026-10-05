@@ -27,7 +27,13 @@ try {
   await sendNativeQuestionCard(runtime, delivery);
   assert.equal(calls[0][1].data.reply_in_thread, true);
   const first = JSON.parse(calls[0][1].data.content);
-  assert.equal(first.body.elements.filter(e => e.tag === 'button').length, 2);
+  const optionButtons = first.body.elements.flatMap(e => e.columns || []).flatMap(e => e.elements || []);
+  assert.equal(optionButtons.filter(e => e.tag === 'button').length, 2);
+  assert.equal(first.body.elements.find(e => e.tag === 'collapsible_panel').expanded, false,
+    'optional custom input does not occupy phone space before the user opens it');
+  assert.ok(!first.header, 'the question does not need a second large title bar');
+  assert.equal(first.body.elements.filter(e => e.tag === 'markdown').map(e => e.content).join('\n'),
+    '输出形式？\n5 分钟未答时默认选第 1 项。', 'labels appear on buttons rather than twice');
   const requests = [];
   const actionOptions = { authorize: async () => true, request: async (url, options) => {
     requests.push([url, options]); return { response: { ok: true } };
@@ -52,6 +58,9 @@ try {
   assert.deepEqual(calls.map(call => call[0]), ['create', 'patch']);
   assert.equal(calls[1][1].path.message_id, 'original');
   assert.ok(!JSON.stringify(JSON.parse(calls[1][1].data.content)).includes('behaviors'), 'ended card cannot submit answers');
+  const endedCard = JSON.parse(calls[1][1].data.content);
+  assert.equal(endedCard.body.elements[0].content, timeout.nativeQuestion.statusText);
+  assert.equal(endedCard.body.elements[1].expanded, false, 'ended questions keep context out of the reading path');
   await sendNativeQuestionCard({ ...runtime }, timeout);
   await sendNativeQuestionCard(runtime, delivery);
   assert.equal(calls.length, 2, 'restart/replay cannot resend or reopen the question');
@@ -79,6 +88,11 @@ try {
 
   const multi = buildNativeQuestionCard(identity, { ...question, question: { ...question.question, multiSelect: true } });
   assert.equal(multi.body.elements.find(e => e.tag === 'form').elements[0].tag, 'multi_select_static');
+  assert.equal(multi.body.elements.find(e => e.tag === 'form').elements.length, 2,
+    'multi-select uses its own submit without requiring custom input');
+  const freeText = buildNativeQuestionCard(identity, { ...question, question: { question: '填写说明', options: [] } });
+  assert.equal(freeText.body.elements.find(e => e.tag === 'form').elements[0].tag, 'input',
+    'free-text-only questions keep the required input visible');
 
   const pending = { seq: 2, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary',
     content: '输出形式？\n1. 简短\n2. 详细', messageKind: 'user_question', providerMessageId: 'question:pending',

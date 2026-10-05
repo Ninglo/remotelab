@@ -1272,3 +1272,10 @@ settings are separate from verified live deployment and delivery.
 - Verified gaps: pending preparations ignored later activation gestures; releasing before local audio started discarded the preparation and recreated the same cold start next time. Device acquisition and AudioWorklet loading had no deadlines.
 - Revision: permit another gesture while preparing, resume pending audio on press/release and touchend, and retain only quiet preparation after an early release. Abandoned takes cannot start recording later. Bound device acquisition to 15 seconds and fall back from a stalled AudioWorklet after 1.5 seconds; preserve the 5-second audio-resume deadline. Actual cancellation, backgrounding, typing mode and idle expiry still release the device.
 - Acceptance boundary: lifecycle tests cover late grants, fresh gesture recovery, early-release reuse and worklet fallback. Browser checks use real captured PCM and simulated recognition/activation stalls. These checks do not constitute physical acceptance on the reported iPhone.
+
+## 2026-10-05 — Make Feishu question cards readable on phones
+
+- Feedback: a separate question card beside the delivery checklist occupied too much phone space; users could not judge interaction quality from its delivered text alone.
+- Live evidence: the first demo timed out before the follow-up, removing its controls. A second demo received option B through a real Feishu button callback and updated the original card; the feedback then identified card size as the remaining immediate problem.
+- Revision: omit the large title bar and duplicate labels, put at most two option buttons in a row, and collapse optional custom input. Resolved questions retain a result line and collapsed original context. Required free-text input and multi-select submission remain directly available.
+- Boundary: this is a compact presentation of the existing question card. It does not merge questions into delivery checklists or change the five-minute fallback policy. Provider acceptance, code checks and human phone-layout acceptance remain separate.

@@ -9,29 +9,48 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const receiptPath = (runtime, identity) => join(runtime.config.storageDir, 'native-question-cards',
   `${hash(JSON.stringify([runtime.config.sourceRouteId || 'default', identity.sessionId, identity.runId, identity.questionId]))}.json`);
 const plain = content => ({ tag: 'plain_text', content });
+const markdown = content => ({ tag: 'markdown', content });
+const collapsed = (title, elements) => ({ tag: 'collapsible_panel', expanded: false,
+  header: { title: plain(title) }, elements });
+const buttonRows = buttons => {
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 2) rows.push({ tag: 'column_set',
+    columns: buttons.slice(i, i + 2).map(button => ({ tag: 'column', width: 'weighted', weight: 1,
+      elements: [button] })) });
+  return rows;
+};
 
 export function buildNativeQuestionCard(identity, question) {
   const q = question.question;
   const value = { namespace: 'native-question', ...identity };
-  const button = (label, extra = {}) => ({ tag: 'button', text: plain(label), type: 'primary',
+  const button = (label, extra = {}) => ({ tag: 'button', text: plain(label), type: 'default', width: 'fill',
     behaviors: [{ type: 'callback', value: { ...value, ...extra } }] });
-  const elements = [{ tag: 'markdown', content: q.question },
-    ...(q.options || []).map((option, i) => ({ tag: 'markdown',
-      content: `${i + 1}. ${option.label}${option.description ? `：${option.description}` : ''}` }))];
+  const options = q.options || [];
+  const elements = [];
   if (question.state === 'pending') {
-    if (!q.multiSelect) (q.options || []).forEach((option, i) => elements.push(button(option.label, { option: i + 1 })));
-    const fields = [];
-    if (q.multiSelect && q.options?.length) fields.push({ tag: 'multi_select_static', name: 'choices',
-      placeholder: plain('选择一项或多项'), options: q.options.map((option, i) => ({ text: plain(option.label), value: String(i + 1) })) });
-    fields.push({ tag: 'input', name: 'answer', input_type: 'multiline_text', max_length: 1000,
-      placeholder: plain('也可以填写自己的答案') });
-    fields.push({ ...button('提交答案'), name: 'submit_answer', form_action_type: 'submit' });
-    elements.push({ tag: 'form', name: 'question_answer', elements: fields });
-    elements.push({ tag: 'markdown', content: `${q.options?.length ? `五分钟未回复时，采用第 1 项「${q.options[0].label}」。` : '五分钟未答后继续处理。'} 状态只在本卡片更新；也可回复编号或文字。` });
-  } else elements.push({ tag: 'markdown', content: question.statusText });
-  return { schema: '2.0', config: { update_multi: true, enable_forward: false },
-    header: { title: plain(question.state === 'pending' ? '待你回复' : question.state === 'timeout' ? '已采用系统默认' : '问题已结束'),
-      template: question.state === 'pending' ? 'blue' : 'grey' }, body: { elements } };
+    elements.push(markdown(q.question));
+    const descriptions = options.filter(option => option.description)
+      .map(option => `${option.label}：${option.description}`);
+    if (descriptions.length) elements.push(markdown(descriptions.join('\n')));
+    const submit = name => ({ ...button('提交'), name, form_action_type: 'submit' });
+    if (q.multiSelect && options.length) elements.push({ tag: 'form', name: 'question_choices', elements: [
+      { tag: 'multi_select_static', name: 'choices', placeholder: plain('选择一项或多项'),
+        options: options.map((option, i) => ({ text: plain(option.label), value: String(i + 1) })) },
+      submit('submit_choices'),
+    ] });
+    else elements.push(...buttonRows(options.map((option, i) => button(option.label, { option: i + 1 }))));
+    const customAnswer = { tag: 'form', name: 'question_answer', elements: [
+      { tag: 'input', name: 'answer', input_type: 'multiline_text', max_length: 1000,
+        placeholder: plain('填写自己的答案') }, submit('submit_answer'),
+    ] };
+    elements.push(options.length ? collapsed('填写其他答案', [customAnswer]) : customAnswer);
+    elements.push(markdown(options.length ? '5 分钟未答时默认选第 1 项。' : '5 分钟未答时按未答继续。'));
+  } else {
+    elements.push(markdown(question.statusText));
+    elements.push(collapsed('查看原问题', [markdown(q.question),
+      ...options.map((option, i) => markdown(`${i + 1}. ${option.label}${option.description ? `：${option.description}` : ''}`))]));
+  }
+  return { schema: '2.0', config: { update_multi: true, enable_forward: false }, body: { elements } };
 }
 
 // One original message, with a durable creation fence and receipt. A state
