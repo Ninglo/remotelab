@@ -427,17 +427,24 @@ async function withScheduleMutation(mutator) {
 
 export async function listRecurringSchedules(options = {}) {
   const sessionId = trimString(options.sessionId);
-  const schedules = await loadSchedules();
-  return schedules
-    .filter((entry) => !sessionId || entry.sourceSessionId === sessionId)
-    .sort((left, right) => (Date.parse(left.nextRunAt) || Infinity) - (Date.parse(right.nextRunAt) || Infinity))
-    .map(clone);
+  // Reads also refresh/normalize the shared cache and can write the registry.
+  // Serialize them with edits, so an older read cannot relabel stale data with
+  // a newer file mtime and overwrite a just-saved configuration.
+  return scheduleMutationQueue(async () => {
+    const schedules = await loadSchedules();
+    return schedules
+      .filter((entry) => !sessionId || entry.sourceSessionId === sessionId)
+      .sort((left, right) => (Date.parse(left.nextRunAt) || Infinity) - (Date.parse(right.nextRunAt) || Infinity))
+      .map(clone);
+  });
 }
 
 export async function getRecurringSchedule(scheduleId) {
   const id = trimString(scheduleId);
-  const schedules = await loadSchedules();
-  return clone(schedules.find((entry) => entry.id === id) || null);
+  return scheduleMutationQueue(async () => {
+    const schedules = await loadSchedules();
+    return clone(schedules.find((entry) => entry.id === id) || null);
+  });
 }
 
 export async function createRecurringSchedule(input = {}, options = {}) {

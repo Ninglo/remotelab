@@ -110,6 +110,11 @@ The same gate, lifetime, pending-execution reservation, cooldown, dedupe key,
 Trigger and normal Run admission apply. A concurrent event/check or a task edit
 cannot commit an obsolete gate result. An event does not move `nextRunAt`;
 the configured cron/interval remains the recovery fallback.
+Registry reads, including normalization and cache refresh, share the same serial
+queue as mutations. A slow older read cannot replace newly saved configuration
+with an old cache marked as current. Only the instance control plane owns this
+registry; external readers should use HTTP rather than load a state-writing
+normalizer from a second process.
 
 The observer starts lazily for an opted-in task or a resource API read. It seeds
 run/queue/compaction metadata once, then coalesces Session invalidation hints
