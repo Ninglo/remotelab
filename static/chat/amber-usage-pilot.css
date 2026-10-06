@@ -14,6 +14,9 @@
 
 .pet-quota-pilot-button {
   display: block;
+  width: 128px;
+  max-width: 100%;
+  min-height: 32px;
   margin-left: auto;
   padding: 5px 9px;
   border: 1px solid var(--border);
@@ -21,6 +24,8 @@
   background: var(--bg);
   color: var(--text-secondary);
   font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
 }

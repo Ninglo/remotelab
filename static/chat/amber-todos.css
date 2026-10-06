@@ -1,6 +1,5 @@
 .amber-todos { display: none; }
 :root[data-theme="amber"] .amber-todos { display: block; position: relative; margin-top: 6px; }
-.amber-todos-toggle { font-size: 12px; min-height: 30px; }
 .amber-todos-panel {
   position: absolute;
   top: calc(100% + 8px);
@@ -14,7 +13,7 @@
   background: var(--bg);
   color: var(--text);
   box-shadow: 0 12px 36px rgba(30, 28, 20, 0.16);
-  font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+  font-family: inherit;
   font-size: 13px;
   line-height: 1.5;
 }
