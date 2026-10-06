@@ -1,8 +1,8 @@
 # Feishu topic conversation and continuation
 
-Status: revised 2026-10-06 after the operator required all new groups and
-uninvited topics to default to passive reception. This supersedes the
-2026-10-04 blanket admission of every new topic.
+Status: clarified 2026-10-06 after recovering a missed work-topic request and
+reviewing earlier per-group decisions. Work/learning entry points use exact-chat
+opt-in; sharing and newly joined groups keep passive defaults.
 
 ## Product contract
 
@@ -16,12 +16,26 @@ no additional mention. Other topics do not inherit that invitation. Admitted
 topics receive direct-conversation instructions. Explicit mute,
 listening and paused controls remain effective.
 
+A work or learning topic group intended to receive assistant tasks must have
+its own `responseMode: "all"`. Sharing groups retain `mention_only`; native
+topic metadata alone never overrides that distinction. Review actual group
+purpose and prior decisions instead of assuming every topic group is a work
+entry point. Keep existing automated workflows and explicitly enabled
+discussion groups separate from new, unconfigured groups.
+
 The earlier blanket topic policy fixed a plain question under an automated
 report, but also admitted uninvited new topics. The latest operator instruction
 requires passive defaults across groups. A report-created topic without an
 accepted Bot conversation now needs an explicit invitation. Bound report
 topics continue normally. Topic prompts remain distinct from mainline observer
 instructions.
+
+If a missing group opt-in filtered a real request before Session creation,
+recover the original sender and source message through the native connector
+submission path. The normal opening includes the accepted model, effort,
+Harness and Session link and stays in that original topic. The Session belongs
+to the original sender's workspace. Delegating from the repair operator's
+Session does not recover the original attribution or delivery route.
 
 ## Implementation
 
@@ -47,7 +61,8 @@ instructions.
 
 ## Regression verification
 
-`tests/test-feishu-response-policy.mjs` covers passive new topics and invited
+`tests/test-feishu-response-policy.mjs` covers exact-chat work/learning opt-in
+with missing event metadata, sharing exceptions, passive new topics and invited
 topic continuation, per-chat opt-in, topic-specific prompts, another human in
 the same thread, restart persistence, binding scope isolation, topic aliases
 and native root fallback, outbound-created threads, recovery after failed

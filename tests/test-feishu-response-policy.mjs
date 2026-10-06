@@ -230,6 +230,43 @@ try {
     chatMode: 'topic', messageId: 'other-topic-reply', rootId: 'other-topic-root',
   }, []);
 
+  // Work/learning groups opt in by exact chat ID. Native-topic metadata must
+  // not broaden that opt-in into sharing groups or newly joined groups.
+  await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', groups: {
+    'work-topic': { responseMode: 'all' },
+    'sharing-topic': { responseMode: 'mention_only' },
+  } }));
+  const workTopicConfig = await loadConfig(configPath);
+  const topicRuntime = {
+    config: workTopicConfig, botIdentity: { ...runtime.botIdentity },
+    storagePaths: { messageIndexPath: join(testHome, 'work-topics', 'message-index.json') },
+    appClient: { im: { v1: { chat: { get: async () => ({
+      code: 0, data: { chat_mode: 'topic', name: 'native topic group' },
+    }) } } } },
+  };
+  for (const [chatId, expected] of [
+    ['work-topic', ['reaction', 'submit']], ['sharing-topic', []], ['new-native-topic', []],
+  ]) {
+    effects = [];
+    await handleMessage(topicRuntime, { ...base, chatId, chatMode: '', threadId: `${chatId}-first`,
+      messageText: 'Please explain these two implementations',
+    }, 'test', helpers);
+    assert.deepEqual(effects, expected,
+      `${chatId}: first input missing chat metadata must retain its per-chat policy`);
+  }
+  for (const sender of [
+    { senderType: 'user', openId: 'another-human' },
+    { senderType: 'app', openId: 'peer-bot' },
+    { senderType: 'app', openId: 'bot-self' },
+  ]) {
+    effects = [];
+    await handleMessage(topicRuntime, { ...base, chatId: 'work-topic', chatMode: 'topic',
+      threadId: `work-${sender.openId}`, sender,
+    }, 'test', helpers);
+    assert.deepEqual(effects, sender.senderType === 'user' ? ['reaction', 'submit'] : [],
+      'an enabled native work topic admits humans without enabling Bot loops');
+  }
+
   // Sending a reply may assign a new Feishu thread ID to an admitted group root.
   await recordFeishuThreadSessionBinding(runtime, base, 'outbound-session', { threadId: 'created-by-reply' });
   await check('a thread created by the Bot reply can be continued', {

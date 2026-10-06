@@ -56,6 +56,9 @@ try {
   assert.match(replies.at(-1), /已静默当前话题/);
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, true);
   assert.equal(await shouldRouteFeishuMessageToRemoteLab(runtime, base), false);
+  runtime.config.groups = { chat: { responseMode: 'all' } };
+  assert.equal(await shouldRouteFeishuMessageToRemoteLab(runtime, { ...base, chatMode: 'topic' }), false,
+    'an enabled native work topic must respect an explicit mute');
   await silent('human discussion');
   await silent('attachment discussion', { messageType: 'file', attachments: [{ fileKey: 'file' }] });
   await silent('mention someone else', { mentions: [{ openId: 'another-human' }] });
