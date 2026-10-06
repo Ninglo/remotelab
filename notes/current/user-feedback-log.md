@@ -1079,6 +1079,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: use one light proofreading pass after ASR, preserve full clauses and speaker framing, reject summary-shaped short outputs, and support explicit heard-form to canonical-term corrections in a personal dictionary. Keep name terms grounded in the accessible company directory and focus the hotword budget on frequent collaborators and domain terms.
 - Follow-up: compare a fresh recording against the original for complete item detail, the confirmed alias, and unrelated-name false corrections.
 
+### 2026-10-06 — 按个人重新试用语音草稿整理
+
+- Source: direct follow-up to the earlier voice-input trial.
+- Observed friction or ask: ASR smoothing still leaves transcription errors and company names; try a second editing pass that also makes the existing request clearer, enabled only for the requesting Person.
+- Product implication: retain the existing vocabulary and provider, and select the new clarification instructions through a personal `reviewStyle` setting. Preserve uncertainty, negation, speaker framing, and action scope; do not invent task details. Other People keep their existing proofreading or ASR-only behavior.
+- Follow-up: verify personal settings isolation and a real provider call, then compare a fresh browser dictation with its original transcript. The trial has no conversation-history input; ambiguous references remain unchanged.
+
 ### 2026-09-29 — 优先豆包识别顺滑，不追加模型整理
 
 - Source: direct user correction after the lighter model-review trial.
@@ -1307,3 +1314,10 @@ settings are separate from verified live deployment and delivery.
 - Contract: ordinary group mainlines require this Bot's explicit mention or a task/control command. Only an exact `groups[chatId]` entry with `participationMode: "ambient"` or `responseMode: "all"` enables proactive intake. Connector-wide defaults, existing Sessions, quotes, forwards and reaction preferences cannot activate another group.
 - Boundaries: private chats, topic conversation follow-up, sender access, peer-Bot guards and explicit mute/listening/paused controls keep their existing behavior. No application restart or real-user effect is implied by a source commit or passing isolated checks.
 - Verification: test ordinary text, files, merge-forwards, other-person/@all mentions, inherited `all`, missing settings, per-chat opt-in isolation, topic continuation and restart persistence before rollout.
+
+## 2026-10-06 — Make personal To do reachable from Amber chat
+
+- Feedback: personal tasks work in the side display's reminder settings, but that entry is hard to reach during normal chat. Add a button below Amber's pet that expands the list in place.
+- Change: Amber shows an unfinished task count and a scrollable personal list beside the conversation. Titles expand task notes; checkboxes complete or reopen tasks, with visible failure handling. The list uses the authenticated Person's existing `/api/display/todos` data shared with the side display.
+- Scope: only Amber shows or requests this list; shared snapshots do not mount personal tasks. Task creation, deadlines and numeric progress remain available through chat and the existing editor. Opening the list or using Refresh reads current data without a background poll.
+- Verification: cover theme changes, anonymous snapshots, stale reads, failed writes and empty lists; verify the real Person's existing tasks and desktop/phone layout separately from a source commit and rollout.
