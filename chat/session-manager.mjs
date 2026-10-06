@@ -3311,6 +3311,9 @@ async function ensureRequestInput(record, manifest) {
       ? record.options.recordedUserText.trim() : record.text;
     await appendEvent(record.sessionId, messageEvent('user', recordedText, buildMessageAttachmentRefs(record.images), {
       requestId: record.requestId, responseId: record.responseId, runId: record.runId,
+      ...(record.options.nativeQuestionId && record.options.nativeQuestionAnswerSource === 'control'
+        ? { messageKind: 'native_question_answer', nativeQuestionId: record.options.nativeQuestionId,
+          nativeQuestionRunId: record.nativeDispatchRunId || record.runId } : {}),
       ...(sourceContext ? { sourceContext } : {}),
       ...(workboardAdmission(record.options) ? { workboardAdmission: workboardAdmission(record.options) } : {}),
     }));

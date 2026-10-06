@@ -128,6 +128,16 @@ try {
   assert.equal(questions.length, 1); assert.equal(questions[0].seq, 2);
   assert.equal(questions[0].messageUpdateSeq, 4); assert.equal(questions[0].answerOrigin, 'timeout');
   assert.equal(questions[0].content, pending.content);
+  const controlAnswer = { seq: 3, type: 'message', role: 'user', content: '1', messageKind: 'native_question_answer',
+    nativeQuestionId: pending.questionId, nativeQuestionRunId: pending.runId };
+  const controlledHistory = [history[0], pending, controlAnswer, ended];
+  assert.equal(buildSessionDisplayEvents(controlledHistory).filter(e => e.role === 'user').length, 1,
+    'a control answer is acknowledged by the question, not a second user bubble');
+  assert.equal(controlledHistory[2], controlAnswer, 'display projection retains the raw control record');
+  assert.ok(buildSessionDisplayEvents([{ ...controlAnswer, nativeQuestionRunId: 'other-run' }, pending]).some(e => e.content === '1'),
+    'a question in another run cannot swallow an orphaned answer');
+  assert.ok(buildSessionDisplayEvents([history[0], pending, { ...controlAnswer, messageKind: undefined }, ended]).some(e => e.role === 'user' && e.content === '1'),
+    'a typed reply retains its ordinary bubble');
   let record = { key: 'key', runId: 'run', options: {}, deliveries: [] };
   const options = { store: { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } },
     plan: { connector: 'feishu', sourceRouteId: 'bot', target: delivery.target } };
@@ -138,13 +148,16 @@ try {
 
   class Element {
     constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.listeners = {}; this.attributes = {}; this.textContent = ''; }
-    appendChild(child) { this.children.push(child); return child; }
+    appendChild(child) {
+      if (child.parent) child.parent.children.splice(child.parent.children.indexOf(child), 1);
+      child.parent = this; this.children.push(child); return child;
+    }
     setAttribute(name, value) { this.attributes[name] = value; }
     addEventListener(name, fn) { this.listeners[name] = fn; }
   }
   const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
   const optionRows = node => descendants(node).filter(child => child.className?.startsWith('native-question-option') && child.className !== 'native-question-options');
-  const statusOf = node => node.children.find(child => child.className === 'native-question-status');
+  const statusOf = node => descendants(node).find(child => child.className === 'native-question-status');
   const submissions = [];
   const context = { document: { createElement: tag => new Element(tag) }, currentSessionId: 'session', shareSnapshotMode: false,
     createRequestId: () => 'web-answer', appendMessageTimestamp() {}, refreshCurrentSession: async () => {},
@@ -153,29 +166,32 @@ try {
   vm.runInContext(await readFile(new URL('../static/chat/native-question-ui.js', import.meta.url), 'utf8'), context);
   let panel = context.renderNativeQuestionMessage(new Element('div'), pending);
   assert.equal(statusOf(panel).textContent, '待你选择');
-  assert.equal(panel.children.find(c => c.className?.includes('native-question-deadline')).textContent,
-    '等你回答，不会超时自动选择。');
+  assert.ok(!panel.children.some(c => c.className?.includes('native-question-deadline')),
+    'ordinary questions do not repeat a no-timeout footer');
   assert.equal(statusOf(panel).attributes['aria-live'], 'polite');
   assert.equal(panel.children.find(c => c.tag === 'details').children[0].textContent, '填写其他答案');
   optionRows(panel)[1].listeners.click();
   assert.equal(statusOf(panel).textContent, '正在提交：详细…');
   optionRows(panel)[0].listeners.click();
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(submissions[0][1], { requestId: 'web-answer', nativeQuestionId: 'question', text: '2' });
+  assert.deepEqual(submissions[0][1], { requestId: 'web-answer', nativeQuestionId: 'question', nativeQuestionAnswerSource: 'control', text: '2' });
   assert.equal(submissions.length, 1, 'in-flight clicks cannot submit a second answer');
-  assert.equal(statusOf(panel).textContent, '已选择：详细');
-  assert.equal(optionRows(panel)[1].attributes['aria-pressed'], 'true');
+  assert.equal(statusOf(panel).textContent, '已选择');
+  assert.equal(optionRows(panel).find(c => c.className.includes('is-selected')).attributes['aria-pressed'], 'true');
+  assert.equal(descendants(panel).find(c => c.className === 'native-question-answer-body').children[0].children.length, 1,
+    'the selected option stays visible while the other option is folded');
   assert.ok(optionRows(panel).every(c => c.disabled));
   panel = context.renderNativeQuestionMessage(new Element('div'), pending);
-  assert.equal(statusOf(panel).textContent, '已选择：详细', 'a stale pending refresh retains the accepted answer');
+  assert.equal(statusOf(panel).textContent, '已选择', 'a stale pending refresh retains the accepted answer');
   assert.ok(!panel.children.some(c => c.tag === 'form'));
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionState: 'answered', questionAnswers: ['详细'] });
-  assert.equal(statusOf(panel).textContent, '已选择：详细', 'canonical recovery names the selected answer');
+  assert.equal(statusOf(panel).textContent, '已选择', 'canonical recovery shows the selected answer');
+  assert.equal(optionRows(panel)[0].children.at(-1).textContent, '详细');
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'multiple', nativeQuestion: { ...pending.nativeQuestion, multiSelect: true } });
   optionRows(panel).forEach(c => { c.children[0].checked = true; });
   panel.children.find(c => c.tag === 'button').listeners.click(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(submissions.at(-1)[1].text, '1,2');
-  assert.equal(statusOf(panel).textContent, '已选择：简短、详细');
+  assert.equal(statusOf(panel).textContent, '已选择');
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'multiple', questionState: 'answered',
     questionAnswers: ['简短', '详细'], nativeQuestion: { ...pending.nativeQuestion, multiSelect: true } });
   assert.ok(optionRows(panel).every(c => c.children[0].checked), 'recovered multi-select shows the answered checkboxes');
@@ -183,7 +199,8 @@ try {
   const form = descendants(panel).find(c => c.tag === 'form');
   form.children[0].value = '自己的答案'; form.listeners.submit({ preventDefault() {} });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(submissions.at(-1)[1].text, '自己的答案');
-  assert.equal(statusOf(panel).textContent, '已提交：自己的答案');
+  assert.equal(statusOf(panel).textContent, '已提交');
+  assert.equal(descendants(panel).find(c => c.className === 'native-question-answer').textContent, '自己的答案');
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'free-text', nativeQuestion: { question: '说明原因', options: [] } });
   assert.equal(statusOf(panel).textContent, '待你填写');
   assert.ok(panel.children.some(c => c.tag === 'form'), 'required free text stays directly visible');
@@ -193,7 +210,7 @@ try {
   context.refreshCurrentSession = async () => { throw new Error('Refresh offline'); };
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'refresh-failed' });
   optionRows(panel)[0].listeners.click(); await new Promise(resolve => setImmediate(resolve));
-  assert.equal(statusOf(panel).textContent, '已选择：简短', 'accepted submission survives a failed refresh');
+  assert.equal(statusOf(panel).textContent, '已选择', 'accepted submission survives a failed refresh');
   assert.ok(optionRows(panel).every(c => c.disabled));
   context.fetchJsonOrRedirect = async (url, opts) => { submissions.push([url, JSON.parse(opts.body)]); throw new Error('Network offline'); };
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'retry' });

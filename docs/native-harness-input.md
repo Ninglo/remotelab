@@ -42,6 +42,13 @@ Replying `1`, `2`, or `3` still selects an in-range option. Other text, includin
 an out-of-range number, is a custom answer. Claude multi-select also accepts
 comma-separated numbers such as `1,2`. Several questions appear in order.
 
+Web controls submit with `nativeQuestionAnswerSource: "control"`; Feishu callback
+Request IDs identify the same control path. The answer stays in raw history as
+`native_question_answer` and reaches the native question tool. The visible
+conversation acknowledges it on the original question instead of adding a user
+bubble. Typed replies remain ordinary messages. The selected option stays
+visible with a filled marker and completed color; only other options are folded.
+
 Ordinary questions have no automatic timeout. The original question and its
 controls remain pending until the person answers or stops the run. Opening or
 refreshing the conversation does not start a five-minute countdown, hide the

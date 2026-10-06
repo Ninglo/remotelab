@@ -585,24 +585,34 @@
   font-size: 12px; color: var(--text-secondary);
   line-height: 1.55; margin: 2px 0 9px;
 }
-.native-question { border-left: 3px solid var(--accent); padding: 10px 14px; }
+.native-question { --question-color: var(--notice); border: 1px solid color-mix(in srgb, var(--question-color) 40%, var(--border)); border-left: 3px solid var(--question-color); border-radius: 10px; background: color-mix(in srgb, var(--question-color) 6%, var(--bg)); padding: 10px 12px; }
+:root[data-theme="amber"] .native-question[data-question-state="pending"], :root[data-theme="amber"] .native-question[data-question-state="submitting"] { --question-color: color-mix(in srgb, var(--warning) 70%, var(--text)); }
+.native-question[data-question-state="answered"] { --question-color: var(--success); }
+.native-question[data-question-state="error"] { --question-color: var(--error); }
+.native-question[data-question-state="timeout"], .native-question[data-question-state="cancelled"] { --question-color: var(--text-secondary); }
 .native-question [hidden] { display: none !important; }
-.native-question-title { font-weight: 600; margin: 5px 0 8px; overflow-wrap: anywhere; }
-.native-question-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
-.native-question-option { display: flex; align-items: center; gap: 8px; min-width: 0; text-align: left; padding: 10px; color: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font: inherit; overflow-wrap: anywhere; }
+.native-question-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 7px; }
+.native-question-title { font-size: 15px; font-weight: 650; line-height: 1.5; margin: 0 0 8px; overflow-wrap: anywhere; }
+.native-question-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; margin: 0; }
+.native-question-options:empty { display: none; }
+.native-question-option { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 44px; text-align: left; padding: 8px 10px; color: var(--text); background: var(--bg); border: 1px solid color-mix(in srgb, var(--question-color) 22%, var(--border)); border-radius: 7px; cursor: pointer; font: inherit; line-height: 1.4; overflow-wrap: anywhere; transition: background .12s, border-color .12s; }
+.native-question-option:not(:disabled):hover { border-color: var(--question-color); background: color-mix(in srgb, var(--question-color) 8%, var(--bg)); }
 .native-question-option small { display: block; margin-top: 3px; font-size: 12px; color: var(--text-secondary); }
-.native-question-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.native-question-option.is-selected { border-color: var(--accent); background: var(--bg); box-shadow: inset 0 0 0 1px var(--accent); }
-.native-question-option.is-selected::before { content: "✓"; color: var(--accent); font-weight: 700; }
+.native-question-option:focus-visible { outline: 2px solid var(--question-color); outline-offset: 2px; }
+.native-question-option.is-selected { border-color: var(--question-color); background: color-mix(in srgb, var(--question-color) 12%, var(--bg)); box-shadow: inset 0 0 0 1px var(--question-color); }
+.native-question-indicator { width: 16px; height: 16px; flex: 0 0 16px; border: 1.5px solid var(--question-color); border-radius: 50%; display: grid; place-items: center; }
+.native-question-option.is-selected .native-question-indicator::after { content: ""; width: 8px; height: 8px; background: var(--question-color); border-radius: 50%; }
+.native-question-option input { accent-color: var(--question-color); }
 .native-question button:disabled { cursor: default; opacity: .65; }
 .native-question button.is-selected:disabled { opacity: 1; }
 .native-question-details { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
 .native-question-details summary { cursor: pointer; padding: 4px 0; }
+.native-question-details .native-question-options { margin-top: 5px; }
+.native-question-answer { padding: 8px 10px; color: var(--text); background: color-mix(in srgb, var(--question-color) 12%, var(--bg)); border-left: 3px solid var(--question-color); border-radius: 5px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .native-question-custom { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .native-question-custom textarea { flex: 1 1 200px; min-width: 0; font: inherit; color: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
 .native-question-custom button { align-self: flex-end; }
-.native-question-status { font-size: 13px; font-weight: 600; color: var(--accent); overflow-wrap: anywhere; }
+.native-question-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; background: color-mix(in srgb, var(--question-color) 12%, var(--bg)); font-size: 12px; font-weight: 700; line-height: 1.4; color: color-mix(in srgb, var(--question-color) 72%, var(--text)); overflow-wrap: anywhere; }
+.native-question-status::before { content: ""; width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; }
 .native-question-hint { font-size: 12px; color: var(--text-secondary); }
 .native-question-deadline { margin-top: 6px; }
-.native-question[data-question-state="error"] .native-question-status { color: var(--danger, #b42318); }
-.native-question[data-question-state="timeout"] .native-question-status { color: var(--text-secondary); }

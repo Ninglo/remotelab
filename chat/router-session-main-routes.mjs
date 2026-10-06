@@ -445,6 +445,9 @@ export async function handleSessionMainRoutes({
         });
         const messageOptions = {
           ...(payload.nativeQuestionId ? { nativeQuestionId: payload.nativeQuestionId } : {}),
+          ...(payload.nativeQuestionId && (payload.nativeQuestionAnswerSource === 'control'
+            || (authSession?.authKind === 'service' && requestId.startsWith('feishu-question:')))
+            ? { nativeQuestionAnswerSource: 'control' } : {}),
           tool: payload.tool || undefined,
           thinking: !!payload.thinking,
           model: payload.model || undefined,

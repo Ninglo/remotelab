@@ -4,7 +4,7 @@ function renderNativeQuestionMessage(container, evt) {
   const sessionId = currentSessionId;
   const question = evt.nativeQuestion;
   const readOnly = typeof shareSnapshotMode !== "undefined" && shareSnapshotMode;
-  const acknowledgementKey = `${sessionId}:${evt.questionId}`;
+  const acknowledgementKey = `${sessionId}:${evt.runId || ''}:${evt.questionId}`;
   if (evt.questionState !== "pending") nativeQuestionAcknowledgements.delete(acknowledgementKey);
   const acknowledgedAnswers = readOnly ? null : nativeQuestionAcknowledgements.get(acknowledgementKey);
   const state = acknowledgedAnswers ? "answered" : evt.questionState;
@@ -14,12 +14,15 @@ function renderNativeQuestionMessage(container, evt) {
   panel.dataset.questionId = evt.questionId;
   panel.dataset.questionState = state;
   panel.setAttribute("role", "group");
+  const heading = document.createElement("div");
+  heading.className = "native-question-heading";
+  panel.appendChild(heading);
   const status = document.createElement("div");
   status.className = "native-question-status";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   status.setAttribute("aria-atomic", "true");
-  panel.appendChild(status);
+  heading.appendChild(status);
   const title = document.createElement("div");
   title.className = "native-question-title";
   title.textContent = question.question;
@@ -30,7 +33,10 @@ function renderNativeQuestionMessage(container, evt) {
   const hint = document.createElement("div");
   hint.className = "native-question-hint";
   hint.textContent = options.length ? (question.multiSelect ? "可多选，选好后提交" : "点选即提交") : "填写后提交";
-  if (pending) panel.appendChild(hint);
+  if (pending) heading.appendChild(hint);
+  const answerBody = document.createElement("div");
+  answerBody.className = "native-question-answer-body";
+  panel.appendChild(answerBody);
   const optionList = document.createElement("div");
   optionList.className = "native-question-options";
   const footer = document.createElement("div");
@@ -41,7 +47,7 @@ function renderNativeQuestionMessage(container, evt) {
   let submitting = false, accepted = false;
   let requestId = null, submittedText = null;
   const resultText = values => values.length
-    ? `${values.every(value => options.some(option => option.label === value)) ? "已选择" : "已提交"}：${values.join("、")}`
+    ? (values.every(value => options.some(option => option.label === value)) ? "已选择" : "已提交")
     : "已回答";
   function markSelection(answers) {
     optionRows.forEach((row, i) => {
@@ -50,6 +56,27 @@ function renderNativeQuestionMessage(container, evt) {
       if (!question.multiSelect) row.setAttribute("aria-pressed", String(selected));
       else if (panel.dataset.questionState !== "error") selections[i].checked = selected;
     });
+  }
+  function showAnswer(values) {
+    markSelection(values);
+    const remaining = optionRows.filter((row, i) => !values.includes(options[i].label));
+    if (remaining.length) {
+      const details = document.createElement("details");
+      details.className = "native-question-details";
+      const summary = document.createElement("summary");
+      summary.textContent = values.length ? "查看其他选项" : "查看选项";
+      const otherOptions = document.createElement("div");
+      otherOptions.className = "native-question-options";
+      remaining.forEach(row => otherOptions.appendChild(row));
+      details.appendChild(summary); details.appendChild(otherOptions); answerBody.appendChild(details);
+    }
+    const customValues = values.filter(value => !options.some(option => option.label === value));
+    if (customValues.length) {
+      const answer = document.createElement("div");
+      answer.className = "native-question-answer";
+      answer.textContent = customValues.join("、");
+      answerBody.appendChild(answer);
+    }
   }
   async function submit(text, answers) {
     if (!pending || submitting || accepted || !text.trim()) return;
@@ -68,7 +95,7 @@ function renderNativeQuestionMessage(container, evt) {
     try {
       await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requestId, nativeQuestionId: evt.questionId, text }),
+        body: JSON.stringify({ requestId, nativeQuestionId: evt.questionId, nativeQuestionAnswerSource: "control", text }),
       });
     } catch (error) {
       submitting = false;
@@ -84,6 +111,7 @@ function renderNativeQuestionMessage(container, evt) {
     panel.dataset.questionState = "answered";
     panel.setAttribute("aria-busy", "false");
     status.textContent = resultText(answers);
+    showAnswer(answers);
     nativeQuestionAcknowledgements.set(acknowledgementKey, answers);
     if (nativeQuestionAcknowledgements.size > 100) {
       nativeQuestionAcknowledgements.delete(nativeQuestionAcknowledgements.keys().next().value);
@@ -104,10 +132,15 @@ function renderNativeQuestionMessage(container, evt) {
       const input = document.createElement("input");
       input.type = "checkbox"; input.disabled = !pending;
       selections.push(input); controls.push(input); row.appendChild(input);
+      input.addEventListener("change", () => { row.className = `native-question-option${input.checked ? " is-selected" : ""}`; });
     } else {
       row.type = "button"; row.disabled = !pending; controls.push(row);
       row.setAttribute("aria-pressed", "false");
       row.addEventListener("click", () => void submit(String(index + 1), [option.label]));
+      const indicator = document.createElement("span");
+      indicator.className = "native-question-indicator";
+      indicator.setAttribute("aria-hidden", "true");
+      row.appendChild(indicator);
     }
     const text = document.createElement("span");
     text.textContent = option.label;
@@ -120,16 +153,9 @@ function renderNativeQuestionMessage(container, evt) {
     optionRows.push(row); optionList.appendChild(row);
   });
   if (options.length) {
-    if (state === "pending") panel.appendChild(optionList);
-    else {
-      const details = document.createElement("details");
-      details.className = "native-question-details";
-      const summary = document.createElement("summary");
-      summary.textContent = "查看选项";
-      details.appendChild(summary); details.appendChild(optionList); panel.appendChild(details);
-      markSelection(answers);
-    }
+    answerBody.appendChild(optionList);
   }
+  if (state !== "pending") showAnswer(answers);
   if (pending) {
     if (question.multiSelect && selections.length) {
       const selected = document.createElement("button");
@@ -158,7 +184,7 @@ function renderNativeQuestionMessage(container, evt) {
       customContainer.appendChild(summary); customContainer.appendChild(form);
     } else customContainer = form;
     panel.appendChild(customContainer);
-    panel.appendChild(footer);
+    if (Number.isFinite(evt.questionDeadline)) panel.appendChild(footer);
   }
   status.textContent = state === "pending"
     ? (readOnly ? "待回答（只读）" : options.length ? "待你选择" : "待你填写")

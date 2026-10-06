@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, copyFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, copyFile, chmod, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,14 +53,15 @@ async function until(predicate) {
 }
 try {
   await ready;
-  for (const groupFeed of [false, true]) {
+  for (const [groupFeed, inputKind] of [[false, 'control'], [true, 'control'], [false, 'typed'], [false, 'feishu-control']]) {
+    const caseId = `${groupFeed}-${inputKind}`;
     const conversation = { connector: 'feishu', sourceRouteId: 'bot', target: { chatId: 'group', chatType: 'group', conversationKind: 'main' } };
     const created = await request('POST', '/api/sessions', { folder: home, tool: 'fake-native', model: 'fake-model',
       ...(groupFeed ? { groupFeed, sourceId: 'feishu', conversation, externalTriggerId: 'question-group' } : {}) }, true);
     assert.equal(created.status, 201, JSON.stringify(created.json));
     const sessionId = created.json.session.id;
     const messages = `/api/sessions/${sessionId}/messages`;
-    const accepted = await request('POST', messages, { text: 'ASK_NATIVE_QUESTION', requestId: `root-${groupFeed}` }, true);
+    const accepted = await request('POST', messages, { text: 'ASK_NATIVE_QUESTION', requestId: `root-${caseId}` }, true);
     assert.equal(accepted.status, 202, JSON.stringify(accepted.json));
     const getQuestion = async () => (await request('GET', `/api/sessions/${sessionId}/events?filter=all`)).json.events
       ?.find(event => event.messageKind === 'user_question' && event.questionState === 'pending');
@@ -73,17 +74,31 @@ try {
     const wrong = await request('POST', messages, { text: '1', requestId: `wrong-${groupFeed}`, nativeQuestionId: 'old-id' });
     assert.equal(wrong.status, 409); assert.equal(wrong.json.code, 'QUESTION_EXPIRED');
     if (groupFeed) assert.equal((await request('POST', messages, { text: 'ordinary-web-message' })).status, 403);
-    const payload = { text: '2', requestId: `answer-${groupFeed}`, nativeQuestionId: question.questionId };
-    const answered = await request('POST', messages, payload);
+    const payload = { text: '2', requestId: inputKind === 'feishu-control' ? `feishu-question:${caseId}` : `answer-${caseId}`,
+      ...(inputKind !== 'typed' ? { nativeQuestionId: question.questionId } : {}),
+      ...(inputKind === 'control' ? { nativeQuestionAnswerSource: 'control' } : {}),
+    };
+    const answered = await request('POST', messages, payload, inputKind === 'feishu-control');
     assert.equal(answered.status, 202, JSON.stringify(answered.json));
     await until(async () => (await request('GET', `/api/sessions/${sessionId}/events?filter=all`)).json.events
       ?.find(event => event.questionState === 'answered'));
-    const duplicate = await request('POST', messages, payload);
+    const rawEvents = (await request('GET', `/api/sessions/${sessionId}/events?filter=all`)).json.events;
+    const input = rawEvents.find(event => event.role === 'user' && event.requestId === payload.requestId);
+    assert.equal(input.content, '2', 'the answer is retained in raw history');
+    assert.equal(input.messageKind, inputKind === 'typed' ? undefined : 'native_question_answer');
+    const visibleEvents = (await request('GET', `/api/sessions/${sessionId}/events?filter=visible`)).json.events;
+    assert.equal(visibleEvents.some(event => event.role === 'user' && event.requestId === payload.requestId), inputKind === 'typed',
+      'control feedback is confined to the original question; typed replies remain visible');
+    const nativeAnswers = (await readFile(join(home, 'native-log.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse)
+      .filter(event => event.kind === 'question-answer' && event.runId === question.runId);
+    assert.equal(nativeAnswers.length, 1);
+    assert.deepEqual(nativeAnswers[0].result.answers.format.answers, ['详细'], 'the native Harness received the actual selected option');
+    const duplicate = await request('POST', messages, payload, inputKind === 'feishu-control');
     assert.equal(duplicate.status, 200); assert.equal(duplicate.json.duplicate, true);
-    const late = await request('POST', messages, { ...payload, requestId: `late-${groupFeed}` });
+    const late = await request('POST', messages, { ...payload, nativeQuestionId: question.questionId, requestId: `late-${caseId}` });
     assert.equal(late.status, 409); assert.equal(late.json.code, 'QUESTION_EXPIRED');
   }
-  console.log('native question HTTP: Web controls answer ordinary and group Sessions; stale IDs rejected, ordinary group writes remain blocked, retries deduplicate');
+  console.log('native question HTTP: Web/Feishu controls reach native tools once, retain raw audit and update the original question without a user bubble; typed replies, stale IDs, group access and retries passed');
 } finally {
   const exited = once(server, 'exit'); server.kill('SIGTERM'); await exited;
   await rm(home, { recursive: true, force: true });
