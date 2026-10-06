@@ -26,7 +26,7 @@ Buffer 支持 X，支持列表没有小红书或知乎，所以它不能独自�
 
 [上游](https://github.com/xpzouying/xiaohongshu-mcp)，锁定 v2.5.5（a5c8f7799980ba1fdd501999843eb2d17e4c9a9f）。linux-amd64 release 二进制实测 SHA256：`a4e99322156e7a169466e793045dadc3306c0792db3eade603e030cc0c1c2e3a`。首次安装还下载其自带 Chromium，并按上游 SHA256SUMS 校验。它是社区网页自动化工具，不是小红书官方发布 API。
 
-本机实测原版登录会在加载推荐流时等待整个页面 load，导致登录检查与二维码请求超时。配套 [xiaohongshu-login-ready.patch](xiaohongshu-login-ready.patch) 只修这两条路径：等二维码或本人导航元素出现，不等待整页素材，不插入固定 sleep。在 v2.5.5 源码上 `git apply <patch绝对路径>`，按当前 Go toolchain 编译 `go build -ldflags '-X main.version=v2.5.5-remotelab-login-ready' -o <独立后台二进制路径> .`。二进制、浏览器依赖和私有配置独立于共享源码。换上游版本后重新核对是否仍需要该补丁，不盲目套用。
+本机实测原版登录会在加载推荐流时等待整个页面 load，导致登录检查与二维码请求超时。配套 [xiaohongshu-login-ready.patch](xiaohongshu-login-ready.patch) 只修这两条路径：等二维码或本人导航元素出现，不等待整页素材，不插入固定 sleep。在 v2.5.5 源码上 `git apply --unidiff-zero <patch绝对路径>`，按当前 Go toolchain 编译 `go build -ldflags '-X main.version=v2.5.5-remotelab-login-ready' -o <独立后台二进制路径> .`。二进制、浏览器依赖和私有配置独立于共享源码。换上游版本后重新核对是否仍需要该补丁，不盲目套用。
 
 每人一个私有工作目录和独立端口。环境文件权限 600，`COOKIES_PATH` 指向该人自己的目录，配置 `AUTH_TOKEN`；例如通过 `-port 127.0.0.1:18061` 保持 loopback。其他机器运行前查二进制 `--help`。实际端口、身份和密钥保存在本机私有 settings，不进入共享方法正文。
 
