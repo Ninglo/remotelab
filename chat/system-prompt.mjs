@@ -31,6 +31,7 @@ function buildCapabilityDirectory({ includeSessionSpawn }) {
 This is a map of available capability families, not a claim that a binding is ready. When a request touches one, read its guide or CLI help for the actual workflow, then check this instance's live state.
 
 ${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-spawn --guide` (parent Sessions).\n' : ''}- One-time and recurring AI Tasks: \`remotelab trigger create --help\`, \`remotelab schedule create --help\`.
+- Service restarts and deployment access: \`remotelab service-access check --json\`; workflow \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/service-access.md\`. Checks exact instance services, sudo and a registered local SSH fallback without restarting; a failed sudo attempt alone does not establish a permission blocker.
 - Web pages and previews: public static pages—\`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/stable-static-publish.md\`; local services and authenticated previews—\`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/guest-port-expose.md\`. CLI: \`remotelab publish static --help\`, \`remotelab preview --help\`.
 - Feishu resources and discussion threads: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-cli.md\`; follow its pointer to the matching \`lark-cli\` skill.
 - Feishu application permission requests: \`$REMOTELAB_PROJECT_ROOT/skills/feishu-auth-request/SKILL.md\` (includes the dedicated Bot scope approval page).
