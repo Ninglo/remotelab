@@ -35,7 +35,8 @@ function renderNativeQuestionMessage(container, evt) {
   optionList.className = "native-question-options";
   const footer = document.createElement("div");
   footer.className = "native-question-hint native-question-deadline";
-  footer.textContent = options.length ? `五分钟未答后，系统默认选择「${options[0].label}」。` : "五分钟未答后继续处理。";
+  footer.textContent = !Number.isFinite(evt.questionDeadline) ? "等你回答，不会超时自动选择。"
+    : `截止 ${new Date(evt.questionDeadline).toLocaleString()}：${options.length ? `未答时系统默认选择「${options[0].label}」。` : "未答时继续处理。"}`;
   let customContainer;
   let submitting = false, accepted = false;
   let requestId = null, submittedText = null;

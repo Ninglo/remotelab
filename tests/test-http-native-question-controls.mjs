@@ -65,6 +65,11 @@ try {
     const getQuestion = async () => (await request('GET', `/api/sessions/${sessionId}/events?filter=all`)).json.events
       ?.find(event => event.messageKind === 'user_question' && event.questionState === 'pending');
     const question = await until(getQuestion);
+    assert.equal(question.questionDeadline, null, 'HTTP exposes an ordinary question with no automatic deadline');
+    const visibleQuestion = (await request('GET', `/api/sessions/${sessionId}/events?filter=visible`)).json.events
+      .find(event => event.questionId === question.questionId);
+    assert.equal(visibleQuestion.questionState, 'pending', 'refresh retains the actionable original question');
+    assert.equal(visibleQuestion.nativeQuestion.options.length, 2);
     const wrong = await request('POST', messages, { text: '1', requestId: `wrong-${groupFeed}`, nativeQuestionId: 'old-id' });
     assert.equal(wrong.status, 409); assert.equal(wrong.json.code, 'QUESTION_EXPIRED');
     if (groupFeed) assert.equal((await request('POST', messages, { text: 'ordinary-web-message' })).status, 403);

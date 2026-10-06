@@ -10,7 +10,7 @@ import { processSourceDeliveryOnce } from '../scripts/feishu-connector.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'question-surfaces-'));
 const calls = [], identity = { sessionId: 'session', runId: 'run', questionId: 'question' };
-const question = { id: 'question', state: 'pending', deadline: Date.now() + 300000,
+const question = { id: 'question', state: 'pending', deadline: null,
   question: { question: '输出形式？', options: [{ label: '简短' }, { label: '详细' }] } };
 const delivery = { id: 'delivery', sessionId: 'session', runId: 'run', nativeQuestion: question,
   target: { chatId: 'chat', chatType: 'group', messageId: 'inbound', replyInThread: true } };
@@ -33,7 +33,9 @@ try {
     'optional custom input does not occupy phone space before the user opens it');
   assert.ok(!first.header, 'the question does not need a second large title bar');
   assert.equal(first.body.elements.filter(e => e.tag === 'markdown').map(e => e.content).join('\n'),
-    '输出形式？\n5 分钟未答时默认选第 1 项。', 'labels appear on buttons rather than twice');
+    '输出形式？\n等你回答，不会超时自动选择。', 'labels appear on buttons rather than twice');
+  const finiteCard = buildNativeQuestionCard(identity, { ...question, deadline: Date.now() + 300000 });
+  assert.equal(finiteCard.body.elements.at(-1).content, '到期未答时默认选第 1 项。');
   const requests = [];
   const actionOptions = { authorize: async () => true, request: async (url, options) => {
     requests.push([url, options]); return { response: { ok: true } };
@@ -151,6 +153,8 @@ try {
   vm.runInContext(await readFile(new URL('../static/chat/native-question-ui.js', import.meta.url), 'utf8'), context);
   let panel = context.renderNativeQuestionMessage(new Element('div'), pending);
   assert.equal(statusOf(panel).textContent, '待你选择');
+  assert.equal(panel.children.find(c => c.className?.includes('native-question-deadline')).textContent,
+    '等你回答，不会超时自动选择。');
   assert.equal(statusOf(panel).attributes['aria-live'], 'polite');
   assert.equal(panel.children.find(c => c.tag === 'details').children[0].textContent, '填写其他答案');
   optionRows(panel)[1].listeners.click();

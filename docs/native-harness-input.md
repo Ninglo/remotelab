@@ -42,12 +42,18 @@ Replying `1`, `2`, or `3` still selects an in-range option. Other text, includin
 an out-of-range number, is a custom answer. Claude multi-select also accepts
 comma-separated numbers such as `1,2`. Several questions appear in order.
 
-Each question states its first option as the fallback before waiting. After five
-minutes without an answer, the native host chooses that option and updates the
-original question's state, without sending another reminder or timeout message.
-It records this choice as a system default rather than a user answer.
-A question without options returns unanswered. Native tool replies also identify
-timeout defaults, so silence cannot be mistaken for user consent. Native secret
+Ordinary questions have no automatic timeout. The original question and its
+controls remain pending until the person answers or stops the run. Opening or
+refreshing the conversation does not start a five-minute countdown, hide the
+options or choose on the person's behalf. The detached host stays available
+while waiting; the final result settles after the answer and resulting work.
+
+The broker still supports an explicitly configured finite timeout, with the
+fallback disclosed before waiting. Such a deadline updates the original
+question in place and records any fallback as a system default, not a user
+answer; a question without options returns unanswered. Existing questions keep
+their recorded deadline. Native tool replies identify timeout defaults, so
+silence cannot be mistaken for user consent. Native secret
 inputs are not accepted through ordinary chat. Permission approval requests are
 separate from question tools and remain denied.
 
