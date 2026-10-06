@@ -29,6 +29,7 @@ function formatQueuedMessageTimestamp(stamp) {
 }
 
 function renderQueuedMessagePanel(session) {
+  if (typeof renderWorkAwarenessPanel === "function") renderWorkAwarenessPanel(session);
   if (!queuedPanel) return;
   const items = Array.isArray(session?.queuedMessages) ? session.queuedMessages : [];
   if (!session?.id || session.id !== currentSessionId || items.length === 0) {
@@ -164,6 +165,72 @@ function renderQueuedMessagePanel(session) {
     setExpanded(!queuedPanel.classList.contains("expanded"));
   });
   setExpanded(preserveExpanded);
+}
+
+let workAwarenessPanelRequest = 0;
+async function renderWorkAwarenessPanel(session) {
+  const request = ++workAwarenessPanelRequest;
+  const previous = document.getElementById?.("workAwarenessPanel");
+  if (!session?.id || session.id !== currentSessionId || !session.workAwareness
+    || (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode)) {
+    previous?.remove();
+    return;
+  }
+  const query = session.workAwareness.intents?.at(-1)?.goal || session.workAwareness.works?.at(-1)?.goal || "";
+  try {
+    const params = new URLSearchParams({ sessionId: session.id, query, includeBackground: "false" });
+    const response = await fetch("/api/work-awareness?" + params);
+    if (!response.ok) throw new Error("相关工作暂时读取失败");
+    const data = await response.json();
+    if (request !== workAwarenessPanelRequest || session.id !== currentSessionId) return;
+    if (!data.related.length && !data.suggestions.length) { previous?.remove(); return; }
+    const panel = document.createElement("details");
+    panel.id = "workAwarenessPanel";
+    panel.className = "native-question-details";
+    panel.open = previous?.open === true;
+    const summary = document.createElement("summary");
+    summary.textContent = "相关工作与参考建议（" + (data.related.length + data.suggestions.length) + "）";
+    panel.appendChild(summary);
+    const note = document.createElement("p");
+    note.textContent = "相关性需要核对。各方可继续原工作；送达参考建议与确认采用分别记录。";
+    panel.appendChild(note);
+    for (const item of data.related) {
+      const row = document.createElement("p");
+      const link = document.createElement("a");
+      link.href = "/?session=" + encodeURIComponent(item.sessionId);
+      link.textContent = item.goal;
+      row.appendChild(link);
+      const workStatus = { "unclassified-input": "需求记录（尚未归类）", active: "处理中", completed: "已登记完成（可核对证据）", blocked: "有阻塞", cancelled: "已取消" };
+      row.appendChild(document.createTextNode(" · " + (workStatus[item.status] || item.status) + " · " + (item.actor?.name || "来源待核对")));
+      panel.appendChild(row);
+    }
+    const labels = { draft: "待核验送达", published: "参考已发布，待确认采用", approved: "已确认采用，执行结果待核验", rejected: "已拒绝" };
+    for (const suggestion of data.suggestions) {
+      const row = document.createElement("p");
+      row.textContent = (labels[suggestion.state] || suggestion.state) + "：" + suggestion.content + "\n可能影响：" + suggestion.impact;
+      panel.appendChild(row);
+      const command = suggestion.state === "draft" && suggestion.sourceSessionId === session.id
+        ? "确认协作建议 " + suggestion.id + (suggestion.routing?.mode === "new-session" ? " 执行" : " 发布")
+        : suggestion.state === "published" && (suggestion.targetSessionId || suggestion.sourceSessionId) === session.id ? "确认协作建议 " + suggestion.id + " 执行" : "";
+      if (command && !document.querySelector?.('.native-question[data-question-state="pending"]')) {
+        const control = document.createElement("button");
+        control.type = "button";
+        control.textContent = "填入确认命令（发送前可检查）";
+        control.title = command;
+        control.addEventListener("click", () => {
+          if (msgInput.value.trim()) return;
+          msgInput.value = command;
+          msgInput.dispatchEvent(new Event("input", { bubbles: true }));
+          msgInput.focus();
+        });
+        panel.appendChild(control);
+      }
+    }
+    if (previous) previous.replaceWith(panel);
+    else queuedPanel?.after(panel);
+  } catch {
+    if (previous && request === workAwarenessPanelRequest) previous.querySelector("summary").textContent = "相关工作读取失败，请稍后重新打开会话核对";
+  }
 }
 
 function renderSessionMessageCount(session) {

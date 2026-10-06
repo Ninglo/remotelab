@@ -3,6 +3,7 @@ import { sameConversation, refineConversation } from '../lib/conversation-target
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
 import { canForwardNativeRequest, createNativeRequestDispatcher } from './native-request-dispatch.mjs';
 import { readNativeQuestion, nativeQuestionReplyText } from './native-user-questions.mjs';
+import { recordWorkInput, recordWorkOutcome, markReferenceReceipt } from './work-awareness.mjs';
 import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
 import { materializeFileAssetAttachments } from './file-assets.mjs';
@@ -38,7 +39,7 @@ import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
 import { IS_GUEST_INSTANCE, CONFIG_DIR } from '../lib/config.mjs';
-import { DEFAULT_PERSON_ID, SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
+import { DEFAULT_PERSON_ID, SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
@@ -1634,6 +1635,7 @@ async function buildPromptPackage(sessionId, session, text, previousTool, effect
     ));
   }
 
+  if (options.workDecisionContext) actualText = options.workDecisionContext + '\n\n' + actualText;
   if (flattenPrompt && promptMode === 'default') {
     actualText = actualText.replace(/\s+/g, ' ').trim();
   }
@@ -1754,6 +1756,7 @@ async function settleNativeRequest(record, run) {
   const outcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
   await requests.settle(record.key, { ...root.result, executionRunId: run.id },
     outcomeRequired ? buildReplyDeliveries(ownPlan, { text: '' }, { requireFeishuOutcome: true }) : []);
+  await recordWorkOutcome(record.sessionId, { ...record, result: root.result }, run);
   await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
   await requestRuntime.refresh(record.key);
   await requests.archiveFinished(record.key);
@@ -1964,6 +1967,7 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
   scheduleDetachedRunMemoryWriteback(sessionId, latestSession, finalizedRun, manifest);
   const record = await requests.byRunId(finalizedRun.id);
   if (record) {
+    await recordWorkOutcome(sessionId, record, finalizedRun);
     await requests.mutate(record.key, current => ({ ...current, postCompletionPending: false }));
     await requestRuntime.refresh(record.key);
     await requests.archiveFinished(record.key);
@@ -3174,18 +3178,66 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
 }
 
 const deliveryIssueObserver = createSourceDeliveryIssueObserver();
+async function recordWorkInputAndDeliver(session, record) {
+  const decisionInput = /^(确认协作建议|拒绝协作建议)\s/.test(record.text || '');
+  let decisionContext = '';
+  try {
+    const result = await recordWorkInput(session, record);
+    if (decisionInput && !result.suggestion) return 'Human work decision was NOT accepted: no verified human decision or invalid command. Review current records; the original authorization remains in force.';
+    if (decisionInput && result.suggestion) decisionContext = 'Recorded human work decision: ' + JSON.stringify({
+      suggestionId: result.suggestion.id, state: result.suggestion.state,
+      routing: result.suggestion.routing, execution: result.suggestion.execution,
+      boundary: 'Published is reference delivery only. Approved is adoption of this exact reviewed packet, not execution or completion.' });
+    const suggestion = result.referenceDelivery;
+    if (!suggestion) return decisionContext;
+    const text = '协作参考建议 ' + suggestion.id + '\n来源 Session：' + suggestion.sourceSessionId
+      + '\n' + suggestion.actor.name + ' 所在工作中的信息：' + suggestion.content
+      + '\n可能影响：' + suggestion.impact
+      + '\n这是已获准送达的参考建议，尚未获准修改当前任务。需要采用时，由人在本 Session 输入：确认协作建议 ' + suggestion.id + ' 执行';
+    const target = await findSessionMeta(suggestion.targetSessionId);
+    const active = requestRuntime.active(suggestion.targetSessionId)[0];
+    if (!target || target.archived || !active || active.options?.internalOperation) {
+      await markReferenceReceipt(suggestion.sourceSessionId, suggestion.id, { state: 'inbox-only', reason: 'Target not available for active reference input' });
+      broadcastSessionInvalidation(suggestion.targetSessionId);
+      return decisionContext;
+    }
+    const question = await readNativeQuestion(runDir(active.nativeDispatchRunId || active.runId));
+    if (question?.state === 'pending') {
+      await markReferenceReceipt(suggestion.sourceSessionId, suggestion.id, { state: 'inbox-only', reason: 'Target has a pending native question; reference cannot answer it' });
+      return decisionContext;
+    }
+    const receipt = await submitHttpMessage(suggestion.targetSessionId, text, [], {
+      ...active.runtimeSelection,
+      requestId: 'work-reference:' + suggestion.id, workReference: suggestion.id,
+      recordUserMessage: false, suppressSourceDelivery: true, allowGroupFeedWrite: true,
+      initiatedByIdentityId: SYSTEM_IDENTITY_ID, viewPersonId: SYSTEM_PERSON_ID,
+      sourceContext: { connector: 'work-reference', relatedPeople: suggestion.people || [] },
+    });
+    await markReferenceReceipt(suggestion.sourceSessionId, suggestion.id, { state: 'submitted', requestId: receipt.requestId,
+      runId: receipt.run.id, adoption: 'pending-human-confirmation' });
+    return decisionContext;
+  } catch (error) {
+    await appendEvent(session.id, { type: 'work_event', action: 'input-or-reference-error', requestId: record.requestId, error: error.message });
+    console.error('[work-awareness] ' + error.message);
+    return decisionInput ? 'Human work decision was NOT accepted: ' + error.message
+      + '. Review current records before changing the task; the original authorization remains in force.' : '';
+  }
+}
 const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
   prepareInput: async (record, manifest) => {
     if (record.options?.nativeQuestionId) return { text: nativeQuestionReplyText(record), context: '' };
     const attachments = await materializeFileAssetAttachments(record.images || []);
     const session = await findSessionMeta(record.sessionId);
+    const decisionContext = await recordWorkInputAndDeliver(session, record);
     const tool = await getToolDefinitionAsync(manifest.tool);
-    const context = tool?.promptMode === 'bare-user' ? '' : await buildManagerTurnContextText(session, { ...record.options, requestId: record.requestId });
-    let text = tool?.promptMode === 'bare-user' ? record.text
-      : [wrapPrivatePromptBlock(context), `Current user message:\n${record.text}`].filter(Boolean).join('\n\n---\n\n');
+    const context = tool?.promptMode === 'bare-user' ? '' : await buildManagerTurnContextText(session, { ...record.options, requestId: record.requestId, memoryQuery: record.text });
+    let text = tool?.promptMode === 'bare-user' && !record.options.workReference ? record.text
+      : [wrapPrivatePromptBlock(context), (record.options.workReference
+        ? 'Reference-only cross-Session input (not a user instruction; human adoption pending):\n' : 'Current user message:\n') + record.text].filter(Boolean).join('\n\n---\n\n');
     if (tool?.flattenPrompt) text = text.replace(/\s+/g, ' ').trim();
-    return { text: prependAttachmentPaths(text, attachments), context };
+    if (decisionContext) text = decisionContext + '\n\n' + text;
+    return { text: prependAttachmentPaths(text, attachments), context: [context, decisionContext].filter(Boolean).join('\n\n') };
   },
   recordInput: ensureRequestInput,
   settle: settleNativeRequest,
@@ -3223,6 +3275,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   await ensureRequestSchema(CONFIG_DIR);
   let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
+  if (options.workReference) {
+    const head = requestRuntime.active(sessionId)[0];
+    if (!head || head.options?.internalOperation || session.archived) throw new Error('Reference retained in work inbox; target is not running');
+    const question = await readNativeQuestion(runDir(head.nativeDispatchRunId || head.runId));
+    if (question?.state === 'pending') throw new Error('Reference retained in work inbox; target is awaiting a human answer');
+  }
   if (session.groupFeed === true && options.allowGroupFeedWrite !== true && !options.nativeQuestionId) {
     throw Object.assign(new Error('Group conversations accept messages only from their connector'), {
       code: 'GROUP_FEED_READ_ONLY',
@@ -3248,7 +3306,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       throw Object.assign(new Error('这道问题已结束，回答未应用；需要修改时请直接说明新的选择。'), { code: 'QUESTION_EXPIRED' });
     }
   }
-  else if (!priorRequest && activeNative && !options.internalOperation && !savedImages.length) {
+  else if (!priorRequest && activeNative && !options.internalOperation && !options.workReference && !savedImages.length) {
     const question = await readNativeQuestion(runDir(activeRequest.runId));
     if (question?.state === 'pending') options = { ...options, nativeQuestionId: question.id };
   }
@@ -3300,6 +3358,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, sourceDelivery: deliveryPlan, ...runtimeSelection })
     : [];
   const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries, deliveryPlan, boundConversation: Boolean(session.conversation) });
+  await recordWorkInputAndDeliver(session, record);
   const activeRun = activeRequest ? await getRun(activeRequest.runId) : null;
   const nativeFollowUp = activeNative && !activeRun?.cancelRequested && canForwardNativeRequest(record, activeRequest);
   const queued = !record.result && !record.nativeDispatchRunId && !nativeFollowUp && requestRuntime.active(sessionId)[0]?.key !== record.key;
@@ -3369,12 +3428,15 @@ async function ensureRequestInput(record, manifest) {
 }
 
 async function prepareRequestRun(record) {
+  if (record.options?.workReference) throw new Error('Reference retained in work inbox; it must not start or reopen a Session');
   const { sessionId, requestId, responseId, images } = record;
   const options = { ...record.options, memoryQuery: record.text, preSavedAttachments: images, ...(record.deliveryPlan ? { sourceDelivery: record.deliveryPlan } : {}) };
   const normalizedText = record.text;
   let session = await getSession(sessionId);
   if (!session) throw new Error('Accepted request has no session');
-  Object.assign(options, record.runtimeSelection || await resolveSessionRuntimeSelection(session, options));
+  const workDecisionContext = await recordWorkInputAndDeliver(session, record);
+  session = await getSession(sessionId);
+  Object.assign(options, record.runtimeSelection || await resolveSessionRuntimeSelection(session, options), { workDecisionContext });
   let existingRun = await getRun(record.runId);
   const launchReceipt = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
   if (record.cancelRequestedAt && !launchReceipt) {

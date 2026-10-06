@@ -110,6 +110,17 @@ operation rules and pointers; Skills/WORKFLOW hold reusable methods. Project
 status, personal tastes and office locations remain in their own maintenance
 locations. Native Harness loading rules still determine instruction activation.
 
+The bounded start/continuation path now also resolves involved source authors
+and mentioned people independently of project ownership, and reads relevant
+company sections directly from their original location. `memory context` and
+`work context` expose read coverage and source versions through the same modules.
+Missing matches, unavailable sources and budget skips remain different outcomes.
+Canonical Session work records provide non-exclusive overlap references;
+cross-Session publication and adoption require separate human chat decisions.
+This adds no foreground semantic model call or parallel project ledger. See
+[Session work awareness](../../docs/session-work-awareness.md) for commands,
+bounds, receipt semantics, recovery and actual acceptance limits.
+
 Start with all registered projects in an isolated collection/test-report area,
 consuming existing source outputs rather than adding a second group consumer.
 Runtime-enforced write isolation, version-aware correction, role recognition and

@@ -26,7 +26,7 @@ const lines = value => (Array.isArray(value) ? value : []).map(v => text(v, 160)
 export async function loadLearningPolicy(memoryDir = MEMORY_DIR) {
   try {
     const policy = JSON.parse(await readFile(join(memoryDir, 'learning-policy.json'), 'utf8'));
-    if (policy.version !== 1 || policy.enabled !== true) return { enabled: false };
+    if (policy.version !== 1 || policy.enabled !== true) return { enabled: false, readStatus: 'disabled' };
     if (!Array.isArray(policy.personIds) || !policy.personIds.every(id => /^person_[a-zA-Z0-9_-]{1,100}$/.test(id))) {
       throw new Error('learning-policy.json requires explicit personIds');
     }
@@ -34,7 +34,7 @@ export async function loadLearningPolicy(memoryDir = MEMORY_DIR) {
       context: policy.context === true, personIds: policy.personIds };
   } catch (error) {
     if (error.code !== 'ENOENT') console.error(`[memory-learning] Policy disabled: ${error.message}`);
-    return { enabled: false };
+    return { enabled: false, readStatus: error.code === 'ENOENT' ? 'not-recorded' : 'unavailable' };
   }
 }
 
@@ -313,10 +313,17 @@ function matches(entry, query, project) {
 }
 
 export async function buildLearningContext({ personId, identityId, authDocument, query = '', project, session, sourceContext,
-  memoryDir = MEMORY_DIR, maxChars = 6000 } = {}) {
+  memoryDir = MEMORY_DIR, maxChars = 6000, onCoverage = () => {} } = {}) {
   const policy = await loadLearningPolicy(memoryDir);
+  if (policy.readStatus === 'unavailable') {
+    onCoverage({ result: 'source-unavailable', path: join(memoryDir, 'learning-policy.json') });
+    return 'Scoped memory policy unavailable; this is not proof that background has not been recorded. Original registered sources remain available for explicit retrieval.';
+  }
   if (!policy.enabled || !policy.context || !policy.personIds.includes(personId)
-    || !verifiedLearningPerson({ personId, identityId, authDocument })) return '';
+    || !verifiedLearningPerson({ personId, identityId, authDocument })) {
+    onCoverage({ result: policy.readStatus || 'not-applicable-to-this-person-or-task' });
+    return '';
+  }
   try {
     if (typeof project !== 'string') project = await resolveLearningProject(session, sourceContext);
     const snapshot = await inspectLearning({ personId, identityId, authDocument, memoryDir });
@@ -331,19 +338,28 @@ export async function buildLearningContext({ personId, identityId, authDocument,
     const selected = candidates.filter(e => ['confirmed', 'inferred', 'verified', 'withdrawn'].includes(e.status)
       && (e.status === 'withdrawn' && (e.scope !== 'project' || e.project === project) || matches(e, query, project)))
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    let skipped = policy.profiles && snapshot.profile.prefix.trim() && !blocks.length ? 1 : 0;
     for (const entry of selected.slice(0, 12)) {
       const body = entryBody(entry);
-      if (blocks.join('\n\n').length + body.length + CONTEXT_HEADER.length + 2 > budget) continue;
+      if (blocks.join('\n\n').length + body.length + CONTEXT_HEADER.length + 2 > budget) { skipped++; continue; }
       blocks.push(body);
     }
+    skipped += Math.max(0, selected.length - 12);
+    onCoverage({ result: skipped ? 'partial-budget-skipped' : blocks.length ? 'found' : 'no-match-in-applicable-scoped-entries', paths: snapshot.paths, skipped });
     if (!blocks.length) {
       const pointer = 'Scoped collaboration memory is enabled for the verified current Person; no applicable entries fit this snapshot. '
         + 'For a new task or a discovered error, inspect current method status with `remotelab memory context --query <topic> --json`. '
         + 'Observation, retrieval and execution success are separate; this provides no new authorization.';
       return pointer.length <= budget ? pointer : '';
     }
-    return CONTEXT_HEADER + blocks.join('\n\n');
-  } catch (error) { console.error(`[memory-learning] Context unavailable: ${error.message}`); return ''; }
+    return CONTEXT_HEADER + blocks.join('\n\n') + (skipped ? '\nSome scoped entries were skipped by budget; read their registered original sources before relying on them.' : '');
+  } catch (error) {
+    console.error(`[memory-learning] Context unavailable: ${error.message}`);
+    onCoverage({ result: 'source-unavailable', path: learningPaths(memoryDir, personId).profile, reason: error.message });
+    const failure = 'Scoped memory source unavailable (not a missing record): ' + JSON.stringify({ personId,
+      profile: learningPaths(memoryDir, personId).profile, reason: error.message });
+    return failure.length <= maxChars ? failure : '';
+  }
 }
 
 export function buildLearningReviewPrompt({ userMessage, assistantTurnText, sources, snapshot, project, delivered, candidateTargets = [] }) {

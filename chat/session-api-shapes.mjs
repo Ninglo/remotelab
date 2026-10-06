@@ -15,6 +15,8 @@ function stripSessionShape(session, {
   delete cloned.titleLocked;
   delete cloned.feishuProgressChanges;
   if (!includeQueuedMessages) {
+    if (Array.isArray(cloned.workAwareness?.works)) cloned.workAwareness = { revision: cloned.workAwareness.revision,
+      activeCount: cloned.workAwareness.works.filter(work => work.status === 'active').length };
     delete cloned.queuedMessages;
     delete cloned.deliveryIssues;
   }

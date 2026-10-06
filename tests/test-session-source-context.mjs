@@ -174,7 +174,7 @@ try {
   assert.match(secondManifest.managerTurnContext, /<progress>\.\.\.<\/progress>/, 'resumed turns receive the display contract');
   assert.match(secondManifest.managerTurnContext, /当前发言人：Bob/);
   assert.match(secondManifest.managerTurnContext, /long quoted context/);
-  assert.ok(secondManifest.managerTurnContext.length < 10_000, 'visible source context stays bounded');
+  assert.ok(secondManifest.managerTurnContext.length < 12_000, 'source and bounded necessary-background coverage stay within the combined budget');
   assert.doesNotMatch(secondManifest.managerTurnContext,
     /msg_source_context_1|msg_source_context_2|thread-2|Alice|mutated-after-admission/);
   assert.deepEqual((await getSessionSourceContext(session.id, { requestId: 'req-source-context-2' })).message, secondSnapshot);

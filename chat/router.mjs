@@ -87,6 +87,7 @@ import {
   handleConnectorSurfaceRoutes,
 } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
+import { handleWorkAwarenessRoutes } from './router-work-awareness.mjs';
 import { handleSiteFeedbackRoutes } from './router-site-feedback-routes.mjs';
 import { handleQianyanRoutes } from './router-qianyan-routes.mjs';
 import { handleQianyanInternalRoutes } from './router-qianyan-internal-routes.mjs';
@@ -1430,6 +1431,8 @@ export async function handleRequest(req, res) {
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
+
+  if (await handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson })) return;
 
   // ---- API endpoints ----
 

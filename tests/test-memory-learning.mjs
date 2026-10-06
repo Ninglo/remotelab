@@ -193,6 +193,6 @@ try {
   assert.equal(await readFile(outside, 'utf8'), 'CORE PRINCIPLES');
   await rm(paths.profile); await writeFile(paths.profile, before);
   await writeFile(policyPath, '{bad json');
-  assert.equal(await context('飞书权限'), '');
+  assert.match(await context('飞书权限'), /policy unavailable/);
   console.log('MEMORY_LEARNING_VERIFIED: ordinary habits, independent-session evidence, explicit preferences, short-turn review, Bot capability and real missing-permission boundary, versioned withdrawal/counterexamples, receipt-bound outcomes, scoped bounded retrieval, preserved manual text, lock and malformed/symlink protection; isolated fixtures only.');
 } finally { await rm(home, { recursive: true, force: true }); }

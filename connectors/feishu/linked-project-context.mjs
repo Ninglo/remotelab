@@ -76,6 +76,8 @@ export async function appendLinkedFeishuProjectEvent(runtime, record) {
       createTime: summary.createTime, threadId: summary.threadId,
       messageText: trimString(summary.messageText || summary.textPreview).slice(0, MAX_MESSAGE_CHARACTERS),
       sender: { senderType: 'user', name: trimString(summary.sender.name),
+        openId: trimString(summary.sender.openId), userId: trimString(summary.sender.userId), unionId: trimString(summary.sender.unionId),
+        realm: trimString(runtime.config.sourceRouteId),
         participantKey: feishuParticipantKey(summary.sender) },
     },
   })}\n`, { encoding: 'utf8', mode: 0o600 });
@@ -162,6 +164,7 @@ export function selectLinkedFeishuMessages(eventText, link, current, options = {
       threadId: trimString(item.threadId),
       sender: identified ? feishuParticipantLabel(item.sender)
         : previous?.sender || feishuParticipantLabel(item.sender),
+      authorRef: item.sender ? { ...item.sender, kind: 'feishu' } : previous?.authorRef,
     });
   }
 

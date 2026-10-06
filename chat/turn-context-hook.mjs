@@ -4,6 +4,9 @@ import { buildSourceContextPrompt } from './source-context-prompt.mjs';
 import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
 import { buildLearningContext } from './memory-learning.mjs';
+import { buildRelatedPersonContext } from './related-person-context.mjs';
+import { buildWorkAwarenessContext } from './work-awareness.mjs';
+import { buildNecessaryBackgroundContext } from './necessary-background.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -21,15 +24,26 @@ function buildFeishuLogPromptBlock(sourceContext) {
 }
 
 export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '' } = {}) {
+  const sections = await Promise.allSettled([
+    buildLearningContext({ personId, identityId, query: `${query}\n${sourceContext?.connector || ''}`, session, sourceContext }),
+    buildProjectMemoryPromptBlock(session, sourceContext),
+    buildRelatedPersonContext({ personId, identityId, sourceContext, query }),
+    buildWorkAwarenessContext(session, { query }),
+    query ? buildNecessaryBackgroundContext(session, { query, sourceContext }) : '',
+  ]);
+  const [learning, project, people, work, background] = sections.map((result, index) => result.status === 'fulfilled'
+    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['learning', 'project', 'people', 'work', 'background'][index], reason: result.reason.message }));
   return [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
-    await buildLearningContext({ personId, identityId, query: `${query}\n${sourceContext?.connector || ''}`,
-      session, sourceContext }),
-    await buildProjectMemoryPromptBlock(session, sourceContext),
+    learning,
+    project,
+    people,
+    work,
+    background,
     // Classifier summaries are derived UI state, not fresh execution evidence.
     // Keep them queryable on the session; do not replay stale blockers every turn.
   ].map((section) => String(section || '').trim()).filter(Boolean).join('\n\n');

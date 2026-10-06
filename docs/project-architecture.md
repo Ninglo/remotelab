@@ -161,6 +161,11 @@ control-plane restarts through durable Request/Run state and reconciliation.
 - `chat/run-projection.mjs` — native output to normalized events.
 - `chat/run-reconciler.mjs` — recovery and missing-result settlement.
 - `chat/history.mjs` — canonical append-only Session history.
+- `chat/work-awareness.mjs` — bounded work, input and reference-suggestion
+  records within Session metadata; symmetric non-exclusive overlap queries.
+- `chat/necessary-background.mjs` and `chat/related-person-context.mjs` —
+  task-relevant original sources, read coverage and independently attributed
+  people. See [Session work awareness](session-work-awareness.md).
 
 ### Frontend
 
@@ -200,6 +205,9 @@ Important authenticated routes include:
 - `GET|PATCH /api/sessions/:id`
 - `POST /api/sessions/:id/messages`
 - `POST /api/sessions/:id/fork`
+- `GET /api/work-awareness`, `GET|POST /api/work-awareness/people`
+- `POST /api/work-awareness/start|update|suggest` (Run-attributed records;
+  human publication/adoption remains explicit chat input, not an approval API)
 
 All authenticated routes operate against the complete instance Session set. The
 Person filter is a client-side convenience over attribution metadata, not a

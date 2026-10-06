@@ -108,6 +108,11 @@ export function normalizeFeishuHistoryItem(item, options = {}) {
   if (!text || isConnectorReceiptOnly(text, item)) return null;
   return {
     sender: senderName(item),
+    messageId: trimString(item.message_id),
+    ...(trimString(item.sender?.id || item.sender?.open_id) ? { authorRef: {
+      kind: 'feishu', subjectId: trimString(item.sender?.id || item.sender?.open_id),
+      senderType: trimString(item.sender?.sender_type), realm: trimString(options.sourceRouteId),
+    } } : {}),
     time: formatFeishuConversationTime(timestamp, options),
     text,
     timestamp,
@@ -223,7 +228,7 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
     .filter((item) => !currentMessageId || trimString(item?.message_id) !== currentMessageId)
     .filter((item) => !sinceMessageId || trimString(item?.message_id) !== sinceMessageId)
     .map((item) => {
-      const message = normalizeFeishuHistoryItem(item, { timeZone: options.timeZone });
+      const message = normalizeFeishuHistoryItem(item, { timeZone: options.timeZone, sourceRouteId: runtime?.config?.sourceRouteId || summary.sourceRouteId });
       return message ? { ...message, messageId: trimString(item?.message_id),
         senderType: trimString(item?.sender?.sender_type), senderId: trimString(item?.sender?.id) } : null;
     })
@@ -233,8 +238,9 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
   const fitted = fitCharacterBudget(relevant, maxCharacters);
   if (fitted.messages.length === 0) return null;
   return {
-    messages: fitted.messages.map(({ sender, time, text, timestamp, messageId, senderType, senderId }) => ({
-      sender, time, text,
+    messages: fitted.messages.map(({ sender, time, text, timestamp, messageId, senderType, senderId, authorRef }) => ({
+      sender, time, text, messageId,
+      ...(authorRef ? { authorRef } : {}),
       ...(options.includeMetadata ? { timestamp, messageId, senderType, senderId } : {}),
     })),
     truncated: fitted.truncated || rawItems.length >= maxMessages,

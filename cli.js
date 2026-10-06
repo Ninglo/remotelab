@@ -55,6 +55,7 @@ Usage:
   remotelab agenda                  Manage the instance calendar feed
   remotelab todo                    Manage personal To do items and numeric progress
   remotelab memory                  Inspect and maintain scoped people profiles and the Agent handbook
+  remotelab work                    Register work, find related results and prepare reference suggestions
   remotelab trigger                  Manage durable session triggers
   remotelab schedule                 Manage recurring automated tasks
   remotelab usage-summary            Summarize local Codex token usage
@@ -68,6 +69,12 @@ Usage:
 }
 
 switch (command) {
+  case 'work': {
+    const { runWorkAwarenessCommand } = await import(scriptPath('lib/work-awareness-command.mjs'));
+    try { process.exitCode = await runWorkAwarenessCommand(process.argv.slice(3)); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'memory': {
     const { runMemoryLearningCommand } = await import(scriptPath('lib/memory-learning-command.mjs'));
     try { process.exitCode = await runMemoryLearningCommand(args); }

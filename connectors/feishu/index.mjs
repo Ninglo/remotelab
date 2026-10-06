@@ -703,6 +703,7 @@ export function buildMessageSourceContext(summary) {
       return {
         ...(name ? { name } : {}),
         ...(token ? { token } : {}),
+        ...(mention.openId || mention.id?.open_id ? { kind: 'feishu', subjectId: trimString(mention.openId || mention.id.open_id) } : {}),
       };
     })
     .filter(Boolean);
@@ -723,6 +724,8 @@ export function buildMessageSourceContext(summary) {
     const messages = summary.conversationContext.messages
       .map((entry) => ({
         sender: trimString(entry?.sender),
+        messageId: trimString(entry?.messageId),
+        ...(entry.authorRef ? { authorRef: entry.authorRef } : {}),
         time: trimString(entry?.time),
         text: trimString(entry?.text),
       }))
@@ -742,6 +745,7 @@ export function buildMessageSourceContext(summary) {
       text: trimString(entry?.text),
       threadId: trimString(entry?.threadId),
       sender: trimString(entry?.sender),
+      ...(entry.authorRef ? { authorRef: entry.authorRef } : {}),
     })).filter((entry) => entry.messageId && entry.timestamp && entry.text);
     if (messages.length > 0) {
       context.linkedProjectContext = {
