@@ -253,11 +253,11 @@ Bot mention or task/control command. Once the Bot has an accepted conversation
 binding, human follow-ups in that same topic need no further mention; other
 topics, groups, tenants and Bots do not inherit that invitation.
 
-Each Thread creates or continues its own Session, scoped by Bot, tenant, chat
+Each invited Thread creates or continues its own Session, scoped by Bot, tenant, chat
 and topic. The Session replies to every human message in that topic by default,
 including forwarded messages, unless explicitly told to stay silent or paused.
-An existing binding preserves Session continuity across connector restarts; it
-is not an admission requirement. Quoting a message outside a Thread does not
+An accepted binding preserves Session continuity across connector restarts and
+admits later unmentioned human follow-ups. Quoting a message outside a Thread does not
 create topic identity; it follows the group's mainline admission policy.
 Private messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
