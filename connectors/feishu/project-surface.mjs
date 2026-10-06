@@ -31,6 +31,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
   const actions = createRecordStore(join(root, 'actions'));
   const exclusive = createKeyedTaskQueue();
   const watchers = new Map();
+  const activeRefreshes = new Set();
   let refreshTimer;
   let stopped = false;
 
@@ -180,7 +181,14 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     });
   }
 
-  async function refresh() {
+  function refresh() {
+    if (stopped) return Promise.resolve();
+    const work = refreshRecords();
+    activeRefreshes.add(work);
+    return work.finally(() => activeRefreshes.delete(work));
+  }
+
+  async function refreshRecords() {
     const records = await cards.active();
     await Promise.allSettled(records.filter(record => record.messageId).map(record => exclusive(record.key, async () => {
       const current = await cards.get(record.key);
@@ -201,7 +209,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
   }
 
   function observe(path) {
-    if (!watchFiles || watchers.has(path)) return;
+    if (stopped || !watchFiles || watchers.has(path)) return;
     const observer = watch(dirname(path), { persistent: false }, (_, filename) => {
       if (filename && String(filename) !== basename(path)) return;
       clearTimeout(refreshTimer);
@@ -234,5 +242,11 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
   }
 
   return { command, actionFeedback, handleAction, refresh, restore,
-    stop() { stopped = true; clearTimeout(refreshTimer); for (const observer of watchers.values()) observer.close(); } };
+    async stop() {
+      stopped = true;
+      clearTimeout(refreshTimer);
+      for (const observer of watchers.values()) observer.close();
+      await Promise.allSettled([...activeRefreshes]);
+      await Promise.all([cards.idle(), actions.idle()]);
+    } };
 }

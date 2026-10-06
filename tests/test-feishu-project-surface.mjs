@@ -126,7 +126,7 @@ try {
   await surface.handleAction(uncertainResume);
   assert.equal(task.state, 'active');
   assert(content().includes('不能当作已生效'), 'uncertain acknowledgements are visible');
-  surface.stop();
+  await surface.stop();
   surface = makeSurface();
   await surface.restore();
   await surface.handleAction(uncertainResume);
@@ -157,7 +157,7 @@ try {
   assert.equal(submitted.startThread, undefined, 'memory edits continue the original topic');
 
   // Exercise actual filesystem notifications, including atomic replacement.
-  surface.stop();
+  await surface.stop();
   surface = makeSurface({ watchFiles: true });
   await surface.command(summary, 'memory');
   const updated = new Promise((resolve, reject) => {
@@ -175,6 +175,6 @@ try {
   assert(patches > 0);
   console.log('PASS: Feishu project source binding, scoped reads, configuration controls, audit, replay/restart and live memory invalidation');
 } finally {
-  for (const surface of surfaces) surface.stop();
+  await Promise.all(surfaces.map(surface => surface.stop()));
   await rm(home, { recursive: true, force: true });
 }
