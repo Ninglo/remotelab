@@ -15,6 +15,10 @@ const config = join(root, 'config'), bin = join(root, 'bin');
 const validationLog = join(tmpdir(), `remotelab-native-integration-results-${process.pid}.log`);
 const evidence = async message => { console.log(message); await appendFile(validationLog, `${new Date().toISOString()} ${message}\n`); };
 await mkdir(config); await mkdir(bin);
+await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_a', people: [
+  { id: 'person_a', name: '甲', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
+  { id: 'person_b', name: '乙', identities: [{ id: 'identity_b', kind: 'web', subjectId: 'b' }] },
+] }));
 await writeFile(join(config, 'tools.json'), JSON.stringify([
   { id: 'fake-native', name: 'Fake native', command: 'fake-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
   { id: 'fake-switch', name: 'Other runtime', command: 'fake-native', runtimeFamily: 'codex-json', inputMode: 'batch', promptMode: 'bare-user' },
@@ -253,6 +257,47 @@ try {
   await awaitAnswer(internalSession.id, 'internal-root');
   assert.equal((await logs()).filter(event => event.clientId === 'blocked-followup').length, 0);
   await evidence('PASS: internal native work keeps follow-ups queued consistently across admission, detail, duplicate, restart and removal; accepted native input cannot be removed.');
+  const sender = await rpc('create');
+  const target = await rpc('create');
+  const humanOptions = (requestId, who) => ({ requestId, tool: 'fake-native', viewPersonId: 'person_' + who, initiatedByIdentityId: 'identity_' + who });
+  const senderRun = await rpc('accept', sender.id, '设计同一项开工方案', [], humanOptions('work-a', 'a'));
+  const targetRun = await rpc('accept', target.id, '设计同一项开工方案', [], humanOptions('work-b', 'b'));
+  await until(async () => (await logs()).some(event => event.runId === targetRun.run.id && event.kind === 'turn/start'), 'target native turn active');
+  const actor = { personId: 'person_a', identityId: 'identity_a', name: '甲' };
+  const draft = await rpc('work-suggest', { sessionId: sender.id, targetSessionId: target.id, actor, requestId: 'work-draft',
+    content: '另一边也在设计开工方案，建议核对重叠部分。', impact: '可能减少重复工作', evidenceRefs: [1] });
+  assert.equal((await rpc('work-inbox', target.id)).length, 0);
+  const publishText = '确认协作建议 ' + draft.suggestion.id + ' 发布';
+  await rpc('accept', sender.id, publishText, [], { requestId: 'agent-cannot-publish', tool: 'fake-native',
+    viewPersonId: 'person_system', initiatedByIdentityId: 'identity_system' });
+  await until(async () => (await receipt(senderRun.run.id, 'agent-cannot-publish'))?.state === 'accepted', 'unverified command safely reported to Harness');
+  assert.match((await logs()).find(event => event.clientId === 'agent-cannot-publish').text, /NOT accepted/);
+  assert.equal((await rpc('work-inbox', target.id)).length, 0);
+  await rpc('accept', sender.id, publishText, [], humanOptions('work-publish', 'a'));
+  await until(async () => (await receipt(targetRun.run.id, 'work-reference:' + draft.suggestion.id))?.state === 'accepted', 'reference gets native receipt');
+  const input = (await logs()).find(event => event.clientId === 'work-reference:' + draft.suggestion.id);
+  assert.match(input.text, /Reference-only cross-Session input/);
+  assert.match(input.text, /尚未获准修改当前任务/);
+  assert.equal((await rpc('work-inbox', target.id))[0].state, 'published');
+  await rpc('accept', sender.id, publishText, [], humanOptions('work-publish', 'a'));
+  assert.equal((await logs()).filter(event => event.clientId === 'work-reference:' + draft.suggestion.id).length, 1, 'duplicate publication is not repeated');
+  const awaiting = await rpc('create');
+  const awaitingRun = await rpc('accept', awaiting.id, 'ASK_NATIVE_QUESTION', [], humanOptions('work-question', 'b'));
+  await until(async () => (await logs()).some(event => event.runId === awaitingRun.run.id && event.kind === 'turn/start'), 'question turn started');
+  await until(async () => (await rpc('history', awaiting.id)).some(event => event.messageKind === 'user_question' && event.questionState === 'pending'), 'pending question projected');
+  const questionDraft = await rpc('work-suggest', { sessionId: sender.id, targetSessionId: awaiting.id, actor, requestId: 'work-question-draft',
+    content: '这条建议只能参考，不能替人回答问题。', impact: '补充背景', evidenceRefs: [1] });
+  await rpc('accept', sender.id, '确认协作建议 ' + questionDraft.suggestion.id + ' 发布', [], humanOptions('work-question-publish', 'a'));
+  assert.equal((await rpc('work-inbox', awaiting.id))[0].receipt.state, 'inbox-only');
+  assert.equal((await logs()).filter(event => event.runId === awaitingRun.run.id && event.kind === 'question-answer').length, 0);
+  await rpc('accept', awaiting.id, '1', [], humanOptions('work-question-answer', 'b'));
+  await rpc('accept', target.id, '确认协作建议 ' + draft.suggestion.id + ' 执行', [], humanOptions('work-adopt', 'b'));
+  assert.equal((await rpc('work-inbox', target.id))[0].state, 'approved');
+  await until(async () => (await receipt(targetRun.run.id, 'work-adopt'))?.state === 'accepted', 'human adoption acknowledged by native Harness');
+  await writeFile(join(root, senderRun.run.id + '.release'), '');
+  await writeFile(join(root, targetRun.run.id + '.release'), '');
+  await awaitAnswer(sender.id, 'work-a'); await awaitAnswer(target.id, 'work-b'); await awaitAnswer(awaiting.id, 'work-question');
+  await evidence('PASS: human-approved publication reaches a running Harness exactly once as reference-only; adoption requires a separate target human input; a reference cannot answer a pending question.');
   succeeded = true;
   await evidence(`test-native-harness-integration: ok; validation log: ${validationLog}`);
 } catch (error) {

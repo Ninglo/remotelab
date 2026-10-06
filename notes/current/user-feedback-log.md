@@ -1374,3 +1374,10 @@ settings are separate from verified live deployment and delivery.
 - Revision: opt script-gated tasks into the existing schedule registry's foreground-idle event. Coalesce unchanged activity hints, observe compact resource metadata, retain the configured fallback cadence and the normal bounded Trigger/Run path.
 - Boundary: only Session run/queue/compaction transitions are event sources in this slice. Quota, host-load and material eligibility remain gate checks; group publication remains subject to the task's explicit human authorization.
 - Verification: isolated resource transition/recovery checks, cancellation and concurrent event/cadence admission, and an authenticated fixture run before the hourly fallback. Source/CI checks, current-instance loading and a real idle-review result are separate acceptance stages.
+
+## 2026-10-06 — Make related work visible without assigning exclusive ownership
+
+- Source: approved Session start/collaboration design in RemoteLab Session `2e718a6341abc95ac148dc4368fb4c8d`; related company-background addition explicitly accepted in the same delivery.
+- Feedback: concurrent starts had duplicated work until a person noticed. Relevant stored background was sometimes missed, and another participant's naming rules were lost when the project creator was treated as the only person.
+- Revision: keep bounded work records in their original Sessions; query both sides without leases or automatic cancellation. Resolve involved people independently of project tags, read applicable original company sources, and expose read failures, versions and budget skips. Cross-Session references retain separate human publication and adoption decisions; routing remains a concrete reviewed packet.
+- Verification: isolated concurrent state, actual rendered source attribution, version/failure/budget cases, draft-only UI controls, native reference receipts and pending-question protection. Synthetic timing measures record size and read cost; real semantic relevance and compliance remain actual-use observations. No real group test messages or profile/company rewrites.

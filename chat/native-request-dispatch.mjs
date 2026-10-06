@@ -71,6 +71,7 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         const context = typeof prepared === 'string' ? '' : prepared.context || '';
         record = await store.mutate(record.key, current => ({ ...current,
           nativeDispatchRunId: head.runId, nativeInput: { id: record.requestId, text,
+            ...(record.options?.workReference ? { referenceOnly: true } : {}),
             ...(record.options?.nativeQuestionId ? { questionId: record.options.nativeQuestionId, answerText: nativeQuestionReplyText(record) } : {}),
           }, nativeContext: context,
           nativeInputBaseSeq: current.nativeInputBaseSeq ?? manifest.forkBaseSeq ?? 0,

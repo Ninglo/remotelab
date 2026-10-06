@@ -101,6 +101,16 @@ function harness(options = {}, onQuestion) {
 }
 {
   const h = harness(); await h.start();
+  const reference = h.driver.submit({ id: 'reference-race', text: 'reference', referenceOnly: true }); await tick();
+  const referenceRejected = assert.rejects(reference, error => error.code === 'NATIVE_REJECTED');
+  h.reply('turn/steer', null, { code: -32600, message: 'No active turn to steer' });
+  await referenceRejected;
+  assert.equal(h.sent.filter(value => value.method === 'turn/start').length, 1, 'reference must not restart a turn');
+  await assert.rejects(h.driver.submit({ id: 'late-reference', text: 'reference', referenceOnly: true }), /cannot start/);
+  h.driver.close();
+}
+{
+  const h = harness(); await h.start();
   const promise = h.driver.submit({ id: 'no-replay', text: 'next' }); await tick();
   const rejection = assert.rejects(promise, /transport/);
   h.reply('turn/steer', null, { code: -32000, message: 'transport disconnected' });

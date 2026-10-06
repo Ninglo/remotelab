@@ -196,6 +196,9 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
       isAccepting: async () => { const cancelled = await isCancelled(); return started && acceptingExternalInputs && !closing && !interruptRequested && !cancelled; },
       onIdle: () => queueMicrotask(maybeStop),
       submit: async input => {
+        if (input.referenceOnly && (questions.pending || nativeResult)) {
+          throw Object.assign(new Error('Reference retained in inbox: the native turn ended or is awaiting human input'), { code: 'NATIVE_REJECTED' });
+        }
         submissions++;
         const before = settlementRevision;
         try {

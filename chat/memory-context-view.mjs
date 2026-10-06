@@ -1,31 +1,9 @@
 // Explicit, authenticated inspection only; never a prompt or background reader.
-import { open } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { createHash } from 'node:crypto';
+import { readMemoryDocument as document } from './memory-document.mjs';
 import { MEMORY_DIR } from '../lib/config.mjs';
 import { loadProjectMemoryRuntime } from './project-memory-runtime.mjs';
 import { readMemoryFileCatalog } from './memory-file-catalog.mjs';
-
-async function document(path, limit) {
-  let handle;
-  try {
-    handle = await open(path, 'r');
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > limit) return { status: 'too-large-or-not-file' };
-    const buffer = Buffer.alloc(limit + 1);
-    let size = 0;
-    while (size <= limit) {
-      const result = await handle.read(buffer, size, buffer.length - size, null);
-      if (!result.bytesRead) break;
-      size += result.bytesRead;
-    }
-    if (size > limit) return { status: 'too-large-or-not-file' };
-    const text = buffer.subarray(0, size).toString('utf8');
-    return { status: 'available', path, text, modifiedAt: stat.mtime.toISOString(), hash: createHash('sha256').update(text).digest('hex').slice(0, 16) };
-  } catch (error) {
-    return { status: error.code === 'ENOENT' ? 'not-recorded' : 'unavailable' };
-  } finally { await handle?.close(); }
-}
 
 export async function readMemoryContextView({ people = [], personId = '', memoryDir = MEMORY_DIR, configPath } = {}) {
   // Validate against actual Person records, never a caller-provided file path.

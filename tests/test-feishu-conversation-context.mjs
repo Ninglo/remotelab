@@ -22,7 +22,7 @@ assert.deepEqual(normalizeFeishuHistoryItem({
   ...textItem('mention', '2026-09-22T09:00:00.000Z', 'Alice', '请看 @_user_1'),
   mentions: [{ key: '@_user_1', name: 'Bob' }],
 }, { timeZone: 'Asia/Shanghai' }), {
-  sender: 'Alice（身份未核实）', time: '2026-09-22 17:00:00', text: '请看 @Bob',
+  messageId: 'mention', sender: 'Alice（身份未核实）', time: '2026-09-22 17:00:00', text: '请看 @Bob',
   timestamp: Date.parse('2026-09-22T09:00:00.000Z'),
 });
 const sameNameA = normalizeFeishuHistoryItem({
@@ -35,6 +35,9 @@ const sameNameB = normalizeFeishuHistoryItem({
 });
 assert.notEqual(sameNameA.sender, sameNameB.sender,
   'recent group history must distinguish people who share a display name');
+assert.equal(sameNameA.authorRef.subjectId, 'ou_history_a');
+assert.equal(sameNameB.authorRef.subjectId, 'ou_history_b');
+assert.equal(buildMessageSourceContext({ sourceRouteId: 'route', mentions: [{ name: '被提及的人', key: '@_user', openId: 'ou_mentioned' }] }).mentions[0].subjectId, 'ou_mentioned');
 
 function runtimeFor(items, calls) {
   return {
@@ -62,8 +65,8 @@ const topicContext = await loadFeishuConversationContext(runtimeFor([
 
 assert.deepEqual(topicContext, {
   messages: [
-    { sender: '酒嘉年（身份未核实）', time: '2026-09-22 16:00:00', text: '第一条' },
-    { sender: '张予（身份未核实）', time: '2026-09-22 18:00:00', text: '第二条' },
+    { messageId: 'root', sender: '酒嘉年（身份未核实）', time: '2026-09-22 16:00:00', text: '第一条' },
+    { messageId: 'reply', sender: '张予（身份未核实）', time: '2026-09-22 18:00:00', text: '第二条' },
   ],
   truncated: false,
 });
@@ -85,8 +88,8 @@ const groupContext = await loadFeishuConversationContext(runtimeFor([
 }, { timeZone: 'Asia/Shanghai' });
 
 assert.deepEqual(groupContext.messages, [
-  { sender: 'Alice（身份未核实）', time: '2026-09-22 16:00:00', text: '本轮开始' },
-  { sender: '张予（身份未核实）', time: '2026-09-22 18:45:00', text: '最近一条' },
+  { messageId: 'middle', sender: 'Alice（身份未核实）', time: '2026-09-22 16:00:00', text: '本轮开始' },
+  { messageId: 'recent', sender: '张予（身份未核实）', time: '2026-09-22 18:45:00', text: '最近一条' },
 ]);
 assert.equal(groupCalls[0].params.container_id_type, 'chat');
 assert.equal(groupCalls[0].params.container_id, 'chat-secret');
