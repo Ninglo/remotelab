@@ -253,6 +253,14 @@ Bot mention or task/control command. Once the Bot has an accepted conversation
 binding, human follow-ups in that same topic need no further mention; other
 topics, groups, tenants and Bots do not inherit that invitation.
 
+Work and learning topic groups that are intended as assistant task entry points
+must explicitly set `groups[chatId].responseMode: "all"`; do not infer their role
+from `chat_mode=topic` or their name. A sharing topic group can retain
+`responseMode: "mention_only"`. Review the actual group purpose and prior
+participation decisions when repairing a missing entry-point configuration;
+new groups remain passive. This intake setting does not remove explicit mute
+or the self/peer-Bot guards.
+
 Each invited Thread creates or continues its own Session, scoped by Bot, tenant, chat
 and topic. The Session replies to every human message in that topic by default,
 including forwarded messages, unless explicitly told to stay silent or paused.

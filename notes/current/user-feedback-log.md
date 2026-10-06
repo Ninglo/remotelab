@@ -7,6 +7,14 @@
 - Change: add an instance-scoped, read-only `service-access check` that checks exact units, sudo and an explicitly registered loopback SSH fallback. Verify root UID and the same machine before presenting the concrete route. Discover it in startup context and retain a small lookup pointer in registered instances' resumed turns, even when the user only says “continue”; deployment/restart queries include the exact registration. Keep host-specific registration in instance config; no permission grants or key installation.
 - Acceptance: reproduce sudo denial with working SSH, true SSH failure, non-root/wrong-host rejection, nonexistent units, unconfigured instances, unsafe configuration and fresh/resumed context delivery. Verify the actual affected instance separately; capability evidence does not broaden the task or prove deployment.
 
+### 2026-10-06 — Recover work-topic entry points without widening sharing groups
+
+- Clarified scope: work/learning topic entry points must admit human tasks without a Bot mention or earlier invitation. The operator then excluded sharing groups and requested that earlier per-group decisions be retained. Native topic metadata is not a blanket opt-in; the earlier new-group passive default remains effective.
+- Observed failure: a concrete research request in an existing native topic group was received and then filtered before Session creation, so it produced no opening.
+- Change: repair missing exact-chat `responseMode: "all"` configuration for established work/learning entry points. Preserve explicit sharing-group `mention_only`, other passive groups, existing workflows, mute and self/peer-Bot guards. Missing event metadata is resolved before admission.
+- Recovery requirement: resume the original Feishu sender and source message through the connector, publish the normal opening with accepted runtime information and Session link in that same topic, and retain the original sender's workspace attribution. Delegating from the operator's Session does not satisfy this requirement.
+- Verification: isolated admission, metadata, mute and Bot guards; remote main delivery, loaded connector version, original-person attribution and actual opening readback are separate checks.
+
 ### 2026-10-06 — Omit the phase heading from final-only Feishu replies
 
 - Feedback: a group reply that sends only the answer has no reason to announce “最终回复”.
