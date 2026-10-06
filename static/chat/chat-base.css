@@ -166,19 +166,6 @@
   position: relative;
 }
 
-:root[data-theme="amber"] .chat-area::after {
-  content: "";
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  width: 90px;
-  height: 90px;
-  background: url('img/sticker-bear.gif') no-repeat center / contain;
-  opacity: 0.55;
-  pointer-events: none;
-  z-index: 1;
-}
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 .rl-icon {

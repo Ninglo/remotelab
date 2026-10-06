@@ -1,0 +1,121 @@
+.amber-pet { display: none; }
+:root[data-theme="amber"] .amber-pet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: absolute;
+  z-index: 5;
+  width: var(--pet-size, 90px);
+  --pet-size: 90px;
+}
+.amber-pet-image {
+  display: block;
+  width: var(--pet-size);
+  height: var(--pet-size);
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.amber-pet-image img { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0.8; pointer-events: none; }
+.amber-pet.is-dragging .amber-pet-image { cursor: grabbing; }
+.amber-pet-toggle {
+  touch-action: manipulation;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 24px;
+  margin-top: 2px;
+  padding: 0 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: 700 20px/1 system-ui, sans-serif;
+  letter-spacing: 2px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(30, 28, 20, 0.06);
+}
+.amber-pet-toggle:hover, .amber-pet.is-open .amber-pet-toggle { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
+.amber-pet-resize {
+  position: absolute;
+  top: calc(var(--pet-size) - 24px);
+  right: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: 16px/1 system-ui, sans-serif;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+}
+.amber-pet:hover .amber-pet-resize, .amber-pet:focus-within .amber-pet-resize, .amber-pet.is-dragging .amber-pet-resize { opacity: 1; }
+@media (hover: none) { .amber-pet-resize { opacity: 1; } }
+.amber-pet-menu {
+  position: fixed;
+  width: 300px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 10px 30px rgba(30, 28, 20, 0.13);
+  font-family: inherit;
+  font-size: 12px;
+}
+.amber-pet-menu[hidden] { display: none; }
+.amber-pet-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.amber-pet-label { flex: 1; font-size: 13px; font-weight: 600; }
+.amber-pet-tool {
+  touch-action: manipulation;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font: 18px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+.amber-pet-tool:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); }
+.amber-pet-tool:disabled { opacity: 0.4; cursor: default; }
+.amber-pet button:focus-visible { outline: 2px solid var(--focus-border); outline-offset: 2px; }
+.amber-pet-hint { margin-top: 10px; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+:root[data-theme="amber"] .amber-pet .pet-quota-pilot { position: static; max-width: none; font-size: 12px; }
+.amber-pet .pet-quota-pilot-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  color: var(--text);
+  text-align: left;
+  box-shadow: none;
+}
+.amber-pet .pet-quota-pilot-button::before { content: "◔"; color: var(--accent); font: 18px/1 system-ui, sans-serif; }
+.amber-pet .amber-todos-toggle::before { content: "☑"; }
+.amber-pet .pet-quota-pilot-button::after { content: "›"; margin-left: auto; color: var(--text-secondary); font: 18px/1 system-ui, sans-serif; }
+.amber-pet .pet-quota-pilot-button[aria-expanded="true"]::after { transform: rotate(90deg); }
+.amber-pet .pet-quota-pilot-button[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-dim); }
+.amber-pet .pet-quota-pilot-details { box-shadow: none; }
+:root[data-theme="amber"] .amber-pet .amber-todos { margin-top: 8px; }
+.amber-pet .amber-todos-panel { position: static; width: 100%; max-height: 45dvh; margin-top: 6px; border-radius: 12px; box-shadow: none; }
+.amber-pet .amber-todos-header { flex-wrap: wrap; padding: 10px; }
+.amber-pet .amber-todos-message { padding: 0 10px 10px; }
+.amber-pet .amber-todos-list { padding: 0 10px; }
+.amber-pet .amber-todos-footer { flex-wrap: wrap; padding: 10px; }
