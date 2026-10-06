@@ -6,7 +6,7 @@
 
 本版对照主仓库的界面、主 CLI 分派和相关专题资料。命令下的每个子操作、仓库外脚本、其他实例配置和作者归属尚未全面核对。
 
-本轮源码基线：67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579。8 组、42 项候选功能；33 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
+本轮源码基线：67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579。8 组、42 项候选功能；34 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
 
 ## 发起工作、接着做和找回历史
 
@@ -468,15 +468,17 @@ Agent 命令入口：`remotelab generate-token`、`remotelab set-password`。
 
 ### 项目、个人与公司资料接续
 
-让新工作沿入口查已有项目认识、个人偏好和背景资料，必要时维护原来源。
+让新工作沿入口查已有项目认识、个人偏好和背景资料，必要时维护原来源。已启用的实例还能从普通互动归纳人员习惯，从执行证据维护行动手册。
 
-入口：同一说明项目的记忆章；已配置的启动和项目指针；直接告诉 Agent 应保留什么。
+入口：同一说明项目的记忆章；已配置的启动和项目指针；直接告诉 Agent 应保留什么。检查和修订入口为 memory，操作说明见 docs/memory-learning.md。
 
-使用条件：路径指针不等于正文已读取。个人偏好、共同规则、项目事实和候选记录有不同维护位置与生效范围。
+使用条件：路径指针不等于正文已读取。个人偏好、共同规则、项目事实和候选记录有不同维护位置与生效范围。新学习默认关闭，按实例明确列出的 Person 试用；推断、本人偏好、已验证方法和撤销分别标记，实际效果继续核对。
 
 可以这样说：“接着这个项目做，先核对现有主账和最新决定。”
 
-维护线索：[docs/memory-architecture/README.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/memory-architecture/README.md)、[chat/project-memory-runtime.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/project-memory-runtime.mjs)、[chat/person-memory-context.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/person-memory-context.mjs)。
+维护线索：[docs/memory-architecture/README.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/memory-architecture/README.md)、[chat/project-memory-runtime.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/project-memory-runtime.mjs)、[chat/person-memory-context.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/person-memory-context.mjs)、[chat/memory-learning.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/memory-learning.mjs)、[docs/memory-learning.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/memory-learning.md)。
+
+Agent 命令入口：`remotelab memory`。
 
 ### 语言、主题、思考显示与会话开场设置
 
@@ -642,6 +644,7 @@ Fleet Observer：它是监控数据源和独立管理入口；RemoteLab 监控�
 | local-bridge | 会话绑定的本地助手 |
 | agenda | 日历事件和订阅提醒 |
 | todo | 个人待办、截止时间与数字进度 |
+| memory | 项目、个人与公司资料接续 |
 | trigger | 一次性自动工作 |
 | schedule | 重复执行的自动化 |
 | usage-summary | 监控器的总览与自动化列表 |

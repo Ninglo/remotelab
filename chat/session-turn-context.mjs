@@ -80,6 +80,7 @@ export async function loadCompletedTurnContext(sessionId, runId, { loadSessionHi
   return {
     priorContextText: buildPriorContext(history, userMessage?.seq),
     userMessage,
+    turnEvents: turnHistory,
     assistantTurnText: buildDisplayedAssistantTurn(turnHistory)
       || normalizeText(latestAssistantMessage?.content || ''),
   };

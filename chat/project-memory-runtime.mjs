@@ -47,6 +47,27 @@ export async function loadProjectMemoryRuntime(path = PROJECT_MEMORY_RUNTIME_FIL
   } finally { await handle.close(); }
 }
 
+function associatedProjects(config, session, sourceContext) {
+  const source = sourceContext && typeof sourceContext === 'object' ? sourceContext : null;
+  const conversation = !source ? session.conversation : null;
+  const route = source?.sourceRouteId || conversation?.sourceRouteId || '';
+  const chatId = source?.chatId || conversation?.target?.chatId || '';
+  const group = config.groups.find(g => g.sourceRouteId === route && g.chatId === chatId);
+  const declared = config.sessionBindings.find(s => s.sessionId === session.id);
+  return { group, declared, projectIds: group?.projectIds || declared?.projectIds || [] };
+}
+
+export async function resolveLearningProject(session = {}, sourceContext, options = {}) {
+  try {
+    const { config } = await loadProjectMemoryRuntime(options.configPath);
+    if (!config.enabled) return '';
+    const { projectIds } = associatedProjects(config, session, sourceContext);
+    // Ambiguous/missing association is not a license to make a project rule
+    // instance-wide. A directory name, Session title or Person view is not ID.
+    return projectIds.length === 1 ? projectIds[0] : '';
+  } catch { return ''; }
+}
+
 export async function buildProjectMemoryPromptBlock(session = {}, sourceContext, options = {}) {
   let loaded;
   try { loaded = await loadProjectMemoryRuntime(options.configPath); }
@@ -54,13 +75,7 @@ export async function buildProjectMemoryPromptBlock(session = {}, sourceContext,
   const { config, hash } = loaded;
   if (!config.enabled || !config.contextEnabled) return '';
   // Current input wins. Never match titles, Person views or previous chat metadata.
-  const source = sourceContext && typeof sourceContext === 'object' ? sourceContext : null;
-  const conversation = !source ? session.conversation : null;
-  const route = source?.sourceRouteId || conversation?.sourceRouteId || '';
-  const chatId = source?.chatId || conversation?.target?.chatId || '';
-  const group = config.groups.find(g => g.sourceRouteId === route && g.chatId === chatId);
-  const declared = config.sessionBindings.find(s => s.sessionId === session.id);
-  const projectIds = group?.projectIds || declared?.projectIds || [];
+  const { group, declared, projectIds } = associatedProjects(config, session, sourceContext);
   if (!projectIds.length) return ''; // Ordinary/unassigned turns retain the existing pointers.
   const data = {
     release: config.releaseId, configHash: hash.slice(0,16),

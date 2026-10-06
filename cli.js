@@ -54,6 +54,7 @@ Usage:
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
   remotelab todo                    Manage personal To do items and numeric progress
+  remotelab memory                  Inspect and maintain scoped people profiles and the Agent handbook
   remotelab trigger                  Manage durable session triggers
   remotelab schedule                 Manage recurring automated tasks
   remotelab usage-summary            Summarize local Codex token usage
@@ -67,6 +68,12 @@ Usage:
 }
 
 switch (command) {
+  case 'memory': {
+    const { runMemoryLearningCommand } = await import(scriptPath('lib/memory-learning-command.mjs'));
+    try { process.exitCode = await runMemoryLearningCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'recording': {
     const { runRecordingCommand } = await import(scriptPath('lib/recording-command.mjs'));
     try { process.exitCode = await runRecordingCommand(args); }

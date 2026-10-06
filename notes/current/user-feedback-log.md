@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-06 — Learn habits and operational lessons from ordinary work
+
+- Feedback: important-event-only memory misses quiet habits and repeated corrections. A larger AGENTS.md does not guarantee that an available permission lesson is retrieved or followed.
+- Decision: retain human-owned core principles; let the Agent maintain an evidence-backed action handbook and each verified Person's collaboration record. Observations, explicit preferences and tested methods have distinct states; project facts keep their existing home.
+- Change: opt-in scoped learning reuses the existing post-turn reviewer, merges independent sources, retains versions/counterexamples/withdrawals, and supplies bounded relevant bodies with retrieval receipts. Current authorization still controls operations.
+- Acceptance: isolated positive and true missing-permission cases, native Sol/low reviewer fixtures and fresh/resumed prompt paths; deployment and actual reduction in repeated mistakes remain separate evidence.
+
 ### 2026-10-06 — Keep voice cleanup out of the Send path
 
 - Observed friction: a draft cleanup returned repeated revisions and self-check prose as message text. Waiting for cleanup also delayed desktop Send and blocked phone Send clicks; the model request had a 20-second deadline.

@@ -1461,6 +1461,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     await buildTurnContextHook(session, {
     sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
+    query: options.recordedUserText || options.memoryQuery || '',
     }),
   ));
   return slots.filter(Boolean);
@@ -1976,9 +1977,10 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
   }
   void (async () => {
     try {
-      const { userMessage, assistantTurnText } = await loadCompletedTurnContext(
+      const { userMessage, assistantTurnText, turnEvents } = await loadCompletedTurnContext(
         sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
       );
+      const request = await requests.byRunId(finalizedRun.id);
       const result = await maybeRunMemoryWriteback({
         sessionId,
         session,
@@ -1986,6 +1988,10 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
         userMessage: userMessage?.content || '',
         sourceEventSeq: userMessage?.seq,
         assistantTurnText,
+        turnEvents,
+        personId: request?.options?.viewPersonId,
+        identityId: request?.options?.initiatedByIdentityId,
+        sourceContext: request?.options?.sourceContext,
         runPrompt: (prompt) => runDetachedAssistantPrompt({
           ...session,
           id: sessionId,
@@ -1996,17 +2002,20 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
           },
         }),
       });
-      if (result?.promotedCount > 0) {
+      if (result?.promotedCount > 0 || result?.rejected?.length > 0 || result?.error) {
         const paths = Array.isArray(result.promotedFiles)
           ? result.promotedFiles.map((filePath) => displayPromptPath(filePath)).filter(Boolean)
           : [];
         await appendEvent(sessionId, contextOperationEvent({
           operation: 'write_memory',
-          phase: 'applied',
+          phase: result.promotedCount > 0 ? 'applied' : 'rejected',
           trigger: 'automatic',
-          title: 'Memory entries saved',
-          summary: `RemoteLab saved ${result.promotedCount} memory entry(s). Target-specific review and acceptance remain separate.`,
+          title: result.promotedCount > 0 ? 'Memory entries saved' : 'Memory update not applied',
+          summary: `RemoteLab updated ${result.promotedCount} memory entry(s). Entry status and execution evidence remain separate from retrieval or behavioral success.`,
           reason: paths.length > 0 ? `Updated: ${paths.join(', ')}` : '',
+          learningResults: result.results || [],
+          rejectedLearningUpdates: result.rejected || [],
+          ...(result.error ? { memoryLearningError: result.error } : {}),
         }));
       }
     } catch (error) {
@@ -3341,7 +3350,7 @@ async function ensureRequestInput(record, manifest) {
 
 async function prepareRequestRun(record) {
   const { sessionId, requestId, responseId, images } = record;
-  const options = { ...record.options, preSavedAttachments: images, ...(record.deliveryPlan ? { sourceDelivery: record.deliveryPlan } : {}) };
+  const options = { ...record.options, memoryQuery: record.text, preSavedAttachments: images, ...(record.deliveryPlan ? { sourceDelivery: record.deliveryPlan } : {}) };
   const normalizedText = record.text;
   let session = await getSession(sessionId);
   if (!session) throw new Error('Accepted request has no session');

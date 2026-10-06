@@ -3,6 +3,7 @@ import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
 import { buildSourceContextPrompt } from './source-context-prompt.mjs';
 import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
+import { buildLearningContext } from './memory-learning.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -19,13 +20,15 @@ function buildFeishuLogPromptBlock(sourceContext) {
   ].join('\n');
 }
 
-export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId } = {}) {
+export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '' } = {}) {
   return [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
+    await buildLearningContext({ personId, identityId, query: `${query}\n${sourceContext?.connector || ''}`,
+      session, sourceContext }),
     await buildProjectMemoryPromptBlock(session, sourceContext),
     // Classifier summaries are derived UI state, not fresh execution evidence.
     // Keep them queryable on the session; do not replay stale blockers every turn.

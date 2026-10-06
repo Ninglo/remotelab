@@ -19,6 +19,7 @@ import {
 import { extractTaggedBlock, parseJsonObjectText } from './session-text-parsing.mjs';
 import { isEnvToggleEnabled } from '../lib/env-toggle.mjs';
 import { createKeyedTaskQueue, writeTextAtomic } from './fs-utils.mjs';
+import { loadLearningPolicy, reviewMemoryLearning } from './memory-learning.mjs';
 
 // Background review has its own cost policy; never inherit foreground defaults.
 export function memoryReviewRuntimeSelection(tool) {
@@ -261,10 +262,42 @@ export async function maybeRunMemoryWriteback({
   userMessage,
   assistantTurnText,
   sourceEventSeq,
+  turnEvents,
+  personId,
+  identityId,
+  authDocument,
+  sourceContext,
   runPrompt,
 }) {
   if (!isWritebackEnabled()) {
     return { attempted: false, written: false };
+  }
+
+  // Reuse the one post-turn reviewer. This is not a second foreground gate.
+  try {
+    const candidateTargets = (await loadLearningPolicy()).enabled ? await loadMemoryWritebackTargets() : [];
+    const learned = await reviewMemoryLearning({ sessionId, session, run, userMessage,
+      assistantTurnText, sourceEventSeq, turnEvents, personId, identityId, authDocument, sourceContext, candidateTargets, runPrompt });
+    if (learned) {
+      const decision = parseWritebackDecision(learned.candidateResponse);
+      delete learned.candidateResponse;
+      if (decision.shouldWrite) {
+        const source = { recordedAt: new Date().toISOString(), sessionId, runId: run?.id,
+          eventSeq: sourceEventSeq, personAttribution: 'verify-source-message' };
+        try {
+          const candidates = await promoteLearningsToDurableMemory(decision.learnings, source);
+          learned.promotedCount += candidates.promotedCount;
+          learned.promotedFiles = [...new Set([...learned.promotedFiles, ...candidates.promotedFiles])];
+          learned.written = learned.promotedCount > 0;
+        } catch (error) {
+          learned.rejected.push({ key: 'candidate-writeback', reason: error.message });
+        }
+      }
+      return learned;
+    }
+  } catch (error) {
+    console.error(`[memory-learning] Review failed: ${error.message}`);
+    return { attempted: true, written: false, promotedCount: 0, promotedFiles: [], error: error.message };
   }
 
   // Skip trivial turns

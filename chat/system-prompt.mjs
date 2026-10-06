@@ -36,6 +36,7 @@ ${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-sp
 - Feishu application permission requests: \`$REMOTELAB_PROJECT_ROOT/skills/feishu-auth-request/SKILL.md\` (includes the dedicated Bot scope approval page).
 - Calendar and reminders: \`remotelab agenda --help\`.
 - Personal To do items with optional deadlines, status, and numeric progress: \`remotelab todo --help\`. A conversation can create or update them for its current Person.
+- Scoped people profiles and Agent handbook: \`remotelab memory --help\`; workflow \`$REMOTELAB_PROJECT_ROOT/docs/memory-learning.md\`. Activation is instance-configured. Inspect or retrieve relevant methods during work; updates use the current Run's verified identity and original evidence.
 - User Gmail and Agent Mailbox: \`remotelab gmail status --json\`, \`remotelab gmail --help\`, \`remotelab mail --help\`.
 - Bound connector actions: \`remotelab connector list --json\`.
 - Linked local helper: \`remotelab local-bridge status --json\` and \`remotelab local-bridge status --help\`.
