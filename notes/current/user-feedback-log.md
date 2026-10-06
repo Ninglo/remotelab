@@ -1354,3 +1354,10 @@ settings are separate from verified live deployment and delivery.
 - Evidence: the native question received the selected answer; the transcript also displayed the control input as an ordinary numeric reply. Refresh folded all options, including the selected one.
 - Revision: give pending questions a distinct tinted surface, clear selection markers and full-width option rows. Keep selected options visible in the completed color after submission and refresh, with other choices folded. Control answers retain raw history and native delivery but no longer create a second visible user message; typed answers keep their normal bubbles.
 - Verification: real browser clicks through an isolated native protocol peer, mobile/desktop and light/dark/Amber states, immediate acknowledgement and reload, raw-versus-visible HTTP history, exactly one native answer, duplicate retries, custom/multiple answers and explicit error states. This does not merge questions into a delivery checklist or imitate an external client's exact styling.
+
+## 2026-10-06 — Selection colors must belong to the current theme
+
+- Feedback: the interaction and layout were useful, but question colors looked separate from the selected theme.
+- Cause: pending and completed states used notice/success colors; Amber pending questions additionally used a warning tint rather than the theme accent.
+- Revision: retain the layout and direct submission, derive question colors from the current accent/background/text, and use tint strength, the visible chosen row and a check mark for completion. Error and ended states retain the theme's error and muted colors.
+- Verification: light/dark/Amber and OS-controlled appearance, theme changes while the question is pending or answered, a custom accent, readable text and controls at phone/desktop widths, and a real native choice without a duplicate chat bubble.

@@ -47,7 +47,10 @@ Request IDs identify the same control path. The answer stays in raw history as
 `native_question_answer` and reaches the native question tool. The visible
 conversation acknowledges it on the original question instead of adding a user
 bubble. Typed replies remain ordinary messages. The selected option stays
-visible with a filled marker and completed color; only other options are folded.
+visible with a filled marker and completed tint; only other options are folded.
+Question surfaces use the active theme's accent, background and text colors in
+every state. Completion adds a stronger tint and a check mark instead of changing
+to an unrelated success color. System appearance follows the OS light/dark mode.
 
 Ordinary questions have no automatic timeout. The original question and its
 controls remain pending until the person answers or stops the run. Opening or
