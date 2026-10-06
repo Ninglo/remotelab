@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-06 — Omit the phase heading from final-only Feishu replies
+
+- Feedback: a group reply that sends only the answer has no reason to announce “最终回复”.
+- Change: ordinary group mainline replies display the answer directly, including terminal recovery and replay. Remove either generic final-heading spelling if the Harness included one. Explicit automation titles and the labels used by Thread work and questions keep their existing behavior.
+- Acceptance: verify the plain body, source-message quote, attachments, reactions and one-time recovery publication in isolated tests; deployed service version and real Feishu appearance are separate evidence.
+
 ### 2026-10-06 — Learn habits and operational lessons from ordinary work
 
 - Feedback: important-event-only memory misses quiet habits and repeated corrections. A larger AGENTS.md does not guarantee that an available permission lesson is retrieved or followed.
