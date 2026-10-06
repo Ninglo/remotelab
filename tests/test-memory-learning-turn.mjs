@@ -65,7 +65,7 @@ try {
   const cliSession = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', cliRun = 'run_cli_fixture';
   await requests.accept({ sessionId: cliSession, requestId: 'cli_request', runId: cliRun,
     text: '撤销这个权限检查方法', options: { viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId } });
-  const original = await appendEvent(cliSession, { type: 'message', role: 'user', content: '撤销这个权限检查方法', runId: cliRun });
+  const original = await appendEvent(cliSession, { type: 'message', role: 'user', content: '撤销这个权限检查方法', runId: cliRun, requestId: 'cli_request' });
   const method = { kind: 'method', key: 'permission-check', content: '查询当前身份和目标资源权限。',
     cues: ['权限'], conditions: '资源操作报错时', exceptions: '不同身份和资源权限分别检查，不扩大授权',
     scope: 'instance', tested: true, evidence: [{ seq: 2, quote: '"code":0' }] };
@@ -85,6 +85,15 @@ try {
   assert.equal(JSON.parse(printed).results[0].status, 'withdrawn');
   assert.ok((await loadHistory(cliSession)).some(e => e.operation === 'write_memory' && e.phase === 'applied'));
   assert.match(await m.buildLearningContext({ ...actor, query: '一个新任务' }), /withdrawn.*查询当前身份/);
+  // A later authenticated Person can steer the same physical Run. Their
+  // message must not inherit the original requester's personal identity.
+  await requests.accept({ sessionId: cliSession, requestId: 'beta_input', runId: 'run_beta_input',
+    text: '我来继续这个方案', options: { viewPersonId: 'person_beta', initiatedByIdentityId: 'identity_beta' } });
+  await appendEvent(cliSession, { type: 'message', role: 'user', content: '我来继续这个方案', requestId: 'beta_input', runId: cliRun });
+  printed = '';
+  await runMemoryLearningCommand(['inspect', '--run-id', cliRun, '--json'], io);
+  assert.equal(JSON.parse(printed).personId, 'person_beta');
+  assert.doesNotMatch(JSON.stringify(JSON.parse(printed).profile), /具体例子/);
   // A source association, not a cwd/title, defines the project scope.
   const config = { schemaVersion: 1, enabled: true, contextEnabled: true, reviewEnabled: true, releaseId: 'fixture',
     indexPath: join(home, 'index.md'), ledgerPath: join(home, 'ledger.md'), workflowPath: join(home, 'workflow.md'),
