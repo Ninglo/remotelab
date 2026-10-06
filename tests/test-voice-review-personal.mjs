@@ -64,6 +64,37 @@ try {
   });
   assert.equal(guarded.overedited, true);
   assert.equal(guarded.revised, longOriginal.replace('Cloud Talk', 'Claude Tag'));
+
+  // A personal trial must select its own instructions without changing other People.
+  await updateVoiceReviewSettings('person-a', { reviewStyle: 'clarify' });
+  await updateVoiceReviewSettings('person-a', { terms: ['Cloud Talk => Claude Tag'] });
+  assert.equal((await getVoiceReviewSettings('person-a')).reviewStyle, 'clarify',
+    'ordinary settings saves preserve the personal trial style');
+  assert.equal((await getVoiceReviewSettings('person-b')).reviewStyle, undefined);
+  const clarified = await reviewVoiceText('person-a', '嗯我觉得 Cloud Talk 可能有点问题，先帮我想想，不要改代码。', {
+    runModel: async (prompt) => {
+      assert.match(prompt, /优先级：原意和要求范围/);
+      assert.match(prompt, /“帮我想想”不能改成“帮我实现”/);
+      assert.match(prompt, /多个候选都合理时保留原文/);
+      assert.match(prompt, /不提供对话历史/);
+      assert.match(prompt, /Cloud Talk → Claude Tag/);
+      return '我觉得 Claude Tag 可能有点问题，先帮我想想，不要改代码。';
+    },
+  });
+  assert.equal(clarified.revised, '我觉得 Claude Tag 可能有点问题，先帮我想想，不要改代码。');
+  await updateVoiceReviewSettings('person-b', { enabled: true, reviewMode: 'model' });
+  await reviewVoiceText('person-b', '只帮我检查一下。', {
+    runModel: async (prompt) => {
+      assert.match(prompt, /你只校对语音转写/);
+      assert.doesNotMatch(prompt, /用户发送消息前的文字编辑|Claude Tag/);
+      return '只帮我检查一下。';
+    },
+  });
+  await assert.rejects(updateVoiceReviewSettings('person-a', { reviewStyle: 'unknown' }), /reviewStyle/);
+  await updateVoiceReviewSettings('person-a', { reviewStyle: 'proofread' });
+  assert.equal((await getVoiceReviewSettings('person-a')).reviewStyle, undefined,
+    'the trial can return to the existing proofreading behavior');
+  await updateVoiceReviewSettings('person-b', { enabled: false, reviewMode: 'asr' });
   await updateVoiceReviewSettings('person-a', { terms: ['RemoteLab', 'RoboDojo'] });
   await assert.rejects(updateVoiceReviewSettings('person-a', {
     terms: Array.from({ length: 51 }, (_, index) => `term-${index}`),
