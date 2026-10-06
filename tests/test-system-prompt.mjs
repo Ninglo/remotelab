@@ -42,11 +42,11 @@ assert.match(context, /remotelab preview --help/);
 assert.match(context, /\$REMOTELAB_PROJECT_ROOT\/skills\/feishu-auth-request\/SKILL\.md/);
 await fs.access(new URL('../skills/feishu-auth-request/SKILL.md', import.meta.url));
 assert.doesNotMatch(context, /Quick Tunnel/);
-for (const guide of ['stable-static-publish', 'guest-port-expose', 'feishu-cli', 'session-debug']) {
+for (const guide of ['stable-static-publish', 'guest-port-expose', 'feishu-cli', 'session-debug', 'service-access']) {
   assert.match(context, new RegExp(`\\$REMOTELAB_PROJECT_ROOT/docs/platform-skills/${guide}\\.md`));
   await fs.access(new URL(`../docs/platform-skills/${guide}.md`, import.meta.url));
 }
-for (const command of ['trigger create --help', 'schedule create --help', 'agenda --help', 'gmail status --json', 'mail --help', 'connector list --json', 'local-bridge status --json']) {
+for (const command of ['trigger create --help', 'schedule create --help', 'agenda --help', 'gmail status --json', 'mail --help', 'connector list --json', 'local-bridge status --json', 'service-access check --json']) {
   assert.ok(context.includes(`remotelab ${command}`), `${command} should be discoverable`);
 }
 assert.doesNotMatch(context, /--conversation-file|--gate-file|Events in feed:/);

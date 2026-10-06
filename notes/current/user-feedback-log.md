@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-06 — Discover restart alternatives before asking an administrator
+
+- Feedback: service updates repeatedly stopped at a sudo permission check although an existing local SSH management route was available; the user had to remind the Agent of it.
+- Cause: the capability directory omitted service management, the host-access pointer did not identify this route, and historical blocked reports could be mistaken for current capability evidence. A newly learned checking method still depended on the Harness knowing which routes to check.
+- Change: add an instance-scoped, read-only `service-access check` that checks exact units, sudo and an explicitly registered loopback SSH fallback. Verify root UID and the same machine before presenting the concrete route. Discover it in startup context and retain a small lookup pointer in registered instances' resumed turns, even when the user only says “continue”; deployment/restart queries include the exact registration. Keep host-specific registration in instance config; no permission grants or key installation.
+- Acceptance: reproduce sudo denial with working SSH, true SSH failure, non-root/wrong-host rejection, nonexistent units, unconfigured instances, unsafe configuration and fresh/resumed context delivery. Verify the actual affected instance separately; capability evidence does not broaden the task or prove deployment.
+
 ### 2026-10-06 — Recover work-topic entry points without widening sharing groups
 
 - Clarified scope: work/learning topic entry points must admit human tasks without a Bot mention or earlier invitation. The operator then excluded sharing groups and requested that earlier per-group decisions be retained. Native topic metadata is not a blanket opt-in; the earlier new-group passive default remains effective.

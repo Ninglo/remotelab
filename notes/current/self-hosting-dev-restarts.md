@@ -36,6 +36,15 @@ When the control plane shuts down during an active run:
 
 ### 2. Operational sequence
 
+Before reporting a restart permission blocker, use the instance-scoped
+`remotelab service-access check --json` and the
+[service access workflow](../../docs/platform-skills/service-access.md).
+It checks the registered sudo and loopback SSH alternatives without
+restarting anything. A missing sudo entry alone is not evidence that every
+authorized management route is unavailable. Fresh and resumed Harness
+contexts carry the lookup entry; current capability evidence takes priority
+over older blocked reports.
+
 1. Work and code from `7690`
 2. Restart `7690` when needed
 3. Re-open / reconnect the chat UI

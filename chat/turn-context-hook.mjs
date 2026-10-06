@@ -7,6 +7,7 @@ import { buildLearningContext } from './memory-learning.mjs';
 import { buildRelatedPersonContext } from './related-person-context.mjs';
 import { buildWorkAwarenessContext } from './work-awareness.mjs';
 import { buildNecessaryBackgroundContext } from './necessary-background.mjs';
+import { buildServiceAccessPromptBlock } from '../lib/service-access.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -30,15 +31,17 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     buildRelatedPersonContext({ personId, identityId, sourceContext, query }),
     buildWorkAwarenessContext(session, { query }),
     query ? buildNecessaryBackgroundContext(session, { query, sourceContext }) : '',
+    buildServiceAccessPromptBlock(query),
   ]);
-  const [learning, project, people, work, background] = sections.map((result, index) => result.status === 'fulfilled'
-    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['learning', 'project', 'people', 'work', 'background'][index], reason: result.reason.message }));
+  const [learning, project, people, work, background, serviceAccess] = sections.map((result, index) => result.status === 'fulfilled'
+    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['learning', 'project', 'people', 'work', 'background', 'service-access'][index], reason: result.reason.message }));
   return [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
+    serviceAccess,
     learning,
     project,
     people,

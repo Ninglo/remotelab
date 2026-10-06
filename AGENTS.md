@@ -78,6 +78,8 @@ Browser / app surface ──HTTPS──→ Cloudflare Tunnel ──→ chat-serv
 
 **Self-hosting rule**: restarting the active chat server is acceptable when needed because runs reconcile back from durable state. This assumes compatible persisted state and a service manager that preserves detached execution. **Before upgrading an existing instance or repointing shared-source consumers, read [the Request state upgrade notice](docs/request-state-upgrade.md).** The 2026-09-07 schema change requires offline conversion; ordinary restart recovery does not perform it. Keep a working maintenance entry point outside the service being stopped. Manual extra instances remain optional ad-hoc debugging tools only. See `notes/current/self-hosting-dev-restarts.md`.
 
+**Management access**: before declaring a restart permission blocker, use `remotelab service-access check --json` and [the service access workflow](docs/platform-skills/service-access.md). Check registered sudo and local SSH alternatives; one failed route or an old blocked report is insufficient. Capability discovery does not expand the current task's authorized targets.
+
 ---
 
 ## File Structure
