@@ -57,6 +57,14 @@ try {
   assert.match(await context(), /inferred.*大白话/);
   assert.doesNotMatch(await context(), /BETA_SECRET/);
   assert.doesNotMatch(await context('下载文件'), /倾向于大白话/);
+  const narrowed = await apply([{ ...habit, action: 'revise', expectedVersion: entry.version,
+    content: '只在方案入门解释时倾向于具体例子。', conditions: '方案入门解释时',
+    evidence: [{ seq: 1, quote: '这次先用例子，技术细节用公式' }] }], sources('narrow', '这次先用例子，技术细节用公式'));
+  assert.equal(narrowed.results[0].status, 'observed', 'Agent can refine observations, but old support cannot certify a changed claim');
+  entry = (await snapshot()).profile.entries[0];
+  assert.equal(entry.evidence.length, 1);
+  assert.equal(entry.history.at(-1).supportingEvidence.length, 4);
+  assert.equal(entry.history.at(-1).conditions, '解释方案时');
   assert.equal(await context('解释', { maxChars: 100 }), '', 'bounded context never clips exceptions off an entry');
   // Explicit default can upgrade the same semantic entry; it does not create a
   // second key or require a long assistant response to be noticed.

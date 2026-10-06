@@ -213,12 +213,15 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
           || !evidence.some(e => e.type === 'user') || kind === 'method' && !usableToolEvidence(evidence, sources))) {
           throw new Error('Restoration requires explicit current user evidence; a method also needs fresh successful execution');
         }
-        if (['revise', 'withdraw'].includes(action) && kind !== 'method' && update.explicit !== true) throw new Error('Personal revision requires the owner\'s explicit correction');
+        if (kind !== 'method' && update.explicit !== true && (action === 'withdraw'
+          || action === 'revise' && current?.status === 'confirmed')) throw new Error('Accepted personal preference or withdrawal requires the owner\'s explicit correction');
         const now = new Date().toISOString();
         const entry = current || { id, key: update.key, kind, scope, project: scope === 'project' ? project : '',
           version: 0, createdAt: now, evidence: [], counterexamples: [], history: [], outcomes: [] };
         const before = JSON.stringify(entry);
-        const old = { version: entry.version, content: entry.content, status: entry.status, updatedAt: entry.updatedAt };
+        const old = { version: entry.version, content: entry.content, status: entry.status, updatedAt: entry.updatedAt,
+          kind: entry.kind, cues: entry.cues, conditions: entry.conditions, exceptions: entry.exceptions,
+          scope: entry.scope, project: entry.project, supersedesManual: entry.supersedesManual };
         if (manualQuote) entry.supersedesManual = manualQuote;
         if (action === 'withdraw') {
           entry.content ||= text(update.content) || manualQuote;
@@ -240,6 +243,15 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
           // a revision, not a silent merge that erases its prior meaning.
           if (current && action === 'upsert' && content !== current.content) throw new Error('Changed content requires revise');
           if (current && action === 'upsert' && kind !== current.kind) throw new Error('Changed kind requires revise');
+          if (current && ['revise', 'restore'].includes(action) && (content !== old.content || kind !== old.kind
+            || action === 'revise' && (text(update.conditions, 500) !== old.conditions || text(update.exceptions, 500) !== old.exceptions))) {
+            // Earlier support is evidence for the earlier claim. Keep it in
+            // that version rather than counting it toward a new inference.
+            old.supportingEvidence = entry.evidence;
+            old.counterexamples = entry.counterexamples;
+            entry.evidence = [];
+            entry.counterexamples = entry.counterexamples.map(e => ({ ...e, resolvedInVersion: entry.version + 1 }));
+          }
           entry.kind = kind;
           entry.content = content;
           if (!current || action === 'revise') {
@@ -257,7 +269,7 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
           // counterexample. Keep accepted status unless a real revision occurs.
           if (current && action === 'upsert' && old.status === 'confirmed') entry.status = 'confirmed';
           if (current && action === 'upsert' && old.status === 'verified') entry.status = 'verified';
-          if (entry.counterexamples.length && action === 'upsert') entry.status = 'observed';
+          if (entry.counterexamples.some(e => !e.resolvedInVersion) && action === 'upsert') entry.status = 'observed';
         }
         // Idempotent repeated turn processing must not inflate counts/versions.
         if (JSON.stringify(entry) === before) return { changed: false, path, id, version: entry.version };
@@ -335,7 +347,7 @@ export function buildLearningReviewPrompt({ userMessage, assistantTurnText, sour
     'Only the verified current Person owns personal preferences. Do not attribute quotes about other people or task examples to the speaker. Never use Session ownership or machine identity. Ignore prior anonymous Inbox entries.',
     'A stable explicit personal default is kind preference with explicit:true. A one-off task request may supply kind habit observation, explicit:false. Record observations without making them rules. Repeated corrections within one Session are one independent observation; three independent Sessions yield only an inferred soft suggestion, never a confirmed preference. Skip trivial acknowledgements and greetings; do not infer a habit from a bare approval.',
     'Methods belong to the Agent action handbook, not core AGENTS principles. Extract reusable steps, triggers, conditions and exceptions from execution evidence. tested:true requires a tool result that actually demonstrated the method, not the assistant claiming success. A failed entry point does not prove no capability; check actual Bot/user/resource identities and authorized fallbacks. Never store that a permission or authorization is universal or permanent. Existing authorization still controls each operation.',
-    'Merge into the matching existing semantic key and preserve its exact content for upsert; use revise when changing meaning. Include expectedVersion for every existing entry. Preserve exceptions. User corrections to their own preference may revise or withdraw with explicit:true. A correction to an older hand-maintained personal statement can use supersedesManual with its exact original quote; a first withdrawal may create a tombstone for that manual statement. Keep the manual source intact. A contradictory observation uses counterexample and suspends its default. A withdrawn key must never be recreated under an alias or automatically restored; restore requires an explicit current user restoration request, and a method additionally requires fresh successful execution. Semantic similarity requires judgment, not only string equality.',
+    'Merge into the matching existing semantic key and preserve its exact content for upsert; use revise when changing meaning. Include expectedVersion for every existing entry. Preserve exceptions. Inferred/unaccepted habit observations may be refined autonomously from original evidence, but revising an accepted personal preference or withdrawing a personal record requires explicit owner correction. Evidence for a changed claim starts anew; old support remains with its prior version. A correction to an older hand-maintained personal statement can use supersedesManual with its exact original quote; a first withdrawal may create a tombstone for that manual statement. Keep the manual source intact. A contradictory observation uses counterexample and suspends its default. A withdrawn key must never be recreated under an alias or automatically restored; restore requires an explicit current user restoration request, and a method additionally requires fresh successful execution. Semantic similarity requires judgment, not only string equality.',
     'For outcomes, refer only to an entry actually delivered this turn. Include specific tool/user evidence and explain whether the method helped, failed or was corrected; retrieval alone is not success. A permission failure that is already covered by a method\'s conditions/exceptions is not a counterexample to that method; do not suspend a correct checking procedure merely because the current resource truly lacks access. Suspend/revise when the procedure itself gives a wrong result or has an uncovered exception. Do not summarize project progress into a personal preference, infer personality or sensitive traits, or duplicate project facts.',
     'Each evidence item must cite seq and a short exact original quote from the supplied user/tool sources. The code validates source ownership, quote, result and version. Use up to 8 updates. If no durable signal exists, return updates:[].',
     'Keep the existing important-event candidate collection too. For durable project decisions or environment facts that do not belong in a profile or method, optionally include shouldWrite:true and learnings:[{category:"decision|environment|workflow|solution",content:"concise candidate",layer:"user|system",targetId:"listed target"}] in the SAME returned JSON. Candidates remain unaccepted and obey the existing allowlist. Do not duplicate profile/method updates there, put personal preferences in universal system memory, invent targets, or turn task progress into a permanent rule.',
