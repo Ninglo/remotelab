@@ -50,10 +50,11 @@ export function normalizeFeishuGroups(value = {}) {
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {
     if (!chatId.trim() || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid Feishu group settings');
     for (const key of Object.keys(raw)) {
-      if (!['responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'jevReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+      if (!['responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'jevReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
     }
     if (raw.participationControls !== undefined && typeof raw.participationControls !== 'boolean') throw new Error('Invalid participationControls');
     if (raw.participationControls && raw.participationMode !== 'ambient') throw new Error('participationControls requires ambient mode');
+    if (raw.participationStatusCard !== undefined && typeof raw.participationStatusCard !== 'boolean') throw new Error('Invalid participationStatusCard');
     if (raw.participationStatusMessageId !== undefined && !/^om_[A-Za-z0-9_]+$/.test(raw.participationStatusMessageId)) throw new Error('Invalid participationStatusMessageId');
     if (raw.responseMode !== undefined && !['all', 'mention_only'].includes(raw.responseMode)) throw new Error('Invalid group responseMode');
     if (raw.replyMode !== undefined && !['inline', 'thread'].includes(raw.replyMode)) throw new Error('Invalid group replyMode');

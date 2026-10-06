@@ -20,6 +20,7 @@ try {
     assert.equal(parseParticipationText(text), null, text);
   }
   assert.throws(() => normalizeFeishuGroups({ work: { participationControls: true } }), /requires ambient/);
+  assert.throws(() => normalizeFeishuGroups({ work: { participationStatusCard: 'false' } }), /Invalid participationStatusCard/);
 
   const calls = { observed: [], submitted: [], stopped: [], cards: [], reactions: [], decisions: [] };
   const runtime = { config: { storageDir: home, sourceRouteId: 'bot', responsePolicy: { group: 'all' },
@@ -108,6 +109,19 @@ try {
   assert.equal(accepted.toast.type, 'info');
   await runtime.participation.idle();
   assert.equal((await runtime.participation.state(base)).mode, 'active', 'accepted card action changes the same durable state');
+
+  const cardCallsBeforeHide = calls.cards.length;
+  runtime.config.groups.misc.participationStatusCard = false;
+  await runtime.participation.change({ ...base, messageId: 'hidden-listen' }, 'listening');
+  assert.equal((await runtime.participation.state(base)).mode, 'listening', 'hiding cards preserves mode controls');
+  await runtime.participation.change({ ...base, messageId: 'hidden-resume' }, 'active');
+  runtime.participation = createParticipationController(runtime, options);
+  await runtime.participation.restore();
+  assert.equal(calls.cards.length, cardCallsBeforeHide, 'hidden group cards are not recreated on mode change or restart');
+  assert.equal((await runtime.participation.state(base)).mode, 'active');
+  delete runtime.config.groups.misc.participationStatusCard;
+  await runtime.participation.publish({ ...await runtime.participation.state(base), mode: 'paused', cardSuppressed: true });
+  assert.equal(calls.cards.length, cardCallsBeforeHide, 'durable suppression also protects a withdrawn card');
 
   const result = await classifyFeishuQuickParticipation('换个话题，聊一下打印机', {
     key: 'fixture', includeHandoff: false, participationState: { mode: 'listening', topicAnchor: '预算' },

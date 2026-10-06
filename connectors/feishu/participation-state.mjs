@@ -88,6 +88,10 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     }));
   }
   async function publish(record) {
+    // Withdrawing a status card does not change participation or intake. Keep
+    // the durable opt-out when restoring or changing modes so it cannot resend.
+    if (record.cardSuppressed === true
+        || runtime.config.groups[record.source.chatId]?.participationStatusCard === false) return record;
     const card = buildParticipationCard(record);
     const digest = hash(JSON.stringify(card));
     const group = runtime.config.groups[record.source.chatId];

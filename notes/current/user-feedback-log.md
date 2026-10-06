@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-06 — Show opted-in group status selectively
+
+- Request: use the existing pinned participation cards to identify explicitly enabled groups, then withdraw the cards in Harness-VLA and both auto research groups.
+- Change: retain participation settings while allowing `participationStatusCard: false` to suppress card publication, including restart recovery and mode changes. A withdrawn card may also retain a durable suppression flag.
+- Verification boundary: recall and pin removal require provider receipts and recalled-message readback; runtime suppression requires the updated connector to be loaded. Card visibility does not enable or disable proactive reception.
+
 ### 2026-10-05 — Keep runtime information with the first Feishu reply
 
 - Observed friction: removing the fixed creation notice also removed visible model information. A second message arriving before the opening could suppress the Session link.

@@ -591,6 +591,12 @@ the recent unanswered discussion. The first Thread answer comes from the main
 Session; later Thread inputs use the normal independent Thread Session and
 receive the Thread history as context. Other chats keep their existing policy.
 
+For groups using `participationControls: true`, the pinned status card shows
+active, listening or paused reception. Set that exact group's
+`participationStatusCard: false` to hide the card while keeping participation
+and text controls. This also suppresses publication on restart and mode changes;
+withdraw the existing message and its top notice separately when requested.
+
 ```json
 {
   "responsePolicy": { "group": "mention_only" },
