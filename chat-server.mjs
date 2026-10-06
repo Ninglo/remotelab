@@ -81,6 +81,7 @@ recurringSchedules.startRecurringScheduleScheduler({
     await serverReady;
     return automationResources.startAutomationResourceObserver({ wakeCause });
   },
+  releaseEventResources: automationResources.releaseAutomationResourceObserver,
 });
 sessionAutoArchive.startSessionAutoArchive();
 groupFeedReview.startGroupFeedReview();

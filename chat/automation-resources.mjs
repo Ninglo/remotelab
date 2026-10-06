@@ -99,11 +99,16 @@ export function createAutomationResources({ listResources, getResource, subscrib
   return { start, stop, snapshot, hint, flush, refresh, reconsiderIdle };
 }
 
-let resources, initializing;
+let resources, initializing, taskDemand = false;
 export async function startAutomationResourceObserver({ wakeCause = '' } = {}) {
+  if (wakeCause) taskDemand = true;
   if (!resources) {
     initializing ||= import('./session-manager.mjs').then(manager => {
-      resources = createAutomationResources({ listResources: manager.listSessionResources, getResource: manager.getSessionResource });
+      resources = createAutomationResources({ listResources: manager.listSessionResources, getResource: manager.getSessionResource,
+        onIdle: cause => {
+          if (taskDemand) notifyAutomationWake('foreground_idle', cause);
+          else resources.stop();
+        } });
     }).finally(() => { initializing = null; });
     await initializing;
   }
@@ -116,3 +121,9 @@ export async function getAutomationResourceSnapshot() {
   return resources.refresh();
 }
 export function stopAutomationResourceObserver() { resources?.stop(); }
+export function releaseAutomationResourceObserver() {
+  taskDemand = false;
+  // Keep observing an active Run's guard until work settles, then release the
+  // subscription. A later API read or opted-in task can lazily rebuild it.
+  resources?.reconsiderIdle('unused');
+}

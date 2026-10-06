@@ -120,6 +120,9 @@ one second. Ordinary output/title changes with unchanged activity do not wake
 gates. Initial/recovered idle state and registration/resume while idle also
 reconsider work, so restart does not require a new foreground task to finish.
 There is no extra recurring resource scanner. Unknown state fails closed.
+When no enabled tasks need events, the shared observer releases its subscription
+after active work settles. An API read can lazily reseed a snapshot; without an
+event consumer it also releases on idle, rather than creating a permanent watcher.
 
 Authenticated `GET /api/automation/resources` returns `{ resources }` with
 `status: "ready" | "observing"`, observation time, known Session count, only busy

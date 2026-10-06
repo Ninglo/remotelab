@@ -912,7 +912,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
 export function startRecurringScheduleScheduler(options = {}) {
   if (schedulerTimer) return schedulerTimer;
   const pollMs = Math.max(250, Number.parseInt(options.pollMs || process.env.REMOTELAB_SCHEDULE_POLL_MS, 10) || DEFAULT_POLL_MS);
-  let stopped = false, pendingWake = null;
+  let stopped = false, pendingWake = null, resourceDemand = null;
   const tick = (wake = null) => {
     if (stopped) return;
     if (wake) pendingWake = wake;
@@ -921,6 +921,7 @@ export function startRecurringScheduleScheduler(options = {}) {
     schedulerTickPromise = materializeDueRecurringSchedulesNow({ ...options,
       ...(event ? { wakeReason: 'foreground_idle', checkCause: event.cause } : {}) })
       .then(async (result) => {
+        await ensureResources(false);
         if (result.materialized > 0 && typeof options.onMaterialized === 'function') await options.onMaterialized(result);
         return result;
       })
@@ -931,11 +932,13 @@ export function startRecurringScheduleScheduler(options = {}) {
       });
     return schedulerTickPromise;
   };
-  const ensureResources = async () => {
+  const ensureResources = async (reconsider = true) => {
     const schedules = await listRecurringSchedules();
-    if (!stopped && schedules.some(s => s.enabled && s.wakeOn.includes('foreground_idle'))) {
-      await options.ensureEventResources?.('registration');
-    }
+    if (stopped) return;
+    const needed = schedules.some(s => s.enabled && s.wakeOn.includes('foreground_idle'));
+    if (needed && (reconsider || resourceDemand !== true)) await options.ensureEventResources?.('registration');
+    else if (!needed && resourceDemand !== false) await options.releaseEventResources?.();
+    resourceDemand = needed;
   };
   unsubscribeWake = onAutomationWake(event => {
     if (stopped) return;

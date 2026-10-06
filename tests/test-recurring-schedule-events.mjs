@@ -83,10 +83,11 @@ try {
 
   // The scheduler keeps an event that arrives during a cadence check, rather than losing it.
   const serial = await create();
-  let firstGate, unblockGate, finished, calls = 0;
+  let firstGate, unblockGate, finished, released, calls = 0, resourceStarts = 0;
   const first = new Promise(resolve => { firstGate = resolve; });
   const block = new Promise(resolve => { unblockGate = resolve; });
   const done = new Promise(resolve => { finished = resolve; });
+  const releaseDone = new Promise(resolve => { released = resolve; });
   startRecurringScheduleScheduler({ ...options, wakeReason: undefined, now: serial.nextRunAt,
     runGate: async () => {
       calls++;
@@ -94,14 +95,20 @@ try {
       return { trigger: true };
     },
     onMaterialized: () => finished(),
+    ensureEventResources: () => { resourceStarts++; },
+    releaseEventResources: () => released(),
   });
   await first;
   notifyAutomationWake('foreground_idle', 'resource_recovery');
-  unblockGate(); await done; stopRecurringScheduleScheduler();
+  unblockGate(); await done;
   assert.equal(calls, 2, 'an event arriving during a check is retained and serialized');
   assert.equal(created.length, 1);
   const serialResult = await getRecurringSchedule(serial.id);
   assert.equal(serialResult.checkCount, 2); assert.equal(serialResult.lastCheckCause, 'resource_recovery');
+  assert.equal(resourceStarts, 1, 'ordinary scheduler checks must not rearm the observer');
+  admissions = 1; notifyAutomationWake('foreground_idle'); await releaseDone;
+  assert.equal((await getRecurringSchedule(serial.id)).status, 'completed');
+  stopRecurringScheduleScheduler();
   await updateRecurringSchedule(serial.id, { enabled: false });
 } finally {
   stopRecurringScheduleScheduler();
