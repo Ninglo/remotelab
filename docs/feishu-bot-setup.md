@@ -620,9 +620,11 @@ withdraw the existing message and its top notice separately when requested.
 `inline`. `replyPolicy.chats[chatId]` and `groups[chatId].replyMode` override the
 default with `inline` or `thread`. `groups[chatId]` also supports
 `responseMode` (`all`/`mention_only`), optional `systemPrompt`, and the
-exact-chat `participationMode: "ambient"` pilot setting. Topic
-groups use `all` when no exact chat override exists; ordinary groups fall back
-to `responsePolicy.group`. The prompt is appended to global instructions when
+exact-chat `participationMode: "ambient"` pilot setting. New groups and
+uninvited topics default to `mention_only`. Only an exact-chat ambient opt-in
+or `responseMode: "all"` admits unsolicited messages; connector-wide
+`responsePolicy.group` cannot opt in another group. A successfully bound topic
+continues without another mention. The prompt is appended to global instructions when
 creating a Session; existing Sessions keep their instruction snapshot.
 
 Precedence is: topic-group or existing-Thread topology → explicit `/inline` or
