@@ -1302,6 +1302,13 @@ settings are separate from verified live deployment and delivery.
 - Boundaries: private chats, topic conversation follow-up, sender access, peer-Bot guards and explicit mute/listening/paused controls keep their existing behavior. No application restart or real-user effect is implied by a source commit or passing isolated checks.
 - Verification: test ordinary text, files, merge-forwards, other-person/@all mentions, inherited `all`, missing settings, per-chat opt-in isolation, topic continuation and restart persistence before rollout.
 
+## 2026-10-06 — Make Web questions and submitted answers unmistakable
+
+- Feedback: a real Web option submission worked, but the question did not clearly ask for a choice and the selected answer had little visible acknowledgement.
+- Revision: lead with “待你选择” or “待你填写” and a short action hint. On acceptance, name the selected options or submitted text, retain that acknowledgement across a stale pending refresh, and never unlock an accepted answer because a refresh failed. Keep optional custom input and ended options collapsed to limit phone height.
+- Boundary: timeout remains explicitly a system default rather than a human choice. This change does not combine the question with a delivery checklist or alter the timeout policy.
+- Verification: cover single, multiple and custom answers, in-flight duplicate clicks, uncertain submission retry, failed refresh, canonical state recovery, read-only snapshots and browser layouts on phone and desktop.
+
 ## 2026-10-06 — Make personal To do reachable from Amber chat
 
 - Feedback: personal tasks work in the side display's reminder settings, but that entry is hard to reach during normal chat. Add a button below Amber's pet that expands the list in place.
