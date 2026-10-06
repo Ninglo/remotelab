@@ -360,11 +360,17 @@ export async function handleControlRoutes({
       writeJson(res, 401, { error: 'Authentication required' });
       return true;
     }
+    const controller = new AbortController();
+    const cancelReview = () => controller.abort();
+    res.once('close', cancelReview);
     try {
       const payload = JSON.parse(await readBody(req, 16384) || '{}');
-      writeJson(res, 200, await reviewVoiceText(authSession.personId, payload.text));
+      const result = await reviewVoiceText(authSession.personId, payload.text, { signal: controller.signal });
+      if (!res.destroyed) writeJson(res, 200, result);
     } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Could not review voice transcript' });
+      if (!res.destroyed) writeJson(res, 400, { error: error.message || 'Could not review voice transcript' });
+    } finally {
+      res.removeListener('close', cancelReview);
     }
     return true;
   }

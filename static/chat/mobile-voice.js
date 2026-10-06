@@ -224,11 +224,7 @@
   async function finish(target) {
     if (!isCurrent(target) || !target.completed || !target.released || target.finishing) return;
     target.finishing = true;
-    const before = msgInput.value;
-    const review = globalScope.remotelabWaitForVoiceReview?.();
-    let result;
     try {
-      if (review) result = await review;
       // The final transcript event is emitted just before audio cleanup starts.
       await Promise.resolve();
       await controller.whenIdle();
@@ -237,10 +233,6 @@
       return;
     }
     if (!isCurrent(target)) return;
-    if (msgInput.value !== before && msgInput.value !== result?.after) {
-      cancelCapture();
-      return;
-    }
     requestedVoice = false;
     clearCapture();
     msgInput.dispatchEvent(new Event("input", { bubbles: true }));

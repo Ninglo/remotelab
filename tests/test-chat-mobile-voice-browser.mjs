@@ -13,6 +13,9 @@ const artifacts = resolve(process.argv[3]);
 const root = await mkdtemp(join(tmpdir(), 'remotelab-mobile-voice-browser-'));
 const config = join(root, 'config');
 await Promise.all([mkdir(config), mkdir(artifacts, { recursive: true })]);
+await writeFile(join(config, 'voice-review-personal.json'), JSON.stringify({ alpha: {
+  enabled: true, reviewMode: 'model', providerId: 'doubao', apiKey: 'fixture-key', terms: [],
+} }));
 await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, serviceToken: 'fixture-service', primaryPersonId: 'alpha',
   people: [{ id: 'alpha', name: 'Alpha', handle: 'alpha', credentials: [], identities: [], preferences: {} },
     { id: 'beta', name: 'Beta', handle: 'beta', credentials: [], identities: [], preferences: {} }] }));
@@ -42,9 +45,10 @@ const server = spawn(process.execPath, ['chat-server.mjs'], { cwd: resolve('.'),
   REMOTELAB_MEMORY_DIR: join(root, 'memory'), REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER: '1', SECURE_COOKIES: '0',
 }, stdio: ['ignore', 'pipe', 'pipe'] });
 let serverOutput = '';
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-fake-device-for-media-stream',
-  '--use-fake-ui-for-media-stream', `--use-file-for-fake-audio-capture=${audioFile}`] });
+let browser;
 try {
+  browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream', `--use-file-for-fake-audio-capture=${audioFile}`] });
   await new Promise((resolve, reject) => {
     const deadline = setTimeout(() => reject(new Error(`Server startup timeout: ${serverOutput}`)), 15000);
     server.once('exit', code => { clearTimeout(deadline); reject(new Error(`Server exited ${code}: ${serverOutput}`)); });
@@ -54,6 +58,12 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await context.addCookies([{ name: 'session_token', value: 'mobile-voice-fixture', url: baseUrl }]);
   const page = await context.newPage();
+  let heldReviewRoute;
+  let holdNextReview = true;
+  await page.route('**/api/voice-review', route => {
+    if (holdNextReview) { holdNextReview = false; heldReviewRoute = route; return; }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ revised: route.request().postDataJSON().text }) });
+  });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const installTransport = async () => page.evaluate(() => {
     window.__micRequests = 0;
@@ -72,7 +82,7 @@ try {
     }
     window.WebSocket = VoiceSocket;
     window.__sent = [];
-    sendMessage = () => { window.__sent.push(msgInput.value); msgInput.value = ''; msgInput.dispatchEvent(new Event('input', { bubbles: true })); };
+    sendMessage = () => { window.remotelabCancelVoiceReview?.(); window.__sent.push(msgInput.value); msgInput.value = ''; msgInput.dispatchEvent(new Event('input', { bubbles: true })); };
     msgInput.disabled = false;
     window.remotelabRefreshVoiceInputUi();
     window.remotelabRefreshMobileVoiceUi({ preferences: true });
@@ -140,14 +150,18 @@ try {
   await page.evaluate(() => document.getElementById('sendBtn').click());
   assert.equal(await page.evaluate(() => window.__sent.length), 0);
   await final('请帮我检查任务状态'); await page.waitForFunction(() => document.getElementById('mobileVoicePanel').hidden);
+  await page.waitForFunction(() => !!window.remotelabWaitForVoiceReview?.());
+  assert.ok(heldReviewRoute, 'the optional model request is held independently of recognition');
   assert.equal(await page.evaluate(() => window.__sent.length), 0, 'the final result waits for the user to check it');
   assert.equal(await page.locator('#msgInput').inputValue(), '请帮我检查任务状态');
   assert.equal(await page.evaluate(() => document.activeElement.id === 'msgInput'), false, 'review keeps the keyboard closed');
   assert.equal(await page.locator('#sendBtn').isVisible(), true);
   await page.screenshot({ path: join(artifacts, 'mobile-voice-review.png') });
-  await page.locator('#msgInput').fill('请帮我检查服务状态');
   await page.locator('#sendBtn').tap();
-  assert.deepEqual(await page.evaluate(() => window.__sent), ['请帮我检查服务状态']);
+  assert.deepEqual(await page.evaluate(() => window.__sent), ['请帮我检查任务状态'], 'phone Send must work before model cleanup resolves');
+  assert.equal(await page.evaluate(() => window.remotelabWaitForVoiceReview()), null);
+  await heldReviewRoute.fulfill({ contentType: 'application/json', body: JSON.stringify({ revised: '迟到的整理结果' }) });
+  assert.equal(await page.locator('#msgInput').inputValue(), '', 'late results cannot restore a sent draft');
 
   await page.evaluate(() => { window.__delayVoiceReady = true; });
   await startHold('#mobileVoiceHold');
@@ -310,7 +324,7 @@ try {
   assert.deepEqual(errors, []);
   console.log('test-chat-mobile-voice-browser: keyboard prompt dismissal, long transcript/draft/review scrolling, unchanged-render scroll preservation, stalled audio timeout/retry, real audio volume history, review/edit before manual send, mobile layouts, native cancellation and persisted mode passed (recognition simulated)');
 } finally {
-  await browser.close();
+  await browser?.close();
   server.kill('SIGTERM'); if (server.exitCode === null && server.signalCode === null) await once(server, 'exit');
   await rm(root, { recursive: true, force: true });
 }

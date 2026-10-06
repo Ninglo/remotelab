@@ -64,6 +64,16 @@ try {
   });
   assert.equal(guarded.overedited, true);
   assert.equal(guarded.revised, longOriginal.replace('Cloud Talk', 'Claude Tag'));
+  const runaway = await reviewVoiceText('person-a', longOriginal, {
+    runModel: async () => (`我现在整理一下。等下，有没有改原意？再调整一下：${longOriginal}`).repeat(5),
+  });
+  assert.equal(runaway.overedited, true, 'repeated revisions must not replace dictation');
+  assert.equal(runaway.revised, longOriginal.replace('Cloud Talk', 'Claude Tag'));
+  const tagged = await reviewVoiceText('person-a', '请检查结果。', {
+    runModel: async () => '<think>先检查要求。</think>请检查结果。',
+  });
+  assert.equal(tagged.overedited, true);
+  assert.equal(tagged.revised, '请检查结果。');
 
   // A personal trial must select its own instructions without changing other People.
   await updateVoiceReviewSettings('person-a', { reviewStyle: 'clarify' });
@@ -125,7 +135,7 @@ try {
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'glm-4.7-flash');
     assert.deepEqual(body.thinking, { type: 'disabled' });
-    return { ok: true, json: async () => ({ choices: [{ message: { content: '整理稿' } }] }) };
+    return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"text":"整理稿"}' } }] }) };
   };
   try {
     assert.equal(await runVoiceReviewModel('测试', { personId: 'person-a' }), '整理稿');
@@ -141,7 +151,7 @@ try {
     assert.equal(String(url), 'https://openrouter.ai/api/v1/chat/completions');
     assert.equal(options.headers.Authorization, 'Bearer private-or-key');
     assert.equal(JSON.parse(options.body).model, 'qwen/qwen3-4b:free');
-    return { ok: true, json: async () => ({ choices: [{ message: { content: '整理稿' } }] }) };
+    return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"text":"整理稿"}' } }] }) };
   };
   try {
     assert.equal(await runVoiceReviewModel('测试', { personId: 'person-a' }), '整理稿');
@@ -167,10 +177,40 @@ try {
     const body = JSON.parse(options.body);
     assert.equal(body.model, 'doubao-seed-2-1-lite-260915');
     assert.deepEqual(body.thinking, { type: 'disabled' });
-    return { ok: true, json: async () => ({ choices: [{ message: { content: '整理稿' } }] }) };
+    assert.equal(body.response_format.type, 'json_schema');
+    assert.equal(body.response_format.json_schema.strict, true);
+    assert.equal(body.messages[0].role, 'system');
+    assert.match(body.messages[0].content, /JSON/);
+    return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"text":"整理稿"}', reasoning_content: '不得进入正文' } }] }) };
   };
   try {
     assert.equal(await runVoiceReviewModel('测试', { personId: 'person-a' }), '整理稿');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  try {
+    for (const [content, finish_reason] of [
+      ['我现在整理一下。等下，检查有没有改原意。最终正文：原文。', 'stop'],
+      ['{"text":"原文", "analysis":"自检过程"}', 'stop'],
+      ['{"text":"未完成', 'length'],
+      ['{"text":"看似完整但被截断。"}', 'length'],
+    ]) {
+      globalThis.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ finish_reason, message: { content } }] }) });
+      await assert.rejects(runVoiceReviewModel('测试', { personId: 'person-a' }), /invalid draft|did not finish/);
+    }
+    const controller = new AbortController();
+    let requestStarted;
+    const started = new Promise(resolve => { requestStarted = resolve; });
+    globalThis.fetch = async (_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
+      requestStarted();
+    });
+    const cancelled = reviewVoiceText('person-a', '原始发言', { signal: controller.signal });
+    await started;
+    controller.abort();
+    await assert.rejects(cancelled, /cancelled/);
+    const next = await reviewVoiceText('person-a', '新的一段', { runModel: async () => '新的一段。' });
+    assert.equal(next.revised, '新的一段。', 'cancellation releases the per-Person request slot');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -188,7 +228,7 @@ try {
     assert.equal(String(url), 'https://example.test/v1/chat/completions');
     assert.equal(options.headers.Authorization, 'Bearer test-key');
     assert.equal(JSON.parse(options.body).model, 'small-model');
-    return { ok: true, json: async () => ({ choices: [{ message: { content: '整理稿' } }] }) };
+    return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"text":"整理稿"}' } }] }) };
   };
   try {
     assert.equal(await runVoiceReviewModel('测试'), '整理稿');

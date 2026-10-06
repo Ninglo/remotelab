@@ -446,9 +446,10 @@ assert.equal(canonicalSendContext.msgInput.value, 'hold the draft until confirme
 const reviewedSendContext = createContext();
 const reviewedSendCalls = [];
 let finishVoiceReview;
-let reviewPending = true;
 const voiceReview = new Promise((resolve) => { finishVoiceReview = resolve; });
-reviewedSendContext.window.remotelabWaitForVoiceReview = () => reviewPending ? voiceReview : null;
+let cancelledVoiceReviews = 0;
+reviewedSendContext.window.remotelabWaitForVoiceReview = () => voiceReview;
+reviewedSendContext.window.remotelabCancelVoiceReview = () => { cancelledVoiceReviews++; };
 reviewedSendContext.dispatchAction = async (payload) => {
   reviewedSendCalls.push(payload);
   return true;
@@ -457,29 +458,27 @@ loadComposeContext(reviewedSendContext);
 reviewedSendContext.msgInput.value = '肉波道场结果';
 reviewedSendContext.sendMessage();
 reviewedSendContext.sendMessage();
-assert.equal(reviewedSendCalls.length, 0, 'Send should wait while automatic voice cleanup is running');
-reviewedSendContext.msgInput.value = 'RoboDojo 结果';
-reviewPending = false;
+assert.equal(reviewedSendCalls.length, 1, 'Send dispatches the visible text without waiting for cleanup');
+assert.ok(cancelledVoiceReviews > 0, 'Send invalidates pending cleanup');
 finishVoiceReview({ after: 'RoboDojo 结果' });
 await new Promise((resolve) => setImmediate(resolve));
-assert.equal(reviewedSendCalls.length, 1, 'one queued Send should dispatch after cleanup');
-assert.equal(reviewedSendCalls[0].text, 'RoboDojo 结果');
+assert.equal(reviewedSendCalls.length, 1, 'late cleanup must not trigger a second Send');
+assert.equal(reviewedSendCalls[0].text, '肉波道场结果');
 
 const editedSendContext = createContext();
 let finishEditedReview;
-let editedReviewPending = true;
 const editedReview = new Promise((resolve) => { finishEditedReview = resolve; });
-editedSendContext.window.remotelabWaitForVoiceReview = () => editedReviewPending ? editedReview : null;
+editedSendContext.window.remotelabWaitForVoiceReview = () => editedReview;
 const editedSendCalls = [];
 editedSendContext.dispatchAction = async (payload) => { editedSendCalls.push(payload); return true; };
 loadComposeContext(editedSendContext);
 editedSendContext.msgInput.value = '识别原文';
 editedSendContext.sendMessage();
 editedSendContext.msgInput.value = '用户手动修改';
-editedReviewPending = false;
 finishEditedReview({ after: null });
 await new Promise((resolve) => setImmediate(resolve));
-assert.equal(editedSendCalls.length, 0, 'a queued Send must not dispatch after the user edits the draft');
+assert.equal(editedSendCalls.length, 1, 'editing after Send cannot postpone the already submitted message');
+assert.equal(editedSendCalls[0].text, '识别原文');
 
 const reloadedPendingSendContext = createContext({
   storageSeed: Object.fromEntries(canonicalSendContext.localStorage.store),

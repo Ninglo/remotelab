@@ -24,7 +24,13 @@ const elements = new Map(ids.map((id) => [id, {
 const listeners = new Map();
 const requests = [];
 const reviews = [];
+const reviewSignals = [];
+const deadlines = new Map();
+let nextDeadline = 0;
+let respectAbort = false;
 const browser = {
+  setTimeout(fn, ms) { const id = ++nextDeadline; deadlines.set(id, { fn, ms }); return id; },
+  clearTimeout(id) { deadlines.delete(id); },
   addEventListener(type, listener) { listeners.set(type, listener); },
   remotelabT(key) { return key; },
 };
@@ -34,6 +40,7 @@ const context = {
   currentPerson: { id: 'person-a' },
   currentSessionId: 'session-a',
   Event: class Event { constructor(type) { this.type = type; } },
+  AbortController,
   fetchJsonOrRedirect: async (path, options = {}) => {
     requests.push({ path, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
     if (path === '/api/voice-review/settings' && options.method === 'PATCH') {
@@ -46,7 +53,13 @@ const context = {
     if (path === '/api/voice-review/settings') return { settings: {
       enabled: true, reviewMode: 'model', terms: ['RoboDojo'], provider: { id: 'doubao', apiKeyConfigured: true },
     }, backend: 'api' };
-    if (path === '/api/voice-review') return new Promise((resolve) => reviews.push(resolve));
+    if (path === '/api/voice-review') {
+      reviewSignals.push(options.signal);
+      return new Promise((resolve, reject) => {
+        reviews.push(resolve);
+        if (respectAbort) options.signal.addEventListener('abort', () => reject(new Error('timeout')), { once: true });
+      });
+    }
     throw new Error('Unexpected request');
   },
 };
@@ -67,7 +80,7 @@ finishDictation('请检查肉波道场的结果');
 assert.equal(elements.get('voiceReviewPanel').hidden, false);
 assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.working');
 const pending = browser.remotelabWaitForVoiceReview();
-assert.ok(pending, 'Send can wait for automatic cleanup');
+assert.ok(pending, 'automatic cleanup remains observable independently of Send');
 await flush();
 assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 1,
   'finished dictation starts cleanup without another click');
@@ -135,10 +148,50 @@ const stale = browser.remotelabWaitForVoiceReview();
 await flush();
 composer.value = '用户自己改过的文字';
 composer.dispatchEvent(new context.Event('input'));
+assert.equal(reviewSignals.at(-1).aborted, true, 'editing cancels the obsolete request');
 reviews.shift()({ revised: '模型迟到的结果' });
 assert.equal((await stale).after, null);
 assert.equal(composer.value, '用户自己改过的文字', 'late cleanup must preserve manual edits');
 assert.equal(elements.get('voiceReviewPanel').hidden, true);
+
+composer.value = '我要立即发送的识别原文';
+finishDictation(composer.value);
+const cancelled = browser.remotelabWaitForVoiceReview();
+browser.remotelabCancelVoiceReview();
+assert.equal(reviewSignals.at(-1).aborted, true, 'Send cancels cleanup immediately');
+assert.equal(browser.remotelabWaitForVoiceReview(), null);
+reviews.shift()({ revised: '迟到的整理结果' });
+assert.equal((await cancelled).after, null);
+assert.equal(composer.value, '我要立即发送的识别原文', 'late cleanup cannot change the sent text');
+
+composer.value = '旧的一段';
+finishDictation(composer.value);
+const oldTake = browser.remotelabWaitForVoiceReview();
+const oldSignal = reviewSignals.at(-1);
+composer.value = '新的一段';
+finishDictation(composer.value);
+const newTake = browser.remotelabWaitForVoiceReview();
+assert.equal(oldSignal.aborted, true);
+assert.equal(reviews.length, 2, 'new dictation must start without waiting for the old request');
+reviews.shift()({ revised: '旧结果' });
+assert.equal((await oldTake).after, null);
+reviews.shift()({ revised: '新的一段。' });
+assert.equal((await newTake).after, '新的一段。');
+
+respectAbort = true;
+composer.value = '等超时的原始识别';
+finishDictation(composer.value);
+const timedOut = browser.remotelabWaitForVoiceReview();
+assert.equal(deadlines.size, 1);
+const deadline = [...deadlines.values()][0];
+assert.equal(deadline.ms, 5000);
+deadline.fn();
+assert.equal((await timedOut).after, '等超时的原始识别');
+assert.equal(composer.value, '等超时的原始识别');
+assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.failed');
+assert.equal(deadlines.size, 0, 'terminal requests clear their deadline');
+reviews.shift();
+respectAbort = false;
 
 elements.get('voiceReviewProvider').value = '';
 await elements.get('voiceReviewSave').listeners.get('click')();
@@ -146,7 +199,7 @@ composer.value = '没有模型时的识别原文';
 finishDictation('没有模型时的识别原文');
 assert.equal(browser.remotelabWaitForVoiceReview(), null);
 assert.equal(elements.get('voiceReviewBody').textContent, 'voiceReview.unconfigured');
-assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 6,
+assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 10,
   'hotwords alone cannot trigger model cleanup');
 
 elements.get('voiceReviewProvider').value = 'doubao';
@@ -172,7 +225,7 @@ composer.value = '只做顺滑的转写';
 finishDictation('只做顺滑的转写');
 assert.equal(browser.remotelabWaitForVoiceReview(), null);
 assert.equal(elements.get('voiceReviewPanel').hidden, true);
-assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 6,
+assert.equal(requests.filter((request) => request.path === '/api/voice-review').length, 10,
   'ASR-only mode must not call the model even when an API key is saved');
 
 console.log('test-chat-voice-review-preview: ok');

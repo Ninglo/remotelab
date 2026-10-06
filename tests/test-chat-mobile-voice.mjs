@@ -176,10 +176,9 @@ f = fixture(); f.hold(); f.release(); f.tick(30000); f.finish('超时结果'); a
 f = fixture(); let resolveReview;
 f.review(new Promise(resolve => { resolveReview = resolve; })); f.hold(); f.release(); f.finish('识别原文');
 await flush(); f.elements.sendBtn.emit('click');
-assert.equal(f.counts.sends, 0, 'review waits for the existing optional cleanup');
-f.input.value = '整理后的文字'; resolveReview({ after: f.input.value }); await flush(); assert.equal(f.counts.sends, 0);
-assert.equal(f.input.value, '整理后的文字');
-f.elements.sendBtn.emit('click'); assert.equal(f.counts.sends, 1);
+assert.equal(f.counts.sends, 1, 'completed recognition allows Send while optional cleanup is pending');
+resolveReview({ after: '整理后的文字' }); await flush();
+assert.equal(f.counts.sends, 1, 'cleanup completion does not trigger another Send');
 f = fixture(); f.review(new Promise(resolve => { resolveReview = resolve; })); f.hold(); f.release(); f.finish('识别原文');
 f.elements.mobileVoiceCancel.emit('click'); resolveReview({ after: '识别原文' }); await flush(); assert.equal(f.counts.sends, 0);
 f = fixture(); f.hold(); f.release(); f.input.value = '用户修改'; f.input.emit('input', { isTrusted: true });

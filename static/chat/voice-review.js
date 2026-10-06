@@ -30,7 +30,6 @@
   let capture = null;
   let undoState = null;
   let pendingReview = null;
-  let reviewTail = Promise.resolve();
   const ordinalCharacters = "一二三四五六七八九十";
   const pointPattern = /(?:首先|然后|接着)?\s*第([一二三四五六七八九十]|[1-9]\d?)(?:点|项|件事情|件事|个事情|个事)(?:是|：|:)?[，,\s]*/g;
 
@@ -81,7 +80,9 @@
   }
 
   function clearPanel() {
+    capture?.controller?.abort();
     capture = null;
+    pendingReview = null;
     undoState = null;
     panel.hidden = true;
     undoButton.hidden = true;
@@ -91,18 +92,21 @@
 
   function captureIsCurrent(target) {
     return target === capture
+      && target.personId === currentPerson?.id
       && target.sessionId === (typeof currentSessionId === "string" ? currentSessionId : "")
       && target.composerText === composer.value;
   }
 
   async function reviewCapture(target) {
     if (!captureIsCurrent(target)) return { after: null };
+    const deadline = globalScope.setTimeout(() => target.controller.abort(), 5000);
     try {
       const payload = await fetchJsonOrRedirect("/api/voice-review", {
         method: "POST",
         revalidate: false,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: target.transcript }),
+        signal: target.controller.signal,
       });
       if (!captureIsCurrent(target)) return { after: null };
       const revised = typeof payload?.revised === "string" ? payload.revised.trim() : "";
@@ -142,6 +146,8 @@
       panel.title = error?.message || "Voice review failed";
       panel.hidden = false;
       return { after };
+    } finally {
+      globalScope.clearTimeout(deadline);
     }
   }
 
@@ -221,6 +227,8 @@
       displayedTranscript: event.detail.displayedTranscript,
       rawComposerText: event.detail.rawComposerText,
       sessionId: event.detail.sessionId,
+      personId: currentPerson?.id,
+      controller: new AbortController(),
     };
     if (!captureIsCurrent(capture)) return clearPanel();
     panel.hidden = false;
@@ -231,8 +239,7 @@
     }
     body.textContent = t("voiceReview.working");
     const target = capture;
-    const task = reviewTail.then(() => reviewCapture(target));
-    reviewTail = task;
+    const task = reviewCapture(target);
     pendingReview = { target, task };
     void task.then(() => {
       if (pendingReview?.target === target) pendingReview = null;
@@ -241,6 +248,8 @@
 
   globalScope.remotelabWaitForVoiceReview = () => pendingReview && captureIsCurrent(pendingReview.target)
     ? pendingReview.task : null;
+  // Explicit Send freezes the visible draft and makes any late review obsolete.
+  globalScope.remotelabCancelVoiceReview = clearPanel;
 
   undoButton.addEventListener("click", () => {
     if (!undoState || undoState.sessionId !== currentSessionId || composer.value !== undoState.after) return clearPanel();

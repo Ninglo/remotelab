@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-06 — Keep voice cleanup out of the Send path
+
+- Observed friction: a draft cleanup returned repeated revisions and self-check prose as message text. Waiting for cleanup also delayed desktop Send and blocked phone Send clicks; the model request had a 20-second deadline.
+- Change: accept only the final text field from a JSON response, reject unfinished generation and excessive expansion, and preserve the original on failure. Doubao uses a strict response schema with thinking disabled. Cleanup has a five-second deadline, and explicit Send cancels it and submits the visible draft immediately. Completed phone recognition leaves its capture state without waiting for optional editing; late results cannot overwrite edited or sent text.
+- Evidence boundary: the sent message and source code identify the reproduced failure path. The original ASR text and timing of that old model request were not retained, so its exact latency and provider-internal cause remain unknown. Isolated regression tests and a bounded real-provider check validate the fix separately from acceptance on the reporting phone.
+
 ### 2026-10-06 — Audit all joined groups and keep new groups passive
 
 - Request: list every group, identify explicit proactive participation and retained status cards, and default all other and newly created groups to passive reception.
