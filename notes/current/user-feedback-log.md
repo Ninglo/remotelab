@@ -1294,3 +1294,10 @@ settings are separate from verified live deployment and delivery.
 - Contract: ordinary group mainlines require this Bot's explicit mention or a task/control command. Only an exact `groups[chatId]` entry with `participationMode: "ambient"` or `responseMode: "all"` enables proactive intake. Connector-wide defaults, existing Sessions, quotes, forwards and reaction preferences cannot activate another group.
 - Boundaries: private chats, topic conversation follow-up, sender access, peer-Bot guards and explicit mute/listening/paused controls keep their existing behavior. No application restart or real-user effect is implied by a source commit or passing isolated checks.
 - Verification: test ordinary text, files, merge-forwards, other-person/@all mentions, inherited `all`, missing settings, per-chat opt-in isolation, topic continuation and restart persistence before rollout.
+
+## 2026-10-06 — Make personal To do reachable from Amber chat
+
+- Feedback: personal tasks work in the side display's reminder settings, but that entry is hard to reach during normal chat. Add a button below Amber's pet that expands the list in place.
+- Change: Amber shows an unfinished task count and a scrollable personal list beside the conversation. Titles expand task notes; checkboxes complete or reopen tasks, with visible failure handling. The list uses the authenticated Person's existing `/api/display/todos` data shared with the side display.
+- Scope: only Amber shows or requests this list; shared snapshots do not mount personal tasks. Task creation, deadlines and numeric progress remain available through chat and the existing editor. Opening the list or using Refresh reads current data without a background poll.
+- Verification: cover theme changes, anonymous snapshots, stale reads, failed writes and empty lists; verify the real Person's existing tasks and desktop/phone layout separately from a source commit and rollout.
