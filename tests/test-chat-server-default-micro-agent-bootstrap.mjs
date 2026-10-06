@@ -29,7 +29,7 @@ async function waitFor(predicate, description, timeoutMs = 10000, intervalMs = 1
   throw new Error(`Timed out: ${description}`);
 }
 
-function request(port, method, path) {
+function request(port, method, path, body) {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -37,7 +37,7 @@ function request(port, method, path) {
         port,
         path,
         method,
-        headers: { Cookie: cookie },
+        headers: { Cookie: cookie, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       },
       (res) => {
         let data = '';
@@ -54,7 +54,7 @@ function request(port, method, path) {
       },
     );
     req.on('error', reject);
-    req.end();
+    req.end(body ? JSON.stringify(body) : undefined);
   });
 }
 
@@ -77,6 +77,12 @@ function setupTempHome() {
     }, null, 2),
     'utf8',
   );
+  writeFileSync(join(configDir, 'chat-sessions.json'), JSON.stringify([
+    { id: 'work-http-session', name: 'Isolated work context', folder: home },
+  ]));
+  const referenceDir = join(home, '.remotelab', 'memory', 'reference');
+  mkdirSync(referenceDir, { recursive: true });
+  writeFileSync(join(referenceDir, 'company.md'), '# Company\n\n办公室：隔离测试地点。\n');
   writeFileSync(
     join(localBin, 'codex'),
     '#!/usr/bin/env bash\nexit 0\n',
@@ -143,6 +149,25 @@ try {
     false,
     'micro-agent should not appear through the tools API unless the owner explicitly installs it',
   );
+  // Exercise the mounted HTTP route, including the main router's legacy URL
+  // parser; direct handler tests cannot establish this integration boundary.
+  const workPath = '/api/work-awareness?sessionId=work-http-session&query=';
+  const company = await request(port, 'GET', workPath + encodeURIComponent('公司附近吃饭'));
+  assert.equal(company.status, 200, company.text);
+  assert.match(company.json.background.context, /隔离测试地点/);
+  const code = await request(port, 'GET', workPath + encodeURIComponent('修复公司网站的 JavaScript 测试'));
+  assert.equal(code.status, 200, code.text);
+  assert.doesNotMatch(code.json.background.context, /隔离测试地点/);
+  const index = await request(port, 'GET', workPath + 'code&includeBackground=false');
+  assert.equal(index.status, 200, index.text);
+  assert.equal(index.json.background, undefined);
+  const people = await request(port, 'GET', '/api/work-awareness/people?sessionId=work-http-session');
+  assert.equal(people.status, 200, people.text);
+  assert.equal(typeof people.json.context, 'string');
+  const unauthorisedStart = await request(port, 'POST', '/api/work-awareness/start?sessionId=work-http-session', {
+    runId: 'unregistered', goal: 'Cannot register without an accepted human Request',
+  });
+  assert.equal(unauthorisedStart.status, 403, unauthorisedStart.text);
 } finally {
   await stopServer(server);
   rmSync(home, { recursive: true, force: true });

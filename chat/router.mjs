@@ -1432,7 +1432,8 @@ export async function handleRequest(req, res) {
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
 
-  if (await handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson })) return;
+  if (await handleWorkAwarenessRoutes({ req, res, pathname,
+    parsedUrl: new URL(req.url, 'http://localhost'), authSession, writeJson })) return;
 
   // ---- API endpoints ----
 
