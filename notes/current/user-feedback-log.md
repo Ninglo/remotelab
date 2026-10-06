@@ -1066,6 +1066,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: use one light proofreading pass after ASR, preserve full clauses and speaker framing, reject summary-shaped short outputs, and support explicit heard-form to canonical-term corrections in a personal dictionary. Keep name terms grounded in the accessible company directory and focus the hotword budget on frequent collaborators and domain terms.
 - Follow-up: compare a fresh recording against the original for complete item detail, the confirmed alias, and unrelated-name false corrections.
 
+### 2026-10-06 — 按个人重新试用语音草稿整理
+
+- Source: direct follow-up to the earlier voice-input trial.
+- Observed friction or ask: ASR smoothing still leaves transcription errors and company names; try a second editing pass that also makes the existing request clearer, enabled only for the requesting Person.
+- Product implication: retain the existing vocabulary and provider, and select the new clarification instructions through a personal `reviewStyle` setting. Preserve uncertainty, negation, speaker framing, and action scope; do not invent task details. Other People keep their existing proofreading or ASR-only behavior.
+- Follow-up: verify personal settings isolation and a real provider call, then compare a fresh browser dictation with its original transcript. The trial has no conversation-history input; ambiguous references remain unchanged.
+
 ### 2026-09-29 — 优先豆包识别顺滑，不追加模型整理
 
 - Source: direct user correction after the lighter model-review trial.
