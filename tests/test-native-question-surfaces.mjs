@@ -172,6 +172,9 @@ try {
   panel.children.find(c => c.tag === 'button').listeners.click(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(submissions.at(-1)[1].text, '1,2');
   assert.equal(statusOf(panel).textContent, '已选择：简短、详细');
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'multiple', questionState: 'answered',
+    questionAnswers: ['简短', '详细'], nativeQuestion: { ...pending.nativeQuestion, multiSelect: true } });
+  assert.ok(optionRows(panel).every(c => c.children[0].checked), 'recovered multi-select shows the answered checkboxes');
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'custom' });
   const form = descendants(panel).find(c => c.tag === 'form');
   form.children[0].value = '自己的答案'; form.listeners.submit({ preventDefault() {} });

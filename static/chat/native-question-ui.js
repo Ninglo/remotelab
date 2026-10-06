@@ -47,6 +47,7 @@ function renderNativeQuestionMessage(container, evt) {
       const selected = answers.includes(options[i].label);
       row.className = `native-question-option${selected ? " is-selected" : ""}`;
       if (!question.multiSelect) row.setAttribute("aria-pressed", String(selected));
+      else if (panel.dataset.questionState !== "error") selections[i].checked = selected;
     });
   }
   async function submit(text, answers) {
