@@ -77,6 +77,7 @@ function getPeopleDirectory() {
 
 function replacePeopleDirectory(raw) {
   peopleDirectory = normalizeBootstrapPeople(raw);
+  window.remotelabRefreshQuickLinks?.();
   return getPeopleDirectory();
 }
 
