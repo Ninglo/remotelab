@@ -209,6 +209,19 @@ async function renderWorkAwarenessPanel(session) {
       const row = document.createElement("p");
       row.textContent = (labels[suggestion.state] || suggestion.state) + "：" + suggestion.content + "\n可能影响：" + suggestion.impact;
       panel.appendChild(row);
+      const destination = document.createElement("p");
+      for (const [label, id] of [["查看来源工作", suggestion.sourceSessionId], ["查看接收工作", suggestion.targetSessionId]]) {
+        if (!id) continue;
+        const link = document.createElement("a");
+        link.href = "/?session=" + encodeURIComponent(id);
+        link.textContent = label;
+        destination.appendChild(link);
+        destination.appendChild(document.createTextNode(" "));
+      }
+      if (suggestion.routing) destination.appendChild(document.createTextNode((suggestion.routing.mode === "new-session" ? "建议新开：" : "建议分流：")
+        + (suggestion.routing.name || "独立 Session") + "；工作：" + suggestion.routing.task
+        + (suggestion.routing.folder ? "；工作目录：" + suggestion.routing.folder : "")));
+      panel.appendChild(destination);
       const command = suggestion.state === "draft" && suggestion.sourceSessionId === session.id
         ? "确认协作建议 " + suggestion.id + (suggestion.routing?.mode === "new-session" ? " 执行" : " 发布")
         : suggestion.state === "published" && (suggestion.targetSessionId || suggestion.sourceSessionId) === session.id ? "确认协作建议 " + suggestion.id + " 执行" : "";

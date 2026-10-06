@@ -3206,6 +3206,11 @@ async function recordWorkInputAndDeliver(session, record) {
       await markReferenceReceipt(suggestion.sourceSessionId, suggestion.id, { state: 'inbox-only', reason: 'Target has a pending native question; reference cannot answer it' });
       return decisionContext;
     }
+    const manifest = await getRunManifest(active.nativeDispatchRunId || active.runId);
+    if (manifest?.inputMode !== 'native' || manifest.options?.workReferenceProtocolVersion !== 1) {
+      await markReferenceReceipt(suggestion.sourceSessionId, suggestion.id, { state: 'inbox-only', reason: 'Active Harness does not advertise the guarded reference-input protocol' });
+      return decisionContext;
+    }
     const receipt = await submitHttpMessage(suggestion.targetSessionId, text, [], {
       ...active.runtimeSelection,
       requestId: 'work-reference:' + suggestion.id, workReference: suggestion.id,
@@ -3280,6 +3285,8 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     if (!head || head.options?.internalOperation || session.archived) throw new Error('Reference retained in work inbox; target is not running');
     const question = await readNativeQuestion(runDir(head.nativeDispatchRunId || head.runId));
     if (question?.state === 'pending') throw new Error('Reference retained in work inbox; target is awaiting a human answer');
+    const manifest = await getRunManifest(head.nativeDispatchRunId || head.runId);
+    if (manifest?.inputMode !== 'native' || manifest.options?.workReferenceProtocolVersion !== 1) throw new Error('Reference retained in work inbox; active Harness has no guarded reference protocol');
   }
   if (session.groupFeed === true && options.allowGroupFeedWrite !== true && !options.nativeQuestionId) {
     throw Object.assign(new Error('Group conversations accept messages only from their connector'), {
@@ -3430,7 +3437,7 @@ async function ensureRequestInput(record, manifest) {
 async function prepareRequestRun(record) {
   if (record.options?.workReference) throw new Error('Reference retained in work inbox; it must not start or reopen a Session');
   const { sessionId, requestId, responseId, images } = record;
-  const options = { ...record.options, memoryQuery: record.text, preSavedAttachments: images, ...(record.deliveryPlan ? { sourceDelivery: record.deliveryPlan } : {}) };
+  const options = { ...record.options, memoryQuery: record.text, preSavedAttachments: images, workReferenceProtocolVersion: 1, ...(record.deliveryPlan ? { sourceDelivery: record.deliveryPlan } : {}) };
   const normalizedText = record.text;
   let session = await getSession(sessionId);
   if (!session) throw new Error('Accepted request has no session');
@@ -3609,6 +3616,7 @@ async function prepareRequestRun(record) {
         : {}),
       options: {
         images: savedImages,
+        workReferenceProtocolVersion: 1,
         thinking: options.thinking === true,
         model: options.model || undefined,
         effort: options.effort || undefined,

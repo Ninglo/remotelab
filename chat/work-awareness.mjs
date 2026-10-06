@@ -178,12 +178,12 @@ const findWork = (sessions, sessionId, workId) => state(sessions.find(session =>
 function checkSuggestionFresh(suggestion, sessions) {
   const newSession = suggestion.routing?.mode === 'new-session';
   const source = sessions.find(session => session.id === suggestion.sourceSessionId);
-  if (!source || (!suggestion.sourceWorkId && suggestion.sourceIntentId !== (state(source).intents.at(-1)?.id || ''))) {
+  if (!source || suggestion.sourceIntentId !== (state(source).intents.at(-1)?.id || '')) {
     fail('Source received new input; review a fresh suggestion', 409);
   }
   const target = sessions.find(session => session.id === suggestion.targetSessionId);
   if (!newSession && (!target || target.archived)) fail('Target is missing or archived; review a fresh destination', 409);
-  if (!newSession && !suggestion.targetWorkId && suggestion.targetIntentId !== (state(target).intents.at(-1)?.id || '')) {
+  if (!newSession && suggestion.targetIntentId !== (state(target).intents.at(-1)?.id || '')) {
     fail('Target received new input; review a fresh suggestion', 409);
   }
   for (const side of ['source', 'target']) {
@@ -214,7 +214,7 @@ export async function createWorkSuggestion({ sessionId, actor, requestId, target
       targetIntentId: state(sessions.find(session => session.id === targetSessionId) || {}).intents.at(-1)?.id || '',
       ...(routing ? { routing: { mode: routing.mode, task: clean(routing.task), folder: clean(routing.folder, 500),
         name: clean(routing.name, 100), returnSessionId: sessionId } } : {}),
-      content: clean(content), impact: clean(impact, 600), purpose, evidenceRefs: evidenceRefs.slice(0, 8), actor, people,
+      content: clean(content), impact: clean(impact, 600), purpose, evidenceRefs: evidenceRefs.slice(0, 8), actor, people: people.slice(0, 16), deferredPeople: Math.max(0, people.length - 16),
       state: 'draft', updatedAt: now(), decisions: [] };
     checkSuggestionFresh(suggestion, sessions);
     data.suggestions.push(suggestion);
