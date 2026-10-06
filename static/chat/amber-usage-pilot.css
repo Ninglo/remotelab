@@ -43,6 +43,15 @@
 }
 .pet-quota-pilot-details[hidden] { display: none; }
 
+.amber-quick-links { margin-top: 6px; }
+.amber-quick-links[hidden] { display: none; }
+.amber-quick-link {
+  margin-top: 6px;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
 :root[data-theme="amber"].session-token-pilot-enabled .session-item { min-height: 44px; }
 :root[data-theme="amber"].session-token-pilot-enabled .session-item-title-row { align-items: flex-start; }
 :root[data-theme="amber"].session-token-pilot-enabled .session-item-name { align-self: center; }

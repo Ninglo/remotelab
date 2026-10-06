@@ -13,6 +13,7 @@
     "chat/bootstrap.js",
     "chat/pet-quota-pilot.js",
     "chat/amber-todos.js",
+    "chat/amber-quick-links.js",
     "chat/amber-pet.js",
     "chat/bootstrap-session-catalog.js",
     "chat/session-http-helpers.js",

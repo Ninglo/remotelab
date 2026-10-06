@@ -37,6 +37,11 @@ const ready = new Promise((resolveReady, reject) => {
 });
 try {
   await ready;
+  const auth = await fetch(`${base}/api/auth/me`, { headers: { Cookie: 'session_token=fixture' } }).then(r => r.json());
+  const preferencesResponse = await fetch(`${base}/api/people/${auth.person.id}`, { method: 'PATCH', headers: {
+    Cookie: 'session_token=fixture', 'Content-Type': 'application/json',
+  }, body: JSON.stringify({ quickLinks: [{ label: '个人文档', url: 'https://example.com/documents' }] }) });
+  assert(preferencesResponse.ok, 'isolated personal document fixture is saved');
   const response = await fetch(`${base}/api/sessions`, { method: 'POST', headers: {
     Cookie: 'session_token=fixture', 'Content-Type': 'application/json',
   }, body: JSON.stringify({ folder: home, tool: 'codex', name: 'Pet interaction fixture' }) });
@@ -66,8 +71,9 @@ try {
   const pet = page.locator('.amber-pet-image');
   const toggle = page.locator('.amber-pet-toggle');
   const menu = page.locator('#amberPetMenu');
-  const quota = page.locator('.pet-quota-pilot-button:not(.amber-todos-toggle)');
+  const quota = page.locator('button.pet-quota-pilot-button:not(.amber-todos-toggle)');
   const todos = page.locator('.amber-todos-toggle');
+  const documents = page.locator('.amber-quick-link');
   const drag = async (locator, dx, dy) => {
     const box = await locator.boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -86,6 +92,7 @@ try {
   assert.equal(await menu.isVisible(), false);
   assert.equal(await quota.isVisible(), false);
   assert.equal(await todos.isVisible(), false);
+  assert.equal(await documents.isVisible(), false);
   assert.equal(await page.locator('.amber-pet').count(), 1);
   await pet.click();
   assert.equal(await menu.isVisible(), true, 'clicking the pet opens tools');
@@ -101,6 +108,9 @@ try {
   await pet.waitFor({ state: 'visible' });
   assert(Math.abs((await pet.boundingBox()).x - moved.x) < 2, 'position survives refresh');
   await toggle.click();
+  assert.equal(await documents.isVisible(), true, 'personal document links join the collapsed toolbox');
+  assert.equal(await documents.getAttribute('href'), 'https://example.com/documents');
+  assert.equal(await documents.getAttribute('target'), '_blank');
   await page.locator('.amber-pet-tool').nth(1).click();
   const larger = await pet.boundingBox();
   assert(larger.width > original.width);
@@ -187,7 +197,7 @@ try {
   assert.deepEqual(errors, []);
   await writeFile(join(output, 'verification.json'), JSON.stringify({ passed: true, checks: [
     'collapsed by default', 'drag and resize', 'desktop persistence', 'mobile touch', 'keyboard',
-    'quota and todo controls', 'exclusive detail panels', 'workspace edges', 'theme switching', 'no browser errors',
+    'quota, todo and personal document controls', 'exclusive detail panels', 'workspace edges', 'theme switching', 'no browser errors',
   ] }, null, 2));
   console.log('Amber pet browser: desktop/mobile interaction, persistence, controls, boundaries and theme switching passed');
 } finally {

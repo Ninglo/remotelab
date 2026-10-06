@@ -90,7 +90,7 @@
 }
 .amber-pet-tool:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text); }
 .amber-pet-tool:disabled { opacity: 0.4; cursor: default; }
-.amber-pet button:focus-visible { outline: 2px solid var(--focus-border); outline-offset: 2px; }
+.amber-pet :is(button, a):focus-visible { outline: 2px solid var(--focus-border); outline-offset: 2px; }
 .amber-pet-hint { margin-top: 10px; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
 :root[data-theme="amber"] .amber-pet .pet-quota-pilot { position: static; max-width: none; font-size: 12px; }
 .amber-pet .pet-quota-pilot-button {
@@ -109,9 +109,13 @@
 }
 .amber-pet .pet-quota-pilot-button::before { content: "◔"; color: var(--accent); font: 18px/1 system-ui, sans-serif; }
 .amber-pet .amber-todos-toggle::before { content: "☑"; }
+.amber-pet .amber-quick-links { display: grid; gap: 8px; margin-top: 8px; }
+.amber-pet .amber-quick-links[hidden] { display: none; }
+.amber-pet .amber-quick-link::before { content: "▤"; }
 .amber-pet .pet-quota-pilot-button::after { content: "›"; margin-left: auto; color: var(--text-secondary); font: 18px/1 system-ui, sans-serif; }
 .amber-pet .pet-quota-pilot-button[aria-expanded="true"]::after { transform: rotate(90deg); }
 .amber-pet .pet-quota-pilot-button[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-dim); }
+.amber-pet .amber-quick-link::after { content: "↗"; }
 .amber-pet .pet-quota-pilot-details { box-shadow: none; }
 :root[data-theme="amber"] .amber-pet .amber-todos { margin-top: 8px; }
 .amber-pet .amber-todos-panel { position: static; width: 100%; max-height: 45dvh; margin-top: 6px; border-radius: 12px; box-shadow: none; }
