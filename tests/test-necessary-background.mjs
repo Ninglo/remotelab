@@ -38,6 +38,7 @@ try {
   assert.match(await buildRelatedPersonContext({ ...options, maxChars: 5 }), /did not fit/);
   assert.doesNotMatch(await buildRelatedPersonContext({ ...options, sourceContext: {}, query: '修正 CSS' }), /完整姓名张思源/);
   assert.match(await buildRelatedPersonContext({ ...options, sourceContext: {}, query: '引用张思源的建议' }), /完整姓名张思源/);
+  assert.match(await buildRelatedPersonContext({ ...options, sourceContext: null, query: '引用张思源的建议' }), /完整姓名张思源/);
   await writeFile(company, '# 公共背景\n办公室资料以本文件为准。\n\n## 已由用户提供\n办公地点：测试创新大厦。\n\n## 周边餐饮线索\n旧网页线索需要当次核验。');
   const started = performance.now();
   const restaurant = await readNecessaryBackground({}, { memoryDir, query: '公司附近吃点什么' });

@@ -29,6 +29,8 @@ export function resolveSourcePerson(sender, source = {}, authDocument = getCache
 }
 
 export function collectRelatedPeople({ personId, identityId, sourceContext = {}, query = '', authDocument = getCachedAuthDocument() } = {}) {
+  // Web Requests explicitly store null when there is no connector source.
+  sourceContext = sourceContext && typeof sourceContext === 'object' ? sourceContext : {};
   const people = new Map();
   const add = (found, role, evidence) => {
     if (!found || found.person.id === SYSTEM_PERSON_ID || !/^person_[a-zA-Z0-9_-]+$/.test(found.person.id)) return;

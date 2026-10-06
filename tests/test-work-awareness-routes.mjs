@@ -21,7 +21,7 @@ try {
   const { appendEvent } = await import('../chat/history.mjs');
   const { runWorkAwarenessCommand } = await import('../lib/work-awareness-command.mjs');
   const { record } = await requests.accept({ sessionId: 'a', requestId: 'human', text: '修改 Session 开工功能',
-    options: { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a' } });
+    options: { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a', sourceContext: null } });
   const event = await appendEvent('a', { type: 'message', role: 'user', content: record.text });
   async function call(path, body, auth = { authKind: 'service' }) {
     let output;
@@ -33,6 +33,8 @@ try {
     assert.equal(matched, true);
     return output;
   }
+  const webPeople = await call('/api/work-awareness/people?runId=' + record.runId);
+  assert.equal(webPeople.status, 200); assert.match(webPeople.json.context, /person_a/);
   assert.equal((await call('/api/work-awareness/start?sessionId=a', { runId: 'unregistered', goal: 'unknown' })).status, 403);
   assert.equal((await call('/api/work-awareness/start', { runId: record.runId, goal: 'wrong actor' }, { authKind: 'web', personId: 'person_b' })).status, 403);
   const started = await call('/api/work-awareness/start', { runId: record.runId, goal: record.text, actor: { personId: 'person_b' }, evidenceRefs: [event.seq] });
