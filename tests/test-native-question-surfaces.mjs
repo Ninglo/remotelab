@@ -135,11 +135,14 @@ try {
   assert.equal(record.deliveries.length, 2, 'recovery queues each state only once');
 
   class Element {
-    constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.listeners = {}; this.textContent = ''; }
+    constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.listeners = {}; this.attributes = {}; this.textContent = ''; }
     appendChild(child) { this.children.push(child); return child; }
-    setAttribute() {}
+    setAttribute(name, value) { this.attributes[name] = value; }
     addEventListener(name, fn) { this.listeners[name] = fn; }
   }
+  const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
+  const optionRows = node => descendants(node).filter(child => child.className?.startsWith('native-question-option') && child.className !== 'native-question-options');
+  const statusOf = node => node.children.find(child => child.className === 'native-question-status');
   const submissions = [];
   const context = { document: { createElement: tag => new Element(tag) }, currentSessionId: 'session', shareSnapshotMode: false,
     createRequestId: () => 'web-answer', appendMessageTimestamp() {}, refreshCurrentSession: async () => {},
@@ -147,24 +150,58 @@ try {
   vm.createContext(context);
   vm.runInContext(await readFile(new URL('../static/chat/native-question-ui.js', import.meta.url), 'utf8'), context);
   let panel = context.renderNativeQuestionMessage(new Element('div'), pending);
-  await panel.children.filter(c => c.tag === 'button')[1].listeners.click();
+  assert.equal(statusOf(panel).textContent, '待你选择');
+  assert.equal(statusOf(panel).attributes['aria-live'], 'polite');
+  assert.equal(panel.children.find(c => c.tag === 'details').children[0].textContent, '填写其他答案');
+  optionRows(panel)[1].listeners.click();
+  assert.equal(statusOf(panel).textContent, '正在提交：详细…');
+  optionRows(panel)[0].listeners.click();
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(submissions[0][1], { requestId: 'web-answer', nativeQuestionId: 'question', text: '2' });
-  assert.ok(panel.children.filter(c => c.tag === 'button').every(c => c.disabled));
-  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, nativeQuestion: { ...pending.nativeQuestion, multiSelect: true } });
-  panel.children.filter(c => c.tag === 'label').forEach(c => { c.children[0].checked = true; });
+  assert.equal(submissions.length, 1, 'in-flight clicks cannot submit a second answer');
+  assert.equal(statusOf(panel).textContent, '已选择：详细');
+  assert.equal(optionRows(panel)[1].attributes['aria-pressed'], 'true');
+  assert.ok(optionRows(panel).every(c => c.disabled));
+  panel = context.renderNativeQuestionMessage(new Element('div'), pending);
+  assert.equal(statusOf(panel).textContent, '已选择：详细', 'a stale pending refresh retains the accepted answer');
+  assert.ok(!panel.children.some(c => c.tag === 'form'));
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionState: 'answered', questionAnswers: ['详细'] });
+  assert.equal(statusOf(panel).textContent, '已选择：详细', 'canonical recovery names the selected answer');
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'multiple', nativeQuestion: { ...pending.nativeQuestion, multiSelect: true } });
+  optionRows(panel).forEach(c => { c.children[0].checked = true; });
   panel.children.find(c => c.tag === 'button').listeners.click(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(submissions.at(-1)[1].text, '1,2');
-  panel = context.renderNativeQuestionMessage(new Element('div'), pending);
-  const form = panel.children.find(c => c.tag === 'form');
+  assert.equal(statusOf(panel).textContent, '已选择：简短、详细');
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'custom' });
+  const form = descendants(panel).find(c => c.tag === 'form');
   form.children[0].value = '自己的答案'; form.listeners.submit({ preventDefault() {} });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(submissions.at(-1)[1].text, '自己的答案');
+  assert.equal(statusOf(panel).textContent, '已提交：自己的答案');
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'free-text', nativeQuestion: { question: '说明原因', options: [] } });
+  assert.equal(statusOf(panel).textContent, '待你填写');
+  assert.ok(panel.children.some(c => c.tag === 'form'), 'required free text stays directly visible');
   panel = context.renderNativeQuestionMessage(new Element('div'), questions[0]);
-  assert.ok(panel.children.filter(c => c.tag === 'button').every(c => c.disabled));
-  assert.ok(panel.children.some(c => c.textContent.includes('系统默认')));
+  assert.ok(optionRows(panel).every(c => c.disabled));
+  assert.equal(statusOf(panel).textContent, '已采用系统默认：简短（非你的选择）');
+  context.refreshCurrentSession = async () => { throw new Error('Refresh offline'); };
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'refresh-failed' });
+  optionRows(panel)[0].listeners.click(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(statusOf(panel).textContent, '已选择：简短', 'accepted submission survives a failed refresh');
+  assert.ok(optionRows(panel).every(c => c.disabled));
+  context.fetchJsonOrRedirect = async (url, opts) => { submissions.push([url, JSON.parse(opts.body)]); throw new Error('Network offline'); };
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'retry' });
+  optionRows(panel)[0].listeners.click(); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(statusOf(panel).textContent.includes('提交未获确认'));
+  assert.ok(optionRows(panel).every(c => !c.disabled));
+  const firstRetry = submissions.at(-1);
+  optionRows(panel)[1].listeners.click(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(submissions.at(-1), firstRetry, 'uncertain submission cannot switch to another answer');
+  optionRows(panel)[0].listeners.click(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(submissions.at(-1), firstRetry, 'retry retains its original identity and payload');
   context.shareSnapshotMode = true;
   panel = context.renderNativeQuestionMessage(new Element('div'), pending);
-  assert.ok(panel.children.filter(c => c.tag === 'button').every(c => c.disabled));
+  assert.ok(optionRows(panel).every(c => c.disabled));
+  assert.equal(statusOf(panel).textContent, '待回答（只读）');
   const workerRuntime = { ...runtime, config: { ...runtime.config, storageDir: join(root, 'worker') } };
   const workerCalls = calls.length;
   let workerDelivery = delivery;
