@@ -20,6 +20,7 @@ const filesToParse = [
   join(repoRoot, 'static', 'chat', 'session-store.js'),
   join(repoRoot, 'static', 'chat', 'composer-store.js'),
   join(repoRoot, 'static', 'chat', 'bootstrap.js'),
+  join(repoRoot, 'static', 'chat', 'amber-todos.js'),
   join(repoRoot, 'static', 'chat', 'bootstrap-session-catalog.js'),
   join(repoRoot, 'static', 'chat', 'layout-tooling.js'),
   join(repoRoot, 'static', 'chat', 'tooling.js'),

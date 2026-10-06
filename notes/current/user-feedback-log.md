@@ -1308,3 +1308,10 @@ settings are separate from verified live deployment and delivery.
 - Revision: lead with “待你选择” or “待你填写” and a short action hint. On acceptance, name the selected options or submitted text, retain that acknowledgement across a stale pending refresh, and never unlock an accepted answer because a refresh failed. Keep optional custom input and ended options collapsed to limit phone height.
 - Boundary: timeout remains explicitly a system default rather than a human choice. This change does not combine the question with a delivery checklist or alter the timeout policy.
 - Verification: cover single, multiple and custom answers, in-flight duplicate clicks, uncertain submission retry, failed refresh, canonical state recovery, read-only snapshots and browser layouts on phone and desktop.
+
+## 2026-10-06 — Make personal To do reachable from Amber chat
+
+- Feedback: personal tasks work in the side display's reminder settings, but that entry is hard to reach during normal chat. Add a button below Amber's pet that expands the list in place.
+- Change: Amber shows an unfinished task count and a scrollable personal list beside the conversation. Titles expand task notes; checkboxes complete or reopen tasks, with visible failure handling. The list uses the authenticated Person's existing `/api/display/todos` data shared with the side display.
+- Scope: only Amber shows or requests this list; shared snapshots do not mount personal tasks. Task creation, deadlines and numeric progress remain available through chat and the existing editor. Opening the list or using Refresh reads current data without a background poll.
+- Verification: cover theme changes, anonymous snapshots, stale reads, failed writes and empty lists; verify the real Person's existing tasks and desktop/phone layout separately from a source commit and rollout.
