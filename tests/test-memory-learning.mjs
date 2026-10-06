@@ -112,14 +112,16 @@ try {
     ['small-business-error', '{"code":1,"message":"failed"}', 0],
     ['late-business-failure', '{"code":0}' + 'x'.repeat(1800) + '{"code":403}', 0],
   ]) {
-    const failed = await apply([{ ...method, key }], sources(key, '检查权限', output, exitCode));
+    const failed = await apply([{ ...method, key, evidence: [{ seq: 2,
+      quote: key === 'small-business-error' ? '"code":1' : '"code":0' }] }], sources(key, '检查权限', output, exitCode));
     assert.equal(failed.results[0].status, 'observed', 'failed process or truncated late failure cannot be activated');
   }
   for (const [key, output] of [
     ['http-success', '{"statusCode":200,"data":"checked"}'],
     ['document-discusses-permissions', '{"code":0,"data":{"text":"本文讨论无权限的误判"}}'],
   ]) {
-    const accepted = await apply([{ ...method, key, evidence: [{ seq: 2, quote: key === 'http-success' ? '"statusCode":200' : '"code":0' }] }], sources(key, '检查权限', output, 0));
+    const accepted = await apply([{ ...method, key, content: '读取成功响应时按返回结果确认当前操作。', cues: ['成功响应'],
+      evidence: [{ seq: 2, quote: key === 'http-success' ? '"statusCode":200' : '"code":0' }] }], sources(key, '检查权限', output, 0));
     assert.equal(accepted.results[0].status, 'verified', 'successful envelope is not a permission failure because of HTTP 200 or document content');
   }
   assert.doesNotMatch(await context('飞书权限'), /bot-capability|判断飞书权限前/);
