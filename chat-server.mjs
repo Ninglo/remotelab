@@ -14,6 +14,7 @@ const [
   sessionManager,
   triggers,
   recurringSchedules,
+  automationResources,
   sessionAutoArchive,
   groupFeedReview,
   tools,
@@ -29,6 +30,7 @@ const [
   import('./chat/session-manager.mjs'),
   import('./chat/triggers.mjs'),
   import('./chat/recurring-schedules.mjs'),
+  import('./chat/automation-resources.mjs'),
   import('./chat/session-auto-archive.mjs'),
   import('./chat/group-feed-review.mjs'),
   import('./lib/tools.mjs'),
@@ -38,6 +40,8 @@ const [
 ]);
 
 let ready = false;
+let resolveReady;
+const serverReady = new Promise(resolve => { resolveReady = resolve; });
 const server = http.createServer((req, res) => {
   if (!ready) { res.writeHead(503); res.end('Instance is recovering'); return; }
   const requestLog = apiRequestLog.startApiRequestLog(req, res);
@@ -73,6 +77,10 @@ recurringSchedules.startRecurringScheduleScheduler({
   countOpenScheduleTriggers: triggers.countOpenScheduleTriggers,
   getScheduleTriggerCounts: triggers.getScheduleTriggerCounts,
   onMaterialized: () => triggers.processDueTriggersNow(),
+  ensureEventResources: async wakeCause => {
+    await serverReady;
+    return automationResources.startAutomationResourceObserver({ wakeCause });
+  },
 });
 sessionAutoArchive.startSessionAutoArchive();
 groupFeedReview.startGroupFeedReview();
@@ -95,6 +103,7 @@ async function shutdown() {
   await usageLedger.closeUsageLedger();
   triggers.stopTriggerScheduler();
   recurringSchedules.stopRecurringScheduleScheduler();
+  automationResources.stopAutomationResourceObserver();
   sessionAutoArchive.stopSessionAutoArchive();
   groupFeedReview.stopGroupFeedReview();
   stopCodexAccountMonitor();
@@ -105,6 +114,7 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 ready = true;
+resolveReady();
 {
   console.log(`Chat server listening on http://${CHAT_BIND_HOST}:${CHAT_PORT}`);
   console.log(`Cookie mode: ${SECURE_COOKIES ? 'Secure (HTTPS)' : 'Non-secure (localhost)'}`);

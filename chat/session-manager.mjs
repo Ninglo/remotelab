@@ -2091,6 +2091,24 @@ export async function getSession(id, options = {}) {
   return { ...session, deliveryIssues, deliveryIssueCount: deliveryIssues.length };
 }
 
+// Resource checks need run/queue/compaction state, not histories, connector
+// surfaces, titles, prompts or sidebar enrichment. Include archived active work.
+async function sessionResourceFromMeta(meta) {
+  const active = requestRuntime.active(meta.id)[0];
+  const runActivity = active ? { state: 'running', run: await getRun(active.runId) || { id: active.runId, state: 'accepted' } }
+    : await resolveSessionRunActivity(meta);
+  return { id: meta.id, activity: buildSessionActivity(meta, sessionRuntimeStateById.get(meta.id), {
+    runState: runActivity.state, run: runActivity.run, queuedCount: getFollowUpQueueCount(meta),
+  }) };
+}
+export async function listSessionResources() {
+  return Promise.all((await loadSessionsMeta()).map(sessionResourceFromMeta));
+}
+export async function getSessionResource(id) {
+  const meta = (await loadSessionsMeta()).find(entry => entry.id === id);
+  return meta ? sessionResourceFromMeta(meta) : null;
+}
+
 export async function getSessionEventsAfter(sessionId, afterSeq = 0, options = {}) {
   const events = await buildSessionTimelineEvents(sessionId, {
     includeBodies: options?.includeBodies !== false,

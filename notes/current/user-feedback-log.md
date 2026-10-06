@@ -1361,3 +1361,10 @@ settings are separate from verified live deployment and delivery.
 - Cause: pending and completed states used notice/success colors; Amber pending questions additionally used a warning tint rather than the theme accent.
 - Revision: retain the layout and direct submission, derive question colors from the current accent/background/text, and use tint strength, the visible chosen row and a check mark for completion. Error and ended states retain the theme's error and muted colors.
 - Verification: light/dark/Amber and OS-controlled appearance, theme changes while the question is pending or answered, a custom accent, readable text and controls at phone/desktop widths, and a real native choice without a duplicate chat bubble.
+
+## 2026-10-06 — Idle work should react to availability, with an hourly fallback
+
+- Feedback: minute-level and fifteen-minute condition checks still add unnecessary overhead; use one hour for the bounded trial and start building availability-driven wake-up.
+- Revision: opt script-gated tasks into the existing schedule registry's foreground-idle event. Coalesce unchanged activity hints, observe compact resource metadata, retain the configured fallback cadence and the normal bounded Trigger/Run path.
+- Boundary: only Session run/queue/compaction transitions are event sources in this slice. Quota, host-load and material eligibility remain gate checks; group publication remains subject to the task's explicit human authorization.
+- Verification: isolated resource transition/recovery checks, cancellation and concurrent event/cadence admission, and an authenticated fixture run before the hourly fallback. Source/CI checks, current-instance loading and a real idle-review result are separate acceptance stages.

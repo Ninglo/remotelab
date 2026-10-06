@@ -2,6 +2,8 @@
  * Shared global WebSocket broadcast.
  * Decoupled from ws.mjs to avoid circular imports.
  */
+import { hintAutomationActivity } from '../lib/automation-events.mjs';
+
 let wss = null;
 
 export function setWss(instance) {
@@ -30,5 +32,6 @@ export function broadcastMatching(msg, predicate = () => true) {
 }
 
 export function broadcastAll(msg) {
+  if (msg.type === 'session_invalidated' || msg.type === 'sessions_invalidated') hintAutomationActivity(msg.sessionId || '');
   broadcastMatching(msg);
 }

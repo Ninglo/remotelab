@@ -147,6 +147,11 @@ async function main() {
   try {
     const secondPerson = await request(port, 'GET', '/api/automation-tasks', null, secondPersonCookie);
     assert.equal(secondPerson.status, 200, 'Task Center must be available to every authenticated Person');
+    const resources = await request(port, 'GET', '/api/automation/resources', null, secondPersonCookie);
+    assert.equal(resources.status, 200, resources.text);
+    assert.equal(resources.json.resources.status, 'ready');
+    assert.deepEqual(resources.json.resources.sessions, []);
+    assert.equal((await request(port, 'GET', '/api/automation/resources', null, '')).status, 401);
 
     const overview = await request(port, 'GET', '/api/monitoring/overview?days=1', null, secondPersonCookie);
     assert.equal(overview.status, 200, overview.text);
@@ -339,6 +344,25 @@ async function main() {
     });
     assert.equal(invalid.status, 400);
 
+    const eventTask = await request(port, 'POST', '/api/automation-tasks', {
+      kind: 'recurring', title: 'Idle event fixture', prompt: 'Fixture result only.',
+      schedule: { type: 'interval', everySeconds: 3600 }, wakeOn: ['foreground_idle'],
+      lifetime: { mode: 'bounded', maxExecutions: 1, maxChecks: 10 },
+      gate: { mode: 'script', runtime: 'bash', source: 'echo yes', timeoutSeconds: 2 },
+      target: { mode: 'fixed_session', sessionId: fixedSession.id },
+      resultDelivery: { mode: 'remotelab' },
+    });
+    assert.equal(eventTask.status, 201, eventTask.text);
+    assert.deepEqual(eventTask.json.task.wakeOn, ['foreground_idle']);
+    const eventDone = await waitFor(async () => {
+      const response = await request(port, 'GET', `/api/automation-tasks/${eventTask.json.task.id}`);
+      return response.json?.task?.lastExecution?.state === 'completed' ? response.json.task : false;
+    }, 'idle event must admit a fixture run before its hourly fallback');
+    assert.notEqual(eventDone.check.cause, 'cadence');
+    assert.equal(eventDone.counters.admittedExecutions, 1);
+    assert.equal(eventDone.lastExecution.sessionId, fixedSession.id);
+    assert.equal((await request(port, 'GET', '/api/source-deliveries')).json.deliveries.length, 0,
+      'event wake-up must retain RemoteLab-only delivery');
     console.log('Task Center HTTP and lifecycle tests passed.');
   } finally {
     if (server.child.exitCode === null) {

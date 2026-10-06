@@ -101,6 +101,42 @@ Recurring schedules are stored in `chat-recurring-schedules.json` and exposed th
 - one open occurrence by default, so a slow Agent Run does not create a flood
 - cancellation of future and pending occurrences; `--include-active` also requests cancellation of the active run
 
+### Optional foreground-idle wake-up
+
+Script-gated schedules can opt into `wakeOn: ["foreground_idle"]` (CLI:
+`--wake-on foreground_idle --gate-file <path>`). Existing schedules default to
+`wakeOn: []`. An event wakes the **condition check**, not the Agent directly.
+The same gate, lifetime, pending-execution reservation, cooldown, dedupe key,
+Trigger and normal Run admission apply. A concurrent event/check or a task edit
+cannot commit an obsolete gate result. An event does not move `nextRunAt`;
+the configured cron/interval remains the recovery fallback.
+
+The observer starts lazily for an opted-in task or a resource API read. It seeds
+run/queue/compaction metadata once, then coalesces Session invalidation hints
+for 250 ms and updates the affected Session only. A collection change or failed
+observation requires reseeding. It includes archived active Sessions and emits
+one wake after the entire instance changes from busy to idle and stays quiet for
+one second. Ordinary output/title changes with unchanged activity do not wake
+gates. Initial/recovered idle state and registration/resume while idle also
+reconsider work, so restart does not require a new foreground task to finish.
+There is no extra recurring resource scanner. Unknown state fails closed.
+
+Authenticated `GET /api/automation/resources` returns `{ resources }` with
+`status: "ready" | "observing"`, observation time, known Session count, only busy
+Session IDs/activity and host load/free-memory ratios. An empty busy list means
+idle **only** when status is `ready`. It excludes histories, prompts, connector
+bindings and account credentials. Task Center and schedule records expose
+`wakeOn` and the latest `lastCheckCause`; gates receive
+`REMOTELAB_TASK_CHECK_CAUSE` (`cadence`, `foreground_idle`, `resource_recovery`
+or `registration`).
+
+This slice observes Session activity. Material changes, account/quota recovery
+and host-load recovery are still evaluated by each script gate and its periodic
+fallback; they are not new event sources yet. For an idle-review task the gate
+must recheck eligibility at execution, and yield when foreground work returns.
+Resource availability does not authorize external publication: keep a task's
+conversation unbound when group results require human review.
+
 Each due occurrence becomes a normal durable Trigger with the same stored Session template:
 
 - No `conversation`: a new ordinary Session per occurrence, with results in RemoteLab.

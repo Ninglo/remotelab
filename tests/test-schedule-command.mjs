@@ -83,9 +83,12 @@ const gatePath = join(tempRoot, 'condition.sh');
 writeFileSync(gatePath, 'echo yes\n');
 await run([
   'create', '--every', '30s', '--text', 'Inspect matching state', '--times', '3',
-  '--gate-file', gatePath, '--gate-runtime', 'bash', '--gate-timeout', '2', '--cooldown', '5m',
+  '--gate-file', gatePath, '--gate-runtime', 'bash', '--gate-timeout', '2', '--cooldown', '5m', '--wake-on', 'foreground_idle',
 ]);
+await assert.rejects(run(['create', '--every', '1h', '--text', 'invalid', '--wake-on', 'cpu_idle']), /foreground_idle only/);
+await assert.rejects(run(['create', '--every', '1h', '--text', 'invalid', '--wake-on', 'foreground_idle']), /requires --gate-file/);
 const intervalBody = requests.at(-1).body;
+assert.deepEqual(intervalBody.wakeOn, ['foreground_idle']);
 assert.equal(intervalBody.everySeconds, 30);
 assert.deepEqual(intervalBody.lifetime, { mode: 'bounded', maxExecutions: 3 });
 assert.equal(intervalBody.gate.mode, 'script');

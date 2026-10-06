@@ -644,6 +644,12 @@
     if (task.kind === "recurring") {
       addMetaRow(meta, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
       addMetaRow(meta, translate("tasks.meta.admission", "Admission"), gateText(task));
+      if (task.wakeOn?.includes("foreground_idle")) {
+        addMetaRow(meta, translate("tasks.meta.eventWake", "Event wake-up"),
+          translate("tasks.wake.foreground_idle", "Check conditions when all Sessions become idle; schedule remains a fallback"));
+        if (task.check?.cause) addMetaRow(meta, translate("tasks.meta.checkCause", "Last check cause"),
+          translate(`tasks.wake.${task.check.cause}`, task.check.cause));
+      }
       if (task.gate?.mode === "script") {
         addMetaRow(meta, translate("tasks.meta.gateSnapshot", "Condition snapshot"), task.gate.snapshotSha256 || "—");
         addMetaRow(meta, translate("tasks.meta.gateTimeout", "Condition timeout"), `${task.gate.timeoutSeconds}s`);

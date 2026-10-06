@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 
 import { CHAT_RECURRING_SCHEDULES_FILE } from '../lib/config.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
+import { onAutomationWake, notifyAutomationWake } from '../lib/automation-events.mjs';
 
 const DEFAULT_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_POLL_MS = 1000;
@@ -20,6 +21,7 @@ let schedulesCache = null;
 let schedulesCacheMtimeMs = 0;
 let schedulerTimer = null;
 let schedulerTickPromise = null;
+let unsubscribeWake;
 const scheduleMutationQueue = createSerialTaskQueue();
 
 function trimString(value) {
@@ -132,6 +134,19 @@ function normalizeGate(value, { strict = false } = {}) {
     timeoutSeconds,
     cooldownSeconds,
   };
+}
+
+function normalizeWakeOn(value, gate, { strict = false } = {}) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some(item => item !== 'foreground_idle')) {
+    if (strict) throw new Error('wakeOn must be an array containing only foreground_idle');
+    return [];
+  }
+  if (value.length && gate.mode !== 'script') {
+    if (strict) throw new Error('Event wake-up requires a script gate');
+    return [];
+  }
+  return [...new Set(value)];
 }
 
 function normalizeAlerts(value) {
@@ -341,6 +356,7 @@ function normalizeStoredSchedule(value) {
     timezone,
     lifetime,
     gate,
+    wakeOn: normalizeWakeOn(raw.wakeOn, gate),
     alerts: normalizeAlerts(raw.alerts),
     misfirePolicy: 'latest_once',
     overlapPolicy: 'latest_once',
@@ -356,6 +372,7 @@ function normalizeStoredSchedule(value) {
     gateErrorCount: Math.max(0, Number.parseInt(raw.gateErrorCount, 10) || 0),
     deduplicatedCount: Math.max(0, Number.parseInt(raw.deduplicatedCount, 10) || 0),
     lastCheckAt: normalizeTimestamp(raw.lastCheckAt),
+    lastCheckCause: trimString(raw.lastCheckCause),
     lastMatchedAt: normalizeTimestamp(raw.lastMatchedAt),
     lastGateMatched: raw.lastGateMatched === true,
     lastGateReason: trimString(raw.lastGateReason),
@@ -435,6 +452,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
   const cadence = normalizeCadence(input, { strict: true });
   const lifetime = normalizeLifetime(input.lifetime, { strict: true });
   const gate = normalizeGate(input.gate, { strict: true });
+  const wakeOn = normalizeWakeOn(input.wakeOn, gate, { strict: true });
   const alerts = normalizeAlerts(input.alerts);
   const createdAt = nowIso(options.now);
   const seed = {
@@ -454,6 +472,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     ...seed,
     lifetime,
     gate,
+    wakeOn,
     alerts,
     tool: input.tool,
     runtimePolicy: input.runtimePolicy,
@@ -469,6 +488,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     schedules.push(schedule);
     await save(schedules);
   });
+  notifyAutomationWake('schedule_configuration');
   return clone(schedule);
 }
 
@@ -550,6 +570,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     const gate = Object.hasOwn(patch, 'gate')
       ? normalizeGate(patch.gate, { strict: true })
       : current.gate;
+    const wakeOn = normalizeWakeOn(Object.hasOwn(patch, 'wakeOn') ? patch.wakeOn : current.wakeOn, gate, { strict: true });
     const alerts = Object.hasOwn(patch, 'alerts') ? normalizeAlerts(patch.alerts) : current.alerts;
     const cadenceChanged = JSON.stringify(cadence) !== JSON.stringify(current.cadence);
     const next = normalizeStoredSchedule({
@@ -564,6 +585,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
       timezone,
       lifetime,
       gate,
+      wakeOn,
       alerts,
       enabled,
       status: nextStatus,
@@ -578,6 +600,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     await save(schedules);
     result = clone(next);
   });
+  if (result) notifyAutomationWake('schedule_configuration');
   return result;
 }
 
@@ -648,7 +671,7 @@ function gateCommand(runtime) {
   return { command: '/bin/bash', args: ['--noprofile', '--norc', '-s'] };
 }
 
-export async function runScheduleGate(schedule, scheduledAt) {
+export async function runScheduleGate(schedule, scheduledAt, { checkCause = 'cadence' } = {}) {
   if (schedule.gate?.mode !== 'script') return { trigger: true, reason: '', dedupeKey: '' };
   const { command, args } = gateCommand(schedule.gate.runtime);
   return new Promise((resolve, reject) => {
@@ -660,6 +683,7 @@ export async function runScheduleGate(schedule, scheduledAt) {
         LANG: process.env.LANG || 'C.UTF-8',
         REMOTELAB_TASK_ID: schedule.id,
         REMOTELAB_TASK_CHECK_AT: scheduledAt,
+        REMOTELAB_TASK_CHECK_CAUSE: checkCause,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -739,6 +763,8 @@ async function completeSchedule(scheduleId, reason, now) {
 export async function materializeDueRecurringSchedulesNow(options = {}) {
   const now = nowIso(options.now);
   const nowMs = Date.parse(now);
+  const eventWake = options.wakeReason === 'foreground_idle';
+  const checkCause = eventWake ? (options.checkCause || 'foreground_idle') : 'cadence';
   const createScheduledTrigger = options.createScheduledTrigger;
   const countOpenScheduleTriggers = options.countOpenScheduleTriggers || (async () => 0);
   const getScheduleTriggerCounts = options.getScheduleTriggerCounts || (async () => ({
@@ -758,11 +784,14 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
   }
   schedules = await listRecurringSchedules();
   const candidates = schedules.filter((entry) => (
-    entry.enabled && entry.nextRunAt && Date.parse(entry.nextRunAt) <= nowMs
+    entry.enabled && entry.nextRunAt && (eventWake
+      ? entry.gate.mode === 'script' && entry.wakeOn.includes('foreground_idle')
+      : Date.parse(entry.nextRunAt) <= nowMs)
   ));
   for (const candidate of candidates) {
     try {
-      const occurrences = collectDueOccurrences(candidate, nowMs);
+      const occurrences = eventWake ? { latestAt: now, dueCount: 1, nextRunAt: candidate.nextRunAt }
+        : collectDueOccurrences(candidate, nowMs);
       if (!occurrences.latestAt) continue;
       const counts = await getScheduleTriggerCounts(candidate.id);
       const reservedExecutions = Number(counts.admittedExecutions || 0) + Number(counts.pendingAdmissions || 0);
@@ -778,7 +807,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
           gateResult = { trigger: false, reason: 'cooldown_active', dedupeKey: '' };
         } else {
           try {
-            gateResult = await executeGate(candidate, occurrences.latestAt);
+            gateResult = await executeGate(candidate, occurrences.latestAt, { checkCause });
           } catch (error) {
             gateError = error;
           }
@@ -788,8 +817,11 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
         const index = schedules.findIndex((entry) => entry.id === candidate.id);
         if (index === -1) return;
         const current = schedules[index];
-        if (!current.enabled || !current.nextRunAt || Date.parse(current.nextRunAt) > nowMs) return;
-        const currentOccurrences = collectDueOccurrences(current, nowMs);
+        // A cancelled, edited or already-checked candidate cannot commit a stale gate result.
+        if (!current.enabled || !current.nextRunAt || JSON.stringify(current) !== JSON.stringify(candidate)) return;
+        const currentOccurrences = eventWake
+          ? { latestAt: now, dueCount: 1, nextRunAt: current.nextRunAt }
+          : collectDueOccurrences(current, nowMs);
         if (!currentOccurrences.latestAt || currentOccurrences.latestAt !== occurrences.latestAt) return;
         if (atExecutionCapacity || openCount >= current.maxOpenOccurrences) {
           current.skippedCount += 1;
@@ -847,6 +879,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
             materialized += 1;
           }
         }
+        if (!atExecutionCapacity && openCount < current.maxOpenOccurrences) current.lastCheckCause = checkCause;
         current.missedCount += Math.max(0, occurrences.dueCount - 1);
         current.nextRunAt = occurrences.nextRunAt;
         current.updatedAt = now;
@@ -879,31 +912,49 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
 export function startRecurringScheduleScheduler(options = {}) {
   if (schedulerTimer) return schedulerTimer;
   const pollMs = Math.max(250, Number.parseInt(options.pollMs || process.env.REMOTELAB_SCHEDULE_POLL_MS, 10) || DEFAULT_POLL_MS);
-  const tick = () => {
+  let stopped = false, pendingWake = null;
+  const tick = (wake = null) => {
+    if (stopped) return;
+    if (wake) pendingWake = wake;
     if (schedulerTickPromise) return schedulerTickPromise;
-    schedulerTickPromise = materializeDueRecurringSchedulesNow(options)
+    const event = pendingWake; pendingWake = null;
+    schedulerTickPromise = materializeDueRecurringSchedulesNow({ ...options,
+      ...(event ? { wakeReason: 'foreground_idle', checkCause: event.cause } : {}) })
       .then(async (result) => {
-        if (result.materialized > 0 && typeof options.onMaterialized === 'function') {
-          await options.onMaterialized(result);
-        }
+        if (result.materialized > 0 && typeof options.onMaterialized === 'function') await options.onMaterialized(result);
         return result;
       })
-      .catch((error) => {
-        console.error(`[recurring-schedules] scheduler tick failed: ${error.message}`);
-      })
+      .catch(error => console.error(`[recurring-schedules] scheduler tick failed: ${error.message}`))
       .finally(() => {
         schedulerTickPromise = null;
+        if (!stopped && pendingWake) void tick();
       });
     return schedulerTickPromise;
   };
+  const ensureResources = async () => {
+    const schedules = await listRecurringSchedules();
+    if (!stopped && schedules.some(s => s.enabled && s.wakeOn.includes('foreground_idle'))) {
+      await options.ensureEventResources?.('registration');
+    }
+  };
+  unsubscribeWake = onAutomationWake(event => {
+    if (stopped) return;
+    if (event.reason === 'foreground_idle') void tick(event);
+    else if (event.reason === 'schedule_configuration') {
+      void ensureResources().catch(error => console.error(`[recurring-schedules] resource setup failed: ${error.message}`));
+    }
+  });
   schedulerTimer = setInterval(() => void tick(), pollMs);
-  if (typeof schedulerTimer.unref === 'function') schedulerTimer.unref();
+  schedulerTimer.unref?.();
+  schedulerTimer.stopEvents = () => { stopped = true; pendingWake = null; unsubscribeWake?.(); unsubscribeWake = null; };
+  void ensureResources().catch(error => console.error(`[recurring-schedules] resource setup failed: ${error.message}`));
   void tick();
   return schedulerTimer;
 }
 
 export function stopRecurringScheduleScheduler() {
   if (!schedulerTimer) return false;
+  schedulerTimer.stopEvents?.();
   clearInterval(schedulerTimer);
   schedulerTimer = null;
   return true;

@@ -251,6 +251,7 @@ async function projectRecurringTask(schedule, occurrences) {
       skippedCount: schedule.skippedCount,
     },
     lifetime: schedule.lifetime,
+    wakeOn: schedule.wakeOn || [],
     gate: projectGate(schedule),
     counters: {
       checks: schedule.checkCount || 0,
@@ -273,7 +274,7 @@ async function projectRecurringTask(schedule, occurrences) {
     executionCount: occurrences.length,
     summary,
     health: executionHealth(projected, { lastError: schedule.lastError || '', lastErrorAt: schedule.lastErrorAt || '' }),
-    check: { at: schedule.lastCheckAt || '', reason: schedule.lastGateReason || '',
+    check: { at: schedule.lastCheckAt || '', cause: schedule.lastCheckCause || '', reason: schedule.lastGateReason || '',
       error: schedule.lastError || '', errorAt: schedule.lastErrorAt || '' },
     sourceSessionId: schedule.sourceSessionId,
     createdByIdentityId,

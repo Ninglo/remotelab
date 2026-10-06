@@ -27,6 +27,7 @@ import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { getModelsForTool } from './models.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
+import { getAutomationResourceSnapshot } from './automation-resources.mjs';
 import { backfillBootstrapSessions } from './bootstrap-sessions.mjs';
 import { createSessionDetail } from './session-api-shapes.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
@@ -339,6 +340,10 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  if (pathname === '/api/automation/resources' && req.method === 'GET') {
+    writeJson(res, 200, { resources: await getAutomationResourceSnapshot() });
+    return true;
+  }
   if (pathname === '/api/voice-review/settings' && ['GET', 'PATCH'].includes(req.method)) {
     if (!authSession?.personId) {
       writeJson(res, 401, { error: 'Authentication required' });
