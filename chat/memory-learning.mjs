@@ -129,7 +129,18 @@ export function learningTurnEvidence({ sessionId, runId, userMessage, sourceEven
 }
 
 function knownFailure(output) {
-  return /permission[_ ]violations|access denied|permission denied|unauthorized|forbidden|缺权限|无权限|"success"\s*:\s*false|"isError"\s*:\s*true|"(?:code|status|statusCode)"\s*:\s*[1-9]\d{2,}/i.test(output.replace(/\\+"/g, '"'));
+  try {
+    const result = JSON.parse(output);
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+      if (result.success === false || result.isError === true || result.permission_violations?.length
+        || typeof result.code === 'number' && result.code !== 0
+        || [result.status, result.statusCode].some(value => typeof value === 'number' && value >= 400)) return true;
+      // Successful document bodies may discuss permission failures. They are
+      // content, not the result envelope of this operation.
+      if (businessSuccess(output)) return false;
+    }
+  } catch { /* Printed/wrapped tool output still needs failure detection. */ }
+  return /permission[_ ]violations|access denied|permission denied|unauthorized|forbidden|缺权限|无权限|"success"\s*:\s*false|"isError"\s*:\s*true|"code"\s*:\s*-?[1-9]\d*|"(?:status|statusCode)"\s*:\s*[4-9]\d{2,}/i.test(output.replace(/\\+"/g, '"'));
 }
 
 function businessSuccess(output) {

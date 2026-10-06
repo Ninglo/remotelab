@@ -109,10 +109,18 @@ try {
   assert.equal(result.results[0].status, 'observed');
   for (const [key, output, exitCode] of [
     ['failed-process', '{"code":0}', 1],
+    ['small-business-error', '{"code":1,"message":"failed"}', 0],
     ['late-business-failure', '{"code":0}' + 'x'.repeat(1800) + '{"code":403}', 0],
   ]) {
     const failed = await apply([{ ...method, key }], sources(key, '检查权限', output, exitCode));
     assert.equal(failed.results[0].status, 'observed', 'failed process or truncated late failure cannot be activated');
+  }
+  for (const [key, output] of [
+    ['http-success', '{"statusCode":200,"data":"checked"}'],
+    ['document-discusses-permissions', '{"code":0,"data":{"text":"本文讨论无权限的误判"}}'],
+  ]) {
+    const accepted = await apply([{ ...method, key, evidence: [{ seq: 2, quote: key === 'http-success' ? '"statusCode":200' : '"code":0' }] }], sources(key, '检查权限', output, 0));
+    assert.equal(accepted.results[0].status, 'verified', 'successful envelope is not a permission failure because of HTTP 200 or document content');
   }
   assert.doesNotMatch(await context('飞书权限'), /bot-capability|判断飞书权限前/);
   let methodEntry = (await snapshot()).handbook.entries.find(e => e.key === method.key);
