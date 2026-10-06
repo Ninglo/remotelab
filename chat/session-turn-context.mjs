@@ -85,3 +85,13 @@ export async function loadCompletedTurnContext(sessionId, runId, { loadSessionHi
       || normalizeText(latestAssistantMessage?.content || ''),
   };
 }
+
+// Several admitted inputs may share one native execution. Attribute the actual
+// source message to its own Request, not the Run's original requester.
+export async function loadTurnSourceRequest(sessionId, userMessage, { getRequest } = {}) {
+  if (!userMessage?.requestId || typeof getRequest !== 'function') return null;
+  const record = await getRequest(sessionId, userMessage.requestId);
+  if (record?.sessionId !== sessionId || record.requestId !== userMessage.requestId) return null;
+  const original = record.options?.recordedUserText || record.text;
+  return normalizeText(original) === normalizeText(userMessage.content) ? record : null;
+}

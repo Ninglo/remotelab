@@ -1,12 +1,12 @@
 # 功能清单与使用说明
 
-状态：盘点初稿，待模块作者补漏确认。核对日期：2026-10-05。
+状态：盘点初稿，待模块作者补漏确认。核对日期：2026-10-06。
 
 这份清单是供使用和作者补漏的底稿。完整性和负责人尚未经过作者确认，不能称为完整说明书。
 
-本版对照主仓库的界面、主 CLI 分派和相关专题资料。命令下的每个子操作、仓库外脚本、其他实例配置和作者归属尚未全面核对。
+本版对照主仓库的界面、主 CLI 分派和相关专题资料。命令下的每个子操作、仓库外脚本、其他实例配置和作者归属尚未全面核对。 2026-10-06增补人员学习与行动手册入口；其余功能沿用原盘点和待作者确认边界，不扩展为全部业务已验收。
 
-本轮源码基线：67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579。8 组、42 项候选功能；34 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
+本轮源码基线：16e1dce2a661528ca72f369239f9cd4b022a77b3。8 组、42 项候选功能；34 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
 
 ## 发起工作、接着做和找回历史
 
@@ -22,7 +22,7 @@
 
 可以这样说：“把这份表里的重复项清掉，保留原件，给我可下载的新表。”
 
-维护线索：[chat/session-manager.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/session-manager.mjs)、[chat/runner-sidecar.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/runner-sidecar.mjs)、[docs/native-harness-input.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/native-harness-input.md)。
+维护线索：[chat/session-manager.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/session-manager.mjs)、[chat/runner-sidecar.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/runner-sidecar.mjs)、[docs/native-harness-input.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/native-harness-input.md)。
 
 ### 文件、图片和截图输入
 
@@ -34,7 +34,7 @@
 
 可以这样说：“按这张截图检查页面，修好后给我预览。”
 
-维护线索：[static/chat/compose.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/compose.js)、[chat/file-assets.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/file-assets.mjs)、[docs/object-storage-file-assets.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/object-storage-file-assets.md)。
+维护线索：[static/chat/compose.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/compose.js)、[chat/file-assets.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/file-assets.mjs)、[docs/object-storage-file-assets.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/object-storage-file-assets.md)。
 
 ### 语音输入、快捷键和文字整理
 
@@ -46,7 +46,7 @@
 
 可以这样说：“配置我的语音输入，并检查识别出的文字再发送。”
 
-维护线索：[static/chat/voice-input.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/voice-input.js)、[static/chat/voice-shortcut.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/voice-shortcut.js)、[static/chat/voice-review.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/voice-review.js)、[chat/voice-doubao-relay.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/voice-doubao-relay.mjs)。
+维护线索：[static/chat/voice-input.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/voice-input.js)、[static/chat/voice-shortcut.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/voice-shortcut.js)、[static/chat/voice-review.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/voice-review.js)、[chat/voice-doubao-relay.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/voice-doubao-relay.mjs)。
 
 ### 会话搜索、筛选、置顶、重命名和分组
 
@@ -58,7 +58,7 @@
 
 可以这样说：“把这些相关会话放到我的同一个分组里。”
 
-维护线索：[static/chat/sidebar-ui.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/sidebar-ui.js)、[chat/session-person-view.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/session-person-view.mjs)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/README.zh.md)。
+维护线索：[static/chat/sidebar-ui.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/sidebar-ui.js)、[chat/session-person-view.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/session-person-view.mjs)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/README.zh.md)。
 
 ### 归档、自动归档和重新打开
 
@@ -70,7 +70,7 @@
 
 可以这样说：“把闲置三天的会话自动归档。”
 
-维护线索：[docs/session-auto-archive.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/session-auto-archive.md)、[chat/session-auto-archive.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/session-auto-archive.mjs)。
+维护线索：[docs/session-auto-archive.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/session-auto-archive.md)、[chat/session-auto-archive.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/session-auto-archive.mjs)。
 
 ### 复制会话与分出独立工作
 
@@ -82,7 +82,7 @@
 
 可以这样说：“保留当前方案，另开一个会话比较第二种实现。”
 
-维护线索：[lib/session-spawn-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/session-spawn-command.mjs)、[docs/platform-skills/session-delegate.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/session-delegate.md)、[chat/session-manager.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/session-manager.mjs)。
+维护线索：[lib/session-spawn-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/session-spawn-command.mjs)、[docs/platform-skills/session-delegate.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/session-delegate.md)、[chat/session-manager.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/session-manager.mjs)。
 
 Agent 命令入口：`remotelab session-spawn`。
 
@@ -96,7 +96,7 @@ Agent 命令入口：`remotelab session-spawn`。
 
 可以这样说：“展开这次改动，看看具体改了哪些行。”
 
-维护线索：[static/chat/activity-ui.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/activity-ui.js)、[docs/historical-file-diffs.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/historical-file-diffs.md)。
+维护线索：[static/chat/activity-ui.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/activity-ui.js)、[docs/historical-file-diffs.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/historical-file-diffs.md)。
 
 ## 选择执行方式、回答问题和核对任务
 
@@ -112,7 +112,7 @@ RemoteLab 提供执行入口、持久记录和结果传输。任务怎么理解�
 
 可以这样说：“用本实例已可用的执行工具处理这个仓库。”
 
-维护线索：[chat/models.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/models.mjs)、[lib/runtime-selection.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/runtime-selection.mjs)、[static/chat/tooling.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/tooling.js)。
+维护线索：[chat/models.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/models.mjs)、[lib/runtime-selection.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/runtime-selection.mjs)、[static/chat/tooling.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/tooling.js)。
 
 ### Auto 路由与 Quick 会话
 
@@ -124,7 +124,7 @@ RemoteLab 提供执行入口、持久记录和结果传输。任务怎么理解�
 
 可以这样说：“新建一个 Quick 会话，解释这段报错。”
 
-维护线索：[lib/jev-auto-router.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/jev-auto-router.mjs)、[docs/quick-sessions.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/quick-sessions.md)、[static/chat/auto-routing-settings.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/auto-routing-settings.js)。
+维护线索：[lib/jev-auto-router.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/jev-auto-router.mjs)、[docs/quick-sessions.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/quick-sessions.md)、[static/chat/auto-routing-settings.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/auto-routing-settings.js)。
 
 Agent 命令入口：`remotelab quick-stats`。
 
@@ -138,7 +138,7 @@ Agent 命令入口：`remotelab quick-stats`。
 
 可以这样说：“检查当前可用账号和采样时间，说明是否需要我完成授权。”
 
-维护线索：[chat/router-codex-auth-routes.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/router-codex-auth-routes.mjs)、[lib/codex-accounts.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/codex-accounts.mjs)、[chat/router-claude-auth-routes.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/router-claude-auth-routes.mjs)、[chat/router-pi-auth-routes.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/router-pi-auth-routes.mjs)。
+维护线索：[chat/router-codex-auth-routes.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/router-codex-auth-routes.mjs)、[lib/codex-accounts.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/codex-accounts.mjs)、[chat/router-claude-auth-routes.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/router-claude-auth-routes.mjs)、[chat/router-pi-auth-routes.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/router-pi-auth-routes.mjs)。
 
 ### 执行中的提问、追加输入与停止
 
@@ -150,7 +150,7 @@ Agent 命令入口：`remotelab quick-stats`。
 
 可以这样说：“保留刚才的目标，把输出语言改成中文。”
 
-维护线索：[docs/native-harness-input.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/native-harness-input.md)、[static/chat/native-question-ui.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/native-question-ui.js)、[chat/native-user-questions.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/native-user-questions.mjs)。
+维护线索：[docs/native-harness-input.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/native-harness-input.md)、[static/chat/native-question-ui.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/native-question-ui.js)、[chat/native-user-questions.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/native-user-questions.mjs)。
 
 ### 任务卡、进度和验收依据
 
@@ -162,7 +162,7 @@ Agent 命令入口：`remotelab quick-stats`。
 
 可以这样说：“这项工作列出可验收的交付项，每项完成后附上依据。”
 
-维护线索：[lib/workboard-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/workboard-command.mjs)、[lib/workboard-state.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/workboard-state.mjs)、[docs/assistant-message-visibility.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/assistant-message-visibility.md)。
+维护线索：[lib/workboard-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/workboard-command.mjs)、[lib/workboard-state.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/workboard-state.mjs)、[docs/assistant-message-visibility.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/assistant-message-visibility.md)。
 
 Agent 命令入口：`remotelab workboard`。
 
@@ -176,7 +176,7 @@ Agent 命令入口：`remotelab workboard`。
 
 可以这样说：“这次回答没到飞书，核对原投递记录后再决定是否重试。”
 
-维护线索：[docs/platform-skills/session-debug.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/session-debug.md)、[docs/session-start-preflight.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/session-start-preflight.md)、[lib/remotelab-api-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/remotelab-api-command.mjs)。
+维护线索：[docs/platform-skills/session-debug.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/session-debug.md)、[docs/session-start-preflight.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/session-start-preflight.md)、[lib/remotelab-api-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/remotelab-api-command.mjs)。
 
 Agent 命令入口：`remotelab api`、`remotelab session-preflight`。
 
@@ -194,7 +194,7 @@ Agent 命令入口：`remotelab api`、`remotelab session-preflight`。
 
 可以这样说：“明天上午检查这个任务的最新结果，把结论回到这里。”
 
-维护线索：[lib/trigger-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/trigger-command.mjs)、[docs/trigger-control-plane-v0.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/trigger-control-plane-v0.md)。
+维护线索：[lib/trigger-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/trigger-command.mjs)、[docs/trigger-control-plane-v0.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/trigger-control-plane-v0.md)。
 
 Agent 命令入口：`remotelab trigger`。
 
@@ -208,7 +208,7 @@ Agent 命令入口：`remotelab trigger`。
 
 可以这样说：“每天九点按这个已验证流程整理资料，结果发到原会话。”
 
-维护线索：[lib/schedule-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/schedule-command.mjs)、[docs/task-center-v1.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/task-center-v1.md)、[docs/trigger-control-plane-v0.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/trigger-control-plane-v0.md)。
+维护线索：[lib/schedule-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/schedule-command.mjs)、[docs/task-center-v1.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/task-center-v1.md)、[docs/trigger-control-plane-v0.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/trigger-control-plane-v0.md)。
 
 Agent 命令入口：`remotelab schedule`。
 
@@ -222,7 +222,7 @@ Agent 命令入口：`remotelab schedule`。
 
 可以这样说：“列出最近失败的自动化，解释失败阶段和已有结果。”
 
-维护线索：[static/chat/task-center.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/task-center.js)、[docs/task-center-v1.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/task-center-v1.md)。
+维护线索：[static/chat/task-center.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/task-center.js)、[docs/task-center-v1.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/task-center-v1.md)。
 
 ### 日历事件和订阅提醒
 
@@ -234,7 +234,7 @@ Agent 命令入口：`remotelab schedule`。
 
 可以这样说：“明天下午三点到四点开会，提前半小时提醒，给我日历订阅入口。”
 
-维护线索：[lib/agenda-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/agenda-command.mjs)、[docs/platform-skills/calendar-write.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/calendar-write.md)。
+维护线索：[lib/agenda-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/agenda-command.mjs)、[docs/platform-skills/calendar-write.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/calendar-write.md)。
 
 Agent 命令入口：`remotelab agenda`。
 
@@ -248,7 +248,7 @@ Agent 命令入口：`remotelab agenda`。
 
 可以这样说：“记一项本周读五篇论文的待办，现在完成两篇。”
 
-维护线索：[lib/todo-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/todo-command.mjs)。
+维护线索：[lib/todo-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/todo-command.mjs)。
 
 Agent 命令入口：`remotelab todo`。
 
@@ -266,7 +266,7 @@ Agent 命令入口：`remotelab todo`。
 
 可以这样说：“在当前话题继续刚才的工作，把结果也回到这里。”
 
-维护线索：[docs/platform-skills/feishu-cli.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/feishu-cli.md)、[docs/feishu-bot-setup.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/feishu-bot-setup.md)。
+维护线索：[docs/platform-skills/feishu-cli.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/feishu-cli.md)、[docs/feishu-bot-setup.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/feishu-bot-setup.md)。
 
 ### 飞书文档和办公操作
 
@@ -278,7 +278,7 @@ Agent 命令入口：`remotelab todo`。
 
 可以这样说：“读取这篇文档，在原件补充结论并保留现有评论。”
 
-维护线索：[lib/feishu-action-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/feishu-action-command.mjs)、[docs/platform-skills/feishu-cli.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/feishu-cli.md)。
+维护线索：[lib/feishu-action-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/feishu-action-command.mjs)、[docs/platform-skills/feishu-cli.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/feishu-cli.md)。
 
 Agent 命令入口：`remotelab feishu`。
 
@@ -292,7 +292,7 @@ Agent 命令入口：`remotelab feishu`。
 
 可以这样说：“查看这个已登记项目的资料和任务，并在原文档评论回复。”
 
-维护线索：[docs/feishu-project-links.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/feishu-project-links.md)、[docs/feishu-document-bindings.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/feishu-document-bindings.md)、[docs/connector-turn-context.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/connector-turn-context.md)。
+维护线索：[docs/feishu-project-links.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/feishu-project-links.md)、[docs/feishu-document-bindings.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/feishu-document-bindings.md)、[docs/connector-turn-context.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/connector-turn-context.md)。
 
 ### Agent 邮箱与 Gmail
 
@@ -304,7 +304,7 @@ Agent 命令入口：`remotelab feishu`。
 
 可以这样说：“查看我的已绑定邮箱中这封邮件，先整理需要回复的事实。”
 
-维护线索：[lib/agent-mail-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/agent-mail-command.mjs)、[lib/gmail-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/gmail-command.mjs)、[docs/cloudflare-email-worker.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/cloudflare-email-worker.md)。
+维护线索：[lib/agent-mail-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/agent-mail-command.mjs)、[lib/gmail-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/gmail-command.mjs)、[docs/cloudflare-email-worker.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/cloudflare-email-worker.md)。
 
 Agent 命令入口：`remotelab mail`、`remotelab gmail`。
 
@@ -318,7 +318,7 @@ Agent 命令入口：`remotelab mail`、`remotelab gmail`。
 
 可以这样说：“先列出这个实例已绑定的连接器，以及能做的具体操作。”
 
-维护线索：[lib/connector-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/connector-command.mjs)、[docs/external-message-protocol.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/external-message-protocol.md)、[scripts/wechat-connector.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/scripts/wechat-connector.mjs)。
+维护线索：[lib/connector-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/connector-command.mjs)、[docs/external-message-protocol.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/external-message-protocol.md)、[scripts/wechat-connector.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/scripts/wechat-connector.mjs)。
 
 Agent 命令入口：`remotelab connector`。
 
@@ -332,7 +332,7 @@ Agent 命令入口：`remotelab connector`。
 
 可以这样说：“查与这个方法相关的已收录材料，给出原始来源和适用条件。”
 
-维护线索：[docs/qianyan-research-access.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/qianyan-research-access.md)、[docs/qianyan-internal-collaboration.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/qianyan-internal-collaboration.md)、[knowledge/qianyan.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/knowledge/qianyan.mjs)。
+维护线索：[docs/qianyan-research-access.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/qianyan-research-access.md)、[docs/qianyan-internal-collaboration.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/qianyan-internal-collaboration.md)、[knowledge/qianyan.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/knowledge/qianyan.mjs)。
 
 ## 下载、分享、网页和预览
 
@@ -348,7 +348,7 @@ Agent 命令入口：`remotelab connector`。
 
 可以这样说：“给我导出的 CSV，直接在会话里下载。”
 
-维护线索：[lib/assistant-message-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/assistant-message-command.mjs)、[chat/file-assets.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/file-assets.mjs)、[docs/object-storage-file-assets.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/object-storage-file-assets.md)。
+维护线索：[lib/assistant-message-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/assistant-message-command.mjs)、[chat/file-assets.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/file-assets.mjs)、[docs/object-storage-file-assets.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/object-storage-file-assets.md)。
 
 Agent 命令入口：`remotelab assistant-message`。
 
@@ -362,7 +362,7 @@ Agent 命令入口：`remotelab assistant-message`。
 
 可以这样说：“为这次结果生成只读分享，先核对会公开哪些内容。”
 
-维护线索：[chat/shares.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/shares.mjs)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/README.zh.md)。
+维护线索：[chat/shares.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/shares.mjs)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/README.zh.md)。
 
 ### 静态网页发布
 
@@ -374,7 +374,7 @@ Agent 命令入口：`remotelab assistant-message`。
 
 可以这样说：“把这份可公开报告发布成网页，给我可直接打开的链接。”
 
-维护线索：[lib/static-publish-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/static-publish-command.mjs)、[docs/platform-skills/stable-static-publish.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/stable-static-publish.md)。
+维护线索：[lib/static-publish-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/static-publish-command.mjs)、[docs/platform-skills/stable-static-publish.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/stable-static-publish.md)。
 
 Agent 命令入口：`remotelab publish`。
 
@@ -388,7 +388,7 @@ Agent 命令入口：`remotelab publish`。
 
 可以这样说：“把这个已经运行的本地预览接到当前实例的认证入口。”
 
-维护线索：[lib/preview-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/preview-command.mjs)、[docs/platform-skills/guest-port-expose.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/guest-port-expose.md)。
+维护线索：[lib/preview-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/preview-command.mjs)、[docs/platform-skills/guest-port-expose.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/guest-port-expose.md)。
 
 Agent 命令入口：`remotelab preview`。
 
@@ -406,7 +406,7 @@ Agent 命令入口：`remotelab preview`。
 
 可以这样说：“检查当前会话有没有连接到我的本地助手。”
 
-维护线索：[lib/local-bridge-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/local-bridge-command.mjs)、[chat/local-bridge-session.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/local-bridge-session.mjs)。
+维护线索：[lib/local-bridge-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/local-bridge-command.mjs)、[chat/local-bridge-session.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/local-bridge-session.mjs)。
 
 Agent 命令入口：`remotelab local-bridge`。
 
@@ -420,7 +420,7 @@ Agent 命令入口：`remotelab local-bridge`。
 
 可以这样说：“打开这个实例的浏览器桌面，让我完成网站验证。”
 
-维护线索：[docs/browser-desktop.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/browser-desktop.md)、[chat/browser-desktop-proxy.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/browser-desktop-proxy.mjs)。
+维护线索：[docs/browser-desktop.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/browser-desktop.md)、[chat/browser-desktop-proxy.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/browser-desktop-proxy.mjs)。
 
 ### 硬件讨论录音
 
@@ -432,7 +432,7 @@ Agent 命令入口：`remotelab local-bridge`。
 
 可以这样说：“核对录音设备和交付位置，再配置这台机器的录音入口。”
 
-维护线索：[lib/recording-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/recording-command.mjs)、[docs/platform-skills/hardware-recording.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/hardware-recording.md)。
+维护线索：[lib/recording-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/recording-command.mjs)、[docs/platform-skills/hardware-recording.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/hardware-recording.md)。
 
 Agent 命令入口：`remotelab recording`。
 
@@ -446,7 +446,7 @@ Agent 命令入口：`remotelab recording`。
 
 可以这样说：“检查已配对显示设备，说明现在能展示哪些内容。”
 
-维护线索：[chat/router-display-routes.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/router-display-routes.mjs)、[static/chat/display-settings.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/display-settings.js)。
+维护线索：[chat/router-display-routes.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/router-display-routes.mjs)、[static/chat/display-settings.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/display-settings.js)。
 
 ## 人员、记忆和界面设置
 
@@ -462,7 +462,7 @@ Agent 命令入口：`remotelab recording`。
 
 可以这样说：“检查我的网页与飞书身份是否对应同一个人员档案。”
 
-维护线索：[lib/auth-config.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/auth-config.mjs)、[templates/chat.html](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/templates/chat.html)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/README.zh.md)。
+维护线索：[lib/auth-config.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/auth-config.mjs)、[templates/chat.html](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/templates/chat.html)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/README.zh.md)。
 
 Agent 命令入口：`remotelab generate-token`、`remotelab set-password`。
 
@@ -476,7 +476,7 @@ Agent 命令入口：`remotelab generate-token`、`remotelab set-password`。
 
 可以这样说：“接着这个项目做，先核对现有主账和最新决定。”
 
-维护线索：[docs/memory-architecture/README.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/memory-architecture/README.md)、[chat/project-memory-runtime.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/project-memory-runtime.mjs)、[chat/person-memory-context.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/person-memory-context.mjs)、[chat/memory-learning.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/memory-learning.mjs)、[docs/memory-learning.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/memory-learning.md)。
+维护线索：[docs/memory-architecture/README.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/memory-architecture/README.md)、[chat/project-memory-runtime.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/project-memory-runtime.mjs)、[chat/person-memory-context.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/person-memory-context.mjs)、[chat/memory-learning.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/memory-learning.mjs)、[docs/memory-learning.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/memory-learning.md)。
 
 Agent 命令入口：`remotelab memory`。
 
@@ -490,7 +490,7 @@ Agent 命令入口：`remotelab memory`。
 
 可以这样说：“把界面语言设成中文，并收起默认展开的过程内容。”
 
-维护线索：[templates/chat.html](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/templates/chat.html)、[static/chat/settings-ui.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/settings-ui.js)、[static/chat/instance-settings.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/instance-settings.js)。
+维护线索：[templates/chat.html](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/templates/chat.html)、[static/chat/settings-ui.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/settings-ui.js)、[static/chat/instance-settings.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/instance-settings.js)。
 
 ### 安装到桌面与浏览器通知
 
@@ -502,7 +502,7 @@ Agent 命令入口：`remotelab memory`。
 
 可以这样说：“给我这个设备的安装步骤，并检查是否支持通知。”
 
-维护线索：[templates/mobile-install.html](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/templates/mobile-install.html)、[chat/push.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/push.mjs)、[static/chat/notifications.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/notifications.js)。
+维护线索：[templates/mobile-install.html](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/templates/mobile-install.html)、[chat/push.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/push.mjs)、[static/chat/notifications.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/notifications.js)。
 
 ## 监控、部署和开发协作
 
@@ -518,7 +518,7 @@ Agent 命令入口：`remotelab memory`。
 
 可以这样说：“查看本实例的紧急问题和覆盖缺口，给我最新观测时间。”
 
-维护线索：[docs/monitoring.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/monitoring.md)、[static/chat/monitoring.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/static/chat/monitoring.js)、[chat/router-control-routes.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/chat/router-control-routes.mjs)。
+维护线索：[docs/monitoring.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/monitoring.md)、[static/chat/monitoring.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/static/chat/monitoring.js)、[chat/router-control-routes.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/chat/router-control-routes.mjs)。
 
 Agent 命令入口：`remotelab usage-summary`。
 
@@ -532,7 +532,7 @@ Agent 命令入口：`remotelab usage-summary`。
 
 可以这样说：“检查现有监控是否启用告警与恢复，说明范围和真实记录。”
 
-维护线索：[docs/monitoring.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/monitoring.md)、[scripts/monitoring-alerts.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/scripts/monitoring-alerts.mjs)、[scripts/monitoring-report.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/scripts/monitoring-report.mjs)。
+维护线索：[docs/monitoring.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/monitoring.md)、[scripts/monitoring-alerts.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/scripts/monitoring-alerts.mjs)、[scripts/monitoring-report.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/scripts/monitoring-report.mjs)。
 
 ### 个人 GitHub 工作目录与身份核对
 
@@ -544,7 +544,7 @@ Agent 命令入口：`remotelab usage-summary`。
 
 可以这样说：“为我准备这个仓库的工作目录，先核对身份、远端和已有改动。”
 
-维护线索：[lib/github-workspace-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/github-workspace-command.mjs)、[docs/shared-host-github-accounts.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/shared-host-github-accounts.md)。
+维护线索：[lib/github-workspace-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/github-workspace-command.mjs)、[docs/shared-host-github-accounts.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/shared-host-github-accounts.md)。
 
 Agent 命令入口：`remotelab github-workspace`。
 
@@ -558,7 +558,7 @@ Agent 命令入口：`remotelab github-workspace`。
 
 可以这样说：“检查这个实例的版本和健康状态，按现行流程处理必要的升级。”
 
-维护线索：[docs/setup.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/setup.md)、[docs/request-state-upgrade.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/request-state-upgrade.md)、[docs/instance-factory-v1.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/instance-factory-v1.md)、[cli.js](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/cli.js)。
+维护线索：[docs/setup.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/setup.md)、[docs/request-state-upgrade.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/request-state-upgrade.md)、[docs/instance-factory-v1.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/instance-factory-v1.md)、[cli.js](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/cli.js)。
 
 Agent 命令入口：`remotelab setup`、`remotelab start`、`remotelab stop`、`remotelab restart`、`remotelab chat`、`remotelab upgrade-state`、`remotelab provision-host`、`remotelab bootstrap-host`、`remotelab install-profile`、`remotelab validate-profile`。
 
@@ -572,7 +572,7 @@ Agent 命令入口：`remotelab setup`、`remotelab start`、`remotelab stop`、
 
 可以这样说：“先检查本机条件，再为指定用途准备独立实例。”
 
-维护线索：[lib/guest-instance-command.mjs](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/lib/guest-instance-command.mjs)、[docs/instance-factory-v1.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/instance-factory-v1.md)、[docs/platform-skills/guest-port-expose.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/platform-skills/guest-port-expose.md)。
+维护线索：[lib/guest-instance-command.mjs](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/lib/guest-instance-command.mjs)、[docs/instance-factory-v1.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/instance-factory-v1.md)、[docs/platform-skills/guest-port-expose.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/platform-skills/guest-port-expose.md)。
 
 Agent 命令入口：`remotelab guest-instance`。
 
@@ -586,7 +586,7 @@ Agent 命令入口：`remotelab guest-instance`。
 
 可以这样说：“检查这个仓库是否已有 CI 修复流程，说明状态和授权范围。”
 
-维护线索：[docs/remote-capability-monitor.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/remote-capability-monitor.md)、[docs/github-auto-triage.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/github-auto-triage.md)、[docs/github-ci-auto-repair.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/github-ci-auto-repair.md)、[docs/proactive-observer.md](https://github.com/Ninglo/remotelab/blob/67bf9b03e5be5c4f7309dfd9a0ecb6d4387f1579/docs/proactive-observer.md)。
+维护线索：[docs/remote-capability-monitor.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/remote-capability-monitor.md)、[docs/github-auto-triage.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/github-auto-triage.md)、[docs/github-ci-auto-repair.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/github-ci-auto-repair.md)、[docs/proactive-observer.md](https://github.com/Ninglo/remotelab/blob/16e1dce2a661528ca72f369239f9cd4b022a77b3/docs/proactive-observer.md)。
 
 ## monitor 和 fleet
 
@@ -658,7 +658,7 @@ Fleet Observer：它是监控数据源和独立管理入口；RemoteLab 监控�
 
 ## 核对范围
 
-- 核对时，本实例的服务版本与本章源码基线一致。工具目录、监控总览和自动化任务的只读接口返回成功；这不证明每项业务操作、未来定时执行或所有实例都可用。
+- 人员学习与行动手册按本章源码基线核对；实际部署版本和实例开关需分别读取。其余功能沿用原盘点的只读接口观察，不代表全部业务操作、未来定时执行或所有实例均已验收。
 - 本机 PATH 中的 CLI 帮助比本次核对的源码少了 workboard 和 recording 两项。本章以所选实例的源码 CLI 为准；使用时让 Agent 先确认自己的实例和版本。
 - 作者确认尚未完成。提交作者、机器用户名或 Agent 写代码的身份，都不能直接当作这个功能的当前负责人。
 

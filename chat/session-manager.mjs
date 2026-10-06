@@ -28,7 +28,7 @@ import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { WORKBOARD_INSTRUCTIONS, workboardContext, workboardReadback } from '../lib/workboard-context.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
-import { requests, appendDeliveries } from './requests.mjs';
+import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { publishLiveAssistantReplies, excludePublishedFinalReplies, prepareNativeFinalFiles, annotateTerminalReplyDeliveries } from './native-final-publication.mjs';
 import { readPromptAsset } from './prompt-asset-loader.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
@@ -180,7 +180,7 @@ import {
   maybeApplyAssistantWorkSummary,
 } from './session-assistant-followups.mjs';
 import { runDetachedAssistantPrompt } from './session-detached-assistant.mjs';
-import { loadCompletedTurnContext } from './session-turn-context.mjs';
+import { loadCompletedTurnContext, loadTurnSourceRequest } from './session-turn-context.mjs';
 import {
   buildFeishuAmbientIncompleteWorkNotice,
   buildReplyPublicationPayload,
@@ -1980,7 +1980,9 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
       const { userMessage, assistantTurnText, turnEvents } = await loadCompletedTurnContext(
         sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
       );
-      const request = await requests.byRunId(finalizedRun.id);
+      const request = await loadTurnSourceRequest(sessionId, userMessage, {
+        getRequest: (id, requestId) => requests.get(requestKey(id, requestId)),
+      });
       const result = await maybeRunMemoryWriteback({
         sessionId,
         session,
