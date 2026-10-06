@@ -1,7 +1,8 @@
 # Personal quick links in Amber
 
-Amber places a Person's configured quick links below the pet's quota and To do
-buttons. A single link can point to an existing work-document directory so people
+Amber places a Person's configured quick links in the bear's tool menu alongside
+quota and To do. The menu starts collapsed; click the bear or its ellipsis to
+expand it. A single link can point to an existing work-document directory so people
 can find their outputs without searching older conversations. No document copies
 or personal destination URLs are embedded in shipped code.
 
@@ -17,3 +18,6 @@ opens them in a separate tab and refreshes after People updates. Preferences
 survive restarts and follow the account between browsers. Other themes do not
 display the pet's links. The directory itself remains the one place to maintain
 document destinations.
+
+The bear's position and size stay in the current Person's browser, with separate
+desktop and mobile layouts. This does not change the account-backed quick links.
