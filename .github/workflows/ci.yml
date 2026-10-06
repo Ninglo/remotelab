@@ -38,6 +38,9 @@ jobs:
       - name: Verify package boundary
         run: node tests/test-package-publish-boundary.mjs
 
+      - name: Verify social publishing without real accounts
+        run: node scripts/run-with-clean-instance-env.mjs node --test tests/test-social-publish.mjs
+
       - name: Run smoke tests
         run: npm test
 

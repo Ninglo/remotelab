@@ -1,0 +1,28 @@
+diff --git a/xiaohongshu/login.go b/xiaohongshu/login.go
+index 67e002d..4569f9e 100644
+--- a/xiaohongshu/login.go
++++ b/xiaohongshu/login.go
+@@ -20,9 +20,9 @@ func NewLogin(page *rod.Page) *LoginAction {
+ func (a *LoginAction) CheckLoginStatus(ctx context.Context) (bool, error) {
+ 	// 加超时保护：只是查登录态的快速检查，不应无限挂（登录扫码的等待在 Login/WaitForLogin 里）
+ 	pp := a.page.Context(ctx).Timeout(30 * time.Second)
+-	pp.MustNavigate("https://www.xiaohongshu.com/explore").MustWaitLoad()
++	pp.MustNavigate("https://www.xiaohongshu.com/explore")
++	pp.MustWait(`() => document.querySelector(".main-container .user .link-wrapper .channel") !== null || document.querySelector(".login-container .qrcode-img") !== null`)
+ 
+-	time.Sleep(1 * time.Second)
+ 
+ 	exists, _, err := pp.Has(`.main-container .user .link-wrapper .channel`)
+ 	if err != nil {
+@@ -91,9 +91,9 @@ func (a *LoginAction) FetchQrcodeImage(ctx context.Context) (string, bool, error
+ 	pp := a.page.Context(ctx)
+ 
+ 	// 导航到小红书首页，这会触发二维码弹窗
+-	pp.MustNavigate("https://www.xiaohongshu.com/explore").MustWaitLoad()
++	pp.MustNavigate("https://www.xiaohongshu.com/explore")
++	pp.MustWait(`() => document.querySelector(".main-container .user .link-wrapper .channel") !== null || document.querySelector(".login-container .qrcode-img") !== null`)
+ 
+-	time.Sleep(2 * time.Second)
+ 
+ 	if exists, _, _ := pp.Has(".main-container .user .link-wrapper .channel"); exists {
+ 		return "", true, nil

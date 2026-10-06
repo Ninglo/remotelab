@@ -1,0 +1,4 @@
+interface:
+  display_name: "会话跨平台发布"
+  short_description: "把明确要公开的会话内容适配并发布到小红书和 X，保存结果并避免重复发布"
+  default_prompt: "使用 $social-publish 将我提供的内容发布到已绑定的小红书和 X，并返回逐平台链接和结果。"

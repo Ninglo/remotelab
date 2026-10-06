@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf" content="{{CSRF}}"><title>绑定发布账号</title>
+<style nonce="{{NONCE}}">
+*{box-sizing:border-box}body{margin:0;background:#f8f8fa;color:#1c1c1e;font:16px/1.6 system-ui,-apple-system,sans-serif}main{max-width:820px;padding:32px 20px 60px;margin:auto}h1{font-size:28px;line-height:1.3}h2{font-size:21px;margin:0 0 12px}p{margin:8px 0 16px}.muted{color:#636366}section{background:white;border:1px solid #e5e5ea;border-radius:12px;padding:24px;margin:20px 0}a{color:#345c8e}input,select,button{font:inherit;min-height:44px;border-radius:8px;padding:10px 12px}input,select{border:1px solid #c8c8ce;width:100%;background:white;color:#1c1c1e}button{border:0;background:#1c1c1e;color:white;cursor:pointer;margin:12px 8px 0 0}button.secondary{background:#f0f0f3;color:#1c1c1e}button:disabled{opacity:.5;cursor:wait}label{display:block;margin:12px 0 6px}#qr{width:240px;max-width:100%;display:block;margin:20px auto}pre{white-space:pre-wrap;word-break:break-word;background:#f8f8fa;border-radius:8px;padding:12px;font:14px/1.6 system-ui}.message{white-space:pre-wrap;overflow-wrap:anywhere}.error{color:#a12a2a}.ok{color:#246242}[hidden]{display:none!important}@media(max-width:500px){main{padding:24px 14px}section{padding:20px}h1{font-size:25px}}
+</style></head><body><main>
+<h1>绑定一次，以后在会话里发布</h1>
+<p>绑定完成后，把文字发给我并说“发到小红书和 X”，我会适配、发布并返回结果。</p>
+<p class="muted">这页只绑定账号，不会发布任何内容。平台要求重新登录或安全验证时，可能需要再次绑定。请使用你本人的 RemoteLab 登录账号。</p>
+<section><h2>小红书</h2><p>用小红书 App 扫码，读回账号，再确认绑定。登录状态会保存在本实例上。</p>
+<button id="make-qr">显示登录二维码</button><button id="identity" class="secondary">已扫码，读取账号</button>
+<img id="qr" hidden alt="小红书登录二维码"><p id="xhs-info" class="message" role="status">尚未读取账号。</p><button id="bind-xhs" hidden>绑定这个小红书账号</button></section>
+<section><h2>X</h2><p>使用 Buffer 代为发布。一次性步骤：<a href="https://publish.buffer.com/" target="_blank" rel="noreferrer">登录或注册 Buffer</a>，连接你的 X，再到 <a href="https://publish.buffer.com/settings/api" target="_blank" rel="noreferrer">Settings → API</a> 创建一个密钥。</p>
+<label for="buffer-key">Buffer API key</label><input id="buffer-key" type="password" autocomplete="off" spellcheck="false" placeholder="密钥只提交给本实例，保存后不再显示">
+<button id="discover">读取可发布的 X 账号</button><label for="channels" id="channels-label" hidden>选择发布账号</label><select id="channels" hidden></select><button id="bind-buffer" hidden>绑定所选 X 账号</button><p id="buffer-info" class="message" role="status">尚未绑定。</p>
+<p class="muted">优先使用账号当前可用的计划；此流程不会自动购买订阅。</p></section>
+<section><h2>当前状态</h2><button id="refresh" class="secondary">刷新状态</button><p id="status" class="message" role="status">正在读取。</p><p class="muted">知乎还未接入。发布结果会在原会话返回，不需要你来这个页面点发布。</p></section>
+</main><script nonce="{{NONCE}}">
+const el=id=>document.getElementById(id);let channels=[],xhsIdentity;
+const show=(id,text,error=false)=>{el(id).textContent=text;el(id).className='message '+(error?'error':'ok')};
+async function api(path,body){const response=await fetch('api/'+path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','X-CSRF-Token':document.querySelector('meta[name=csrf]').content}:{},body:body?JSON.stringify(body):undefined});const d=await response.json();if(!response.ok)throw Error(d.error||'操作失败');return d}
+async function refresh(){try{const d=await api('status');show('status','小红书：'+(d.xiaohongshu.bound?('已绑定 '+d.xiaohongshu.name+(d.xiaohongshu.matchesBinding?'，登录有效':'，需要核对登录')):'待绑定')+'\nX：'+(d.x.bound?'已绑定 '+d.x.name:'待绑定')+(d.xiaohongshu.error?'\n小红书连接：'+d.xiaohongshu.error:''))}catch(e){show('status',e.message,true)}}
+function action(id,statusId,fn){el(id).onclick=async()=>{el(id).disabled=true;try{await fn()}catch(e){show(statusId,e.message,true)}finally{el(id).disabled=false}}}
+action('make-qr','xhs-info',async()=>{show('xhs-info','正在读取二维码。');const d=await api('xhs/qr',{});if(d.is_logged_in){show('xhs-info','已登录，请点击“读取账号”。');return}el('qr').src=d.img;el('qr').hidden=false;show('xhs-info','请在二维码有效期内用小红书 App 扫码，再点击“读取账号”。')});
+action('identity','xhs-info',async()=>{xhsIdentity=await api('xhs/identity',{});el('bind-xhs').hidden=!(xhsIdentity.is_logged_in&&xhsIdentity.user_id);show('xhs-info',xhsIdentity.is_logged_in?'读回账号：'+xhsIdentity.username+'\n账号 ID：'+xhsIdentity.user_id:'尚未登录，请先扫码。')});
+action('bind-xhs','xhs-info',async()=>{const d=await api('xhs/bind',{accountId:xhsIdentity.user_id});el('qr').hidden=true;el('bind-xhs').hidden=true;show('xhs-info','已绑定 '+d.name);await refresh()});
+action('discover','buffer-info',async()=>{const d=await api('buffer/discover',{apiKey:el('buffer-key').value});channels=d.channels;el('channels').replaceChildren(...channels.map((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent=c.name+'（'+c.organizationName+'）';return o}));for(const id of ['channels','channels-label','bind-buffer'])el(id).hidden=!channels.length;show('buffer-info',channels.length?'请选择这次要发布的 X 账号。':'没有读到 X 账号，请先在 Buffer 连接 X。')});
+action('bind-buffer','buffer-info',async()=>{const c=channels[Number(el('channels').value)];if(!c)throw Error('请先读取账号');const d=await api('buffer/bind',{apiKey:el('buffer-key').value,channelId:c.id,organizationId:c.organizationId});el('buffer-key').value='';show('buffer-info','已绑定 '+d.name);await refresh()});
+action('refresh','status',refresh);refresh();
+</script></body></html>
