@@ -1,18 +1,20 @@
 # Feishu topic conversation and continuation
 
-Status: topic admission revised 2026-10-04. This replaces the 2026-09-08
-requirement for an invitation before the first ordinary-group Thread message.
+Status: topic admission revised 2026-10-04; ordinary-group proactive intake
+restricted to explicit per-chat opt-in on 2026-10-06. Topic continuation still
+replaces the 2026-09-08 first-message invitation requirement.
 
 ## Product contract
 
 Every human message in a Feishu topic is addressed to the assistant by default
 and receives a reply without an @ mention. This applies both to native topic
 groups and to Threads in ordinary groups, including the first reply under a
-report-script message that has not yet been bound to a Session. Existing group
-mention settings no longer discard human messages. Every admitted, unmuted
-mainline message also reaches a Session, which decides whether a useful reply
-or task is needed. Legacy mention-only mainlines use a continuing observation
-Session, while topics receive direct-conversation instructions. Explicit mute,
+report-script message that has not yet been bound to a Session. Ordinary group
+mainlines require an explicit Bot mention or command unless that exact chat has
+`participationMode: "ambient"` or `responseMode: "all"`. Connector-wide settings,
+including legacy `all`, do not enable proactive participation in other groups.
+Only explicitly enabled mainlines let a Session decide whether a useful reply
+or task is needed. Topics receive direct-conversation instructions. Explicit mute,
 listening and paused controls remain effective.
 
 The reported failure was a plain question under an automated report: durable
@@ -26,8 +28,9 @@ the mainline instructions that let a group observer stay silent.
 - `group-settings.mjs` recognizes native topics, thread/topic IDs and normalized
   topic conversation kinds. Topic intake is `all` regardless of the group's
   mainline response override, with instructions to reply to each human message.
-- `response-policy.mjs` retains sender, self, peer-Bot and mute guards; every
-  remaining human message reaches a Session. A binding is no longer required.
+- `response-policy.mjs` retains sender, self, peer-Bot and mute guards, and
+  filters uninvited ordinary-group messages before any model submission.
+  Topic messages do not require a pre-existing Session binding.
 - `handleMessage` awaits this decision before commands, reactions, attachment
   handling or Request submission. Inbox access control still runs first.
 - `session-flow.mjs` uses the same canonical topic identity as Session routing:
@@ -39,7 +42,8 @@ the mainline instructions that let a group observer stay silent.
   so continuation preserves the associated Session across connector restarts.
   A failed submission does not create a binding or prevent a later plain reply.
 - Topics do not use ambient or reaction-only quick-participation instructions.
-  Forwarded messages on both the mainline and inside topics reach the Session.
+  Forwarded mainline messages require the same per-chat opt-in or explicit
+  invitation as text. Forwarded messages inside topics reach their Session.
 
 ## Regression verification
 

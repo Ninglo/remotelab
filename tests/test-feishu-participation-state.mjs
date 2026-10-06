@@ -23,7 +23,7 @@ try {
 
   const calls = { observed: [], submitted: [], stopped: [], cards: [], reactions: [], decisions: [] };
   const runtime = { config: { storageDir: home, sourceRouteId: 'bot', responsePolicy: { group: 'all' },
-    groups: { misc: { participationMode: 'ambient', jevReactions: true, participationControls: true,
+    groups: { work: { responseMode: 'all' }, misc: { participationMode: 'ambient', jevReactions: true, participationControls: true,
       participationStatusMessageId: 'om_existing' } } }, storagePaths: {}, botIdentity: { openId: 'bot' },
     appClient: { im: { v1: { message: {
       patch: async x => { calls.cards.push(x); return { code: 0 }; },

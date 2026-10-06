@@ -237,14 +237,16 @@ Notes:
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
-`accessPolicy` decides who may use the Bot. After access and explicit quiet
-controls, every human message reaches a Session for interpretation, including
-unmentioned mainline messages and merge-forwards. The legacy
-`responsePolicy.group` / `groups[chatId].responseMode` values remain accepted
-for config compatibility; `mention_only` now uses the continuing mainline
-Session's participation judgment rather than filtering human input. The Session
-may leave ordinary human-to-human discussion without visible text, but a concrete
-unanswered question or request needs a reply. Native Feishu
+`accessPolicy` decides who may use the Bot. Ordinary groups require an explicit
+mention of this Bot or a task/control command by default. To enable proactive
+participation, configure that exact chat with `participationMode: "ambient"`
+or `responseMode: "all"` in `groups`. Connector-wide `responsePolicy.group`
+values remain accepted for config compatibility, but even `all` cannot opt in
+unconfigured ordinary groups. `mention_only` never implicitly enables ambient
+participation. Uninvited ordinary text, attachments, inline quotes and
+merge-forwards are filtered before reactions, attachment handling or model
+submission; existing group Sessions cannot widen this scope. In explicitly
+enabled groups the Session decides when a useful contribution is needed. Native Feishu
 topics and Threads in ordinary groups always admit human messages without an
 @ mention, because each topic is an intentional AI conversation surface. This
 includes the first reply in a Thread created by a report script, before a
@@ -255,7 +257,7 @@ and topic. The Session replies to every human message in that topic by default,
 including forwarded messages, unless explicitly told to stay silent or paused.
 An existing binding preserves Session continuity across connector restarts; it
 is not an admission requirement. Quoting a message outside a Thread does not
-create topic identity; it reaches the mainline Session instead.
+create topic identity; it follows the group's mainline admission policy.
 Private messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
 including stored-message replay. Mention matching uses the Bot's API identity.
@@ -503,8 +505,8 @@ commentary is not treated as a completed answer, and the notice does not claim
 the task succeeded. The reaction delivery has a durable receipt and ordered
 claim, but the reaction create call has no message-send-style idempotency UUID: an unknown
 provider outcome requires reconciliation before deliberate retry.
-Every admitted human message on the main timeline and in topics or threads
-already reaches a Session. `quickReactions: true` only enables mainline reaction
+In an explicitly enabled group, admitted human messages on the main timeline
+reach a Session. Topic conversations retain direct replies. `quickReactions: true` only enables mainline reaction
 hints; topics use direct replies. An explicit @ mention normally asks for a text reply;
 the model includes `OnIt` before a normal answer. A message asking for only a
 reaction receives no visible text after the reaction is added.

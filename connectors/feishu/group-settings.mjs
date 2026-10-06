@@ -83,15 +83,13 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
       && (summary.startThread !== true || group.jevReactions === true)));
   const groupMainline = !privateChat && !topic
     && [summary.chatType, summary.chatMode].some(value => String(value || '').toLowerCase() === 'group');
-  const legacyMentionGate = (group.responseMode ?? config.responsePolicy?.group ?? 'mention_only') === 'mention_only';
-  const ambient = !privateChat && !topic
-    && (group.participationMode === 'ambient' || (groupMainline && legacyMentionGate));
+  const ambient = !privateChat && !topic && group.participationMode === 'ambient';
   const quickReactions = group.quickReactions === true && !privateChat && !topic;
   return {
-    // Legacy mention-only settings now select Session participation judgment,
-    // rather than dropping unmentioned human messages before the Session.
-    responseMode: topic || groupMainline ? 'all' : group.responseMode
-      ?? (ambient ? 'all' : config.responsePolicy?.group ?? 'mention_only'),
+    // Ordinary groups must opt in individually. Connector-wide defaults cannot
+    // enable proactive participation in an unconfigured business group.
+    responseMode: topic || ambient ? 'all' : group.responseMode
+      ?? 'mention_only',
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     ...(ambient ? { participationMode: 'ambient' } : {}),
@@ -103,10 +101,9 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
     systemPrompt: [config.systemPrompt, group.systemPrompt,
       group.jevReactions === true && ambient ? JEV_REACTION_SESSION_PROMPT
         : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
-      ambient && (group.participationMode === 'ambient' || group.groupFeed === true)
-        ? GROUP_TIMELINE_SESSION_PROMPT : '',
+      ambient ? GROUP_TIMELINE_SESSION_PROMPT : '',
       ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT
-        : groupMainline ? GROUP_SESSION_PROMPT : '']
+        : groupMainline && group.responseMode === 'all' ? GROUP_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
   };
 }

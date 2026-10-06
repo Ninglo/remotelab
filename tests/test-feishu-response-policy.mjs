@@ -34,11 +34,17 @@ async function check(label, changes, expected, responsePolicy = { group: 'mentio
 }
 
 try {
-  await check('ordinary group chatter reaches the Session for reply judgment', {}, ['submit']);
-  await check('another human mention is context for the Session, not an intake filter', { mentions: [{ openId: 'human' }] }, ['submit']);
+  await check('ordinary group chatter does not trigger an unconfigured Bot', {}, []);
+  await check('mentioning another human cannot enable proactive intake', { mentions: [{ openId: 'human' }] }, []);
+  await check('@all cannot enable proactive intake', { mentions: [{ openId: 'all' }] }, []);
+  await check('attachments cannot enable proactive intake', { messageType: 'file' }, []);
+  await check('merge-forwards cannot enable proactive intake', { messageType: 'merge_forward' }, []);
   await check('this Bot mention is admitted and acknowledged', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
   await check('private chat always responds immediately', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit']);
-  await check('all group mode admits every message', {}, ['reaction', 'submit'], { group: 'all' });
+  await check('connector-wide all mode cannot opt in ordinary groups', {}, [], { group: 'all' });
+  await check('partial group metadata cannot inherit connector-wide all mode', {
+    chatType: '', chatMode: '', groupMessageType: 'group',
+  }, [], { group: 'all' });
   await check('chat-mode topic groups admit plain text by default', {
     chatMode: 'topic', messageId: 'topic-default-root',
   }, ['reaction', 'submit']);
@@ -60,16 +66,23 @@ try {
 
   runtime.config.groups = { 'group-1': { responseMode: 'all', systemPrompt: 'Group instructions' } };
   await check('group override admits plain text without a file or mention', {}, ['reaction', 'submit']);
-  await check('other groups also receive the Session fallback', { chatId: 'group-2' }, ['submit']);
+  await check('a group opt-in does not spread to other groups', { chatId: 'group-2' }, []);
   await check('self remains excluded under group override', { sender: { senderType: 'app', openId: 'bot-self' } }, []);
   runtime.config.groups = { 'group-1': { responseMode: 'mention_only' } };
-  await check('legacy mention-only override now uses Session judgment', {}, ['submit'], { group: 'all' });
+  await check('explicit mention-only override blocks ordinary chatter', {}, [], { group: 'all' });
   await check('mainline mention override cannot narrow native topics', {
     chatMode: 'topic', groupMessageType: 'thread', messageId: 'topic-explicit-mention-root',
   }, ['reaction', 'submit']);
   await check('mainline mention override cannot narrow ordinary group Threads', {
     threadId: 'report-thread',
   }, ['reaction', 'submit']);
+  delete runtime.config.groups;
+
+  runtime.config.groups = { 'group-1': { participationMode: 'ambient' } };
+  await check('explicit ambient opt-in admits ordinary chatter', {}, ['submit']);
+  await check('ambient opt-in does not spread through connector-wide all mode', { chatId: 'group-2' }, [], { group: 'all' });
+  runtime.config.groups = { 'group-1': { quickReactions: true } };
+  await check('a reaction preference cannot opt in proactive participation', {}, []);
   delete runtime.config.groups;
 
   effects = [];
@@ -140,7 +153,7 @@ try {
   const defaults = await loadConfig(configPath);
   assert.equal(defaults.accessPolicy.mode, 'all');
   assert.deepEqual(defaults.responsePolicy, { group: 'mention_only' });
-  await check('omitting the group setting still forwards ordinary group messages', {}, ['submit'], {});
+  await check('omitting the group setting blocks ordinary group messages', {}, [], {});
   await check('omitting the group setting admits explicit Bot mentions', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit'], {});
   await check('omitting the group setting still admits private messages', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit'], {});
 
@@ -161,7 +174,7 @@ try {
   await check('another human may continue the same thread', {
     ...thread, sender: { senderType: 'user', openId: 'another-human' },
   }, ['reaction', 'submit']);
-  await check('the group mainline also reaches its own Session', {}, ['submit']);
+  await check('a joined topic does not activate the group mainline', {}, []);
   for (const [label, identity] of [
     ['sibling thread', { ...thread, threadId: 'thread-2' }],
     ['same thread ID in another group', { ...thread, chatId: 'group-2' }],
@@ -199,9 +212,9 @@ try {
   assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, threadId: 'unjoined' }), null,
     'a group Session is not the unrelated Thread Session');
   await check('unrelated threads admit messages without a group Session invitation', { threadId: 'unjoined' }, ['reaction', 'submit']);
-  await check('a group quote without topic identity remains a mainline observation', {
+  await check('a group quote without topic identity cannot activate proactive intake', {
     rootId: base.messageId, parentId: base.messageId,
-  }, ['submit']);
+  }, []);
   await check('a topic root may invite the Bot before a thread ID exists', {
     chatMode: 'topic', messageId: 'topic-root', mentions: [{ openId: 'bot-self' }],
   }, ['reaction', 'submit']);

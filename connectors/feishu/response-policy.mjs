@@ -1,5 +1,6 @@
-import { trimString } from './index.mjs';
+import { normalizeFeishuMode, trimString } from './index.mjs';
 import { getFeishuConversationSettings } from './conversation-settings.mjs';
+import { resolveFeishuGroupSettings } from './group-settings.mjs';
 
 function normalizeGroupResponseMode(value) {
   const mode = trimString(value).toLowerCase();
@@ -56,7 +57,11 @@ export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary, { ex
   // Bot handoffs always need an explicit mention, even in private chats or group=all.
   if (isFeishuBotSender(summary)) return mentioned;
   if (!mentioned && !explicitCommand && (await getFeishuConversationSettings(runtime, summary)).muted) return false;
-  // Access control and explicit quiet controls fence reception. Every other
-  // human message reaches the Session; the Harness owns reply judgment.
-  return true;
+  if (mentioned || explicitCommand) return true;
+  const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
+  if (modes.includes('p2p') || modes.includes('private')) return true;
+  if (!modes.some(mode => ['group', 'topic', 'thread'].includes(mode))) return true;
+  // Topic conversations retain direct replies. Ordinary group messages reach
+  // the Harness only after this exact group has opted in to proactive intake.
+  return resolveFeishuGroupSettings(runtime.config, summary).responseMode === 'all';
 }

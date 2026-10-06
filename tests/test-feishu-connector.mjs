@@ -109,7 +109,9 @@ assert.equal(initializedRuntimeProfile.legacyConfigDir, '');
 assert.equal(initializedRuntimeProfile.cliPath, join(repoRoot, 'node_modules', '.bin', 'lark-cli'));
 
 const runtime = {
-  config: { responsePolicy: { group: 'all' } },
+  config: { responsePolicy: { group: 'mention_only' },
+    groups: { chat_test_1: { responseMode: 'all' }, chat_post_1: { responseMode: 'all' },
+      chat_image_1: { responseMode: 'all' }, chat_unknown_1: { responseMode: 'all' } } },
   processingMessageIds: new Set(),
   storagePaths: {
     handledMessagesPath: '/tmp/remotelab-feishu-connector-test-handled.json',
@@ -164,7 +166,7 @@ const forwardedMainline = await handleMessage(runtime, mergeForwardRoot, 'test',
   },
 });
 assert.equal(forwardedMainline.sessionId, 'session_merge_forward_mainline');
-assert.equal(mergeForwardSubmissions, 1, 'a mainline merge-forward reaches the Session for judgment');
+assert.equal(mergeForwardSubmissions, 1, 'an opted-in mainline merge-forward reaches the Session for judgment');
 const forwardedTopic = await handleMessage(runtime, {
   ...mergeForwardRoot, threadId: 'thread_merge_forward_1',
 }, 'test', {
@@ -1734,7 +1736,8 @@ try {
   const sotaRuntime = { tool: 'codex', model: 'configured-frontier', effort: 'xhigh', thinking: false, runtimeTier: 'sota' };
   await submitRemoteLabRequest({
     authCookie: 'session_token=test-cookie',
-    config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionFolder: repoRoot, sessionTool: 'codex' },
+    config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionFolder: repoRoot, sessionTool: 'codex',
+      groups: { chat_sota_scope: { participationMode: 'ambient' } } },
   }, {
     chatType: 'group', chatId: 'chat_sota_scope', messageId: 'msg_sota_scope',
     messageText: '深入分析这个问题。', sender: { openId: 'ou_scope_test_sota' },
