@@ -15,7 +15,7 @@ const runtime = {
   botIdentity: { openId: 'self' },
 };
 const base = { chatId: 'chat', chatType: 'group', messageType: 'text', tenantKey: 'tenant',
-  messageText: 'task', sender: { senderType: 'user', openId: 'human' }, mentions: [] };
+  messageText: 'task', sender: { senderType: 'user', openId: 'human' }, mentions: [{ openId: 'self' }] };
 const deferred = () => {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
