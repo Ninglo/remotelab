@@ -138,7 +138,7 @@ try {
   await publishNativeFinalReplies(shortRecord, shortHistory, { ...shortOptions, running: false });
   await publishNativeFinalReplies(shortRecord, shortHistory, { ...shortOptions, running: false });
   assert.equal(shortRecord.deliveries.length, 1, 'short reply replay publishes one final answer');
-  assert.equal(shortRecord.deliveries[0].text, '【最终答复】\n\n核查结果。');
+  assert.equal(shortRecord.deliveries[0].text, '核查结果。', 'a final-only mainline reply has no phase heading');
   assert.equal(shortRecord.deliveries[0].target.messageId, 'short-source');
   assert.equal(shortRecord.deliveries[0].sessionEntryIncluded, undefined);
   assert.deepEqual(buildReplyDeliveries(shortPlan, { text: '准备回复', attachments: [{ assetId: 'early-file' }] },
@@ -412,7 +412,8 @@ try {
   const shortRequest = await requests.byRunId(shortOutcome.run.id);
   assert.equal(shortRequest.result.payload.sessionEntry, undefined, 'terminal short reply adds no runtime footer');
   assert.equal(shortRequest.deliveries.length, 1);
-  assert.equal(shortRequest.deliveries[0].text, '【最终答复】\n\n主 Harness 已经直接完成并交付结果。');
+  assert.equal(shortRequest.deliveries[0].text, '主 Harness 已经直接完成并交付结果。',
+    'terminal fallback also publishes the mainline answer without a heading');
   assert.equal(shortRequest.deliveries[0].target.messageId, 'short-source');
 } finally {
   await killAll();

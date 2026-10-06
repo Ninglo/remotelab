@@ -153,4 +153,28 @@ assert.equal(buildReplyDeliveries(feishuPlan, { text: '' }, { running: false }).
 assert.equal(buildReplyDeliveries(feishuPlan, { text: '通知' })[0].text, '通知', 'manual notices have no inferred phase');
 assert.equal(buildReplyDeliveries(feishuPlan, { text: '仍未完成。' }, { running: false })[0].text,
   '【最终答复】\n\n仍未完成。', 'result publication never rewrites the task outcome');
+const mainlinePlan = { connector: 'feishu', target: { chatId: 'chat', messageId: 'source',
+  conversationKind: 'main', chatType: 'group' } };
+for (const text of ['核查结果。', '【最终答复】\n\n核查结果。', '【最终回复】\n核查结果。']) {
+  const parts = buildReplyDeliveries(mainlinePlan, { text, reaction: 'OK',
+    attachments: [{ assetId: 'result-file' }] }, { running: false });
+  assert.equal(parts.find(part => part.kind === 'content').text, '核查结果。');
+  assert.equal(parts.find(part => part.kind === 'reaction').emojiType, 'OK');
+  assert.equal(parts.find(part => part.kind === 'attachment').attachment.assetId, 'result-file');
+  assert.ok(parts.every(part => part.target.messageId === 'source'), 'plain replies retain their source anchor');
+}
+assert.deepEqual(buildReplyDeliveries(mainlinePlan, { text: '开场' }, { running: true, surfaceKind: 'opening' }), []);
+assert.deepEqual(buildReplyDeliveries(mainlinePlan, { text: '进度' }, { running: true, surfaceKind: 'progress' }), []);
+assert.equal(buildReplyDeliveries(mainlinePlan, { text: '请选择目标。' }, {
+  running: true, surfaceKind: 'question',
+})[0].text, '【待你回复】\n\n请选择目标。', 'questions still ask visibly for input');
+assert.equal(buildReplyDeliveries(mainlinePlan, { text: '核查结果。' }, {
+  running: false, automationTitle: '每日审阅',
+})[0].text, '【每日审阅】\n\n核查结果。', 'an explicit automation title remains useful');
+for (const target of [{ ...mainlinePlan.target, conversationKind: 'thread', replyInThread: true },
+  { ...mainlinePlan.target, threadId: 'topic' }, { ...mainlinePlan.target, chatType: 'p2p' }]) {
+  assert.equal(buildReplyDeliveries({ ...mainlinePlan, target }, { text: '核查结果。' }, {
+    running: false,
+  })[0].text, '【最终答复】\n\n核查结果。', 'other reply modes retain their phase headings');
+}
 console.log('test-assistant-surface-messages: ok');
