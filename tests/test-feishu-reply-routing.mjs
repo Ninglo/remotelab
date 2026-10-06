@@ -108,6 +108,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 try {
   const runtime = {
     authCookie: 'session_token=test',
+    botIdentity: { openId: 'bot-self' },
     config: {
       chatBaseUrl: `http://127.0.0.1:${server.address().port}`,
       sourceRouteId: 'bot', sessionFolder: tempDir, sessionTool: 'codex',
@@ -211,6 +212,7 @@ try {
   const standardTopicRoot = {
     ...base, chatId: 'topic-standard-chat', chatMode: 'topic', threadId: 'provider-topic-standard',
     messageId: 'topic-standard-root', messageText: 'standard task', textPreview: 'standard task',
+    mentions: [{ openId: 'bot-self' }],
   };
   const standardTopic = await handleMessage(runtime, standardTopicRoot, 'test', { addProcessingReaction: async () => null });
   assert.equal(sessions.find(session => session.id === standardTopic.sessionId).executionProfile, undefined);

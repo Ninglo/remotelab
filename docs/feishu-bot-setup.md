@@ -246,11 +246,12 @@ unconfigured ordinary groups. `mention_only` never implicitly enables ambient
 participation. Uninvited ordinary text, attachments, inline quotes and
 merge-forwards are filtered before reactions, attachment handling or model
 submission; existing group Sessions cannot widen this scope. In explicitly
-enabled groups the Session decides when a useful contribution is needed. Native Feishu
-topics and Threads in ordinary groups always admit human messages without an
-@ mention, because each topic is an intentional AI conversation surface. This
-includes the first reply in a Thread created by a report script, before a
-Session has been bound. Group response settings do not narrow topic admission.
+enabled groups the Session decides when a useful contribution is needed. New
+groups, including native topic groups, default to passive reception. Creating
+or joining a group does not opt it in. An uninvited topic requires an explicit
+Bot mention or task/control command. Once the Bot has an accepted conversation
+binding, human follow-ups in that same topic need no further mention; other
+topics, groups, tenants and Bots do not inherit that invitation.
 
 Each Thread creates or continues its own Session, scoped by Bot, tenant, chat
 and topic. The Session replies to every human message in that topic by default,

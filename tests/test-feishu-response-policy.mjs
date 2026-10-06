@@ -45,24 +45,28 @@ try {
   await check('partial group metadata cannot inherit connector-wide all mode', {
     chatType: '', chatMode: '', groupMessageType: 'group',
   }, [], { group: 'all' });
-  await check('chat-mode topic groups admit plain text by default', {
+  await check('new topic groups require an explicit invitation', {
     chatMode: 'topic', messageId: 'topic-default-root',
-  }, ['reaction', 'submit']);
-  await check('thread-type topic groups admit plain text by default', {
+  }, []);
+  await check('thread-type groups default to passive reception', {
     groupMessageType: 'thread', messageId: 'thread-type-default-root',
-  }, ['reaction', 'submit']);
-  await check('first human reply in an ordinary group Thread needs no invitation', {
+  }, []);
+  await check('an uninvited ordinary-group Thread stays passive', {
     threadId: 'ordinary-group-thread',
-  }, ['reaction', 'submit']);
-  await check('topic ID alone admits the first human reply', {
+  }, []);
+  await check('topic ID alone cannot invite the first human reply', {
     topicId: 'script-created-topic', messageText: '目前有完成的对局吗',
-  }, ['reaction', 'submit']);
-  await check('normalized Thread identity needs no mention', {
+  }, []);
+  await check('normalized Thread identity alone cannot activate reception', {
     conversationKind: 'thread', rootId: 'script-root',
-  }, ['reaction', 'submit']);
-  await check('normalized topic identity needs no mention', {
+  }, []);
+  await check('normalized topic identity alone cannot activate reception', {
     conversationKind: 'topic', rootId: 'topic-root',
-  }, ['reaction', 'submit']);
+  }, []);
+
+  await check('missing chat metadata cannot activate an uninvited topic', {
+    chatType: '', chatMode: '', groupMessageType: '', topicId: 'new-topic-without-metadata',
+  }, []);
 
   runtime.config.groups = { 'group-1': { responseMode: 'all', systemPrompt: 'Group instructions' } };
   await check('group override admits plain text without a file or mention', {}, ['reaction', 'submit']);
@@ -70,15 +74,16 @@ try {
   await check('self remains excluded under group override', { sender: { senderType: 'app', openId: 'bot-self' } }, []);
   runtime.config.groups = { 'group-1': { responseMode: 'mention_only' } };
   await check('explicit mention-only override blocks ordinary chatter', {}, [], { group: 'all' });
-  await check('mainline mention override cannot narrow native topics', {
+  await check('mention-only native topics require an invitation', {
     chatMode: 'topic', groupMessageType: 'thread', messageId: 'topic-explicit-mention-root',
-  }, ['reaction', 'submit']);
-  await check('mainline mention override cannot narrow ordinary group Threads', {
+  }, []);
+  await check('mention-only unjoined Threads require an invitation', {
     threadId: 'report-thread',
-  }, ['reaction', 'submit']);
+  }, []);
   delete runtime.config.groups;
 
   runtime.config.groups = { 'group-1': { participationMode: 'ambient' } };
+  await check('ambient opt-in also allows new topics in that exact group', { threadId: 'ambient-new-thread' }, ['reaction', 'submit']);
   await check('explicit ambient opt-in admits ordinary chatter', {}, ['submit']);
   await check('ambient opt-in does not spread through connector-wide all mode', { chatId: 'group-2' }, [], { group: 'all' });
   runtime.config.groups = { 'group-1': { quickReactions: true } };
@@ -132,7 +137,7 @@ try {
   const topicDefaults = resolveFeishuGroupSettings(groupConfig, {
     ...base, chatId: 'topic-chat', chatMode: 'topic', threadId: 'topic-1',
   });
-  assert.equal(topicDefaults.responseMode, 'all');
+  assert.equal(topicDefaults.responseMode, 'mention_only');
   assert.match(topicDefaults.systemPrompt, /Reply to each human message in the current topic/);
   for (const topicIdentity of [{ threadId: 'report-thread' }, { topicId: 'report-topic' },
     { conversationKind: 'thread' }, { chatMode: 'topic', rootId: 'native-root' }]) {
@@ -165,9 +170,9 @@ try {
     recordFeishuMessageSession } = await import('../connectors/feishu/session-flow.mjs');
   runtime.storagePaths.messageIndexPath = join(testHome, 'bot-1', 'message-index.json');
   const thread = { threadId: 'thread-1', tenantKey: 'tenant-1' };
-  await check('an unjoined thread admits its first human message', thread, ['reaction', 'submit']);
-  await check('another human mention does not block a topic reply', { ...thread, mentions: [{ openId: 'human' }] }, ['reaction', 'submit']);
-  await check('@all does not block a topic reply', { ...thread, mentions: [{ openId: 'all' }] }, ['reaction', 'submit']);
+  await check('an unjoined thread requires an invitation', thread, []);
+  await check('another human mention cannot invite this Bot into an unjoined topic', { ...thread, mentions: [{ openId: 'human' }] }, []);
+  await check('@all cannot invite this Bot into an unjoined topic', { ...thread, mentions: [{ openId: 'all' }] }, []);
   await check('explicit mention joins a thread', { ...thread, mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
   assert.equal((await findFeishuThreadSessionBinding(runtime, { ...base, ...thread })).sessionId, 'routing-session');
   await check('thread replies need no further mention', thread, ['reaction', 'submit']);
@@ -182,7 +187,7 @@ try {
   ]) {
     assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, ...identity }), null,
       `${label} must not inherit a binding`);
-    await check(`${label} can start its own conversation`, identity, ['reaction', 'submit']);
+    await check(`${label} cannot inherit another conversation's invitation`, identity, []);
   }
   await check('topic ID alias can continue a joined thread', {
     tenantKey: thread.tenantKey, topicId: thread.threadId,
@@ -205,13 +210,13 @@ try {
   runtime.storagePaths.messageIndexPath = join(testHome, 'bot-2', 'message-index.json');
   assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, ...thread }), null,
     'another Bot does not inherit the existing Session binding');
-  await check('another Bot accepts human topic messages independently', thread, ['reaction', 'submit']);
+  await check('another Bot needs its own invitation into the topic', thread, []);
   runtime.storagePaths.messageIndexPath = firstBotIndex;
 
   await recordFeishuMessageSession(runtime, base, 'old-group-session');
   assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, threadId: 'unjoined' }), null,
     'a group Session is not the unrelated Thread Session');
-  await check('unrelated threads admit messages without a group Session invitation', { threadId: 'unjoined' }, ['reaction', 'submit']);
+  await check('a group Session cannot invite unrelated Threads', { threadId: 'unjoined' }, []);
   await check('a group quote without topic identity cannot activate proactive intake', {
     rootId: base.messageId, parentId: base.messageId,
   }, []);
@@ -221,9 +226,9 @@ try {
   await check('native topic replies can identify the joined topic by root ID', {
     chatMode: 'topic', messageId: 'topic-reply', rootId: 'topic-root',
   }, ['reaction', 'submit']);
-  await check('a different native topic is admitted by the topic-group default', {
+  await check('a different native topic stays passive', {
     chatMode: 'topic', messageId: 'other-topic-reply', rootId: 'other-topic-root',
-  }, ['reaction', 'submit']);
+  }, []);
 
   // Sending a reply may assign a new Feishu thread ID to an admitted group root.
   await recordFeishuThreadSessionBinding(runtime, base, 'outbound-session', { threadId: 'created-by-reply' });
@@ -239,9 +244,9 @@ try {
   }), /submission failed/);
   assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, threadId: 'failed-admission' }), null,
     'failed submission must not leave a Session binding');
-  await check('next topic message can recover after failed submission without an @', {
+  await check('failed submission does not activate subsequent unmentioned topic messages', {
     threadId: 'failed-admission',
-  }, ['reaction', 'submit']);
+  }, []);
 
   console.log('Feishu access, response, durable thread continuation and processing acknowledgement tests passed');
 } finally {

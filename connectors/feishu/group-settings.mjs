@@ -89,7 +89,7 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   return {
     // Ordinary groups must opt in individually. Connector-wide defaults cannot
     // enable proactive participation in an unconfigured business group.
-    responseMode: topic || ambient ? 'all' : group.responseMode
+    responseMode: group.participationMode === 'ambient' ? 'all' : group.responseMode
       ?? 'mention_only',
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),

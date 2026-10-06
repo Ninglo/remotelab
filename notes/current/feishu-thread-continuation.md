@@ -1,54 +1,54 @@
 # Feishu topic conversation and continuation
 
-Status: topic admission revised 2026-10-04; ordinary-group proactive intake
-restricted to explicit per-chat opt-in on 2026-10-06. Topic continuation still
-replaces the 2026-09-08 first-message invitation requirement.
+Status: revised 2026-10-06 after the operator required all new groups and
+uninvited topics to default to passive reception. This supersedes the
+2026-10-04 blanket admission of every new topic.
 
 ## Product contract
 
-Every human message in a Feishu topic is addressed to the assistant by default
-and receives a reply without an @ mention. This applies both to native topic
-groups and to Threads in ordinary groups, including the first reply under a
-report-script message that has not yet been bound to a Session. Ordinary group
-mainlines require an explicit Bot mention or command unless that exact chat has
+Groups and their uninvited topics require an explicit Bot mention or command
+unless that exact chat has
 `participationMode: "ambient"` or `responseMode: "all"`. Connector-wide settings,
 including legacy `all`, do not enable proactive participation in other groups.
-Only explicitly enabled mainlines let a Session decide whether a useful reply
-or task is needed. Topics receive direct-conversation instructions. Explicit mute,
+Creating or joining a group never opts it in. After an accepted invitation or
+an outbound-created conversation binds a topic, later human follow-ups need
+no additional mention. Other topics do not inherit that invitation. Admitted
+topics receive direct-conversation instructions. Explicit mute,
 listening and paused controls remain effective.
 
-The reported failure was a plain question under an automated report: durable
-ingress recorded it, but response policy rejected it before creating a Request.
-There was no model judgment or outbound delivery to diagnose for that input.
-Topic Sessions must receive topic-specific reply instructions rather than
-the mainline instructions that let a group observer stay silent.
+The earlier blanket topic policy fixed a plain question under an automated
+report, but also admitted uninvited new topics. The latest operator instruction
+requires passive defaults across groups. A report-created topic without an
+accepted Bot conversation now needs an explicit invitation. Bound report
+topics continue normally. Topic prompts remain distinct from mainline observer
+instructions.
 
 ## Implementation
 
 - `group-settings.mjs` recognizes native topics, thread/topic IDs and normalized
-  topic conversation kinds. Topic intake is `all` regardless of the group's
-  mainline response override, with instructions to reply to each human message.
+  topic conversation kinds. Only exact-chat opt-in selects intake `all`;
+  admitted topics retain instructions to reply to each human message.
 - `response-policy.mjs` retains sender, self, peer-Bot and mute guards, and
-  filters uninvited ordinary-group messages before any model submission.
-  Topic messages do not require a pre-existing Session binding.
+  filters uninvited groups and new topics before any model submission.
+  A scoped Session binding permits normal topic continuation.
 - `handleMessage` awaits this decision before commands, reactions, attachment
   handling or Request submission. Inbox access control still runs first.
 - `session-flow.mjs` uses the same canonical topic identity as Session routing:
   thread ID, topic ID, or native topic-mode root identity. Bare group reply/quote
   parent IDs never constitute topic identity.
 - Binding lookup still requires exact Bot, tenant, chat and topic scope when
-  selecting the Session. It controls continuity, not whether a human can speak.
+  selecting the Session and admitting unmentioned follow-ups.
 - Inbound acceptance and outbound delivery receipts already record bindings,
   so continuation preserves the associated Session across connector restarts.
-  A failed submission does not create a binding or prevent a later plain reply.
+  A failed submission does not create a binding or activate later plain replies.
 - Topics do not use ambient or reaction-only quick-participation instructions.
   Forwarded mainline messages require the same per-chat opt-in or explicit
-  invitation as text. Forwarded messages inside topics reach their Session.
+  invitation as text. Forwarded messages inside bound topics reach their Session.
 
 ## Regression verification
 
-`tests/test-feishu-response-policy.mjs` covers first and subsequent mention-free
-topic messages, mainline overrides, topic-specific prompts, another human in
+`tests/test-feishu-response-policy.mjs` covers passive new topics and invited
+topic continuation, per-chat opt-in, topic-specific prompts, another human in
 the same thread, restart persistence, binding scope isolation, topic aliases
 and native root fallback, outbound-created threads, recovery after failed
 submission, mainline quotes and suppression of unmentioned Bot/self messages.

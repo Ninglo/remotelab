@@ -1,6 +1,7 @@
-import { normalizeFeishuMode, trimString } from './index.mjs';
+import { buildFeishuTopicId, normalizeFeishuMode, trimString } from './index.mjs';
 import { getFeishuConversationSettings } from './conversation-settings.mjs';
 import { resolveFeishuGroupSettings } from './group-settings.mjs';
+import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 
 function normalizeGroupResponseMode(value) {
   const mode = trimString(value).toLowerCase();
@@ -58,10 +59,12 @@ export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary, { ex
   if (isFeishuBotSender(summary)) return mentioned;
   if (!mentioned && !explicitCommand && (await getFeishuConversationSettings(runtime, summary)).muted) return false;
   if (mentioned || explicitCommand) return true;
-  const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
+  const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType,
+    summary?.conversationKind].map(normalizeFeishuMode);
   if (modes.includes('p2p') || modes.includes('private')) return true;
-  if (!modes.some(mode => ['group', 'topic', 'thread'].includes(mode))) return true;
-  // Topic conversations retain direct replies. Ordinary group messages reach
-  // the Harness only after this exact group has opted in to proactive intake.
-  return resolveFeishuGroupSettings(runtime.config, summary).responseMode === 'all';
+  if (!modes.some(mode => ['group', 'topic', 'thread'].includes(mode)) && !buildFeishuTopicId(summary)) return true;
+  // New groups and uninvited topics are passive. A successful invitation binds
+  // only that conversation, so later replies continue without another mention.
+  if (resolveFeishuGroupSettings(runtime.config, summary).responseMode === 'all') return true;
+  return Boolean(await findFeishuThreadSessionBinding(runtime, summary));
 }

@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-06 — Audit all joined groups and keep new groups passive
+
+- Request: list every group, identify explicit proactive participation and retained status cards, and default all other and newly created groups to passive reception.
+- Change: passive defaults cover native topic groups and uninvited new Threads as well as group mainlines. A successful explicit invitation binds only the corresponding Bot, tenant, group and topic; human follow-ups in that conversation continue normally.
+- Boundaries: existing exact-chat recording/evaluation automation remains explicitly configured, separate from discretionary ambient participation. Group creation, joining, forwards, reaction preferences and another topic's invitation cannot enable proactive reception. Withdrawing a card changes visibility only.
+- Verification: cover missing metadata, fresh topic groups, sibling scopes, restart persistence and failed admission; audit actual membership and configuration before describing deployed behavior.
+
 ### 2026-10-06 — Show opted-in group status selectively
 
 - Request: use the existing pinned participation cards to identify explicitly enabled groups, then withdraw the cards in Harness-VLA and both auto research groups.
