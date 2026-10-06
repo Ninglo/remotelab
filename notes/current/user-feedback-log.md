@@ -1328,3 +1328,9 @@ settings are separate from verified live deployment and delivery.
 - Change: Amber shows an unfinished task count and a scrollable personal list beside the conversation. Titles expand task notes; checkboxes complete or reopen tasks, with visible failure handling. The list uses the authenticated Person's existing `/api/display/todos` data shared with the side display.
 - Scope: only Amber shows or requests this list; shared snapshots do not mount personal tasks. Task creation, deadlines and numeric progress remain available through chat and the existing editor. Opening the list or using Refresh reads current data without a background poll.
 - Verification: cover theme changes, anonymous snapshots, stale reads, failed writes and empty lists; verify the real Person's existing tasks and desktop/phone layout separately from a source commit and rollout.
+
+## 2026-10-06 — Keep human questions open instead of racing a timeout
+
+- Feedback: repeated Web interaction previews defaulted before the person could inspect or submit them; ended controls made a real question look absent or unusable.
+- Supersedes: the first trial's fixed five-minute default. Ordinary native questions now wait for an answer or an explicit stop, with no automatic timer or selection. The broker, HTTP admission, Web display and Feishu callback share the absent-deadline behavior. An explicitly configured finite timeout and already-recorded deadlines retain their disclosed fallback and system-origin audit.
+- Verification: advance the question clock by a day, submit an actual human answer, cancel pending questions, preserve them through controller restart, and check null deadlines through HTTP and both surfaces. Native-process crash recovery and merging question controls into a delivery checklist remain separate work.

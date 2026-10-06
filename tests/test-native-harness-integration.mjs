@@ -66,7 +66,8 @@ try {
   await until(async () => { questionClaim = await rpc('claim', { connector: 'feishu' }); return questionClaim; }, 'native question is published in same Feishu conversation');
   assert.match(questionClaim.delivery.text, /^【待你回复】/);
   assert.match(questionClaim.delivery.text, /1\. 简短/);
-  assert.match(questionClaim.delivery.text, /5 分钟/);
+  assert.match(questionClaim.delivery.text, /不会超时自动选择/);
+  assert.equal(questionClaim.delivery.nativeQuestion.deadline, null);
   assert.equal(questionClaim.delivery.target.chatId, 'same-chat');
   assert.equal(questionClaim.delivery.nativeQuestion.state, 'pending');
   await rpc('complete', questionClaim.delivery.id, questionClaim.leaseId, { externalId: 'question-message' });

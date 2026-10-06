@@ -82,7 +82,9 @@ for (const { family, binary, mode } of cases) {
     }
     const running = runNativeHost({ directory, command, runtimeFamily: family === 'codex' ? 'codex-json' : 'claude-stream-json',
       options: { model: family === 'codex' ? 'gpt-5.4' : 'claude-sonnet-4-6', effort: 'low', disableApps: true }, prompt: 'Ask which output format and language to use.', cwd: home, env,
-      ...(mode === 'timeout' ? { questionOptions: { now: () => clock, setTimer: callback => { expire = callback; return callback; }, clearTimer: () => {} } } : {}),
+      questionOptions: { now: () => clock,
+        ...(mode === 'timeout' ? { timeoutMs: 300_000, setTimer: callback => { expire = callback; return callback; }, clearTimer: () => {} } : {}),
+      },
       onProcess: proc => { child = proc; proc.stdout.on('data', chunk => rawFrames.push(String(chunk))); }, onStdout: line => { const event = JSON.parse(line); events.push(event); if (event.type === 'remotelab.user_question' && event.state === 'pending') {
         questionReady(event);
         if (mode === 'timeout') { clock += 300_000; expire(); }
@@ -94,7 +96,10 @@ for (const { family, binary, mode } of cases) {
         let next;
         const secondShown = new Promise(resolve => { next = resolve; });
         questionReady = next;
-        const firstId = (await readNativeQuestion(directory)).id;
+        const firstQuestion = await readNativeQuestion(directory);
+        assert.equal(firstQuestion.deadline, null, 'installed native questions do not impose a default deadline');
+        clock += 24 * 60 * 60_000;
+        const firstId = firstQuestion.id;
         const receipt = await submitNativeInput(directory, { id: 'numbered', text: '2', questionId: firstId });
         assert.equal(receipt.mode, 'question_answer');
         await Promise.race([secondShown, earlyExit]);

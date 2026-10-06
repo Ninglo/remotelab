@@ -3,6 +3,7 @@ import { sameConversation, refineConversation } from '../lib/conversation-target
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
 import { canForwardNativeRequest, createNativeRequestDispatcher } from './native-request-dispatch.mjs';
 import { readNativeQuestion, nativeQuestionReplyText } from './native-user-questions.mjs';
+import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
 import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
@@ -3214,7 +3215,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   else if (!priorRequest && options.nativeQuestionId) {
     const question = activeNative ? await readNativeQuestion(runDir(activeRequest.runId)) : null;
     if (savedImages.length || question?.state !== 'pending' || question.id !== options.nativeQuestionId
-        || Date.now() >= question.deadline) {
+        || nativeQuestionDeadlineExpired(question.deadline)) {
       throw Object.assign(new Error('这道问题已结束，回答未应用；需要修改时请直接说明新的选择。'), { code: 'QUESTION_EXPIRED' });
     }
   }

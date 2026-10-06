@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { readRecord, serialQueue, writeDurableJson } from '../../lib/durable-records.mjs';
 import { shouldReplyInFeishuThread, shouldReplyToFeishuMessage, buildFeishuApiUuid } from './index.mjs';
 import { feishuResponseError } from './delivery-errors.mjs';
+import { nativeQuestionDeadlineExpired } from '../../lib/native-question-surface.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -47,7 +48,8 @@ export function buildNativeQuestionCard(identity, question) {
     // form rather than nesting a form inside a collapsible panel.
     if (options.length) customAnswer.elements = [collapsed('填写其他答案', customAnswer.elements)];
     elements.push(customAnswer);
-    elements.push(markdown(options.length ? '5 分钟未答时默认选第 1 项。' : '5 分钟未答时按未答继续。'));
+    elements.push(markdown(!Number.isFinite(question.deadline) ? '等你回答，不会超时自动选择。'
+      : options.length ? '到期未答时默认选第 1 项。' : '到期未答时按未答继续。'));
   } else {
     elements.push(markdown(question.statusText));
     elements.push(collapsed('查看原问题', [markdown(q.question),
@@ -63,7 +65,7 @@ export async function sendNativeQuestionCard(runtime, delivery) {
   const path = receiptPath(runtime, identity);
   const prior = await readRecord(path);
   const question = delivery.nativeQuestion;
-  if (!prior?.messageId && (question.state !== 'pending' || Date.now() >= question.deadline)) return { skipped: true };
+  if (!prior?.messageId && (question.state !== 'pending' || nativeQuestionDeadlineExpired(question.deadline))) return { skipped: true };
   if (prior?.state && prior.state !== 'pending' && question.state === 'pending') return prior;
   const content = JSON.stringify(buildNativeQuestionCard(identity, question));
   const contentHash = hash(content);
@@ -123,7 +125,7 @@ export async function handleNativeQuestionCardAction(runtime, raw, { request, au
       sender: { senderType: 'user', openId: actor,
         userId: trim(event.operator?.operator_id?.user_id), unionId: trim(event.operator?.operator_id?.union_id) } };
     if ((card.target.tenantKey && card.target.tenantKey !== tenantKey) || !await authorize(summary)) return reply('无权回答这个问题。');
-    if (card.state !== 'pending' || Date.now() >= card.deadline) return reply('问题已结束，未应用这次选择；需要修改时请直接说明。');
+    if (card.state !== 'pending' || nativeQuestionDeadlineExpired(card.deadline)) return reply('问题已结束，未应用这次选择；需要修改时请直接说明。');
     let text = '';
     if (Number.isInteger(value.option) && value.option >= 1 && value.option <= card.question.options.length) text = String(value.option);
     else {

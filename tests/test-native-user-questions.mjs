@@ -9,7 +9,7 @@ import { createCodexAdapter } from '../chat/adapters/codex.mjs';
 import { createClaudeAdapter } from '../chat/adapters/claude.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
 
-assert.equal(QUESTION_TIMEOUT_MS, 300_000);
+assert.equal(QUESTION_TIMEOUT_MS, null);
 const attributedReply = '【飞书群消息｜发言人：嘉年】\n2';
 assert.equal(nativeQuestionReplyText({ text: attributedReply, options: { sourceContext: { connector: 'feishu' } } }), '2');
 assert.equal(nativeQuestionReplyText({ text: '【飞书群消息｜发言人：嘉年】\n请用中文\n保留例子', options: { sourceDelivery: { connector: 'feishu' } } }), '请用中文\n保留例子');
@@ -18,12 +18,38 @@ assert.equal(nativeQuestionReplyText({ text: attributedReply, options: { recorde
 const root = await mkdtemp(join(tmpdir(), 'native-question-test-'));
 const events = [], bus = new EventEmitter();
 let clock = 1000, expire;
-const broker = createNativeQuestionBroker({ directory: root, now: () => clock,
+const broker = createNativeQuestionBroker({ directory: root, timeoutMs: 300_000, now: () => clock,
   setTimer: callback => { expire = callback; return callback; }, clearTimer: () => {},
   onEvent: event => { events.push(event); bus.emit(event.state, event); }, onError: error => { throw error; } });
 const options = [{ label: 'Brief', description: 'Short result' }, { label: 'Detailed', description: 'All the detail' }];
 const q = { id: 'format', header: 'Format', question: 'Which format?', options };
 try {
+  const humanEvents = [], humanBus = new EventEmitter();
+  const waitingRoot = join(root, 'human');
+  let humanClock = 1000;
+  const waiting = createNativeQuestionBroker({ directory: waitingRoot, now: () => humanClock,
+    setTimer: () => { throw new Error('Ordinary questions must not start a timeout'); },
+    onEvent: event => { humanEvents.push(event); humanBus.emit(event.state); } });
+  try {
+    const ready = once(humanBus, 'pending');
+    const result = waiting.ask({ protocol: 'codex', id: 'human', questions: [q] });
+    await ready;
+    const original = await readNativeQuestion(waitingRoot);
+    assert.equal(original.deadline, null);
+    assert.match(humanEvents[0].content, /不会超时自动选择/);
+    humanClock += 24 * 60 * 60_000;
+    assert.deepEqual(await readNativeQuestion(waitingRoot), original, 'a day later the same question is still pending');
+    assert.equal(humanEvents.length, 1, 'waiting does not generate defaults or another attention message');
+    assert.equal((await waiting.answer({ id: 'human-choice', questionId: original.id, text: '2' })).mode, 'question_answer');
+    const resolved = await result;
+    assert.deepEqual({ ...resolved.answers }, { format: ['Detailed'] });
+    assert.equal(resolved.resolutions[0].origin, 'user', 'a delayed click remains a human choice');
+    const cancelReady = once(humanBus, 'pending');
+    const cancelled = waiting.ask({ protocol: 'claude', id: 'stop-human', questions: [q] });
+    await cancelReady; await waiting.cancel();
+    assert.equal((await cancelled).cancelled, true, 'stop can still release a question without choosing');
+  } finally { await waiting.close(); }
+
   let pending = once(bus, 'pending');
   const answer = broker.ask({ protocol: 'codex', id: 'one', questions: [q] });
   await pending;
@@ -98,5 +124,5 @@ try {
   assert.equal((await cancelled).cancelled, true);
   assert.equal((await readNativeQuestion(root)).state, 'cancelled');
   assert.equal(broker.pending, 0);
-  console.log('native questions: numbered/custom/multiple answers, five-minute defaults, deadline races, durable origins and Web projection passed');
+  console.log('native questions: ordinary questions stay pending and accept delayed answers; explicit defaults, deadline races, cancellation, durable origins and Web projection passed');
 } finally { await broker.close(); await rm(root, { recursive: true, force: true }); }

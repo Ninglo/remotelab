@@ -2,8 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { readRecord, serialQueue, writeDurableJson } from '../lib/durable-records.mjs';
 import { messageEvent } from './normalizer.mjs';
+import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mjs';
 
-export const QUESTION_TIMEOUT_MS = 5 * 60_000;
+// Ordinary human questions stay open until answered or cancelled. An explicit
+// finite timeout remains available to callers that have declared a fallback.
+export const QUESTION_TIMEOUT_MS = null;
 const currentPath = directory => join(directory, 'native-question.json');
 export const readNativeQuestion = directory => readRecord(currentPath(directory));
 
@@ -69,6 +72,7 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
   timeoutMs = QUESTION_TIMEOUT_MS, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout }) {
   const serial = serialQueue();
   const queue = [];
+  const hasTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0;
   let active = null, timer = null, closed = false;
   const journalPath = entry => join(directory, 'native-questions', `${createHash('sha256').update(entry.id).digest('hex').slice(0, 32)}.json`);
   const emit = (entry, state, content, origin = '', answers = []) => onEvent({
@@ -87,8 +91,9 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
     const options = q.options.map((o, i) => `${i + 1}. ${o.label}${o.description ? `：${o.description}` : ''}`);
     return [entry.questions.length > 1 ? `问题 ${entry.index + 1}/${entry.questions.length}：${q.question}` : q.question,
       ...options, '', q.multiSelect ? '回复编号选择；多选可回复 1,2。其他文字作为自定义回答。' : '回复 1、2、3 等编号选择；其他文字作为自定义回答。',
-      q.options.length ? `${minutes} 分钟内未回复，将超时自动选择第 1 项「${q.options[0].label}」。`
-        : `${minutes} 分钟内未回复，将按“超时未答”返回，让 AI 继续处理。`].join('\n');
+      !hasTimeout ? '等待你的回答，不会超时自动选择。'
+        : q.options.length ? `${minutes} 分钟内未回复，将超时自动选择第 1 项「${q.options[0].label}」。`
+          : `${minutes} 分钟内未回复，将按“超时未答”返回，让 AI 继续处理。`].join('\n');
   }
   async function showNext() {
     if (closed || active) return;
@@ -106,13 +111,13 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
     }
     if (entry.index >= entry.questions.length) { await complete(); return; }
     entry.state = 'pending';
-    entry.deadline = now() + timeoutMs;
+    entry.deadline = hasTimeout ? now() + timeoutMs : null;
     await save(entry);
     await writeDurableJson(currentPath(directory), { id: `${entry.id}:${entry.index}`, state: 'pending', deadline: entry.deadline });
     emit(entry, 'pending', publicQuestion(entry));
     const questionId = `${entry.id}:${entry.index}`;
     const deadline = entry.deadline;
-    timer = setTimer(() => void serial(() => {
+    if (hasTimeout) timer = setTimer(() => void serial(() => {
       // Clearing a timer cannot remove a callback already queued behind a user
       // reply. That callback belongs to the old question, never the next one.
       if (active && `${active.id}:${active.index}` === questionId && now() >= deadline) return answerCurrent(null, 'timeout');
@@ -161,8 +166,8 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
     answer(input) {
       if (!input.questionId) return Promise.resolve(null);
       return serial(async () => {
-        if (!active || input.questionId !== `${active.id}:${active.index}` || now() >= active.deadline) {
-          if (active && now() >= active.deadline) await answerCurrent(null, 'timeout');
+        if (!active || input.questionId !== `${active.id}:${active.index}` || nativeQuestionDeadlineExpired(active.deadline, now())) {
+          if (active && nativeQuestionDeadlineExpired(active.deadline, now())) await answerCurrent(null, 'timeout');
           onEvent({ type: 'remotelab.user_question', messageId: `question-expired:${input.id}`,
             questionId: input.questionId, state: 'expired', origin: 'user',
             content: '这条回答对应的问题已结束，未应用这条回答。需要修改时，请直接说明新的选择。' });
