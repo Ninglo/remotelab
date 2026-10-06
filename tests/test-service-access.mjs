@@ -75,7 +75,9 @@ try {
   }
   await fs.writeFile(configPath, JSON.stringify(config));
   assert.equal((await readServiceAccessConfig()).units.length, 2);
-  assert.equal(await buildServiceAccessPromptBlock('普通问答'), '');
+  const ordinary = await buildServiceAccessPromptBlock('继续刚才的改动');
+  assert.match(ordinary, /service-access check --json/, 'old native threads need a small lookup pointer even without restart keywords');
+  assert.doesNotMatch(ordinary, /127\.0\.0\.1|remotelab-example/, 'ordinary turns do not need the full registration body');
   const prompt = await buildServiceAccessPromptBlock('重启服务被 sudo 权限卡住');
   assert.match(prompt, /service-access check --json/);
   assert.match(prompt, /127\.0\.0\.1/);
@@ -84,6 +86,9 @@ try {
   const hook = await buildTurnContextHook({}, { query: '部署时需要重启' });
   assert.match(hook, /Service management capability lookup/, 'resumed turns need the new route even when their startup prefix is cached');
   assert.match(hook, /older blocked reports and handbook entries are not current capability evidence/);
+  assert.match(await buildTurnContextHook({}, { query: '继续' }), /service-access check --json/);
+  await fs.unlink(configPath);
+  assert.equal(await buildServiceAccessPromptBlock('普通问答'), '', 'unconfigured instances keep ordinary turn context unchanged');
   console.log('test-service-access: ok');
 } finally {
   await fs.rm(root, { recursive: true, force: true });
