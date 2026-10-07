@@ -1,7 +1,9 @@
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { createHash, randomBytes } from 'crypto';
-import { spawn } from 'child_process';
+import { normalizeGate, runScheduleGate } from '../lib/automation-script.mjs';
+import { normalizeAutomationPolicy } from '../lib/automation-execution-policy.mjs';
+export { runScheduleGate, parseGateOutput } from '../lib/automation-script.mjs';
 
 import { CHAT_RECURRING_SCHEDULES_FILE } from '../lib/config.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
@@ -11,10 +13,6 @@ const DEFAULT_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_POLL_MS = 1000;
 const DEFAULT_MAX_OPEN_OCCURRENCES = 1;
 const MIN_INTERVAL_SECONDS = 10;
-const DEFAULT_GATE_TIMEOUT_SECONDS = 5;
-const MAX_GATE_TIMEOUT_SECONDS = 30;
-const MAX_GATE_SOURCE_BYTES = 64 * 1024;
-const MAX_GATE_OUTPUT_BYTES = 16 * 1024;
 const MAX_CRON_SEARCH_MINUTES = 5 * 366 * 24 * 60;
 
 let schedulesCache = null;
@@ -95,44 +93,6 @@ function normalizeLifetime(value, { strict = false } = {}) {
     ...(maxExecutions ? { maxExecutions } : {}),
     ...(maxChecks ? { maxChecks } : {}),
     ...(endsAt ? { endsAt } : {}),
-  };
-}
-
-function normalizeGate(value, { strict = false } = {}) {
-  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const mode = trimString(raw.mode).toLowerCase() || 'direct';
-  if (!['direct', 'script'].includes(mode)) throw new Error('gate.mode must be direct or script');
-  if (mode === 'direct') return { mode };
-  const runtime = trimString(raw.runtime || raw.language).toLowerCase() || 'bash';
-  if (!['bash', 'python', 'node'].includes(runtime)) throw new Error('gate.runtime must be bash, python, or node');
-  const source = typeof raw.source === 'string'
-    ? raw.source
-    : typeof raw.script?.source === 'string'
-      ? raw.script.source
-      : '';
-  if (!source.trim()) throw new Error('gate.source is required for script gates');
-  if (Buffer.byteLength(source, 'utf8') > MAX_GATE_SOURCE_BYTES) {
-    throw new Error(`gate.source must not exceed ${MAX_GATE_SOURCE_BYTES} bytes`);
-  }
-  const requestedTimeout = raw.timeoutSeconds ?? raw.script?.timeoutSeconds;
-  const timeoutSeconds = requestedTimeout === undefined
-    ? DEFAULT_GATE_TIMEOUT_SECONDS
-    : positiveInteger(requestedTimeout);
-  if (!timeoutSeconds || timeoutSeconds > MAX_GATE_TIMEOUT_SECONDS) {
-    throw new Error(`gate.timeoutSeconds must be between 1 and ${MAX_GATE_TIMEOUT_SECONDS}`);
-  }
-  const cooldownSeconds = raw.cooldownSeconds === undefined ? 0 : Number(raw.cooldownSeconds);
-  if (!Number.isInteger(cooldownSeconds) || cooldownSeconds < 0) {
-    if (strict) throw new Error('gate.cooldownSeconds must be a non-negative integer');
-    throw new Error('Invalid gate cooldown');
-  }
-  return {
-    mode,
-    runtime,
-    source,
-    snapshotSha256: createHash('sha256').update(source).digest('hex'),
-    timeoutSeconds,
-    cooldownSeconds,
   };
 }
 
@@ -357,6 +317,7 @@ function normalizeStoredSchedule(value) {
     lifetime,
     gate,
     wakeOn: normalizeWakeOn(raw.wakeOn, gate),
+    automationPolicy: normalizeAutomationPolicy(raw.automationPolicy),
     alerts: normalizeAlerts(raw.alerts),
     misfirePolicy: 'latest_once',
     overlapPolicy: 'latest_once',
@@ -480,6 +441,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     lifetime,
     gate,
     wakeOn,
+    automationPolicy: normalizeAutomationPolicy(input.automationPolicy),
     alerts,
     tool: input.tool,
     runtimePolicy: input.runtimePolicy,
@@ -539,7 +501,10 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
         && patch.enabled !== (requestedStatus === 'active')) {
       throw new Error('enabled conflicts with status');
     }
-    if (requestedStatus === 'active' && ['cancelled', 'completed'].includes(current.status)) {
+    const extendsBoundedTrial = current.status === 'completed' && current.lifetime?.mode === 'bounded'
+      && patch.lifetime?.mode === 'bounded'
+      && Number(patch.lifetime.maxExecutions) > Number(current.lifetime.maxExecutions || 0);
+    if (requestedStatus === 'active' && ['cancelled', 'completed'].includes(current.status) && !extendsBoundedTrial) {
       throw new Error(`${current.status === 'completed' ? 'Completed' : 'Cancelled'} schedules cannot be resumed`);
     }
     const nextStatus = requestedStatus || (Object.prototype.hasOwnProperty.call(patch, 'enabled')
@@ -593,6 +558,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
       lifetime,
       gate,
       wakeOn,
+      automationPolicy: normalizeAutomationPolicy(patch.automationPolicy === undefined ? current.automationPolicy : patch.automationPolicy),
       alerts,
       enabled,
       status: nextStatus,
@@ -652,93 +618,6 @@ function collectDueOccurrences(schedule, nowMs) {
   return { dueCount: due.length, latestAt: due.at(-1) || '', nextRunAt: cursor };
 }
 
-export function parseGateOutput(value) {
-  const output = trimString(value);
-  if (/^yes$/i.test(output)) return { trigger: true, reason: '', dedupeKey: '' };
-  if (/^no$/i.test(output)) return { trigger: false, reason: '', dedupeKey: '' };
-  let parsed;
-  try {
-    parsed = JSON.parse(output);
-  } catch {
-    throw new Error('Gate output must be yes, no, or one JSON object');
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || typeof parsed.trigger !== 'boolean') {
-    throw new Error('Gate JSON must contain a boolean trigger field');
-  }
-  return {
-    trigger: parsed.trigger,
-    reason: trimString(parsed.reason).slice(0, 500),
-    dedupeKey: trimString(parsed.dedupeKey).slice(0, 500),
-  };
-}
-
-function gateCommand(runtime) {
-  if (runtime === 'python') return { command: 'python3', args: ['-'] };
-  if (runtime === 'node') return { command: process.execPath, args: ['-'] };
-  return { command: '/bin/bash', args: ['--noprofile', '--norc', '-s'] };
-}
-
-export async function runScheduleGate(schedule, scheduledAt, { checkCause = 'cadence' } = {}) {
-  if (schedule.gate?.mode !== 'script') return { trigger: true, reason: '', dedupeKey: '' };
-  const { command, args } = gateCommand(schedule.gate.runtime);
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: schedule.sessionTemplate?.folder || process.cwd(),
-      env: {
-        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-        HOME: process.env.HOME || '',
-        LANG: process.env.LANG || 'C.UTF-8',
-        REMOTELAB_TASK_ID: schedule.id,
-        REMOTELAB_TASK_CHECK_AT: scheduledAt,
-        REMOTELAB_TASK_CHECK_CAUSE: checkCause,
-      },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    let outputBytes = 0;
-    let settled = false;
-    const finish = (handler, value) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      handler(value);
-    };
-    const timeout = setTimeout(() => {
-      child.kill('SIGKILL');
-      finish(reject, new Error(`Gate timed out after ${schedule.gate.timeoutSeconds}s`));
-    }, schedule.gate.timeoutSeconds * 1000);
-    child.on('error', (error) => finish(reject, error));
-    child.stdout.on('data', (chunk) => {
-      outputBytes += chunk.length;
-      if (outputBytes > MAX_GATE_OUTPUT_BYTES) {
-        child.kill('SIGKILL');
-        finish(reject, new Error(`Gate output exceeded ${MAX_GATE_OUTPUT_BYTES} bytes`));
-        return;
-      }
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf8');
-      if (stderr.length > 2000) stderr = stderr.slice(-2000);
-    });
-    child.on('close', (code, signal) => {
-      if (settled) return;
-      if (code !== 0) {
-        const detail = trimString(stderr);
-        finish(reject, new Error(`Gate exited with ${signal || code}${detail ? `: ${detail}` : ''}`));
-        return;
-      }
-      try {
-        finish(resolve, parseGateOutput(stdout));
-      } catch (error) {
-        finish(reject, error);
-      }
-    });
-    child.stdin.on('error', () => {});
-    child.stdin.end(schedule.gate.source);
-  });
-}
 
 function lifetimeCompletionReason(schedule, nowMs, counts = {}) {
   if (schedule.lifetime?.mode !== 'bounded') return '';
@@ -800,6 +679,25 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
       const occurrences = eventWake ? { latestAt: now, dueCount: 1, nextRunAt: candidate.nextRunAt }
         : collectDueOccurrences(candidate, nowMs);
       if (!occurrences.latestAt) continue;
+      if (candidate.automationPolicy?.minIdleSeconds) {
+        const resources = await (options.getResourceSnapshot
+          ? options.getResourceSnapshot() : import('./automation-resources.mjs').then(m => m.getAutomationResourceSnapshot()));
+        const since = Date.parse(resources?.idleSince || '');
+        if (resources?.status !== 'ready' || resources.sessions?.length || !Number.isFinite(since)
+          || nowMs - since < candidate.automationPolicy.minIdleSeconds * 1000) {
+          // Consume a due fallback once. Leaving it overdue would repeat this
+          // resource read every scheduler tick instead of once per hour.
+          if (!eventWake) await withScheduleMutation(async (rows, save) => {
+            const current = rows.find(s => s.id === candidate.id);
+            if (!current?.enabled || JSON.stringify(current) !== JSON.stringify(candidate)) return;
+            current.nextRunAt = occurrences.nextRunAt; current.skippedCount += 1;
+            current.lastCheckAt = now; current.lastCheckCause = 'cadence';
+            current.lastGateMatched = false; current.lastGateReason = 'continuous_idle_not_met'; current.updatedAt = now;
+            await save(rows);
+          });
+          continue;
+        }
+      }
       const counts = await getScheduleTriggerCounts(candidate.id);
       const reservedExecutions = Number(counts.admittedExecutions || 0) + Number(counts.pendingAdmissions || 0);
       const atExecutionCapacity = candidate.lifetime?.maxExecutions
@@ -866,6 +764,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
             model: current.model,
             effort: current.effort,
             thinking: current.thinking,
+            automationPolicy: current.automationPolicy,
             scheduleId: current.id,
             occurrenceId: `${current.id}:${dedupeSuffix}`,
           });
@@ -943,7 +842,9 @@ export function startRecurringScheduleScheduler(options = {}) {
     const schedules = await listRecurringSchedules();
     if (stopped) return;
     const needed = schedules.some(s => s.enabled && s.wakeOn.includes('foreground_idle'));
-    if (needed && (reconsider || resourceDemand !== true)) await options.ensureEventResources?.('registration');
+    const quietPeriods = [...new Set(schedules.filter(s => s.enabled && s.wakeOn.includes('foreground_idle'))
+      .map(s => Math.max(1, s.automationPolicy?.minIdleSeconds || 1) * 1000))];
+    if (needed && (reconsider || resourceDemand !== true)) await options.ensureEventResources?.('registration', quietPeriods);
     else if (!needed && resourceDemand !== false) await options.releaseEventResources?.();
     resourceDemand = needed;
   };

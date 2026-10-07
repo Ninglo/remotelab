@@ -650,6 +650,9 @@
         if (task.check?.cause) addMetaRow(meta, translate("tasks.meta.checkCause", "Last check cause"),
           translate(`tasks.wake.${task.check.cause}`, task.check.cause));
       }
+      if (task.automationPolicy?.minIdleSeconds) {
+        addMetaRow(meta, translate("tasks.meta.idleWindow", "Continuous idle"), `${task.automationPolicy.minIdleSeconds}s`);
+      }
       if (task.gate?.mode === "script") {
         addMetaRow(meta, translate("tasks.meta.gateSnapshot", "Condition snapshot"), task.gate.snapshotSha256 || "—");
         addMetaRow(meta, translate("tasks.meta.gateTimeout", "Condition timeout"), `${task.gate.timeoutSeconds}s`);

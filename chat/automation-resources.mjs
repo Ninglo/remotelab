@@ -9,22 +9,35 @@ function busy(session) {
 
 export function createAutomationResources({ listResources, getResource, subscribe = onAutomationActivityHint,
   onIdle = cause => notifyAutomationWake('foreground_idle', cause), coalesceMs = 250, quietMs = 1000,
-  setTimer = setTimeout, clearTimer = clearTimeout,
+  setTimer = setTimeout, clearTimer = clearTimeout, now = Date.now,
   onError = () => console.warn('[automation-resources] Resource observation failed; fail closed') } = {}) {
   const sessions = new Map(), pending = new Set();
-  let ready = false, stopped = true, full = false, flushing = null, timer, idleTimer, unsubscribe, starting;
-  let lastIdle = false, idlePending = false, generatedAt = '';
+  let ready = false, stopped = true, full = false, flushing = null, timer, unsubscribe, starting;
+  let lastIdle = false, idlePending = false, generatedAt = '', idleSince = '';
+  let quietPeriods = [quietMs];
+  const idleTimers = new Map(), issued = new Set();
   let generation = 0;
   const isIdle = () => ready && ![...sessions.values()].some(busy);
-  function cancelIdle() { clearTimer(idleTimer); idleTimer = null; }
+  function cancelIdle() { for (const timer of idleTimers.values()) clearTimer(timer); idleTimers.clear(); }
   function armIdle(cause) {
     cancelIdle();
     idlePending = true;
-    idleTimer = setTimer(() => {
-      idleTimer = null;
-      if (!stopped && isIdle() && !flushing && !pending.size && !full) { idlePending = false; onIdle(cause); }
-    }, quietMs);
-    idleTimer.unref?.();
+    if (!idleSince) idleSince = new Date(now()).toISOString();
+    for (const period of quietPeriods) {
+      if (issued.has(period)) continue;
+      const timer = setTimer(() => {
+        idleTimers.delete(period);
+        if (!stopped && isIdle() && !flushing && !pending.size && !full) {
+          issued.add(period); idlePending = idleTimers.size > 0; onIdle(cause);
+        }
+      }, Math.max(0, period - (now() - Date.parse(idleSince))));
+      timer?.unref?.(); idleTimers.set(period, timer);
+    }
+  }
+  function setQuietPeriods(periods = [quietMs]) {
+    quietPeriods = [...new Set(periods.filter(ms => Number.isFinite(ms) && ms > 0))];
+    if (!quietPeriods.length) quietPeriods = [quietMs];
+    if (!stopped && isIdle()) armIdle('registration');
   }
   async function flush() {
     if (stopped || flushing) return flushing;
@@ -52,11 +65,11 @@ export function createAutomationResources({ listResources, getResource, subscrib
         ready = true; generatedAt = new Date().toISOString();
         const idle = isIdle();
         if (idle && (!lastIdle || recovered || idlePending)) armIdle(recovered ? 'resource_recovery' : 'foreground_idle');
-        else if (!idle) { cancelIdle(); idlePending = false; }
+        else if (!idle) { cancelIdle(); idlePending = false; idleSince = ''; issued.clear(); }
         lastIdle = idle;
       } catch {
         if (stopped || generation !== observedGeneration) return;
-        ready = false; lastIdle = false; idlePending = false; cancelIdle(); onError();
+        ready = false; lastIdle = false; idlePending = false; idleSince = ''; issued.clear(); cancelIdle(); onError();
       }
     })().finally(() => {
       flushing = null;
@@ -68,9 +81,10 @@ export function createAutomationResources({ listResources, getResource, subscrib
     if (stopped || timer || flushing) return;
     timer = setTimer(() => { void flush(); }, coalesceMs); timer.unref?.();
   }
-  function hint(id) {
+  function hint(id, { resetIdle = false } = {}) {
     if (stopped) return;
     cancelIdle();
+    if (resetIdle) { idleSince = ''; lastIdle = false; issued.clear(); }
     if (!ready || !id) full = true; else pending.add(id);
     scheduleFlush();
   }
@@ -81,26 +95,26 @@ export function createAutomationResources({ listResources, getResource, subscrib
   }
   function stop() {
     stopped = true; generation += 1; ready = false; unsubscribe?.(); unsubscribe = null;
-    clearTimer(timer); timer = null; cancelIdle(); idlePending = false; pending.clear(); full = false;
+    clearTimer(timer); timer = null; cancelIdle(); idlePending = false; idleSince = ''; issued.clear(); lastIdle = false; pending.clear(); full = false;
   }
   function snapshot() {
     const known = !stopped && ready && !flushing && !full && !pending.size;
-    return { status: known ? 'ready' : 'observing', generatedAt, knownSessionCount: sessions.size,
+    return { status: known ? 'ready' : 'observing', generatedAt, idleSince: known && isIdle() ? idleSince : '', knownSessionCount: sessions.size,
       sessions: known ? [...sessions.values()].filter(busy) : [],
       host: { loadPerCpu: loadavg()[0] / availableParallelism(), freeMemoryRatio: freemem() / totalmem() } };
   }
-  function reconsiderIdle(cause = 'registration') { if (!stopped && isIdle()) armIdle(cause); }
+  function reconsiderIdle(cause = 'registration') { if (!stopped && isIdle()) { issued.clear(); armIdle(cause); } }
   async function refresh() {
     if (!ready) full = true;
     if (flushing) await flushing;
     if (full || pending.size) await flush();
     return snapshot();
   }
-  return { start, stop, snapshot, hint, flush, refresh, reconsiderIdle };
+  return { start, stop, snapshot, hint, flush, refresh, reconsiderIdle, setQuietPeriods };
 }
 
 let resources, initializing, taskDemand = false;
-export async function startAutomationResourceObserver({ wakeCause = '' } = {}) {
+export async function startAutomationResourceObserver({ wakeCause = '', quietPeriods } = {}) {
   if (wakeCause) taskDemand = true;
   if (!resources) {
     initializing ||= import('./session-manager.mjs').then(manager => {
@@ -112,6 +126,7 @@ export async function startAutomationResourceObserver({ wakeCause = '' } = {}) {
     }).finally(() => { initializing = null; });
     await initializing;
   }
+  if (quietPeriods) resources.setQuietPeriods(quietPeriods);
   await resources.start();
   if (wakeCause) resources.reconsiderIdle(wakeCause);
   return resources.snapshot();

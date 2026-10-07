@@ -325,3 +325,17 @@ The main rule should stay the same:
 
 automation policy belongs to durable server-owned trigger objects,
 while actual work execution flows either through the normal session/run grammar or through a first-class connector action path, depending on the action type.
+
+### Opt-in idle execution policy
+
+A script-gated task may set `automationPolicy.minIdleSeconds` (0–86400) and bounded script snapshots in `automationPolicy.beforeLaunch` / `afterRun`. The script format is the same as `gate`; stdout is one `{ "trigger": boolean, "reason": string }` result. Hook environment includes task, Session, Run and phase identities. The task read model exposes idle duration and hook presence, never script source.
+
+The shared resource observer keeps one-shot timers for the distinct requested idle durations. A newly accepted request resets the idle window immediately, including work that ends before the coalesced read. Metadata-only hints retain elapsed idle time. Restart or unknown observations start a fresh window. Hourly fallback checks obey the same minimum window, and a task is checked only after that window is satisfied.
+
+`beforeLaunch` runs in the control plane after durable Run preparation and before spawning any model runner. A false result, error, timeout or intervening cancellation produces a cancelled Run with `automationLaunchDeferred`, without invoking a model. It still counts as an admitted attempt; do not hide that attempt or silently renew its budget. After the model starts, foreground arrivals require an independent resource guard to cancel/yield; no admission snapshot can rule out future arrivals.
+
+`afterRun` is independent of the cancelled model unit. A durable pending-hook index and Run success marker support recovery and idempotence. Hooks must write their own state idempotently, respect output authorization, and return false on failure. A failed hook is retained for native Run observation/readback or restart retry. Successful hooks are not repeated. The index does not run another model or create another recurring task.
+
+An explicitly enlarged bounded `lifetime.maxExecutions` can resume a completed trial via `status: active`; existing trigger history remains and still consumes the cumulative limit. Plain resume of completed/cancelled tasks remains rejected. This is a new budget decision requiring task-level authorization, not an automatic retry entitlement.
+
+Checkpointing belongs to the task's work script: write and validate a small completed unit before continuing. On cancellation, only validated files can be reused; uncommitted model reasoning is not a checkpoint. External publication remains a separate authorization decision.

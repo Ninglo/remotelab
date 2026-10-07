@@ -33,8 +33,28 @@ try {
   await materializeDueRecurringSchedulesNow(options); assert.equal(created.length, 1, 'pending admissions reserve the execution budget');
   admissions = 1; await materializeDueRecurringSchedulesNow(options);
   assert.equal((await getRecurringSchedule(eventSchedule.id)).status, 'completed');
+  await assert.rejects(updateRecurringSchedule(eventSchedule.id, { status: 'active' }), /cannot be resumed/);
+  const extended = await updateRecurringSchedule(eventSchedule.id, { status: 'active', lifetime: { ...eventSchedule.lifetime, maxExecutions: 3 } });
+  assert.equal(extended.lifetime.maxExecutions, 3); assert.equal(extended.status, 'active');
+  await updateRecurringSchedule(eventSchedule.id, { enabled: false });
   await updateRecurringSchedule(direct.id, { enabled: false }); await updateRecurringSchedule(noOptIn.id, { enabled: false });
   created.length = 0; admissions = 0;
+
+  const delayed = await create({ automationPolicy: { minIdleSeconds: 300, beforeLaunch: { mode: 'script', runtime: 'bash', source: 'echo no' } } });
+  let gateCalls = 0;
+  const stabilityOptions = { ...options, now: '2026-10-06T00:06:00Z', runGate: async () => { gateCalls++; return { trigger: true }; },
+    getResourceSnapshot: async () => ({ status: 'ready', sessions: [], idleSince: '2026-10-06T00:01:01Z' }) };
+  await materializeDueRecurringSchedulesNow(stabilityOptions); assert.equal(gateCalls, 0, 'do not even invoke a gate before stable idle');
+  await materializeDueRecurringSchedulesNow({ ...stabilityOptions, now: '2026-10-06T00:06:01Z' });
+  assert.equal(gateCalls, 1); assert.equal(created[0].automationPolicy.minIdleSeconds, 300);
+  assert.equal(created[0].automationPolicy.beforeLaunch.source, 'echo no', 'freeze the guard with the occurrence');
+  const due = (await getRecurringSchedule(delayed.id)).nextRunAt;
+  const beforeFallbackCalls = gateCalls;
+  await materializeDueRecurringSchedulesNow({ ...stabilityOptions, now: due, wakeReason: undefined,
+    getResourceSnapshot: async () => ({ status: 'ready', sessions: [{ id: 'busy' }], idleSince: '' }) });
+  assert.ok(Date.parse((await getRecurringSchedule(delayed.id)).nextRunAt) > Date.parse(due), 'a skipped hourly fallback advances, without minute/second rechecks');
+  assert.equal(gateCalls, beforeFallbackCalls);
+  await updateRecurringSchedule(delayed.id, { enabled: false }); created.length = 0;
 
   const concurrent = await create();
   let entered, release;

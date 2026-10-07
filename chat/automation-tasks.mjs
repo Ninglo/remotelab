@@ -252,6 +252,8 @@ async function projectRecurringTask(schedule, occurrences) {
     },
     lifetime: schedule.lifetime,
     wakeOn: schedule.wakeOn || [],
+    automationPolicy: schedule.automationPolicy ? { minIdleSeconds: schedule.automationPolicy.minIdleSeconds,
+      beforeLaunch: !!schedule.automationPolicy.beforeLaunch, afterRun: !!schedule.automationPolicy.afterRun } : null,
     gate: projectGate(schedule),
     counters: {
       checks: schedule.checkCount || 0,

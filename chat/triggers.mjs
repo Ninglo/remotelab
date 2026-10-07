@@ -1,3 +1,4 @@
+import { normalizeAutomationPolicy } from '../lib/automation-execution-policy.mjs';
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
@@ -182,6 +183,7 @@ function normalizeStoredTrigger(value) {
     deliveryAttempts: Math.max(0, parsePositiveInteger(raw.deliveryAttempts, 0)),
     runId: trimString(raw.runId),
     deliveryMode: trimString(raw.deliveryMode),
+    automationPolicy: normalizeAutomationPolicy(raw.automationPolicy),
     scheduleId: trimString(raw.scheduleId),
     occurrenceId: trimString(raw.occurrenceId),
     executionSessionId,
@@ -369,6 +371,7 @@ export async function createTrigger(input = {}) {
     createdAt,
     updatedAt: createdAt,
     deliveryAttempts: 0,
+    automationPolicy: normalizeAutomationPolicy(input.automationPolicy),
     scheduleId: trimString(input.scheduleId),
     occurrenceId: trimString(input.occurrenceId),
     executionSessionId: '',
@@ -750,6 +753,7 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
       skipDispatch: true,
       triggerId: current.id,
       automationTitle: current.title || current.sessionTemplate?.name || '自动化任务',
+      automationPolicy: current.automationPolicy || undefined,
       scheduleId: current.scheduleId || undefined,
       occurrenceId: current.occurrenceId || undefined,
       ...(current.sessionTemplate?.reuse === 'fixed_session'

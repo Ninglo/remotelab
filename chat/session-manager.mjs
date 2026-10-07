@@ -1,3 +1,5 @@
+import { hintAutomationActivity } from '../lib/automation-events.mjs';
+import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
 import { requireConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
 import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
@@ -731,6 +733,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   }
   const manifest = await getRunManifest(runId);
   if (!manifest) return run;
+  if (run.finalizedAt) reconcileAutomationHook(run, manifest, { updateRun });
 
   let historyChanged = false;
   let sessionChanged = false;
@@ -1875,6 +1878,8 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     finalizedAt: current.finalizedAt || nowIso(),
   })) || run;
 
+  reconcileAutomationHook(finalizedRun, manifest, { updateRun });
+
   const completedRequest = await requests.byRunId(run.id);
   if (completedRequest) {
     await requests.mutate(completedRequest.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso() }));
@@ -2050,6 +2055,7 @@ async function syncDetachedRun(sessionId, runId) {
 export async function startDetachedRunObservers() {
   await ensureRequestSchema(CONFIG_DIR);
   await requestRuntime.recover();
+  await recoverAutomationHooks({ getRun, getManifest: getRunManifest, observe: observeDetachedRun, updateRun });
   deliveryIssueObserver.start();
 }
 
@@ -3368,6 +3374,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   await recordWorkInputAndDeliver(session, record);
   const activeRun = activeRequest ? await getRun(activeRequest.runId) : null;
   const nativeFollowUp = activeNative && !activeRun?.cancelRequested && canForwardNativeRequest(record, activeRequest);
+  if (!duplicate) hintAutomationActivity(sessionId, { resetIdle: true });
   const queued = !record.result && !record.nativeDispatchRunId && !nativeFollowUp && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
     const draftName = isSessionAutoRenamePending(session)
@@ -3434,6 +3441,31 @@ async function ensureRequestInput(record, manifest) {
   }
 }
 
+async function launchAutomationRun(runId, options = {}) {
+  const run = await getRun(runId);
+  const manifest = await getRunManifest(runId);
+  if (!run || !manifest) throw new Error('Run is not prepared');
+  await registerAutomationHook(runId, manifest);
+  let allowed;
+  try {
+    allowed = await runAutomationHook(manifest.automationPolicy || options.automationPolicy, 'beforeLaunch', {
+      runId, sessionId: run.sessionId, scheduleId: manifest.scheduleId, folder: manifest.folder,
+    });
+  } catch (error) { allowed = { trigger: false, reason: `Before-launch check failed: ${error.message}` }; }
+  // Include cancellation arriving while the script was checking/preparing its
+  // guard. A script failure or busy foreground spends no model invocation.
+  const latest = await getRun(runId);
+  if (!allowed.trigger || latest?.cancelRequested || latest?.state === 'cancelled') {
+    const result = { completedAt: nowIso(), cancelled: true, exitCode: null };
+    await writeRunResult(runId, result);
+    await updateRun(runId, current => ({ ...current, state: 'cancelled', cancelRequested: true,
+      automationLaunchDeferred: true, failureReason: allowed.reason || 'Cancelled before launch', result }));
+    reconcileAutomationHook(await getRun(runId), manifest, { updateRun });
+    return {};
+  }
+  return spawnDetachedRunner(runId);
+}
+
 async function prepareRequestRun(record) {
   if (record.options?.workReference) throw new Error('Reference retained in work inbox; it must not start or reopen a Session');
   const { sessionId, requestId, responseId, images } = record;
@@ -3462,7 +3494,7 @@ async function prepareRequestRun(record) {
     await requestRuntime.refresh(record.key);
     const launch = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
     if (existingRun.state === 'accepted' && !launch) {
-      const spawned = await spawnDetachedRunner(record.runId);
+      const spawned = await launchAutomationRun(record.runId, record.options);
       await updateRun(record.runId, current => ({ ...current, runnerProcessId: spawned.pid, runnerUnitName: spawned.unitName, runnerUnitScope: spawned.unitScope, runnerLaunchMode: spawned.launchMode }));
     } else if (launch && !existingRun.runnerProcessId) {
       await updateRun(record.runId, current => ({ ...current, runnerProcessId: launch.pid }));
@@ -3599,6 +3631,7 @@ async function prepareRequestRun(record) {
       ...(normalizeSourceDeliveryPlan(options.sourceDelivery)
         ? { sourceDelivery: normalizeSourceDeliveryPlan(options.sourceDelivery) }
         : {}),
+      ...(options.automationPolicy ? { automationPolicy: options.automationPolicy } : {}),
       ...(trimString(options.triggerId) ? { triggerId: trimString(options.triggerId) } : {}),
       ...(trimString(options.scheduleId) ? { scheduleId: trimString(options.scheduleId) } : {}),
       ...(trimString(options.occurrenceId) ? { occurrenceId: trimString(options.occurrenceId) } : {}),
@@ -3691,7 +3724,7 @@ async function prepareRequestRun(record) {
   await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso() }));
   await requestRuntime.refresh(record.key);
   observeDetachedRun(sessionId, run.id);
-  const spawned = await spawnDetachedRunner(run.id);
+  const spawned = await launchAutomationRun(run.id, options);
   await updateRun(run.id, (current) => ({
     ...current,
     runnerProcessId: spawned?.pid || current.runnerProcessId || null,
@@ -3719,20 +3752,20 @@ export async function removeQueuedMessage(sessionId, requestId) {
   return { requestId: record.requestId, session: await getSession(sessionId, { includeQueuedMessages: true }) };
 }
 
-export async function cancelActiveRun(sessionId) {
+export async function cancelActiveRun(sessionId, { expectedRunId = '' } = {}) {
   const session = await findSessionMeta(sessionId);
   if (!session) return null;
-  const request = (await requests.active()).find(record => record.sessionId === sessionId && !record.releasedAt && !record.nativeDispatchRunId && !record.options.deliveryOnly);
+  const request = (await requests.active()).find(record => record.sessionId === sessionId && (!expectedRunId || record.runId === expectedRunId) && !record.releasedAt && !record.nativeDispatchRunId && !record.options.deliveryOnly);
   if (request) {
     await requests.mutate(request.key, current => ({ ...current, cancelRequestedAt: current.cancelRequestedAt || nowIso() }));
     await requestRuntime.refresh(request.key);
     const existing = await getRun(request.runId);
     if (!existing) return { id: request.runId, state: 'accepted', cancelRequested: true };
   }
-  const runId = request?.runId || session.activeRunId;
+  const runId = expectedRunId || request?.runId || session.activeRunId;
   if (!runId) return null;
   const run = await flushDetachedRunIfNeeded(sessionId, runId) || await getRun(runId);
-  if (!run) return null;
+  if (!run || run.sessionId !== sessionId) return null;
   if (isTerminalRunState(run.state)) {
     return run;
   }

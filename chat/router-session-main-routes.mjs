@@ -704,7 +704,7 @@ export async function handleSessionMainRoutes({
         writeJson(res, 403, { error: 'Group conversations are read-only here. Reply in the source chat.' });
         return true;
       }
-      const updated = await cancelActiveRun(run.sessionId);
+      const updated = await cancelActiveRun(run.sessionId, { expectedRunId: runId });
       if (!updated) {
         const refreshed = await getRunState(runId);
         if (refreshed && refreshed.state !== 'running' && refreshed.state !== 'accepted') {

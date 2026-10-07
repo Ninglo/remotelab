@@ -2,6 +2,7 @@
 import assert from 'assert/strict';
 import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import http from 'http';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -363,6 +364,43 @@ async function main() {
     assert.equal(eventDone.lastExecution.sessionId, fixedSession.id);
     assert.equal((await request(port, 'GET', '/api/source-deliveries')).json.deliveries.length, 0,
       'event wake-up must retain RemoteLab-only delivery');
+    // A gate may have matched, then foreground can become busy before the
+    // model starts. The platform hook rejects it without invoking the fixture
+    // model; its terminal accounting runs even though no runner survives.
+    const hookReceipt = join(fixture.home, 'terminal-hook.json');
+    const before = { mode: 'script', runtime: 'bash', source: 'echo no', timeoutSeconds: 2 };
+    const after = { mode: 'script', runtime: 'node', timeoutSeconds: 2, source:
+      `const fs = require('node:fs/promises');
+(async () => {
+const p = ${JSON.stringify(hookReceipt)};
+let n = 0; try { n = JSON.parse(await fs.readFile(p, 'utf8')).attempts; } catch {}
+await fs.writeFile(p, JSON.stringify({ attempts: n + 1, runId: process.env.REMOTELAB_RUN_ID }));
+console.log(JSON.stringify({ trigger: n > 0 }));
+})().catch(e => { console.error(e); process.exitCode = 1; });` };
+    const guarded = await request(port, 'POST', '/api/automation-tasks', {
+      kind: 'recurring', title: 'Before model cancellation', prompt: 'Must never reach the model.',
+      schedule: { type: 'interval', everySeconds: 3600 }, wakeOn: ['foreground_idle'],
+      lifetime: { mode: 'bounded', maxExecutions: 1, maxChecks: 10 },
+      gate: { mode: 'script', runtime: 'bash', source: 'echo yes', timeoutSeconds: 2 },
+      automationPolicy: { minIdleSeconds: 0, beforeLaunch: before, afterRun: after },
+      target: { mode: 'fixed_session', sessionId: fixedSession.id }, resultDelivery: { mode: 'remotelab' },
+    });
+    assert.equal(guarded.status, 201, guarded.text);
+    const rejected = await waitFor(async () => {
+      const response = await request(port, 'GET', `/api/automation-tasks/${guarded.json.task.id}`);
+      return response.json?.task?.lastExecution?.state === 'cancelled' ? response.json.task.lastExecution : false;
+    }, 'before-launch hook cancels without model invocation');
+    const hookDone = await waitFor(async () => {
+      const response = await request(port, 'GET', `/api/runs/${rejected.runId}`);
+      return response.json?.run?.automationHookCompletedAt ? response.json.run : false;
+    }, 'failed terminal hook retries and persists success');
+    assert.equal(hookDone.automationLaunchDeferred, true);
+    assert.equal(hookDone.runnerProcessId || 0, 0, 'no model runner was spawned');
+    const receipt = JSON.parse(await readFile(hookReceipt, 'utf8'));
+    assert.equal(receipt.runId, rejected.runId); assert.equal(receipt.attempts, 2);
+    await request(port, 'GET', `/api/runs/${rejected.runId}`);
+    assert.equal(JSON.parse(await readFile(hookReceipt, 'utf8')).attempts, 2, 'terminal hook success is durable and idempotent');
+    assert.equal((await request(port, 'GET', '/api/source-deliveries')).json.deliveries.length, 0);
     console.log('Task Center HTTP and lifecycle tests passed.');
   } finally {
     if (server.child.exitCode === null) {

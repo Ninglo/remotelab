@@ -51,3 +51,30 @@ const late = createAutomationResources({ listResources: () => new Promise(resolv
 const startup = late.start(); late.stop(); completeRead([]); await startup;
 assert.equal(late.snapshot().status, 'observing');
 console.log('automation resource observation: transition, deduplication, queue/compact, recovery and stop passed');
+
+// A five-minute timer is one event-driven confirmation, not 300 gate calls.
+let clock = Date.parse('2026-10-07T00:00:00Z'), stableRows = [], stableListener;
+const stableTimers = new Map(), stableWakes = []; let stableId = 0;
+const stable = createAutomationResources({ listResources: async () => stableRows,
+  getResource: async id => stableRows.find(r => r.id === id), subscribe: fn => { stableListener = fn; return () => {}; },
+  onIdle: cause => stableWakes.push(cause), now: () => clock,
+  setTimer: (fn, ms) => { const id = ++stableId; stableTimers.set(id, { fn, at: clock + ms }); return id; },
+  clearTimer: id => stableTimers.delete(id) });
+stable.setQuietPeriods([300000]); await stable.start();
+const began = stable.snapshot().idleSince;
+function advance(ms) { clock += ms; for (const [id, timer] of [...stableTimers]) {
+  if (timer.at <= clock) { stableTimers.delete(id); timer.fn(); }
+} }
+advance(299000); assert.equal(stableWakes.length, 0);
+stableListener('title-only'); await stable.flush();
+assert.equal(stable.snapshot().idleSince, began, 'metadata updates retain a genuinely stable idle window');
+// Even a request that finishes before the coalesced resource read resets idle.
+stableListener('brief-request', { resetIdle: true }); await stable.flush();
+advance(1000); assert.equal(stableWakes.length, 0);
+advance(299000); assert.equal(stableWakes.length, 1);
+stableRows = [row('busy', 'running')]; stableListener('busy', { resetIdle: true }); await stable.flush();
+assert.equal(stable.snapshot().idleSince, '');
+stable.stop(); assert.equal(stableTimers.size, 0);
+await stable.start(); assert.equal(stable.snapshot().idleSince, '');
+stableRows = []; stableListener('busy'); await stable.flush();
+advance(300000); assert.equal(stableWakes.length, 2, 'restart starts a fresh confirmation window'); stable.stop();

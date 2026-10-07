@@ -77,9 +77,9 @@ recurringSchedules.startRecurringScheduleScheduler({
   countOpenScheduleTriggers: triggers.countOpenScheduleTriggers,
   getScheduleTriggerCounts: triggers.getScheduleTriggerCounts,
   onMaterialized: () => triggers.processDueTriggersNow(),
-  ensureEventResources: async wakeCause => {
+  ensureEventResources: async (wakeCause, quietPeriods) => {
     await serverReady;
-    return automationResources.startAutomationResourceObserver({ wakeCause });
+    return automationResources.startAutomationResourceObserver({ wakeCause, quietPeriods });
   },
   releaseEventResources: automationResources.releaseAutomationResourceObserver,
 });
