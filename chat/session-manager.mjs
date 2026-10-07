@@ -1233,6 +1233,9 @@ async function flushDetachedRunIfNeeded(sessionId, runId) {
   if (!run.finalizedAt || !isTerminalRunState(run.state) || (await requests.byRunId(runId))?.releasedAt === null) {
     return await syncDetachedRun(sessionId, runId) || await getRun(runId);
   }
+  if (run.automationHookPending && !run.automationHookCompletedAt) {
+    reconcileAutomationHook(run, await getRunManifest(runId), { updateRun });
+  }
   return run;
 }
 
@@ -3446,6 +3449,7 @@ async function launchAutomationRun(runId, options = {}) {
   const manifest = await getRunManifest(runId);
   if (!run || !manifest) throw new Error('Run is not prepared');
   await registerAutomationHook(runId, manifest);
+  if (manifest.automationPolicy?.afterRun) await updateRun(runId, current => ({ ...current, automationHookPending: true }));
   let allowed;
   try {
     allowed = await runAutomationHook(manifest.automationPolicy || options.automationPolicy, 'beforeLaunch', {
@@ -3460,7 +3464,6 @@ async function launchAutomationRun(runId, options = {}) {
     await writeRunResult(runId, result);
     await updateRun(runId, current => ({ ...current, state: 'cancelled', cancelRequested: true,
       automationLaunchDeferred: true, failureReason: allowed.reason || 'Cancelled before launch', result }));
-    reconcileAutomationHook(await getRun(runId), manifest, { updateRun });
     return {};
   }
   return spawnDetachedRunner(runId);

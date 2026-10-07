@@ -145,6 +145,7 @@ async function main() {
   const fixture = setupHome();
   const port = randomPort();
   const server = await startServer({ ...fixture, port });
+  let outputPassed = false;
   try {
     const secondPerson = await request(port, 'GET', '/api/automation-tasks', null, secondPersonCookie);
     assert.equal(secondPerson.status, 200, 'Task Center must be available to every authenticated Person');
@@ -401,12 +402,14 @@ console.log(JSON.stringify({ trigger: n > 0 }));
     await request(port, 'GET', `/api/runs/${rejected.runId}`);
     assert.equal(JSON.parse(await readFile(hookReceipt, 'utf8')).attempts, 2, 'terminal hook success is durable and idempotent');
     assert.equal((await request(port, 'GET', '/api/source-deliveries')).json.deliveries.length, 0);
+    outputPassed = true;
     console.log('Task Center HTTP and lifecycle tests passed.');
   } finally {
     if (server.child.exitCode === null) {
       server.child.kill('SIGTERM');
       await waitFor(() => server.child.exitCode !== null, 'Task Center test server shutdown');
     }
+    if (!outputPassed) console.error(server.output());
     rmSync(fixture.home, { recursive: true, force: true });
   }
 }
