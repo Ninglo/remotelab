@@ -80,12 +80,12 @@ try {
   assert.match(routing.confirmation, /执行$/);
   assert.equal((await m.decideWorkSuggestion({ sessionId: 'a', suggestionId: routing.suggestion.id, action: 'approve', actor: actorA, requestId: 'route-human' })).suggestion.state, 'approved');
   const fixture = Array.from({ length: 1000 }, (_, index) => ({ id: 'benchmark_' + index, name: '测试 ' + index, folder: home,
-    workAwareness: { version: 1, revision: 1, works: [], suggestions: [], intents: [{ id: 'intent_' + index,
-      goal: index % 20 ? '整理其他资料 ' + index : goal, status: 'unclassified-input', updatedAt: '2026-10-06T00:00:00Z' }] } }));
+    workAwareness: { version: 1, revision: 1, works: [], suggestions: [], intents: [] },
+    workSummary: { goal: index % 20 ? '整理其他资料 ' + index : goal } }));
   const samples = [];
   for (let i = 0; i < 20; i++) {
     const begin = performance.now();
-    const matches = m.relatedWorkFromSessions(fixture, { sessionId: 'benchmark_0', query: goal });
+    const matches = m.candidateWorkFromSessions(fixture, { sessionId: 'benchmark_0', query: goal, limit: 3 });
     samples.push(performance.now() - begin);
     assert.equal(matches.length, 3);
   }

@@ -3,12 +3,12 @@ import { requests } from './requests.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
 import { loadHistory } from './history.mjs';
 import { buildRelatedPersonContext, collectRelatedPeople } from './related-person-context.mjs';
-import { verifiedWorkActor, queryRelatedWork, workInbox, startWork, updateWork, createWorkSuggestion } from './work-awareness.mjs';
+import { verifiedWorkActor, queryRelatedWork, queryWorkCandidates, reviewRelatedWork, workInbox, startWork, updateWork, createWorkSuggestion } from './work-awareness.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { retrieveNecessaryContext } from './necessary-background.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|people))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|people|review))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -25,10 +25,12 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       return true;
     }
     if (req.method === 'GET' && pathname === '/api/work-awareness') {
-      writeJson(res, 200, { sessionId, current: session.workAwareness || null,
-        related: await queryRelatedWork({ sessionId, query,
-          object: parsedUrl.searchParams.get('object') || '', projectId: parsedUrl.searchParams.get('project') || '',
-          limit: parsedUrl.searchParams.get('limit') || 3 }), suggestions: await workInbox(sessionId),
+      const scope = { sessionId, query: parsedUrl.searchParams.get('query') || '', object: parsedUrl.searchParams.get('object') || '',
+        projectId: parsedUrl.searchParams.get('project') || '', limit: parsedUrl.searchParams.get('limit') || 5 };
+      const [related, candidates, suggestions] = await Promise.all([
+        queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId),
+      ]);
+      writeJson(res, 200, { sessionId, current: session.workAwareness || null, related, candidates, suggestions,
         ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : { background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
           personId: record?.options?.viewPersonId || authSession?.personId,
           identityId: record?.options?.initiatedByIdentityId || authSession?.identityId }) }) });
@@ -54,6 +56,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     if (pathname.endsWith('/start')) result = await startWork(options);
     else if (pathname.endsWith('/update')) result = await updateWork(options);
     else if (pathname.endsWith('/suggest')) result = await createWorkSuggestion(options);
+    else if (pathname.endsWith('/review')) result = await reviewRelatedWork(options);
     else throw Object.assign(new Error('Unsupported work operation'), { statusCode: 405 });
     broadcastAll({ type: 'session_invalidated', sessionId });
     broadcastAll({ type: 'sessions_invalidated' });

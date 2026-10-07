@@ -170,15 +170,18 @@ function renderQueuedMessagePanel(session) {
 let workAwarenessPanelRequest = 0;
 async function renderWorkAwarenessPanel(session) {
   const request = ++workAwarenessPanelRequest;
-  const previous = document.getElementById?.("workAwarenessPanel");
+  let previous = document.getElementById?.("workAwarenessPanel");
   if (!session?.id || session.id !== currentSessionId || !session.workAwareness
     || (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode)) {
     previous?.remove();
     return;
   }
-  const query = session.workAwareness.intents?.at(-1)?.goal || session.workAwareness.works?.at(-1)?.goal || "";
+  if (previous && previous.dataset.sessionId !== session.id) {
+    previous.remove();
+    previous = undefined;
+  }
   try {
-    const params = new URLSearchParams({ sessionId: session.id, query, includeBackground: "false" });
+    const params = new URLSearchParams({ sessionId: session.id, includeBackground: "false" });
     const response = await fetch("/api/work-awareness?" + params);
     if (!response.ok) throw new Error("相关工作暂时读取失败");
     const data = await response.json();
@@ -186,30 +189,74 @@ async function renderWorkAwarenessPanel(session) {
     if (!data.related.length && !data.suggestions.length) { previous?.remove(); return; }
     const panel = document.createElement("details");
     panel.id = "workAwarenessPanel";
-    panel.className = "native-question-details";
-    panel.open = previous?.open === true;
+    panel.className = "work-awareness-panel";
+    panel.dataset.sessionId = session.id;
+    panel.open = previous?.dataset?.sessionId === session.id && previous.open === true;
     const summary = document.createElement("summary");
     summary.textContent = "相关工作与参考建议（" + (data.related.length + data.suggestions.length) + "）";
     panel.appendChild(summary);
+    const body = document.createElement("div");
+    body.className = "work-awareness-body";
     const note = document.createElement("p");
-    note.textContent = "相关性需要核对。各方可继续原工作；送达参考建议与确认采用分别记录。";
-    panel.appendChild(note);
+    note.className = "work-awareness-note";
+    note.textContent = "供参考，不会自动改动任何人的工作。";
+    body.appendChild(note);
+    const compact = (text, limit = 72) => {
+      const value = String(text || "").replace(/^【[^】]*】\s*/, "").replace(/\s+/g, " ").trim();
+      return value.length > limit ? value.slice(0, limit - 1) + "…" : value;
+    };
     for (const item of data.related) {
-      const row = document.createElement("p");
+      const row = document.createElement("article");
+      row.className = "work-awareness-item";
+      const header = document.createElement("div");
+      header.className = "work-awareness-item-header";
       const link = document.createElement("a");
+      link.className = "work-awareness-title";
       link.href = "/?session=" + encodeURIComponent(item.sessionId);
-      link.textContent = item.goal;
-      row.appendChild(link);
-      const workStatus = { "unclassified-input": "需求记录（尚未归类）", active: "处理中", completed: "已登记完成（可核对证据）", blocked: "有阻塞", cancelled: "已取消" };
-      row.appendChild(document.createTextNode(" · " + (workStatus[item.status] || item.status) + " · " + (item.actor?.name || "来源待核对")));
-      panel.appendChild(row);
+      link.textContent = compact(item.sessionName || item.goal);
+      header.appendChild(link);
+      const label = document.createElement("span");
+      label.className = "work-awareness-label";
+      label.textContent = ({ overlap: "可能重复", dependency: "前置工作", reuse: "可复用成果", "same-declared-object": "同一对象" })[item.relation] || "相关工作";
+      header.appendChild(label);
+      row.appendChild(header);
+      const reason = document.createElement("p");
+      reason.className = "work-awareness-reason";
+      reason.textContent = item.reason || "查看来源，核对与当前工作的关系。";
+      row.appendChild(reason);
+      const meta = document.createElement("p");
+      meta.className = "work-awareness-meta";
+      const workStatus = { active: "处理中", completed: "已登记完成", blocked: "有阻塞", recorded: "工作记录" };
+      meta.textContent = [item.actor?.name, workStatus[item.status], item.archived ? "已归档" : ""].filter(Boolean).join(" · ");
+      row.appendChild(meta);
+      const details = document.createElement("details");
+      const detailTitle = document.createElement("summary");
+      detailTitle.textContent = "工作详情";
+      const goal = document.createElement("p");
+      goal.textContent = item.goal;
+      details.appendChild(detailTitle);
+      details.appendChild(goal);
+      row.appendChild(details);
+      body.appendChild(row);
     }
     const labels = { draft: "待核验送达", published: "参考已发布，待确认采用", approved: "已确认采用，执行结果待核验", rejected: "已拒绝" };
     for (const suggestion of data.suggestions) {
-      const row = document.createElement("p");
-      row.textContent = (labels[suggestion.state] || suggestion.state) + "：" + suggestion.content + "\n可能影响：" + suggestion.impact;
-      panel.appendChild(row);
+      const row = document.createElement("article");
+      row.className = "work-awareness-item";
+      const state = document.createElement("p");
+      state.className = "work-awareness-label";
+      state.textContent = labels[suggestion.state] || suggestion.state;
+      row.appendChild(state);
+      const content = document.createElement("p");
+      content.className = "work-awareness-reason";
+      content.textContent = suggestion.content;
+      row.appendChild(content);
+      const impact = document.createElement("p");
+      impact.className = "work-awareness-meta";
+      impact.textContent = "可能影响：" + suggestion.impact;
+      row.appendChild(impact);
       const destination = document.createElement("p");
+      destination.className = "work-awareness-meta";
       for (const [label, id] of [["查看来源工作", suggestion.sourceSessionId], ["查看接收工作", suggestion.targetSessionId]]) {
         if (!id) continue;
         const link = document.createElement("a");
@@ -221,13 +268,14 @@ async function renderWorkAwarenessPanel(session) {
       if (suggestion.routing) destination.appendChild(document.createTextNode((suggestion.routing.mode === "new-session" ? "建议新开：" : "建议分流：")
         + (suggestion.routing.name || "独立 Session") + "；工作：" + suggestion.routing.task
         + (suggestion.routing.folder ? "；工作目录：" + suggestion.routing.folder : "")));
-      panel.appendChild(destination);
+      row.appendChild(destination);
       const command = suggestion.state === "draft" && suggestion.sourceSessionId === session.id
         ? "确认协作建议 " + suggestion.id + (suggestion.routing?.mode === "new-session" ? " 执行" : " 发布")
         : suggestion.state === "published" && (suggestion.targetSessionId || suggestion.sourceSessionId) === session.id ? "确认协作建议 " + suggestion.id + " 执行" : "";
       if (command && !document.querySelector?.('.native-question[data-question-state="pending"]')) {
         const control = document.createElement("button");
         control.type = "button";
+        control.className = "work-awareness-action";
         control.textContent = "填入确认命令（发送前可检查）";
         control.title = command;
         control.addEventListener("click", () => {
@@ -236,13 +284,15 @@ async function renderWorkAwarenessPanel(session) {
           msgInput.dispatchEvent(new Event("input", { bubbles: true }));
           msgInput.focus();
         });
-        panel.appendChild(control);
+        row.appendChild(control);
       }
+      body.appendChild(row);
     }
+    panel.appendChild(body);
     if (previous) previous.replaceWith(panel);
     else queuedPanel?.after(panel);
   } catch {
-    if (previous && request === workAwarenessPanelRequest) previous.querySelector("summary").textContent = "相关工作读取失败，请稍后重新打开会话核对";
+    if (previous && request === workAwarenessPanelRequest && session.id === currentSessionId) previous.querySelector("summary").textContent = "相关工作读取失败，请稍后重新打开会话核对";
   }
 }
 

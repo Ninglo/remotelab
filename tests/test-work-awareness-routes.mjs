@@ -13,7 +13,8 @@ await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryP
   { id: 'person_a', name: '甲', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
   { id: 'person_b', name: '乙', identities: [{ id: 'identity_b', kind: 'web', subjectId: 'b' }] },
 ] }));
-await writeFile(join(config, 'chat-sessions.json'), JSON.stringify([{ id: 'a', name: 'a', folder: home }, { id: 'b', name: 'b', folder: home }]));
+await writeFile(join(config, 'chat-sessions.json'), JSON.stringify([{ id: 'a', name: 'a', folder: home },
+  { id: 'b', name: 'b', folder: home, workSummary: { goal: '实现 Session 开工登记和相关工作检索' } }]));
 try {
   await (await import('../lib/auth-config.mjs')).loadAuthDocument({ persistMigration: false });
   const { handleWorkAwarenessRoutes } = await import('../chat/router-work-awareness.mjs');
@@ -23,6 +24,9 @@ try {
   const { record } = await requests.accept({ sessionId: 'a', requestId: 'human', text: '修改 Session 开工功能',
     options: { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a', sourceContext: null } });
   const event = await appendEvent('a', { type: 'message', role: 'user', content: record.text });
+  const { recordWorkInput } = await import('../chat/work-awareness.mjs');
+  const { findSessionMeta } = await import('../chat/session-meta-store.mjs');
+  await recordWorkInput(await findSessionMeta('a'), record);
   async function call(path, body, auth = { authKind: 'service' }) {
     let output;
     const parsedUrl = new URL(path, 'http://test');
@@ -40,6 +44,16 @@ try {
   const started = await call('/api/work-awareness/start', { runId: record.runId, goal: record.text, actor: { personId: 'person_b' }, evidenceRefs: [event.seq] });
   assert.equal(started.status, 200); assert.equal(started.json.work.actor.personId, 'person_a', 'body cannot replace Request attribution');
   const work = started.json.work;
+  const search = await call('/api/work-awareness?sessionId=a&query=' + encodeURIComponent(record.text) + '&includeBackground=false');
+  assert.equal(search.json.related.length, 0, 'word matching is not a displayed recommendation');
+  const candidate = search.json.candidates.find(item => item.sessionId === 'b');
+  assert(candidate, 'existing work summaries are retrievable');
+  const review = { runId: record.runId, items: [{ sessionId: 'b', workId: candidate.id, fingerprint: candidate.fingerprint,
+    relation: 'reuse', reason: '另一会话已有开工检索实现，可作为本轮修改相同功能的来源。' }], evidenceRefs: [event.seq] };
+  assert.equal((await call('/api/work-awareness/review', { ...review, evidenceRefs: [9999] })).status, 400);
+  assert.equal((await call('/api/work-awareness/review', review, { authKind: 'web', personId: 'person_b' })).status, 403);
+  assert.equal((await call('/api/work-awareness/review', review)).status, 200);
+  assert.equal((await call('/api/work-awareness?sessionId=a&includeBackground=false')).json.related[0].verification, 'harness-reviewed');
   assert.equal((await call('/api/work-awareness/update', { runId: record.runId, workId: work.id, expectedVersion: 1, status: 'completed', result: 'unproven', evidenceRefs: [9999] })).status, 400);
   const updated = await call('/api/work-awareness/update', { runId: record.runId, workId: work.id, expectedVersion: 1, status: 'completed', result: 'source-backed report', evidenceRefs: [event.seq] });
   assert.equal(updated.status, 200);

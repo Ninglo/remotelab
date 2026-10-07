@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-07 — Related work needs a concrete reason before it is recommended
+
+- Feedback: unrelated tasks appeared because conversational words overlapped; poor relevance mattered more than appearance. Raw messages also stretched the panel across the composer.
+- Revision: index registered goals, objects, result references and existing work summaries instead of the latest unclassified message. Keep search candidates separate from displayed relations. An exact declared object or a current Harness review with a concrete overlap, dependency or reuse reason can appear; an empty list is valid. Reuse the foreground turn's understanding without a second semantic worker or model call. New input and changed target records invalidate prior reviews.
+- Presentation: collapsed, theme-aware compact rows show Session titles and specific reasons; source details remain expandable in a height-limited region. Collaboration publication/adoption controls keep their existing authorization boundary.
+- Verification: actual false-positive patterns, stable goals after short follow-ups, semantic relation writeback without a word-match prerequisite, source fingerprints, Request attribution and evidence checks, empty lists, desktop/mobile containment, keyboard use and literal source text. Retrieval can still miss differently worded tasks; a recorded Harness judgment is not a guarantee of semantic accuracy or business completion.
+
 ### 2026-10-06 — Discover restart alternatives before asking an administrator
 
 - Feedback: service updates repeatedly stopped at a sudo permission check although an existing local SSH management route was available; the user had to remind the Agent of it.

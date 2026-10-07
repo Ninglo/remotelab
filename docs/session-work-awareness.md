@@ -8,7 +8,11 @@
 
 每条已接受的普通人类输入在所属 Session 中留下有限的需求记录。它是检索线索，尚不表示已经归类成一项任务。Agent 可以用 `remotelab work start` 登记具体目标、操作对象及候选项目，用 `work update` 登记状态、结果、成果和方法的来源。开工登记不排他，不存在先开始者占有工作、自动停工或自动分配责任。
 
-相关检索只检查已有 Session 的结构化记录，不扫描对话全文。声明的相同对象，或至少两个相同的词／中文相邻双字，是候选依据。开工上下文最多带三项相关工作；双方查询能分别发现另一方，时间只用于排序。近义词、遗漏登记和含糊目标可能漏检，关键词重合也可能误报。Agent 需结合来源核对，不能声称系统能保证没有重复工作。旧历史不会因此自动回填；确有需要时沿原来源整理。
+相关检索只检查已登记的任务目标、操作对象、成果引用及已有的会话工作摘要，不扫描对话全文，也不把最后一句原始聊天当成任务。上下文优先沿已登记的当前工作读取；Agent 理解本轮目标后可用 `work context --query` 显式检索。常见语气词和跨任务高频字词不作主要线索，词语检索只产生 `candidates`，不直接出现在相关工作面板。已有摘要只证明可查工作记录，不证明成果已经验收。
+
+面板的 `related` 最多三项，可为空：声明操作对象完全相同的工作，或当前 Harness 已核对具体重复、依赖、复用关系的来源。Harness 复用本轮理解，不新增前台模型调用；用 `work review --file` 保存关联理由和本轮读取证据，只改变本会话的参考列表，不发消息、不改变其他任务，也不批准跨 Session 建议。关联可以来自词语候选或另行查到的确切来源，不要求两边措辞相同。每项携带来源记录指纹，来源改变或本会话接受新输入后旧核对失效。推荐尚未核对时不以候选填充空位。
+
+词语候选仍可能漏掉同义表述、遗漏登记或含糊目标；当前 Harness 的核对也可能判断失误，不能声称系统能保证没有重复工作。旧对话不自动回填任务或重新调用模型；已有摘要可作检索线索，必要时沿原来源继续核对。
 
 人员身份与项目关联分别处理。当前请求者按已核 Person／Identity 读取；引用、提及、收件涉及的其他人员也读取适用的称呼规则。来源消息保留原始身份 ID、消息 ID 及来源域；同名、昵称、参与者哈希、机器账户和 Session 创建者都不能证明作者。唯一登记的完整姓名可以识别被提及的对象，不能认证引文作者。未知身份保持未知。
 
@@ -47,6 +51,7 @@ remotelab work context --query '当前目标' --json
 remotelab work start --goal '具体工作目标' --object '文件路径或业务对象 ID' --project '候选项目 ID' --json
 remotelab work people --query '引用完整姓名所指人员的建议' --json
 remotelab work suggest --file suggestion.json --json
+remotelab work review --file review.json --json
 remotelab work update --file update.json --json
 ```
 
@@ -64,7 +69,7 @@ remotelab work update --file update.json --json
 {"targetSessionId":"...","purpose":"overlap","content":"另一边也在处理同一对象，建议双方核对具体范围","impact":"可能减少重复改动；不会自动停止任何一方","evidenceRefs":[123]}
 ```
 
-`GET /api/work-awareness` 提供记录和共同背景，`includeBackground=false` 供面板只读工作索引，避免重复加载背景。`/people` 提供涉及人物的必要规则；`/start`、`/update`、`/suggest` 是有限写入口，没有批准 API。
+`GET /api/work-awareness` 将未核对的 `candidates` 与可展示的 `related` 分开，并提供记录和共同背景；`includeBackground=false` 供面板只读工作索引，避免重复加载背景。`/people` 提供涉及人物的必要规则；`/start`、`/update`、`/suggest`、`/review` 是有限写入口，没有批准 API。`review.json` 包含 `items`（至多三项，各含 `sessionId`、`workId`、检索返回的 `fingerprint`、`relation` 和具体 `reason`）及本轮 `evidenceRefs`；`relation` 为 `overlap`、`dependency` 或 `reuse`。空 `items` 是有效结果。
 
 ## 代价、恢复与验证边界
 
