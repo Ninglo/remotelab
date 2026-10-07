@@ -10,6 +10,9 @@ const tracker = createAutomationResources({
   getResource: async id => { singleReads++; if (broken) throw new Error('unavailable'); return rows.find(r => r.id === id); },
   subscribe: fn => { listener = fn; subscriptions++; return () => { listener = null; subscriptions--; }; },
   onIdle: cause => wakes.push(cause), onError: () => errors++,
+  // Fake timer delays must use a fake clock too: a real 1 ms tick otherwise
+  // changes the rearmed delay to 999 ms and quiet() cannot find the timer.
+  now: () => 10000,
   setTimer: (fn, ms) => { const id = ++nextTimer; timers.set(id, { fn, ms }); return id; },
   clearTimer: id => timers.delete(id),
 });
