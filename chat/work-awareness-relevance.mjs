@@ -97,8 +97,11 @@ export function relatedWorkFromSessions(sessions, options = {}) {
         reason: item.reason, verification: 'harness-reviewed', reviewSource: { runId: review.runId,
           requestId: review.requestId, evidenceRefs: review.evidenceRefs } }] : [];
     }) : [];
-  const exact = candidateWorkFromSessions(sessions, { ...options, limit: 10 })
-    .filter(work => work.verification === 'declared-object');
+  // Exact related work requires a declared object. Without one, a second
+  // full topic search cannot produce an accepted relation and only adds cost.
+  const exact = searchScope(sessions, options).object
+    ? candidateWorkFromSessions(sessions, { ...options, limit: 10 }).filter(work => work.verification === 'declared-object')
+    : [];
   return [...reviewed, ...exact]
     .filter((entry, index, all) => all.findIndex(other => other.sessionId === entry.sessionId) === index)
     .slice(0, Math.min(3, Math.max(1, Number(limit) || 3)));
