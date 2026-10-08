@@ -362,7 +362,7 @@
   padding-top: 40px;
 }
 
-/* Connected left-to-right flows live in the original message. */
+/* Full flow previews stay in the message; reading opens in the same page. */
 .md-content .inline-flow {
   margin: 12px 0; border: 1px solid var(--border); border-radius: 10px;
   background: var(--bg-secondary); overflow: hidden;
@@ -375,6 +375,34 @@
 .inline-flow-title { font-size: 14px; font-weight: 600; }
 .inline-flow-count { color: var(--text-secondary); font-size: 12px; }
 .inline-flow-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-left: auto; }
+.inline-flow-open { margin-left: auto; }
+.inline-flow-preview {
+  display: block; width: 100%; border: 0; padding: 12px 14px 10px;
+  background: transparent; color: var(--text); font: inherit; cursor: zoom-in;
+}
+.inline-flow-preview:hover { background: var(--surface-hover); }
+.inline-flow-preview-svg {
+  display: block; width: 100%; height: clamp(140px, 24vw, 260px);
+  color: var(--text-secondary); overflow: visible;
+}
+.inline-flow-preview-svg .inline-flow-edge { stroke-width: 1; }
+.inline-flow-preview-node { fill: var(--bg); stroke: var(--border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.inline-flow-preview-decision { stroke: var(--accent); }
+.inline-flow-preview-text { fill: var(--text); font: inherit; font-size: 16px; dominant-baseline: middle; }
+.inline-flow-preview-hint { display: block; margin-top: 10px; color: var(--text-secondary); font-size: 12px; text-align: center; }
+.inline-flow-dialog {
+  width: min(1600px, calc(100vw - 32px)); height: calc(100dvh - 32px);
+  max-width: none; max-height: none; padding: 0; margin: auto;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg-secondary); color: var(--text); box-shadow: var(--modal-shadow);
+  overflow: hidden; font-family: inherit; font-size: 14px; line-height: 1.6;
+}
+.inline-flow-dialog::backdrop { background: var(--modal-backdrop); }
+.inline-flow-viewer { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.inline-flow-viewer .inline-flow-header, .inline-flow-viewer .inline-flow-hint { flex: none; }
+.inline-flow-viewer .inline-flow-viewport { flex: 1; min-height: 0; overscroll-behavior: contain; }
+.inline-flow-viewer .inline-flow-detail { flex: none; max-height: min(28dvh, 220px); overflow: auto; }
+.inline-flow-close { font-size: 20px; line-height: 1; min-width: 36px; }
 .inline-flow-view {
   padding: 4px 8px; min-height: 32px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg); color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
@@ -428,10 +456,11 @@
 .inline-flow-source { border-top: 1px solid var(--border); padding: 8px 14px; }
 .inline-flow-source-title { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
 .md-content .inline-flow-source pre { margin: 10px 0 2px; max-height: 320px; }
-.inline-flow button:focus-visible, .inline-flow summary:focus-visible, .inline-flow-viewport:focus-visible {
+.inline-flow button:focus-visible, .inline-flow summary:focus-visible, .inline-flow-dialog button:focus-visible, .inline-flow-viewport:focus-visible {
   outline: 2px solid var(--accent); outline-offset: -2px;
 }
 @media (max-width: 600px) {
+  .inline-flow-dialog { width: calc(100vw - 16px); height: calc(100dvh - 16px); border-radius: 10px; }
   .inline-flow-header { padding: 10px 12px; }
   .inline-flow-controls { width: 100%; margin-left: 0; }
   .inline-flow-view { min-height: 36px; }
