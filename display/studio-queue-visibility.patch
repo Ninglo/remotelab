@@ -1,0 +1,56 @@
+--- a/concept-v21/app.js
++++ b/concept-v21/app.js
+@@ -459,3 +459,3 @@
+       ? { title: `${metrics.pendingReview} 项 Session 结果待看`, detail: "打开 RemoteLab 查看结果" }
+-      : { title: metrics.running ? `${metrics.running} 个 Session 正在运行` : "当前没有运行中的 Session", detail: `${metrics.queued} 个请求排队中 · 当前无待浏览结果` };
++      : { title: metrics.running ? `${metrics.running} 个 Session 正在运行` : "当前没有运行中的 Session", detail: `${metrics.queued > 0 ? `${metrics.queued} 个请求排队中 · ` : ""}当前无待浏览结果` };
+   }
+@@ -506,3 +506,3 @@
+   const { running, waiting = 0, queued, pendingReview } = metrics;
+-  if (waiting) return { title: `${waiting} 个 Session 等待中`, detail: `${running} 个正在运行 · ${queued} 个请求排队 · ${pendingReview} 项结果待看` };
++  if (waiting) return { title: `${waiting} 个 Session 等待中`, detail: [`${running} 个正在运行`, queued > 0 ? `${queued} 个请求排队` : "", `${pendingReview} 项结果待看`].filter(Boolean).join(" · ") };
+   if (pendingReview) {
+@@ -513,5 +513,5 @@
+   }
+-  if (running) return { title: `${running} 个 Session 正在运行`, detail: queued ? `另有 ${queued} 个请求等待开始；当前没有待查看结果。` : "当前没有排队请求和待查看结果。" };
++  if (running) return { title: `${running} 个 Session 正在运行`, detail: queued ? `另有 ${queued} 个请求等待开始；当前没有待查看结果。` : "当前没有待查看结果。" };
+   if (queued) return { title: `${queued} 个请求等待开始`, detail: "目前没有运行中的 Session 或待查看结果。" };
+-  return { title: "当前没有进行中的工作", detail: "没有排队请求，也没有待查看结果。" };
++  return { title: "当前没有进行中的工作", detail: "当前没有待查看结果。" };
+ }
+@@ -527,5 +527,6 @@
+     const row = addText(zone, "div", "work-metrics", "");
+-    const counts = [["running", "Session 运行中", metrics.running], ["queued", "请求排队中", metrics.queued], ["review", "结果待查看", metrics.pendingReview]];
++    const counts = [["running", "Session 运行中", metrics.running], ["review", "结果待查看", metrics.pendingReview]];
++    if (metrics.queued > 0) counts.splice(1, 0, ["queued", "请求排队中", metrics.queued]);
+     if (Number.isInteger(metrics.waiting)) counts.splice(1, 0, ["waiting", "Session 等待中", metrics.waiting]);
+-    row.classList.toggle("has-waiting", Number.isInteger(metrics.waiting));
++    row.style.setProperty("--work-metric-columns", String(counts.length));
+     for (const [kind, label, count] of counts) {
+@@ -537,3 +538,4 @@
+     addText(zone, "h3", "status-heading", "个 Session 正在运行");
+-    addText(zone, "p", "status-detail", `${Number.isInteger(metrics.waiting) ? `${metrics.waiting} 个 Session 等待中 · ` : ""}${metrics.queued} 个请求排队中${metricsStale ? " · 最近一次读取" : ""}`);
++    const details = [Number.isInteger(metrics.waiting) ? `${metrics.waiting} 个 Session 等待中` : "", metrics.queued > 0 ? `${metrics.queued} 个请求排队中` : "", metricsStale ? "最近一次读取" : ""].filter(Boolean);
++    if (details.length) addText(zone, "p", "status-detail", details.join(" · "));
+   } else if (state.work === "review") {
+--- a/concept-v21/v21.css
++++ b/concept-v21/v21.css
+@@ -75,3 +75,3 @@
+ .work-summary span{font-size:calc(17px * var(--screen-scale,1));line-height:1.4;color:var(--screen-muted)}
+-.work-metrics{gap:11px;margin:13px 0 0}
++.work-metrics{grid-template-columns:repeat(var(--work-metric-columns,3),minmax(0,1fr));gap:11px;margin:13px 0 0}
+ .metric{min-height:126px;padding:14px 10px;justify-content:center;border:1px solid transparent}
+@@ -305,3 +305,2 @@
+ /* Waiting is a quiet gold signal; keep the existing three-zone layout. */
+-.work-metrics.has-waiting{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .metric-waiting{background:color-mix(in srgb,var(--screen-surface) 90%,#d9b35a);border-color:color-mix(in srgb,var(--screen-border) 80%,#d9b35a)}
+--- a/concept-v21/index.html
++++ b/concept-v21/index.html
+@@ -10,5 +10,5 @@
+   <link rel="stylesheet" href="./product.css">
+-  <link rel="stylesheet" href="./v21.css?v=67">
++  <link rel="stylesheet" href="./v21.css?v=68">
+   <script src="./theme-presets.js?v=65" defer></script>
+-  <script src="./app.js?v=67" defer></script>
++  <script src="./app.js?v=68" defer></script>
+   <script src="./device-sync.js?v=65" defer></script>

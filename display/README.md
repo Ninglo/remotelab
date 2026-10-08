@@ -128,6 +128,14 @@ waiting count retain the original three-column overview rather than claiming
 zero. Confirm the target device's new frame receipt and continuing USB ACKs;
 the physical appearance still needs on-site observation.
 
+`display/studio-queue-visibility.patch` follows the waiting update. It hides the
+queue count and queue wording when there are no queued requests, and restores
+them when requests are waiting to start. The remaining overview counts fill the
+available width. Apply it from the studio root after `git apply --check`, verify
+zero and positive counts in overview and running modes, and follow the same
+publication and device-receipt checks above. Pairing and applied settings stay
+in place.
+
 ## Personal GIF and sentence
 
 In **Settings → Side display**, each signed-in Person can upload a GIF and save
