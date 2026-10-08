@@ -79,7 +79,8 @@ try {
     const store = { get: async () => current, mutate: async (_key, update) => { current = update(current); } };
     const opening = { seq: 1, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary',
       content: `${threadFirst ? '<private>feishu-reply:thread</private>' : ''}我来核对。` };
-    const events = [opening, { seq: 2, type: 'tool_use' },
+    const events = [{ seq: 0, type: 'message', role: 'user', runId: 'run', content: '核对这个问题。' },
+      opening, { seq: 2, type: 'tool_use' },
       { ...opening, seq: 3, content: '<progress>找到原因。</progress>' },
       { ...opening, seq: 4, content: '选择方式？', messageKind: 'user_question',
         nativeQuestion: { question: '选择方式？', options: [] }, questionId: 'question', questionState: 'pending' }];
@@ -109,7 +110,9 @@ try {
   const groupPlan = { ...plan, target: { ...plan.target, chatType: 'group' } };
   const threadOpening = { seq: 1, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary',
     content: '<private>feishu-reply:thread</private>在话题里继续。' };
-  await publishLiveAssistantReplies(selected, [threadOpening], { store: selectedStore, plan: groupPlan });
+  await publishLiveAssistantReplies(selected,
+    [{ seq: 0, type: 'message', role: 'user', runId: 'run', content: '开始核对。' }, threadOpening],
+    { store: selectedStore, plan: groupPlan });
   assert.equal(selected.deliveries.length, 1);
   await publishLiveAssistantReplies(selected, [{ ...threadOpening, seq: 2, content: '<progress>已核对。</progress>' }],
     { store: selectedStore, plan: groupPlan });
