@@ -1503,3 +1503,9 @@ settings are separate from verified live deployment and delivery.
 - Feedback: the message-native version still felt confusing: a vertical sequence with hidden branches did not show the flow. The reader explicitly requested a left-to-right arrangement.
 - Revision: show connected steps in horizontal columns, fan parallel branches into separate lanes, keep a shared endpoint once with both incoming arrows, and place conditions on the connections. Keep all branches visible by default. Overview, panning, zoom and step details remain inside the message.
 - Boundary: rendering changes existing flow descriptions without rewriting their source or executing their contents. An image, separate page or another vertical disclosure list is not the requested result.
+
+## 2026-10-08 — Preview the whole flow before opening it for reading
+
+- Feedback: the connected horizontal direction is accepted, but the message shows only part of the flow. The reader requested a thumbnail that can be clicked to open the diagram.
+- Revision: fit the complete structure into a message-native preview, and open the same flow in a larger in-page dialog for reading, panning, zooming and checking relations. Keep every branch and merge in both views; close back to the message without navigation.
+- Verification boundary: verify the actual persisted message on desktop and phone, complete preview bounds, enlarged controls, close/focus, same-message rerenders and clean removal. A loaded older browser page is a separate update boundary; new message delivery alone does not reload its frontend.

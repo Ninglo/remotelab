@@ -180,11 +180,58 @@
     return { nodes, edges, width: xs.at(-1) + 204, height: Math.max(...nodes.map(node => node.y + node.height)) + 32 };
   }
 
-  let widgetId = 0;
-  function createWidget(graph, pre, source, saved = {}) {
-    const diagram = layout(graph), id = `inline-flow-${++widgetId}`;
+  const svgNS = "http://www.w3.org/2000/svg";
+  function svgElement(tag, attributes = {}) {
+    const element = document.createElementNS(svgNS, tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+    return element;
+  }
+
+  function arrowMarker(id) {
+    const defs = svgElement("defs"), marker = svgElement("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: "userSpaceOnUse", orient: "auto" });
+    marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "currentColor" }));
+    defs.append(marker); return defs;
+  }
+
+  function previewText(parent, value, x, y, width) {
+    const lines = [""];
+    let units = 0;
+    for (const char of value) {
+      const size = /[\x00-\x7f]/.test(char) ? 0.55 : 1;
+      if (char === "\n" || units + size > width / 16) {
+        if (lines.length === 3) { lines[2] += "…"; break; }
+        lines.push(""); units = 0;
+      }
+      if (char !== "\n") { lines[lines.length - 1] += char; units += size; }
+    }
+    const text = svgElement("text", { x, y, "text-anchor": "middle", class: "inline-flow-preview-text" });
+    lines.forEach((line, index) => {
+      const span = svgElement("tspan", { x, y: y + (index - (lines.length - 1) / 2) * 22 });
+      span.textContent = line; text.append(span);
+    });
+    parent.append(text);
+  }
+
+  function createPreview(diagram, id) {
+    const svg = svgElement("svg", { viewBox: `0 0 ${diagram.width} ${diagram.height}`, "aria-hidden": "true", class: "inline-flow-preview-svg" });
+    svg.append(arrowMarker(`${id}-preview-arrow`));
+    for (const edge of diagram.edges) {
+      svg.append(svgElement("path", { d: edge.path, class: `inline-flow-edge${edge.returning ? " inline-flow-edge-return" : ""}`, "marker-end": `url(#${id}-preview-arrow)` }));
+      if (edge.label) previewText(svg, edge.label, edge.labelX, edge.labelY, edge.labelWidth);
+    }
+    for (const node of diagram.nodes) {
+      const group = svgElement("g", { "data-flow-preview-node": node.id });
+      const title = svgElement("title"); title.textContent = node.label; group.append(title);
+      group.append(svgElement("rect", { x: node.x, y: node.y, width: node.width, height: node.height, rx: 9, class: `inline-flow-preview-node${node.kind === "decision" ? " inline-flow-preview-decision" : ""}` }));
+      previewText(group, node.label, node.x + node.width / 2, node.y + node.height / 2, node.width - 24);
+      svg.append(group);
+    }
+    return svg;
+  }
+
+  function createViewer(graph, diagram, id, saved = {}) {
     const nodes = new Map(diagram.nodes.map(node => [node.id, node]));
-    const widget = createElement("section", "inline-flow");
+    const widget = createElement("section", "inline-flow-viewer");
     widget.setAttribute("aria-label", translate("flow.title"));
     const header = createElement("div", "inline-flow-header");
     header.append(createElement("strong", "inline-flow-title", translate("flow.title")));
@@ -204,15 +251,8 @@
     const space = createElement("div", "inline-flow-space"), board = createElement("div", "inline-flow-board");
     board.style.width = `${diagram.width}px`; board.style.height = `${diagram.height}px`;
     space.append(board); viewport.append(space); widget.append(viewport);
-    const svgNS = "http://www.w3.org/2000/svg";
-    function svgElement(tag, attributes = {}) {
-      const element = document.createElementNS(svgNS, tag);
-      for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
-      return element;
-    }
     const svg = svgElement("svg", { width: diagram.width, height: diagram.height, "aria-hidden": "true", class: "inline-flow-connections" });
-    const defs = svgElement("defs"), marker = svgElement("marker", { id: `${id}-arrow`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" });
-    marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "currentColor" })); defs.append(marker); svg.append(defs); board.append(svg);
+    svg.append(arrowMarker(`${id}-arrow`)); board.append(svg);
     const connections = [];
     for (const edge of diagram.edges) {
       const path = svgElement("path", { d: edge.path, class: `inline-flow-edge${edge.returning ? " inline-flow-edge-return" : ""}`, "marker-end": `url(#${id}-arrow)` });
@@ -238,12 +278,12 @@
       board.append(card); cards.set(node.id, card);
     }
     const detail = createElement("div", "inline-flow-detail"); detail.id = `${id}-detail`; detail.hidden = true; widget.append(detail);
-    let selected = "", zoom = 1, fit = saved.fit === true, initialized = false;
+    let selected = "", zoom = 1, fit = saved.fit !== false, initialized = false;
     function centerNode(nodeId) {
       const node = nodes.get(nodeId);
       if (!node) return;
-      viewport.scrollLeft = (node.x + node.width / 2) * zoom - viewport.clientWidth / 2;
-      viewport.scrollTop = (node.y + node.height / 2) * zoom - viewport.clientHeight / 2;
+      viewport.scrollLeft = (node.x + node.width / 2) * zoom + (parseFloat(board.style.left) || 0) - viewport.clientWidth / 2;
+      viewport.scrollTop = (node.y + node.height / 2) * zoom + (parseFloat(board.style.top) || 0) - viewport.clientHeight / 2;
     }
     function select(nodeId) {
       selected = nodes.has(nodeId) ? nodeId : "";
@@ -268,17 +308,20 @@
       }
     }
     function setZoom(value, reset = false) {
-      const cx = (viewport.scrollLeft + viewport.clientWidth / 2) / zoom, cy = (viewport.scrollTop + viewport.clientHeight / 2) / zoom;
+      const cx = (viewport.scrollLeft + viewport.clientWidth / 2 - (parseFloat(board.style.left) || 0)) / zoom;
+      const cy = (viewport.scrollTop + viewport.clientHeight / 2 - (parseFloat(board.style.top) || 0)) / zoom;
       zoom = Math.max(0.01, Math.min(1.5, value));
-      space.style.width = `${diagram.width * zoom}px`; space.style.height = `${diagram.height * zoom}px`;
+      const left = fit ? Math.max(0, (viewport.clientWidth - diagram.width * zoom) / 2) : 0;
+      const top = fit ? Math.max(0, (viewport.clientHeight - diagram.height * zoom) / 2) : 0;
+      space.style.width = `${diagram.width * zoom + 2 * left}px`; space.style.height = `${diagram.height * zoom + 2 * top}px`;
+      board.style.left = `${left}px`; board.style.top = `${top}px`;
       board.style.transform = `scale(${zoom})`;
-      viewport.style.height = `${Math.max(280, Math.min(480, diagram.height * zoom + 16))}px`;
       scale.textContent = `${Math.round(zoom * 100)}%`;
-      viewport.scrollLeft = reset ? 0 : cx * zoom - viewport.clientWidth / 2;
-      viewport.scrollTop = reset ? 0 : cy * zoom - viewport.clientHeight / 2;
+      viewport.scrollLeft = reset ? 0 : cx * zoom + left - viewport.clientWidth / 2;
+      viewport.scrollTop = reset ? 0 : cy * zoom + top - viewport.clientHeight / 2;
     }
     function overview() {
-      fit = true; setZoom(Math.min((viewport.clientWidth - 16) / diagram.width, 448 / diagram.height, 1), true);
+      fit = true; setZoom(Math.min((viewport.clientWidth - 24) / diagram.width, (viewport.clientHeight - 24) / diagram.height, 1), true);
     }
     control("flow.fit", overview);
     control("flow.read", () => { fit = false; setZoom(1); });
@@ -307,31 +350,88 @@
     });
     function endDrag() { drag = null; viewport.classList.remove("inline-flow-dragging"); }
     viewport.addEventListener("pointerup", endDrag); viewport.addEventListener("pointercancel", endDrag);
-    const original = createElement("details", "inline-flow-source");
-    original.append(createElement("summary", "inline-flow-source-title", translate("flow.source")));
-    original.append(pre); original.open = saved.sourceOpen === true || (saved.openKeys || []).includes("source"); widget.append(original);
     select(saved.selected);
     function resize() {
-      if (!viewport.clientWidth) return;
+      if (!widget.isConnected || !viewport.clientWidth || !viewport.clientHeight) return;
       if (!initialized) {
         initialized = true;
         if (fit) overview();
         else {
-          const initial = viewport.clientWidth < 480 ? 1 : Math.min(1, (viewport.clientWidth - 24) / 992);
-          setZoom(Number.isFinite(saved.zoom) ? saved.zoom : initial, true);
+          setZoom(Number.isFinite(saved.zoom) ? saved.zoom : 1, true);
           viewport.scrollLeft = saved.left || 0; viewport.scrollTop = saved.top || 0;
         }
       } else if (fit) overview();
     }
     root.requestAnimationFrame(resize);
+    let observer;
     if (root.ResizeObserver) {
-      const observer = new root.ResizeObserver(() => {
+      observer = new root.ResizeObserver(() => {
         if (!widget.isConnected) { observer.disconnect(); return; }
         resize();
       });
       observer.observe(viewport);
     }
-    widget.inlineFlowState = () => ({ source, zoom, fit, selected, left: viewport.scrollLeft, top: viewport.scrollTop, sourceOpen: original.open });
+    widget.inlineFlowState = () => ({ zoom, fit, selected, left: viewport.scrollLeft, top: viewport.scrollTop });
+    widget.disposeInlineFlow = () => observer?.disconnect();
+    return widget;
+  }
+
+  let widgetId = 0, activeViewer = null;
+  function createWidget(graph, pre, source, saved = {}) {
+    const diagram = layout(graph), id = `inline-flow-${++widgetId}`;
+    const widget = createElement("section", "inline-flow");
+    widget.setAttribute("aria-label", translate("flow.title"));
+    widget.inlineFlowViewState = saved;
+    const header = createElement("div", "inline-flow-header");
+    header.append(createElement("strong", "inline-flow-title", translate("flow.title")));
+    header.append(createElement("span", "inline-flow-count", translate("flow.count", { nodes: graph.nodes.length, branches: graph.edges.filter(edge => edge.label).length })));
+    const open = createElement("button", "inline-flow-view inline-flow-open", translate("flow.open"));
+    open.type = "button"; open.setAttribute("aria-haspopup", "dialog"); header.append(open); widget.append(header);
+    const preview = createElement("button", "inline-flow-preview");
+    preview.type = "button"; preview.setAttribute("aria-label", translate("flow.open")); preview.setAttribute("aria-haspopup", "dialog");
+    preview.append(createPreview(diagram, id));
+    preview.append(createElement("span", "inline-flow-preview-hint", translate("flow.previewHint")));
+    widget.append(preview);
+    widget.inlineFlowOpenButton = open;
+
+    function openViewer() {
+      if (activeViewer?.owner === widget) return;
+      activeViewer?.dialog.close();
+      const dialog = createElement("dialog", "inline-flow-dialog md-content");
+      dialog.setAttribute("aria-label", translate("flow.title"));
+      const viewer = createViewer(graph, diagram, `${id}-expanded`, widget.inlineFlowViewState);
+      const close = createElement("button", "inline-flow-view inline-flow-close", "×");
+      close.type = "button"; close.setAttribute("aria-label", translate("action.close")); close.autofocus = true;
+      close.addEventListener("click", () => dialog.close());
+      viewer.querySelector(".inline-flow-controls").append(close);
+      dialog.append(viewer); document.body.append(dialog);
+      const state = { owner: widget, source, dialog, viewer };
+      activeViewer = state;
+      // Ownership transfers to the new message component during a same-source rerender.
+      const observer = new root.MutationObserver(() => {
+        if (!state.owner.isConnected) dialog.close();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      dialog.addEventListener("close", () => {
+        observer.disconnect();
+        state.owner.inlineFlowViewState = viewer.inlineFlowState();
+        viewer.disposeInlineFlow(); dialog.remove();
+        if (activeViewer === state) activeViewer = null;
+        if (state.owner.isConnected) state.owner.inlineFlowOpenButton.focus({ preventScroll: true });
+      }, { once: true });
+      dialog.addEventListener("click", event => {
+        if (event.target !== dialog) return;
+        const rect = dialog.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+      });
+      dialog.showModal();
+    }
+    open.addEventListener("click", openViewer); preview.addEventListener("click", openViewer);
+    const original = createElement("details", "inline-flow-source");
+    original.append(createElement("summary", "inline-flow-source-title", translate("flow.source")));
+    original.append(pre); original.open = saved.sourceOpen === true || (saved.openKeys || []).includes("source"); widget.append(original);
+    if (saved.expanded && activeViewer?.source === source) activeViewer.owner = widget;
+    widget.inlineFlowState = () => ({ source, ...((activeViewer?.owner === widget ? activeViewer.viewer.inlineFlowState() : widget.inlineFlowViewState) || {}), expanded: activeViewer?.owner === widget, sourceOpen: original.open });
     return widget;
   }
 
