@@ -92,7 +92,7 @@ try {
     // destination, not the current event's marker, is authoritative.
     await publishLiveAssistantReplies(original, [final], { store, plan, running: false });
     const visible = current.deliveries.filter(part => part.kind !== 'reaction');
-    assert.deepEqual(visible.map(part => part.surfaceKind), ['opening', 'progress', 'question', 'final', 'final']);
+    assert.deepEqual(visible.map(part => part.surfaceKind), ['opening', 'question', 'final', 'final']);
     for (const part of visible) {
       assert.equal(part.target.conversationKind, threadFirst ? 'thread' : 'main');
       assert.equal(part.target.messageId, 'question-1');
@@ -101,7 +101,7 @@ try {
     assert.equal(resolveAmbientFeishuReplyPlan(current, plan, [final]).target.conversationKind,
       threadFirst ? 'thread' : 'main', 'terminal publication keeps the same durable choice');
     await publishLiveAssistantReplies(current, [final], { store, plan, running: false });
-    assert.equal(current.deliveries.length, 6, 'recovery never queues the final or file twice');
+    assert.equal(current.deliveries.length, 5, 'recovery never queues the final or file twice');
   }
   // A Thread chosen before the first visible reply still has its normal
   // lifecycle. Final-only suppression applies to the selected mainline route.
@@ -116,7 +116,7 @@ try {
   assert.equal(selected.deliveries.length, 1);
   await publishLiveAssistantReplies(selected, [{ ...threadOpening, seq: 2, content: '<progress>已核对。</progress>' }],
     { store: selectedStore, plan: groupPlan });
-  assert.deepEqual(selected.deliveries.map(part => part.target.conversationKind), ['thread', 'thread']);
+  assert.deepEqual(selected.deliveries.map(part => part.target.conversationKind), ['thread']);
   assert.deepEqual(buildSessionEntryDeliveries({ id: 's1' }, { userMessageCount: 0 },
     { sourceDelivery: plan, sourceContext: { feishuParticipation: 'ambient' } }), []);
   assert.equal(resolveSessionDeliveryPlan({ conversation: plan },

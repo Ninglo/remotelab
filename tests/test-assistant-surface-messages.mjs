@@ -82,20 +82,20 @@ for (const connector of ['feishu', 'wechat', 'email']) {
   const options = { store, session: { sourceId: connector }, plan: { connector, sourceRouteId: 'test',
     target: { chatId: 'chat', messageId: 'inbound', threadId: 'topic', to: 'person@example.test' } } };
   const deliveryExpected = connector === 'feishu'
-    ? expected.map((text, index) => `【${index === 2 ? '最终答复' : index === 0 ? '开始处理' : '进展'}】\n\n${text}`) : expected;
+    ? [expected[0], expected[2]].map((text, index) => `【${index === 0 ? '开始处理' : '最终答复'}】\n\n${text}`) : expected;
   await publishLiveAssistantReplies(record, history.slice(0, -1), options);
-  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected.slice(0, 2));
+  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected.slice(0, connector === 'feishu' ? 1 : 2));
   assert.equal(record.deliveries.some(part => part.kind === 'reaction'), false, 'progress never finishes the temporary outcome reaction');
   record = JSON.parse(JSON.stringify(record)); // Restart/replay uses durable receipt state.
   await publishLiveAssistantReplies(record, history, options);
   if (connector === 'feishu') {
-    assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected.slice(0, 2),
+    assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected.slice(0, connector === 'feishu' ? 1 : 2),
       'a model final cannot announce delivery while execution is running');
   }
   await publishLiveAssistantReplies(record, history, { ...options, running: false });
   await publishLiveAssistantReplies(record, history, { ...options, running: false });
   assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text), deliveryExpected);
-  assert.deepEqual(record.streamedSurfaceMessageIds, ['m2', 'm5', 'm8']);
+  assert.deepEqual(record.streamedSurfaceMessageIds, connector === 'feishu' ? ['m2', 'm8'] : ['m2', 'm5', 'm8']);
   assert.deepEqual(record.streamedFinalReplyIds, ['m8']);
   assert.ok(record.deliveries.every(part => part.target.threadId === 'topic'));
   const pending = excludePublishedFinalReplies(history, record.streamedSurfaceMessageIds);
@@ -140,7 +140,7 @@ await publishLiveAssistantReplies(legacyRecord, [user, message(2, undefined, '<p
   store: { get: async () => legacyRecord, mutate: async (_key, fn) => { legacyRecord = fn(legacyRecord); } },
   plan: feishuPlan,
 });
-assert.equal(legacyRecord.deliveries[0].text, '【进展】\n\nExplicit progress', 'explicit progress can still stream without a native phase');
+assert.deepEqual(legacyRecord.deliveries, [], 'ordinary explicit progress stays in history even without a native phase');
 for (const running of [true, false]) {
   const label = running ? '进展' : '最终答复';
   assert.equal(buildReplyDeliveries(feishuPlan, { text: '【待你确认】\n请选择目标。' }, { running })[0].text,
