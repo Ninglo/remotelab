@@ -7,6 +7,14 @@
   "maintenance": "README.md",
   "chapters": [
     {
+      "id": "deliverables",
+      "title": "RemoteLab 产出汇总",
+      "source": "docs/architecture-atlas",
+      "route": "deliverables.html",
+      "description": "从项目已有记录汇总功能与代码、说明页面、文档和历史交付依据；沿原来源核对实际启用和验收。",
+      "navTitle": "产出汇总"
+    },
+    {
       "id": "features",
       "title": "功能清单与使用说明",
       "source": "docs/architecture-atlas",
@@ -39,9 +47,40 @@
       "navTitle": "记忆与协作"
     }
   ],
-  "edition": "20261006memory",
+  "edition": "20261008deliverables",
   "readingConvention": "从消息全程进入；具体环节内展开实现，专题引用保留原维护源和日期。",
   "pages": [
+    {
+      "route": "deliverables.html",
+      "chapter": "deliverables",
+      "reference": "deliverables.md",
+      "sections": [
+        [
+          "scope",
+          "已有产出与核对范围"
+        ],
+        [
+          "capabilities",
+          "功能与代码"
+        ],
+        [
+          "pages",
+          "说明页面"
+        ],
+        [
+          "documents",
+          "项目文档"
+        ],
+        [
+          "history",
+          "找回的历史记录"
+        ],
+        [
+          "maintenance",
+          "如何继续维护"
+        ]
+      ]
+    },
     {
       "route": "features.html",
       "chapter": "features",
@@ -301,5 +340,72 @@
         ]
       ]
     }
-  ]
+  ],
+  "deliverables": {
+    "checkedAt": "2026-10-08",
+    "sourceRevision": "4e8426e5e256f0ff49acf1b4af285965242c94d9",
+    "historyCheckedThrough": "2026-09-16",
+    "documents": [
+      {
+        "path": "README.zh.md",
+        "name": "产品介绍与安装入口",
+        "purpose": "解释 RemoteLab 解决什么问题，以及如何开始使用。"
+      },
+      {
+        "path": "docs/project-architecture.md",
+        "name": "系统架构与代码地图",
+        "purpose": "从系统职责定位实现文件和运行链路。"
+      },
+      {
+        "path": "docs/implementation-recipes.md",
+        "name": "常见开发修改方法",
+        "purpose": "为修改接口、运行适配和界面提供现有实现入口。"
+      },
+      {
+        "path": "docs/external-message-protocol.md",
+        "name": "外部消息接入协议",
+        "purpose": "说明连接器输入、执行和结果投递的共同约定。"
+      },
+      {
+        "path": "docs/native-harness-input.md",
+        "name": "执行工具的输入与接续",
+        "purpose": "说明 Codex、Pi、Claude 的输入传递、追加消息和恢复。"
+      },
+      {
+        "path": "docs/session-work-awareness.md",
+        "name": "相关工作与协作记录",
+        "purpose": "说明开工背景、已有成果查询与参考建议的证据边界。"
+      },
+      {
+        "path": "docs/memory-learning.md",
+        "name": "人员观察与 Agent 方法",
+        "purpose": "说明按身份读取、确认和撤销的方法；项目成果仍归项目。"
+      },
+      {
+        "path": "docs/feishu-bot-setup.md",
+        "name": "飞书接入与配置",
+        "purpose": "说明 Bot、话题、权限与运行配置的接入条件。"
+      },
+      {
+        "path": "docs/platform-skills/stable-static-publish.md",
+        "name": "静态网页发布",
+        "purpose": "说明把网页发布到原实例、回读和更新的流程。"
+      },
+      {
+        "path": "docs/platform-skills/guest-port-expose.md",
+        "name": "运行服务预览",
+        "purpose": "说明预览本地服务及其认证和实例边界。"
+      },
+      {
+        "path": "docs/platform-skills/hardware-recording.md",
+        "name": "硬件录音",
+        "purpose": "说明设备绑定、录音提交和实际设备验收要求。"
+      },
+      {
+        "path": "docs/README.md",
+        "name": "完整文档导航",
+        "purpose": "从当前主线文档继续查找专用 API、安装与运维资料。"
+      }
+    ]
+  }
 }
