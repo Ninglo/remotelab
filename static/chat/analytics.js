@@ -1,232 +1,109 @@
 "use strict";
-
-(function () {
-  // ---- Configuration ----
-  const FLUSH_INTERVAL_MS = 30000;
-  const MAX_QUEUE_SIZE = 100;
-  const STORAGE_KEY_CID = "remotelab.analytics.cid";
-  const STORAGE_KEY_QUEUE = "remotelab.analytics.queue";
-  const ENDPOINT = "/api/analytics/events";
-
-  // ---- Client identity ----
-  function getOrCreateClientId() {
+(function installUsageCollection(globalScope) {
+  if ((typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) || !globalScope.crypto?.randomUUID) return;
+  const visitId = crypto.randomUUID(), queue = [], presented = new Set(), observed = new Set();
+  let sessionId = "", page = "", lastOpened = "", timer = null, sending = false, retryMs = 1000;
+  const entry = new URL(location.href).searchParams.has("session") ? "session_link" : "default";
+  function track(event, fields = {}) {
+    if (queue.length >= 500) return;
+    queue.push({ eventId: crypto.randomUUID(), timestamp: Date.now(), visitId, sessionId, page, event, ...fields });
+    if (!timer) timer = setTimeout(() => { timer = null; void flush(); }, 1000);
+  }
+  async function flush() {
+    if (sending || !queue.length || navigator.onLine === false) return;
+    sending = true;
+    const batch = queue.splice(0, 50);
     try {
-      let cid = localStorage.getItem(STORAGE_KEY_CID);
-      if (cid) return cid;
-      cid = "c_" + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-      localStorage.setItem(STORAGE_KEY_CID, cid);
-      return cid;
-    } catch {
-      return "c_anonymous";
+      const response = await fetch("/api/usage/events", { method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ events: batch }), keepalive: true });
+      if (response.status !== 202 || !(await response.json()).recorded) throw new Error("collection unavailable");
+      retryMs = 1000;
+    } catch { queue.unshift(...batch); queue.splice(500); retryMs = Math.min(60_000, retryMs * 2); }
+    finally {
+      sending = false;
+      if (queue.length && !timer) timer = setTimeout(() => { timer = null; void flush(); }, retryMs);
     }
   }
-
-  function createPageSessionId() {
-    return "s_" + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-  }
-
-  const clientId = getOrCreateClientId();
-  const pageSessionId = createPageSessionId();
-  const pageLoadTime = Date.now();
-
-  // ---- Event queue ----
-  let eventQueue = [];
-  let flushTimer = null;
-  let flushing = false;
-
-  function resolveEndpointUrl() {
-    if (typeof window.remotelabResolveProductUrl === "function") {
-      return window.remotelabResolveProductUrl(ENDPOINT);
-    }
-    return ENDPOINT;
-  }
-
-  // ---- Core API ----
-  function track(event, props, cat) {
-    if (!event) return;
-    const entry = {
-      event,
-      cat: cat || "interaction",
-      clientTs: new Date().toISOString(),
-      cid: clientId,
-      sid: pageSessionId,
-      props: props || {},
-    };
-    eventQueue.push(entry);
-    if (eventQueue.length >= MAX_QUEUE_SIZE) {
-      flush();
+  function open(entryKind) {
+    if (!document.hidden && page === "sessions" && sessionId && lastOpened !== sessionId) {
+      lastOpened = sessionId; track("session_open", { entry: entryKind });
     }
   }
-
-  function trackEnv(event, props) {
-    track(event, props, "env");
+  function enter(nextPage) {
+    if (page === nextPage) return;
+    page = nextPage; lastOpened = "";
+    if (!document.hidden) track("page_enter");
+    open("navigation");
   }
-
-  function trackLifecycle(event, props) {
-    track(event, props, "lifecycle");
+  function attach(id) {
+    if (sessionId !== id) { sessionId = id; lastOpened = ""; }
+    open(entry);
   }
-
-  function trackError(event, props) {
-    track(event, props, "error");
+  function present(element, metadata) {
+    if (document.hidden || page !== "sessions" || !element.isConnected) return;
+    const key = `${metadata.sessionId}:${metadata.historySeq}:${metadata.kind}:${metadata.state || ""}`;
+    if (presented.has(key)) return;
+    presented.add(key); if (presented.size > 10000) presented.delete(presented.values().next().value);
+    track("content_presented", metadata);
   }
-
-  // ---- Flush mechanism ----
-  function flush() {
-    if (flushing || eventQueue.length === 0) return;
-    flushing = true;
-    const batch = eventQueue.splice(0);
-    const payload = JSON.stringify({ events: batch });
-
-    fetch(resolveEndpointUrl(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payload,
-      credentials: "same-origin",
-      keepalive: true,
-    })
-      .catch(function () {
-        eventQueue.unshift.apply(eventQueue, batch);
-        persistQueue();
-      })
-      .finally(function () {
-        flushing = false;
-      });
-  }
-
-  function persistQueue() {
-    try {
-      if (eventQueue.length > 0) {
-        localStorage.setItem(
-          STORAGE_KEY_QUEUE,
-          JSON.stringify(eventQueue.slice(0, 200)),
-        );
-      }
-    } catch {}
-  }
-
-  function restoreQueue() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_QUEUE);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          eventQueue.unshift.apply(eventQueue, parsed);
-        }
-        localStorage.removeItem(STORAGE_KEY_QUEUE);
-      }
-    } catch {}
-  }
-
-  // ---- Lifecycle hooks ----
-  function startFlushTimer() {
-    if (flushTimer) return;
-    flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
-  }
-
-  function stopFlushTimer() {
-    if (flushTimer) {
-      clearInterval(flushTimer);
-      flushTimer = null;
+  const observer = typeof IntersectionObserver === "function" ? new IntersectionObserver(entries => {
+    for (const item of entries) if (item.isIntersecting && item.intersectionRect.width > 0 && item.intersectionRect.height > 0
+        && !document.hidden && page === "sessions") {
+      present(item.target, item.target._usageMetadata); observer.unobserve(item.target); observed.delete(item.target);
     }
+  }, { threshold: 0 }) : null;
+  function content(element, event) {
+    if (!observer || !event?.seq || !sessionId) return;
+    element._usageMetadata = { sessionId, historySeq: event.seq, runId: event.runId, requestId: event.requestId,
+      kind: event.messageKind === "user_question" ? "question" : event.phase === "final" ? "final" : "reply",
+      ...(event.questionState ? { state: event.questionState, questionId: event.questionId } : {}) };
+    observed.add(element); observer.observe(element);
   }
-
-  function onPageUnload() {
-    stopFlushTimer();
-    if (eventQueue.length === 0) return;
-    const batch = eventQueue.splice(0);
-    const payload = JSON.stringify({ events: batch });
-    try {
-      navigator.sendBeacon(
-        resolveEndpointUrl(),
-        new Blob([payload], { type: "application/json" }),
-      );
-    } catch {
-      // Restore and persist for next load
-      eventQueue.unshift.apply(eventQueue, batch);
-      persistQueue();
-    }
+  if (observer && typeof MutationObserver === "function") new MutationObserver(() => {
+    // Renderers build batches off-document. Prune after insertion/removal, not
+    // while the preceding nodes are still in an unfinished DocumentFragment.
+    for (const node of observed) if (!node.isConnected) { observer.unobserve(node); observed.delete(node); }
+  }).observe(document.body, { childList: true, subtree: true });
+  async function objectHash(text) {
+    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`usage-v1:${text}`));
+    return Array.from(new Uint8Array(bytes), value => value.toString(16).padStart(2, "0")).join("");
   }
-
-  function onVisibilityChange() {
-    if (document.visibilityState === "hidden") {
-      trackLifecycle("page_hidden", {
-        durationSec: Math.round((Date.now() - pageLoadTime) / 1000),
-      });
-      flush();
-    } else if (document.visibilityState === "visible") {
-      trackLifecycle("page_visible");
-    }
-  }
-
-  // ---- Auto-collect environment ----
-  function collectEnvironment() {
-    var ua = navigator.userAgent || "";
-    var isMobile = /iPhone|iPad|iPod|Android/i.test(ua);
-    var isStandalone = !!(
-      (typeof window.matchMedia === "function" &&
-        window.matchMedia("(display-mode: standalone)").matches) ||
-      navigator.standalone === true
-    );
-
-    trackEnv("environment", {
-      deviceType: isMobile ? "mobile" : "desktop",
-      platform: navigator.platform || "",
-      screenWidth: screen.width,
-      screenHeight: screen.height,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-      devicePixelRatio: window.devicePixelRatio || 1,
-      language: navigator.language || "",
-      languages: (navigator.languages || []).slice(0, 5),
-      isStandalone: isStandalone,
-      isMobileDevice: isMobile,
-      connectionType:
-        (navigator.connection && navigator.connection.effectiveType) || "",
-      touchPoints: navigator.maxTouchPoints || 0,
-      timezone:
-        (Intl.DateTimeFormat &&
-          Intl.DateTimeFormat().resolvedOptions().timeZone) ||
-        "",
-      timezoneOffset: new Date().getTimezoneOffset(),
-    });
-  }
-
-  // ---- Global error capture ----
-  window.addEventListener("error", function (event) {
-    trackError("unhandled_error", {
-      message: (event.message || "").slice(0, 200),
-      filename: (event.filename || "").slice(-100),
-      lineno: event.lineno || 0,
-      colno: event.colno || 0,
-    });
+  document.addEventListener("click", event => {
+    if (!event.isTrusted) return;
+    const target = event.target.closest?.("button, a, img, video, audio");
+    if (!target) return;
+    const actions = { cancelBtn: "stop", sendBtn: "send", newSessionBtn: "new_session", headerNewSessionBtn: "new_session",
+      taskCenterCreateToggle: "create_automation", monitoringOverviewTab: "monitor_overview", monitoringAutomationsTab: "monitor_automations",
+      monitoringUsageTab: "monitor_usage" };
+    if (actions[target.id]) track("ui_action", { feature: "workbench", action: actions[target.id] });
+    let url; try { url = new URL(target.getAttribute("href") || target.getAttribute("src") || "", location.href); } catch { return; }
+    const asset = url.pathname.match(/^\/api\/assets\/([a-zA-Z0-9_-]+)\/download$/);
+    const publication = url.pathname.match(/^\/public-pages\/([a-zA-Z0-9_-]+)\//);
+    const image = url.pathname.match(/^\/images\/([a-zA-Z0-9_-]+\.[a-z0-9]+)$/);
+    if (url.origin !== location.origin) return;
+    const action = target.hasAttribute("download") || url.searchParams.get("download") === "1" ? "download" : "open";
+    if (asset) track("artifact_open", { objectId: asset[1], action });
+    else if (publication || image) void objectHash(publication ? `publication:${publication[1]}` : image[1])
+      .then(objectId => track("artifact_open", { objectId, action, kind: publication ? "web" : "image" })).catch(() => {});
   });
-
-  // ---- Initialize ----
-  restoreQueue();
-  collectEnvironment();
-  trackLifecycle("page_load", {
-    referrer: document.referrer || "",
-    url: window.location.pathname + window.location.search,
-    hash: window.location.hash || "",
+  document.addEventListener("visibilitychange", () => {
+    track("page_visibility", { state: document.hidden ? "background" : "foreground" });
+    if (!document.hidden) {
+      lastOpened = ""; open("foreground");
+      for (const node of observed) { observer?.unobserve(node); observer?.observe(node); }
+    }
+    void flush();
   });
-  startFlushTimer();
-
-  document.addEventListener("visibilitychange", onVisibilityChange);
-  window.addEventListener("pagehide", onPageUnload);
-  window.addEventListener("beforeunload", onPageUnload);
-
-  // ---- Expose global API ----
-  window.RemoteLabAnalytics = {
-    track: track,
-    trackEnv: trackEnv,
-    trackLifecycle: trackLifecycle,
-    trackError: trackError,
-    flush: flush,
-    getClientId: function () {
-      return clientId;
-    },
-    getPageSessionId: function () {
-      return pageSessionId;
-    },
-  };
-})();
+  globalScope.addEventListener("pagehide", () => {
+    track("page_visibility", { state: "leave" });
+    if (queue.length) navigator.sendBeacon?.("/api/usage/events", new Blob([JSON.stringify({ events: queue.slice(0, 50) })], { type: "application/json" }));
+  });
+  globalScope.addEventListener("online", () => void flush());
+  globalScope.RemoteLabUsage = { track, attach, enter, content, flush };
+  // Initial HTTP bootstrap and reconnect can select a Session without calling
+  // the sidebar click helper. Observe the canonical store, including that path.
+  if (typeof chatStore !== "undefined" && chatStore?.subscribe) {
+    const sync = state => { attach(state.currentSessionId || ""); enter(state.activeTab || "sessions"); };
+    chatStore.subscribe(sync); sync(chatStore.getState());
+  }
+})(window);

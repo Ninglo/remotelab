@@ -1,6 +1,7 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { CHAT_HISTORY_DIR } from '../lib/config.mjs';
+import { observeHistoryUsage } from './usage-event-projection.mjs';
 import {
   createKeyedTaskQueue,
   ensureDir,
@@ -547,11 +548,19 @@ export async function getHistoryHeadSeq(sessionId) {
 }
 
 export async function appendEvent(sessionId, event) {
-  return runSessionMutation(sessionId, async () => appendEventUnlocked(sessionId, event));
+  return runSessionMutation(sessionId, async () => {
+    const stored = await appendEventUnlocked(sessionId, event);
+    observeHistoryUsage(sessionId, stored);
+    return stored;
+  });
 }
 
-export async function appendEvents(sessionId, events) {
-  return runSessionMutation(sessionId, async () => appendEventsUnlocked(sessionId, events));
+export async function appendEvents(sessionId, events, options = {}) {
+  return runSessionMutation(sessionId, async () => {
+    const stored = await appendEventsUnlocked(sessionId, events);
+    if (options.observeUsage !== false) for (const event of stored) observeHistoryUsage(sessionId, event);
+    return stored;
+  });
 }
 
 export async function readEventsAfter(sessionId, afterSeq = 0, options = {}) {
