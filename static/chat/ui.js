@@ -231,7 +231,9 @@ function renderMarkdownIntoNode(node, markdown, { preserveHiddenBlocks = false }
     : visibleSource;
   const rendered = marked.parse(markdownSource);
   if (rendered.trim()) {
+    const flowState = globalThis.RemoteLabInlineFlow?.captureState(node);
     node.innerHTML = rendered;
+    globalThis.RemoteLabInlineFlow?.enhance(node, flowState);
     enhanceCodeBlocks(node);
     enhanceRenderedContentLinks(node);
     return true;
