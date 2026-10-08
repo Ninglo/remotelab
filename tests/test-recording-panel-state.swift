@@ -11,6 +11,7 @@ struct RecordingPanelStateTests {
         assert(state(idle).action == "start")
         assert(state(idle).tone == "idle")
         assert(state(nil).action == nil)
+        assert(RecordingPanelState.project(laneID: "a", snapshot: idle, servicePID: nil, serviceRunning: true).tone == "unknown")
         assert(state(["pid": 122, "active": [], "records": []]).tone == "unknown", "Old daemon state must not light the indicator")
         let starting: [String: Any] = ["pid": pid, "active": [["laneId": "a", "state": "starting"]], "records": []]
         assert(state(starting).tone == "starting", "Starting is not proof that audio is saved")

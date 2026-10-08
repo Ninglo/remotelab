@@ -9,6 +9,7 @@ struct HostSettings {
     let cli: String
     let node: String
     let snapshot: String?
+    let hostApp: String?
     let environment: [String: String]
 
     init() {
@@ -20,7 +21,8 @@ struct HostSettings {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let env = ProcessInfo.processInfo.environment
         let config = env["REMOTELAB_CONFIG_DIR"] ?? home.appendingPathComponent(".config/remotelab-hardware-recording").path
-        mode = args.first.flatMap { $0.hasPrefix("--") ? nil : $0 } ?? "serve"
+        hostApp = option("--host-app") ?? Bundle.main.object(forInfoDictionaryKey: "RemoteLabRecordingHostApp") as? String
+        mode = args.first.flatMap { $0.hasPrefix("--") ? nil : $0 } ?? (hostApp == nil ? "serve" : "panel")
         root = URL(fileURLWithPath: option("--root") ?? config + "/recording")
         cli = option("--cli") ?? Bundle.main.object(forInfoDictionaryKey: "RemoteLabCLIPath") as? String ?? home.appendingPathComponent(".remotelab/apps/hardware-recording/cli.js").path
         node = option("--node") ?? Bundle.main.object(forInfoDictionaryKey: "RemoteLabNodePath") as? String ?? "/usr/local/bin/node"
@@ -63,6 +65,9 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var footer: NSTextField!
     var controls = [String: LaneControls]()
     var service: Process?
+    var daemonPID: Int32?
+    var daemonObserver: DispatchSourceProcess?
+    var ownsDaemon = false
     var watcher: DispatchSourceFileSystemObject?
     var signals = [DispatchSourceSignal]()
     var timer: Timer?
@@ -157,12 +162,30 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func startService() {
         if settings.mode == "preview" { observeDirectory(); refresh(); return }
         guard config["enabled"] as? Bool == true else { serviceError = "录音未启用，请先完成配置"; render(); return }
+        if settings.mode == "panel" {
+            guard let hostApp = settings.hostApp else { serviceError = "尚未指定已授权的录音程序"; render(); return }
+            observeDirectory()
+            io.async {
+                let running = self.probeService()
+                DispatchQueue.main.async {
+                    if running { self.refresh() }
+                    else { self.launchProcess("/usr/bin/open", ["-W", "-n", "-g", hostApp, "--args", "serve", "--root", self.settings.root.path]); self.ownsDaemon = true; self.refresh() }
+                }
+            }
+            return
+        }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { serviceError = "需要为 RemoteLab Recording 允许麦克风权限"; render(); return }
         if !(config["bindings"] as? [Any] ?? []).isEmpty && IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted {
             serviceError = "需要为 RemoteLab Recording 允许输入监控权限"; render(); return
         }
-        let process = Process(); process.executableURL = URL(fileURLWithPath: settings.node)
-        process.arguments = [settings.cli, "recording", "serve", "--root", settings.root.path]; process.environment = settings.environment
+        observeDirectory()
+        launchProcess(settings.node, [settings.cli, "recording", "serve", "--root", settings.root.path])
+        refresh()
+    }
+
+    func launchProcess(_ executable: String, _ arguments: [String]) {
+        let process = Process(); process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments; process.environment = settings.environment
         let output = Pipe(); process.standardOutput = output; process.standardError = output
         output.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -172,19 +195,46 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         process.terminationHandler = { process in
             DispatchQueue.main.async {
+                if self.settings.mode == "panel", self.daemonPID != nil { return }
                 self.serviceError = process.terminationStatus == 0 ? "录音服务已停止，原音保留在本机" : "录音服务异常退出，请查看录音日志"
                 self.render()
                 if self.quitWhenStopped { NSApp.reply(toApplicationShouldTerminate: true) }
             }
         }
         do {
-            try process.run(); service = process; observeDirectory(); refresh()
+            try process.run(); service = process
             for signalNumber in [SIGTERM, SIGINT] {
                 signal(signalNumber, SIG_IGN)
                 let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
                 source.setEventHandler { NSApp.terminate(nil) }; source.resume(); signals.append(source)
             }
         } catch { serviceError = "无法启动录音服务：\(error.localizedDescription)"; render() }
+    }
+
+    // Runs on the file queue. This is a one-time socket-backed liveness check,
+    // not periodic polling and not a permission-bearing audio process.
+    func probeService() -> Bool {
+        let process = Process(); process.executableURL = URL(fileURLWithPath: settings.node)
+        process.arguments = [settings.cli, "recording", "status", "--root", settings.root.path]
+        process.environment = settings.environment
+        let output = Pipe(); process.standardOutput = output; process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
+            return (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["running"] as? Bool == true
+        } catch { return false }
+    }
+
+    func adoptDaemon(_ pid: Int32) {
+        if daemonPID == pid { return }
+        daemonObserver?.cancel(); daemonPID = pid
+        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+        source.setEventHandler {
+            self.daemonPID = nil; self.serviceError = "录音服务已停止，原音保留在本机"; self.render()
+            if self.quitWhenStopped { NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        source.resume(); daemonObserver = source
+        if shuttingDown && ownsDaemon { kill(pid, SIGTERM) }
     }
 
     func observeDirectory() {
@@ -200,7 +250,13 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         do {
             let data = try Data(contentsOf: settings.root.appendingPathComponent("status.json"))
             guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw NSError(domain: "Recording", code: 2) }
-            DispatchQueue.main.async { self.lastSnapshot = value; self.readError = nil; self.render() }
+            let candidate = (value["pid"] as? NSNumber)?.int32Value
+            let verified = settings.mode != "panel" || (candidate != nil && candidate! > 0 && kill(candidate!, 0) == 0 && (candidate == daemonPID || probeService()))
+            DispatchQueue.main.async {
+                self.lastSnapshot = value; self.readError = verified ? nil : "等待已授权的录音程序就绪"
+                if self.settings.mode == "panel", verified, let pid = candidate { self.adoptDaemon(pid) }
+                self.render()
+            }
         } catch {
             DispatchQueue.main.async { self.readError = "尚未读到本次服务的状态"; self.render() }
         }
@@ -208,10 +264,10 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func render() {
         let preview = settings.mode == "preview"
-        let running = preview || (service?.isRunning == true && !shuttingDown)
-        let pid = preview ? (lastSnapshot?["pid"] as? NSNumber)?.int32Value : service?.processIdentifier
+        let running = preview || ((settings.mode == "panel" ? daemonPID != nil || service?.isRunning == true : service?.isRunning == true) && !shuttingDown)
+        let pid = preview ? (lastSnapshot?["pid"] as? NSNumber)?.int32Value : settings.mode == "panel" ? daemonPID : service?.processIdentifier
         for lane in controls.values {
-            let state = RecordingPanelState.project(laneID: lane.id, snapshot: lastSnapshot, servicePID: pid, serviceRunning: running, error: serviceError ?? readError)
+            let state = shuttingDown ? RecordingPanelState(title: "正在停止并保存", detail: "保存完成后退出", action: nil, tone: "starting", startedAt: nil) : RecordingPanelState.project(laneID: lane.id, snapshot: lastSnapshot, servicePID: pid, serviceRunning: running, error: serviceError ?? readError)
             lane.state = state
             lane.button.title = lane.busy ? (state.tone == "recording" || state.tone == "starting" ? "正在停止并保存" : "正在处理") : state.title
             lane.button.isEnabled = !preview && !lane.busy && state.action != nil
@@ -249,7 +305,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func lanePressed(_ sender: NSButton) {
         guard let id = sender.identifier?.rawValue, let lane = controls[id], !lane.busy,
-              let action = lane.state?.action, service?.isRunning == true else { return }
+              let action = lane.state?.action, service?.isRunning == true || daemonPID != nil else { return }
         lane.busy = true; lane.actionError = nil; render()
         let process = Process(); process.executableURL = URL(fileURLWithPath: settings.node)
         process.arguments = [settings.cli, "recording", action, "--lane", id, "--root", settings.root.path]; process.environment = settings.environment
@@ -281,6 +337,16 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { NSApp.terminate(nil); return false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if settings.mode == "panel" {
+            if ownsDaemon, daemonPID != nil || service?.isRunning == true {
+                if !shuttingDown {
+                    shuttingDown = true; quitWhenStopped = true; render()
+                    if let pid = daemonPID { kill(pid, SIGTERM) }
+                }
+                return .terminateLater
+            }
+            daemonObserver?.cancel(); watcher?.cancel(); timer?.invalidate(); return .terminateNow
+        }
         if service?.isRunning == true {
             if !shuttingDown { shuttingDown = true; quitWhenStopped = true; render(); service?.terminate() }
             return .terminateLater
@@ -299,7 +365,7 @@ struct Main {
             AVCaptureDevice.requestAccess(for: .audio) { granted in emit(accessStatus()); exit(granted ? 0 : 1) }
             NSApplication.shared.run(); return
         }
-        guard ["serve", "preview"].contains(settings.mode) else { emit(["error": "Use serve, preview, check or permissions"]); exit(1) }
+        guard ["serve", "panel", "preview"].contains(settings.mode) else { emit(["error": "Use serve, panel, preview, check or permissions"]); exit(1) }
         let app = NSApplication.shared; app.setActivationPolicy(.regular)
         app.appearance = NSAppearance(named: .aqua)
         let host = RecordingHost(settings: settings); app.delegate = host

@@ -9,10 +9,10 @@ struct RecordingPanelState: Equatable {
     let startedAt: String?
 
     static func project(laneID: String, snapshot: [String: Any]?, servicePID: Int32?, serviceRunning: Bool, error: String? = nil) -> RecordingPanelState {
-        guard serviceRunning, let pid = servicePID else {
+        guard serviceRunning else {
             return .init(title: "服务未运行", detail: error ?? "请重新打开 RemoteLab Recording", action: nil, tone: "offline", startedAt: nil)
         }
-        guard error == nil, let snapshot, (snapshot["pid"] as? NSNumber)?.int32Value == pid,
+        guard error == nil, let pid = servicePID, let snapshot, (snapshot["pid"] as? NSNumber)?.int32Value == pid,
               let active = snapshot["active"] as? [[String: Any]], let records = snapshot["records"] as? [[String: Any]] else {
             return .init(title: "正在确认状态", detail: error ?? "尚未收到本次录音服务的状态", action: nil, tone: "unknown", startedAt: nil)
         }
