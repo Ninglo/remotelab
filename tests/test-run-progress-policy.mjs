@@ -22,6 +22,7 @@ const { progressPolicyForRun, sessionProgressMode } = await import('../lib/sessi
 const { progressCardPanel } = await import('../connectors/feishu/progress-card-controls.mjs');
 
 await writeJsonAtomic(CHAT_SESSIONS_FILE, ['s1', 's2'].map(id => ({ id, folder: home, tool: 'codex', workboardPilot: true,
+  feishuProgressDefault: { mode: 'messages', personId: 'earlier-person' },
   conversation: { connector: 'feishu', sourceRouteId: 'bot', target: { chatType: 'group', chatId: 'group' } } })));
 await writeJsonAtomic(AUTH_FILE, { token: 'isolated-person-token' });
 const authBefore = await readFile(AUTH_FILE, 'utf8');
@@ -30,9 +31,11 @@ const progress = (runId, text) => ({ type: 'message', role: 'assistant', phase: 
   providerMessageId: `${runId}-${text}`, content: `<progress>${text}</progress>` });
 
 test('both expansion states update the same card; manual overrides and other Runs stay independent', async () => {
-  let record = { key: 'request-a', sessionId: 's1', runId: 'run-a', options: {}, deliveries: [] };
+  let record = { key: 'request-a', sessionId: 's1', runId: 'run-a',
+    options: { feishuProgressDefault: { mode: 'messages', personId: 'earlier-person' } }, deliveries: [] };
   const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
   const stale = await findSessionMeta('s1');
+  assert.equal(sessionProgressMode(stale, 'run-a'), 'collapsed', 'superseded personal defaults do not choose expansion');
   const publish = (events, running = true) => publishLiveAssistantReplies(record, events, { store, session: stale, running,
     plan: { connector: 'feishu', target: { chatId: 'group' } } });
   await chooseRunProgressPolicy('s1', 'run-a', 'expanded');
