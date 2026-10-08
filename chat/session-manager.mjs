@@ -3335,6 +3335,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   // give unrelated group inputs one shared final and lose their reply ownership.
   if (session.conversation?.target?.conversationKind === 'main'
       && options.sourceContext?.connector === 'feishu' && !options.automationTitle
+      && !['app', 'bot'].includes(options.sourceContext.sender?.senderType)
       && isPilotInputSinceActivation(await routingPilotScope(session.conversation),
         options.sourceContext.createTime || options.sourceContext.eventTs)) options = { ...options, routingPilotMainline: true };
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });

@@ -46,7 +46,8 @@ async function sourceFor(record) {
       || !isPilotInputSinceActivation(scope, record.options?.sourceContext?.createTime || record.options?.sourceContext?.eventTs)
       || !verifiedWorkActor(record.options?.viewPersonId, record.options?.initiatedByIdentityId)
       || record.options?.routingRethink || record.options?.automationTitle || record.options?.internalOperation
-      || record.options?.sourceContext?.connector !== 'feishu') fail('Routing requires a human Feishu input in the enabled pilot group');
+      || record.options?.sourceContext?.connector !== 'feishu'
+      || ['app', 'bot'].includes(record.options?.sourceContext?.sender?.senderType)) fail('Routing requires a human Feishu input in the enabled pilot group');
   const origin = record.deliveryPlan || record.options?.sourceDelivery;
   if (!sameGroup(session.conversation, origin)) fail('Input destination is outside the pilot group');
   return { session, scope, origin };
@@ -88,6 +89,7 @@ export async function routeGroupWork(record, body, deps) {
           || (input.runId !== record.runId && input.nativeDispatchRunId !== (record.nativeDispatchRunId || record.runId)
             && record.nativeDispatchRunId !== input.runId)
           || input.options?.sourceContext?.connector !== 'feishu'
+          || ['app', 'bot'].includes(input.options?.sourceContext?.sender?.senderType)
           || !verifiedWorkActor(input.options?.viewPersonId, input.options?.initiatedByIdentityId)
           || !sameGroup(origin, input.deliveryPlan || input.options?.sourceDelivery)) fail('Source input is unavailable or outside this human group turn');
     }
@@ -233,7 +235,7 @@ export async function completeGroupSync(record, run) {
 }
 export async function buildGroupRoutingContext(session, sourceContext) {
   const scope = await routingPilotScope(session?.conversation);
-  if (!scope || sourceContext?.connector !== 'feishu'
+  if (!scope || sourceContext?.connector !== 'feishu' || ['app', 'bot'].includes(sourceContext.sender?.senderType)
       || !isPilotInputSinceActivation(scope, sourceContext.createTime || sourceContext.eventTs)) return '';
   const current = await findSessionMeta(session.id) || session;
   const sessions = await loadSessionsMeta();

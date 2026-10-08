@@ -67,6 +67,8 @@ try {
   assert.equal((await requests.byRequest('new', 'routed:two')).deliveryPlan.target.participationEpoch, '7');
   assert.equal((await readGroupRoutingState(await findSessionMeta('main'))).routes.length, 2);
   const third = await input('three', '不同事项');
+  await assert.rejects(routeGroupWork(await input('bot-message', '通知', { sourceContext: { connector: 'feishu', sender: { senderType: 'app' } } }),
+    { mode: 'new', task: '通知', reason: '应用消息' }, manager), /human Feishu/);
   await assert.rejects(routeGroupWork(third, { mode: 'continue', targetSessionId: 'other', task: '跨群', reason: '错误' }, manager), /same pilot/);
   await assert.rejects(routeGroupWork(await input('auto', '通知', { automationTitle: 'notice' }), { mode: 'new', task: '通知', reason: '错误' }, manager), /human Feishu/);
   await requests.mutate(third.key, r => ({ ...r, deliveries: [{ kind: 'content' }] }));
