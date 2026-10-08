@@ -21,6 +21,7 @@
   --error: #dc2626;
   --error-bg: #fef2f2;
   --warning: #d97706;
+  --waiting: #a34a08;
   --issue: #ea580c;
   --failed-message-border: #f59e0b;
   --copy-btn-bg: rgba(255,255,255,0.88);
@@ -67,6 +68,7 @@
     --error: #f87171;
     --error-bg: #2a1215;
     --warning: #fbbf24;
+    --waiting: #fb923c;
     --issue: #fb923c;
     --failed-message-border: #f59e0b;
     --copy-btn-bg: rgba(28,28,31,0.92);
@@ -103,6 +105,7 @@
   --error: #f14c4c;
   --error-bg: #3a1f1f;
   --warning: #d7ba7d;
+  --waiting: #fb923c;
   --issue: #ce9178;
   --failed-message-border: #d19a66;
   --copy-btn-bg: rgba(37,37,38,0.92);
@@ -146,6 +149,7 @@
   --error: #c66a57;
   --error-bg: #faece8;
   --warning: #d9b35a;
+  --waiting: #a34a08;
   --issue: #c66a57;
   --failed-message-border: #d9b35a;
   --copy-btn-bg: rgba(246, 248, 239, 0.88);

@@ -67,6 +67,13 @@ try {
       ?.find(event => event.messageKind === 'user_question' && event.questionState === 'pending');
     const question = await until(getQuestion);
     assert.equal(question.questionDeadline, null, 'HTTP exposes an ordinary question with no automatic deadline');
+    for (const view of ['', '?view=sidebar']) {
+      const session = (await request('GET', `/api/sessions/${sessionId}${view}`)).json.session;
+      assert.equal(session.activity.run.state, 'running', 'the waiting native run is still live');
+      assert.equal(session.activity.run.waiting, true, 'detail and sidebar HTTP reads expose the real pending question');
+    }
+    const listed = (await request('GET', '/api/sessions')).json.sessions.find(session => session.id === sessionId);
+    assert.equal(listed.activity.run.waiting, true, 'the initial Session list also exposes waiting');
     const visibleQuestion = (await request('GET', `/api/sessions/${sessionId}/events?filter=visible`)).json.events
       .find(event => event.questionId === question.questionId);
     assert.equal(visibleQuestion.questionState, 'pending', 'refresh retains the actionable original question');
@@ -82,6 +89,7 @@ try {
     assert.equal(answered.status, 202, JSON.stringify(answered.json));
     await until(async () => (await request('GET', `/api/sessions/${sessionId}/events?filter=all`)).json.events
       ?.find(event => event.questionState === 'answered'));
+    await until(async () => (await request('GET', `/api/sessions/${sessionId}?view=sidebar`)).json.session.activity.run.waiting === false);
     const rawEvents = (await request('GET', `/api/sessions/${sessionId}/events?filter=all`)).json.events;
     const input = rawEvents.find(event => event.role === 'user' && event.requestId === payload.requestId);
     assert.equal(input.content, '2', 'the answer is retained in raw history');

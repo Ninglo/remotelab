@@ -1181,6 +1181,9 @@ async function enrichSessionMeta(meta, _options = {}) {
   const queuedCount = getFollowUpQueueCount(meta);
   const activeRequest = requestRuntime.active(meta.id)[0];
   const runActivity = activeRequest ? { state: 'running', run: await getRun(activeRequest.runId) || { id: activeRequest.runId, state: 'accepted' } } : await resolveSessionRunActivity(meta);
+  const nativeQuestion = runActivity.run?.id
+    ? await readNativeQuestion(runDir(activeRequest?.nativeDispatchRunId || runActivity.run.id))
+    : null;
   const { managerState, workState } = buildSessionControlState(meta);
   const {
     followUpQueue,
@@ -1214,6 +1217,7 @@ async function enrichSessionMeta(meta, _options = {}) {
       runState: runActivity.state,
       run: runActivity.run,
       queuedCount,
+      nativeQuestion,
     }),
   };
   const connectors = await buildSessionConnectorSurface(session);

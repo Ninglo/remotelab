@@ -8,6 +8,18 @@ import { readRecord } from '../lib/durable-records.mjs';
 import { createCodexAdapter } from '../chat/adapters/codex.mjs';
 import { createClaudeAdapter } from '../chat/adapters/claude.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
+import { buildSessionActivity } from '../chat/session-activity.mjs';
+
+const activityForQuestion = (nativeQuestion, overrides = {}) => buildSessionActivity({}, {}, {
+  runState: 'running', run: { id: 'run-question', state: 'running' }, nativeQuestion, ...overrides,
+});
+assert.equal(activityForQuestion({ state: 'pending', deadline: Date.now() - 1 }).run.waiting, false,
+  'an expired finite question no longer waits even before its timer callback is projected');
+assert.equal(activityForQuestion({ state: 'pending', deadline: null }, { runState: 'idle' }).run.waiting, false);
+assert.equal(activityForQuestion({ state: 'pending', deadline: null }, { run: { cancelRequested: true } }).run.waiting, false);
+assert.equal(activityForQuestion(null, { run: { providerRuntimeQueue: { state: 'waiting' } } }).run.waiting, true);
+assert.equal(activityForQuestion(null, { run: { sessionStartPreflight: { state: 'waiting_retry' } } }).run.waiting, true);
+assert.equal(activityForQuestion(null, { run: { providerRuntimeQueue: { state: 'active' } } }).run.waiting, false);
 
 assert.equal(QUESTION_TIMEOUT_MS, null);
 const attributedReply = '【飞书群消息｜发言人：嘉年】\n2';
@@ -36,6 +48,7 @@ try {
     await ready;
     const original = await readNativeQuestion(waitingRoot);
     assert.equal(original.deadline, null);
+    assert.equal(activityForQuestion(original).run.waiting, true, 'a durable unanswered question is waiting while its run remains live');
     assert.match(humanEvents[0].content, /不会超时自动选择/);
     humanClock += 24 * 60 * 60_000;
     assert.deepEqual(await readNativeQuestion(waitingRoot), original, 'a day later the same question is still pending');
@@ -44,10 +57,12 @@ try {
     const resolved = await result;
     assert.deepEqual({ ...resolved.answers }, { format: ['Detailed'] });
     assert.equal(resolved.resolutions[0].origin, 'user', 'a delayed click remains a human choice');
+    assert.equal(activityForQuestion(await readNativeQuestion(waitingRoot)).run.waiting, false, 'answering clears waiting');
     const cancelReady = once(humanBus, 'pending');
     const cancelled = waiting.ask({ protocol: 'claude', id: 'stop-human', questions: [q] });
     await cancelReady; await waiting.cancel();
     assert.equal((await cancelled).cancelled, true, 'stop can still release a question without choosing');
+    assert.equal(activityForQuestion(await readNativeQuestion(waitingRoot)).run.waiting, false, 'cancelling clears waiting');
   } finally { await waiting.close(); }
 
   let pending = once(bus, 'pending');

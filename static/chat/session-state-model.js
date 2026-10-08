@@ -4,6 +4,8 @@
   const fallbackStrings = {
     "status.idle": "idle",
     "status.running": "running",
+    "status.waiting": "waiting",
+    "status.waitingTitle": "Waiting for the next step",
     "workflow.priority.high": "High",
     "workflow.priority.highTitle": "Needs user attention soon.",
     "workflow.priority.medium": "Medium",
@@ -202,6 +204,7 @@
     return {
       run: {
         state: runState,
+        waiting: runState === "running" && raw?.run?.waiting === true && raw?.run?.cancelRequested !== true,
         phase: typeof raw?.run?.phase === "string" ? raw.run.phase : null,
         startedAt: typeof raw?.run?.startedAt === "string" ? raw.run.startedAt : null,
         runId: typeof raw?.run?.runId === "string" ? raw.run.runId : null,
@@ -238,7 +241,9 @@
     const indicators = [];
 
     if (activity.run.state === "running") {
-      indicators.push(createStatus("running", t("status.running"), "status-running", "running"));
+      indicators.push(activity.run.waiting
+        ? createStatus("waiting", t("status.waiting"), "status-waiting", "waiting", "", t("status.waitingTitle"))
+        : createStatus("running", t("status.running"), "status-running", "running"));
     }
 
     if (activity.queue.state === "queued") {
@@ -259,6 +264,12 @@
 
     if (activity.compact.state === "pending") {
       indicators.push(createStatus("compacting", t("workflow.status.compacting"), "status-compacting", "compacting"));
+    }
+
+    // Retain the existing between-turn waiting label, but never let a previous
+    // turn's workflow state override a fresh executing or queued turn.
+    if (indicators.length === 0 && normalizeSessionWorkflowState(session?.workflowState) === "waiting_user") {
+      indicators.push(createStatus("waiting", t("status.waiting"), "status-waiting", "waiting", "", t("status.waitingTitle")));
     }
 
     const primary = indicators[0] || (

@@ -77,6 +77,7 @@ try {
   await rpc('complete', questionClaim.delivery.id, questionClaim.leaseId, { externalId: 'question-message' });
   await killController(); await boot();
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'restart must not republish the pending question');
+  assert.equal((await rpc('session', questionSession.id)).activity.run.waiting, true, 'waiting survives a control-plane restart');
   const questionReplyOptions = { ...options('question-answer'), model: 'irrelevant-auto-snapshot', nativeQuestionId: questionClaim.delivery.nativeQuestion.id };
   await assert.rejects(rpc('accept', questionSession.id, '1', [], { ...options('wrong-question'), nativeQuestionId: 'old-question' }), { code: 'QUESTION_EXPIRED' });
   const attributedChoice = buildAttributedFeishuMessage({ chatType: 'topic', sender: { name: '嘉年' }, messageText: '2' });
@@ -88,6 +89,7 @@ try {
   assert.equal((await logs()).filter(e => e.runId === questioning.run.id && e.kind === 'turn/steer').length, 0, 'numeric answer returns to the question tool, not turn/steer');
   assert.equal((await rpc('accept', questionSession.id, attributedChoice, [], questionReplyOptions)).duplicate, true, 'answer replay retains admission fingerprint after question expires');
   await awaitAnswer(questionSession.id, 'question-root');
+  assert.equal((await rpc('session', questionSession.id)).activity.run.waiting, false, 'the settled answer clears waiting');
   await killController(); await boot();
   assert.equal((await logs()).filter(e => e.kind === 'question-answer').length, 1, 'restart cannot repeat the native tool response');
   let questionFinal;

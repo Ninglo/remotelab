@@ -1,4 +1,5 @@
 import { getRun, isTerminalRunState } from './runs.mjs';
+import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mjs';
 
 export async function resolveSessionRunActivity(meta) {
   if (meta?.activeRunId) {
@@ -35,13 +36,21 @@ export function getSessionRunId(session) {
     : null;
 }
 
-export function buildSessionActivity(meta, runtimeState, { runState, run, queuedCount }) {
+export function buildSessionActivity(meta, runtimeState, { runState, run, queuedCount, nativeQuestion }) {
   const compactState = runtimeState?.pendingCompact === true ? 'pending' : 'idle';
   const queueCount = Number.isInteger(queuedCount) ? queuedCount : 0;
+  // Waiting is a display fact; the live run still owns resources and can be
+  // answered or stopped. Never turn a waiting native process into an idle run.
+  const waiting = runState === 'running' && run?.cancelRequested !== true && (
+    (nativeQuestion?.state === 'pending' && !nativeQuestionDeadlineExpired(nativeQuestion.deadline))
+    || run?.providerRuntimeQueue?.state === 'waiting'
+    || run?.sessionStartPreflight?.state === 'waiting_retry'
+  );
 
   return {
     run: {
       state: runState === 'running' ? 'running' : 'idle',
+      waiting,
       phase: runState === 'running'
         ? (typeof run?.state === 'string' ? run.state : null)
         : null,

@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-08 — Show waiting separately from running
+
+- Feedback: tasks waiting for a choice or judgment still appeared as running, so the Session list did not show which work had stopped. A single waiting label is sufficient; the reason can stay inside the conversation.
+- Change: project pending native questions, provider-capacity waits and preflight retry waits into the display state without changing the live run's execution or resource ownership. Show existing between-turn waiting workflow records too, while active execution overrides stale workflow labels.
+- Presentation: use a steady orange dot and waiting text, with deep orange in light/Amber and a brighter orange in dark appearance. Keep normal execution green and preserve queue and stop controls.
+- Evidence boundary: live waits come from durable native question or runtime records; between-turn waiting retains the existing workflow classification. Silence, elapsed time, delivery and unread results do not create a waiting state.
+
 ### 2026-10-07 — Related work needs a concrete reason before it is recommended
 
 - Feedback: unrelated tasks appeared because conversational words overlapped; poor relevance mattered more than appearance. Raw messages also stretched the panel across the composer.

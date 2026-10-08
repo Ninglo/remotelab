@@ -126,6 +126,28 @@ const runningStatus = model.getSessionStatusSummary(runningSession);
 assert.equal(runningStatus.primary.key, 'running');
 assert.equal(model.isSessionBusy(runningSession), true);
 
+const waitingSession = makeSession({
+  activity: makeActivity({ run: { state: 'running', waiting: true, runId: 'run-question' } }),
+});
+assert.equal(model.getSessionStatusSummary(waitingSession).primary.key, 'waiting');
+assert.equal(model.getSessionStatusSummary(waitingSession).primary.label, 'waiting');
+assert.equal(model.isSessionBusy(waitingSession), true, 'waiting native runs retain their live controls and resource ownership');
+assert.equal(model.getSessionStatusSummary(makeSession({
+  activity: makeActivity({ run: { state: 'running', waiting: true, cancelRequested: true } }),
+})).primary.key, 'running', 'stopping a run clears its waiting display');
+assert.equal(model.getSessionStatusSummary(makeSession({
+  activity: makeActivity({ run: { state: 'idle', waiting: true } }),
+})).primary.key, 'idle', 'an old run wait cannot survive terminalization');
+assert.equal(model.getSessionStatusSummary(makeSession({ workflowState: 'waiting_user' })).primary.key, 'waiting',
+  'the existing between-turn waiting state remains visible');
+assert.equal(model.getSessionStatusSummary(makeSession({ workflowState: 'done' })).primary.key, 'idle',
+  'finished work does not wait merely because its result is unread');
+
+context.getSessionStatusSummary = model.getSessionStatusSummary;
+vm.runInNewContext(readFileSync(join(repoRoot, 'static/chat/session-surface-ui.js'), 'utf8'), context);
+assert.equal(context.getSessionRowStatusInfo(waitingSession).key, 'waiting', 'the actual sidebar row retains the waiting indicator');
+assert.equal(context.getSessionRowStatusInfo(runningSession).key, 'running');
+
 const runningWithStaleWaitingSession = makeSession({
   workflowState: 'waiting_user',
   workflowPriority: 'high',
@@ -138,6 +160,8 @@ assert.equal(
   4,
   'live running activity should override a stale waiting-on-user workflow label',
 );
+assert.equal(model.getSessionStatusSummary(runningWithStaleWaitingSession).primary.key, 'running',
+  'a previous waiting workflow label cannot override a fresh executing run');
 
 const queuedSession = makeSession({
   activity: makeActivity({
@@ -148,6 +172,7 @@ const queuedStatus = model.getSessionStatusSummary(queuedSession);
 assert.equal(queuedStatus.primary.key, 'queued');
 assert.equal(queuedStatus.primary.title, '2 follow-ups queued');
 assert.equal(model.isSessionBusy(queuedSession), true);
+assert.equal(model.getSessionStatusSummary({ ...queuedSession, workflowState: 'waiting_user' }).primary.key, 'queued');
 
 const compactingSession = makeSession({
   activity: makeActivity({

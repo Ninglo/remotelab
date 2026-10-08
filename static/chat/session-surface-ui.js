@@ -509,7 +509,7 @@ function renderSessionStatusIndicator(statusInfo) {
 
 function getSessionRowStatusInfo(session) {
   const liveStatus = getSessionStatusSummary(session).primary;
-  if (liveStatus?.key === "running") return liveStatus;
+  if (liveStatus?.key === "running" || liveStatus?.key === "waiting") return liveStatus;
   const reviewStatus = getSessionReviewStatusInfo(session);
   if (!reviewStatus) return null;
   return {

@@ -1147,6 +1147,8 @@ body:not([data-app-view="sessions"]) .session-item.active {
 }
 .session-row-status.status-running { color: var(--success); }
 .session-row-status.status-running .session-status-dot { background: var(--success); animation: pulse 1.5s infinite; }
+.session-row-status.status-waiting { color: var(--waiting); }
+.session-row-status.status-waiting .session-status-dot { background: var(--waiting); }
 .session-row-status.status-unread {
   padding: 3px 5px;
   border-radius: 999px;
