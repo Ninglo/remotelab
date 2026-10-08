@@ -15,6 +15,7 @@ const { writeJsonAtomic } = await import('../chat/fs-utils.mjs');
 const { findSessionMeta } = await import('../chat/session-meta-store.mjs');
 const { appendEvent } = await import('../chat/history.mjs');
 const { updateSessionProgressPolicy } = await import('../chat/session-progress-policy.mjs');
+const { updateSessionWorkboardPilot } = await import('../chat/session-manager.mjs');
 const { publishLiveAssistantReplies } = await import('../chat/native-final-publication.mjs');
 const { prepareFeishuRuntimeCommandPlan, applyFeishuRuntimeCommandPlan } = await import('../connectors/feishu/runtime-commands.mjs');
 const { handleFeishuProgressPolicyAction } = await import('../connectors/feishu/progress-policy-actions.mjs');
@@ -26,7 +27,7 @@ await writeJsonAtomic(CHAT_SESSIONS_FILE, ['s1', 's2'].map(id => ({ id, folder: 
 const progress = (seq, content = `发现 ${seq}`) => ({ type: 'message', role: 'assistant', phase: 'commentary',
   runId: 'run', providerMessageId: `m-${seq}`, seq, content: `<progress>${content}</progress>` });
 
-test('switching during a Run is Session-scoped, durable, and never replays quiet progress', async () => {
+test('ordinary progress stays in cards, legacy controls persist, questions and finals still notify', async () => {
   let record = { key: 'request', sessionId: 's1', runId: 'run', options: {}, deliveries: [] };
   const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
   const staleSession = await findSessionMeta('s1');
@@ -35,7 +36,7 @@ test('switching during a Run is Session-scoped, durable, and never replays quiet
   const events = [];
   events.push(await appendEvent('s1', progress(1)));
   await publish(events);
-  assert.equal(record.deliveries.length, 1);
+  assert.equal(record.deliveries.length, 0);
   await updateSessionProgressPolicy('s1', { mode: 'card', expectedRevision: 0, changeId: 'quiet' });
   events.push(await appendEvent('s1', progress(2)));
   let quietAssetCalls = 0;
@@ -43,23 +44,23 @@ test('switching during a Run is Session-scoped, durable, and never replays quiet
     plan: { connector: 'feishu', target: { chatId: 'group' } },
     prepareFinal: () => { quietAssetCalls++; throw new Error('quiet progress must not publish assets'); } });
   assert.equal(quietAssetCalls, 0);
-  assert.equal(record.deliveries.length, 1, 'already running publishers must re-read the policy');
+  assert.equal(record.deliveries.length, 0, 'already running publishers must re-read the card policy');
   assert.equal((await findSessionMeta('s2')).feishuProgressMode, undefined);
   const child = await promisify(execFile)(process.execPath, ['--input-type=module', '-e',
     "const {findSessionMeta}=await import('./chat/session-meta-store.mjs');console.log(JSON.stringify(await findSessionMeta('s1')))"]);
   assert.equal(JSON.parse(child.stdout).feishuProgressMode, 'card', 'a fresh process loads the saved policy');
   await updateSessionProgressPolicy('s1', { mode: 'messages', expectedRevision: 1, changeId: 'loud' });
-  assert.equal((await findSessionMeta('s1')).feishuProgressAfterSeq, events.at(-1).seq);
+  assert.equal((await findSessionMeta('s1')).feishuProgressAfterSeq, undefined, 'changing expansion does not change delivery or replay fences');
   // Late retries of the earlier action cannot undo a newer setting.
   await updateSessionProgressPolicy('s1', { mode: 'card', expectedRevision: 0, changeId: 'quiet' });
   assert.equal((await findSessionMeta('s1')).feishuProgressMode, 'messages');
   events.push(await appendEvent('s1', progress(3)));
   await publish(events);
   await publish(events);
-  assert.deepEqual(record.deliveries.map(item => item.providerMessageId), ['m-1', 'm-3']);
+  assert.deepEqual(record.deliveries, [], 'neither expansion state sends ordinary progress messages');
   const headBeforeReset = (await findSessionMeta('s1')).feishuProgressAfterSeq;
   await updateSessionProgressPolicy('s1', { mode: 'default', expectedRevision: 2, changeId: 'reset' });
-  assert.equal((await findSessionMeta('s1')).feishuProgressAfterSeq, headBeforeReset, 'equivalent defaults cannot drop pending progress');
+  assert.equal((await findSessionMeta('s1')).feishuProgressAfterSeq, headBeforeReset, 'changing expansion defaults cannot drop pending progress');
   await assert.rejects(updateSessionProgressPolicy('s1', { mode: 'card', expectedRevision: 1, changeId: 'stale' }), { status: 409 });
   await updateSessionProgressPolicy('s1', { mode: 'card', expectedRevision: 3, changeId: 'quiet-again' });
   const question = { ...progress(4), content: '请补充输入', messageKind: 'user_question' };
@@ -68,6 +69,11 @@ test('switching during a Run is Session-scoped, durable, and never replays quiet
   await publishLiveAssistantReplies(record, [{ ...progress(5), phase: 'final_answer', content: '交付结果' }], {
     store, session: staleSession, running: false, plan: { connector: 'feishu', target: { chatId: 'group' } } });
   assert(record.deliveries.some(item => item.text.includes('交付结果')), 'finals still notify');
+  await updateSessionWorkboardPilot('s1', false);
+  events.push(await appendEvent('s1', progress(6)));
+  await publish(events);
+  assert.equal(record.deliveries.filter(item => item.surfaceKind === 'progress').length, 1, 'without cards only new useful progress notifies');
+  await updateSessionWorkboardPilot('s1', true);
   await assert.rejects(updateSessionProgressPolicy('s1', { mode: 'auto', expectedRevision: 4, changeId: 'bad' }), { status: 400 });
 });
 
@@ -84,10 +90,10 @@ test('slash controls query and switch without a model call; combinations are rej
   const options = { request, resolveDefault: () => { throw new Error('must not resolve models'); } };
   const summary = { chatType: 'p2p', chatId: 'group', messageId: 'command-1' };
   const query = await prepareFeishuRuntimeCommandPlan(runtime, summary, parseFeishuCommandBlock('/progress').commands, options);
-  assert.match(query.text, /全局默认/);
+  assert.match(query.text, /默认折叠/);
   const change = await prepareFeishuRuntimeCommandPlan(runtime, summary, parseFeishuCommandBlock('/progress card').commands, options);
-  assert.match(await applyFeishuRuntimeCommandPlan(change, options), /只更新卡片/);
-  assert.match(await applyFeishuRuntimeCommandPlan(change, options), /只更新卡片/, 'durable plan replay is idempotent');
+  assert.match(await applyFeishuRuntimeCommandPlan(change, options), /默认折叠/);
+  assert.match(await applyFeishuRuntimeCommandPlan(change, options), /默认折叠/, 'durable plan replay is idempotent');
   assert((await prepareFeishuRuntimeCommandPlan(runtime, summary,
     [{ name: 'progress', value: 'card' }, { name: 'model', value: 'x' }], options)).error);
   assert((await prepareFeishuRuntimeCommandPlan(runtime, summary,
@@ -110,12 +116,12 @@ test('card buttons validate their origin, reject stale or unauthorized actions, 
     return { response: { ok: true }, json: { session: await findSessionMeta('s1') } };
   };
   const raw = { header: { event_id: 'button-1' }, event: { context: { open_chat_id: 'group', open_message_id: 'original' },
-    operator: { open_id: 'person' }, action: { value: { namespace: 'session-progress', sessionId: 's1', mode: 'messages', revision: 4 } } } };
+    operator: { open_id: 'person' }, action: { value: { namespace: 'session-progress', sessionId: 's1', mode: 'messages', revision: (await findSessionMeta('s1')).feishuProgressRevision } } } };
   const options = { request, authorize: async () => true, stateDir: dir };
   const runtime = { config: { sourceRouteId: 'bot' } };
   assert.equal((await handleFeishuProgressPolicyAction(runtime, raw, options)).toast.type, 'success');
   assert.equal((await handleFeishuProgressPolicyAction(runtime, raw, options)).toast.type, 'success');
-  assert.equal((await findSessionMeta('s1')).feishuProgressRevision, 5);
+  assert.equal((await findSessionMeta('s1')).feishuProgressRevision, raw.event.action.value.revision + 1);
   const stale = structuredClone(raw); stale.header.event_id = 'button-stale'; stale.event.action.value.mode = 'card';
   assert.equal((await handleFeishuProgressPolicyAction(runtime, stale, options)).toast.type, 'error');
   const before = mutations;
@@ -125,11 +131,12 @@ test('card buttons validate their origin, reject stale or unauthorized actions, 
   assert.equal(mutations, before);
   const cycle = { sessionId: 's1', latestSeq: 3, anchorSeq: 1, progressOnly: true, progress: { seq: 3, content: '当前' },
     progressHistory: [{ seq: 1, content: '先前' }, { seq: 3, content: '当前' }, { seq: 9, content: '未来' }],
-    progressPolicy: { feishuProgressMode: 'messages', feishuProgressRevision: 5 } };
+    progressPolicy: { feishuProgressMode: 'collapsed', feishuProgressRevision: 5 } };
   const card = buildFeishuProgressCard(cycle);
   const panel = card.body.elements.find(element => element.tag === 'collapsible_panel');
   assert.equal(panel.expanded, false);
-  assert.match(JSON.stringify(panel), /先前/); assert.doesNotMatch(JSON.stringify(panel), /当前|未来/);
+  assert.match(JSON.stringify(panel), /先前/); assert.match(JSON.stringify(panel), /当前/); assert.doesNotMatch(JSON.stringify(panel), /未来/);
+  assert.doesNotMatch(JSON.stringify(card), /恢复默认|卡片＋新消息/);
   const calls = [];
   const pilot = { sessionId: 's1', cards: [{ messageId: 'original', anchorSeq: 1, latestSeq: 3, contentHash: 'old' }] };
   const publishOptions = { pilot, persist: async () => {}, verifyMessage: async () => {},
@@ -139,6 +146,6 @@ test('card buttons validate their origin, reject stale or unauthorized actions, 
   assert.equal(calls.length, 1, 'policy-only changes patch the existing card once');
   assert.equal(calls[0].path.message_id, 'original');
   const many = buildFeishuProgressCard({ ...cycle, latestSeq: 25, progressHistory: Array.from({ length: 24 }, (_, i) => ({ seq: i + 1, content: '长'.repeat(3000) })) });
-  assert(many.body.elements.find(e => e.tag === 'collapsible_panel').elements.length <= 11, 'history is bounded without deleting source history');
+  assert(many.body.elements.find(e => e.tag === 'collapsible_panel').elements.length <= 13, 'history is bounded without deleting source history');
   assert(JSON.stringify(many).length < 14000);
 });

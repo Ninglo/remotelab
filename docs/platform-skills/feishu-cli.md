@@ -139,6 +139,6 @@ Bot application scope use
 [`feishu-auth-request`](../../skills/feishu-auth-request/SKILL.md). Do not print
 App Secrets or tokens.
 
-### Per-Session progress controls
+### Foldable work process
 
-Use the progress/task card buttons or send a standalone `/progress`: `messages` keeps the card and new progress messages, `card` updates only the card for progress, and `default` restores the global default (card plus new messages). The shared preference lasts across turns and restarts in that Session only. Questions and final results still arrive as messages. Card history can be expanded to read recent intermediate updates. Switching back to messages never replays older quiet progress; concurrency does not override a manual choice.
+In Feishu conversations with progress cards enabled, ordinary progress updates the original card. Latest and previous progress share one 工作过程 panel that the reader can expand or collapse directly, as in Web. The executing Harness chooses the initial expansion from the task: use `assistant-message --progress-mode expanded|collapsed --compact --json`, optionally with the initial checklist. Start expanded when showing the work path is useful, collapsed for a routine result. Required decisions, exceptional risks, questions and final results retain separate notifications; they are not expansion criteria. No personal habit or extra model call is involved. `/progress expanded|collapsed` is an optional explicit override for this Run. Older messages/card/default commands remain accepted as expansion aliases. Without a progress card, useful progress still sends messages.

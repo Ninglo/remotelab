@@ -270,6 +270,37 @@ try {
     const finalAssistant = resultMessage.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'done');
     assert.ok(finalAssistant, 'original assistant completion message should still be present');
 
+    const cardSetup = await request(port, 'PATCH', `/api/sessions/${session.id}`, {
+      workboardPilot: true, conversation: { connector: 'feishu', sourceRouteId: 'test',
+        target: { chatType: 'p2p', chatId: 'isolated-chat', conversationKind: 'main' } },
+    });
+    assert.equal(cardSetup.status, 200, JSON.stringify(cardSetup.json));
+    const policyPath = `/api/sessions/${session.id}/assistant-messages`;
+    const choosePanel = mode => request(port, 'POST', policyPath, { runId: run.id, progressMode: mode });
+    const panelSelection = await choosePanel('expanded');
+    assert.equal(panelSelection.status, 201, JSON.stringify(panelSelection.json));
+    assert.equal(panelSelection.json.event, null, 'selection metadata creates no chat message');
+    assert.equal(panelSelection.json.progressPolicy.feishuProgressMode, 'expanded');
+    assert.equal((await request(port, 'GET', `/api/sessions/${session.id}?view=summary`)).json.session.feishuProgressMode, 'expanded');
+    assert.equal((await choosePanel('expanded')).json.progressPolicy.feishuProgressRevision,
+      panelSelection.json.progressPolicy.feishuProgressRevision, 'identical selection is idempotent');
+    assert.equal((await choosePanel('invalid')).status, 400);
+    assert.equal((await request(port, 'POST', policyPath, { runId: 'unknown-run', progressMode: 'collapsed' })).status, 400);
+    assert.equal((await request(port, 'POST', policyPath, { runId: run.id, progressMode: 'collapsed' },
+      { Cookie: 'session_token=not-authorized' })).status, 401);
+    const policyCli = spawn(process.execPath, ['cli.js', 'assistant-message', '--progress-mode', 'collapsed',
+      '--session', session.id, '--run-id', run.id, '--compact', '--json', '--base-url', `http://127.0.0.1:${port}`], {
+      cwd: repoRoot, env: { ...process.env, HOME: home, REMOTELAB_INSTANCE_ROOT: '',
+        REMOTELAB_CONFIG_DIR: join(home, '.config', 'remotelab'), REMOTELAB_MEMORY_DIR: join(home, '.remotelab', 'memory') },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let policyOutput = '', policyError = '';
+    policyCli.stdout.on('data', chunk => { policyOutput += chunk; });
+    policyCli.stderr.on('data', chunk => { policyError += chunk; });
+    const policyExit = await new Promise(resolve => policyCli.once('exit', resolve));
+    assert.equal(policyExit, 0, policyError);
+    assert.equal(JSON.parse(policyOutput).progressPolicy.feishuProgressMode, 'collapsed');
+
     const task = { taskId: 'http-task', revision: 1, goal: 'HTTP 清单验收', status: 'running', reason: '',
       items: [{ id: 'files', title: '文件', condition: '附件可下载', status: 'pending', evidenceRefs: [] },
         { id: 'reply', title: '答复', condition: '正文已生成', status: 'pending', evidenceRefs: [] }] };

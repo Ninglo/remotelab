@@ -1411,12 +1411,14 @@ export async function handleControlRoutes({
           requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
           runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
           source: payload.source || 'assistant_message_api',
+          ...(payload.progressMode !== undefined ? { progressMode: payload.progressMode } : {}),
           ...(payload.workboard ? { workboard: payload.workboard } : {}),
           ...(payload.workboardPatch ? { workboardPatch: payload.workboardPatch } : {}),
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         });
         writeJson(res, 201, {
           event: outcome.event,
+          ...(outcome.progressPolicy ? { progressPolicy: outcome.progressPolicy } : {}),
           session: createClientSessionDetail(outcome.session),
         });
       } catch (error) {

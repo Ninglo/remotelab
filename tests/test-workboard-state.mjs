@@ -286,8 +286,7 @@ test('ordinary progress updates the original card; openings, questions and final
   record = { ...record, deliveries: [], streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
   await publishLiveAssistantReplies(record, history.slice(0, -1), { ...options, running: true });
   assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text),
-    ['【开始处理】\n\n核对原卡更新和重复任务 ID', '【进展】\n\n发现两个 ID 对应相同验收条件',
-      '【待你回复】\n\n请选择部署窗口', '【进展】\n\n修复已通过验证，正在推送']);
+    ['【开始处理】\n\n核对原卡更新和重复任务 ID', '【待你回复】\n\n请选择部署窗口']);
   const state = structuredClone(pilot), cards = [];
   const publishing = { pilot: state, persist: async () => {}, verifyMessage: async () => {}, app: { im: { v1: { message: {
     reply: async input => { cards.push(['create', JSON.parse(input.data.content)]); return { code: 0, data: { message_id: 'one-card' } }; },
@@ -296,7 +295,7 @@ test('ordinary progress updates the original card; openings, questions and final
   for (const update of updates) await publishFeishuWorkboardCycle(update, publishing);
   for (const update of updates) assert.equal(await publishFeishuWorkboardCycle(update, publishing), null);
   assert.deepEqual(cards.map(([action]) => action), ['create', 'patch', 'patch']);
-  assert.equal(cards.at(-1)[1].body.elements.at(-1).content, task.progress.content);
+  assert(cards.at(-1)[1].body.elements.find(e => e.tag === 'collapsible_panel').elements.some(e => e.content === task.progress.content));
   assert.equal(state.cards.length, 1);
 });
 
@@ -312,8 +311,7 @@ test('continuation progress uses full Session history and stale prior Runs canno
   await publishLiveAssistantReplies(record, [progress, stale], { session, fullHistory: history,
     plan: { connector: 'feishu', target: { chatId: 'group' } }, store: {
       get: async () => record, mutate: async (_key, fn) => { record = fn(record); } } });
-  assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.text),
-    ['【进展】\n\n继续核验原任务']);
+  assert.deepEqual(record.deliveries, [], 'continuation progress updates its card without a separate message');
 });
 
 test('a group sender outside the opt-in cannot supply progress on the same Run', () => {
@@ -335,7 +333,7 @@ test('renderer upgrades patch an existing card once without creating or replayin
   } } } } };
   assert.equal(await publishFeishuWorkboardCycle({ ...cycle, latestSeq: 4 }, options), null);
   assert.equal((await publishFeishuWorkboardCycle(cycle, options)).action, 'updated');
-  assert.equal(JSON.parse(calls[0].data.content).body.elements.at(-1).content, '当前验证进展');
+  assert.equal(JSON.parse(calls[0].data.content).body.elements.find(e => e.tag === 'collapsible_panel').elements.at(-1).content, '当前验证进展');
   assert.equal(await publishFeishuWorkboardCycle(cycle, { ...options, pilot: structuredClone(state) }), null);
   assert.equal(calls.length, 1);
   assert.equal(state.cards.length, 1);

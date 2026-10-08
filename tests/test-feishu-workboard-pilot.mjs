@@ -83,7 +83,7 @@ test('card renderer keeps one item per row and updates its progress', () => {
   assert.equal(card.body.elements[0].content, '**1/2 · 进行中**');
   assert.equal(card.body.elements[1].text.content, '✓ 排序 — 日期递增。');
   assert.equal(card.body.elements[2].text.content, '○ 核验 — 每项可查。');
-  assert.equal(card.body.elements.at(-1).content, '暂无进度更新');
+  assert.equal(card.body.elements.find(e => e.tag === 'collapsible_panel').elements.at(-1).content, '暂无进度更新');
   const complete = buildFeishuWorkboardCard('目标：交付两项结果\n[x] 排序 — 日期递增。\n[x] 核验 — 每项可查。');
   assert.equal(complete.header.template, 'green');
   assert.equal(complete.body.elements[0].content, '**2/2 · 已完成**');

@@ -95,7 +95,7 @@ import {
   buildSessionWorkState,
 } from './session-control-state.mjs';
 import { broadcastAll } from './ws-clients.mjs';
-import { withSessionProgressPolicy } from './session-progress-policy.mjs';
+import { withSessionProgressPolicy, chooseRunProgressPolicy } from './session-progress-policy.mjs';
 import { getHistoryHeadSeq } from './history.mjs';
 import {
   buildTemporarySessionName,
@@ -1026,6 +1026,14 @@ async function appendAssistantMessageUnlocked(sessionId, text = '', images = [],
   const savedImages = options.preSavedAttachments?.length > 0
     ? sanitizeRequestAttachments(options.preSavedAttachments)
     : await saveAttachments(images);
+  let progressPolicy;
+  if (options.progressMode !== undefined) {
+    progressPolicy = await chooseRunProgressPolicy(sessionId, options.runId, options.progressMode);
+    session = await findSessionMeta(sessionId) || session;
+  }
+  if (!normalizedText && savedImages.length === 0 && progressPolicy) {
+    return { event: null, progressPolicy, session: await enrichSessionMeta(session) };
+  }
   if (!normalizedText && savedImages.length === 0) {
     const error = new Error('text or attachments are required');
     error.code = 'MESSAGE_EMPTY';
@@ -1051,6 +1059,7 @@ async function appendAssistantMessageUnlocked(sessionId, text = '', images = [],
   broadcastSessionInvalidation(sessionId);
   return {
     event: stripEventAttachmentSavedPaths(event),
+    ...(progressPolicy ? { progressPolicy } : {}),
     session: await enrichSessionMeta(session),
   };
 }
@@ -2665,6 +2674,11 @@ export async function updateSessionWorkboardPilot(id, enabled, { optInPersonId =
         if (session.feishuProgressMode === 'card') {
           delete session.feishuProgressMode;
           session.feishuProgressAfterSeq = progressHead;
+          session.feishuProgressRevision = (session.feishuProgressRevision || 0) + 1;
+        }
+        if (session.feishuProgressRuns) {
+          session.feishuProgressRuns = Object.fromEntries(Object.entries(session.feishuProgressRuns)
+            .map(([runId, policy]) => [runId, { ...policy, afterSeq: progressHead }]));
           session.feishuProgressRevision = (session.feishuProgressRevision || 0) + 1;
         }
       }

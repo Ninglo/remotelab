@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { progressCardControls, progressCardHistory } from './progress-card-controls.mjs';
+import { progressCardPanel } from './progress-card-controls.mjs';
 import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '../../lib/workboard-state.mjs';
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
 import { projectProgressStreams, progressExecutionLabel } from '../../lib/progress-stream.mjs';
+import { progressPolicyForRun } from '../../lib/session-progress-policy.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -27,10 +28,8 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null, cy
     })) : [{ tag: 'div', text: { tag: 'plain_text',
       content: lines.filter(line => line !== goal).join('\n') || trim(text) } }]),
     { tag: 'hr' },
-    ...progressCardControls(cycle),
-    ...progressCardHistory(cycle),
-    { tag: 'markdown', content: '**目前进展**' },
-    { tag: 'markdown', content: board ? workboardProgressText(board, progress) : progress?.content || '暂无进度更新' },
+    ...progressCardPanel(cycle, [{ tag: 'markdown',
+      content: board ? workboardProgressText(board, progress) : progress?.content || '暂无进度更新' }]),
   ];
   return {
     schema: '2.0', config: { update_multi: true },
@@ -44,9 +43,7 @@ export function buildFeishuProgressCard(cycle) {
   return { schema: '2.0', config: { update_multi: true },
     header: { template: 'blue', title: { tag: 'plain_text', content: '本轮进展' } },
     body: { elements: [
-      { tag: 'markdown', content: cycle.progress?.content || '暂无进度更新' },
-      ...progressCardHistory(cycle),
-      ...progressCardControls(cycle),
+      ...progressCardPanel(cycle),
       { tag: 'hr' },
       { tag: 'markdown', content: progressExecutionLabel(cycle.executionState) },
     ] } };
@@ -171,7 +168,7 @@ function collectAuthorizedCycles(events, pilot, session = null) {
       && event.seq > task.anchorSeq
       && (!anchor.runId || event.runId === anchor.runId));
     return { ...task, closed: final, sessionId: session?.id || pilot.sessionId,
-      progressPolicy: { feishuProgressMode: session?.feishuProgressMode, feishuProgressRevision: session?.feishuProgressRevision || 0 },
+      progressPolicy: progressPolicyForRun(session, task.runId),
       ...(target?.conversationKind === 'thread' ? { replyMessageId: anchors.get(task.anchorSeq)?.replyMessageId || allowed.get(anchor.runId) } : {}) };
   });
 }

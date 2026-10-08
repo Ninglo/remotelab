@@ -171,11 +171,11 @@ try {
   session.workboardPilot = true;
   const beforeProgressSelection = structuredClone(session.feishuRuntimeSelection);
   await handleMessage(runtime, { ...summary, messageId: 'progress-control', messageText: '/progress card' }, 'test', helpers);
-  assert.match(replies.at(-1), /只更新卡片/);
+  assert.match(replies.at(-1), /默认折叠/);
   assert.equal(session.feishuProgressMode, 'card');
   assert.deepEqual(session.feishuRuntimeSelection, beforeProgressSelection, 'display control must not change runtime settings');
   await handleMessage(runtime, { ...summary, messageId: 'progress-query', messageText: '/progress' }, 'test', helpers);
-  assert.match(replies.at(-1), /作用范围：当前 Session/);
+  assert.match(replies.at(-1), /作用范围：本轮任务/);
   await handleMessage(runtime, { ...summary, messageId: 'progress-with-task', messageText: '/progress messages\n\n不要执行这段正文' }, 'test', helpers);
   assert.match(replies.at(-1), /正文/);
   assert.equal(session.feishuProgressMode, 'card', 'invalid task combinations must not partly mutate the setting');

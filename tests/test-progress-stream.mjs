@@ -81,7 +81,7 @@ test('Feishu progress patches one original card and replay/restart sends no dupl
   assert.equal(calls[1][1].path.message_id, 'original');
   const finalCard = JSON.parse(calls.at(-1)[1].data.content);
   assert.equal(finalCard.header.title.content, '本轮进展');
-  assert.equal(finalCard.body.elements[0].content, '已定位显示问题');
+  assert(finalCard.body.elements.find(e => e.tag === 'collapsible_panel').elements.some(e => e.content === '已定位显示问题'));
   assert.match(finalCard.body.elements.at(-1).content, /执行已结束/);
   assert.doesNotMatch(JSON.stringify(finalCard), /0\/0|已验收|\[x\]/);
   for (const update of expandFeishuWorkboardUpdates(cycles)) {
@@ -123,20 +123,20 @@ test('late acceptance list upgrades the original progress position and message',
     'a prior final closes the upgrade window; a new task cannot claim the old progress message');
 });
 
-test('progress messages remain visible with and without card admission; replay queues no duplicates', async () => {
+test('admitted progress stays in cards; unadmitted turns keep messages; replay queues no duplicates', async () => {
   let record = { key: 'request', runId: 'run', options: {}, deliveries: [] };
   const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
   await publishLiveAssistantReplies(record, history.slice(0, -2), {
     store, session, fullHistory: history, plan: { connector: 'feishu', target: { chatId: 'group' } } });
   assert.deepEqual(record.deliveries.filter(part => part.kind === 'content').map(part => part.surfaceKind),
-    ['opening', 'progress', 'question', 'progress']);
+    ['opening', 'question']);
   assert.deepEqual(record.deliveries.filter(part => part.surfaceKind === 'progress').map(part => part.text),
-    ['【进展】\n\n分组规则已核对', '【进展】\n\n已定位显示问题']);
+    []);
   const published = structuredClone(record);
   await publishLiveAssistantReplies(published, history.slice(0, -2), {
     store, session, fullHistory: history, plan: { connector: 'feishu', target: { chatId: 'group' } } });
   assert.deepEqual(record, published, 'durable message identities survive observer replay/restart');
-  record = { ...record, deliveries: [], streamedSurfaceMessageIds: [] };
+  record = { ...record, options: { workboardEnabled: false }, deliveries: [], streamedSurfaceMessageIds: [] };
   const unadmitted = structuredClone(history); delete unadmitted[0].workboardAdmission;
   await publishLiveAssistantReplies(record, unadmitted.slice(0, -2), {
     store, session, fullHistory: unadmitted, plan: { connector: 'feishu', target: { chatId: 'group' } } });
@@ -144,7 +144,7 @@ test('progress messages remain visible with and without card admission; replay q
 });
 
 test('rollout fence preserves old card progress without resending it; new progress keeps its thread', async () => {
-  let record = { key: 'request', runId: 'run', options: {}, deliveries: [], progressMessageAfterSeq: 3 };
+  let record = { key: 'request', runId: 'run', options: { workboardEnabled: false }, deliveries: [], progressMessageAfterSeq: 3 };
   const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
   const plan = { connector: 'feishu', sourceRouteId: 'bot',
     target: { chatId: 'group', chatType: 'group', conversationKind: 'thread', messageId: 'root', replyInThread: true } };
@@ -174,7 +174,7 @@ test('concurrent progress keeps each private chat or task topic and durable dedu
   const inputs = await Promise.all(cases.map(async (target, index) => {
     const plan = { connector: 'feishu', sourceRouteId: 'bot', target };
     const { record } = await store.accept({ sessionId: `session-${index}`, requestId: `request-${index}`, text: '任务',
-      deliveryPlan: plan });
+      deliveryPlan: plan, options: { workboardEnabled: false } });
     const event = progress(3, `任务 ${index} 有新进展`, { runId: record.runId });
     return { record, event, plan };
   }));

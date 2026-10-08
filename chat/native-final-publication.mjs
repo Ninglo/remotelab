@@ -43,8 +43,12 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
+  // A shared Session can have cards enabled while this actual author/turn was
+  // not admitted to cards. Keep progress visible on its existing message path.
+  const forThisTurn = policy => record.options?.workboardEnabled === false
+    ? { ...policy, workboardPilot: false } : policy;
   const progressPolicy = plan.connector === 'feishu'
-    ? await findSessionMeta(record.sessionId || session?.id) || session : null;
+    ? forThisTurn(await findSessionMeta(record.sessionId || session?.id) || session) : null;
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
     if (event.runId && event.runId !== record.runId) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
@@ -60,7 +64,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     // This is not a delivery receipt; old card text must not be announced again.
     if (surface.surfaceKind === 'progress' && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
     if (plan.connector === 'feishu' && surface.surfaceKind === 'progress'
-        && !shouldPublishSessionProgress(progressPolicy, event.seq)) continue;
+        && !shouldPublishSessionProgress(progressPolicy, event.seq, record.runId)) continue;
     if (stored?.streamedSurfaceMessageIds?.includes(messageId)
         || stored?.streamedFinalReplyIds?.includes(messageId)) continue;
     const final = isFinalAssistantMessage(event);
@@ -127,8 +131,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     });
     if (plan.connector === 'feishu' && surface.surfaceKind === 'progress') {
       await withSessionProgressPolicy(record.sessionId || session?.id, async () => {
-        const latest = await findSessionMeta(record.sessionId || session?.id) || session;
-        if (shouldPublishSessionProgress(latest, event.seq)) await admit();
+        const latest = forThisTurn(await findSessionMeta(record.sessionId || session?.id) || session);
+        if (shouldPublishSessionProgress(latest, event.seq, record.runId)) await admit();
       });
     } else await admit();
   }

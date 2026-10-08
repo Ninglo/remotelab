@@ -269,6 +269,7 @@ async function readSessionMessagePayload(req, pathname) {
       runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
       ...(pathname.endsWith('/assistant-messages') && payload?.workboard ? { workboard: payload.workboard } : {}),
       ...(pathname.endsWith('/assistant-messages') && payload?.workboardPatch ? { workboardPatch: payload.workboardPatch } : {}),
+      ...(pathname.endsWith('/assistant-messages') && payload?.progressMode !== undefined ? { progressMode: payload.progressMode } : {}),
       text: typeof payload?.text === 'string' ? payload.text : '',
       tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
       model: typeof payload?.model === 'string' ? payload.model.trim() : '',

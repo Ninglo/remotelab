@@ -1,3 +1,5 @@
+import { progressPolicyForRun } from '../lib/session-progress-policy.mjs';
+
 function cloneJson(value) {
   if (value === null || value === undefined) return value;
   return JSON.parse(JSON.stringify(value));
@@ -14,6 +16,7 @@ function stripSessionShape(session, {
   delete cloned.delegatedAt;
   delete cloned.titleLocked;
   delete cloned.feishuProgressChanges;
+  if (cloned.feishuProgressRuns) Object.assign(cloned, progressPolicyForRun(cloned, cloned.activeRunId || cloned.feishuProgressRunId));
   if (!includeQueuedMessages) {
     if (Array.isArray(cloned.workAwareness?.works)) cloned.workAwareness = { revision: cloned.workAwareness.revision,
       activeCount: cloned.workAwareness.works.filter(work => work.status === 'active').length };
