@@ -4,12 +4,13 @@ import { loadProjectMemoryRuntime } from './project-memory-runtime.mjs';
 import { readMemoryDocument } from './memory-document.mjs';
 import { buildLearningContext } from './memory-learning.mjs';
 import { buildRelatedPersonContext } from './related-person-context.mjs';
+import { readTopicMemory } from './topic-memory-context.mjs';
 
 export function needsCompanyBackground(query = '') {
   return /办公室|办公(?:地点|地址)|上班|就餐|吃饭|午饭|晚饭|通勤|接待|来访|工位|附近.{0,8}(?:吃|饭|餐)|公司.{0,16}(?:背景|资料|信息|地址|位置|在哪|附近|周边|饭|餐|吃)/i.test(query);
 }
 
-export async function readNecessaryBackground(session = {}, { query = '', sourceContext, memoryDir = MEMORY_DIR, configPath, maxChars = 1800 } = {}) {
+export async function readNecessaryBackground(session = {}, { query = '', sourceContext, memoryDir = MEMORY_DIR, configPath, maxChars = 1800, topicMaxChars = 3600 } = {}) {
   const coverage = [];
   const registered = { company: join(memoryDir, 'reference', 'company.md'), projects: join(memoryDir, 'projects.md') };
   const skillPath = join(memoryDir, 'skills.md');
@@ -42,8 +43,10 @@ export async function readNecessaryBackground(session = {}, { query = '', source
       ...(company.status === 'available' ? { result: omitted.length ? 'partial' : 'found', excerpts, omitted,
         ...(omitted.length ? { reason: 'Budget skipped whole sections; read the original source before relying on their facts.' } : {}) } : {}) });
   } else coverage.push({ kind: 'company', path: registered.company, result: 'not-applicable', bodyLoaded: false });
+  let projectConfig;
   try {
     const { config, hash } = await loadProjectMemoryRuntime(configPath);
+    projectConfig = config;
     const source = sourceContext || session.conversation || {};
     const group = config.groups.find(entry => entry.sourceRouteId === source.sourceRouteId && entry.chatId === (source.chatId || source.target?.chatId));
     const binding = config.sessionBindings.find(entry => entry.sessionId === session.id);
@@ -55,6 +58,7 @@ export async function readNecessaryBackground(session = {}, { query = '', source
     coverage.push({ kind: 'project', result: 'source-unavailable', index: registered.projects,
       reason: 'Project runtime could not be read; original registered project pointers remain the fallback.' });
   }
+  if (query.trim()) coverage.push(await readTopicMemory({ query, memoryDir, projectConfig, maxChars: topicMaxChars }));
   return { coverage, boundary: 'Current source versions replace older retrieved snapshots. Company facts are background; the user\'s explicit current place and task constraints take precedence. Conflicting records require source verification. Recorded knowledge, suggestions and candidate associations are not business authorization.' };
 }
 

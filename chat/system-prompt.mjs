@@ -45,7 +45,7 @@ ${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-sp
 - Session and run inspection: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/session-debug.md\`.
 - Other installed capabilities: \`remotelab --help\`.
 
-The CLI uses this runner's instance and source Session environment. If \`remotelab\` is unavailable in PATH, use \`node "$REMOTELAB_PROJECT_ROOT/cli.js" <command>\`.`;
+The CLI uses this runner's instance and source Session environment. If \`remotelab\` is unavailable in PATH or reports an unknown advertised subcommand, use the current source entry \`node "$REMOTELAB_PROJECT_ROOT/cli.js" <command>\`; an older PATH entry can point to a different checkout.`;
 }
 
 /** RemoteLab-owned context for a fresh provider thread. */
