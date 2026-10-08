@@ -1174,7 +1174,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       connector: 'feishu',
       sourceRouteId: runtime.config.sourceRouteId || 'default',
       target: { ...requestDeliveryTarget, ...(participationStatus
-        ? { participationEpoch: String(participationStatus.epoch) } : {}) },
+        ? { participationEpoch: String(effectiveSummary.participationEpoch ?? participationStatus.epoch) } : {}) },
     },
     ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
@@ -1751,7 +1751,8 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
     const controller = participationController(runtime, helpers);
     const control = await controller.intake(summary, helpers.participationSnapshot);
     if (control) return { receipt: control };
-    summary = { ...summary, participationEpoch: String((await controller.state(summary)).epoch) };
+    summary = { ...summary, participationEpoch: String(helpers.participationSnapshot?.epoch
+      ?? (await controller.state(summary)).epoch) };
   }
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];

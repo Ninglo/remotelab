@@ -86,6 +86,14 @@ try {
     assert.equal((await submitRemoteLabRequest(runtime, invited, { prepared })).ignored, true);
     assert.equal(submissions, before + 1, 'a prepared request from before resume cannot enter the model queue');
 
+    const activeSnapshot = { ...await runtime.participation.state(base), receivedAt: Date.now() };
+    await send('mute-queued', '/mute');
+    await send('queued-at', '@_bot 之前的邀请', { mentions: [{ openId: 'bot' }] }, {
+      participationSnapshot: activeSnapshot,
+    });
+    assert.equal(effects.runs.length, count, 'arrival epoch survives intake; mute cancels queued older invitations');
+    await send('resume-queued', '/unmute');
+
     let resumeClassifier;
     let classificationEntered;
     const entered = new Promise(resolve => { classificationEntered = resolve; });
