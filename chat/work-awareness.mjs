@@ -71,8 +71,10 @@ async function mutate(sessionId, action, change) {
 
 export async function queryRelatedWork(options = {}) {
   const sessions = await loadSessionsMeta();
-  return Promise.all(relatedWorkFromSessions(sessions, options).map(async item => ({ ...item,
-    sourceInfo: await describeRelatedWorkSource(item, sessions) })));
+  return Promise.all(relatedWorkFromSessions(sessions, options).map(async item => {
+    const sourceInfo = await describeRelatedWorkSource(item, sessions);
+    return { ...item, sourceInfo, sessionLocation: sourceInfo.location };
+  }));
 }
 
 export async function queryWorkCandidates(options = {}) {

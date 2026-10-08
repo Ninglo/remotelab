@@ -57,6 +57,7 @@ try {
   assert.equal(relatedSource.verification, 'harness-reviewed');
   assert.equal(relatedSource.sourceInfo.verified, false, 'legacy summaries do not invent an original message');
   assert.equal(relatedSource.sourceInfo.receivedAt, '');
+  assert.equal(relatedSource.sessionLocation, relatedSource.sourceInfo.location, 'existing read consumers retain the location field');
   const { describeRelatedWorkSource } = await import('../chat/work-suggestion-description.mjs');
   const workSource = await describeRelatedWorkSource({ ...work, sessionId: 'a' }, [await findSessionMeta('a')]);
   assert.equal(workSource.location, 'Web 对话');
