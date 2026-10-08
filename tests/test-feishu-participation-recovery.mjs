@@ -93,6 +93,14 @@ try {
     });
     assert.equal(effects.runs.length, count, 'arrival epoch survives intake; mute cancels queued older invitations');
     await send('resume-queued', '/unmute');
+    const ongoingEpoch = (await runtime.participation.state(base)).epoch;
+    await send('already-active', '/unmute');
+    assert.equal((await runtime.participation.state(base)).epoch, ongoingEpoch,
+      'reasserting active reception must not invalidate an ongoing reply');
+    assert.equal((await submitRemoteLabRequest(runtime, { ...base, messageId: 'ongoing',
+      participationEpoch: String(ongoingEpoch) }, { prepared: { ...prepared, payload: {
+        sourceDelivery: { target: { participationEpoch: String(ongoingEpoch) } },
+      } } })).runId, 'fixture-run');
 
     let resumeClassifier;
     let classificationEntered;

@@ -144,7 +144,10 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       if (!MODES.has(mode)) throw new Error('Invalid Agent participation mode');
       let record = await records.mutate(key, current => ({ ...prior, ...current, source: sourceFor(summary), mode,
         beforePause: mode === 'paused' ? (prior.mode === 'paused' ? prior.beforePause : prior.mode) : prior.beforePause,
-        epoch: (prior.epoch || 0) + 1, topicHint: false, invitedMessages: [],
+        // Reasserting active reception is a no-op for ongoing work. Advancing
+        // its epoch would silently suppress otherwise valid replies.
+        epoch: prior.mode === 'active' && mode === 'active' ? (prior.epoch || 0) : (prior.epoch || 0) + 1,
+        topicHint: false, invitedMessages: [],
         stopPending: mode !== 'active', updatedAt: new Date().toISOString(),
         ...((prior.mode === 'paused' && mode !== 'paused') || (prior.mode !== 'active' && mode === 'active')
           ? { contextAfterMs: Date.now(), topicAnchor: '' } : {}),
