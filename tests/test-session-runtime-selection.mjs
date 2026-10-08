@@ -16,8 +16,8 @@ try {
   assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, {
     ...laterDefaults, runtimeSelectionScope: 'auto', sourceContext: { connector: 'feishu' },
   }, active), active, 'connector default snapshots cannot switch an active Harness');
-  assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, { model: 'gpt-6-astra' }, active),
-    { ...laterDefaults, model: 'gpt-6-astra', effort: 'medium' }, 'explicit model changes still resolve for the busy guard');
+  assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, { model: 'gpt-6-astra', effort: 'xhigh' }, active),
+    { ...laterDefaults, model: 'gpt-6-astra', effort: 'xhigh' }, 'explicit model changes still resolve for the busy guard');
   assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, { freshThread: true }, active), laterDefaults,
     'a requested fresh thread does not inherit active execution settings');
   const autoDefault = await resolveSessionRuntimeSelection({ tool: 'codex' });
