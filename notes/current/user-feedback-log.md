@@ -1449,3 +1449,10 @@ settings are separate from verified live deployment and delivery.
 - Feedback: related suggestions sat too far left, apart from the centered conversation and message input. The requested position is immediately above the message input, aligned with its left edge.
 - Revision: place the existing collapsible panel in the input stack between runtime controls and the message input. It inherits the same desktop column width and mobile gutters; remove its separate horizontal margins.
 - Verification: use the production input markup and responsive styles to check desktop and mobile alignment, bounded expanded details, and preserved draft-only confirmation controls.
+
+## 2026-10-08 — Progress disclosure should respond without rebuilding the conversation
+
+- Feedback: the shared show/hide callback worked in the real Feishu client, but felt slow.
+- Cause: saving a click rebuilt the Session response, then the route worker reread the whole conversation before patching the original card. Its single queue also put clicks behind automatic refreshes; startup subscribed only after walking historical cards.
+- Revision: return the accepted metadata receipt, broadcast the card's mode/revision without actor identities, and let the existing single writer prioritize a repaint of its acknowledged display snapshot. Coalesce queued clicks, preserve the last accepted revision during automatic refresh, and subscribe before instance bootstrap completes. Cold caches use the normal authorized projection first.
+- Verification boundary: isolated actual-worker WebSocket tests cover no extra history read, cold startup, queued refresh ordering, rapid clicks and stale automatic metadata. Durable state, auth, origin and delivery regressions remain required. Client responsiveness after rollout is a separate real-use observation; no artificial group clicks or test messages.

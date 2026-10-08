@@ -113,7 +113,15 @@ export async function updateProgressCardDisclosure(id, { anchorSeq, mode, change
       session.updatedAt = new Date().toISOString();
       return true;
     });
-    if (result.changed) broadcastAll({ type: 'session_invalidated', sessionId: id });
+    if (result.changed) broadcastAll({ type: 'session_invalidated', sessionId: id,
+      progressCard: { anchorSeq, ...progressPolicyForCardHint(result.meta, anchorSeq),
+        sourceRouteId: result.meta.conversation.sourceRouteId,
+        chatId: result.meta.conversation.target.chatId } });
     return result.meta;
   });
+}
+
+function progressPolicyForCardHint(session, anchorSeq) {
+  const { mode, revision } = session.feishuProgressCards[anchorSeq];
+  return { mode, revision };
 }

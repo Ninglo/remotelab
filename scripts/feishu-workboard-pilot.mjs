@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import * as Lark from '@larksuiteoapi/node-sdk';
 import { createSerialTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
+import { createProgressCardRefresh } from '../connectors/feishu/progress-card-refresh.mjs';
 import {
   collectFeishuWorkboardCycles,
   collectFeishuGroupWorkboardCycles,
@@ -95,9 +96,29 @@ let syncing = false;
 const pending = new Set();
 const ignored = new Set();
 const retries = new Map();
+const disclosures = createProgressCardRefresh(pilot);
 let socket = null;
 let reconnectTimer = null;
 let reconnectMs = 250;
+
+async function publishCycle(cycle, cardPilot, chatId) {
+  cycle = disclosures.apply(cycle);
+  const result = await publishFeishuWorkboardCycle(cycle, { pilot: cardPilot, app, persist,
+    verifyMessage: (messageId, options) => verifyMessage(messageId, options, chatId) });
+  disclosures.remember(cycle);
+  if (result) console.log(`[feishu-workboard] ${result.action} session=${cycle.sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
+}
+
+async function syncDisclosure(change) {
+  // On cold start, read this Session now rather than putting the click behind
+  // the route's whole bootstrap backlog. The normal admission checks remain.
+  if (!change.cycle) { await syncOne(change.sessionId); return; }
+  const stored = instanceScope ? pilot.sessions[change.sessionId]
+    : change.sessionId === pilot.sessionId ? pilot : pilot.groupSessions[change.sessionId];
+  const start = Date.now();
+  await publishCycle(change.cycle, { ...pilot, ...stored, sessionId: change.sessionId }, stored.chatId);
+  console.log(`[feishu-workboard] disclosure session=${change.sessionId} anchor=${change.anchorSeq} queueMs=${start - change.receivedAt} updateMs=${Date.now() - start}`);
+}
 
 async function syncPrivate() {
   const session = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`)).session;
@@ -109,8 +130,7 @@ async function syncPrivate() {
   }
   for (const cycle of expandFeishuWorkboardUpdates(collectFeishuWorkboardCycles(events, pilot, session), events)) {
     if (stopped || expired()) { stop(); break; }
-    const result = await publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage });
-    if (result) console.log(`[feishu-workboard] ${result.action} session=${pilot.sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
+    await publishCycle(cycle, pilot, pilot.chatId);
   }
 }
 
@@ -141,9 +161,7 @@ async function syncGroup(sessionId) {
   groupPilot.protocolAfterSeq = stored.protocolAfterSeq;
   for (const cycle of expandFeishuWorkboardUpdates(collectFeishuGroupWorkboardCycles(events, groupPilot, session), events)) {
     if (stopped || expired()) { stop(); break; }
-    const result = await publishFeishuWorkboardCycle(cycle, { pilot: groupPilot, app, persist,
-      verifyMessage: (messageId, options) => verifyMessage(messageId, options, target.chatId) });
-    if (result) console.log(`[feishu-workboard] ${result.action} session=${sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
+    await publishCycle(cycle, groupPilot, target.chatId);
   }
 }
 
@@ -160,9 +178,7 @@ async function syncInstance(sessionId) {
   const events = (await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/events?filter=all`)).events;
   for (const cycle of expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(events, sessionPilot, session))) {
     if (stopped || expired()) { stop(); break; }
-    const result = await publishFeishuWorkboardCycle(cycle, { pilot: sessionPilot, app, persist,
-      verifyMessage: (messageId, options) => verifyMessage(messageId, options, target.chatId) });
-    if (result) console.log(`[feishu-workboard] ${result.action} session=${sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
+    await publishCycle(cycle, sessionPilot, target.chatId);
   }
 }
 
@@ -191,11 +207,15 @@ async function drain() {
   if (syncing) return;
   syncing = true;
   try {
-    while (pending.size && !stopped) {
-      const sessionId = pending.values().next().value;
-      pending.delete(sessionId);
+    while ((disclosures.size || pending.size) && !stopped) {
+      // Human clicks take precedence over queued automatic refreshes. Keep
+      // the same single writer and sequence fences for both update paths.
+      const change = disclosures.take();
+      const sessionId = change?.sessionId || pending.values().next().value;
+      if (!change) pending.delete(sessionId);
       try {
-        await syncOne(sessionId);
+        if (change) await syncDisclosure(change);
+        else await syncOne(sessionId);
         if (retries.has(sessionId)) clearTimeout(retries.get(sessionId));
         retries.delete(sessionId);
       } catch (error) {
@@ -245,7 +265,8 @@ function connect(cookie) {
     let message;
     try { message = JSON.parse(data); } catch { return; }
     if (message.type === 'session_invalidated' && (instanceScope || message.sessionId === pilot.sessionId || pilot.groupEnabled)) {
-      enqueue(message.sessionId);
+      if (disclosures.accept(message)) void drain();
+      else enqueue(message.sessionId);
     }
   });
   socket.on('error', error => console.error(`[feishu-workboard] socket: ${error.message}`));
@@ -273,6 +294,9 @@ function scheduleReconnect() {
 async function initialize() {
   if (instanceScope) {
     for (const id of await discoverGroupSessions()) pending.add(id);
+    // Subscribe before walking all historical cards. A human click must not
+    // wait for every other Session to finish its startup refresh.
+    connect(await remote.ensureAuthCookie());
     // A fenced uncertain send in one Session must not stop other cards or
     // bring down the route worker. The serial drain isolates those failures.
     await drain();
@@ -284,7 +308,7 @@ async function initialize() {
   migrating = false;
   pilot.runtime = { pid: process.pid, readyAt: new Date().toISOString() };
   await persist();
-  connect(await remote.ensureAuthCookie());
+  if (!instanceScope) connect(await remote.ensureAuthCookie());
   console.log(`[feishu-workboard] ready route=${pilot.sourceRouteId} scope=${instanceScope ? 'instance' : 'person'}`);
 }
 
