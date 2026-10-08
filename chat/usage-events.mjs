@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
+import { buildUsageInsights } from './usage-insights.mjs';
 
 export const CLIENT_USAGE_EVENTS = new Set(['page_enter', 'session_open', 'page_visibility', 'ui_action', 'content_presented', 'artifact_open']);
 const SERVER_EVENTS = new Set(['message_submitted', 'request_state', 'run_state', 'question_state', 'tool_started', 'tool_finished',
@@ -122,7 +123,6 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     const gaps = (Array.isArray(metadata?.gaps) ? metadata.gaps : []).filter(gap =>
       Number.isFinite(gap.start) && Number.isFinite(gap.end) && gap.end >= start && gap.start <= now)
       .map(gap => ({ start: gap.start, end: gap.end }));
-    if (gaps.length) incomplete = true;
     try { files = (await readdir(directory)).filter(name => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)
       && name.slice(0, 10) >= new Date(start).toISOString().slice(0, 10)).sort().reverse(); } catch (error) { if (error.code !== 'ENOENT') incomplete = true; }
     const events = [], ids = new Set();
@@ -145,6 +145,8 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
       if (scanned > maxScanned) break;
     }
     events.sort((a, b) => a.timestamp - b.timestamp || a.eventId.localeCompare(b.eventId));
+    const scanIncomplete = incomplete;
+    if (gaps.length) incomplete = true;
     const byEvent = {}, bySurface = {}, artifacts = {};
     for (const event of events) {
       byEvent[event.event] = (byEvent[event.event] || 0) + 1;
@@ -157,7 +159,8 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     return { generatedAt: new Date(now).toISOString(), collectionStartedAt: metadata?.startedAt || null,
       window: { start: new Date(start).toISOString(), end: new Date(now).toISOString(), days },
       total: events.length, byEvent, bySurface, artifacts, paths: summarizeSurfacePaths(events),
-      events: events.slice(-limit).reverse(), coverage: { incomplete, scanned, pending, dropped, failures, gaps,
+      report: buildUsageInsights(events, { start, now, collectionStartedAt: metadata?.startedAt, gaps, scanIncomplete, dropped, failures }),
+      events: events.slice(-limit).reverse(), coverage: { incomplete, scanIncomplete, scanned, pending, dropped, failures, gaps,
         notes: ['仅包含采集启动后的可观测事件；不回填历史。', '飞书送达不代表已读；Web 呈现不代表理解或采纳。',
           '产物生成、网页发布、附加到回复与访问分别计数；普通文件写入不自动认定为产物。',
           '原生提问的等待有确定状态；自然语言中的隐含等待尚未自动识别。'] } };

@@ -6,6 +6,41 @@ The authenticated workbench now records small actions in the instance-local
 adds no external analytics service, automatic semantic classifier or task-state
 UI redesign. Human-attention presentation remains a separate product discussion.
 
+## Product analysis
+
+The default page answers four questions: who contributes, whether Feishu work
+continues in Web, how execution and explicit questions progress, and which
+published/attached artifacts receive deliberate workbench clicks. It does not
+show raw action totals, tool traffic or recent event rows. Raw records and the
+existing API diagnostics remain available for engineering investigation.
+
+- People and active conversations require accepted human input, including
+  question answers. Multi-turn exchange requires at least two ordinary inputs;
+  question controls alone do not inflate it. Daily participation uses UTC+8.
+- Paths match the same verified person and Session. Web answers count as
+  continuation. Web input remains valid without an open record; opening and
+  continuing are independent branches. Returning to the original Feishu
+  conversation uses Web continuations as the denominator, not all entries.
+- Executions use unique actual Run IDs linked to ordinary human inputs,
+  including authoritative follow-up mappings. Question control requests are
+  not extra Runs. Input-to-end time requires an observed original input; a
+  follow-up to an older Run cannot invent its start. Ending is not satisfaction.
+- Question waiting uses matching pending/answer records in the qualified
+  interval. Timeouts and cancellations are not answers; ended Runs and expired
+  deadlines do not appear as outstanding questions. Orphan terminal records do
+  not create a zero-second waiting sample. Implicit waiting remains unclassified.
+- Artifacts join hashed origins to registered asset IDs and count logical
+  objects. New generation, website revision operations, attachment/publication
+  and deliberate later opening remain separate. Automatic asset fetches never
+  count as use. The opening cohort is this interval's provided objects; old or
+  unlinked clicks cannot inflate it. Unsupported creation/edit counts are null.
+- Aggregation uses the entire qualified event window before recent-event
+  pagination. It begins after the latest known collection gap, avoiding pairs
+  across missing data. Scan truncation or collection failures suppress rates
+  and timings. Empty denominators and missing Web-opening samples are unknown;
+  sample counts are always visible. No retention, adoption or satisfaction
+  improvement is inferred from the short initial observation period.
+
 ## What is collected
 
 | Source | Observed action | Counting boundary |
