@@ -23,6 +23,7 @@
     "chat/tooling.js",
     "chat/realtime.js",
     "chat/realtime-render.js",
+    "chat/inline-flow.js",
     "chat/ui.js",
     "chat/native-question-ui.js",
     "chat/activity-ui.js",
