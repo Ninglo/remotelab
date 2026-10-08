@@ -310,8 +310,11 @@ the entry; later replies and observer replay do not repeat it. Feishu sends no
 separate fixed creation notice. Other connectors that support an admission
 notice retain their existing snapshot-based notice. Starting an ordinary user
 run saves its complete Harness/model/effort profile on the Session for the
-WebUI; internal operations do not replace user preferences. Feishu labels
-openings `开始处理`, native questions `待你回复`, and stopped-Run results
+WebUI; internal operations do not replace user preferences. Later routine Feishu turns omit openings; without an acceptance checklist they
+send the ordinary final reply rather than a progress-only card. Task cards show
+the latest progress outside a callback disclosure, default collapsed. The last
+accepted click controls that shared card across updates and resumption.
+Feishu labels new-conversation openings `开始处理`, native questions `待你回复`, and stopped-Run results
 `最终答复`. Scheduled automation results use the task's name instead, snapshotted
 from the trigger title (or Session template name) when its request is accepted;
 retries and restarts retain that name. Task completion comes from verified

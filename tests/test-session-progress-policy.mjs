@@ -19,7 +19,7 @@ const { updateSessionWorkboardPilot } = await import('../chat/session-manager.mj
 const { publishLiveAssistantReplies } = await import('../chat/native-final-publication.mjs');
 const { prepareFeishuRuntimeCommandPlan, applyFeishuRuntimeCommandPlan } = await import('../connectors/feishu/runtime-commands.mjs');
 const { handleFeishuProgressPolicyAction } = await import('../connectors/feishu/progress-policy-actions.mjs');
-const { buildFeishuProgressCard, publishFeishuWorkboardCycle } = await import('../connectors/feishu/workboard-pilot.mjs');
+const { publishFeishuWorkboardCycle } = await import('../connectors/feishu/workboard-pilot.mjs');
 const { parseFeishuCommandBlock } = await import('../connectors/feishu/command-parser.mjs');
 const conversation = { connector: 'feishu', sourceRouteId: 'bot',
   target: { chatType: 'group', chatId: 'group', conversationKind: 'thread', threadId: 'thread' } };
@@ -72,7 +72,7 @@ test('ordinary progress stays in cards, legacy controls persist, questions and f
   await updateSessionWorkboardPilot('s1', false);
   events.push(await appendEvent('s1', progress(6)));
   await publish(events);
-  assert.equal(record.deliveries.filter(item => item.surfaceKind === 'progress').length, 1, 'without cards only new useful progress notifies');
+  assert.equal(record.deliveries.filter(item => item.surfaceKind === 'progress').length, 0, 'without a checklist ordinary progress stays in Web/history');
   await updateSessionWorkboardPilot('s1', true);
   await assert.rejects(updateSessionProgressPolicy('s1', { mode: 'auto', expectedRevision: 4, changeId: 'bad' }), { status: 400 });
 });
@@ -129,23 +129,6 @@ test('card buttons validate their origin, reject stale or unauthorized actions, 
   assert.equal((await handleFeishuProgressPolicyAction(runtime, forged, options)).toast.type, 'error');
   assert.equal((await handleFeishuProgressPolicyAction(runtime, raw, { ...options, authorize: async () => false })).toast.type, 'error');
   assert.equal(mutations, before);
-  const cycle = { sessionId: 's1', latestSeq: 3, anchorSeq: 1, progressOnly: true, progress: { seq: 3, content: '当前' },
-    progressHistory: [{ seq: 1, content: '先前' }, { seq: 3, content: '当前' }, { seq: 9, content: '未来' }],
-    progressPolicy: { feishuProgressMode: 'collapsed', feishuProgressRevision: 5 } };
-  const card = buildFeishuProgressCard(cycle);
-  const panel = card.body.elements.find(element => element.tag === 'collapsible_panel');
-  assert.equal(panel.expanded, false);
-  assert.match(JSON.stringify(panel), /先前/); assert.match(JSON.stringify(panel), /当前/); assert.doesNotMatch(JSON.stringify(panel), /未来/);
-  assert.doesNotMatch(JSON.stringify(card), /恢复默认|卡片＋新消息/);
-  const calls = [];
-  const pilot = { sessionId: 's1', cards: [{ messageId: 'original', anchorSeq: 1, latestSeq: 3, contentHash: 'old' }] };
-  const publishOptions = { pilot, persist: async () => {}, verifyMessage: async () => {},
-    app: { im: { v1: { message: { patch: async input => { calls.push(input); return { code: 0 }; } } } } } };
-  await publishFeishuWorkboardCycle(cycle, publishOptions);
-  await publishFeishuWorkboardCycle(cycle, publishOptions);
-  assert.equal(calls.length, 1, 'policy-only changes patch the existing card once');
-  assert.equal(calls[0].path.message_id, 'original');
-  const many = buildFeishuProgressCard({ ...cycle, latestSeq: 25, progressHistory: Array.from({ length: 24 }, (_, i) => ({ seq: i + 1, content: '长'.repeat(3000) })) });
-  assert(many.body.elements.find(e => e.tag === 'collapsible_panel').elements.length <= 13, 'history is bounded without deleting source history');
-  assert(JSON.stringify(many).length < 14000);
+  assert.equal(await publishFeishuWorkboardCycle({ progressOnly: true }, { pilot: { cards: [] } }), null,
+    'progress alone cannot create a card');
 });

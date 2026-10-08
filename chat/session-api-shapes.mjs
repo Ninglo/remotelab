@@ -16,6 +16,8 @@ function stripSessionShape(session, {
   delete cloned.delegatedAt;
   delete cloned.titleLocked;
   delete cloned.feishuProgressChanges;
+  if (cloned.feishuProgressCards) cloned.feishuProgressCards = Object.fromEntries(
+    Object.entries(cloned.feishuProgressCards).map(([anchor, { mode, revision }]) => [anchor, { mode, revision }]));
   if (cloned.feishuProgressRuns) Object.assign(cloned, progressPolicyForRun(cloned, cloned.activeRunId || cloned.feishuProgressRunId));
   if (!includeQueuedMessages) {
     if (Array.isArray(cloned.workAwareness?.works)) cloned.workAwareness = { revision: cloned.workAwareness.revision,

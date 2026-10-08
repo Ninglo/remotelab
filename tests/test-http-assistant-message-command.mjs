@@ -308,6 +308,14 @@ try {
     const initial = await request(port, 'POST', boardPath, { workboard: task, runId: run.id });
     assert.equal(initial.status, 201, JSON.stringify(initial.json)); assert.equal(initial.json.event.source, 'workboard_checklist');
     assert.equal(initial.json.event.workboard.taskId, task.taskId);
+    const disclosurePath = `/api/sessions/${session.id}/progress-card`;
+    const disclosureBody = { anchorSeq: initial.json.event.seq, mode: 'expanded', changeId: 'http-show', actorOpenId: 'test-person' };
+    const show = await request(port, 'POST', disclosurePath, disclosureBody);
+    assert.equal(show.status, 200, JSON.stringify(show.json));
+    assert.deepEqual(show.json.session.feishuProgressCards[disclosureBody.anchorSeq], { mode: 'expanded', revision: 1 });
+    assert.equal((await request(port, 'POST', disclosurePath, { ...disclosureBody, anchorSeq: 999999 })).status, 400);
+    assert.equal((await request(port, 'POST', disclosurePath, disclosureBody, { Cookie: 'session_token=not-authorized' })).status, 401);
+    assert.equal((await request(port, 'POST', disclosurePath, disclosureBody)).json.session.feishuProgressCards[disclosureBody.anchorSeq].revision, 1);
     const unsupported = await request(port, 'POST', boardPath, { workboard: { ...task, revision: 2,
       items: task.items.map(item => ({ ...item, status: 'done' })) }, runId: run.id });
     assert.equal(unsupported.status, 400, 'unchecked evidence cannot produce a done card');
