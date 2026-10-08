@@ -60,6 +60,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - [Request state upgrade tool](request-state-upgrade-tool.md) — one-command state conversion, validation, journaled cutover and rollback using an instance plan
 - [Request state upgrade](request-state-upgrade.md) — required offline conversion for legacy instances, rollback and the 2026-09-07 incident; read before updating existing services
 - `external-message-protocol.md` — canonical integration contract for external channels
+- [Inline flow display](inline-flow-display.md) — accepted strategy for readable prose, complete left-to-right message previews and in-page enlargement; retains branches, conditions, joins and original source
 - [Native Harness input](native-harness-input.md) — active input transport, native lifecycle, recovery and validation
 - [Session start preflight](session-start-preflight.md) — optional fresh-provider knowledge probe, replacement retry, and daily outcome statistics
 - [Memory and organizational collaboration](memory-architecture/README.md) — shared human/Agent reference and [interactive diagrams](memory-architecture/index.html) for actual startup retrieval, post-turn collection, memory scopes, and the separately labeled organization-governance proposal
