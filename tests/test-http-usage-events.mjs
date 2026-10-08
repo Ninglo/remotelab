@@ -95,6 +95,15 @@ try {
   assert.equal(summary.byEvent.message_submitted, 3, 'duplicates and question controls count once');
   assert.equal(summary.paths.feishuStarted, 1); assert.equal(summary.paths.webOpened, 1);
   assert.equal(summary.paths.webContinued, 1); assert.equal(summary.paths.originalFeishuContinued, 1);
+  assert.equal(summary.report.activity.people, 1);
+  assert.equal(summary.report.activity.sessions, 1);
+  assert.equal(summary.report.activity.inputs, 2, 'native answers are participation, not extra ordinary exchanges');
+  assert.equal(summary.report.activity.questionAnswers, 1);
+  assert.equal(summary.report.journeys.continued.rate, 1, 'answering in Web continues the same collaboration');
+  assert.equal(summary.report.journeys.returned.rate, 1);
+  assert.equal(summary.report.execution.waiting.raised, 1);
+  assert.equal(summary.report.execution.waiting.answered, 1);
+  assert.equal(summary.report.execution.waiting.durationSamples, 1);
   const raw = JSON.stringify(summary);
   for (const privateText of ['ASK_NATIVE_QUESTION', 'private-client-content', 'private-secret', 'spoofed', 'fixture-human', 'fixture-topic', 'fixture-group']) {
     assert.equal(raw.includes(privateText), false, `analytics strips ${privateText}`);
@@ -109,6 +118,13 @@ try {
       page.on('pageerror', error => errors.push(error.message));
       await page.goto(base + `/?tab=tasks&monitor=usage&session=${sessionId}`);
       await page.waitForSelector('#usageAnalysisContent table');
+      assert.equal(await page.locator('#usageAnalysisContent').getAttribute('data-report-version'), '1');
+      const reportText = await page.locator('#usageAnalysisContent').innerText();
+      assert.ok(reportText.includes('People contributing') || reportText.includes('参与交流人数'));
+      for (const rawLabel of ['tool_started', 'Actual usage actions', 'Observed actions', '最近动作，可回到原对话']) {
+        assert.equal(reportText.includes(rawLabel), false, 'raw events do not form the product analysis');
+      }
+      assert.equal(await page.locator('#usageAnalysisContent details[open]').count(), 0, 'definitions begin collapsed');
       assert.equal(await page.locator('#monitoringUsage').isVisible(), true);
       assert.equal(await page.locator('#monitoringAutomations').isVisible(), false);
       await page.locator('#monitoringOverviewTab').click();
@@ -117,6 +133,7 @@ try {
       await page.waitForSelector('#usageAnalysisContent table');
       await page.setViewportSize({ width: 390, height: 844 });
       assert.equal(await page.locator('#monitoringUsage').isVisible(), true);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'tables scroll inside the page on mobile');
       assert.deepEqual(errors, [], 'the real workbench and analysis load without browser errors');
       await page.evaluate(() => window.RemoteLabUsage.flush());
       const afterBrowser = (await request('GET', '/api/usage/analysis')).json;
