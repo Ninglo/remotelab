@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { buildUsageInsights } from '../chat/usage-insights.mjs';
-import { createUsageEventStore } from '../chat/usage-events.mjs';
+import { createUsageEventStore, usageKey } from '../chat/usage-events.mjs';
+import { readUsageSessionOrigins, usageOriginFromRequest } from '../chat/usage-session-origins.mjs';
 
 let sequence = 0;
 const event = (timestamp, name, fields = {}) => ({ eventId: 'event-' + (++sequence), timestamp, event: name,
   actorKind: 'human', sessionId: 's', personHash: 'alice', surface: 'web', ...fields });
-const report = events => buildUsageInsights(events, { now: 10000 });
+const origin = (sessionId = 's', surface = 'feishu', timestamp = 0, conversationKey = 'original') => ({ sessionId, surface, timestamp, conversationKey });
+const report = (events, options = {}) => buildUsageInsights(events, { now: 10000, ...options });
 const input = (timestamp, fields) => event(timestamp, 'message_submitted', { kind: 'message', ...fields });
 
 test('human adoption excludes tool noise, automation, question controls and identity duplicates', () => {
@@ -26,7 +29,7 @@ test('human adoption excludes tool noise, automation, question controls and iden
 test('answering in Web is meaningful continuation, while answer-only visits do not inflate multi-turn exchange', () => {
   const x = report([input(1, { surface: 'feishu', conversationKey: 'original' }),
     input(2, { kind: 'question_answer' }), input(3, { kind: 'question_answer', surface: 'feishu', conversationKey: 'original' }),
-    input(4, { kind: 'question_answer', personHash: 'bob', sessionId: 'earlier-session' })]);
+    input(4, { kind: 'question_answer', personHash: 'bob', sessionId: 'earlier-session' })], { sessionOrigins: [origin()] });
   assert.equal(x.activity.people, 2); assert.equal(x.activity.sessions, 2);
   assert.equal(x.activity.multiTurn.denominator, 1); assert.equal(x.activity.multiTurn.numerator, 0);
   assert.equal(x.journeys.continued.rate, 1); assert.equal(x.journeys.returned.rate, 1);
@@ -43,12 +46,59 @@ test('cross-surface fractions match the same person and thread, and keep questio
     event(9, 'session_open', { personHash: 'charlie' }),
     input(10, { surface: 'feishu', personHash: 'charlie', conversationKey: 'charlie-thread' }),
   ];
-  const x = report(events.reverse()).journeys;
+  const x = report(events.reverse(), { sessionOrigins: [origin()] }).journeys;
   assert.equal(x.started, 3);
-  assert.deepEqual(x.opened, { numerator: 1, denominator: 3, rate: 1 / 3 });
+  assert.deepEqual(x.opened, { numerator: 2, denominator: 3, rate: 2 / 3 }, 'an active participant may open an old Feishu-origin conversation before their first input in this window');
   assert.deepEqual(x.continued, { numerator: 2, denominator: 3, rate: 2 / 3 }, 'Web input does not require an observed open');
   assert.deepEqual(x.returned, { numerator: 1, denominator: 2, rate: 0.5 });
   assert.equal(x.answeredInWeb, 1);
+});
+
+test('old conversation origins survive time-window and gap filtering without backfilling old activity', () => {
+  const events = [input(1000, { surface: 'feishu' }), event(6000, 'session_open'), input(7000),
+    input(8000, { surface: 'feishu', conversationKey: 'original' })];
+  const options = { now: 10000, start: 2000, gaps: [{ start: 2500, end: 5000 }], sessionOrigins: [origin('s', 'feishu', 1000)] };
+  const x = buildUsageInsights(events, options);
+  assert.equal(x.activity.inputs, 2, 'the old Feishu input stays outside the count');
+  assert.equal(x.journeys.started, 1);
+  assert.equal(x.journeys.opened.rate, 1); assert.equal(x.journeys.continued.rate, 1); assert.equal(x.journeys.returned.rate, 1);
+  const oldWeb = buildUsageInsights([input(6000, { surface: 'feishu' }), input(7000)], {
+    ...options, sessionOrigins: [origin('s', 'web', 1000)] });
+  assert.equal(oldWeb.journeys.started, 0, 'a first observed Feishu input cannot relabel a Web-origin conversation');
+  const unknown = buildUsageInsights(events, { ...options, sessionOrigins: [] });
+  assert.equal(unknown.journeys.unknownOrigins, 1); assert.equal(unknown.journeys.continued.rate, null);
+  const unavailable = buildUsageInsights(events, { ...options, originLookupIncomplete: true });
+  assert.equal(unavailable.journeys.continued.rate, null); assert.equal(unavailable.activity.inputs, 2);
+});
+
+test('answer-only continuation in an old Feishu conversation is included; an unknown original thread cannot yield a return rate', () => {
+  const x = report([input(6000, { kind: 'question_answer' })], { sessionOrigins: [origin('s', 'feishu', 1000)] });
+  assert.equal(x.activity.inputs, 0); assert.equal(x.journeys.started, 1); assert.equal(x.journeys.continued.rate, 1);
+  const noThread = report([input(6000)], { sessionOrigins: [origin('s', 'feishu', 1000, '')] });
+  assert.equal(noThread.journeys.unknownReturnTargets, 1); assert.equal(noThread.journeys.returned.rate, null);
+});
+
+test('original Request metadata verifies archived conversation origin without exposing text or inferring agent work', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'usage-origins-'));
+  try {
+    await mkdir(join(directory, 'archive')); await mkdir(join(directory, 'lookup', 'first-user-request'), { recursive: true });
+    const key = '0123456789abcdef01234567', sessionId = 'old-session';
+    const request = { schema: 1, key, sessionId, acceptedAt: '2026-09-01T12:00:00Z', text: 'private content',
+      options: { viewPersonId: 'verified', initiatedByIdentityId: 'verified-identity',
+        sourceContext: { connector: 'feishu', chatId: 'private-chat', rootId: 'private-thread', sender: { senderType: 'user' } } } };
+    const address = createHash('sha256').update(JSON.stringify([sessionId, 'first'])).digest('hex').slice(0, 24);
+    await writeFile(join(directory, 'lookup', 'first-user-request', address + '.json'), JSON.stringify({ key }));
+    await writeFile(join(directory, 'archive', key + '.json'), JSON.stringify(request));
+    const x = await readUsageSessionOrigins([sessionId, 'missing'], { requestsDirectory: directory, hash: usageKey });
+    assert.equal(x.origins.length, 1); assert.equal(x.origins[0].surface, 'feishu');
+    assert.equal(x.origins[0].timestamp, Date.parse(request.acceptedAt));
+    assert.equal(x.origins[0].conversationKey, usageKey(JSON.stringify(['default', 'private-chat', 'private-thread'])));
+    assert.ok(!JSON.stringify(x).includes('private')); assert.equal(x.errors, 0);
+    assert.equal(usageOriginFromRequest({ ...request, options: { ...request.options, usageActorKind: 'agent' } }, usageKey), null);
+    assert.equal(usageOriginFromRequest({ ...request, options: { ...request.options, scheduleId: 'automation' } }, usageKey), null);
+    assert.equal(usageOriginFromRequest({ ...request, options: { ...request.options, sourceContext: {} } }, usageKey), null);
+    assert.equal((await readUsageSessionOrigins([sessionId, 'missing'], { requestsDirectory: directory, hash: usageKey, maxSessions: 1 })).truncated, true);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('native follow-ups do not become extra executions, and only paired waits become durations', () => {

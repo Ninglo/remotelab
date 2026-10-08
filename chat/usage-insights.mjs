@@ -18,7 +18,7 @@ const dayKey = timestamp => {
 };
 
 export function buildUsageInsights(events, { start = 0, now = Date.now(), collectionStartedAt = null,
-  gaps = [], scanIncomplete = false, dropped = 0, failures = 0 } = {}) {
+  gaps = [], scanIncomplete = false, dropped = 0, failures = 0, sessionOrigins = [], originLookupIncomplete = false } = {}) {
   // Following a known gap, begin a new continuous observation interval.
   // Pairing events across a missing interval would invent timings/conversions.
   const gapEnd = Math.max(0, ...gaps.map(gap => gap.end).filter(end => Number.isFinite(end) && end <= now));
@@ -53,7 +53,7 @@ export function buildUsageInsights(events, { start = 0, now = Date.now(), collec
     daily: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, row]) => ({
       day, people: row.people.size, sessions: row.sessions.size, inputs: row.inputs,
     })) };
-  const journeys = analyzeJourneys(qualified, reliable);
+  const journeys = analyzeJourneys(qualified, reliable && !originLookupIncomplete, sessionOrigins);
   const execution = analyzeExecution(qualified, inputs, humanSessions, reliable, now);
   const artifacts = analyzeArtifacts(qualified, reliable);
   return { schemaVersion: 1, since: new Date(since).toISOString(), until: new Date(now).toISOString(),
@@ -62,7 +62,8 @@ export function buildUsageInsights(events, { start = 0, now = Date.now(), collec
       unknownIdentities: activity.unidentifiedInputs }, activity, journeys, execution, artifacts };
 }
 
-function analyzeJourneys(events, reliable) {
+function analyzeJourneys(events, reliable, sessionOrigins) {
+  const origins = new Map(sessionOrigins.filter(origin => Number.isFinite(origin.timestamp)).map(origin => [origin.sessionId, origin]));
   const groups = new Map();
   for (const event of events) {
     if (event.actorKind !== 'human' || !event.personHash || !event.sessionId) continue;
@@ -70,26 +71,30 @@ function analyzeJourneys(events, reliable) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(event);
   }
-  let started = 0, opened = 0, continued = 0, answeredInWeb = 0, returned = 0;
+  let started = 0, opened = 0, continued = 0, answeredInWeb = 0, returned = 0, unknownOrigins = 0, unknownReturnTargets = 0;
   let webSamples = false;
   for (const group of groups.values()) {
-    const first = group.find(ordinaryInput);
-    if (first?.surface !== 'feishu') continue;
+    if (!group.some(event => event.event === 'message_submitted')) continue;
+    const origin = origins.get(group[0].sessionId);
+    if (!origin) { unknownOrigins++; continue; }
+    if (origin.surface !== 'feishu') continue;
     started++;
-    const later = group.filter(event => event.timestamp > first.timestamp);
+    const later = group.filter(event => event.timestamp > origin.timestamp);
     if (later.some(event => event.surface === 'web' && event.event === 'session_open')) { opened++; webSamples = true; }
     const web = later.find(event => event.surface === 'web' && event.event === 'message_submitted');
     if (later.some(event => event.surface === 'web' && event.event === 'message_submitted' && event.kind === 'question_answer')) answeredInWeb++;
     if (!web) continue;
     webSamples = true; continued++;
-    if (first.conversationKey && later.some(event => event.event === 'message_submitted' && event.surface === 'feishu'
-      && event.timestamp > web.timestamp && event.conversationKey === first.conversationKey)) returned++;
+    if (!origin.conversationKey) unknownReturnTargets++;
+    else if (later.some(event => event.event === 'message_submitted' && event.surface === 'feishu'
+      && event.timestamp > web.timestamp && event.conversationKey === origin.conversationKey)) returned++;
   }
   // Web input is authoritative even when a browser-open record is missing.
   // Opening and continuing are independent branches, not a forced funnel.
   return { started, opened: fraction(opened, started, reliable && opened > 0),
     continued: fraction(continued, started, reliable && webSamples),
-    returned: fraction(returned, continued, reliable), answeredInWeb };
+    returned: fraction(returned, continued, reliable && !unknownReturnTargets), answeredInWeb, unknownOrigins, unknownReturnTargets,
+    originBasis: 'first_request' };
 }
 
 function analyzeExecution(events, inputs, humanSessions, reliable, now) {

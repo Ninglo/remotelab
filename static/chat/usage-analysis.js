@@ -39,7 +39,11 @@
     const { activity, journeys, execution, artifacts, quality } = report;
     content.appendChild(node("p", text("本次观察时段：" + time(report.since) + " 至 " + time(report.until),
       "Observed interval: " + time(report.since) + " to " + time(report.until)), "monitoring-note"));
-    if (quality.afterGap) content.appendChild(node("p", text("上线初期有采集缺口，本页从恢复采集后重新汇总。", "An early collection gap exists. These summaries begin after collection recovered."), "monitoring-note"));
+    if (quality.afterGap) content.appendChild(node("p", text("本期发生过采集缺失，本页只汇总最近一次恢复采集后的连续记录；缺失时段没有补成零。", "Collection gaps exist. These summaries cover the continuous interval after the latest recovery; missing intervals are not filled with zeros."), "monitoring-note"));
+    const observedMs = Date.parse(report.until) - Date.parse(report.since), requestedMs = Number(period.value) * 86400000;
+    if (observedMs < requestedMs - 60000) content.appendChild(node("p", text(
+      "所选范围为近 " + period.value + " 天，目前实际可用数据只有约 " + duration(observedMs, true) + "；尚不代表完整的 " + period.value + " 天使用情况。",
+      "The selected range is " + period.value + " days, but only about " + duration(observedMs, true) + " of collected observations are available."), "monitoring-note"));
     if (!quality.reliable) content.appendChild(node("p", text("本次数据不完整，次数仅供回查；比例与耗时暂不计算。", "This observation is incomplete. Counts are partial; rates and timings are withheld."), "monitoring-note"));
     const adoption = section(text("有多少人在参与协作", "Who is participating"));
     metrics(adoption, [[text("参与交流人数", "People contributing"), activity.people],
@@ -52,12 +56,14 @@
       activity.daily.map(row => [row.day, row.people, row.sessions]));
     const path = section(text("飞书与 Web 的协作是否接得上", "Does Feishu collaboration continue in Web"));
     table(path, [text("协作过程", "Collaboration path"), text("观测数 / 样本数 · 比例", "Observed / samples · rate")], [
-      [text("飞书交办后打开 Web", "Opened Web after input in Feishu"), ratio(journeys.opened)],
-      [text("飞书交办后在 Web 继续协作", "Continued in Web after input in Feishu"), ratio(journeys.continued)],
+      [text("飞书发起的会话，本期在 Web 打开", "Feishu-origin conversations opened in Web this interval"), ratio(journeys.opened)],
+      [text("飞书发起的会话，本期在 Web 继续协作", "Feishu-origin conversations continued in Web this interval"), ratio(journeys.continued)],
       [text("Web 协作后返回原飞书话题", "Returned to the original Feishu conversation"), ratio(journeys.returned)],
     ]);
-    note(path, "每个人在同一会话算一次，按先后顺序关联；继续协作包括发消息和回答提问。返回比例以在 Web 继续协作的样本为分母。",
-      "Each person and conversation count once. Continuation includes messages and answers. Return rate uses Web continuations as its denominator.");
+    note(path, "会话最初来源以原始请求记录为准，老会话也计入；每个人在同一会话算一次。继续协作包括发消息和回答提问，返回比例以在 Web 继续协作的样本为分母。",
+      "Origin comes from the original request, including older conversations. Each person and conversation count once. Continuation includes messages and answers; return rate uses Web continuations.");
+    if (journeys.unknownOrigins) note(path, "另有 " + journeys.unknownOrigins + " 组参与记录暂不能确认会话最初来源，未计入跨端比例。",
+      journeys.unknownOrigins + " participating person/conversation pairs have an unknown origin and are excluded from cross-surface rates.");
     if (journeys.started < 10) note(path, "目前只有 " + journeys.started + " 个飞书协作样本，先观察，不据此判断使用习惯。",
       "Only " + journeys.started + " Feishu collaboration samples so far. Observe before drawing conclusions about habits.");
     const work = section(text("交办后的执行与等待", "Execution and waiting after handoff"));
@@ -96,8 +102,8 @@
     details.appendChild(node("summary", text("查看口径与覆盖范围", "Definitions and coverage"))); definitions.appendChild(details);
     note(details, "使用人数按已核的真人身份去重，排除 Agent、自动化和后台操作；会话数按有真人输入的会话去重。",
       "People counts deduplicate verified human identities. Agent, automation and system operations are excluded. Conversations require human input.");
-    note(details, "跨入口路径只代表本期看到的同一人、同一会话，不代表完整历史首发或任务完成。没有分母、配对或完整数据时显示未知。",
-      "Paths describe the same person and conversation in this interval, not historical origin or business completion. Missing denominators, pairs or complete data remain unknown.");
+    note(details, "跨入口动作只统计本期看到的同一人、同一会话；会话最初来源从原始请求确认，历史消息不补入本期次数。没有分母、配对或可靠来源时保留未知。",
+      "Actions cover the same person and conversation in this interval. Origin is verified from the original request; historical messages are not added to interval counts. Missing denominators, pairs or reliable origins remain unknown.");
     note(details, "网页按一个站点计件，修改另外计次数；文件附在回复中不能证明本次新生成。— 表示未覆盖该统计或尚无数据，不等于零。",
       "Websites count once per site, with updates counted separately. Attachment does not establish new generation. A dash means unsupported or unavailable, not zero.");
     note(details, "目前还不能直接判断满意度、隐含的等人判断或成果是否被真正复用；这些仍需原反馈和任务验收。",

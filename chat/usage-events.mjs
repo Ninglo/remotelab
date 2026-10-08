@@ -5,6 +5,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { buildUsageInsights } from './usage-insights.mjs';
+import { readUsageSessionOrigins } from './usage-session-origins.mjs';
+import { writeJsonAtomic } from './fs-utils.mjs';
 
 export const CLIENT_USAGE_EVENTS = new Set(['page_enter', 'session_open', 'page_visibility', 'ui_action', 'content_presented', 'artifact_open']);
 const SERVER_EVENTS = new Set(['message_submitted', 'request_state', 'run_state', 'question_state', 'tool_started', 'tool_finished',
@@ -57,12 +59,16 @@ export function normalizeUsageEvent(input, { personId = '', client = false, now 
   return event;
 }
 
-export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-events'), maxPending = 2048 } = {}) {
+export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-events'), maxPending = 2048,
+  loadSessionOrigins = sessionIds => readUsageSessionOrigins(sessionIds, { requestsDirectory: join(CONFIG_DIR, 'requests'), hash: usageKey }) } = {}) {
   const activatedAt = Date.now();
   const collectionSince = readFile(join(directory, 'collection.json'), 'utf8')
     .then(raw => Date.parse(JSON.parse(raw).startedAt) || activatedAt)
     .catch(() => activatedAt);
   let tail = Promise.resolve(), pending = 0, dropped = 0, failures = 0, ready = false, warned = false;
+  let firstIssueAt = 0, lastIssueAt = 0, persistedIssues = 0;
+  const healthPath = join(directory, `health-${randomUUID()}.json`);
+  const noteIssue = () => { lastIssueAt = Date.now(); firstIssueAt ||= lastIssueAt; };
   const seen = new Map(), queued = new Set(), admissions = new Set();
   const remember = id => { seen.set(id, true); if (seen.size > 50_000) seen.delete(seen.keys().next().value); };
   async function init() {
@@ -80,7 +86,7 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
         .filter(event => event && event.timestamp >= since && !seen.has(event.eventId) && !queued.has(event.eventId))
         .map(event => [event.eventId, event])).values()];
       if (!valid.length) return true;
-      if (pending + valid.length > maxPending) { dropped += valid.length; return false; }
+      if (pending + valid.length > maxPending) { dropped += valid.length; noteIssue(); return false; }
       pending += valid.length;
       valid.forEach(event => queued.add(event.eventId));
       const task = tail.then(async () => {
@@ -95,9 +101,18 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
           await chmod(file, 0o600);
           unique.forEach(event => remember(event.eventId));
         }
+        if (failures + dropped > persistedIssues) {
+          // Disk-full errors may prevent persisting their own receipt. Persist
+          // the interrupted interval at the next successful append, so restart
+          // cannot silently turn a known loss into a complete observation.
+          try {
+            await writeJsonAtomic(healthPath, { schemaVersion: 1, start: firstIssueAt, end: Date.now(), failures, dropped }, { mode: 0o600 });
+            persistedIssues = failures + dropped;
+          } catch { /* Keep process counters degraded until persistence recovers. */ }
+        }
         return true;
       }).catch(() => {
-        failures++; if (!warned) { warned = true; console.warn('[usage-events] Collection unavailable; work continues.'); }
+        failures++; noteIssue(); if (!warned) { warned = true; console.warn('[usage-events] Collection unavailable; work continues.'); }
         return false;
       }).finally(() => { pending -= valid.length; valid.forEach(event => queued.delete(event.eventId)); });
       tail = task.then(() => {});
@@ -120,9 +135,24 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     const now = Date.now(), start = now - days * 86_400_000;
     let metadata = null, files = [], incomplete = false, scanned = 0;
     try { metadata = JSON.parse(await readFile(join(directory, 'collection.json'), 'utf8')); } catch {}
-    const gaps = (Array.isArray(metadata?.gaps) ? metadata.gaps : []).filter(gap =>
+    const persistedGaps = [...(Array.isArray(metadata?.gaps) ? metadata.gaps : [])];
+    try {
+      const names = await readdir(directory);
+      for (const name of names.filter(name => /^health-[a-f0-9-]+\.json$/.test(name))) {
+        try { const incident = JSON.parse(await readFile(join(directory, name), 'utf8'));
+          if (incident.schemaVersion === 1) persistedGaps.push(incident);
+        } catch { incomplete = true; }
+      }
+    } catch (error) { if (error.code !== 'ENOENT') incomplete = true; }
+    const gaps = persistedGaps.filter(gap =>
       Number.isFinite(gap.start) && Number.isFinite(gap.end) && gap.end >= start && gap.start <= now)
       .map(gap => ({ start: gap.start, end: gap.end }));
+    const qualifiedStart = Math.max(start, Date.parse(metadata?.startedAt) || start, 0,
+      ...gaps.map(gap => gap.end).filter(end => end <= now));
+    const knownCorruptions = (Array.isArray(metadata?.knownCorruptions) ? metadata.knownCorruptions : []).filter(entry =>
+      /^[a-f0-9]{64}$/.test(entry.sha256 || '') && Number.isFinite(entry.start) && Number.isFinite(entry.end)
+      && entry.end <= qualifiedStart && persistedGaps.some(gap => gap.start <= entry.start && gap.end >= entry.end));
+    let excludedCorruptLines = 0;
     try { files = (await readdir(directory)).filter(name => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)
       && name.slice(0, 10) >= new Date(start).toISOString().slice(0, 10)).sort().reverse(); } catch (error) { if (error.code !== 'ENOENT') incomplete = true; }
     const events = [], ids = new Set();
@@ -133,7 +163,11 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
         for await (const line of lines) {
           if (++scanned > maxScanned) { incomplete = true; break; }
           if (line.length > 4096) { incomplete = true; continue; }
-          let event; try { event = JSON.parse(line); } catch { incomplete = true; continue; }
+          let event; try { event = JSON.parse(line); } catch {
+            if (knownCorruptions.some(entry => entry.sha256 === createHash('sha256').update(line).digest('hex'))) excludedCorruptLines++;
+            else incomplete = true;
+            continue;
+          }
           if (event.schemaVersion !== 1 || !event.eventId || ids.has(event.eventId)) continue;
           ids.add(event.eventId);
           if (event.timestamp < Math.max(start, Date.parse(metadata?.startedAt) || start)
@@ -146,6 +180,8 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     }
     events.sort((a, b) => a.timestamp - b.timestamp || a.eventId.localeCompare(b.eventId));
     const scanIncomplete = incomplete;
+    const originFacts = await loadSessionOrigins(events.filter(event => event.actorKind === 'human' && event.event === 'message_submitted'
+      && event.timestamp >= qualifiedStart && event.timestamp <= now).map(event => event.sessionId));
     if (gaps.length) incomplete = true;
     const byEvent = {}, bySurface = {}, artifacts = {};
     for (const event of events) {
@@ -159,8 +195,10 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     return { generatedAt: new Date(now).toISOString(), collectionStartedAt: metadata?.startedAt || null,
       window: { start: new Date(start).toISOString(), end: new Date(now).toISOString(), days },
       total: events.length, byEvent, bySurface, artifacts, paths: summarizeSurfacePaths(events),
-      report: buildUsageInsights(events, { start, now, collectionStartedAt: metadata?.startedAt, gaps, scanIncomplete, dropped, failures }),
-      events: events.slice(-limit).reverse(), coverage: { incomplete, scanIncomplete, scanned, pending, dropped, failures, gaps,
+      report: buildUsageInsights(events, { start, now, collectionStartedAt: metadata?.startedAt, gaps, scanIncomplete,
+        dropped: lastIssueAt >= qualifiedStart ? dropped : 0, failures: lastIssueAt >= qualifiedStart ? failures : 0,
+        sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0 }),
+      events: events.slice(-limit).reverse(), coverage: { incomplete, scanIncomplete, scanned, pending, dropped, failures, gaps, excludedCorruptLines,
         notes: ['仅包含采集启动后的可观测事件；不回填历史。', '飞书送达不代表已读；Web 呈现不代表理解或采纳。',
           '产物生成、网页发布、附加到回复与访问分别计数；普通文件写入不自动认定为产物。',
           '原生提问的等待有确定状态；自然语言中的隐含等待尚未自动识别。'] } };
