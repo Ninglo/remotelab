@@ -64,6 +64,9 @@
     const enNotes = ["Only observed events after collection began; no historical backfill.", "Feishu delivery is not reading; Web presentation is not understanding or acceptance.",
       "Generation, publication, attachment and access are separate counts. Ordinary file writes are not automatically artifacts.", "Native questions have definite states. Implicit waiting in conversation text is not automatically detected."];
     (zh() ? cnNotes : enNotes).forEach(note => coverage.appendChild(node("p", note, "monitoring-note")));
+    (value.coverage.gaps || []).forEach(gap => coverage.appendChild(node("p", text(
+      `${time(gap.start)} 至 ${time(gap.end)} 存在已确认的采集缺口，该段次数可能不完整。`,
+      `Known collection gap from ${time(gap.start)} to ${time(gap.end)}; counts may be incomplete.`), "monitoring-note")));
     if (value.coverage.incomplete || value.coverage.dropped || value.coverage.failures) coverage.appendChild(node("p", text("存在扫描截断或采集失败，当前次数可能不完整。", "Scan limits or collection failures mean these counts may be incomplete."), "monitoring-note"));
   }
   async function load() {

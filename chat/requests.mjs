@@ -29,12 +29,20 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
   const records = createRecordStore(root);
   const admission = serialQueue();
   const get = records.get;
-  const publishPendingDeliveries = (record, accepted = false) => {
+  const publishPendingDeliveries = (record, accepted = false, previous) => {
     notifySourceDeliveryAvailable(record?.deliveries || []);
-    try { onChange(record, { accepted }); } catch { /* Observation must not interrupt admission. */ }
+    try { onChange(record, { accepted, previous }); } catch { /* Observation must not interrupt admission. */ }
     return record;
   };
-  const mutate = async (...args) => publishPendingDeliveries(await records.mutate(...args));
+  const mutate = async (key, updater) => {
+    let previous;
+    const record = await records.mutate(key, current => {
+      previous = { resultState: current?.result?.state, settledAt: current?.settledAt,
+        deliveries: (current?.deliveries || []).map(part => ({ id: part.id, state: part.state, attempts: part.attempts })) };
+      return updater(current);
+    });
+    return publishPendingDeliveries(record, false, previous);
+  };
   const indexPath = (kind, scope, id) => join(root, 'lookup', kind, `${requestKey(scope, id)}.json`);
   const index = async (kind, scope, id, key) => {
     const path = indexPath(kind, scope, id);
