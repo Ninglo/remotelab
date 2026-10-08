@@ -61,6 +61,7 @@ The component requires Node.js 18.15 or newer (for disk-space checks) and FFmpeg
 - Linux uses a stable named ALSA card (`hw:CARD=...`) or a named PulseAudio source, Python 3 and explicit `/dev/input/by-id/...-event-kbd` access. Identical receivers may require distinct stable card names/udev configuration. Grant only the device access needed by the host user. Numeric card indexes and the default source must not be used.
 - `free3p` is supported **if it presents the expected keyboard HID events**. Its actual protocol and codes must be learned on the first machine; this implementation has not verified that physical model. The helper does not seize the keyboard: configure unused function keys so events do not type text or invoke normal application shortcuts.
 - Optional `session.tool` chooses an installed Harness; otherwise the service selects an available one. A lane may specify `sessionId`, or `conversation` in the canonical [conversation target format](../external-message-protocol.md). Default is a fresh Session for each recording. Conversation and Session targets are mutually exclusive. Use this instance's auth and base URL; cross-instance credential provisioning is outside this capability.
+- Capture and delivery are separate choices. Set `submissionMode: "local"` to keep keypad/UI recording available while saving audio only on this machine. This stops all upload/Session requests, including pending retries from earlier recordings. New and recovered recordings retain their local-only choice as `held`; switching the config back to the default `"automatic"` does not replay them. There is no automatic release of held recordings. Keep the setup Session out of the delivery bindings when the user already has a dedicated recording-analysis workflow; discover its actual upload entry and conversation before preparing delivery. A request to prepare that route does not authorize sending test recordings to a real group.
 
 After preparing a config file, the AI uses `configure --file PATH`, `enable`, and `install --apply`, then reads `status`. `install` without `--apply` previews the launchd/systemd user service. On Linux, a usable user systemd manager is required; for service-less environments use `serve` under an existing process supervisor. macOS uses a user LaunchAgent, so logout stops capture. `uninstall --apply` stops/removes the service and preserves the recordings. Stop a manually supervised `serve` process with SIGTERM before changing bindings or disabling the config.
 
@@ -79,6 +80,7 @@ States mean different things:
 | active `starting` | Receiver process started; input has not yet delivered verified stereo frames |
 | active `recording` | PCM is being saved for that lane |
 | `pending` | Audio saved; upload/submission pending |
+| `held` | Audio saved locally; no upload or analysis request authorized for this recording |
 | `blocked` | Saved audio retained; upload/submission needs retry or configuration repair |
 | `submitted` / `analysisState: accepted` | RemoteLab accepted the analysis request; follow the Session/Run for the result |
 | `failed` | No usable audio saved; inspect the reason |

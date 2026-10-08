@@ -22,11 +22,15 @@ struct RecordingPanelStateTests {
         assert(state(recording, "b").tone == "idle", "The other discussion is independent")
         assert(state(recording, running: false).tone == "offline", "Child exit must clear a red indicator even if the last file is red")
         assert(state(recording, error: "cannot read status").tone == "unknown")
-        for status in ["pending", "submitted", "blocked", "failed"] {
+        for status in ["pending", "held", "submitted", "blocked", "failed"] {
             let saved: [String: Any] = ["pid": pid, "active": [], "records": [["laneId": "a", "status": status, "startedAt": "2026-01-01"]]]
             assert(state(saved).action == "start")
             assert(state(saved).tone != "recording", "Saved/uploading audio is not an active recording")
         }
+        let held: [String: Any] = ["pid": pid, "active": [], "records": [["laneId": "a", "status": "held"]]]
+        assert(state(held).detail.contains("保存在本机"))
+        let paused: [String: Any] = ["pid": pid, "submissionMode": "local", "active": [], "records": [["laneId": "a", "status": "pending"]]]
+        assert(state(paused).detail.contains("上传已暂停"))
         let latest: [String: Any] = ["pid": pid, "active": [], "records": [
             ["laneId": "a", "status": "failed", "startedAt": "2026-01-01"],
             ["laneId": "a", "status": "submitted", "startedAt": "2026-01-02"]]]

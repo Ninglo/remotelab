@@ -208,6 +208,42 @@ async function pendingRecord(root, extra = {}) {
   await wav.append(Buffer.from([123, 0])); await wav.finish(); return record;
 }
 
+test('local capture saves held audio and keeps it local across crash recovery and automatic-mode restart', async (t) => {
+  const root = await temporary(t), cfg = config({ submissionMode: 'local' }), factory = captureFactory();
+  assert.equal((await saveRecordingConfig(root, cfg)).submissionMode, 'local');
+  assert.throws(() => config({ submissionMode: 'typo' }), /submission mode/);
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  await manager.start('a');
+  await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(123, 456));
+  const saved = (await manager.stop('a')).recording;
+  assert.equal(saved.status, 'held'); assert.deepEqual(await samples(root, saved), Array(4).fill(123));
+  await saveRecord(root, { ...saved, status: 'recording' });
+  await recoverRecordings(root);
+  const recovered = await loadRecord(root, saved.id);
+  assert.equal(recovered.status, 'held'); assert.equal(recovered.interrupted, true);
+  const queue = new RecordingUploadQueue({ root, config: config(), submit: async () => assert.fail('Held recordings must never be replayed') });
+  await queue.run(); await queue.close();
+  assert.equal((await loadRecord(root, saved.id)).status, 'held');
+});
+
+test('local mode blocks old pending retries and direct submissions before any remote request', async (t) => {
+  const root = await temporary(t), cfg = config({ submissionMode: 'local' });
+  const record = await pendingRecord(root, { destination: { sessionId: 'old_setup_session' } });
+  const client = { request: async () => assert.fail('Local mode must not call any HTTP API') };
+  const queue = new RecordingUploadQueue({ root, config: cfg, submit: async () => assert.fail('Old pending files must stay paused') });
+  await queue.run(); await queue.close();
+  assert.equal((await loadRecord(root, record.id)).attempts, undefined);
+  await assert.rejects(submitRecording(root, record, { config: cfg, client }), /remains local/);
+  await assert.rejects(submitRecording(root, { ...record, submissionMode: 'local' }, { config: config(), client }), /remains local/);
+  const factory = captureFactory();
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  const daemon = await startRecordingDaemon({ root, config: cfg, manager, listenInput: false });
+  t.after(() => daemon.stop());
+  await assert.rejects(controlRecording(root, 'retry', record.id), /remains local/);
+  assert.equal(JSON.parse(await readFile(join(root, 'status.json'), 'utf8')).submissionMode, 'local');
+});
+
 test('accepted-but-lost replies retry the same request and reuse finalized assets without leaking cookies to storage', async (t) => {
   const root = await temporary(t), record = await pendingRecord(root), requests = [];
   let fail = true, uploads = 0, intents = 0, finalized = false;

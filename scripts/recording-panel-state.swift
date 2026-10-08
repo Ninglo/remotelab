@@ -30,7 +30,8 @@ struct RecordingPanelState: Equatable {
         var tone = "idle"
         if let last {
             switch last["status"] as? String {
-            case "pending": detail = "点击开始 · 上一段已保存，正在回传"
+            case "held": detail = "点击开始 · 上一段已保存在本机"
+            case "pending": detail = snapshot["submissionMode"] as? String == "local" ? "点击开始 · 上一段已保存，上传已暂停" : "点击开始 · 上一段已保存，正在回传"
             case "submitted": detail = "点击开始 · 上一段已传入 RemoteLab"
             case "blocked": detail = "点击开始 · 上一段已保存，回传需重试"; tone = "warning"
             case "failed": detail = "点击重试 · 上一段未录成"; tone = "warning"

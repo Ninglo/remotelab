@@ -306,7 +306,8 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             lane.card.layer?.backgroundColor = (red ? NSColor.systemRed.withAlphaComponent(0.06) : NSColor.controlBackgroundColor).cgColor
             lane.detail.stringValue = lane.actionError ?? state.detail
         }
-        footer?.stringValue = preview ? "界面预览：按钮不会开始录音。" : serviceError ?? (shuttingDown ? "正在保存并退出，请稍候…" : "按小键盘或点按钮启停。停止后自动回传。")
+        let localOnly = config["submissionMode"] as? String == "local"
+        footer?.stringValue = preview ? "界面预览：按钮不会开始录音。" : serviceError ?? (shuttingDown ? "正在保存并退出，请稍候…" : localOnly ? "按小键盘或点按钮启停。只保存在本机，暂不上传。" : "按小键盘或点按钮启停。停止后自动回传。")
         renderElapsed()
         let projection = controls.values.sorted { $0.id < $1.id }.map {
             ["laneId": $0.id, "title": $0.status.stringValue, "buttonTitle": $0.button.title, "detail": $0.detail.stringValue,

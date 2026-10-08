@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-08 — Keep recording setup separate from recording analysis
+
+- Observed failure: both Mac recording lanes delivered test clips into the setup Session although the instance already had a dedicated recording-upload group and analysis workflow. Repeated requests for the operator to verify one small UI transition added avoidable work.
+- Requested behavior: reuse the existing upload and analysis route; configuring it does not authorize sending test recordings into a real group. Verify available software evidence autonomously and reserve human participation for observations the software cannot supply.
+- Change: support local-only capture without upload, Session creation or retry submission. Saved and interrupted recordings retain that choice after restart; the panel states that audio stays on the machine. Delivery remains a separate, explicitly selected workflow, rather than inheriting the setup conversation.
+- Verification boundary: isolated tests cover saved PCM, crash recovery, mode changes, old pending uploads, direct submission guards and retry rejection. Mac compilation and local configuration/readback are separate from actual group delivery; no group test is required to verify a paused route.
+
 ### 2026-10-08 — A repeated question submission must acknowledge the received answer
 
 - Observed failure: a Feishu question form reported that an answer was not applied although the same answer had already reached the waiting Harness. Later clicks were admitted with new callback event IDs and rejected because the question was already answered.
