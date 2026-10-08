@@ -11,7 +11,7 @@
       "title": "RemoteLab 产出汇总",
       "source": "docs/architecture-atlas",
       "route": "deliverables.html",
-      "description": "从项目已有记录汇总功能与代码、说明页面、文档和历史交付依据；沿原来源核对实际启用和验收。",
+      "description": "汇总独立网站、功能与代码、说明页面、文档和历史交付依据；沿原项目核对和维护。",
       "navTitle": "产出汇总"
     },
     {
@@ -47,7 +47,7 @@
       "navTitle": "记忆与协作"
     }
   ],
-  "edition": "20261008deliverables",
+  "edition": "20261008webproducts",
   "readingConvention": "从消息全程进入；具体环节内展开实现，专题引用保留原维护源和日期。",
   "pages": [
     {
@@ -58,6 +58,10 @@
         [
           "scope",
           "已有产出与核对范围"
+        ],
+        [
+          "web-products",
+          "独立 Web 产物"
         ],
         [
           "capabilities",
@@ -406,6 +410,451 @@
         "name": "完整文档导航",
         "purpose": "从当前主线文档继续查找专用 API、安装与运维资料。"
       }
-    ]
+    ],
+    "webProducts": {
+      "checkedAt": "2026-10-08",
+      "scope": "本实例可定位的独立 HTML 网站与 Web 试验，按项目或主题归组；历史版本保留在各组相关入口中。",
+      "publicationRecordsSeen": 101,
+      "metadataMissing": 30,
+      "products": [
+        {
+          "id": "qianyan-workbench-sources-20260929",
+          "name": "具身前沿追踪",
+          "category": "研究资料",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/qianyan-workbench-sources-20260929/index.html",
+          "purpose": "具身智能与 AI 行业两条赛道的动态、原文阅读、研究资料、早报与音频。",
+          "status": "持续维护；各材料与榜单保留自己的日期和核读范围。",
+          "publishedAt": "2026-10-08T08:45:06.188Z",
+          "related": [
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/qianyan-workbench-v6-20260929/index.html",
+              "name": "早期单页原型（v6）",
+              "publishedAt": "2026-09-29T10:55:01.496Z"
+            }
+          ]
+        },
+        {
+          "id": "classic-paper-reading-20260929",
+          "name": "具身策略经典论文研读",
+          "category": "研究资料",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/classic-paper-reading-20260929/index.html",
+          "purpose": "从主要动机和数学基础查找具身策略论文及阅读路线。",
+          "status": "已发布的研读网站；不作为模型训练或复现结果。",
+          "publishedAt": "2026-10-04T16:10:05.866Z",
+          "related": []
+        },
+        {
+          "id": "embodied-agent-lab-20260919",
+          "name": "具身 Agent 入门与实验回放",
+          "category": "评测与实验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/embodied-agent-lab-20260919/index.html?v=r3",
+          "purpose": "结合语言决策、机器人过程视频与轨迹理解实验案例。",
+          "status": "历史案例回放；实时生产观测接入另行核对。",
+          "publishedAt": "2026-09-19T17:56:40.378771+00:00",
+          "related": []
+        },
+        {
+          "id": "robodojo-openwam-architecture-20260924",
+          "name": "RoboDojo × OpenWAM 部署架构",
+          "category": "评测与实验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/robodojo-openwam-architecture-20260924/index.html",
+          "purpose": "查看评测到模型推理的调用链和组件说明。",
+          "status": "9 月 24 日的架构说明快照；当前部署沿原项目核对。",
+          "publishedAt": "2026-09-24T09:11:58.779Z",
+          "related": []
+        },
+        {
+          "id": "robodojo-pi05-comparison-20260910",
+          "name": "RoboDojo Pi0.5 结果与对照",
+          "category": "评测与实验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/robodojo-pi05-comparison-20260910/index.html",
+          "purpose": "查看历史评测运行、结果、模型对照与效率分析。",
+          "status": "历史结果入口；不作为正在运行的评测状态。",
+          "publishedAt": "2026-09-15T07:16:20.474Z",
+          "related": [
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/robodojo-pi05-new-vs-official-20260913/index.html",
+              "name": "新模型与官方模型对照",
+              "publishedAt": "2026-09-14T04:03:46.461934+00:00"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/robodojo-pi05-new-vs-previous-20260913/index.html",
+              "name": "新模型与上一版对照",
+              "publishedAt": "2026-09-14T04:03:42.063859+00:00"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/robodojo-ab-efficiency-20260909/index.html",
+              "name": "9月9日评测效率分析",
+              "publishedAt": "2026-09-09T15:55:36.806Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/robodojo-ab-status-20260909-2250/index.html",
+              "name": "9月9日评测状态快照",
+              "publishedAt": "2026-09-09T14:58:28.104Z"
+            }
+          ]
+        },
+        {
+          "id": "core10k-throughput-diagnosis-20260924",
+          "name": "Core10k 评测速度说明",
+          "category": "评测与实验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/core10k-throughput-diagnosis-20260924/index.html",
+          "purpose": "解释一轮评测耗时及速度分析。",
+          "status": "9 月 24 日的诊断材料；不当作当前吞吐读数。",
+          "publishedAt": "2026-09-24T02:05:28.230Z",
+          "related": []
+        },
+        {
+          "id": "agent-benchmark-report-20260709",
+          "name": "Agent Benchmark 接入与训练闭环评估",
+          "category": "评测与实验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/agent-benchmark-report-20260709/index.html",
+          "purpose": "比较 Agent 评测接入与训练闭环的方案。",
+          "status": "历史报告；9 月 9 日重新发布不改变原报告日期。",
+          "publishedAt": "2026-09-09T04:04:34.744Z",
+          "related": []
+        },
+        {
+          "id": "secondary-display-studio",
+          "name": "副屏设置与方案预览",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/secondary-display-studio/index.html",
+          "purpose": "查看副屏布局、主题配置、提醒与声音试验方案。",
+          "status": "预览与配置资料；实际设备表现需由原设备记录核对。",
+          "publishedAt": "2026-09-26T09:47:46.321Z",
+          "related": [
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-sound-pilot-20260927/index.html",
+              "name": "副屏声音试验",
+              "publishedAt": "2026-09-28T11:35:42.123Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-sound-test-20260927/index.html",
+              "name": "声音播放测试页面",
+              "publishedAt": "2026-09-27T10:14:59.444Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-59-preview-first/index.html",
+              "name": "第59版布局评审入口",
+              "publishedAt": "2026-09-26T09:47:53.596Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-58-unified-font-todos/index.html",
+              "name": "第58版历史预览",
+              "publishedAt": "2026-09-26T03:00:36.842Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-57-font-layout-fast-pet/index.html",
+              "name": "第57版历史预览",
+              "publishedAt": "2026-09-25T12:14:29.882Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-56-topic-directed-alerts/index.html",
+              "name": "第56版历史预览",
+              "publishedAt": "2026-09-25T12:00:01.681Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-55-topic-reply-filter/index.html",
+              "name": "第55版历史预览",
+              "publishedAt": "2026-09-25T11:21:56.358Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-54-feishu-one-consent/index.html",
+              "name": "第54版历史预览",
+              "publishedAt": "2026-09-25T11:12:25.043Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-53-calendar-still-pet/index.html",
+              "name": "第53版历史预览",
+              "publishedAt": "2026-09-25T11:11:04.727Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-51-evening-reminders/index.html",
+              "name": "第51版历史预览",
+              "publishedAt": "2026-09-25T10:48:15.184Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-52-feishu-ack/index.html",
+              "name": "第52版历史预览",
+              "publishedAt": "2026-09-25T10:46:20.402Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-50-sync-original-pets/index.html",
+              "name": "第50版历史预览",
+              "publishedAt": "2026-09-25T10:20:39.219Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-49-beijing-weather/index.html",
+              "name": "第49版历史预览",
+              "publishedAt": "2026-09-25T10:07:46.947Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-48-weather-chat-source/index.html",
+              "name": "第48版历史预览",
+              "publishedAt": "2026-09-25T10:04:00.168Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-47-weather-chat-source/index.html",
+              "name": "第47版历史预览",
+              "publishedAt": "2026-09-25T10:03:24.130Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-46-reminder-sync/index.html",
+              "name": "第46版历史预览",
+              "publishedAt": "2026-09-25T09:44:38.766Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-45-feishu-read-sync/index.html",
+              "name": "第45版历史预览",
+              "publishedAt": "2026-09-25T09:36:02.231Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-44-persistent-feishu/index.html",
+              "name": "第44版历史预览",
+              "publishedAt": "2026-09-25T09:21:52.869Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-43-quiet-alerts/index.html",
+              "name": "第43版历史预览",
+              "publishedAt": "2026-09-25T09:15:16.132Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-42-reminder-stack/index.html",
+              "name": "第42版历史预览",
+              "publishedAt": "2026-09-25T09:05:24.150Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-41-feishu-actions/index.html",
+              "name": "第41版历史预览",
+              "publishedAt": "2026-09-25T08:50:06.441Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-40-feishu-pets/index.html",
+              "name": "第40版历史预览",
+              "publishedAt": "2026-09-25T08:33:47.860Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-39-real-reminders/index.html",
+              "name": "第39版历史预览",
+              "publishedAt": "2026-09-25T08:11:22.364Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-38-schedule-overview/index.html",
+              "name": "第38版历史预览",
+              "publishedAt": "2026-09-25T06:29:35.022Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-37-animated-pets/index.html",
+              "name": "第37版历史预览",
+              "publishedAt": "2026-09-25T06:21:25.707Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-36-one-click-apply/index.html",
+              "name": "第36版历史预览",
+              "publishedAt": "2026-09-25T06:09:33.788Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-35-sticky-preview-apply/index.html",
+              "name": "第35版历史预览",
+              "publishedAt": "2026-09-25T04:31:08.647Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-34-sticky-preview-apply/index.html",
+              "name": "第34版历史预览",
+              "publishedAt": "2026-09-25T04:30:06.153Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-33-preview-apply/index.html",
+              "name": "第33版历史预览",
+              "publishedAt": "2026-09-25T04:29:01.312Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-32-remotelab-ui/index.html",
+              "name": "第32版历史预览",
+              "publishedAt": "2026-09-25T04:18:27.420Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-31-appearance-work/index.html",
+              "name": "第31版历史预览",
+              "publishedAt": "2026-09-25T04:05:58.301Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-30-clear-flow/index.html",
+              "name": "第30版历史预览",
+              "publishedAt": "2026-09-25T03:56:38.668Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-29-three-zones/index.html",
+              "name": "第29版历史预览",
+              "publishedAt": "2026-09-25T03:43:09.075Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-28-original-style/index.html",
+              "name": "第28版历史预览",
+              "publishedAt": "2026-09-25T03:34:44.496Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/display-studio-27-20260925-layout/index.html",
+              "name": "第27版历史预览",
+              "publishedAt": "2026-09-25T03:18:31.478Z"
+            }
+          ]
+        },
+        {
+          "id": "remotelab-theme-lab-20260924",
+          "name": "RemoteLab 外观实验室",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-theme-lab-20260924/index.html",
+          "purpose": "预览外观主题和配色方案。",
+          "status": "试验预览；发布页面不代表主题已经应用。",
+          "publishedAt": "2026-09-30T09:03:44.792Z",
+          "related": []
+        },
+        {
+          "id": "remotelab-workbench-design-20260930-v4",
+          "name": "RemoteLab 工作台与任务导航方案",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v4/index.html",
+          "purpose": "查看工作台、文件夹、任务中心与导航的信息组织方案。",
+          "status": "v4 设计预览；v1–v3 保留为历史版本。",
+          "publishedAt": "2026-09-30T13:26:36.272Z",
+          "related": [
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v3/index.html",
+              "name": "第3版历史预览",
+              "publishedAt": "2026-09-30T12:41:37.810Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v2/index.html",
+              "name": "第2版历史预览",
+              "publishedAt": "2026-09-30T12:18:27.515Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v1/index.html",
+              "name": "第1版历史预览",
+              "publishedAt": "2026-09-30T11:15:41.457Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-folder-ui-preview-20260930/index.html",
+              "name": "文件夹布局预览",
+              "publishedAt": "2026-09-30T08:41:51.895Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-navigation-study-20260924/index.html",
+              "name": "导航方案研究",
+              "publishedAt": "2026-09-25T08:12:19.167Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-task-center-hierarchy-20260924/index.html",
+              "name": "任务中心层级预览",
+              "publishedAt": "2026-09-24T10:34:13.128Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-task-center-lab-20260924/index.html",
+              "name": "任务中心交互试验",
+              "publishedAt": "2026-09-24T10:23:19.695Z"
+            },
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-ui-exploration-20260924/index.html",
+              "name": "工作台界面探索",
+              "publishedAt": "2026-09-24T10:02:02.124Z"
+            }
+          ]
+        },
+        {
+          "id": "remotelab-fleet-overview",
+          "name": "RemoteLab 账号与机器概览",
+          "category": "运维资料",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/remotelab-fleet-overview/index.html",
+          "purpose": "查看已发布的账号、机器与实例概览。",
+          "status": "静态概览；当前服务健康与额度读原监控。",
+          "publishedAt": "2026-09-19T14:59:17.683Z",
+          "related": []
+        },
+        {
+          "id": "gongpai-hardware-selection-20260925-v2",
+          "name": "工牌硬件选型参考",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/gongpai-hardware-selection-20260925-v2/index.html",
+          "purpose": "查看候选硬件的选型材料。",
+          "status": "历史选型资料；网页存在不代表硬件交付。",
+          "publishedAt": "2026-09-25T08:14:09.567Z",
+          "related": [
+            {
+              "url": "https://zhangyu.jiujianian.dev/public-pages/gongpai-hardware-selection-20260925/index.html",
+              "name": "第一版硬件选型资料",
+              "publishedAt": "2026-09-25T08:13:39.735Z"
+            }
+          ]
+        },
+        {
+          "id": "shape-pals-20260926",
+          "name": "小形星 · 几何伙伴实验室",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/shape-pals-20260926/index.html",
+          "purpose": "查看几何形态伙伴的视觉与交互方案。",
+          "status": "独立试验页面。",
+          "publishedAt": "2026-09-26T11:25:12.317Z",
+          "related": []
+        },
+        {
+          "id": "companion-lab-20260926-v2",
+          "name": "小人实验室",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/companion-lab-20260926-v2/index.html",
+          "purpose": "查看人物与伙伴形象的交互原型。",
+          "status": "v2 独立试验页面。",
+          "publishedAt": "2026-09-26T11:03:09.958Z",
+          "related": []
+        },
+        {
+          "id": "claude-tag-otter-c2-3d-trial-20261004",
+          "name": "C2 水獭 3D 试生成",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/claude-tag-otter-c2-3d-trial-20261004/index.html",
+          "purpose": "查看水獭形象的首次 3D 生成结果。",
+          "status": "试生成，原页标注待修正。",
+          "publishedAt": "2026-10-04T12:09:09.844Z",
+          "related": []
+        },
+        {
+          "id": "jev-model-labeling-20260922",
+          "name": "RemoteLab 模型标注入口",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/jev-model-labeling-20260922/index.html",
+          "purpose": "进入模型标注页面。",
+          "status": "已发布入口；实际标注仍需页面要求的权限。",
+          "publishedAt": "2026-09-22T08:31:12.705Z",
+          "related": []
+        },
+        {
+          "id": "activity-playground-20260908",
+          "name": "RemoteLab 工作过程交互试验",
+          "category": "产品与设备试验",
+          "url": "https://zhangyu.jiujianian.dev/public-pages/activity-playground-20260908/index.html",
+          "purpose": "查看工作过程收起、展开和细节展示的交互方案。",
+          "status": "历史交互原型；页面发布不代表已成为应用默认行为。",
+          "publishedAt": "2026-09-08T01:39:03.882Z",
+          "related": []
+        }
+      ],
+      "excludedPublicationGroups": [
+        {
+          "reason": "已在本说明项目的页面目录中登记",
+          "slugs": [
+            "remotelab-architecture-atlas",
+            "remotelab-memory-architecture"
+          ]
+        },
+        {
+          "reason": "文件交付或原始数据，未作为独立网站收录",
+          "slugs": [
+            "robolab-source-transfer-20261008",
+            "daily-review-files-20260917-20260923",
+            "robodojo-evaluation-data"
+          ]
+        }
+      ]
+    }
   }
 }

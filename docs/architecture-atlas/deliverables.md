@@ -1,12 +1,52 @@
 # RemoteLab 产出汇总
 
-本章在 2026-10-08 定位了 8 组、43 项候选功能及其 106 个源码或文档引用，6 个原有说明页面、12 个重点文档入口，以及 27 条旧功能记录。数量分别描述不同对象，不能相加当作已完成成果总数。
+本章在 2026-10-08 归集了 17 组独立 Web 产物，涵盖 66 个网站与历史版本入口；同时定位 8 组、43 项候选功能及其 106 个源码或文档引用，6 个原有说明页面、12 个重点文档入口，以及 27 条旧功能记录。数量分别描述不同对象，不能相加当作已完成成果总数。
 
 本次核对到文件、目录和引用存在。功能清单沿用 2026-10-06 的候选记录，模块作者补漏与逐项实际使用验收尚未完成；历史目录也可能含已调整的入口。某项功能的当前启用、结果送达与业务效果，需要继续沿原记录查证。
 
 源码核对基线 4e8426e5e256f0ff49acf1b4af285965242c94d9。页面、功能与文档保留各自的核对日期，本章整理日期不替代它们。
 
 本页是整体说明项目的生成章节；内容修改原项目记录后重新生成。
+
+## 独立 Web 产物
+
+独立网站、研究资料与试验页面也属于我们的产出，按原项目或主题归组。网站内容继续在各自项目维护，本章只登记入口、用途和发布时的状态。发布目录于 2026-10-08 核对；发布记录时间不等于内容日期，也不表示试验已应用或设备已经验收。
+
+本次从 101 条发布记录归集可定位的 HTML 页面，同一项目的历史版本收在对应入口下。另有 30 条旧目录缺发布元数据，尚未逐项恢复；临时文件传输与原始数据发布不计作网站。因此这里仍保留补漏空间。
+
+### 研究资料
+
+- [具身前沿追踪](https://zhangyu.jiujianian.dev/public-pages/qianyan-workbench-sources-20260929/index.html)：具身智能与 AI 行业两条赛道的动态、原文阅读、研究资料、早报与音频。 持续维护；各材料与榜单保留自己的日期和核读范围。 发布记录：2026-10-08。
+  同组历史版本与相关入口：[早期单页原型（v6）](https://zhangyu.jiujianian.dev/public-pages/qianyan-workbench-v6-20260929/index.html)
+- [具身策略经典论文研读](https://zhangyu.jiujianian.dev/public-pages/classic-paper-reading-20260929/index.html)：从主要动机和数学基础查找具身策略论文及阅读路线。 已发布的研读网站；不作为模型训练或复现结果。 发布记录：2026-10-04。
+
+### 评测与实验
+
+- [具身 Agent 入门与实验回放](https://zhangyu.jiujianian.dev/public-pages/embodied-agent-lab-20260919/index.html?v=r3)：结合语言决策、机器人过程视频与轨迹理解实验案例。 历史案例回放；实时生产观测接入另行核对。 发布记录：2026-09-19。
+- [RoboDojo × OpenWAM 部署架构](https://zhangyu.jiujianian.dev/public-pages/robodojo-openwam-architecture-20260924/index.html)：查看评测到模型推理的调用链和组件说明。 9 月 24 日的架构说明快照；当前部署沿原项目核对。 发布记录：2026-09-24。
+- [RoboDojo Pi0.5 结果与对照](https://zhangyu.jiujianian.dev/public-pages/robodojo-pi05-comparison-20260910/index.html)：查看历史评测运行、结果、模型对照与效率分析。 历史结果入口；不作为正在运行的评测状态。 发布记录：2026-09-15。
+  同组历史版本与相关入口：[新模型与官方模型对照](https://zhangyu.jiujianian.dev/public-pages/robodojo-pi05-new-vs-official-20260913/index.html)、[新模型与上一版对照](https://zhangyu.jiujianian.dev/public-pages/robodojo-pi05-new-vs-previous-20260913/index.html)、[9月9日评测效率分析](https://zhangyu.jiujianian.dev/public-pages/robodojo-ab-efficiency-20260909/index.html)、[9月9日评测状态快照](https://zhangyu.jiujianian.dev/public-pages/robodojo-ab-status-20260909-2250/index.html)
+- [Core10k 评测速度说明](https://zhangyu.jiujianian.dev/public-pages/core10k-throughput-diagnosis-20260924/index.html)：解释一轮评测耗时及速度分析。 9 月 24 日的诊断材料；不当作当前吞吐读数。 发布记录：2026-09-24。
+- [Agent Benchmark 接入与训练闭环评估](https://zhangyu.jiujianian.dev/public-pages/agent-benchmark-report-20260709/index.html)：比较 Agent 评测接入与训练闭环的方案。 历史报告；9 月 9 日重新发布不改变原报告日期。 发布记录：2026-09-09。
+
+### 产品与设备试验
+
+- [副屏设置与方案预览](https://zhangyu.jiujianian.dev/public-pages/secondary-display-studio/index.html)：查看副屏布局、主题配置、提醒与声音试验方案。 预览与配置资料；实际设备表现需由原设备记录核对。 发布记录：2026-09-26。
+  同组历史版本与相关入口：[副屏声音试验](https://zhangyu.jiujianian.dev/public-pages/display-studio-sound-pilot-20260927/index.html)、[声音播放测试页面](https://zhangyu.jiujianian.dev/public-pages/display-sound-test-20260927/index.html)、[第59版布局评审入口](https://zhangyu.jiujianian.dev/public-pages/display-studio-59-preview-first/index.html)、[第58版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-58-unified-font-todos/index.html)、[第57版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-57-font-layout-fast-pet/index.html)、[第56版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-56-topic-directed-alerts/index.html)、[第55版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-55-topic-reply-filter/index.html)、[第54版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-54-feishu-one-consent/index.html)、[第53版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-53-calendar-still-pet/index.html)、[第51版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-51-evening-reminders/index.html)、[第52版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-52-feishu-ack/index.html)、[第50版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-50-sync-original-pets/index.html)、[第49版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-49-beijing-weather/index.html)、[第48版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-48-weather-chat-source/index.html)、[第47版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-47-weather-chat-source/index.html)、[第46版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-46-reminder-sync/index.html)、[第45版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-45-feishu-read-sync/index.html)、[第44版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-44-persistent-feishu/index.html)、[第43版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-43-quiet-alerts/index.html)、[第42版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-42-reminder-stack/index.html)、[第41版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-41-feishu-actions/index.html)、[第40版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-40-feishu-pets/index.html)、[第39版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-39-real-reminders/index.html)、[第38版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-38-schedule-overview/index.html)、[第37版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-37-animated-pets/index.html)、[第36版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-36-one-click-apply/index.html)、[第35版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-35-sticky-preview-apply/index.html)、[第34版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-34-sticky-preview-apply/index.html)、[第33版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-33-preview-apply/index.html)、[第32版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-32-remotelab-ui/index.html)、[第31版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-31-appearance-work/index.html)、[第30版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-30-clear-flow/index.html)、[第29版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-29-three-zones/index.html)、[第28版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-28-original-style/index.html)、[第27版历史预览](https://zhangyu.jiujianian.dev/public-pages/display-studio-27-20260925-layout/index.html)
+- [RemoteLab 外观实验室](https://zhangyu.jiujianian.dev/public-pages/remotelab-theme-lab-20260924/index.html)：预览外观主题和配色方案。 试验预览；发布页面不代表主题已经应用。 发布记录：2026-09-30。
+- [RemoteLab 工作台与任务导航方案](https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v4/index.html)：查看工作台、文件夹、任务中心与导航的信息组织方案。 v4 设计预览；v1–v3 保留为历史版本。 发布记录：2026-09-30。
+  同组历史版本与相关入口：[第3版历史预览](https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v3/index.html)、[第2版历史预览](https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v2/index.html)、[第1版历史预览](https://zhangyu.jiujianian.dev/public-pages/remotelab-workbench-design-20260930-v1/index.html)、[文件夹布局预览](https://zhangyu.jiujianian.dev/public-pages/remotelab-folder-ui-preview-20260930/index.html)、[导航方案研究](https://zhangyu.jiujianian.dev/public-pages/remotelab-navigation-study-20260924/index.html)、[任务中心层级预览](https://zhangyu.jiujianian.dev/public-pages/remotelab-task-center-hierarchy-20260924/index.html)、[任务中心交互试验](https://zhangyu.jiujianian.dev/public-pages/remotelab-task-center-lab-20260924/index.html)、[工作台界面探索](https://zhangyu.jiujianian.dev/public-pages/remotelab-ui-exploration-20260924/index.html)
+- [工牌硬件选型参考](https://zhangyu.jiujianian.dev/public-pages/gongpai-hardware-selection-20260925-v2/index.html)：查看候选硬件的选型材料。 历史选型资料；网页存在不代表硬件交付。 发布记录：2026-09-25。
+  同组历史版本与相关入口：[第一版硬件选型资料](https://zhangyu.jiujianian.dev/public-pages/gongpai-hardware-selection-20260925/index.html)
+- [小形星 · 几何伙伴实验室](https://zhangyu.jiujianian.dev/public-pages/shape-pals-20260926/index.html)：查看几何形态伙伴的视觉与交互方案。 独立试验页面。 发布记录：2026-09-26。
+- [小人实验室](https://zhangyu.jiujianian.dev/public-pages/companion-lab-20260926-v2/index.html)：查看人物与伙伴形象的交互原型。 v2 独立试验页面。 发布记录：2026-09-26。
+- [C2 水獭 3D 试生成](https://zhangyu.jiujianian.dev/public-pages/claude-tag-otter-c2-3d-trial-20261004/index.html)：查看水獭形象的首次 3D 生成结果。 试生成，原页标注待修正。 发布记录：2026-10-04。
+- [RemoteLab 模型标注入口](https://zhangyu.jiujianian.dev/public-pages/jev-model-labeling-20260922/index.html)：进入模型标注页面。 已发布入口；实际标注仍需页面要求的权限。 发布记录：2026-09-22。
+- [RemoteLab 工作过程交互试验](https://zhangyu.jiujianian.dev/public-pages/activity-playground-20260908/index.html)：查看工作过程收起、展开和细节展示的交互方案。 历史交互原型；页面发布不代表已成为应用默认行为。 发布记录：2026-09-08。
+
+### 运维资料
+
+- [RemoteLab 账号与机器概览](https://zhangyu.jiujianian.dev/public-pages/remotelab-fleet-overview/index.html)：查看已发布的账号、机器与实例概览。 静态概览；当前服务健康与额度读原监控。 发布记录：2026-09-19。
 
 ## 功能与代码
 
@@ -145,8 +185,9 @@ RemoteLab 提供执行入口、持久记录和结果传输。任务怎么理解�
 
 1. 功能与使用说明更新 features.json；实际代码与专用文档仍在原文件维护。
 2. 说明页面和本章重点文档入口更新 project.json；新增章节继续加入同一个项目。
-3. 重新生成本章并组装原网站，更新同一个发布入口；生成的 HTML 与参考文本不手工维护第二份正文。
-4. 项目决定、责任与进度沿原项目记录核对；本章提供成果入口，不另维护一份记忆或任务状态。
+3. 独立 Web 产物继续在原项目维护；在 project.json 的 deliverables.webProducts 登记发布入口与状态，同一项目的旧版本归入 related。
+4. 重新生成本章并组装原网站，更新同一个发布入口；生成的 HTML 与参考文本不手工维护第二份正文。
+5. 项目决定、责任与进度沿原项目记录核对；本章提供成果入口，不另维护一份记忆或任务状态。
 
 ```sh
 node docs/architecture-atlas/render-deliverables.mjs
