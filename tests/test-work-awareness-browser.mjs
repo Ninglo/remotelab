@@ -8,7 +8,7 @@ const output = resolve(process.argv[3]);
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'], executablePath: process.argv[4] });
 try {
-  const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+  const page = await browser.newPage({ viewport: { width: 1100, height: 850 }, locale: 'zh-CN', timezoneId: 'Asia/Shanghai' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   const template = await readFile(resolve('templates/chat.html'), 'utf8');
@@ -66,6 +66,34 @@ try {
     assert(await panel.locator('.work-awareness-body').evaluate(node => node.scrollHeight > node.clientHeight), 'long details scroll inside a bounded panel');
     await page.locator('main').screenshot({ path: resolve(output, 'related-work-mobile-' + theme + '.png') });
   }
+  await page.evaluate(async () => {
+    window.fixture = { related: [], suggestions: [{ id: 'suggestion_readable', sourceSessionId: 'a', targetSessionId: 'b',
+      sourceInfo: { sessionId: 'a', sessionName: '群聊分流重构', location: 'Web 对话', actorName: '来源请求者',
+        requestId: 'original', receivedAt: '2026-10-08T05:08:37.068Z', excerpt: '两边的改动会不会冲突？' },
+      targetInfo: { sessionId: 'b', sessionName: '飞书进展卡片响应提速', location: '飞书群聊 · RemoteLab 优化讨论群 · 话题' },
+      state: 'draft', current: false, draftedAt: '2026-10-08T05:18:21.773Z', content: 'resolveAmbientFeishuReplyPlan '.repeat(30),
+      impact: '原技术说明保留', explanation: { summary: '当时的测试发现，取消开头消息后，最终答复可能跑回群主线。',
+        relevance: '另一边正在修改回复样式，两处改动都涉及回复的位置。', nextAction: '相关工作已经更新，先核对最新实现，现在不需要确认发送这份旧草稿。' },
+      references: [{ sessionId: 'b', sessionName: '飞书进展卡片响应提速', requestId: 'feishu-original',
+        location: '飞书群聊 · RemoteLab 优化讨论群 · 话题', messageTime: '2026-10-08T05:13:25Z', actorName: '依据发言人' }],
+    }] };
+    await renderWorkAwarenessPanel(sessionFixture);
+  });
+  await page.setViewportSize({ width: 1100, height: 850 });
+  await checkComposerAlignment();
+  assert.match(await panel.textContent(), /取消开头消息后/);
+  assert.match(await panel.textContent(), /13:08/);
+  assert.match(await panel.textContent(), /13:18/);
+  assert.match(await panel.textContent(), /13:13/);
+  assert.match(await panel.textContent(), /不需要你确认同步或采用/);
+  assert.equal(await panel.locator('button').count(), 0, 'the explained old draft remains stale');
+  assert.equal(await panel.locator('details p').first().isVisible(), false, 'technical original is hidden until requested');
+  for (const link of await panel.locator('a').all()) assert.equal(await link.getAttribute('target'), '_blank', 'named source links preserve the current conversation');
+  await page.locator('main').screenshot({ path: resolve(output, 'readable-suggestion-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await checkComposerAlignment();
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.locator('main').screenshot({ path: resolve(output, 'readable-suggestion-mobile.png') });
   await page.evaluate(async () => { window.fixture = { related: [], candidates: [{ goal: 'unreviewed' }], suggestions: [] }; await renderWorkAwarenessPanel(sessionFixture); });
   assert.equal(await panel.count(), 0, 'empty recommendations remove the panel');
   assert.deepEqual(errors, []);

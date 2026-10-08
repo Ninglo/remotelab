@@ -38,7 +38,16 @@ context.msgInput.value = '人自己的草稿'; control.listeners.click(); assert
 data = { related: [], suggestions: [{ ...fixture.suggestions[0], state: 'published' }] };
 context.currentSessionId = 'b';
 await context.renderWorkAwarenessPanel({ ...session, id: 'b' });
-assert.match(panel.find('button').title, /执行/);
+assert.match(panel.find('button').title, /确认采用/);
+data = { related: [], suggestions: [{ ...fixture.suggestions[0], current: false }] };
+context.currentSessionId = 'a';
+await context.renderWorkAwarenessPanel(session);
+assert.equal(Boolean(panel.find('button')), false, 'stale suggestions cannot offer a misleading confirmation');
+data = { related: [], suggestions: [{ ...fixture.suggestions[0], content: 'technical details '.repeat(30) }] };
+await context.renderWorkAwarenessPanel(session);
+assert.equal(Boolean(panel.find('button')), false, 'long legacy advice must be explained before confirmation');
+data = { related: [], suggestions: [{ ...fixture.suggestions[0], state: 'published' }] };
+context.currentSessionId = 'b';
 pendingQuestion = true;
 await context.renderWorkAwarenessPanel({ ...session, id: 'b' });
 assert.equal(Boolean(panel.find('button')), false, 'confirmation is not offered as a pending-question answer');

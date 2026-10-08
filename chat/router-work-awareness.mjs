@@ -4,12 +4,12 @@ import { requests } from './requests.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
 import { loadHistory } from './history.mjs';
 import { buildRelatedPersonContext, collectRelatedPeople } from './related-person-context.mjs';
-import { verifiedWorkActor, queryRelatedWork, queryWorkCandidates, reviewRelatedWork, workInbox, startWork, updateWork, createWorkSuggestion } from './work-awareness.mjs';
+import { verifiedWorkActor, queryRelatedWork, queryWorkCandidates, reviewRelatedWork, workInbox, startWork, updateWork, createWorkSuggestion, explainWorkSuggestion } from './work-awareness.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { retrieveNecessaryContext } from './necessary-background.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|people|review|route))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -29,7 +29,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       const scope = { sessionId, query: parsedUrl.searchParams.get('query') || '', object: parsedUrl.searchParams.get('object') || '',
         projectId: parsedUrl.searchParams.get('project') || '', limit: parsedUrl.searchParams.get('limit') || 5 };
       const [related, candidates, suggestions] = await Promise.all([
-        queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId),
+        queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId, { describe: true }),
       ]);
       writeJson(res, 200, { sessionId, current: session.workAwareness || null, routing: await readGroupRoutingState(session), related, candidates, suggestions,
         ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : { background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
@@ -62,6 +62,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     else if (pathname.endsWith('/start')) result = await startWork(options);
     else if (pathname.endsWith('/update')) result = await updateWork(options);
     else if (pathname.endsWith('/suggest')) result = await createWorkSuggestion(options);
+    else if (pathname.endsWith('/explain')) result = await explainWorkSuggestion(options);
     else if (pathname.endsWith('/review')) result = await reviewRelatedWork(options);
     else throw Object.assign(new Error('Unsupported work operation'), { statusCode: 405 });
     broadcastAll({ type: 'session_invalidated', sessionId });
