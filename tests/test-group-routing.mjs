@@ -11,7 +11,7 @@ await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPers
   { id: 'person_a', name: '甲', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
 ] }));
 const origin = { connector: 'feishu', sourceRouteId: 'bot', target: { chatId: 'pilot', tenantKey: 'tenant',
-  chatType: 'group', conversationKind: 'main', messageId: 'one' } };
+  chatType: 'group', conversationKind: 'main', messageId: 'one', participationEpoch: '7' } };
 const topic = { ...origin, target: { ...origin.target, conversationKind: 'thread', rootId: 'root', messageId: 'root', replyInThread: true } };
 await writeFile(join(dir, 'chat-sessions.json'), JSON.stringify([
   { id: 'main', name: 'group', folder: home, conversation: origin, groupFeed: true },
@@ -36,7 +36,7 @@ try {
     options: { ...options, ...extra }, deliveryPlan: origin, runtimeSelection: { tool: 'codex', model: 'test' } })).record;
   let created = 0, submits = 0;
   const manager = {
-    async createSession(folder, tool, name, extra) { created++; assert.equal(extra.conversation.target.rootId, 'one'); return findSessionMeta('new'); },
+    async createSession(folder, tool, name, extra) { created++; assert.equal(extra.conversation.target.rootId, 'one'); assert.equal(extra.conversation.target.participationEpoch, undefined); assert.equal(extra.conversation.target.sourceKind, 'group_routing_work'); return findSessionMeta('new'); },
     async submitHttpMessage(sessionId, text, images, supplied) {
       const { record, duplicate } = await requests.accept({ sessionId, requestId: supplied.requestId, text, images: supplied.preSavedAttachments || images,
         options: supplied, deliveryPlan: supplied.suppressSourceDelivery ? null : supplied.sourceDelivery });
@@ -63,6 +63,8 @@ try {
   await routeGroupWork(second, { mode: 'continue', targetSessionId: 'new', task: '加入 B', reason: '同一工作补充' }, manager);
   assert.equal(created, 1); assert.equal(submits, 2);
   assert.equal((await requests.byRequest('new', 'routed:two')).deliveryPlan.target.rootId, 'one');
+  assert.equal((await requests.byRequest('new', 'routed:two')).deliveryPlan.target.participationScopeTopicId, 'main');
+  assert.equal((await requests.byRequest('new', 'routed:two')).deliveryPlan.target.participationEpoch, '7');
   assert.equal((await readGroupRoutingState(await findSessionMeta('main'))).routes.length, 2);
   const third = await input('three', '不同事项');
   await assert.rejects(routeGroupWork(third, { mode: 'continue', targetSessionId: 'other', task: '跨群', reason: '错误' }, manager), /same pilot/);
@@ -94,6 +96,11 @@ try {
   assert.equal(p.state, 'return-queued'); assert.equal(p.returnDeliveryState, 'pending');
   const out = await requests.byRunId(p.returnRunId);
   assert.equal(out.deliveries.length, 1);
+  const targetReturn = await requests.byRunId(p.targetReturnRunId);
+  assert.equal(targetReturn.deliveries.length, 1);
+  assert.equal(targetReturn.deliveries[0].target.rootId, 'root');
+  assert.match(targetReturn.deliveries[0].text, /新事实 X/);
+  assert.equal(p.targetDeliveryState, 'pending');
   assert.equal(out.deliveries[0].target.messageId, 'one');
   assert.match(out.deliveries[0].text, /新事实成立/);
   assert.equal((await requests.byRequest('work', review.requestId)).deliveries.length, 0);

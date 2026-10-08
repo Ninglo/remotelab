@@ -1490,9 +1490,20 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const summary = { ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice' };
   return withFeishuHandoffLock(runtime, summary, async () => {
     if (participationEnabled(runtime, summary)) {
-      const status = await participationController(runtime, helpers).state(summary);
-      const stale = summary.participationEpoch !== undefined && Number(summary.participationEpoch) !== status.epoch;
-      if (stale || (status.mode !== 'active' && !status.invitedMessages?.includes(summary.messageId))) {
+      const controller = participationController(runtime, helpers);
+      const status = await controller.state(summary);
+      const scopeId = summary.participationScopeTopicId;
+      const originSummary = scopeId ? { ...summary,
+        conversationKind: scopeId === 'main' ? 'main' : 'thread',
+        topicId: scopeId === 'main' ? '' : scopeId, threadId: scopeId === 'main' ? '' : scopeId,
+        rootId: scopeId === 'main' ? '' : scopeId,
+        messageId: summary.participationScopeMessageId,
+      } : summary;
+      const originStatus = scopeId ? await controller.state(originSummary) : status;
+      const stale = summary.participationEpoch !== undefined && Number(summary.participationEpoch) !== originStatus.epoch;
+      const originBlocked = scopeId && originStatus.mode !== 'active'
+        && !originStatus.invitedMessages?.includes(originSummary.messageId);
+      if (stale || originBlocked || (status.mode !== 'active' && !status.invitedMessages?.includes(summary.messageId))) {
         const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
           body: { state: 'cancelled', leaseId: claim.leaseId, reason: `Group participation is ${status.mode}; stale=${stale}` } });
         if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to cancel paused group delivery');

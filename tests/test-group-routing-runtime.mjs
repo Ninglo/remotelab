@@ -76,7 +76,10 @@ try {
   const review = await requests.byRequest(target.id, 'routing-sync:' + proposal.id);
   assert.equal(review.result.state, 'completed');
   assert.equal(review.options.nativeQuestionId, undefined);
-  assert.equal(review.deliveries.length, 0, 'reconsideration does not publish in the target topic');
+  assert.equal(review.deliveries.length, 0, 'ordinary reply stream does not duplicate the approved reference publication');
+  const targetOutput = await requests.byRunId(proposal.targetReturnRunId);
+  assert.equal(targetOutput.deliveries[0].target.rootId, 'input-root');
+  assert.match(targetOutput.deliveries[0].text, /补充事实 X/);
   assert.equal(proposal.returnDeliveryState, 'pending', 'no synthetic group messages are sent');
   const outbound = await requests.byRunId(proposal.returnRunId);
   assert.match(outbound.deliveries[0].text, /复核完成/);
@@ -95,6 +98,7 @@ try {
   const failed = await until(async () => { const p = (await readGroupRoutingState(await findSessionMeta(main.id))).proposals[1];
     return p.returnDeliveryId && p; });
   assert.equal(failed.resultState, 'failed');
+  assert.equal(failed.targetDeliveryId, undefined, 'an expired review does not publish in the target topic');
   assert.equal(failed.returnDeliveryState, 'pending');
   const failureReturn = await requests.byRunId(failed.returnRunId);
   assert.match(failureReturn.deliveries[0].text, /目标讨论已变化/);

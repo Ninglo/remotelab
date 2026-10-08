@@ -142,6 +142,33 @@ try {
     assert.equal((await reactionStore.active()).length, 1);
     assert.equal((await createFeishuReadReactionStore(runtime.config.storageDir).active()).length, 1,
       'restart preserves cleanup receipts and the unrelated conversation');
+    if (!topic) {
+      await send('routing-resume', '/unmute');
+      const originStatus = await runtime.participation.state(base);
+      const routed = { ...base, threadId: 'separate-work', rootId: 'separate-root',
+        messageId: 'separate-root', conversationKind: 'thread', sourceKind: 'group_routing_work',
+        participationEpoch: String(originStatus.epoch), participationScopeTopicId: 'main',
+        participationScopeMessageId: 'source-request' };
+      let sent = 0;
+      const deliver = async id => processSourceDeliveryOnce(runtime, {
+        requestRemoteLab: async (path, options) => path === '/api/source-deliveries/claim'
+          ? { response: { ok: true }, json: { claim: { leaseId: 'lease-' + id, delivery: {
+            id, target: routed, kind: 'content', text: 'topic result',
+          } } } } : request(path, options),
+        sendFeishuText: async () => { sent++; return { message_id: 'sent-' + sent, thread_id: 'separate-work' }; },
+      });
+      assert.notEqual(originStatus.epoch, (await runtime.participation.state(routed)).epoch);
+      await deliver('routing-valid');
+      assert.equal(sent, 1, 'a source mainline epoch must not be compared to a new topic epoch');
+      await runtime.participation.change(routed, 'listening');
+      await deliver('routing-destination-muted');
+      assert.equal(sent, 1, 'destination participation remains authoritative');
+      await runtime.participation.change(routed, 'active');
+      await send('routing-source-pause', '/mute');
+      await send('routing-source-resume', '/unmute');
+      await deliver('routing-source-stale');
+      assert.equal(sent, 1, 'source epoch still fences pending routing after pause and resume');
+    }
     if (topic) {
       await send('resume-metadata', '/unmute');
       const raw = { threadId: '', rootId: '' };

@@ -23,6 +23,17 @@ const sameGroup = (a, b) => a?.connector === 'feishu' && b?.connector === 'feish
   && a.target?.tenantKey === b.target?.tenantKey;
 const state = session => session.groupRouting || { version: 1, routes: [], proposals: [] };
 const contract = '这是本群分流试点的工作话题。保持当前任务与回复话题。来源群补充是原作者的后续输入，结合已有工作处理；不要另开重复任务。跨对话信息同步必须使用 work route 的 sync 草稿并由人确认。不要从收到参考推断修改其他任务或对外发送的新授权。';
+function workDeliveryPlan(destination, origin) {
+  const target = { ...destination.target };
+  for (const key of ['participationEpoch', 'participationScopeTopicId', 'participationScopeMessageId']) delete target[key];
+  if (origin.target.participationEpoch !== undefined) Object.assign(target, {
+    participationEpoch: origin.target.participationEpoch,
+    participationScopeTopicId: origin.target.participationScopeTopicId
+      || origin.target.threadId || origin.target.topicId || origin.target.rootId || 'main',
+    participationScopeMessageId: origin.target.participationScopeMessageId || origin.target.messageId,
+  });
+  return { ...destination, target };
+}
 async function api(deps) { return deps || await import('./session-manager.mjs'); }
 async function save(sessionId, update) {
   return mutateSessionMeta(sessionId, draft => { draft.groupRouting = state(draft); update(draft.groupRouting); return true; });
@@ -57,12 +68,12 @@ export async function routeGroupWork(record, body, deps) {
       if (old) return { proposal: old, duplicate: true };
       if (state(session).proposals.length >= 64) fail('Pilot proposal limit reached');
       const proposal = { id: proposalId, state: 'draft', sourceSessionId: session.id, sourceRequestId: record.requestId,
-        sourceStamp: stamp(session), targetSessionId: target.id, targetName: target.name, targetStamp: stamp(target),
+        sourceName: session.name, sourceStamp: stamp(session), targetSessionId: target.id, targetName: target.name, targetStamp: stamp(target),
         task, reason, createdAt: new Date().toISOString() };
       await save(session.id, data => data.proposals.push(proposal));
       await appendEvent(session.id, { type: 'work_event', action: 'routing-sync-draft', proposal });
       return { proposal, confirmation: '确认同步 ' + proposalId,
-        scope: 'Only this reference and bounded reconsideration; result returns here, without a message in the target group topic.' };
+        scope: 'Only this reference and bounded reconsideration; approved information and result appear in the target topic and the result returns here.' };
     }
     // Every forwarded message must be an accepted input of this source Session.
     // Explicit IDs let a native turn group consecutive text/images without
@@ -92,8 +103,9 @@ export async function routeGroupWork(record, body, deps) {
       const first = inputs[0], source = first.deliveryPlan || first.options.sourceDelivery;
       if (!source.target.messageId) fail('Source message anchor is required');
       const conversation = { ...source, target: { ...source.target, conversationKind: 'thread',
-        rootId: source.target.messageId, replyInThread: true, sourceKind: 'ambient_thread_open' } };
+        rootId: source.target.messageId, replyInThread: true, sourceKind: 'group_routing_work' } };
       delete conversation.target.threadId; delete conversation.target.topicId;
+      for (const key of ['participationEpoch', 'participationScopeTopicId', 'participationScopeMessageId']) delete conversation.target[key];
       const manager = await api(deps);
       target = await manager.createSession(scope.folder, record.runtimeSelection?.tool || session.tool,
         clean(body.name, 100) || task.slice(0, 60), { ...record.runtimeSelection,
@@ -113,8 +125,7 @@ export async function routeGroupWork(record, body, deps) {
         return { ...current, routingHandoff: { targetSessionId: target.id, routeId: route.id },
           options: { ...current.options, suppressSourceDelivery: true } };
       });
-      const delivery = { ...target.conversation, target: { ...target.conversation.target,
-        ...(origin.target.participationEpoch !== undefined ? { participationEpoch: origin.target.participationEpoch } : {}) } };
+      const delivery = workDeliveryPlan(target.conversation, origin);
       const options = { requestId: 'routed:' + input.requestId,
         ...record.runtimeSelection, viewPersonId: input.options.viewPersonId,
         initiatedByIdentityId: input.options.initiatedByIdentityId,
@@ -173,7 +184,7 @@ export async function acceptGroupSync(record, deps) {
     const target = await findSessionMeta(proposal.targetSessionId);
     if (!target || target.archived || target.groupFeed || !sameGroup(origin, target.conversation)
         || stamp(target) !== proposal.targetStamp || stamp(session) !== proposal.sourceStamp) fail('Discussion changed; review a fresh sync proposal');
-    const packet = { ...proposal, confirmationRequestId: record.requestId, state: 'approved', returnPlan: origin,
+    const packet = { ...proposal, confirmationRequestId: record.requestId, state: 'approved', returnPlan: origin, targetPlan: workDeliveryPlan(target.conversation, origin),
       actor: verifiedWorkActor(record.options.viewPersonId, record.options.initiatedByIdentityId) };
     await save(session.id, data => Object.assign(data.proposals.find(p => p.id === proposal.id), packet));
     await appendEvent(session.id, { type: 'work_event', action: 'routing-sync-approved', proposal: packet });
@@ -183,7 +194,7 @@ export async function acceptGroupSync(record, deps) {
 async function dispatchGroupSync(packet, target, record, deps) {
   if (!target || target.archived || stamp(target) !== packet.targetStamp) fail('Target changed before dispatch; review a fresh proposal');
   const manager = await api(deps);
-  const text = `经来源对话的人确认，将以下信息同步给你并请你补充思考。\n来源 Session：${packet.sourceSessionId}；来源输入：${packet.sourceRequestId}。\n影响与理由：${packet.reason}\n信息与复核任务：${packet.task}\n\n只核对这些信息对当前结论的影响，说明是否采纳、哪些结论需要调整以及理由。不要擅自改变原任务、执行新的业务操作或调用工具向群发消息。最终答复会自动回传来源对话；不要自行再次回传。若需要超出此范围的行动，给出建议交人决定。`;
+  const text = `经来源对话的人确认，将以下信息同步给你并请你补充思考。\n来源 Session：${packet.sourceSessionId}；来源输入：${packet.sourceRequestId}。\n影响与理由：${packet.reason}\n信息与复核任务：${packet.task}\n\n只核对这些信息对当前结论的影响，说明是否采纳、哪些结论需要调整以及理由。不要擅自改变原任务、执行新的业务操作或调用工具向群发消息。最终答复会由系统连同已批准的信息在当前话题展示，并回传来源对话；不要自行重复发送。若需要超出此范围的行动，给出建议交人决定。`;
   const options = { requestId: 'routing-sync:' + packet.id,
     viewPersonId: record.options.viewPersonId, initiatedByIdentityId: record.options.initiatedByIdentityId,
     recordUserMessage: false, suppressSourceDelivery: true, routingRethink: { sourceSessionId: packet.sourceSessionId, proposalId: packet.id },
@@ -206,10 +217,17 @@ export async function completeGroupSync(record, run) {
   const success = record.result?.state === 'completed';
   const result = clean(record.result?.payload?.text, 10000);
   const text = `【同步复核${success ? '结果' : '未完成'}】\n来自：${packet.targetName}\n\n${success ? result || '目标已结束，但没有返回可用结论。' : '目标未完成复核：' + (record.result?.error || run?.state || 'unknown')}\n\n来源建议：${packet.id}`;
+  // Publish the approved information with the reconsideration in its owning
+  // topic. Keep this separate from the model's ordinary reply stream so a
+  // failed/stale review cannot announce that reference as adopted.
+  const targetReceipt = success ? await enqueueSourceDelivery({ sessionId: packet.targetSessionId,
+    responseId: 'routing-reviewed:' + packet.id,
+    text: `【经确认同步的复核】\n来源：${packet.sourceName || packet.sourceSessionId}\n同步信息与问题：${packet.task}\n影响：${packet.reason}\n\n${result || '未返回可用结论。'}\n\n同步记录：${packet.id}`,
+    sourceDelivery: packet.targetPlan }) : null;
   const receipt = await enqueueSourceDelivery({ sessionId: source.id, responseId: 'routing-return:' + packet.id,
     text, sourceDelivery: packet.returnPlan });
   await save(source.id, data => Object.assign(data.proposals.find(p => p.id === packet.id),
-    { state: 'return-queued', result, resultState: record.result?.state, returnDeliveryId: receipt.id, returnRunId: receipt.runId, runId: run.id }));
+    { state: 'return-queued', result, resultState: record.result?.state, returnDeliveryId: receipt.id, returnRunId: receipt.runId, targetDeliveryId: targetReceipt?.id, targetReturnRunId: targetReceipt?.runId, runId: run.id }));
   await appendEvent(source.id, { type: 'work_event', action: 'routing-sync-result', proposalId: packet.id,
     targetSessionId: packet.targetSessionId, result, deliveryId: receipt.id });
 }
@@ -226,7 +244,7 @@ export async function buildGroupRoutingContext(session, sourceContext) {
     '简单答复按原位置直接答。已有话题中的正常回复继续当前话题。在群主线收到需独立处理的新事项或既有事项的补充时，先检查下面已预留/已接续的话题；补充不要新建。',
     '用 node "$REMOTELAB_PROJECT_ROOT/cli.js" work route --file <JSON绝对路径> --json。JSON: {sourceRequestId:"本条输入的Request ID（原生追加时必填）",mode:"new"|"continue",task:"本次限定任务",reason:"新事项或接续理由",name:"新话题名",targetSessionId:"continue时必填",requestIds:["当前Request ID以及已接受的连续补充ID"]}。成功后由目标话题回复，主线不重复正文。失败必须说明，不得宣称已转交。',
     '这是本群工作话题的专用接续入口，代替本试点中会丢失飞书话题绑定的普通 session-spawn。新话题先预留再开工，重试复用原目的地；不要为了等补充而固定延时。',
-    '信息可能影响另一个话题时先读相关内容，再 work route --file 创建 {mode:"sync",targetSessionId,task:"具体信息和要求对方复核的问题",reason:"影响哪项结论、为什么"}。这仅保存草稿，不发送。向人展示目标、具体内容、影响、仅复核并回传的范围，以及返回的“确认同步 sync_...”短句；人发该短句后才送达并让目标补充思考。不要自动批准，不要求人在目标重复确认同一范围。',
+    '信息可能影响另一个话题时先读相关内容，再 work route --file 创建 {mode:"sync",targetSessionId,task:"具体信息和要求对方复核的问题",reason:"影响哪项结论、为什么"}。这仅保存草稿，不发送。向人展示目标、具体内容、影响、在目标展示已批准信息及复核结论、并回传来源的范围，以及返回的“确认同步 sync_...”短句；人发该短句后才送达并让目标补充思考。不要自动批准，不要求人在目标重复确认同一范围。',
     '同步只限本群工作话题；不触碰其他群、自动通知或既有任务的执行状态。复核结果自动回来源，不能把已提交说成已采纳或已完成。需要新业务动作另提建议。',
     '本试点已经获得在本群自动新建工作话题和接续同一事项的授权；跨话题复核另按具体草稿请人确认。这一试点入口优先于通用新建Session说明。相关检索和同步建议不能阻塞当前简短答复，不为每条聊天全局扫描所有会话。路由/同步记录可通过 work context 查看。',
     JSON.stringify({ routes: state(current).routes.slice(-12).map(({ id, targetSessionId, task, reason, state, requestIds }) =>
@@ -238,9 +256,15 @@ export async function buildGroupRoutingContext(session, sourceContext) {
 export async function readGroupRoutingState(session) {
   if (!session.groupRouting) return null;
   const value = structuredClone(session.groupRouting);
-  for (const p of value.proposals) if (p.returnRunId) {
-    const request = await requests.byRunId(p.returnRunId);
-    p.returnDeliveryState = request?.deliveries.find(d => d.id === p.returnDeliveryId)?.state || 'unknown';
+  for (const p of value.proposals) {
+    if (p.returnRunId) {
+      const request = await requests.byRunId(p.returnRunId);
+      p.returnDeliveryState = request?.deliveries.find(d => d.id === p.returnDeliveryId)?.state || 'unknown';
+    }
+    if (p.targetReturnRunId) {
+      const request = await requests.byRunId(p.targetReturnRunId);
+      p.targetDeliveryState = request?.deliveries.find(d => d.id === p.targetDeliveryId)?.state || 'unknown';
+    }
   }
   return value;
 }
