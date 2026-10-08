@@ -9,9 +9,12 @@ const now = () => new Date().toISOString();
 export function canForwardNativeRequest(record, head) {
   if (!record || !head || record.key === head.key || record.preparedAt
       || record.options?.freshThread || head.cancelRequestedAt
-      || record.options?.internalOperation) return false;
+      || record.options?.internalOperation || record.options?.routingRethink
+      || head.options?.routingRethink) return false;
   if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding
       || head.options?.sourceContext?.documentBinding || head.options?.internalOperation)) return false;
+  if (!record.options?.nativeQuestionId && (record.options?.routingPilotMainline
+      || head.options?.routingPilotMainline)) return false;
   const a = record.runtimeSelection || {};
   const b = head.runtimeSelection || {};
   return ['tool', 'model', 'effort', 'thinking'].every(key => (a[key] || '') === (b[key] || ''));

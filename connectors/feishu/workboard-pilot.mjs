@@ -105,7 +105,9 @@ function collectAuthorizedCycles(events, pilot, session = null) {
         : trim(source?.sender?.openId) === pilot.senderOpenId
           && (!target || matchesTarget);
       if (event.runId) {
-        if (authorizedUser) allowed.set(event.runId, source?.messageId || '');
+        if (authorizedUser) allowed.set(event.runId, source?.routingReplyMessageId
+          && [target?.rootId, target?.messageId].includes(source.routingReplyMessageId)
+          ? source.routingReplyMessageId : source?.messageId || '');
         else allowed.delete(event.runId);
       }
       history.push(event);

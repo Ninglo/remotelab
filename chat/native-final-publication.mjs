@@ -4,7 +4,7 @@ import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
 import { appendDeliveries } from './requests.mjs';
 import { buildReplyDeliveries, isFeishuMainlineReply } from '../lib/reply-deliveries.mjs';
 import { buildReplyPublicationPayload, isFirstUserTurnPublication } from './reply-publication.mjs';
-import { resolveAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
+import { resolveAmbientFeishuReplyPlan, rememberAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
 import {
   extractAssistantArtifactBlockReferences, extractAssistantLocalMarkdownImageReferences,
   collectGeneratedResultFilesFromRun, collectAssistantLocalMarkdownImageRewrites,
@@ -64,7 +64,9 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
         && !parseProgressMessage(event.content).progress) continue;
     const messageId = assistantSurfaceMessageId(event);
     if (!messageId) continue;
-    const stored = await store.get(record.key);
+    let stored = await store.get(record.key);
+    if (stored?.options?.suppressSourceDelivery || stored?.routingHandoff) return;
+    stored = await rememberAmbientFeishuReplyPlan(stored || record, plan, [event], store);
     const replyPlan = resolveAmbientFeishuReplyPlan(stored || record, plan, [event]);
     if (isFeishuMainlineReply(replyPlan) && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
     // Routine turns keep their opener in Web/history instead of sending another
@@ -113,7 +115,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const parts = buildParts(stored || record);
     if (!parts.length) continue;
     const admit = () => store.mutate(record.key, current => {
-      if (!current || current.result
+      if (!current || current.result || current.options?.suppressSourceDelivery || current.routingHandoff
           || suppressOpening(surface, current)
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;

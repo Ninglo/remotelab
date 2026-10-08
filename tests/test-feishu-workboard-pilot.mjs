@@ -218,6 +218,12 @@ test('instance cards follow turn admission across members and keep the original 
     inbound(4, 'b', 'open-b'), checklist(5, 'b'), inbound(6, 'untrusted', 'open-c', false), checklist(7, 'untrusted')];
   const cycles = collectFeishuInstanceWorkboardCycles(events, state, group);
   assert.deepEqual(cycles.map(task => [task.anchorSeq, task.replyMessageId]), [[2, 'om-1'], [5, 'om-4']]);
+  const routedGroup = { ...group, conversation: { ...group.conversation,
+    target: { ...group.conversation.target, rootId: 'original-root' } } };
+  const routedEvents = events.map(event => event.role === 'user'
+    ? { ...event, sourceContext: { ...event.sourceContext, routingReplyMessageId: 'original-root' } } : event);
+  assert.deepEqual(collectFeishuInstanceWorkboardCycles(routedEvents, state, routedGroup).map(task => task.replyMessageId),
+    ['original-root', 'original-root'], 'mainline supplements keep cards in the owning work topic');
   assert.equal(isFeishuInstanceWorkboardSession({ ...group, groupFeed: true }, state), false);
   assert.equal(isFeishuInstanceWorkboardSession(group, { ...state, sourceRouteId: 'wrong' }), false);
   const calls = [];

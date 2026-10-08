@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -315,6 +315,21 @@ try {
   assert.equal(replay.decision.emojiType, 'TEARS');
   assert.deepEqual(effects, ['run:group:inline', 'reaction:TEARS'],
     'replay reuses the reaction decision while resubmitting through the idempotent Session request path');
+  const { GROUP_ROUTING_PILOT_FILE } = await import('../lib/group-routing-pilot.mjs');
+  await mkdir(join(home, '.config/remotelab'), { recursive: true });
+  await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({ version: 1, enabled: true,
+    groups: [{ sourceRouteId: 'pilot-bot', chatId: 'pilot', tenantKey: 'tenant', folder: home }] }));
+  effects.length = 0;
+  const routedPilot = await handleMessage(runtime, { ...base, tenantKey: 'tenant', messageId: 'pilot-complex' }, 'test', {
+    ...helpers, classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex' }),
+  });
+  assert.equal(routedPilot.workSessionId, 'group-session', 'pilot lets the main Harness choose new work versus supplement');
+  assert(effects.includes('run:group:inline')); assert(!effects.includes('run:new:thread'));
+  effects.length = 0;
+  const otherTenant = await handleMessage(runtime, { ...base, tenantKey: 'another', messageId: 'other-tenant-complex' }, 'test', {
+    ...helpers, classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex' }),
+  });
+  assert.equal(otherTenant.workSessionId, 'thread-session', 'all non-pilot routes preserve Jev placement');
   console.log('test-feishu-jev-reactions: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

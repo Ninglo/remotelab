@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { loadDailyReportMemory } from '../connectors/feishu/daily-report-memory.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
@@ -1291,9 +1292,11 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
   // Temporary fail-open policy: Jev still selects reactions and work placement,
   // but every observed message reaches the Session model for reply judgment.
   // Neither silence, a reaction-only answer, nor a failed classification blocks it.
-  const legacyWork = decision.participation === 'reply'
+  const pilot = isPilotInputSinceActivation(await routingPilotScope({ connector: 'feishu',
+    sourceRouteId: runtime.config.sourceRouteId || 'default', target: summary }), summary.createTime || summary.eventTs);
+  const legacyWork = !pilot && decision.participation === 'reply'
     && !['short', 'complex', 'reaction'].includes(decision.workMode);
-  const complexWork = decision.workMode === 'complex' && !buildFeishuTopicId(summary);
+  const complexWork = !pilot && decision.workMode === 'complex' && !buildFeishuTopicId(summary);
   const workSummary = complexWork
     ? { ...summary, replyModeOverride: 'thread', startThread: true }
     : summary;

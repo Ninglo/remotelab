@@ -1,3 +1,4 @@
+import { buildGroupRoutingContext } from './group-routing.mjs';
 import { buildLocalBridgePromptBlock } from './local-bridge-prompt.mjs';
 import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
 import { buildSourceContextPrompt } from './source-context-prompt.mjs';
@@ -32,9 +33,10 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     buildWorkAwarenessContext(session, { query }),
     query ? buildNecessaryBackgroundContext(session, { query, sourceContext }) : '',
     buildServiceAccessPromptBlock(query),
+    buildGroupRoutingContext(session, sourceContext),
   ]);
-  const [learning, project, people, work, background, serviceAccess] = sections.map((result, index) => result.status === 'fulfilled'
-    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['learning', 'project', 'people', 'work', 'background', 'service-access'][index], reason: result.reason.message }));
+  const [learning, project, people, work, background, serviceAccess, groupRouting] = sections.map((result, index) => result.status === 'fulfilled'
+    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['learning', 'project', 'people', 'work', 'background', 'service-access', 'group-routing'][index], reason: result.reason.message }));
   return [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
@@ -47,6 +49,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     people,
     work,
     background,
+    groupRouting,
     // Classifier summaries are derived UI state, not fresh execution evidence.
     // Keep them queryable on the session; do not replay stale blockers every turn.
   ].map((section) => String(section || '').trim()).filter(Boolean).join('\n\n');

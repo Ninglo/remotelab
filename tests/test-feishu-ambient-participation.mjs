@@ -117,6 +117,25 @@ try {
   await publishLiveAssistantReplies(selected, [{ ...threadOpening, seq: 2, content: '<progress>已核对。</progress>' }],
     { store: selectedStore, plan: groupPlan });
   assert.deepEqual(selected.deliveries.map(part => part.target.conversationKind), ['thread']);
+  // A routine opening can be hidden by presentation without losing placement.
+  let hidden = { ...record, key: 'hidden', runId: 'run', responseId: 'later', deliveries: [] };
+  const hiddenStore = { get: async () => hidden, mutate: async (_key, update) => { hidden = update(hidden); return hidden; } };
+  const laterHistory = [{ seq: 0, type: 'message', role: 'user', responseId: 'earlier', content: '以前的问题' },
+    { seq: 10, type: 'message', role: 'user', responseId: 'later', runId: 'run', content: '新问题' }];
+  await publishLiveAssistantReplies(hidden, [{ ...threadOpening, seq: 11 }],
+    { store: hiddenStore, plan: groupPlan, fullHistory: laterHistory });
+  assert.equal(hidden.deliveries.length, 0, 'routine opening stays hidden');
+  assert.equal(hidden.replyPlacement.target.rootId, 'question-1');
+  hidden = JSON.parse(JSON.stringify(hidden));
+  await publishLiveAssistantReplies(hidden, [{ ...threadOpening, seq: 12, phase: 'final_answer', content: '完成。' }],
+    { store: hiddenStore, plan: groupPlan, fullHistory: laterHistory, running: false });
+  assert.equal(hidden.deliveries.length, 1);
+  assert.equal(hidden.deliveries[0].target.conversationKind, 'thread');
+  const stale = hidden;
+  hidden = { ...hidden, deliveries: [], options: { ...hidden.options, suppressSourceDelivery: true }, routingHandoff: { targetSessionId: 'worker' } };
+  await publishLiveAssistantReplies(stale, [{ ...threadOpening, seq: 13, phase: 'final_answer', content: '重复答案。' }],
+    { store: hiddenStore, plan: groupPlan, running: false });
+  assert.equal(hidden.deliveries.length, 0, 'fresh ownership suppresses stale live publisher');
   assert.deepEqual(buildSessionEntryDeliveries({ id: 's1' }, { userMessageCount: 0 },
     { sourceDelivery: plan, sourceContext: { feishuParticipation: 'ambient' } }), []);
   assert.equal(resolveSessionDeliveryPlan({ conversation: plan },

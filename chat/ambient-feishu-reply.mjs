@@ -19,10 +19,15 @@ export function resolveAmbientFeishuReplyPlan(record, plan, history = []) {
   if (prior) return normalizeConversation({ ...conversation, target: {
     ...target, ...prior.target, messageId: prior.target.messageId || target.messageId,
   } });
-  const lastAssistant = [...history].reverse().find(event => event?.type === 'message' && event.role === 'assistant');
-  const final = String(lastAssistant?.content || '').trimStart();
-  const content = parseFeishuReactionDirective(final)?.text || final;
-  if (!content.startsWith(THREAD_DIRECTIVE)) return plan;
+  if (record.replyPlacement?.connector === conversation.connector
+      && record.replyPlacement.sourceRouteId === conversation.sourceRouteId
+      && record.replyPlacement.target?.chatId === target.chatId) return normalizeConversation(record.replyPlacement);
+  const selected = history.some(event => {
+    if (event?.type !== 'message' || event.role !== 'assistant') return false;
+    const text = String(event.content || '').trimStart();
+    return (parseFeishuReactionDirective(text)?.text || text).startsWith(THREAD_DIRECTIVE);
+  });
+  if (!selected) return plan;
   return normalizeConversation({
     ...conversation,
     target: {
@@ -33,4 +38,14 @@ export function resolveAmbientFeishuReplyPlan(record, plan, history = []) {
       sourceKind: 'ambient_thread_open',
     },
   });
+}
+
+// Persist placement before presentation suppresses an opening. A queued visible
+// part still takes precedence; reactions and hidden openers never create replies.
+export async function rememberAmbientFeishuReplyPlan(record, plan, history, store) {
+  const selected = resolveAmbientFeishuReplyPlan(record, plan, history);
+  if (record?.options?.sourceContext?.feishuParticipation !== 'ambient' || !selected) return record;
+  if (selected.target?.conversationKind !== 'thread' || record.replyPlacement) return record;
+  return await store.mutate(record.key, current => current.replyPlacement ? current
+    : { ...current, replyPlacement: resolveAmbientFeishuReplyPlan(current, plan, history) });
 }

@@ -1,3 +1,5 @@
+import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
+import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink } from './group-routing.mjs';
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
 import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
 import { requireConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
@@ -1706,7 +1708,8 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
     }
   }
   const feishuOutcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
-  const deliveryPlan = resolveAmbientFeishuReplyPlan(record, plan, runHistory);
+  const deliveryPlan = record.options?.suppressSourceDelivery || record.routingHandoff
+    ? null : resolveAmbientFeishuReplyPlan(record, plan, runHistory);
   const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
     && record.options.sourceContext?.feishuExplicitMention !== true;
   const ambientWorkStarted = runHistory.some(event => event?.type === 'tool_use' && event.role === 'assistant');
@@ -1736,7 +1739,9 @@ async function settleNativeRequest(record, run) {
   if (!run || !isTerminalRunState(run.state)) return;
   const root = await requests.byRunId(run.id);
   if (!root?.result) return;
-  const ownPlan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
+  record = await requests.get(record.key) || record;
+  const ownPlan = record.options?.suppressSourceDelivery || record.routingHandoff ? null
+    : normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
   const rootPlan = normalizeSourceDeliveryPlan(root.deliveryPlan || root.options.sourceDelivery);
   const destination = plan => {
     if (!plan) return '';
@@ -1772,6 +1777,7 @@ async function settleNativeRequest(record, run) {
   await requests.settle(record.key, { ...root.result, executionRunId: run.id },
     outcomeRequired ? buildReplyDeliveries(ownPlan, { text: '' }, { requireFeishuOutcome: true }) : []);
   await recordWorkOutcome(record.sessionId, { ...record, result: root.result }, run);
+  await completeGroupSync({ ...record, result: root.result }, run);
   await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
   await requestRuntime.refresh(record.key);
   await requests.archiveFinished(record.key);
@@ -1985,6 +1991,7 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
   const record = await requests.byRunId(finalizedRun.id);
   if (record) {
     await recordWorkOutcome(sessionId, record, finalizedRun);
+    await completeGroupSync(record, finalizedRun);
     await requests.mutate(record.key, current => ({ ...current, postCompletionPending: false }));
     await requestRuntime.refresh(record.key);
     await requests.archiveFinished(record.key);
@@ -3202,9 +3209,11 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
 
 const deliveryIssueObserver = createSourceDeliveryIssueObserver();
 async function recordWorkInputAndDeliver(session, record) {
-  const decisionInput = /^(确认协作建议|拒绝协作建议)\s/.test(record.text || '');
+  const routingDecision = syncDecisionText(record);
+  const decisionInput = Boolean(routingDecision) || /^(确认协作建议|拒绝协作建议)\s/.test(record.text || '');
   let decisionContext = '';
   try {
+    if (routingDecision) return await acceptGroupSync(record);
     const result = await recordWorkInput(session, record);
     if (decisionInput && !result.suggestion) return 'Human work decision was NOT accepted: no verified human decision or invalid command. Review current records; the original authorization remains in force.';
     if (decisionInput && result.suggestion) decisionContext = 'Recorded human work decision: ' + JSON.stringify({
@@ -3322,6 +3331,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     session = await setSessionArchived(sessionId, false) || session;
   }
   options = applyQuickSessionRuntime(session, options);
+  // Mainline routing decisions are per accepted input. Native coalescing would
+  // give unrelated group inputs one shared final and lose their reply ownership.
+  if (session.conversation?.target?.conversationKind === 'main'
+      && options.sourceContext?.connector === 'feishu' && !options.automationTitle
+      && isPilotInputSinceActivation(await routingPilotScope(session.conversation),
+        options.sourceContext.createTime || options.sourceContext.eventTs)) options = { ...options, routingPilotMainline: true };
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
@@ -3336,7 +3351,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       throw Object.assign(new Error('这道问题已结束，回答未应用；需要修改时请直接说明新的选择。'), { code: 'QUESTION_EXPIRED' });
     }
   }
-  else if (!priorRequest && activeNative && !options.internalOperation && !options.workReference && !savedImages.length) {
+  else if (!priorRequest && activeNative && !options.internalOperation && !options.workReference && !options.routingRethink && !options.routingSource && !syncDecisionText({ text, options }) && !savedImages.length) {
     const question = await readNativeQuestion(runDir(activeRequest.runId));
     if (question?.state === 'pending') options = { ...options, nativeQuestionId: question.id };
   }
@@ -3358,7 +3373,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       optInPersonId: options.viewPersonId,
     }) || session;
   }
-  if (!priorRequest && activeNative && !options.internalOperation &&
+  if (!priorRequest && activeNative && !options.internalOperation && !options.routingRethink && !options.routingSource &&
     (options.freshThread || ['tool', 'model', 'effort', 'thinking'].some(key => (runtimeSelection[key] || '') !== (activeRequest.runtimeSelection?.[key] || '')))) {
     throw Object.assign(new Error('当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。'), { code: 'SESSION_BUSY' });
   }
@@ -3484,6 +3499,21 @@ async function launchAutomationRun(runId, options = {}) {
 }
 
 async function prepareRequestRun(record) {
+  if (record.options?.routingRethink && !record.preparedAt && !record.result) {
+    try { await validateGroupRethink(record); }
+    catch (error) {
+      const result = { exitCode: 1, error: error.message, completedAt: nowIso() };
+      if (!await getRun(record.runId)) await createRun({
+        status: { id: record.runId, sessionId: record.sessionId, requestId: record.requestId,
+          responseId: record.responseId, state: 'accepted', tool: record.runtimeSelection?.tool },
+        manifest: { sessionId: record.sessionId, requestId: record.requestId, responseId: record.responseId,
+          options: record.options, folder: (await findSessionMeta(record.sessionId))?.folder },
+      });
+      await writeRunResult(record.runId, result);
+      await updateRun(record.runId, current => ({ ...current, state: 'failed', failureReason: error.message, result }));
+      return;
+    }
+  }
   if (record.options?.workReference) throw new Error('Reference retained in work inbox; it must not start or reopen a Session');
   const { sessionId, requestId, responseId, images } = record;
   const options = { ...record.options, memoryQuery: record.text, preSavedAttachments: images, workReferenceProtocolVersion: 1, ...(record.deliveryPlan ? { sourceDelivery: record.deliveryPlan } : {}) };

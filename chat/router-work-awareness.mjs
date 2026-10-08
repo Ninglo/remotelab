@@ -1,3 +1,4 @@
+import { routeGroupWork, readGroupRoutingState } from './group-routing.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { requests } from './requests.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
@@ -8,7 +9,7 @@ import { broadcastAll } from './ws-clients.mjs';
 import { retrieveNecessaryContext } from './necessary-background.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|people|review))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|people|review|route))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -30,7 +31,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       const [related, candidates, suggestions] = await Promise.all([
         queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId),
       ]);
-      writeJson(res, 200, { sessionId, current: session.workAwareness || null, related, candidates, suggestions,
+      writeJson(res, 200, { sessionId, current: session.workAwareness || null, routing: await readGroupRoutingState(session), related, candidates, suggestions,
         ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : { background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
           personId: record?.options?.viewPersonId || authSession?.personId,
           identityId: record?.options?.initiatedByIdentityId || authSession?.identityId }) }) });
@@ -53,7 +54,12 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       people: collectRelatedPeople({ personId: actor.personId, identityId: actor.identityId,
         sourceContext: record.options?.sourceContext, query: body.content || body.goal || '' }) };
     let result;
-    if (pathname.endsWith('/start')) result = await startWork(options);
+    if (pathname.endsWith('/route')) {
+      const input = body.sourceRequestId ? await requests.byRequest(sessionId, body.sourceRequestId) : record;
+      if (!input || (input.runId !== record.runId && input.nativeDispatchRunId !== record.runId)) throw new Error('Source input does not belong to this active execution');
+      result = await routeGroupWork(input, body);
+    }
+    else if (pathname.endsWith('/start')) result = await startWork(options);
     else if (pathname.endsWith('/update')) result = await updateWork(options);
     else if (pathname.endsWith('/suggest')) result = await createWorkSuggestion(options);
     else if (pathname.endsWith('/review')) result = await reviewRelatedWork(options);
