@@ -62,6 +62,10 @@ behind normal workbench authentication; connector service credentials cannot
 submit browser actions. Public snapshots do not collect workbench actions.
 
 Collection queues are bounded and failures do not interrupt normal execution.
+Recovered events older than collection start and already queued event IDs are
+filtered before reserving capacity. Request bookkeeping does not re-enqueue
+unchanged settled results or delivery receipts. Reads and CLI exit also await
+events still waiting for collection metadata, not only pending file writes.
 Browser batches retain IDs on retry; reader deduplication also survives server
 restart and multiple appenders. The initial collection timestamp is persisted;
 older event timestamps do not enter the baseline. Data is not retroactively

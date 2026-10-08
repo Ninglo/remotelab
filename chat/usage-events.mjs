@@ -58,8 +58,11 @@ export function normalizeUsageEvent(input, { personId = '', client = false, now 
 
 export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-events'), maxPending = 2048 } = {}) {
   const activatedAt = Date.now();
+  const collectionSince = readFile(join(directory, 'collection.json'), 'utf8')
+    .then(raw => Date.parse(JSON.parse(raw).startedAt) || activatedAt)
+    .catch(() => activatedAt);
   let tail = Promise.resolve(), pending = 0, dropped = 0, failures = 0, ready = false, warned = false;
-  const seen = new Map();
+  const seen = new Map(), queued = new Set(), admissions = new Set();
   const remember = id => { seen.set(id, true); if (seen.size > 50_000) seen.delete(seen.keys().next().value); };
   async function init() {
     if (ready) return;
@@ -70,32 +73,47 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     ready = true;
   }
   function record(events, context = {}) {
-    const valid = (Array.isArray(events) ? events : [events]).map(value => normalizeUsageEvent(value, context)).filter(Boolean);
-    if (!valid.length) return Promise.resolve(true);
-    if (pending + valid.length > maxPending) { dropped += valid.length; return Promise.resolve(false); }
-    pending += valid.length;
-    const task = tail.then(async () => {
-      await init();
-      const fresh = valid.filter(event => !seen.has(event.eventId));
-      // Retries (including after a restart) retain eventId. Readers deduplicate
-      // by that durable ID as well; no duplicate retry changes counts.
-      const unique = [...new Map(fresh.map(event => [event.eventId, event])).values()];
-      if (unique.length) {
-        const file = join(directory, `${new Date().toISOString().slice(0, 10)}.jsonl`);
-        await appendFile(file, unique.map(event => JSON.stringify(event)).join('\n') + '\n', { mode: 0o600 });
-        await chmod(file, 0o600);
-        unique.forEach(event => remember(event.eventId));
-      }
-      return true;
-    }).catch(() => {
-      failures++; if (!warned) { warned = true; console.warn('[usage-events] Collection unavailable; work continues.'); }
-      return false;
-    }).finally(() => { pending -= valid.length; });
-    tail = task.then(() => {});
-    return task;
+    const admission = collectionSince.then(since => {
+      const valid = [...new Map((Array.isArray(events) ? events : [events])
+        .map(value => normalizeUsageEvent(value, context))
+        .filter(event => event && event.timestamp >= since && !seen.has(event.eventId) && !queued.has(event.eventId))
+        .map(event => [event.eventId, event])).values()];
+      if (!valid.length) return true;
+      if (pending + valid.length > maxPending) { dropped += valid.length; return false; }
+      pending += valid.length;
+      valid.forEach(event => queued.add(event.eventId));
+      const task = tail.then(async () => {
+        await init();
+        const fresh = valid.filter(event => !seen.has(event.eventId));
+        // Retries (including after a restart) retain eventId. Readers deduplicate
+        // by that durable ID as well; no duplicate retry changes counts.
+        const unique = [...new Map(fresh.map(event => [event.eventId, event])).values()];
+        if (unique.length) {
+          const file = join(directory, `${new Date().toISOString().slice(0, 10)}.jsonl`);
+          await appendFile(file, unique.map(event => JSON.stringify(event)).join('\n') + '\n', { mode: 0o600 });
+          await chmod(file, 0o600);
+          unique.forEach(event => remember(event.eventId));
+        }
+        return true;
+      }).catch(() => {
+        failures++; if (!warned) { warned = true; console.warn('[usage-events] Collection unavailable; work continues.'); }
+        return false;
+      }).finally(() => { pending -= valid.length; valid.forEach(event => queued.delete(event.eventId)); });
+      tail = task.then(() => {});
+      return task;
+    });
+    admissions.add(admission);
+    void admission.then(() => admissions.delete(admission), () => admissions.delete(admission));
+    return admission;
+  }
+  async function idle() {
+    // Include calls still awaiting the persisted start time, before they join
+    // the write queue. CLI exit and reads must observe those calls too.
+    await Promise.all([...admissions]);
+    await tail;
   }
   async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000 } = {}) {
-    await tail;
+    await idle();
     days = Math.max(1, Math.min(30, Math.floor(Number(days) || 7)));
     limit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 100)));
     const now = Date.now(), start = now - days * 86_400_000;
@@ -140,7 +158,7 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
           '产物生成、网页发布、附加到回复与访问分别计数；普通文件写入不自动认定为产物。',
           '原生提问的等待有确定状态；自然语言中的隐含等待尚未自动识别。'] } };
   }
-  return { record, query, idle: () => tail };
+  return { record, query, idle };
 }
 
 export function summarizeSurfacePaths(events) {

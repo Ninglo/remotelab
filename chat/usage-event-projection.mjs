@@ -14,7 +14,7 @@ function conversationKey(source = {}) {
   return usageKey(JSON.stringify([source.sourceRouteId || 'default', chat,
     target.rootId || source.rootId || target.topicId || source.topicId || target.threadId || source.threadId || 'main']));
 }
-export function observeRequestUsage(request, { accepted = false } = {}) {
+export function observeRequestUsage(request, { accepted = false, previous } = {}) {
   if (!request) return;
   const options = request.options || {}, attribution = actor(options);
   const base = { sessionId: request.sessionId, requestId: request.requestId, runId: request.runId, automationId: options.triggerId || options.scheduleId, ...attribution };
@@ -26,11 +26,13 @@ export function observeRequestUsage(request, { accepted = false } = {}) {
   }
   // Native follow-up/answer requests can use an existing Run. Settling them
   // must never manufacture extra completed Runs in the usage counts.
-  if (request.result && !options.deliveryOnly) record({ ...base, actorKind: 'system', event: 'request_state', state: request.result.state,
+  if (request.result && !options.deliveryOnly && (!previous || previous.resultState !== request.result.state || previous.settledAt !== request.settledAt)) record({ ...base, actorKind: 'system', event: 'request_state', state: request.result.state,
     runId: request.nativeDispatchRunId || request.runId,
     eventId: usageKey(`request-result:${request.key}:${request.result.state}`), timestamp: Date.parse(request.settledAt) });
   for (const delivery of request.deliveries || []) {
     if (!['delivered', 'delivery_failed', 'unknown', 'cancelled'].includes(delivery.state)) continue;
+    const prior = previous?.deliveries?.find(part => part.id === delivery.id);
+    if (prior && prior.state === delivery.state && prior.attempts === delivery.attempts) continue;
     record({ ...base, actorKind: 'system', surface: delivery.connector === 'feishu' ? 'feishu' : 'runtime',
       eventId: usageKey(`delivery:${delivery.id}:${delivery.state}:${delivery.attempts}`), event: 'delivery_state',
       objectId: delivery.id, state: delivery.state, kind: delivery.kind,
