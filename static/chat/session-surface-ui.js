@@ -292,12 +292,13 @@ async function renderWorkAwarenessPanel(session) {
       meta.className = "work-awareness-meta";
       const workStatus = { active: "处理中", completed: "已登记完成", blocked: "有阻塞", recorded: "工作记录" };
       const fromSummary = item.source?.kind === "session-work-summary";
-      meta.textContent = ["来源：" + (item.sourceInfo?.location || "对话入口未核实"),
+      meta.textContent = [(item.sourceInfo?.verified ? "来源：" : "当前对话入口：")
+        + (item.sourceInfo?.location || "对话入口未核实"),
         fromSummary ? "AI 整理的对话摘要" : "AI 登记的工作记录", workStatus[item.status],
         item.updatedAt ? (fromSummary ? "对话记录更新于 " : "工作记录更新于 ") + formatWorkAwarenessTime(item.updatedAt) : "",
         item.archived ? "已归档" : ""].filter(Boolean).join(" · ");
       row.appendChild(meta);
-      appendWorkAwarenessMessageTime(row, item.sourceInfo || {}, "登记消息：", "原始消息时间未记录。");
+      appendWorkAwarenessMessageTime(row, item.sourceInfo || {}, "登记消息：", "原始消息来源与时间未记录。");
       const details = document.createElement("details");
       const detailTitle = document.createElement("summary");
       detailTitle.textContent = "展开来源记录";

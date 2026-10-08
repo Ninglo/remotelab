@@ -28,7 +28,7 @@ try {
     window.msgInput.placeholder = '输入消息…'; window.msgInput.disabled = false;
     window.fixture = { related: [{ sessionId: 'b', sessionName: 'Session 开工功能上线', relation: 'reuse', status: 'completed',
       actor: { name: '来源请求者' }, reason: '昨天实现的检索逻辑和测试，是这次调整相关性判断的直接修改依据。',
-      sourceInfo: { sessionId: 'b', sessionName: 'Session 开工功能上线', location: 'Web 对话', actorName: '登记请求者',
+      sourceInfo: { sessionId: 'b', sessionName: 'Session 开工功能上线', location: 'Web 对话', actorName: '登记请求者', verified: true,
         receivedAt: '2026-10-08T05:08:37.068Z', excerpt: '实现相关工作检索' }, updatedAt: '2026-10-08T05:18:21.773Z',
       goal: '核对原有实现、来源、边界以及验收记录。'.repeat(30) + '<img src=x onerror=alert(1)>' }],
       candidates: [{ sessionId: 'unrelated', goal: '获取会议权限' }], suggestions: [] };
