@@ -1423,3 +1423,10 @@ settings are separate from verified live deployment and delivery.
 - Feedback: a progress panel needs an explicit click hint. New conversations still need their actual runtime and Session link; readers also need to understand what happens after supplementary input, interruption, or work without a checklist.
 - Revision: label the native panel with “点击显示 / 折叠进展”. Keep the same hint after either local toggle, without another settings button or callback.
 - Existing lifecycle: the first conversation reply includes its accepted model, effort and Session link once. A continuing task reuses its stable task card, including across Runs when the Harness resumes that task. A new task has its own card; work without a checklist can use a lightweight per-Run progress card. Without card admission, useful progress remains a message. Simple answers need no artificial start or card, and final replies remain separate from task acceptance.
+
+## 2026-10-08 — Routine Feishu turns need no separate start message
+
+- Feedback: after the conversation is established, a card and final answer are enough; a repeated “开始处理” adds noise. Readers also asked whether a progress-only card requires another model call.
+- Revision: retain the first conversation reply's runtime and link, suppress later Feishu openings, and keep questions and final results separate. Web and raw history retain the Harness opening. Supplementary input in the first Run cannot send a second opening.
+- Cost and purpose: the existing worker builds cards from already-written useful progress without another model call. A new card makes a Feishu create/reply request and readback; a changed card makes a patch and readback. Simple answers without useful progress create no card. Work whose path is useful can retain a progress-only card without inventing an acceptance checklist.
+- Verification: cover first-turn runtime/link, later-turn opening suppression with and without card admission, supplementary input and replay, independent questions/results, and unchanged Web/other connector visibility.

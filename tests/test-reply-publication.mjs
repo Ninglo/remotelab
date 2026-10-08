@@ -86,6 +86,7 @@ const { publishNativeFinalReplies } = await import('../chat/native-final-publica
 const { buildReplyPublicationPayload } = await import('../chat/reply-publication.mjs');
 const { appendSessionEntryFooter, buildSessionEntry } = await import('../lib/session-navigation.mjs');
 const { buildReplyDeliveries } = await import('../lib/reply-deliveries.mjs');
+const { buildSessionDisplayEvents } = await import('../chat/session-display-events.mjs');
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -165,6 +166,14 @@ try {
   assert.ok(earlyRecord.deliveries[0].text.includes(runtimeDescription));
   assert.match(earlyRecord.deliveries[0].text, /\?session=first-feishu-session&tab=sessions/,
     'a second input arriving before the opening cannot remove the entry');
+  const steeredHistory = [...earlyInputs.slice(0, -1),
+    { seq: 4, type: 'message', role: 'user', responseId: 'steered-response', content: '再补充一项。' },
+    { ...firstHistory[1], seq: 5, providerMessageId: 'steered-opening', content: '继续检查补充信息。' }];
+  await publishNativeFinalReplies(earlyRecord, steeredHistory, { ...earlyOptions, fullHistory: steeredHistory });
+  assert.equal(earlyRecord.deliveries.length, 1,
+    'supplementary input cannot send another opening from the first Run');
+  assert.equal(buildSessionDisplayEvents(steeredHistory).filter(event => event.surfaceKind === 'opening').length, 2,
+    'Web retains both useful Harness openings');
   earlyRecord = JSON.parse(JSON.stringify(earlyRecord));
   await publishNativeFinalReplies(earlyRecord, earlyInputs, { ...earlyOptions, running: false });
   await publishNativeFinalReplies(earlyRecord, earlyInputs, { ...earlyOptions, running: false });
@@ -191,6 +200,30 @@ try {
   await publishNativeFinalReplies(laterRecord, laterHistory, { ...earlyOptions, running: false,
     store: { get: async () => laterRecord, mutate: async (_key, fn) => { laterRecord = fn(laterRecord); } } });
   assert.equal(laterRecord.deliveries[0].text, '【最终答复】\n\n核查结果。');
+  for (const cards of [true, false]) {
+    const continuingHistory = [earlyInputs[1],
+      { ...firstHistory[1], seq: 5, providerMessageId: 'later-opening', content: '继续检查。' },
+      { ...firstHistory[1], seq: 6, providerMessageId: 'later-question', messageKind: 'user_question', content: '请选择输入。' },
+      { ...firstHistory[2], seq: 7, providerMessageId: 'later-result' }];
+    const fullHistory = [...firstHistory, ...continuingHistory];
+    let continuing = { ...laterRecord, key: `continuing-${cards}`, options: { workboardEnabled: cards },
+      deliveries: [], streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
+    const options = { ...openingOptions, session: { ...openingOptions.session, workboardPilot: cards }, fullHistory,
+      store: { get: async () => continuing, mutate: async (_key, fn) => { continuing = fn(continuing); } } };
+    await publishNativeFinalReplies(continuing, continuingHistory.slice(0, -1), options);
+    assert.deepEqual(continuing.deliveries.map(item => item.surfaceKind), ['question'],
+      'later Feishu turns retain questions without a routine start message, with or without cards');
+    await publishNativeFinalReplies(continuing, continuingHistory, { ...options, running: false });
+    await publishNativeFinalReplies(continuing, continuingHistory, { ...options, running: false });
+    assert.deepEqual(continuing.deliveries.map(item => item.surfaceKind), ['question', 'final']);
+    assert.ok(continuing.deliveries.every(item => !item.sessionEntryIncluded));
+    assert.ok(buildSessionDisplayEvents(continuingHistory).some(event => event.surfaceKind === 'opening'));
+    continuing = { ...continuing, deliveries: [], streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
+    await publishNativeFinalReplies(continuing, continuingHistory.slice(0, 2),
+      { ...options, plan: { connector: 'wechat', target: { to: 'peer' } } });
+    assert.deepEqual(continuing.deliveries.map(item => item.surfaceKind), ['opening'],
+      'the Feishu-only rule preserves other connectors');
+  }
   const silent = buildReplyPublicationPayload([earlyInputs[0],
     { ...earlyInputs.at(-1), content: '<private>silence</private>' }], firstRun,
     { session: openingOptions.session, fullHistory: earlyInputs });

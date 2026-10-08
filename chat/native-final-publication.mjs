@@ -38,8 +38,9 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
   return next;
 }
 
-// Card-enabled turns keep ordinary progress in their original card. Openings,
-// questions and final replies retain separate durable message receipts.
+// Card-enabled turns keep ordinary progress in their original card. Feishu
+// publishes an opening only for the new conversation; questions and results
+// retain separate durable message receipts throughout the conversation.
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
@@ -49,6 +50,12 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     ? { ...policy, workboardPilot: false } : policy;
   const progressPolicy = plan.connector === 'feishu'
     ? forThisTurn(await findSessionMeta(record.sessionId || session?.id) || session) : null;
+  const publicationRun = { id: record.runId, responseId: record.responseId,
+    ...(record.runtimeSelection || record.options) };
+  const firstUserTurn = isFirstUserTurnPublication(events, publicationRun, fullHistory);
+  const suppressOpening = (surface, current) => plan.connector === 'feishu' && surface.surfaceKind === 'opening'
+    && (!firstUserTurn || current?.deliveries?.some(item => item.surfaceKind === 'opening'
+      || item.kind === 'session_entry' || item.sessionEntryIncluded));
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
     if (event.runId && event.runId !== record.runId) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
@@ -60,6 +67,9 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const stored = await store.get(record.key);
     const replyPlan = resolveAmbientFeishuReplyPlan(stored || record, plan, [event]);
     if (isFeishuMainlineReply(replyPlan) && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
+    // Routine turns keep their opener in Web/history instead of sending another
+    // start message. A steered first Run cannot announce its opening twice.
+    if (suppressOpening(surface, stored || record)) continue;
     // A rollout can fence progress previously suppressed by card grouping.
     // This is not a delivery receipt; old card text must not be announced again.
     if (surface.surfaceKind === 'progress' && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
@@ -84,12 +94,10 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       continue;
     }
     if (!prepared) continue;
-    const publicationRun = { id: record.runId, responseId: record.responseId,
-      ...(record.runtimeSelection || record.options) };
     const includeEntry = plan.connector === 'feishu' && Boolean(session?.id)
       && !isFeishuMainlineReply(replyPlan)
       && ['opening', 'final'].includes(surface.surfaceKind)
-      && isFirstUserTurnPublication(events, publicationRun, fullHistory)
+      && firstUserTurn
       && !stored?.deliveries?.some(item => item.kind === 'session_entry' || item.sessionEntryIncluded);
     const entry = includeEntry ? buildSessionEntry(session, { runtimeSelection: publicationRun }) : null;
     const payload = final ? buildReplyPublicationPayload([prepared], publicationRun,
@@ -106,6 +114,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (!parts.length) continue;
     const admit = () => store.mutate(record.key, current => {
       if (!current || current.result
+          || suppressOpening(surface, current)
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;
       const parts = buildParts(current);
