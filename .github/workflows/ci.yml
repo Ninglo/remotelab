@@ -58,3 +58,9 @@ jobs:
       - uses: actions/checkout@v6
       - name: Compile device-specific keypad adapter (no device access)
         run: swiftc scripts/recording-input-macos.swift -o "$RUNNER_TEMP/remotelab-recording-input"
+      - name: Verify recording indicator states (no device access)
+        run: |
+          swiftc scripts/recording-panel-state.swift tests/test-recording-panel-state.swift -o "$RUNNER_TEMP/recording-panel-tests"
+          "$RUNNER_TEMP/recording-panel-tests"
+      - name: Compile optional native recording window (no device access)
+        run: swiftc scripts/recording-panel-state.swift scripts/recording-host-macos.swift -o "$RUNNER_TEMP/recording-host"

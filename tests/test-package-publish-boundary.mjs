@@ -29,7 +29,7 @@ try {
   });
   const report = JSON.parse(stdout);
   const packedFiles = Array.isArray(report?.[0]?.files) ? report[0].files : [];
-  for (const helper of ['scripts/recording-input-macos.swift', 'scripts/recording-input-linux.py']) {
+  for (const helper of ['scripts/recording-input-macos.swift', 'scripts/recording-input-linux.py', 'scripts/recording-panel-state.swift', 'scripts/recording-host-macos.swift']) {
     assert.ok(packedFiles.some((entry) => entry.path === helper), `hardware recording helper must ship: ${helper}`);
   }
   assert.equal(

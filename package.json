@@ -57,6 +57,8 @@
     "README.md",
     "docs/",
     "scripts/recording-input-macos.swift",
+    "scripts/recording-panel-state.swift",
+    "scripts/recording-host-macos.swift",
     "scripts/recording-input-linux.py"
   ],
   "scripts": {

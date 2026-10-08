@@ -85,6 +85,18 @@ States mean different things:
 
 `submitted` does not mean transcription or delivery is complete. The normal Session and Connector lifecycle owns those results. `status` exposes active lanes, saved records, Session/Run IDs and keypad errors; it never prints signed upload intents. Software status alone cannot prove transmitter/channel separation: some receiver modes may expose two duplicated channels. The physical acceptance test must confirm them using distinct spoken samples.
 
+## Optional macOS recording window
+
+When an operator needs immediate, persistent feedback, give their AI this prompt:
+
+> Add the native RemoteLab Recording window to this Mac using the shipped Swift host. Use this machine's recording configuration, Node executable and CLI. Preserve an existing app's bundle identity and permission grants, back up its executable, and check permissions after replacement. Show the window without starting an audio recording; let the operator click its large buttons or use the already bound keypad. Verify actual audio start and saved stop events, then the original file and remote submission separately. Do not use a delayed chat message as the start cue.
+
+`scripts/recording-panel-state.swift` and `scripts/recording-host-macos.swift` compile together with `swiftc` into the optional AppKit host. Package it inside a normal `.app` with `CFBundleExecutable`, a stable `CFBundleIdentifier`, and `NSMicrophoneUsageDescription`; the AI must use the actual local installation paths. Launch arguments are `serve --cli PATH --node PATH --root PATH`. Finder launch defaults to `serve`; `RemoteLabCLIPath` and `RemoteLabNodePath` can be set in this app's Info.plist. The host starts one recorder daemon and holds a visible window with an independent large start/stop button for each configured lane. Do not run a separate LaunchAgent recorder alongside it. Closing the window or quitting stops this daemon gracefully and preserves active recordings.
+
+The window watches atomic status changes locally; it has no model call or network dependency. Orange “正在启动” is shown before verified audio arrives, and red “正在录音” only after PCM is being saved. Stopping, local preservation and remote admission remain distinct. A dead child, unreadable status or status from a different daemon cannot leave a red indicator. A keypad fault is shown separately while mouse controls remain available. Red proves active capture, not intelligible speech or correct transmitter assignment. The window is initially kept above other windows; the operator can turn that off. It does not change system volume or play automatic prompts.
+
+`check` reports this app's permission state without opening devices; `permissions` explicitly requests macOS permission. `preview --root FIXTURE_DIR --snapshot PNG_PATH` renders test configuration/status files without starting a daemon, opening hardware or enabling buttons. Keep previews clearly labeled and separate from live recording state. CI compiles the host and tests the state projection without hardware access. Actual window visibility, permission retention, keypad behavior and audible microphone samples still need host-level verification.
+
 ## Acceptance boundary
 
 Automated tests use synthetic audio, two receiver streams, real local asset uploads, RemoteLab message admission and a fake Harness. They cover independent start/stop, receiver failure isolation, segment repair, disk bounds, interrupted data, retry identity and instance-local daemon control. CI compiles the macOS helper without accessing devices. These are software evidence.
