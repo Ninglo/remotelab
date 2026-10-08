@@ -38,8 +38,8 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
   return next;
 }
 
-// Useful progress remains a new message even when the route worker also
-// updates a status card. Both paths retain their own durable receipts.
+// Card-enabled turns keep ordinary progress in their original card. Openings,
+// questions and final replies retain separate durable message receipts.
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
