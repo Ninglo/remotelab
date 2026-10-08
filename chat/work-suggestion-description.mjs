@@ -29,10 +29,10 @@ export function workSessionLocation(session) {
   return location({ ...(matches ? observed : {}), ...binding, ...target });
 }
 
-export async function describeSuggestionSources(suggestion, sessions, readRequest = requests.byRequest) {
+async function createSourceReader(sessions, readRequest) {
   const cache = new Map();
   const auth = getCachedAuthDocument() || await loadAuthDocument({ persistMigration: false }).catch(() => null);
-  const describe = async (sessionId, requestId) => {
+  return async (sessionId, requestId) => {
     const session = sessions.find(entry => entry.id === sessionId);
     const key = JSON.stringify([sessionId, requestId]);
     if (!cache.has(key)) cache.set(key, requestId ? readRequest(sessionId, requestId).catch(() => null) : Promise.resolve(null));
@@ -45,6 +45,17 @@ export async function describeSuggestionSources(suggestion, sessions, readReques
       receivedAt: record?.acceptedAt || '', verified: Boolean(record),
       excerpt: text(record?.text?.replace(/^\[群参与状态：[\s\S]*?\]\s*/, '').replace(/^【飞书群消息[^】]*】\s*/, '')) };
   };
+}
+
+export async function describeRelatedWorkSource(work, sessions, readRequest = requests.byRequest) {
+  const describe = await createSourceReader(sessions, readRequest);
+  const sourceInfo = await describe(work.sessionId, work.source?.requestId);
+  if (!sourceInfo.verified) sourceInfo.location = workSessionLocation(sessions.find(entry => entry.id === work.sessionId));
+  return sourceInfo;
+}
+
+export async function describeSuggestionSources(suggestion, sessions, readRequest = requests.byRequest) {
+  const describe = await createSourceReader(sessions, readRequest);
   const source = sessions.find(entry => entry.id === suggestion.sourceSessionId);
   const sourceIntent = data(source).intents?.find(entry => entry.id === suggestion.sourceIntentId);
   const target = sessions.find(entry => entry.id === suggestion.targetSessionId);

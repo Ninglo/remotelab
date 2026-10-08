@@ -7,7 +7,8 @@ import { candidateWorkFromSessions, relatedWorkFromSessions, workSearchEntries }
 
 const fixture = [
   { id: 'a', workSummary: { goal: '优化 RemoteLab 相关工作检索，减少误推荐' }, workAwareness: { works: [], intents: [{ requestId: 'a1', goal: '继续吧' }] } },
-  { id: 'startup', name: 'Session 开工功能', workSummary: { goal: '实现 RemoteLab 开工登记和相关工作检索', summary: '已有实现可查', rawMaterials: ['chat/work-awareness.mjs'] } },
+  { id: 'startup', name: 'Session 开工功能', updatedAt: '2026-10-06T09:00:00Z', lastReviewedAt: '2026-10-08T09:00:00Z',
+    workSummary: { goal: '实现 RemoteLab 开工登记和相关工作检索', summary: '已有实现可查', rawMaterials: ['chat/work-awareness.mjs'] } },
   { id: 'meeting', name: '会议权限', workSummary: { goal: '获取飞书会议纪要的文字权限' }, workAwareness: { intents: [{ goal: '然后看一下，这里的问题我觉得确实需要考虑' }] } },
   { id: 'industry', name: 'AI 行业', workSummary: { goal: '建立 AI 行业资讯赛道' }, workAwareness: { intents: [{ goal: '这是相关的行业内容，但是我觉得确实要看一下' }] } },
   { id: 'raw', workAwareness: { intents: [{ goal: '优化 RemoteLab 相关工作检索，减少误推荐' }] } },
@@ -34,6 +35,9 @@ assert.equal(candidateWorkFromSessions(deviceFixture, { sessionId: 'fresh',
   'the named display topic outranks an unrelated task on the same computer');
 assert(candidateWorkFromSessions(fixture, { sessionId: 'a', query: '继续吧' }).some(hit => hit.sessionId === 'startup'),
   'generic continuation retains the existing goal');
+
+assert.equal(workSearchEntries(fixture).find(entry => entry.sessionId === 'startup').updatedAt, fixture[1].updatedAt,
+  'viewing an old source cannot make its record appear newly updated');
 
 const home = await mkdtemp(join(tmpdir(), 'remotelab-relevance-'));
 setIsolatedTestHome(home);

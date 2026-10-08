@@ -1484,3 +1484,10 @@ settings are separate from verified live deployment and delivery.
 - Causes: normal work preparation did not forward the new input to candidate search; a single named topic could be rejected. Necessary background reported project bindings but did not search original project passages. The local CLI also pointed to an older source.
 - Change: use the actual turn query, accept informative named-topic references and prioritize them over incidental host overlap. Read bounded original passages from registered sources with paths, lines, versions and omitted-source accounting; retain separate project association and action authority. CLI launchers should follow the Run source, with the current-source direct entry as fallback.
 - Verification: replay the original query in fresh, unbound and resumed preparation, retain no unrelated/person body, and test changes, switches, budgets and bad pointers. Finding background is separate from a real Harness using it correctly; no synthetic group delivery.
+
+## 2026-10-08 — Tune the general guidance without requiring a remembered example
+
+- Feedback: the later unreadable passage could not be identified. The reader asked to tune the general experience first and revisit a specific example when it appears again.
+- Revision: reading material explains which current step it can help and requires no sending decision. Collaboration advice names its destination and says where confirmation belongs; creating a new conversation, sending a reference and adopting it use distinct labels. Previously delivered or decided advice shows the current next step, while its old proposal remains in details.
+- Provenance: registered work uses its accepted source message for entry, identity and time. Legacy summaries keep missing source times explicit; viewing an old record cannot make it look newly updated. No extra model call or inferred source attribution is introduced.
+- Acceptance: verify ordinary reading, outgoing/incoming references, new-conversation proposals, old and decided records, source-time boundaries, and desktop/mobile input alignment. The unknown later passage is not claimed to have been recovered or fixed.
