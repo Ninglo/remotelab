@@ -90,6 +90,7 @@ import { queryUsageLedger } from './usage-ledger.mjs';
 import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
 import { updateSessionProgressPolicy } from './session-progress-policy.mjs';
+import { resolveProgressActor } from './person-progress-preference.mjs';
 import {
   buildClientInstanceSettings,
   loadInstanceSettings,
@@ -477,9 +478,9 @@ export async function handleControlRoutes({
   if (personMatch && req.method === 'PATCH') {
     try {
       const payload = JSON.parse(await readBody(req, 32768) || '{}');
-      if (['voiceShortcut', 'mobileInputMode'].some((key) => Object.prototype.hasOwnProperty.call(payload, key))
+      if (['voiceShortcut', 'mobileInputMode', 'feishuProgressMode'].some((key) => Object.prototype.hasOwnProperty.call(payload, key))
         && authSession?.personId !== personMatch[1]) {
-        writeJson(res, 403, { error: 'Voice preferences can only be changed by their Person' });
+        writeJson(res, 403, { error: 'Personal preferences can only be changed by their Person' });
         return true;
       }
       const updated = await updatePerson(personMatch[1], payload);
@@ -1102,8 +1103,10 @@ export async function handleControlRoutes({
     if (!await requireSessionAccess(res, authSession, id)) return true;
     try {
       const patch = JSON.parse(await readBody(req, 4096));
-      await updateSessionProgressPolicy(id, patch);
-      writeJson(res, 200, { session: await getSessionForClient(id) });
+      const current = await getSessionForClient(id);
+      const actor = await resolveProgressActor(authSession, patch.sourceContext, current?.conversation);
+      await updateSessionProgressPolicy(id, patch, { actor });
+      writeJson(res, 200, { session: await getSessionForClient(id), personalPreferenceSaved: Boolean(actor && patch.mode !== 'default') });
     } catch (error) {
       writeJson(res, error.status || 400, { error: error.message });
     }

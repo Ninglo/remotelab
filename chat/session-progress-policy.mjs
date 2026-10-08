@@ -3,6 +3,7 @@ import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { getHistoryHeadSeq } from './history.mjs';
 import { findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { broadcastAll } from './ws-clients.mjs';
+import { updatePerson } from '../lib/auth.mjs';
 
 // Policy changes and progress outbox admissions share one lock. A notification
 // already admitted before a switch may finish; later observations read the new policy.
@@ -14,7 +15,7 @@ function invalid(message, status = 400) {
   throw error;
 }
 
-export async function updateSessionProgressPolicy(id, { mode, expectedRevision, changeId } = {}) {
+export async function updateSessionProgressPolicy(id, { mode, expectedRevision, changeId } = {}, { actor = null } = {}) {
   if (!FEISHU_PROGRESS_MODES.has(mode)) invalid('进展策略应为 messages、card 或 default。');
   if (!Number.isInteger(expectedRevision) || expectedRevision < 0) invalid('请先读取当前进展策略版本。');
   if (typeof changeId !== 'string' || !changeId.trim() || changeId.length > 200) invalid('缺少有效的进展策略操作编号。');
@@ -26,17 +27,22 @@ export async function updateSessionProgressPolicy(id, { mode, expectedRevision, 
     if (current.feishuProgressChanges?.includes(changeId)) return current;
     if ((current.feishuProgressRevision || 0) !== expectedRevision) invalid('策略已被其他操作更新，请查看最新卡片或输入 /progress 后重试。', 409);
     const nextMode = mode === 'default' ? undefined : mode;
+    // Only an explicit two-mode selection saves a personal default. Legacy
+    // reset actions clear the Session override and leave that default intact.
+    if (actor && nextMode) await updatePerson(actor.person.id, { feishuProgressMode: nextMode });
     const head = await getHistoryHeadSeq(id);
     const result = await mutateSessionMeta(id, session => {
       if (session.feishuProgressChanges?.includes(changeId)) return false;
       if ((session.feishuProgressRevision || 0) !== expectedRevision) invalid('策略已更新，请查看最新卡片后重试。', 409);
       if (session.feishuProgressMode !== nextMode) {
-        const changesDelivery = sessionProgressMode(session) !== (nextMode === 'card' ? 'card' : 'messages');
+        const changesDelivery = sessionProgressMode(session) !== sessionProgressMode({ ...session, feishuProgressMode: nextMode });
         if (nextMode) session.feishuProgressMode = nextMode;
         else delete session.feishuProgressMode;
         if (changesDelivery) session.feishuProgressAfterSeq = head;
         session.feishuProgressRevision = expectedRevision + 1;
       }
+      if (nextMode && actor) session.feishuProgressSelectedBy = { personId: actor.person.id, identityId: actor.identity.id };
+      else delete session.feishuProgressSelectedBy;
       session.feishuProgressChanges = [...(session.feishuProgressChanges || []), changeId].slice(-100);
       session.updatedAt = new Date().toISOString();
       return true;

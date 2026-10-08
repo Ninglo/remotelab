@@ -89,7 +89,15 @@ decides whether the work satisfies the user's goal.
   Each useful progress update also enters the Feishu message outbox, returning
   to the original conversation or topic as a new message. This global default
   lets concurrent tasks notify readers and retains the intermediate message
-  history; per-Session strategy controls are deferred. Openings, native user
+  history. Cards now expose two idempotent choices: card plus messages, or card
+  only. A verified explicit operator selection persists through the existing
+  Person auth preferences. Explicit Session choices take priority over the
+  actual task initiator's personal default captured at admission, then the
+  global default. Shared groups have one visible stream for all members, never
+  individual recipient hiding. Unknown identities cannot save a default;
+  old manual Session choices, reset callbacks and `/progress default` remain
+  supported (reset clears the Session choice without changing personal settings).
+  Openings, native user
   questions and final results remain separate. Without a card, explicit progress
   uses one compact progress panel per Run, without acceptance items. Later
   progress patches that same position/message; Web retains expandable progress

@@ -1,4 +1,5 @@
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
+import { progressDefaultForTurn } from './person-progress-preference.mjs';
 import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
 import { requireConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
 import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
@@ -3339,6 +3340,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const workboardPeople = await loadWorkboardOptIns();
   const workboardEnabled = isWorkboardTurnEnabled(session, options, workboardPeople);
   const personOptedIn = isWorkboardOptedIn(session, options, workboardPeople);
+  if (!priorRequest && !options.internalOperation && !options.nativeQuestionId
+      && session.conversation?.connector === 'feishu') {
+    options = { ...options, feishuProgressDefault: workboardEnabled
+      ? await progressDefaultForTurn(options, session.conversation) : null };
+  } else if (priorRequest && Object.hasOwn(priorRequest.options, 'feishuProgressDefault')) {
+    options = { ...options, feishuProgressDefault: priorRequest.options.feishuProgressDefault || null };
+  }
   if (workboardEnabled && personOptedIn && session.workboardOptInPersonId !== options.viewPersonId) {
     session = await updateSessionWorkboardPilot(sessionId, true, {
       optInPersonId: options.viewPersonId,
@@ -3384,6 +3392,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ? buildTemporarySessionName(record.text)
       : '';
     const mutation = await mutateSessionMeta(sessionId, draft => {
+      if (!duplicate && Object.hasOwn(record.options, 'feishuProgressDefault')) {
+        draft.feishuProgressDefault = record.options.feishuProgressDefault;
+      }
       if (draft.workboardPilot === true && options.checklistGateReceipt && !duplicate) {
         draft.workboardGate = { requestId: record.requestId, ...options.checklistGateReceipt };
       }
@@ -3420,6 +3431,8 @@ async function ensureRequestInput(record, manifest) {
         ? { messageKind: 'native_question_answer', nativeQuestionId: record.options.nativeQuestionId,
           nativeQuestionRunId: record.nativeDispatchRunId || record.runId } : {}),
       ...(sourceContext ? { sourceContext } : {}),
+      ...(Object.hasOwn(record.options, 'feishuProgressDefault')
+        ? { feishuProgressDefault: record.options.feishuProgressDefault } : {}),
       ...(workboardAdmission(record.options) ? { workboardAdmission: workboardAdmission(record.options) } : {}),
     }));
   }

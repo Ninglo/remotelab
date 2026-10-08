@@ -52,10 +52,12 @@ export async function handleFeishuProgressPolicyAction(runtime, raw, {
         || !await authorize(summary)) return reply('无权操作这个会话的进展设置。');
     const result = await request(`/api/sessions/${encodeURIComponent(value.sessionId)}/progress-policy`, {
       method: 'POST', body: { mode: value.mode, expectedRevision: value.revision,
+        sourceContext: { ...summary, connector: 'feishu', sourceRouteId: route },
         changeId: trim(raw?.header?.event_id || event.event_id) || `button:${actor}:${messageId}:${value.revision}:${value.mode}` },
     });
     if (!result.response?.ok) return reply(result.json?.error || '切换未成功，输入 /progress 可重试。');
-    return reply(`${describeSessionProgressPolicy(result.json?.session)}；仅当前会话生效。`, 'success');
+    return reply(`${describeSessionProgressPolicy(result.json?.session)}；${result.json?.personalPreferenceSaved
+      ? '已保存你的个人默认，以后新任务沿用。' : '仅当前会话生效，未写个人偏好。'}`, 'success');
   } catch (error) {
     console.warn(`[feishu-progress-policy] ${error.message}`);
     return reply('切换未获确认，请输入 /progress 查看当前设置后重试。');

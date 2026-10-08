@@ -14,7 +14,7 @@ import {
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
 import { normalizeConversation } from '../lib/conversation-target.mjs';
-import { shouldPublishSessionProgress } from '../lib/session-progress-policy.mjs';
+import { shouldPublishSessionProgress, progressPolicyForTask } from '../lib/session-progress-policy.mjs';
 import { withSessionProgressPolicy } from './session-progress-policy.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
 
@@ -44,7 +44,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
   const progressPolicy = plan.connector === 'feishu'
-    ? await findSessionMeta(record.sessionId || session?.id) || session : null;
+    ? progressPolicyForTask(await findSessionMeta(record.sessionId || session?.id) || session, record.options) : null;
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
     if (event.runId && event.runId !== record.runId) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
@@ -127,7 +127,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     });
     if (plan.connector === 'feishu' && surface.surfaceKind === 'progress') {
       await withSessionProgressPolicy(record.sessionId || session?.id, async () => {
-        const latest = await findSessionMeta(record.sessionId || session?.id) || session;
+        const latest = progressPolicyForTask(await findSessionMeta(record.sessionId || session?.id) || session, record.options);
         if (shouldPublishSessionProgress(latest, event.seq)) await admit();
       });
     } else await admit();

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { progressCardControls, progressCardHistory } from './progress-card-controls.mjs';
 import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '../../lib/workboard-state.mjs';
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
+import { progressPolicyForTask } from '../../lib/session-progress-policy.mjs';
 import { projectProgressStreams, progressExecutionLabel } from '../../lib/progress-stream.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
@@ -166,12 +167,14 @@ function collectAuthorizedCycles(events, pilot, session = null) {
     || pilot.cards.some(card => card.anchorSeq === task.anchorSeq || card.taskId === task.taskId
       || task.aliases?.includes(card.taskId))).map(task => {
     const anchor = history.find(event => event.seq === task.anchorSeq);
+    const input = anchor?.role === 'user' ? anchor : history.find(event => event.role === 'user' && event.runId === anchor?.runId);
     const final = history.some(event => event.type === 'message' && event.role === 'assistant'
       && ['final', 'final_answer'].includes(event.phase)
       && event.seq > task.anchorSeq
       && (!anchor.runId || event.runId === anchor.runId));
     return { ...task, closed: final, sessionId: session?.id || pilot.sessionId,
-      progressPolicy: { feishuProgressMode: session?.feishuProgressMode, feishuProgressRevision: session?.feishuProgressRevision || 0 },
+      progressPolicy: progressPolicyForTask({ workboardPilot: session?.workboardPilot,
+        feishuProgressMode: session?.feishuProgressMode, feishuProgressRevision: session?.feishuProgressRevision || 0 }, input),
       ...(target?.conversationKind === 'thread' ? { replyMessageId: anchors.get(task.anchorSeq)?.replyMessageId || allowed.get(anchor.runId) } : {}) };
   });
 }

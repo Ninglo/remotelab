@@ -5,10 +5,9 @@ export function progressCardControls(cycle = {}) {
   if (!cycle.sessionId) return [];
   const policy = cycle.progressPolicy || {};
   const current = sessionProgressMode(policy);
-  const modes = [{ mode: 'messages', label: '卡片＋新消息' }, { mode: 'card', label: '只更新卡片' },
-    ...(policy.feishuProgressMode ? [{ mode: 'default', label: '恢复默认' }] : [])];
+  const modes = [{ mode: 'messages', label: '卡片 + 新消息' }, { mode: 'card', label: '只更新卡片' }];
   return [
-    { tag: 'markdown', content: `${describeSessionProgressPolicy(policy)} · 仅当前会话\n需要你回复的问题和最终结果仍发消息。` },
+    { tag: 'markdown', content: `${describeSessionProgressPolicy(policy)}\n选择立即影响本会话；身份核实后也保存为操作者以后新任务的个人默认。群内卡片和消息全员可见。需要你回复的问题和最终结果仍发消息。` },
     { tag: 'column_set', flex_mode: 'flow', columns: modes.map(({ mode, label }) => ({
       tag: 'column', width: 'auto', elements: [{ tag: 'button',
         text: { tag: 'plain_text', content: label }, type: mode === current ? 'primary' : 'default',
