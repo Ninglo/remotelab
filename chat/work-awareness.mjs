@@ -293,8 +293,8 @@ export async function buildWorkAwarenessContext(session, { query = '' } = {}) {
   if (!session?.id || !query.trim()) return '';
   const started = performance.now();
   const sessions = await loadSessionsMeta();
-  const related = relatedWorkFromSessions(sessions, { sessionId: session.id });
-  const candidates = candidateWorkFromSessions(sessions, { sessionId: session.id });
+  const related = relatedWorkFromSessions(sessions, { sessionId: session.id, query });
+  const candidates = candidateWorkFromSessions(sessions, { sessionId: session.id, query });
   const suggestions = allSuggestions(sessions).filter(suggestion => suggestion.sourceSessionId === session.id
     || suggestion.targetSessionId === session.id && suggestion.state !== 'draft');
   const data = state(sessions.find(entry => entry.id === session.id) || session);

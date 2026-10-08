@@ -19,6 +19,21 @@ assert(!hits.some(hit => ['meeting', 'industry', 'raw'].includes(hit.sessionId))
 assert.deepEqual(relatedWorkFromSessions(fixture, { sessionId: 'a' }), [], 'even a good keyword candidate needs a relevance review');
 assert.deepEqual(relatedWorkFromSessions(fixture, { sessionId: 'unknown', query: '然后我觉得相关的问题确实需要看一下' }), [], 'no minimum recommendation count');
 assert.equal(workSearchEntries(fixture).find(entry => entry.sessionId === 'startup').status, 'recorded', 'an inferred summary is not completion acceptance');
+const deviceFixture = [
+  { id: 'fresh', workAwareness: { works: [], intents: [], suggestions: [] } },
+  { id: 'display', name: '副屏内容', workSummary: { goal: '副屏采用工作、提醒、陪伴三区', summary: '已有设置入口' } },
+  { id: 'other', name: '其他工作', workSummary: { goal: '配置通知投递' } },
+  { id: 'recording', name: '多电脑录音接入', workSummary: { goal: 'Mac Mini 连接电脑后显示录音内容' } },
+];
+assert(candidateWorkFromSessions(deviceFixture, { sessionId: 'fresh', query: '副屏' }).some(hit => hit.sessionId === 'display'),
+  'one explicit named topic is sufficient for a reference candidate');
+assert.deepEqual(relatedWorkFromSessions(deviceFixture, { sessionId: 'fresh', query: '副屏' }), [],
+  'a topic match remains unreviewed rather than automatic association');
+assert.equal(candidateWorkFromSessions(deviceFixture, { sessionId: 'fresh',
+  query: '副屏现在连接在Mac Mini上了，但是我希望它能显示我这台电脑的内容，能做到吗' })[0].sessionId, 'display',
+  'the named display topic outranks an unrelated task on the same computer');
+assert(candidateWorkFromSessions(fixture, { sessionId: 'a', query: '继续吧' }).some(hit => hit.sessionId === 'startup'),
+  'generic continuation retains the existing goal');
 
 const home = await mkdtemp(join(tmpdir(), 'remotelab-relevance-'));
 setIsolatedTestHome(home);
@@ -27,6 +42,10 @@ await mkdir(config, { recursive: true });
 await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(fixture));
 try {
   const m = await import('../chat/work-awareness.mjs');
+  await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(deviceFixture));
+  const freshHook = await m.buildWorkAwarenessContext(deviceFixture[0], { query: '副屏' });
+  assert.match(freshHook, /副屏采用工作/, 'fresh hook forwards the actual input instead of searching an absent old summary');
+  await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(fixture));
   const { mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
   const actor = { personId: 'person_a', identityId: 'identity_a', name: '甲' };
   const item = { sessionId: hits[0].sessionId, workId: hits[0].id, fingerprint: hits[0].fingerprint,
