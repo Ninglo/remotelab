@@ -149,7 +149,7 @@
   --error: #c66a57;
   --error-bg: #faece8;
   --warning: #d9b35a;
-  --waiting: #a34a08;
+  --waiting: var(--warning);
   --issue: #c66a57;
   --failed-message-border: #d9b35a;
   --copy-btn-bg: rgba(246, 248, 239, 0.88);
