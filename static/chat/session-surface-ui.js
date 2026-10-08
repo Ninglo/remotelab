@@ -290,7 +290,7 @@ async function renderWorkAwarenessPanel(session) {
     }
     panel.appendChild(body);
     if (previous) previous.replaceWith(panel);
-    else queuedPanel?.after(panel);
+    else document.getElementById("workAwarenessSlot")?.appendChild(panel);
   } catch {
     if (previous && request === workAwarenessPanelRequest && session.id === currentSessionId) previous.querySelector("summary").textContent = "相关工作读取失败，请稍后重新打开会话核对";
   }

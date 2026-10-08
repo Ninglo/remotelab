@@ -17,9 +17,9 @@ const fixture = { related: [{ sessionId: 'b', sessionName: '开工资料', goal:
 let data = fixture, pendingQuestion = false, delay;
 const source = await readFile(new URL('../static/chat/session-surface-ui.js', import.meta.url), 'utf8');
 const context = vm.createContext({ URLSearchParams, Event, currentSessionId: 'a', shareSnapshotMode: false,
-  queuedPanel: { after(next) { panel = next; } },
+  queuedPanel: {},
   msgInput: { value: '', dispatchEvent() { fillEvents++; }, focus() {} },
-  document: { getElementById() { return panel; }, createElement(tag) { return new Element(tag); },
+  document: { getElementById(id) { return id === 'workAwarenessSlot' ? { appendChild(next) { panel = next; } } : panel; }, createElement(tag) { return new Element(tag); },
     createTextNode(text) { return { textContent: text }; }, querySelector() { return pendingQuestion; } },
   async fetch(url, options) { if (options?.method === 'POST') posts++; if (delay) await delay;
     assert.match(url, /includeBackground=false/); return { ok: true, async json() { return data; } }; },

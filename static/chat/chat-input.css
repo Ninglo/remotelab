@@ -670,7 +670,7 @@
 
 .work-awareness-panel {
   flex-shrink: 0;
-  margin: 0 var(--chat-gutter) 10px;
+  margin: 0 0 10px;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 12px;

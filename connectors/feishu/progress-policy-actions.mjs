@@ -37,6 +37,7 @@ export async function handleFeishuProgressPolicyAction(runtime, raw, {
       || !Number.isInteger(value.revision) || value.revision < 0
       || (disclosure && (!['expanded', 'collapsed'].includes(value.mode)
         || !Number.isSafeInteger(value.anchorSeq) || value.anchorSeq < 1))) return reply('无效的进展设置，请查看最新卡片。');
+  const startedAt = Date.now();
   try {
     const route = runtime.config?.sourceRouteId || 'default';
     const card = await findProgressPolicyCard({ sessionId: value.sessionId, messageId, sourceRouteId: route }, stateDir);
@@ -67,5 +68,7 @@ export async function handleFeishuProgressPolicyAction(runtime, raw, {
   } catch (error) {
     console.warn(`[feishu-progress-policy] ${error.message}`);
     return reply('切换未获确认，请输入 /progress 查看当前设置后重试。');
+  } finally {
+    if (disclosure) console.log(`[feishu-progress-policy] disclosure session=${value.sessionId} anchor=${value.anchorSeq} saveMs=${Date.now() - startedAt}`);
   }
 }

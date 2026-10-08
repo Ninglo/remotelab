@@ -1102,9 +1102,15 @@ export async function handleControlRoutes({
     if (!await requireSessionAccess(res, authSession, id)) return true;
     try {
       const patch = JSON.parse(await readBody(req, 4096));
-      if (progressPolicyMatch[2] === 'progress-card') await updateProgressCardDisclosure(id, patch);
-      else await updateSessionProgressPolicy(id, patch);
-      writeJson(res, 200, { session: await getSessionForClient(id) });
+      if (progressPolicyMatch[2] === 'progress-card') {
+        const session = await updateProgressCardDisclosure(id, patch);
+        // The disclosure receipt needs metadata only. Rebuilding the entire
+        // Session here adds another history read to a simple button click.
+        writeJson(res, 200, { session: createClientSessionDetail(session) });
+      } else {
+        await updateSessionProgressPolicy(id, patch);
+        writeJson(res, 200, { session: await getSessionForClient(id) });
+      }
     } catch (error) {
       writeJson(res, error.status || 400, { error: error.message });
     }

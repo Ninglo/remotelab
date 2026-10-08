@@ -17,6 +17,11 @@ const { findSessionMeta } = await import('../chat/session-meta-store.mjs');
 const { updateProgressCardDisclosure } = await import('../chat/session-progress-policy.mjs');
 const { createSessionDetail } = await import('../chat/session-api-shapes.mjs');
 const { progressPolicyForCard } = await import('../lib/session-progress-policy.mjs');
+const { createProgressCardRefresh } = await import('../connectors/feishu/progress-card-refresh.mjs');
+const { setWss } = await import('../chat/ws-clients.mjs');
+const hints = [];
+setWss({ clients: [{ readyState: 1, send: value => hints.push(JSON.parse(value)) }] });
+after(() => setWss(null));
 const { handleFeishuProgressPolicyAction } = await import('../connectors/feishu/progress-policy-actions.mjs');
 const { collectFeishuInstanceWorkboardCycles, buildFeishuWorkboardCard, publishFeishuWorkboardCycle }
   = await import('../connectors/feishu/workboard-pilot.mjs');
@@ -59,6 +64,9 @@ test('latest summary is outside, history defaults hidden, and real clicks keep o
   assert(collapsed.body.elements.every(e => e.content?.length < 220 || !e.content));
   assert.doesNotMatch(JSON.stringify(collapsed), /collapsible_panel|查看完整工作过程/);
   assert.equal((await act(callback('expand-a', 'expanded'))).toast.type, 'success');
+  assert.deepEqual(hints.find(hint => hint.progressCard)?.progressCard,
+    { anchorSeq: first.seq, mode: 'expanded', revision: 1, sourceRouteId: 'bot', chatId: 'group' },
+    'accepted clicks broadcast only presentation fields, without actor or change identities');
   [cycle] = await cycles();
   const expanded = buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress, cycle);
   assert.equal(expanded.body.elements.find(e => e.tag === 'button').text.content, '点击折叠进展');
@@ -111,4 +119,36 @@ test('expanded card history stays below provider payload limits and cannot inclu
   assert(Buffer.byteLength(JSON.stringify(card)) < 30000);
   assert.doesNotMatch(JSON.stringify(card), /未来内容/);
   assert(card.body.elements.some(e => e.content?.includes('完整内容见会话历史')));
+});
+
+test('cached repaint coalesces clicks, fences old choices and never rolls a card back to old content', () => {
+  const routePilot = { ...pilot, sessions: { s: pilot } };
+  const refresh = createProgressCardRefresh(routePilot);
+  const hint = (mode, revision, extra = {}) => ({ type: 'session_invalidated', sessionId: 's',
+    progressCard: { anchorSeq: first.seq, sourceRouteId: 'bot', chatId: 'group', mode, revision, ...extra } });
+  const snapshot = { sessionId: 's', anchorSeq: first.seq, latestSeq: pilot.cards[0].latestSeq,
+    progressHistory: [{ seq: 1, content: 'past' }, { seq: 1000, content: 'future' }],
+    updates: [{ seq: 1 }], cardDisclosure: { mode: 'collapsed', revision: 0 } };
+  refresh.remember(snapshot);
+  assert.equal(refresh.accept(hint('expanded', 1)), true);
+  refresh.accept(hint('collapsed', 2));
+  refresh.accept(hint('expanded', 1));
+  assert.equal(refresh.size, 1);
+  const change = refresh.take();
+  assert.deepEqual(change.cycle.cardDisclosure, { mode: 'collapsed', revision: 2 });
+  assert.equal(change.cycle.updates, undefined);
+  assert.deepEqual(change.cycle.progressHistory, [{ seq: 1, content: 'past' }]);
+  refresh.remember({ ...snapshot, latestSeq: snapshot.latestSeq - 1 });
+  refresh.accept(hint('expanded', 3));
+  assert.equal(refresh.take().cycle.latestSeq, snapshot.latestSeq, 'a stale checkpoint cannot replace the acknowledged snapshot');
+  assert.deepEqual(refresh.apply(snapshot).cardDisclosure, { mode: 'expanded', revision: 3 }, 'in-flight normal refresh preserves a newer click');
+  for (const extra of [{ chatId: 'foreign' }, { sourceRouteId: 'foreign' }, { anchorSeq: 1000 }])
+    assert.equal(refresh.accept(hint('collapsed', 4, extra)), false);
+  const cold = createProgressCardRefresh(routePilot);
+  cold.accept(hint('expanded', 3));
+  assert.equal(cold.take().cycle, null, 'cache misses request a normal authorized refresh');
+  refresh.remember({ ...snapshot, cardDisclosure: { mode: 'collapsed', revision: 7 } });
+  refresh.accept(hint('expanded', 6));
+  assert.equal(refresh.size, 0, 'reconnect snapshots fence delayed older hints');
+  assert.deepEqual(refresh.apply(snapshot).cardDisclosure, { mode: 'collapsed', revision: 7 });
 });
