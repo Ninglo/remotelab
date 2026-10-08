@@ -9,6 +9,17 @@ setIsolatedTestHome(home);
 try {
   const { resolveSessionRuntimeSelection } = await import('../chat/session-runtime-selection.mjs');
   const defaults = { tool: 'codex', model: 'gpt-6-sol', effort: 'low', thinking: false };
+  const active = { ...defaults, effort: 'xhigh' };
+  const laterDefaults = { ...defaults, model: 'gpt-6.1-sol' };
+  assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, {}, active), active,
+    'ordinary input inherits the actual active Harness snapshot even when Session preferences changed');
+  assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, {
+    ...laterDefaults, runtimeSelectionScope: 'auto', sourceContext: { connector: 'feishu' },
+  }, active), active, 'connector default snapshots cannot switch an active Harness');
+  assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, { model: 'gpt-6-astra' }, active),
+    { ...laterDefaults, model: 'gpt-6-astra', effort: 'medium' }, 'explicit model changes still resolve for the busy guard');
+  assert.deepEqual(await resolveSessionRuntimeSelection(laterDefaults, { freshThread: true }, active), laterDefaults,
+    'a requested fresh thread does not inherit active execution settings');
   const autoDefault = await resolveSessionRuntimeSelection({ tool: 'codex' });
   assert.deepEqual(
     { tool: autoDefault.tool, model: autoDefault.model, effort: autoDefault.effort, thinking: autoDefault.thinking },
@@ -81,6 +92,9 @@ try {
       'later messages keep the concrete first-turn selection',
     );
     assert.equal(routingCalls, 1, 'the router runs only for the initial Auto selection');
+    assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'codex', model: 'auto' },
+      { autoRoutingText: 'An ordinary follow-up during execution.' }, active), active);
+    assert.equal(routingCalls, 1, 'active follow-ups never invoke Auto again');
   } finally {
     globalThis.fetch = previousFetch;
     delete process.env.TYPESAFE_API_KEY;

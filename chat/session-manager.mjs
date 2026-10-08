@@ -3373,7 +3373,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       autoRoutingText: savedImages.length
         ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
         : text?.trim(),
-    });
+    }, activeNative ? activeRequest.runtimeSelection : null);
   const workboardPeople = await loadWorkboardOptIns();
   const workboardEnabled = isWorkboardTurnEnabled(session, options, workboardPeople);
   const personOptedIn = isWorkboardOptedIn(session, options, workboardPeople);

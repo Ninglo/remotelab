@@ -172,8 +172,15 @@ try {
   const session = await rpc('create');
   const first = await accept(session.id, 'first', 'Start held native work');
   await until(async () => (await logs()).some(event => event.runId === first.run.id && event.kind === 'turn/start'), 'first native turn started');
+  await rpc('runtime', session.id, { model: 'later-session-default', effort: 'high' });
   await assert.rejects(rpc('accept', session.id, 'Switch the active runtime', [], { ...options('blocked-switch'), tool: 'fake-switch' }), error => error.code === 'SESSION_BUSY');
-  const second = await accept(session.id, 'second', 'Use my correction immediately');
+  await assert.rejects(rpc('accept', session.id, 'Explicit model change', [], {
+    ...options('blocked-model-switch'), model: 'explicit-new-model',
+  }), error => error.code === 'SESSION_BUSY');
+  const secondOptions = {
+    ...options('second'), model: 'connector-default', effort: 'high', runtimeSelectionScope: 'auto',
+  };
+  const second = await rpc('accept', session.id, 'Use my correction immediately', [], secondOptions);
   assert.equal(second.queued, false, 'native input admission is not reported as a controller-managed task queue');
   await until(async () => (await receipt(first.run.id, 'second'))?.state === 'accepted', 'second input acknowledged durably before completion');
   assert.equal((await logs()).filter(event => event.runId === first.run.id && event.kind === 'completed').length, 0);
@@ -181,7 +188,7 @@ try {
   await assert.rejects(rpc('remove', session.id, 'second'), error => error.code === 'REQUEST_NOT_QUEUED');
   await evidence('PASS: second user message reached native turn/steer before the active turn completed, in one detached Harness process.');
   await killController(); await boot();
-  const duplicate = await accept(session.id, 'second', 'Use my correction immediately');
+  const duplicate = await rpc('accept', session.id, 'Use my correction immediately', [], secondOptions);
   assert.equal(duplicate.duplicate, true);
   await accept(session.id, 'third', 'Another correction after controller recovery');
   await until(async () => (await receipt(first.run.id, 'third'))?.state === 'accepted', 'third input steered after recovery');

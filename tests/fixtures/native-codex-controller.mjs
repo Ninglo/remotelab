@@ -12,6 +12,7 @@ process.on('message', async ({ id, action, args }) => {
       : action === 'response' ? await manager.getSessionReplyPublication(...args)
       : action === 'history' ? await manager.getHistory(...args)
       : action === 'session' ? await manager.getSession(args[0], { includeQueuedMessages: true })
+      : action === 'runtime' ? await manager.updateSessionRuntimePreferences(...args)
       : action === 'remove' ? await manager.removeQueuedMessage(...args)
       : action === 'shutdown' ? await manager.killAll()
       : action === 'work-start' ? await work.startWork(args[0])

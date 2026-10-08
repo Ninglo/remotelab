@@ -16,7 +16,7 @@ import { clampReasoningEffort } from '../lib/reasoning-effort-policy.mjs';
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
 // Resolve once at admission; the notice and detached runner share this snapshot.
-export async function resolveSessionRuntimeSelection(session = {}, options = {}) {
+export async function resolveSessionRuntimeSelection(session = {}, options = {}, activeRuntimeSelection = null) {
   if (isQuickSession(session)) return getQuickSessionRuntimeProfile();
   // Runtime preferences belong to the RemoteLab Session, regardless of the
   // connector that delivered the message. Keep the old Feishu field as a
@@ -39,6 +39,16 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {})
     ['auto', 'default'].includes(options.runtimeSelectionScope) || session.feishuRuntimeSelection || completeConnectorSnapshot
   );
   const requested = migrateLegacySessionRuntimeFields(carriesDefaultSnapshot ? {} : options);
+  // Ordinary input steers the admitted Harness. Session preferences and Auto
+  // defaults may have changed since admission; neither can replace that run's
+  // frozen snapshot. Explicit switches still resolve below for the busy guard.
+  const requestedRuntimeChange = ['tool', 'model', 'effort'].some(key =>
+    trim(requested[key]) && requested[key] !== activeRuntimeSelection?.[key])
+    || (typeof requested.thinking === 'boolean' && requested.thinking !== activeRuntimeSelection?.thinking);
+  if (activeRuntimeSelection && !requestedRuntimeChange && !options.freshThread
+      && !options.internalOperation && !options.routingRethink && !options.routingSource) {
+    return { ...activeRuntimeSelection };
+  }
   const savedProfile = normalizeRuntimeProfile(saved);
   const requestedProfile = normalizeRuntimeProfile(requested);
   requestedProfile.tool = normalizeLegacyToolId(requestedProfile.tool);
