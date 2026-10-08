@@ -5,11 +5,14 @@
   const automations = document.getElementById("monitoringAutomations");
   const content = document.getElementById("monitoringContent");
   if (!overview || !automations || !content) return;
-  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringAutomationsTab")];
+  const views = ["overview", "usage", "automations"];
+  const usage = document.getElementById("monitoringUsage");
+  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab")];
   const period = document.getElementById("monitoringPeriod");
   const refresh = document.getElementById("monitoringRefresh");
   const create = document.getElementById("taskCenterCreateToggle");
-  let view = new URL(globalScope.location.href).searchParams.get("monitor") === "overview" ? "overview" : "automations";
+  const requested = new URL(globalScope.location.href).searchParams.get("monitor");
+  let view = views.includes(requested) ? requested : "automations";
   let value = null, serial = 0, loading = false;
   const t = (key, vars) => globalScope.remotelabT?.(`monitoring.${key}`, vars) || key;
   const node = (tag, text = "", className = "") => {
@@ -187,23 +190,26 @@
   }
   function select(next, { sync = true } = {}) {
     view = next; overview.hidden = view !== "overview"; automations.hidden = view !== "automations";
-    create.hidden = view === "overview";
-    tabs.forEach((tab, index) => { const selected = index === (view === "overview" ? 0 : 1);
+    if (usage) usage.hidden = view !== "usage";
+    create.hidden = view !== "automations";
+    tabs.forEach((tab, index) => { const selected = index === views.indexOf(view);
       tab.setAttribute("aria-selected", String(selected)); tab.tabIndex = selected ? 0 : -1;
     });
     if (sync) {
       const url = new URL(globalScope.location.href); url.searchParams.set("tab", "tasks");
-      if (view === "overview") url.searchParams.set("monitor", "overview"); else url.searchParams.delete("monitor");
+      if (view !== "automations") url.searchParams.set("monitor", view); else url.searchParams.delete("monitor");
       globalScope.history.replaceState(null, "", url);
-      if (view === "overview") void load(); else void globalScope.RemoteLabTaskCenter?.onTabShown();
+      if (view === "overview") void load();
+      else if (view === "usage") void globalScope.RemoteLabUsageAnalysis?.load();
+      else void globalScope.RemoteLabTaskCenter?.onTabShown();
     }
   }
   tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => select(index === 0 ? "overview" : "automations"));
+    tab.addEventListener("click", () => select(views[index]));
     tab.addEventListener("keydown", event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-      event.preventDefault(); const target = event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - index;
-      select(target === 0 ? "overview" : "automations"); tabs[target].focus();
+      event.preventDefault(); const target = event.key === "Home" ? 0 : event.key === "End" ? views.length - 1 : (index + (event.key === "ArrowRight" ? 1 : views.length - 1)) % views.length;
+      select(views[target]); tabs[target].focus();
     });
   });
   period.addEventListener("change", () => { value = null; void load(); });
@@ -212,7 +218,7 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && view === "overview" && document.body.dataset.appView === "tasks") void load({ silent: true });
   });
-  globalScope.RemoteLabMonitoring = { isOverview: () => view === "overview", onTabShown: () => load({ silent: Boolean(value) }) };
+  globalScope.RemoteLabMonitoring = { isOverview: () => view !== "automations", onTabShown: () => view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
   select(view, { sync: false });
   if (view === "overview" && document.body.dataset.appView === "tasks") void load();
 })(window);

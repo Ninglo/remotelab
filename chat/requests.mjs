@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { canonicalJson, createRecordStore, readRecord, serialQueue, writeDurableJson } from '../lib/durable-records.mjs';
 import { notifySourceDeliveryAvailable } from './source-delivery-signals.mjs';
+import { observeRequestUsage } from './usage-event-projection.mjs';
 
 export const requestKey = (sessionId, requestId) => createHash('sha256')
   .update(JSON.stringify([sessionId, requestId])).digest('hex').slice(0, 24);
@@ -24,12 +25,13 @@ function withResult(current, result, plans) {
     deliveries: appendDeliveries(current, plans) };
 }
 
-export function createRequestStore(root) {
+export function createRequestStore(root, { onChange = () => {} } = {}) {
   const records = createRecordStore(root);
   const admission = serialQueue();
   const get = records.get;
-  const publishPendingDeliveries = record => {
+  const publishPendingDeliveries = (record, accepted = false) => {
     notifySourceDeliveryAvailable(record?.deliveries || []);
+    try { onChange(record, { accepted }); } catch { /* Observation must not interrupt admission. */ }
     return record;
   };
   const mutate = async (...args) => publishPendingDeliveries(await records.mutate(...args));
@@ -78,7 +80,7 @@ export function createRequestStore(root) {
       if (!first) await index('first-user-request', sessionId, 'first', key);
       if (!first || first.key === key) initial.deliveries = appendDeliveries(initial, input.initialDeliveries || []);
     }
-    const record = publishPendingDeliveries(await records.mutate(key, () => input.result ? withResult(initial, input.result, input.plans || []) : initial));
+    const record = publishPendingDeliveries(await records.mutate(key, () => input.result ? withResult(initial, input.result, input.plans || []) : initial), true);
     return { record, duplicate: false };
   });
   return {
@@ -101,4 +103,4 @@ export function createRequestStore(root) {
   };
 }
 
-export const requests = createRequestStore(join(CONFIG_DIR, 'requests'));
+export const requests = createRequestStore(join(CONFIG_DIR, 'requests'), { onChange: observeRequestUsage });

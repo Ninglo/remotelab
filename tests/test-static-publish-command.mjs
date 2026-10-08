@@ -72,6 +72,15 @@ try {
     verify: false,
   });
   assert.equal(replaced.slug, 'demo-page');
+  const { usageEvents } = await import('../chat/usage-events.mjs');
+  const summary = await usageEvents.query();
+  assert.equal(summary.byEvent.web_published, 2, 'a multi-file website and its update are two publication actions');
+  assert.equal(summary.artifacts['web_published:web:create'], 1);
+  assert.equal(summary.artifacts['web_published:web:update'], 1);
+  const publicationsObserved = summary.events.filter(event => event.event === 'web_published');
+  assert.equal(publicationsObserved[0].objectId, publicationsObserved[1].objectId, 'revisions retain one logical website');
+  assert.equal(JSON.stringify(summary).includes(source), false, 'source paths stay out of analytics');
+
   assert.match(await readFile(join(publishRoot, 'demo-page', 'index.html'), 'utf8'), /Second/);
 
   await assert.rejects(
