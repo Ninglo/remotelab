@@ -142,6 +142,18 @@ try {
     assert.equal((await reactionStore.active()).length, 1);
     assert.equal((await createFeishuReadReactionStore(runtime.config.storageDir).active()).length, 1,
       'restart preserves cleanup receipts and the unrelated conversation');
+    if (topic) {
+      await send('resume-metadata', '/unmute');
+      const raw = { threadId: '', rootId: '' };
+      const rawState = await runtime.participation.state({ ...base, ...raw });
+      const beforeMetadata = effects.runs.length;
+      await send('metadata-invitation', '帮忙检查', raw, {
+        enrichSummaryWithChatMetadata: async (_r, s) => ({ ...s, ...base }),
+        participationSnapshot: { ...rawState, mode: 'paused', epoch: 99, receivedAt: Date.now() },
+      });
+      assert.equal(effects.runs.length, beforeMetadata + 1,
+        'metadata fallback cannot apply a mainline snapshot to an independent topic');
+    }
   }
   console.log('Feishu mute recovery: mainline/topic invitation, queued and in-flight fencing, scoped THINKING cleanup and unsent delivery cancellation pass');
 } finally {

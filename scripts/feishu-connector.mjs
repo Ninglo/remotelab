@@ -1749,10 +1749,14 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
   if (participationEnabled(runtime, summary)) {
     const controller = participationController(runtime, helpers);
-    const control = await controller.intake(summary, helpers.participationSnapshot);
+    const intakeState = await controller.state(summary);
+    const arrival = helpers.participationSnapshot;
+    // Chat metadata can reveal a topic absent from the raw event. An arrival
+    // snapshot from the mainline must never control that independent topic.
+    const snapshot = !arrival?.key || arrival.key === intakeState.key ? arrival : null;
+    const control = await controller.intake(summary, snapshot);
     if (control) return { receipt: control };
-    summary = { ...summary, participationEpoch: String(helpers.participationSnapshot?.epoch
-      ?? (await controller.state(summary)).epoch) };
+    summary = { ...summary, participationEpoch: String(snapshot?.epoch ?? intakeState.epoch) };
   }
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
@@ -2145,7 +2149,7 @@ async function main() {
     if (summary.fileToken && await documentPoller.accept(summary)) return {};
     const status = participationEnabled(runtime, summary) ? await participationController(runtime).state(summary) : null;
     const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel,
-      ...(status ? { participationSnapshot: { mode: status.mode, epoch: status.epoch, receivedAt: Date.now() } } : {}),
+      ...(status ? { participationSnapshot: { key: status.key, mode: status.mode, epoch: status.epoch, receivedAt: Date.now() } } : {}),
     });
     if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {
       if (participationEnabled(runtime, summary) && (
