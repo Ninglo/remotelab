@@ -168,6 +168,39 @@ function renderQueuedMessagePanel(session) {
 }
 
 let workAwarenessPanelRequest = 0;
+function formatWorkAwarenessTime(value) {
+  const stamp = new Date(value).getTime();
+  if (!value || !Number.isFinite(stamp)) return "时间未核实";
+  const formatter = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short",
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(stamp).map(part => [part.type, part.value]));
+  const zone = formatter.resolvedOptions().timeZone === "Asia/Shanghai" ? "北京时间" : parts.timeZoneName;
+  return parts.year + "年" + parts.month + "月" + parts.day + "日 " + parts.hour + ":" + parts.minute + "（" + zone + "）";
+}
+
+function appendWorkAwarenessSource(parent, source, prefix) {
+  if (!source?.sessionId) return;
+  const line = document.createElement("p");
+  line.className = "work-awareness-meta";
+  line.appendChild(document.createTextNode(prefix + (source.location ? source.location + " · " : "")));
+  const link = document.createElement("a");
+  link.href = "/?session=" + encodeURIComponent(source.sessionId) + "&tab=sessions";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = "《" + (source.sessionName || "来源对话") + "》 ↗";
+  line.appendChild(link);
+  parent.appendChild(line);
+  if (source.messageTime || source.receivedAt) {
+    const time = document.createElement("p");
+    time.className = "work-awareness-meta";
+    time.textContent = (source.actorName ? source.actorName + "的消息 · " : "")
+      + formatWorkAwarenessTime(source.messageTime || source.receivedAt)
+      + (source.messageTime ? "（发送时间）" : "（接收时间）");
+    parent.appendChild(time);
+  }
+}
+
 async function renderWorkAwarenessPanel(session) {
   const request = ++workAwarenessPanelRequest;
   let previous = document.getElementById?.("workAwarenessPanel");
@@ -213,6 +246,8 @@ async function renderWorkAwarenessPanel(session) {
       const link = document.createElement("a");
       link.className = "work-awareness-title";
       link.href = "/?session=" + encodeURIComponent(item.sessionId);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
       link.textContent = compact(item.sessionName || item.goal);
       header.appendChild(link);
       const label = document.createElement("span");
@@ -227,7 +262,9 @@ async function renderWorkAwarenessPanel(session) {
       const meta = document.createElement("p");
       meta.className = "work-awareness-meta";
       const workStatus = { active: "处理中", completed: "已登记完成", blocked: "有阻塞", recorded: "工作记录" };
-      meta.textContent = [item.actor?.name, workStatus[item.status], item.archived ? "已归档" : ""].filter(Boolean).join(" · ");
+      meta.textContent = [item.source?.kind === "session-work-summary" ? "AI 整理的工作摘要" : item.actor?.name,
+        item.sessionLocation, workStatus[item.status], item.updatedAt ? "记录更新于 " + formatWorkAwarenessTime(item.updatedAt) : "",
+        item.archived ? "已归档" : ""].filter(Boolean).join(" · ");
       row.appendChild(meta);
       const details = document.createElement("details");
       const detailTitle = document.createElement("summary");
@@ -239,45 +276,88 @@ async function renderWorkAwarenessPanel(session) {
       row.appendChild(details);
       body.appendChild(row);
     }
-    const labels = { draft: "待核验送达", published: "参考已发布，待确认采用", approved: "已确认采用，执行结果待核验", rejected: "已拒绝" };
+    const labels = { draft: "尚未同步", published: "已同步，尚未确认采用", approved: "已确认采用，尚需核对执行结果", rejected: "已拒绝" };
     for (const suggestion of data.suggestions) {
       const row = document.createElement("article");
       row.className = "work-awareness-item";
+      const outgoing = suggestion.sourceSessionId === session.id;
+      const sourceInfo = suggestion.sourceInfo || { sessionId: suggestion.sourceSessionId };
+      const targetInfo = suggestion.targetInfo || { sessionId: suggestion.targetSessionId };
       const state = document.createElement("p");
       state.className = "work-awareness-label";
-      state.textContent = labels[suggestion.state] || suggestion.state;
+      state.textContent = (outgoing ? "从此对话发出 · " : "从其他对话收到 · ") + (labels[suggestion.state] || suggestion.state);
+      if (suggestion.current === false) state.textContent += " · 旧建议，需重新核对";
       row.appendChild(state);
+      const readable = suggestion.explanation;
       const content = document.createElement("p");
       content.className = "work-awareness-reason";
-      content.textContent = suggestion.content;
+      content.textContent = readable?.summary || (suggestion.content.length <= 240 ? suggestion.content
+        : "这条旧建议还没有简明说明，请先重新整理后再决定是否同步。原文保留在下方。");
       row.appendChild(content);
-      const impact = document.createElement("p");
-      impact.className = "work-awareness-meta";
-      impact.textContent = "可能影响：" + suggestion.impact;
-      row.appendChild(impact);
-      const destination = document.createElement("p");
-      destination.className = "work-awareness-meta";
-      for (const [label, id] of [["查看来源工作", suggestion.sourceSessionId], ["查看接收工作", suggestion.targetSessionId]]) {
-        if (!id) continue;
-        const link = document.createElement("a");
-        link.href = "/?session=" + encodeURIComponent(id);
-        link.textContent = label;
-        destination.appendChild(link);
-        destination.appendChild(document.createTextNode(" "));
+      if (readable) {
+        for (const [label, value] of [["为什么相关：", readable.relevance], ["建议下一步：", readable.nextAction]]) {
+          const explanation = document.createElement("p");
+          explanation.className = "work-awareness-reason";
+          explanation.textContent = label + value;
+          row.appendChild(explanation);
+        }
       }
-      if (suggestion.routing) destination.appendChild(document.createTextNode((suggestion.routing.mode === "new-session" ? "建议新开：" : "建议分流：")
+      appendWorkAwarenessSource(row, sourceInfo, "建议来自：");
+      appendWorkAwarenessSource(row, targetInfo, suggestion.state === "draft" ? "准备同步到：" : "接收方：");
+      const time = document.createElement("p");
+      time.className = "work-awareness-meta";
+      time.textContent = "AI 整理的建议 · " + (suggestion.draftedAt ? "整理于 " + formatWorkAwarenessTime(suggestion.draftedAt)
+        : "最后更新于 " + formatWorkAwarenessTime(suggestion.updatedAt));
+      if (suggestion.explanation?.updatedAt) time.textContent += " · 简明说明更新于 " + formatWorkAwarenessTime(suggestion.explanation.updatedAt);
+      row.appendChild(time);
+      for (const reference of suggestion.references || []) {
+        if (reference.sessionId !== sourceInfo.sessionId || reference.requestId !== sourceInfo.requestId) {
+          appendWorkAwarenessSource(row, reference, "依据消息来自：");
+        }
+      }
+      const action = document.createElement("p");
+      action.className = "work-awareness-meta";
+      const stale = suggestion.current === false;
+      action.textContent = stale ? "相关对话或工作已有变化：这条旧建议需要重新核对，现在不需要你确认同步或采用。"
+        : suggestion.state === "draft" ? "这里需要你决定是否把建议同步过去；只有发送确认后才会同步。"
+          : !outgoing && suggestion.state === "published" ? "这条信息已收到；需要你决定是否采用到当前工作里。"
+            : suggestion.state === "published" ? "已发给接收对话，是否采用由那边决定。" : "";
+      if (suggestion.routing) action.textContent += (suggestion.routing.mode === "new-session" ? " 建议新开：" : " 建议分流：")
         + (suggestion.routing.name || "独立 Session") + "；工作：" + suggestion.routing.task
-        + (suggestion.routing.folder ? "；工作目录：" + suggestion.routing.folder : "")));
-      row.appendChild(destination);
-      const command = suggestion.state === "draft" && suggestion.sourceSessionId === session.id
+        + (suggestion.routing.folder ? "；工作目录：" + suggestion.routing.folder : "");
+      row.appendChild(action);
+      const details = document.createElement("details");
+      const detailTitle = document.createElement("summary");
+      detailTitle.textContent = "展开原文与来源依据";
+      details.appendChild(detailTitle);
+      const original = document.createElement("p");
+      original.textContent = suggestion.content;
+      details.appendChild(original);
+      const impact = document.createElement("p");
+      impact.textContent = "原建议的影响说明：" + suggestion.impact;
+      details.appendChild(impact);
+      if (sourceInfo.excerpt) {
+        const excerpt = document.createElement("p");
+        excerpt.textContent = "触发这条建议的原需求（摘录）：" + sourceInfo.excerpt;
+        details.appendChild(excerpt);
+      }
+      for (const reference of suggestion.references || []) {
+        if (!reference.excerpt) continue;
+        const excerpt = document.createElement("p");
+        excerpt.textContent = "《" + reference.sessionName + "》的依据消息（摘录）：" + reference.excerpt;
+        details.appendChild(excerpt);
+      }
+      row.appendChild(details);
+      const command = stale || (!readable && suggestion.content.length > 240) ? "" : suggestion.state === "draft" && outgoing
         ? "确认协作建议 " + suggestion.id + (suggestion.routing?.mode === "new-session" ? " 执行" : " 发布")
         : suggestion.state === "published" && (suggestion.targetSessionId || suggestion.sourceSessionId) === session.id ? "确认协作建议 " + suggestion.id + " 执行" : "";
       if (command && !document.querySelector?.('.native-question[data-question-state="pending"]')) {
         const control = document.createElement("button");
         control.type = "button";
         control.className = "work-awareness-action";
-        control.textContent = "填入确认命令（发送前可检查）";
-        control.title = command;
+        control.textContent = outgoing && suggestion.state === "draft" && suggestion.routing?.mode !== "new-session"
+          ? "准备确认同步" : "准备确认采用";
+        control.title = "点击只填写确认文字；发送后才会" + (outgoing && suggestion.state === "draft" && suggestion.routing?.mode !== "new-session" ? "同步。" : "确认采用。");
         control.addEventListener("click", () => {
           if (msgInput.value.trim()) return;
           msgInput.value = command;

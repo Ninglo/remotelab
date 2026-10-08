@@ -28,6 +28,10 @@
 
 涉及另一 Session 的建议先保存草稿，完整写明来源、内容、可能影响及可核对的事件证据。来源 Session 中，人检查草稿后发送：
 
+面向读者的说明先回答三件事：发现了什么，为什么会影响接收方的工作，需要人决定或做什么。`explanation` 的 `summary`、`relevance`、`nextAction` 各写一句短而完整的人话；函数名、测试日志、版本和技术边界保留在 `content` 中供展开核对。超过 240 字符的正文必须附简明说明。不要把 AI 整理的建议写成某个人的原话。
+
+界面从接受的原需求记录读取来源入口、具体对话、作者及消息发送／接收时间，分别显示建议整理时间；不知道的入口与时间保留未核实状态，不以 Session 最新发言人补齐。`sourceRefs` 可引用至多八条确切的 `sessionId`／`requestId`，用来标明另一群或对话的原消息。链接显示对话名称并在新页打开。来源侧显示是否同步，接收侧显示是否采用；已变化的旧建议保留可读记录，隐藏过期确认动作。
+
 ```text
 确认协作建议 suggestion_<id> 发布
 ```
@@ -51,6 +55,7 @@ remotelab work context --query '当前目标' --json
 remotelab work start --goal '具体工作目标' --object '文件路径或业务对象 ID' --project '候选项目 ID' --json
 remotelab work people --query '引用完整姓名所指人员的建议' --json
 remotelab work suggest --file suggestion.json --json
+remotelab work explain --file explanation.json --json
 remotelab work review --file review.json --json
 remotelab work update --file update.json --json
 ```
@@ -66,8 +71,10 @@ remotelab work update --file update.json --json
 建议示例：
 
 ```json
-{"targetSessionId":"...","purpose":"overlap","content":"另一边也在处理同一对象，建议双方核对具体范围","impact":"可能减少重复改动；不会自动停止任何一方","evidenceRefs":[123]}
+{"targetSessionId":"...","purpose":"overlap","explanation":{"summary":"另一边取消开头消息时，最终答复可能发回群主线。","relevance":"接收方正在改回复样式，也会影响同一条回复的位置。","nextAction":"先核对接收方最新实现；如果风险仍在，再确认同步这条发现。"},"content":"具体代码与隔离测试依据","impact":"仅同步给对应工作对话作参考","evidenceRefs":[123]}
 ```
+
+给已有建议补上简明说明使用 `work explain`：提供 `suggestionId`、`expectedVersion`、`explanation`、当前 Session 的读取证据 `evidenceRefs` 及可选 `sourceRefs`。该入口仅为当前已核请求者所属的建议增加有作者、时间和请求来源的说明，保留原文、整理时间、发送与采用状态；不会发送参考、改变任务或让过期建议重新有效。源记录和当前读取会话分别留痕。
 
 `GET /api/work-awareness` 将未核对的 `candidates` 与可展示的 `related` 分开，并提供记录和共同背景；`includeBackground=false` 供面板只读工作索引，避免重复加载背景。`/people` 提供涉及人物的必要规则；`/start`、`/update`、`/suggest`、`/review` 是有限写入口，没有批准 API。`review.json` 包含 `items`（至多三项，各含 `sessionId`、`workId`、检索返回的 `fingerprint`、`relation` 和具体 `reason`）及本轮 `evidenceRefs`；`relation` 为 `overlap`、`dependency` 或 `reuse`。空 `items` 是有效结果。
 

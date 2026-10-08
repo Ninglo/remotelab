@@ -62,6 +62,52 @@ try {
     content: '参考建议', impact: '核对是否重复', evidenceRefs: [event.seq] });
   assert.equal(suggested.status, 200); assert.equal(suggested.json.suggestion.state, 'draft');
   assert.equal((await call('/api/work-awareness?sessionId=b&includeBackground=false')).json.suggestions.length, 0);
+  const explanation = { summary: '另一边正在修改同一个入口，测试发现两处改动可能影响同一回复。',
+    relevance: '双方的任务都涉及开工时读取资料，因此需要一起核对改动。', nextAction: '先核对另一边的最新实现，再决定是否把这条发现同步过去。' };
+  const described = await call('/api/work-awareness?sessionId=a&includeBackground=false');
+  const view = described.json.suggestions.find(item => item.id === suggested.json.suggestion.id);
+  assert.equal(view.sourceInfo.location, 'Web 对话');
+  assert.equal(view.sourceInfo.receivedAt, record.acceptedAt);
+  assert.equal(view.sourceInfo.actorName, '甲');
+  assert.equal(view.sourceInfo.excerpt, record.text);
+  assert.equal(view.draftedAt, suggested.json.suggestion.createdAt);
+  assert.equal(view.current, true);
+  assert.equal((await call('/api/work-awareness/suggest', { runId: record.runId, targetSessionId: 'b',
+    content: 'technical details '.repeat(30), impact: '说明影响', evidenceRefs: [event.seq] })).status, 400);
+  const explain = { runId: record.runId, suggestionId: view.id, expectedVersion: view.version,
+    explanation, evidenceRefs: [event.seq], sourceRefs: [{ sessionId: 'a', requestId: record.requestId }] };
+  assert.equal((await call('/api/work-awareness/explain', { ...explain, expectedVersion: 99 })).status, 409);
+  assert.equal((await call('/api/work-awareness/explain', { ...explain, sourceRefs: [{ sessionId: 'a', requestId: 'fabricated' }] })).status, 400);
+  const explained = await call('/api/work-awareness/explain', explain);
+  assert.equal(explained.status, 200);
+  assert.equal(explained.json.suggestion.content, suggested.json.suggestion.content, 'readability preserves original advice');
+  assert.equal(explained.json.suggestion.state, 'draft', 'an explanation cannot publish or approve');
+  assert.equal(explained.json.referenceDelivery, undefined);
+  assert.equal(explained.json.suggestion.explanation.summary, explanation.summary);
+  const proof = (await call('/api/work-awareness?sessionId=a&includeBackground=false')).json.suggestions.find(item => item.id === view.id);
+  assert.equal(proof.references[0].excerpt, record.text);
+  const { record: other } = await requests.accept({ sessionId: 'b', requestId: 'other', text: '修改另一任务',
+    options: { viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b', sourceContext: {
+      connector: 'feishu', chatType: 'group', chatId: 'oc_example', chatName: '测试群', threadId: 'omt_example',
+      createTime: '1791436400000', sender: { name: '不可信旧名字' },
+    } } });
+  await recordWorkInput(await findSessionMeta('b'), other);
+  const otherEvidence = await appendEvent('b', { type: 'tool_result', output: 'Read the original advice' });
+  assert.equal((await call('/api/work-awareness/explain', { ...explain, runId: other.runId,
+    expectedVersion: explained.json.suggestion.version, evidenceRefs: [otherEvidence.seq] })).status, 403, 'another requester cannot replace its explanation');
+  assert.equal((await call('/api/work-awareness?sessionId=a&includeBackground=false')).json.suggestions.find(item => item.id === view.id).current, false);
+  const withSource = await call('/api/work-awareness/explain', { ...explain, expectedVersion: explained.json.suggestion.version,
+    sourceRefs: [{ sessionId: 'b', requestId: other.requestId }] });
+  assert.equal(withSource.status, 200);
+  const external = (await call('/api/work-awareness?sessionId=a&includeBackground=false')).json.suggestions.find(item => item.id === view.id).references[0];
+  assert.equal(external.location, '飞书群聊 · 测试群 · 话题');
+  assert.equal(external.actorName, '乙', 'the accepted identity overrides an unverified sender label');
+  assert.equal(external.messageTime, new Date(1791436400000).toISOString());
+  const { workSessionLocation } = await import('../chat/work-suggestion-description.mjs');
+  assert.equal(workSessionLocation({ conversation: { connector: 'feishu', target: { chatId: 'oc_example', chatType: 'group', threadId: 'omt_example' } },
+    sourceContext: { connector: 'feishu', chatId: 'oc_example', chatName: '测试群', sender: { name: '旧发言人' } } }), '飞书群聊 · 测试群 · 话题');
+  assert.equal(workSessionLocation({ conversation: { connector: 'feishu', target: { chatId: 'oc_new', chatType: 'p2p' } },
+    sourceContext: { connector: 'feishu', chatId: 'oc_old', chatName: '旧群' } }), '飞书私聊', 'a new binding cannot borrow the old group name');
   const route = await call('/api/work-awareness/suggest', { runId: record.runId, purpose: 'routing', content: '建议新开一个独立 Session',
     impact: '执行目的地将改变，需人工核验', evidenceRefs: [event.seq], routing: { mode: 'new-session', task: '调查限定的第二条路线', folder: home, name: '参考草稿' } });
   assert.equal(route.status, 200); assert.equal(route.json.suggestion.targetSessionId, '');
