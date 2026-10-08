@@ -149,6 +149,7 @@ try {
       const beforeMetadata = effects.runs.length;
       await send('metadata-invitation', '帮忙检查', raw, {
         enrichSummaryWithChatMetadata: async (_r, s) => ({ ...s, ...base }),
+        addProcessingReaction: async () => ({ reactionId: 'metadata-read' }),
         participationSnapshot: { ...rawState, mode: 'paused', epoch: 99, receivedAt: Date.now() },
       });
       assert.equal(effects.runs.length, beforeMetadata + 1,
