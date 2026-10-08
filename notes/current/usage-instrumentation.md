@@ -8,7 +8,7 @@ UI redesign. Human-attention presentation remains a separate product discussion.
 
 ## Product analysis
 
-The default page answers four questions: who contributes, whether Feishu work
+The page answers product questions about feature use, historical revisits, automation, materials, knowledge, delegation and delivery, alongside the original four questions: who contributes, whether Feishu work
 continues in Web, how execution and explicit questions progress, and which
 published/attached artifacts receive deliberate workbench clicks. It does not
 show raw action totals, tool traffic or recent event rows. Raw records and the
@@ -70,8 +70,44 @@ existing API diagnostics remain available for engineering investigation.
 
 Automated requests retain actor=automation where the authoritative request
 options identify them; agent and internal operations are separate from humans.
-This first slice does not yet instrument every automation configuration change,
-knowledge/Skill read, preview publishing mechanism or arbitrary file generation.
+The expanded slice adds fixed capability categories at recognized native tool
+boundaries and supported RemoteLab CLI actions. It records one operation ID for
+start and terminal receipts, excludes help/status/dry-run calls and generic shell
+commands, and joins verified initiating people via canonical Run/Request metadata.
+Feishu writes with the same explicit API idempotency key join into one logical
+call, with retry attempts separate. Independent invocations still count independently; this is invocation frequency,
+not an inferred number of user intentions or business tasks. CLI completion means
+the entry executed, and an explicit failed verification remains unknown.
+
+Automation changes are recorded only after successful API persistence, with
+no-op patches/actions excluded. Actual accepted automation Requests establish
+execution counts; scheduler checks do not. Delivery result IDs deduplicate retries,
+retain attempt counts and distinguish failures subsequently recovered.
+
+Historical revisits require an original human Request older than the qualified
+interval; opening and continuing are separate, and no retention rate is inferred.
+A missing origin stays unknown. Applied stops, actual runtime changes, native
+follow-ups and answers are distinguished from UI button-click intent.
+Accepted Request attachments record only hashed object IDs and MIME-derived
+kinds; this does not prove processing. Explicit memory operation receipts
+establish retrieval/applied/rejected counts, not behavioral compliance.
+Delegation links retain the original delegated Run ID, so unrelated later child
+Runs cannot change its result. A parent Session filter includes its direct child links, their original Run
+results and deliberate child opens, but not unrelated later child work.
+Child opening does not prove result handoff.
+
+`features.json` persists expanded-entry activation separately from the older
+ledger start, and is not reset on process restart. CLI observations flush before
+exit, including failures. All fields still pass the server whitelist; browsers
+cannot supply capability/control facts. Explicit fixture exclusions match the SHA-256 of an exact original ledger line;
+raw observations and exclusion evidence are retained, and a genuine record with
+the same event ID is not excluded by name or category.
+No content, arguments, filenames,
+resource URLs or tool output are copied into the usage ledger.
+
+External scripts, direct Lark/document tools, arbitrary file writes, speech
+synthesis and arbitrary Skill reads are not completely covered. Absent category
+rows are not zero-use claims. The interface states these limits.
 It does not automatically label messages as reminders, misunderstandings,
 rework, satisfaction or human approval.
 

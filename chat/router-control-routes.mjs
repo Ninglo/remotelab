@@ -1,3 +1,4 @@
+import { observeAutomationChange, observeIntervention, runtimeUsageChanged } from './usage-controls.mjs';
 import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { findSessionConversation, requireConversation, updateSessionConversation } from './session-conversations.mjs';
@@ -625,6 +626,7 @@ export async function handleControlRoutes({
     }
     try {
       const task = await createAutomationTask(await prepareAutomationTask(payload, authSession));
+      observeAutomationChange(task, null, authSession);
       writeJson(res, 201, { task });
       broadcastAll({ type: 'automation_tasks_updated', taskId: task.id });
     } catch (error) {
@@ -665,18 +667,23 @@ export async function handleControlRoutes({
       }
       const patch = await prepareScheduledRuntimePatch(current, payload);
       await (recurring ? updateRecurringSchedule(id, patch) : updateTrigger(id, patch));
-      writeJson(res, 200, { task: await getAutomationTask(id) });
+      const saved = await getAutomationTask(id);
+      observeAutomationChange(await (recurring ? getRecurringSchedule(id) : getTrigger(id)), current, authSession);
+      writeJson(res, 200, { task: saved });
       broadcastAll({ type: 'automation_tasks_updated', taskId: id });
     } catch (error) { writeJson(res, 400, { error: error.message }); }
     return true;
   }
   if (automationTaskMatch && req.method === 'POST' && automationTaskMatch[2]) {
     try {
+      const recurring = automationTaskMatch[1].startsWith('sch_');
+      const before = await (recurring ? getRecurringSchedule(automationTaskMatch[1]) : getTrigger(automationTaskMatch[1]));
       const result = await applyAutomationTaskAction(automationTaskMatch[1], automationTaskMatch[2]);
       if (!result) {
         writeJson(res, 404, { error: 'Automation task not found' });
         return true;
       }
+      observeAutomationChange(await (recurring ? getRecurringSchedule(automationTaskMatch[1]) : getTrigger(automationTaskMatch[1])), before, authSession, automationTaskMatch[2]);
       writeJson(res, 200, result);
       broadcastAll({ type: 'automation_tasks_updated', taskId: result.task.id });
     } catch (error) {
@@ -725,6 +732,7 @@ export async function handleControlRoutes({
         return true;
       }
       const trigger = await createTrigger(await prepareScheduledTask(payload, { authSession }));
+      observeAutomationChange(trigger, null, authSession);
       writeJson(res, 201, { trigger });
       broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
@@ -767,6 +775,7 @@ export async function handleControlRoutes({
         writeJson(res, 404, { error: 'Trigger not found' });
         return true;
       }
+      observeAutomationChange(trigger, current, authSession);
       writeJson(res, 200, { trigger });
       broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
@@ -781,6 +790,7 @@ export async function handleControlRoutes({
       writeJson(res, 404, { error: 'Trigger not found' });
       return true;
     }
+    observeAutomationChange(trigger, null, authSession, 'delete');
     writeJson(res, 200, { ok: true, trigger });
     broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     return true;
@@ -803,6 +813,7 @@ export async function handleControlRoutes({
     }
     try {
       const schedule = await createRecurringSchedule(await prepareScheduledTask(payload, { authSession }));
+      observeAutomationChange(schedule, null, authSession);
       writeJson(res, 201, { schedule });
       broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
@@ -841,6 +852,7 @@ export async function handleControlRoutes({
       if (payload.enabled === false || ['paused', 'cancelled'].includes(trimString(payload.status).toLowerCase())) {
         cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: payload.includeActive === true });
       }
+      observeAutomationChange(schedule, current, authSession);
       writeJson(res, 200, { schedule, cancellation });
       broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
@@ -856,6 +868,7 @@ export async function handleControlRoutes({
       return true;
     }
     const cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: false });
+    observeAutomationChange(schedule, null, authSession, 'delete');
     writeJson(res, 200, { ok: true, schedule, cancellation });
     broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     return true;
@@ -1348,6 +1361,7 @@ export async function handleControlRoutes({
       }) || session;
     }
     if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch || hasRuntimeTierPatch) {
+      const beforeRuntimeUsage = await getSession(sessionId);
       session = await updateSessionRuntimePreferences(sessionId, {
         ...(hasRuntimeTierPatch ? {
           runtimeTier: runtimeTierPreset.tier,
@@ -1362,6 +1376,7 @@ export async function handleControlRoutes({
         ...(hasEffortPatch ? { effort: patch.effort } : {}),
         ...(hasThinkingPatch ? { thinking: patch.thinking } : {}),
       }) || session;
+      if (runtimeUsageChanged(beforeRuntimeUsage, session)) observeIntervention(sessionId, 'runtime_change', authSession);
     }
     if (hasLastReviewedAtPatch) {
       session = await updateSessionLastReviewedAt(sessionId, patch.lastReviewedAt || '') || session;

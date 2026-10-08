@@ -19,7 +19,7 @@ await writeFile(join(config, 'auth-sessions.json'), JSON.stringify({
   connector: { expiry: Date.now() + 3600000, role: 'owner', authKind: 'service' },
 }));
 await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'fake-native', command: 'fake-native', name: 'Fixture',
-  runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user', models: [{ id: 'fake-model', label: 'Fixture' }] }]));
+  runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user', models: [{ id: 'fake-model', label: 'Fixture' }, { id: 'fake-model-2', label: 'Fixture 2' }] }]));
 await copyFile(join(repo, 'tests/fixtures/native-codex-app-server.cjs'), join(bin, 'fake-native'));
 await chmod(join(bin, 'fake-native'), 0o755);
 const reservation = createServer();
@@ -121,6 +121,34 @@ try {
   assert.equal(summary.report.journeys.originBasis, 'first_request');
   assert.equal(summary.report.journeys.started, 1);
   assert.equal(summary.report.journeys.continued.rate, 1, 'old Feishu source survives a first observed Web input');
+  assert.equal(summary.report.functions.revisits.continued, 1, 'original Request anchors historical continuation after a gap');
+  const automationCreated = await request('POST', '/api/automation-tasks', {
+    kind: 'one_time', title: 'Private automation title', prompt: 'Private prompt',
+    scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+    target: { mode: 'fixed_session', sessionId }, notification: { mode: 'remotelab' },
+  });
+  assert.equal(automationCreated.status, 201, JSON.stringify(automationCreated.json));
+  const automationId = automationCreated.json.task.id;
+  assert.equal((await request('POST', `/api/automation-tasks/${automationId}/pause`)).status, 200);
+  assert.equal((await request('POST', `/api/automation-tasks/${automationId}/pause`)).status, 200);
+  const changes = (await query()).json.report.functions.automation.byAction;
+  assert.equal(changes.find(row => row.operation === 'create').actions, 1);
+  assert.equal(changes.find(row => row.operation === 'pause').actions, 1, 'no-op pause cannot be counted twice');
+  assert.equal((await request('PATCH', `/api/sessions/${sessionId}`, { model: 'fake-model-2' })).status, 200);
+  assert.equal((await request('PATCH', `/api/sessions/${sessionId}`, { model: 'fake-model-2' })).status, 200);
+  const runtimeChanges = (await query()).json.report.functions.interventions.find(row => row.operation === 'runtime_change');
+  assert.equal(runtimeChanges.actions, 1, 'saving unchanged runtime preferences is not human intervention');
+  const stopSession = (await request('POST', '/api/sessions', { folder: home, tool: 'fake-native', model: 'fake-model' })).json.session.id;
+  assert.equal((await request('POST', `/api/sessions/${stopSession}/messages`, { text: 'ASK_NATIVE_QUESTION', requestId: 'waiting-to-stop' })).status, 202);
+  await until(async () => (await request('GET', `/api/sessions/${stopSession}/events?filter=all`)).json.events
+    ?.find(event => event.messageKind === 'user_question' && event.questionState === 'pending'));
+  assert.equal((await request('POST', `/api/sessions/${stopSession}/cancel`)).status, 200);
+  const stopped = (await request('GET', `/api/usage/analysis?sessionId=${stopSession}`)).json.report.functions;
+  assert.equal(stopped.interventions.find(row => row.operation === 'stop').actions, 1);
+  const privateFree = JSON.stringify((await query()).json);
+  assert.equal(privateFree.includes('Private automation title'), false);
+  assert.equal(privateFree.includes('Private prompt'), false);
+  assert.equal((await request('POST', '/api/usage/events', { events: [{ event: 'capability_state', eventId: 'spoof-capability', operationId: 'spoof', feature: 'mail' }] })).status, 400);
   if (process.argv[2]) {
     const { chromium } = await import(process.argv[2]);
     const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
@@ -138,6 +166,9 @@ try {
       for (const rawLabel of ['tool_started', 'Actual usage actions', 'Observed actions', '最近动作，可回到原对话']) {
         assert.equal(reportText.includes(rawLabel), false, 'raw events do not form the product analysis');
       }
+      assert.ok(reportText.includes('Which capabilities are used') || reportText.includes('哪些功能正在被使用'));
+      assert.ok(reportText.includes('Automation execution and delivery') || reportText.includes('自动化是否持续执行'));
+      assert.ok(reportText.includes('speech synthesis') || reportText.includes('语音合成'), 'coverage gaps are visible');
       assert.equal(await page.locator('#usageAnalysisContent details[open]').count(), 0, 'definitions begin collapsed');
       assert.equal(await page.locator('#monitoringUsage').isVisible(), true);
       assert.equal(await page.locator('#monitoringAutomations').isVisible(), false);

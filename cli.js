@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { promisify } from 'util';
+import { runObservedCommand } from './lib/usage-command-observer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -84,13 +85,13 @@ switch (command) {
   }
   case 'memory': {
     const { runMemoryLearningCommand } = await import(scriptPath('lib/memory-learning-command.mjs'));
-    try { process.exitCode = await runMemoryLearningCommand(args); }
+    try { process.exitCode = await runObservedCommand(command, args, io => runMemoryLearningCommand(args, io)); }
     catch (error) { console.error(error.message); process.exitCode = 1; }
     break;
   }
   case 'recording': {
     const { runRecordingCommand } = await import(scriptPath('lib/recording-command.mjs'));
-    try { process.exitCode = await runRecordingCommand(args); }
+    try { process.exitCode = await runObservedCommand(command, args, io => runRecordingCommand(args, io)); }
     catch (error) { console.error(error.message); process.exitCode = 1; }
     break;
   }
@@ -143,7 +144,7 @@ switch (command) {
 
   case 'todo': {
     const { runTodoCommand } = await import(scriptPath('lib/todo-command.mjs'));
-    process.exitCode = await runTodoCommand(args);
+    process.exitCode = await runObservedCommand(command, args, io => runTodoCommand(args, io.stdout, io.stderr));
     break;
   }
 
@@ -156,7 +157,7 @@ switch (command) {
   case 'publish': {
     const { runStaticPublishCommand } = await import(scriptPath('lib/static-publish-command.mjs'));
     try {
-      process.exitCode = await runStaticPublishCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runStaticPublishCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -166,7 +167,7 @@ switch (command) {
 
   case 'preview': {
     const { runPreviewCommand } = await import(scriptPath('lib/preview-command.mjs'));
-    try { process.exitCode = await runPreviewCommand(args); }
+    try { process.exitCode = await runObservedCommand(command, args, io => runPreviewCommand(args, io)); }
     catch (error) { console.error(error.message); process.exitCode = 1; }
     break;
   }
@@ -198,7 +199,7 @@ switch (command) {
   case 'email': {
     const { runAgentMailCommand } = await import(scriptPath('lib/agent-mail-command.mjs'));
     try {
-      process.exitCode = await runAgentMailCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runAgentMailCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -209,7 +210,7 @@ switch (command) {
   case 'gmail': {
     const { runGmailCommand } = await import(scriptPath('lib/gmail-command.mjs'));
     try {
-      process.exitCode = await runGmailCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runGmailCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -232,7 +233,7 @@ switch (command) {
   case 'connectors': {
     const { runConnectorCommand } = await import(scriptPath('lib/connector-command.mjs'));
     try {
-      process.exitCode = await runConnectorCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runConnectorCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -242,7 +243,7 @@ switch (command) {
 
   case 'feishu': {
     const { runFeishuActionCommand } = await import(scriptPath('lib/feishu-action-command.mjs'));
-    process.exitCode = await runFeishuActionCommand(args);
+    process.exitCode = await runObservedCommand(command, args, io => runFeishuActionCommand(args, io));
     break;
   }
 
@@ -272,7 +273,7 @@ switch (command) {
   case 'local-bridge': {
     const { runLocalBridgeCommand } = await import(scriptPath('lib/local-bridge-command.mjs'));
     try {
-      process.exitCode = await runLocalBridgeCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runLocalBridgeCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -283,7 +284,7 @@ switch (command) {
   case 'agenda': {
     const { runAgendaCommand } = await import(scriptPath('lib/agenda-command.mjs'));
     try {
-      process.exitCode = await runAgendaCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runAgendaCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -295,7 +296,7 @@ switch (command) {
   case 'triggers': {
     const { runTriggerCommand } = await import(scriptPath('lib/trigger-command.mjs'));
     try {
-      process.exitCode = await runTriggerCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runTriggerCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -307,7 +308,7 @@ switch (command) {
   case 'schedules': {
     const { runScheduleCommand } = await import(scriptPath('lib/schedule-command.mjs'));
     try {
-      process.exitCode = await runScheduleCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runScheduleCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -352,7 +353,7 @@ switch (command) {
   case 'spawn-session': {
     const { runSessionSpawnCommand } = await import(scriptPath('lib/session-spawn-command.mjs'));
     try {
-      process.exitCode = await runSessionSpawnCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runSessionSpawnCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

@@ -1,3 +1,4 @@
+import { observeIntervention } from './usage-controls.mjs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 
@@ -509,6 +510,7 @@ export async function handleSessionMainRoutes({
         writeJson(res, 409, { error: 'No active run' });
         return true;
       }
+      observeIntervention(sessionId, 'stop', authSession, run.id);
       writeJson(res, 200, { run });
       return true;
     }
@@ -723,6 +725,7 @@ export async function handleSessionMainRoutes({
         writeJson(res, 409, { error: 'No active run' });
         return true;
       }
+      observeIntervention(run.sessionId, 'stop', authSession, runId);
       writeJson(res, 200, { run: updated });
       return true;
     }

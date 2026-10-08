@@ -45,6 +45,8 @@
       "所选范围为近 " + period.value + " 天，目前实际可用数据只有约 " + duration(observedMs, true) + "；尚不代表完整的 " + period.value + " 天使用情况。",
       "The selected range is " + period.value + " days, but only about " + duration(observedMs, true) + " of collected observations are available."), "monitoring-note"));
     if (!quality.reliable) content.appendChild(node("p", text("本次数据不完整，次数仅供回查；比例与耗时暂不计算。", "This observation is incomplete. Counts are partial; rates and timings are withheld."), "monitoring-note"));
+    if (value.coverage?.excludedFixtureLines) content.appendChild(node("p", text("已排除经核实的测试事件；正式使用记录和排除依据仍保留。",
+      "Verified test fixtures are excluded; original observations and exclusion evidence are retained."), "monitoring-note"));
     const adoption = section(text("有多少人在参与协作", "Who is participating"));
     metrics(adoption, [[text("参与交流人数", "People contributing"), activity.people],
       [text("参与协作的会话", "Conversations with input"), activity.sessions],
@@ -54,6 +56,7 @@
     if (!activity.sessions) note(adoption, "这一时段尚无真人交流样本，产物记录仍可独立查看。", "There are no human-input samples in this interval. Artifact observations remain available.");
     if (activity.daily.length > 1) table(adoption, [text("日期（北京时间）", "Date (UTC+8)"), text("交流人数", "People"), text("会话数", "Conversations")],
       activity.daily.map(row => [row.day, row.people, row.sessions]));
+    if (report.functions) renderFunctions(report.functions);
     const path = section(text("飞书与 Web 的协作是否接得上", "Does Feishu collaboration continue in Web"));
     table(path, [text("协作过程", "Collaboration path"), text("观测数 / 样本数 · 比例", "Observed / samples · rate")], [
       [text("飞书发起的会话，本期在 Web 打开", "Feishu-origin conversations opened in Web this interval"), ratio(journeys.opened)],
@@ -112,6 +115,58 @@
       activity.unidentifiedInputs + " human inputs lack a linkable identity and are excluded from people counts.");
     if (artifacts.otherOpened) note(details, "另有 " + artifacts.otherOpened + " 件产物的主动点击未关联到本期交付，不放进本期产物打开率。",
       artifacts.otherOpened + " explicitly clicked objects cannot be linked to this interval's delivery cohort and are excluded from its open rate.");
+  }
+  function renderFunctions(data) {
+    const usage = section(text("哪些功能正在被使用", "Which capabilities are used"));
+    if (data.featureStartedAt) note(usage, "能力入口的新增采集从 " + time(data.featureStartedAt) + " 开始；早于此时的调用没有回填。",
+      "Expanded entry observations start at " + time(data.featureStartedAt) + "; earlier calls are not backfilled.");
+    if (data.features.length) table(usage, [text("能力", "Capability"), text("已关联交办人", "Linked contributors"), text("会话", "Conversations"),
+      text("调用次数", "Calls"), text("入口执行完成", "Entry completed"), text("失败／受阻", "Failed / blocked"), text("进行中／结果未知", "Active / unknown")],
+      data.features.map(row => [text(...row.title), row.people || (row.unattributed ? "—" : 0), row.sessions || "—", row.calls,
+        row.completed, row.failed + " / " + row.blocked, row.unfinished + " / " + row.unknown]));
+    else note(usage, "扩展采集尚无能力调用样本。没有出现在表中的功能，可能尚无样本或尚未接入，不能据此判断没人用。",
+      "No expanded capability samples yet. An absent capability may have no samples or lack instrumentation; it does not establish non-use.");
+    note(usage, "按明确的能力调用计次，重复回执不加次数；终端命令不计成产品功能。自动化也可能调用这些能力，交办人数只关联已核真人。入口执行完成不等于业务成果验收。",
+      "Count explicit capability calls, deduplicating receipts and excluding generic shell commands. Automation may also invoke capabilities. Contributors require verified human links. Entry completion is not business acceptance.");
+    const retries = data.features.reduce((sum, row) => sum + row.retryAttempts, 0);
+    if (retries) note(usage, "其中明确复用同一幂等标识的重试有 " + retries + " 次，已从调用件数中分开。",
+      retries + " retries reuse explicit idempotency keys and are separate from logical call counts.");
+    const behavior = section(text("历史协作是否被继续，人怎样介入", "Returning to work and human intervention"));
+    metrics(behavior, [[text("回看本期之前已有的会话", "Older conversations opened"), data.revisits.opened],
+      [text("在已有会话继续发消息或回答", "Older conversations continued"), data.revisits.continued],
+      [text("参与历史协作的人", "People revisiting older work"), data.revisits.people]]);
+    const interventions = { follow_up: ["执行中追加输入", "Input forwarded during execution"], stop: ["主动停止执行", "Stop applied"],
+      runtime_change: ["调整模型或运行设置", "Runtime settings changed"], question_answer: ["回答执行中的提问", "Native question answered"] };
+    if (data.interventions.length) table(behavior, [text("人工动作", "Human action"), text("次数", "Actions"), text("会话", "Conversations")],
+      data.interventions.map(row => [text(...interventions[row.operation]), row.actions, row.sessions]));
+    note(behavior, "回看按原始请求时间确认，会话打开与继续交流分别统计；不把它当作用户留存率。停止、追加消息和改模型都是实际动作，不能直接推断不满意。",
+      "Revisits use original request times, separating opening from continued input. This is not a retention rate. Stops, follow-ups and runtime changes do not establish dissatisfaction.");
+    if (data.revisits.unknownOrigins) note(behavior, "另有 " + data.revisits.unknownOrigins + " 个会话缺少可靠起始记录，未归入历史回访。",
+      data.revisits.unknownOrigins + " conversations lack reliable origin records and are excluded from historical revisits.");
+    const automation = section(text("自动化是否持续执行，结果能否送达", "Automation execution and delivery"));
+    const changes = { create: ["创建", "Created"], update: ["修改", "Edited"], pause: ["暂停", "Paused"], resume: ["恢复", "Resumed"], cancel: ["取消", "Cancelled"], delete: ["删除配置", "Configuration removed"] };
+    if (data.automation.byAction.length) table(automation, [text("自动化配置动作", "Automation changes"), text("次数", "Count")],
+      data.automation.byAction.map(row => [text(...(changes[row.operation] || changes.update)), row.actions]));
+    const runs = data.automation.executions, deliveries = data.delivery;
+    metrics(automation, [[text("自动触发的执行", "Automation executions"), runs.observed],
+      [text("正常结束／失败", "Ended / failed"), runs.completed + " / " + runs.failed],
+      [text("投递成功／失败／未知", "Delivered / failed / unknown"), deliveries.delivered + " / " + deliveries.failed + " / " + deliveries.unknown],
+      [text("投递重试后恢复", "Delivery recovered"), deliveries.recovered]]);
+    note(automation, "自动执行只数已接收的实际请求，不数后台巡检。投递按一份结果去重，重试另外记录；正常结束不等于业务完成，飞书送达不等于已读。",
+      "Executions require accepted automation requests, excluding background checks. Deliveries deduplicate logical results with retries tracked separately. Ending is not business completion; Feishu delivery is not reading.");
+    const support = section(text("材料、知识与分工怎样参与协作", "Materials, knowledge and delegated work"));
+    const kinds = { image: ["图像", "Images"], audio: ["音频", "Audio"], video: ["视频", "Video"], document: ["文档", "Documents"], table: ["表格", "Tables"], file: ["其他文件", "Other files"] };
+    if (data.materials.length) table(support, [text("输入材料", "Submitted material"), text("材料件数", "Objects"), text("会话", "Conversations")],
+      data.materials.map(row => [text(...(kinds[row.kind] || kinds.file)), row.files, row.sessions]));
+    metrics(support, [[text("知识返回给执行器", "Knowledge delivered to Harness"), data.knowledge.retrieved],
+      [text("知识更新生效／被拒绝", "Knowledge updates applied / rejected"), data.knowledge.applied + " / " + data.knowledge.rejected],
+      [text("分支／委派会话", "Forks / delegated conversations"), data.delegation.forks + " / " + data.delegation.delegated],
+      [text("委派执行正常结束／失败", "Delegated execution ended / failed"), data.delegation.completed + " / " + data.delegation.failed],
+      [text("分工会话被真人打开", "Child conversations opened by people"), data.delegation.opened]]);
+    note(support, "材料接收不代表已处理，知识返回不代表已正确采用，子会话结束不代表结果已回到主任务。无法确认的处理、采纳和结果回收保留未知。",
+      "Submitted materials are not necessarily processed, delivered knowledge is not necessarily followed, and a child run ending does not prove handoff to its parent.");
+    note(support, "新增能力采集覆盖 RemoteLab 的明确命令入口和已识别的原生工具；绕过这些入口的外部脚本、直接文件写入、语音合成及直接飞书文档工具尚未完整覆盖。",
+      "Expanded observations cover explicit RemoteLab commands and recognized native tools. External scripts, direct file writes, speech synthesis and direct Feishu document tools remain incompletely covered.");
   }
   async function load() {
     const request = ++serial; refresh.disabled = true;

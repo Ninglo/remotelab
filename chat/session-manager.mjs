@@ -3991,9 +3991,6 @@ export async function delegateSession(sessionId, payload = {}) {
   });
   if (!child) return null;
 
-  observeUsage({ eventId: usageKey(`delegate:${source.id}:${child.id}`), event: 'session_linked',
-    sessionId: child.id, parentSessionId: source.id, actorKind: 'agent', surface: 'agent', operation: 'delegate' });
-
   const handoffText = buildDelegationHandoff({
     source,
     sourceText,
@@ -4006,6 +4003,10 @@ export async function delegateSession(sessionId, payload = {}) {
     viewPersonId,
     ...selection,
   });
+
+  observeUsage({ eventId: usageKey(`delegate:${source.id}:${child.id}`), event: 'session_linked',
+    sessionId: child.id, parentSessionId: source.id, runId: outcome.run?.id,
+    actorKind: 'agent', surface: 'agent', operation: 'delegate' });
 
   if (!runInternally) {
     await appendEvent(source.id, buildDelegationContextOperation(task, child));
