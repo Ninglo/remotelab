@@ -1471,6 +1471,12 @@ settings are separate from verified live deployment and delivery.
 - Revision: lead with the finding, its effect on the receiving work and a concrete next step. Name the source and destination, label AI-written advice, and distinguish message time, drafting time and later explanation updates. Preserve the original text under details, open named source links in a new page, and hide stale confirmation actions. Long new advice requires a plain-language explanation; an audited explanation can be added to a requester's existing advice without sending it or changing its original state.
 - Boundary: verified source messages supply provenance; current Session sender metadata cannot substitute for original authorship. A readable explanation is neither approval nor evidence that a reported risk still exists in newer code.
 
+## 2026-10-08 — Keep flow explanations readable inside the conversation
+
+- Feedback: raw flowchart code in the message feed was difficult to read. An interactive flow library was a presentation reference; a generated image or separate preview page did not satisfy the request.
+- Revision: convert supported flow descriptions at their original message position into a sequence with expandable branches. Preserve conditions, shared endpoints, cycles and the original source; offer all steps for inspecting the complete relationship set.
+- Boundary: disclosures only reveal content. They do not select an answer or execute a workflow. Unsupported or incomplete syntax remains code instead of becoming an inaccurate partial flow.
+
 ## 2026-10-08 — Explicit topic references must find existing background
 
 - Feedback: a new secondary-display question was treated mainly as desktop sharing after only early USB integration memory was read. Existing display content and settings should be discoverable from the explicit topic.
