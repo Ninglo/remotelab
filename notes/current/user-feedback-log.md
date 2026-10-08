@@ -1497,3 +1497,9 @@ settings are separate from verified live deployment and delivery.
 - Revision: reading material explains which current step it can help and requires no sending decision. Collaboration advice names its destination and says where confirmation belongs; creating a new conversation, sending a reference and adopting it use distinct labels. Previously delivered or decided advice shows the current next step, while its old proposal remains in details.
 - Provenance: registered work uses its accepted source message for entry, identity and time. Legacy summaries keep missing source times explicit; viewing an old record cannot make it look newly updated. No extra model call or inferred source attribution is introduced.
 - Acceptance: verify ordinary reading, outgoing/incoming references, new-conversation proposals, old and decided records, source-time boundaries, and desktop/mobile input alignment. The unknown later passage is not claimed to have been recovered or fixed.
+
+## 2026-10-08 — Make flow branches visible from left to right
+
+- Feedback: the message-native version still felt confusing: a vertical sequence with hidden branches did not show the flow. The reader explicitly requested a left-to-right arrangement.
+- Revision: show connected steps in horizontal columns, fan parallel branches into separate lanes, keep a shared endpoint once with both incoming arrows, and place conditions on the connections. Keep all branches visible by default. Overview, panning, zoom and step details remain inside the message.
+- Boundary: rendering changes existing flow descriptions without rewriting their source or executing their contents. An image, separate page or another vertical disclosure list is not the requested result.

@@ -114,148 +114,224 @@
     return root.remotelabT(key, vars);
   }
 
+  // Break only DFS return edges for ranking; every connection is still drawn.
+  function layout(graph) {
+    const outgoing = new Map(graph.nodes.map(node => [node.id, []]));
+    graph.edges.forEach((edge, index) => outgoing.get(edge.source).push({ ...edge, index }));
+    const active = new Set(), seen = new Set(), returns = new Set(), order = [];
+    function visit(id) {
+      if (seen.has(id)) return;
+      seen.add(id); active.add(id);
+      for (const edge of outgoing.get(id)) {
+        if (active.has(edge.target)) returns.add(edge.index);
+        else visit(edge.target);
+      }
+      active.delete(id); order.unshift(id);
+    }
+    graph.nodes.forEach(node => visit(node.id));
+    const ranks = new Map(graph.nodes.map(node => [node.id, 0]));
+    for (const id of order) for (const edge of outgoing.get(id)) {
+      if (!returns.has(edge.index)) ranks.set(edge.target, Math.max(ranks.get(edge.target), ranks.get(id) + 1));
+    }
+    const rows = new Map();
+    let row = 0;
+    function place(id) {
+      if (rows.has(id)) return rows.get(id);
+      const children = outgoing.get(id).filter(edge => !returns.has(edge.index));
+      const values = children.map(edge => place(edge.target));
+      const value = values.length ? values.reduce((sum, item) => sum + item, 0) / values.length : row++ * 170;
+      rows.set(id, value); return value;
+    }
+    order.forEach(place);
+    const columns = [];
+    graph.nodes.forEach(node => (columns[ranks.get(node.id)] ||= []).push(node.id));
+    for (const column of columns) {
+      column.sort((a, b) => rows.get(a) - rows.get(b));
+      let bottom = -170;
+      for (const id of column) { rows.set(id, Math.max(rows.get(id), bottom + 170)); bottom = rows.get(id); }
+    }
+    const routes = graph.edges.filter((edge, index) => returns.has(index) || ranks.get(edge.target) > ranks.get(edge.source) + 1);
+    const top = 32 + routes.length * 54;
+    const xs = [24];
+    for (let rank = 1; rank < columns.length; rank += 1) {
+      const labeled = graph.edges.some(edge => ranks.get(edge.source) === rank - 1 && ranks.get(edge.target) === rank && edge.label);
+      xs.push(xs[rank - 1] + 180 + (labeled ? 172 : 76));
+    }
+    const nodes = graph.nodes.map(node => ({ ...node, x: xs[ranks.get(node.id)], y: top + rows.get(node.id), width: 180, height: 110 }));
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    let route = 0;
+    const edges = graph.edges.map((edge, index) => {
+      const from = byId.get(edge.source), to = byId.get(edge.target);
+      const peers = outgoing.get(edge.source), port = peers.findIndex(value => value.index === index);
+      const spacing = Math.min(18, (from.height - 32) / Math.max(1, peers.length - 1));
+      const sx = from.x + from.width, sy = from.y + from.height / 2 + (port - (peers.length - 1) / 2) * spacing;
+      const tx = to.x, ty = to.y + to.height / 2;
+      const returning = returns.has(index), long = returning || ranks.get(edge.target) > ranks.get(edge.source) + 1;
+      const mid = (sx + tx) / 2;
+      let path, labelX = mid, labelY = (sy + ty) / 2 - 12, labelWidth = Math.max(60, tx - sx - 12);
+      if (long) {
+        const lane = 24 + route++ * 54;
+        const exit = sx + 24, entry = tx - 24;
+        path = `M ${sx} ${sy} H ${exit} V ${lane} H ${entry} V ${ty} H ${tx - 4}`;
+        labelY = lane; labelWidth = Math.max(100, Math.min(164, Math.abs(exit - entry) - 16));
+      } else path = `M ${sx} ${sy} C ${mid} ${sy}, ${mid} ${ty}, ${tx - 4} ${ty}`;
+      return { ...edge, path, labelX, labelY, labelWidth, returning };
+    });
+    return { nodes, edges, width: xs.at(-1) + 204, height: Math.max(...nodes.map(node => node.y + node.height)) + 32 };
+  }
+
+  let widgetId = 0;
   function createWidget(graph, pre, source, saved = {}) {
-    const nodes = new Map(graph.nodes.map(node => [node.id, node]));
-    const outgoing = new Map(graph.nodes.map(node => [node.id, graph.edges.filter(edge => edge.source === node.id)]));
-    const incoming = new Map(graph.nodes.map(node => [node.id, graph.edges.filter(edge => edge.target === node.id)]));
+    const diagram = layout(graph), id = `inline-flow-${++widgetId}`;
+    const nodes = new Map(diagram.nodes.map(node => [node.id, node]));
     const widget = createElement("section", "inline-flow");
     widget.setAttribute("aria-label", translate("flow.title"));
-    const openKeys = new Set(saved.openKeys || []);
     const header = createElement("div", "inline-flow-header");
     header.append(createElement("strong", "inline-flow-title", translate("flow.title")));
     header.append(createElement("span", "inline-flow-count", translate("flow.count", { nodes: graph.nodes.length, branches: graph.edges.filter(edge => edge.label).length })));
-    const viewButton = createElement("button", "inline-flow-view");
-    viewButton.type = "button";
-    header.append(viewButton); widget.append(header);
-    const content = createElement("div", "inline-flow-content");
-    widget.append(content);
-    let all = saved.all === true;
-
-    function track(details, key) {
-      details.dataset.flowKey = key;
-      details.open = openKeys.has(key);
-      details.addEventListener("toggle", () => {
-        if (details.open) openKeys.add(key); else openKeys.delete(key);
-      });
+    const controls = createElement("div", "inline-flow-controls");
+    function control(key, action, text) {
+      const button = createElement("button", "inline-flow-view", text || translate(key));
+      button.type = "button"; button.setAttribute("aria-label", translate(key));
+      button.addEventListener("click", action); controls.append(button); return button;
     }
-
-    function stepCard(id) {
-      const node = nodes.get(id);
-      const details = createElement("details", `inline-flow-step${node.kind === "decision" ? " inline-flow-decision" : ""}`);
-      details.dataset.flowNode = id;
-      const summary = createElement("summary", "inline-flow-step-title");
-      summary.append(createElement("span", "inline-flow-dot"));
-      summary.append(createElement("span", "inline-flow-label", node.label));
-      details.append(summary);
-      const body = createElement("div", "inline-flow-step-body");
-      const parents = incoming.get(id);
-      if (!parents.length) body.append(createElement("p", "inline-flow-relation", translate("flow.start")));
-      for (const edge of parents) {
-        const row = createElement("p", "inline-flow-relation", translate("flow.from", { step: nodes.get(edge.source).label }));
+    header.append(controls); widget.append(header);
+    const hint = createElement("p", "inline-flow-hint", translate("flow.hint"));
+    widget.append(hint);
+    const viewport = createElement("div", "inline-flow-viewport");
+    viewport.tabIndex = 0; viewport.setAttribute("role", "region");
+    viewport.setAttribute("aria-label", translate("flow.canvas"));
+    const space = createElement("div", "inline-flow-space"), board = createElement("div", "inline-flow-board");
+    board.style.width = `${diagram.width}px`; board.style.height = `${diagram.height}px`;
+    space.append(board); viewport.append(space); widget.append(viewport);
+    const svgNS = "http://www.w3.org/2000/svg";
+    function svgElement(tag, attributes = {}) {
+      const element = document.createElementNS(svgNS, tag);
+      for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+      return element;
+    }
+    const svg = svgElement("svg", { width: diagram.width, height: diagram.height, "aria-hidden": "true", class: "inline-flow-connections" });
+    const defs = svgElement("defs"), marker = svgElement("marker", { id: `${id}-arrow`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" });
+    marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "currentColor" })); defs.append(marker); svg.append(defs); board.append(svg);
+    const connections = [];
+    for (const edge of diagram.edges) {
+      const path = svgElement("path", { d: edge.path, class: `inline-flow-edge${edge.returning ? " inline-flow-edge-return" : ""}`, "marker-end": `url(#${id}-arrow)` });
+      path.dataset.flowSource = edge.source; path.dataset.flowTarget = edge.target;
+      svg.append(path);
+      let label;
+      if (edge.label) {
+        label = createElement("span", "inline-flow-edge-label", edge.label);
+        label.title = edge.label; label.style.left = `${edge.labelX}px`; label.style.top = `${edge.labelY}px`; label.style.width = `${edge.labelWidth}px`;
+        board.append(label);
+      }
+      connections.push({ edge, path, label });
+    }
+    const cards = new Map();
+    for (const node of diagram.nodes) {
+      const card = createElement("button", `inline-flow-node${node.kind === "decision" ? " inline-flow-decision" : ""}`);
+      card.type = "button"; card.dataset.flowNode = node.id; card.setAttribute("aria-controls", `${id}-detail`);
+      card.style.left = `${node.x}px`; card.style.top = `${node.y}px`;
+      card.style.width = `${node.width}px`; card.style.height = `${node.height}px`;
+      const label = createElement("span", "inline-flow-label", node.label); card.append(label);
+      card.title = node.label; card.setAttribute("aria-label", node.label);
+      card.addEventListener("click", () => select(selected === node.id ? "" : node.id));
+      board.append(card); cards.set(node.id, card);
+    }
+    const detail = createElement("div", "inline-flow-detail"); detail.id = `${id}-detail`; detail.hidden = true; widget.append(detail);
+    let selected = "", zoom = 1, fit = saved.fit === true, initialized = false;
+    function centerNode(nodeId) {
+      const node = nodes.get(nodeId);
+      if (!node) return;
+      viewport.scrollLeft = (node.x + node.width / 2) * zoom - viewport.clientWidth / 2;
+      viewport.scrollTop = (node.y + node.height / 2) * zoom - viewport.clientHeight / 2;
+    }
+    function select(nodeId) {
+      selected = nodes.has(nodeId) ? nodeId : "";
+      for (const [key, card] of cards) card.setAttribute("aria-pressed", String(key === selected));
+      for (const { edge, path, label } of connections) {
+        const highlighted = selected && (edge.source === selected || edge.target === selected);
+        path.classList.toggle("inline-flow-edge-selected", !!highlighted);
+        if (label) label.classList.toggle("inline-flow-edge-label-selected", !!highlighted);
+      }
+      detail.replaceChildren(); detail.hidden = !selected;
+      if (!selected) return;
+      detail.append(createElement("strong", "inline-flow-detail-title", nodes.get(selected).label));
+      for (const edge of graph.edges) {
+        if (edge.source !== selected && edge.target !== selected) continue;
+        const previous = edge.target === selected, target = previous ? edge.source : edge.target;
+        const row = createElement("p", "inline-flow-relation");
+        const link = createElement("button", "inline-flow-relation-link", translate(previous ? "flow.from" : "flow.to", { step: nodes.get(target).label }));
+        link.type = "button"; link.addEventListener("click", () => { select(target); centerNode(target); });
+        row.append(link);
         if (edge.label) row.append(createElement("span", "inline-flow-relation-condition", translate("flow.when", { condition: edge.label })));
-        body.append(row);
-      }
-      if (all) {
-        for (const edge of outgoing.get(id)) {
-          const row = createElement("p", "inline-flow-relation", translate("flow.to", { step: nodes.get(edge.target).label }));
-          if (edge.label) row.append(createElement("span", "inline-flow-relation-condition", translate("flow.when", { condition: edge.label })));
-          body.append(row);
-        }
-      }
-      details.append(body); track(details, `node:${id}`);
-      return details;
-    }
-
-    function branch(edge, index, visited, path) {
-      const details = createElement("details", "inline-flow-branch");
-      const summary = createElement("summary", "inline-flow-branch-title");
-      if (edge.label) summary.append(createElement("span", "inline-flow-condition", edge.label));
-      summary.append(createElement("span", "inline-flow-branch-label", nodes.get(edge.target).label));
-      details.append(summary);
-      const panel = createElement("div", "inline-flow-branch-content");
-      details.append(panel);
-      const key = `${path}/${index}:${edge.target}`;
-      track(details, key);
-      let filled = false;
-      function fill() {
-        if (filled || !details.open) return;
-        filled = true;
-        panel.append(renderPath(edge.target, new Set(visited), key));
-      }
-      details.addEventListener("toggle", fill);
-      fill();
-      return details;
-    }
-
-    function renderPath(start, visited, path) {
-      const list = createElement("ol", "inline-flow-path");
-      let current = start;
-      while (current) {
-        if (visited.has(current)) {
-          list.append(createElement("li", "inline-flow-return", translate("flow.returns", { step: nodes.get(current).label })));
-          break;
-        }
-        visited.add(current);
-        const item = createElement("li", "inline-flow-item");
-        item.append(stepCard(current)); list.append(item);
-        const next = outgoing.get(current);
-        if (next.length > 1) {
-          const branches = createElement("div", "inline-flow-branches");
-          branches.append(createElement("div", "inline-flow-branches-label", translate("flow.directions", { count: next.length })));
-          next.forEach((edge, index) => branches.append(branch(edge, index, visited, `${path}/${current}`)));
-          item.append(branches); break;
-        }
-        if (!next.length) {
-          item.append(createElement("div", "inline-flow-end", translate("flow.end"))); break;
-        }
-        if (next[0].label) item.append(createElement("div", "inline-flow-next-condition", next[0].label));
-        current = next[0].target;
-      }
-      return list;
-    }
-
-    function render() {
-      content.replaceChildren();
-      viewButton.textContent = translate(all ? "flow.segmented" : "flow.all");
-      viewButton.setAttribute("aria-pressed", String(all));
-      if (all) {
-        const list = createElement("ol", "inline-flow-path inline-flow-all");
-        for (const node of graph.nodes) {
-          const item = createElement("li", "inline-flow-item");
-          item.append(stepCard(node.id)); list.append(item);
-        }
-        content.append(list);
-      } else {
-        const roots = graph.nodes.filter(node => !incoming.get(node.id).length);
-        const covered = new Set();
-        function cover(id) {
-          if (covered.has(id)) return;
-          covered.add(id);
-          outgoing.get(id).forEach(edge => cover(edge.target));
-        }
-        roots.forEach(node => cover(node.id));
-        for (const node of graph.nodes) {
-          if (!covered.has(node.id)) { roots.push(node); cover(node.id); }
-        }
-        if (roots.length > 1) {
-          roots.forEach((node, index) => content.append(branch({ target: node.id }, index, new Set(), "root")));
-        } else content.append(renderPath((roots[0] || graph.nodes[0]).id, new Set(), "root"));
+        detail.append(row);
       }
     }
-    viewButton.addEventListener("click", () => { all = !all; render(); });
-    render();
-
+    function setZoom(value, reset = false) {
+      const cx = (viewport.scrollLeft + viewport.clientWidth / 2) / zoom, cy = (viewport.scrollTop + viewport.clientHeight / 2) / zoom;
+      zoom = Math.max(0.01, Math.min(1.5, value));
+      space.style.width = `${diagram.width * zoom}px`; space.style.height = `${diagram.height * zoom}px`;
+      board.style.transform = `scale(${zoom})`;
+      viewport.style.height = `${Math.max(280, Math.min(480, diagram.height * zoom + 16))}px`;
+      scale.textContent = `${Math.round(zoom * 100)}%`;
+      viewport.scrollLeft = reset ? 0 : cx * zoom - viewport.clientWidth / 2;
+      viewport.scrollTop = reset ? 0 : cy * zoom - viewport.clientHeight / 2;
+    }
+    function overview() {
+      fit = true; setZoom(Math.min((viewport.clientWidth - 16) / diagram.width, 448 / diagram.height, 1), true);
+    }
+    control("flow.fit", overview);
+    control("flow.read", () => { fit = false; setZoom(1); });
+    const fork = diagram.nodes.find(node => graph.edges.filter(edge => edge.source === node.id).length > 1);
+    if (fork) control("flow.branch", () => {
+      fit = false;
+      setZoom(Math.min(1, (viewport.clientWidth - 24) / 468));
+      viewport.scrollLeft = Math.max(0, (fork.x - 12) * zoom);
+      centerVertical(fork);
+      select(fork.id);
+    });
+    function centerVertical(node) { viewport.scrollTop = (node.y + node.height / 2) * zoom - viewport.clientHeight / 2; }
+    control("flow.zoomOut", () => { fit = false; setZoom(zoom / 1.25); }, "−");
+    const scale = createElement("span", "inline-flow-scale"); controls.append(scale);
+    control("flow.zoomIn", () => { fit = false; setZoom(zoom * 1.25); }, "+");
+    // Scroll is native on touch/keyboard; mouse dragging pans the same viewport.
+    let drag;
+    viewport.addEventListener("pointerdown", event => {
+      if (event.pointerType !== "mouse" || event.button !== 0 || event.target.closest("button")) return;
+      drag = { x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+      viewport.setPointerCapture(event.pointerId); viewport.classList.add("inline-flow-dragging"); event.preventDefault();
+    });
+    viewport.addEventListener("pointermove", event => {
+      if (!drag) return;
+      viewport.scrollLeft = drag.left + drag.x - event.clientX; viewport.scrollTop = drag.top + drag.y - event.clientY;
+    });
+    function endDrag() { drag = null; viewport.classList.remove("inline-flow-dragging"); }
+    viewport.addEventListener("pointerup", endDrag); viewport.addEventListener("pointercancel", endDrag);
     const original = createElement("details", "inline-flow-source");
     original.append(createElement("summary", "inline-flow-source-title", translate("flow.source")));
-    original.append(pre); track(original, "source");
-    widget.append(original);
-    widget.inlineFlowState = () => {
-      // Read the DOM too: a native disclosure can toggle just before its event fires.
-      for (const details of widget.querySelectorAll("details[data-flow-key]")) {
-        if (details.open) openKeys.add(details.dataset.flowKey); else openKeys.delete(details.dataset.flowKey);
-      }
-      return { source, all, openKeys: Array.from(openKeys) };
-    };
+    original.append(pre); original.open = saved.sourceOpen === true || (saved.openKeys || []).includes("source"); widget.append(original);
+    select(saved.selected);
+    function resize() {
+      if (!viewport.clientWidth) return;
+      if (!initialized) {
+        initialized = true;
+        if (fit) overview();
+        else {
+          const initial = viewport.clientWidth < 480 ? 1 : Math.min(1, (viewport.clientWidth - 24) / 992);
+          setZoom(Number.isFinite(saved.zoom) ? saved.zoom : initial, true);
+          viewport.scrollLeft = saved.left || 0; viewport.scrollTop = saved.top || 0;
+        }
+      } else if (fit) overview();
+    }
+    root.requestAnimationFrame(resize);
+    if (root.ResizeObserver) {
+      const observer = new root.ResizeObserver(() => {
+        if (!widget.isConnected) { observer.disconnect(); return; }
+        resize();
+      });
+      observer.observe(viewport);
+    }
+    widget.inlineFlowState = () => ({ source, zoom, fit, selected, left: viewport.scrollLeft, top: viewport.scrollTop, sourceOpen: original.open });
     return widget;
   }
 
@@ -281,5 +357,5 @@
     }
   }
 
-  root.RemoteLabInlineFlow = { parse, enhance, captureState };
+  root.RemoteLabInlineFlow = { parse, layout, enhance, captureState };
 })(typeof window === "undefined" ? globalThis : window);
