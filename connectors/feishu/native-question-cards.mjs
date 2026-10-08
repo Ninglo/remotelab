@@ -117,37 +117,62 @@ export async function handleNativeQuestionCardAction(runtime, raw, { request, au
   const messageId = trim(event.context?.open_message_id || event.context?.message_id);
   const actor = trim(event.operator?.operator_id?.open_id || event.operator?.open_id);
   if (!chatId || !messageId || !actor || !trim(value.sessionId) || !trim(value.runId) || !trim(value.questionId)) return reply('无法识别原问题，请查看原话题。');
-  try {
-    const card = await readRecord(receiptPath(runtime, value));
-    if (!card || card.messageId !== messageId || card.target.chatId !== chatId) return reply('这张卡片不属于原问题。');
-    const tenantKey = trim(event.tenant_key || raw?.header?.tenant_key);
-    const summary = { ...card.target, messageId, tenantKey,
-      sender: { senderType: 'user', openId: actor,
-        userId: trim(event.operator?.operator_id?.user_id), unionId: trim(event.operator?.operator_id?.union_id) } };
-    if ((card.target.tenantKey && card.target.tenantKey !== tenantKey) || !await authorize(summary)) return reply('无权回答这个问题。');
-    if (card.state !== 'pending' || nativeQuestionDeadlineExpired(card.deadline)) return reply('问题已结束，未应用这次选择；需要修改时请直接说明。');
-    let text = '';
-    if (Number.isInteger(value.option) && value.option >= 1 && value.option <= card.question.options.length) text = String(value.option);
-    else {
-      const fields = event.action?.form_value || {};
-      text = trim(fields.answer);
-      if (!text && card.question.multiSelect && Array.isArray(fields.choices) && fields.choices.length
-          && fields.choices.every(index => /^\d+$/.test(String(index)) && Number(index) >= 1 && Number(index) <= card.question.options.length)) text = fields.choices.join(',');
+  return withNativeQuestionCardLock(runtime, async () => {
+    try {
+      const path = receiptPath(runtime, value);
+      const card = await readRecord(path);
+      if (!card || card.messageId !== messageId || card.target.chatId !== chatId) return reply('这张卡片不属于原问题。');
+      const tenantKey = trim(event.tenant_key || raw?.header?.tenant_key);
+      const summary = { ...card.target, messageId, tenantKey,
+        sender: { senderType: 'user', openId: actor,
+          userId: trim(event.operator?.operator_id?.user_id), unionId: trim(event.operator?.operator_id?.union_id) } };
+      if ((card.target.tenantKey && card.target.tenantKey !== tenantKey) || !await authorize(summary)) return reply('无权回答这个问题。');
+      let text = '';
+      if (Number.isInteger(value.option) && value.option >= 1 && value.option <= card.question.options.length) text = String(value.option);
+      else {
+        const fields = event.action?.form_value || {};
+        text = trim(fields.answer);
+        if (!text && card.question.multiSelect && Array.isArray(fields.choices) && fields.choices.length
+            && fields.choices.every(index => /^\d+$/.test(String(index)) && Number(index) >= 1 && Number(index) <= card.question.options.length)) text = fields.choices.join(',');
+      }
+      if (!text) return reply('请选择选项或填写自己的答案。');
+      // Feishu can retry a callback or assign another event ID to a second click.
+      // Keep the first admission envelope durable before sending: a lost HTTP
+      // acknowledgement must replay that input, even if its question has ended.
+      let submission = card.submission;
+      if (submission) {
+        if (submission.actor !== actor || submission.text !== text) {
+          return reply(submission.accepted
+            ? '问题已有回答；需要修改时请在原话题直接说明。'
+            : '上次提交尚未确认，请先重试原答案。');
+        }
+        if (submission.accepted) return reply('这条回答已提交，无需重复提交。', 'success');
+      } else {
+        if (card.state !== 'pending' || nativeQuestionDeadlineExpired(card.deadline)) return reply('问题已结束，未应用这次选择；需要修改时请直接说明。');
+        const eventId = trim(raw?.header?.event_id || event.event_id) || hash(JSON.stringify([messageId, actor, text]));
+        submission = { actor, text, body: {
+          requestId: `feishu-question:${eventId}`, nativeQuestionId: value.questionId, text,
+          sourceContext: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
+            chatId, chatType: card.target.chatType, messageId, tenantKey, sender: summary.sender,
+            eventId, ...(card.thread_id ? { threadId: card.thread_id } : {}) },
+          sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: card.target },
+        } };
+        await writeDurableJson(path, { ...card, submission });
+      }
+      const result = await request(`/api/sessions/${encodeURIComponent(value.sessionId)}/messages`, { method: 'POST', body: submission.body });
+      if (result.response?.ok) {
+        await writeDurableJson(path, { ...card, submission: { ...submission, accepted: true } });
+      } else if (result.response?.status >= 400 && result.response.status < 500 && result.response.status !== 408) {
+        // Only an explicit client rejection clears admission. A server failure
+        // can follow successful admission, so retain its original envelope.
+        await writeDurableJson(path, { ...card, submission: null });
+      }
+      return result.response?.ok ? reply('回答已提交。', 'success') : reply(result.json?.error || '回答未获确认，请查看原问题。');
+    } catch (error) {
+      console.warn(`[feishu-native-question] ${error.message}`);
+      return reply('回答未获确认，请查看原问题后重试。');
     }
-    if (!text) return reply('请选择选项或填写自己的答案。');
-    const eventId = trim(raw?.header?.event_id || event.event_id) || hash(JSON.stringify([messageId, actor, text]));
-    const result = await request(`/api/sessions/${encodeURIComponent(value.sessionId)}/messages`, { method: 'POST', body: {
-      requestId: `feishu-question:${eventId}`, nativeQuestionId: value.questionId, text,
-      sourceContext: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
-        chatId, chatType: card.target.chatType, messageId, tenantKey, sender: summary.sender,
-        eventId, ...(card.thread_id ? { threadId: card.thread_id } : {}) },
-      sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: card.target },
-    } });
-    return result.response?.ok ? reply('回答已提交。', 'success') : reply(result.json?.error || '回答未获确认，请查看原问题。');
-  } catch (error) {
-    console.warn(`[feishu-native-question] ${error.message}`);
-    return reply('回答未获确认，请查看原问题后重试。');
-  }
+  });
 }
 
 export function withNativeQuestionCardLock(runtime, operation) {
