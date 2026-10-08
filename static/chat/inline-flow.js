@@ -269,7 +269,7 @@
     }
     function setZoom(value, reset = false) {
       const cx = (viewport.scrollLeft + viewport.clientWidth / 2) / zoom, cy = (viewport.scrollTop + viewport.clientHeight / 2) / zoom;
-      zoom = Math.max(0.12, Math.min(1.5, value));
+      zoom = Math.max(0.01, Math.min(1.5, value));
       space.style.width = `${diagram.width * zoom}px`; space.style.height = `${diagram.height * zoom}px`;
       board.style.transform = `scale(${zoom})`;
       viewport.style.height = `${Math.max(280, Math.min(480, diagram.height * zoom + 16))}px`;
