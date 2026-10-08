@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { createConnection } from 'node:net';
 import { mkdtemp, mkdir, readFile, writeFile, stat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -174,6 +175,29 @@ test('instance-local control socket enforces one daemon and independent lane com
   await controlRecording(root, 'stop', 'a');
   assert.deepEqual((await controlRecording(root, 'status')).active.map((s) => s.laneId), ['b']);
   await daemon.stop(); await assert.rejects(stat(join(root, 'daemon.lock')), { code: 'ENOENT' });
+});
+
+test('shutdown saves active audio and closes idle or half-closed control clients', { timeout: 5000 }, async (t) => {
+  const root = await temporary(t), cfg = config(), factory = captureFactory();
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  const daemon = await startRecordingDaemon({ root, config: cfg, manager,
+    uploadQueue: { run: async () => {}, close: async () => {} }, listenInput: false });
+  t.after(() => daemon.stop());
+  const record = (await manager.start('a')).recording;
+  await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(123, 456));
+  const idle = createConnection(join(root, 'control.sock'));
+  const halfClosed = createConnection({ path: join(root, 'control.sock'), allowHalfOpen: true });
+  t.after(() => { idle.destroy(); halfClosed.destroy(); });
+  await Promise.all([once(idle, 'connect'), once(halfClosed, 'connect')]);
+  const response = new Promise((resolve) => halfClosed.once('data', (chunk) => resolve(JSON.parse(chunk))));
+  halfClosed.write(JSON.stringify({ action: 'status' }) + '\n');
+  assert.equal((await response).active.length, 1);
+  const disconnected = [once(idle, 'close'), once(halfClosed, 'close')];
+  await daemon.stop();
+  // allowHalfOpen deliberately keeps this client's write side open after the response.
+  halfClosed.destroy(); await Promise.all(disconnected);
+  assert.deepEqual(await samples(root, await loadRecord(root, record.id)), Array(4).fill(123));
+  await assert.rejects(stat(join(root, 'daemon.lock')), { code: 'ENOENT' });
 });
 
 async function pendingRecord(root, extra = {}) {

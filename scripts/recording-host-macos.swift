@@ -50,11 +50,15 @@ final class LaneControls {
     let button: NSButton
     let detail: NSTextField
     let elapsed: NSTextField
+    let status: NSTextField
+    let indicator: NSView
+    let card: NSView
     var state: RecordingPanelState?
     var busy = false
     var actionError: String?
-    init(id: String, button: NSButton, detail: NSTextField, elapsed: NSTextField) {
+    init(id: String, button: NSButton, detail: NSTextField, elapsed: NSTextField, status: NSTextField, indicator: NSView, card: NSView) {
         self.id = id; self.button = button; self.detail = detail; self.elapsed = elapsed
+        self.status = status; self.indicator = indicator; self.card = card
     }
 }
 
@@ -106,43 +110,55 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func buildWindow(_ lanes: [[String: Any]]) {
-        let width: CGFloat = 820
-        let height = min(CGFloat(lanes.count) * 228 + 156, NSScreen.main.map { $0.visibleFrame.height - 80 } ?? 700)
+        let width: CGFloat = 560
+        let height = min(CGFloat(lanes.count) * 128 + 112, NSScreen.main.map { $0.visibleFrame.height - 80 } ?? 700)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = settings.mode == "preview" ? "录音窗口预览（不会录音）" : "RemoteLab Recording"
-        window.minSize = NSSize(width: 580, height: 360); window.isReleasedWhenClosed = false
+        window.title = settings.mode == "preview" ? "录音窗口预览（不会录音）" : "讨论录音"
+        window.minSize = NSSize(width: 480, height: 300); window.isReleasedWhenClosed = false
         window.delegate = self; window.backgroundColor = .windowBackgroundColor; window.level = .floating
-        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 18
-        stack.edgeInsets = NSEdgeInsets(top: 24, left: 28, bottom: 24, right: 28)
+        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 16, right: 20)
         let header = NSStackView(); header.orientation = .horizontal; header.alignment = .centerY
-        let title = text("录音状态", size: 30); title.font = .boldSystemFont(ofSize: 30)
-        let pin = NSButton(checkboxWithTitle: "保持窗口置顶", target: self, action: #selector(pinChanged(_:)))
+        let title = text("讨论录音", size: 20); title.font = .boldSystemFont(ofSize: 20)
+        let pin = NSButton(checkboxWithTitle: "置顶", target: self, action: #selector(pinChanged(_:)))
+        pin.font = .systemFont(ofSize: 12)
         pin.state = .on
         header.addArrangedSubview(title); header.addArrangedSubview(NSView()); header.addArrangedSubview(pin)
         stack.addArrangedSubview(header)
         for lane in lanes {
             guard let id = lane["id"] as? String else { continue }
-            let card = NSStackView(); card.orientation = .vertical; card.alignment = .leading; card.spacing = 8
-            let label = text(lane["label"] as? String ?? id, size: 24)
-            let button = NSButton(title: "正在确认状态", target: self, action: #selector(lanePressed(_:)))
+            let card = NSStackView(); card.orientation = .vertical; card.alignment = .leading; card.spacing = 10
+            card.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+            card.wantsLayer = true; card.layer?.cornerRadius = 12
+            let label = text(lane["label"] as? String ?? id, size: 15); label.font = .boldSystemFont(ofSize: 15)
+            let indicator = NSView(); indicator.wantsLayer = true; indicator.layer?.cornerRadius = 4
+            indicator.widthAnchor.constraint(equalToConstant: 8).isActive = true
+            indicator.heightAnchor.constraint(equalToConstant: 8).isActive = true
+            let status = text("正在确认状态", size: 13, color: .secondaryLabelColor)
+            let elapsed = text("", size: 14)
+            elapsed.font = .monospacedDigitSystemFont(ofSize: 14, weight: .medium)
+            let heading = NSStackView(views: [indicator, label, status, NSView(), elapsed])
+            heading.orientation = .horizontal; heading.alignment = .centerY; heading.spacing = 8
+            let button = NSButton(title: "暂不可用", target: self, action: #selector(lanePressed(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(id); button.isBordered = false
-            button.wantsLayer = true; button.layer?.cornerRadius = 14; button.font = .boldSystemFont(ofSize: 44)
+            button.wantsLayer = true; button.layer?.cornerRadius = 8; button.font = .systemFont(ofSize: 15, weight: .semibold)
             button.setButtonType(.momentaryPushIn); button.isEnabled = false
-            let detail = text("等待录音服务", size: 18, color: .secondaryLabelColor)
-            let elapsed = text("", size: 22)
-            elapsed.font = .monospacedDigitSystemFont(ofSize: 22, weight: .medium)
-            let info = NSStackView(views: [detail, NSView(), elapsed]); info.orientation = .horizontal; info.alignment = .centerY
-            card.addArrangedSubview(label); card.addArrangedSubview(button); card.addArrangedSubview(info)
+            let detail = text("等待录音服务", size: 12, color: .secondaryLabelColor)
+            detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            let info = NSStackView(views: [detail, NSView(), button]); info.orientation = .horizontal; info.alignment = .centerY; info.spacing = 12
+            card.addArrangedSubview(heading); card.addArrangedSubview(info)
             stack.addArrangedSubview(card)
-            for view in [button, info] { view.translatesAutoresizingMaskIntoConstraints = false; view.widthAnchor.constraint(equalTo: card.widthAnchor).isActive = true }
-            button.heightAnchor.constraint(equalToConstant: 122).isActive = true
-            card.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -56).isActive = true
-            controls[id] = LaneControls(id: id, button: button, detail: detail, elapsed: elapsed)
+            for view in [heading, info] { view.translatesAutoresizingMaskIntoConstraints = false; view.widthAnchor.constraint(equalTo: card.widthAnchor, constant: -32).isActive = true }
+            button.heightAnchor.constraint(equalToConstant: 40).isActive = true
+            button.widthAnchor.constraint(equalToConstant: 112).isActive = true
+            card.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
+            controls[id] = LaneControls(id: id, button: button, detail: detail, elapsed: elapsed, status: status, indicator: indicator, card: card)
         }
-        footer = text("红色表示正在保存音频。可点击按钮，也可使用已绑定的小键盘。", size: 16, color: .secondaryLabelColor)
+        footer = text("按一次开始，再按一次停止。停止后自动回传。", size: 12, color: .secondaryLabelColor)
         stack.addArrangedSubview(footer)
-        header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -56).isActive = true
-        footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -56).isActive = true
+        header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
+        footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = true
         scroll.backgroundColor = .windowBackgroundColor
         scroll.documentView = stack; window.contentView = scroll
@@ -195,7 +211,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         process.terminationHandler = { process in
             DispatchQueue.main.async {
-                if self.settings.mode == "panel", self.daemonPID != nil { return }
+                if self.settings.mode == "panel", self.daemonPID != nil, !self.shuttingDown { return }
                 self.serviceError = process.terminationStatus == 0 ? "录音服务已停止，原音保留在本机" : "录音服务异常退出，请查看录音日志"
                 self.render()
                 if self.quitWhenStopped { NSApp.reply(toApplicationShouldTerminate: true) }
@@ -206,7 +222,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             for signalNumber in [SIGTERM, SIGINT] {
                 signal(signalNumber, SIG_IGN)
                 let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
-                source.setEventHandler { NSApp.terminate(nil) }; source.resume(); signals.append(source)
+                source.setEventHandler {
+                    // AppKit's terminateLater spins a nested run loop. Enter from a run-loop
+                    // event so it can still deliver GCD process-exit callbacks and finish quitting.
+                    RunLoop.main.perform(inModes: [.common]) { NSApp.terminate(nil) }
+                }; source.resume(); signals.append(source)
             }
         } catch { serviceError = "无法启动录音服务：\(error.localizedDescription)"; render() }
     }
@@ -246,14 +266,18 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func refresh() { io.async { self.readSnapshot() } }
-    func readSnapshot() {
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard settings.mode == "panel", daemonPID != nil, !shuttingDown else { return }
+        io.async { self.readSnapshot(verifyService: true) }
+    }
+    func readSnapshot(verifyService: Bool = false) {
         do {
             let data = try Data(contentsOf: settings.root.appendingPathComponent("status.json"))
             guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw NSError(domain: "Recording", code: 2) }
             let candidate = (value["pid"] as? NSNumber)?.int32Value
-            let verified = settings.mode != "panel" || (candidate != nil && candidate! > 0 && kill(candidate!, 0) == 0 && (candidate == daemonPID || probeService()))
+            let verified = settings.mode != "panel" || (candidate != nil && candidate! > 0 && kill(candidate!, 0) == 0 && ((!verifyService && candidate == daemonPID) || probeService()))
             DispatchQueue.main.async {
-                self.lastSnapshot = value; self.readError = verified ? nil : "等待已授权的录音程序就绪"
+                self.lastSnapshot = value; self.readError = verified ? nil : "录音服务尚未就绪，请重新打开窗口"
                 if self.settings.mode == "panel", verified, let pid = candidate { self.adoptDaemon(pid) }
                 self.render()
             }
@@ -269,18 +293,23 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for lane in controls.values {
             let state = shuttingDown ? RecordingPanelState(title: "正在停止并保存", detail: "保存完成后退出", action: nil, tone: "starting", startedAt: nil) : RecordingPanelState.project(laneID: lane.id, snapshot: lastSnapshot, servicePID: pid, serviceRunning: running, error: serviceError ?? readError)
             lane.state = state
-            lane.button.title = lane.busy ? (state.tone == "recording" || state.tone == "starting" ? "正在停止并保存" : "正在处理") : state.title
+            lane.status.stringValue = state.title
+            lane.button.title = lane.busy ? "处理中…" : state.action == "stop" ? "停止并保存" : state.action == "start" ? "开始录音" : "暂不可用"
             lane.button.isEnabled = !preview && !lane.busy && state.action != nil
             let red = state.tone == "recording"
-            let color: NSColor = red ? .systemRed : ["warning", "starting", "unknown"].contains(state.tone) ? .systemOrange.withAlphaComponent(0.16) : .controlBackgroundColor
-            lane.button.layer?.backgroundColor = color.cgColor
-            lane.button.contentTintColor = red ? .white : .labelColor
+            let warning = ["warning", "starting", "unknown"].contains(state.tone)
+            let color: NSColor = red ? .systemRed : warning ? .systemOrange : .systemBlue
+            lane.button.layer?.backgroundColor = (lane.button.isEnabled ? color : .tertiaryLabelColor).cgColor
+            lane.button.contentTintColor = .white
+            lane.indicator.layer?.backgroundColor = (red || warning ? color : .tertiaryLabelColor).cgColor
+            lane.status.textColor = red ? .systemRed : .secondaryLabelColor
+            lane.card.layer?.backgroundColor = (red ? NSColor.systemRed.withAlphaComponent(0.06) : NSColor.controlBackgroundColor).cgColor
             lane.detail.stringValue = lane.actionError ?? state.detail
         }
-        footer?.stringValue = preview ? "界面预览：没有启动录音服务，按钮不会开始录音。" : serviceError ?? (shuttingDown ? "正在保存并退出，请稍候…" : "红色表示正在保存音频。可点击按钮，也可使用已绑定的小键盘。")
+        footer?.stringValue = preview ? "界面预览：按钮不会开始录音。" : serviceError ?? (shuttingDown ? "正在保存并退出，请稍候…" : "按小键盘或点按钮启停。停止后自动回传。")
         renderElapsed()
         let projection = controls.values.sorted { $0.id < $1.id }.map {
-            ["laneId": $0.id, "title": $0.button.title, "detail": $0.detail.stringValue,
+            ["laneId": $0.id, "title": $0.status.stringValue, "buttonTitle": $0.button.title, "detail": $0.detail.stringValue,
              "tone": $0.state?.tone ?? "unknown", "enabled": $0.button.isEnabled,
              "action": $0.state?.action ?? ""] as [String: Any]
         }
@@ -319,9 +348,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 DispatchQueue.main.async {
                     lane.busy = false
                     if process.terminationStatus != 0 {
-                        lane.actionError = "操作失败，请重试：" + String((String(data: data, encoding: .utf8) ?? "录音服务未响应").suffix(500))
+                        lane.actionError = "操作没有完成，请重新打开窗口"
+                        self.readError = "录音服务未响应，请重新打开窗口"
+                        self.render()
                     }
-                    self.refresh()
+                    self.io.async { self.readSnapshot(verifyService: process.terminationStatus != 0) }
                 }
             }
         } catch { lane.busy = false; lane.actionError = error.localizedDescription; render() }
@@ -359,6 +390,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
 struct Main {
     static func main() {
         let settings = HostSettings()
+        if settings.mode == "panel", let identifier = Bundle.main.bundleIdentifier,
+           let existing = NSRunningApplication.runningApplications(withBundleIdentifier: identifier).first(where: { $0.processIdentifier != getpid() }) {
+            existing.activate(options: [.activateAllWindows])
+            return
+        }
         if settings.mode == "check" { emit(accessStatus()); return }
         if settings.mode == "permissions" {
             emit(["inputRequestGranted": IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)])
