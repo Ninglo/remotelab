@@ -179,6 +179,18 @@ function formatWorkAwarenessTime(value) {
   return parts.year + "年" + parts.month + "月" + parts.day + "日 " + parts.hour + ":" + parts.minute + "（" + zone + "）";
 }
 
+function appendWorkAwarenessMessageTime(parent, source, label = "消息时间：", missing = "") {
+  if (!source.messageTime && !source.receivedAt && !missing) return;
+  const time = document.createElement("p");
+  time.className = "work-awareness-meta";
+  time.textContent = source.messageTime || source.receivedAt
+    ? label + (source.actorName ? source.actorName + " · " : "")
+      + formatWorkAwarenessTime(source.messageTime || source.receivedAt)
+      + (source.messageTime ? "（发送）" : "（接收）")
+    : missing;
+  parent.appendChild(time);
+}
+
 function appendWorkAwarenessSource(parent, source, prefix) {
   if (!source?.sessionId) return;
   const line = document.createElement("p");
@@ -191,14 +203,22 @@ function appendWorkAwarenessSource(parent, source, prefix) {
   link.textContent = "《" + (source.sessionName || "来源对话") + "》 ↗";
   line.appendChild(link);
   parent.appendChild(line);
-  if (source.messageTime || source.receivedAt) {
-    const time = document.createElement("p");
-    time.className = "work-awareness-meta";
-    time.textContent = (source.actorName ? source.actorName + "的消息 · " : "")
-      + formatWorkAwarenessTime(source.messageTime || source.receivedAt)
-      + (source.messageTime ? "（发送时间）" : "（接收时间）");
-    parent.appendChild(time);
-  }
+  appendWorkAwarenessMessageTime(parent, source);
+}
+
+function workSuggestionNextStep(suggestion, outgoing, needsExplanation) {
+  if (suggestion.state === "approved") return suggestion.routing?.mode === "new-session"
+    ? "已确认新开对话；是否已创建并开始处理，仍需看实际结果。"
+    : "已经确认采用；是否执行完成，仍需看实际结果。";
+  if (suggestion.state === "rejected") return "这条建议已拒绝，无需再确认。";
+  if (suggestion.current === false) return "两边已有新进展，需重新核对这条旧建议；现在无需确认。";
+  if (needsExplanation) return "这条建议还需补充简明说明；现在无需确认。";
+  if (suggestion.state === "published") return outgoing
+    ? "接收对话已可查看这条参考，你这里无需再次确认；是否采用由那边决定。"
+    : "查看这条发现，决定是否用于当前任务。";
+  return suggestion.explanation?.nextAction || (suggestion.routing?.mode === "new-session"
+    ? "决定是否新开一个工作对话处理这件事。"
+    : "决定是否同步这条信息。");
 }
 
 async function renderWorkAwarenessPanel(session) {
@@ -226,13 +246,16 @@ async function renderWorkAwarenessPanel(session) {
     panel.dataset.sessionId = session.id;
     panel.open = previous?.dataset?.sessionId === session.id && previous.open === true;
     const summary = document.createElement("summary");
-    summary.textContent = "相关工作与参考建议（" + (data.related.length + data.suggestions.length) + "）";
+    summary.textContent = (data.related.length && data.suggestions.length ? "相关资料与协作建议"
+      : data.related.length ? "可参考的相关资料" : "协作建议")
+      + "（" + (data.related.length + data.suggestions.length) + "）";
     panel.appendChild(summary);
     const body = document.createElement("div");
     body.className = "work-awareness-body";
     const note = document.createElement("p");
     note.className = "work-awareness-note";
-    note.textContent = "供参考，不会自动改动任何人的工作。";
+    note.textContent = data.related.length && data.suggestions.length ? "相关资料可直接查看；协作建议会说明是否需要你确认。"
+      : data.related.length ? "这些资料可能有助于当前任务，可打开来源查看。" : "先看发现和来源，再看现在需要做什么。";
     body.appendChild(note);
     const compact = (text, limit = 72) => {
       const value = String(text || "").replace(/^【[^】]*】\s*/, "").replace(/\s+/g, " ").trim();
@@ -252,27 +275,46 @@ async function renderWorkAwarenessPanel(session) {
       header.appendChild(link);
       const label = document.createElement("span");
       label.className = "work-awareness-label";
-      label.textContent = ({ overlap: "可能重复", dependency: "前置工作", reuse: "可复用成果", "same-declared-object": "同一对象" })[item.relation] || "相关工作";
+      label.textContent = ({ overlap: "工作可能重叠", dependency: "当前任务依赖它", reuse: "已有内容可参考", "same-declared-object": "处理同一对象" })[item.relation] || "相关资料";
       header.appendChild(label);
       row.appendChild(header);
       const reason = document.createElement("p");
       reason.className = "work-awareness-reason";
-      reason.textContent = item.reason || "查看来源，核对与当前工作的关系。";
+      reason.textContent = "为什么出现：" + (item.verification === "declared-object"
+        ? "另一边处理的是同一个文件或业务对象，可以查看已有记录。"
+        : item.reason || "可打开来源，核对哪些内容能用于当前任务。");
       row.appendChild(reason);
+      const reading = document.createElement("p");
+      reading.className = "work-awareness-reason";
+      reading.textContent = "现在可做：查看资料。这里无需确认发送或采用。";
+      row.appendChild(reading);
       const meta = document.createElement("p");
       meta.className = "work-awareness-meta";
       const workStatus = { active: "处理中", completed: "已登记完成", blocked: "有阻塞", recorded: "工作记录" };
-      meta.textContent = [item.source?.kind === "session-work-summary" ? "AI 整理的工作摘要" : item.actor?.name,
-        item.sessionLocation, workStatus[item.status], item.updatedAt ? "记录更新于 " + formatWorkAwarenessTime(item.updatedAt) : "",
+      const fromSummary = item.source?.kind === "session-work-summary";
+      meta.textContent = ["来源：" + (item.sourceInfo?.location || "对话入口未核实"),
+        fromSummary ? "AI 整理的对话摘要" : "AI 登记的工作记录", workStatus[item.status],
+        item.updatedAt ? (fromSummary ? "对话记录更新于 " : "工作记录更新于 ") + formatWorkAwarenessTime(item.updatedAt) : "",
         item.archived ? "已归档" : ""].filter(Boolean).join(" · ");
       row.appendChild(meta);
+      appendWorkAwarenessMessageTime(row, item.sourceInfo || {}, "登记消息：", "原始消息时间未记录。");
       const details = document.createElement("details");
       const detailTitle = document.createElement("summary");
-      detailTitle.textContent = "工作详情";
+      detailTitle.textContent = "展开来源记录";
       const goal = document.createElement("p");
-      goal.textContent = item.goal;
+      goal.textContent = "来源工作的目标：" + item.goal;
       details.appendChild(detailTitle);
       details.appendChild(goal);
+      if (item.results?.at(-1)?.result) {
+        const result = document.createElement("p");
+        result.textContent = "最近登记的结果：" + item.results.at(-1).result;
+        details.appendChild(result);
+      }
+      if (item.sourceInfo?.excerpt) {
+        const excerpt = document.createElement("p");
+        excerpt.textContent = "登记时的消息（摘录）：" + item.sourceInfo.excerpt;
+        details.appendChild(excerpt);
+      }
       row.appendChild(details);
       body.appendChild(row);
     }
@@ -285,25 +327,39 @@ async function renderWorkAwarenessPanel(session) {
       const targetInfo = suggestion.targetInfo || { sessionId: suggestion.targetSessionId };
       const state = document.createElement("p");
       state.className = "work-awareness-label";
-      state.textContent = (outgoing ? "从此对话发出 · " : "从其他对话收到 · ") + (labels[suggestion.state] || suggestion.state);
-      if (suggestion.current === false) state.textContent += " · 旧建议，需重新核对";
+      state.textContent = (outgoing ? "本对话提出 · " : "来自其他对话 · ")
+        + (suggestion.routing?.mode === "new-session" && suggestion.state === "draft" ? "建议新开对话，尚未确认"
+          : suggestion.routing?.mode === "new-session" && suggestion.state === "approved" ? "已确认新开对话，尚需核对创建结果"
+            : labels[suggestion.state] || suggestion.state);
+      if (suggestion.current === false && !["approved", "rejected"].includes(suggestion.state)) state.textContent += " · 旧建议，需重新核对";
       row.appendChild(state);
       const readable = suggestion.explanation;
+      const stale = suggestion.current === false;
+      const needsExplanation = !readable && suggestion.content.length > 240;
+      const newConversation = suggestion.routing?.mode === "new-session";
+      const targetName = targetInfo.sessionName || suggestion.routing?.name || "接收对话";
       const content = document.createElement("p");
       content.className = "work-awareness-reason";
       content.textContent = readable?.summary || (suggestion.content.length <= 240 ? suggestion.content
         : "这条旧建议还没有简明说明，请先重新整理后再决定是否同步。原文保留在下方。");
       row.appendChild(content);
       if (readable) {
-        for (const [label, value] of [["为什么相关：", readable.relevance], ["建议下一步：", readable.nextAction]]) {
-          const explanation = document.createElement("p");
-          explanation.className = "work-awareness-reason";
-          explanation.textContent = label + value;
-          row.appendChild(explanation);
-        }
+        const explanation = document.createElement("p");
+        explanation.className = "work-awareness-reason";
+        explanation.textContent = "为什么与你有关：" + readable.relevance;
+        row.appendChild(explanation);
       }
+      const action = document.createElement("p");
+      action.className = "work-awareness-reason";
+      action.textContent = "现在要做什么：" + workSuggestionNextStep(suggestion, outgoing, needsExplanation);
+      row.appendChild(action);
       appendWorkAwarenessSource(row, sourceInfo, "建议来自：");
-      appendWorkAwarenessSource(row, targetInfo, suggestion.state === "draft" ? "准备同步到：" : "接收方：");
+      if (newConversation) {
+        const destination = document.createElement("p");
+        destination.className = "work-awareness-meta";
+        destination.textContent = "计划新开：《" + targetName + "》 · 处理：" + suggestion.routing.task;
+        row.appendChild(destination);
+      } else appendWorkAwarenessSource(row, targetInfo, suggestion.state === "draft" ? "准备同步到：" : "接收方：");
       const time = document.createElement("p");
       time.className = "work-awareness-meta";
       time.textContent = "AI 整理的建议 · " + (suggestion.draftedAt ? "整理于 " + formatWorkAwarenessTime(suggestion.draftedAt)
@@ -315,17 +371,13 @@ async function renderWorkAwarenessPanel(session) {
           appendWorkAwarenessSource(row, reference, "依据消息来自：");
         }
       }
-      const action = document.createElement("p");
-      action.className = "work-awareness-meta";
-      const stale = suggestion.current === false;
-      action.textContent = stale ? "相关对话或工作已有变化：这条旧建议需要重新核对，现在不需要你确认同步或采用。"
-        : suggestion.state === "draft" ? "这里需要你决定是否把建议同步过去；只有发送确认后才会同步。"
-          : !outgoing && suggestion.state === "published" ? "这条信息已收到；需要你决定是否采用到当前工作里。"
-            : suggestion.state === "published" ? "已发给接收对话，是否采用由那边决定。" : "";
-      if (suggestion.routing) action.textContent += (suggestion.routing.mode === "new-session" ? " 建议新开：" : " 建议分流：")
-        + (suggestion.routing.name || "独立 Session") + "；工作：" + suggestion.routing.task
-        + (suggestion.routing.folder ? "；工作目录：" + suggestion.routing.folder : "");
-      row.appendChild(action);
+      const confirmation = document.createElement("p");
+      confirmation.className = "work-awareness-meta";
+      confirmation.textContent = stale || needsExplanation ? "" : newConversation ? (suggestion.state === "draft" ? "新开对话的确认在当前来源对话完成。" : "")
+        : suggestion.state === "draft" ? "同步给《" + targetName + "》的确认在当前来源对话完成；对方收到后再决定是否采用。"
+          : !outgoing && suggestion.state === "published" ? "当前对话已收录这条参考；若要用于当前任务，在这个接收对话确认采用。"
+            : suggestion.state === "published" ? "已同步给《" + targetName + "》，等待对方决定是否采用。" : "";
+      if (confirmation.textContent) row.appendChild(confirmation);
       const details = document.createElement("details");
       const detailTitle = document.createElement("summary");
       detailTitle.textContent = "展开原文与来源依据";
@@ -336,6 +388,11 @@ async function renderWorkAwarenessPanel(session) {
       const impact = document.createElement("p");
       impact.textContent = "原建议的影响说明：" + suggestion.impact;
       details.appendChild(impact);
+      if (readable?.nextAction && suggestion.state !== "draft") {
+        const proposal = document.createElement("p");
+        proposal.textContent = "原建议的下一步：" + readable.nextAction;
+        details.appendChild(proposal);
+      }
       if (sourceInfo.excerpt) {
         const excerpt = document.createElement("p");
         excerpt.textContent = "触发这条建议的原需求（摘录）：" + sourceInfo.excerpt;
@@ -347,17 +404,22 @@ async function renderWorkAwarenessPanel(session) {
         excerpt.textContent = "《" + reference.sessionName + "》的依据消息（摘录）：" + reference.excerpt;
         details.appendChild(excerpt);
       }
+      if (suggestion.routing?.folder) {
+        const folder = document.createElement("p");
+        folder.textContent = "工作目录：" + suggestion.routing.folder;
+        details.appendChild(folder);
+      }
       row.appendChild(details);
-      const command = stale || (!readable && suggestion.content.length > 240) ? "" : suggestion.state === "draft" && outgoing
+      const command = stale || needsExplanation ? "" : suggestion.state === "draft" && outgoing
         ? "确认协作建议 " + suggestion.id + (suggestion.routing?.mode === "new-session" ? " 执行" : " 发布")
         : suggestion.state === "published" && (suggestion.targetSessionId || suggestion.sourceSessionId) === session.id ? "确认协作建议 " + suggestion.id + " 执行" : "";
       if (command && !document.querySelector?.('.native-question[data-question-state="pending"]')) {
         const control = document.createElement("button");
         control.type = "button";
         control.className = "work-awareness-action";
-        control.textContent = outgoing && suggestion.state === "draft" && suggestion.routing?.mode !== "new-session"
-          ? "准备确认同步" : "准备确认采用";
-        control.title = "点击只填写确认文字；发送后才会" + (outgoing && suggestion.state === "draft" && suggestion.routing?.mode !== "new-session" ? "同步。" : "确认采用。");
+        const decision = newConversation ? "新开对话" : outgoing && suggestion.state === "draft" ? "同步" : "采用";
+        control.textContent = "准备确认" + decision;
+        control.title = "点击只把确认文字放入输入框，发送后才会确认" + decision + "。";
         control.addEventListener("click", () => {
           if (msgInput.value.trim()) return;
           msgInput.value = command;

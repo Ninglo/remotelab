@@ -53,7 +53,15 @@ try {
   assert.equal((await call('/api/work-awareness/review', { ...review, evidenceRefs: [9999] })).status, 400);
   assert.equal((await call('/api/work-awareness/review', review, { authKind: 'web', personId: 'person_b' })).status, 403);
   assert.equal((await call('/api/work-awareness/review', review)).status, 200);
-  assert.equal((await call('/api/work-awareness?sessionId=a&includeBackground=false')).json.related[0].verification, 'harness-reviewed');
+  const relatedSource = (await call('/api/work-awareness?sessionId=a&includeBackground=false')).json.related[0];
+  assert.equal(relatedSource.verification, 'harness-reviewed');
+  assert.equal(relatedSource.sourceInfo.verified, false, 'legacy summaries do not invent an original message');
+  assert.equal(relatedSource.sourceInfo.receivedAt, '');
+  const { describeRelatedWorkSource } = await import('../chat/work-suggestion-description.mjs');
+  const workSource = await describeRelatedWorkSource({ ...work, sessionId: 'a' }, [await findSessionMeta('a')]);
+  assert.equal(workSource.location, 'Web 对话');
+  assert.equal(workSource.actorName, '甲');
+  assert.equal(workSource.receivedAt, record.acceptedAt);
   assert.equal((await call('/api/work-awareness/update', { runId: record.runId, workId: work.id, expectedVersion: 1, status: 'completed', result: 'unproven', evidenceRefs: [9999] })).status, 400);
   const updated = await call('/api/work-awareness/update', { runId: record.runId, workId: work.id, expectedVersion: 1, status: 'completed', result: 'source-backed report', evidenceRefs: [event.seq] });
   assert.equal(updated.status, 200);
@@ -103,6 +111,10 @@ try {
   assert.equal(external.location, '飞书群聊 · 测试群 · 话题');
   assert.equal(external.actorName, '乙', 'the accepted identity overrides an unverified sender label');
   assert.equal(external.messageTime, new Date(1791436400000).toISOString());
+  const groupWorkSource = await describeRelatedWorkSource({ sessionId: 'b', source: { requestId: other.requestId } }, [await findSessionMeta('b')]);
+  assert.equal(groupWorkSource.location, external.location);
+  assert.equal(groupWorkSource.actorName, '乙');
+  assert.equal(groupWorkSource.messageTime, external.messageTime);
   const { workSessionLocation } = await import('../chat/work-suggestion-description.mjs');
   assert.equal(workSessionLocation({ conversation: { connector: 'feishu', target: { chatId: 'oc_example', chatType: 'group', threadId: 'omt_example' } },
     sourceContext: { connector: 'feishu', chatId: 'oc_example', chatName: '测试群', sender: { name: '旧发言人' } } }), '飞书群聊 · 测试群 · 话题');

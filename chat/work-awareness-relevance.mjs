@@ -28,7 +28,8 @@ export function workSearchEntries(sessions) {
       source: { kind: 'session-work-summary' },
       results: [{ result: clean(summary.summary, 360), artifacts: (summary.rawMaterials || []).slice(0, 5),
         methods: (summary.reusablePatterns || []).slice(0, 5), acceptance: 'not-asserted' }],
-      updatedAt: session.lastReviewedAt || session.updatedAt || '',
+      // A read receipt says how far someone read, not when the summary changed.
+      updatedAt: session.updatedAt || '',
     }] : [];
     return items.map(work => ({ ...work, sessionId: session.id, sessionName: clean(session.name, 120),
       archived: session.archived === true,

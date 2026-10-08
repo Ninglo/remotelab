@@ -28,6 +28,8 @@ try {
     window.msgInput.placeholder = '输入消息…'; window.msgInput.disabled = false;
     window.fixture = { related: [{ sessionId: 'b', sessionName: 'Session 开工功能上线', relation: 'reuse', status: 'completed',
       actor: { name: '来源请求者' }, reason: '昨天实现的检索逻辑和测试，是这次调整相关性判断的直接修改依据。',
+      sourceInfo: { sessionId: 'b', sessionName: 'Session 开工功能上线', location: 'Web 对话', actorName: '登记请求者',
+        receivedAt: '2026-10-08T05:08:37.068Z', excerpt: '实现相关工作检索' }, updatedAt: '2026-10-08T05:18:21.773Z',
       goal: '核对原有实现、来源、边界以及验收记录。'.repeat(30) + '<img src=x onerror=alert(1)>' }],
       candidates: [{ sessionId: 'unrelated', goal: '获取会议权限' }], suggestions: [] };
     window.fetch = async () => ({ ok: true, json: async () => window.fixture });
@@ -50,6 +52,12 @@ try {
   assert.equal(await panel.locator('.work-awareness-item').count(), 1);
   assert.equal(await panel.locator('a').textContent(), 'Session 开工功能上线');
   assert.equal(await panel.locator('img').count(), 0, 'raw source text remains literal');
+  assert.match(await panel.locator('> summary').textContent(), /可参考的相关资料/);
+  assert.match(await panel.innerText(), /无需确认发送或采用/);
+  assert.match(await panel.innerText(), /来源：Web 对话/);
+  assert.match(await panel.innerText(), /登记消息：登记请求者/);
+  assert.match(await panel.innerText(), /13:08/);
+  assert.equal(await panel.locator('button').count(), 0);
   assert(!String(await panel.textContent()).includes('获取会议权限'), 'candidates do not leak into the panel');
   await checkComposerAlignment();
   await page.evaluate(() => document.activeElement.blur());
@@ -85,7 +93,7 @@ try {
   assert.match(await panel.textContent(), /13:08/);
   assert.match(await panel.textContent(), /13:18/);
   assert.match(await panel.textContent(), /13:13/);
-  assert.match(await panel.textContent(), /不需要你确认同步或采用/);
+  assert.match(await panel.textContent(), /现在无需确认/);
   assert.equal(await panel.locator('button').count(), 0, 'the explained old draft remains stale');
   assert.equal(await panel.locator('details p').first().isVisible(), false, 'technical original is hidden until requested');
   for (const link of await panel.locator('a').all()) assert.equal(await link.getAttribute('target'), '_blank', 'named source links preserve the current conversation');
@@ -94,6 +102,32 @@ try {
   await checkComposerAlignment();
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.locator('main').screenshot({ path: resolve(output, 'readable-suggestion-mobile.png') });
+  await page.evaluate(async () => {
+    window.fixture.suggestions[0] = { ...window.fixture.suggestions[0], current: true, state: 'published' };
+    await renderWorkAwarenessPanel(sessionFixture);
+  });
+  assert.match(await panel.innerText(), /你这里无需再次确认/);
+  assert.equal(await panel.locator('button').count(), 0, 'source cannot approve adoption');
+  await page.evaluate(async () => {
+    window.currentSessionId = 'b';
+    await renderWorkAwarenessPanel({ ...sessionFixture, id: 'b' });
+  });
+  await panel.locator('> summary').click();
+  assert.match(await panel.innerText(), /在这个接收对话确认采用/);
+  assert.equal(await panel.locator('button').textContent(), '准备确认采用');
+  await checkComposerAlignment();
+  await page.evaluate(async () => {
+    window.currentSessionId = 'a';
+    window.fixture.suggestions[0] = { ...window.fixture.suggestions[0], state: 'draft', targetSessionId: '', targetInfo: null,
+      routing: { mode: 'new-session', name: '独立调查', task: '调查第二条路线' },
+      explanation: { summary: '第二条路线需要单独调查。', relevance: '它能帮助当前任务比较两种方案。', nextAction: '决定是否新开对话进行调查。' } };
+    await renderWorkAwarenessPanel(sessionFixture);
+  });
+  await panel.locator('> summary').click();
+  assert.match(await panel.innerText(), /计划新开：《独立调查》/);
+  assert.equal(await panel.locator('button').textContent(), '准备确认新开对话');
+  await checkComposerAlignment();
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.evaluate(async () => { window.fixture = { related: [], candidates: [{ goal: 'unreviewed' }], suggestions: [] }; await renderWorkAwarenessPanel(sessionFixture); });
   assert.equal(await panel.count(), 0, 'empty recommendations remove the panel');
   assert.deepEqual(errors, []);
