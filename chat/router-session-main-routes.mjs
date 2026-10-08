@@ -448,6 +448,9 @@ export async function handleSessionMainRoutes({
           sessionId,
         });
         const messageOptions = {
+          usageSurface: authSession?.authKind === 'service' ? (payload.sourceContext?.connector === 'feishu' ? 'feishu' : 'agent') : 'web',
+          usageActorKind: authSession?.authKind !== 'service' ? 'human' : payload.sourceContext?.connector === 'feishu'
+            && !['app', 'bot'].includes(payload.sourceContext?.sender?.senderType) ? 'human' : 'agent',
           ...(payload.nativeQuestionId ? { nativeQuestionId: payload.nativeQuestionId } : {}),
           ...(payload.nativeQuestionId && (payload.nativeQuestionAnswerSource === 'control'
             || (authSession?.authKind === 'service' && requestId.startsWith('feishu-question:')))
@@ -469,6 +472,8 @@ export async function handleSessionMainRoutes({
         const initiator = await resolveSessionInitiator(authSession, payload.sourceId, payload.sourceContext);
         messageOptions.initiatedByIdentityId = initiator.identityId;
         messageOptions.viewPersonId = initiator.personId;
+        messageOptions.usagePersonId = authSession?.authKind === 'service' ? initiator.personId : authSession?.personId;
+        if (authSession?.authKind === 'service' && initiator.personId === SYSTEM_PERSON_ID) messageOptions.usageActorKind = 'agent';
         const outcome = requestId
           ? await submitHttpMessage(sessionId, payload.text.trim(), [], {
               ...messageOptions,

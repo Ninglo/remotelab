@@ -236,6 +236,21 @@ try {
     const downloadRes = await request(port, 'GET', `/api/assets/${attachment.assetId}/download`);
     assert.equal(downloadRes.status, 200, 'published generated image should be downloadable');
     assert.deepEqual(downloadRes.buffer, expectedImage, 'published asset should preserve the generated image bytes');
+    const analysis = await request(port, 'GET', `/api/usage/analysis?sessionId=${session.id}`);
+    assert.equal(analysis.status, 200);
+    assert.equal(analysis.json.byEvent.artifact_generated, 1, 'only the current verified provider image counts');
+    assert.equal(analysis.json.byEvent.artifact_attached, 1, 'attachment is counted separately from generation');
+    assert.equal(analysis.json.byEvent.artifact_access_requested, 1, 'access request is not conflated with reading');
+    assert.equal(analysis.json.events.find(event => event.event === 'artifact_generated').kind, 'image');
+    const generated = analysis.json.events.find(event => event.event === 'artifact_generated');
+    const registered = analysis.json.events.find(event => event.event === 'artifact_registered');
+    const attached = analysis.json.events.find(event => event.event === 'artifact_attached');
+    assert.equal(registered.originObjectId, generated.objectId, 'physical generation is linked to the delivered asset without raw paths');
+    assert.equal(registered.objectId, attached.objectId);
+    assert.equal(attached.runId, runId, 'result-file messages retain the actual producing Run');
+
+    assert.equal(JSON.stringify(analysis.json).includes('generated-image.png'), false, 'filenames stay out of analytics');
+
   } finally {
     await stopServer(chatServer);
     rmSync(home, { recursive: true, force: true });

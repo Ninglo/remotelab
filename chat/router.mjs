@@ -76,6 +76,7 @@ import { pathExists, statOrNull } from './fs-utils.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
+import { handleUsageRoutes } from './router-usage-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
 import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
 import { handleClaudeAuthRoutes } from './router-claude-auth-routes.mjs';
@@ -1538,6 +1539,8 @@ export async function handleRequest(req, res) {
   })) {
     return;
   }
+
+  if (await handleUsageRoutes({ req, res, pathname, parsedUrl, authSession, writeJson })) return;
 
   if (await handleControlRoutes({
     req,

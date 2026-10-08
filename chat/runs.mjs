@@ -1,3 +1,4 @@
+import { observeRunUsage } from './usage-event-projection.mjs';
 import { requests } from './requests.mjs';
 import { randomBytes } from 'crypto';
 import { appendFile, mkdir, open, readFile, readdir, rm } from 'fs/promises';
@@ -320,13 +321,16 @@ export async function createRun({ status, manifest }) {
     await writeJsonAtomic(runStatusPath(run.id), run);
     await writeJsonAtomic(runManifestPath(run.id), { ...(manifest || {}), id: run.id });
     runStatusCache.set(run.id, run);
+    observeRunUsage(run);
     runManifestCache.set(run.id, { ...(manifest || {}), id: run.id });
   });
   return clone(run);
 }
 
 export async function getRun(runId) {
-  return getRunUnlocked(runId);
+  const run = await getRunUnlocked(runId);
+  observeRunUsage(run);
+  return run;
 }
 
 export async function updateRun(runId, updater) {
@@ -342,6 +346,7 @@ export async function updateRun(runId, updater) {
     next.updatedAt = new Date().toISOString();
     await writeJsonAtomic(runStatusPath(runId), next);
     runStatusCache.set(runId, next);
+    observeRunUsage(next);
     return clone(next);
   });
 }

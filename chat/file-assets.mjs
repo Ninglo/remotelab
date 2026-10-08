@@ -1,3 +1,4 @@
+import { observeUsage, usageKey, artifactKind } from './usage-events.mjs';
 import { createHash, createHmac, randomBytes } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
 import { basename, extname, join } from 'path';
@@ -769,6 +770,9 @@ export async function publishLocalFileAssetFromPath({
 
     await ensureDir(CHAT_FILE_ASSETS_DIR);
     await writeJsonAtomic(fileAssetPath(assetId), record);
+    observeUsage({ eventId: usageKey(`registered:${assetId}`), event: 'artifact_registered',
+      sessionId: normalizedSessionId, objectId: assetId, originObjectId: usageKey(readablePath),
+      actorKind: 'agent', surface: 'runtime', kind: artifactKind(record.mimeType), sizeBytes: fileStats.size });
     return buildClientFileAsset(record, { includeDirectUrl: true });
   }
 
@@ -793,8 +797,12 @@ export async function publishLocalFileAssetFromPath({
     throw createError(`Failed to upload local file asset: ${response.status}`, 'FILE_ASSET_UPLOAD_FAILED', 502);
   }
 
-  return finalizeFileAssetUpload(intent.asset.id, {
+  const finalized = await finalizeFileAssetUpload(intent.asset.id, {
     sizeBytes: fileStats.size,
     etag: response.headers.get('etag') || '',
   });
+  observeUsage({ eventId: usageKey(`registered:${intent.asset.id}`), event: 'artifact_registered',
+    sessionId, objectId: intent.asset.id, originObjectId: usageKey(readablePath),
+    actorKind: 'agent', surface: 'runtime', kind: artifactKind(mimeType || ''), sizeBytes: fileStats.size });
+  return finalized;
 }

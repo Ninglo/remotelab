@@ -795,6 +795,7 @@ function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false
     }
     appendMessageTimestamp(div, evt.timestamp, "msg-assistant-time");
     container.appendChild(div);
+    globalThis.RemoteLabUsage?.content(div, evt);
     return div;
   }
 }

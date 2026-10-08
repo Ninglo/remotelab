@@ -110,6 +110,7 @@
         </header>
         <nav class="monitoring-tabs" role="tablist" aria-label="Monitor views" data-i18n-aria-label="monitoring.views">
           <button type="button" role="tab" id="monitoringOverviewTab" aria-controls="monitoringOverview" aria-selected="false" tabindex="-1" data-i18n="monitoring.overview">Overview</button>
+          <button type="button" role="tab" id="monitoringUsageTab" aria-controls="monitoringUsage" aria-selected="false" tabindex="-1" data-i18n="monitoring.usageAnalysis">Usage analysis</button>
           <button type="button" role="tab" id="monitoringAutomationsTab" aria-controls="monitoringAutomations" aria-selected="true" data-i18n="monitoring.automations">Automations</button>
         </nav>
         <section id="monitoringOverview" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringOverviewTab" hidden>
@@ -118,6 +119,14 @@
             <button class="task-center-icon-btn" id="monitoringRefresh" type="button" data-icon="refresh" title="Refresh overview" aria-label="Refresh overview" data-i18n-title="monitoring.refresh" data-i18n-aria-label="monitoring.refresh"></button>
           </div>
           <div id="monitoringContent" aria-live="polite"></div>
+        </section>
+        <section id="monitoringUsage" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringUsageTab" hidden>
+          <div class="monitoring-toolbar">
+            <label><span data-i18n="monitoring.period">Usage period</span> <select id="usageAnalysisPeriod"><option value="1" data-i18n="monitoring.day">Last 24 hours</option><option value="7" selected data-i18n="monitoring.week">Last 7 days</option><option value="30" data-i18n="monitoring.month">Last 30 days</option></select></label>
+            <label><span data-i18n="monitoring.usageSession">Conversation</span> <select id="usageAnalysisSession"></select></label>
+            <button class="task-center-icon-btn" id="usageAnalysisRefresh" type="button" data-icon="refresh" data-i18n-title="monitoring.refresh" data-i18n-aria-label="monitoring.refresh" title="Refresh" aria-label="Refresh"></button>
+          </div>
+          <div id="usageAnalysisContent" aria-live="polite"></div>
         </section>
         <section id="monitoringAutomations" role="tabpanel" aria-labelledby="monitoringAutomationsTab">
         <form class="task-center-form" id="taskCenterForm" hidden>
@@ -739,6 +748,7 @@
 <script src="chat/amber-todos.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/amber-quick-links.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/amber-pet.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/analytics.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/bootstrap-session-catalog.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/session-http-helpers.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/session-http-list-state.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
@@ -765,6 +775,7 @@
 <script src="chat/automation-overview.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/task-center.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/monitoring.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/usage-analysis.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

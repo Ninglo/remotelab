@@ -2,6 +2,7 @@ import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { findSessionConversation, requireConversation, updateSessionConversation } from './session-conversations.mjs';
 import { readFile, readdir } from 'fs/promises';
+import { observeUsage, artifactKind } from './usage-events.mjs';
 import { basename, dirname, join, resolve } from 'path';
 
 import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_ENABLED, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
@@ -1030,6 +1031,10 @@ export async function handleControlRoutes({
     }
     if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
     const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
+    observeUsage({ event: 'artifact_access_requested', surface: authSession?.authKind === 'service' ? 'agent' : 'web',
+      actorKind: authSession?.authKind === 'service' ? 'agent' : 'human', sessionId: asset.sessionId,
+      objectId: asset.id || fileAssetRoute.assetId, kind: artifactKind(asset.mimeType),
+      action: downloadRequested ? 'download' : 'preview' }, { personId: authSession?.personId });
 
     try {
       if (asset.storage?.provider === 'local') {

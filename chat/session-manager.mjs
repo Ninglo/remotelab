@@ -76,6 +76,7 @@ import {
   statusEvent,
 } from './normalizer.mjs';
 import { appendUsageLedgerRecord, buildUsageLedgerRecord } from './usage-ledger.mjs';
+import { observeUsage, usageKey } from './usage-events.mjs';
 import { triggerSessionStateSuggestion } from './session-state-classifier.mjs';
 import { buildSourceRuntimePrompt } from './source-runtime-prompts.mjs';
 import {
@@ -2519,6 +2520,9 @@ export async function createSession(folder, tool, name, extra = {}) {
     return { session, created: true, changed: true };
   });
 
+  if (created.created) observeUsage({ eventId: usageKey(`session-created:${created.session.id}`),
+    event: 'session_created', sessionId: created.session.id, actorKind: 'system', surface: 'runtime' });
+
   if ((created.created || created.changed) && shouldExposeSession(created.session)) {
     broadcastScopedSessionsInvalidation(created.session);
   }
@@ -3396,7 +3400,8 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // These are admission-time projections, not user input. A retry keeps the
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
-    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline']) {
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline',
+      'usageSurface', 'usageActorKind', 'usagePersonId']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];
     }
@@ -3903,7 +3908,7 @@ export async function forkSession(sessionId, options = {}) {
     .map((event) => sanitizeForkedEvent(event))
     .filter(Boolean);
   if (copiedEvents.length > 0) {
-    await appendEvents(child.id, copiedEvents);
+    await appendEvents(child.id, copiedEvents, { observeUsage: false });
   }
 
   if (contextHead) {
@@ -3924,6 +3929,8 @@ export async function forkSession(sessionId, options = {}) {
     await clearForkContext(child.id);
   }
 
+  observeUsage({ eventId: usageKey(`fork:${source.id}:${child.id}`), event: 'session_linked',
+    sessionId: child.id, parentSessionId: source.id, actorKind: 'system', surface: 'runtime', operation: 'fork' });
   broadcastSessionsInvalidation();
   return getSession(child.id, { viewPersonId });
 }
@@ -3983,6 +3990,9 @@ export async function delegateSession(sessionId, payload = {}) {
     ...(runInternally ? { internalRole: INTERNAL_SESSION_ROLE_DELEGATE } : {}),
   });
   if (!child) return null;
+
+  observeUsage({ eventId: usageKey(`delegate:${source.id}:${child.id}`), event: 'session_linked',
+    sessionId: child.id, parentSessionId: source.id, actorKind: 'agent', surface: 'agent', operation: 'delegate' });
 
   const handoffText = buildDelegationHandoff({
     source,

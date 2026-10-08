@@ -193,5 +193,6 @@ function renderNativeQuestionMessage(container, evt) {
         : evt.questionStatusText || "问题已结束。";
   appendMessageTimestamp(panel, evt.timestamp, "msg-assistant-time");
   container.appendChild(panel);
+  globalThis.RemoteLabUsage?.content(panel, evt);
   return panel;
 }
