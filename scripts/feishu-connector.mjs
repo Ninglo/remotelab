@@ -990,6 +990,14 @@ async function submitRemoteLabRequest(runtime, summary, {
   observedRecent = null, legacyGroupWorkThread = false,
 } = {}) {
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
+  if (!observeOnly && participationEnabled(runtime, summary)) {
+    const state = await participationController(runtime).state(summary);
+    const epoch = prepared?.payload?.sourceDelivery?.target?.participationEpoch ?? summary.participationEpoch;
+    if ((epoch !== undefined && Number(epoch) !== state.epoch) || state.mode === 'paused'
+        || (state.mode === 'listening' && !state.invitedMessages?.includes(summary.messageId))) {
+      return { ignored: true, reason: 'participation_changed' };
+    }
+  }
   if (prepared) {
     const submission = await submitConnectorMessage(requester, prepared.sessionId, {
       ...prepared.payload,
@@ -1090,7 +1098,12 @@ async function submitRemoteLabRequest(runtime, summary, {
         sourceContext,
       },
     });
-    if (!observed.response.ok) throw new Error(observed.json?.error || 'Unable to record Feishu message in Session');
+    if (!observed.response.ok) {
+      const status = observed.response.status;
+      throw Object.assign(new Error(observed.json?.error || 'Unable to record Feishu message in Session'), {
+        retryable: !(status >= 400 && status < 500 && ![408, 429].includes(status)),
+      });
+    }
     return { sessionId: session.id, externalTriggerId, observation: observed.json };
   }
   const participationStatus = participationEnabled(runtime, effectiveSummary)
@@ -1160,7 +1173,8 @@ async function submitRemoteLabRequest(runtime, summary, {
     sourceDelivery: {
       connector: 'feishu',
       sourceRouteId: runtime.config.sourceRouteId || 'default',
-      target: requestDeliveryTarget,
+      target: { ...requestDeliveryTarget, ...(participationStatus
+        ? { participationEpoch: String(participationStatus.epoch) } : {}) },
     },
     ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
@@ -1265,11 +1279,13 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
 
   // Listening always keeps observations, but suppresses model runs, reactions,
   // attachment work and task handoff unless this exact message invites us.
-  if (controller && participationState.mode === 'listening') {
+  if (controller) {
     const latest = await controller.state(summary);
-    permission = latest.mode === 'active' || latest.invitedMessages?.includes(summary.messageId);
+    const stale = summary.participationEpoch !== undefined && Number(summary.participationEpoch) !== latest.epoch;
+    permission = !stale && latest.mode !== 'paused'
+      && (latest.mode === 'active' || latest.invitedMessages?.includes(summary.messageId));
     if (!permission) return { sessionId, externalTriggerId, decision, observedOnly: true };
-    summary = { ...summary, participationOnce: true };
+    if (latest.mode === 'listening') summary = { ...summary, participationOnce: true };
   }
 
   // Temporary fail-open policy: Jev still selects reactions and work placement,
@@ -1277,7 +1293,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
   // Neither silence, a reaction-only answer, nor a failed classification blocks it.
   const legacyWork = decision.participation === 'reply'
     && !['short', 'complex', 'reaction'].includes(decision.workMode);
-  const complexWork = decision.workMode === 'complex';
+  const complexWork = decision.workMode === 'complex' && !buildFeishuTopicId(summary);
   const workSummary = complexWork
     ? { ...summary, replyModeOverride: 'thread', startThread: true }
     : summary;
@@ -1285,6 +1301,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     submitRemoteLabRequest(runtime, summary, options)))(runtime, workSummary,
     complexWork ? { observedRecent: observation.recent }
       : { skipUserMessage: true, ...(legacyWork ? { legacyGroupWorkThread: true } : {}) });
+  if (workReceipt?.ignored) return { sessionId, externalTriggerId, decision, observedOnly: true };
   const delivery = decision.emojiType
     ? await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
       runtime, summary, sessionId, decision.emojiType)
@@ -1295,7 +1312,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       workSessionId: workReceipt.sessionId } : {}) };
 }
 
-async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
+async function addProcessingReaction(runtime, summary, emojiType = 'THINKING', { track = true } = {}) {
   if (isFeishuDocumentCommentSummary(summary)) {
     return withTimeout(() => addFeishuCommentProcessingReaction(runtime, summary),
       DEFAULT_PROCESSING_REACTION_TIMEOUT_MS, 'Feishu comment processing reaction');
@@ -1304,6 +1321,22 @@ async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
   const createReaction = runtime?.appClient?.im?.v1?.messageReaction?.create;
   if (!messageId || typeof createReaction !== 'function') {
     return null;
+  }
+  if (track && emojiType === 'THINKING' && runtime.config?.storageDir) {
+    const store = runtime.readReactionStore ||= createFeishuReadReactionStore(runtime.config.storageDir);
+    const receipt = await store.add(messageId, () => addProcessingReaction(runtime, summary, emojiType, { track: false }), {
+      chatId: summary.chatId, tenantKey: summary.tenantKey || summary.sender?.tenantKey || '',
+      topicId: buildFeishuTopicId(summary),
+    });
+    if (participationEnabled(runtime, summary)) {
+      const state = await participationController(runtime).state(summary);
+      if (state.mode === 'paused' || (summary.participationEpoch !== undefined
+          && Number(summary.participationEpoch) !== state.epoch)) {
+        await store.remove(messageId, (id, reactionId) => removeProcessingReaction(runtime, id, reactionId));
+        return null;
+      }
+    }
+    return receipt;
   }
   const response = await withTimeout(
     () => createReaction.call(runtime.appClient.im.v1.messageReaction, {
@@ -1329,10 +1362,7 @@ async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
 }
 
 function createQuickParticipationReaction(runtime) {
-  return (summary, emojiType) => emojiType === 'THINKING' && runtime.readReactionStore
-    ? runtime.readReactionStore.add(summary.messageId,
-      () => addProcessingReaction(runtime, summary, emojiType))
-    : addProcessingReaction(runtime, summary, emojiType);
+  return (summary, emojiType) => addProcessingReaction(runtime, summary, emojiType);
 }
 
 async function removeProcessingReaction(runtime, messageId, reactionId) {
@@ -1456,10 +1486,13 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   return withFeishuHandoffLock(runtime, summary, async () => {
     if (participationEnabled(runtime, summary)) {
       const status = await participationController(runtime, helpers).state(summary);
-      if (status.mode !== 'active' && !status.invitedMessages?.includes(summary.messageId)) {
+      const stale = summary.participationEpoch !== undefined && Number(summary.participationEpoch) !== status.epoch;
+      if (stale || (status.mode !== 'active' && !status.invitedMessages?.includes(summary.messageId))) {
         const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
-          body: { state: 'cancelled', reason: `Group participation is ${status.mode}` } });
+          body: { state: 'cancelled', leaseId: claim.leaseId, reason: `Group participation is ${status.mode}; stale=${stale}` } });
         if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to cancel paused group delivery');
+        await readReactionStore.remove(summary.messageId,
+          (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId));
         return resolved.json?.delivery;
       }
     }
@@ -1485,7 +1518,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     if (sent?.skipped) {
       const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
-        body: { state: 'cancelled', reason: 'Question already ended without an original card; suppressed late notification' } });
+        body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Question already ended without an original card; suppressed late notification' } });
       if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to suppress stale question delivery');
       return resolved.json?.delivery;
     }
@@ -1660,6 +1693,21 @@ function participationController(runtime, helpers = {}) {
       const result = await request(`/api/sessions/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST' });
       if (!result.response.ok && result.response.status !== 404) throw new Error(result.json?.error || 'Unable to stop current group turn');
     },
+    cleanup: async record => {
+      const store = runtime.readReactionStore ||= createFeishuReadReactionStore(runtime.config.storageDir);
+      for (const reaction of await store.active()) {
+        const source = reaction.source || (runtime.storagePaths?.messageIndexPath
+          ? await findConnectorMessageIndexRecord(runtime.storagePaths.messageIndexPath, {
+            connector: FEISHU_CONNECTOR_ID, accountId: record.source.tenantKey, messageId: reaction.messageId,
+          }) : null);
+        const topic = source?.topicId || source?.threadId
+          || (source?.conversationKind === 'thread' ? source.conversationId : '') || '';
+        if (source?.chatId !== record.source.chatId || topic !== record.source.topicId
+            || ((source.tenantKey || source.accountId) && (source.tenantKey || source.accountId) !== record.source.tenantKey)) continue;
+        await store.remove(reaction.messageId,
+          (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId));
+      }
+    },
   });
   return runtime.participation;
 }
@@ -1700,8 +1748,10 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
   summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
   if (participationEnabled(runtime, summary)) {
-    const control = await participationController(runtime, helpers).intake(summary);
+    const controller = participationController(runtime, helpers);
+    const control = await controller.intake(summary, helpers.participationSnapshot);
     if (control) return { receipt: control };
+    summary = { ...summary, participationEpoch: String((await controller.state(summary)).epoch) };
   }
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
@@ -1860,6 +1910,11 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     }
     throw error;
   }
+  if (receipt?.ignored) {
+    await runtime.readReactionStore?.remove(summary.messageId,
+      (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId));
+    return receipt;
+  }
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
   if (runtime.storagePaths?.messageIndexPath) {
     await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
@@ -1885,6 +1940,7 @@ function initializeInbox(runtime) {
         return handleFeishuReactionFeedback(runtime, entry.summary);
       }
       return handleMessage(runtime, entry.summary, entry.sourceLabel, {
+        participationSnapshot: entry.participationSnapshot,
         preparedRuntimeCommand: entry.runtimeCommand,
         saveRuntimeCommand: runtimeCommand => update({ runtimeCommand }),
         submitRemoteLabRequest: (runtime, summary, options = {}) => submitRemoteLabRequest(runtime, summary, {
@@ -2086,7 +2142,10 @@ async function main() {
     const receivedAt = performance.now();
     const summary = summarize(raw);
     if (summary.fileToken && await documentPoller.accept(summary)) return {};
-    const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
+    const status = participationEnabled(runtime, summary) ? await participationController(runtime).state(summary) : null;
+    const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel,
+      ...(status ? { participationSnapshot: { mode: status.mode, epoch: status.epoch, receivedAt: Date.now() } } : {}),
+    });
     if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {
       if (participationEnabled(runtime, summary) && (
         (await participationController(runtime).state(summary)).mode !== 'active'

@@ -119,6 +119,29 @@ try {
   const observedSource = { connector: 'feishu', sourceRouteId: 'pilot-bot', tenantKey: 'pilot-tenant',
     chatId: 'pilot-group', messageId: 'observed-one', sender: { name: 'Ada', openId: 'person-1' } };
   const observePath = `/api/sessions/${groupFeedId}/observations`;
+  const topicConversation = { ...groupFeedConversation, target: {
+    ...groupFeedConversation.target, conversationKind: 'thread', threadId: 'pilot-topic',
+    rootId: 'topic-root', messageId: 'topic-root', replyInThread: true,
+  } };
+  const topicSession = await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu', conversation: topicConversation,
+  });
+  assert.equal(topicSession.status, 201);
+  assert.equal(topicSession.body.session.groupFeed, undefined, 'listening must work in existing work topics');
+  const topicObservation = { sourceMessageId: 'topic-discussion', text: '普通讨论，只旁听',
+    sourceContext: { ...observedSource, messageId: 'topic-discussion', threadId: 'pilot-topic' } };
+  const topicObservePath = `/api/sessions/${topicSession.body.session.id}/observations`;
+  assert.equal((await connectorRequest('POST', topicObservePath, topicObservation)).status, 201);
+  assert.equal((await connectorRequest('POST', topicObservePath, topicObservation)).status, 200);
+  for (const threadId of ['different-topic', '']) {
+    assert.equal((await connectorRequest('POST', topicObservePath, {
+      ...topicObservation, sourceContext: { ...topicObservation.sourceContext, threadId },
+    })).status, 400, 'listening cannot import another topic or the mainline');
+  }
+  assert.equal((await connectorRequest('POST', observePath, topicObservation)).status, 400,
+    'topic discussion cannot enter the group mainline observer');
+  const topicSnapshot = (await request('GET', `/api/sessions/${topicSession.body.session.id}`)).body.session;
+  assert.equal(topicSnapshot.activity.run.state, 'idle', 'observations must not start a Harness');
   const observation = { sourceMessageId: 'observed-one', requestId: 'feishu:observed-one',
     text: '这个结果真惊喜', sourceContext: observedSource };
   assert.equal((await request('POST', observePath, observation)).status, 403,

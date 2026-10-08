@@ -9,7 +9,8 @@ const keyFor = messageId => createHash('sha256').update(messageId).digest('hex')
 export function createFeishuReadReactionStore(root) {
   const records = createRecordStore(join(root, 'read-reactions'));
   return {
-    async add(messageId, create) {
+    active: records.active,
+    async add(messageId, create, source = null) {
       const key = keyFor(messageId);
       const previous = await records.get(key);
       if (previous?.reactionId) return { reactionId: previous.reactionId };
@@ -17,6 +18,7 @@ export function createFeishuReadReactionStore(root) {
       if (!receipt?.reactionId) return receipt;
       await records.mutate(key, current => current || {
         messageId, reactionId: receipt.reactionId, removed: false, sequence: Date.now(),
+        ...(source ? { source } : {}),
       });
       return receipt;
     },

@@ -292,7 +292,14 @@ export async function failSourceDelivery(id, leaseId, error, options = {}) {
 export async function resolveSourceDelivery(id, resolution) {
   return queue(async () => {
     const current = await getSourceDelivery(id);
-    if (!current || !['unknown', 'delivery_failed'].includes(current.state)) throw new Error('Only an unresolved delivery can be resolved');
+    // Suppression happens after claim but before calling the provider. Only
+    // the holder of that exact lease may cancel a sending delivery.
+    const cancellable = entry => resolution.state === 'cancelled' && (entry?.state === 'pending'
+      || (entry?.state === 'sending' && resolution.leaseId && entry.leaseId === resolution.leaseId));
+    if (current?.state === 'cancelled' && resolution.state === 'cancelled') return current;
+    if (!current || (!['unknown', 'delivery_failed'].includes(current.state) && !cancellable(current))) {
+      throw new Error('Only an unresolved delivery or a matching unsent lease can be resolved');
+    }
     if (resolution.state === 'delivered') {
       const session = await findSessionMeta(current.sessionId);
       if (session?.conversation?.connector === 'feishu'
@@ -302,7 +309,9 @@ export async function resolveSourceDelivery(id, resolution) {
       if (session && resolution.messageId) await updateSessionConversation(current.sessionId, current, { receipt: resolution });
     }
     return mutateDelivery(id, entry => {
-    if (!['unknown', 'delivery_failed'].includes(entry.state)) throw new Error('Only an unresolved delivery can be resolved');
+    if (!['unknown', 'delivery_failed'].includes(entry.state) && !cancellable(entry)) {
+      throw new Error('Only an unresolved delivery or a matching unsent lease can be resolved');
+    }
     if (!['delivered', 'pending', 'cancelled'].includes(resolution.state)) throw new Error('Invalid delivery resolution');
     return { ...entry, state: resolution.state, externalId: resolution.externalId || entry.externalId,
       availableAt: nowIso(), leaseId: '', resolution: resolution.reason || 'operator resolution' };

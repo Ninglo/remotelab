@@ -606,6 +606,15 @@ active, listening or paused reception. Set that exact group's
 and text controls. This also suppresses publication on restart and mode changes;
 withdraw the existing message and its top notice separately when requested.
 
+Participation controls apply independently to the main timeline and each existing
+Thread. `/mute` selects listening: messages are recorded without a model turn unless
+that message explicitly invites the Bot. `/unmute` restores active participation for
+new messages; queued content from before restoration is not replayed as new work.
+Pausing or entering listening cancels that conversation's ongoing work and removes
+its retained THINKING reactions. Definite observation rejections are archived with
+their error instead of blocking later messages with endless retries. Delivery
+suppression cancels the matching unsent lease; it does not report a provider send.
+
 ```json
 {
   "responsePolicy": { "group": "mention_only" },

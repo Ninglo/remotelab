@@ -386,7 +386,10 @@ export async function handleSessionMainRoutes({
       try {
         const payload = JSON.parse(await readBody(req, 512 * 1024));
         const session = await getSession(sessionId);
-        if (session?.conversation?.connector !== 'feishu' || !session.groupFeed) {
+        const target = session?.conversation?.target;
+        const boundTopic = target?.chatType === 'group' && target?.threadId
+          && ['thread', 'topic'].includes(target.conversationKind);
+        if (session?.conversation?.connector !== 'feishu' || (!session.groupFeed && !boundTopic)) {
           writeJson(res, 400, { error: 'Observations require a bound Feishu group Session' });
           return true;
         }
@@ -398,10 +401,11 @@ export async function handleSessionMainRoutes({
         if (payload?.sourceContext?.connector !== 'feishu'
             || payload.sourceContext.chatId !== session.conversation.target?.chatId
             || payload.sourceContext.sourceRouteId !== session.conversation.sourceRouteId
+            || (target?.threadId || '') !== (payload.sourceContext.threadId || payload.sourceContext.topicId || '')
             || (session.conversation.target?.tenantKey
               && payload.sourceContext.tenantKey !== session.conversation.target.tenantKey)
             || payload.sourceContext.messageId !== payload.sourceMessageId) {
-          writeJson(res, 400, { error: 'Observation source does not match the bound Feishu group' });
+          writeJson(res, 400, { error: 'Observation source does not match the bound Feishu conversation' });
           return true;
         }
         const initiator = await resolveSessionInitiator(authSession, 'feishu', payload.sourceContext);

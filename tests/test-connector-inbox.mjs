@@ -85,5 +85,26 @@ try {
   await Promise.all([inbox.tick(), inbox.tick()]); await inbox.idle();
   inbox.store.active = active;
   assert.deepEqual(stale, ['stale-snapshot'], 'a stale disk scan cannot execute an already completed receipt again');
+
+  const rejected = [];
+  inbox = createConnectorInbox(join(root, 'rejection'), {
+    conversationKey: entry => entry.chat,
+    onError: () => {},
+    process: async entry => {
+      rejected.push(entry.id);
+      if (entry.id === 'invalid') throw Object.assign(new Error('definite HTTP 400'), { retryable: false });
+      return {};
+    },
+  });
+  const invalid = await inbox.accept('invalid', { chat: 'chat-a' });
+  await inbox.accept('restore', { chat: 'chat-a' });
+  inbox.start();
+  try {
+    await inbox.idle();
+    assert.deepEqual(rejected, ['invalid', 'restore'], 'a permanent rejection releases the next message in the same conversation');
+    assert.equal((await inbox.store.get(invalid.key)).receipt.permanent, true);
+    assert.equal((await inbox.accept('invalid', { chat: 'chat-a' })).complete, true);
+    assert.deepEqual(rejected, ['invalid', 'restore'], 'redelivery retains the original failure without re-executing it');
+  } finally { inbox.stop(); await inbox.idle(); }
   console.log('connector inbox: durable replay, immediate dispatch, ordered handoff, shutdown and stale-scan deduplication pass');
 } finally { await rm(root, { recursive: true, force: true }); }

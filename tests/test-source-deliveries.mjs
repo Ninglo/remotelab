@@ -237,6 +237,17 @@ const follow = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: '
 assert.equal(follow.delivery.id, later.id);
 assert.equal(follow.delivery.target.rootId, 'actual-root');
 const { resolveSourceDelivery } = await import('../chat/source-deliveries.mjs');
+const suppressed = await enqueueSourceDelivery({ sessionId: 'suppressed', responseId: 'suppressed-before-send', text: 'must not send',
+  sourceDelivery: { connector: 'feishu', sourceRouteId: 'suppressed', target: { chatId: 'suppressed-chat' } } });
+const suppressedClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'suppressed' });
+await assert.rejects(resolveSourceDelivery(suppressed.id, { state: 'cancelled', leaseId: 'wrong' }), /matching unsent lease/);
+assert.equal((await resolveSourceDelivery(suppressed.id, {
+  state: 'cancelled', leaseId: suppressedClaim.leaseId, reason: 'paused before provider send',
+})).state, 'cancelled');
+assert.equal((await resolveSourceDelivery(suppressed.id, { state: 'cancelled', leaseId: suppressedClaim.leaseId })).state,
+  'cancelled', 'cancellation acknowledgement is restart-safe');
+assert.equal((await requests.get(suppressed.id.split('_')[1])).deliveries.length, 1,
+  'suppression cannot create an unknown delivery or a failure notification');
 await failSourceDelivery(other.id, independent.leaseId, 'no receipt');
 await assert.rejects(resolveSourceDelivery(other.id, { state: 'delivered' }), /actual messageId/);
 await resolveSourceDelivery(other.id, { state: 'delivered', messageId: 'operator-root', externalId: 'operator-root' });

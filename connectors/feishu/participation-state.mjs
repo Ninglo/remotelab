@@ -53,7 +53,7 @@ export function buildParticipationCard(record) {
   ] };
 }
 
-export function createParticipationController(runtime, { resolveSession, cancelSession, interpretControl,
+export function createParticipationController(runtime, { resolveSession, cancelSession, cleanup, interpretControl,
   authorize = async () => false } = {}) {
   const records = createRecordStore(join(runtime.config.storageDir, 'participation-state'));
   const queues = new Map();
@@ -146,7 +146,8 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         beforePause: mode === 'paused' ? (prior.mode === 'paused' ? prior.beforePause : prior.mode) : prior.beforePause,
         epoch: (prior.epoch || 0) + 1, topicHint: false, invitedMessages: [],
         stopPending: mode !== 'active', updatedAt: new Date().toISOString(),
-        ...(prior.mode === 'paused' && mode !== 'paused' ? { contextAfterMs: Date.now(), topicAnchor: '' } : {}),
+        ...((prior.mode === 'paused' && mode !== 'paused') || (prior.mode !== 'active' && mode === 'active')
+          ? { contextAfterMs: Date.now(), topicAnchor: '' } : {}),
       }));
       // Intake is fenced as soon as mode is durable. Acknowledgement follows
       // cancellation, not merely the card change.
@@ -157,6 +158,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
           try { await cancelSession(target); }
           catch (error) { await publish(record); throw error; }
         }
+        await cleanup?.(record);
       }
       record = await records.mutate(key, current => ({ ...current, stopPending: false,
         processedControls: [...(current.processedControls || []), controlId].filter(Boolean).slice(-100) }));
@@ -180,7 +182,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       return invited;
     });
   }
-  async function intake(summary) {
+  async function intake(summary, snapshot = null) {
     if (!participationEnabled(runtime, summary) || ['app', 'bot'].includes(summary.sender?.senderType)) return null;
     const record = await state(summary);
     if (record.processedControls?.includes(summary.messageId)) {
@@ -191,6 +193,12 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const addressed = (summary.mentions || []).some(x => x.openId === runtime.botIdentity?.openId);
     const mode = !others || addressed ? parseParticipationText(summary.messageText || summary.textPreview) : null;
     if (mode) { await change(summary, mode); return { participationControl: true, mode }; }
+    const at = Number(summary.createTime);
+    const messageTime = at > 0 ? (at < 10_000_000_000 ? at * 1000 : at) : snapshot?.receivedAt;
+    if ((snapshot && snapshot.epoch !== record.epoch && snapshot.mode !== 'active')
+        || (record.contextAfterMs && messageTime && messageTime < record.contextAfterMs)) {
+      return { ignored: true, reason: 'participation_before_resume' };
+    }
     if (record.mode === 'paused') {
       const text = String(summary.messageText || summary.textPreview || '').slice(0, 500);
       // Only an explicit attempt to restore reception may be interpreted.
@@ -232,7 +240,10 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       if (!participationEnabled(runtime, record.source)) continue;
       if (record.stopPending) await change(record.source, record.mode,
         { sessionId: record.sessionId, controlId: `restore:${record.epoch}` });
-      else await publish(record);
+      else {
+        if (record.mode !== 'active') await cleanup?.(record);
+        await publish(record);
+      }
     }
   }
   return { state, remember, change, assess, intake, action, restore, publish,
