@@ -1428,8 +1428,15 @@ settings are separate from verified live deployment and delivery.
 
 - Feedback: after the conversation is established, a card and final answer are enough; a repeated “开始处理” adds noise. Readers also asked whether a progress-only card requires another model call.
 - Revision: retain the first conversation reply's runtime and link, suppress later Feishu openings, and keep questions and final results separate. Web and raw history retain the Harness opening. Supplementary input in the first Run cannot send a second opening.
-- Cost and purpose: the existing worker builds cards from already-written useful progress without another model call. A new card makes a Feishu create/reply request and readback; a changed card makes a patch and readback. Simple answers without useful progress create no card. Work whose path is useful can retain a progress-only card without inventing an acceptance checklist.
+- Cost and purpose: the existing worker builds cards from already-written useful progress without another model call. A new card makes a Feishu create/reply request and readback; a changed card makes a patch and readback. The later decision below replaces standalone progress cards with ordinary final replies for unlisted work.
 - Verification: cover first-turn runtime/link, later-turn opening suppression with and without card admission, supplementary input and replay, independent questions/results, and unchanged Web/other connector visibility.
+
+### 2026-10-08 — Keep latest progress outside, details hidden until requested
+
+- Latest decision: only an acceptance checklist creates a Feishu card. Without one, retain an ordinary final message rather than a narrow progress-only card. Later routine turns omit another start message; the first new-conversation reply keeps its model, effort and link.
+- Layout: a bounded latest-progress preview remains visible; detailed recent work and the full-history link start hidden. This replaces the earlier proposal to expand while running and collapse at the end.
+- Actual client feedback: native folding was reset by the next card update. The requester chose shared callback disclosure: the last accepted click controls that original card for everyone, and survives progress, completion and resumption. It does not create a personal preference.
+- Costs: deterministic create/patch/readback requests and local event processing, with no additional model call. A disclosure click saves card metadata and refreshes that same message.
 
 ## 2026-10-08 — Mute and restoration must not replay stale discussion
 

@@ -71,22 +71,16 @@ test('both expansion states update the same card; manual overrides and other Run
   assert.equal(JSON.parse(child.stdout).feishuProgressRuns['run-a'].manual, true);
 });
 
-test('one native foldable panel contains latest and previous work with the chosen initial expansion', async () => {
-  const session = await findSessionMeta('s1');
-  for (const runId of ['run-a', 'run-b']) {
-    const panels = progressCardPanel({ sessionId: 's1', latestSeq: 3,
-      progress: { seq: 3, content: '当前路径' }, progressHistory: [{ seq: 1, content: '先前路径' }, { seq: 3, content: '当前路径' }],
-      progressPolicy: progressPolicyForRun(session, runId) });
-    assert.equal(panels.length, 1);
-    assert.equal(panels[0].tag, 'collapsible_panel');
-    assert.equal(panels[0].expanded, runId === 'run-a');
-    assert.match(JSON.stringify(panels), /先前路径/);
-    assert.equal((JSON.stringify(panels).match(/当前路径/g) || []).length, 1);
-    assert.doesNotMatch(JSON.stringify(panels), /恢复默认|卡片＋新消息|button|个人|习惯/);
-  }
+test('card disclosure defaults collapsed regardless of automatic Run presentation choices', async () => {
+  const panels = progressCardPanel({ sessionId: 's1', anchorSeq: 1, latestSeq: 3,
+    progress: { seq: 3, content: '当前路径' }, progressHistory: [{ seq: 1, content: '先前路径' }, { seq: 3, content: '当前路径' }],
+    progressPolicy: progressPolicyForRun(await findSessionMeta('s1'), 'run-a') });
+  assert.equal(panels.find(e => e.tag === 'button').text.content, '点击显示进展');
+  assert.match(JSON.stringify(panels), /当前路径/);
+  assert.doesNotMatch(JSON.stringify(panels), /先前路径|collapsible_panel|恢复默认|卡片＋新消息/);
 });
 
-test('metadata-only selection adds no chat message or user habit, and disabled cards send only new progress', async () => {
+test('metadata-only selection adds no chat message or user habit, and disabled cards retain progress in Web/history', async () => {
   const before = (await loadHistory('s1')).length;
   const selection = await appendAssistantMessage('s1', '', [], { runId: 'run-c', progressMode: 'collapsed' });
   assert.equal(selection.event, null);
@@ -105,5 +99,5 @@ test('metadata-only selection adds no chat message or user habit, and disabled c
   await publishLiveAssistantReplies(record, [...older, current], {
     store: { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } },
     session: await findSessionMeta('s1'), plan: { connector: 'feishu', target: { chatId: 'group' } } });
-  assert.deepEqual(record.deliveries.map(item => item.providerMessageId), ['run-a-no-card']);
+  assert.deepEqual(record.deliveries, []);
 });

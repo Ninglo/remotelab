@@ -3,6 +3,8 @@ import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { getRun } from './runs.mjs';
+import { loadHistory } from './history.mjs';
+import { projectWorkboards } from '../lib/workboard-state.mjs';
 
 // Policy changes and progress outbox admissions share one lock. A notification
 // already admitted before a switch may finish; later observations read the new policy.
@@ -77,6 +79,37 @@ export async function updateSessionProgressPolicy(id, { mode, expectedRevision, 
         session.feishuProgressRevision = expectedRevision + 1;
       }
       session.feishuProgressChanges = [...(session.feishuProgressChanges || []), changeId].slice(-100);
+      session.updatedAt = new Date().toISOString();
+      return true;
+    });
+    if (result.changed) broadcastAll({ type: 'session_invalidated', sessionId: id });
+    return result.meta;
+  });
+}
+
+export async function updateProgressCardDisclosure(id, { anchorSeq, mode, changeId, actorOpenId } = {}) {
+  if (!Number.isSafeInteger(anchorSeq) || anchorSeq < 1 || !['expanded', 'collapsed'].includes(mode))
+    invalid('无效的进展卡片操作。');
+  if (typeof changeId !== 'string' || !changeId.trim() || changeId.length > 200
+      || typeof actorOpenId !== 'string' || !actorOpenId.trim() || actorOpenId.length > 200)
+    invalid('缺少有效的卡片操作来源。');
+  return withSessionProgressPolicy(id, async () => {
+    const current = await findSessionMeta(id);
+    if (!current) invalid('会话不存在。', 404);
+    if (current.conversation?.connector !== 'feishu' || current.workboardPilot !== true)
+      invalid('此操作仅用于已启用的飞书任务卡片。');
+    if (!projectWorkboards(await loadHistory(id)).some(task => task.anchorSeq === anchorSeq))
+      invalid('无法确认这张任务卡片，请查看原话题。');
+    const result = await mutateSessionMeta(id, session => {
+      const prior = session.feishuProgressCards?.[anchorSeq];
+      // Retried older callbacks never undo a more recent click. Each new
+      // absolute show/hide intent wins in acceptance order, even from a stale
+      // client snapshot; no automatic progress update writes this field.
+      if (prior?.changes?.includes(changeId)) return false;
+      session.feishuProgressCards = { ...session.feishuProgressCards, [anchorSeq]: {
+        mode, revision: (prior?.revision || 0) + 1, actorOpenId,
+        changes: [...(prior?.changes || []), changeId].slice(-100),
+      } };
       session.updatedAt = new Date().toISOString();
       return true;
     });

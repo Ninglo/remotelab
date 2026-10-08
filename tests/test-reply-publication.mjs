@@ -259,18 +259,21 @@ try {
     sourceDelivery: { connector: 'feishu', sourceRouteId: 'visibility-test',
       target: { chatId: 'visibility-chat', messageId: 'incoming', threadId: 'visibility-topic' } },
   });
-  for (const expected of ['先检查消息链路。', '原因已经找到。']) {
+  for (const expected of ['先检查消息链路。']) {
     let claim;
     await waitFor(async () => {
       claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
       return !!claim;
-    }, 'visible progress delivery while model is blocked');
+    }, 'new-conversation opening while model is blocked');
     assert.equal(claim.delivery.text, `【${expected === '先检查消息链路。' ? '开始处理' : '进展'}】\n\n${expected}`);
     assert.equal(claim.delivery.target.threadId, 'visibility-topic');
     assert.equal((await requests.byRunId(visibilityOutcome.run.id)).result, null, 'opening and progress precede the result');
     await completeSourceDelivery(claim.delivery.id, claim.leaseId, { externalId: `visible-${expected}` });
   }
-  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' }), null, 'untagged commentary is never queued');
+  await waitFor(async () => (await loadHistory(visibilitySession.id)).some(event => event.content?.includes('原因已经找到。')),
+    'progress is retained in the native history');
+  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' }), null,
+    'without a checklist tagged and untagged ordinary commentary remain in Web/history');
   writeFileSync(join(tempHome, 'release-progress-test'), 'continue');
   await waitFor(async () => (await getSessionReplyPublication(visibilitySession.id, visibilityOutcome.response.id))?.state === 'ready', 'visibility run finalization');
   const visibilityPublication = await getSessionReplyPublication(visibilitySession.id, visibilityOutcome.response.id);

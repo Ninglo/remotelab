@@ -295,7 +295,7 @@ test('ordinary progress updates the original card; openings, questions and final
   for (const update of updates) await publishFeishuWorkboardCycle(update, publishing);
   for (const update of updates) assert.equal(await publishFeishuWorkboardCycle(update, publishing), null);
   assert.deepEqual(cards.map(([action]) => action), ['create', 'patch', 'patch']);
-  assert(cards.at(-1)[1].body.elements.find(e => e.tag === 'collapsible_panel').elements.some(e => e.content === task.progress.content));
+  assert(cards.at(-1)[1].body.elements.some(e => e.content === task.progress.content));
   assert.equal(state.cards.length, 1);
 });
 
@@ -333,7 +333,7 @@ test('renderer upgrades patch an existing card once without creating or replayin
   } } } } };
   assert.equal(await publishFeishuWorkboardCycle({ ...cycle, latestSeq: 4 }, options), null);
   assert.equal((await publishFeishuWorkboardCycle(cycle, options)).action, 'updated');
-  assert.equal(JSON.parse(calls[0].data.content).body.elements.find(e => e.tag === 'collapsible_panel').elements.at(-1).content, '当前验证进展');
+  assert(JSON.parse(calls[0].data.content).body.elements.some(e => e.content === '当前验证进展'));
   assert.equal(await publishFeishuWorkboardCycle(cycle, { ...options, pilot: structuredClone(state) }), null);
   assert.equal(calls.length, 1);
   assert.equal(state.cards.length, 1);

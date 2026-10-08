@@ -44,8 +44,8 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
-  // A shared Session can have cards enabled while this actual author/turn was
-  // not admitted to cards. Keep progress visible on its existing message path.
+  // Admission remains per turn even when the Session has cards enabled.
+  // Ordinary unlisted progress remains in Web/history rather than a new post.
   const forThisTurn = policy => record.options?.workboardEnabled === false
     ? { ...policy, workboardPilot: false } : policy;
   const progressPolicy = plan.connector === 'feishu'

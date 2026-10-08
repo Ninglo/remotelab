@@ -63,35 +63,16 @@ test('Runs and cancellation remain separate from accepted task completion', () =
   assert.equal(failed[0].executionState, 'failed');
 });
 
-test('Feishu progress patches one original card and replay/restart sends no duplicate', async () => {
-  const state = pilot(), calls = [];
-  const options = { pilot: state, persist: async () => {}, verifyMessage: async () => {}, app: { im: { v1: { message: {
-    reply: async input => { calls.push(['create', input]); return { code: 0, data: { message_id: 'original' } }; },
-    patch: async input => { calls.push(['patch', input]); return { code: 0 }; },
-  } } } } };
-  const cycles = collectFeishuInstanceWorkboardCycles(history, state, session);
-  assert.equal(cycles.length, 1);
-  assert.equal(cycles[0].replyMessageId, 'in-1');
-  for (const update of expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(history.slice(0, -2), state, session))) {
-    await publishFeishuWorkboardCycle(update, options);
+test('Feishu unlisted progress creates no card, including replay and restart', async () => {
+  const state = pilot();
+  for (const events of [history.slice(0, -2), history]) {
+    assert.deepEqual(collectFeishuInstanceWorkboardCycles(events, state, session), []);
   }
-  for (const update of expandFeishuWorkboardUpdates(cycles)) await publishFeishuWorkboardCycle(update, options);
-  assert.deepEqual(calls.map(([kind]) => kind), ['create', 'patch', 'patch']);
-  assert.equal(calls[0][1].path.message_id, 'in-1');
-  assert.equal(calls[1][1].path.message_id, 'original');
-  const finalCard = JSON.parse(calls.at(-1)[1].data.content);
-  assert.equal(finalCard.header.title.content, '本轮进展');
-  assert(finalCard.body.elements.find(e => e.tag === 'collapsible_panel').elements.some(e => e.content === '已定位显示问题'));
-  assert.match(finalCard.body.elements.at(-1).content, /执行已结束/);
-  assert.doesNotMatch(JSON.stringify(finalCard), /0\/0|已验收|\[x\]/);
-  for (const update of expandFeishuWorkboardUpdates(cycles)) {
-    assert.equal(await publishFeishuWorkboardCycle(update, { ...options, pilot: structuredClone(state) }), null);
-  }
-  assert.deepEqual(collectFeishuInstanceWorkboardCycles(history, { ...pilot(), progressStartedAt: 2000 }, session), [],
-    'upgrade does not backfill old chat progress');
-  const outsider = structuredClone(history);
-  delete outsider[0].workboardAdmission;
-  assert.deepEqual(collectFeishuInstanceWorkboardCycles(outsider, pilot(), session), []);
+  assert.equal(await publishFeishuWorkboardCycle({ progressOnly: true }, { pilot: state }), null);
+  assert.deepEqual(state.cards, []);
+  const existing = { ...pilot(), cards: [{ anchorSeq: 3, messageId: 'legacy-progress', latestSeq: 6 }] };
+  assert.deepEqual(collectFeishuInstanceWorkboardCycles(history, existing, session), [],
+    'an old lightweight receipt cannot make unlisted work create new cards or patches');
 });
 
 test('late acceptance list upgrades the original progress position and message', async () => {
@@ -110,9 +91,14 @@ test('late acceptance list upgrades the original progress position and message',
   for (const cycle of expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(expanded, state, session))) {
     await publishFeishuWorkboardCycle(cycle, options);
   }
-  assert.deepEqual(calls, ['create', 'patch']);
+  assert.deepEqual(calls, ['create']);
   assert.equal(state.cards.length, 1);
   assert.equal(state.cards[0].taskId, 'real-task');
+  const legacyState = { ...pilot(), cards: [{ anchorSeq: 3, messageId: 'original', latestSeq: 3 }] };
+  for (const cycle of expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(expanded, legacyState, session))) {
+    await publishFeishuWorkboardCycle(cycle, { ...options, pilot: legacyState });
+  }
+  assert.deepEqual(calls, ['create', 'patch'], 'an existing progress card upgrades to a real task in place');
   const display = buildSessionDisplayEvents(expanded, { exposeWorkboard: true });
   assert.equal(display.filter(event => event.workboard).length, 1);
   assert.equal(display.find(event => event.workboard).seq, 3);
@@ -123,7 +109,7 @@ test('late acceptance list upgrades the original progress position and message',
     'a prior final closes the upgrade window; a new task cannot claim the old progress message');
 });
 
-test('admitted progress stays in cards; unadmitted turns keep messages; replay queues no duplicates', async () => {
+test('admitted progress stays in cards; unadmitted turns also keep ordinary progress in history; replay queues no duplicates', async () => {
   let record = { key: 'request', runId: 'run', options: {}, deliveries: [] };
   const store = { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } };
   await publishLiveAssistantReplies(record, history.slice(0, -2), {
@@ -140,7 +126,7 @@ test('admitted progress stays in cards; unadmitted turns keep messages; replay q
   const unadmitted = structuredClone(history); delete unadmitted[0].workboardAdmission;
   await publishLiveAssistantReplies(record, unadmitted.slice(0, -2), {
     store, session, fullHistory: unadmitted, plan: { connector: 'feishu', target: { chatId: 'group' } } });
-  assert.equal(record.deliveries.filter(part => part.surfaceKind === 'progress').length, 2);
+  assert.equal(record.deliveries.filter(part => part.surfaceKind === 'progress').length, 0);
 });
 
 test('rollout fence preserves old card progress without resending it; new progress keeps its thread', async () => {
@@ -150,14 +136,12 @@ test('rollout fence preserves old card progress without resending it; new progre
     target: { chatId: 'group', chatType: 'group', conversationKind: 'thread', messageId: 'root', replyInThread: true } };
   await publishLiveAssistantReplies(record, history.slice(0, -2), { store, session, fullHistory: history, plan });
   const updates = record.deliveries.filter(part => part.surfaceKind === 'progress');
-  assert.equal(updates.length, 1);
-  assert.equal(updates[0].text, '【进展】\n\n已定位显示问题');
-  assert.deepEqual(updates[0].target, plan.target);
+  assert.equal(updates.length, 0);
   assert.equal(record.streamedSurfaceMessageIds.includes('message-3'), false,
     'a suppression fence cannot masquerade as a sent message');
   const before = structuredClone(record);
   await publishLiveAssistantReplies(record, history, { store, session, fullHistory: history, plan, running: false });
-  assert.equal(record.deliveries.filter(part => part.surfaceKind === 'progress').length, 1,
+  assert.equal(record.deliveries.filter(part => part.surfaceKind === 'progress').length, 0,
     'cold terminal recovery never backfills intermediate progress');
   assert.deepEqual(record.deliveries.slice(0, before.deliveries.length), before.deliveries);
 });
@@ -175,17 +159,17 @@ test('concurrent progress keeps each private chat or task topic and durable dedu
     const plan = { connector: 'feishu', sourceRouteId: 'bot', target };
     const { record } = await store.accept({ sessionId: `session-${index}`, requestId: `request-${index}`, text: '任务',
       deliveryPlan: plan, options: { workboardEnabled: false } });
-    const event = progress(3, `任务 ${index} 有新进展`, { runId: record.runId });
+    const event = msg(3, `任务 ${index} 的结果`, { runId: record.runId, phase: 'final_answer' });
     return { record, event, plan };
   }));
-  const publish = ({ record, event, plan }) => publishLiveAssistantReplies(record, [event], { store, session, plan });
+  const publish = ({ record, event, plan }) => publishLiveAssistantReplies(record, [event], { store, session, plan, running: false });
   await Promise.all(inputs.flatMap(input => [publish(input), publish(input)]));
   for (const { record, plan } of inputs) {
     const stored = await store.get(record.key);
     assert.equal(stored.deliveries.length, 1);
-    assert.equal(stored.deliveries[0].surfaceKind, 'progress');
+    assert.equal(stored.deliveries[0].surfaceKind, 'final');
     assert.deepEqual(stored.deliveries[0].target, plan.target);
-    assert.deepEqual(stored.streamedSurfaceMessageIds, ['message-3'],
+    assert.deepEqual(stored.streamedFinalReplyIds, ['message-3'],
       'the same provider message identity in another Request cannot consume this delivery');
   }
 });
