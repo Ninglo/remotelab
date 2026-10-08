@@ -72,6 +72,8 @@ older event timestamps do not enter the baseline. Data is not retroactively
 classified from old conversations. The query reads at most 30 days / 200,000
 lines, returns at most 500 recent events and exposes scan/error/drop coverage.
 A query cap or collection failure is an incomplete observation, not zero use.
+Known incident intervals in collection metadata remain visible after restart;
+reset process counters do not erase a previously confirmed observation gap.
 There is no automatic deletion policy in this first slice.
 
 Validation covers real isolated HTTP/native-question admission, cross-surface

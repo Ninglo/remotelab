@@ -89,6 +89,11 @@ test('startup history and concurrent duplicate receipts leave capacity for new a
     const restarted = createUsageEventStore({ directory });
     void restarted.record({ eventId: 'next-action', event: 'message_submitted' });
     assert.equal((await restarted.query()).total, 3, 'reads include calls awaiting collection metadata');
+    const gaps = [{ start: since - 1, end: since + 1 }, { start: since - 40 * 86400000, end: since - 39 * 86400000 }];
+    await writeFile(join(directory, 'collection.json'), JSON.stringify({ startedAt: new Date(since).toISOString(), gaps }));
+    const coverage = (await restarted.query()).coverage;
+    assert.equal(coverage.incomplete, true, 'known gaps remain visible after process counters reset');
+    assert.deepEqual(coverage.gaps, [gaps[0]], 'old gaps outside the query window do not taint this window');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
