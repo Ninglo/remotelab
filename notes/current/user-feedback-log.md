@@ -1443,3 +1443,9 @@ settings are separate from verified live deployment and delivery.
 - Feedback: a muted Thread stopped accepting observations; manually restoring it processed queued discussion as separate tasks. Pausing stopped execution but left THINKING reactions and unresolved outbound leases. The requested repair includes group mainline mute.
 - Revision: accept observations only for the exact bound group or Thread; archive definite observation rejections and retain the error. Save participation at arrival, fence in-flight work and outbound responses by the mode epoch, and apply restoration only to future content. Retain temporary reaction receipts with their conversation scope and clear them on cancellation/restart. Suppress outbound work by cancelling the matching unsent lease before calling the provider.
 - Verification: isolated mainline/Thread invitations, queued and in-flight restoration, prepared HTTP admission, cross-Thread source rejection, scoped reaction cleanup/restart, permanent-error queue release and lease cancellation. Real discussion traffic remains a separate acceptance sample; no synthetic group messages or automatic topic restoration.
+
+## 2026-10-08 — Align related suggestions with the message input
+
+- Feedback: related suggestions sat too far left, apart from the centered conversation and message input. The requested position is immediately above the message input, aligned with its left edge.
+- Revision: place the existing collapsible panel in the input stack between runtime controls and the message input. It inherits the same desktop column width and mobile gutters; remove its separate horizontal margins.
+- Verification: use the production input markup and responsive styles to check desktop and mobile alignment, bounded expanded details, and preserved draft-only confirmation controls.
