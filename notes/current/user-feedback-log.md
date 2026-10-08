@@ -1490,6 +1490,7 @@ settings are separate from verified live deployment and delivery.
 - Feedback: raw flowchart code in the message feed was difficult to read. An interactive flow library was a presentation reference; a generated image or separate preview page did not satisfy the request.
 - Revision: convert supported flow descriptions at their original message position into a sequence with expandable branches. Preserve conditions, shared endpoints, cycles and the original source; offer all steps for inspecting the complete relationship set.
 - Boundary: disclosures only reveal content. They do not select an answer or execute a workflow. Unsupported or incomplete syntax remains code instead of becoming an inaccurate partial flow.
+- Superseded presentation: the later left-to-right and complete-preview decisions below replace the vertical sequence with hidden branches. Source preservation, read-only interaction and safe code fallback remain in force.
 
 ## 2026-10-08 — Explicit topic references must find existing background
 
@@ -1516,3 +1517,4 @@ settings are separate from verified live deployment and delivery.
 - Feedback: the connected horizontal direction is accepted, but the message shows only part of the flow. The reader requested a thumbnail that can be clicked to open the diagram.
 - Revision: fit the complete structure into a message-native preview, and open the same flow in a larger in-page dialog for reading, panning, zooming and checking relations. Keep every branch and merge in both views; close back to the message without navigation.
 - Verification boundary: verify the actual persisted message on desktop and phone, complete preview bounds, enlarged controls, close/focus, same-message rerenders and clean removal. A loaded older browser page is a separate update boundary; new message delivery alone does not reload its frontend.
+- Confirmation: after delivery and actual-message verification, the requester accepted this approach and asked to retain the strategy and integrate it with existing guidance. The canonical strategy lives in [inline flow display](../../docs/inline-flow-display.md), reached from the repo Agent context, documentation map and existing explanation project's graph guidance. Detailed source and acceptance evidence remain in the originating instance record.

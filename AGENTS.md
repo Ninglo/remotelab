@@ -36,6 +36,7 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 - Let the Harness choose the useful output or office action from the user's goal during the normal task turn, even when the user does not name a format or API. Keep post-answer display conversion deterministic; resource writes still require the intended target and data to be resolved and verified.
 - Keep raw identifying details out of shared notes; record sanitized product evidence and promote stable conclusions into canonical docs.
 - See `notes/current/product-mainline.md` and `notes/current/user-feedback-log.md`.
+- For flow explanations in the Web message feed, read `docs/inline-flow-display.md`: keep the conclusion in readable prose, use a complete left-to-right preview for useful relationships, and open details in the same page. Simple answers keep their existing text form.
 
 ## Unified RemoteLab Explanation Project
 
@@ -310,6 +311,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Doc | Path | When to read |
 |-----|------|-------------|
 | Documentation Map | `docs/README.md` | Repo doc taxonomy: what lives in `docs/` vs `notes/` |
+| Inline Flow Display | `docs/inline-flow-display.md` | Accepted message-native preview/expand strategy, authoring choices, relationship preservation and renderer limits |
 | Notes Map | `notes/README.md` | Note taxonomy: `current` vs `directional` vs `archive` vs `local` |
 | Project Architecture | `docs/project-architecture.md` | Top-down map of the shipped system, code locations, runtime flows, and current-vs-direction split |
 | Implementation Recipes | `docs/implementation-recipes.md` | Step-by-step guides for common modifications: add API endpoint, add runtime adapter, modify sidebar; includes key function signatures |
