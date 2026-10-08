@@ -1495,6 +1495,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       const scopeId = summary.participationScopeTopicId;
       const originSummary = scopeId ? { ...summary,
         conversationKind: scopeId === 'main' ? 'main' : 'thread',
+        groupMessageType: scopeId === 'main' ? 'group' : 'thread',
+        chatMode: scopeId === 'main' ? 'group' : 'thread',
         topicId: scopeId === 'main' ? '' : scopeId, threadId: scopeId === 'main' ? '' : scopeId,
         rootId: scopeId === 'main' ? '' : scopeId,
         messageId: summary.participationScopeMessageId,

@@ -146,7 +146,7 @@ try {
       await send('routing-resume', '/unmute');
       const originStatus = await runtime.participation.state(base);
       const routed = { ...base, threadId: 'separate-work', rootId: 'separate-root',
-        messageId: 'separate-root', conversationKind: 'thread', sourceKind: 'group_routing_work',
+        messageId: 'separate-root', conversationKind: 'thread', groupMessageType: 'thread', chatMode: 'group', sourceKind: 'group_routing_work',
         participationEpoch: String(originStatus.epoch), participationScopeTopicId: 'main',
         participationScopeMessageId: 'source-request' };
       let sent = 0;
