@@ -56,4 +56,37 @@ for (const unsupported of [
 assert.equal(parse(`flowchart TD\nA[${'x'.repeat(30000)}]`), null, 'oversized input stays code');
 assert.equal(parse(`flowchart TD\n${Array.from({length:65}, (_,index) => `N${index}[Step]`).join('\n')}`), null, 'bound DOM growth');
 
+// The visible layout must preserve splits and joins, independent of declaration direction.
+const layout = graph => JSON.parse(JSON.stringify(context.RemoteLabInlineFlow.layout(graph)));
+const diagram = layout(flow);
+const positions = new Map(diagram.nodes.map(node => [node.id, node]));
+assert.equal(diagram.nodes.length, 12, 'a shared endpoint is drawn once');
+assert.equal(diagram.edges.length, 12, 'every original connection is visible');
+for (const edge of diagram.edges) {
+  assert.ok(positions.get(edge.source).x < positions.get(edge.target).x, 'forward edges progress left to right');
+  assert.ok(edge.path && !edge.path.includes('NaN'), 'connections have finite geometry');
+  if (edge.label) assert.ok(Number.isFinite(edge.labelX) && Number.isFinite(edge.labelY));
+}
+assert.equal(positions.get('D').x, positions.get('E').x);
+assert.equal(positions.get('E').x, positions.get('F').x);
+assert.ok(positions.get('D').y < positions.get('E').y && positions.get('E').y < positions.get('F').y,
+  'the three parallel branches occupy separate visible lanes');
+assert.equal(diagram.edges.filter(edge => edge.target === 'G').length, 2, 'both routes enter the same merge');
+for (const a of diagram.nodes) for (const b of diagram.nodes) {
+  if (a.id === b.id) continue;
+  assert.ok(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y,
+    'step cards cannot overlap');
+}
+for (const input of ['graph LR; A-->B; B-->A; C[Separate]', 'graph LR; A-->A',
+  'graph LR; A-->B; A-->C; B-->D; C-->D; D-->B']) {
+  const graph = parse(input), drawing = layout(graph);
+  assert.equal(drawing.nodes.length, graph.nodes.length);
+  assert.equal(drawing.edges.length, graph.edges.length);
+  assert.ok(drawing.edges.some(edge => edge.returning), 'cycles keep an explicit return connector');
+  assert.ok(Number.isFinite(drawing.width) && Number.isFinite(drawing.height));
+  for (const node of drawing.nodes) assert.ok(node.x >= 0 && node.y >= 0 && node.x + node.width <= drawing.width && node.y + node.height <= drawing.height);
+}
+const disconnected = layout(parse('graph BT; A[First]; B[Second]; C[Third]'));
+assert.equal(new Set(disconnected.nodes.map(node => node.y)).size, 3, 'unconnected components remain visible');
+
 console.log('test-chat-inline-flow: ok');

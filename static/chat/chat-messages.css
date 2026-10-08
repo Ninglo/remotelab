@@ -362,79 +362,78 @@
   padding-top: 40px;
 }
 
-/* Flow descriptions stay inside the message, with branches disclosed in place. */
+/* Connected left-to-right flows live in the original message. */
 .md-content .inline-flow {
-  margin: 12px 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-secondary);
-  overflow: hidden;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.6;
+  margin: 12px 0; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-secondary); overflow: hidden;
+  font-family: inherit; font-size: 14px; line-height: 1.6;
 }
 .inline-flow-header {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
-  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
 }
 .inline-flow-title { font-size: 14px; font-weight: 600; }
 .inline-flow-count { color: var(--text-secondary); font-size: 12px; }
+.inline-flow-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-left: auto; }
 .inline-flow-view {
-  margin-left: auto; padding: 4px 8px; border: 1px solid var(--border);
-  border-radius: 6px; background: transparent; color: var(--text);
-  font: inherit; font-size: 12px; cursor: pointer;
+  padding: 4px 8px; min-height: 32px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
 }
-.inline-flow-view:hover { background: var(--surface-hover); }
-.inline-flow-content { padding: 16px; }
-.md-content .inline-flow-path { list-style: none; padding: 0; margin: 0; }
-.md-content .inline-flow-item { position: relative; padding: 0 0 14px 16px; margin: 0; border-left: 1px solid var(--border); }
-.md-content .inline-flow-item:last-child { padding-bottom: 0; border-left-color: transparent; }
-.inline-flow-step-title {
-  display: flex; align-items: flex-start; gap: 8px; cursor: pointer;
-  padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
-  color: var(--text); background: var(--bg); list-style: none;
+.inline-flow-view:hover, .inline-flow-node:hover { background: var(--surface-hover); }
+.inline-flow-scale { color: var(--text-secondary); font-size: 11px; min-width: 32px; text-align: center; }
+.md-content .inline-flow-hint { font-size: 12px; color: var(--text-secondary); margin: 8px 14px; }
+.inline-flow-viewport {
+  position: relative; max-width: 100%; overflow: auto; overscroll-behavior-x: contain;
+  cursor: grab; scrollbar-width: auto;
 }
-.inline-flow-step-title::-webkit-details-marker,
-.inline-flow-branch-title::-webkit-details-marker { display: none; }
-.inline-flow-step-title::after { content: "+"; margin-left: auto; padding-left: 8px; color: var(--text-secondary); }
-.inline-flow-step[open] > .inline-flow-step-title::after { content: "−"; }
-.inline-flow-step-title:hover, .inline-flow-branch-title:hover { background: var(--surface-hover); }
-.inline-flow-dot {
-  position: absolute; top: 16px; left: -4px; width: 7px; height: 7px;
-  border-radius: 50%; background: var(--text-secondary);
+.inline-flow-dragging { cursor: grabbing; user-select: none; }
+.inline-flow-space { position: relative; min-width: 100%; }
+.inline-flow-board { position: absolute; top: 0; left: 0; transform-origin: top left; }
+.inline-flow-connections { position: absolute; top: 0; left: 0; overflow: visible; color: var(--text-secondary); }
+.inline-flow-edge { stroke: var(--text-secondary); stroke-width: 1.8; fill: none; vector-effect: non-scaling-stroke; }
+.inline-flow-edge-return { stroke-dasharray: 5 4; }
+.inline-flow-edge-selected { stroke: var(--accent); stroke-width: 2.5; }
+.inline-flow-edge-label {
+  position: absolute; transform: translate(-50%, -50%); padding: 3px 5px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--bg-secondary);
+  color: var(--text); font-size: 15px; line-height: 1.4; text-align: center;
+  overflow-wrap: anywhere; box-sizing: border-box; pointer-events: none;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
 }
-.inline-flow-decision .inline-flow-dot { border-radius: 1px; transform: rotate(45deg); }
-.inline-flow-label { overflow-wrap: anywhere; white-space: pre-line; min-width: 0; }
-.inline-flow-step-body { padding: 10px 12px 0; }
-.md-content .inline-flow-relation { color: var(--text-secondary); font-size: 12px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.inline-flow-edge-label-selected { border-color: var(--accent); }
+.inline-flow-node {
+  position: absolute; display: flex; align-items: center; justify-content: center;
+  padding: 14px; border: 1.5px solid var(--border); border-radius: 9px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 16px; line-height: 1.5;
+  text-align: center; cursor: pointer; box-sizing: border-box;
+}
+.inline-flow-decision { border-color: var(--accent); padding-left: 24px; }
+.inline-flow-decision::before {
+  content: ""; position: absolute; left: 9px; top: calc(50% - 4px);
+  width: 8px; height: 8px; transform: rotate(45deg); border: 1.5px solid var(--accent);
+}
+.inline-flow-node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.inline-flow-label {
+  overflow-wrap: anywhere; white-space: pre-line; min-width: 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
+}
+.inline-flow-detail { border-top: 1px solid var(--border); padding: 12px 14px; }
+.inline-flow-detail-title { display: block; margin-bottom: 8px; white-space: pre-line; overflow-wrap: anywhere; }
+.md-content .inline-flow-relation { font-size: 12px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.inline-flow-relation-link {
+  padding: 0; border: 0; background: transparent; color: var(--text-secondary);
+  font: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+}
 .inline-flow-relation-condition { display: block; margin-top: 2px; color: var(--text); }
-.inline-flow-branches { padding-top: 12px; }
-.inline-flow-branches-label { color: var(--text-secondary); font-size: 12px; margin-bottom: 8px; }
-.inline-flow-branch { margin-bottom: 8px; }
-.inline-flow-branch:last-child { margin-bottom: 0; }
-.inline-flow-branch-title {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
-  padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px;
-  background: var(--bg); list-style: none; cursor: pointer;
-}
-.inline-flow-branch-title::before { content: "›"; color: var(--text-secondary); }
-.inline-flow-branch[open] > .inline-flow-branch-title::before { content: "⌄"; }
-.inline-flow-condition { font-size: 12px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
-.inline-flow-branch-label { flex: 1 1 180px; color: var(--text-secondary); font-size: 13px; overflow-wrap: anywhere; }
-.inline-flow-branch-content { padding: 12px 0 2px 12px; }
-.inline-flow-next-condition, .inline-flow-end, .inline-flow-return { padding-top: 6px; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
-.md-content .inline-flow-return { margin: 0; padding-left: 16px; }
-.inline-flow-source { border-top: 1px solid var(--border); padding: 8px 16px; }
+.inline-flow-source { border-top: 1px solid var(--border); padding: 8px 14px; }
 .inline-flow-source-title { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
 .md-content .inline-flow-source pre { margin: 10px 0 2px; max-height: 320px; }
-.inline-flow-view:focus-visible, .inline-flow summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.inline-flow button:focus-visible, .inline-flow summary:focus-visible, .inline-flow-viewport:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
 @media (max-width: 600px) {
   .inline-flow-header { padding: 10px 12px; }
-  .inline-flow-count { font-size: 11px; }
-  .inline-flow-content { padding: 12px; }
-  .md-content .inline-flow-item { padding-left: 10px; }
-  .inline-flow-branch-content { padding-left: 6px; }
-  .inline-flow-branch-title { padding: 10px; }
+  .inline-flow-controls { width: 100%; margin-left: 0; }
   .inline-flow-view { min-height: 36px; }
 }
 .code-copy-btn {
