@@ -10,6 +10,7 @@ const [
   { handleRequest },
   apiRequestLog,
   usageLedger,
+  usageObservations,
   ws,
   sessionManager,
   triggers,
@@ -26,6 +27,7 @@ const [
   import('./chat/router.mjs'),
   import('./chat/api-request-log.mjs'),
   import('./chat/usage-ledger.mjs'),
+  import('./chat/usage-events.mjs'),
   import('./chat/ws.mjs'),
   import('./chat/session-manager.mjs'),
   import('./chat/triggers.mjs'),
@@ -109,6 +111,7 @@ async function shutdown() {
   groupFeedReview.stopGroupFeedReview();
   stopCodexAccountMonitor();
   await sessionManager.killAll();
+  await usageObservations.usageEvents.idle();
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);

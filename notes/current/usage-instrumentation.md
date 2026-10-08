@@ -17,7 +17,11 @@ existing API diagnostics remain available for engineering investigation.
 - People and active conversations require accepted human input, including
   question answers. Multi-turn exchange requires at least two ordinary inputs;
   question controls alone do not inflate it. Daily participation uses UTC+8.
-- Paths match the same verified person and Session. Web answers count as
+- Paths match the same verified person and Session. Origin uses the immutable
+  original Request, including archived Requests predating collection. It never
+  uses the first input left in a filtered window as historical origin. Only
+  current-interval actions enter counts; old messages are not backfilled.
+  Unconfirmed origins are reported and excluded from source cohorts. Web answers count as
   continuation. Web input remains valid without an open record; opening and
   continuing are independent branches. Returning to the original Feishu
   conversation uses Web continuations as the denominator, not all entries.
@@ -38,7 +42,9 @@ existing API diagnostics remain available for engineering investigation.
   pagination. It begins after the latest known collection gap, avoiding pairs
   across missing data. Scan truncation or collection failures suppress rates
   and timings. Empty denominators and missing Web-opening samples are unknown;
-  sample counts are always visible. No retention, adoption or satisfaction
+  sample counts are always visible. The page prominently distinguishes the
+  selected date range from the much shorter interval actually collected.
+  No retention, adoption or satisfaction
   improvement is inferred from the short initial observation period.
 
 ## What is collected
@@ -79,12 +85,15 @@ same person's cross-surface actions to be joined without storing raw sender IDs,
 conversation titles, addresses or text. File registration links hashed source
 object IDs with deliverable asset IDs.
 
-The first path summary groups the same Person and Session in chronological
-order: first observed human input in Feishu → later Web open → later Web input
-→ later input in the original Feishu conversation. The cohort begins within the
-selected window; it does not establish the Session's historical starting surface
-or where the business task finished. Different people and different threads
-cannot stand in for returning to the original conversation.
+The product path summary groups active people within conversations whose
+original Feishu source is verified from their first durable Request. It observes
+Web opens/inputs and later original-thread input only inside the continuous
+collection interval. Answer-only Web participation in older conversations is
+included. Missing first-source records stay unknown. The legacy `paths` API
+field remains an engineering summary of first input observed in the window;
+the product page uses `report.journeys`, whose `originBasis` is `first_request`.
+Different people and different threads cannot stand in for returning to the
+original conversation. These paths do not establish business completion.
 
 ## Storage and operational boundaries
 
@@ -109,6 +118,13 @@ lines, returns at most 500 recent events and exposes scan/error/drop coverage.
 A query cap or collection failure is an incomplete observation, not zero use.
 Known incident intervals in collection metadata remain visible after restart;
 reset process counters do not erase a previously confirmed observation gap.
+After a failed/dropped append, the next successful append persists a private
+per-writer recovery receipt. The recovered continuous interval survives restart.
+For confirmed damaged lines, collection metadata may record an exact SHA-256
+fingerprint and incident interval. The reader excludes only that exact damaged
+line when its verified interval is fully outside the new baseline; any other
+parse error still withholds rates and timings. Original ledger bytes remain
+unchanged. Core shutdown drains outstanding observation writes.
 There is no automatic deletion policy in this first slice.
 
 Validation covers real isolated HTTP/native-question admission, cross-surface

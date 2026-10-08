@@ -50,6 +50,37 @@ test('failed storage and full queue never reject the primary work', async () => 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('storage-loss recovery survives restart, and only fingerprinted corruption outside the baseline is excluded', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'usage-health-'));
+  try {
+    const directory = join(root, 'ledger'); await writeFile(directory, 'temporarily blocked');
+    const store = createUsageEventStore({ directory });
+    assert.equal(await store.record({ eventId: 'failed', event: 'session_created' }), false);
+    await rm(directory);
+    assert.equal(await store.record({ eventId: 'recovered', event: 'session_created' }), true);
+    const restarted = createUsageEventStore({ directory });
+    let summary = await restarted.query();
+    assert.equal(summary.coverage.gaps.length, 1, 'restart preserves the failed interval');
+    const health = (await readdir(directory)).find(name => name.startsWith('health-'));
+    assert.equal((await stat(join(directory, health))).mode & 0o777, 0o600);
+    const corrupted = '{"schemaVersion":1,"eventId":"cut-off';
+    const file = (await readdir(directory)).find(name => name.endsWith('.jsonl'));
+    await writeFile(join(directory, file), corrupted + '\n', { flag: 'a' });
+    assert.equal((await restarted.query()).report.quality.reliable, false, 'new unverified corruption fails closed');
+    const { createHash } = await import('node:crypto');
+    const metadata = JSON.parse(await readFile(join(directory, 'collection.json'), 'utf8'));
+    const gap = summary.coverage.gaps[0];
+    await writeFile(join(directory, 'collection.json'), JSON.stringify({ ...metadata,
+      knownCorruptions: [{ sha256: createHash('sha256').update(corrupted).digest('hex'), ...gap }] }));
+    summary = await restarted.query();
+    assert.equal(summary.coverage.excludedCorruptLines, 1);
+    assert.equal(summary.coverage.scanIncomplete, false);
+    assert.equal(summary.report.quality.reliable, true, 'only the verified continuous interval is qualified');
+    await writeFile(join(directory, file), 'another unknown damaged record\n', { flag: 'a' });
+    assert.equal((await restarted.query()).report.quality.reliable, false, 'a known fingerprint never exempts other damaged records');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('surface paths require same person, same Session, ordered human inputs and original thread', () => {
   const e = (timestamp, event, surface, extra = {}) => ({ timestamp, event, surface, personHash: 'person-a', sessionId: 's', actorKind: 'human', ...extra });
   const events = [e(1, 'message_submitted', 'feishu', { conversationKey: 'thread-a' }),

@@ -108,6 +108,19 @@ try {
   for (const privateText of ['ASK_NATIVE_QUESTION', 'private-client-content', 'private-secret', 'spoofed', 'fixture-human', 'fixture-topic', 'fixture-group']) {
     assert.equal(raw.includes(privateText), false, `analytics strips ${privateText}`);
   }
+  // A real old Feishu Request must still anchor the cohort after the analytics
+  // interval starts again. The first newly collected message is now in Web.
+  const collectionPath = join(config, 'usage-events', 'collection.json');
+  const metadata = JSON.parse(await readFile(collectionPath, 'utf8'));
+  const recoveryAt = Date.now();
+  await writeFile(collectionPath, JSON.stringify({ ...metadata, gaps: [{ start: firstInput.timestamp, end: recoveryAt }] }));
+  assert.equal((await request('POST', messages, { text: 'Continue old conversation in Web', requestId: 'web-later' })).status, 202);
+  summary = (await query()).json;
+  assert.equal(summary.report.since, new Date(recoveryAt).toISOString());
+  assert.equal(summary.report.activity.inputs, 1, 'old messages do not get counted as new activity');
+  assert.equal(summary.report.journeys.originBasis, 'first_request');
+  assert.equal(summary.report.journeys.started, 1);
+  assert.equal(summary.report.journeys.continued.rate, 1, 'old Feishu source survives a first observed Web input');
   if (process.argv[2]) {
     const { chromium } = await import(process.argv[2]);
     const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
@@ -121,6 +134,7 @@ try {
       assert.equal(await page.locator('#usageAnalysisContent').getAttribute('data-report-version'), '1');
       const reportText = await page.locator('#usageAnalysisContent').innerText();
       assert.ok(reportText.includes('People contributing') || reportText.includes('参与交流人数'));
+      assert.ok(reportText.includes('selected range') || reportText.includes('所选范围'), 'actual collection interval is distinguished from seven-day query range');
       for (const rawLabel of ['tool_started', 'Actual usage actions', 'Observed actions', '最近动作，可回到原对话']) {
         assert.equal(reportText.includes(rawLabel), false, 'raw events do not form the product analysis');
       }
