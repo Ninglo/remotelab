@@ -62,6 +62,7 @@ export function renderTheme(snapshot, { metrics = {}, nowMs = Date.now() } = {})
   const freshCount = snapshot.sources.filter((source) => source.fresh).length;
   const totalCount = snapshot.sources.length;
   const running = Number.isSafeInteger(metrics?.running) ? metrics.running : '—';
+  const waiting = Number.isSafeInteger(metrics?.waiting) ? metrics.waiting : '—';
   const pendingReview = Number.isSafeInteger(metrics?.pendingReview) ? metrics.pendingReview : '—';
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="480" viewBox="0 0 1920 480">
     <style>
@@ -88,8 +89,10 @@ export function renderTheme(snapshot, { metrics = {}, nowMs = Date.now() } = {})
     <text x="1272" y="139" class="micro muted">REMOTELAB 运行概况</text>
     <text x="1272" y="246" class="number">${running}</text>
     <text x="1276" y="278" font-size="22" class="muted">正在运行</text>
-    <text x="1580" y="246" class="number">${pendingReview}</text>
-    <text x="1584" y="278" font-size="22" class="muted">结果待浏览</text>
+    <text x="1468" y="246" class="number" style="fill:#d9b35a">${waiting}</text>
+    <text x="1472" y="278" font-size="22" class="muted">等待中</text>
+    <text x="1664" y="246" class="number">${pendingReview}</text>
+    <text x="1668" y="278" font-size="22" class="muted">结果待浏览</text>
     <path d="M1272 313H1852" stroke="#2c3741" stroke-width="2"/>
     <text x="1272" y="361" font-size="21" class="muted">这不是操作入口；详情请到来源应用查看</text>
     <text x="1272" y="421" class="micro muted">状态优先  ·  少即是多</text>

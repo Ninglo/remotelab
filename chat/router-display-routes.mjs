@@ -60,6 +60,7 @@ async function sendProxyResponse(res, response) {
   for (const name of [
     'x-remotelab-display-observed-at',
     'x-remotelab-display-running',
+    'x-remotelab-display-waiting',
     'x-remotelab-display-pending-review',
     'x-remotelab-display-poll-seconds',
   ]) {

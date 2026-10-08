@@ -7,6 +7,7 @@
 - Presentation: use a steady orange dot and waiting text, with deep orange in light/Amber and a brighter orange in dark appearance. Keep normal execution green and preserve queue and stop controls.
 - Evidence boundary: live waits come from durable native question or runtime records; between-turn waiting retains the existing workflow classification. Silence, elapsed time, delivery and unread results do not create a waiting state.
 - Appearance correction: the deep orange looked dark red against Amber's green background. Use Amber's existing golden warning color for waiting instead of the separate red-brown token; the state and other themes remain unchanged.
+- Secondary display: carry the same status into the existing work overview, keeping its theme, reminders and animation. Add a quiet gold waiting count beside executing, queued and result counts; waiting does not imply urgency or a confirmed human action. Verify the scoped adapter, refresh on waiting-only changes, rendered layout and target-device USB receipt separately.
 
 ### 2026-10-07 — Related work needs a concrete reason before it is recommended
 

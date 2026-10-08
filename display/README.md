@@ -108,6 +108,26 @@ sends it over USB. Run `node display/render-previews.mjs <output-directory>` to
 inspect official progress, confirmed-attention, and stale states before
 activating the pilot.
 
+## Waiting in the detailed studio
+
+Display metrics use the same Session status projection as the chat sidebar:
+`running` excludes a live run marked waiting, and `waiting` includes visible
+between-turn waiting Sessions. A new executing, queued or compacting turn takes
+precedence over the previous workflow label. Waiting and results to browse stay
+separate, and these counts do not assert urgency or user acceptance.
+
+The instance-local v14/v21 studio predates repository-managed display assets.
+`display/studio-waiting.patch` records its focused update (adapter, refresh
+fingerprint, four overview counts, quiet gold styling, cache version and stream
+regression). Apply it from that studio's root after `git apply --check`, and
+verify `node concept-v14/test-preview-stream.mjs` in its isolated test state.
+Publish the updated v21 `app.js`, `v21.css` and `index.html` to that instance's
+existing studio pages, then restart only its preview renderer. Preserve pairing,
+applied settings, theme, reminders and animation. Older adapters without a
+waiting count retain the original three-column overview rather than claiming
+zero. Confirm the target device's new frame receipt and continuing USB ACKs;
+the physical appearance still needs on-site observation.
+
 ## Personal GIF and sentence
 
 In **Settings → Side display**, each signed-in Person can upload a GIF and save

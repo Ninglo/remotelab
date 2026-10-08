@@ -18,6 +18,7 @@ import { createFeishuUserReminders } from './feishu-user-reminders.mjs';
 import { normalizeSentence, prepareContent, renderPersonalPng } from './personal-content.mjs';
 import { prepareAnimatedPreview, previewBundleId, previewFrameId, renderAnimatedPreview, renderAnimatedPreviewBundle, renderAnimatedPreviewJpeg, renderStaticPreviewJpeg } from './preview-animation.mjs';
 import { createTodoStore } from './todos.mjs';
+import '../static/chat/session-state-model.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const bindHost = String(process.env.REMOTELAB_DISPLAY_BIND_HOST || '127.0.0.1').trim();
@@ -353,6 +354,7 @@ async function collectSnapshot(personId) {
   const now = Date.now();
   const cutoff = now - 24 * 60 * 60 * 1000;
   let running = 0;
+  let waiting = 0;
   let queued = 0;
   let pendingReview = 0;
   const pendingResults = [];
@@ -362,7 +364,9 @@ async function collectSnapshot(personId) {
     if (!identityIds.has(trimString(session?.initiatedByIdentityId))) continue;
     const run = session?.activity?.run || {};
     const queueCount = Number(session?.activity?.queue?.count || 0);
-    if (run.state === 'running') {
+    const displayStatus = globalThis.RemoteLabSessionStateModel.getSessionPrimaryStatus(session).key;
+    if (displayStatus === 'waiting' && !session.archived && !session.internalRole) waiting += 1;
+    if (displayStatus === 'running') {
       running += 1;
       if (active.length < 3) {
         active.push({
@@ -380,7 +384,7 @@ async function collectSnapshot(personId) {
     // on their own surface; a missing web review stamp is not an unread receipt.
     const usesWebReview = (!sourceId || sourceId === 'chat') && !session.conversation
       && !session.internalRole && !session.archived;
-    const busy = run.state === 'running' || queueCount > 0 || session.activity?.compact?.state === 'pending';
+    const busy = run.state === 'running' || displayStatus === 'waiting' || queueCount > 0 || session.activity?.compact?.state === 'pending';
     if (usesWebReview && !busy && assistantAt >= cutoff && assistantAt > reviewedAt) {
       pendingReview += 1;
       const name = trimString(session.name).replace(/\s+/g, ' ').slice(0, 36) || '未命名 Session';
@@ -392,7 +396,7 @@ async function collectSnapshot(personId) {
     if (latestAt >= cutoff) deliveryIssues += Number(session.deliveryIssueCount || 0);
   }
   pendingResults.sort((a, b) => b.assistantAt - a.assistantAt);
-  return { running, queued, pendingReview, pendingResults: pendingResults.slice(0, 3).map(({ name, context }) => ({ name, context })), deliveryIssues, active,
+  return { running, waiting, queued, pendingReview, pendingResults: pendingResults.slice(0, 3).map(({ name, context }) => ({ name, context })), deliveryIssues, active,
     feishu: summarizeFeishuSessions(result.json.sessions, identityIds, feishuLinked, now),
     observedAt: new Date().toISOString() };
 }
@@ -440,6 +444,7 @@ function snapshotSvg(snapshot) {
   const now = new Date();
   const notices = [];
   if (snapshot.deliveryIssues) notices.push(['#ff7272', '消息投递异常', `${snapshot.deliveryIssues} 条需要检查`]);
+  if (snapshot.waiting) notices.push(['#d9b35a', 'Session 等待中', `${snapshot.waiting} 项 · 到 RemoteLab 查看`]);
   if (snapshot.queued) notices.push(['#89a8ff', '请求正在排队', `队列中还有 ${snapshot.queued} 项`]);
   if (snapshot.pendingReview) notices.push(['#f5c86b', '结果等待 Review', `近 24 小时共 ${snapshot.pendingReview} 项`]);
   if (!notices.length) notices.push(['#56e0b4', '运行平稳', '当前没有关键提醒']);
@@ -894,6 +899,7 @@ async function handle(req, res) {
       sendText(res, 200, wantsJpeg ? 'image/jpeg' : 'image/png', image, {
         'X-RemoteLab-Display-Observed-At': snapshot.observedAt,
         'X-RemoteLab-Display-Running': String(snapshot.running ?? ''),
+        'X-RemoteLab-Display-Waiting': String(snapshot.waiting ?? ''),
         'X-RemoteLab-Display-Pending-Review': String(snapshot.pendingReview ?? ''),
         'X-RemoteLab-Display-Poll-Seconds': String(pollSeconds || 8),
         'X-RemoteLab-Display-Animated': animated ? '1' : '0',

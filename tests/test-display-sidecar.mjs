@@ -70,6 +70,7 @@ async function waitFor(url, timeoutMs = 10_000) {
 const apiPort = await reservePort();
 const displayPort = await reservePort();
 let sessionsUnavailable = false;
+let waitingSessions = [];
 const excludedResults = [
   { name: 'Feishu result already delivered', sourceId: 'chat', conversation: { connector: 'feishu' } },
   { name: 'Legacy Feishu result', sourceId: 'feishu' },
@@ -116,6 +117,7 @@ const api = createServer((req, res) => {
         workSummary: { summary: '整理本周进展' },
         deliveryIssueCount: 0,
       },
+      ...waitingSessions,
       ...excludedResults.map((overrides) => ({
         sourceId: 'chat',
         initiatedByIdentityId: 'identity_display_a',
@@ -405,6 +407,23 @@ try {
   assert.deepEqual(statusBJson.metrics.pendingResults, [], 'another Person result stays private');
   assert.equal(statusB.status, 200);
   assert.equal(statusBJson.snapshot.signals.some((signal) => signal.sourceId === 'evaluation'), false);
+  waitingSessions = [
+    { name: 'Pending question', activity: { run: { state: 'running', waiting: true } } },
+    { name: 'Between-turn wait', workflowState: 'waiting_user', lastAssistantMessageAt: Date.now(), activity: { run: { state: 'idle' } } },
+    { name: 'Archived wait', archived: true, workflowState: 'waiting_user' },
+    { name: 'Queued next turn', workflowState: 'waiting_user', activity: { run: { state: 'idle' }, queue: { state: 'queued', count: 1 } } },
+    { name: 'Compacting next turn', workflowState: 'waiting_user', activity: { run: { state: 'idle' }, compact: { state: 'pending' } } },
+    { name: 'Cancelling wait', activity: { run: { state: 'running', waiting: true, cancelRequested: true } } },
+    { name: 'Other Person wait', initiatedByIdentityId: 'identity_unrelated', activity: { run: { state: 'running', waiting: true } } },
+  ].map((session) => ({ initiatedByIdentityId: 'identity_display_a', ...session }));
+  const waitingStatus = await (await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/status`, { headers: publicHeaders })).json();
+  assert.equal(waitingStatus.metrics.waiting, 2, 'live questions and idle waits share the sidebar status, excluding archived and other Person work');
+  assert.equal(waitingStatus.metrics.running, 2, 'waiting is excluded from execution; cancellation still owns a live run');
+  assert.equal(waitingStatus.metrics.queued, 2, 'a queued next turn overrides a stale waiting workflow label');
+  assert.equal(waitingStatus.metrics.pendingReview, 1, 'a waiting response is not counted again as a finished result');
+  assert(!waitingStatus.metrics.active.some(({ name }) => name === 'Pending question'), 'waiting sessions do not appear as executing');
+  assert(waitingStatus.snapshot.signals.some((signal) => signal.id === 'waiting'), 'the default status screen also receives waiting');
+  waitingSessions = [];
   const preview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/preview.png`, { headers: publicHeaders });
   assert.equal(preview.status, 200);
   assert.equal(preview.headers.get('content-type'), 'image/png');

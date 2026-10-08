@@ -15,6 +15,10 @@ export function remotelabStatusSource(metrics, nowMs = Date.now()) {
     add('running', 'progress', `${metrics.running} 项任务正在运行`,
       '任务仍在执行；这块屏只展示概况，不展示会话正文。', 'RemoteLab Session');
   }
+  if (metrics.waiting > 0) {
+    add('waiting', 'progress', `${metrics.waiting} 个 Session 等待中`,
+      '到 RemoteLab 查看当前等待状态和下一步。', 'RemoteLab Session');
+  }
   if (metrics.queued > 0) {
     add('queued', 'progress', `${metrics.queued} 项请求正在排队`,
       '等待中的请求会由 RemoteLab 继续调度。', 'RemoteLab 队列');

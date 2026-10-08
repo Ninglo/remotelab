@@ -1,0 +1,169 @@
+--- a/concept-v14/preview-server.mjs
++++ b/concept-v14/preview-server.mjs
+@@ -368,6 +368,7 @@
+   const metrics = result.metrics;
+   return {
+     running: metrics.running,
++    waiting: metrics.waiting,
+     queued: metrics.queued,
+     pendingReview: metrics.pendingReview,
+     pendingResults: Array.isArray(metrics.pendingResults) ? metrics.pendingResults.slice(0, 3) : [],
+@@ -461,12 +462,12 @@
+ 
+ function metricsFingerprint(metrics) {
+   if (!metrics) return '';
+-  const { running, queued, pendingReview, pendingResults, deliveryIssues, active, reminderSources } = metrics;
++  const { running, waiting, queued, pendingReview, pendingResults, deliveryIssues, active, reminderSources } = metrics;
+   // The Feishu poll timestamp changes even when the visible reminder does not.
+   // Redrawing for that timestamp delays real Session changes behind rendering.
+   const feishuUser = reminderSources?.feishuUser;
+   const { observedAt: _observedAt, ...feishuState } = feishuUser || {};
+-  return JSON.stringify({ running, queued, pendingReview, pendingResults, deliveryIssues, active,
++  return JSON.stringify({ running, waiting, queued, pendingReview, pendingResults, deliveryIssues, active,
+     reminderSources: { ...reminderSources, feishuUser: feishuUser ? feishuState : null } });
+ }
+ 
+--- a/concept-v14/test-preview-stream.mjs
++++ b/concept-v14/test-preview-stream.mjs
+@@ -26,6 +26,8 @@
+ let lastSeenOffset = 0;
+ let puts = [];
+ let metricReads = 0;
++let waitingCount = 0;
++let fixedRunning = null;
+ let animationsReceived = [];
+ let nextFrame;
+ let rejectFrame;
+@@ -108,7 +110,7 @@
+       json(res, { devices: [{ id: deviceId, name: 'Test Display', lastSeenAt: new Date(Date.now() + lastSeenOffset).toISOString() }] });
+     } else if (req.method === 'GET' && req.url === `/v1/people/${personId}/status`) {
+       metricReads += 1;
+-      json(res, { metrics: { running: metricReads, queued: 0, pendingReview: 1, deliveryIssues: 0, active: [{ name: `Session ${metricReads}` }], observedAt: new Date().toISOString() } });
++      json(res, { metrics: { running: fixedRunning ?? metricReads, waiting: waitingCount, queued: 0, pendingReview: 1, deliveryIssues: 0, active: [{ name: `Session ${fixedRunning ?? metricReads}` }], observedAt: new Date().toISOString() } });
+     } else if (req.url === `/v1/people/${personId}/preview-frame` && req.method === 'GET') {
+       if (previewReadFailures > 0) { previewReadFailures -= 1; res.writeHead(503); res.end('{}'); failedPreviewRead?.(); return; }
+       json(res, latest ? { configured: true, devicePlayback: playback.map(item => ({ ...item, bundleFrameId: latest })), frameId: latest, expiresAt, updatedAt: new Date().toISOString(), animationCount: animationsReceived.length } : { configured: false });
+@@ -268,6 +270,19 @@
+     assert.equal(sourceBody.animationCount, 1, `${sourceName} should animate on device`);
+     assert.equal(Buffer.from(animationsReceived[0].gifBase64, 'base64').compare(await fs.readFile(path.resolve(source, `../concept-v21/assets/${assetName}.gif`))), 0);
+   }
++  fixedRunning = 7;
++  waitingCount = 1;
++  const waitingResponse = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(v21Payload) });
++  assert.equal(waitingResponse.status, 200);
++  const waitingFrameId = (await waitingResponse.json()).frameId;
++  await waitActive(record => record?.lastFrameId === waitingFrameId);
++  const waitingStatus = await (await fetch(`${base}/api/paired-device`, { headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId } })).json();
++  assert.equal(waitingStatus.metrics.running, 7);
++  assert.equal(waitingStatus.metrics.waiting, 1, 'waiting survives the scoped metrics adapter');
++  const changedWaitingFrame = waitFrame();
++  waitingCount = 2;
++  assert.notEqual(await changedWaitingFrame, waitingFrameId, 'a waiting-only change redraws the displayed frame');
++  fixedRunning = null;
+   const staticPayload = { ...payload, state: { ...payload.state, selectedId: 'quote1', widgets: [
+     { id: 'quote1', type: 'quote', width: 100, fontScale: 1, surface: 'solid', elements: {}, settings: { text: 'Static display lease test', from: 'Regression test' } },
+   ] } };
+@@ -321,7 +336,7 @@
+   await waitActive(record => record === null);
+   assert.equal(latest, 'another-owner-frame', 'must not overwrite a newer layout from another source');
+   assert.equal(deletes, 1, 'must not delete a newer layout from another source');
+-  process.stdout.write(`PASS: v14/v21 frames, GIF, metrics, scoped status, queued applies, 48h live refresh and restart, unchanged frame lease renewal, dependency recovery, backup, device-scoped playback, explicit removal, frame ownership\n`);
++  process.stdout.write(`PASS: v14/v21 frames, GIF, metrics, waiting-only refresh, scoped status, queued applies, 48h live refresh and restart, unchanged frame lease renewal, dependency recovery, backup, device-scoped playback, explicit removal, frame ownership\n`);
+ 
+ } finally {
+   if (child && !child.killed) await stopChild();
+--- a/concept-v21/app.js
++++ b/concept-v21/app.js
+@@ -88,7 +88,7 @@
+     }
+   } catch { /* Storage may be disabled; the in-memory preview still works. */ }
+ }
+-const EXAMPLE_METRICS = { running: 2, queued: 1, pendingReview: 1,
++const EXAMPLE_METRICS = { running: 2, waiting: 1, queued: 1, pendingReview: 1,
+   pendingResults: [{ name: "项目审阅示例", context: "整理本周项目进展" }], reminderSources: null };
+ let metrics = deviceRender?.metrics || EXAMPLE_METRICS;
+ let metricsAreLive = Boolean(deviceRender?.metrics);
+@@ -503,7 +503,8 @@
+   return due.map((type) => typeof type === "string" ? ({ type, ...liveReminder(type, now) }) : type);
+ }
+ function workSummary() {
+-  const { running, queued, pendingReview } = metrics;
++  const { running, waiting = 0, queued, pendingReview } = metrics;
++  if (waiting) return { title: `${waiting} 个 Session 等待中`, detail: `${running} 个正在运行 · ${queued} 个请求排队 · ${pendingReview} 项结果待看` };
+   if (pendingReview) {
+     const result = metrics.pendingResults?.[0];
+     if (result?.name) return { title: `来自「${result.name}」的结果`,
+@@ -524,14 +525,17 @@
+     addText(summaryNode, "strong", "", summary.title);
+     addText(summaryNode, "span", "", summary.detail);
+     const row = addText(zone, "div", "work-metrics", "");
+-    for (const [kind, label, count] of [["running", "Session 运行中", metrics.running], ["queued", "请求排队中", metrics.queued], ["review", "结果待查看", metrics.pendingReview]]) {
++    const counts = [["running", "Session 运行中", metrics.running], ["queued", "请求排队中", metrics.queued], ["review", "结果待查看", metrics.pendingReview]];
++    if (Number.isInteger(metrics.waiting)) counts.splice(1, 0, ["waiting", "Session 等待中", metrics.waiting]);
++    row.classList.toggle("has-waiting", Number.isInteger(metrics.waiting));
++    for (const [kind, label, count] of counts) {
+       const metric = addText(row, "div", `metric metric-${kind}`, "");
+       addText(metric, "strong", "", String(count)); addText(metric, "span", "", label);
+     }
+   } else if (state.work === "running") {
+     addText(zone, "div", "status-count", String(metrics.running));
+     addText(zone, "h3", "status-heading", "个 Session 正在运行");
+-    addText(zone, "p", "status-detail", `${metrics.queued} 个请求排队中${metricsStale ? " · 最近一次读取" : ""}`);
++    addText(zone, "p", "status-detail", `${Number.isInteger(metrics.waiting) ? `${metrics.waiting} 个 Session 等待中 · ` : ""}${metrics.queued} 个请求排队中${metricsStale ? " · 最近一次读取" : ""}`);
+   } else if (state.work === "review") {
+     addText(zone, "div", "status-count", String(metrics.pendingReview));
+     addText(zone, "h3", "status-heading", "项结果待你浏览");
+@@ -677,7 +681,7 @@
+ }
+ window.displayStudioApplyLiveMetrics = (raw) => {
+   if (!["running", "queued", "pendingReview"].every((key) => Number.isInteger(raw?.[key]) && raw[key] >= 0)) return;
+-  metrics = { running: raw.running, queued: raw.queued, pendingReview: raw.pendingReview,
++  metrics = { running: raw.running, waiting: raw.waiting, queued: raw.queued, pendingReview: raw.pendingReview,
+     pendingResults: Array.isArray(raw.pendingResults) ? raw.pendingResults.slice(0, 3) : [],
+     observedAt: raw.observedAt, reminderSources: raw.reminderSources || null };
+   metricsAreLive = true;
+@@ -992,7 +996,7 @@
+     const body = await response.json();
+     const next = body?.metrics;
+     if (!response.ok || body.metricsUnavailable || !["running", "queued", "pendingReview"].every((key) => Number.isInteger(next?.[key]) && next[key] >= 0)) throw Error("unavailable");
+-    metrics = { running: next.running, queued: next.queued, pendingReview: next.pendingReview,
++    metrics = { running: next.running, waiting: next.waiting, queued: next.queued, pendingReview: next.pendingReview,
+       pendingResults: Array.isArray(next.pendingResults) ? next.pendingResults.slice(0, 3) : [],
+       observedAt: next.observedAt, reminderSources: next.reminderSources || body.reminderSources || null };
+     metricsAreLive = true;
+--- a/concept-v21/v21.css
++++ b/concept-v21/v21.css
+@@ -69,7 +69,7 @@
+   .zones-section{scroll-margin-top:300px}
+ }
+ 
+-/* The three counts remain scannable, while the sentence explains what to do next. */
++/* The counts remain scannable, while the sentence explains what to do next. */
+ .work-summary{display:grid;gap:3px;margin-top:13px;color:var(--screen-text)}
+ .work-summary strong{font-size:calc(25px * var(--screen-scale,1));line-height:1.25}
+ .work-summary span{font-size:calc(17px * var(--screen-scale,1));line-height:1.4;color:var(--screen-muted)}
+@@ -301,3 +301,10 @@
+   .theme-card{display:flex;justify-items:initial;text-align:left;min-height:42px}
+   .reminder-choices{grid-template-columns:repeat(2,minmax(0,1fr))}
+ }
++
++/* Waiting is a quiet gold signal; keep the existing three-zone layout. */
++.work-metrics.has-waiting{grid-template-columns:repeat(4,minmax(0,1fr))}
++.metric-waiting{background:color-mix(in srgb,var(--screen-surface) 90%,#d9b35a);border-color:color-mix(in srgb,var(--screen-border) 80%,#d9b35a)}
++.metric-waiting strong{color:#947026}
++.screen[data-theme=midnight] .metric-waiting{background:#152015;border-color:#6a6035}
++.screen[data-theme=midnight] .metric-waiting strong{color:#d9b35a}
+--- a/concept-v21/index.html
++++ b/concept-v21/index.html
+@@ -8,9 +8,9 @@
+   <link rel="stylesheet" href="./styles.css">
+   <link rel="stylesheet" href="./aligned.css">
+   <link rel="stylesheet" href="./product.css">
+-  <link rel="stylesheet" href="./v21.css?v=65">
++  <link rel="stylesheet" href="./v21.css?v=67">
+   <script src="./theme-presets.js?v=65" defer></script>
+-  <script src="./app.js?v=66" defer></script>
++  <script src="./app.js?v=67" defer></script>
+   <script src="./device-sync.js?v=65" defer></script>
+ </head>
+ <body>
