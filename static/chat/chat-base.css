@@ -405,6 +405,7 @@ body.share-snapshot-mode .header-quick-actions {
   display: inline-block; flex-shrink: 0;
 }
 .status-dot.running { background: var(--success); animation: pulse 1.5s infinite; }
+.status-dot.waiting { background: var(--waiting); }
 .status-dot.queued { background: var(--queue); animation: pulse 1.5s infinite; }
 .status-dot.compacting { background: var(--notice); animation: pulse 1.5s infinite; }
 .status-dot.renaming { background: var(--naming); animation: pulse 1.5s infinite; }
