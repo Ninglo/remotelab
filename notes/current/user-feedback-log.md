@@ -1476,3 +1476,10 @@ settings are separate from verified live deployment and delivery.
 - Feedback: raw flowchart code in the message feed was difficult to read. An interactive flow library was a presentation reference; a generated image or separate preview page did not satisfy the request.
 - Revision: convert supported flow descriptions at their original message position into a sequence with expandable branches. Preserve conditions, shared endpoints, cycles and the original source; offer all steps for inspecting the complete relationship set.
 - Boundary: disclosures only reveal content. They do not select an answer or execute a workflow. Unsupported or incomplete syntax remains code instead of becoming an inaccurate partial flow.
+
+## 2026-10-08 — Explicit topic references must find existing background
+
+- Feedback: a new secondary-display question was treated mainly as desktop sharing after only early USB integration memory was read. Existing display content and settings should be discoverable from the explicit topic.
+- Causes: normal work preparation did not forward the new input to candidate search; a single named topic could be rejected. Necessary background reported project bindings but did not search original project passages. The local CLI also pointed to an older source.
+- Change: use the actual turn query, accept informative named-topic references and prioritize them over incidental host overlap. Read bounded original passages from registered sources with paths, lines, versions and omitted-source accounting; retain separate project association and action authority. CLI launchers should follow the Run source, with the current-source direct entry as fallback.
+- Verification: replay the original query in fresh, unbound and resumed preparation, retain no unrelated/person body, and test changes, switches, budgets and bad pointers. Finding background is separate from a real Harness using it correctly; no synthetic group delivery.
