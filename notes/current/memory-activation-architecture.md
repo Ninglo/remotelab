@@ -18,6 +18,12 @@ Keep substantial memory on disk and activate only relevant material:
 - Fresh threads with usable prior Session history can receive bounded continuation
   from normalized history or existing continuation records. Hidden provider state
   cannot be fully reconstructed.
+- Topic discovery now reads bounded matching passages from registered navigation
+  and the enabled original project ledger on fresh/resumed turns. It records
+  path, lines and file version, without inferring a project binding or changing
+  the original storage. Matching task/topic/current links are followed within
+  registered instance regions; provider-private memory is not scanned. See
+  [Session work awareness](../../docs/session-work-awareness.md).
 - Source/runtime instructions, Session instructions, source snapshots, explicit
   agreements and local-bridge state are projected for the applicable turn.
 - workSummary is queryable Session metadata. The normal turn hook deliberately

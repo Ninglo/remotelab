@@ -5,7 +5,8 @@ const state = session => session?.workAwareness || {};
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 const noise = new Set(['工作', '项目', '处理', '这个', '那个', '一个', '我们', '可以', '方案',
   '一下', '然后', '但是', '觉得', '我觉', '确实', '相关', '问题', '内容', '需要', '已经', '其实',
-  '这里', '那里', '现在', '之后', '之前', '所以', '还是', '就是', '的是', '的一', '都是']);
+  '这里', '那里', '现在', '之后', '之前', '所以', '还是', '就是', '的是', '的一', '都是', '继续', '续吧',
+  '电脑', '显示', '连接', '希望', '什么', '怎么', '这台']);
 
 function tokens(value) {
   const text = clean(value, 1500).toLowerCase();
@@ -39,7 +40,7 @@ export function workSearchEntries(sessions) {
 function searchScope(sessions, { sessionId, query, object }) {
   const session = sessions.find(entry => entry.id === sessionId);
   const active = (state(session).works || []).filter(work => work.status === 'active').at(-1);
-  return { query: clean(query) || active?.goal || session?.workSummary?.goal || '',
+  return { query: tokens(query).size ? clean(query) : active?.goal || session?.workSummary?.goal || '',
     object: clean(object, 500) || active?.object || '' };
 }
 
@@ -56,16 +57,23 @@ export function candidateWorkFromSessions(sessions, options = {}) {
   for (const entry of entries) for (const token of tokens(searchText(entry))) {
     frequency.set(token, (frequency.get(token) || 0) + 1);
   }
+  const namedTopics = [...queryTokens].filter(token => /^[\u4e00-\u9fff]{2}$/.test(token)
+    && (frequency.get(token) || 0) <= Math.max(2, entries.length * 0.1)
+    && entries.some(entry => entry.sessionName.startsWith(token)));
   const found = [];
   for (const work of entries) {
     const sameObject = scope.object && work.object === scope.object;
     const matched = [...tokens(searchText(work))].filter(token => queryTokens.has(token));
     const informative = matched.filter(token => (frequency.get(token) || 0) < Math.max(3, entries.length * 0.25));
     const specificTerm = informative.some(token => /[a-z]/.test(token) && (token.length >= 8 || /[./:]/.test(token)));
-    if (!sameObject && informative.length < 2 && !specificTerm) continue;
+    const namedTopic = informative.some(token => /^[\u4e00-\u9fff]{2}$/.test(token)
+      && work.sessionName.includes(token) && frequency.get(token) <= Math.max(2, entries.length * 0.1));
+    if (!sameObject && namedTopics.length && !matched.some(token => namedTopics.includes(token))) continue;
+    if (!sameObject && informative.length < 2 && !specificTerm && !namedTopic) continue;
     const weight = informative.reduce((sum, token) => sum + Math.log(1 + entries.length / frequency.get(token)), 0);
     const sameProject = projectId && work.projects?.some(project => project.projectId === projectId && project.status === 'confirmed');
-    found.push({ ...work, score: sameObject ? 1000 : weight / Math.sqrt(Math.max(1, queryTokens.size)),
+    found.push({ ...work, score: sameObject ? 1000 : weight / Math.sqrt(Math.max(1, queryTokens.size))
+      * (namedTopics.some(token => work.sessionName.startsWith(token)) ? 4 : 1),
       sameProject: Boolean(sameProject), matchedTerms: informative.slice(0, 8),
       relation: sameObject ? 'same-declared-object' : 'search-candidate',
       reason: sameObject ? '声明的操作对象相同：' + scope.object : '',
