@@ -1231,6 +1231,8 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
 
   let decision = observation.decision;
   if (!decision) {
+    const groupRoutingPilot = isPilotInputSinceActivation(await routingPilotScope({ connector: 'feishu',
+      sourceRouteId: runtime.config.sourceRouteId || 'default', target: summary }), summary.createTime || summary.eventTs);
     const context = buildFeishuSessionReactionContext(observation.recent, {
       mentioned: mentionsFeishuBot(runtime, summary),
     });
@@ -1270,7 +1272,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(sessionId)}/observations/decision`, {
         method: 'POST', body: { sourceMessageId, ...value },
       })))(sessionId, summary.messageId, {
-      participation, emojiType, workMode, reason: verdict?.reason || '',
+      participation, emojiType, workMode, groupRoutingPilot, reason: verdict?.reason || '',
       ...(verdict?.contextSources ? { contextSources: verdict.contextSources } : {}),
     });
     if (saved?.response && !saved.response.ok) throw new Error(saved.json?.error || 'Unable to record Jev decision');
@@ -1292,8 +1294,8 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
   // Temporary fail-open policy: Jev still selects reactions and work placement,
   // but every observed message reaches the Session model for reply judgment.
   // Neither silence, a reaction-only answer, nor a failed classification blocks it.
-  const pilot = isPilotInputSinceActivation(await routingPilotScope({ connector: 'feishu',
-    sourceRouteId: runtime.config.sourceRouteId || 'default', target: summary }), summary.createTime || summary.eventTs);
+  // Replay the accepted placement policy even if the pilot switch changed.
+  const pilot = decision.groupRoutingPilot === true;
   const legacyWork = !pilot && decision.participation === 'reply'
     && !['short', 'complex', 'reaction'].includes(decision.workMode);
   const complexWork = !pilot && decision.workMode === 'complex' && !buildFeishuTopicId(summary);

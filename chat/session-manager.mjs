@@ -3391,7 +3391,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // These are admission-time projections, not user input. A retry keeps the
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
-    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft']) {
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];
     }
@@ -3503,11 +3503,14 @@ async function prepareRequestRun(record) {
     try { await validateGroupRethink(record); }
     catch (error) {
       const result = { exitCode: 1, error: error.message, completedAt: nowIso() };
+      const target = await findSessionMeta(record.sessionId);
+      const tool = record.runtimeSelection?.tool || target?.tool;
       if (!await getRun(record.runId)) await createRun({
         status: { id: record.runId, sessionId: record.sessionId, requestId: record.requestId,
-          responseId: record.responseId, state: 'accepted', tool: record.runtimeSelection?.tool },
+          responseId: record.responseId, state: 'accepted', tool },
         manifest: { sessionId: record.sessionId, requestId: record.requestId, responseId: record.responseId,
-          options: record.options, folder: (await findSessionMeta(record.sessionId))?.folder },
+          tool, runtimeFamily: (await getToolDefinitionAsync(tool))?.runtimeFamily,
+          options: { ...record.options, ...record.runtimeSelection }, folder: target?.folder },
       });
       await writeRunResult(record.runId, result);
       await updateRun(record.runId, current => ({ ...current, state: 'failed', failureReason: error.message, result }));

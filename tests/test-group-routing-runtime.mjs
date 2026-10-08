@@ -11,10 +11,18 @@ await mkdir(dir, { recursive: true });
 await mkdir(join(home, 'bin'));
 const executable = join(home, 'bin/fake-route');
 await writeFile(executable, `#!/usr/bin/env node
+(async () => {
+if (process.argv.join(' ').includes('HOLD_REVIEW_FIXTURE')) {
+ const fs = require('fs'); const gate = ${JSON.stringify(join(home, 'release'))};
+ if (!fs.existsSync(gate)) await new Promise(resolve => { const watcher = fs.watch(${JSON.stringify(home)}, () => {
+  if (fs.existsSync(gate)) { watcher.close(); resolve(); }
+ }); if (fs.existsSync(gate)) { watcher.close(); resolve(); } });
+}
 console.log(JSON.stringify({type:'thread.started',thread_id:'test-thread'}));
 console.log(JSON.stringify({type:'turn.started'}));
 console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',phase:'final_answer',text:'复核完成：新信息影响原结论，建议更新假设。'}}));
 console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,output_tokens:1}}));
+})().catch(e => { console.error(e); process.exitCode = 1; });
 `);
 await chmod(executable, 0o755);
 process.env.PATH = join(home, 'bin') + ':' + process.env.PATH;
@@ -31,7 +39,7 @@ await loadAuthDocument({ persistMigration: false });
 const manager = await import('../chat/session-manager.mjs');
 const { requests } = await import('../chat/requests.mjs');
 const { recordWorkInput } = await import('../chat/work-awareness.mjs');
-const { findSessionMeta } = await import('../chat/session-meta-store.mjs');
+const { findSessionMeta, mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
 const { routeGroupWork, readGroupRoutingState } = await import('../chat/group-routing.mjs');
 // A bounded observer, only synthetic detached processes, no provider or connector.
 async function until(predicate) {
@@ -73,5 +81,22 @@ try {
   const outbound = await requests.byRunId(proposal.returnRunId);
   assert.match(outbound.deliveries[0].text, /复核完成/);
   assert.equal(outbound.deliveries[0].target.messageId, 'input-root');
+  // Queued reconsideration must fail visibly if a newer task changes the target.
+  const hold = await manager.submitHttpMessage(target.id, 'HOLD_REVIEW_FIXTURE', [], {
+    ...runtime, requestId: 'held-task', viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a', suppressSourceDelivery: true,
+  });
+  await until(async () => (await requests.byRunId(hold.run.id))?.preparedAt);
+  const { record: newSource } = await requests.accept({ sessionId: main.id, requestId: 'stale-source', text: '再核对一项',
+    options: opts, runtimeSelection: runtime, deliveryPlan: origin });
+  const staleDraft = await routeGroupWork(newSource, { mode: 'sync', targetSessionId: target.id, task: '复核旧假设', reason: '排队期间的新任务反例' });
+  await manager.submitHttpMessage(main.id, staleDraft.confirmation, [], { ...opts, requestId: 'stale-human-confirm' });
+  await mutateSessionMeta(target.id, session => { session.workAwareness.intents.push({ id: 'newer-human-task' }); return true; });
+  await writeFile(join(home, 'release'), 'release');
+  const failed = await until(async () => { const p = (await readGroupRoutingState(await findSessionMeta(main.id))).proposals[1];
+    return p.returnDeliveryId && p; });
+  assert.equal(failed.resultState, 'failed');
+  assert.equal(failed.returnDeliveryState, 'pending');
+  const failureReturn = await requests.byRunId(failed.returnRunId);
+  assert.match(failureReturn.deliveries[0].text, /目标讨论已变化/);
   console.log('GROUP_ROUTING_RUNTIME_VERIFIED: actual admission, isolated worker, human approval dispatch, target completion hook and durable source outbox. No live model or Feishu send.');
 } finally { await manager.killAll(); await rm(home, { recursive: true, force: true }); }

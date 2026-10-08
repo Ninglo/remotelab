@@ -102,6 +102,7 @@ try {
   await assert.rejects(acceptGroupSync(await input('stale-confirm', fresh.confirmation), manager), /changed/);
   const rejected = await acceptGroupSync(await input('reject', '拒绝同步 ' + fresh.proposal.id), manager);
   assert.match(rejected, /拒绝/); assert.equal(submits, 3);
+  assert.match(await acceptGroupSync(await requests.byRequest('main', 'reject'), manager), /rejected/);
   const crashDraft = await routeGroupWork(syncSource, { mode: 'sync', targetSessionId: 'work', task: '重试固定输入', reason: '模拟接受前故障' }, manager);
   const crashInput = await input('crash', crashDraft.confirmation);
   await assert.rejects(acceptGroupSync(crashInput, { ...manager, submitHttpMessage: async () => { throw new Error('interrupted'); } }), /interrupted/);

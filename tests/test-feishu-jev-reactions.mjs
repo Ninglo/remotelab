@@ -330,6 +330,12 @@ try {
     ...helpers, classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex' }),
   });
   assert.equal(otherTenant.workSessionId, 'thread-session', 'all non-pilot routes preserve Jev placement');
+  effects.length = 0;
+  const replayPilot = await handleMessage(runtime, { ...base, tenantKey: 'another', messageId: 'replay-pilot' }, 'test', {
+    ...helpers, observeRemoteLabMessage: async () => ({ sessionId: 'group-session', observation: { eventSeq: 2,
+      decision: { participation: 'reply', workMode: 'complex', emojiType: 'OnIt', groupRoutingPilot: true } } }),
+  });
+  assert.equal(replayPilot.workSessionId, 'group-session', 'persisted pilot routing survives configuration changes on replay');
   console.log('test-feishu-jev-reactions: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

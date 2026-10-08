@@ -106,6 +106,7 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
       }
       const decision = {
         participation, emojiType: emojiType || null, workMode: workMode || null,
+        ...(proposed.groupRoutingPilot === true ? { groupRoutingPilot: true } : {}),
         reason: trim(proposed?.reason),
         decidedAt: new Date().toISOString(),
         ...(Array.isArray(proposed.contextSources) ? { contextSources: proposed.contextSources

@@ -31,7 +31,9 @@ async function sourceFor(record) {
   if (record.result || record.releasedAt) fail('Only an active accepted input can route work');
   const session = await findSessionMeta(record.sessionId);
   const scope = await routingPilotScope(session?.conversation);
-  if (!isPilotInputSinceActivation(scope, record.acceptedAt) || !verifiedWorkActor(record.options?.viewPersonId, record.options?.initiatedByIdentityId)
+  if (!isPilotInputSinceActivation(scope, record.acceptedAt)
+      || !isPilotInputSinceActivation(scope, record.options?.sourceContext?.createTime || record.options?.sourceContext?.eventTs)
+      || !verifiedWorkActor(record.options?.viewPersonId, record.options?.initiatedByIdentityId)
       || record.options?.routingRethink || record.options?.automationTitle || record.options?.internalOperation
       || record.options?.sourceContext?.connector !== 'feishu') fail('Routing requires a human Feishu input in the enabled pilot group');
   const origin = record.deliveryPlan || record.options?.sourceDelivery;
@@ -163,7 +165,11 @@ export async function acceptGroupSync(record, deps) {
       return '同步已经登记：' + proposal.state;
     }
     if (proposal.state !== 'draft') fail('This proposal is no longer awaiting confirmation');
-    if (decision[1] === '拒绝同步') { await save(session.id, d => { d.proposals.find(p => p.id === proposal.id).state = 'rejected'; }); return '已拒绝本条同步。'; }
+    if (decision[1] === '拒绝同步') {
+      await save(session.id, d => Object.assign(d.proposals.find(p => p.id === proposal.id),
+        { state: 'rejected', confirmationRequestId: record.requestId }));
+      return '已拒绝本条同步。';
+    }
     const target = await findSessionMeta(proposal.targetSessionId);
     if (!target || target.archived || target.groupFeed || !sameGroup(origin, target.conversation)
         || stamp(target) !== proposal.targetStamp || stamp(session) !== proposal.sourceStamp) fail('Discussion changed; review a fresh sync proposal');
