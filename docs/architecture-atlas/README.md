@@ -27,7 +27,9 @@
 
 [产出汇总](deliverables.html)是整体说明项目中的一个章节，集中回答“已有成果有哪些、从哪里用、去哪里核对”。功能与代码沿用`features.json`，页面沿用`project.json`，专题文档仍维护在原文件；仓库根目录的`feature_list.json`、`progress.txt`和`CHANGELOG.md`作为历史交付依据。前两份记录最后更新于2026-09-16，27条`pass`标记不作为当前部署或业务验收结论。
 
-生成入口是`node docs/architecture-atlas/render-deliverables.mjs`，生成`deliverables.html`与`deliverables.md`；后者是同一内容的参考文本，不另写成果记忆正文。功能、章节或文档目录变化后重新生成，再纳入原统一发布包。各功能的实现、启用、送达与验收仍沿原证据核对；这次定位到的现存文件不足以确认录音里提到的“几个月前那一份”就是这些记录。
+同章的[独立 Web 产物](deliverables.html#web-products)补入具身前沿追踪、经典论文研读、具身 Agent 实验回放及其他研究、评测和产品试验网站。上一版只覆盖主仓库页面，遗漏了这些通过 RemoteLab 发布的独立产物。2026-10-08重新核对本实例的101条发布记录，将可定位的66个独立HTML发布入口归为17组；同组旧版本收在相关入口中。30条缺发布元数据的旧目录仍待恢复，文件传输与数据JSON不计作独立网站。网页发布、试验应用与真实设备验收分别记录。
+
+独立网站的内容、项目决定和进度继续在各自项目维护；这里只在`project.json`的`deliverables.webProducts`登记用途、发布入口和状态。`publishedAt`来自发布元数据，不作为内容首次产出时间或实际验收日期。生成入口是`node docs/architecture-atlas/render-deliverables.mjs`，生成`deliverables.html`与`deliverables.md`；后者是同一内容的参考文本，不另写成果记忆正文。功能、网站、章节或文档目录变化后重新生成，再纳入原统一发布包。各功能的实现、启用、送达与验收仍沿原证据核对；这次定位到的现存文件不足以确认录音里提到的“几个月前那一份”就是这些记录。
 
 ## 功能盘点与作者确认（2026-10-05）
 
