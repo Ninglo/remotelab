@@ -46,14 +46,21 @@ try {
   assert.equal(requests[0][1].body.sourceContext.sender.openId, 'actor');
   assert.deepEqual(requests[0][1].body.sourceDelivery.target, delivery.target);
   await handleNativeQuestionCardAction(runtime, rawAction({ option: 2 }), actionOptions);
-  assert.deepEqual(requests[0], requests[1], 'callback retry uses identical request identity and payload');
-  await handleNativeQuestionCardAction(runtime, rawAction({}, { answer: '中文\n保留例子' }), actionOptions);
+  const secondClick = rawAction({ option: 2 }); secondClick.header.event_id = 'action-two';
+  assert.equal((await handleNativeQuestionCardAction(runtime, secondClick, actionOptions)).toast.type, 'success');
+  assert.equal(requests.length, 1, 'same or new callback IDs acknowledge the first answer without another admission');
+  const customRuntime = { ...runtime, config: { ...runtime.config, storageDir: join(root, 'custom') },
+    appClient: { im: { v1: { message: { ...runtime.appClient.im.v1.message,
+      reply: async () => ({ code: 0, data: { message_id: 'original' } }),
+    } } } } };
+  await sendNativeQuestionCard(customRuntime, delivery);
+  await handleNativeQuestionCardAction(customRuntime, rawAction({}, { answer: '中文\n保留例子' }), actionOptions);
   assert.equal(requests.at(-1)[1].body.text, '中文\n保留例子');
   const denied = await handleNativeQuestionCardAction(runtime, rawAction({ option: 1 }), { ...actionOptions, authorize: async () => false });
   assert.equal(denied.toast.type, 'error');
   const tampered = rawAction({ option: 1 }); tampered.event.context.open_chat_id = 'another-chat';
   assert.equal((await handleNativeQuestionCardAction(runtime, tampered, actionOptions)).toast.type, 'error');
-  assert.equal(requests.length, 3, 'denied or tampered callbacks submit nothing');
+  assert.equal(requests.length, 2, 'denied or tampered callbacks submit nothing');
   const timeout = { ...delivery, id: 'timeout', nativeQuestion: { ...question, state: 'timeout', origin: 'timeout',
     answers: ['简短'], statusText: '未收到回复，已采用系统默认「简短」。' } };
   await sendNativeQuestionCard(runtime, timeout);
@@ -67,7 +74,55 @@ try {
   await sendNativeQuestionCard(runtime, delivery);
   assert.equal(calls.length, 2, 'restart/replay cannot resend or reopen the question');
   assert.equal((await handleNativeQuestionCardAction(runtime, rawAction({ option: 1 }), actionOptions)).toast.type, 'error');
-  assert.equal(requests.length, 3, 'expired buttons do not launch unrelated work');
+  assert.equal((await handleNativeQuestionCardAction({ ...runtime }, secondClick, actionOptions)).toast.type, 'success',
+    'the accepted answer is still acknowledged after the original card closes and the Connector restarts');
+  assert.equal(requests.length, 2, 'expired or repeated buttons do not launch unrelated work');
+  const retryRuntime = { ...customRuntime, config: { ...customRuntime.config, storageDir: join(root, 'retry') } };
+  await sendNativeQuestionCard(retryRuntime, delivery);
+  const retryRequests = [];
+  const uncertainAnswer = { authorize: async () => true, request: async (url, options) => {
+    retryRequests.push([url, options]); throw new Error('response lost after admission');
+  } };
+  assert.equal((await handleNativeQuestionCardAction(retryRuntime, rawAction({ option: 2 }), uncertainAnswer)).toast.type, 'error');
+  assert.equal((await handleNativeQuestionCardAction(retryRuntime, rawAction({ option: 1 }), uncertainAnswer)).toast.type, 'error');
+  const anotherActor = rawAction({ option: 2 }); anotherActor.event.operator.operator_id.open_id = 'another-actor';
+  assert.equal((await handleNativeQuestionCardAction(retryRuntime, anotherActor, uncertainAnswer)).toast.type, 'error');
+  assert.equal(retryRequests.length, 1, 'an uncertain answer cannot be replaced by another answer or actor');
+  await sendNativeQuestionCard(retryRuntime, { ...delivery, nativeQuestion: { ...question, state: 'answered',
+    answers: ['详细'], statusText: '已回答：详细' } });
+  const replayed = await handleNativeQuestionCardAction({ ...retryRuntime }, secondClick, {
+    authorize: async () => true, request: async (url, options) => {
+      retryRequests.push([url, options]); return { response: { ok: true }, json: { duplicate: true } };
+    },
+  });
+  assert.equal(replayed.toast.type, 'success');
+  assert.deepEqual(retryRequests[1], retryRequests[0],
+    'a new callback after restart and answer projection replays the exact admitted request, including original event ID');
+  const serverErrorRuntime = { ...customRuntime, config: { ...customRuntime.config, storageDir: join(root, 'server-error') } };
+  await sendNativeQuestionCard(serverErrorRuntime, delivery);
+  const serverRequests = [];
+  const serverErrorOptions = { authorize: async () => true, request: async (url, options) => {
+    serverRequests.push([url, options]); return { response: { ok: serverRequests.length > 1, status: serverRequests.length > 1 ? 200 : 500 } };
+  } };
+  await handleNativeQuestionCardAction(serverErrorRuntime, rawAction({ option: 2 }), serverErrorOptions);
+  assert.equal((await handleNativeQuestionCardAction(serverErrorRuntime, secondClick, serverErrorOptions)).toast.type, 'success');
+  assert.deepEqual(serverRequests[1], serverRequests[0], 'a failure after admission retains the exact request for retry');
+  const rejectedAnswerRuntime = { ...customRuntime, config: { ...customRuntime.config, storageDir: join(root, 'rejected-answer') } };
+  await sendNativeQuestionCard(rejectedAnswerRuntime, delivery);
+  await handleNativeQuestionCardAction(rejectedAnswerRuntime, rawAction({ option: 2 }), {
+    authorize: async () => true, request: async () => ({ response: { ok: false, status: 403 } }),
+  });
+  const corrected = rawAction({ option: 1 }); corrected.header.event_id = 'corrected';
+  assert.equal((await handleNativeQuestionCardAction(rejectedAnswerRuntime, corrected, actionOptions)).toast.type, 'success',
+    'a definite rejection allows a corrected submission');
+  const concurrentRuntime = { ...customRuntime, config: { ...customRuntime.config, storageDir: join(root, 'concurrent') } };
+  await sendNativeQuestionCard(concurrentRuntime, delivery);
+  let concurrentRequests = 0;
+  const simultaneous = await Promise.all([rawAction({ option: 2 }), secondClick].map(raw =>
+    handleNativeQuestionCardAction(concurrentRuntime, raw, { authorize: async () => true,
+      request: async () => { concurrentRequests++; return { response: { ok: true } }; } })));
+  assert.ok(simultaneous.every(result => result.toast.type === 'success'));
+  assert.equal(concurrentRequests, 1, 'concurrent clicks share one durable admission');
   assert.equal((await sendNativeQuestionCard(runtime, { ...timeout, runId: 'unknown' })).skipped, true);
   assert.equal((await sendNativeQuestionCard(runtime, { ...delivery, runId: 'old', nativeQuestion: { ...question, deadline: Date.now() - 1 } })).skipped, true);
   let uncertainCreates = 0;

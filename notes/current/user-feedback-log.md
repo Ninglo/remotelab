@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-08 — A repeated question submission must acknowledge the received answer
+
+- Observed failure: a Feishu question form reported that an answer was not applied although the same answer had already reached the waiting Harness. Later clicks were admitted with new callback event IDs and rejected because the question was already answered.
+- Change: save the first callback's complete admission request before sending it, serialize callbacks with original-card updates, and retain the successful submission receipt. Repeated clicks acknowledge that receipt; a lost response or server failure retries the original request even after the question closes. Unknown submissions cannot switch answers or actors, and explicit client rejection permits a corrected attempt.
+- Verification boundary: isolated cases cover changed callback IDs, concurrent clicks, Connector restart, closed-card replay, lost acknowledgement, server failure, rejected admission and actor/target checks. The reported original answer is confirmed in raw history and the native input receipt; code and deployment checks remain separate from the next human client interaction.
+
 ### 2026-10-08 — Show waiting separately from running
 
 - Feedback: tasks waiting for a choice or judgment still appeared as running, so the Session list did not show which work had stopped. A single waiting label is sufficient; the reason can stay inside the conversation.
