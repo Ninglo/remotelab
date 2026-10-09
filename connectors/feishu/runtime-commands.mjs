@@ -2,7 +2,7 @@ import { buildExternalTriggerId } from './index.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 import { buildFeishuSessionConversationTarget, isFeishuThreadConversation } from './reply-routing.mjs';
 import { describeFeishuMuteSetting } from './conversation-settings.mjs';
-import { describeSessionProgressPolicy, FEISHU_PROGRESS_MODES, progressPolicyForRun } from '../../lib/session-progress-policy.mjs';
+import { describeSessionProgressPolicy, FEISHU_PROGRESS_MODES, progressPolicyForRun, usesOctober7GroupMessaging } from '../../lib/session-progress-policy.mjs';
 import { isQuickSession } from '../../lib/quick-session-profile.mjs';
 import {
   completeRuntimeProfile,
@@ -137,12 +137,23 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   const inputCommands = normalizeCommands(rawCommands);
   const validationError = validateCommandSet(inputCommands);
   if (validationError) return { error: validationError, text: validationError, operations: [] };
+  const help = usesOctober7GroupMessaging({ conversation: { connector: 'feishu', target: summary } })
+    ? HELP.replace('/progress [expanded|collapsed] — 查看或设置本轮工作过程默认展开或折叠',
+      '/progress [messages|card|default] — 查看或设置当前会话的进展提示') : HELP;
   if (inputCommands.some(command => command.name === 'progress')) {
     const fail = text => ({ error: text, text, operations: [] });
     if (taskMode || inputCommands.length !== 1) return fail('/progress 请单独发送，不与任务正文或其他命令组合。');
     const session = summary?.startThread ? null : await findCommandSession(runtime, summary, request);
     if (!session) return fail('请在已有会话中发送 /progress；这个命令不会新建任务。');
     const mode = inputCommands[0].value.toLowerCase();
+    if (usesOctober7GroupMessaging(session)) {
+      if (mode && !['messages', 'card', 'default'].includes(mode)) return fail('用法：/progress messages（卡片＋新消息）、/progress card（只更新卡片）、/progress default（恢复默认）。');
+      if (mode === 'card' && session.workboardPilot !== true) return fail('当前会话未启用进展卡片，请继续使用新消息提示。');
+      return { commands: inputCommands, sessionId: session.id, operations: mode ? [{
+        scope: 'session-progress', sessionId: session.id, mode,
+        expectedRevision: session.feishuProgressRevision || 0, changeId: `command:${summary.messageId}`,
+      }] : [], text: `${describeSessionProgressPolicy(session)}\n作用范围：当前会话\n/progress messages：卡片＋新消息\n/progress card：只更新卡片\n/progress default：恢复默认\n需要你回复的问题和最终结果仍发消息。` };
+    }
     if (mode && !FEISHU_PROGRESS_MODES.has(mode)) return fail('用法：/progress expanded（默认展开）、/progress collapsed（默认折叠）。');
     if (mode && session.workboardPilot !== true) return fail('当前会话未启用进展卡片，请继续使用新消息提示。');
     return { commands: inputCommands, sessionId: session.id, operations: mode ? [{
@@ -181,7 +192,7 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
 
   for (const command of commands) {
     if (command.name === 'help') {
-      notes.push(HELP);
+      notes.push(help);
       continue;
     }
     if (command.name === 'status') {
@@ -283,7 +294,7 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
     const sessionOperation = operations.find(operation => operation.scope === 'session');
     if (sessionOperation) notes.push(`已更新当前 Session 配置。\n${describe(selection)}`);
   }
-  return { commands, operations, selection, sessionId: session?.id || '', text: notes.join('\n\n') || HELP };
+  return { commands, operations, selection, sessionId: session?.id || '', text: notes.join('\n\n') || help };
 }
 
 export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
@@ -294,7 +305,9 @@ export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
         method: 'POST', body: { mode: operation.mode, expectedRevision: operation.expectedRevision, changeId: operation.changeId,
           ...(operation.runId ? { runId: operation.runId } : {}) },
       });
-      text = `已设置本轮工作过程的默认展开状态。\n${describeSessionProgressPolicy(progressPolicyForRun(session, operation.runId || undefined))}\n普通进展继续在卡片内更新；问题和最终结果仍单独发消息。`;
+      text = usesOctober7GroupMessaging(session)
+        ? `${describeSessionProgressPolicy(session)}\n仅当前会话生效；需要你回复的问题和最终结果仍发消息。`
+        : `已设置本轮工作过程的默认展开状态。\n${describeSessionProgressPolicy(progressPolicyForRun(session, operation.runId || undefined))}\n普通进展继续在卡片内更新；问题和最终结果仍单独发消息。`;
       continue;
     }
     const { session } = await requestJson(request, `/api/sessions/${encodeURIComponent(operation.sessionId)}`, {

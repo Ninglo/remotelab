@@ -99,6 +99,7 @@ import {
 } from './session-control-state.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { withSessionProgressPolicy, chooseRunProgressPolicy } from './session-progress-policy.mjs';
+import { usesOctober7GroupMessaging } from '../lib/session-progress-policy.mjs';
 import { getHistoryHeadSeq } from './history.mjs';
 import {
   buildTemporarySessionName,
@@ -1447,13 +1448,15 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
   slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
-    await readPromptAsset('system/surface-messages.md')));
+    await readPromptAsset(usesOctober7GroupMessaging(session)
+      ? 'system/surface-messages-feishu-group-20261007.md' : 'system/surface-messages.md')));
   const optedIn = options.workboardEnabled === true || session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
   const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true })) : null;
   if ((optedIn && options.workboardEnabled !== false) || taskContext?.activeTasks.length) {
     slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
-      WORKBOARD_INSTRUCTIONS
+      (usesOctober7GroupMessaging(session)
+        ? WORKBOARD_INSTRUCTIONS.replace(' --progress-mode expanded|collapsed', '') : WORKBOARD_INSTRUCTIONS)
       + (options.workboardDraft ? '\nCode has published the supplied initial list. ' : '')
       + (options.workboardEnabled === false ? '\nThis turn is not opted in to create new task cards; only continue an existing task when requested. ' : '')));
     if (taskContext && (taskContext.activeTasks.length || taskContext.recentTasks.length)) {

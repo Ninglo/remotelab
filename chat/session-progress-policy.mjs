@@ -1,9 +1,9 @@
-import { FEISHU_PROGRESS_MODES, progressPolicyForRun, normalizeProgressMode } from '../lib/session-progress-policy.mjs';
+import { FEISHU_PROGRESS_MODES, progressPolicyForRun, normalizeProgressMode, sessionProgressMode, usesOctober7GroupMessaging } from '../lib/session-progress-policy.mjs';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { getRun } from './runs.mjs';
-import { loadHistory } from './history.mjs';
+import { loadHistory, getHistoryHeadSeq } from './history.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
 
 // Policy changes and progress outbox admissions share one lock. A notification
@@ -31,6 +31,7 @@ export async function chooseRunProgressPolicy(id, runId, mode) {
     if (!current) invalid('会话不存在。', 404);
     if (current.conversation?.connector !== 'feishu') invalid('此设置仅用于飞书会话。');
     if (current.workboardPilot !== true) invalid('当前会话未启用进展卡片，请继续使用新消息提示。');
+    if (usesOctober7GroupMessaging(current)) return progressPolicyForRun(current, runId);
     const prior = current.feishuProgressRuns?.[runId];
     if (prior?.manual || prior?.mode === mode) return progressPolicyForRun(current, runId);
     const previous = progressPolicyForRun(current, runId);
@@ -56,6 +57,29 @@ export async function updateSessionProgressPolicy(id, { mode, expectedRevision, 
     const current = await findSessionMeta(id);
     if (!current) invalid('会话不存在。', 404);
     if (current.conversation?.connector !== 'feishu') invalid('此设置仅用于飞书会话。');
+    if (usesOctober7GroupMessaging(current)) {
+      if (!['messages', 'card', 'default'].includes(mode)) invalid('群进展策略应为 messages、card 或 default。');
+      if (mode === 'card' && current.workboardPilot !== true) invalid('当前会话未启用进展卡片，请继续使用新消息提示。');
+      if (current.feishuProgressChanges?.includes(changeId)) return current;
+      if ((current.feishuProgressRevision || 0) !== expectedRevision) invalid('策略已被其他操作更新，请查看最新卡片或输入 /progress 后重试。', 409);
+      const nextMode = mode === 'default' ? undefined : mode;
+      const head = await getHistoryHeadSeq(id);
+      const result = await mutateSessionMeta(id, session => {
+        if (session.feishuProgressChanges?.includes(changeId)) return false;
+        if ((session.feishuProgressRevision || 0) !== expectedRevision) invalid('策略已更新，请查看最新卡片后重试。', 409);
+        if (session.feishuProgressMode !== nextMode) {
+          if (sessionProgressMode(session) !== (nextMode === 'card' ? 'card' : 'messages')) session.feishuProgressAfterSeq = head;
+          if (nextMode) session.feishuProgressMode = nextMode;
+          else delete session.feishuProgressMode;
+          session.feishuProgressRevision = expectedRevision + 1;
+        }
+        session.feishuProgressChanges = [...(session.feishuProgressChanges || []), changeId].slice(-100);
+        session.updatedAt = new Date().toISOString();
+        return true;
+      });
+      if (result.changed) broadcastAll({ type: 'session_invalidated', sessionId: id });
+      return result.meta;
+    }
     if (current.workboardPilot !== true) invalid('当前会话未启用进展卡片，请继续使用新消息提示。');
     const policyRunId = runId || current.activeRunId || current.feishuProgressRunId;
     if (policyRunId) await requirePolicyRun(id, policyRunId);

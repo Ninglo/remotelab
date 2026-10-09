@@ -78,6 +78,13 @@ if (instanceScope && !Number.isFinite(pilot.progressStartedAt)) {
   pilot.progressStartedAt = Date.now();
   await persist();
 }
+if (process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE === '2026-10-07'
+    && !Number.isFinite(pilot.groupProgressRestoredAt)) {
+  // A durable route-wide floor includes group Sessions discovered later.
+  // Existing card IDs and acknowledgements remain intact.
+  pilot.groupProgressRestoredAt = Date.now();
+  await persist();
+}
 
 async function verifyMessage(messageId, { updated } = {}, chatId = pilot.chatId) {
   const readback = await app.im.v1.message.get({ path: { message_id: messageId } });

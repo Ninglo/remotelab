@@ -233,6 +233,22 @@ receipts before claiming live delivery.
 
 ## Work process in task cards
 
+An instance can restore the 2026-10-07 group-message contract (main
+`a103380f`) with `REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE=2026-10-07` on its
+core, Feishu connectors and card workers. Group turns publish their useful
+opening and explicit progress messages again; the original card offers
+session-scoped messages/card/default controls. Unlisted group progress can
+create a lightweight card and a later checklist upgrades the same message.
+Questions and terminal results retain their separate delivery identities.
+Private chats, Web display and instances without this setting keep the
+current contract below. Existing Run/card disclosure records are retained.
+Before enabling it, fence active group Requests at the current history head
+while the core writer is stopped. Workers persist `groupProgressRestoredAt`
+before processing history, preserving original card IDs and acknowledgements
+without creating cards for old suppressed progress. Keep all coupled services
+on the same verified commit. Remove the setting to return to the current
+contract; do not restore old receipt files over newer acknowledgements.
+
 Only a published acceptance checklist creates a Feishu card. Unlisted work keeps its ordinary final reply and its Web/history process, without a standalone progress card. Existing lightweight card receipts remain preserved; if their work later receives a real checklist, the known message upgrades in place. Later routine Feishu turns omit the opening; a new conversation retains its first reply with the accepted model, effort and Session link. Questions, exceptional notices and final results retain separate delivery.
 
 The latest progress appears outside the detailed work process as a bounded preview. Details start collapsed. A callback button labeled 点击显示进展 or 点击折叠进展 shows or hides recent excerpts and the full-history link. Native fold controls reset when Feishu patches the whole card and do not report clicks, so they cannot satisfy manual priority here. The callback records the choice for that original card's durable anchor in Session metadata; updates, completion and cross-Run resumption preserve it. A new card starts collapsed. All readers see the last accepted click on the shared card. No personal habit is saved and no extra model call is made.

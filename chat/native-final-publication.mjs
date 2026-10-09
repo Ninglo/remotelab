@@ -14,7 +14,7 @@ import {
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
 import { normalizeConversation } from '../lib/conversation-target.mjs';
-import { shouldPublishSessionProgress } from '../lib/session-progress-policy.mjs';
+import { shouldPublishSessionProgress, usesOctober7GroupMessaging } from '../lib/session-progress-policy.mjs';
 import { withSessionProgressPolicy } from './session-progress-policy.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
 
@@ -54,6 +54,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     ...(record.runtimeSelection || record.options) };
   const firstUserTurn = isFirstUserTurnPublication(events, publicationRun, fullHistory);
   const suppressOpening = (surface, current) => plan.connector === 'feishu' && surface.surfaceKind === 'opening'
+    && !usesOctober7GroupMessaging(progressPolicy)
     && (!firstUserTurn || current?.deliveries?.some(item => item.surfaceKind === 'opening'
       || item.kind === 'session_entry' || item.sessionEntryIncluded));
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
@@ -74,7 +75,9 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (suppressOpening(surface, stored || record)) continue;
     // A rollout can fence progress previously suppressed by card grouping.
     // This is not a delivery receipt; old card text must not be announced again.
-    if (surface.surfaceKind === 'progress' && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
+    if ((surface.surfaceKind === 'progress' || surface.surfaceKind === 'opening'
+        && usesOctober7GroupMessaging(progressPolicy))
+        && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
     if (plan.connector === 'feishu' && surface.surfaceKind === 'progress'
         && !shouldPublishSessionProgress(progressPolicy, event.seq, record.runId)) continue;
     if (stored?.streamedSurfaceMessageIds?.includes(messageId)

@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { progressCardPanel } from './progress-card-controls.mjs';
+import { groupProgressCardControls, groupProgressCardHistory, buildFeishuGroupProgressCard } from './group-progress-card.mjs';
 import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '../../lib/workboard-state.mjs';
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
-import { progressPolicyForRun, progressPolicyForCard } from '../../lib/session-progress-policy.mjs';
+import { progressPolicyForRun, progressPolicyForCard, usesOctober7GroupMessaging } from '../../lib/session-progress-policy.mjs';
+import { projectProgressStreams } from '../../lib/progress-stream.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -27,8 +29,12 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null, cy
     })) : [{ tag: 'div', text: { tag: 'plain_text',
       content: lines.filter(line => line !== goal).join('\n') || trim(text) } }]),
     { tag: 'hr' },
-    ...progressCardPanel(cycle, [{ tag: 'markdown',
-      content: progress?.content || (board ? workboardProgressText(board, progress) : '暂无进度更新') }]),
+    ...(usesOctober7GroupMessaging(cycle.progressPolicy) ? [
+      ...groupProgressCardControls(cycle), ...groupProgressCardHistory(cycle),
+      { tag: 'markdown', content: '**目前进展**' },
+      { tag: 'markdown', content: board ? workboardProgressText(board, progress) : progress?.content || '暂无进度更新' },
+    ] : progressCardPanel(cycle, [{ tag: 'markdown',
+      content: progress?.content || (board ? workboardProgressText(board, progress) : '暂无进度更新') }])),
   ];
   return {
     schema: '2.0', config: { update_multi: true },
@@ -143,7 +149,19 @@ function collectAuthorizedCycles(events, pilot, session = null) {
     }
   }
   const tasks = projectWorkboards(history);
-  return tasks.filter(task => pilot.scope !== 'instance'
+  const groupProgressFloor = history.reduce((floor, event) =>
+    (event.timestamp || 0) < (pilot.groupProgressRestoredAt ?? pilot.progressStartedAt)
+      ? Math.max(floor, event.seq) : floor, 0);
+  const streams = usesOctober7GroupMessaging(session) && Number.isFinite(pilot.progressStartedAt)
+    ? projectProgressStreams(history, new Set(tasks.flatMap(task => task.progressHistory.map(progress => progress.seq))))
+      .filter(stream => anchors.get(stream.anchorSeq)?.admitted)
+      .map(stream => {
+        // Keep the original anchor for in-place upgrades, but never replay
+        // suppressed progress when enabling the historical publisher.
+        const known = pilot.cards.some(card => card.anchorSeq === stream.anchorSeq || card.taskId === stream.taskId);
+        return { ...stream, updates: stream.updates.filter(update => known || update.seq > groupProgressFloor) };
+      }).filter(stream => stream.updates.length) : [];
+  return [...tasks, ...streams].filter(task => pilot.scope !== 'instance'
     || anchors.get(task.anchorSeq)?.admitted
     || pilot.cards.some(card => card.anchorSeq === task.anchorSeq || card.taskId === task.taskId
       || task.aliases?.includes(card.taskId))).map(task => {
@@ -166,15 +184,17 @@ export function collectFeishuWorkboardCycles(events, pilot, session) {
 }
 // Replay each verified checkpoint rather than collapsing a burst to all-done.
 export function expandFeishuWorkboardUpdates(cycles) {
-  return cycles.flatMap(cycle => cycle.updates.filter(update => update.workboard).map(update => ({ ...cycle,
+  return cycles.flatMap(cycle => cycle.updates.filter(update => update.workboard
+    || usesOctober7GroupMessaging(cycle.progressPolicy)).map(update => ({ ...cycle,
     latestSeq: update.seq, content: update.content, board: update.workboard, progress: update.progress,
     progressOnly: !update.workboard, executionState: update.executionState || cycle.executionState })));
 }
 
 export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage }) {
   // Unlisted work has one ordinary result, never a progress-only card.
-  if (cycle.progressOnly) return null;
-  const content = JSON.stringify(buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress, cycle));
+  if (cycle.progressOnly && !usesOctober7GroupMessaging(cycle.progressPolicy)) return null;
+  const content = JSON.stringify(cycle.progressOnly ? buildFeishuGroupProgressCard(cycle)
+    : buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress, cycle));
   const contentHash = createHash('sha256').update(content).digest('hex');
   let card = pilot.cards.find(item => item.anchorSeq === cycle.anchorSeq)
     || pilot.cards.find(item => cycle.taskId && item.taskId === cycle.taskId);

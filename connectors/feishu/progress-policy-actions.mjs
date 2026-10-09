@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../../lib/config.mjs';
-import { describeSessionProgressPolicy, FEISHU_PROGRESS_MODES, progressPolicyForRun } from '../../lib/session-progress-policy.mjs';
+import { describeSessionProgressPolicy, FEISHU_PROGRESS_MODES, progressPolicyForRun, usesOctober7GroupMessaging } from '../../lib/session-progress-policy.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -55,6 +55,8 @@ export async function handleFeishuProgressPolicyAction(runtime, raw, {
     if (session?.conversation?.connector !== 'feishu' || session.conversation.sourceRouteId !== route
         || target?.chatId !== chatId || (target.tenantKey && target.tenantKey !== summary.tenantKey)
         || !await authorize(summary)) return reply('无权操作这个会话的进展设置。');
+    if (disclosure && usesOctober7GroupMessaging(session))
+      return reply('群消息已恢复 10 月 7 日规则，请在原卡片选择“卡片＋新消息”或“只更新卡片”。');
     const result = await request(`/api/sessions/${encodeURIComponent(value.sessionId)}/${disclosure ? 'progress-card' : 'progress-policy'}`, {
       method: 'POST', body: { mode: value.mode, expectedRevision: value.revision,
         ...(disclosure ? { anchorSeq: value.anchorSeq, actorOpenId: actor } : {}),
@@ -62,6 +64,8 @@ export async function handleFeishuProgressPolicyAction(runtime, raw, {
         changeId: trim(raw?.header?.event_id || event.event_id) || `button:${actor}:${messageId}:${value.revision}:${value.mode}` },
     });
     if (!result.response?.ok) return reply(result.json?.error || '切换未成功，输入 /progress 可重试。');
+    if (usesOctober7GroupMessaging(session) && !disclosure)
+      return reply(`${describeSessionProgressPolicy(result.json?.session)}；仅当前会话生效。`, 'success');
     if (disclosure) return reply(value.mode === 'expanded' ? '已显示进展；本卡片后续更新保留这一选择。'
       : '已折叠进展；本卡片后续更新保留这一选择。', 'success');
     return reply(`${describeSessionProgressPolicy(progressPolicyForRun(result.json?.session, value.runId))}；本轮生效；普通进展仍在卡片内更新。`, 'success');
