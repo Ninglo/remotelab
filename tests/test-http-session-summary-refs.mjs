@@ -166,6 +166,13 @@ try {
 
     const list304 = await request(port, 'GET', '/api/sessions', null, { 'If-None-Match': list.headers.etag });
     assert.equal(list304.status, 304, 'an unchanged prepared list keeps its ETag');
+    const allEvents = await request(port, 'GET', `/api/sessions/${sessionId}/events?filter=all`);
+    const cursor = Math.max(0, ...allEvents.json.events.map(e => e.seq));
+    const tail = await request(port, 'GET', `/api/sessions/${sessionId}/events?filter=all&afterSeq=${cursor}`);
+    assert.equal(tail.status, 200);
+    assert.deepEqual(tail.json.events, [], 'the HTTP route honors the cursor instead of returning the full history');
+    assert.equal(tail.json.hasMore, false);
+    assert.equal((await request(port, 'GET', `/api/sessions/${sessionId}/events?filter=all&afterSeq=-1`)).status, 400);
     const renamed = await request(port, 'PATCH', `/api/sessions/${sessionId}`, { name: 'Changed via HTTP' });
     assert.equal(renamed.status, 200);
     const afterRename = await request(port, 'GET', '/api/sessions');

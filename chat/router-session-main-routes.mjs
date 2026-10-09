@@ -7,7 +7,7 @@ import { resolveOrCreateExternalIdentity } from '../lib/auth.mjs';
 import { findSessionConversation } from './session-conversations.mjs';
 import { SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
-import { appendEvent, findLatestUserMessage, readEventBody } from './history.mjs';
+import { appendEvent, findLatestUserMessage, getHistorySnapshot, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
 import { getRun, getRunManifest } from './runs.mjs';
@@ -212,8 +212,25 @@ export async function handleSessionMainRoutes({
       ? String(parsedUrl.query.filter || '').trim().toLowerCase()
       : '';
     if (filter === 'all') {
-      const events = await getSessionEventsAfter(sessionId, 0);
-      writeJsonCached(req, res, { sessionId, filter: 'all', events });
+      const incremental = Object.prototype.hasOwnProperty.call(parsedUrl.query, 'afterSeq');
+      const afterSeq = incremental ? Number(parsedUrl.query.afterSeq) : 0;
+      if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
+        writeJson(res, 400, { error: 'afterSeq must be a nonnegative safe integer' });
+        return true;
+      }
+      const requestedLimit = Number(parsedUrl.query.limit);
+      const limit = incremental ? (Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+        ? Math.min(requestedLimit, 2000) : 2000) : null;
+      // Freeze the read boundary before I/O. Appends while we read must not be
+      // skipped by advancing the cursor to a newer, unread metadata head.
+      const snapshot = incremental ? await getHistorySnapshot(sessionId, { metadataOnly: true }) : null;
+      const readThrough = snapshot ? Math.min(snapshot.latestSeq, afterSeq + limit) : undefined;
+      const events = await getSessionEventsAfter(sessionId, afterSeq, { limit,
+        toSeq: readThrough,
+        includeBodies: parsedUrl.query.includeBodies !== 'false' });
+      writeJsonCached(req, res, { sessionId, filter: 'all', events,
+        ...(snapshot ? { nextAfterSeq: Math.max(afterSeq, readThrough),
+          hasMore: snapshot.latestSeq > afterSeq + limit } : {}) });
       return true;
     }
     const session = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });

@@ -729,7 +729,8 @@ async function buildSessionTimelineEvents(sessionId, options = {}) {
   if (activeRunId) {
     await syncDetachedRun(sessionId, activeRunId);
   }
-  return loadHistory(sessionId, { includeBodies: options.includeBodies !== false, deferFileDiffs: true });
+  return loadHistory(sessionId, { includeBodies: options.includeBodies !== false, deferFileDiffs: true,
+    fromSeq: options.fromSeq, toSeq: options.toSeq });
 }
 
 async function syncDetachedRunUnlocked(sessionId, runId) {
@@ -2174,10 +2175,17 @@ export async function getSessionResource(id) {
 }
 
 export async function getSessionEventsAfter(sessionId, afterSeq = 0, options = {}) {
+  const cursor = Number.isSafeInteger(afterSeq) && afterSeq >= 0 ? afterSeq : 0;
+  const limit = Number.isSafeInteger(options.limit) && options.limit > 0
+    ? Math.min(options.limit, 2000) : null;
+  const readThrough = Number.isSafeInteger(options.toSeq) && options.toSeq >= 0
+    ? options.toSeq : undefined;
   const events = await buildSessionTimelineEvents(sessionId, {
     includeBodies: options?.includeBodies !== false,
+    fromSeq: cursor + 1,
+    toSeq: limit === null ? readThrough : Math.min(cursor + limit, readThrough ?? Infinity),
   });
-  const filtered = (Array.isArray(events) ? events : []).filter((event) => Number.isInteger(event?.seq) && event.seq > afterSeq);
+  const filtered = (Array.isArray(events) ? events : []).filter((event) => Number.isInteger(event?.seq) && event.seq > cursor);
   if (options?.includeAttachmentPaths === true) return filtered;
   return filtered.map((event) => stripEventAttachmentSavedPaths(event));
 }
