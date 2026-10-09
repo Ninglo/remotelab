@@ -51,6 +51,10 @@ export function buildFeishuRequestDeliveryTarget(summary) {
     conversationKind: isFeishuThreadConversation(summary) ? 'thread' : 'main',
     ...(summary?.startThread === true && trimString(summary?.messageId)
       ? { rootId: trimString(summary.messageId) } : {}),
+    ...(summary?.participationEpoch !== undefined ? {
+      participationScopeTopicId: buildFeishuTopicId(summary) || 'main',
+      participationScopeMessageId: summary.messageId,
+    } : {}),
   });
 }
 

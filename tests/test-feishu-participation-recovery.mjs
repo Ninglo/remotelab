@@ -183,6 +183,66 @@ try {
         'metadata fallback cannot apply a mainline snapshot to an independent topic');
     }
   }
+  // Exercise the real outbox refinement after the opening learns a provider
+  // thread ID. Mainline and topic epochs deliberately differ, as in the incident.
+  const { createParticipationController } = await import('../connectors/feishu/participation-state.mjs');
+  const { applyFeishuReplyRouting, buildFeishuRequestDeliveryTarget, buildFeishuSessionConversationTarget }
+    = await import('../connectors/feishu/reply-routing.mjs');
+  const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery, resolveSourceDelivery }
+    = await import('../chat/source-deliveries.mjs');
+  const { CHAT_SESSIONS_FILE } = await import('../lib/config.mjs');
+  const { writeJsonAtomic } = await import('../chat/fs-utils.mjs');
+  const runtime = { config: { sourceRouteId: 'outbox-bot', storageDir: join(home, 'outbox'), groups: {
+    'outbox-group': { participationMode: 'ambient', participationControls: true, participationStatusCard: false },
+  } }, storagePaths: {} };
+  runtime.participation = createParticipationController(runtime);
+  const source = { chatId: 'outbox-group', chatType: 'group', chatMode: 'group', tenantKey: 'tenant',
+    messageId: 'source-root', messageText: 'Investigate missing progress' };
+  await runtime.participation.change(source, 'paused', { controlId: 'initial-pause' });
+  await runtime.participation.change(source, 'active', { controlId: 'initial-resume' });
+  const sourceEpoch = (await runtime.participation.state(source)).epoch;
+  const root = applyFeishuReplyRouting({ replyPolicy: { group: 'thread' } },
+    { ...source, participationEpoch: String(sourceEpoch) });
+  const conversation = { connector: 'feishu', sourceRouteId: 'outbox-bot',
+    target: buildFeishuSessionConversationTarget(root) };
+  await writeJsonAtomic(CHAT_SESSIONS_FILE, [{ id: 'outbox-session', conversation }]);
+  const plan = summary => ({ ...conversation, target: buildFeishuRequestDeliveryTarget(summary) });
+  const sent = [];
+  const helpers = {
+    requestRemoteLab: async (path, { body } = {}) => {
+      const value = path.endsWith('/claim') ? { claim: await claimSourceDelivery(body) }
+        : path.endsWith('/complete') ? { delivery: await completeSourceDelivery(path.split('/')[3], body.leaseId, body) }
+        : { delivery: await resolveSourceDelivery(path.split('/')[3], body) };
+      return { response: { ok: true }, json: value };
+    },
+    sendFeishuText: async (_runtime, target) => {
+      sent.push(target);
+      return { message_id: 'sent-' + sent.length, thread_id: 'learned-thread' };
+    },
+  };
+  const deliver = async (name, summary) => {
+    await enqueueSourceDelivery({ sessionId: 'outbox-session', responseId: name,
+      sourceDelivery: plan(summary), text: name });
+    return processSourceDeliveryOnce(runtime, helpers);
+  };
+  assert.equal((await deliver('opening', root)).state, 'delivered');
+  assert.equal((await deliver('final', root)).state, 'delivered',
+    'learning the destination thread cannot turn a valid mainline result stale');
+  const followup = { ...source, threadId: 'learned-thread', rootId: 'source-root', messageId: 'followup',
+    conversationKind: 'thread', replyInThread: true, participationEpoch: '0' };
+  assert.notEqual(sourceEpoch, (await runtime.participation.state(followup)).epoch);
+  assert.equal((await deliver('followup-result', followup)).state, 'delivered');
+  assert.equal(sent.at(-1).messageId, 'followup', 'the follow-up reply keeps its own anchor');
+  await runtime.participation.change(followup, 'paused', { controlId: 'topic-pause' });
+  assert.equal((await deliver('destination-paused', root)).state, 'cancelled');
+  await runtime.participation.change(followup, 'active', { controlId: 'topic-resume' });
+  assert.equal((await deliver('stale-followup', followup)).state, 'cancelled',
+    'pause/resume still invalidates a genuinely old topic result');
+  await runtime.participation.change(source, 'paused', { controlId: 'source-pause' });
+  await runtime.participation.change(source, 'active', { controlId: 'source-resume' });
+  assert.equal((await deliver('stale-origin', root)).state, 'cancelled',
+    'pause/resume still invalidates a genuinely old mainline result');
+  assert.equal(sent.length, 3, 'blocked results must never reach the provider');
   console.log('Feishu mute recovery: mainline/topic invitation, queued and in-flight fencing, scoped THINKING cleanup and unsent delivery cancellation pass');
 } finally {
   await new Promise(resolve => server.close(resolve));

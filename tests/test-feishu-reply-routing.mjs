@@ -61,6 +61,12 @@ const existingThread = applyFeishuReplyRouting(policy, {
 });
 assert.equal(existingThread.conversationKind, 'thread');
 assert.equal(existingThread.startThread, undefined, 'existing topology wins over the configured mainline mode');
+assert.equal(buildFeishuRequestDeliveryTarget({ ...threadSummary, participationEpoch: '2' }).participationScopeTopicId,
+  'main', 'a new thread reply remains fenced by its source mainline');
+assert.equal(buildFeishuRequestDeliveryTarget({ ...threadSummary, participationEpoch: '2' }).participationScopeMessageId,
+  'root-1');
+assert.equal(buildFeishuRequestDeliveryTarget({ ...existingThread, participationEpoch: '0' }).participationScopeTopicId,
+  'thread-1', 'a follow-up captures the independent topic fence');
 
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-reply-routing-'));
 const sessions = [];

@@ -44,6 +44,17 @@ const resolved = conversationAfterReceipt(currentRoot, { messageId: 'reply', thr
 assert.equal(resolved.target.rootId, 'current-root');
 assert.equal(resolved.target.threadId, 'assigned-thread');
 assert.equal(sameConversation(currentRoot, resolved), true);
+const originating = { ...currentRoot, target: { ...currentRoot.target, participationEpoch: '2',
+  participationScopeTopicId: 'main', participationScopeMessageId: 'current-root' } };
+const learned = conversationAfterReceipt(originating, { messageId: 'opening', threadId: 'assigned-thread' });
+assert.equal(refineConversation(originating, learned).target.threadId, 'assigned-thread');
+assert.equal(refineConversation(originating, learned).target.participationScopeTopicId, 'main');
+const followup = { ...learned, target: { ...learned.target, messageId: 'followup', parentId: 'current-root',
+  participationEpoch: '0', participationScopeTopicId: 'assigned-thread', participationScopeMessageId: 'followup' } };
+assert.deepEqual(refineConversation(followup, learned), followup,
+  'a topic follow-up keeps its own message and participation fence instead of inheriting the root request');
+assert.deepEqual(refineConversation(learned, followup), learned,
+  'a later input cannot replace the original request participation fence');
 assert.equal(conversationAfterReceipt(topic, { messageId: 'reply', threadId: 'thread' }).target.rootId, 'root');
 const dmMain = { ...group, target: { chatId: 'private', chatType: 'p2p', conversationKind: 'main' } };
 const dmThread = { ...group, target: { chatId: 'private', chatType: 'p2p', conversationKind: 'thread', messageId: 'dm-root', replyInThread: true } };

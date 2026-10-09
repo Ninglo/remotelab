@@ -1145,9 +1145,11 @@ async function submitRemoteLabRequest(runtime, summary, {
   // Session identity follows main-vs-thread topology. Each request still owns
   // an immutable delivery snapshot so delayed replies return to the location
   // selected for that inbound message.
+  const deliverySummary = { ...messageSummary, ...(participationStatus
+    ? { participationEpoch: String(effectiveSummary.participationEpoch ?? participationStatus.epoch) } : {}) };
   const requestDeliveryTarget = legacyGroupWorkThread
-    ? buildFeishuLegacyGroupWorkThreadTarget(messageSummary)
-    : buildFeishuRequestDeliveryTarget(messageSummary);
+    ? buildFeishuLegacyGroupWorkThreadTarget(deliverySummary)
+    : buildFeishuRequestDeliveryTarget(deliverySummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: messageSummary.logContinuation
@@ -1175,8 +1177,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     sourceDelivery: {
       connector: 'feishu',
       sourceRouteId: runtime.config.sourceRouteId || 'default',
-      target: { ...requestDeliveryTarget, ...(participationStatus
-        ? { participationEpoch: String(effectiveSummary.participationEpoch ?? participationStatus.epoch) } : {}) },
+      target: requestDeliveryTarget,
     },
     ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
