@@ -155,14 +155,20 @@ export function parseDoubaoServerMessage(data) {
 
   let sequence = null;
   let payloadOffset = headerSizeBytes;
-  if (messageType === 0x09) {
+  if (messageType === 0x09 && (flags & 1) !== 0) {
     if (bytes.length < headerSizeBytes + 8) {
       throw new Error('Doubao server response is truncated');
     }
     sequence = bytes.readInt32BE(headerSizeBytes);
     payloadOffset += 4;
   }
+  if (bytes.length < payloadOffset + 4) {
+    throw new Error('Doubao server response is truncated');
+  }
   const payloadSize = bytes.readUInt32BE(payloadOffset);
+  if (bytes.length < payloadOffset + 4 + payloadSize) {
+    throw new Error('Doubao server payload is truncated');
+  }
   const payloadBytes = bytes.slice(payloadOffset + 4, payloadOffset + 4 + payloadSize);
   const payload = decodeDoubaoPayload(payloadBytes, compression);
   let json = null;

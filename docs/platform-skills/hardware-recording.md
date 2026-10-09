@@ -95,6 +95,17 @@ credentials, accepts the recorder's mono 16 kHz PCM16 WAV, and saves
 Use it from the recording-analysis workflow on the analysis server; do not
 install a local model or copy those credentials to the capture Mac. Its help
 does not require configured credentials. Keep every segment's raw response.
+Finished WAVs use Doubao's `bigmodel_nostream` endpoint, with the same existing
+credentials ([official API](https://docs.volcengine.com/docs/6561/2628951?lang=zh)).
+The helper accepts completion only after a final response whose audio duration
+covers the whole input. The receipt retains the original SHA-256, sent PCM byte
+count, final-response flag and recognized duration. A timeout or early close
+keeps partial text with `state: failed` / `transcriptState: partial`; do not
+present that text as a complete transcript. A successful empty result has
+`hasSpeech: false` and needs an audio check, rather than a claim that speech
+was recognized. Original WAVs stay unchanged and can be retried directly,
+without re-uploading or opening another Session. For a long discussion, process
+every ordered five-minute segment and retain its receipt before combining text.
 
 After preparing a config file, the AI uses `configure --file PATH`, `enable`, and `install --apply`, then reads `status`. `install` without `--apply` previews the launchd/systemd user service. On Linux, a usable user systemd manager is required; for service-less environments use `serve` under an existing process supervisor. macOS uses a user LaunchAgent, so logout stops capture. `uninstall --apply` stops/removes the service and preserves the recordings. Stop a manually supervised `serve` process with SIGTERM before changing bindings or disabling the config.
 

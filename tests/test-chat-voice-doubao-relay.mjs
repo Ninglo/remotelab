@@ -101,7 +101,7 @@ transcriptSequence.writeInt32BE(1, 0);
 const transcriptSize = Buffer.alloc(4);
 transcriptSize.writeUInt32BE(transcriptPayload.length, 0);
 const transcriptFrame = Buffer.concat([
-  Buffer.from([0x11, 0x90, 0x11, 0x00]),
+  Buffer.from([0x11, 0x91, 0x11, 0x00]),
   transcriptSequence,
   transcriptSize,
   transcriptPayload,
@@ -110,6 +110,16 @@ const parsedTranscript = parseDoubaoServerMessage(transcriptFrame);
 assert.equal(parsedTranscript.messageType, 9, 'full server responses should parse as message type 9');
 assert.equal(parsedTranscript.sequence, 1, 'full server responses should expose the server sequence');
 assert.equal(extractDoubaoTranscript(parsedTranscript), '你好世界', 'transcript extraction should flatten result text values');
+
+for (const flags of [0, 2]) {
+  const frame = Buffer.concat([
+    Buffer.from([0x11, 0x90 | flags, 0x11, 0]), transcriptSize, transcriptPayload,
+  ]);
+  const response = parseDoubaoServerMessage(frame);
+  assert.equal(response.sequence, null, 'responses without sequence flags must not consume payload bytes');
+  assert.equal(extractDoubaoTranscript(response), '你好世界');
+  assert.throws(() => parseDoubaoServerMessage(frame.subarray(0, -1)), /payload is truncated/);
+}
 
 const errorPayload = gzipSync(Buffer.from(JSON.stringify({
   message: 'missing Authorization header',
