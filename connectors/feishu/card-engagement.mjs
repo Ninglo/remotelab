@@ -89,7 +89,7 @@ export function createFeishuCardReadSampler(runtime, { stateDir, store = usageEv
       samples ||= await readFile(statePath, 'utf8').then(raw => JSON.parse(raw)).catch(error => {
         if (error.code === 'ENOENT') return {}; throw error;
       });
-      const candidates = (await listTrackedFeishuCards(route, stateDir)).map(card => ({ card, key: cardKey(route, card.messageId) }))
+      const candidates = (await listTrackedFeishuCards(route, stateDir)).reverse().map(card => ({ card, key: cardKey(route, card.messageId) }))
         .filter(({ card, key }) => {
           const sample = samples[key];
           const createdAt = Number(card.createdAt || sample?.createdAt);
@@ -102,7 +102,6 @@ export function createFeishuCardReadSampler(runtime, { stateDir, store = usageEv
       const sample = samples[key] ||= {};
       activeSample = sample;
       sample.createdAt ||= Number(card.createdAt) || 0;
-      const needsMetadata = !sample.createdAt;
       if (!sample.createdAt) {
         const response = await getMessage({ path: { message_id: card.messageId } });
         if (response?.code !== 0) {
@@ -114,7 +113,8 @@ export function createFeishuCardReadSampler(runtime, { stateDir, store = usageEv
           sample.createdAt = Number(item?.create_time) || 0;
           if (!sample.createdAt) { sample.unavailable = true; sample.errorCode = 'invalid_receipt'; }
         }
-      } else {
+      }
+      if (!sample.unavailable && sample.createdAt > now() - week) {
         const response = await readUsers({ path: { message_id: card.messageId }, params: {
           user_id_type: 'open_id', page_size: 100, ...(sample.pageToken ? { page_token: sample.pageToken } : {}),
         } });
@@ -131,7 +131,7 @@ export function createFeishuCardReadSampler(runtime, { stateDir, store = usageEv
       }
       sample.failures = 0;
       if (!sample.unavailable) delete sample.errorCode;
-      sample.checkedAt = now(); sample.nextAt = now() + (needsMetadata || sample.pageToken ? 10_000 : 300_000);
+      sample.checkedAt = now(); sample.nextAt = now() + (sample.pageToken ? 10_000 : 300_000);
       await writeJsonAtomic(statePath, samples, { mode: 0o600 });
       return true;
     } catch {

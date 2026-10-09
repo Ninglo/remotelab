@@ -109,3 +109,20 @@ test('sampler bounds temporary failures and never queries cards outside the seve
     readUsers: async () => { throw Error('expired card must never be queried'); } });
   assert.equal(await old.tick(), false);
 });
+
+test('legacy receipts verify message age and collect current reads in the same tick', async () => {
+  const { stateDir, statePath } = await stateFixture('legacy');
+  await writeFile(join(stateDir, 'a.json'), JSON.stringify({ sourceRouteId: 'bot-a', sessions: {
+    [card.sessionId]: { chatId: card.chatId, cards: [{ ...card, createdAt: undefined }] } } }));
+  const store = createUsageEventStore({ directory: join(home, 'legacy-ledger') });
+  let calls = 0;
+  const sampler = createFeishuCardReadSampler({ config: { sourceRouteId: 'bot-a' } }, {
+    stateDir, statePath, store, resolvePerson,
+    getMessage: async () => ({ code: 0, data: { items: [{ message_id: card.messageId, chat_id: card.chatId,
+      msg_type: 'interactive', create_time: String(Date.now() - 1000) }] } }),
+    readUsers: async () => { calls++; return { code: 0, data: { items: readers, has_more: false } }; },
+  });
+  await sampler.tick();
+  assert.equal(calls, 1);
+  assert.equal((await store.query()).feishuCards.totals.readCards, 1);
+});
