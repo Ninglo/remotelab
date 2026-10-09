@@ -23,6 +23,8 @@ await writeFile(join(config, 'tools.json'), JSON.stringify([
   { id: 'fake-native', name: 'Fake native', command: 'fake-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
   { id: 'fake-switch', name: 'Other runtime', command: 'fake-native', runtimeFamily: 'codex-json', inputMode: 'batch', promptMode: 'bare-user' },
 ]));
+await writeFile(join(config, 'group-routing-pilot.json'), JSON.stringify({ version: 1, enabled: true,
+  groups: [{ sourceRouteId: 'default', chatId: 'pilot-chat', tenantKey: 'tenant', folder: root }] }));
 await copyFile(join(repo, 'tests/fixtures/native-codex-app-server.cjs'), join(bin, 'fake-native'));
 await chmod(join(bin, 'fake-native'), 0o755);
 const env = { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: '/bin/sh',
@@ -207,6 +209,83 @@ try {
   await rpc('complete', claim.delivery.id, claim.leaseId, { externalId: 'one-final-reply' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'same conversation gets one final publication for all steered messages');
   await evidence('PASS: SIGKILL/controller recovery preserved one execution and one copy of each accepted input; all three response addresses share one final answer and one Feishu publication.');
+
+  const pilotPlan = messageId => ({ connector: 'feishu', sourceRouteId: 'default', target: {
+    chatId: 'pilot-chat', tenantKey: 'tenant', chatType: 'group', conversationKind: 'main', messageId } });
+  const pilotOptions = (requestId, person = 'a') => ({ ...options(requestId), sourceDelivery: pilotPlan(requestId),
+    viewPersonId: 'person_' + person, initiatedByIdentityId: 'identity_' + person,
+    feishuConnectorAuthenticated: true, allowGroupFeedWrite: true,
+    sourceContext: { connector: 'feishu', chatId: 'pilot-chat', createTime: Date.now(), sender: { senderType: 'user' } } });
+  const pilot = await rpc('create', { conversation: pilotPlan('pilot-root'), sourceId: 'feishu' });
+  const pilotRoot = await rpc('accept', pilot.id, 'Start held research A', [], pilotOptions('pilot-root'));
+  await until(async () => (await logs()).some(event => event.runId === pilotRoot.run.id && event.kind === 'turn/start'), 'pilot mainline begins');
+  const supplement = await rpc('accept', pilot.id, 'Add ideas to research A', [], pilotOptions('pilot-supplement'));
+  const independent = await rpc('accept', pilot.id, 'Start independent research B', [], pilotOptions('pilot-independent', 'b'));
+  const status = await rpc('accept', pilot.id, 'Where is the answer?', [], pilotOptions('pilot-status', 'b'));
+  await rpc('accept', pilot.id, 'An input whose handling marker is omitted', [], pilotOptions('pilot-unhandled'));
+  assert.equal(supplement.queued, false); assert.equal(status.queued, false);
+  assert.equal(independent.queued, false);
+  for (const id of ['pilot-supplement', 'pilot-independent', 'pilot-status', 'pilot-unhandled']) {
+    await until(async () => (await receipt(pilotRoot.run.id, id))?.state === 'accepted', id + ' reaches held execution');
+  }
+  assert.equal((await logs()).filter(event => event.runId === pilotRoot.run.id && event.kind === 'completed').length, 0);
+  const handoff = await rpc('route-input', pilot.id, 'pilot-root', {
+    mode: 'new', task: 'Research A including the supplement', reason: 'same research', requestIds: ['pilot-root', 'pilot-supplement'] });
+  const separate = await rpc('route-input', pilot.id, 'pilot-independent', {
+    mode: 'new', task: 'Research B', reason: 'a different matter from another author' });
+  assert.notEqual(separate.targetSessionId, handoff.targetSessionId);
+  const statusText = '两个请求已转入研究话题，结果会在那里回复。';
+  const statusReply = await rpc('reply-input', pilot.id, 'pilot-status', { text: statusText });
+  assert.equal(statusReply.state, 'queued');
+  // The status answer can be claimed while the original execution is still held.
+  const pilotClaims = [];
+  let statusClaim;
+  await until(async () => {
+    const item = await rpc('claim', { connector: 'feishu' });
+    if (!item) return false;
+    pilotClaims.push(item.delivery);
+    await rpc('complete', item.delivery.id, item.leaseId, { externalId: 'pilot-' + pilotClaims.length });
+    if (item.delivery.text === statusText) statusClaim = item;
+    return Boolean(statusClaim);
+  }, 'status response is ready before the research/mainline execution completes');
+  assert.equal(statusClaim.delivery.target.messageId, 'pilot-status');
+  assert.equal(statusClaim.delivery.target.replyInThread, undefined);
+  assert.equal((await rpc('response', pilot.id, 'pilot-root')).state, 'running');
+  await killController(); await boot();
+  await rpc('reply-input', pilot.id, 'pilot-status', { text: statusText });
+  assert.equal((await rpc('request', pilot.id, 'pilot-status')).deliveries.filter(d => d.kind === 'content').length, 1);
+  await writeFile(join(root, `${pilotRoot.run.id}.release`), '');
+  for (const id of ['pilot-root', 'pilot-supplement', 'pilot-independent', 'pilot-status']) {
+    await until(async () => (await rpc('response', pilot.id, id))?.state === 'ready', id + ' settles independently');
+  }
+  assert.equal((await rpc('response', pilot.id, 'pilot-status')).payload.text, statusText);
+  assert.equal((await rpc('response', pilot.id, 'pilot-supplement')).payload.text, '', 'a routed supplement does not inherit the root final');
+  assert.equal((await rpc('request', pilot.id, 'pilot-supplement')).routingHandoff.targetSessionId, handoff.targetSessionId);
+  assert.equal((await rpc('request', pilot.id, 'pilot-independent')).routingHandoff.targetSessionId, separate.targetSessionId);
+  await until(async () => (await rpc('response', pilot.id, 'pilot-unhandled'))?.state === 'failed', 'omitted handling stays incomplete');
+  assert.equal((await rpc('request', pilot.id, 'pilot-unhandled')).result.state, 'failed');
+  assert.equal((await rpc('request', pilot.id, 'pilot-root')).deliveredAt, undefined);
+  while (true) {
+    const item = await rpc('claim', { connector: 'feishu' }); if (!item) break;
+    pilotClaims.push(item.delivery);
+    assert.notEqual(item.delivery.text, statusText, 'settlement never republishes the early per-input reply');
+    assert.notEqual(item.delivery.text, 'durable native answer', 'routed root final is not published in the mainline');
+    await rpc('complete', item.delivery.id, item.leaseId, { externalId: 'pilot-' + pilotClaims.length });
+  }
+  await writeFile(join(root, `${handoff.receipts[0].run.id}.release`), '');
+  await until(async () => (await rpc('response', handoff.targetSessionId, 'routed:pilot-root'))?.state === 'ready', 'research topic finishes');
+  let topicClaim;
+  await until(async () => { topicClaim = await rpc('claim', { connector: 'feishu' }); return Boolean(topicClaim); }, 'research result is in the saved work topic');
+  assert.equal(topicClaim.delivery.target.rootId, 'pilot-root');
+  assert.equal(topicClaim.delivery.target.replyInThread, true);
+  await rpc('complete', topicClaim.delivery.id, topicClaim.leaseId, { externalId: 'pilot-research' });
+  await writeFile(join(root, `${separate.receipts[0].run.id}.release`), '');
+  await until(async () => (await rpc('response', separate.targetSessionId, 'routed:pilot-independent'))?.state === 'ready', 'independent research finishes');
+  await until(async () => { topicClaim = await rpc('claim', { connector: 'feishu' }); return Boolean(topicClaim); }, 'independent result has its own topic');
+  assert.equal(topicClaim.delivery.target.rootId, 'pilot-independent');
+  await rpc('complete', topicClaim.delivery.id, topicClaim.leaseId, { externalId: 'pilot-independent-research' });
+  assert(pilotClaims.some(d => d.target.messageId === 'pilot-unhandled' && /尚未完成/.test(d.text)), 'an omitted input receives an honest notice at its own anchor');
+  await evidence('PASS: pilot supplement, independent matter and another author status steer before root completion; topics remain distinct, status sends immediately at its own anchor, omitted handling stays incomplete, restart and settlement never duplicate/root-copy replies.');
 
   const raceSession = await rpc('create');
   const raceRoot = await accept(raceSession.id, 'race-first', 'Start a completion-race turn');

@@ -27,7 +27,7 @@ try {
   const { requests } = await import('../chat/requests.mjs');
   const { findSessionMeta, mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
   const { recordWorkInput } = await import('../chat/work-awareness.mjs');
-  const { routeGroupWork, acceptGroupSync, completeGroupSync, validateGroupRethink, readGroupRoutingState, buildGroupRoutingContext } = await import('../chat/group-routing.mjs');
+  const { routeGroupWork, replyGroupInput, recoverPilotReplies, pilotInputResult, acceptGroupSync, completeGroupSync, validateGroupRethink, readGroupRoutingState, buildGroupRoutingContext } = await import('../chat/group-routing.mjs');
   const { routingPilotScope, isPilotInputSinceActivation } = await import('../lib/group-routing-pilot.mjs');
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const options = { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a',
@@ -92,7 +92,63 @@ try {
   const active = { key: 'head', runtimeSelection: review.runtimeSelection, options: {} };
   assert.equal(canForwardNativeRequest(review, active), false, 'review cannot steer active work or answer a question');
   assert.equal(canForwardNativeRequest({ key: 'later', options: {} }, review), false, 'review results cannot coalesce with a later user task');
-  assert.equal(canForwardNativeRequest({ ...first, options: { routingPilotMainline: true } }, active), false);
+  assert.equal(canForwardNativeRequest({ ...first, options: { routingPilotMainline: true, routingPilotMainlineProtocol: 2 } }, active), false);
+  const pilotHead = { ...active, runtimeSelection: first.runtimeSelection, options: { routingPilotMainline: true, routingPilotMainlineProtocol: 2 } };
+  assert.equal(canForwardNativeRequest({ ...first, options: { routingPilotMainline: true, routingPilotMainlineProtocol: 2 } }, pilotHead), true,
+    'compatible pilot inputs share execution without sharing reply results');
+  assert.equal(canForwardNativeRequest({ ...first, options: { routingPilotMainline: true } }, pilotHead), false,
+    'pre-upgrade accepted pilot inputs keep the old contract');
+  assert.equal(canForwardNativeRequest({ ...first, options: { routingPilotMainline: true, routingPilotMainlineProtocol: 2 } },
+    { ...pilotHead, options: { routingPilotMainline: true } }), false);
+  assert.equal(canForwardNativeRequest({ ...first, options: { routingPilotMainline: true, routingPilotMainlineProtocol: 2, internalOperation: 'scheduled' } }, pilotHead), false);
+  const localRoot = await input('local-root', '调查另一事项', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const statusInput = await input('status-input', '目前处理到哪了', { routingPilotMainline: true, routingPilotMainlineProtocol: 2,
+    sourceDelivery: { ...origin, target: { ...origin.target, messageId: 'status-message' } } });
+  const status = await requests.mutate(statusInput.key, current => ({ ...current, nativeDispatchRunId: localRoot.runId }));
+  const replyPacket = { text: '研究已接收，正在对应话题继续。' };
+  const localReply = await replyGroupInput(status, replyPacket);
+  assert.equal(localReply.state, 'queued');
+  await replyGroupInput(status, replyPacket);
+  const savedStatus = await requests.get(status.key);
+  assert.equal(savedStatus.deliveries.filter(d => d.kind === 'content').length, 1);
+  assert.equal(savedStatus.deliveries[0].target.messageId, 'status-message');
+  assert.equal((await requests.get(localRoot.key)).options.suppressSourceDelivery, undefined);
+  assert.equal(pilotInputResult(savedStatus, { id: localRoot.runId, state: 'completed' }).payload.text, replyPacket.text);
+  await assert.rejects(replyGroupInput(status, { text: '换个回答' }), /different reply/);
+  await assert.rejects(replyGroupInput(status, { ...replyPacket, requestIds: ['status-input', 'local-root'] }), /different reply/);
+  await assert.rejects(routeGroupWork(status, { mode: 'new', task: '不能搬走', reason: '已答复' }, manager), /outside this human group turn/);
+  const missing = await input('unhandled', '独立问题', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const missingResult = pilotInputResult(missing, { id: localRoot.runId, state: 'completed' });
+  assert.equal(missingResult.state, 'failed');
+  assert.match(missingResult.payload.text, /尚未完成/);
+  await assert.rejects(replyGroupInput(status, { ...replyPacket, requestIds: ['status-input', 'unhandled'] }), /active pilot execution|different reply/);
+  const combinedA = await input('combined-a', '补充 A', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const combinedB = await input('combined-b', '补充 B', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const b = await requests.mutate(combinedB.key, current => ({ ...current, nativeDispatchRunId: combinedA.runId }));
+  const combinedPacket = { text: '两个补充都已纳入。', requestIds: ['combined-a', 'combined-b'] };
+  await replyGroupInput(b, combinedPacket); await replyGroupInput(b, combinedPacket);
+  assert.equal((await requests.get(combinedA.key)).deliveries.length, 1);
+  assert.equal((await requests.get(combinedB.key)).deliveries.length, 0, 'explicit combined answer publishes once');
+  assert.equal(pilotInputResult(await requests.get(combinedB.key), { id: combinedA.runId, state: 'completed' }).replyOwnerRequestId, 'combined-a');
+  // Simulate a crash after the packet reservation but before member writes.
+  const recoverA = await input('recover-a', '同一件事 A', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const recoverB = await input('recover-b', '同一件事 B', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  await requests.mutate(recoverB.key, current => ({ ...current, nativeDispatchRunId: recoverA.runId }));
+  const reserved = await requests.mutate(recoverA.key, current => ({ ...current, mainlineReplyPlans: [{
+    requestIds: ['recover-a', 'recover-b'], ownerRequestId: 'recover-a', payload: { text: '合并答复。', attachments: [] },
+  }] }));
+  await assert.rejects(routeGroupWork(await requests.get(recoverB.key),
+    { mode: 'new', task: '不能搬走已预留答复', reason: '已预留答复' }, manager), /reserved local reply/);
+  await recoverPilotReplies(reserved); await recoverPilotReplies(reserved);
+  assert.equal((await requests.get(recoverA.key)).deliveries.length, 1);
+  assert.equal((await requests.get(recoverB.key)).mainlineReply.contract.payload.text, '合并答复。');
+  const thanks = await input('thanks-only', '好的谢谢', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const noBody = await replyGroupInput(thanks, { noTextReason: '致谢只需保留已有表情。' });
+  assert.equal(noBody.state, 'recorded');
+  const handledThanks = await requests.get(thanks.key);
+  assert.equal(handledThanks.deliveries.length, 0, 'an explicit no-text choice never creates an extra progress or receipt message');
+  assert.equal(pilotInputResult(handledThanks, { id: thanks.runId, state: 'completed' }).state, 'completed');
+  await assert.rejects(routeGroupWork(thanks, { mode: 'new', task: '不能再搬走', reason: '已选择无正文' }, manager), /outside this human group turn/);
   const completed = { ...review, result: { state: 'completed', payload: { text: '新事实成立，结论应调整。' } } };
   await completeGroupSync(completed, { id: review.runId, state: 'completed' });
   await completeGroupSync(completed, { id: review.runId, state: 'completed' });
@@ -122,8 +178,12 @@ try {
   const secondReview = await requests.byRequest('work', 'routing-sync:' + crashDraft.proposal.id);
   await mutateSessionMeta('work', s => { s.workAwareness.intents.push({ id: 'newer' }); return true; });
   await assert.rejects(validateGroupRethink(secondReview), /目标讨论已变化/);
-  const context = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext);
+  const context = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext, { inputReplyContract: true });
   assert.match(context, /sourceRequestId/); assert(context.length < 16000);
+  assert.match(context, /work reply/); assert.match(context, /不要在主线先读设备代码/);
+  const legacyContext = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext);
+  assert.doesNotMatch(legacyContext, /新消息可 steer/);
+  assert.match(legacyContext, /沿用接受时/);
   const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
   const reactions = (await listSourceDeliveries({ connector: 'feishu', sourceRouteId: 'bot' }))
     .filter(delivery => delivery.kind === 'reaction');

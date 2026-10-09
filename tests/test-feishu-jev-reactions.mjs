@@ -55,6 +55,8 @@ try {
       assert.equal(questions.emotion, undefined);
       assert.deepEqual(Object.keys(questions.binaryAnswer.criteria), ['yes', 'no', 'none']);
       assert.deepEqual(Object.keys(questions.workMode.criteria), ['short', 'complex']);
+      assert.match(questions.workMode.instructions, /status reply first/);
+      assert.match(questions.workMode.instructions, /actually requests diagnosis/);
       assert.match(questions.participation.instructions, /only praises, criticizes, or rejects/);
       assert.match(questions.participation.instructions, /how many groups have this bot/);
       assert.match(questions.participation.instructions, /mention alone does not authorize work/);

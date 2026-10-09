@@ -1,4 +1,4 @@
-import { routeGroupWork, readGroupRoutingState } from './group-routing.mjs';
+import { routeGroupWork, replyGroupInput, readGroupRoutingState } from './group-routing.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { requests } from './requests.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
@@ -9,7 +9,7 @@ import { broadcastAll } from './ws-clients.mjs';
 import { retrieveNecessaryContext } from './necessary-background.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -54,10 +54,10 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       people: collectRelatedPeople({ personId: actor.personId, identityId: actor.identityId,
         sourceContext: record.options?.sourceContext, query: body.content || body.goal || '' }) };
     let result;
-    if (pathname.endsWith('/route')) {
+    if (pathname.endsWith('/route') || pathname.endsWith('/reply')) {
       const input = body.sourceRequestId ? await requests.byRequest(sessionId, body.sourceRequestId) : record;
       if (!input || (input.runId !== record.runId && input.nativeDispatchRunId !== record.runId)) throw new Error('Source input does not belong to this active execution');
-      result = await routeGroupWork(input, body);
+      result = pathname.endsWith('/reply') ? await replyGroupInput(input, body) : await routeGroupWork(input, body);
     }
     else if (pathname.endsWith('/start')) result = await startWork(options);
     else if (pathname.endsWith('/update')) result = await updateWork(options);

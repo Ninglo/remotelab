@@ -135,5 +135,33 @@ try {
   });
   assert.match(commandRequest.path, /sessionId=a/); assert.equal(JSON.parse(output).sessionId, 'a');
   await assert.rejects(runWorkAwarenessCommand(['approve']), /Use work/);
+  const plan = { connector: 'feishu', sourceRouteId: 'bot', target: { chatId: 'pilot', tenantKey: 'tenant',
+    chatType: 'group', conversationKind: 'main', messageId: 'reply-anchor' } };
+  const { mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
+  await mutateSessionMeta('a', session => { session.conversation = plan; return true; });
+  await writeFile(join(config, 'group-routing-pilot.json'), JSON.stringify({ version: 1, enabled: true,
+    groups: [{ sourceRouteId: 'bot', chatId: 'pilot', tenantKey: 'tenant', folder: home }] }));
+  const { record: mainInput } = await requests.accept({ sessionId: 'a', requestId: 'pilot-input', text: '接下这项工作',
+    deliveryPlan: plan, options: { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a',
+      routingPilotMainline: true, routingPilotMainlineProtocol: 2, sourceContext: { connector: 'feishu' }, sourceDelivery: plan } });
+  const { record: followInput } = await requests.accept({ sessionId: 'a', requestId: 'pilot-follow', text: '处理到哪了',
+    deliveryPlan: { ...plan, target: { ...plan.target, messageId: 'follow-anchor' } },
+    options: { ...mainInput.options, viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' } });
+  await requests.mutate(followInput.key, value => ({ ...value, nativeDispatchRunId: mainInput.runId }));
+  const replyBody = { runId: mainInput.runId, sourceRequestId: followInput.requestId, text: '正在研究话题处理。' };
+  assert.equal((await call('/api/work-awareness/reply', replyBody, { authKind: 'web', personId: 'person_b' })).status, 403);
+  assert.equal((await call('/api/work-awareness/reply', { ...replyBody, sourceRequestId: 'human' })).status, 400,
+    'the active execution cannot borrow another accepted Request');
+  const localReply = await call('/api/work-awareness/reply', replyBody);
+  assert.equal(localReply.status, 200);
+  assert.equal((await requests.get(followInput.key)).deliveries[0].target.messageId, 'follow-anchor');
+  assert.equal((await requests.get(followInput.key)).options.viewPersonId, 'person_b');
+  const replyFile = join(home, 'reply.json'); await writeFile(replyFile, JSON.stringify(replyBody));
+  await runWorkAwarenessCommand(['reply', '--file', replyFile, '--json'], {
+    stdout: { write() {} }, client: { async request(path, options) {
+      assert.equal(path, '/api/work-awareness/reply'); assert.equal(options.body.sourceRequestId, followInput.requestId);
+      return { response: { ok: true }, json: localReply.json };
+    } },
+  });
   console.log('WORK_ROUTES_VERIFIED: accepted Request attribution; missing/wrong actor rejected; fabricated evidence rejected; Agent drafts cannot approve; routing stays a reviewed packet; CLI shares the same read entry.');
 } finally { await rm(home, { recursive: true, force: true }); }

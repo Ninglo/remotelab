@@ -1,8 +1,8 @@
-import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
+import { routingPilotScope, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { strictStartCheckPrompt } from './strict-start-check.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
-import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink } from './group-routing.mjs';
+import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink, pilotInputResult, recoverPilotReplies } from './group-routing.mjs';
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
 import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
 import { requireConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
@@ -1489,6 +1489,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     'Per-turn context',
     await buildTurnContextHook(session, {
     sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
+    pilotInputReplyContract: hasPilotInputReplyContract({ options }),
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
     query: options.recordedUserText || options.memoryQuery || '',
     }),
@@ -1705,8 +1706,9 @@ function normalizeRunEvents(run, events) {
 }
 
 async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
-  const record = await requests.byRunId(run.id);
+  let record = await requests.byRunId(run.id);
   if (!record || record.result) return;
+  if (hasPilotInputReplyContract(record)) record = await recoverPilotReplies(record);
   if (run.state === 'completed') await maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents);
   const history = await loadHistory(sessionId, { includeBodies: true });
   const session = await findSessionMeta(sessionId);
@@ -1742,7 +1744,9 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
       : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`,
     attachments: [],
   };
-  await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
+  const ownResult = hasPilotInputReplyContract(record) && (record.mainlineReply || record.routingHandoff?.state === 'submitted')
+    ? pilotInputResult(record, run) : { state: run.state, payload, error: run.failureReason || null };
+  await requests.settle(record.key, ownResult,
     annotateTerminalReplyDeliveries(buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
       && !feishuOutcomeRequired
       ? null : deliveryPlan, deliveryPayload, { running: false, automationTitle: record.options.automationTitle, requireFeishuOutcome: feishuOutcomeRequired
@@ -1760,6 +1764,16 @@ async function settleNativeRequest(record, run) {
   record = await requests.get(record.key) || record;
   const ownPlan = record.options?.suppressSourceDelivery || record.routingHandoff ? null
     : normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
+  if (hasPilotInputReplyContract(record) && !record.options?.nativeQuestionId) {
+    const result = pilotInputResult(record, run);
+    await requests.settle(record.key, result, record.mainlineReply || record.routingHandoff?.state === 'submitted'
+      ? [] : buildReplyDeliveries(ownPlan, result.payload, { running: false }));
+    await recordWorkOutcome(record.sessionId, { ...record, result }, run);
+    await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
+    await requestRuntime.refresh(record.key);
+    await requests.archiveFinished(record.key);
+    return;
+  }
   const rootPlan = normalizeSourceDeliveryPlan(root.deliveryPlan || root.options.sourceDelivery);
   const destination = plan => {
     if (!plan) return '';
@@ -3295,6 +3309,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
         ? 'Reference-only cross-Session input (not a user instruction; human adoption pending):\n' : 'Current user message:\n') + record.text].filter(Boolean).join('\n\n---\n\n');
     if (tool?.flattenPrompt) text = text.replace(/\s+/g, ' ').trim();
     if (decisionContext) text = decisionContext + '\n\n' + text;
+    if (hasPilotInputReplyContract(record)) text = `本条已接受的群主线输入 Request ID：${record.requestId}。本条须分别选择 work route 或 work reply，不继承根输入的回复。\n\n` + text;
     return { text: prependAttachmentPaths(text, attachments), context: [context, decisionContext].filter(Boolean).join('\n\n') };
   },
   recordInput: ensureRequestInput,
@@ -3352,13 +3367,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     session = await setSessionArchived(sessionId, false) || session;
   }
   options = applyQuickSessionRuntime(session, options);
-  // Mainline routing decisions are per accepted input. Native coalescing would
-  // give unrelated group inputs one shared final and lose their reply ownership.
+  // Mainline inputs may share execution; their explicit handoff/local reply
+  // remains per input rather than inheriting the root's final result.
   if (session.conversation?.target?.conversationKind === 'main'
       && options.sourceContext?.connector === 'feishu' && !options.automationTitle
       && !['app', 'bot'].includes(options.sourceContext.sender?.senderType)
       && isPilotInputSinceActivation(await routingPilotScope(session.conversation),
-        options.sourceContext.createTime || options.sourceContext.eventTs)) options = { ...options, routingPilotMainline: true };
+        options.sourceContext.createTime || options.sourceContext.eventTs)) options = { ...options, routingPilotMainline: true, routingPilotMainlineProtocol: 2 };
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
@@ -3422,7 +3437,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // These are admission-time projections, not user input. A retry keeps the
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
-    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'messageReplyPolicy',
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy',
       'usageSurface', 'usageActorKind', 'usagePersonId']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];

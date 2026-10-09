@@ -1,7 +1,7 @@
 # Feishu mainline routing latency and reaction feedback
 
-Status: routing optimization research; reaction/feedback implementation is
-verified separately from deployed processes and natural-message acceptance.
+Status: latency retrospective and implementation work. Source verification,
+deployment and natural-message acceptance are separate outcomes.
 
 ## Observed problem
 
@@ -38,10 +38,12 @@ or new semantic supervisor is required to adopt the useful boundaries.
    checks remain necessary, but evidence needed to choose a destination differs
    from evidence needed to execute the work.
 2. Reserve a stable topic, admit the packet, and release the mainline promptly.
-   Reuse existing scoped routing, per-input IDs and native follow-up receipts.
-   Do not forward every new group message into the running turn: multiple
-   people, new matters, stop requests and different reply locations need their
-   own ownership. Do not add a fixed wait to collect consecutive messages.
+   Compatible accepted human inputs may steer the running pilot mainline;
+   arrival in one execution does not imply membership of one business task.
+   The Harness selects each input's handoff or local answer explicitly. Keep
+   source identity, per-input receipts and reply ownership; do not inherit a
+   routed root input's final answer for an unrelated follow-up. Do not add a
+   fixed wait to collect consecutive messages.
 3. Move receipt feedback off context/attachment preparation. Read-only status
    questions can use persisted received/queued/running state; deeper diagnosis
    continues in a work topic. A status reply must not imply work completion.
@@ -76,6 +78,46 @@ destination admission p95 <=10s, status response p95 <=5s. Include upstream
 and startup wait in these targets. Preserve all hard ownership cases and compare
 relationship accuracy with the baseline; do not accept faster wrong routing.
 Begin with isolated replay and then the existing authorized single-group scope.
+
+## 2026-10-09 retrospective
+
+The October 8 pilot disabled mainline steer to prevent shared-result settlement
+from treating unrelated inputs as one reply. The explicit dispatch guard and
+its introduction comment confirm a compatibility precaution, not an observed
+native transport failure. This addressed reply ownership by serializing entire
+turns, introducing head-of-line waiting for supplements and status questions.
+
+Three independent waits need different changes:
+
+- Accepted input to active execution: remove the pilot-only serialization when
+  both inputs use the per-input pilot contract; keep runtime, question, internal
+  operation, document and confirmed reconsideration boundaries.
+- Mainline decision: use bounded destination/status metadata and defer device,
+  repository and business research. Do not make a second deep investigation
+  merely to decide where the investigation should run.
+- Input preparation: receipt ordering was improved in the reaction slice, but
+  attachment/background preparation remains a separate dependency. The observed
+  27.979-second gap cannot be attributed more precisely from existing evidence.
+
+An explicit local reply must use the saved input address and enter the durable
+outbox without waiting for the whole execution to end. Topic handoff and local
+reply are mutually exclusive for an input. Retries must preserve the same text
+and input set. Missing per-input handling must remain visible as incomplete,
+never be silently marked answered with a different input's final payload.
+
+The implementation permits compatible pilot inputs to steer one execution and
+adds `work reply` for an explicit local answer. A root-reserved reply packet and
+per-input outbox commits allow terminal recovery after interruption. The pilot
+settlement uses each input's handoff or selected answer; other conversations
+retain the existing shared-final behavior. A status nudge no longer inherently
+requires a full investigation in the lightweight placement prompt. These prompt
+changes still need natural-message evaluation; isolated tests prove transport
+and state contracts, not model compliance or reasoning speed.
+
+The historical 270.605/342.877-second admission-to-start spans include startup;
+removing the dependency is not a measured promise to save that exact duration.
+Isolated held-run replay can prove concurrent delivery, correct ownership and
+recovery. It cannot prove real-model routing accuracy or production p95 latency.
 
 ## Reaction slice
 

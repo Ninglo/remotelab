@@ -1,6 +1,8 @@
 import * as manager from '../../chat/session-manager.mjs';
 import * as delivery from '../../chat/source-deliveries.mjs';
 import * as work from '../../chat/work-awareness.mjs';
+import * as routing from '../../chat/group-routing.mjs';
+import { requests } from '../../chat/requests.mjs';
 import { loadAuthDocument } from '../../lib/auth-config.mjs';
 await loadAuthDocument({ persistMigration: false });
 await manager.startDetachedRunObservers();
@@ -18,6 +20,9 @@ process.on('message', async ({ id, action, args }) => {
       : action === 'work-start' ? await work.startWork(args[0])
       : action === 'work-suggest' ? await work.createWorkSuggestion(args[0])
       : action === 'work-inbox' ? await work.workInbox(args[0])
+      : action === 'route-input' ? await routing.routeGroupWork(await requests.byRequest(args[0], args[1]), args[2])
+      : action === 'reply-input' ? await routing.replyGroupInput(await requests.byRequest(args[0], args[1]), args[2])
+      : action === 'request' ? await requests.byRequest(...args)
       : action === 'claim' ? await delivery.claimSourceDelivery(...args)
       : action === 'complete' ? await delivery.completeSourceDelivery(...args)
       : action === 'stop' ? await manager.drainRequestRuntime() : null;

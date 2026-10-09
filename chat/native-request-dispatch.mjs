@@ -1,5 +1,6 @@
 import { submitNativeInput, readNativeInputReceipt } from './native-input-transport.mjs';
 import { nativeQuestionReplyText } from './native-user-questions.mjs';
+import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 
 const terminal = run => ['completed', 'failed', 'cancelled'].includes(run?.state);
 const now = () => new Date().toISOString();
@@ -13,8 +14,10 @@ export function canForwardNativeRequest(record, head) {
       || head.options?.routingRethink) return false;
   if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding
       || head.options?.sourceContext?.documentBinding || head.options?.internalOperation)) return false;
-  if (!record.options?.nativeQuestionId && (record.options?.routingPilotMainline
-      || head.options?.routingPilotMainline)) return false;
+  // A pre-upgrade turn does not know the per-input reply contract. Preserve its
+  // accepted behavior; only two new-protocol pilot inputs may share execution.
+  if (!record.options?.nativeQuestionId && (record.options?.routingPilotMainline || head.options?.routingPilotMainline)
+      && !(hasPilotInputReplyContract(record) && hasPilotInputReplyContract(head))) return false;
   const a = record.runtimeSelection || {};
   const b = head.runtimeSelection || {};
   return ['tool', 'model', 'effort', 'thinking'].every(key => (a[key] || '') === (b[key] || ''));

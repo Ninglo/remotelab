@@ -1,12 +1,13 @@
 // The Harness chooses semantic relationships. This module validates and stores
 // their transport, admission and return contracts; it never calls a classifier.
 import { createHash } from 'node:crypto';
-import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
+import { routingPilotScope, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { loadSessionsMeta, findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
-import { requests } from './requests.mjs';
+import { requests, appendDeliveries } from './requests.mjs';
 import { appendEvent } from './history.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
+import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 20);
 const fail = message => { throw new Error(message); };
@@ -52,6 +53,100 @@ async function sourceFor(record) {
   if (!sameGroup(session.conversation, origin)) fail('Input destination is outside the pilot group');
   return { session, scope, origin };
 }
+
+async function commitInputReply(input, reply) {
+  return requests.mutate(input.key, current => {
+    if (current.mainlineReply) {
+      if (JSON.stringify(current.mainlineReply.contract) !== JSON.stringify(reply)) fail('Retry must preserve the input set and reply');
+      return current;
+    }
+    if (current.result || current.routingHandoff || current.streamedFinalReplyIds?.length
+        || current.deliveries?.some(d => ['content', 'attachment'].includes(d.kind))) fail('Input is no longer available for a local reply');
+    const plans = input.requestId === reply.ownerRequestId
+      ? buildReplyDeliveries(input.deliveryPlan || input.options.sourceDelivery, reply.payload, { running: false }) : [];
+    return { ...current, options: { ...current.options, suppressSourceDelivery: true },
+      mainlineReply: { contract: reply, queuedAt: new Date().toISOString() },
+      deliveries: appendDeliveries(current, plans) };
+  });
+}
+
+// The validated packet is reserved on the root before any member is written.
+// Terminal recovery completes an interrupted combined reply without losing its
+// remaining input markers or publishing its owner twice.
+export async function recoverPilotReplies(root) {
+  for (const reply of root.mainlineReplyPlans || []) {
+    for (const id of reply.requestIds) {
+      const input = await requests.byRequest(root.sessionId, id);
+      if (!input || (input.nativeDispatchRunId || input.runId) !== root.runId) fail('Reserved reply input is unavailable');
+      await commitInputReply(input, reply);
+    }
+  }
+  return await requests.get(root.key) || root;
+}
+
+// A local answer is owned by the selected accepted inputs, not the root Run.
+// Persist the packet before its per-input outbox parts; replay cannot send twice.
+export async function replyGroupInput(record, body) {
+  return serial(record.sessionId, async () => {
+    record = await requests.get(record.key) || record;
+    const { session, origin } = await sourceFor(record);
+    if (!hasPilotInputReplyContract(record) || session.conversation.target.conversationKind !== 'main') {
+      fail('Local per-input replies require the pilot mainline');
+    }
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    const noTextReason = clean(body.noTextReason, 600);
+    if (text.length > 12000 || (!text && !noTextReason)) fail('Provide reply text (up to 12000 characters) or a reason no text is needed');
+    if (text && noTextReason) fail('Select a text reply or a no-text decision');
+    const ids = body.requestIds || [record.requestId];
+    if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length
+        || !ids.includes(record.requestId)) fail('Select 1–8 distinct input IDs including the current input');
+    const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
+    const payload = { text, attachments: [] };
+    const reply = { requestIds: ids, ownerRequestId: ids[0], payload, ...(noTextReason ? { noTextReason } : {}) };
+    for (const input of inputs) {
+      if (!input || !hasPilotInputReplyContract(input)
+          || (input.nativeDispatchRunId || input.runId) !== (record.nativeDispatchRunId || record.runId)) {
+        fail('Source input does not belong to this active pilot execution');
+      }
+      const source = await sourceFor(input);
+      if (!sameGroup(origin, source.origin) || input.routingHandoff
+          || (input.mainlineReply && JSON.stringify(input.mainlineReply.contract) !== JSON.stringify(reply))
+          || (!input.mainlineReply && (input.streamedFinalReplyIds?.length
+            || input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind))))) {
+        fail('Input already has a different reply or handoff');
+      }
+    }
+    const root = await requests.byRunId(record.nativeDispatchRunId || record.runId);
+    if (!root || root.result) fail('Active pilot execution is required');
+    await requests.mutate(root.key, current => {
+      if (current.result) fail('Active pilot execution is required');
+      const prior = (current.mainlineReplyPlans || []).filter(p => p.requestIds.some(id => ids.includes(id)));
+      if (prior.length && (prior.length !== 1 || JSON.stringify(prior[0]) !== JSON.stringify(reply))) {
+        fail('Input already has a different reserved reply');
+      }
+      return prior.length ? current : { ...current, mainlineReplyPlans: [...(current.mainlineReplyPlans || []), reply] };
+    });
+    const receipts = [];
+    for (const input of inputs) {
+      const saved = await commitInputReply(input, reply);
+      receipts.push({ requestId: saved.requestId, deliveryIds: saved.deliveries.map(d => d.id) });
+    }
+    await appendEvent(session.id, { type: 'work_event', action: 'mainline-input-reply', requestIds: ids,
+      ownerRequestId: ids[0], receipts });
+    return { requestIds: ids, receipts, state: text ? 'queued' : 'recorded', scope: 'Input reply decision recorded; delivery and business completion are separate.' };
+  });
+}
+
+export function pilotInputResult(record, run) {
+  if (record.mainlineReply) return { state: 'completed', payload: record.mainlineReply.contract.payload,
+    executionRunId: run.id, executionState: run.state, replyOwnerRequestId: record.mainlineReply.contract.ownerRequestId };
+  if (record.routingHandoff?.state === 'submitted') return { state: 'completed', payload: { text: '', attachments: [] },
+    executionRunId: run.id, executionState: run.state, routingHandoff: record.routingHandoff };
+  const text = run.state === 'cancelled' ? '本轮已取消，这条消息尚未完成分流或独立回复。'
+    : '这条消息已接收，但本轮未保存它的分流或独立回复，处理尚未完成。';
+  return { state: run.state === 'cancelled' ? 'cancelled' : 'failed', payload: { text, attachments: [] },
+    executionRunId: run.id, error: text };
+}
 export async function routeGroupWork(record, body, deps) {
   return serial(record.sessionId, async () => {
     record = await requests.get(record.key) || record;
@@ -83,7 +178,7 @@ export async function routeGroupWork(record, body, deps) {
     if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length) fail('Select 1–8 distinct source requestIds');
     const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
     for (const input of inputs) {
-      if (!input || input.result || input.options?.routingRethink || input.options?.automationTitle
+      if (!input || input.result || input.mainlineReply || input.options?.routingRethink || input.options?.automationTitle
           || input.options?.internalOperation
           || (input.deliveries || []).some(d => ['content', 'attachment'].includes(d.kind))
           || (input.runId !== record.runId && input.nativeDispatchRunId !== (record.nativeDispatchRunId || record.runId)
@@ -94,6 +189,10 @@ export async function routeGroupWork(record, body, deps) {
           || !sameGroup(origin, input.deliveryPlan || input.options?.sourceDelivery)) fail('Source input is unavailable or outside this human group turn');
     }
     if (!ids.includes(record.requestId)) fail('Include the current requestId');
+    const root = await requests.byRunId(record.nativeDispatchRunId || record.runId);
+    if (root?.mainlineReplyPlans?.some(reply => reply.requestIds.some(id => ids.includes(id)))) {
+      fail('A reserved local reply already owns this input');
+    }
     const old = state(session).routes.find(route => route.requestIds.includes(record.requestId));
     if (old) {
       if (body.targetSessionId && old.targetSessionId !== body.targetSessionId) fail('This input already belongs to another work topic');
@@ -122,6 +221,7 @@ export async function routeGroupWork(record, body, deps) {
     const manager = await api(deps), receipts = [], feedbackWarnings = [];
     for (const input of inputs) {
       const claimed = await requests.mutate(input.key, current => {
+        if (current.mainlineReply) fail('A local reply decision already owns this input');
         if (current.routingHandoff && current.routingHandoff.targetSessionId !== target.id) fail('Input already handed to another topic');
         if (current.deliveries?.some(d => ['content', 'attachment'].includes(d.kind))) fail('A visible reply already owns this input; do not move it silently');
         return { ...current, routingHandoff: { targetSessionId: target.id, routeId: route.id },
@@ -249,7 +349,7 @@ export async function completeGroupSync(record, run) {
   await appendEvent(source.id, { type: 'work_event', action: 'routing-sync-result', proposalId: packet.id,
     targetSessionId: packet.targetSessionId, result, deliveryId: receipt.id });
 }
-export async function buildGroupRoutingContext(session, sourceContext) {
+export async function buildGroupRoutingContext(session, sourceContext, { inputReplyContract = false } = {}) {
   const scope = await routingPilotScope(session?.conversation);
   if (!scope || sourceContext?.connector !== 'feishu' || ['app', 'bot'].includes(sourceContext.sender?.senderType)
       || !isPilotInputSinceActivation(scope, sourceContext.createTime || sourceContext.eventTs)) return '';
@@ -259,9 +359,13 @@ export async function buildGroupRoutingContext(session, sourceContext) {
     && sameGroup(s.conversation, session.conversation)).slice(-12).map(s => ({ sessionId: s.id, name: s.name, goal: s.workSummary?.goal }));
   return ['## 本群分流试点（只在本群生效）',
     '你负责理解消息之间的关系，不另调用分流模型。区分是否参与、事项归属、执行位置、回复位置、是否向另一话题同步信息。',
-    '简单答复按原位置直接答。已有话题中的正常回复继续当前话题。在群主线收到需独立处理的新事项或既有事项的补充时，先检查下面已预留/已接续的话题；补充不要新建。',
+    '群主线负责尽快确定事项和去向，仅核对作者、授权、已有话题和当前处理状态；执行前的业务检查放到工作话题。不要在主线先读设备代码、查论文或展开业务研究，也不要为选择去向完成整项调查。归属不清时做一次有界的相关状态查询；关键授权仍须核实。已有话题正常回复继续当前话题，补充优先接续下面已有的话题。',
     '用 node "$REMOTELAB_PROJECT_ROOT/cli.js" work route --file <JSON绝对路径> --json。JSON: {sourceRequestId:"本条输入的Request ID（原生追加时必填）",mode:"new"|"continue",task:"本次限定任务",reason:"新事项或接续理由",name:"新话题名",targetSessionId:"continue时必填",requestIds:["当前Request ID以及已接受的连续补充ID"]}。成功后由目标话题回复，主线不重复正文。失败必须说明，不得宣称已转交。',
     '这是本群工作话题的专用接续入口，代替本试点中会丢失飞书话题绑定的普通 session-spawn。新话题先预留再开工，重试复用原目的地；不要为了等补充而固定延时。',
+    ...(inputReplyContract ? ['群主线的新消息可 steer 进入同一次执行，但每条仍有自己的作者、Request ID、事项和回复责任；及时处理补充、催问和停止要求。不要把进入同一次执行理解为同一任务。',
+    '主线简短答复（尤其催问）用 node "$REMOTELAB_PROJECT_ROOT/cli.js" work reply --file <JSON绝对路径> --json，JSON: {sourceRequestId:"要回应的已接受输入ID",text:"这条输入的答复",requestIds:["明确由这段答复一起覆盖的输入ID"]}。只使用本次执行实际收到的输入，不猜ID。此入口按原消息地址立即进入发送队列，不等整轮结束；每条输入只能选择移交或本地答复。重试保持正文和ID集合不变。',
+    '追加输入必须分别 work route 或 work reply；不要依赖根输入的 final 代替它们的答复。不需要正文的闲聊、致谢或仅表情回应，用 work reply 的 {sourceRequestId,noTextReason:"不需要正文的具体理由"} 保存处理结论，保留已有表情，不额外发状态文字。根输入未移交且未单独答复时仍可正常 final。已经通过入口答复的内容不再重复发送。催问先依据已保存的接收、排队、运行或移交回执简短回答；深入漏回调查另交工作话题，不把调查完成作为当场回应的前提。']
+      : ['本条沿用接受时的执行与回复契约；正常 final 或 work route 保留原路径，不使用新的主线 work reply。']),
     '信息可能影响另一个话题时先读相关内容，再 work route --file 创建 {mode:"sync",targetSessionId,task:"具体信息和要求对方复核的问题",reason:"影响哪项结论、为什么"}。这仅保存草稿，不发送。向人展示目标、具体内容、影响、在目标展示已批准信息及复核结论、并回传来源的范围，以及返回的“确认同步 sync_...”短句；人发该短句后才送达并让目标补充思考。不要自动批准，不要求人在目标重复确认同一范围。',
     '同步只限本群工作话题；不触碰其他群、自动通知或既有任务的执行状态。复核结果自动回来源，不能把已提交说成已采纳或已完成。需要新业务动作另提建议。',
     '本试点已经获得在本群自动新建工作话题和接续同一事项的授权；跨话题复核另按具体草稿请人确认。这一试点入口优先于通用新建Session说明。相关检索和同步建议不能阻塞当前简短答复，不为每条聊天全局扫描所有会话。路由/同步记录可通过 work context 查看。',
