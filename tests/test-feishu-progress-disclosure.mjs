@@ -23,6 +23,9 @@ const hints = [];
 setWss({ clients: [{ readyState: 1, send: value => hints.push(JSON.parse(value)) }] });
 after(() => setWss(null));
 const { handleFeishuProgressPolicyAction } = await import('../connectors/feishu/progress-policy-actions.mjs');
+const { recordFeishuCardAction } = await import('../connectors/feishu/card-engagement.mjs');
+const { usageEvents } = await import('../chat/usage-events.mjs');
+const observations = [];
 const { collectFeishuInstanceWorkboardCycles, buildFeishuWorkboardCard, publishFeishuWorkboardCycle }
   = await import('../connectors/feishu/workboard-pilot.mjs');
 const conversation = { connector: 'feishu', sourceRouteId: 'bot',
@@ -54,7 +57,10 @@ const callback = (eventId, mode, extra = {}) => ({ header: { event_id: eventId, 
   context: { open_chat_id: 'group', open_message_id: 'original' }, operator: { open_id: 'person' },
   action: { value: { namespace: 'progress-card', sessionId: 's', anchorSeq: first.seq, revision: 0, mode, ...extra } } } });
 const act = raw => handleFeishuProgressPolicyAction({ config: { sourceRouteId: 'bot' } }, raw,
-  { request, stateDir, authorize: async summary => summary.sender.openId === 'person' });
+  { request, stateDir, authorize: async summary => summary.sender.openId === 'person', recordAction: input => {
+    const observed = recordFeishuCardAction(input, { resolvePerson: async () => 'verified-person' });
+    observations.push(observed); return observed;
+  } });
 
 test('latest summary is outside, history defaults hidden, and real clicks keep one message through updates', async () => {
   let [cycle] = await cycles();
@@ -97,9 +103,15 @@ test('latest summary is outside, history defaults hidden, and real clicks keep o
   assert.equal(JSON.parse(child.stdout).feishuProgressCards[first.seq].mode, 'expanded', 'a fresh process keeps the manual state');
   const projected = createSessionDetail(await findSessionMeta('s'));
   assert.deepEqual(projected.feishuProgressCards[first.seq], { mode: 'expanded', revision: 3 });
+  await Promise.all(observations);
+  const metrics = (await usageEvents.query()).feishuCards.totals;
+  assert.equal(metrics.expandClicks, 2, 'one callback retry never becomes a second click');
+  assert.equal(metrics.collapseClicks, 1);
+  assert.equal(metrics.expandedCards, 1, 'multiple expansions of one card retain distinct clicks and one card');
 });
 
 test('callbacks validate the real message, anchor, tenant and operator; core rejects unlisted anchors', async () => {
+  const before = observations.length;
   for (const change of [raw => { raw.event.context.open_message_id = 'forwarded'; },
     raw => { raw.event.action.value.anchorSeq = progress.seq; },
     raw => { raw.header.tenant_key = 'other'; }, raw => { raw.event.operator.open_id = 'outsider'; }]) {
@@ -108,6 +120,7 @@ test('callbacks validate the real message, anchor, tenant and operator; core rej
   }
   await assert.rejects(updateProgressCardDisclosure('s', { anchorSeq: progress.seq, mode: 'collapsed', changeId: 'x', actorOpenId: 'person' }), { status: 400 });
   assert.equal(progressPolicyForCard(await findSessionMeta('s'), first.seq).mode, 'expanded');
+  assert.equal(observations.length, before, 'forged or unauthorized cards cannot contribute user analytics');
 });
 
 

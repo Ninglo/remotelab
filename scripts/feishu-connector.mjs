@@ -4,6 +4,7 @@ import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors
 import { loadDailyReportMemory } from '../connectors/feishu/daily-report-memory.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
 import { handleFeishuProgressPolicyAction } from '../connectors/feishu/progress-policy-actions.mjs';
+import { createFeishuCardReadSampler, handleFeishuCardReadEvent } from '../connectors/feishu/card-engagement.mjs';
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
@@ -1567,6 +1568,7 @@ function startSourceDeliveryPoller(runtime, options = {}) {
   const pollPromise = (async () => {
     while (!runtime.sourceDeliveryPollStopped) {
       try {
+        void runtime.cardReadSampler?.tick();
         await processOnce(runtime, { waitMs, signal });
       } catch (error) {
         if (runtime.sourceDeliveryPollStopped || signal.aborted) break;
@@ -2056,6 +2058,7 @@ async function main() {
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths);
+  runtime.cardReadSampler = createFeishuCardReadSampler(runtime);
   if (config.projectSurfacesPath) runtime.projectSurface = createProjectSurface(runtime, {
     authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
   });
@@ -2209,6 +2212,7 @@ async function main() {
   };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
+    'im.message.message_read_v1': raw => handleFeishuCardReadEvent(runtime, raw),
     'card.action.trigger': async raw => {
       const questionFeedback = await handleNativeQuestionCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),

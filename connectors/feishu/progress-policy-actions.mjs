@@ -2,6 +2,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../../lib/config.mjs';
 import { describeSessionProgressPolicy, FEISHU_PROGRESS_MODES, progressPolicyForRun, usesOctober7GroupMessaging } from '../../lib/session-progress-policy.mjs';
+import { recordFeishuCardAction } from './card-engagement.mjs';
+import { usageKey } from '../../chat/usage-events.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -22,7 +24,7 @@ export async function findProgressPolicyCard({ sessionId, messageId, sourceRoute
 }
 
 export async function handleFeishuProgressPolicyAction(runtime, raw, {
-  request, authorize = async () => false, stateDir = join(CONFIG_DIR, 'workboards'),
+  request, authorize = async () => false, stateDir = join(CONFIG_DIR, 'workboards'), recordAction = recordFeishuCardAction,
 } = {}) {
   const event = raw?.event || raw;
   let value = event?.action?.value;
@@ -57,12 +59,18 @@ export async function handleFeishuProgressPolicyAction(runtime, raw, {
         || !await authorize(summary)) return reply('无权操作这个会话的进展设置。');
     if (disclosure && usesOctober7GroupMessaging(session))
       return reply('群消息已恢复 10 月 7 日规则，请在原卡片选择“卡片＋新消息”或“只更新卡片”。');
+    const changeId = trim(raw?.header?.event_id || event.event_id)
+      || (trim(event.token) ? `token:${event.token}` : `button:${actor}:${messageId}:${value.revision}:${value.mode}`);
     const result = await request(`/api/sessions/${encodeURIComponent(value.sessionId)}/${disclosure ? 'progress-card' : 'progress-policy'}`, {
       method: 'POST', body: { mode: value.mode, expectedRevision: value.revision,
         ...(disclosure ? { anchorSeq: value.anchorSeq, actorOpenId: actor } : {}),
         ...(value.runId ? { runId: value.runId } : {}),
-        changeId: trim(raw?.header?.event_id || event.event_id) || `button:${actor}:${messageId}:${value.revision}:${value.mode}` },
+        changeId: changeId.startsWith('token:') ? `button-token:${usageKey(changeId)}` : changeId },
     });
+    // Observation is separate from the shared card state and never changes a
+    // Person's default. It must not delay or fail the button response.
+    void Promise.resolve().then(() => recordAction({ route, actor, messageId, sessionId: value.sessionId,
+      value, changeId, accepted: result.response?.ok === true })).catch(() => {});
     if (!result.response?.ok) return reply(result.json?.error || '切换未成功，输入 /progress 可重试。');
     if (usesOctober7GroupMessaging(session) && !disclosure)
       return reply(`${describeSessionProgressPolicy(result.json?.session)}；仅当前会话生效。`, 'success');

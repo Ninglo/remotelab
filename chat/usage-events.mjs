@@ -7,11 +7,12 @@ import { CONFIG_DIR } from '../lib/config.mjs';
 import { buildUsageInsights } from './usage-insights.mjs';
 import { readUsageSessionOrigins } from './usage-session-origins.mjs';
 import { writeJsonAtomic } from './fs-utils.mjs';
+import { summarizeFeishuCardEngagement, readFeishuCardSamplingCoverage } from '../lib/feishu-card-engagement.mjs';
 
 export const CLIENT_USAGE_EVENTS = new Set(['page_enter', 'session_open', 'page_visibility', 'ui_action', 'content_presented', 'artifact_open']);
 const SERVER_EVENTS = new Set(['message_submitted', 'request_state', 'run_state', 'question_state', 'tool_started', 'tool_finished',
   'artifact_generated', 'artifact_registered', 'artifact_attached', 'web_published', 'delivery_state', 'artifact_access_requested', 'session_created', 'session_linked',
-  'capability_state', 'automation_change', 'intervention', 'material_submitted', 'knowledge_state']);
+  'capability_state', 'automation_change', 'intervention', 'material_submitted', 'knowledge_state', 'feishu_card_action', 'feishu_card_read']);
 const identifier = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,160}$/.test(value) ? value : '';
 const token = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,64}$/.test(value) ? value : '';
 const CLIENT_TOKENS = {
@@ -47,6 +48,10 @@ export function normalizeUsageEvent(input, { personId = '', client = false, now 
     surface: client ? 'web' : ['web', 'feishu', 'agent', 'automation', 'runtime'].includes(input.surface) ? input.surface : 'runtime',
     actorKind: client ? 'human' : ['human', 'agent', 'automation', 'system'].includes(input.actorKind) ? input.actorKind : 'system' };
   if (personId) event.personHash = usageKey(`person:${personId}`);
+  if (!client && /^[a-f0-9]{64}$/.test(input.actorKey || '')) event.actorKey = input.actorKey;
+  if (!client && identifier(input.sourceRouteId)) event.sourceRouteId = input.sourceRouteId;
+  if (!client && ['expanded', 'collapsed', 'messages', 'card', 'default'].includes(input.mode)) event.mode = input.mode;
+  if (!client && Number.isFinite(input.readAt) && input.readAt >= 0 && input.readAt <= now + 60_000) event.readAt = input.readAt;
   for (const key of ['sessionId', 'requestId', 'runId', 'visitId', 'parentSessionId', 'objectId', 'originObjectId', 'automationId', 'questionId', 'toolCallId', 'operationId', 'attemptId']) {
     const value = identifier(input[key]); if (value) event[key] = value;
   }
@@ -214,6 +219,7 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     return { generatedAt: new Date(now).toISOString(), collectionStartedAt: metadata?.startedAt || null,
       window: { start: new Date(start).toISOString(), end: new Date(now).toISOString(), days },
       total: events.length, byEvent, bySurface, artifacts, paths: summarizeSurfacePaths(events),
+      feishuCards: { ...summarizeFeishuCardEngagement(events), sampling: await readFeishuCardSamplingCoverage(join(directory, '..', 'feishu-card-reads')) },
       report: buildUsageInsights(events, { start, now, collectionStartedAt: metadata?.startedAt, gaps, scanIncomplete,
         dropped: lastIssueAt >= qualifiedStart ? dropped : 0, failures: lastIssueAt >= qualifiedStart ? failures : 0,
         sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0, featureStartedAt }),

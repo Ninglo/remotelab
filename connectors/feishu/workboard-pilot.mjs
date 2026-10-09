@@ -239,6 +239,7 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
       throw new Error(response?.msg || 'Feishu workboard create failed');
     }
     card.messageId = response.data.message_id;
+    card.createdAt = Number(response.data.create_time) || Date.now();
     card.pendingCreate = false;
     await persist();
     await verifyMessage(card.messageId, { updated: false });
