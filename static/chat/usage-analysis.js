@@ -120,7 +120,7 @@
   }
   function renderSettings(data) {
     const root = section(text("基础设置选了什么，哪些经常被改回", "Setting choices and later reversals"));
-    const scopes = { browser: ['浏览器', 'Browser'], person: ['个人', 'Person'], group: ['群', 'Group'],
+    const scopes = { browser: ['用户的浏览器', 'Person/browser'], person: ['个人', 'Person'], group: ['群', 'Group'],
       instance: ['整个实例', 'Instance'], display: ['个人副屏', 'Personal display'] };
     const renderRows = (target, rows) => table(target, [text("设置", "Setting"), text("作用范围", "Scope"),
       text("已记录配置数", "Observed configurations"), text("最近记录的选项分布", "Last observed choices"),
@@ -132,8 +132,8 @@
     const applied = data.rows.filter(row => row.stage === 'applied'), other = data.rows.filter(row => row.stage !== 'applied');
     if (applied.length) renderRows(root, applied);
     else note(root, "尚未记录到生效配置，不代表用户未使用这些功能。", "No applied configurations are observed yet; this does not establish non-use.");
-    note(root, "每个浏览器、个人、群或实例分别算一份配置；分布是最近一次观测，不是活跃人数，也不代表覆盖了所有设备。基础设置按整个实例汇总，不受会话筛选；变更次数仍按本页观察时段统计。",
-      "Each browser, person, group or instance counts as one configuration. Last observations are not active-user counts or a complete device inventory. Settings are instance-wide, independent of the conversation filter; changes use this page's observed interval.");
+    note(root, "浏览器设置按登录用户和浏览器分别记录；个人、群和实例设置各自汇总。分布是最近一次观测，不是活跃人数，也不代表覆盖了所有设备。基础设置按整个实例汇总，不受会话筛选；变更次数仍按本页观察时段统计。",
+      "Browser choices are observed separately for each signed-in Person/browser pair; personal, group and instance settings retain their respective scopes. Last observations are not active-user counts or a complete device inventory. Settings are instance-wide, independent of the conversation filter; changes use this page's observed interval.");
     note(root, "初次记录和重复保存不算切换。改回先前值需要同一作用范围内的连续变更；开启、关闭或改回不能单独证明功能好坏，还要结合后续使用与本人反馈。",
       "Initial observations and repeated saves are not changes. Returning to an earlier value requires a continuous sequence in the same scope. Choices alone do not establish usability; compare later use and direct feedback.");
     if (data.partial) note(root, "设置记录存在采集缺失，当前分布或变更次数可能不完整。", "Setting observations are partial; distributions or change counts may be incomplete.");
