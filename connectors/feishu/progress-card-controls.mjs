@@ -1,4 +1,24 @@
 import { buildSessionNavigationHref } from '../../lib/session-navigation.mjs';
+import { progressHistoryPages } from '../../lib/progress-card-history.mjs';
+
+export function replyProgressCardPanel(cycle, latest) {
+  const mode = cycle.messageReplyPolicy?.progress;
+  if (mode !== 'card_all') return ['messages', 'card_latest'].includes(mode)
+    ? [{ tag: 'markdown', content: '**最新进展**' }, ...latest] : progressCardPanel(cycle, latest);
+  const history = (cycle.progressHistory || []).filter(item => item.seq <= cycle.latestSeq);
+  const pages = progressHistoryPages(history), page = Math.min(cycle.cardDisclosure?.page || 0, pages.length - 1);
+  const expanded = cycle.cardDisclosure?.mode === 'expanded';
+  const button = (content, mode, targetPage = page, intent) => ({ tag: 'button', type: 'default',
+    text: { tag: 'plain_text', content }, behaviors: [{ type: 'callback', value: {
+      namespace: 'progress-card', sessionId: cycle.sessionId, anchorSeq: cycle.anchorSeq,
+      revision: cycle.cardDisclosure?.revision || 0, mode, page: targetPage, ...(intent ? { intent } : {}),
+    } }] });
+  return [{ tag: 'markdown', content: `**全部进展 · ${history.length} 条${expanded ? ` · 第 ${page + 1}/${pages.length} 页` : ''}**` },
+    button(expanded ? '折叠全部进展' : '展开全部进展', expanded ? 'collapsed' : 'expanded'),
+    ...(expanded ? [{ tag: 'markdown', content: pages[page] },
+      ...(page > 0 ? [button('上一页', 'expanded', page - 1, 'page')] : []),
+      ...(page < pages.length - 1 ? [button('下一页', 'expanded', page + 1, 'page')] : [])] : [])];
+}
 
 // Native folds reset on full-card updates and do not report clicks. A callback
 // disclosure keeps the shared card choice durable while the latest stays visible.

@@ -1,5 +1,6 @@
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
+import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
 import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink } from './group-routing.mjs';
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
 import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
@@ -3388,7 +3389,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     }, activeNative ? activeRequest.runtimeSelection : null);
   const workboardPeople = await loadWorkboardOptIns();
   const workboardEnabled = messageReplyPolicy ? session.groupFeed !== true
-    && (messageReplyPolicy.checklist || messageReplyPolicy.progress === 'card')
+    && (messageReplyPolicy.checklist || replyProgressUsesCard(messageReplyPolicy))
     : isWorkboardTurnEnabled(session, options, workboardPeople);
   const personOptedIn = messageReplyPolicy ? Boolean(options.viewPersonId && options.initiatedByIdentityId)
     : isWorkboardOptedIn(session, options, workboardPeople);

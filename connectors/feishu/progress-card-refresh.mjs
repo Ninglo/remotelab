@@ -15,7 +15,8 @@ export function createProgressCardRefresh(pilot) {
     const acknowledged = snapshots.get(key)?.cardDisclosure;
     const choice = (acknowledged?.revision || 0) > (hinted?.revision || 0) ? acknowledged : hinted;
     return choice && choice.revision >= (cycle.cardDisclosure?.revision || 0)
-      ? { ...cycle, cardDisclosure: { mode: choice.mode, revision: choice.revision } } : cycle;
+      ? { ...cycle, cardDisclosure: { mode: choice.mode, revision: choice.revision,
+        ...(choice.page != null ? { page: choice.page } : {}) } } : cycle;
   }
 
   function remember(cycle) {
@@ -25,10 +26,12 @@ export function createProgressCardRefresh(pilot) {
     const prior = snapshots.get(key);
     if (prior && prior.latestSeq > cycle.latestSeq) return;
     // Store only the existing card's display material, not raw Session events
-    // or its checkpoint replay list. The renderer shows the last ten entries.
+    // or its checkpoint replay list. Full-history mode retains every record
+    // so a page change never replaces complete history with a recent excerpt.
     const { updates, ...snapshot } = apply(cycle);
-    snapshots.set(key, { ...snapshot, progressHistory: (snapshot.progressHistory || [])
-      .filter(progress => progress.seq <= snapshot.latestSeq).slice(-10) });
+    const history = (snapshot.progressHistory || []).filter(progress => progress.seq <= snapshot.latestSeq);
+    snapshots.set(key, { ...snapshot, progressHistory: snapshot.messageReplyPolicy?.progress === 'card_all'
+      ? history : history.slice(-10) });
   }
 
   function accept(message) {
@@ -37,6 +40,7 @@ export function createProgressCardRefresh(pilot) {
         || !Number.isSafeInteger(choice?.anchorSeq) || choice.anchorSeq < 1
         || !Number.isSafeInteger(choice.revision) || choice.revision < 1
         || !['expanded', 'collapsed'].includes(choice.mode)
+        || choice.page != null && (!Number.isSafeInteger(choice.page) || choice.page < 0)
         || choice.sourceRouteId !== pilot.sourceRouteId) return false;
     const stored = storedFor(message.sessionId);
     if (stored?.chatId !== choice.chatId || !stored?.cards?.some(card =>

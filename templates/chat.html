@@ -391,12 +391,15 @@
                   <p class="settings-section-note" data-i18n="settings.replies.openingNote">收到较长任务后，先说明理解和第一步。简单问题直接回答。</p>
                   <label><input id="replyChecklist" type="checkbox" checked><span data-i18n="settings.replies.checklist">需要时显示任务清单</span></label>
                   <p class="settings-section-note" data-i18n="settings.replies.checklistNote">工作有多个需要分别核对的成果时才显示，简单问题不额外生成清单。</p>
-                  <label for="replyProgress" data-i18n="settings.replies.progress">进展如何发送</label>
+                  <label><input id="replyShowProgress" type="checkbox" checked><span data-i18n="settings.replies.showProgress">显示过程进展</span></label>
+                  <label for="replyProgress" data-i18n="settings.replies.progress">进展展示方式</label>
                   <select class="settings-inline-select" id="replyProgress">
-                    <option value="none" data-i18n="settings.replies.none">不发送过程进展</option>
-                    <option value="messages" data-i18n="settings.replies.messages">逐条发送文字消息</option>
-                    <option value="card" selected data-i18n="settings.replies.card">在卡片内更新（详情默认折叠）</option>
+                    <option value="messages" selected data-i18n="settings.replies.messages">卡片＋单独文字进展</option>
+                    <option value="card_latest" data-i18n="settings.replies.latest">卡片展示最新进展</option>
+                    <option value="card_all" data-i18n="settings.replies.card">卡片展示全部进展（默认折叠）</option>
+                    <option value="card" hidden data-i18n="settings.replies.legacyCard">原已保存的卡片进展</option>
                   </select>
+                  <p class="settings-section-note" data-i18n="settings.replies.progressNote">三种方式都使用同一张卡片。有清单就复用清单卡，没有清单就使用进展卡。关闭过程进展时，清单和最终回复仍按各自设置显示。</p>
                   <p class="settings-section-note" data-i18n="settings.replies.final">最终回复始终单独发送。需要你回答的问题和异常情况也会单独通知。</p>
                 </div>
                 <div class="settings-section">

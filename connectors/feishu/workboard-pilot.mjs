@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { progressCardPanel } from './progress-card-controls.mjs';
+import { progressCardPanel, replyProgressCardPanel } from './progress-card-controls.mjs';
+import { replyProgressUsesCard } from '../../static/chat/message-reply-model.js';
 import { groupProgressCardControls, groupProgressCardHistory, buildFeishuGroupProgressCard } from './group-progress-card.mjs';
 import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '../../lib/workboard-state.mjs';
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
@@ -13,7 +14,7 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null, cy
     schema: '2.0', config: { update_multi: true },
     header: { template: 'blue', title: { tag: 'plain_text', content: '处理进展' } },
     body: { elements: [{ tag: 'markdown', content: progressExecutionLabel(cycle.executionState) },
-      ...progressCardPanel(cycle, [{ tag: 'markdown', content: progress?.content || '暂无进度更新' }])] },
+      ...replyProgressCardPanel(cycle, [{ tag: 'markdown', content: progress?.content || '暂无进度更新' }])] },
   };
   const lines = String(text || '').split(/\r?\n/).map(trim).filter(Boolean);
   const goal = lines.find(line => /^目标[：:]/.test(line)) || '目标：完成当前任务并核对结果。';
@@ -34,12 +35,12 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null, cy
         content: `${item.done ? '✓' : '○'} ${item.title} — ${item.condition}` },
     })) : [{ tag: 'div', text: { tag: 'plain_text',
       content: lines.filter(line => line !== goal).join('\n') || trim(text) } }]),
-    ...(!cycle.messageReplyPolicy || cycle.messageReplyPolicy.progress === 'card' ? [{ tag: 'hr' },
+    ...(!cycle.messageReplyPolicy || replyProgressUsesCard(cycle.messageReplyPolicy) ? [{ tag: 'hr' },
       ...(!cycle.messageReplyPolicy && usesOctober7GroupMessaging(cycle.progressPolicy) ? [
         ...groupProgressCardControls(cycle), ...groupProgressCardHistory(cycle),
         { tag: 'markdown', content: '**目前进展**' },
         { tag: 'markdown', content: board ? workboardProgressText(board, progress) : progress?.content || '暂无进度更新' },
-      ] : progressCardPanel(cycle, [{ tag: 'markdown',
+      ] : (cycle.messageReplyPolicy ? replyProgressCardPanel : progressCardPanel)(cycle, [{ tag: 'markdown',
         content: progress?.content || (board ? workboardProgressText(board, progress) : '暂无进度更新') }]))] : []),
   ];
   return {
@@ -161,7 +162,7 @@ function collectAuthorizedCycles(events, pilot, session = null) {
   const progressSeqs = new Set(tasks.flatMap(task => task.progressHistory.map(progress => progress.seq)));
   const allStreams = projectProgressStreams(history, progressSeqs);
   const modularStreams = allStreams.filter(stream =>
-    policies.get(stream.runId)?.progress === 'card' && allowed.has(stream.runId));
+    replyProgressUsesCard(policies.get(stream.runId)) && allowed.has(stream.runId));
   const groupProgressFloor = history.reduce((floor, event) =>
     (event.timestamp || 0) < (pilot.groupProgressRestoredAt ?? pilot.progressStartedAt)
       ? Math.max(floor, event.seq) : floor, 0);
@@ -184,12 +185,13 @@ function collectAuthorizedCycles(events, pilot, session = null) {
       && event.seq > task.anchorSeq
       && (!anchor.runId || event.runId === anchor.runId));
     return { ...task, closed: final, sessionId: session?.id || pilot.sessionId,
-      ...(messageReplyPolicy && messageReplyPolicy.progress !== 'card' ? {
+      ...(messageReplyPolicy && !replyProgressUsesCard(messageReplyPolicy) ? {
         updates: task.updates.filter(update => history.some(event => event.seq === update.seq && event.source === 'workboard_checklist')),
       } : {}),
       ...(messageReplyPolicy ? { messageReplyPolicy } : {}),
       progressPolicy: progressPolicyForRun(session, task.runId),
-      cardDisclosure: progressPolicyForCard(session, task.anchorSeq, task.runId),
+      cardDisclosure: progressPolicyForCard(session, task.anchorSeq,
+        messageReplyPolicy?.progress === 'card_all' ? undefined : task.runId),
       ...(target?.conversationKind === 'thread' ? { replyMessageId: anchors.get(task.anchorSeq)?.replyMessageId || allowed.get(anchor.runId) } : {}) };
   });
 }
@@ -202,7 +204,7 @@ export function collectFeishuWorkboardCycles(events, pilot, session) {
 // Replay each verified checkpoint rather than collapsing a burst to all-done.
 export function expandFeishuWorkboardUpdates(cycles) {
   return cycles.flatMap(cycle => cycle.updates.filter(update => update.workboard
-    || (cycle.messageReplyPolicy ? cycle.progressOnly && cycle.messageReplyPolicy.progress === 'card'
+    || (cycle.messageReplyPolicy ? cycle.progressOnly && replyProgressUsesCard(cycle.messageReplyPolicy)
       : usesOctober7GroupMessaging(cycle.progressPolicy))).map(update => ({ ...cycle,
     latestSeq: update.seq, content: update.content, board: update.workboard, progress: update.progress,
     progressOnly: !update.workboard, executionState: update.executionState || cycle.executionState })));
@@ -210,7 +212,7 @@ export function expandFeishuWorkboardUpdates(cycles) {
 
 export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage }) {
   // Unlisted work has one ordinary result, never a progress-only card.
-  const modularProgress = cycle.messageReplyPolicy?.progress === 'card';
+  const modularProgress = replyProgressUsesCard(cycle.messageReplyPolicy);
   if (cycle.progressOnly && !(cycle.messageReplyPolicy ? modularProgress : usesOctober7GroupMessaging(cycle.progressPolicy))) return null;
   const content = JSON.stringify(cycle.progressOnly && !cycle.messageReplyPolicy ? buildFeishuGroupProgressCard(cycle)
     : buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress, cycle));
@@ -223,7 +225,8 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
     // sent its result. Never place a late checklist after that result.
     if (cycle.closed) return null;
     const uuid = `rl_wb_${createHash('sha256').update(`${pilot.sessionId}:${cycle.anchorSeq}`).digest('hex').slice(0, 32)}`;
-    card = { taskId: cycle.taskId, anchorSeq: cycle.anchorSeq, uuid, messageId: '', pendingCreate: true, latestSeq: 0 };
+    card = { taskId: cycle.taskId, anchorSeq: cycle.anchorSeq, uuid, messageId: '', pendingCreate: true, latestSeq: 0,
+      ...(cycle.messageReplyPolicy ? { progressMode: cycle.messageReplyPolicy.progress } : {}) };
     pilot.cards.push(card);
     await persist();
     const response = cycle.replyMessageId

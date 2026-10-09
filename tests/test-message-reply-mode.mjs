@@ -55,6 +55,7 @@ test('draft, activation and rollback are separate, scoped and revision checked',
   settings = await changeMessageReplySettings({ action: 'activate', expectedRevision: settings.revision, confirm: true }, actor);
   const snapshot = await resolveMessageReplyPolicy(inboundOptions);
   assert.equal(snapshot.progress, 'card');
+  assert.equal(snapshot.version, 2, 'confirmation adopts the new configuration version');
   assert.equal(await resolveMessageReplyPolicy({ ...inboundOptions, feishuConnectorAuthenticated: false }), null);
   assert.equal(await resolveMessageReplyPolicy({ ...inboundOptions, sourceContext: { ...source, sourceRouteId: 'other' } }), null);
   assert.equal(await resolveMessageReplyPolicy({ ...inboundOptions, sourceContext: { ...source, chatId: 'oc_other' } }), null);
@@ -209,4 +210,144 @@ test('a late checklist upgrades the modular progress card and survives replay', 
   const count = calls.length;
   for (const cycle of collect(listed)) await publishFeishuWorkboardCycle(cycle, options);
   assert.equal(calls.length, count);
+});
+
+test('the three version 2 modes retain one card, with distinct progress and one separate result', async () => {
+  const priorBaseline = process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE;
+  process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE = '2026-10-07';
+  try {
+    for (const mode of ['messages', 'card_latest', 'card_all']) for (const useChecklist of [false, true]) {
+      const choices = { ...draft, checklist: useChecklist, progress: mode };
+      const inbound = { ...user(1, choices), messageReplyPolicy: { ...policy(choices), version: 2 } };
+      const events = [inbound, opener, ...(useChecklist ? [checklist] : []),
+        { ...progress(4), content: '<progress>早期发现</progress>' },
+        { ...progress(5), content: '<progress>最新发现</progress>' }];
+      const localPilot = { ...pilot, cards: [] }, calls = [];
+      const options = { pilot: localPilot, persist: async () => {}, verifyMessage: async () => {},
+        app: { im: { v1: { message: {
+          reply: async input => { calls.push(['create', input]); return { code: 0, data: { message_id: 'original-v2-card' } }; },
+          patch: async input => { assert.equal(input.path.message_id, 'original-v2-card'); calls.push(['patch', input]); return { code: 0 }; },
+        } } } } };
+      const cycles = collectFeishuInstanceWorkboardCycles(events, localPilot,
+        { ...session, feishuProgressRuns: { run: { manual: true, mode: 'expanded' } } });
+      assert.equal(cycles.length, 1, `${mode} has a card even without a checklist`);
+      for (const cycle of expandFeishuWorkboardUpdates(cycles)) await publishFeishuWorkboardCycle(cycle, options);
+      const beforeReplay = calls.length;
+      for (const cycle of expandFeishuWorkboardUpdates(cycles)) await publishFeishuWorkboardCycle(cycle, options);
+      assert.equal(calls.length, beforeReplay);
+      assert.equal(calls.filter(call => call[0] === 'create').length, 1);
+      const card = calls.at(-1)[1].data.content;
+      assert.equal(card.includes('早期发现'), false);
+      assert.equal(card.includes('最新发现'), mode !== 'card_all');
+      assert.equal(card.includes('展开全部进展'), mode === 'card_all');
+      if (mode === 'card_all') assert.equal(cycles[0].cardDisclosure.mode, 'collapsed', 'a new full-history card starts collapsed independently of the Run preference');
+      assert.equal(card.includes('核对来源'), useChecklist);
+      assert.equal(localPilot.cards[0].progressMode, mode);
+      let record = { key: 'new-mode', runId: 'run', options: { messageReplyPolicy: inbound.messageReplyPolicy }, deliveries: [] };
+      const store = { get: async () => record, mutate: async (_key, fn) => (record = fn(record)) };
+      const question = { ...progress(6), content: '确认日期？', messageKind: 'user_question', nativeQuestion: { questions: [] }, questionState: 'pending' };
+      await publishLiveAssistantReplies(record, [...events, question], { store, plan, session, running: true });
+      await publishLiveAssistantReplies(record, [...events, question, final], { store, plan, session, running: false });
+      await publishLiveAssistantReplies(record, [...events, question, final], { store, plan, session, running: false });
+      assert.equal(record.deliveries.filter(part => part.surfaceKind === 'progress').length, mode === 'messages' ? 2 : 0);
+      assert.equal(record.deliveries.filter(part => part.surfaceKind === 'question').length, 1);
+      assert.equal(record.deliveries.filter(part => part.surfaceKind === 'final').length, 1);
+    }
+  } finally {
+    if (priorBaseline == null) delete process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE;
+    else process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE = priorBaseline;
+  }
+});
+
+test('all-progress pages retain every full record, including early updates, and hide future content', async () => {
+  const { progressHistoryPages } = await import('../lib/progress-card-history.mjs');
+  const history = Array.from({ length: 25 }, (_, index) => ({ seq: index + 1,
+    content: `完整记录${index}：` + '中文😀\\\n'.repeat(1000) }));
+  const pages = progressHistoryPages([...history, { seq: 100, content: '未来内容' }], 25);
+  const complete = history.map((item, index) => `**进展 ${index + 1}**\n${item.content}`).join('\n\n');
+  assert.equal(pages.join(''), complete, 'pagination never truncates long records or older progress');
+  assert(pages.length > 1);
+  const cycle = { sessionId: 's', anchorSeq: 3, latestSeq: 25, progressHistory: history,
+    progress: history.at(-1), messageReplyPolicy: { version: 2, progress: 'card_all' },
+    cardDisclosure: { mode: 'collapsed', revision: 0 } };
+  const closed = JSON.stringify(buildFeishuWorkboardCard('', null, cycle.progress, { ...cycle, progressOnly: true }));
+  assert.equal(closed.includes('完整记录'), false, 'all progress starts inside the collapsed section');
+  for (let page = 0; page < pages.length; page++) {
+    const card = buildFeishuWorkboardCard('', null, cycle.progress,
+      { ...cycle, progressOnly: true, cardDisclosure: { mode: 'expanded', revision: 1, page } });
+    assert(card.body.elements.some(element => element.content === pages[page]));
+    assert(Buffer.byteLength(JSON.stringify({ content: JSON.stringify(card) })) < 30000);
+  }
+});
+
+test('full-history callbacks preserve page and disclosure across updates, retries and cached repaint', async () => {
+  const { loadHistory } = await import('../chat/history.mjs');
+  const { loadSessionsMeta, findSessionMeta } = await import('../chat/session-meta-store.mjs');
+  const { handleFeishuProgressPolicyAction } = await import('../connectors/feishu/progress-policy-actions.mjs');
+  const { createProgressCardRefresh } = await import('../connectors/feishu/progress-card-refresh.mjs');
+  const { progressPolicyForCard } = await import('../lib/session-progress-policy.mjs');
+  const { mkdir } = await import('node:fs/promises');
+  const fullSession = { ...session, id: 'full-history' };
+  await writeJsonAtomic(CHAT_SESSIONS_FILE, [...await loadSessionsMeta(), fullSession]);
+  const inbound = { ...user(1, { ...draft, checklist: false, progress: 'card_all' }),
+    runId: 'all-history', messageReplyPolicy: { version: 2, checklist: false, progress: 'card_all' } };
+  await appendEvent(fullSession.id, inbound);
+  const anchor = await appendEvent(fullSession.id, { ...progress(2), runId: 'all-history', content: '<progress>最早记录' + '详细文字'.repeat(2500) + '</progress>' });
+  for (let index = 0; index < 12; index++) await appendEvent(fullSession.id,
+    { ...progress(index + 3), runId: 'all-history', content: `<progress>后续记录${index}</progress>` });
+  const stateDir = join(home, 'full-history-cards'); await mkdir(stateDir);
+  const localPilot = { ...pilot, sessionId: fullSession.id, cards: [] };
+  const persist = () => writeJsonAtomic(join(stateDir, 'bot.json'), { sourceRouteId: group.sourceRouteId,
+    sessions: { [fullSession.id]: localPilot } });
+  const getCycle = async () => collectFeishuInstanceWorkboardCycles(await loadHistory(fullSession.id), localPilot,
+    await findSessionMeta(fullSession.id))[0];
+  const cycle = await getCycle();
+  await publishFeishuWorkboardCycle(cycle, { pilot: localPilot, persist, verifyMessage: async () => {},
+    app: { im: { v1: { message: { reply: async () => ({ code: 0, data: { message_id: 'history-original' } }) } } } } });
+  const request = async (_path, options = {}) => {
+    try { return { response: { ok: true }, json: { session: options.method === 'POST'
+      ? await updateProgressCardDisclosure(fullSession.id, options.body) : await findSessionMeta(fullSession.id) } }; }
+    catch (error) { return { response: { ok: false }, json: { error: error.message } }; }
+  };
+  const act = (eventId, mode, page = 1) => handleFeishuProgressPolicyAction({ config: { sourceRouteId: group.sourceRouteId } },
+    { header: { event_id: eventId }, event: { context: { open_chat_id: group.chatId, open_message_id: 'history-original' },
+      operator: { open_id: 'person' }, action: { value: { namespace: 'progress-card', sessionId: fullSession.id,
+        anchorSeq: anchor.seq, revision: 0, mode, page } } } },
+    { request, stateDir, authorize: async summary => summary.sender.openId === 'person', recordAction: async () => {} });
+  const priorBaseline = process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE;
+  process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE = '2026-10-07';
+  try {
+    assert.equal((await act('open-page1', 'expanded')).toast.type, 'success', 'the actual modular receipt works under the current instance default');
+    assert.equal((await act('collapse-page1', 'collapsed')).toast.type, 'success');
+    await act('open-page1', 'expanded');
+    await appendEvent(fullSession.id, { ...progress(99), runId: 'all-history', content: '<progress>最新记录</progress>' });
+    let choice = progressPolicyForCard(await findSessionMeta(fullSession.id), anchor.seq);
+    assert.equal(choice.mode, 'collapsed'); assert.equal(choice.page, 1);
+    await act('open-page0', 'expanded', 0);
+    const refresh = createProgressCardRefresh({ scope: 'instance', sourceRouteId: group.sourceRouteId,
+      sessions: { [fullSession.id]: localPilot } });
+    const snapshot = await getCycle();
+    localPilot.cards[0].latestSeq = snapshot.latestSeq;
+    refresh.remember(snapshot);
+    assert.equal(refresh.accept({ type: 'session_invalidated', sessionId: fullSession.id,
+      progressCard: { anchorSeq: anchor.seq, chatId: group.chatId, sourceRouteId: group.sourceRouteId,
+        mode: 'expanded', revision: snapshot.cardDisclosure.revision + 1, page: 1 } }), true);
+    const cached = refresh.take().cycle;
+    assert.equal(cached.cardDisclosure.page, 1);
+    assert.equal(cached.progressHistory.length, 14, 'a fast repaint retains more than ten complete records');
+    await assert.rejects(updateProgressCardDisclosure(fullSession.id,
+      { anchorSeq: anchor.seq, mode: 'expanded', page: 1000, changeId: 'invalid-page', actorOpenId: 'person' }), /页码/);
+  } finally {
+    if (priorBaseline == null) delete process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE;
+    else process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE = priorBaseline;
+  }
+});
+
+test('turning a progress page is recorded without counting another expansion', async () => {
+  const { recordFeishuCardAction } = await import('../connectors/feishu/card-engagement.mjs');
+  let observed;
+  await recordFeishuCardAction({ route: 'bot', actor: 'person', messageId: 'card', sessionId: 's',
+    changeId: 'page-click', accepted: true, value: { namespace: 'progress-card', mode: 'expanded', page: 1, intent: 'page' } },
+    { resolvePerson: async () => 'person', store: { record: async event => { observed = event; } } });
+  assert.equal(observed.action, 'page');
 });

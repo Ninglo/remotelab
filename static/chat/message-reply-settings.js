@@ -13,7 +13,7 @@ const status = text => { byId('replySettingsStatus').textContent = text; };
 
 function readDraft() {
   return { opening: byId('replyOpening').checked, checklist: byId('replyChecklist').checked,
-    progress: byId('replyProgress').value,
+    progress: byId('replyShowProgress').checked ? byId('replyProgress').value : 'none',
     groups: [...byId('replyGroups').querySelectorAll('input:checked')].map(input => groups[Number(input.value)])
       .map(({ sourceRouteId, chatId }) => ({ sourceRouteId, chatId })) };
 }
@@ -29,30 +29,49 @@ function renderPreview() {
     title.textContent = step.title;
     const text = document.createElement('p');
     text.textContent = step.text;
-    item.append(title, text);
+    item.append(title);
+    if (step.text) item.append(text);
     if (step.card) {
-      const details = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = copy('点击显示进展', 'Show progress');
-      const body = document.createElement('p');
-      body.textContent = copy('更多进展记录会显示在这里。更新同一张卡片时，会保留上次展开或收起的选择。',
-        'More progress appears here. Updates to the same card preserve the last expand or collapse choice.');
-      details.append(summary, body);
-      item.append(details);
+      if (step.collapsed) {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = copy('展开全部进展', 'Show all progress');
+        const body = document.createElement('p');
+        body.textContent = step.history.join('\n\n');
+        details.append(summary, body);
+        item.append(details);
+        const behavior = document.createElement('p');
+        behavior.className = 'settings-section-note';
+        behavior.textContent = copy('记录较多时在原卡内翻页。后续更新保留上次展开、折叠和页码选择。',
+          'Long histories use pages in the original card. Updates preserve your expand, collapse and page choice.');
+        item.append(behavior);
+      } else {
+        const behavior = document.createElement('p');
+        behavior.className = 'settings-section-note';
+        behavior.textContent = copy('新进展替换卡片里显示的上一条，只保留最新一条。',
+          'New progress replaces the previous visible update; the card shows the latest only.');
+        item.append(behavior);
+      }
       const note = document.createElement('p');
       note.className = 'settings-section-note';
       note.textContent = step.combined ? copy('进展更新上面的清单原卡，不另发一张卡。', 'Progress updates the checklist card above.')
         : copy('没有清单时，只创建一张进展卡，后续更新原卡。', 'Without a checklist, one progress card is created and updated.');
       item.append(note);
+      if (step.textMessages?.length) {
+        const messages = document.createElement('p');
+        messages.textContent = copy('同时在原话题单独发送文字进展：\n', 'Also send separate text updates in the original topic:\n') + step.textMessages.join('\n\n');
+        item.append(messages);
+      }
     }
     preview.append(item);
   }
   byId('replyActivate').disabled = busy || changed || !state || !readDraft().groups.length;
+  byId('replyProgress').disabled = busy || !byId('replyShowProgress').checked;
 }
 
 function describeChoices(value) {
-  return copy(`首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '逐条发文字进展', card: '进展在卡片内更新' })[value.progress]}`,
-    `first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'text progress updates', card: 'progress updates in a card' })[value.progress]}`);
+  return copy(`首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展', card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' })[value.progress]}`,
+    `first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'card + separate text updates', card_latest: 'latest progress in a card', card_all: 'all progress in a collapsed card', card: 'previously saved card progress' })[value.progress]}`);
 }
 
 function groupLabel(group) {
@@ -81,7 +100,8 @@ function renderState() {
   const draft = state?.draft || DEFAULT_REPLY_DRAFT;
   byId('replyOpening').checked = draft.opening;
   byId('replyChecklist').checked = draft.checklist;
-  byId('replyProgress').value = draft.progress;
+  byId('replyShowProgress').checked = draft.progress !== 'none';
+  byId('replyProgress').value = draft.progress === 'none' ? 'messages' : draft.progress;
   const list = byId('replyGroups');
   list.replaceChildren();
   groups.forEach((group, index) => {

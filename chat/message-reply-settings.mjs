@@ -50,7 +50,7 @@ export async function changeMessageReplySettings(input, actor) {
         if (!current.draft.groups.length) fail('请先选择要应用自定义回复的群并保存草案。');
         const known = new Set((await listMessageReplyGroups()).map(group => `${group.sourceRouteId}:${group.chatId}`));
         if (current.draft.groups.some(group => !known.has(`${group.sourceRouteId}:${group.chatId}`))) fail('选中群的来源无法核对，请重新选择。');
-        next.active = { ...structuredClone(current.draft), version: 1, policyId: `reply_${next.revision}`,
+        next.active = { ...structuredClone(current.draft), version: 2, policyId: `reply_${next.revision}`,
           activatedAt: now, personId: actor.personId, identityId: actor.identityId };
       } else next.active = null;
     }
@@ -77,7 +77,7 @@ export async function resolveMessageReplyPolicy(options = {}) {
   try { ({ active } = await loadMessageReplySettings()); }
   catch (error) { console.warn(`[message-reply-mode] ${error.message}; preserving legacy display for new requests`); return null; }
   if (!active?.groups.some(group => group.chatId === source.chatId && group.sourceRouteId === source.sourceRouteId)) return null;
-  return { version: 1, policyId: active.policyId, opening: active.opening,
+  return { version: active.version || 1, policyId: active.policyId, opening: active.opening,
     checklist: active.checklist, progress: active.progress, final: true };
 }
 
@@ -89,7 +89,12 @@ export function messageReplyPrompt(policy) {
     policy.checklist ? 'Use an acceptance checklist when independent deliverables make it useful. Simple answers need no artificial checklist.'
       : 'The user has disabled new acceptance checklists. Do not publish a new task checklist; an explicitly resumed existing task retains its original card.',
     policy.progress === 'none' ? 'The user has disabled ordinary progress delivery on Feishu.'
-      : `Publish useful new findings with <progress>...</progress>. RemoteLab delivers them as ${policy.progress === 'messages' ? 'text messages' : 'updates to one card, initially collapsed; a checklist is not required'}.`,
+      : `Publish useful new findings with <progress>...</progress>. RemoteLab delivers them as ${({
+        messages: policy.version === 2 ? 'updates to one card plus separate text messages' : 'text messages',
+        card_latest: 'the latest progress in one card, replacing its prior visible update',
+        card_all: 'all progress records inside one card, initially collapsed, with in-card pages when needed',
+        card: 'updates to one card, initially collapsed',
+      })[policy.progress]}; a checklist is not required.`,
     'Required questions and exceptional notices remain separate. Always deliver the final result for work you take on. These display choices do not change group participation, routing, permissions, or task acceptance.',
   ].join('\n');
 }

@@ -41,7 +41,8 @@ export async function recordFeishuCardAction({ route, actor, messageId, sessionI
     return await store.record({ event: 'feishu_card_action', eventId: usageKey(`feishu-action:${route}:${changeId}`),
       surface: 'feishu', actorKind: 'human', actorKey: actorKey(route, actor), sourceRouteId: route,
       sessionId, objectId: cardKey(route, messageId), historySeq: value.anchorSeq,
-      action: value.namespace === 'progress-card' ? (value.mode === 'expanded' ? 'expand' : 'collapse') : 'delivery_choice',
+      action: value.namespace === 'progress-card' ? (value.intent === 'page' && Number.isSafeInteger(value.page)
+        ? 'page' : value.mode === 'expanded' ? 'expand' : 'collapse') : 'delivery_choice',
       mode: value.mode, state: accepted ? 'accepted' : 'rejected' }, { personId });
   } catch { console.warn('[feishu-card-engagement] Click collection unavailable; card action continues.'); return false; }
 }

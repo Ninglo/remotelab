@@ -6,6 +6,7 @@ import { getRun } from './runs.mjs';
 import { loadHistory, getHistoryHeadSeq } from './history.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
 import { projectProgressStreams } from '../lib/progress-stream.mjs';
+import { progressHistoryPages } from '../lib/progress-card-history.mjs';
 
 // Policy changes and progress outbox admissions share one lock. A notification
 // already admitted before a switch may finish; later observations read the new policy.
@@ -112,9 +113,10 @@ export async function updateSessionProgressPolicy(id, { mode, expectedRevision, 
   });
 }
 
-export async function updateProgressCardDisclosure(id, { anchorSeq, mode, changeId, actorOpenId } = {}) {
+export async function updateProgressCardDisclosure(id, { anchorSeq, mode, page, changeId, actorOpenId } = {}) {
   if (!Number.isSafeInteger(anchorSeq) || anchorSeq < 1 || !['expanded', 'collapsed'].includes(mode))
     invalid('无效的进展卡片操作。');
+  if (page != null && (!Number.isSafeInteger(page) || page < 0)) invalid('无效的进展页码。');
   if (typeof changeId !== 'string' || !changeId.trim() || changeId.length > 200
       || typeof actorOpenId !== 'string' || !actorOpenId.trim() || actorOpenId.length > 200)
     invalid('缺少有效的卡片操作来源。');
@@ -126,11 +128,18 @@ export async function updateProgressCardDisclosure(id, { anchorSeq, mode, change
     const history = await loadHistory(id);
     const tasks = projectWorkboards(history);
     const progressSeqs = new Set(tasks.flatMap(task => task.progressHistory.map(progress => progress.seq)));
-    const standalone = projectProgressStreams(history, progressSeqs).some(stream => stream.anchorSeq === anchorSeq
+    const standalone = projectProgressStreams(history, progressSeqs).find(stream => stream.anchorSeq === anchorSeq
       && history.some(event => event.role === 'user' && event.runId === stream.runId
-        && event.messageReplyPolicy?.progress === 'card' && event.workboardAdmission));
-    if (!tasks.some(task => task.anchorSeq === anchorSeq) && !standalone)
+        && ['card', 'card_all'].includes(event.messageReplyPolicy?.progress) && event.workboardAdmission));
+    const owner = tasks.find(task => task.anchorSeq === anchorSeq) || standalone;
+    if (!owner)
       invalid('无法确认这张任务卡片，请查看原话题。');
+    const anchorRun = history.find(event => event.seq === anchorSeq)?.runId;
+    const policy = history.find(event => event.role === 'user' && event.runId === anchorRun
+      && event.messageReplyPolicy)?.messageReplyPolicy;
+    if (page != null && (policy?.progress !== 'card_all'
+        || page >= progressHistoryPages(owner.progressHistory, owner.latestSeq).length))
+      invalid('无法确认这个进展页码，请查看最新卡片。');
     const result = await mutateSessionMeta(id, session => {
       const prior = session.feishuProgressCards?.[anchorSeq];
       // Retried older callbacks never undo a more recent click. Each new
@@ -139,6 +148,7 @@ export async function updateProgressCardDisclosure(id, { anchorSeq, mode, change
       if (prior?.changes?.includes(changeId)) return false;
       session.feishuProgressCards = { ...session.feishuProgressCards, [anchorSeq]: {
         mode, revision: (prior?.revision || 0) + 1, actorOpenId,
+        ...(policy?.progress === 'card_all' ? { page: page ?? prior?.page ?? 0 } : {}),
         changes: [...(prior?.changes || []), changeId].slice(-100),
       } };
       session.updatedAt = new Date().toISOString();
@@ -153,6 +163,6 @@ export async function updateProgressCardDisclosure(id, { anchorSeq, mode, change
 }
 
 function progressPolicyForCardHint(session, anchorSeq) {
-  const { mode, revision } = session.feishuProgressCards[anchorSeq];
-  return { mode, revision };
+  const { mode, revision, page } = session.feishuProgressCards[anchorSeq];
+  return { mode, revision, ...(page != null ? { page } : {}) };
 }
