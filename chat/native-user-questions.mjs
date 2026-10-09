@@ -8,7 +8,21 @@ import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mj
 // finite timeout remains available to callers that have declared a fallback.
 export const QUESTION_TIMEOUT_MS = null;
 const currentPath = directory => join(directory, 'native-question.json');
-export const readNativeQuestion = directory => readRecord(currentPath(directory));
+const questionJournalPath = (directory, id) => join(directory, 'native-questions',
+  `${createHash('sha256').update(id).digest('hex').slice(0, 32)}.json`);
+export async function readNativeQuestion(directory) {
+  const current = await readRecord(currentPath(directory));
+  if (current?.state !== 'pending' || current.question || typeof current.id !== 'string') return current;
+  // A controller upgrade must also retain numbered replies for detached hosts
+  // already running the old pointer format. Read their journal; never rewrite
+  // the host's state or replay its native answer.
+  const separator = current.id.lastIndexOf(':');
+  const entry = await readRecord(questionJournalPath(directory, current.id.slice(0, separator)));
+  const index = Number(current.id.slice(separator + 1));
+  if (!entry || entry.index !== index || entry.state !== 'pending' || !entry.questions?.[index]) return current;
+  return { ...current, question: entry.questions[index],
+    ...(index === 0 ? { openedAt: entry.openedAt } : {}) };
+}
 
 // Feishu adds a speaker envelope to the conversation transcript. Keep that
 // attribution in history, but return only the user's reply to the native tool.
@@ -89,7 +103,7 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
   const queue = [];
   const hasTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0;
   let active = null, timer = null, closed = false;
-  const journalPath = entry => join(directory, 'native-questions', `${createHash('sha256').update(entry.id).digest('hex').slice(0, 32)}.json`);
+  const journalPath = entry => questionJournalPath(directory, entry.id);
   const emit = (entry, state, content, origin = '', answers = []) => onEvent({
     type: 'remotelab.user_question', messageId: `${entry.id}:${entry.index}:${state}`,
     questionId: `${entry.id}:${entry.index}`, state, origin, content,

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once, EventEmitter } from 'node:events';
 import { createNativeQuestionBroker, readNativeQuestion, resolveQuestionAnswer, nativeQuestionAnswers, nativeQuestionReplyText, isNativeQuestionShortcut, QUESTION_TIMEOUT_MS } from '../chat/native-user-questions.mjs';
-import { readRecord } from '../lib/durable-records.mjs';
+import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createCodexAdapter } from '../chat/adapters/codex.mjs';
 import { createClaudeAdapter } from '../chat/adapters/claude.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
@@ -63,6 +63,14 @@ try {
     assert.match(humanEvents[0].content, /不会超时自动选择/);
     humanClock += 24 * 60 * 60_000;
     assert.deepEqual(await readNativeQuestion(waitingRoot), original, 'a day later the same question is still pending');
+    const oldPointer = { id: original.id, state: original.state, deadline: original.deadline };
+    await writeDurableJson(join(waitingRoot, 'native-question.json'), oldPointer);
+    const upgradedView = await readNativeQuestion(waitingRoot);
+    assert.equal(isNativeQuestionShortcut(upgradedView, { text: '2', options: {} }), true,
+      'a running old detached host retains numbered replies after controller upgrade');
+    assert.equal(isNativeQuestionShortcut(upgradedView, { text: 'Feishu merge_forward message reference', options: {} }), false);
+    assert.deepEqual(await readRecord(join(waitingRoot, 'native-question.json')), oldPointer,
+      'compatibility observation cannot rewrite the native host pointer');
     assert.equal(humanEvents.length, 1, 'waiting does not generate defaults or another attention message');
     assert.equal((await waiting.answer({ id: 'human-choice', questionId: original.id, text: '2' })).mode, 'question_answer');
     const resolved = await result;
