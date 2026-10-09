@@ -34,7 +34,11 @@ function flushSessionSidebarUpdates() {
     }
     if (updates.length) {
       reorderSessionSidebarGroups();
+      const previousSpace = activeSessionSpace;
       renderSessionSpaceSwitcher();
+      // Classification can remove the last session in the selected Space.
+      // The switcher then selects All, which changes the entire visible set.
+      if (activeSessionSpace !== previousSpace) renderSessionList();
     }
   } finally {
     sessionListRenderDepth -= 1;

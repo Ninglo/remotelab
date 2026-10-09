@@ -76,6 +76,7 @@ const archive = new Node('archived-section');
 root.append(archive);
 const context = vm.createContext({
   console, Map, Set, Date, CSS: { escape: (value) => value }, sessionList: root,
+  activeSessionSpace: 'all',
   requestAnimationFrame: (callback) => { frames.push(callback); return frames.length; },
   getVisibleActiveSessions: () => records.filter((entry) => !entry.hidden && !entry.pinned && !entry.archived)
     .sort((a, b) => Date.parse(b.lastEventAt) - Date.parse(a.lastEventAt)),
@@ -132,6 +133,14 @@ update('c', { name: 'stale queued patch' });
 context.renderSessionList();
 frames.shift()();
 assert.equal(createdRows, 2, 'a synchronous filter/selection render must discard queued patches');
+
+context.activeSessionSpace = 'removed-space';
+context.renderSessionSpaceSwitcher = () => { context.activeSessionSpace = 'all'; };
+update('hidden', { status: 'idle' });
+const rendersBeforeSpaceFallback = fullRenders;
+frames.shift()();
+assert.equal(fullRenders, rendersBeforeSpaceFallback + 1,
+  'removing the selected Space must refresh rows for the fallback All selection');
 
 // Identity lookup must avoid copying the directory once per session, and a
 // refreshed directory must invalidate the index rather than retain old owners.
