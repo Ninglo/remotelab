@@ -58,7 +58,7 @@ export function replySettingRows(settings, groups) {
   const rows = settingRows(replySettingValues(settings.draft), { scope: 'instance', scopeId: 'reply-draft', stage: 'draft' });
   for (const group of groups) {
     const selected = settings.active?.groups.some(item => item.sourceRouteId === group.sourceRouteId && item.chatId === group.chatId);
-    rows.push(...settingRows(replySettingValues(selected ? settings.active : null, settings.active?.version), {
+    rows.push(...settingRows(replySettingValues(selected ? settings.active : null, settings.active?.version || 1), {
       scope: 'group', scopeId: JSON.stringify([group.sourceRouteId, group.chatId]),
     }));
   }

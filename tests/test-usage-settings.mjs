@@ -11,7 +11,7 @@ setIsolatedTestHome(home);
 after(() => rm(home, { recursive: true, force: true }));
 const { CONFIG_DIR, CHAT_SESSIONS_FILE } = await import('../lib/config.mjs');
 const { createSettingObserver, readSettingSnapshot } = await import('../lib/usage-setting-store.mjs');
-const { settingRows, settingObserver, observeSettingRows, personSettingValues } = await import('../chat/usage-settings.mjs');
+const { settingRows, settingObserver, observeSettingRows, personSettingValues, replySettingRows } = await import('../chat/usage-settings.mjs');
 const { createUsageEventStore, usageEvents, usageKey, normalizeUsageEvent } = await import('../chat/usage-events.mjs');
 const { changeMessageReplySettings, loadMessageReplySettings } = await import('../chat/message-reply-settings.mjs');
 const { updateInstanceSettings } = await import('../chat/instance-settings.mjs');
@@ -85,6 +85,9 @@ test('reply drafts, actual group activation, no-op saves and restoring defaults 
   await collectSettingBaseline();
   let settings = await loadMessageReplySettings();
   const draft = { opening: false, checklist: false, progress: 'card_all', groups: [groups[0]] };
+  const legacyRows = replySettingRows({ ...settings, active: { ...draft, progress: 'messages' } }, groups);
+  assert.equal(legacyRows.find(row => row.setting === 'reply.progress' && row.stage === 'applied').value, 'text_messages',
+    'an active policy without a version follows the runtime legacy fallback');
   settings = await changeMessageReplySettings({ action: 'draft', expectedRevision: settings.revision, draft }, actor);
   let result = await usageEvents.query({ settingSnapshot: await settingObserver.snapshot() });
   assert.equal(result.report.settings.rows.find(row => row.setting === 'reply.mode' && row.stage === 'applied').changes, 0);
