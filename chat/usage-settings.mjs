@@ -45,12 +45,13 @@ export const personSettingValues = preferences => ({
   'person.session_filter': preferences.defaultSessionPersonFilter || 'all',
   'person.mobile_input': preferences.mobileInputMode || 'text',
   'person.voice_shortcut': toggle(preferences.voiceShortcut?.enabled),
+  ...(preferences.messageReplies ? replySettingValues(preferences.messageReplies.active, 3) : {}),
 });
 
 export function replySettingValues(choices, version = 2) {
   return choices ? { 'reply.mode': 'custom', 'reply.opening': toggle(choices.opening),
     'reply.checklist': toggle(choices.checklist),
-    'reply.progress': choices.progress === 'messages' && version !== 2 ? 'text_messages' : choices.progress }
+    'reply.progress': choices.progress === 'messages' && version < 2 ? 'text_messages' : choices.progress }
     : { 'reply.mode': 'default', 'reply.opening': 'inherit', 'reply.checklist': 'inherit', 'reply.progress': 'inherit' };
 }
 

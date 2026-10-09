@@ -409,7 +409,7 @@ try {
       assert.ok(inbound.workboardAdmission.identityId);
     }
 
-    // The new reply mode is a separate human-confirmed configuration. Exercise
+    // Personal reply preferences follow verified identities across entry points. Exercise
     // real HTTP admission and persisted input snapshots with the fake Harness.
     const replySource = { ...source('reply-member'), chatId: 'oc_replyfixture', chatName: '回复机制隔离群' };
     const replyConversation = { connector: 'feishu', sourceRouteId: 'fixture-bot',
@@ -418,12 +418,18 @@ try {
       sourceId: 'feishu', sourceContext: replySource, conversation: replyConversation }, service);
     assert.equal(replyGroup.status, 201);
     const replySettings = await request(port, 'GET', '/api/message-reply-settings');
-    const replyDraft = { opening: false, checklist: false, progress: 'card',
-      groups: [{ sourceRouteId: 'fixture-bot', chatId: replySource.chatId }] };
-    const savedReply = await request(port, 'POST', '/api/message-reply-settings', {
-      action: 'draft', expectedRevision: replySettings.json.settings.revision, draft: replyDraft });
-    assert.equal(savedReply.status, 200);
-    assert.equal(savedReply.json.settings.active, null);
+    assert.equal(replySettings.json.settings.personId, 'person_default');
+    assert.equal(replySettings.json.groups, undefined, 'there is no group selector');
+    const replyChoices = { opening: false, checklist: false, progress: 'card_all' };
+    const discovered = JSON.parse(readFileSync(join(home, '.config/remotelab/auth.json'), 'utf8'));
+    const replyIdentity = discovered.people.flatMap(person => person.identities)
+      .find(identity => identity.kind === 'feishu' && identity.subjectId === 'reply-member');
+    assert(replyIdentity);
+    const bound = await request(port, 'POST', '/api/people/person_default/identities', { identityId: replyIdentity.id });
+    assert.equal(bound.status, 200);
+    const unconfirmed = await request(port, 'POST', '/api/message-reply-settings', {
+      action: 'apply', expectedRevision: replySettings.json.settings.revision, choices: replyChoices });
+    assert.equal(unconfirmed.status, 400, 'editing does not apply choices without explicit Save and apply');
     const replyInput = id => ({ requestId: id, text: 'Generate the fixture files.', tool: 'fake-codex',
       sourceContext: { ...replySource, messageId: `om-${id}` }, sourceDelivery: replyConversation });
     const replyPost = id => request(port, 'POST', `/api/sessions/${replyGroup.json.session.id}/messages`, replyInput(id), service);
@@ -431,7 +437,7 @@ try {
     assert.ok([200, 202].includes(legacyReply.status), JSON.stringify(legacyReply.json));
     await waitForRunTerminal(port, legacyReply.json.run.id);
     const activeReply = await request(port, 'POST', '/api/message-reply-settings', {
-      action: 'activate', expectedRevision: savedReply.json.settings.revision, confirm: true });
+      action: 'apply', expectedRevision: replySettings.json.settings.revision, choices: replyChoices, confirm: true });
     assert.equal(activeReply.status, 200, JSON.stringify(activeReply.json));
     const modularReply = await replyPost('reply-after-confirmation');
     assert.ok([200, 202].includes(modularReply.status), JSON.stringify(modularReply.json));
@@ -440,11 +446,34 @@ try {
     const oldInput = replyEvents.json.events.find(event => event.role === 'user' && event.requestId === 'reply-before-confirmation');
     const newInput = replyEvents.json.events.find(event => event.role === 'user' && event.requestId === 'reply-after-confirmation');
     assert.equal(oldInput.messageReplyPolicy, undefined);
-    assert.equal(newInput.messageReplyPolicy.progress, 'card');
+    assert.equal(newInput.messageReplyPolicy.progress, 'card_all');
     assert.equal(newInput.messageReplyPolicy.checklist, false);
     assert.equal(newInput.messageReplyPolicy.opening, false);
+    assert.equal(newInput.messageReplyPolicy.personId, 'person_default');
+    assert.equal(newInput.messageReplyPolicy.scope, 'person');
+    assert.equal(newInput.messageReplyPolicy.version, 3);
+    const deniedService = await request(port, 'POST', '/api/message-reply-settings', {
+      action: 'apply', expectedRevision: activeReply.json.settings.revision, choices: replyChoices, confirm: true }, service);
+    assert.equal(deniedService.status, 403);
+    for (const kind of ['web', 'p2p', 'group']) {
+      const sourceContext = kind === 'web' ? null : { ...replySource, chatType: kind === 'p2p' ? 'p2p' : 'group',
+        chatId: `oc_reply_${kind}`, messageId: `om_cross_${kind}` };
+      const conversation = sourceContext ? { connector: 'feishu', sourceRouteId: 'fixture-bot', target: {
+        chatType: sourceContext.chatType, chatId: sourceContext.chatId, conversationKind: 'main' } } : null;
+      const created = await request(port, 'POST', '/api/sessions', { folder: repoRoot, tool: 'fake-codex',
+        ...(conversation ? { sourceId: 'feishu', sourceContext, conversation } : {}) }, conversation ? service : {});
+      assert.equal(created.status, 201, JSON.stringify(created.json));
+      const sent = await request(port, 'POST', `/api/sessions/${created.json.session.id}/messages`, {
+        requestId: `reply-cross-${kind}`, text: 'Generate the fixture files.', tool: 'fake-codex',
+        ...(conversation ? { sourceContext, sourceDelivery: conversation } : {}) }, conversation ? service : {});
+      assert.ok([200, 202].includes(sent.status), JSON.stringify(sent.json));
+      await waitForRunTerminal(port, sent.json.run.id);
+      const captured = await request(port, 'GET', `/api/sessions/${created.json.session.id}/events?filter=all`);
+      const accepted = captured.json.events.find(event => event.role === 'user' && event.requestId === `reply-cross-${kind}`);
+      assert.equal(accepted.messageReplyPolicy.policyId, newInput.messageReplyPolicy.policyId, kind);
+    }
     const rolledBackReply = await request(port, 'POST', '/api/message-reply-settings', {
-      action: 'legacy', expectedRevision: activeReply.json.settings.revision, confirm: true });
+      action: 'reset', expectedRevision: activeReply.json.settings.revision, confirm: true });
     assert.equal(rolledBackReply.status, 200);
     const retriedReply = await replyPost('reply-after-confirmation');
     assert.equal(retriedReply.json.run.id, modularReply.json.run.id, 'retry preserves the already accepted mode and Run');
