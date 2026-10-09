@@ -1,4 +1,5 @@
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
+import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink } from './group-routing.mjs';
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
 import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
@@ -1448,14 +1449,14 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
   slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
-    await readPromptAsset(usesOctober7GroupMessaging(session)
+    await readPromptAsset(!options.messageReplyPolicy && usesOctober7GroupMessaging(session)
       ? 'system/surface-messages-feishu-group-20261007.md' : 'system/surface-messages.md')));
   const optedIn = options.workboardEnabled === true || session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
   const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true })) : null;
-  if ((optedIn && options.workboardEnabled !== false) || taskContext?.activeTasks.length) {
+  if ((optedIn && options.workboardEnabled !== false && options.messageReplyPolicy?.checklist !== false) || taskContext?.activeTasks.length) {
     slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
-      (usesOctober7GroupMessaging(session)
+      (!options.messageReplyPolicy && usesOctober7GroupMessaging(session)
         ? WORKBOARD_INSTRUCTIONS.replace(' --progress-mode expanded|collapsed', '') : WORKBOARD_INSTRUCTIONS)
       + (options.workboardDraft ? '\nCode has published the supplied initial list. ' : '')
       + (options.workboardEnabled === false ? '\nThis turn is not opted in to create new task cards; only continue an existing task when requested. ' : '')));
@@ -1490,6 +1491,8 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     query: options.recordedUserText || options.memoryQuery || '',
     }),
   ));
+  if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
+    'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
   return slots.filter(Boolean);
 }
 
@@ -3355,6 +3358,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const activeRequest = requestRuntime.active(sessionId)[0];
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
   const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
+  const routingOrigin = options.routingSource ? await requests.byRequest(options.routingSource.sessionId, options.routingSource.requestId) : null;
+  const inherited = priorRequest || (activeNative && !options.freshThread ? activeRequest : null) || routingOrigin;
+  const messageReplyPolicy = inherited ? inherited.options.messageReplyPolicy || null : await resolveMessageReplyPolicy(options);
+  options = { ...options };
+  if (messageReplyPolicy) options.messageReplyPolicy = messageReplyPolicy;
+  else delete options.messageReplyPolicy;
   if (priorRequest?.options?.nativeQuestionId) options = { ...options, nativeQuestionId: priorRequest.options.nativeQuestionId };
   else if (!priorRequest && options.nativeQuestionId) {
     const question = activeNative ? await readNativeQuestion(runDir(activeRequest.runId)) : null;
@@ -3378,8 +3387,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         : text?.trim(),
     }, activeNative ? activeRequest.runtimeSelection : null);
   const workboardPeople = await loadWorkboardOptIns();
-  const workboardEnabled = isWorkboardTurnEnabled(session, options, workboardPeople);
-  const personOptedIn = isWorkboardOptedIn(session, options, workboardPeople);
+  const workboardEnabled = messageReplyPolicy ? session.groupFeed !== true
+    && (messageReplyPolicy.checklist || messageReplyPolicy.progress === 'card')
+    : isWorkboardTurnEnabled(session, options, workboardPeople);
+  const personOptedIn = messageReplyPolicy ? Boolean(options.viewPersonId && options.initiatedByIdentityId)
+    : isWorkboardOptedIn(session, options, workboardPeople);
   if (workboardEnabled && personOptedIn && session.workboardOptInPersonId !== options.viewPersonId) {
     session = await updateSessionWorkboardPilot(sessionId, true, {
       optInPersonId: options.viewPersonId,
@@ -3394,7 +3406,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ...options,
       workboardEnabled: true,
       checklistGateReceipt: { status: 'harness', needsChecklist: null, reason: 'actual_execution_scope' },
-      workboardDraft: draftWorkboardChecklist(text),
+      workboardDraft: messageReplyPolicy?.checklist === false ? '' : draftWorkboardChecklist(text),
     };
   } else if (!priorRequest) {
     options = { ...options, workboardEnabled: false };
@@ -3403,7 +3415,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // These are admission-time projections, not user input. A retry keeps the
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
-    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline',
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'messageReplyPolicy',
       'usageSurface', 'usageActorKind', 'usagePersonId']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];
@@ -3462,6 +3474,7 @@ async function ensureRequestInput(record, manifest) {
         ? { messageKind: 'native_question_answer', nativeQuestionId: record.options.nativeQuestionId,
           nativeQuestionRunId: record.nativeDispatchRunId || record.runId } : {}),
       ...(sourceContext ? { sourceContext } : {}),
+      ...(record.options.messageReplyPolicy ? { messageReplyPolicy: record.options.messageReplyPolicy } : {}),
       ...(workboardAdmission(record.options) ? { workboardAdmission: workboardAdmission(record.options) } : {}),
     }));
   }

@@ -129,6 +129,7 @@ export async function routeGroupWork(record, body, deps) {
       });
       const delivery = workDeliveryPlan(target.conversation, origin);
       const options = { requestId: 'routed:' + input.requestId,
+        feishuConnectorAuthenticated: input.options.feishuConnectorAuthenticated === true,
         ...record.runtimeSelection, viewPersonId: input.options.viewPersonId,
         initiatedByIdentityId: input.options.initiatedByIdentityId,
         sourceContext: { ...input.options.sourceContext, feishuParticipation: undefined,
