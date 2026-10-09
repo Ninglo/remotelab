@@ -9,9 +9,12 @@ class Element {
     this.dataset = {};
     this.textContent = '';
     this.className = '';
+    this.isConnected = true;
+    this.listeners = {};
   }
   appendChild(child) { this.children.push(child); return child; }
   setAttribute() {}
+  addEventListener(name, callback) { this.listeners[name] = callback; }
 }
 
 const container = new Element('div');
@@ -182,3 +185,27 @@ assert.doesNotMatch(css.match(/\.session-workboard-inline\s*\{([^}]*)\}/)?.[1] |
 const html = await readFile(new URL('../templates/chat.html', import.meta.url), 'utf8');
 assert.doesNotMatch(html, /sessionWorkboardPanel/, 'no floating panel remains in the page');
 console.log('test-chat-workboard-ui: ok');
+
+for (const mode of ['messages', 'card_latest', 'card_all', 'none']) {
+  const personal = { ...standaloneProgress, seq: 99, messageReplyPolicy: { version: 3, progress: mode } };
+  const card = context.renderSessionWorkboardMessage(new Element('div'), personal);
+  const area = card.children.find(child => child.className === 'session-workboard-progress');
+  assert.equal(Boolean(area), mode !== 'none');
+  if (!area) continue;
+  const details = area.children.find(child => child.tagName === 'details');
+  assert.equal(Boolean(details), mode === 'card_all');
+  if (mode !== 'card_all') {
+    assert.equal(area.children[1].textContent, '最新核验结果');
+    continue;
+  }
+  assert.equal(details.open, false, 'all records start folded, including the latest');
+  assert.equal(area.children.some(child => child.className.includes('progress-current')), false);
+  assert.equal(details.children.length, 3, 'both complete progress records live inside the fold');
+  details.open = true; details.listeners.toggle();
+  const updated = context.renderSessionWorkboardMessage(new Element('div'), { ...personal,
+    workboardProgressHistory: [...personal.workboardProgressHistory, { seq: 12, content: '后续进展' }] });
+  const refreshedDetails = updated.children.find(child => child.className === 'session-workboard-progress')
+    .children.find(child => child.tagName === 'details');
+  assert.equal(refreshedDetails.open, true, 'updates retain the reader choice on the same card');
+  assert.equal(refreshedDetails.children.length, 4, 'new progress is added inside the fold');
+}

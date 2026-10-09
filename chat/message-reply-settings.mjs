@@ -6,6 +6,8 @@ import { loadSessionsMeta } from './session-meta-store.mjs';
 import { DEFAULT_REPLY_DRAFT, validateReplyDraft } from '../static/chat/message-reply-model.js';
 import { observeSettingRows, replySettingRows } from './usage-settings.mjs';
 
+import { resolvePersonMessageReplyPolicy } from './person-message-replies.mjs';
+
 const path = join(CONFIG_DIR, 'message-reply-settings.json');
 const serial = createSerialTaskQueue();
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
@@ -75,11 +77,25 @@ export async function changeMessageReplySettings(input, actor) {
 export async function resolveMessageReplyPolicy(options = {}) {
   const source = options.sourceContext;
   const target = options.sourceDelivery?.target;
-  if (options.feishuConnectorAuthenticated !== true || options.internalOperation || options.automationTitle
-      || source?.connector !== 'feishu' || source.chatType !== 'group' || !source.messageId
-      || !source.sender?.openId || ['bot', 'app'].includes(source.sender.senderType)
-      || options.sourceDelivery?.connector !== 'feishu' || source.chatId !== target?.chatId
-      || source.sourceRouteId !== options.sourceDelivery?.sourceRouteId) return null;
+  if (options.internalOperation || options.automationTitle) return null;
+  const feishu = options.feishuConnectorAuthenticated === true && source?.connector === 'feishu'
+    && ['p2p', 'group'].includes(source.chatType) && source.messageId && source.sender?.openId
+    && !['bot', 'app'].includes(source.sender.senderType)
+    && options.sourceDelivery?.connector === 'feishu' && source.chatId === target?.chatId
+    && source.sourceRouteId === options.sourceDelivery?.sourceRouteId;
+  const web = options.usageSurface === 'web' && options.viewPersonId && options.initiatedByIdentityId
+    && options.feishuConnectorAuthenticated !== true && !source?.connector;
+  if (!feishu && !web) return null;
+  try {
+    const personal = await resolvePersonMessageReplyPolicy(options);
+    if (personal) return { ...personal, final: true };
+  } catch (error) {
+    console.warn(`[message-reply-mode] ${error.message}; preserving default display`);
+    return null;
+  }
+  // Preserve previously confirmed group settings and accepted version 1/2 inputs.
+  // The Settings UI now writes only its authenticated person's preference.
+  if (!feishu || source.chatType !== 'group') return null;
   let active;
   try { ({ active } = await loadMessageReplySettings()); }
   catch (error) { console.warn(`[message-reply-mode] ${error.message}; preserving legacy display for new requests`); return null; }
@@ -90,14 +106,16 @@ export async function resolveMessageReplyPolicy(options = {}) {
 
 export function messageReplyPrompt(policy) {
   if (!policy) return '';
-  return ['This accepted Feishu request uses the separately confirmed modular message-reply mode. These choices replace default Feishu opening/progress/checklist visibility rules for this request; Web history remains unchanged.',
+  return [policy.scope === 'person'
+    ? "This accepted request uses its sender's confirmed personal reply settings, shared by their Web and Feishu private, group and thread messages. These choices replace default opening/progress/checklist visibility rules. Complete raw history remains available in the process record."
+    : 'This accepted Feishu request uses the separately confirmed modular message-reply mode. These choices replace default Feishu opening/progress/checklist visibility rules for this request; Web history remains unchanged.',
     policy.opening ? 'For substantial work, start with one useful short text reply describing your understanding and first action. A direct short answer needs no extra opener.'
-      : 'The user has disabled the opening text on Feishu. Start the work directly; do not create a receipt message to replace it.',
+      : 'The user has disabled the opening text. Start the work directly; do not create a receipt message to replace it.',
     policy.checklist ? 'Use an acceptance checklist when independent deliverables make it useful. Simple answers need no artificial checklist.'
       : 'The user has disabled new acceptance checklists. Do not publish a new task checklist; an explicitly resumed existing task retains its original card.',
-    policy.progress === 'none' ? 'The user has disabled ordinary progress delivery on Feishu.'
+    policy.progress === 'none' ? 'The user has disabled ordinary progress delivery.'
       : `Publish useful new findings with <progress>...</progress>. RemoteLab delivers them as ${({
-        messages: policy.version === 2 ? 'updates to one card plus separate text messages' : 'text messages',
+        messages: policy.version >= 2 ? 'updates to one card plus separate text messages' : 'text messages',
         card_latest: 'the latest progress in one card, replacing its prior visible update',
         card_all: 'all progress records inside one card, initially collapsed, with in-card pages when needed',
         card: 'updates to one card, initially collapsed',

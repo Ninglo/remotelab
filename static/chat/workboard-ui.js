@@ -5,6 +5,7 @@ let sessionWorkboardEvents = [];
 let sessionWorkboardRun = null;
 let sessionWorkboardRunRequest = null;
 let sessionWorkboardStallTimer = null;
+const personalProgressDisclosure = new Map();
 const SESSION_WORKBOARD_STALL_MS = 5 * 60 * 1000;
 
 function isSessionWorkboardMessage(event) {
@@ -275,10 +276,11 @@ function renderSessionWorkboardMessage(container, event) {
   }
   if (!progressOnly) card.appendChild(list);
   const progress = document.createElement("section");
+  const replyMode = event.messageReplyPolicy?.version === 3 ? event.messageReplyPolicy.progress : null;
   progress.className = "session-workboard-progress";
   progress.setAttribute("aria-label", "目前进展");
   const progressTitle = document.createElement("strong");
-  progressTitle.textContent = "目前进展";
+  progressTitle.textContent = replyMode === "card_all" ? "全部进展" : "目前进展";
   progress.appendChild(progressTitle);
   const current = document.createElement("div");
   current.className = "session-workboard-progress-current md-content";
@@ -286,14 +288,22 @@ function renderSessionWorkboardMessage(container, event) {
   const content = event.workboardProgress?.content || "暂无进度更新";
   if (typeof renderMarkdownIntoNode === "function") renderMarkdownIntoNode(current, content);
   else current.textContent = content;
-  progress.appendChild(current);
-  const previousProgress = (event.workboardProgressHistory || []).filter(update =>
-    event.workboardProgress?.derivedFromOutcome || update.seq !== event.workboardProgress?.seq);
+  if (replyMode !== "card_all") progress.appendChild(current);
+  const previousProgress = replyMode === "card_all" ? event.workboardProgressHistory || []
+    : replyMode ? [] : (event.workboardProgressHistory || []).filter(update =>
+      event.workboardProgress?.derivedFromOutcome || update.seq !== event.workboardProgress?.seq);
   if (previousProgress.length) {
     const history = document.createElement("details");
     history.className = "session-workboard-progress-history";
     const summary = document.createElement("summary");
-    summary.textContent = "之前的进展（" + previousProgress.length + "）";
+    summary.textContent = (replyMode === "card_all" ? "展开全部进展（" : "之前的进展（") + previousProgress.length + "）";
+    if (replyMode === "card_all") {
+      const disclosureKey = currentSessionId + ":" + event.seq;
+      history.open = personalProgressDisclosure.get(disclosureKey) === true;
+      history.addEventListener("toggle", () => {
+        if (history.isConnected) personalProgressDisclosure.set(disclosureKey, history.open);
+      });
+    }
     history.appendChild(summary);
     for (const update of previousProgress) {
       const entry = document.createElement("div");
@@ -304,7 +314,7 @@ function renderSessionWorkboardMessage(container, event) {
     }
     progress.appendChild(history);
   }
-  card.appendChild(progress);
+  if (replyMode !== "none") card.appendChild(progress);
   if (event.workboard || event.workboardCurrentTurn || progressOnly) {
     const status = document.createElement("div");
     status.className = "session-workboard-run-state";

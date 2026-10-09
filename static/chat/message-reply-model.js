@@ -5,7 +5,7 @@ export const DEFAULT_REPLY_DRAFT = Object.freeze({ opening: true, checklist: tru
 // enabled progress mode a card, independently of an acceptance checklist.
 export function replyProgressUsesCard(policy) {
   return ['card', 'card_latest', 'card_all'].includes(policy?.progress)
-    || policy?.version === 2 && policy.progress === 'messages';
+    || policy?.version >= 2 && policy.progress === 'messages';
 }
 
 export function validateReplyDraft(value) {

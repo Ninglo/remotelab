@@ -323,13 +323,21 @@ function flushTurnInto(target, turn, { sessionRunning = false, exposeWorkboard =
   // Surface messages split the expandable process record without changing
   // the underlying history or swallowing an opening while work continues.
   const surfaceMessages = collectAssistantSurfaceMessages(bodyEvents, {
-    includeProgress: includeSurfaceProgress, completed: !sessionRunning,
+    includeProgress: turn.user.messageReplyPolicy?.version === 3 ? true : includeSurfaceProgress,
+    independentOpening: turn.user.messageReplyPolicy?.version === 3, completed: !sessionRunning,
   });
+  const replyPolicy = turn.user.messageReplyPolicy?.version === 3 ? turn.user.messageReplyPolicy : null;
+  if (replyPolicy) for (const [event, surface] of surfaceMessages) {
+    if (surface.surfaceKind === 'opening' && !replyPolicy.opening
+        || surface.surfaceKind === 'progress' && replyPolicy.progress !== 'messages') surfaceMessages.delete(event);
+  }
   let visibleStart = 0;
   for (let index = 0; index < bodyEvents.length; index += 1) {
     const event = bodyEvents[index];
     const surface = surfaceMessages.get(event);
-    if (!surface && !(exposeWorkboard && (isWorkboardEvent(event) || event.messageKind === 'progress_panel'))
+    const publicCard = exposeWorkboard && (isWorkboardEvent(event) || event.messageKind === 'progress_panel')
+      && (!replyPolicy || (event.messageKind === 'progress_panel' ? replyPolicy.progress !== 'none' : replyPolicy.checklist));
+    if (!surface && !publicCard
         && event.messageKind !== 'session_delegate_notice') continue;
     if (index > visibleStart) {
       const segment = bodyEvents.slice(visibleStart, index);

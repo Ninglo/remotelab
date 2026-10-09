@@ -375,18 +375,15 @@
             <section class="settings-group" id="settings-message-replies" data-settings-section>
               <header class="settings-group-header">
                 <h3 data-i18n="settings.replies.title">消息回复机制</h3>
-                <p data-i18n="settings.replies.note">查看正在使用的方式，或为指定群自定义回复。保存草案后，还需确认应用。</p>
+                <p data-i18n="settings.replies.note">只影响你：网页和飞书私聊、群消息、话题消息，沿用同一套回复设置。</p>
               </header>
               <div class="settings-group-body">
                 <div class="settings-section">
                   <div class="settings-section-title" data-i18n="settings.replies.current">正在使用的方式</div>
                   <p class="settings-section-note" id="replySettingsCurrent" role="status" data-i18n="settings.replies.loading">正在读取当前回复方式……</p>
-                  <div class="settings-section-title" data-i18n="settings.replies.default">本实例当前默认机制</div>
-                  <p class="settings-section-note" id="replySettingsDefault"></p>
                 </div>
                 <div class="settings-section reply-settings-parts">
-                  <div class="settings-section-title" data-i18n="settings.replies.draft">自定义回复方式（草案）</div>
-                  <p class="settings-section-note" data-i18n="settings.replies.draftNote">下面的选项只用于编辑和预览。确认应用后，才改变所选群的后续新工作。</p>
+                  <div class="settings-section-title" data-i18n="settings.replies.draft">我的回复设置</div>
                   <label><input id="replyOpening" type="checkbox" checked><span data-i18n="settings.replies.opening">发送首条文字回复</span></label>
                   <p class="settings-section-note" data-i18n="settings.replies.openingNote">收到较长任务后，先说明理解和第一步。简单问题直接回答。</p>
                   <label><input id="replyChecklist" type="checkbox" checked><span data-i18n="settings.replies.checklist">需要时显示任务清单</span></label>
@@ -397,26 +394,20 @@
                     <option value="messages" selected data-i18n="settings.replies.messages">卡片＋单独文字进展</option>
                     <option value="card_latest" data-i18n="settings.replies.latest">卡片展示最新进展</option>
                     <option value="card_all" data-i18n="settings.replies.card">卡片展示全部进展（默认折叠）</option>
-                    <option value="card" hidden data-i18n="settings.replies.legacyCard">原已保存的卡片进展</option>
                   </select>
                   <p class="settings-section-note" data-i18n="settings.replies.progressNote">三种方式都使用同一张卡片。有清单就复用清单卡，没有清单就使用进展卡。关闭过程进展时，清单和最终回复仍按各自设置显示。</p>
                   <p class="settings-section-note" data-i18n="settings.replies.final">最终回复始终单独发送。需要你回答的问题和异常情况也会单独通知。</p>
                 </div>
                 <div class="settings-section">
-                  <div class="settings-section-title" data-i18n="settings.replies.groups">将这份草案应用到哪些群</div>
-                  <p class="settings-section-note" data-i18n="settings.replies.scope">只影响选中的群。进行中的工作、群的参与和分流方式保持原样。同一群有多个机器人来源时，可分别选择。</p>
-                  <div class="reply-settings-groups" id="replyGroups"></div>
-                </div>
-                <div class="settings-section">
-                  <div class="settings-section-title" data-i18n="settings.replies.preview">这份草案的完整回复示例</div>
+                  <details class="reply-settings-preview"><summary class="settings-section-title" data-i18n="settings.replies.preview">查看回复示例</summary>
                   <p class="settings-section-note" data-i18n="settings.replies.previewNote">以“核对报告”为例。编辑和预览不会向群发消息；简单问题直接给最终答复。</p>
-                  <div class="reply-mechanism-preview" id="replyMechanismPreview"></div>
+                  <div class="reply-mechanism-preview" id="replyMechanismPreview"></div></details>
                 </div>
                 <div class="settings-app-actions">
-                  <button class="settings-app-btn" id="replySaveDraft" type="button" disabled data-i18n="settings.replies.save">保存草案（暂不应用）</button>
-                  <button class="settings-app-btn" id="replyActivate" type="button" disabled data-i18n="settings.replies.activate">确认应用到选中群</button>
-                  <button class="settings-app-btn" id="replyLegacy" type="button" disabled data-i18n="settings.replies.legacy">改回当前默认机制</button>
+                  <button class="settings-app-btn" id="replyActivate" type="button" disabled data-i18n="settings.replies.activate">保存并应用</button>
+                  <button class="settings-app-btn" id="replyLegacy" type="button" disabled data-i18n="settings.replies.legacy">恢复默认</button>
                 </div>
+                <p class="settings-section-note" data-i18n="settings.replies.applies">保存后对你发起的新工作生效；进行中的工作继续沿用开始时的设置。</p>
                 <p class="settings-section-note" id="replySettingsStatus" role="status" aria-live="polite"></p>
               </div>
             </section>

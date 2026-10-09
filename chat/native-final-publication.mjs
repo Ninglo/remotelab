@@ -72,7 +72,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (stored?.options?.suppressSourceDelivery || stored?.routingHandoff) return;
     stored = await rememberAmbientFeishuReplyPlan(stored || record, plan, [event], store);
     const replyPlan = resolveAmbientFeishuReplyPlan(stored || record, plan, [event]);
-    if (isFeishuMainlineReply(replyPlan) && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
+    if (isFeishuMainlineReply(replyPlan) && messageReplyPolicy?.version !== 3
+        && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
     // Routine turns keep their opener in Web/history instead of sending another
     // start message. A steered first Run cannot announce its opening twice.
     if (suppressOpening(surface, stored || record)) continue;
@@ -115,6 +116,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const buildParts = current => buildReplyDeliveries(resolveAmbientFeishuReplyPlan(current, plan, [event]), payload, {
       running,
       surfaceKind: surface.surfaceKind,
+      messageReplyPolicy,
       automationTitle: record.options?.automationTitle,
       requireFeishuOutcome: final && record.options?.sourceContext?.feishuOutcomeRequired === true,
     });
