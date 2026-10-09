@@ -980,8 +980,9 @@ function writeCachedResponse(req, res, {
   cacheControl,
   vary,
   headers: extraHeaders = {},
+  etag: preparedEtag,
 } = {}) {
-  const etag = createEtag(body);
+  const etag = preparedEtag || createEtag(body);
   const headers = {
     'Cache-Control': cacheControl,
     ETag: etag,
@@ -1006,11 +1007,13 @@ function writeJsonCached(req, res, payload, {
   cacheControl = 'private, no-cache',
   vary = 'Cookie',
   headers,
+  prepared,
 } = {}) {
   writeCachedResponse(req, res, {
     statusCode,
     contentType: 'application/json',
-    body: createJsonBody(payload),
+    body: prepared?.body ?? createJsonBody(payload),
+    etag: prepared?.etag,
     cacheControl,
     vary,
     headers,

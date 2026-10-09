@@ -31,6 +31,8 @@ import {
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheFileVersion = null;
+let sessionVersionIndex = null;
+let sessionVersionIndexFileVersion = null;
 const runSessionsMetaMutation = createSerialTaskQueue();
 
 function getSessionsMetaFileVersion(stats) {
@@ -351,6 +353,16 @@ export async function loadSessionsMeta() {
 export function findSessionMetaCached(sessionId) {
   if (!Array.isArray(sessionsMetaCache)) return null;
   return sessionsMetaCache.find((meta) => meta.id === sessionId) || null;
+}
+
+// Detect writes made by another CLI/process without reprojection of every
+// Session. Serialize metadata only when its durable file actually changes.
+export async function loadSessionMetaVersionIndex() {
+  const metas = await loadSessionsMeta();
+  if (sessionVersionIndex && sessionVersionIndexFileVersion === sessionsMetaCacheFileVersion) return sessionVersionIndex;
+  sessionVersionIndex = new Map(metas.map(meta => [meta.id, JSON.stringify(meta)]));
+  sessionVersionIndexFileVersion = sessionsMetaCacheFileVersion;
+  return sessionVersionIndex;
 }
 
 export async function findSessionMeta(sessionId) {

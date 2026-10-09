@@ -5,6 +5,14 @@
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
 
 let wss = null;
+const invalidationListeners = new Set();
+
+// Local projections share the same change hints as clients, even before a WS
+// server exists. List readers can update one record without revisiting cold ones.
+export function onSessionInvalidation(listener) {
+  invalidationListeners.add(listener);
+  return () => invalidationListeners.delete(listener);
+}
 
 export function setWss(instance) {
   wss = instance;
@@ -32,6 +40,10 @@ export function broadcastMatching(msg, predicate = () => true) {
 }
 
 export function broadcastAll(msg) {
+  for (const listener of invalidationListeners) {
+    try { listener(msg); }
+    catch (error) { console.error('[ws] local projection hint failed:', error.message); }
+  }
   if (msg.type === 'session_invalidated' || msg.type === 'sessions_invalidated') hintAutomationActivity(msg.sessionId || '');
   broadcastMatching(msg);
 }

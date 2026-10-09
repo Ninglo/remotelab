@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -163,6 +163,30 @@ try {
       'If-None-Match': ref.summaryEtag,
     });
     assert.equal(summary304.status, 304, 'unchanged summary route should revalidate to 304');
+
+    const list304 = await request(port, 'GET', '/api/sessions', null, { 'If-None-Match': list.headers.etag });
+    assert.equal(list304.status, 304, 'an unchanged prepared list keeps its ETag');
+    const renamed = await request(port, 'PATCH', `/api/sessions/${sessionId}`, { name: 'Changed via HTTP' });
+    assert.equal(renamed.status, 200);
+    const afterRename = await request(port, 'GET', '/api/sessions');
+    assert.equal(afterRename.json.sessions.find(s => s.id === sessionId).name, 'Changed via HTTP');
+
+    // A CLI may edit the metadata file without this process broadcasting a hint.
+    const metadataFile = join(home, '.config', 'remotelab', 'chat-sessions.json');
+    const metadata = JSON.parse(readFileSync(metadataFile, 'utf8'));
+    metadata.find(s => s.id === sessionId).name = 'Changed by another process';
+    writeFileSync(metadataFile, JSON.stringify(metadata));
+    const externalChange = await request(port, 'GET', '/api/sessions');
+    assert.equal(externalChange.json.sessions.find(s => s.id === sessionId).name, 'Changed by another process',
+      'prepared lists immediately detect external metadata writes');
+
+    const archived = await request(port, 'PATCH', `/api/sessions/${sessionId}`, { archived: true });
+    assert.equal(archived.status, 200);
+    const afterArchive = await request(port, 'GET', '/api/sessions');
+    assert.ok(!afterArchive.json.sessions.some(s => s.id === sessionId));
+    assert.ok(afterArchive.json.archivedCount > 0);
+    const archiveList = await request(port, 'GET', '/api/sessions/archived');
+    assert.ok(archiveList.json.sessions.some(s => s.id === sessionId));
 
     console.log('test-http-session-summary-refs: ok');
   } finally {

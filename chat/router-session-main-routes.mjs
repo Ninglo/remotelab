@@ -35,6 +35,10 @@ import { readLangSmithCaseConfig, getLangSmithCaseStatus } from '../lib/langsmit
 import { buildLangSmithCaseNavigationHref, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { searchSessionLogs } from './session-log-search.mjs';
 import { observeSessionMessage, recordSessionObservationDecision } from './session-observations.mjs';
+import { createSessionListCache } from './session-list-cache.mjs';
+import { onSessionInvalidation } from './ws-clients.mjs';
+import { loadSessionMetaVersionIndex } from './session-meta-store.mjs';
+import { normalizeSessionSourceId } from './session-source-resolution.mjs';
 
 export const SESSION_CREATION_MAX_BYTES = 64 * 1024;
 
@@ -71,6 +75,13 @@ async function getSessionForClient(id, options = {}) {
 async function getSessionListItemForClient(id, options = {}) {
   return createSessionListItem(await getSession(id, options));
 }
+
+const sessionListCache = createSessionListCache({
+  loadVersions: loadSessionMetaVersionIndex,
+  loadAll: personId => listSessionListItemsForClient({ includeArchived: true, viewPersonId: personId }),
+  loadOne: (id, personId) => getSessionListItemForClient(id, { viewPersonId: personId, forList: true }),
+});
+onSessionInvalidation(sessionListCache.invalidate);
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -167,32 +178,13 @@ export async function handleSessionMainRoutes({
     const view = typeof parsedUrl.query.view === 'string'
       ? String(parsedUrl.query.view || '').trim().toLowerCase()
       : '';
-    const sessionList = await listSessionListItemsForClient({
-      includeArchived: true,
-      sourceId: typeof parsedUrl.query.sourceId === 'string' ? parsedUrl.query.sourceId : '',
-      viewPersonId: authSession?.personId || '',
+    const prepared = await sessionListCache.read({
+      personId: authSession?.personId || '',
+      sourceId: normalizeSessionSourceId(parsedUrl.query.sourceId),
+      folder: typeof parsedUrl.query.folder === 'string' ? parsedUrl.query.folder : '',
+      archived: sessionGetRoute.kind === 'archived-list', refs: view === 'refs',
     });
-    const folderFilter = parsedUrl.query.folder;
-    const filtered = folderFilter
-      ? sessionList.filter((session) => session.folder === folderFilter)
-      : sessionList;
-    const archivedSessions = filtered.filter((session) => session?.archived === true);
-    const activeSessions = filtered.filter((session) => session?.archived !== true);
-    const targetSessions = sessionGetRoute.kind === 'archived-list'
-      ? archivedSessions
-      : activeSessions;
-    const sessionRefs = targetSessions.map(createSessionSummaryRef).filter((ref) => ref?.id);
-    if (view === 'refs') {
-      writeJsonCached(req, res, {
-        sessionRefs,
-        archivedCount: archivedSessions.length,
-      });
-      return true;
-    }
-    writeJsonCached(req, res, {
-      sessions: targetSessions,
-      archivedCount: archivedSessions.length,
-    });
+    writeJsonCached(req, res, null, { prepared });
     return true;
   }
 

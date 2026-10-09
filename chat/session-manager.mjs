@@ -2149,6 +2149,7 @@ export async function getSession(id, options = {}) {
   const metas = await loadSessionsMeta();
   const meta = metas.find((entry) => entry.id === id) || await findSessionMeta(id);
   if (!meta) return null;
+  if (options.forList === true && !shouldExposeSession(meta)) return null;
   const session = await enrichSessionMetaForClient(await reconcileTerminalActiveSessionMeta(meta), options);
   const deliveryIssues = await listSourceDeliveryIssues({ sessionId: id });
   return { ...session, deliveryIssues, deliveryIssueCount: deliveryIssues.length };
