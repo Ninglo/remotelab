@@ -9,7 +9,7 @@ import { requireConversation, resolveSessionDeliveryPlan } from './session-conve
 import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
 import { canForwardNativeRequest, createNativeRequestDispatcher } from './native-request-dispatch.mjs';
-import { readNativeQuestion, nativeQuestionReplyText } from './native-user-questions.mjs';
+import { readNativeQuestion, nativeQuestionReplyText, isNativeQuestionShortcut } from './native-user-questions.mjs';
 import { recordWorkInput, recordWorkOutcome, markReferenceReceipt } from './work-awareness.mjs';
 import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
@@ -3407,7 +3407,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
   else if (!priorRequest && activeNative && !options.internalOperation && !options.workReference && !options.routingRethink && !options.routingSource && !syncDecisionText({ text, options }) && !savedImages.length) {
     const question = await readNativeQuestion(runDir(activeRequest.runId));
-    if (question?.state === 'pending') options = { ...options, nativeQuestionId: question.id };
+    if (isNativeQuestionShortcut(question, { text, options })) options = { ...options, nativeQuestionId: question.id };
   }
   // A question answer belongs to the awaiting Harness. It must not invoke Auto
   // routing or switch models just because the reply is a short number.

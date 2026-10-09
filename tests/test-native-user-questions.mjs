@@ -3,7 +3,7 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once, EventEmitter } from 'node:events';
-import { createNativeQuestionBroker, readNativeQuestion, resolveQuestionAnswer, nativeQuestionAnswers, nativeQuestionReplyText, QUESTION_TIMEOUT_MS } from '../chat/native-user-questions.mjs';
+import { createNativeQuestionBroker, readNativeQuestion, resolveQuestionAnswer, nativeQuestionAnswers, nativeQuestionReplyText, isNativeQuestionShortcut, QUESTION_TIMEOUT_MS } from '../chat/native-user-questions.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { createCodexAdapter } from '../chat/adapters/codex.mjs';
 import { createClaudeAdapter } from '../chat/adapters/claude.mjs';
@@ -35,6 +35,17 @@ const broker = createNativeQuestionBroker({ directory: root, timeoutMs: 300_000,
   onEvent: event => { events.push(event); bus.emit(event.state, event); }, onError: error => { throw error; } });
 const options = [{ label: 'Brief', description: 'Short result' }, { label: 'Detailed', description: 'All the detail' }];
 const q = { id: 'format', header: 'Format', question: 'Which format?', options };
+const shortcutQuestion = { state: 'pending', deadline: null, openedAt: 1000, question: q };
+const shortcut = (text, sourceContext) => isNativeQuestionShortcut(shortcutQuestion, { text, options: { sourceContext } });
+assert.equal(shortcut('2'), true);
+assert.equal(shortcut('55'), false);
+assert.equal(shortcut('普通任务补充'), false);
+assert.equal(shortcut('2', { connector: 'feishu', messageType: 'merge_forward', createTime: '1100' }), false);
+assert.equal(shortcut('2', { connector: 'feishu', messageType: 'text', createTime: '900' }), false);
+assert.equal(shortcut('2', { connector: 'feishu', messageType: 'text' }), false);
+assert.equal(shortcut(attributedReply, { connector: 'feishu', messageType: 'text', createTime: '1100' }), true);
+assert.equal(isNativeQuestionShortcut({ ...shortcutQuestion, question: { ...q, multiSelect: true } },
+  { text: '1,2', options: {} }), true);
 try {
   const humanEvents = [], humanBus = new EventEmitter();
   const waitingRoot = join(root, 'human');

@@ -108,6 +108,12 @@ or ended questions use grey. Closed questions have no active answer controls.
 These controls reuse the existing `card.action.trigger`
 subscription; they do not turn arbitrary status cards into interactive forms.
 
+Ordinary messages and forwarded references continue as task supplements while a
+question is open. Only a valid numbered shortcut sent after the question opened
+can answer it without a question ID. Use the card's custom-answer form for free
+text; it binds the answer to that question. The Connector's Auto runtime snapshot
+does not switch the active Harness when it delivers a supplement.
+
 `base.upsert` takes a field map as task data, not generated API code. Use the
 Base field list to confirm writable names and select options before writing;
 `--create` explicitly creates a new record and must not be blindly repeated.

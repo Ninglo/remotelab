@@ -469,6 +469,8 @@ export async function handleSessionMainRoutes({
           thinking: !!payload.thinking,
           model: payload.model || undefined,
           effort: payload.effort || undefined,
+          ...(authSession?.authKind === 'service' && payload.runtimeSelectionScope
+            ? { runtimeSelectionScope: payload.runtimeSelectionScope } : {}),
           sourceDelivery: payload.sourceDelivery,
           sourceContext: payload.sourceContext,
           suppressSourceDelivery: authSession?.authKind !== 'service' && !payload.sourceDelivery,

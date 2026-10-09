@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-09 — Pending choices must not absorb task supplements or block steering
+
+- Observed failure: a forwarded conversation sent just before a question appeared was retried, then recorded as a custom answer using its transport placeholder. Ordinary supplements kept failing the active-runtime guard rather than reaching steering.
+- Cause: the HTTP payload reader and admission route dropped the Connector's Auto/default scope marker from its partial runtime snapshot. This turned ordinary delivery into an apparent model switch. Separately, admission treated every text-only input during a pending question as an answer.
+- Change: retain the Connector scope at both HTTP boundaries and keep the admitted Harness snapshot. Bind custom answers to the question control's ID; infer only valid numbered shortcuts, excluding forwarded resources and Feishu messages sent before the question opened. Ordinary supplements retain their own input records and reach steering.
+- Validation: isolated HTTP interleavings cover question creation, concurrent supplements/forwarded references, pre-question and out-of-range numbers, blocking and async native questions, explicit option/custom answers, duplicate admission/callbacks, and steering after an answer. Historical records remain evidence; resolving this transport bug does not authorize restarting cancelled business work or making an unresolved resource choice.
+
 ### 2026-10-09 — Cold conversations should leave the frequent refresh path
 
 - Feedback: retaining old conversations does not justify repeatedly processing the entire catalog. Suggested recent-session counts are design hints, not a fixed product cutoff; choose the smallest useful work from real traffic and preserve access to older work.

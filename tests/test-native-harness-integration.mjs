@@ -110,7 +110,7 @@ try {
   await rpc('complete', customClaim.delivery.id, customClaim.leaseId, { externalId: 'custom-question-message' });
   const customText = '请用中文\n保留代码例子';
   const attributedCustom = buildAttributedFeishuMessage({ chatType: 'group', sender: { name: '嘉年' }, messageText: customText });
-  await accept(customSession.id, 'custom-question-answer', attributedCustom);
+  await rpc('accept', customSession.id, attributedCustom, [], { ...options('custom-question-answer'), nativeQuestionId: customClaim.delivery.nativeQuestion.id });
   await until(async () => (await receipt(customQuestion.run.id, 'custom-question-answer'))?.state === 'accepted', 'Feishu custom answer gets a receipt');
   assert.deepEqual((await logs()).find(e => e.runId === customQuestion.run.id && e.kind === 'question-answer').result, { answers: { format: { answers: [customText] } } });
   await awaitAnswer(customSession.id, 'custom-question-root');

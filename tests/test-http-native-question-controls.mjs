@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, copyFile, chmod, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, copyFile, chmod, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,7 +106,72 @@ try {
     const late = await request('POST', messages, { ...payload, nativeQuestionId: question.questionId, requestId: `late-${caseId}` });
     assert.equal(late.status, 409); assert.equal(late.json.code, 'QUESTION_EXPIRED');
   }
+  for (const [protocol, answer] of [['blocking', '2'], ['blocking', '请用中文，保留代码例子'], ['async', '2']]) {
+    const caseId = `${protocol}-${answer}`;
+    const created = await request('POST', '/api/sessions', { folder: home, tool: 'fake-native', model: 'fake-model' }, true);
+    const sessionId = created.json.session.id, messages = `/api/sessions/${sessionId}/messages`;
+    const rootRequest = await request('POST', messages, { text: 'Keep running', requestId: `root-${caseId}` }, true);
+    const runId = rootRequest.json.run.id;
+    const events = async () => (await request('GET', `/api/sessions/${sessionId}/events?filter=all`)).json.events;
+    const log = async () => (await readFile(join(home, 'native-log.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse)
+      .filter(event => event.runId === runId);
+    await until(async () => (await log()).some(event => event.kind === 'turn/start'));
+    const ordinary = (id, text, type = 'text', createTime = Date.now()) => ({ requestId: `${caseId}-${id}`, text,
+      tool: 'fake-native', model: 'auto', runtimeSelectionScope: 'auto',
+      sourceContext: { connector: 'feishu', messageType: type, createTime: String(createTime),
+        ingestion: { status: type === 'merge_forward' ? 'unparsed' : 'complete' } },
+    });
+    const send = async payload => {
+      const result = await request('POST', messages, payload, true);
+      assert.equal(result.status, 202, JSON.stringify(result.json));
+      return result;
+    };
+    // The actual connector sends a partial Auto snapshot with no effort. Both
+    // before and after a question, this must steer the admitted runtime.
+    await send(ordinary('before-question', '补充：返回配置状态'));
+    await until(async () => (await log()).some(event => event.clientId === `${caseId}-before-question`));
+    await send(ordinary('create-question', protocol === 'async' ? 'ASK_ASYNC_ON_STEER' : 'ASK_ON_STEER'));
+    const question = await until(async () => (await events()).find(event => event.questionState === 'pending'));
+    const supplements = [ordinary('forward', 'Feishu merge_forward message reference', 'merge_forward'),
+      ordinary('supplement', '应参考上例返回应当返回的各种配置状态'),
+      ordinary('early-number', '2', 'text', question.timestamp - 60_000),
+      ordinary('out-of-range', '55')];
+    await Promise.all(supplements.map(send));
+    for (const payload of supplements) {
+      await until(async () => (await log()).some(event => event.clientId === payload.requestId));
+      assert.equal((await events()).some(event => event.questionState === 'answered'), false,
+        'ordinary, forwarded and pre-question messages must not resolve a choice');
+      const duplicate = await request('POST', messages, payload, true);
+      assert.equal(duplicate.json.duplicate, true);
+      assert.equal((await log()).filter(event => event.clientId === payload.requestId).length, 1,
+        'duplicate ordinary messages steer once');
+    }
+    const chosen = { text: answer, requestId: `feishu-question:${caseId}`, nativeQuestionId: question.questionId,
+      sourceContext: { connector: 'feishu' } };
+    await Promise.all([send(chosen), send(ordinary('with-answer', '回答同时到达的任务补充'))]);
+    await until(async () => (await events()).find(event => event.questionState === 'answered'));
+    const duplicateAnswer = await request('POST', messages, chosen, true);
+    assert.equal(duplicateAnswer.json.duplicate, true);
+    await send(ordinary('after-answer', '继续返回配置状态'));
+    await until(async () => (await log()).some(event => event.clientId === `${caseId}-with-answer`));
+    assert.equal((await log()).filter(event => event.clientId === `${caseId}-with-answer`).length, 1);
+    await until(async () => (await log()).some(event => event.clientId === `${caseId}-after-answer`));
+    const answers = (await events()).filter(event => event.questionState === 'answered');
+    assert.equal(answers.length, 1);
+    assert.deepEqual(answers[0].questionAnswers, [answer === '2' ? '详细' : answer]);
+    const journals = await readdir(join(config, 'chat-runs', runId, 'native-questions'));
+    const journal = JSON.parse(await readFile(join(config, 'chat-runs', runId, 'native-questions', journals[0]), 'utf8'));
+    assert.equal(journal.resolutions.length, 1, 'one native answer survives repeated submission');
+    if (protocol === 'blocking') assert.equal((await log()).filter(event => event.kind === 'question-answer').length, 1);
+    else {
+      await until(async () => (await log()).find(event => event.clientId === 'question:async-question'));
+      assert.equal((await log()).filter(event => event.clientId === 'question:async-question').length, 1);
+    }
+    await send(ordinary('release', 'RELEASE_NATIVE'));
+    await until(async () => (await request('GET', `/api/sessions/${sessionId}?view=sidebar`)).json.session.activity.run.state !== 'running');
+  }
   console.log('native question HTTP: Web/Feishu controls reach native tools once, retain raw audit and update the original question without a user bubble; typed replies, stale IDs, group access and retries passed');
+  console.log('native question interleaving: partial connector Auto snapshots, ordinary inputs before/during/after questions, merge-forward placeholders, early and invalid numbers, blocking/async answers and retries passed');
 } finally {
   const exited = once(server, 'exit'); server.kill('SIGTERM'); await exited;
   await rm(home, { recursive: true, force: true });

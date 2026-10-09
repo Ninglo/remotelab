@@ -47,6 +47,21 @@ export function resolveQuestionAnswer(question, text) {
   return { values: [raw], kind: 'custom' };
 }
 
+// A pending question is not a catch-all for ordinary task input. Custom
+// answers must carry the question ID from a control; only valid numbered
+// shortcuts may be inferred from a plain message sent after this question.
+export function isNativeQuestionShortcut(question, record) {
+  if (question?.state !== 'pending' || !question.question
+      || nativeQuestionDeadlineExpired(question.deadline)) return false;
+  const source = record.options?.sourceContext;
+  if (source?.connector === 'feishu') {
+    if (!['text', 'post'].includes(source.messageType) || source.ingestion?.status === 'unparsed') return false;
+    const sentAt = Number(source.createTime);
+    if (!Number.isFinite(sentAt) || !Number.isFinite(question.openedAt) || sentAt < question.openedAt) return false;
+  }
+  return resolveQuestionAnswer(question.question, nativeQuestionReplyText(record)).kind === 'option';
+}
+
 export function nativeQuestionEvent(obj) {
   if (obj?.type !== 'remotelab.user_question' || typeof obj.content !== 'string') return null;
   return messageEvent('assistant', obj.content, [], {
@@ -90,7 +105,8 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
     const minutes = timeoutMs / 60_000;
     const options = q.options.map((o, i) => `${i + 1}. ${o.label}${o.description ? `：${o.description}` : ''}`);
     return [entry.questions.length > 1 ? `问题 ${entry.index + 1}/${entry.questions.length}：${q.question}` : q.question,
-      ...options, '', q.multiSelect ? '回复编号选择；多选可回复 1,2。其他文字作为自定义回答。' : '回复 1、2、3 等编号选择；其他文字作为自定义回答。',
+      ...options, '', q.multiSelect ? '回复编号选择；多选可回复 1,2。' : '回复 1、2、3 等编号选择。',
+      '自定义答案请在问题卡片中填写并提交；普通消息继续作为任务补充。',
       !hasTimeout ? '等待你的回答，不会超时自动选择。'
         : q.options.length ? `${minutes} 分钟内未回复，将超时自动选择第 1 项「${q.options[0].label}」。`
           : `${minutes} 分钟内未回复，将按“超时未答”返回，让 AI 继续处理。`].join('\n');
@@ -113,7 +129,8 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
     entry.state = 'pending';
     entry.deadline = hasTimeout ? now() + timeoutMs : null;
     await save(entry);
-    await writeDurableJson(currentPath(directory), { id: `${entry.id}:${entry.index}`, state: 'pending', deadline: entry.deadline });
+    await writeDurableJson(currentPath(directory), { id: `${entry.id}:${entry.index}`, state: 'pending', deadline: entry.deadline,
+      openedAt: now(), question: entry.questions[entry.index] });
     emit(entry, 'pending', publicQuestion(entry));
     const questionId = `${entry.id}:${entry.index}`;
     const deadline = entry.deadline;

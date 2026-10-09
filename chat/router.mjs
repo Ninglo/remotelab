@@ -275,6 +275,7 @@ async function readSessionMessagePayload(req, pathname) {
       tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
       model: typeof payload?.model === 'string' ? payload.model.trim() : '',
       effort: typeof payload?.effort === 'string' ? payload.effort.trim() : '',
+      runtimeSelectionScope: ['auto', 'default'].includes(payload?.runtimeSelectionScope) ? payload.runtimeSelectionScope : '',
       thinking: payload?.thinking === true,
       source: typeof payload?.source === 'string' ? payload.source.trim() : '',
       sourceContext: payload?.sourceContext && typeof payload.sourceContext === 'object' ? payload.sourceContext : null,
