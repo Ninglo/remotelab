@@ -12,12 +12,29 @@ const hash = value => createHash('sha256').update(value).digest('base64url');
 const cell = value => String(value || '—').replace(/\|/g, '／').replace(/[\r\n]+/g, ' ').slice(0, 180);
 const errorCode = error => error.code || 'DELIVERY_UNCERTAIN';
 
+function accountAlerts(snapshot, config) {
+  if (config.accountAlerts?.enabled !== true) return [];
+  const sources = config.accountAlerts.sources || [];
+  return (snapshot.accounts || []).filter(account => !sources.length || account.sources?.some(source => sources.includes(source)))
+    .flatMap(account => {
+      if (['unknown', 'conflicting'].includes(account.status)) return [{ kind: 'account', id: account.id,
+        subject: account.label, severity: 'critical' }];
+      if (account.status === 'exhausted') return [{ kind: 'quota', id: account.id,
+        subject: account.label, severity: 'critical' }];
+      return [];
+    });
+}
+
 export async function sendMonitoringAlert(events, config, batchId) {
   if (!/^oc_[\w]+$/.test(config.chatId || '') || !/^[\w.-]+$/.test(config.profile || '')) throw new Error('INVALID_RECIPIENT');
   const rows = events.map(item => {
     const recovery = config.recoveryIncidents?.slice().reverse().find(record => record.kind === item.kind && record.id === item.id);
-    return `| ${cell(item.subject)} | ${item.kind === 'disk'
-      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}` : '运行持续异常，请核对原执行记录'}${recovery ? `；${cell(recovery.label)}${recovery.reason ? `：${cell(recovery.reason)}` : ''}` : ''} |`;
+    const problem = item.kind === 'disk'
+      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
+      : item.kind === 'account' ? '额度持续无法核实，请核对采集或登录状态；不能据此判断账号已耗尽'
+      : item.kind === 'quota' ? '额度已耗尽，请选择有可用额度的账号'
+      : '运行持续异常，请核对原执行记录';
+    return `| ${cell(item.subject)} | ${problem}${recovery ? `；${cell(recovery.label)}${recovery.reason ? `：${cell(recovery.reason)}` : ''}` : ''} |`;
   }).join('\n');
   const message = `**监管：需要及时处理**\n\n| 对象 | 当前问题 |\n|---|---|\n${rows}\n\n${config.overviewUrl || ''}\n日常状态继续并入日报，本条只报告新出现的紧急问题。`;
   const { stdout } = await promisify(execFile)('lark-cli', ['--profile', config.profile, 'im', '+messages-send',
@@ -43,6 +60,10 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   // are not recovery. Rearm only an explicitly observed healthy or stopped item.
   for (const item of snapshot.disks) if (item.status === 'healthy') recovered.add(hash(`disk:${item.path || item.label}`));
   for (const item of snapshot.services) if (item.status === 'healthy') recovered.add(hash(`service:${item.unit || item.label}`));
+  for (const account of snapshot.accounts || []) {
+    if (['available', 'exhausted'].includes(account.status)) recovered.add(hash(`account:${account.id}`));
+    if (account.status === 'available') recovered.add(hash(`quota:${account.id}`));
+  }
   if (!snapshot.coverage.gaps.some(gap => gap.source === 'automations')) {
     for (const item of snapshot.automations.items || []) {
       const stopped = ['paused', 'cancelled', 'completed'].includes(item.state);
@@ -53,18 +74,23 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
-  for (const item of snapshot.attention.filter(item => ['disk', 'service', 'automation'].includes(item.kind)
-    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id)))) {
+  for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'automation'].includes(item.kind)
+    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     const count = previous?.active ? previous.observations + 1 : 1;
-    const critical = item.severity === 'critical' || item.kind === 'automation'
-      && (config.criticalAutomationIds || []).includes(item.id) && count >= 3;
+    const eligible = item.severity === 'critical' || item.kind === 'automation'
+      && (config.criticalAutomationIds || []).includes(item.id);
+    const configuredCount = Number(config.confirmationObservations);
+    const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
+    const requiredCount = item.kind === 'disk' ? 1 : item.kind === 'automation' ? 3
+      : ['account', 'quota'].includes(item.kind) ? Math.max(3, confirmationCount) : confirmationCount;
+    const critical = eligible && count >= requiredCount;
     const incident = !previous?.active ? { cycle: (previous?.cycle || 0) + 1, status: 'observing', observations: count, active: true } : previous;
     if (!critical && incident.lastCritical) { incident.status = 'observing'; incident.cycle++; }
     Object.assign(incident, { observations: count, active: true, subject: item.subject, kind: item.kind });
     incident.lastCritical = critical;
-    if (baseline && (critical || item.kind === 'automation' && (config.criticalAutomationIds || []).includes(item.id))
+    if (baseline && eligible
       && !['sent', 'needs_review'].includes(incident.status)) incident.status = 'baseline';
     if (critical && incident.status === 'observing') incident.status = 'pending';
     state.incidents[key] = incident;
