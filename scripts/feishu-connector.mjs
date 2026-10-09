@@ -80,7 +80,8 @@ import {
   classifyFeishuQuickParticipation,
   createFeishuQuickParticipationPilot,
 } from '../connectors/feishu/quick-participation.mjs';
-import { createFeishuReadReactionStore } from '../connectors/feishu/read-reactions.mjs';
+import { createFeishuReadReactionStore, createFeishuOutcomeReactionStore } from '../connectors/feishu/read-reactions.mjs';
+import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../lib/feishu-reaction-catalog.mjs';
 import { sendNativeQuestionCard, handleNativeQuestionCardAction, withNativeQuestionCardLock } from '../connectors/feishu/native-question-cards.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
 import { createProjectSurface } from '../connectors/feishu/project-surface.mjs';
@@ -1264,12 +1265,13 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       && (verdict?.decision === 'reply' || mentioned) ? 'reply' : 'silent';
     const reactionAnswer = !mentioned && verdict?.workMode === 'reaction'
       && ['Yes', 'No'].includes(verdict?.emojiType);
-    const emojiType = participation === 'reply'
-      ? (reactionAnswer ? verdict.emojiType : 'OnIt')
-      : ['WOW', 'TOASTED'].includes(verdict?.emojiType) ? verdict.emojiType : null;
     const workMode = participation !== 'reply' ? null
       : reactionAnswer ? 'reaction'
         : (verdict?.decision !== 'reply' || verdict?.workMode === 'short') ? 'short' : 'complex';
+    const fittingReaction = Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, verdict?.emojiType || '')
+      ? verdict.emojiType : null;
+    const emojiType = reactionAnswer ? verdict.emojiType : fittingReaction
+      || (participation === 'reply' ? (workMode === 'complex' ? 'Get' : 'OnIt') : null);
     const saved = await (helpers.recordJevDecision || ((sessionId, sourceMessageId, value) =>
       requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(sessionId)}/observations/decision`, {
         method: 'POST', body: { sourceMessageId, ...value },
@@ -1304,15 +1306,24 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
   const workSummary = complexWork
     ? { ...summary, replyModeOverride: 'thread', startThread: true }
     : summary;
+  // Queue feedback independently of attachments/context preparation. Capture a
+  // queue error until admission finishes so feedback failure cannot lose work.
+  let feedback = Promise.resolve({});
+  if (decision.emojiType) {
+    try {
+      feedback = Promise.resolve((helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
+        runtime, summary, sessionId, decision.emojiType))
+        .then(delivery => ({ delivery }), error => ({ error }));
+    } catch (error) { feedback = Promise.resolve({ error }); }
+  }
   const workReceipt = await (helpers.submitRemoteLabRequest || ((runtime, summary, options) =>
     submitRemoteLabRequest(runtime, summary, options)))(runtime, workSummary,
     complexWork ? { observedRecent: observation.recent }
       : { skipUserMessage: true, ...(legacyWork ? { legacyGroupWorkThread: true } : {}) });
+  const outcome = await feedback;
+  if (outcome.error) throw outcome.error;
   if (workReceipt?.ignored) return { sessionId, externalTriggerId, decision, observedOnly: true };
-  const delivery = decision.emojiType
-    ? await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
-      runtime, summary, sessionId, decision.emojiType)
-    : null;
+  const delivery = outcome.delivery;
   return { sessionId, externalTriggerId, decision,
     ...(delivery ? { deliveryId: delivery.id } : {}),
     ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId,
@@ -1442,6 +1453,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const failures = runtime.deliveryFailures ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-failures'));
   const readReactionStore = runtime.readReactionStore ||=
     createFeishuReadReactionStore(runtime.config.storageDir);
+  const outcomeReactionStore = runtime.outcomeReactionStore ||=
+    createFeishuOutcomeReactionStore(runtime.config.storageDir);
   const replayOptions = {
     continueOnError: true, limit: 10, budgetMs: 30_000,
     onError: (error, receipt) => console.error(`[feishu-connector] delivery acknowledgement deferred (${receipt.deliveryId}): ${error.message}`),
@@ -1456,6 +1469,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   };
   const acknowledge = async receipt => {
     if (receipt.kind === 'reaction') {
+      await outcomeReactionStore.clean(receipt.target?.messageId,
+        (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(
+          runtime, messageId, reactionId));
       await readReactionStore.remove(receipt.target?.messageId,
         (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(
           runtime, messageId, reactionId));
@@ -1521,7 +1537,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       sent = delivery.nativeQuestion
         ? await withNativeQuestionCardLock(runtime, () => sendNativeQuestionCard(runtime, delivery))
         : delivery.kind === 'reaction'
-        ? await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary, delivery.emojiType)
+        ? await outcomeReactionStore.apply(summary.messageId, delivery.emojiType,
+          () => (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary, delivery.emojiType),
+          { stage: delivery.reactionStage || 1 })
         : delivery.attachment
           ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
           : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
@@ -1535,6 +1553,12 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         failure: classifyFeishuDeliveryError(error) });
       await failures.flush(acknowledgeFailure, replayOptions);
       throw error;
+    }
+    if (sent?.superseded) {
+      const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
+        body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'A later routing reaction already owns this source message' } });
+      if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to suppress an older reaction');
+      return resolved.json?.delivery;
     }
     if (sent?.skipped) {
       const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',

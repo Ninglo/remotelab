@@ -12,9 +12,9 @@ const { sendFeishuAttachment } = await import('../connectors/feishu/reply-attach
 const apiError = (status, data) => Object.assign(new Error(`Request failed with status code ${status}`), { response: { status, data } });
 const requestRemoteLab = async (path, { body = {} } = {}) => {
   if (path.endsWith('/claim')) return { response: { ok: true }, json: { claim: await outbox.claimSourceDelivery(body) } };
-  const [, id, action] = /\/api\/source-deliveries\/([^/]+)\/(complete|fail)/.exec(path) || [];
+  const [, id, action] = /\/api\/source-deliveries\/([^/]+)\/(complete|fail|resolve)/.exec(path) || [];
   assert(id, path);
-  const delivery = action === 'complete'
+  const delivery = action === 'resolve' ? await outbox.resolveSourceDelivery(id, body) : action === 'complete'
     ? await outbox.completeSourceDelivery(id, body.leaseId, body)
     : await outbox.failSourceDelivery(id, body.leaseId, body.error, body);
   return { response: { ok: true }, json: { delivery } };
@@ -102,7 +102,43 @@ try {
     assert.equal((await outbox.getSourceDelivery(later.id)).state, 'delivered');
     assert.equal(rejectedSends, 1, 'recovery only replays acknowledgement, never the rejected send');
   }
-  console.log('Feishu delivery errors: definite rejection releases topic, ambiguous sends stay fenced, upload failures retry safely');
+  // Real sender/outbox integration: a routing receipt replaces only this Bot's
+  // old outcome. A failed DELETE survives restart without another external POST.
+  const route = 'routing-reaction-replacement';
+  const reactionPlan = { connector: 'feishu', sourceRouteId: route,
+    target: { chatId: route, messageId: 'original-input', conversationKind: 'main' } };
+  const config = { sourceRouteId: route, storageDir: join(home, route) };
+  const creates = [], deletes = [];
+  let failCleanup = true;
+  const reactionHelpers = { requestRemoteLab,
+    addProcessingReaction: async (_runtime, summary, emoji) => {
+      creates.push([summary.messageId, emoji]); return { reactionId: `own-${emoji}` };
+    },
+    removeProcessingReaction: async (_runtime, messageId, reactionId) => {
+      assert.equal(reactionId, 'own-THANKS');
+      if (failCleanup) throw new Error('temporary DELETE failure');
+      deletes.push([messageId, reactionId]);
+    } };
+  const before = await outbox.enqueueSourceDelivery({ sessionId: route, responseId: 'before',
+    reaction: 'THANKS', sourceDelivery: reactionPlan });
+  await processSourceDeliveryOnce({ config }, reactionHelpers);
+  assert.equal((await outbox.getSourceDelivery(before.id)).state, 'delivered');
+  const handoff = await outbox.enqueueSourceDelivery({ sessionId: route, responseId: 'handoff',
+    reaction: 'Get', reactionStage: 2, sourceDelivery: reactionPlan });
+  await processSourceDeliveryOnce({ config }, reactionHelpers);
+  assert.equal((await outbox.getSourceDelivery(handoff.id)).state, 'sending');
+  failCleanup = false;
+  await processSourceDeliveryOnce({ config }, { ...reactionHelpers,
+    receiptReplayOptions: { now: Date.now() + 60000 } });
+  assert.equal((await outbox.getSourceDelivery(handoff.id)).state, 'delivered');
+  assert.deepEqual(creates, [['original-input', 'THANKS'], ['original-input', 'Get']]);
+  assert.deepEqual(deletes, [['original-input', 'own-THANKS']]);
+  const late = await outbox.enqueueSourceDelivery({ sessionId: route, responseId: 'late',
+    reaction: 'OnIt', sourceDelivery: reactionPlan });
+  await processSourceDeliveryOnce({ config }, reactionHelpers);
+  assert.equal((await outbox.getSourceDelivery(late.id)).state, 'cancelled');
+  assert.equal(creates.length, 2, 'late initial feedback cannot replace the routing receipt');
+  console.log('Feishu delivery errors: rejection and uncertainty, safe retries, restart-safe reaction replacement passed');
 } finally {
   await rm(home, { recursive: true, force: true });
 }

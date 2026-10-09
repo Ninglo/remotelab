@@ -48,7 +48,11 @@ try {
   const classified = await classifyFeishuQuickParticipation('Ada: 你这次做得真棒', {
     key: 'fixture', includeHandoff: false, fetchImpl: async (_url, request) => {
       const { questions } = JSON.parse(request.body);
-      assert.deepEqual(Object.keys(questions.emotion.criteria), ['praise', 'criticism', 'none']);
+      assert(questions.reaction.criteria.Get);
+      assert(questions.reaction.criteria.THANKS);
+      assert(questions.reaction.criteria.FACEPALM);
+      assert.equal(questions.reaction.criteria.DONE, undefined, 'tone cannot claim completion');
+      assert.equal(questions.emotion, undefined);
       assert.deepEqual(Object.keys(questions.binaryAnswer.criteria), ['yes', 'no', 'none']);
       assert.deepEqual(Object.keys(questions.workMode.criteria), ['short', 'complex']);
       assert.match(questions.participation.instructions, /only praises, criticizes, or rejects/);
@@ -87,6 +91,17 @@ try {
   assert.equal(olderQuestion.decision, 'silent');
   assert.equal(olderQuestion.emojiType, 'TOASTED');
 
+  for (const id of ['Get', 'THANKS', 'FACEPALM', 'HUG', 'JIAYI', 'HIGHFIVE']) {
+    const choice = await classifyFeishuQuickParticipation('NEWEST MESSAGE TO CLASSIFY: Ada: 请结合上下文回应', {
+      key: 'fixture', includeHandoff: false,
+      fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+        participation: { choice: 'reply', probabilities: { reply: 0.98, silent: 0.02 } },
+        reaction: { choice: id, probabilities: { [id]: 0.94 } },
+      } }) }),
+    });
+    assert.equal(choice.emojiType, id, 'a text reply does not discard a fitting social reaction');
+  }
+
   for (const [choice, probability, expected] of [
     ['short', 0.93, 'short'], ['short', 0.59, 'complex'], ['complex', 0.92, 'complex'],
   ]) {
@@ -117,6 +132,7 @@ try {
     key: 'fixture', fetchImpl: async (_url, request) => {
       const questions = JSON.parse(request.body).questions;
       assert.equal(questions.emotion, undefined, 'other groups keep their original Jev request size');
+      assert.equal(questions.reaction, undefined);
       assert.equal(questions.reactionOnly, undefined);
       assert.equal(questions.workMode, undefined);
       assert(questions.projectHandoff);
@@ -170,7 +186,7 @@ try {
   const silent = await handleMessage(runtime, base, 'test', helpers);
   assert.equal(silent.decision.emojiType, 'WOW');
   assert.equal(silent.workSessionId, 'group-session');
-  assert.deepEqual(effects, ['observe:praise', 'jev', 'decision:silent:null:WOW', 'run:group:inline', 'reaction:WOW'],
+  assert.deepEqual(effects, ['observe:praise', 'jev', 'decision:silent:null:WOW', 'reaction:WOW', 'run:group:inline'],
     'Jev keeps the social reaction while the Session model judges whether text is needed');
 
   effects.length = 0;
@@ -183,7 +199,7 @@ try {
     });
   assert.equal(direct.runId, 'work-run');
   assert.equal(direct.workSessionId, 'thread-session');
-  assert.deepEqual(effects, ['observe:work', 'jev', 'decision:reply:complex:OnIt', 'run:new:thread', 'reaction:OnIt'],
+  assert.deepEqual(effects, ['observe:work', 'jev', 'decision:reply:complex:Get', 'reaction:Get', 'run:new:thread'],
     'complex work starts its own Session and Thread after the group observation');
 
   effects.length = 0;
@@ -195,7 +211,7 @@ try {
       },
     });
   assert.equal(short.workSessionId, 'group-session');
-  assert.deepEqual(effects, ['observe:short', 'jev', 'decision:reply:short:OnIt', 'run:group:inline', 'reaction:OnIt'],
+  assert.deepEqual(effects, ['observe:short', 'jev', 'decision:reply:short:OnIt', 'reaction:OnIt', 'run:group:inline'],
     'short work stays in the original Session and group mainline');
 
   effects.length = 0;
@@ -208,15 +224,15 @@ try {
       return { sessionId: 'group-session', runId: 'old-run' };
     },
   });
-  assert.deepEqual(effects, ['legacy:true:true', 'reaction:OnIt'],
+  assert.deepEqual(effects, ['reaction:OnIt', 'legacy:true:true'],
     'older decisions replay in their original topology');
 
   effects.length = 0;
   const mentionedPraise = await handleMessage(runtime, { ...base, messageId: 'mentioned-praise',
     messageText: '你这次做得真棒', mentions: [{ openId: 'bot' }] }, 'test', helpers);
   assert.equal(mentionedPraise.decision.participation, 'reply');
-  assert.deepEqual(effects, ['observe:mentioned-praise', 'jev', 'decision:reply:short:OnIt',
-    'run:group:inline', 'reaction:OnIt'],
+  assert.deepEqual(effects, ['observe:mentioned-praise', 'jev', 'decision:reply:short:WOW',
+    'reaction:WOW', 'run:group:inline'],
     'a direct mention falls back to the existing group Session with one work reaction');
 
   effects.length = 0;
@@ -229,7 +245,7 @@ try {
     });
   assert.equal(mentionedCriticism.decision.participation, 'reply');
   assert.deepEqual(effects, ['observe:mentioned-criticism', 'jev',
-    'decision:reply:short:OnIt', 'run:group:inline', 'reaction:OnIt']);
+    'decision:reply:short:TOASTED', 'reaction:TOASTED', 'run:group:inline']);
 
   effects.length = 0;
   const testMention = await handleMessage(runtime, { ...base, messageId: 'test-mention',
@@ -241,7 +257,7 @@ try {
     });
   assert.equal(testMention.decision.participation, 'reply');
   assert.deepEqual(effects, ['observe:test-mention', 'jev', 'decision:reply:short:OnIt',
-    'run:group:inline', 'reaction:OnIt'],
+    'reaction:OnIt', 'run:group:inline'],
     'an uncertain @ mention wakes the existing group Session with only OnIt');
 
   effects.length = 0;
@@ -254,7 +270,7 @@ try {
   });
   assert.equal(onlyReaction.decision.participation, 'silent');
   assert.equal(onlyReaction.runId, 'work-run');
-  assert.deepEqual(effects, ['observe:emoji-only', 'jev', 'decision:silent:null:WOW', 'run:group:inline', 'reaction:WOW'],
+  assert.deepEqual(effects, ['observe:emoji-only', 'jev', 'decision:silent:null:WOW', 'reaction:WOW', 'run:group:inline'],
     'a reaction-only classification cannot suppress the Session model');
 
   effects.length = 0;
@@ -269,7 +285,7 @@ try {
   assert.equal(yes.runId, 'work-run');
   assert.equal(yes.workSessionId, 'group-session');
   assert.deepEqual(effects, ['observe:receipt-question', 'jev',
-    'decision:reply:reaction:Yes', 'run:group:inline', 'reaction:Yes'],
+    'decision:reply:reaction:Yes', 'reaction:Yes', 'run:group:inline'],
     'a binary reaction is preserved and still reaches the existing Session for reply judgment');
 
   for (const [messageId, messageText, emojiType] of [
@@ -287,7 +303,7 @@ try {
     assert.equal(outcome.decision.emojiType, emojiType);
     assert.equal(outcome.runId, 'work-run');
     assert.deepEqual(effects, ['observe:' + messageId, 'jev',
-      `decision:silent:null:${emojiType}`, 'run:group:inline', ...(emojiType ? [`reaction:${emojiType}`] : [])]);
+      `decision:silent:null:${emojiType}`, ...(emojiType ? [`reaction:${emojiType}`] : []), 'run:group:inline']);
     assert.equal('deliveryId' in outcome, Boolean(emojiType));
   }
 
@@ -313,8 +329,29 @@ try {
     classifyJevReaction: () => { throw new Error('replay must reuse the persisted decision'); },
   });
   assert.equal(replay.decision.emojiType, 'TEARS');
-  assert.deepEqual(effects, ['run:group:inline', 'reaction:TEARS'],
+  assert.deepEqual(effects, ['reaction:TEARS', 'run:group:inline'],
     'replay reuses the reaction decision while resubmitting through the idempotent Session request path');
+
+  effects.length = 0;
+  let releasePreparation, preparationStarted;
+  const preparation = new Promise(resolve => { releasePreparation = resolve; });
+  const started = new Promise(resolve => { preparationStarted = resolve; });
+  const pending = handleMessage(runtime, { ...base, messageId: 'slow-preparation', messageText: '请处理这个问题' }, 'test', {
+    ...helpers,
+    classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex', emojiType: 'Get' }),
+    submitRemoteLabRequest: async () => { preparationStarted(); await preparation; return { sessionId: 'work' }; },
+  });
+  await started;
+  assert(effects.includes('reaction:Get'), 'receipt is queued while attachment/context admission is still blocked');
+  releasePreparation();
+  await pending;
+  effects.length = 0;
+  await assert.rejects(handleMessage(runtime, { ...base, messageId: 'feedback-failed', messageText: '请处理这个问题' }, 'test', {
+    ...helpers,
+    classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex' }),
+    enqueueJevReaction: async () => { throw new Error('feedback queue offline'); },
+  }), /feedback queue offline/);
+  assert(effects.includes('run:new:thread'), 'feedback failure cannot discard accepted work');
   const { GROUP_ROUTING_PILOT_FILE } = await import('../lib/group-routing-pilot.mjs');
   await mkdir(join(home, '.config/remotelab'), { recursive: true });
   await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({ version: 1, enabled: true,

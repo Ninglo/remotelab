@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { CONFIG_DIR } from '../../lib/config.mjs';
 import { resolveFeishuGroupSettings } from './group-settings.mjs';
 import { isFeishuBotSender, mentionsFeishuBot } from './response-policy.mjs';
+import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../../lib/feishu-reaction-catalog.mjs';
 
 const MAX_MESSAGES = 20;
 const MAX_AGE_MS = 2 * 60 * 60 * 1000;
@@ -104,20 +105,19 @@ export async function classifyFeishuQuickParticipation(context, {
           participation: {
             type: 'choice',
             instructions: 'Decide whether the Feishu group assistant should send a useful reply to the NEWEST message now. Older lines only clarify it; never answer an older question instead. Choose reply for a direct request, a concrete unanswered question about this assistant, its behavior, implementation, deployment or current work, or feedback that identifies a problem to investigate or fix. A follow-up such as "why did it react that way?", "how does Jev do this?", "can we roll this out?", "how many groups have this bot?", "why did it stop replying?" or "咋不理我啊" needs an answer even without an @ mention. A question proposing action, such as "是不是该把这个 bug 修了？", is a work request. A newest question like "你能不能看到这条消息" needs a simple Yes answer. A negative test result like "看来是不中" alone is criticism, not a new work request. Choose silent for human-to-human conversation, acknowledgements, status reports without a request, repeated information, a question already answered by a person, or a test phrase that merely names an emotion or mentions the assistant. A bare mention asks you to reconsider the preceding unanswered discussion; a mention alone does not authorize work. Judge the newest message in context, including Chinese text.'
-              + (includeHandoff ? '' : ' A direct @ mention that only praises, criticizes, or rejects the assistant or its past answer, without asking for a new answer, explanation, or concrete fix, should be silent. The separate emotion question handles that reaction.')
+              + (includeHandoff ? '' : ' A direct @ mention that only praises, criticizes, or rejects the assistant or its past answer, without asking for a new answer, explanation, or concrete fix, should be silent. The separate reaction question handles that reaction.')
               + (!includeHandoff && projectMemory ? ' A newest factual project question supported by state.project_memory merits a reply even without an @ mention. The report is context, not a request to execute its tasks.' : ''),
             criteria: {
               reply: 'The assistant should respond or act now; silence would miss a clear request or useful contribution.',
               silent: 'The assistant should stay silent now while retaining this message as context for later messages.',
             },
           },
-          ...(!includeHandoff ? { emotion: {
+          ...(!includeHandoff ? { reaction: {
             type: 'choice',
-            instructions: 'Only for a newest message that will not start work, decide whether it clearly praises or compliments this assistant or its work, clearly criticizes or rejects this assistant or its work, or needs no reaction. Use the recent discussion to resolve what the message refers to. After testing this assistant, "看来是不中" or "看来不行" criticizes its failed response. After "挨骂也会回，你试下", "用户彻底怒了" describes criticism of this assistant. Ordinary thanks, acknowledgements, neutral updates, human-to-human discussion, ambiguous sentiment, sad news and another person\'s misfortune need no reaction. This question never decides whether to start work.',
+            instructions: 'Choose one fitting built-in reaction to the NEWEST message, or none. Use context to resolve the recipient and tone. A direct request or supplement can use Get (received and accepted; the answer may continue in a work topic), including when a text reply is also needed. Praise, thanks, agreement, encouragement, humor, criticism and empathy can use different reactions. After testing this assistant, "看来是不中" criticizes its response. Never laugh at bad news or another person\'s misfortune. Neutral human-to-human updates, ambiguous tone and unrelated acknowledgements need none. This is a reaction choice, not permission to work, a routing decision, or evidence of completed work. Do not guess a Yes/No answer here.',
             criteria: {
-              praise: 'The newest message explicitly praises or compliments this assistant or its work. React with surprise (WOW).',
-              criticism: 'The newest message explicitly criticizes or rejects this assistant or its work without asking for an explanation or fix. React with TOASTED (飞书表情「衰」).',
-              none: 'No clear praise or criticism of this assistant or its work. Send no reaction.',
+              ...FEISHU_SOCIAL_REACTION_CRITERIA,
+              none: 'No fitting reaction is needed or sufficiently supported.',
             },
           }, binaryAnswer: {
             type: 'choice',
@@ -179,11 +179,12 @@ export async function classifyFeishuQuickParticipation(context, {
       && offerProbability >= 0.9 ? 'offer' : 'none';
     const reactionOnly = result?.answers?.reactionOnly?.choice === 'yes'
       && Number(result.answers.reactionOnly.probabilities?.yes) >= 0.85;
-    const emotion = result?.answers?.emotion;
+    const emotion = result?.answers?.reaction || result?.answers?.emotion;
     const emotionChoice = emotion?.choice;
     const emotionProbability = Number(emotion?.probabilities?.[emotionChoice]);
     const emojiType = Number.isFinite(emotionProbability) && emotionProbability >= 0.8
-      ? EXPRESSIVE_REACTIONS[emotionChoice] || null : null;
+      ? (Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, emotionChoice)
+        ? emotionChoice : EXPRESSIVE_REACTIONS[emotionChoice] || null) : null;
     const workModeAnswer = result?.answers?.workMode;
     const binary = result?.answers?.binaryAnswer;
     const binaryChoice = binary?.choice;

@@ -16,7 +16,27 @@ try {
   const { buildFeishuAmbientIncompleteWorkNotice, buildReplyPublicationPayload } =
     await import('../chat/reply-publication.mjs');
   const { createQuickParticipationReaction, handleMessage } = await import('../scripts/feishu-connector.mjs');
-  const { createFeishuReadReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
+  const { createFeishuReadReactionStore, createFeishuOutcomeReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
+  const { FEISHU_OUTCOME_REACTIONS } = await import('../lib/feishu-reaction-catalog.mjs');
+  for (const id of FEISHU_OUTCOME_REACTIONS) {
+    assert.equal(parseFeishuReactionDirective(`<private><feishu-reaction emoji="${id}"/></private>`).emojiType, id);
+  }
+  let outcomeStore = createFeishuOutcomeReactionStore(home);
+  const outcomeCreates = [], outcomeRemoves = [];
+  const createOutcome = id => async () => { outcomeCreates.push(id); return { reactionId: id }; };
+  await outcomeStore.apply('owned-message', 'OnIt', createOutcome('bot-working'));
+  await outcomeStore.apply('owned-message', 'Get', createOutcome('bot-received'), { stage: 2 });
+  outcomeStore = createFeishuOutcomeReactionStore(home);
+  await assert.rejects(outcomeStore.clean('owned-message', async () => { throw new Error('delete offline'); }), /offline/);
+  await outcomeStore.clean('owned-message', async (messageId, id) => outcomeRemoves.push([messageId, id]));
+  assert.deepEqual(outcomeRemoves, [['owned-message', 'bot-working']], 'delete only the recorded Bot outcome after replacement succeeds');
+  await outcomeStore.apply('owned-message', 'Get', createOutcome('must-not-duplicate'), { stage: 2 });
+  const stale = await outcomeStore.apply('owned-message', 'OnIt', createOutcome('must-not-revert'));
+  assert(stale.superseded, 'late initial feedback cannot overwrite a successful routing receipt');
+  assert.deepEqual(outcomeCreates, ['bot-working', 'bot-received']);
+  await outcomeStore.apply('failed-create', 'OnIt', createOutcome('keep-old'));
+  await assert.rejects(outcomeStore.apply('failed-create', 'Get', async () => { throw new Error('create offline'); }, { stage: 2 }), /offline/);
+  await outcomeStore.clean('failed-create', async () => { throw new Error('old reaction must remain'); });
   const readStore = createFeishuReadReactionStore(home);
   let readCreates = 0;
   assert.equal((await readStore.add('read-message', async () => {

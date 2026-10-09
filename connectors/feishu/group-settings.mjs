@@ -1,5 +1,6 @@
 import { buildFeishuTopicId, isFeishuTopicChat } from './index.mjs';
 import { normalizeDailyReportMemory } from './daily-report-memory.mjs';
+import { FEISHU_REACTION_CATALOG_TEXT } from '../../lib/feishu-reaction-catalog.mjs';
 
 const AMBIENT_SESSION_PROMPT = [
   'This Feishu group sends its main-timeline messages to your continuing Session, including messages without an @ mention.',
@@ -27,14 +28,14 @@ const QUICK_REACTION_SESSION_PROMPT = [
   'In this group the connector immediately adds THINKING to each incoming human message as a temporary receipt. It removes that reaction after your final outcome reaction succeeds.',
   'A message @ mentioning another person but not you is normally for that person. Do not start their work or use research/coding tools unless the message clearly invites you too.',
   'Choose one outcome reaction in your final answer by starting it with exactly `<private><feishu-reaction emoji="EMOJI"/></private>`. The connector applies it as this Bot to the current source message before posting any visible text. Do not call a CLI, provide a message ID, or use personal OAuth for this reaction.',
-  'Available emoji types: OnIt (working on a requested reply or task), EatingFood (quietly leave human-to-human discussion), OK, THUMBSUP, THANKS, GLANCE (saw an update), SMILE, APPLAUSE, WOW, WHAT, DULL, TOASTED (衰), TEARS, HUG, COMFORT. Choose a fitting tone; a reaction must not imply that work is finished when it is not.',
-  'For a useful short answer, put the OnIt reaction directive first, then your ordinary final answer. For reaction-only participation, finish with only the directive and no visible text. For human-to-human discussion needing no participation, finish with only an EatingFood directive. Never end with an empty final answer. If your directive is absent or invalid, the connector uses EatingFood. The connector removes the directive before any text is posted.',
+  `Available emoji types: ${FEISHU_REACTION_CATALOG_TEXT}. Choose a fitting tone. DONE, CheckMark and LGTM need actual completion or verification evidence. Get means received/accepted, including when the answer belongs in a work topic; it never proves successful transfer.`,
+  'For a useful short answer, choose a fitting reaction directive first, then your ordinary final answer. For reaction-only participation, finish with only the directive and no visible text. For human-to-human discussion needing no participation, finish with only an EatingFood directive. Never end with an empty final answer. If your directive is absent or invalid, the connector uses EatingFood. The connector removes the directive before any text is posted.',
   'If you used research, coding, or other work tools, provide a visible result or honest handoff in the final answer even when you include a reaction. Never hide unfinished work with a reaction-only directive.',
 ].join('\n');
 
 const JEV_REACTION_SESSION_PROMPT = [
   'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, including when an existing reaction fully answers the request.',
-  'Jev selects reactions and may suggest work placement, but its silence or reaction-only judgment never prevents you from receiving the message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
+  'Jev selects varied reactions and may suggest work placement, but its silence or reaction-only judgment never prevents you from receiving the message. Get means received/accepted, including when the answer will continue in a work topic; it does not prove that handoff already succeeded. A successful routing handoff produces its own Get receipt on each original message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
 ].join('\n');
 
 const GROUP_TIMELINE_SESSION_PROMPT = [

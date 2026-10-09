@@ -102,6 +102,8 @@ export async function getSourceDelivery(id) {
 export async function enqueueSourceDelivery(input = {}) {
   const plan = normalizeSourceDeliveryPlan(input.sourceDelivery);
   const reaction = trimString(input.reaction);
+  const reactionStage = input.reactionStage ?? 1;
+  if (reaction && ![1, 2].includes(reactionStage)) throw new Error('Invalid Feishu reaction stage');
   if (reaction && (plan?.connector !== 'feishu' || !plan.target?.messageId
       || !FEISHU_OUTCOME_REACTIONS.includes(reaction))) throw new Error('Invalid Feishu reaction delivery');
   if (!plan || !input.responseId || (!input.text && !input.attachments?.length && !reaction)) {
@@ -122,6 +124,7 @@ export async function enqueueSourceDelivery(input = {}) {
     options: { deliveryOnly: true, responseId: input.responseId },
     result: { state: 'completed', payload: { text: input.text || '', attachments: input.attachments || [], reaction } },
     plans: buildReplyDeliveries(plan, { text: input.text, attachments: input.attachments, reaction }).map(part => ({ ...part,
+      ...(part.kind === 'reaction' ? { reactionStage } : {}),
       ...(workboard ? { workboardTaskId: workboard.taskId, workboardRevision: workboard.revision,
         providerPartCount: (input.text ? 1 : 0) + (input.attachments?.length || 0) } : {}),
       triggerId: input.triggerId || '', scheduleId: input.scheduleId || '', occurrenceId: input.occurrenceId || '' })),

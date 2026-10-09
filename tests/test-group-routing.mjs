@@ -33,7 +33,7 @@ try {
   const options = { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a',
     sourceContext: { connector: 'feishu', chatId: 'pilot' }, sourceDelivery: origin };
   const input = async (id, text, extra = {}) => (await requests.accept({ sessionId: 'main', requestId: id, text,
-    options: { ...options, ...extra }, deliveryPlan: origin, runtimeSelection: { tool: 'codex', model: 'test' } })).record;
+    options: { ...options, ...extra }, deliveryPlan: extra.sourceDelivery || origin, runtimeSelection: { tool: 'codex', model: 'test' } })).record;
   let created = 0, submits = 0;
   const manager = {
     async createSession(folder, tool, name, extra) { created++; assert.equal(extra.conversation.target.rootId, 'one'); assert.equal(extra.conversation.target.participationEpoch, undefined); assert.equal(extra.conversation.target.sourceKind, 'group_routing_work'); return findSessionMeta('new'); },
@@ -59,7 +59,9 @@ try {
   assert.equal(created, 1); assert.equal(submits, 1);
   assert.equal((await requests.get(first.key)).options.suppressSourceDelivery, true);
   assert.equal((await requests.byRequest('new', 'routed:one')).options.sourceContext.routingReplyMessageId, 'one');
-  const second = await input('two', '补充一句：请加入 B');
+  const second = await input('two', '补充一句：请加入 B', {
+    sourceDelivery: { ...origin, target: { ...origin.target, messageId: 'two' } },
+  });
   await routeGroupWork(second, { mode: 'continue', targetSessionId: 'new', task: '加入 B', reason: '同一工作补充' }, manager);
   assert.equal(created, 1); assert.equal(submits, 2);
   assert.equal((await requests.byRequest('new', 'routed:two')).deliveryPlan.target.rootId, 'one');
@@ -122,6 +124,35 @@ try {
   await assert.rejects(validateGroupRethink(secondReview), /目标讨论已变化/);
   const context = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext);
   assert.match(context, /sourceRequestId/); assert(context.length < 16000);
+  const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
+  const reactions = (await listSourceDeliveries({ connector: 'feishu', sourceRouteId: 'bot' }))
+    .filter(delivery => delivery.kind === 'reaction');
+  const firstReceipt = (await requests.get(first.key)).routingHandoff.receiptDeliveryId;
+  const firstReaction = reactions.find(delivery => delivery.id === firstReceipt);
+  assert.equal(firstReaction.emojiType, 'Get');
+  assert.equal(firstReaction.reactionStage, 2);
+  assert.equal(firstReaction.target.messageId, 'one');
+  const secondReceipt = (await requests.get(second.key)).routingHandoff.receiptDeliveryId;
+  assert.equal(reactions.find(delivery => delivery.id === secondReceipt).target.messageId, 'two',
+    'supplement receipt stays on its own message while the work reply stays in the first topic');
+  assert.equal(reactions.filter(delivery => delivery.id === firstReceipt).length, 1, 'route retry queues one receipt');
+  const failed = await input('failed-admission', '补充失败');
+  let feedbackCalls = 0;
+  const packet = { mode: 'continue', targetSessionId: 'new', task: '补充失败', reason: '原工作补充' };
+  await assert.rejects(routeGroupWork(failed, packet, { ...manager,
+    submitHttpMessage: async () => { throw new Error('admission offline'); },
+    enqueueSourceDelivery: async () => { feedbackCalls++; },
+  }), /admission offline/);
+  assert.equal(feedbackCalls, 0, 'never acknowledge successful transfer before target admission');
+  assert.equal((await requests.get(failed.key)).routingHandoff, undefined);
+  const feedbackFailure = await routeGroupWork(failed, packet, { ...manager,
+    enqueueSourceDelivery: async () => { throw new Error('receipt queue offline'); },
+  });
+  assert.equal(feedbackFailure.feedbackWarnings.length, 1);
+  assert.equal((await requests.get(failed.key)).routingHandoff.state, 'submitted', 'receipt failure does not undo accepted work');
+  const recovered = await routeGroupWork(failed, packet, manager);
+  assert.equal(recovered.feedbackWarnings.length, 0);
+  assert.equal((await requests.get(failed.key)).routingHandoff.feedbackError, null);
   await writeFile(configPath, JSON.stringify({ ...config, enabled: false }));
   assert.equal(await routingPilotScope(origin), null);
   assert.equal(await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext), '');

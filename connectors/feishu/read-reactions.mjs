@@ -41,3 +41,45 @@ export function createFeishuReadReactionStore(root) {
     },
   };
 }
+
+// Track only IDs created by this connector/Bot. Replace its own outcome after
+// the new create receipt is durable; cleanup retries through delivery receipts.
+export function createFeishuOutcomeReactionStore(root) {
+  const records = createRecordStore(join(root, 'outcome-reactions'));
+  const queues = new Map();
+  const serial = async (messageId, fn) => {
+    const key = keyFor(messageId);
+    const task = (queues.get(key) || Promise.resolve()).catch(() => {}).then(() => fn(key));
+    queues.set(key, task);
+    try { return await task; } finally { if (queues.get(key) === task) queues.delete(key); }
+  };
+  return {
+    apply(messageId, emojiType, create, { stage = 1 } = {}) {
+      return serial(messageId, async key => {
+        const previous = await records.get(key);
+        if ((previous?.stage || 1) > stage) return { reactionId: previous.reactionId, superseded: true };
+        const receipt = previous?.emojiType === emojiType && previous.reactionId
+          ? { reactionId: previous.reactionId } : await create();
+        if (!receipt?.reactionId) return receipt;
+        const pending = new Set(previous?.pendingRemoval || []);
+        if (previous?.reactionId && previous.reactionId !== receipt.reactionId) pending.add(previous.reactionId);
+        pending.delete(receipt.reactionId);
+        await records.mutate(key, () => ({ messageId, emojiType, reactionId: receipt.reactionId,
+          stage, pendingRemoval: [...pending], sequence: previous?.sequence || Date.now() }));
+        return receipt;
+      });
+    },
+    clean(messageId, remove) {
+      if (!messageId) return Promise.resolve();
+      return serial(messageId, async key => {
+        const current = await records.get(key);
+        for (const id of current?.pendingRemoval || []) {
+          try { await remove(messageId, id); }
+          catch (error) { if (Number(error?.code || error?.response?.data?.code) !== 231011) throw error; }
+          await records.mutate(key, value => ({ ...value,
+            pendingRemoval: value.pendingRemoval.filter(pending => pending !== id) }));
+        }
+      });
+    },
+  };
+}

@@ -119,7 +119,7 @@ export async function routeGroupWork(record, body, deps) {
       task, reason, state: 'reserved', createdAt: new Date().toISOString() };
     if (old && JSON.stringify(old.requestIds) !== JSON.stringify(ids)) fail('Retry must preserve the reserved input set');
     if (!old) await save(session.id, data => data.routes.push(route)); // reserve before starting any work
-    const manager = await api(deps), receipts = [];
+    const manager = await api(deps), receipts = [], feedbackWarnings = [];
     for (const input of inputs) {
       const claimed = await requests.mutate(input.key, current => {
         if (current.routingHandoff && current.routingHandoff.targetSessionId !== target.id) fail('Input already handed to another topic');
@@ -152,10 +152,25 @@ export async function routeGroupWork(record, body, deps) {
         throw error;
       }
       await requests.mutate(claimed.key, current => ({ ...current, routingHandoff: { ...current.routingHandoff, state: 'submitted' } }));
+      // The task has been admitted elsewhere. A separate durable receipt still
+      // belongs on EACH original message, even when its mainline body is muted.
+      try {
+        const feedback = await (deps?.enqueueSourceDelivery || enqueueSourceDelivery)({
+          sessionId: session.id, responseId: `feishu-routing-receipt:${input.requestId}`,
+          reaction: 'Get', reactionStage: 2,
+          sourceDelivery: input.deliveryPlan || input.options.sourceDelivery,
+        });
+        await requests.mutate(input.key, current => ({ ...current, routingHandoff: {
+          ...current.routingHandoff, receiptDeliveryId: feedback.id, feedbackError: null } }));
+      } catch (error) {
+        feedbackWarnings.push({ requestId: input.requestId, error: error.message });
+        await requests.mutate(input.key, current => ({ ...current, routingHandoff: {
+          ...current.routingHandoff, feedbackError: error.message } }));
+      }
     }
     await save(session.id, data => { const current = data.routes.find(r => r.id === route.id); current.state = 'submitted'; });
     await appendEvent(session.id, { type: 'work_event', action: 'routing-handoff', route, receipts });
-    return { targetSessionId: target.id, route, receipts,
+    return { targetSessionId: target.id, route, receipts, feedbackWarnings,
       instruction: 'Work owns its topic replies. Do not repeat a body reply in the group mainline. Each input receipt remains separate.' };
   });
 }

@@ -145,7 +145,7 @@ try {
     },
   });
   assert.equal(outcome.decision.contextSources[0].date, actualDate);
-  assert.deepEqual(effects, ['jev', 'run', 'Yes']);
+  assert.deepEqual(effects, ['jev', 'Yes', 'run'], 'feedback need not wait for work input preparation');
   assert.equal(outcome.runId, 'memory-run');
   assert.deepEqual(JSON.parse(await readFile(receiptPath, 'utf8')).body_sha256, receipt.body_sha256);
   console.log('test-feishu-daily-report-memory: ok');
