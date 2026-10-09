@@ -5,6 +5,7 @@ import { broadcastAll } from './ws-clients.mjs';
 import { getRun } from './runs.mjs';
 import { loadHistory, getHistoryHeadSeq } from './history.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
+import { projectProgressStreams } from '../lib/progress-stream.mjs';
 
 // Policy changes and progress outbox admissions share one lock. A notification
 // already admitted before a switch may finish; later observations read the new policy.
@@ -122,7 +123,13 @@ export async function updateProgressCardDisclosure(id, { anchorSeq, mode, change
     if (!current) invalid('会话不存在。', 404);
     if (current.conversation?.connector !== 'feishu' || current.workboardPilot !== true)
       invalid('此操作仅用于已启用的飞书任务卡片。');
-    if (!projectWorkboards(await loadHistory(id)).some(task => task.anchorSeq === anchorSeq))
+    const history = await loadHistory(id);
+    const tasks = projectWorkboards(history);
+    const progressSeqs = new Set(tasks.flatMap(task => task.progressHistory.map(progress => progress.seq)));
+    const standalone = projectProgressStreams(history, progressSeqs).some(stream => stream.anchorSeq === anchorSeq
+      && history.some(event => event.role === 'user' && event.runId === stream.runId
+        && event.messageReplyPolicy?.progress === 'card' && event.workboardAdmission));
+    if (!tasks.some(task => task.anchorSeq === anchorSeq) && !standalone)
       invalid('无法确认这张任务卡片，请查看原话题。');
     const result = await mutateSessionMeta(id, session => {
       const prior = session.feishuProgressCards?.[anchorSeq];

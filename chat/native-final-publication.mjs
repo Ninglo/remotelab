@@ -53,11 +53,14 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
   const publicationRun = { id: record.runId, responseId: record.responseId,
     ...(record.runtimeSelection || record.options) };
   const firstUserTurn = isFirstUserTurnPublication(events, publicationRun, fullHistory);
+  const messageReplyPolicy = record.options?.messageReplyPolicy;
   const suppressOpening = (surface, current) => plan.connector === 'feishu' && surface.surfaceKind === 'opening'
-    && !usesOctober7GroupMessaging(progressPolicy)
-    && (!firstUserTurn || current?.deliveries?.some(item => item.surfaceKind === 'opening'
-      || item.kind === 'session_entry' || item.sessionEntryIncluded));
-  for (const [event, surface] of collectAssistantSurfaceMessages(events || [])) {
+    && (messageReplyPolicy
+      ? !messageReplyPolicy.opening || current?.deliveries?.some(item => item.surfaceKind === 'opening')
+      : !usesOctober7GroupMessaging(progressPolicy) && (!firstUserTurn
+        || current?.deliveries?.some(item => item.surfaceKind === 'opening'
+          || item.kind === 'session_entry' || item.sessionEntryIncluded)));
+  for (const [event, surface] of collectAssistantSurfaceMessages(events || [], { independentOpening: Boolean(messageReplyPolicy) })) {
     if (event.runId && event.runId !== record.runId) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
@@ -76,10 +79,10 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     // A rollout can fence progress previously suppressed by card grouping.
     // This is not a delivery receipt; old card text must not be announced again.
     if ((surface.surfaceKind === 'progress' || surface.surfaceKind === 'opening'
-        && usesOctober7GroupMessaging(progressPolicy))
+        && !messageReplyPolicy && usesOctober7GroupMessaging(progressPolicy))
         && event.seq <= (stored?.progressMessageAfterSeq || 0)) continue;
     if (plan.connector === 'feishu' && surface.surfaceKind === 'progress'
-        && !shouldPublishSessionProgress(progressPolicy, event.seq, record.runId)) continue;
+        && !shouldPublishSessionProgress(progressPolicy, event.seq, record.runId, messageReplyPolicy)) continue;
     if (stored?.streamedSurfaceMessageIds?.includes(messageId)
         || stored?.streamedFinalReplyIds?.includes(messageId)) continue;
     const final = isFinalAssistantMessage(event);
@@ -146,7 +149,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (plan.connector === 'feishu' && surface.surfaceKind === 'progress') {
       await withSessionProgressPolicy(record.sessionId || session?.id, async () => {
         const latest = forThisTurn(await findSessionMeta(record.sessionId || session?.id) || session);
-        if (shouldPublishSessionProgress(latest, event.seq, record.runId)) await admit();
+        if (shouldPublishSessionProgress(latest, event.seq, record.runId, messageReplyPolicy)) await admit();
       });
     } else await admit();
   }

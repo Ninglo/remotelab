@@ -409,6 +409,50 @@ try {
       assert.ok(inbound.workboardAdmission.identityId);
     }
 
+    // The new reply mode is a separate human-confirmed configuration. Exercise
+    // real HTTP admission and persisted input snapshots with the fake Harness.
+    const replySource = { ...source('reply-member'), chatId: 'oc_replyfixture', chatName: '回复机制隔离群' };
+    const replyConversation = { connector: 'feishu', sourceRouteId: 'fixture-bot',
+      target: { chatType: 'group', chatId: replySource.chatId, conversationKind: 'thread' } };
+    const replyGroup = await request(port, 'POST', '/api/sessions', { folder: repoRoot, tool: 'fake-codex',
+      sourceId: 'feishu', sourceContext: replySource, conversation: replyConversation }, service);
+    assert.equal(replyGroup.status, 201);
+    const replySettings = await request(port, 'GET', '/api/message-reply-settings');
+    const replyDraft = { opening: false, checklist: false, progress: 'card',
+      groups: [{ sourceRouteId: 'fixture-bot', chatId: replySource.chatId }] };
+    const savedReply = await request(port, 'POST', '/api/message-reply-settings', {
+      action: 'draft', expectedRevision: replySettings.json.settings.revision, draft: replyDraft });
+    assert.equal(savedReply.status, 200);
+    assert.equal(savedReply.json.settings.active, null);
+    const replyInput = id => ({ requestId: id, text: 'Generate the fixture files.', tool: 'fake-codex',
+      sourceContext: { ...replySource, messageId: `om-${id}` }, sourceDelivery: replyConversation });
+    const replyPost = id => request(port, 'POST', `/api/sessions/${replyGroup.json.session.id}/messages`, replyInput(id), service);
+    const legacyReply = await replyPost('reply-before-confirmation');
+    assert.ok([200, 202].includes(legacyReply.status), JSON.stringify(legacyReply.json));
+    await waitForRunTerminal(port, legacyReply.json.run.id);
+    const activeReply = await request(port, 'POST', '/api/message-reply-settings', {
+      action: 'activate', expectedRevision: savedReply.json.settings.revision, confirm: true });
+    assert.equal(activeReply.status, 200, JSON.stringify(activeReply.json));
+    const modularReply = await replyPost('reply-after-confirmation');
+    assert.ok([200, 202].includes(modularReply.status), JSON.stringify(modularReply.json));
+    await waitForRunTerminal(port, modularReply.json.run.id);
+    const replyEvents = await request(port, 'GET', `/api/sessions/${replyGroup.json.session.id}/events?filter=all`);
+    const oldInput = replyEvents.json.events.find(event => event.role === 'user' && event.requestId === 'reply-before-confirmation');
+    const newInput = replyEvents.json.events.find(event => event.role === 'user' && event.requestId === 'reply-after-confirmation');
+    assert.equal(oldInput.messageReplyPolicy, undefined);
+    assert.equal(newInput.messageReplyPolicy.progress, 'card');
+    assert.equal(newInput.messageReplyPolicy.checklist, false);
+    assert.equal(newInput.messageReplyPolicy.opening, false);
+    const rolledBackReply = await request(port, 'POST', '/api/message-reply-settings', {
+      action: 'legacy', expectedRevision: activeReply.json.settings.revision, confirm: true });
+    assert.equal(rolledBackReply.status, 200);
+    const retriedReply = await replyPost('reply-after-confirmation');
+    assert.equal(retriedReply.json.run.id, modularReply.json.run.id, 'retry preserves the already accepted mode and Run');
+    const futureReply = await replyPost('reply-after-rollback');
+    await waitForRunTerminal(port, futureReply.json.run.id);
+    const revertedEvents = await request(port, 'GET', `/api/sessions/${replyGroup.json.session.id}/events?filter=all`);
+    assert.equal(revertedEvents.json.events.find(event => event.role === 'user' && event.requestId === 'reply-after-rollback').messageReplyPolicy, undefined);
+
     const webContinuation = await request(port, 'POST', `/api/sessions/${group.json.session.id}/messages`, {
       requestId: 'web-continues-feishu', text: 'Continue this investigation from the browser.', tool: 'fake-codex',
     });
