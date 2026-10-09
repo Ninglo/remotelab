@@ -86,6 +86,9 @@ try {
   await busyObserved.promise;
   hint('expanded', 1); await barrier(); bootGate.resolve();
   await awaitOutput(/ready route=default scope=instance/);
+  assert.ok(trace.some(path => path.startsWith('/api/sessions/s/events?')
+    && path.includes('afterSeq=0') && path.includes('includeBodies=false')),
+  'worker bootstraps through bounded event headers rather than complete tool bodies');
   assert.equal(JSON.parse(calls[0].data.content).body.elements.find(e => e.tag === 'button').text.content,
     '点击折叠进展', 'a cold-start click is received before the bootstrap backlog finishes');
   const beforeReads = historyReads;
@@ -117,6 +120,8 @@ try {
   assert.equal(content.body.elements.find(e => e.tag === 'button').text.content, '点击折叠进展');
   assert.match(JSON.stringify(content), /真实过程/);
   await awaitOutput(/updated session=s anchor=2 revision=4/);
+  assert.ok(trace.some(path => path.includes('/api/sessions/s/events?') && path.includes('afterSeq=3')),
+    'automatic refresh resumes after its previous event cursor');
   const refreshed = JSON.parse(calls.at(-1).data.content);
   assert.equal(refreshed.body.elements.find(e => e.tag === 'button').text.content, '点击折叠进展', 'ordinary refresh with older metadata preserves the accepted click');
   assert.match(JSON.stringify(refreshed), /新的过程/);

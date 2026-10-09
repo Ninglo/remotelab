@@ -5,6 +5,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 import { createSerialTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createProgressCardRefresh } from '../connectors/feishu/progress-card-refresh.mjs';
+import { createWorkboardEventReader } from '../connectors/feishu/workboard-event-reader.mjs';
 import {
   collectFeishuWorkboardCycles,
   collectFeishuGroupWorkboardCycles,
@@ -71,6 +72,14 @@ const requestJson = async path => {
   if (!result.response.ok) throw new Error(result.json?.error || `RemoteLab GET failed: ${result.response.status}`);
   return result.json;
 };
+const eventReader = createWorkboardEventReader(requestJson);
+async function cardEvents(sessionId) {
+  const { events, hasMore } = await eventReader.read(sessionId);
+  // Yield between bounded pages, including to queued human disclosure clicks.
+  // Do not publish an incomplete history before its final/authorization fence.
+  if (hasMore) { enqueue(sessionId); return null; }
+  return events;
+}
 const persistQueue = createSerialTaskQueue();
 const persist = () => persistQueue(() => writeJsonAtomic(statePath, pilot, { mode: 0o600 }));
 if (instanceScope && !Number.isFinite(pilot.progressStartedAt)) {
@@ -130,7 +139,8 @@ async function syncDisclosure(change) {
 async function syncPrivate() {
   const session = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`)).session;
   if (!isFeishuWorkboardPilotSession(session, pilot)) return;
-  const events = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}/events?filter=all`)).events;
+  const events = await cardEvents(pilot.sessionId);
+  if (!events) return;
   if (!Number.isInteger(pilot.protocolAfterSeq)) {
     pilot.protocolAfterSeq = migrating ? Math.max(0, ...events.map(event => event.seq || 0)) : 0;
     await persist();
@@ -159,7 +169,8 @@ async function syncGroup(sessionId) {
   if (stored.chatId !== target.chatId) throw new Error(`Group Session destination changed: ${sessionId}`);
   const groupPilot = { ...pilot, sessionId, chatId: target.chatId,
     startedAfterSeq: 0, cards: stored.cards };
-  const events = (await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/events?filter=all`)).events;
+  const events = await cardEvents(sessionId);
+  if (!events) return;
   if (!Number.isInteger(stored.protocolAfterSeq)) {
     // Upgrade fence: preserve old cards without replaying historical revisions.
     stored.protocolAfterSeq = migrating ? Math.max(0, ...events.map(event => event.seq || 0)) : 0;
@@ -182,7 +193,8 @@ async function syncInstance(sessionId) {
   const stored = pilot.sessions[sessionId] ||= { chatId: target.chatId, cards: [], protocolAfterSeq: 0 };
   if (stored.chatId !== target.chatId) throw new Error(`Workboard Session destination changed: ${sessionId}`);
   const sessionPilot = { ...pilot, ...stored, sessionId };
-  const events = (await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/events?filter=all`)).events;
+  const events = await cardEvents(sessionId);
+  if (!events) return;
   for (const cycle of expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(events, sessionPilot, session))) {
     if (stopped || expired()) { stop(); break; }
     await publishCycle(cycle, sessionPilot, target.chatId);
