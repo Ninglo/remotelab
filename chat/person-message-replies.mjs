@@ -1,5 +1,6 @@
 import { findPerson, findIdentity, loadAuthDocument, updateAuthDocument } from '../lib/auth-config.mjs';
 import { DEFAULT_REPLY_DRAFT, validateReplyDraft } from '../static/chat/message-reply-model.js';
+import { observeSettingRows, settingRows, replySettingValues } from './usage-settings.mjs';
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const choices = value => {
@@ -51,7 +52,11 @@ export async function changePersonMessageReplies(input, actor) {
         identityId: actor.identityId, choices: value }].slice(-32) } };
     person.updatedAt = now;
     return settingsFor(person);
-  });
+  }, { afterSave: ({ before, after }) => observeSettingRows(settingRows(
+    replySettingValues(findPerson(after, actor.personId).preferences.messageReplies.active, 3),
+    { scope: 'person', scopeId: actor.personId, subjectPersonId: actor.personId,
+      before: replySettingValues(findPerson(before, actor.personId)?.preferences.messageReplies?.active, 3) }),
+    { personId: actor.personId, surface: 'web', operation: 'change' }) });
   return mutation.result;
 }
 

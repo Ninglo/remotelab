@@ -146,3 +146,12 @@ test('all Feishu destinations publish the selected text components with one dura
     assert.equal(record.deliveries.filter(d => d.surfaceKind === 'final').length, 1);
   }
 });
+
+test('usage observations follow personal saves and preserve version 3 card semantics', async () => {
+  const { settingObserver } = await import('../chat/usage-settings.mjs');
+  const rows = Object.values((await settingObserver.snapshot()).rows).filter(row => row.setting === 'reply.progress');
+  assert.equal(rows.length, 2);
+  assert(rows.every(row => row.scope === 'person'));
+  assert(rows.some(row => row.value === 'messages'), 'version 3 messages includes a card, rather than legacy text-only progress');
+  assert(rows.some(row => row.value === 'inherit'), 'restore defaults updates only that personal observation');
+});
