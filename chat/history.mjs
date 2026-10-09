@@ -368,12 +368,16 @@ async function appendEventUnlocked(sessionId, event) {
   normalized.seq = seq;
   const stored = await storeEvent(sessionId, normalized);
   await saveMetaUnlocked(sessionId, {
+    ...meta,
     latestSeq: seq,
     lastEventAt: stored.timestamp || Date.now(),
     lastUserMessageAt: getUserMessageTimestamp(meta.lastUserMessageAt, stored),
     lastAssistantMessageAt: getAssistantMessageTimestamp(meta.lastAssistantMessageAt, stored),
     size: meta.size + 1,
     counts: incrementCounts(meta.counts, stored),
+    ...(stored.type === 'source_delivery' && stored.deliveryId ? {
+      sourceDeliveryReceiptSeqs: { ...meta.sourceDeliveryReceiptSeqs, [stored.deliveryId]: seq },
+    } : {}),
   });
   return stored;
 }
@@ -387,6 +391,7 @@ async function appendEventsUnlocked(sessionId, events) {
   let lastAssistantMessageAt = meta.lastAssistantMessageAt;
   let size = meta.size;
   let counts = meta.counts;
+  const sourceDeliveryReceiptSeqs = { ...meta.sourceDeliveryReceiptSeqs };
   const appended = [];
   for (const event of events || []) {
     latestSeq += 1;
@@ -399,14 +404,17 @@ async function appendEventsUnlocked(sessionId, events) {
     lastAssistantMessageAt = getAssistantMessageTimestamp(lastAssistantMessageAt, stored);
     size += 1;
     counts = incrementCounts(counts, stored);
+    if (stored.type === 'source_delivery' && stored.deliveryId) sourceDeliveryReceiptSeqs[stored.deliveryId] = latestSeq;
   }
   await saveMetaUnlocked(sessionId, {
+    ...meta,
     latestSeq,
     lastEventAt,
     lastUserMessageAt,
     lastAssistantMessageAt,
     size,
     counts,
+    sourceDeliveryReceiptSeqs,
   });
   return appended;
 }
@@ -429,6 +437,54 @@ async function findLatestUserMessageAt(sessionId, latestSeq = 0) {
     }
   }
   return null;
+}
+
+// Legacy timestamp recovery is a one-time, serialized index repair. List reads
+// never enter it, and concurrent readers cannot repeat the same scan.
+async function repairMessageTimes(sessionId, includeUser) {
+  return runSessionMutation(sessionId, async () => {
+    const meta = await loadMeta(sessionId);
+    const next = { ...meta };
+    if (!meta.lastAssistantMessageAt && !meta.assistantMessageTimeIndexed && meta.counts?.message_assistant > 0) {
+      next.lastAssistantMessageAt = await findLatestAssistantMessageAt(sessionId, meta.latestSeq);
+      next.assistantMessageTimeIndexed = true;
+    }
+    if (includeUser && !meta.lastUserMessageAt && !meta.userMessageTimeIndexed && meta.counts?.message_user > 0) {
+      next.lastUserMessageAt = await findLatestUserMessageAt(sessionId, meta.latestSeq);
+      next.userMessageTimeIndexed = true;
+    }
+    return Object.keys(next).some(key => next[key] !== meta[key]) ? saveMetaUnlocked(sessionId, next) : meta;
+  });
+}
+
+export async function findSourceDeliveryReceipt(sessionId, deliveryId, { legacyScan = false } = {}) {
+  const meta = await loadMeta(sessionId);
+  const seq = meta.sourceDeliveryReceiptSeqs?.[deliveryId];
+  if (seq) return loadStoredEvent(sessionId, seq);
+  // Used only to recover an old duplicate acknowledgement, outside the shared
+  // delivery queue. New delivery transitions use the constant-time index.
+  if (legacyScan) for (let cursor = meta.latestSeq; cursor >= 1; cursor -= 1) {
+    const event = await loadStoredEvent(sessionId, cursor);
+    if (event?.type === 'source_delivery' && event.deliveryId === deliveryId) return event;
+  }
+  return null;
+}
+
+export async function appendSourceDeliveryReceipt(sessionId, event, { priorReceipt } = {}) {
+  return runSessionMutation(sessionId, async () => {
+    const meta = await loadMeta(sessionId);
+    const seq = meta.sourceDeliveryReceiptSeqs?.[event.deliveryId];
+    const prior = seq ? await loadStoredEvent(sessionId, seq) : priorReceipt;
+    if (prior && prior.state === event.state && prior.externalId === event.externalId
+        && prior.providerMessageId === event.providerMessageId) {
+      if (!seq) await saveMetaUnlocked(sessionId, { ...meta,
+        sourceDeliveryReceiptSeqs: { ...meta.sourceDeliveryReceiptSeqs, [event.deliveryId]: prior.seq } });
+      return prior;
+    }
+    const stored = await appendEventUnlocked(sessionId, event);
+    observeHistoryUsage(sessionId, stored);
+    return stored;
+  });
 }
 
 function clearSessionCaches(sessionId) {
@@ -506,25 +562,22 @@ export async function findLatestUserMessage(sessionId, options = {}) {
 }
 
 export async function getHistorySnapshot(sessionId, options = {}) {
-  const [meta, context] = await Promise.all([
+  let [meta, context] = await Promise.all([
     loadMeta(sessionId),
     loadContext(sessionId),
   ]);
+  const metadataOnly = options.metadataOnly === true;
+  if (!metadataOnly && ((!meta.lastAssistantMessageAt && !meta.assistantMessageTimeIndexed && meta.counts?.message_assistant > 0)
+      || (options.includeUserMessageAt === true && !meta.lastUserMessageAt && !meta.userMessageTimeIndexed && meta.counts?.message_user > 0))) {
+    meta = await repairMessageTimes(sessionId, options.includeUserMessageAt === true);
+  }
   const activeFromSeq = Number.isInteger(context?.activeFromSeq) ? context.activeFromSeq : 0;
   const messageCount = (meta.counts?.message_user || 0) + (meta.counts?.message_assistant || 0);
   const activeMessageCount = activeFromSeq > 0
-    ? await countMessageEventsAfter(sessionId, activeFromSeq)
+    ? (metadataOnly ? null : await countMessageEventsAfter(sessionId, activeFromSeq))
     : messageCount;
-  const lastAssistantMessageAt = meta.lastAssistantMessageAt
-    || (
-      (meta.counts?.message_assistant || 0) > 0
-        ? await findLatestAssistantMessageAt(sessionId, meta.latestSeq || 0)
-        : null
-    );
-  const lastUserMessageAt = meta.lastUserMessageAt
-    || (options.includeUserMessageAt === true && (meta.counts?.message_user || 0) > 0
-      ? await findLatestUserMessageAt(sessionId, meta.latestSeq || 0)
-      : null);
+  const lastAssistantMessageAt = meta.lastAssistantMessageAt || null;
+  const lastUserMessageAt = meta.lastUserMessageAt || null;
   return {
     latestSeq: meta.latestSeq || 0,
     lastEventAt: meta.lastEventAt || null,

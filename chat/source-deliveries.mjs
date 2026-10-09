@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { serialQueue } from '../lib/durable-records.mjs';
 import { broadcastAll } from './ws-clients.mjs';
-import { appendEvent, loadHistory } from './history.mjs';
+import { appendSourceDeliveryReceipt, findSourceDeliveryReceipt, loadHistory } from './history.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
 import { recoverTerminalReplyReceipt } from './native-final-publication.mjs';
 import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
@@ -146,7 +146,7 @@ const targetKey = entry => {
   return JSON.stringify([entry.connector, entry.sourceRouteId, t.chatId || t.fileToken || '', t.rootId || t.topicId || t.threadId || t.commentId || (t.replyInThread ? t.messageId : '') || '']);
 };
 
-async function mutateDelivery(id, update) {
+async function mutateDelivery(id, update, { priorReceipt } = {}) {
   const { key, index } = parseId(id);
   const record = await requests.mutate(key, current => {
     if (!current?.deliveries[index]) throw new Error('Delivery not found');
@@ -172,17 +172,12 @@ async function mutateDelivery(id, update) {
   // archival. Both public workboard surfaces can then distinguish work from delivery.
   if ((updated.providerMessageId || updated.workboardTaskId) && ['content', 'attachment'].includes(updated.kind)
       && await findSessionMeta(record.sessionId)) {
-    const history = await loadHistory(record.sessionId, { includeBodies: false });
-    const prior = [...history].reverse().find(event => event.type === 'source_delivery' && event.deliveryId === updated.id);
-    if (!prior || prior.state !== updated.state || prior.externalId !== updated.externalId
-        || prior.providerMessageId !== updated.providerMessageId) {
-      await appendEvent(record.sessionId, { type: 'source_delivery', runId: record.runId,
-        deliveryId: updated.id, providerMessageId: updated.providerMessageId,
-        workboardTaskId: updated.workboardTaskId, workboardRevision: updated.workboardRevision,
-        kind: updated.kind, state: updated.state, providerPartCount: updated.providerPartCount || 1,
-        ...(updated.receiptRecovered ? { receiptRecovered: true } : {}),
-        externalId: updated.externalId || '' });
-    }
+    await appendSourceDeliveryReceipt(record.sessionId, { type: 'source_delivery', runId: record.runId,
+      deliveryId: updated.id, providerMessageId: updated.providerMessageId,
+      workboardTaskId: updated.workboardTaskId, workboardRevision: updated.workboardRevision,
+      kind: updated.kind, state: updated.state, providerPartCount: updated.providerPartCount || 1,
+      ...(updated.receiptRecovered ? { receiptRecovered: true } : {}),
+      externalId: updated.externalId || '' }, { priorReceipt });
   }
   await requests.archiveFinished(key);
   broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
@@ -191,6 +186,7 @@ async function mutateDelivery(id, update) {
 
 async function inspectAndClaimSourceDelivery(options = {}) {
   return queue(async () => {
+    if (options.signal?.aborted) return { claim: null, nextCheckAt: Infinity };
     const now = nowIso(options.now);
     const nowMs = Date.parse(now);
     const timeout = options.leaseTimeoutMs || DELIVERY_LEASE_MS;
@@ -232,7 +228,13 @@ async function inspectAndClaimSourceDelivery(options = {}) {
         continue;
       }
       const leaseId = createId('lease');
+      if (options.signal?.aborted) return { claim: null, nextCheckAt: Infinity };
       const delivery = await mutateDelivery(entry.id, current => ({ ...current, ...(refined ? { target: refined.target } : {}), state: 'sending', leaseId, claimedAt: now, attempts: current.attempts + 1 }));
+      if (options.signal?.aborted) {
+        await mutateDelivery(entry.id, current => current.leaseId === leaseId && current.state === 'sending'
+          ? { ...current, state: 'pending', leaseId: '', claimedAt: '' } : current);
+        return { claim: null, nextCheckAt: Infinity };
+      }
       return { claim: { delivery, leaseId }, nextCheckAt };
     }
     return { claim: null, nextCheckAt };
@@ -263,6 +265,10 @@ export async function claimSourceDeliveryWithWait(options = {}) {
 }
 
 export async function completeSourceDelivery(id, leaseId, input = {}) {
+  const { key: receiptKey, index: receiptIndex } = parseId(id);
+  const before = (await requests.get(receiptKey))?.deliveries[receiptIndex];
+  const priorReceipt = before?.state === 'delivered' && before.receiptLeaseId === leaseId
+    ? await findSourceDeliveryReceipt(before.sessionId, id, { legacyScan: true }) : null;
   return queue(async () => {
     const { key, index } = parseId(id);
     const record = await requests.get(key);
@@ -279,7 +285,7 @@ export async function completeSourceDelivery(id, leaseId, input = {}) {
     if (!['sending', 'unknown'].includes(entry.state) || !leaseId || entry.leaseId !== leaseId) throw new Error('Source delivery lease mismatch');
     return { ...entry, state: 'delivered', externalId: trimString(input.externalId), receiptLeaseId: leaseId,
       deliveredAt: nowIso(input.now), leaseId: '', lastError: '' };
-    });
+    }, { priorReceipt });
   });
 }
 

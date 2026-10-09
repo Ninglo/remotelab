@@ -1182,7 +1182,9 @@ function normalizeSessionReviewedAt(value) {
 
 async function enrichSessionMeta(meta, _options = {}) {
   const runtimeState = sessionRuntimeStateById.get(meta.id);
-  const snapshot = await getHistorySnapshot(meta.id, { includeUserMessageAt: true });
+  // Metadata/list refreshes must never walk historical events. Legacy missing
+  // timestamps stay unknown until an explicit history read repairs their index.
+  const snapshot = await getHistorySnapshot(meta.id, { metadataOnly: true });
   const queuedCount = getFollowUpQueueCount(meta);
   const activeRequest = requestRuntime.active(meta.id)[0];
   const runActivity = activeRequest ? { state: 'running', run: await getRun(activeRequest.runId) || { id: activeRequest.runId, state: 'accepted' } } : await resolveSessionRunActivity(meta);
