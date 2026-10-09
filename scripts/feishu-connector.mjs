@@ -111,6 +111,7 @@ import {
   isFeishuThreadConversation,
 } from '../connectors/feishu/reply-routing.mjs';
 import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
+import { createFeishuMeetingObserver } from '../connectors/feishu/meeting-observer.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   normalizeFeishuResponsePolicy,
@@ -2235,7 +2236,9 @@ async function main() {
     });
     return {};
   };
+  const meetingObserver = createFeishuMeetingObserver(runtime);
   const eventDispatcher = new Lark.EventDispatcher({}).register({
+    ...meetingObserver.handlers,
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
     'im.message.message_read_v1': raw => handleFeishuCardReadEvent(runtime, raw),
     'card.action.trigger': async raw => {
@@ -2269,6 +2272,8 @@ async function main() {
   });
   inbox.start();
   await wsClient.start({ eventDispatcher });
+  void meetingObserver.restore().catch(error =>
+    console.warn(`[feishu-meeting] restore failed: ${error.message}`));
   void runtime.projectSurface?.restore().catch(error =>
     console.warn(`[feishu-project] restore failed: ${error.message}`));
   void discussionHandoff.restore().catch(error =>
