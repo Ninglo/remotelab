@@ -163,6 +163,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Implementation: foreground requests read the saved default and register their own liveness without quota RPCs or shared execution locks. Idle monitoring and native usage updates change the default at 10% or below only when another subscription has fresh quota above that reserve. Ongoing runs remain on their original account; a confirmed exhaustion updates the next default without restarting the run. Unknown or stale quota and network/authentication failures do not trigger rotation.
 - Evidence boundary: scenario tests cover concurrent startup while the monitor holds its control lock, zero foreground quota queries, reserve selection, ongoing-run isolation, and batch/native conversation continuation. The reserve reduces the chance of exhaustion during work; it cannot guarantee that every long task fits.
 
+### 2026-10-09 — Make Feishu choices and completed answers recognizable
+
+- Feedback: a plain white question card looked like another reply; equal grey controls did not show the choice and submit hierarchy, and answering needed a visible state change.
+- Change: pending native question cards have an orange header with an explicit single-choice, multi-choice or written-answer label and a short submission instruction. Option explanations stay with their buttons, long labels get full rows, and custom inputs fill the card width. Form submit buttons use primary styling and distinct labels.
+- Result: a confirmed user answer changes the original card to green `已回答`, shows the answer, and folds the original question. Timeout fallback is blue and explicitly labelled; cancellation and expiry are grey. Ended cards remove answer controls. Existing callback authorization, durable submissions and in-place updates remain the interaction path.
+- Validation boundary: isolated question-surface and native-Harness regression tests cover layout data, state colours, original-card updates and callback replay. Automated JSON checks do not prove the appearance or click feedback in a real Feishu client; verify those during the next natural question interaction.
+
 ### 2026-10-05 — Answer once on the original question
 
 - Feedback: sending another message after a question times out consumes the same human attention again. People should select directly in the Web conversation, with a similar Feishu interaction.

@@ -31,7 +31,13 @@ try {
   assert.equal(optionButtons.filter(e => e.tag === 'button').length, 2);
   assert.equal(first.body.elements.find(e => e.tag === 'form').elements[0].expanded, false,
     'optional custom input does not occupy phone space before the user opens it');
-  assert.ok(!first.header, 'the question does not need a second large title bar');
+  assert.equal(first.header.template, 'orange', 'pending questions visibly request attention');
+  assert.equal(first.header.title.content, '请选择 · 单选');
+  assert.equal(first.header.subtitle.content, '点击一个选项即可提交');
+  const customFields = first.body.elements.find(e => e.tag === 'form').elements[0].elements;
+  assert.equal(customFields[0].width, 'fill', 'custom input fits the card width');
+  assert.equal(customFields[1].text.content, '提交答案');
+  assert.equal(customFields[1].type, 'primary', 'submission has a clear action hierarchy');
   assert.equal(first.body.elements.filter(e => e.tag === 'markdown').map(e => e.content).join('\n'),
     '输出形式？\n等你回答，不会超时自动选择。', 'labels appear on buttons rather than twice');
   const finiteCard = buildNativeQuestionCard(identity, { ...question, deadline: Date.now() + 300000 });
@@ -63,14 +69,18 @@ try {
   assert.equal(requests.length, 2, 'denied or tampered callbacks submit nothing');
   const timeout = { ...delivery, id: 'timeout', nativeQuestion: { ...question, state: 'timeout', origin: 'timeout',
     answers: ['简短'], statusText: '未收到回复，已采用系统默认「简短」。' } };
-  await sendNativeQuestionCard(runtime, timeout);
+  const answered = { ...delivery, id: 'answered', nativeQuestion: { ...question, state: 'answered', origin: 'user',
+    answers: ['详细'], statusText: '已回答：详细' } };
+  await sendNativeQuestionCard(runtime, answered);
   assert.deepEqual(calls.map(call => call[0]), ['create', 'patch']);
   assert.equal(calls[1][1].path.message_id, 'original');
   assert.ok(!JSON.stringify(JSON.parse(calls[1][1].data.content)).includes('behaviors'), 'ended card cannot submit answers');
   const endedCard = JSON.parse(calls[1][1].data.content);
-  assert.equal(endedCard.body.elements[0].content, timeout.nativeQuestion.statusText);
+  assert.equal(endedCard.header.template, 'green', 'the original orange card becomes green after an answer');
+  assert.equal(endedCard.header.title.content, '已回答');
+  assert.equal(endedCard.body.elements[0].content, answered.nativeQuestion.statusText);
   assert.equal(endedCard.body.elements[1].expanded, false, 'ended questions keep context out of the reading path');
-  await sendNativeQuestionCard({ ...runtime }, timeout);
+  await sendNativeQuestionCard({ ...runtime }, answered);
   await sendNativeQuestionCard(runtime, delivery);
   assert.equal(calls.length, 2, 'restart/replay cannot resend or reopen the question');
   assert.equal((await handleNativeQuestionCardAction(runtime, rawAction({ option: 1 }), actionOptions)).toast.type, 'error');
@@ -164,12 +174,40 @@ try {
   }
 
   const multi = buildNativeQuestionCard(identity, { ...question, question: { ...question.question, multiSelect: true } });
+  assert.equal(multi.header.title.content, '请选择 · 多选');
+  assert.equal(multi.header.subtitle.content, '可选多项，选好后提交');
   assert.equal(multi.body.elements.find(e => e.tag === 'form').elements[0].tag, 'multi_select_static');
+  assert.equal(multi.body.elements.find(e => e.tag === 'form').elements[0].width, 'fill');
+  assert.equal(multi.body.elements.find(e => e.tag === 'form').elements[1].text.content, '提交选择');
   assert.equal(multi.body.elements.find(e => e.tag === 'form').elements.length, 2,
     'multi-select uses its own submit without requiring custom input');
   const freeText = buildNativeQuestionCard(identity, { ...question, question: { question: '填写说明', options: [] } });
+  assert.equal(freeText.header.title.content, '请填写答案', 'free text is not labelled as a choice');
   assert.equal(freeText.body.elements.find(e => e.tag === 'form').elements[0].tag, 'input',
     'free-text-only questions keep the required input visible');
+  const described = buildNativeQuestionCard(identity, { ...question, question: { ...question.question,
+    options: [{ label: '简短', description: '只保留结论' }, { label: '详细', description: '保留过程和例子' }, { label: '自己填写' }] } });
+  const describedRows = described.body.elements.filter(e => e.tag === 'column_set');
+  assert.deepEqual(describedRows.map(row => row.columns.length), [2, 1]);
+  assert.equal(describedRows[0].columns[0].elements[1].content, '只保留结论');
+  assert.equal(describedRows[0].columns[1].elements[1].content, '保留过程和例子',
+    'each option keeps its own explanation');
+  assert.equal(describedRows[1].columns[0].elements[0].behaviors[0].value.option, 3,
+    'layout changes preserve callback option indices');
+  const longChoices = buildNativeQuestionCard(identity, { ...question, question: { ...question.question,
+    options: [{ label: '短选项' }, { label: '这是需要手机整行显示的一个较长选项名称' }] } });
+  assert.deepEqual(longChoices.body.elements.filter(e => e.tag === 'column_set').map(e => e.columns.length), [1, 1]);
+  for (const [state, template, title] of [
+    ['timeout', 'blue', '已采用默认'], ['cancelled', 'grey', '已取消'], ['expired', 'grey', '问题已结束'],
+  ]) {
+    const ended = buildNativeQuestionCard(identity, { ...question, state, statusText: state });
+    assert.equal(ended.header.template, template);
+    assert.equal(ended.header.title.content, title);
+    assert.ok(!JSON.stringify(ended).includes('behaviors'), `${state} has no active answer controls`);
+  }
+  const freeTextTimeout = buildNativeQuestionCard(identity, { ...question, state: 'timeout',
+    question: { question: '填写说明', options: [] }, statusText: '未收到回复，已按“超时未答”继续处理。' });
+  assert.equal(freeTextTimeout.header.title.content, '超时未答', 'an unanswered free-text question has no default choice');
 
   const pending = { seq: 2, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary',
     content: '输出形式？\n1. 简短\n2. 详细', messageKind: 'user_question', providerMessageId: 'question:pending',
@@ -293,5 +331,6 @@ try {
   await processSourceDeliveryOnce(workerRuntime, workerOptions);
   assert.deepEqual(calls.slice(workerCalls).map(c => c[0]), ['create', 'patch'],
     'the actual Connector worker routes questions to one interactive card and updates it in place');
-  console.log('native question surfaces: original-card updates, no timeout resend, durable replay, actor/target checks, expired controls, Web single/multiple/custom answers passed');
+  assert.equal(JSON.parse(calls.at(-1)[1].data.content).header.title.content, '已采用默认');
+  console.log('native question surfaces: orange pending / green answered / distinct timeout and cancellation, responsive choices, original-card updates, durable replay, actor/target checks, expired controls, Web single/multiple/custom answers passed');
 } finally { await rm(root, { recursive: true, force: true }); }

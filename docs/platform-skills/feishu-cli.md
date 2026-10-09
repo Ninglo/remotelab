@@ -96,9 +96,15 @@ A successful static card send does not establish that its buttons work.
 Native Harness questions have a built-in Connector handler: the original
 interactive question card accepts option buttons or a custom-answer form, then
 updates in place on answer, timeout or cancellation. It never sends another
-timeout reminder. Phone presentation avoids a title bar and duplicate option
-lists, groups buttons two per row, and collapses optional custom input. A resolved
-question shows one result line with the original question behind an expander.
+timeout reminder. Pending questions use an orange header labelled `请选择 · 单选`,
+`请选择 · 多选`, or `请填写答案`, with a short instruction for submitting. Short
+single-choice buttons share rows of two; long labels use full rows, and each
+explanation stays with its option. Optional custom input stays collapsed and
+uses a full-width input and a primary `提交答案` button; multi-select has its own
+`提交选择` button. A user answer changes the original header to green `已回答`
+and shows the answer, with the original question behind an expander. Timeout
+fallback uses blue `已采用默认` (or `超时未答` without options), while cancelled
+or ended questions use grey. Closed questions have no active answer controls.
 These controls reuse the existing `card.action.trigger`
 subscription; they do not turn arbitrary status cards into interactive forms.
 

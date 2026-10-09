@@ -13,13 +13,30 @@ const plain = content => ({ tag: 'plain_text', content });
 const markdown = content => ({ tag: 'markdown', content });
 const collapsed = (title, elements) => ({ tag: 'collapsible_panel', expanded: false,
   header: { title: plain(title) }, elements });
-const buttonRows = buttons => {
+const optionRows = (options, button) => {
   const rows = [];
-  for (let i = 0; i < buttons.length; i += 2) rows.push({ tag: 'column_set',
-    columns: buttons.slice(i, i + 2).map(button => ({ tag: 'column', width: 'weighted', weight: 1,
-      elements: [button] })) });
+  // Long labels need a full row on phones. Keep each explanation beside its
+  // own choice instead of making people match a separate list to the buttons.
+  const perRow = options.some(option => Array.from(option.label).length > 16) ? 1 : 2;
+  for (let i = 0; i < options.length; i += perRow) rows.push({ tag: 'column_set',
+    columns: options.slice(i, i + perRow).map((option, offset) => ({ tag: 'column', width: 'weighted', weight: 1,
+      elements: [button(option.label, { option: i + offset + 1 }),
+        ...(option.description ? [markdown(option.description)] : [])] })) });
   return rows;
 };
+
+function questionHeader(question, options) {
+  if (question.state === 'pending') return {
+    template: 'orange',
+    title: plain(options.length ? `请选择 · ${question.question.multiSelect ? '多选' : '单选'}` : '请填写答案'),
+    subtitle: plain(options.length ? question.question.multiSelect
+      ? '可选多项，选好后提交' : '点击一个选项即可提交' : '填写后提交'),
+  };
+  if (question.state === 'answered') return { template: 'green', title: plain('已回答') };
+  if (question.state === 'timeout') return { template: 'blue',
+    title: plain(options.length ? '已采用默认' : '超时未答') };
+  return { template: 'grey', title: plain(question.state === 'cancelled' ? '已取消' : '问题已结束') };
+}
 
 export function buildNativeQuestionCard(identity, question) {
   const q = question.question;
@@ -30,23 +47,25 @@ export function buildNativeQuestionCard(identity, question) {
   const elements = [];
   if (question.state === 'pending') {
     elements.push(markdown(q.question));
-    const descriptions = options.filter(option => option.description)
-      .map(option => `${option.label}：${option.description}`);
-    if (descriptions.length) elements.push(markdown(descriptions.join('\n')));
-    const submit = name => ({ ...button('提交'), name, form_action_type: 'submit' });
-    if (q.multiSelect && options.length) elements.push({ tag: 'form', name: 'question_choices', elements: [
-      { tag: 'multi_select_static', name: 'choices', placeholder: plain('选择一项或多项'),
-        options: options.map((option, i) => ({ text: plain(option.label), value: String(i + 1) })) },
-      submit('submit_choices'),
-    ] });
-    else elements.push(...buttonRows(options.map((option, i) => button(option.label, { option: i + 1 }))));
+    const submit = (name, label) => ({ ...button(label), type: 'primary', name, form_action_type: 'submit' });
+    if (q.multiSelect && options.length) {
+      const descriptions = options.filter(option => option.description)
+        .map(option => `${option.label}：${option.description}`);
+      if (descriptions.length) elements.push(markdown(descriptions.join('\n')));
+      elements.push({ tag: 'form', name: 'question_choices', elements: [
+        { tag: 'multi_select_static', name: 'choices', width: 'fill', placeholder: plain('选择一项或多项'),
+          options: options.map((option, i) => ({ text: plain(option.label), value: String(i + 1) })) },
+        submit('submit_choices', '提交选择'),
+      ] });
+    } else elements.push(...optionRows(options, button));
     const customAnswer = { tag: 'form', name: 'question_answer', elements: [
-      { tag: 'input', name: 'answer', input_type: 'multiline_text', max_length: 1000,
-        placeholder: plain('填写自己的答案') }, submit('submit_answer'),
+      { tag: 'input', name: 'answer', input_type: 'multiline_text', max_length: 1000, width: 'fill',
+        placeholder: plain('填写自己的答案') }, submit('submit_answer', '提交答案'),
     ] };
     // Feishu requires forms at the body root. Fold the fields inside the
     // form rather than nesting a form inside a collapsible panel.
     if (options.length) customAnswer.elements = [collapsed('填写其他答案', customAnswer.elements)];
+    if (options.length) elements.push({ tag: 'hr' });
     elements.push(customAnswer);
     elements.push(markdown(!Number.isFinite(question.deadline) ? '等你回答，不会超时自动选择。'
       : options.length ? '到期未答时默认选第 1 项。' : '到期未答时按未答继续。'));
@@ -55,7 +74,8 @@ export function buildNativeQuestionCard(identity, question) {
     elements.push(collapsed('查看原问题', [markdown(q.question),
       ...options.map((option, i) => markdown(`${i + 1}. ${option.label}${option.description ? `：${option.description}` : ''}`))]));
   }
-  return { schema: '2.0', config: { update_multi: true, enable_forward: false }, body: { elements } };
+  return { schema: '2.0', config: { update_multi: true, enable_forward: false },
+    header: questionHeader(question, options), body: { elements } };
 }
 
 // One original message, with a durable creation fence and receipt. A state
