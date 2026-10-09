@@ -3,7 +3,7 @@ import { assistantSurfaceMessageId, collectAssistantSurfaceMessages, parseProgre
 import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
 import { appendDeliveries } from './requests.mjs';
 import { buildReplyDeliveries, isFeishuMainlineReply } from '../lib/reply-deliveries.mjs';
-import { buildReplyPublicationPayload, isFirstUserTurnPublication } from './reply-publication.mjs';
+import { buildReplyPublicationPayload, collectReplyPublicationHistory, isFirstUserTurnPublication } from './reply-publication.mjs';
 import { resolveAmbientFeishuReplyPlan, rememberAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
 import {
   extractAssistantArtifactBlockReferences, extractAssistantLocalMarkdownImageReferences,
@@ -38,10 +38,40 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
   return next;
 }
 
-// Card-enabled turns keep ordinary progress in their original card. Feishu
-// publishes an opening only for the new conversation; questions and results
-// retain separate durable message receipts throughout the conversation.
-export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event } = {}) {
+// A native execution retains its root identity, but each accepted ordinary
+// input is a new opening boundary with its own frozen policy and destination.
+// Question answers and reference-only inputs do not start another reply.
+export async function publishLiveRunReplies(record, fullHistory, { store, run, ...options } = {}) {
+  const rootEvents = collectReplyPublicationHistory(fullHistory, run);
+  if (options.plan?.connector !== 'feishu') {
+    return publishLiveAssistantReplies(record, rootEvents, { ...options, store, fullHistory });
+  }
+  const rootSet = new Set(rootEvents);
+  const firstSeq = rootEvents.find(event => event.type === 'message' && event.role === 'user')?.seq || 0;
+  const inputs = new Map();
+  for (const event of fullHistory) {
+    if (event.type !== 'message' || event.role !== 'user' || !event.requestId
+        || event.seq < firstSeq || event.requestId === record.requestId || inputs.has(event.requestId)) continue;
+    const input = await store.byRequest(record.sessionId, event.requestId);
+    // Pre-upgrade suppressed text remains historical evidence, not a replay.
+    if (input?.nativeDispatchRunId !== record.runId || input.liveReplyPublicationVersion !== 1
+        || input.result || input.options?.nativeQuestionId || input.options?.internalOperation || input.options?.workReference) continue;
+    inputs.set(event.requestId, input);
+  }
+  const events = fullHistory.filter(event => rootSet.has(event)
+    || event.type === 'message' && event.role === 'user' && inputs.has(event.requestId));
+  // A queued spool item may be projected after the new user event. Its
+  // original emission time keeps old output on the previous input's route.
+  if (events.every(event => Number.isFinite(event.timestamp))) {
+    events.sort((a, b) => a.timestamp - b.timestamp || a.seq - b.seq);
+  }
+  await publishLiveAssistantReplies(record, events, { ...options, store, fullHistory, inputRecords: inputs });
+}
+
+// Publication rules are per accepted input; ordinary progress still follows
+// the existing card/message choice. The root owns durable delivery identities
+// and the terminal result for the shared execution.
+export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event, inputRecords = new Map() } = {}) {
   if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
       || !plan) return;
   // Admission remains per turn even when the Session has cards enabled.
@@ -53,15 +83,30 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
   const publicationRun = { id: record.runId, responseId: record.responseId,
     ...(record.runtimeSelection || record.options) };
   const firstUserTurn = isFirstUserTurnPublication(events, publicationRun, fullHistory);
-  const messageReplyPolicy = record.options?.messageReplyPolicy;
-  const suppressOpening = (surface, current) => plan.connector === 'feishu' && surface.surfaceKind === 'opening'
-    && (messageReplyPolicy
-      ? !messageReplyPolicy.opening || current?.deliveries?.some(item => item.surfaceKind === 'opening')
-      : !usesOctober7GroupMessaging(progressPolicy) && (!firstUserTurn
-        || current?.deliveries?.some(item => item.surfaceKind === 'opening'
-          || item.kind === 'session_entry' || item.sessionEntryIncluded)));
-  for (const [event, surface] of collectAssistantSurfaceMessages(events || [], { independentOpening: Boolean(messageReplyPolicy) })) {
+  const scopes = new Map();
+  let input = record;
+  for (const event of events) {
+    if (event.type === 'message' && event.role === 'user') input = inputRecords.get(event.requestId) || record;
+    scopes.set(event, input);
+  }
+  const suppressOpening = (surface, current, owner, messageReplyPolicy) => {
+    if (plan.connector !== 'feishu' || surface.surfaceKind !== 'opening') return false;
+    const alreadyPublished = current?.deliveries?.some(item => item.surfaceKind === 'opening'
+      && (item.publicationRequestId || record.requestId) === owner.requestId);
+    if (messageReplyPolicy) return !messageReplyPolicy.opening || alreadyPublished;
+    if (usesOctober7GroupMessaging(progressPolicy)) return alreadyPublished;
+    return !firstUserTurn || current?.deliveries?.some(item => item.surfaceKind === 'opening'
+      || item.kind === 'session_entry' || item.sessionEntryIncluded);
+  };
+  for (const [event, surface] of collectAssistantSurfaceMessages(events || [], { independentOpening: Boolean(record.options?.messageReplyPolicy) })) {
     if (event.runId && event.runId !== record.runId) continue;
+    const final = isFinalAssistantMessage(event);
+    const owner = final || surface.surfaceKind === 'question' ? record : scopes.get(event) || record;
+    if (owner !== record && !owner.nativeReceipt?.accepted) continue;
+    if (owner.options?.suppressSourceDelivery || owner.routingHandoff) continue;
+    const messageReplyPolicy = owner.options?.messageReplyPolicy;
+    const ownerPlan = owner === record ? plan : normalizeConversation(owner.deliveryPlan || owner.options?.sourceDelivery);
+    if (!ownerPlan) continue;
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
     if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'
@@ -70,13 +115,12 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (!messageId) continue;
     let stored = await store.get(record.key);
     if (stored?.options?.suppressSourceDelivery || stored?.routingHandoff) return;
-    stored = await rememberAmbientFeishuReplyPlan(stored || record, plan, [event], store);
-    const replyPlan = resolveAmbientFeishuReplyPlan(stored || record, plan, [event]);
+    if (owner === record) stored = await rememberAmbientFeishuReplyPlan(stored || record, plan, [event], store);
+    const replyRecord = current => owner === record ? current : owner;
+    const replyPlan = resolveAmbientFeishuReplyPlan(replyRecord(stored || record), ownerPlan, [event]);
     if (isFeishuMainlineReply(replyPlan) && messageReplyPolicy?.version !== 3
         && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
-    // Routine turns keep their opener in Web/history instead of sending another
-    // start message. A steered first Run cannot announce its opening twice.
-    if (suppressOpening(surface, stored || record)) continue;
+    if (suppressOpening(surface, stored || record, owner, messageReplyPolicy)) continue;
     // A rollout can fence progress previously suppressed by card grouping.
     // This is not a delivery receipt; old card text must not be announced again.
     if ((surface.surfaceKind === 'progress' || surface.surfaceKind === 'opening'
@@ -86,7 +130,6 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
         && !shouldPublishSessionProgress(progressPolicy, event.seq, record.runId, messageReplyPolicy)) continue;
     if (stored?.streamedSurfaceMessageIds?.includes(messageId)
         || stored?.streamedFinalReplyIds?.includes(messageId)) continue;
-    const final = isFinalAssistantMessage(event);
     // An early final is not a stopped execution. Feishu sends the result once
     // execution stops, rather than announcing delivery while work continues.
     if (plan.connector === 'feishu' && final && running) continue;
@@ -113,7 +156,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       { session, fullHistory, includeSessionEntry: Boolean(entry) }) : {
       text: appendSessionEntryFooter(prepared.content, entry), attachments: getAssistantReplyAttachments(prepared),
     };
-    const buildParts = current => buildReplyDeliveries(resolveAmbientFeishuReplyPlan(current, plan, [event]), payload, {
+    const buildParts = current => buildReplyDeliveries(resolveAmbientFeishuReplyPlan(replyRecord(current), ownerPlan, [event]), payload, {
       running,
       surfaceKind: surface.surfaceKind,
       messageReplyPolicy,
@@ -124,7 +167,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (!parts.length) continue;
     const admit = () => store.mutate(record.key, current => {
       if (!current || current.result || current.options?.suppressSourceDelivery || current.routingHandoff
-          || suppressOpening(surface, current)
+          || suppressOpening(surface, current, owner, messageReplyPolicy)
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;
       const parts = buildParts(current);
@@ -135,6 +178,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
         ...(final ? { streamedFinalReplyIds: [...(current.streamedFinalReplyIds || []), messageId] } : {}),
         deliveries: appendDeliveries(current, parts.map(part => ({
           ...part, providerMessageId: messageId, surfaceKind: surface.surfaceKind,
+          publicationRequestId: owner.requestId,
           ...(event.nativeQuestion && part.kind === 'content' ? { nativeQuestion: {
             id: event.questionId, state: event.questionState, question: event.nativeQuestion,
             deadline: event.questionDeadline, answers: event.questionAnswers || [],

@@ -8,6 +8,7 @@ const root = process.env.HOME;
 const runId = process.env.REMOTELAB_RUN_ID;
 let nextTurn = 0, activeTurn = '', released = false, finalText = 'durable native answer';
 let holdQuestion = false;
+let heldOpeningAck = null;
 const log = event => fs.appendFileSync(path.join(root, 'native-log.jsonl'), JSON.stringify({ ...event, runId, pid: process.pid }) + '\n');
 const emit = message => console.log(JSON.stringify(message));
 const notify = (method, params) => emit({ method, params: { threadId: 'native-thread', ...params } });
@@ -43,6 +44,9 @@ lines.on('line', line => {
     activeTurn = `turn-${++nextTurn}`;
     emit({ id, result: { turn: { id: activeTurn, status: 'inProgress' } } });
     notify('turn/started', { turn: { id: activeTurn, status: 'inProgress' } });
+    if (text.includes('PUBLISH_OPENING')) notify('item/completed', { turnId: activeTurn, item: {
+      id: `opening-${params.clientUserMessageId}`, type: 'agentMessage', phase: 'commentary', text: 'Opening for the original request.',
+    } });
     if (text.includes('ASK_NATIVE_QUESTION')) emit({ id: 'question-request', method: 'item/tool/requestUserInput', params: {
       threadId: 'native-thread', turnId: activeTurn, itemId: 'question-tool', isBlocking: true,
       questions: [{ id: 'format', question: '选择输出形式？', header: '形式', options: [{ label: '简短', description: '摘要' }, { label: '详细', description: '完整内容' }] }],
@@ -56,6 +60,13 @@ lines.on('line', line => {
     } else if (params.expectedTurnId !== activeTurn || !activeTurn) {
       emit({ id, error: { code: -32600, message: 'no active turn to steer' } });
     } else {
+      if (text.includes('HOLD_OPENING_ACK')) {
+        notify('item/completed', { turnId: activeTurn, item: {
+          id: `opening-${params.clientUserMessageId}`, type: 'agentMessage', phase: 'commentary', text: 'Supplement accepted; I will verify its actual state.',
+        } });
+        heldOpeningAck = { id, turnId: activeTurn };
+        return;
+      }
       emit({ id, result: { turnId: activeTurn } });
       if (text.includes('ASK_ON_STEER')) askQuestion();
       if (text.includes('ASK_ASYNC_ON_STEER')) askQuestion(true);
@@ -80,6 +91,10 @@ lines.on('line', line => {
   }
 });
 const timer = setInterval(() => {
+  if (heldOpeningAck && fs.existsSync(path.join(root, `${runId}.ack`))) {
+    emit({ id: heldOpeningAck.id, result: { turnId: heldOpeningAck.turnId } });
+    heldOpeningAck = null;
+  }
   if (!released && activeTurn && fs.existsSync(path.join(root, `${runId}.release`))) {
     released = true; finish();
   }

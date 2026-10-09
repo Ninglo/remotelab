@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-09 — A steered request's first useful reply must reach its source
+
+- Observed failure: an ordinary follow-up was acknowledged as native steering; Web displayed the first substantive answer about submission and incomplete concurrency validation, while Feishu showed only its input reaction. The exact assistant item had no outbox entry. A later explicitly published progress message did reach the original topic.
+- Cause: live publication filtered history to the execution's root Run ID. The follow-up user event had its own request Run ID and disappeared from that projection, so its first reply was filtered as routine process text. Confirmed opening policies also used one opening receipt for the entire Run instead of the accepted input.
+- Change: retain ordinary native input boundaries, frozen reply policies and source anchors in live publication. Keep one durable opening identity per input under the shared execution; revisit already projected output on input acknowledgement. Question answers retain their original control, and final replies keep the stopped-execution contract. Preserve manual card disclosure and avoid replaying pre-upgrade suppressed text.
+- Validation: isolated real-controller interleaving holds the steering acknowledgement until its text is visible in Web, then releases only that acknowledgement and observes one Feishu outbox entry at the follow-up anchor. Cover ordinary requests, question-answer continuation, text/card/none modes, disabled openings, differing targets, duplicate submissions/events, controller recovery and one terminal result. No business evaluation, resource or scheduling action is part of this repair; live delivery acceptance remains separate from tests and source deployment.
+
 ### 2026-10-09 — Pending choices must not absorb task supplements or block steering
 
 - Observed failure: a forwarded conversation sent just before a question appeared was retried, then recorded as a custom answer using its transport placeholder. Ordinary supplements kept failing the active-runtime guard rather than reaching steering.

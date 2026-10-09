@@ -30,6 +30,7 @@ await chmod(join(bin, 'fake-native'), 0o755);
 const env = { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: '/bin/sh',
   REMOTELAB_CONFIG_DIR: config, REMOTELAB_MEMORY_DIR: join(root, 'memory'), REMOTELAB_WORK_ROOT_DIR: root,
   REMOTELAB_MEMORY_WRITEBACK: 'off', REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER: '1',
+  REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE: '2026-10-07',
   REMOTELAB_USER_SHELL_ENV_B64: Buffer.from(JSON.stringify({ shell: '/bin/sh', mode: 'test', env: {} })).toString('base64') };
 let child, nextId = 0, succeeded = false;
 const pending = new Map();
@@ -66,6 +67,43 @@ async function awaitAnswer(sessionId, requestId) {
 }
 try {
   await boot();
+  const replyPlan = messageId => ({ connector: 'feishu', sourceRouteId: 'default', target: {
+    chatId: 'steering-chat', chatType: 'group', conversationKind: 'thread', threadId: 'steering-thread',
+    rootId: 'steering-root', messageId, replyInThread: true,
+  } });
+  const replySession = await rpc('create', { conversation: replyPlan('original') });
+  const replyOptions = id => ({ ...options(id), sourceDelivery: replyPlan(id) });
+  const openingRun = await rpc('accept', replySession.id, 'PUBLISH_OPENING', [], replyOptions('opening-root'));
+  let openingClaim;
+  await until(async () => { openingClaim = await rpc('claim', { connector: 'feishu' }); return openingClaim; }, 'original opening is published');
+  assert.equal(openingClaim.delivery.surfaceKind, 'opening');
+  await rpc('complete', openingClaim.delivery.id, openingClaim.leaseId, { externalId: 'original-opening' });
+  await rpc('accept', replySession.id, 'HOLD_OPENING_ACK', [], replyOptions('opening-steer'));
+  await until(async () => (await rpc('history', replySession.id)).some(event => event.role === 'assistant'
+    && event.content?.includes('Supplement accepted;')), 'steered first reply reaches Web before acknowledgement');
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'no unacknowledged input may take the reply destination');
+  await writeFile(join(root, `${openingRun.run.id}.ack`), 'release acknowledgement');
+  let steeredClaim;
+  await until(async () => { steeredClaim = await rpc('claim', { connector: 'feishu' }); return steeredClaim; }, 'acknowledgement publishes the existing first reply without another model event');
+  assert.equal(steeredClaim.delivery.surfaceKind, 'opening');
+  assert.match(steeredClaim.delivery.text, /Supplement accepted;/);
+  assert.equal(steeredClaim.delivery.target.messageId, 'opening-steer');
+  assert.equal(steeredClaim.delivery.target.threadId, 'steering-thread');
+  assert.equal(steeredClaim.delivery.publicationRequestId, 'opening-steer');
+  await rpc('complete', steeredClaim.delivery.id, steeredClaim.leaseId, { externalId: 'steered-opening' });
+  assert.equal((await rpc('accept', replySession.id, 'HOLD_OPENING_ACK', [], replyOptions('opening-steer'))).duplicate, true);
+  await killController(); await boot();
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'controller recovery cannot repeat either opening');
+  assert.equal((await logs()).filter(event => event.clientId === 'opening-steer').length, 1);
+  await writeFile(join(root, `${openingRun.run.id}.release`), 'finish execution');
+  await awaitAnswer(replySession.id, 'opening-root');
+  await awaitAnswer(replySession.id, 'opening-steer');
+  const replyFinal = await rpc('claim', { connector: 'feishu' });
+  assert.equal(replyFinal.delivery.surfaceKind, 'final');
+  assert.equal(replyFinal.delivery.target.messageId, 'opening-root');
+  await rpc('complete', replyFinal.delivery.id, replyFinal.leaseId, { externalId: 'final-opening-test' });
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'a shared stopped Run publishes its result once');
+  await evidence('PASS steering opening: Web-before-ack event order, per-input Feishu target, duplicate submission, controller recovery, one native steer and one terminal result');
   const questionSession = await rpc('create');
   const questioning = await accept(questionSession.id, 'question-root', 'ASK_NATIVE_QUESTION');
   let questionClaim;

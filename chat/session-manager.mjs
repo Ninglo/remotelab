@@ -37,7 +37,7 @@ import { WORKBOARD_INSTRUCTIONS, workboardContext, workboardReadback } from '../
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, requestKey, appendDeliveries } from './requests.mjs';
-import { publishLiveAssistantReplies, excludePublishedFinalReplies, prepareNativeFinalFiles, annotateTerminalReplyDeliveries } from './native-final-publication.mjs';
+import { publishLiveRunReplies, excludePublishedFinalReplies, prepareNativeFinalFiles, annotateTerminalReplyDeliveries } from './native-final-publication.mjs';
 import { readPromptAsset } from './prompt-asset-loader.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -756,8 +756,8 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       const plan = normalizeSourceDeliveryPlan(record?.deliveryPlan || record?.options?.sourceDelivery);
       if (plan && !record.options?.suppressSourceDelivery && !record.options?.internalOperation) {
         const history = await loadHistory(sessionId, { includeBodies: true, deferFileDiffs: true });
-        await publishLiveAssistantReplies(record, collectReplyPublicationHistory(history, run), {
-          store: requests, plan, running: !isTerminalRunState(run.state),
+        await publishLiveRunReplies(record, history, {
+          store: requests, run, plan, running: !isTerminalRunState(run.state),
           fullHistory: history,
           session: await findSessionMeta(sessionId),
           prepareFinal: event => prepareNativeFinalFiles(record, event, { run, manifest }),
@@ -3306,6 +3306,7 @@ async function recordWorkInputAndDeliver(session, record) {
       + '. Review current records before changing the task; the original authorization remains in force.' : '';
   }
 }
+const liveReplyAcknowledgedInputs = new Set();
 const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
   prepareInput: async (record, manifest) => {
@@ -3335,7 +3336,31 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
     await requests.archiveFinished(record.key);
   },
-  changed: async key => { const record = await requestRuntime.refresh(key); if (record) broadcastSessionInvalidation(record.sessionId); },
+  changed: async key => {
+    const record = await requestRuntime.refresh(key);
+    if (!record) return;
+    broadcastSessionInvalidation(record.sessionId);
+    if (record.result) { liveReplyAcknowledgedInputs.delete(key); return; }
+    // Output can be projected before the input acknowledgement is durable.
+    // Revisit it on the acknowledgement event; no delay or model replay.
+    if (record.options?.nativeQuestionId || record.options?.workReference
+        || record.liveReplyPublicationVersion !== 1 || !record.nativeReceipt?.accepted
+        || liveReplyAcknowledgedInputs.has(key)) return;
+    const run = await getRun(record.nativeDispatchRunId);
+    if (!run || isTerminalRunState(run.state)) return;
+    const root = await requests.byRunId(run.id);
+    const plan = normalizeSourceDeliveryPlan(root?.deliveryPlan || root?.options?.sourceDelivery);
+    if (root && plan) {
+      const history = await loadHistory(record.sessionId, { includeBodies: true, deferFileDiffs: true });
+      const manifest = await getRunManifest(run.id);
+      await publishLiveRunReplies(root, history, {
+        store: requests, run, plan, running: true, fullHistory: history,
+        session: await findSessionMeta(record.sessionId),
+        prepareFinal: event => prepareNativeFinalFiles(root, event, { run, manifest }),
+      });
+    }
+    liveReplyAcknowledgedInputs.add(key);
+  },
   onError: (error, sessionId) => console.error(`[native-input] ${sessionId}: ${error.stack || error}`),
 });
 const requestRuntime = createRequestRuntime({

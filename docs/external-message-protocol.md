@@ -321,6 +321,18 @@ retries and restarts retain that name. Task completion comes from verified
 workboard outcomes, not these message labels. Email retains its single
 final-message behavior.
 
+When the effective Feishu group baseline or confirmed reply policy enables
+opening text, each accepted ordinary steering input can publish its first useful
+Harness reply once, even inside an already running native Run. Publication uses
+that input's frozen reply destination and records its Request ID alongside the
+shared execution's delivery identity. Native question answers and reference-only
+inputs do not create another opening boundary. If Harness output arrives before
+the input acknowledgement, acknowledgement revisits the retained output without
+starting another model turn. Progress still follows the existing message/card
+choice; terminal publication remains once per stopped execution. Inputs already
+dispatched before this publication contract was installed retain their historical
+receipts and are not replayed as new openings.
+
 Example:
 
 ```bash
