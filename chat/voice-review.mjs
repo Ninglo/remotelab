@@ -2,6 +2,7 @@ import { chmod } from 'fs/promises';
 import { join } from 'path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from './fs-utils.mjs';
+import { observeSettingRows, settingRows, voiceSettingValues } from './usage-settings.mjs';
 
 const SETTINGS_FILE = join(CONFIG_DIR, 'voice-review-personal.json');
 const writeSettings = createSerialTaskQueue();
@@ -111,7 +112,7 @@ export async function getVoiceReviewSettings(personId) {
   return normalizeVoiceReviewSettings(all?.[personId]);
 }
 
-export async function updateVoiceReviewSettings(personId, patch) {
+export async function updateVoiceReviewSettings(personId, patch, observationContext = {}) {
   if (!personId) throw new Error('A signed-in Person is required');
   validateVoiceReviewSettings(patch);
   return writeSettings(async () => {
@@ -132,7 +133,10 @@ export async function updateVoiceReviewSettings(personId, patch) {
     };
     await writeJsonAtomic(SETTINGS_FILE, { ...all, [personId]: next }, { mode: 0o600 });
     await chmod(SETTINGS_FILE, 0o600);
-    return normalizeVoiceReviewSettings(next);
+    const saved = normalizeVoiceReviewSettings(next);
+    await observeSettingRows(settingRows(voiceSettingValues(saved), { scope: 'person', scopeId: personId,
+      subjectPersonId: personId, before: voiceSettingValues(current) }), { ...observationContext, operation: 'change' });
+    return saved;
   });
 }
 

@@ -1,4 +1,5 @@
 import { observeAutomationChange, observeIntervention, runtimeUsageChanged } from './usage-controls.mjs';
+import { settingActor, observeSettingRows, settingRows, personSettingValues } from './usage-settings.mjs';
 import { handleMessageReplySettings } from './router-message-reply-settings.mjs';
 import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
@@ -356,7 +357,7 @@ export async function handleControlRoutes({
     try {
       const settings = req.method === 'GET'
         ? await getVoiceReviewSettings(authSession.personId)
-        : await updateVoiceReviewSettings(authSession.personId, JSON.parse(await readBody(req, 16384) || '{}'));
+        : await updateVoiceReviewSettings(authSession.personId, JSON.parse(await readBody(req, 16384) || '{}'), settingActor(authSession));
       writeJson(res, 200, { settings, backend: getVoiceReviewBackend(settings) });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Could not save voice review settings' });
@@ -486,7 +487,10 @@ export async function handleControlRoutes({
         writeJson(res, 403, { error: 'Voice preferences can only be changed by their Person' });
         return true;
       }
-      const updated = await updatePerson(personMatch[1], payload);
+      const updated = await updatePerson(personMatch[1], payload, { afterSave: saved =>
+        observeSettingRows(settingRows(personSettingValues(saved.after), { scope: 'person', scopeId: saved.personId,
+          subjectPersonId: saved.personId, before: personSettingValues(saved.before) }),
+        { ...settingActor(authSession), operation: 'change' }) });
       if (!updated) {
         writeJson(res, 404, { error: 'Person not found' });
         return true;
@@ -594,7 +598,7 @@ export async function handleControlRoutes({
       const patch = payload?.settings && typeof payload.settings === 'object'
         ? payload.settings
         : payload;
-      const settings = await updateInstanceSettings(patch);
+      const settings = await updateInstanceSettings(patch, settingActor(authSession));
       writeJson(res, 200, {
         settings: buildClientInstanceSettings(settings, { authSession }),
       });

@@ -2,6 +2,7 @@
 // from the capped recent-event list. Raw events stay available for diagnostics.
 import { buildFeatureInsights } from './usage-feature-insights.mjs';
 import { summarizeFeishuCardEngagement } from '../lib/feishu-card-engagement.mjs';
+import { buildSettingInsights } from './usage-setting-insights.mjs';
 const median = values => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b), middle = Math.floor(sorted.length / 2);
@@ -21,7 +22,7 @@ const dayKey = timestamp => {
 
 export function buildUsageInsights(events, { start = 0, now = Date.now(), collectionStartedAt = null,
   gaps = [], scanIncomplete = false, dropped = 0, failures = 0, sessionOrigins = [], originLookupIncomplete = false, featureStartedAt = null,
-  feishuCardSampling = { routes: [], incomplete: false, started: false } } = {}) {
+  feishuCardSampling = { routes: [], incomplete: false, started: false }, settingEvents = null, settingSnapshot = {} } = {}) {
   // Following a known gap, begin a new continuous observation interval.
   // Pairing events across a missing interval would invent timings/conversions.
   const gapEnd = Math.max(0, ...gaps.map(gap => gap.end).filter(end => Number.isFinite(end) && end <= now));
@@ -70,10 +71,11 @@ export function buildUsageInsights(events, { start = 0, now = Date.now(), collec
   // evidence that all cards in the requested interval have been checked.
   feishuCards.sampling = { ...feishuCardSampling, scope: 'instance' };
   feishuCards.partial = !reliable || feishuCardSampling.incomplete;
+  const settings = buildSettingInsights(settingEvents || qualified, { since, now, snapshot: settingSnapshot, reliable });
   return { schemaVersion: 1, since: new Date(since).toISOString(), until: new Date(now).toISOString(),
     quality: { reliable, afterGap: gapEnd > Math.max(start, Date.parse(collectionStartedAt) || start),
       webObserved: qualified.some(event => event.actorKind === 'human' && ['page_enter', 'session_open', 'artifact_open'].includes(event.event)),
-      unknownIdentities: activity.unidentifiedInputs }, activity, journeys, execution, artifacts, functions, feishuCards };
+      unknownIdentities: activity.unidentifiedInputs }, activity, journeys, execution, artifacts, functions, feishuCards, settings };
 }
 
 function analyzeJourneys(events, reliable, sessionOrigins) {

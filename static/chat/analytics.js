@@ -107,3 +107,62 @@
     chatStore.subscribe(sync); sync(chatStore.getState());
   }
 })(window);
+
+(function installSettingCollection(globalScope) {
+  if ((typeof shareSnapshotMode !== 'undefined' && shareSnapshotMode) || !globalScope.crypto?.randomUUID) return;
+  const person = typeof bootstrapAuthInfo !== 'undefined' ? bootstrapAuthInfo?.person?.id : '';
+  if (!person || bootstrapAuthInfo.authKind === 'service') return;
+  const browserKey = 'remotelab.usageSettingsBrowser', pendingKey = 'remotelab.usageSettingsPending:' + person;
+  let browserId, pending = [], sending = false, stopped = false;
+  try {
+    browserId = localStorage.getItem(browserKey);
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(browserId || '')) {
+      browserId = crypto.randomUUID(); localStorage.setItem(browserKey, browserId);
+    }
+    if (localStorage.getItem(browserKey) !== browserId) return;
+    const saved = JSON.parse(localStorage.getItem(pendingKey) || '[]');
+    if (Array.isArray(saved)) pending = saved.slice(-100);
+  } catch { return; }
+  const persist = () => { try { localStorage.setItem(pendingKey, JSON.stringify(pending)); } catch {} };
+  async function flush() {
+    if (sending || stopped || navigator.onLine === false) return;
+    sending = true;
+    try {
+      while (pending.length) {
+        const observation = pending[0];
+        const response = await fetch('/api/usage/settings', { method: 'POST', credentials: 'same-origin', keepalive: true,
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(observation) });
+        if (response.status === 401 || response.status === 403) { stopped = true; break; }
+        if (response.status === 400) { pending.shift(); persist(); continue; }
+        if (response.status !== 202 || !(await response.json()).recorded) break;
+        pending.shift(); persist();
+      }
+    } catch {} finally { sending = false; }
+  }
+  function observe(values, operation = 'snapshot') {
+    if (stopped || pending.length >= 100) return;
+    pending.push({ browserId, observationId: crypto.randomUUID(), timestamp: Date.now(), operation, values });
+    persist(); void flush();
+  }
+  const choices = [
+    ['web.theme', 'remotelabGetThemePreference', 'remotelab:themechange', 'preference'],
+    ['web.thinking', 'remotelabGetThinkingBlockDisplayMode', 'remotelab:thinkingblockdisplaychange', 'mode'],
+    ['web.language', 'remotelabGetUiLanguagePreference', 'remotelab:localechange', 'preference'],
+  ];
+  const initial = {};
+  for (const [setting, getter, eventName, field] of choices) {
+    if (typeof globalScope[getter] === 'function') initial[setting] = globalScope[getter]();
+    globalScope.addEventListener(eventName, event => {
+      if (event.detail?.persisted === true) observe({ [setting]: event.detail[field] }, 'change');
+    });
+  }
+  if (Object.keys(initial).length) observe(initial);
+  globalScope.addEventListener('online', () => void flush());
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void flush(); });
+  globalScope.addEventListener('pagehide', () => {
+    // Keep the same ID if reload interrupts the request; the durable receipt
+    // deduplicates this beacon and the next page's retry.
+    if (pending.length && !stopped) navigator.sendBeacon?.('/api/usage/settings',
+      new Blob([JSON.stringify(pending[0])], { type: 'application/json' }));
+  });
+})(window);

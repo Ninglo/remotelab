@@ -1,6 +1,7 @@
 import { INSTANCE_SETTINGS_FILE } from '../lib/config.mjs';
 import { dirname, join } from 'path';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from './fs-utils.mjs';
+import { observeSettingRows, settingRows, instanceSettingValues } from './usage-settings.mjs';
 
 const DEFAULT_VOICE_PROVIDER = 'doubao';
 const VOICE_PROVIDER_GATEWAY_DIRECT = 'doubao_gateway_direct';
@@ -193,7 +194,7 @@ export async function getBootstrapInstanceSettings(authSession = null) {
   return buildClientInstanceSettings(stored, { authSession });
 }
 
-export async function updateInstanceSettings(rawPatch = {}) {
+export async function updateInstanceSettings(rawPatch = {}, observationContext = {}) {
   const patch = rawPatch && typeof rawPatch === 'object'
     ? rawPatch
     : {};
@@ -226,6 +227,8 @@ export async function updateInstanceSettings(rawPatch = {}) {
         : current.sessionAutoArchive,
     };
     await writeJsonAtomic(INSTANCE_SETTINGS_FILE, next);
+    await observeSettingRows(settingRows(instanceSettingValues(next), { scope: 'instance', scopeId: 'instance',
+      before: instanceSettingValues(current) }), { ...observationContext, operation: 'change' });
     return cloneValue(next);
   });
 }

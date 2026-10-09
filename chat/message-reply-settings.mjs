@@ -4,6 +4,7 @@ import { CONFIG_DIR } from '../lib/config.mjs';
 import { createSerialTaskQueue, writeJsonAtomic } from './fs-utils.mjs';
 import { loadSessionsMeta } from './session-meta-store.mjs';
 import { DEFAULT_REPLY_DRAFT, validateReplyDraft } from '../static/chat/message-reply-model.js';
+import { observeSettingRows, replySettingRows } from './usage-settings.mjs';
 
 const path = join(CONFIG_DIR, 'message-reply-settings.json');
 const serial = createSerialTaskQueue();
@@ -59,6 +60,12 @@ export async function changeMessageReplySettings(input, actor) {
       choices: structuredClone(input.action === 'legacy' ? current.active : next.draft),
       groups: (input.action === 'legacy' ? current.active?.groups : next.draft.groups) || [] }].slice(-32);
     await writeJsonAtomic(path, next, { mode: 0o600 });
+    const affected = [...new Map([...(current.active?.groups || []), ...(next.active?.groups || [])]
+      .map(group => [`${group.sourceRouteId}:${group.chatId}`, group])).values()];
+    const before = new Map(replySettingRows(current, affected).map(row => [`${row.scopeKey}:${row.stage}:${row.setting}`, row.value]));
+    await observeSettingRows(replySettingRows(next, affected).map(row => ({ ...row,
+      previousValue: before.get(`${row.scopeKey}:${row.stage}:${row.setting}`) })),
+    { personId: actor.personId, surface: 'web', operation: 'change' });
     return next;
   });
 }

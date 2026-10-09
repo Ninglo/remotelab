@@ -1946,12 +1946,15 @@
       } else {
         root.localStorage?.setItem(UI_LANGUAGE_STORAGE_KEY, normalized);
       }
+      return Boolean(root.localStorage) && readStoredUiLanguagePreference() === normalized;
     } catch {}
+    return false;
   }
 
   function setUiLanguagePreference(value, { reload = false } = {}) {
+    const previousPreference = uiLanguagePreference;
     uiLanguagePreference = normalizeUiLanguagePreference(value, { allowAuto: true });
-    writeStoredUiLanguagePreference(uiLanguagePreference);
+    const persisted = writeStoredUiLanguagePreference(uiLanguagePreference);
     activeUiLanguage = resolveActiveUiLanguage(uiLanguagePreference);
     applyTranslations(root.document);
     try {
@@ -1959,6 +1962,7 @@
         detail: {
           preference: uiLanguagePreference,
           active: activeUiLanguage,
+          previousPreference, persisted,
         },
       }));
     } catch {}

@@ -589,27 +589,33 @@ window.remotelabGetThinkingBlockDisplayOptions = function getThinkingBlockDispla
 };
 
 window.remotelabSetThemePreference = function setThemePreference(value) {
+  const previousPreference = currentThemePreference;
   currentThemePreference = applyThemePreference(value);
   applyThemeTextOverrides(currentThemePreference);
+  let persisted = false;
   try {
     localStorage.setItem(UI_THEME_STORAGE_KEY, currentThemePreference);
+    persisted = localStorage.getItem(UI_THEME_STORAGE_KEY) === currentThemePreference;
   } catch {}
   try {
     window.dispatchEvent(new CustomEvent("remotelab:themechange", {
-      detail: { preference: currentThemePreference },
+      detail: { preference: currentThemePreference, previousPreference, persisted },
     }));
   } catch {}
   return currentThemePreference;
 };
 
 window.remotelabSetThinkingBlockDisplayMode = function setThinkingBlockDisplayMode(value) {
+  const previousMode = currentThinkingBlockDisplayMode;
   currentThinkingBlockDisplayMode = normalizeThinkingBlockDisplayMode(value);
+  let persisted = false;
   try {
     localStorage.setItem(THINKING_BLOCK_DISPLAY_STORAGE_KEY, currentThinkingBlockDisplayMode);
+    persisted = localStorage.getItem(THINKING_BLOCK_DISPLAY_STORAGE_KEY) === currentThinkingBlockDisplayMode;
   } catch {}
   try {
     window.dispatchEvent(new CustomEvent("remotelab:thinkingblockdisplaychange", {
-      detail: { mode: currentThinkingBlockDisplayMode },
+      detail: { mode: currentThinkingBlockDisplayMode, previousMode, persisted },
     }));
   } catch {}
   rerenderCurrentSessionForThinkingBlockDisplayChange();

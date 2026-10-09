@@ -57,6 +57,7 @@
     if (activity.daily.length > 1) table(adoption, [text("日期（北京时间）", "Date (UTC+8)"), text("交流人数", "People"), text("会话数", "Conversations")],
       activity.daily.map(row => [row.day, row.people, row.sessions]));
     if (report.functions) renderFunctions(report.functions);
+    if (report.settings) renderSettings(report.settings);
     const path = section(text("飞书与 Web 的协作是否接得上", "Does Feishu collaboration continue in Web"));
     table(path, [text("协作过程", "Collaboration path"), text("观测数 / 样本数 · 比例", "Observed / samples · rate")], [
       [text("飞书发起的会话，本期在 Web 打开", "Feishu-origin conversations opened in Web this interval"), ratio(journeys.opened)],
@@ -116,6 +117,37 @@
       activity.unidentifiedInputs + " human inputs lack a linkable identity and are excluded from people counts.");
     if (artifacts.otherOpened) note(details, "另有 " + artifacts.otherOpened + " 件产物的主动点击未关联到本期交付，不放进本期产物打开率。",
       artifacts.otherOpened + " explicitly clicked objects cannot be linked to this interval's delivery cohort and are excluded from its open rate.");
+  }
+  function renderSettings(data) {
+    const root = section(text("基础设置选了什么，哪些经常被改回", "Setting choices and later reversals"));
+    const scopes = { browser: ['浏览器', 'Browser'], person: ['个人', 'Person'], group: ['群', 'Group'],
+      instance: ['整个实例', 'Instance'], display: ['个人副屏', 'Personal display'] };
+    const renderRows = (target, rows) => table(target, [text("设置", "Setting"), text("作用范围", "Scope"),
+      text("已记录配置数", "Observed configurations"), text("最近记录的选项分布", "Last observed choices"),
+      text("本期变更 / 回默认 / 回先前值", "Changes / defaults / earlier value")], rows.map(row => [
+        text(...row.title), text(...scopes[row.scope]), row.configurations,
+        row.values.map(value => text(...value.title) + ' ' + value.configurations).join(text('；', '; ')) || '—',
+        row.changes + ' / ' + row.restoredDefaults + ' / ' + row.returnsToEarlier,
+      ]));
+    const applied = data.rows.filter(row => row.stage === 'applied'), other = data.rows.filter(row => row.stage !== 'applied');
+    if (applied.length) renderRows(root, applied);
+    else note(root, "尚未记录到生效配置，不代表用户未使用这些功能。", "No applied configurations are observed yet; this does not establish non-use.");
+    note(root, "每个浏览器、个人、群或实例分别算一份配置；分布是最近一次观测，不是活跃人数，也不代表覆盖了所有设备。基础设置按整个实例汇总，不受会话筛选；变更次数仍按本页观察时段统计。",
+      "Each browser, person, group or instance counts as one configuration. Last observations are not active-user counts or a complete device inventory. Settings are instance-wide, independent of the conversation filter; changes use this page's observed interval.");
+    note(root, "初次记录和重复保存不算切换。改回先前值需要同一作用范围内的连续变更；开启、关闭或改回不能单独证明功能好坏，还要结合后续使用与本人反馈。",
+      "Initial observations and repeated saves are not changes. Returning to an earlier value requires a continuous sequence in the same scope. Choices alone do not establish usability; compare later use and direct feedback.");
+    if (data.partial) note(root, "设置记录存在采集缺失，当前分布或变更次数可能不完整。", "Setting observations are partial; distributions or change counts may be incomplete.");
+    const details = node('details'); details.appendChild(node('summary', text('查看草案、预览与采集起点', 'Drafts, previews and collection start'))); root.appendChild(details);
+    if (data.startedAt) note(details, "设置采集从 " + time(data.startedAt) + " 开始；已有设置只记录现状，不补成过去的使用或选择次数。",
+      "Setting collection starts at " + time(data.startedAt) + ". Existing settings establish a baseline, without backfilling past use or choices.");
+    for (const stage of ['draft', 'preview']) {
+      const rows = other.filter(row => row.stage === stage);
+      if (!rows.length) continue;
+      details.appendChild(node('h4', text(...(stage === 'draft' ? ['已保存草案（尚未应用）', 'Saved drafts, not applied'] : ['预览选择（不代表应用）', 'Preview choices, not adoption']))));
+      renderRows(details, rows);
+    }
+    note(details, "浏览器设置来自登录用户报告的本地保存结果；服务器设置在保存成功后记录。副屏应用表示预览服务接收配置，不证明实体屏显示效果。仅记录固定选项，不记录密钥、快捷链接、个人词典或主题导入内容。",
+      "Browser choices are authenticated client reports of local saves; server choices follow successful persistence. Display application means the preview service accepted configuration, not physical-screen acceptance. Only fixed choices are recorded, excluding credentials, links, personal terms and imported themes.");
   }
   function renderFeishuCards(data) {
     const root = section(text("飞书卡片有没有阅读信号，过程被展开多少次", "Feishu card read signals and process clicks"));

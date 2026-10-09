@@ -6,6 +6,58 @@ The authenticated workbench now records small actions in the instance-local
 adds no external analytics service, automatic semantic classifier or task-state
 UI redesign. Human-attention presentation remains a separate product discussion.
 
+## Configuration state and later changes
+
+Usage analysis also shows fixed setting choices, their last observed distribution,
+and changes back to defaults or earlier values. `report.settings` is instance-wide:
+a Session filter does not narrow browser, Person, group or instance configuration.
+Change counts still use the report's qualified continuous date interval. Each row
+counts one setting field in its actual scope, not one user intention or form submit.
+Last observations are neither active-user counts nor a complete device inventory.
+
+| Settings | Scope and successful recording boundary |
+| --- | --- |
+| Message reply opening, checklist and progress mode | Saved draft is instance-scoped and separate from confirmed group application. Groups removed from the active range return to inherited defaults. Version 1 text-only progress remains distinct from version 2 card plus messages. |
+| Workbench theme, default process disclosure, UI language | Authenticated browser reports only after local storage readback confirms persistence. One random locally stored browser ID per browser, combined with the verified Person, identifies a configuration; no device fingerprint is collected. |
+| Automatic archive and archive hours | Instance-scoped, after server persistence. |
+| Voice review enabled, mode and style; default Session filter, mobile input mode and voice shortcut enabled | Person-scoped, after persistence. The changed subject and verified saving actor remain distinct. |
+| Secondary display theme | Preview selection and accepted application remain separate. Existing private theme logs seed the latest known state for verified People without inventing historical choice counts. Application is a preview-service receipt, not physical-screen verification. |
+
+Existing authoritative configurations and first browser visits establish a
+baseline. Initial observations, unchanged saves, repeated activation and refreshes
+do not count as choices. An earlier-value return requires a continuous known
+sequence for the same setting/scope/stage. Drafts and previews appear separately
+and do not establish adoption. Unexpected or externally changed state becomes a
+new snapshot, not an invented human choice. No recommendation or preference write
+is triggered by these records. Use choices together with later behavior and direct
+feedback when judging whether a feature helps.
+
+`GET /api/usage/settings` returns the private latest state, optionally narrowed by
+hashed subject. `POST /api/usage/settings` accepts only the three fixed browser
+choices from a same-site human login. Authentication determines attribution;
+client-provided identities, scopes and arbitrary configuration are ignored or
+rejected. Server settings are observed at their real successful save boundary.
+The fixed catalog excludes secrets, provider credentials, personal dictionaries,
+quick-link contents, shortcut bindings and imported theme data.
+
+`CONFIG_DIR/usage-settings/current.json` retains the current index, receipt IDs
+and a durable outbox (directory 0700, file 0600). The shared usage-event ledger
+retains deduplicated change history. Outbox replay survives restart and lost
+acknowledgements; stale snapshots cannot rewind newer state. Configuration writes
+still succeed if collection fails. A bounded outbox, corrupt index, source-read
+failure or known storage incident marks the report partial. An unreadable index
+is preserved; a durable `health.json` keeps confirmed loss visible after restart
+and must only be cleared following a verified repair. Browser retry queues are
+bounded and event-driven; missed/offline/unvisited devices remain outside known
+coverage. There is no fabricated historical backfill.
+
+`tests/test-usage-settings.mjs` covers save boundaries, scope/identity, drafts,
+previews, no-ops, default restoration, outbox replay, corrupt state and privacy.
+The optional `tests/test-usage-settings-browser.mjs` (installed Playwright module,
+Chromium executable and optional library path as arguments) additionally checks successful local persistence,
+storage failure, refresh recovery, distinct authenticated People and the unified
+desktop/mobile report. Tests use isolated homes and do not change real groups.
+
 ## Product analysis
 
 The page answers product questions about feature use, historical revisits, automation, materials, knowledge, delegation and delivery, alongside the original four questions: who contributes, whether Feishu work
@@ -83,6 +135,7 @@ use `report.feishuCards`. See [card measurement details](../../docs/feishu-card-
 | Durable source outbox | delivered / failed / unknown / cancelled receipt | Feishu delivery is not reading. The receipt is separate from content generation. |
 | Feishu read API / subscribed single-chat read event | first collected read signal | Deduplicate each user/card pair. Provider read time may be earlier; an absent signal is unknown. |
 | Validated Feishu card callback | process expanded / collapsed, delivery mode chosen | Count accepted callbacks once; retries and rejected actions do not inflate valid clicks. Group card display is shared. |
+| Successful supported configuration save / authenticated browser local save | Fixed setting choice and later change | Baselines and no-ops are not adoption. Applied group/person/browser/instance state is distinct from saved drafts and previews. |
 | Session creation / delegation | created and parent-child link | A link proves delegation, not adoption or success. Forked historical events are not recounted. |
 
 Automated requests retain actor=automation where the authoritative request

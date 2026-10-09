@@ -8,11 +8,13 @@ import { buildUsageInsights } from './usage-insights.mjs';
 import { readUsageSessionOrigins } from './usage-session-origins.mjs';
 import { writeJsonAtomic } from './fs-utils.mjs';
 import { summarizeFeishuCardEngagement, readFeishuCardSamplingCoverage } from '../lib/feishu-card-engagement.mjs';
+import { validSettingObservation, validUsageSetting } from '../lib/usage-setting-schema.mjs';
+import { readSettingSnapshot } from '../lib/usage-setting-store.mjs';
 
 export const CLIENT_USAGE_EVENTS = new Set(['page_enter', 'session_open', 'page_visibility', 'ui_action', 'content_presented', 'artifact_open']);
 const SERVER_EVENTS = new Set(['message_submitted', 'request_state', 'run_state', 'question_state', 'tool_started', 'tool_finished',
   'artifact_generated', 'artifact_registered', 'artifact_attached', 'web_published', 'delivery_state', 'artifact_access_requested', 'session_created', 'session_linked',
-  'capability_state', 'automation_change', 'intervention', 'material_submitted', 'knowledge_state', 'feishu_card_action', 'feishu_card_read']);
+  'capability_state', 'automation_change', 'intervention', 'material_submitted', 'knowledge_state', 'feishu_card_action', 'feishu_card_read', 'setting_state']);
 const identifier = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,160}$/.test(value) ? value : '';
 const token = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,64}$/.test(value) ? value : '';
 const CLIENT_TOKENS = {
@@ -37,7 +39,7 @@ export function artifactKind(mime = '') {
 
 // Only these fields reach the ledger. Never forward a tool's arguments, message
 // text, answers, filenames, URLs, IP address or arbitrary client properties.
-export function normalizeUsageEvent(input, { personId = '', client = false, now = Date.now() } = {}) {
+export function normalizeUsageEvent(input, { personId = '', verifiedPersonHash = '', client = false, now = Date.now() } = {}) {
   if (!(client ? CLIENT_USAGE_EVENTS : SERVER_EVENTS).has(input?.event)) return null;
   const eventId = identifier(input.eventId);
   if (!eventId) return null;
@@ -48,6 +50,14 @@ export function normalizeUsageEvent(input, { personId = '', client = false, now 
     surface: client ? 'web' : ['web', 'feishu', 'agent', 'automation', 'runtime'].includes(input.surface) ? input.surface : 'runtime',
     actorKind: client ? 'human' : ['human', 'agent', 'automation', 'system'].includes(input.actorKind) ? input.actorKind : 'system' };
   if (personId) event.personHash = usageKey(`person:${personId}`);
+  else if (!client && /^[a-f0-9]{64}$/.test(verifiedPersonHash)) event.personHash = verifiedPersonHash;
+  if (input.event === 'setting_state') {
+    if (!validSettingObservation({ setting: input.setting, value: input.settingValue, scope: input.settingScope,
+      scopeKey: input.scopeKey, stage: input.stage, authority: input.authority })) return null;
+    for (const key of ['setting', 'settingValue', 'settingScope', 'scopeKey', 'stage', 'authority']) event[key] = input[key];
+    if (validUsageSetting(input.setting, input.previousValue)) event.previousValue = input.previousValue;
+    if (/^[a-f0-9]{64}$/.test(input.subjectHash || '')) event.subjectHash = input.subjectHash;
+  }
   if (!client && /^[a-f0-9]{64}$/.test(input.actorKey || '')) event.actorKey = input.actorKey;
   if (!client && identifier(input.sourceRouteId)) event.sourceRouteId = input.sourceRouteId;
   if (!client && ['expanded', 'collapsed', 'messages', 'card', 'default'].includes(input.mode)) event.mode = input.mode;
@@ -136,7 +146,7 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     await Promise.all([...admissions]);
     await tail;
   }
-  async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000 } = {}) {
+  async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000, settingSnapshot } = {}) {
     await idle();
     days = Math.max(1, Math.min(30, Math.floor(Number(days) || 7)));
     limit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 100)));
@@ -192,6 +202,8 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
       finally { lines.close(); stream.destroy(); }
       if (scanned > maxScanned) break;
     }
+    const settingEvents = events.filter(event => event.event === 'setting_state');
+    settingSnapshot ||= await readSettingSnapshot(join(directory, '..', 'usage-settings'));
     if (sessionId) {
       const children = events.filter(event => event.event === 'session_linked' && event.parentSessionId === sessionId);
       const childIds = new Set(children.map(event => event.sessionId)), runIds = new Set(children.map(event => event.runId).filter(Boolean));
@@ -223,7 +235,8 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
       feishuCards: { ...summarizeFeishuCardEngagement(events), sampling: feishuCardSampling },
       report: buildUsageInsights(events, { start, now, collectionStartedAt: metadata?.startedAt, gaps, scanIncomplete,
         dropped: lastIssueAt >= qualifiedStart ? dropped : 0, failures: lastIssueAt >= qualifiedStart ? failures : 0,
-        sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0, featureStartedAt, feishuCardSampling }),
+        sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0, featureStartedAt, feishuCardSampling,
+        settingEvents, settingSnapshot }),
       events: events.slice(-limit).reverse(), coverage: { incomplete, scanIncomplete, scanned, pending, dropped, failures, gaps, excludedCorruptLines, excludedFixtureLines,
         notes: ['仅包含采集启动后的可观测事件；不回填历史。', '飞书送达不代表已读；Web 呈现不代表理解或采纳。',
           '产物生成、网页发布、附加到回复与访问分别计数；普通文件写入不自动认定为产物。',
