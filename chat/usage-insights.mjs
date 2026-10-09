@@ -1,6 +1,7 @@
 // Product questions are calculated from the entire qualified window, never
 // from the capped recent-event list. Raw events stay available for diagnostics.
 import { buildFeatureInsights } from './usage-feature-insights.mjs';
+import { summarizeFeishuCardEngagement } from '../lib/feishu-card-engagement.mjs';
 const median = values => {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b), middle = Math.floor(sorted.length / 2);
@@ -19,7 +20,8 @@ const dayKey = timestamp => {
 };
 
 export function buildUsageInsights(events, { start = 0, now = Date.now(), collectionStartedAt = null,
-  gaps = [], scanIncomplete = false, dropped = 0, failures = 0, sessionOrigins = [], originLookupIncomplete = false, featureStartedAt = null } = {}) {
+  gaps = [], scanIncomplete = false, dropped = 0, failures = 0, sessionOrigins = [], originLookupIncomplete = false, featureStartedAt = null,
+  feishuCardSampling = { routes: [], incomplete: false, started: false } } = {}) {
   // Following a known gap, begin a new continuous observation interval.
   // Pairing events across a missing interval would invent timings/conversions.
   const gapEnd = Math.max(0, ...gaps.map(gap => gap.end).filter(end => Number.isFinite(end) && end <= now));
@@ -58,10 +60,20 @@ export function buildUsageInsights(events, { start = 0, now = Date.now(), collec
   const execution = analyzeExecution(qualified, inputs, humanSessions, reliable, now);
   const artifacts = analyzeArtifacts(qualified, reliable);
   const functions = buildFeatureInsights(qualified, { since, sessionOrigins, featureStartedAt });
+  const cardEvents = qualified.filter(event => ['feishu_card_action', 'feishu_card_read'].includes(event.event)
+    && event.surface === 'feishu' && event.actorKind === 'human' && event.actorKey && event.objectId);
+  const feishuCards = summarizeFeishuCardEngagement(cardEvents);
+  feishuCards.people = { verified: feishuCards.byUser.filter(user => user.personHash).length,
+    unlinked: feishuCards.byUser.filter(user => !user.personHash).length };
+  feishuCards.firstObservedAt = cardEvents.length ? new Date(cardEvents[0].timestamp).toISOString() : null;
+  // Sampling health is current instance state, not a time/Session cohort or
+  // evidence that all cards in the requested interval have been checked.
+  feishuCards.sampling = { ...feishuCardSampling, scope: 'instance' };
+  feishuCards.partial = !reliable || feishuCardSampling.incomplete;
   return { schemaVersion: 1, since: new Date(since).toISOString(), until: new Date(now).toISOString(),
     quality: { reliable, afterGap: gapEnd > Math.max(start, Date.parse(collectionStartedAt) || start),
       webObserved: qualified.some(event => event.actorKind === 'human' && ['page_enter', 'session_open', 'artifact_open'].includes(event.event)),
-      unknownIdentities: activity.unidentifiedInputs }, activity, journeys, execution, artifacts, functions };
+      unknownIdentities: activity.unidentifiedInputs }, activity, journeys, execution, artifacts, functions, feishuCards };
 }
 
 function analyzeJourneys(events, reliable, sessionOrigins) {

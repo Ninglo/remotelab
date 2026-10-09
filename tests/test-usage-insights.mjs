@@ -179,6 +179,63 @@ test('equal timestamps do not let an initial snapshot reopen a settled execution
   assert.equal(x.execution.waiting.answered, 1); assert.equal(x.execution.waiting.pending, 0);
 });
 
+test('card observations share the continuous report window and verified identity without inflating participation', () => {
+  const card = (timestamp, name, fields = {}) => event(timestamp, name, {
+    surface: 'feishu', actorKey: 'app-a-alice', objectId: 'card-a', sourceRouteId: 'app-a', ...fields,
+  });
+  const expand = card(6000, 'feishu_card_action', { action: 'expand', state: 'accepted' });
+  const x = report([
+    card(1000, 'feishu_card_read'), card(5500, 'feishu_card_read', { readAt: 1000 }), expand, { ...expand },
+    card(7000, 'feishu_card_action', { actorKey: 'app-b-alice', sourceRouteId: 'app-b', objectId: 'card-b',
+      action: 'delivery_choice', mode: 'messages', state: 'accepted' }),
+    card(7500, 'feishu_card_read', { personHash: undefined, actorKey: 'unlinked-a' }),
+    card(8000, 'feishu_card_read', { personHash: undefined, actorKey: 'unlinked-b', sourceRouteId: 'app-b' }),
+    card(8500, 'feishu_card_action', { action: 'expand', state: 'rejected' }),
+    card(9000, 'feishu_card_read', { actorKind: 'agent' }), input(9500),
+  ], { start: 2000, gaps: [{ start: 2500, end: 5000 }] });
+  assert.equal(x.feishuCards.firstObservedAt, new Date(5500).toISOString());
+  assert.deepEqual(x.feishuCards.people, { verified: 1, unlinked: 2 });
+  assert.equal(x.feishuCards.byUser.length, 3, 'verified identities join across apps; unlinked app identities stay separate');
+  assert.equal(x.feishuCards.byUser[0].personHash, 'alice');
+  assert.equal(x.feishuCards.totals.readCards, 3, 'count first signals collected in the interval, not the earlier provider read time');
+  assert.equal(x.feishuCards.totals.expandClicks, 1); assert.equal(x.feishuCards.totals.expandedCards, 1);
+  assert.equal(x.feishuCards.totals.rejectedClicks, 1); assert.equal(x.feishuCards.totals.deliveryChoices.messages, 1);
+  assert.equal(x.activity.people, 1); assert.equal(x.activity.inputs, 1);
+});
+
+test('card sampling gaps qualify card counts separately from other usage metrics', () => {
+  const sampling = { started: true, incomplete: true, routes: [{ sourceRouteId: 'app', unavailable: 1 }] };
+  const x = report([input(1000), input(2000)], { feishuCardSampling: sampling });
+  assert.equal(x.quality.reliable, true); assert.equal(x.activity.multiTurn.rate, 1);
+  assert.equal(x.feishuCards.partial, true); assert.equal(x.feishuCards.sampling.scope, 'instance');
+  assert.deepEqual(x.feishuCards.sampling.routes, sampling.routes);
+  assert.equal(x.feishuCards.firstObservedAt, null); assert.equal(x.feishuCards.byUser.length, 0);
+  assert.equal(report([], { scanIncomplete: true }).feishuCards.partial, true);
+});
+
+test('card report aggregates the full window before pagination and uses the selected Session', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'usage-card-report-'));
+  try {
+    const directory = join(home, 'ledger'), samplingDirectory = join(home, 'feishu-card-reads');
+    await mkdir(samplingDirectory);
+    await writeFile(join(samplingDirectory, 'app.json'), JSON.stringify({ tracked: { checkedAt: Date.now(), pageToken: 'next' } }));
+    const store = createUsageEventStore({ directory, loadSessionOrigins: async () => ({ origins: [], errors: 0 }) });
+    const click = { event: 'feishu_card_action', actorKind: 'human', surface: 'feishu', actorKey: usageKey('actor'),
+      sourceRouteId: 'app', objectId: usageKey('card'), action: 'expand', state: 'accepted', sessionId: 'selected' };
+    await store.record([
+      { ...click, eventId: 'expand-1' }, { ...click, eventId: 'expand-2' },
+      { ...click, eventId: 'other', sessionId: 'other-session', objectId: usageKey('other-card') },
+    ], { personId: 'verified' });
+    const x = await store.query({ limit: 1, sessionId: 'selected' });
+    assert.equal(x.events.length, 1); assert.equal(x.report.feishuCards.totals.expandClicks, 2);
+    assert.equal(x.report.feishuCards.totals.expandedCards, 1);
+    assert.equal(x.report.feishuCards.byUser[0].personHash, usageKey('person:verified'));
+    assert.equal(x.report.feishuCards.sampling.scope, 'instance'); assert.equal(x.report.feishuCards.partial, true);
+    assert.deepEqual(x.report.feishuCards.sampling.routes, x.feishuCards.sampling.routes);
+    assert.equal((await store.query({ limit: 1 })).report.feishuCards.totals.expandClicks, 3);
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
+
 test('API aggregation uses all observations even when only one recent event is requested', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'usage-report-'));
   try {

@@ -11,8 +11,23 @@ UI redesign. Human-attention presentation remains a separate product discussion.
 The page answers product questions about feature use, historical revisits, automation, materials, knowledge, delegation and delivery, alongside the original four questions: who contributes, whether Feishu work
 continues in Web, how execution and explicit questions progress, and which
 published/attached artifacts receive deliberate workbench clicks. It does not
-show raw action totals, tool traffic or recent event rows. Raw records and the
+show raw event totals, tool traffic or recent event rows. Raw records and the
 existing API diagnostics remain available for engineering investigation.
+
+Feishu card reads, process expand/collapse clicks and the two delivery choices
+now appear on this same Usage analysis page, next to Feishu/Web continuation.
+`report.feishuCards` uses the report's continuous interval and Session filter,
+before raw-event pagination, and the same hashed verified Person keys as other
+observations. Card-only activity does not inflate human-input participation.
+Unlinked app identities remain separate. Read counts are first collected
+person/card signals, whose provider read time can precede this interval;
+expanded-card counts also deduplicate person/card pairs, while accepted clicks
+count each distinct callback. There is no observed unread cohort or reading
+rate. Current instance sampling health is shown separately from filtered
+behavior; gaps qualify card counts without invalidating unrelated metrics.
+The top-level `feishuCards` field keeps the original selected-window diagnostic
+summary, including events before the latest gap; the page and product analysis
+use `report.feishuCards`. See [card measurement details](../../docs/feishu-card-engagement.md).
 
 - People and active conversations require accepted human input, including
   question answers. Multi-turn exchange requires at least two ordinary inputs;
@@ -66,6 +81,8 @@ existing API diagnostics remain available for engineering investigation.
 | Web | artifact click | Same-instance asset, image and publication links. Direct external visits are not measured. |
 | File asset HTTP route | access requested | Thumbnail/inline requests may be automatic; this is not proof of a completed download. Explicit clicks have a separate event. |
 | Durable source outbox | delivered / failed / unknown / cancelled receipt | Feishu delivery is not reading. The receipt is separate from content generation. |
+| Feishu read API / subscribed single-chat read event | first collected read signal | Deduplicate each user/card pair. Provider read time may be earlier; an absent signal is unknown. |
+| Validated Feishu card callback | process expanded / collapsed, delivery mode chosen | Count accepted callbacks once; retries and rejected actions do not inflate valid clicks. Group card display is shared. |
 | Session creation / delegation | created and parent-child link | A link proves delegation, not adoption or success. Forked historical events are not recounted. |
 
 Automated requests retain actor=automation where the authoritative request

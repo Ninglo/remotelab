@@ -69,6 +69,7 @@
       journeys.unknownOrigins + " participating person/conversation pairs have an unknown origin and are excluded from cross-surface rates.");
     if (journeys.started < 10) note(path, "目前只有 " + journeys.started + " 个飞书协作样本，先观察，不据此判断使用习惯。",
       "Only " + journeys.started + " Feishu collaboration samples so far. Observe before drawing conclusions about habits.");
+    if (report.feishuCards) renderFeishuCards(report.feishuCards);
     const work = section(text("交办后的执行与等待", "Execution and waiting after handoff"));
     table(work, [text("交办关联的执行", "Executions linked to human input"), text("次数", "Count")], [
       [text("正常结束", "Ended normally"), execution.completed], [text("执行失败", "Execution failed"), execution.failed],
@@ -115,6 +116,43 @@
       activity.unidentifiedInputs + " human inputs lack a linkable identity and are excluded from people counts.");
     if (artifacts.otherOpened) note(details, "另有 " + artifacts.otherOpened + " 件产物的主动点击未关联到本期交付，不放进本期产物打开率。",
       artifacts.otherOpened + " explicitly clicked objects cannot be linked to this interval's delivery cohort and are excluded from its open rate.");
+  }
+  function renderFeishuCards(data) {
+    const root = section(text("飞书卡片有没有阅读信号，过程被展开多少次", "Feishu card read signals and process clicks"));
+    const totals = data.totals;
+    if (!data.byUser.length) note(root, "这一时段还没有卡片阅读或点击记录；这不代表用户没有看。",
+      "No card read or click observations in this interval. This does not establish that nobody viewed a card.");
+    else {
+      metrics(root, [[text("已读记录", "Observed reads"), totals.readCards],
+        [text("过程展开次数", "Process expand clicks"), totals.expandClicks],
+        [text("展开过的卡片记录", "Cards expanded per user"), totals.expandedCards],
+        [text("过程折叠次数", "Process collapse clicks"), totals.collapseClicks]]);
+      table(root, [text("用户选择的投递方式", "Delivery choice"), text("有效选择次数", "Accepted selections")], [
+        [text("卡片＋新消息", "Card and new messages"), totals.deliveryChoices.messages],
+        [text("只更新卡片", "Only update the card"), totals.deliveryChoices.card],
+        [text("恢复默认", "Restore default"), totals.deliveryChoices.default],
+      ]);
+    }
+    note(root, "飞书已读不代表认真看完。群卡片展示共享，别人展开后直接阅读不会产生本人的展开点击；没有点击不能当作不喜欢看过程。",
+      "A read signal does not establish careful reading. Group card state is shared, so viewing another person's expansion creates no personal expand click. Missing clicks do not establish a preference.");
+    if (data.partial) note(root, "卡片数据存在采集缺失或采样失败，次数可能不完整；不据此计算阅读率或推荐偏好。",
+      "Collection or sampling gaps make card counts partial. No reading rate or preference recommendation is inferred.");
+    const sampling = data.sampling, details = node("details");
+    details.appendChild(node("summary", text("查看卡片采样状态与统计口径", "Card sampling and measurement notes"))); root.appendChild(details);
+    note(details, "记录涉及 " + data.people.verified + " 位已关联用户、" + data.people.unlinked + " 个尚未关联的应用内身份；未关联身份不跨应用合并，也不加到上方交流人数。",
+      "Observations include " + data.people.verified + " linked people and " + data.people.unlinked + " unlinked app identities. Unlinked identities are not merged across apps or added to input participation counts.");
+    note(details, "已读和展开过的卡片按同一人、同一卡片去重：一张卡片被两个人看，记两条已读。展开次数保留每次有效点击，回调重试不重复计数。0 只表示没有记录到该动作。",
+      "Reads and expanded cards deduplicate each person/card pair; two readers of one card count twice. Expand clicks count accepted actions, excluding callback retries. Zero means no observed action.");
+    if (data.firstObservedAt) note(details, "本窗口首次记录到卡片行为：" + time(data.firstObservedAt) + "。旧记录未补齐，已读按本期首次采集到信号计数，实际阅读时间可能更早。",
+      "First card observation in this window: " + time(data.firstObservedAt) + ". Historical records are incomplete; reads count first collected signals and may have occurred earlier.");
+    if (totals.rejectedClicks) note(details, "另有 " + totals.rejectedClicks + " 次点击被拒绝，未计入有效点击。",
+      totals.rejectedClicks + " rejected clicks are excluded from accepted actions.");
+    if (!sampling.started) note(details, "后台采样尚无状态记录，阅读覆盖范围暂不能确认。", "No background sampling state is available; reading coverage is unknown.");
+    if (sampling.routes.length) table(details, [text("飞书来源", "Feishu source"), text("纳入采样的卡片", "Cards tracked for sampling"),
+      text("不可采集／待完成分页／错误", "Unavailable / paginating / errors"), text("最近采样", "Last checked")],
+      sampling.routes.map(row => [row.sourceRouteId, row.sampledCards, row.unavailable + " / " + row.pendingPages + " / " + row.failures, time(row.lastCheckedAt)]));
+    note(details, "这里显示整个实例当前的后台状态，不受所选会话或日期筛选。只查询机器人近七天发送且留有回执的卡片；尚未检查、过期或失败的卡片都不能判为未读。",
+      "This is current instance-wide background state, independent of the selected conversation or dates. Only receipted Bot cards sent within seven days are sampled. Unchecked, expired or failed cards are not classified as unread.");
   }
   function renderFunctions(data) {
     const usage = section(text("哪些功能正在被使用", "Which capabilities are used"));

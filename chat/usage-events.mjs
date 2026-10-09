@@ -216,13 +216,14 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
         artifacts[key] = (artifacts[key] || 0) + 1;
       }
     }
+    const feishuCardSampling = await readFeishuCardSamplingCoverage(join(directory, '..', 'feishu-card-reads'));
     return { generatedAt: new Date(now).toISOString(), collectionStartedAt: metadata?.startedAt || null,
       window: { start: new Date(start).toISOString(), end: new Date(now).toISOString(), days },
       total: events.length, byEvent, bySurface, artifacts, paths: summarizeSurfacePaths(events),
-      feishuCards: { ...summarizeFeishuCardEngagement(events), sampling: await readFeishuCardSamplingCoverage(join(directory, '..', 'feishu-card-reads')) },
+      feishuCards: { ...summarizeFeishuCardEngagement(events), sampling: feishuCardSampling },
       report: buildUsageInsights(events, { start, now, collectionStartedAt: metadata?.startedAt, gaps, scanIncomplete,
         dropped: lastIssueAt >= qualifiedStart ? dropped : 0, failures: lastIssueAt >= qualifiedStart ? failures : 0,
-        sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0, featureStartedAt }),
+        sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0, featureStartedAt, feishuCardSampling }),
       events: events.slice(-limit).reverse(), coverage: { incomplete, scanIncomplete, scanned, pending, dropped, failures, gaps, excludedCorruptLines, excludedFixtureLines,
         notes: ['仅包含采集启动后的可观测事件；不回填历史。', '飞书送达不代表已读；Web 呈现不代表理解或采纳。',
           '产物生成、网页发布、附加到回复与访问分别计数；普通文件写入不自动认定为产物。',
