@@ -4,6 +4,7 @@ const root = document.getElementById('settings-message-replies');
 const byId = id => document.getElementById(id);
 let state = null;
 let groups = [];
+let defaultMechanism = '';
 let busy = false;
 let changed = false;
 const english = () => document.documentElement.lang.startsWith('en');
@@ -34,8 +35,8 @@ function renderPreview() {
       const summary = document.createElement('summary');
       summary.textContent = copy('点击显示进展', 'Show progress');
       const body = document.createElement('p');
-      body.textContent = copy('这里显示近期进展记录。真实卡片沿用同一条消息，更新后保留手动展开选择。',
-        'Recent progress appears here. The real card updates the same message and preserves the shared disclosure choice.');
+      body.textContent = copy('更多进展记录会显示在这里。更新同一张卡片时，会保留上次展开或收起的选择。',
+        'More progress appears here. Updates to the same card preserve the last expand or collapse choice.');
       details.append(summary, body);
       item.append(details);
       const note = document.createElement('p');
@@ -47,6 +48,32 @@ function renderPreview() {
     preview.append(item);
   }
   byId('replyActivate').disabled = busy || changed || !state || !readDraft().groups.length;
+}
+
+function describeChoices(value) {
+  return copy(`首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '逐条发文字进展', card: '进展在卡片内更新' })[value.progress]}`,
+    `first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'text progress updates', card: 'progress updates in a card' })[value.progress]}`);
+}
+
+function groupLabel(group) {
+  return `${group.name} · ${copy('机器人来源', 'Bot source')}：${group.sourceRouteId}`;
+}
+
+function renderCurrent() {
+  const activeNames = state?.active?.groups.map(value => groups.find(group => group.chatId === value.chatId
+    && group.sourceRouteId === value.sourceRouteId)?.name || value.chatId) || [];
+  byId('replySettingsCurrent').removeAttribute('data-i18n');
+  byId('replySettingsCurrent').textContent = activeNames.length
+    ? copy(`以下群已使用自定义回复：${activeNames.join('、')}（${describeChoices(state.active)}）。其余群沿用默认机制。下面显示的是草案，可能与正在使用的设置不同。`,
+      `Custom replies are active for ${activeNames.join(', ')} (${describeChoices(state.active)}). Other groups use instance defaults. The draft below may differ from the active settings.`)
+    : copy('所有群沿用当前默认机制。下面是尚未应用的自定义草案。', 'All groups use current instance defaults. The custom draft below has not been applied.');
+  byId('replySettingsDefault').textContent = defaultMechanism === 'selectable_progress_card'
+    ? copy('默认更新原卡并发送文字进展。群内卡片可选择“卡片＋新消息”或“只更新卡片”；选过的会话继续沿用自己的选择。简单答复不额外生成卡片。',
+      'By default, progress updates the original card and sends text messages. The group card offers “Card + new messages” and “Card only”; each conversation keeps its existing choice. Simple answers need no extra card.')
+    : defaultMechanism === 'folded_task_card'
+      ? copy('有任务清单时，进展更新原卡，详情默认折叠、可展开；没有清单时直接给最终答复。会话已有的展开或收起选择继续有效。',
+        'With a checklist, progress updates its original card and details start collapsed. Without a checklist, send the final reply directly. Existing conversation disclosure choices remain in effect.')
+      : copy('未自定义的群沿用本实例当前默认方式，群内已有的进展选择继续有效。', 'Groups without custom settings use the current instance defaults and retain their existing progress choices.');
 }
 
 function renderState() {
@@ -63,19 +90,11 @@ function renderState() {
     input.type = 'checkbox'; input.value = String(index);
     input.checked = draft.groups.some(value => value.chatId === group.chatId && value.sourceRouteId === group.sourceRouteId);
     const name = document.createElement('span');
-    name.textContent = `${group.name} · ${group.sourceRouteId}`;
+    name.textContent = groupLabel(group);
     label.append(input, name); list.append(label);
   });
   if (!groups.length) list.textContent = copy('还没有可选择的飞书群对话记录。', 'No recorded Feishu group conversations are available.');
-  const activeNames = state?.active?.groups.map(value => groups.find(group => group.chatId === value.chatId
-    && group.sourceRouteId === value.sourceRouteId)?.name || value.chatId) || [];
-  const activeChoices = state?.active ? copy(
-    `首条文字${state.active.opening ? '开启' : '关闭'}，清单${state.active.checklist ? '开启' : '关闭'}，${({ none: '不发进展', messages: '文字进展', card: '卡片进展' })[state.active.progress]}`,
-    `opening ${state.active.opening ? 'on' : 'off'}, checklist ${state.active.checklist ? 'on' : 'off'}, progress: ${state.active.progress}`) : '';
-  byId('replySettingsCurrent').removeAttribute('data-i18n');
-  byId('replySettingsCurrent').textContent = activeNames.length
-    ? copy(`当前：新模式已用于 ${activeNames.join('、')}（${activeChoices}）。其他群继续旧模式。`, `Active: new mode for ${activeNames.join(', ')} (${activeChoices}). Other groups keep the existing mode.`)
-    : copy('当前：全部继续使用旧模式。保存草案和查看预览都不会生效。', 'Current: all groups use the existing mode. Saving and previewing a draft does not activate it.');
+  renderCurrent();
   byId('replyLegacy').disabled = busy || !state?.active;
   changed = false;
   renderPreview();
@@ -84,7 +103,7 @@ function renderState() {
 async function load() {
   try {
     const data = await fetchJsonOrRedirect('/api/message-reply-settings', { revalidate: false });
-    state = data.settings; groups = data.groups || [];
+    state = data.settings; groups = data.groups || []; defaultMechanism = data.defaultMechanism || '';
     renderState();
   } catch (error) { status(error.message); }
 }
@@ -94,9 +113,13 @@ async function mutate(action) {
   const body = { action, expectedRevision: state.revision };
   if (action === 'draft') body.draft = readDraft();
   else {
+    const selectedNames = state.draft.groups.map(value => groups.find(group => group.chatId === value.chatId
+      && group.sourceRouteId === value.sourceRouteId)?.name || value.chatId).join('、');
     const message = action === 'activate'
-      ? copy('确认在选中群的新请求中采用已保存的消息回复草案？进行中的请求保持原模式。', 'Apply the saved draft to new requests in the selected groups? Running requests keep their original mode.')
-      : copy('确认让后续新请求恢复旧模式？已接受的请求和原有卡片保留原机制。', 'Return future requests to the existing mode? Accepted requests and existing cards retain their original policy.');
+      ? copy(`将已保存的自定义回复应用到这些群吗：${selectedNames}？\n${describeChoices(state.draft)}\n\n只影响后续新工作，进行中的工作保持原样。`,
+        `Apply the saved custom replies to ${selectedNames}?\n${describeChoices(state.draft)}\n\nOnly future work changes. Running work keeps its original settings.`)
+      : copy('让后续新工作改回本实例当前默认机制吗？卡片内已有的进展选择继续有效；进行中的工作沿用原方式。',
+        'Return future work to current instance defaults? Existing card progress choices remain in effect; running work keeps its original settings.');
     if (!window.confirm(message)) return;
     body.confirm = true;
   }
@@ -108,8 +131,9 @@ async function mutate(action) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), revalidate: false });
     state = data.settings;
     renderState();
-    status(action === 'draft' ? copy('草案已保存，正在使用的模式未改变。', 'Draft saved. The active mode has not changed.')
-      : copy('切换已保存。新请求按选定模式处理。', 'Mode saved for future requests.'));
+    status(action === 'draft' ? copy('草案已保存，尚未应用。当前正在使用的方式未改变。', 'Draft saved, without applying it. Active reply settings have not changed.')
+      : action === 'activate' ? copy('自定义回复已应用到所选群，仅影响后续新工作。', 'Custom replies applied to selected groups for future work only.')
+        : copy('已改回当前默认机制，原有会话选择继续有效。', 'Returned to current instance defaults. Existing conversation choices remain in effect.'));
   } catch (error) { status(error.message); }
   finally {
     busy = false;
@@ -125,11 +149,17 @@ if (root) {
     if (!event.target.matches('input, select')) return;
     changed = true;
     renderPreview();
-    status(copy('预览已更新；请先保存草案，之后才能确认生效。', 'Preview updated. Save the draft before activating it.'));
+    status(copy('正在编辑草案，当前回复方式未改变。请先保存，再确认应用。', 'Editing the draft has not changed active replies. Save it before confirming application.'));
   });
   byId('replySaveDraft').addEventListener('click', () => void mutate('draft'));
   byId('replyActivate').addEventListener('click', () => void mutate('activate'));
   byId('replyLegacy').addEventListener('click', () => void mutate('legacy'));
-  window.addEventListener('remotelab:localechange', renderPreview);
+  window.addEventListener('remotelab:localechange', () => {
+    if (state) renderCurrent();
+    byId('replyGroups').querySelectorAll('label span').forEach((name, index) => {
+      name.textContent = groupLabel(groups[index]);
+    });
+    renderPreview();
+  });
   void load();
 }

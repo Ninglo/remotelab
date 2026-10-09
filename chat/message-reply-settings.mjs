@@ -47,7 +47,7 @@ export async function changeMessageReplySettings(input, actor) {
     else {
       if (input.confirm !== true) fail('只有明确确认后才能切换消息回复模式。');
       if (input.action === 'activate') {
-        if (!current.draft.groups.length) fail('请先选择要采用新模式的群并保存草案。');
+        if (!current.draft.groups.length) fail('请先选择要应用自定义回复的群并保存草案。');
         const known = new Set((await listMessageReplyGroups()).map(group => `${group.sourceRouteId}:${group.chatId}`));
         if (current.draft.groups.some(group => !known.has(`${group.sourceRouteId}:${group.chatId}`))) fail('选中群的来源无法核对，请重新选择。');
         next.active = { ...structuredClone(current.draft), version: 1, policyId: `reply_${next.revision}`,

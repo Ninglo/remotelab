@@ -249,9 +249,12 @@ without creating cards for old suppressed progress. Keep all coupled services
 on the same verified commit. Remove the setting to return to the current
 contract; do not restore old receipt files over newer acknowledgements.
 
-The following remains the legacy default. An explicitly confirmed, scoped
-modular mode can independently select opening text, checklists and text/card
-progress. Drafting never activates it. See [message reply mode](feishu-message-reply-mode.md).
+The instance setting above determines its current group-message default;
+the following contract applies when that setting is absent. An explicitly
+confirmed, scoped custom reply mode can independently select opening text,
+checklists and text/card progress. Settings displays the active mode separately
+from its editable draft. Drafting never activates it. Returning to instance
+defaults preserves existing conversation choices. See [message reply mode](feishu-message-reply-mode.md).
 
 Only a published acceptance checklist creates a Feishu card. Unlisted work keeps its ordinary final reply and its Web/history process, without a standalone progress card. Existing lightweight card receipts remain preserved; if their work later receives a real checklist, the known message upgrades in place. Later routine Feishu turns omit the opening; a new conversation retains its first reply with the accepted model, effort and Session link. Questions, exceptional notices and final results retain separate delivery.
 

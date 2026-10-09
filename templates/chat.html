@@ -375,39 +375,46 @@
             <section class="settings-group" id="settings-message-replies" data-settings-section>
               <header class="settings-group-header">
                 <h3 data-i18n="settings.replies.title">消息回复机制</h3>
-                <p data-i18n="settings.replies.note">独立的新配置模式。先保存草案、查看预览，明确确认后才用于选中群。</p>
+                <p data-i18n="settings.replies.note">查看正在使用的方式，或为指定群自定义回复。保存草案后，还需确认应用。</p>
               </header>
               <div class="settings-group-body">
-                <p class="settings-section-note" id="replySettingsCurrent" role="status" data-i18n="settings.replies.loading">正在读取当前模式……</p>
+                <div class="settings-section">
+                  <div class="settings-section-title" data-i18n="settings.replies.current">正在使用的方式</div>
+                  <p class="settings-section-note" id="replySettingsCurrent" role="status" data-i18n="settings.replies.loading">正在读取当前回复方式……</p>
+                  <div class="settings-section-title" data-i18n="settings.replies.default">本实例当前默认机制</div>
+                  <p class="settings-section-note" id="replySettingsDefault"></p>
+                </div>
                 <div class="settings-section reply-settings-parts">
-                  <label><input id="replyOpening" type="checkbox" checked><span data-i18n="settings.replies.opening">发送开工首条文字</span></label>
-                  <p class="settings-section-note" data-i18n="settings.replies.openingNote">处理较长的任务时，先说明理解和第一步；简短问题仍可直接给答案。</p>
-                  <label><input id="replyChecklist" type="checkbox" checked><span data-i18n="settings.replies.checklist">允许任务清单</span></label>
-                  <p class="settings-section-note" data-i18n="settings.replies.checklistNote">有需要分别验收的成果时才使用，不为简单问题凑清单。</p>
-                  <label for="replyProgress" data-i18n="settings.replies.progress">进展展示</label>
+                  <div class="settings-section-title" data-i18n="settings.replies.draft">自定义回复方式（草案）</div>
+                  <p class="settings-section-note" data-i18n="settings.replies.draftNote">下面的选项只用于编辑和预览。确认应用后，才改变所选群的后续新工作。</p>
+                  <label><input id="replyOpening" type="checkbox" checked><span data-i18n="settings.replies.opening">发送首条文字回复</span></label>
+                  <p class="settings-section-note" data-i18n="settings.replies.openingNote">收到较长任务后，先说明理解和第一步。简单问题直接回答。</p>
+                  <label><input id="replyChecklist" type="checkbox" checked><span data-i18n="settings.replies.checklist">需要时显示任务清单</span></label>
+                  <p class="settings-section-note" data-i18n="settings.replies.checklistNote">工作有多个需要分别核对的成果时才显示，简单问题不额外生成清单。</p>
+                  <label for="replyProgress" data-i18n="settings.replies.progress">进展如何发送</label>
                   <select class="settings-inline-select" id="replyProgress">
-                    <option value="none" data-i18n="settings.replies.none">不发送普通进展</option>
-                    <option value="messages" data-i18n="settings.replies.messages">发送文字消息</option>
-                    <option value="card" selected data-i18n="settings.replies.card">卡片内默认折叠，可展开</option>
+                    <option value="none" data-i18n="settings.replies.none">不发送过程进展</option>
+                    <option value="messages" data-i18n="settings.replies.messages">逐条发送文字消息</option>
+                    <option value="card" selected data-i18n="settings.replies.card">在卡片内更新（详情默认折叠）</option>
                   </select>
-                  <p class="settings-section-note" data-i18n="settings.replies.final">最终回复始终发送。必要的提问和异常说明单独送达。</p>
+                  <p class="settings-section-note" data-i18n="settings.replies.final">最终回复始终单独发送。需要你回答的问题和异常情况也会单独通知。</p>
                 </div>
                 <div class="settings-section">
-                  <div class="settings-section-title" data-i18n="settings.replies.groups">选择采用新模式的群</div>
-                  <p class="settings-section-note" data-i18n="settings.replies.scope">不自动选中任何群。确认只改变所选群的新请求展示，保留参与方式、分流及进行中的工作。</p>
+                  <div class="settings-section-title" data-i18n="settings.replies.groups">将这份草案应用到哪些群</div>
+                  <p class="settings-section-note" data-i18n="settings.replies.scope">只影响选中的群。进行中的工作、群的参与和分流方式保持原样。同一群有多个机器人来源时，可分别选择。</p>
                   <div class="reply-settings-groups" id="replyGroups"></div>
                 </div>
-                <div class="settings-app-actions">
-                  <button class="settings-app-btn" id="replySaveDraft" type="button" disabled data-i18n="settings.replies.save">保存草案，不生效</button>
-                  <button class="settings-app-btn" id="replyActivate" type="button" disabled data-i18n="settings.replies.activate">确认生效</button>
-                  <button class="settings-app-btn" id="replyLegacy" type="button" disabled data-i18n="settings.replies.legacy">恢复旧模式</button>
-                </div>
-                <p class="settings-section-note" id="replySettingsStatus" role="status" aria-live="polite"></p>
                 <div class="settings-section">
-                  <div class="settings-section-title" data-i18n="settings.replies.preview">完整消息流程预览</div>
-                  <p class="settings-section-note" data-i18n="settings.replies.previewNote">示例：核对一份报告。这里只展示所选组合，不调用模型、不向群发送测试消息。普通短答直接回复最终答案。</p>
+                  <div class="settings-section-title" data-i18n="settings.replies.preview">这份草案的完整回复示例</div>
+                  <p class="settings-section-note" data-i18n="settings.replies.previewNote">以“核对报告”为例。编辑和预览不会向群发消息；简单问题直接给最终答复。</p>
                   <div class="reply-mechanism-preview" id="replyMechanismPreview"></div>
                 </div>
+                <div class="settings-app-actions">
+                  <button class="settings-app-btn" id="replySaveDraft" type="button" disabled data-i18n="settings.replies.save">保存草案（暂不应用）</button>
+                  <button class="settings-app-btn" id="replyActivate" type="button" disabled data-i18n="settings.replies.activate">确认应用到选中群</button>
+                  <button class="settings-app-btn" id="replyLegacy" type="button" disabled data-i18n="settings.replies.legacy">改回当前默认机制</button>
+                </div>
+                <p class="settings-section-note" id="replySettingsStatus" role="status" aria-live="polite"></p>
               </div>
             </section>
 
