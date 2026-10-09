@@ -34,15 +34,16 @@ if mode != "listen" || allowed.isEmpty { emit(["error": "listen requires explici
 // Read only explicitly bound keypads. Do not seize devices or install a global key tap.
 IOHIDManagerRegisterInputValueCallback(manager, { _, _, _, value in
     let element = IOHIDValueGetElement(value)
-    guard IOHIDElementGetUsagePage(element) == 7 else { return }
+    let usagePage = IOHIDElementGetUsagePage(element)
+    guard usagePage == 7 || usagePage == 12 else { return }
     let device = IOHIDElementGetDevice(element)
     let id = identity(device)
     guard allowed.contains(id) else { return }
-    let keyId = id + ":" + String(IOHIDElementGetUsage(element))
+    let keyId = id + ":" + String(usagePage) + ":" + String(IOHIDElementGetUsage(element))
     if IOHIDValueGetIntegerValue(value) == 0 { held.remove(keyId); return }
     guard IOHIDValueGetIntegerValue(value) == 1, !held.contains(keyId) else { return }
     held.insert(keyId)
-    emit(["deviceId": id, "key": IOHIDElementGetUsage(element), "pressed": true])
+    emit(["deviceId": id, "usagePage": usagePage, "key": IOHIDElementGetUsage(element), "pressed": true])
 }, nil)
 IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
 CFRunLoopRun()

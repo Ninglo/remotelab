@@ -10,7 +10,7 @@ import { normalizeRecordingConfig, readRecordingConfig, saveRecordingConfig } fr
 import { StereoSplitter, WavWriter, wavHeader } from '../lib/recording/pcm.mjs';
 import { RecordingManager } from '../lib/recording/recorder.mjs';
 import { loadRecord, recordDir, saveRecord, recoverRecordings, recordingSummary } from '../lib/recording/store.mjs';
-import { startRecordingDaemon, controlRecording, RecordingUploadQueue } from '../lib/recording/daemon.mjs';
+import { startRecordingDaemon, controlRecording, RecordingUploadQueue, recordingInputBinding } from '../lib/recording/daemon.mjs';
 import { submitRecording } from '../lib/recording/transport.mjs';
 import { recordingServiceSpec } from '../lib/recording/service.mjs';
 
@@ -69,6 +69,25 @@ test('explicit device identities, unique lane/key bindings, and machine identity
   assert.throws(() => config({ bindings: [{ deviceId: 'keypad', key: 104, laneId: 'a' }, { deviceId: 'keypad', key: 104, laneId: 'b' }] }), /only one lane/);
   assert.doesNotMatch(recordingServiceSpec(root, { platform: 'darwin' }).body, /<string>HOME<\/string>/);
   assert.notEqual(recordingServiceSpec(root, { platform: 'linux' }).name, recordingServiceSpec(root + '2', { platform: 'linux' }).name);
+});
+
+test('Bluetooth consumer controls require their own usage page and preserve legacy keyboard bindings', async (t) => {
+  const root = await temporary(t), deviceId = 'hid:1452:556:serial:test_free3';
+  const keyboard = { deviceId, key: 547, laneId: 'a', action: 'toggle' };
+  const consumer = { deviceId, usagePage: 12, key: 547, laneId: 'b', action: 'toggle' };
+  const cfg = config({ bindings: [keyboard, consumer] });
+  await saveRecordingConfig(root, cfg);
+  assert.deepEqual((await readRecordingConfig(root)).bindings, [keyboard, consumer]);
+  const press = { deviceId, key: 547, pressed: true };
+  assert.equal(recordingInputBinding(cfg.bindings, press), cfg.bindings[0]);
+  assert.equal(recordingInputBinding(cfg.bindings, { ...press, usagePage: 7 }), cfg.bindings[0]);
+  assert.equal(recordingInputBinding([keyboard], { ...press, usagePage: 12 }), undefined);
+  assert.equal(recordingInputBinding(cfg.bindings, { ...press, usagePage: 12 }), cfg.bindings[1]);
+  assert.equal(recordingInputBinding(cfg.bindings, { ...press, usagePage: 12, pressed: false }), undefined);
+  assert.equal(recordingInputBinding(cfg.bindings, { ...press, usagePage: 12, deviceId: 'other_keypad' }), undefined);
+  assert.equal(recordingInputBinding(cfg.bindings, { ...press, usagePage: 13 }), undefined);
+  assert.throws(() => config({ bindings: [keyboard, { ...keyboard, usagePage: 7 }] }), /only one lane/);
+  assert.throws(() => config({ bindings: [{ ...consumer, usagePage: 13 }] }), /Unsupported keypad HID usage page/);
 });
 
 test('arbitrary pipe boundaries preserve per-channel PCM without mixing receivers', () => {
