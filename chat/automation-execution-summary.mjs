@@ -1,5 +1,6 @@
 const DEFAULT_TIMEZONE = 'Asia/Shanghai';
 const LIVE_STATES = new Set(['starting', 'accepted', 'admitted', 'running']);
+const dayFormatters = new Map();
 
 function activityTime(execution) {
   return execution.attemptedAt || execution.admittedAt || execution.scheduledAt || '';
@@ -8,9 +9,15 @@ function activityTime(execution) {
 export function automationDay(value, timezone = DEFAULT_TIMEZONE) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return '';
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(date);
+  let formatter = dayFormatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    if (dayFormatters.size >= 16) dayFormatters.delete(dayFormatters.keys().next().value);
+    dayFormatters.set(timezone, formatter);
+  }
+  const parts = formatter.formatToParts(date);
   const field = name => parts.find(part => part.type === name)?.value;
   return `${field('year')}-${field('month')}-${field('day')}`;
 }

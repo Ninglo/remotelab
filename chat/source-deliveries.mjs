@@ -66,26 +66,33 @@ export function buildSourceDeliveryPlan(sourceContext) {
 
 
 export async function listSourceDeliveries(options = {}) {
-  const deliveries = (await requests.active()).flatMap(record => record.deliveries);
-  return deliveries.filter(entry => ['connector', 'sourceRouteId', 'state', 'sessionId'].every(field => !options[field] || entry[field] === options[field]));
+  return requests.projectActive(records => matchingDeliveries(records, options));
+}
+
+function matchingDeliveries(records, options) {
+  return records.flatMap(record => record.deliveries).filter(entry =>
+    ['connector', 'sourceRouteId', 'state', 'sessionId'].every(field => !options[field] || entry[field] === options[field]));
 }
 
 export async function listSourceDeliveryIssues(options = {}) {
-  return (await listSourceDeliveries(options)).map(entry => deliveryIssue(entry, options.now ?? Date.now())).filter(Boolean);
+  return requests.projectActive(records => matchingDeliveries(records, options)
+    .map(entry => deliveryIssue(entry, options.now ?? Date.now())).filter(Boolean));
 }
 
 // Optional transport feedback (e.g. native typing) observes durable requests,
 // never a per-message waiter or a connector-imposed execution deadline.
 export async function listSourceDeliveryActivity(options = {}) {
-  const activity = [];
-  for (const record of await requests.active()) {
-    if (record.result || record.options.deliveryOnly || record.options.internalOperation) continue;
-    const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
-    if (!plan || ['connector', 'sourceRouteId'].some(field => options[field] && plan[field] !== options[field])) continue;
-    if (options.sessionId && record.sessionId !== options.sessionId) continue;
-    activity.push({ ...plan, sessionId: record.sessionId, requestId: record.requestId, responseId: record.responseId });
-  }
-  return activity;
+  return requests.projectActive(records => {
+    const activity = [];
+    for (const record of records) {
+      if (record.result || record.options.deliveryOnly || record.options.internalOperation) continue;
+      const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
+      if (!plan || ['connector', 'sourceRouteId'].some(field => options[field] && plan[field] !== options[field])) continue;
+      if (options.sessionId && record.sessionId !== options.sessionId) continue;
+      activity.push({ ...plan, sessionId: record.sessionId, requestId: record.requestId, responseId: record.responseId });
+    }
+    return activity;
+  });
 }
 
 function parseId(id) {

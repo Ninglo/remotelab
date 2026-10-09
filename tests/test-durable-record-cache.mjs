@@ -28,6 +28,23 @@ try {
   assert.equal((await store.get(key)).nested.state, 'original');
   assert.equal(reads, initialReads, 'unchanged records are not reread or reparsed on get/list');
 
+  const originalClone = globalThis.structuredClone;
+  let bodyCopies = 0;
+  globalThis.structuredClone = value => {
+    if (value?.body || Array.isArray(value) && value.some(item => item?.body)) bodyCopies++;
+    return originalClone(value);
+  };
+  try {
+    const projection = await store.projectActive(records => records.map(record => ({ key: record.key, nested: record.nested })));
+    assert.equal(bodyCopies, 0, 'a status projection never copies the unrelated large body');
+    projection[0].nested.state = 'projected caller mutation';
+    await assert.rejects(store.projectActive(records => { records[0].nested.state = 'selector mutation'; }), TypeError);
+    await assert.rejects(store.projectActive(records => records.pop()), TypeError);
+    assert.equal((await store.get(key)).nested.state, 'original', 'neither a projection result nor selector can mutate canonical records');
+  } finally {
+    globalThis.structuredClone = originalClone;
+  }
+
   await otherWriter.mutate(key, current => ({ ...current, nested: { state: 'external writer' } }));
   assert.equal((await store.get(key)).nested.state, 'external writer', 'another store writer invalidates cached data');
   assert(reads > initialReads);

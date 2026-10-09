@@ -1029,7 +1029,7 @@ function createSessionSummaryRef(session) {
   const projected = createSessionListItem(session);
   return {
     id: projected?.id,
-    summaryEtag: createSessionSummaryEtag(projected),
+    summaryEtag: createEtag(createJsonBody({ session: projected })),
   };
 }
 

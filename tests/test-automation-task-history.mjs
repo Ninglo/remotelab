@@ -46,6 +46,9 @@ try {
   assert.equal(summarizeAutomationExecutions(actual, { now: clock, timezone: 'UTC' }).today.completed, 1,
     'today uses the task timezone and actual attempt date, not a delayed scheduled date');
   assert.equal(automationDay('invalid'), '');
+  assert.equal(automationDay('2026-10-02T15:59:59Z', 'Asia/Shanghai'), '2026-10-02');
+  assert.equal(automationDay('2026-10-02T16:00:00Z', 'Asia/Shanghai'), '2026-10-03');
+  assert.equal(automationDay('2026-10-02T16:00:00Z', 'UTC'), '2026-10-02');
   const task = await createRecurringSchedule({ sourceSessionId: 'history-source', sessionTemplate: template,
     title: 'Task with older failures', text: 'Fixture only', cron: '0 0 1 1 *', timezone: 'UTC' });
   const ids = [], fixtureTriggers = [];

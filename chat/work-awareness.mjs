@@ -36,7 +36,10 @@ export async function projectAssociations(session, sourceContext) {
 async function mutate(sessionId, action, change) {
   let result;
   await withSessionsMetaMutation(async (stored, save) => {
-    const sessions = clone(stored);
+    // Mutations here edit workAwareness only. Keep those drafts independent,
+    // without duplicating every unrelated Session's prompts/source context.
+    const sessions = stored.map(session => ({ ...session,
+      ...(session.workAwareness ? { workAwareness: clone(session.workAwareness) } : {}) }));
     const session = sessions.find(entry => entry.id === sessionId);
     if (!session) fail('Session not found', 404);
     session.workAwareness = state(session);

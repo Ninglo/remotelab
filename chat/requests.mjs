@@ -92,7 +92,7 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
     return { record, duplicate: false };
   });
   return {
-    get, accept, active: records.active, mutate,
+    get, accept, active: records.active, projectActive: records.projectActive, mutate,
     byRequest: (sessionId, requestId) => get(requestKey(sessionId, requestId)),
     byResponse: (sessionId, responseId) => lookup('response', sessionId, responseId),
     byRunId: runId => lookup('run', '', runId),

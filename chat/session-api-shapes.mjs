@@ -9,7 +9,9 @@ function stripSessionShape(session, {
   includeQueuedMessages = false,
 } = {}) {
   if (!session || typeof session !== 'object') return null;
-  const cloned = cloneJson(session);
+  // Drop private/heavy fields before deep-copying the API shape. List readers
+  // do not need to serialize an entire task, source context or work history.
+  const cloned = { ...session };
   delete cloned.task;
   delete cloned.sourceContext;
   delete cloned.delegatedFromSessionId;
@@ -26,7 +28,7 @@ function stripSessionShape(session, {
     delete cloned.queuedMessages;
     delete cloned.deliveryIssues;
   }
-  return cloned;
+  return cloneJson(cloned);
 }
 
 export function createSessionListItem(session) {
