@@ -63,14 +63,20 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
   const persist = async () => { state.observedAt = at; if (!dryRun) await save(stateFile, state); };
   const maxAttempts = Math.min(3, Math.max(1, config.maxAttempts || 2));
   const maxConcurrent = Math.min(3, Math.max(1, config.maxConcurrent || 1));
+  const configuredConfirmations = Number(config.serviceConfirmationObservations);
+  const serviceConfirmations = Number.isFinite(configuredConfirmations)
+    ? Math.min(10, Math.max(1, Math.floor(configuredConfirmations))) : 1;
   const touch = (item, status, reason = '') => Object.assign(item, { status, reason, updatedAt: at });
   const taskById = new Map((snapshot.automations.items || []).map(t => [t.id, t]));
   const failures = snapshot.attention.filter(i => i.kind === 'automation'
     || ['disk', 'service'].includes(i.kind) && i.severity === 'critical'
       && !(config.ignoreUnits || []).includes(i.id));
+  const failingServices = new Set(failures.filter(i => i.kind === 'service').map(i => i.id || i.subject));
   for (const [id, resource] of Object.entries(state.resources)) {
     const [kind, ...parts] = id.split(':');
-    if (healthy(snapshot, { kind, id: parts.join(':') })) resource.active = false;
+    if (healthy(snapshot, { kind, id: parts.join(':') })) {
+      resource.active = false; resource.observations = 0;
+    }
   }
   for (const failure of failures) {
     const id = failure.id || failure.subject;
@@ -81,7 +87,11 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     let generation = task?.lastExecution?.runId;
     if (!generation) {
       const resource = state.resources[subjectKey] ||= { cycle: 0, active: false };
-      if (!resource.active) resource.cycle++;
+      if (!resource.active) { resource.cycle++; resource.observations = 0; }
+      if (resource.lastObservationAt !== (snapshot.generatedAt || at)) {
+        resource.observations = (resource.observations || 0) + 1;
+        resource.lastObservationAt = snapshot.generatedAt || at;
+      }
       resource.active = true; generation = String(resource.cycle);
     }
     const key = hash(`${subjectKey}:${generation}`);
@@ -159,6 +169,10 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       if (healthy(snapshot, item)) {
         item.summary = '本轮独立观测确认已恢复，无需重复补救'; item.evidence = [snapshot.generatedAt];
         touch(item, 'resolved'); continue;
+      }
+      if (item.kind === 'service' && item.status !== 'admitting'
+        && (!failingServices.has(item.id) || (state.resources[`service:${item.id}`]?.observations || 0) < serviceConfirmations)) {
+        item.reason = '等待服务持续异常核实，不启动新的补救'; continue;
       }
       if (!item.sessionId) { touch(item, 'blocked', '未配置该资源的恢复会话'); continue; }
       let attempt = item.attempts.at(-1);

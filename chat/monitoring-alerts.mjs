@@ -127,7 +127,8 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false } =
   // incident remains eligible for repair; an uncertain send is never replayed.
   let recovery;
   try { recovery = baseline ? { skipped: 'baseline' } : await processMonitoringRecovery({
-    config: { ...config.recovery, ignoreUnits: config.alertDelivery.ignoreUnits }, snapshot, dryRun }); }
+    config: { ...config.recovery, ignoreUnits: config.alertDelivery.ignoreUnits,
+      serviceConfirmationObservations: config.alertDelivery.confirmationObservations }, snapshot, dryRun }); }
   catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
   const alerts = await dispatchMonitoringAlerts({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds,
     recoveryIncidents: recovery.incidents }, snapshot, baseline, dryRun });

@@ -85,6 +85,8 @@ Use `scripts/monitoring-alerts.mjs --dry-run` against the target instance enviro
 
 When the operator authorizes recovery, extend the same observer instead of adding another timer. Observation, incident notification and repair have separate durable records. Reporting or baselining a problem does not resolve it. The Harness still diagnoses the error, chooses permitted work and verifies business results; this broker supplies incident identity, bounds, admission and receipt reconciliation.
 
+Service recovery inherits `alertDelivery.confirmationObservations`, so a brief restart cannot start a repair before the configured number of distinct failed snapshots. Counts survive observer restarts and reset after an explicit healthy observation. An unknown measurement cannot authorize a new service repair. Disk emergencies remain immediate, and already admitted work continues normal receipt reconciliation.
+
 Add an explicit instance-local configuration:
 
 ```json

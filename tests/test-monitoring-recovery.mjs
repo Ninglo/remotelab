@@ -70,6 +70,51 @@ test('one durable incident resumes the original Session with the actual fallback
   await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1, 'the unchanged original failure must not create another repair');
 });
 
+test('service recovery waits for three distinct failed observations, with durable counts', async () => {
+  const f = fixture({ kind: 'service' }); f.options.config.serviceConfirmationObservations = 3;
+  let apiCalls = 0; const request = f.options.request;
+  f.options.request = async (...args) => { apiCalls++; return request(...args); };
+  await processMonitoringRecovery(f.options);
+  await processMonitoringRecovery(f.options);
+  assert.equal(apiCalls, 0, 're-reading the same snapshot cannot confirm a second failure or query admission');
+  assert.equal(f.getState().resources['service:/'].observations, 1);
+  for (let round = 1; round <= 2; round++) {
+    f.snapshot.generatedAt = new Date(f.options.now + round * 60_000).toISOString();
+    await processMonitoringRecovery({ ...f.options, now: f.options.now + round * 60_000 });
+    assert.equal(f.getAdmissions(), round === 2 ? 1 : 0);
+  }
+  assert.equal(f.incident().status, 'running');
+});
+
+test('a brief restart resets service confirmation after independent recovery', async () => {
+  const f = fixture({ kind: 'service' }); f.options.config.serviceConfirmationObservations = 3;
+  await processMonitoringRecovery(f.options);
+  const failure = f.snapshot.attention[0];
+  f.snapshot.attention = []; f.snapshot.services = [{ unit: '/', status: 'healthy' }];
+  f.snapshot.generatedAt = new Date(f.options.now + 60_000).toISOString();
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 60_000 });
+  assert.equal(f.incident().status, 'resolved'); assert.equal(f.getAdmissions(), 0);
+  f.snapshot.attention = [failure]; f.snapshot.services = [{ unit: '/', status: 'critical' }];
+  f.snapshot.generatedAt = new Date(f.options.now + 120_000).toISOString();
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 120_000 });
+  assert.equal(f.getState().resources['service:/'].observations, 1); assert.equal(f.getAdmissions(), 0);
+});
+
+test('unknown service readings cannot admit a delayed repair, while disk emergencies stay immediate', async () => {
+  const f = fixture({ kind: 'service' }); f.options.config.serviceConfirmationObservations = 3;
+  f.session.activity.run.state = 'running';
+  for (let round = 0; round < 3; round++) {
+    f.snapshot.generatedAt = new Date(f.options.now + round * 60_000).toISOString();
+    await processMonitoringRecovery({ ...f.options, now: f.options.now + round * 60_000 });
+  }
+  f.session.activity.run.state = 'idle'; f.snapshot.attention = [];
+  f.snapshot.services = [{ unit: '/', status: 'unknown' }];
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 180_000 });
+  assert.equal(f.getAdmissions(), 0);
+  const g = fixture({ kind: 'disk' }); g.options.config.serviceConfirmationObservations = 3;
+  await processMonitoringRecovery(g.options); assert.equal(g.getAdmissions(), 1);
+});
+
 test('lost admission acknowledgement and observer restart reuse the same request identity', async () => {
   const f = fixture(); f.loseAck();
   await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'admitting');
