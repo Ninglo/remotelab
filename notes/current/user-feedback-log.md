@@ -5,6 +5,7 @@
 - Feedback: retaining old conversations does not justify repeatedly processing the entire catalog. Suggested recent-session counts are design hints, not a fixed product cutoff; choose the smallest useful work from real traffic and preserve access to older work.
 - Change: reuse projected and encoded summaries for unchanged sessions, update only invalidated IDs, and share prepared list responses across duplicate reads. Running, queued and local-device sessions remain time-sensitive. Metadata file versions detect CLI writes independently of WebSocket hints; broad membership changes and a demand-driven five-minute fallback can rebuild the catalog.
 - Incremental reader repair: honor the requested event cursor before reading files, cap incremental pages, and freeze each read boundary so concurrent appends cannot be skipped. Full conversation browsing remains an explicit read.
+- Consumer reduction: task-card workers retain event headers and fetch only new card-message bodies; bounded bootstrap pages preserve admission and final-answer fences. The status display uses the existing summary-version index after one initial catalog read, reusing cold summaries and fetching only changed IDs without adding a freshness delay.
 - Boundary: complete list browsing and per-Person organization remain available; cold history is not deleted or automatically archived. CPU and real reply delivery require separate live verification after tests and deployment.
 
 ### 2026-10-08 — Keep recording setup separate from recording analysis

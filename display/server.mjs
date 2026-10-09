@@ -10,6 +10,7 @@ import { Resvg } from '@resvg/resvg-js';
 
 import { findPerson, loadAuthDocument } from '../lib/auth-config.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
+import { createSessionSummaryReader } from '../lib/session-summary-reader.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { emptySignalStore, makeStatusSnapshot, replaceSource, selectOfficialScene, validateSourcePacket } from './status-state.mjs';
 import { remotelabStatusSource } from './remotelab-status-source.mjs';
@@ -52,6 +53,12 @@ let personalStorePromise;
 const preparedPersonal = new Map();
 const client = createRemoteLabHttpClient({
   baseUrl: process.env.REMOTELAB_CHAT_BASE_URL || 'http://127.0.0.1:7690',
+});
+const sessionSummaries = createSessionSummaryReader(async path => {
+  const result = await client.request(path);
+  if (result.response.status === 404) return null;
+  if (!result.response.ok) throw new Error(result.json?.error || 'RemoteLab sessions unavailable');
+  return result.json;
 });
 
 function trimString(value) {
@@ -347,10 +354,7 @@ async function getPersonIdentityIds(personId) {
 
 async function collectSnapshot(personId) {
   const { ids: identityIds, feishuLinked } = await personIdentityInfo(personId);
-  const result = await client.request('/api/sessions');
-  if (!result.response.ok || !Array.isArray(result.json?.sessions)) {
-    throw new Error(result.json?.error || result.text || 'RemoteLab sessions unavailable');
-  }
+  const sessions = await sessionSummaries.read();
   const now = Date.now();
   const cutoff = now - 24 * 60 * 60 * 1000;
   let running = 0;
@@ -360,7 +364,7 @@ async function collectSnapshot(personId) {
   const pendingResults = [];
   let deliveryIssues = 0;
   const active = [];
-  for (const session of result.json.sessions) {
+  for (const session of sessions) {
     if (!identityIds.has(trimString(session?.initiatedByIdentityId))) continue;
     const run = session?.activity?.run || {};
     const queueCount = Number(session?.activity?.queue?.count || 0);
@@ -397,7 +401,7 @@ async function collectSnapshot(personId) {
   }
   pendingResults.sort((a, b) => b.assistantAt - a.assistantAt);
   return { running, waiting, queued, pendingReview, pendingResults: pendingResults.slice(0, 3).map(({ name, context }) => ({ name, context })), deliveryIssues, active,
-    feishu: summarizeFeishuSessions(result.json.sessions, identityIds, feishuLinked, now),
+    feishu: summarizeFeishuSessions(sessions, identityIds, feishuLinked, now),
     observedAt: new Date().toISOString() };
 }
 

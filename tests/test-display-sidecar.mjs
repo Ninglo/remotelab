@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -88,10 +89,11 @@ const api = createServer((req, res) => {
     res.end();
     return;
   }
-  if (req.url === '/api/sessions') {
+  if (req.url === '/api/sessions' || req.url === '/api/sessions?view=refs'
+      || /^\/api\/sessions\/[^/]+\?view=summary$/.test(req.url)) {
     if (sessionsUnavailable) { res.writeHead(503); res.end('sessions unavailable'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ sessions: [
+    const sessions = [
       {
         name: 'Display A session',
         initiatedByIdentityId: 'identity_display_a',
@@ -126,7 +128,12 @@ const api = createServer((req, res) => {
         deliveryIssueCount: 0,
         ...overrides,
       })),
-    ] }));
+    ].map(session => ({ ...session, id: session.name }));
+    const payload = req.url === '/api/sessions' ? { sessions }
+      : req.url.endsWith('?view=refs') ? { sessionRefs: sessions.map(session => ({ id: session.id,
+        summaryEtag: `"${createHash('sha1').update(JSON.stringify({ session })).digest('hex')}"` })) }
+        : { session: sessions.find(session => session.id === decodeURIComponent(req.url.split('/')[3].split('?')[0])) };
+    res.end(JSON.stringify(payload));
     return;
   }
   if (req.url === '/api/automation-tasks') {
