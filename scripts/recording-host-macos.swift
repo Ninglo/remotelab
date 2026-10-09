@@ -247,9 +247,13 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func adoptDaemon(_ pid: Int32) {
         if daemonPID == pid { return }
+        // A recorder opened independently after the launched app exited is attached,
+        // not owned by this panel. Closing the panel must leave it running.
+        if ownsDaemon && service?.isRunning != true { ownsDaemon = false }
         daemonObserver?.cancel(); daemonPID = pid
         let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
         source.setEventHandler {
+            guard self.daemonPID == pid else { return }
             self.daemonPID = nil; self.serviceError = "录音服务已停止，原音保留在本机"; self.render()
             if self.quitWhenStopped { NSApp.reply(toApplicationShouldTerminate: true) }
         }
@@ -278,7 +282,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let verified = settings.mode != "panel" || (candidate != nil && candidate! > 0 && kill(candidate!, 0) == 0 && ((!verifyService && candidate == daemonPID) || probeService()))
             DispatchQueue.main.async {
                 self.lastSnapshot = value; self.readError = verified ? nil : "录音服务尚未就绪，请重新打开窗口"
-                if self.settings.mode == "panel", verified, let pid = candidate { self.adoptDaemon(pid) }
+                if self.settings.mode == "panel", verified, let pid = candidate {
+                    // A verified live socket supersedes a previous exit/launch error.
+                    self.serviceError = nil
+                    self.adoptDaemon(pid)
+                }
                 self.render()
             }
         } catch {
