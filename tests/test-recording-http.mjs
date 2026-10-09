@@ -142,6 +142,7 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
         connector: 'feishu', sourceRouteId: 'recording-publish-test',
       } })).json.claim;
       assert.equal(claimed.delivery.kind, 'attachment'); assert.equal(claimed.delivery.sessionId, published.sessionId);
+      assert.match(claimed.delivery.attachment.originalName, /^测试自动发群-.*\.wav$/);
       sentFiles++;
       await client.request(`/api/source-deliveries/${claimed.delivery.id}/complete`, { method: 'POST', body: {
         leaseId: claimed.leaseId, externalId: 'om_original_file', messageId: 'om_original_file', threadId: 'omt_original_file',
