@@ -134,8 +134,9 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
   await saveRecord(spool, published);
   const third = new WavWriter(join(recordDir(spool, published.id), '00000.wav')); await third.start(); await third.append(Buffer.from([42, 0])); await third.finish();
   let lostPublication = true, sentFiles = 0;
-  const publisher = { ...client, request: async (path, options) => {
-    const result = await client.request(path, options);
+  const captureClient = createRemoteLabHttpClient({ baseUrl: client.baseUrl, authToken: 'c'.repeat(64) });
+  const publisher = { ...captureClient, request: async (path, options) => {
+    const result = await captureClient.request(path, options);
     if (path !== '/api/source-deliveries' || options?.method !== 'POST') return result;
     if (result.json?.delivery?.state !== 'delivered') {
       const claimed = (await client.request('/api/source-deliveries/claim', { method: 'POST', body: {
