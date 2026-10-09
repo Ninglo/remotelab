@@ -27,7 +27,7 @@ export async function handleMessageReplySettings({ req, res, pathname, parsedUrl
       if (Object.keys(input).some(key => !['runId', 'enabled', 'expectedRevision', 'confirm'].includes(key))) {
         throw new Error('未知的开工严格检查操作。');
       }
-      const actor = await currentRunActor(input.runId || parsedUrl?.searchParams.get('runId'), authSession, req.method === 'POST');
+      const actor = await currentRunActor(input.runId || parsedUrl?.query?.runId, authSession, req.method === 'POST');
       const settings = req.method === 'GET' ? await loadPersonMessageReplies(actor)
         : await changePersonMessageReplies({ action: 'strict-start', enabled: input.enabled,
           expectedRevision: input.expectedRevision, confirm: input.confirm }, actor);

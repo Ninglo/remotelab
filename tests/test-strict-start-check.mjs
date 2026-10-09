@@ -3,6 +3,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { parse as parseUrl } from 'node:url';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const home = await mkdtemp(join(tmpdir(), 'remotelab-strict-start-'));
@@ -30,7 +31,7 @@ try {
     options: { viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId, usageSurface: 'web' } })).record;
   const path = '/api/message-reply-settings/current-run';
   async function call(url, body, authSession = { authKind: 'service' }) {
-    const parsedUrl = new URL(url, 'http://test');
+    const parsedUrl = parseUrl(url, true);
     const req = Readable.from(body ? [Buffer.from(JSON.stringify(body))] : []);
     req.method = body ? 'POST' : 'GET';
     let result;
@@ -42,6 +43,8 @@ try {
     const result = await call(url, options?.body);
     return { response: { ok: result.status === 200 }, json: result.json };
   } };
+  assert.equal((await call(path)).status, 403);
+  assert.equal((await call(`${path}?runId=${record.runId}&runId=run_unknown`)).status, 403);
   let output = '';
   const io = { runId: record.runId, client, stdout: { write: value => { output = value; } } };
   await runMessageReplyCommand(['strict-start', 'on', '--json'], io);
