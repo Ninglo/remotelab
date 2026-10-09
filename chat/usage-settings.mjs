@@ -45,7 +45,7 @@ export const personSettingValues = preferences => ({
   'person.session_filter': preferences.defaultSessionPersonFilter || 'all',
   'person.mobile_input': preferences.mobileInputMode || 'text',
   'person.voice_shortcut': toggle(preferences.voiceShortcut?.enabled),
-  ...(preferences.messageReplies ? replySettingValues(preferences.messageReplies.active, 3) : {}),
+  ...replySettingValues(preferences.messageReplies?.active, 3),
 });
 
 export function replySettingValues(choices, version = 2) {

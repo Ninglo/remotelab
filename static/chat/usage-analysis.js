@@ -136,6 +136,9 @@
       "Browser choices are observed separately for each signed-in Person/browser pair; personal, group and instance settings retain their respective scopes. Last observations are not active-user counts or a complete device inventory. Settings are instance-wide, independent of the conversation filter; changes use this page's observed interval.");
     note(root, "初次记录和重复保存不算切换。改回先前值需要同一作用范围内的连续变更；开启、关闭或改回不能单独证明功能好坏，还要结合后续使用与本人反馈。",
       "Initial observations and repeated saves are not changes. Returning to an earlier value requires a continuous sequence in the same scope. Choices alone do not establish usability; compare later use and direct feedback.");
+    if (data.rows.some(row => row.setting.startsWith('reply.') && row.scope === 'group')) note(root,
+      "消息回复的个人设置独立统计；群范围记录来自旧版兼容配置，不转成任何人的个人选择。",
+      "Personal reply choices are counted independently. Group-scoped rows retain legacy configuration and do not establish anyone's personal choice.");
     if (data.partial) note(root, "设置记录存在采集缺失，当前分布或变更次数可能不完整。", "Setting observations are partial; distributions or change counts may be incomplete.");
     const details = node('details'); details.appendChild(node('summary', text('查看草案、预览与采集起点', 'Drafts, previews and collection start'))); root.appendChild(details);
     if (data.startedAt) note(details, "设置采集从 " + time(data.startedAt) + " 开始；已有设置只记录现状，不补成过去的使用或选择次数。",

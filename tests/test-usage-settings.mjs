@@ -83,6 +83,8 @@ test('reply drafts, actual group activation, no-op saves and restoring defaults 
   await writeFile(CHAT_SESSIONS_FILE, JSON.stringify(groups.map((group, n) => ({ id: 'group-' + n,
     conversation: { connector: 'feishu', sourceRouteId: group.sourceRouteId, target: { chatType: 'group', chatId: group.chatId } } }))));
   await collectSettingBaseline();
+  assert.equal(Object.values((await settingObserver.snapshot()).rows).some(row => row.stage === 'draft'), false,
+    'an unsaved legacy template is not reported as a saved draft');
   let settings = await loadMessageReplySettings();
   const draft = { opening: false, checklist: false, progress: 'card_all', groups: [groups[0]] };
   const legacyRows = replySettingRows({ ...settings, active: { ...draft, progress: 'messages' } }, groups);

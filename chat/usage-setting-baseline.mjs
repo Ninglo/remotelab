@@ -18,7 +18,8 @@ export function collectSettingBaseline() {
       loadMessageReplySettings(), listMessageReplyGroups(), listPeopleForClient()]);
     errors += sources.filter(result => result.status === 'rejected').length;
     if (sources[0].status === 'fulfilled') rows.push(...settingRows(instanceSettingValues(sources[0].value), { scope: 'instance', scopeId: 'instance' }));
-    if (sources[1].status === 'fulfilled' && sources[2].status === 'fulfilled') rows.push(...replySettingRows(sources[1].value, sources[2].value));
+    if (sources[1].status === 'fulfilled' && sources[2].status === 'fulfilled') rows.push(...replySettingRows(sources[1].value, sources[2].value)
+      .filter(row => row.stage !== 'draft' || sources[1].value.revision > 0));
     if (sources[3].status === 'fulfilled') {
       const people = sources[3].value;
       for (const person of people) rows.push(...settingRows(personSettingValues(person.preferences || {}), {

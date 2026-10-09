@@ -25,6 +25,8 @@ await writeFile(join(config, 'auth-sessions.json'), JSON.stringify({
   beta: { expiry: Date.now() + 3600000, role: 'owner', personId: beta.personId },
 }));
 await writeFile(join(config, 'tools.json'), '[]');
+await writeFile(join(config, 'message-reply-settings.json'), JSON.stringify({ version: 1, revision: 1,
+  draft: { opening: true, checklist: true, progress: 'messages', groups: [] }, active: null, audit: [] }));
 await writeFile(join(config, 'chat-sessions.json'), JSON.stringify([{ id: 'config-fixture', name: 'Configuration fixture', folder: home,
   conversation: { connector: 'feishu', sourceRouteId: 'fixture', target: { chatType: 'group', chatId: 'oc_fixture' } } }]));
 const reservation = createServer();
@@ -97,22 +99,24 @@ try {
   assert.equal((await request('PATCH', '/api/voice-review/settings', { enabled: true, reviewMode: 'model' })).status, 200);
   assert.equal((await request('PATCH', '/api/people/' + personId, { mobileInputMode: 'voice' })).status, 200);
   let reply = (await request('GET', '/api/message-reply-settings')).json;
-  const drafted = await request('POST', '/api/message-reply-settings', { action: 'draft', expectedRevision: reply.settings.revision,
-    draft: { opening: false, checklist: false, progress: 'card_latest', groups: reply.groups.map(({ sourceRouteId, chatId }) => ({ sourceRouteId, chatId })) } });
-  assert.equal(drafted.status, 200, JSON.stringify(drafted.json)); reply = drafted.json;
-  assert.equal((await report()).settings.rows.find(row => row.setting === 'reply.mode' && row.stage === 'applied').changes, 0);
+  const personalMode = x => x.settings.rows.find(row => row.setting === 'reply.mode' && row.scope === 'person');
+  assert.equal((await request('POST', '/api/message-reply-settings', { action: 'apply', expectedRevision: reply.settings.revision,
+    choices: { opening: false, checklist: false, progress: 'card_latest' } })).status, 400);
+  assert.equal(personalMode(await report()).changes, 0);
   for (let i = 0; i < 2; i++) {
-    const saved = await request('POST', '/api/message-reply-settings', { action: 'activate', expectedRevision: reply.settings.revision, confirm: true });
+    const saved = await request('POST', '/api/message-reply-settings', { action: 'apply', expectedRevision: reply.settings.revision, confirm: true,
+      choices: { opening: false, checklist: false, progress: 'card_latest' } });
     assert.equal(saved.status, 200); reply = saved.json;
   }
-  const applied = (await report()).settings.rows.find(row => row.setting === 'reply.mode' && row.stage === 'applied');
-  assert.equal(applied.changes, 1); assert.equal(applied.configurations, 1);
-  const restored = await request('POST', '/api/message-reply-settings', { action: 'legacy', expectedRevision: reply.settings.revision, confirm: true });
+  const applied = personalMode(await report());
+  assert.equal(applied.changes, 1); assert.equal(applied.configurations, 2);
+  const restored = await request('POST', '/api/message-reply-settings', { action: 'reset', expectedRevision: reply.settings.revision, confirm: true });
   assert.equal(restored.status, 200);
   x = await report();
   for (const setting of ['instance.auto_archive', 'voice.review', 'person.mobile_input'])
     assert.equal(x.settings.rows.find(row => row.setting === setting).changes, 1, 'successful HTTP save is observed: ' + setting);
-  assert.equal(x.settings.rows.find(row => row.setting === 'reply.mode' && row.stage === 'applied').restoredDefaults, 1);
+  assert.equal(personalMode(x).restoredDefaults, 1);
+  assert.equal(x.settings.rows.find(row => row.setting === 'reply.mode' && row.scope === 'group').changes, 0);
   await context.addCookies([{ name: 'session_token', value: 'beta', url: base }]);
   reload = settingResponse(null, null, 'snapshot'); await page.reload(); await reload;
   x = await report();
@@ -148,7 +152,8 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ status: 'passed', server: 'isolated', initialSnapshots: true, choicesAndReversals: true,
     repeatAndReloadDedup: true, failedLocalStorageExcluded: true, separatePeople: true,
-    serverSettingHTTP: true, draftsAndActivation: true, unifiedUI: true, sessionFilterScope: true,
+    serverSettingHTTP: true, savedLegacyDraft: true, personalReplyChoices: true, separatePersonalAndGroupRows: true,
+    unifiedUI: true, sessionFilterScope: true,
     localeAndEmptyPartial: true, mobileNoOverflow: true, noProductionWrites: true }));
 } finally {
   await browser?.close();

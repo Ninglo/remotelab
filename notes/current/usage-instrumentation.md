@@ -17,12 +17,14 @@ Last observations are neither active-user counts nor a complete device inventory
 
 | Settings | Scope and successful recording boundary |
 | --- | --- |
-| Message reply opening, checklist and progress mode | Saved draft is instance-scoped and separate from confirmed group application. Groups removed from the active range return to inherited defaults. Version 1 text-only progress remains distinct from version 2 card plus messages. |
+| Message reply opening, checklist and progress mode | The current Settings page saves the verified Person's choice for Web and Feishu. Personal saves and resets count independently; defaults establish a baseline. Old group configuration and actually saved legacy drafts remain separately scoped, without assigning them to a Person. Version 1 text-only progress remains distinct from version 2/3 card plus messages. |
 | Workbench theme, default process disclosure, UI language | Authenticated browser reports only after local storage readback confirms persistence. One random locally stored browser ID per browser, combined with the verified Person, identifies a configuration; no device fingerprint is collected. |
 | Automatic archive and archive hours | Instance-scoped, after server persistence. |
 | Voice review enabled, mode and style; default Session filter, mobile input mode and voice shortcut enabled | Person-scoped, after persistence. The changed subject and verified saving actor remain distinct. |
 | Secondary display theme | Preview selection and accepted application remain separate. Existing private theme logs seed the latest known state for verified People without inventing historical choice counts. Application is a preview-service receipt, not physical-screen verification. |
 
+See [personal reply settings](feishu-message-reply-mode.md) for current application
+scope and compatibility. An unsaved legacy draft template is not a saved draft.
 Existing authoritative configurations and first browser visits establish a
 baseline. Initial observations, unchanged saves, repeated activation and refreshes
 do not count as choices. An earlier-value return requires a continuous known
