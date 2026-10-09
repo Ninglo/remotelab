@@ -1,8 +1,9 @@
 // A personal Harness policy, separate from display and transport routing.
 // Admission freezes the flag with the accepted reply policy; no extra model,
 // group permission, auto-dispatch or shared project binding is introduced.
-export function strictStartCheckPrompt(policy) {
-  if (policy?.scope !== 'person' || policy.strictStartCheck !== true) return '';
+export function strictStartCheckPrompt(policy, { resetDisabled = false } = {}) {
+  if (policy?.scope !== 'person' || policy.strictStartCheck !== true) return resetDisabled
+    ? 'Strict work-start check is OFF for this accepted work. Any earlier enabled trial belongs to its earlier work/requester; do not inherit it from Session history. Use the ordinary Harness workflow and current authorization. This does not undo completed actions or remove normal source verification.' : '';
   return [
     'The requester has enabled 开工严格检查 (strict work-start check) for their new work. This is a personal opt-in policy for the current Harness, separate from reply visibility.',
     'Before starting substantive work, creating a work topic or changing the goal, complete these checks using the current input and fresh source evidence. Simple questions, explicit continuations and answers to pending questions need only the checks relevant to their change; do not restart the whole audit.',

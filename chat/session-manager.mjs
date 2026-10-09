@@ -1495,8 +1495,11 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   ));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
-  const startCheck = strictStartCheckPrompt(options.messageReplyPolicy);
-  if (startCheck) slots.push(createModelContextSlot('strict_start_check', '开工严格检查 (personal trial)', startCheck));
+  const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;
+  const startCheck = strictStartCheckPrompt(options.messageReplyPolicy, { resetDisabled: options.messageReplyPolicy?.scope === 'person'
+    || Boolean(options.viewPersonId && options.initiatedByIdentityId) });
+  if (startCheck) slots.push(createModelContextSlot('strict_start_check',
+    strictStartEnabled ? '开工严格检查 (personal trial)' : 'Personal work-start mode', startCheck));
   return slots.filter(Boolean);
 }
 

@@ -97,6 +97,11 @@ try {
   const offPrompt = await buildPrompt('strict-session', { id: 'strict-session', systemPrompt: '', codexThreadId: 'existing-thread' },
     '继续', 'codex', 'codex', null, { messageReplyPolicy: off });
   assert.doesNotMatch(offPrompt, /开工严格检查 \(personal trial\)/);
+  assert.match(offPrompt, /Strict work-start check is OFF/);
+  const bobPrompt = await buildPrompt('strict-session', { id: 'strict-session', systemPrompt: '', codexThreadId: 'existing-thread' },
+    '另一位成员开始新的工作', 'codex', 'codex', null, { viewPersonId: 'person_bob', initiatedByIdentityId: 'web_bob' });
+  assert.doesNotMatch(bobPrompt, /开工严格检查 \(personal trial\)/);
+  assert.match(bobPrompt, /do not inherit it from Session history/);
   await requests.mutate(record.key, r => ({ ...r, result: { state: 'completed' } }));
   assert.equal((await call(path, { ...payload, expectedRevision: JSON.parse(output).settings.revision })).status, 403);
   const analytics = JSON.parse(await readFile(join(home, '.config/remotelab/usage-settings/current.json'), 'utf8'));
