@@ -123,5 +123,41 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
   const delivery = (await client.request('/api/source-deliveries?connector=feishu&sourceRouteId=recording-test-route')).json.deliveries.find((d) => d.runId === bound.runId && d.kind === 'content');
   assert.ok(delivery, 'Completed analysis must retain the lane-bound delivery');
   assert.equal(delivery.target.chatId, 'recording-test-chat'); assert.equal(delivery.target.threadId, 'recording-thread');
+  // Native recording uploads use the same durable outbox as Harness replies.
+  // The provider's first original-file receipt binds the new topic, even if
+  // the collector loses that enqueue response and retries it later.
+  const published = { ...record, id: 'rec_' + 'c'.repeat(32), label: '测试自动发群', status: 'pending',
+    destination: { publishAudio: true, conversation: { connector: 'feishu', sourceRouteId: 'recording-publish-test',
+      target: { chatId: 'publication-test-chat', chatType: 'group', chatMode: 'topic' } } },
+    segments: [{ filename: '00000.wav' }] };
+  for (const field of ['sessionId', 'requestId', 'runId', 'submittedAt']) delete published[field];
+  await saveRecord(spool, published);
+  const third = new WavWriter(join(recordDir(spool, published.id), '00000.wav')); await third.start(); await third.append(Buffer.from([42, 0])); await third.finish();
+  let lostPublication = true, sentFiles = 0;
+  const publisher = { ...client, request: async (path, options) => {
+    const result = await client.request(path, options);
+    if (path !== '/api/source-deliveries' || options?.method !== 'POST') return result;
+    if (result.json?.delivery?.state !== 'delivered') {
+      const claimed = (await client.request('/api/source-deliveries/claim', { method: 'POST', body: {
+        connector: 'feishu', sourceRouteId: 'recording-publish-test',
+      } })).json.claim;
+      assert.equal(claimed.delivery.kind, 'attachment'); assert.equal(claimed.delivery.sessionId, published.sessionId);
+      sentFiles++;
+      await client.request(`/api/source-deliveries/${claimed.delivery.id}/complete`, { method: 'POST', body: {
+        leaseId: claimed.leaseId, externalId: 'om_original_file', messageId: 'om_original_file', threadId: 'omt_original_file',
+      } });
+    }
+    if (lostPublication) { lostPublication = false; throw Error('Outbox reply lost after delivery'); }
+    return client.request(path, options);
+  } };
+  await assert.rejects(submitRecording(spool, published, { config, client: publisher }), /Outbox reply lost/);
+  const resumed = await loadRecord(spool, published.id);
+  await submitRecording(spool, resumed, { config, client: publisher });
+  assert.equal(sentFiles, 1); assert.equal(resumed.audioConversation.target.messageId, 'om_original_file');
+  const publishedRun = await terminalRun(client, ws, resumed.runId); assert.equal(publishedRun.state, 'completed', output);
+  const groupResult = (await client.request('/api/source-deliveries?connector=feishu&sourceRouteId=recording-publish-test')).json.deliveries.find(part => part.runId === resumed.runId && part.kind === 'content');
+  assert.equal(groupResult.target.rootId, 'om_original_file'); assert.equal(groupResult.target.threadId, 'omt_original_file');
+  const publishedAsset = (await client.request(`/api/assets/${resumed.segments[0].assetId}`)).json.asset;
+  assert.match(publishedAsset.originalName, /^测试自动发群-/);
   assert.equal(delivery.state, 'pending', 'No real Connector sends are performed in this test');
 });

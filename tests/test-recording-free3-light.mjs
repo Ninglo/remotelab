@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Free3RecordingLight, selectFree3Port, free3UsbPackets } from '../lib/recording/free3-light.mjs';
+import { Free3RecordingLight, selectFree3Port, free3UsbPackets, free3LightCommand } from '../lib/recording/free3-light.mjs';
+
+test('mode-specific light packets retain the same selected bank on start and stop', async () => {
+  const writes = [];
+  const light = new Free3RecordingLight({ laneId: 'a', key: 1, shift: 'P',
+    getStatus: async () => ({ active: [{ laneId: 'a', state: 'recording' }] }),
+    send: async command => writes.push(command) });
+  await light.refresh(); await light.close();
+  assert.deepEqual(writes.map(command => command.s), ['P', 'P']);
+  assert.deepEqual(writes.map(command => command.v.enable), [true, false]);
+  assert.throws(() => free3LightCommand(1, true, 'invalid'), /shift/);
+});
 
 test('indicator follows saved PCM state; stops and an unresponsive recorder clear it', async () => {
   let active = [], fail = false;

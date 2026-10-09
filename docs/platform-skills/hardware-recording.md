@@ -63,6 +63,38 @@ The component requires Node.js 18.15 or newer (for disk-space checks) and FFmpeg
 - Optional `session.tool` chooses an installed Harness; otherwise the service selects an available one. A lane may specify `sessionId`, or `conversation` in the canonical [conversation target format](../external-message-protocol.md). Default is a fresh Session for each recording. Conversation and Session targets are mutually exclusive. Use this instance's auth and base URL; cross-instance credential provisioning is outside this capability.
 - Capture and delivery are separate choices. Set `submissionMode: "local"` to keep keypad/UI recording available while saving audio only on this machine. This stops all upload/Session requests, including pending retries from earlier recordings. New and recovered recordings retain their local-only choice as `held`; switching the config back to the default `"automatic"` does not replay them. There is no automatic release of held recordings. Keep the setup Session out of the delivery bindings when the user already has a dedicated recording-analysis workflow; discover its actual upload entry and conversation before preparing delivery. A request to prepare that route does not authorize sending test recordings to a real group.
 
+### Original audio and analysis in one Feishu topic
+
+> 固化已获授权的单键录音上传：保持已核实的设备、单路采音和按键绑定，为后续新录音配置已有录音群。启用该 lane 的 `publishAudio: true`，使用本实例已登记的 Feishu conversation 与 sourceRouteId，不复制 Bot 凭据到采集机。先验证带测试标记的一条新录音：原音在群中可下载、分析回到同一话题、重试不重复发群。保留所有原音与历史 held 记录，不补发旧录音；保存最终配置、服务入口、回执及暂停方法。
+
+This is opt-in: `publishAudio: true` requires the lane's explicit Feishu
+`conversation` and `target.chatId`. Use a group-only target for a fresh topic
+per recording. The collector uploads WAV assets, queues them through the
+existing instance Connector outbox, and waits for confirmed file delivery
+before admitting analysis. The first file receipt supplies the Session's
+topic anchor; remaining segments and the final analysis use that topic.
+Bot self-message filtering remains intact: an uploaded Bot file does not
+pretend to be a human inbound event. Analysis enters through the recording
+API using a stable request ID.
+
+The saved manifest retains the original publication request, asset IDs,
+delivery ID and confirmed topic, so lost HTTP replies reuse them. Unknown
+provider delivery stays unresolved and must be inspected rather than sent
+again with a new identity. Old local/held recordings are not released.
+WAV filenames include the lane label; use a clearly marked test label for
+acceptance and restore the ordinary label afterward. Optional
+`session.systemPrompt` supplies the authorized recording-analysis workflow;
+test instructions should exclude project/day-report/task changes.
+
+On an analysis instance already configured for Doubao voice input,
+`scripts/recording-transcribe-doubao.mjs --file ORIGINAL.wav --output-dir SOURCE_DIR`
+is the reusable server-side transcription entry. It reads existing instance
+credentials, accepts the recorder's mono 16 kHz PCM16 WAV, and saves
+`transcript.raw.txt` plus `remote-response.json` without changing the original.
+Use it from the recording-analysis workflow on the analysis server; do not
+install a local model or copy those credentials to the capture Mac. Its help
+does not require configured credentials. Keep every segment's raw response.
+
 After preparing a config file, the AI uses `configure --file PATH`, `enable`, and `install --apply`, then reads `status`. `install` without `--apply` previews the launchd/systemd user service. On Linux, a usable user systemd manager is required; for service-less environments use `serve` under an existing process supervisor. macOS uses a user LaunchAgent, so logout stops capture. `uninstall --apply` stops/removes the service and preserves the recordings. Stop a manually supervised `serve` process with SIGTERM before changing bindings or disabling the config.
 
 ## What the service preserves
@@ -109,7 +141,7 @@ The window watches atomic status changes locally; it has no model call or networ
 
 The standalone helper needs explicit `--root`, `--lane`, `--key`, `--serial` and `--serial-module` paths. It uses the installed vendor `serialport` package rather than adding a mandatory RemoteLab dependency; on macOS, run it with the vendor Electron executable and `ELECTRON_RUN_AS_NODE=1`. `--probe` reads model/firmware without changing lights. Selection requires USB VID/PID `4c4a:4155` and the supplied serial; an unrelated serial device is never used. The helper refuses a different model or an occupied serial port.
 
-The inspected HanLinYue editor 1.3.3 sends `{o:"set",k:1,m:"light",v:{enable:true,rgb:"255,0,0",bri:70}}` over its 460800-baud USB serial interface. Long JSON commands use its 64-byte segmented framing. This establishes a software control path; firmware acceptance and visible steady light still require the actual keypad. USB write success is reported separately from physical confirmation. Bluetooth-only light control, setting durability and firmware behavior on cable loss remain unverified.
+The inspected HanLinYue editor 1.3.3 sends `{o:"set",k:1,m:"light",v:{enable:true,rgb:"255,0,0",bri:70}}` over its 460800-baud USB serial interface. Its newer Web editor also adds `s: "P"`, `"M"` or `"R"` for Free3's selected settings bank. Inspect the actual physical switch and use the matching optional `--shift` for both on and off; do not change key mappings or other banks to test lighting. Long JSON commands use its 64-byte segmented framing. This establishes a software control path; firmware acceptance and visible steady light still require the actual keypad. USB write success is reported separately from physical confirmation. Bluetooth-only light control, setting durability and firmware behavior on cable loss remain unverified.
 
 The helper reads the existing recorder's local control socket, watches recording state changes, and checks service health once per second. `starting`, stopped, unreadable state and an unresponsive recorder select light off; only the selected lane's live `recording` state selects red. It serializes light writes and clears the selected light on normal exit. A broken USB link cannot receive a clear command: keep the data cable connected, observe disconnect behavior during acceptance, and use the recording window as the authoritative fallback until that behavior is verified. The helper never starts/stops audio, changes keypad bindings or uploads files. It is opt-in and is not installed as a login service automatically.
 

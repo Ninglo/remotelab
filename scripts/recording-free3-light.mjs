@@ -10,7 +10,7 @@ const args = process.argv.slice(2), options = {};
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--help') {
     console.log('Optional Free3 recording light (does not record):\n'
-      + '  --root PATH --lane ID --key 1|2|3 --serial USB_SERIAL --serial-module PATH\n'
+      + '  --root PATH --lane ID --key 1|2|3 --serial USB_SERIAL --serial-module PATH [--shift P|M|R]\n'
       + '  --probe  Read model/firmware only; leave lights unchanged\n'
       + 'Use the vendor Electron executable with ELECTRON_RUN_AS_NODE=1 when loading its bundled serialport.\n'
       + 'The USB data cable must remain connected. Bluetooth-only control is not verified.');
@@ -18,7 +18,7 @@ for (let i = 0; i < args.length; i++) {
   }
   if (args[i] === '--probe') { options.probe = true; continue; }
   const name = args[i].slice(2);
-  if (!['root', 'lane', 'key', 'serial', 'serial-module'].includes(name) || !args[i + 1] || args[i + 1].startsWith('--')) throw Error(`Invalid option ${args[i]}`);
+  if (!['root', 'lane', 'key', 'serial', 'serial-module', 'shift'].includes(name) || !args[i + 1] || args[i + 1].startsWith('--')) throw Error(`Invalid option ${args[i]}`);
   options[name] = args[++i];
 }
 for (const name of ['root', 'lane', 'key', 'serial', 'serial-module']) if (!options[name]) throw Error(`Missing --${name}`);
@@ -102,7 +102,7 @@ try {
     await call('close');
   } else {
     let sequence = 1;
-    light = new Free3RecordingLight({ laneId: options.lane, key, getStatus: liveStatus,
+    light = new Free3RecordingLight({ laneId: options.lane, key, shift: options.shift, getStatus: liveStatus,
       send: async (command) => {
         const packets = free3UsbPackets(command, sequence); sequence = sequence % 9 + 1;
         for (const packet of packets) { await call('write', packet); await call('drain'); }

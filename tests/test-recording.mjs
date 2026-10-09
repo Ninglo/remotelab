@@ -272,6 +272,52 @@ test('accepted-but-lost replies retry the same request and reuse finalized asset
   const saved = await loadRecord(root, record.id); assert.equal(saved.status, 'submitted'); assert.equal(saved.analysisState, 'accepted');
 });
 
+test('Feishu original-audio publication is opt-in, anchors analysis, and survives a lost admission reply', async (t) => {
+  const root = await temporary(t);
+  const conversation = { connector: 'feishu', sourceRouteId: 'test-bot', target: { chatId: 'oc_test', chatType: 'group', chatMode: 'topic' } };
+  const cfg = config({ lanes: [{ id: 'a', receiverId: 'rx1', channel: 0, conversation, publishAudio: true }], session: { systemPrompt: 'Only analyze test content' } });
+  assert.equal(cfg.lanes[0].publishAudio, true); assert.match(cfg.session.systemPrompt, /test/);
+  assert.throws(() => config({ lanes: [{ id: 'a', receiverId: 'rx1', channel: 0, publishAudio: true }] }), /explicit Feishu/);
+  const record = await pendingRecord(root, { label: '测试', session: { folder: '~', tool: 'fake-codex', systemPrompt: cfg.session.systemPrompt },
+    destination: { conversation, publishAudio: true }, segments: [{ filename: '00000.wav', assetId: 'ready_audio', ready: true }] });
+  let lost = true, publications = 0, submitted = 0, created = 0;
+  const anchored = { ...conversation, target: { ...conversation.target, rootId: 'om_audio', messageId: 'om_audio', threadId: 'omt_audio', replyInThread: true } };
+  const client = { request: async (route, options = {}) => {
+    let json;
+    if (route === '/api/sessions') { created++; assert.equal(options.body.systemPrompt, cfg.session.systemPrompt); json = { session: { id: 'test_session' } }; }
+    else if (route === '/api/assets/ready_audio') json = { asset: { status: 'ready' } };
+    else if (route === '/api/source-deliveries') {
+      publications++; assert.equal(options.body.responseId, `recording-audio:${record.machineId}:${record.id}`);
+      assert.equal(options.body.sourceDelivery.target.chatId, 'oc_test'); assert.equal(options.body.attachments[0].assetId, 'ready_audio');
+      json = { delivery: { id: 'test_outbox', state: 'delivered' } };
+    } else if (route === '/api/sessions/test_session') json = { session: { conversation: anchored } };
+    else if (route.endsWith('/messages')) {
+      submitted++; assert.equal(publications, 1); assert.equal(options.body.sourceContext.feishuMessageId, 'om_audio');
+      if (lost) { lost = false; throw Error('Accepted analysis reply lost'); }
+      json = { duplicate: true, run: { id: 'test_run' } };
+    } else throw Error('Unexpected route ' + route);
+    return { response: { ok: true }, json };
+  } };
+  await assert.rejects(submitRecording(root, record, { config: cfg, client }), /reply lost/);
+  await submitRecording(root, await loadRecord(root, record.id), { config: cfg, client });
+  assert.equal(publications, 1); assert.equal(created, 1); assert.equal(submitted, 2);
+  assert.equal((await loadRecord(root, record.id)).status, 'submitted');
+});
+
+test('unknown original-audio delivery preserves the same outbox entry and does not start analysis', async (t) => {
+  const root = await temporary(t), conversation = { connector: 'feishu', target: { chatId: 'oc_test' } };
+  const record = await pendingRecord(root, { sessionId: 'test_session', destination: { conversation, publishAudio: true },
+    segments: [{ filename: '00000.wav', assetId: 'ready_audio', ready: true }] });
+  const attempts = [];
+  const client = { request: async (route, options = {}) => {
+    if (route === '/api/assets/ready_audio') return { response: { ok: true }, json: { asset: { status: 'ready' } } };
+    if (route === '/api/source-deliveries') { attempts.push(options.body); return { response: { ok: true }, json: { delivery: { id: 'same_outbox', state: 'unknown' } } }; }
+    assert.fail('Unknown file delivery must not start analysis: ' + route);
+  } };
+  for (let i = 0; i < 2; i++) await assert.rejects(submitRecording(root, await loadRecord(root, record.id), { config: config(), client }), /outbox before retrying/);
+  assert.deepEqual(attempts[0], attempts[1]); assert.equal((await loadRecord(root, record.id)).status, 'pending');
+});
+
 test('service shutdown aborts an in-flight upload without losing its pending manifest', async (t) => {
   const root = await temporary(t), record = await pendingRecord(root);
   let started;
