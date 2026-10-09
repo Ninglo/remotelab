@@ -66,10 +66,12 @@ try {
   saved = JSON.parse(await readFile(join(root, 'meeting-observer', '123456789000.json')));
   assert.equal(saved.captureStatus, 'ended_with_saved_events');
   assert.equal(saved.transcript.length, 1); finisher.stop();
-  const denied = create(async args => { calls.push(args); return { code: 121003, msg: 'no permission' }; });
+  const denied = create(async args => { calls.push(args); return { code: 120002, msg: 'Enable AI Summary', error: { log_id: 'fixture-log-id' } }; });
   await denied.handle(start, envelope('123456789002')); await denied.idle();
   saved = JSON.parse(await readFile(join(root, 'meeting-observer', '123456789002.json')));
   assert.equal(saved.captureStatus, 'join_or_access_denied');
+  assert.equal(saved.lastError.code, 120002);
+  assert.equal(saved.lastError.logId, 'fixture-log-id');
   assert.equal(saved.joinVerifiedAt, undefined); denied.stop();
   await writeFile(join(root, 'meeting-observer-policy.json'), JSON.stringify({ ...p, appId: 'other-app' }));
   const wrongApp = create(request); assert.equal(await wrongApp.restore(), false);

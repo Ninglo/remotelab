@@ -40,4 +40,25 @@ assert.equal(result.code, 0);
 assert(sdkCalls.some(call => call.url.includes('/auth/') && call.method?.toUpperCase() === 'POST'),
   JSON.stringify(sdkCalls.map(({ url, method }) => ({ url, method }))));
 assert(sdkCalls.every(call => call.timeout <= 30000 && call.signal instanceof AbortSignal));
+
+// Real SDK failure path: preserve actionable provider errors, without logging
+// Axios request objects containing tenant credentials.
+const logs = [];
+const forbidden = createFeishuHttpInstance({ request: async () => {
+  throw Object.assign(new Error('Axios request failed'), { code: 'ERR_BAD_REQUEST',
+    config: { headers: { Authorization: 'Bearer private-fixture-token' } },
+    response: { status: 403, data: { code: 120002, msg: 'Enable AI Summary',
+      error: { log_id: 'fixture-log-id' } } }, request: { secret: 'private-fixture-token' } });
+} });
+const failedClient = new Lark.Client({ appId: 'fixture-app', appSecret: 'fixture-secret',
+  httpInstance: forbidden, logger: { error: value => logs.push(value), warn() {}, info() {}, debug() {}, trace() {} } });
+await assert.rejects(failedClient.request({ url: '/open-apis/vc/v1/bots/join', method: 'POST' },
+  Lark.withTenantToken('private-fixture-token')), error => {
+  assert.equal(error.code, 120002); assert.equal(error.httpStatus, 403);
+  assert.equal(error.logId, 'fixture-log-id'); assert.match(error.message, /Enable AI Summary/);
+  assert.equal(error.response.status, 403); assert.equal(error.response.data.code, 120002);
+  assert.equal(error.config, undefined); assert.equal(error.request, undefined); return true;
+});
+assert(logs.length > 0);
+assert(!JSON.stringify(logs).includes('private-fixture-token'));
 console.log('PASS: bounded Feishu request/verb transport and real SDK token acquisition with mocked network');

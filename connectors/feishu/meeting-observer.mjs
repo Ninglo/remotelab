@@ -56,6 +56,7 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
     if (response?.code !== 0) {
       const error = new Error(`Feishu API ${response?.code ?? 'invalid response'}: ${response?.msg || ''}`);
       error.code = response?.code;
+      error.logId = response?.error?.log_id || response?.log_id;
       throw error;
     }
     return response.data || {};
@@ -131,7 +132,9 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
         again = !state.captureStatus;
         wait = data.has_more ? 0 : 2000;
       } catch (error) {
-        state.lastError = { message: error.message, code: error.code ?? null, at: new Date(now()).toISOString() };
+        state.lastError = { message: error.message, code: error.code ?? null,
+          ...(error.httpStatus ? { httpStatus: error.httpStatus } : {}),
+          ...(error.logId ? { logId: error.logId } : {}), at: new Date(now()).toISOString() };
         state.readErrors = (state.readErrors || 0) + 1;
         // Post-end denial cannot erase already captured text. A failed join is
         // recorded as a failure, not silently retried or reported as attendance.
