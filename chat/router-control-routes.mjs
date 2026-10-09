@@ -344,7 +344,7 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
-  if (await handleMessageReplySettings({ req, res, pathname, authSession, writeJson })) return true;
+  if (await handleMessageReplySettings({ req, res, pathname, parsedUrl, authSession, writeJson })) return true;
   if (pathname === '/api/automation/resources' && req.method === 'GET') {
     writeJson(res, 200, { resources: await getAutomationResourceSnapshot() });
     return true;

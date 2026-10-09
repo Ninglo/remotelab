@@ -10,7 +10,8 @@ export function replyProgressUsesCard(policy) {
 
 export function validateReplyDraft(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups'].includes(key))
+      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups', 'strictStartCheck'].includes(key))
+      || value.strictStartCheck !== undefined && typeof value.strictStartCheck !== 'boolean'
       || typeof value.opening !== 'boolean' || typeof value.checklist !== 'boolean'
       || !['none', 'messages', 'card_latest', 'card_all', 'card'].includes(value.progress) || !Array.isArray(value.groups)
       || value.groups.length > 64) throw new Error('消息回复配置无效。');
@@ -21,6 +22,7 @@ export function validateReplyDraft(value) {
     return { sourceRouteId: group.sourceRouteId, chatId: group.chatId };
   });
   return { opening: value.opening, checklist: value.checklist, progress: value.progress,
+    ...(value.strictStartCheck !== undefined ? { strictStartCheck: value.strictStartCheck } : {}),
     groups: [...new Map(groups.map(group => [`${group.sourceRouteId}:${group.chatId}`, group])).values()] };
 }
 
@@ -28,6 +30,9 @@ export function buildReplyPreview(draft, locale = 'zh') {
   const value = validateReplyDraft(draft);
   const en = locale.startsWith('en');
   const steps = [];
+  if (value.strictStartCheck) steps.push({ kind: 'start_check', title: en ? 'Strict work-start check' : '开工严格检查',
+    text: en ? 'Check ownership, the existing mechanism and related work before starting. Decide work placement, reply destination and display separately.'
+      : '先核对事项归属、现行机制和相关工作，再决定接续还是另开；回复位置与清单、进展展示分别判断。' });
   if (value.opening) steps.push({ kind: 'opening', title: en ? 'First reply · text' : '首条回复 · 文字',
     text: en ? 'I will check the report against its sources and identify the items that need correction.'
       : '我先对照原始资料检查这份报告，找出需要更正的内容。' });

@@ -110,6 +110,28 @@ try {
   }
   const applied = personalMode(await report());
   assert.equal(applied.changes, 1); assert.equal(applied.configurations, 2);
+  await page.goto(base + '/?tab=settings#settings-message-replies', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelector('#replySettingsCurrent').textContent.includes('已生效'));
+  assert.equal(await page.locator('#replyStrictStartCheck').isChecked(), false);
+  const replySave = () => page.waitForResponse(response => new URL(response.url()).pathname === '/api/message-reply-settings'
+    && response.request().method() === 'POST').then(async response => {
+      assert.equal(response.status(), 200); return response.json();
+    });
+  await page.locator('#replyStrictStartCheck').check();
+  let savedReply = replySave();
+  await page.locator('#replyActivate').click();
+  reply = await savedReply;
+  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: true });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#replyStrictStartCheck').checked);
+  await mkdir('/tmp/remotelab-settings-browser', { recursive: true });
+  await page.locator('#settings-message-replies').screenshot({ path: '/tmp/remotelab-settings-browser/strict-start-check.png' });
+  await page.locator('#replyStrictStartCheck').uncheck();
+  savedReply = replySave();
+  await page.locator('#replyActivate').click();
+  reply = await savedReply;
+  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: false });
+  await page.goto(base + '/?tab=tasks&monitor=usage', { waitUntil: 'domcontentloaded' });
   const restored = await request('POST', '/api/message-reply-settings', { action: 'reset', expectedRevision: reply.settings.revision, confirm: true });
   assert.equal(restored.status, 200);
   x = await report();

@@ -1,5 +1,6 @@
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
+import { strictStartCheckPrompt } from './strict-start-check.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
 import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink } from './group-routing.mjs';
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
@@ -1494,6 +1495,11 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   ));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
+  const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;
+  const startCheck = strictStartCheckPrompt(options.messageReplyPolicy, { resetDisabled: options.messageReplyPolicy?.scope === 'person'
+    || Boolean(options.viewPersonId && options.initiatedByIdentityId) });
+  if (startCheck) slots.push(createModelContextSlot('strict_start_check',
+    strictStartEnabled ? '开工严格检查 (personal trial)' : 'Personal work-start mode', startCheck));
   return slots.filter(Boolean);
 }
 
