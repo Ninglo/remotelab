@@ -244,6 +244,7 @@ assert.deepEqual(context.sortProjectGroupsByLatestActivity(attentionGroups).map(
 
 function createElement() {
   return {
+    dataset: {},
     className: '',
     innerHTML: '',
     children: [],

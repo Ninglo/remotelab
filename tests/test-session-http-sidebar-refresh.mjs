@@ -78,6 +78,7 @@ function createContext() {
     JSON,
     renderCalls,
     fetchCalls,
+    catalogCalls: 0,
     navigator: {},
     Notification: function Notification() {},
     atob(value) {
@@ -174,7 +175,7 @@ function createContext() {
       context.sessions.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
     },
     refreshAppCatalog() {},
-    refreshSessionCatalog() {},
+    refreshSessionCatalog() { context.catalogCalls += 1; },
     renderSessionList() {
       renderCalls.push(context.sessions.map((session) => session.id));
     },
@@ -230,6 +231,11 @@ assert.equal(context.renderCalls.length, 1, 'sidebar refresh should rerender the
 assert.equal(context.sessions[0].id, 'sidebar-target', 'sidebar refresh should allow updated sessions to move to the top');
 assert.equal(context.sessions[0].name, 'Fresh sidebar name', 'sidebar refresh should replace stale session metadata');
 assert.equal(context.sessions[0].status, 'running', 'sidebar refresh should expose the refreshed status immediately');
+assert.equal(context.catalogCalls, 0, 'background run activity must not rebuild source/person filter counts');
+context.upsertSession({ ...context.sessions[0], initiatedByIdentityId: 'different-person' });
+assert.equal(context.catalogCalls, 1, 'ownership changes must refresh person filter counts');
+context.upsertSession({ ...context.sessions[0], sourceId: 'feishu' });
+assert.equal(context.catalogCalls, 2, 'source changes must refresh origin filter counts');
 
 const freshContext = createContext();
 vm.runInNewContext(sessionHttpSource, freshContext, { filename: 'static/chat/session-http.js' });

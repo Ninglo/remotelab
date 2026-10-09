@@ -586,6 +586,7 @@ function createActiveSessionItem(session) {
   const displayStatusInfo = getSessionRowStatusInfo(session);
   const completeRead = isSessionCompleteAndReviewed(session);
   const div = document.createElement("div");
+  div.dataset.sessionId = session.id;
   div.className =
     "session-item"
     + (session.pinned ? " pinned" : "")

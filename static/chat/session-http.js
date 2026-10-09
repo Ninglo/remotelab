@@ -945,7 +945,13 @@ function upsertSession(session) {
     }
     sortSessionsInPlace();
   }
-  refreshSessionCatalog();
+  // Run output changes neither ownership nor source-filter counts. Avoid
+  // rebuilding every filter option for every background invalidation.
+  if (!previous || ["archived", "internalRole", "groupFeed", "initiatedByIdentityId"]
+    .some((key) => previous[key] !== normalized[key])
+    || getEffectiveSessionSourceId(previous) !== getEffectiveSessionSourceId(normalized)) {
+    refreshSessionCatalog();
+  }
   return typeof getChatStoreSession === "function"
     ? getChatStoreSession(session.id)
     : normalized;
@@ -1563,9 +1569,14 @@ async function refreshSidebarSession(sessionId, { forceFresh = false } = {}) {
   }
   const request = (async () => {
     try {
+      const previous = findClientSessionRecord(sessionId);
       const session = await fetchSessionSidebar(sessionId, { forceFresh });
       if (session) {
-        renderSessionList();
+        if (typeof queueSessionSidebarUpdate === "function") {
+          queueSessionSidebarUpdate(session, previous);
+        } else {
+          renderSessionList();
+        }
       }
       return session;
     } catch (error) {

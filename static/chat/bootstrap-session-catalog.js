@@ -320,6 +320,9 @@ function getSessionPersonId(session) {
     ? session.initiatedByIdentityId.trim()
     : "";
   if (!identityId) return PERSON_FILTER_UNASSIGNED_VALUE;
+  if (typeof getPersonIdForSessionIdentity === "function") {
+    return getPersonIdForSessionIdentity(identityId) || PERSON_FILTER_UNASSIGNED_VALUE;
+  }
   const person = getPeopleDirectory().find((entry) => entry.identities.some(
     (identity) => identity.id === identityId,
   ));

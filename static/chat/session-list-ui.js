@@ -5,6 +5,106 @@ function t(key, vars) {
 
 let activeSessionRename = null;
 let sessionListRenderDepth = 0;
+let sessionSidebarRenderRevision = 0;
+let sessionSidebarUpdateFrame = null;
+const pendingSessionSidebarUpdates = new Map();
+
+function queueSessionSidebarUpdate(session, previous) {
+  const pending = pendingSessionSidebarUpdates.get(session.id);
+  pendingSessionSidebarUpdates.set(session.id, {
+    session,
+    previous: pending ? pending.previous : previous,
+  });
+  if (sessionSidebarUpdateFrame !== null) return;
+  sessionSidebarUpdateFrame = requestAnimationFrame(flushSessionSidebarUpdates);
+}
+
+function flushSessionSidebarUpdates() {
+  sessionSidebarUpdateFrame = null;
+  const updates = [...pendingSessionSidebarUpdates.values()];
+  pendingSessionSidebarUpdates.clear();
+  const revision = sessionSidebarRenderRevision;
+  sessionListRenderDepth += 1;
+  try {
+    for (const { session, previous } of updates) {
+      updateSessionSidebarRow(session, previous);
+      // A structural change rebuilt the list from the latest store, including
+      // the other updates in this frame.
+      if (revision !== sessionSidebarRenderRevision) return;
+    }
+    if (updates.length) {
+      reorderSessionSidebarGroups();
+      renderSessionSpaceSwitcher();
+    }
+  } finally {
+    sessionListRenderDepth -= 1;
+    refocusActiveSessionRenameInput();
+  }
+}
+
+function reconcileSessionSidebarOrder(parent, orderedIds) {
+  const rows = new Map([...parent.children].map((row) => [row.dataset.sessionId, row]));
+  let cursor = parent.firstElementChild;
+  for (const id of orderedIds) {
+    const row = rows.get(id);
+    if (!row) continue;
+    if (row !== cursor) parent.insertBefore(row, cursor);
+    cursor = row.nextElementSibling;
+  }
+}
+
+function updateSessionSidebarRow(session, previous) {
+  if (session.groupFeed && previous?.groupFeed
+    && getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE) return;
+  if (!previous || session.groupFeed || previous.groupFeed
+    || session.archived !== previous.archived) {
+    renderSessionList();
+    return;
+  }
+  const row = sessionList.querySelector(`.session-item[data-session-id="${CSS.escape(session.id)}"]`);
+  const visible = session.pinned ? getVisiblePinnedSessions() : getVisibleActiveSessions();
+  const next = visible.find((entry) => entry.id === session.id);
+  if (!row && !next) return;
+  if (!row || !next || session.pinned !== previous.pinned
+    || getSessionGroupInfo(session).key !== getSessionGroupInfo(previous).key) {
+    renderSessionList();
+    return;
+  }
+  if (getComparableSessionStateSignature(session) === getComparableSessionStateSignature(previous)) return;
+  if (activeSessionRename?.sessionId === session.id) return;
+  const parent = row.parentNode;
+  // Suppress blur-as-commit while restoring a rename editor on this row.
+  sessionListRenderDepth += 1;
+  try {
+    row.replaceWith(createActiveSessionItem(next));
+  } finally {
+    sessionListRenderDepth -= 1;
+  }
+  const groupKey = getSessionGroupInfo(next).key;
+  reconcileSessionSidebarOrder(parent, visible
+    .filter((entry) => next.pinned || getSessionGroupInfo(entry).key === groupKey)
+    .map((entry) => entry.id));
+  refocusActiveSessionRenameInput();
+}
+
+function reorderSessionSidebarGroups() {
+  const groups = new Map();
+  for (const session of getVisibleActiveSessions()) {
+    const info = getSessionGroupInfo(session);
+    if (!groups.has(info.key)) groups.set(info.key, { ...info, sessions: [] });
+    groups.get(info.key).sessions.push(session);
+  }
+  const nodes = new Map([...sessionList.children]
+    .filter((node) => node.classList.contains("folder-group"))
+    .map((node) => [node.dataset.groupKey, node]));
+  let cursor = [...nodes.values()][0] || null;
+  for (const group of sortProjectGroupsByLatestActivity([...groups.values()])) {
+    const node = nodes.get(group.key);
+    if (!node) continue;
+    if (node !== cursor) sessionList.insertBefore(node, cursor);
+    cursor = node.nextElementSibling;
+  }
+}
 
 function getProjectGroupSessionSortTime(session) {
   if (typeof getSessionSortTime === "function") {
@@ -108,6 +208,8 @@ function renderSessionSpaceSwitcher() {
 }
 
 function renderSessionList() {
+  sessionSidebarRenderRevision += 1;
+  pendingSessionSidebarUpdates.clear();
   sessionListRenderDepth += 1;
   try {
     sessionList.innerHTML = "";
@@ -223,6 +325,7 @@ function renderProjectsView(visibleSessions) {
     const folderSessions = groupEntry.sessions;
     const group = document.createElement("div");
     group.className = "folder-group";
+    group.dataset.groupKey = groupKey;
 
     const header = document.createElement("div");
     header.className =

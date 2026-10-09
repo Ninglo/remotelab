@@ -60,6 +60,7 @@ function normalizeBootstrapPeople(raw) {
 }
 
 let peopleDirectory = normalizeBootstrapPeople(pageBootstrap.people);
+let identityPersonIndex = null;
 const bootstrapPersonFilterDefault = peopleDirectory.find(
   (person) => person.id === bootstrapAuthInfo?.person?.id,
 )?.preferences?.defaultSessionPersonFilter === "mine"
@@ -75,8 +76,21 @@ function getPeopleDirectory() {
   }));
 }
 
+function getPersonIdForSessionIdentity(identityId) {
+  if (!identityPersonIndex) {
+    identityPersonIndex = new Map();
+    for (const person of peopleDirectory) {
+      for (const identity of person.identities) {
+        if (!identityPersonIndex.has(identity.id)) identityPersonIndex.set(identity.id, person.id);
+      }
+    }
+  }
+  return identityPersonIndex.get(identityId) || "";
+}
+
 function replacePeopleDirectory(raw) {
   peopleDirectory = normalizeBootstrapPeople(raw);
+  identityPersonIndex = null;
   window.remotelabRefreshQuickLinks?.();
   return getPeopleDirectory();
 }
