@@ -90,15 +90,18 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
       }
       if (state.captureStatus) return;
       try {
-        if (!state.joinAttempted && !state.endedAt) {
+        if ((!state.joinAttempted || state.retryJoinAfterRejection) && !state.endedAt) {
           // Persist before the visible write. After a crash or ambiguous response
           // recovery only tries a read, never repeats the join.
           state.joinAttempted = true;
+          state.retryJoinAfterRejection = false;
+          state.joinAttempts = (state.joinAttempts || 0) + 1;
           state.joinRequestedAt = new Date(now()).toISOString();
           await save(state);
           const data = await api({ method: 'POST', url: '/open-apis/vc/v1/bots/join',
             data: { join_identify: { meeting_no: state.meetingNo }, join_type: 1 } });
           state.joinReceipt = data;
+          state.waitingForHostSettings = false;
           if (str(data.meeting?.id) && data.meeting.id !== id) {
             state.captureStatus = 'join_meeting_id_mismatch';
             await save(state); return;
@@ -136,9 +139,18 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
           ...(error.httpStatus ? { httpStatus: error.httpStatus } : {}),
           ...(error.logId ? { logId: error.logId } : {}), at: new Date(now()).toISOString() };
         state.readErrors = (state.readErrors || 0) + 1;
+        if (error.code === 120002) state.hostSettingsWaitStartedAt ||= state.lastError.at;
         // Post-end denial cannot erase already captured text. A failed join is
         // recorded as a failure, not silently retried or reported as attendance.
         if (state.endedAt) state.captureStatus = 'ended_last_read_failed';
+        else if (!state.joinReceipt && !state.joinVerifiedAt && error.code === 120002
+          && state.joinAttempts < 30 && now() - Date.parse(state.hostSettingsWaitStartedAt) < 60000) {
+          // A definite provider rejection accepted no join. The host may enable
+          // AI Summary after starting the meeting; wait at most one minute.
+          // Ambiguous/network failures never allow a repeated join.
+          state.retryJoinAfterRejection = true;
+          state.waitingForHostSettings = true;
+        }
         else if (!state.joinReceipt && !state.joinVerifiedAt && error.code != null) state.captureStatus = 'join_or_access_denied';
         else if (state.readErrors >= 5) state.captureStatus = 'read_failed';
         await save(state);

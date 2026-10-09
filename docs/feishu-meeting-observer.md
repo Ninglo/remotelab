@@ -33,13 +33,20 @@ Private `meeting-observer-policy.json` in the Connector storage directory:
 
 Discovery records and selected meeting events are saved privately under
 `meeting-observer/<meeting_id>.json`. Join intentions are durable before the API
-write; an ambiguous result or restart never repeats the visible join. Successful
+write; an ambiguous result never repeats the visible join, including after restart. Successful
 event reads establish admission separately from a join request. Reads use a
 durable page cursor and de-duplicate event IDs, saving speaker fields, timestamps
 and original transcript items. Polling exists only while a permitted test is
 active and drains available pages immediately, then checks every two seconds.
 Expiry, end events or repeated failures stop collection without ending the human
 meeting. A post-end API denial preserves all text already captured.
+
+Feishu can reject entry with `120002` until the host enables AI Summary and allows
+agents in the meeting's Security settings. Only this definite rejection permits
+another join attempt: every two seconds, at most thirty attempts and sixty seconds,
+within the authorized target window. Other rejections and ambiguous responses
+stop or resume reads without repeating the join. Provider error codes, HTTP status
+and diagnostic log IDs are retained without authenticated SDK request objects.
 
 Required Bot scopes: `vc:meeting.all_meeting:readonly` for discovery and
 `vc:meeting.bot.join:write` for native attendance and event reads. Check current

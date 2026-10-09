@@ -66,13 +66,37 @@ try {
   saved = JSON.parse(await readFile(join(root, 'meeting-observer', '123456789000.json')));
   assert.equal(saved.captureStatus, 'ended_with_saved_events');
   assert.equal(saved.transcript.length, 1); finisher.stop();
-  const denied = create(async args => { calls.push(args); return { code: 120002, msg: 'Enable AI Summary', error: { log_id: 'fixture-log-id' } }; });
+  const denied = create(async args => { calls.push(args); return { code: 121003, msg: 'no permission', error: { log_id: 'fixture-log-id' } }; });
   await denied.handle(start, envelope('123456789002')); await denied.idle();
   saved = JSON.parse(await readFile(join(root, 'meeting-observer', '123456789002.json')));
   assert.equal(saved.captureStatus, 'join_or_access_denied');
-  assert.equal(saved.lastError.code, 120002);
+  assert.equal(saved.lastError.code, 121003);
   assert.equal(saved.lastError.logId, 'fixture-log-id');
   assert.equal(saved.joinVerifiedAt, undefined); denied.stop();
+  let settingsEnabled = false;
+  const waiting = create(async args => {
+    if (!settingsEnabled) return { code: 120002, msg: 'Enable AI Summary' };
+    return args.method === 'POST' ? { code: 0, data: { meeting: { id: '123456789004' } } }
+      : { code: 0, data: { events: [transcript], has_more: false } };
+  });
+  await waiting.handle(start, envelope('123456789004')); await waiting.idle();
+  saved = JSON.parse(await readFile(join(root, 'meeting-observer', '123456789004.json')));
+  assert.equal(saved.retryJoinAfterRejection, true); assert.equal(saved.captureStatus, undefined);
+  settingsEnabled = true;
+  for (const [key, task] of [...tasks]) { tasks.delete(key); task.fn(); }
+  await waiting.idle();
+  saved = JSON.parse(await readFile(join(root, 'meeting-observer', '123456789004.json')));
+  assert.equal(saved.joinAttempts, 2); assert.ok(saved.joinVerifiedAt);
+  assert.equal(saved.transcript.length, 1); waiting.stop();
+  const exhausted = create(async () => ({ code: 120002, msg: 'Enable AI Summary' }));
+  await exhausted.handle(start, envelope('123456789005')); await exhausted.idle();
+  for (let i = 0; i < 29; i++) {
+    for (const [key, task] of [...tasks]) { tasks.delete(key); assert.equal(task.ms, 2000); task.fn(); }
+    await exhausted.idle();
+  }
+  saved = JSON.parse(await readFile(join(root, 'meeting-observer', '123456789005.json')));
+  assert.equal(saved.joinAttempts, 30); assert.equal(saved.captureStatus, 'join_or_access_denied');
+  assert.equal(tasks.size, 0); exhausted.stop();
   await writeFile(join(root, 'meeting-observer-policy.json'), JSON.stringify({ ...p, appId: 'other-app' }));
   const wrongApp = create(request); assert.equal(await wrongApp.restore(), false);
   console.log('feishu meeting observer: tenant and target boundaries, join deduplication, restart, pagination, transcript retention and failure evidence passed');
