@@ -11,8 +11,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
 
-function randomPort() {
-  return 34000 + Math.floor(Math.random() * 10000);
+async function availablePort() {
+  const reservation = http.createServer();
+  await new Promise((resolve, reject) => { reservation.once('error', reject); reservation.listen(0, '127.0.0.1', resolve); });
+  const port = reservation.address().port;
+  await new Promise((resolve, reject) => reservation.close(error => error ? reject(error) : resolve()));
+  return port;
 }
 
 function sleep(ms) {
@@ -151,14 +155,23 @@ async function startServer({ home, port }) {
   child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
   child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
-  await waitFor(async () => {
-    try {
-      const res = await request(port, 'GET', '/api/auth/me');
-      return res.status === 200;
-    } catch {
-      return false;
-    }
-  }, 'server startup');
+  try {
+    await new Promise((resolve, reject) => {
+      const finish = error => {
+        clearTimeout(deadline);
+        child.stdout.off('data', onOutput); child.off('exit', onExit); child.off('error', onError);
+        if (error) reject(new Error(`${error}\nstdout:\n${stdout.slice(-4000)}\nstderr:\n${stderr.slice(-4000)}`));
+        else resolve();
+      };
+      const onOutput = () => { if (stdout.includes('Chat server listening')) finish(); };
+      const onExit = (code, signal) => finish(`Server exited before readiness: ${code ?? signal}`);
+      const onError = error => finish(`Server spawn failed: ${error.message}`);
+      const deadline = setTimeout(() => finish('Server readiness deadline exceeded'), 10000);
+      child.stdout.on('data', onOutput); child.once('exit', onExit); child.once('error', onError);
+    });
+    const res = await request(port, 'GET', '/api/auth/me');
+    assert.equal(res.status, 200, `Ready fixture server must accept its own cookie\n${stdout}\n${stderr}`);
+  } catch (error) { await stopServer({ child }); throw error; }
 
   return {
     child,
@@ -213,7 +226,7 @@ async function getEvents(port, sessionId) {
 
 async function main() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   let server = await startServer({ home, port });
 
   try {
