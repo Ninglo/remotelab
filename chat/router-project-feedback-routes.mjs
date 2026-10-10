@@ -1,6 +1,7 @@
 import { readBody } from '../lib/utils.mjs';
 import { getCachedAuthDocument, loadAuthDocument, findPerson } from '../lib/auth-config.mjs';
 import { createProjectFeedbackStore } from './project-feedback.mjs';
+import { usageEvents, usageKey } from './usage-events.mjs';
 
 function sameOrigin(req) {
   const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket?.encrypted ? 'https' : 'http');
@@ -9,6 +10,7 @@ function sameOrigin(req) {
     && (req.headers.origin ? req.headers.origin === `${proto}://${host}` : Boolean(req.headers.authorization));
 }
 export function createProjectFeedbackHandler({ store = createProjectFeedbackStore(),
+  usageStore = usageEvents,
   personLookup = async id => findPerson(getCachedAuthDocument() || await loadAuthDocument(), id) } = {}) {
   return async function handle({ req, res, pathname, authSession, writeJson }) {
     if (pathname !== '/api/project-feedback') return false;
@@ -28,6 +30,13 @@ export function createProjectFeedbackHandler({ store = createProjectFeedbackStor
         if (!person) { send(403, { error: '登录身份需要重新核对。' }); return true; }
         const saved = await store.submit({ person_id: person.id, name: person.name || person.handle,
           identity_id: authSession.identityId }, input);
+        // Stable record identity joins uncertain HTTP retries. No text, target
+        // URL or feedback author name enters the usage ledger.
+        const operationId = usageKey(saved.record.id);
+        await usageStore.record(['started', 'completed'].map(state => ({ event: 'capability_state',
+          eventId: operationId + ':' + state, operationId, feature: 'feedback', operation: 'feedback.save',
+          timestamp: Date.parse(saved.record.created_at), state, surface: 'web', actorKind: 'human',
+        })), { personId: person.id }).catch(() => {});
         send(saved.duplicate ? 200 : 201, saved);
       }
     } catch (error) {

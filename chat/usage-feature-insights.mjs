@@ -4,7 +4,7 @@ const distinct = (events, key) => new Set(events.map(event => event[key]).filter
 const terminal = state => ['completed', 'failed', 'blocked', 'unknown'].includes(state);
 const counts = events => ({ actions: events.length, people: distinct(events, 'personHash'), sessions: distinct(events, 'sessionId') });
 
-export function buildFeatureInsights(events, { since, sessionOrigins = [], featureStartedAt = null } = {}) {
+export function buildFeatureInsights(events, { since, sessionOrigins = [], featureStartedAt = null, featureCollectionStarts = {} } = {}) {
   const requestRuns = new Map(), runPeople = new Map();
   for (const event of events) if (event.event === 'request_state' && event.requestId && event.runId) {
     requestRuns.set(event.sessionId + ':' + event.requestId, event.runId);
@@ -16,7 +16,8 @@ export function buildFeatureInsights(events, { since, sessionOrigins = [], featu
     runPeople.get(id).add(event.personHash);
   }
   const operations = new Map();
-  for (const event of events) if (event.event === 'capability_state' && CAPABILITIES[event.feature] && event.operationId) {
+  for (const event of events) if (event.event === 'capability_state' && CAPABILITIES[event.feature] && event.operationId
+      && !(Date.parse(featureCollectionStarts[event.feature]) > event.timestamp)) {
     const key = event.feature + ':' + event.operationId;
     const row = operations.get(key) || { ...event, started: false, attempts: new Set() };
     row.attempts.add(event.attemptId || event.operationId);
@@ -35,6 +36,9 @@ export function buildFeatureInsights(events, { since, sessionOrigins = [], featu
       if (row.actorKind !== 'automation') for (const person of runPeople.get(row.runId) || []) people.add(person);
     }
     features.push({ feature, title, calls: rows.length, people: people.size, sessions: distinct(rows, 'sessionId'),
+      latestAt: new Date(rows.reduce((latest, row) => Math.max(latest, row.timestamp), 0)).toISOString(),
+      directHuman: rows.filter(row => row.actorKind === 'human').length,
+      agent: rows.filter(row => row.actorKind === 'agent' && !row.automationId).length,
       automated: rows.filter(row => row.actorKind === 'automation' || row.automationId).length,
       completed: rows.filter(row => row.state === 'completed').length,
       retryAttempts: rows.reduce((sum, row) => sum + Math.max(0, row.attempts.size - 1), 0),

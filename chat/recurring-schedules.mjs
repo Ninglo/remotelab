@@ -3,6 +3,7 @@ import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-
 import { createHash, randomBytes } from 'crypto';
 import { normalizeGate, runScheduleGate } from '../lib/automation-script.mjs';
 import { normalizeAutomationPolicy } from '../lib/automation-execution-policy.mjs';
+import { normalizeAutomationPurpose } from '../lib/automation-purpose.mjs';
 export { runScheduleGate, parseGateOutput } from '../lib/automation-script.mjs';
 
 import { CHAT_RECURRING_SCHEDULES_FILE } from '../lib/config.mjs';
@@ -310,6 +311,7 @@ function normalizeStoredSchedule(value) {
     createdByIdentityId: trimString(raw.createdByIdentityId),
     sessionTemplate,
     title: trimString(raw.title),
+    purpose: normalizeAutomationPurpose(raw.purpose),
     text,
     cadence,
     cron,
@@ -436,6 +438,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     createdByIdentityId: input.createdByIdentityId,
     sessionTemplate,
     title: input.title,
+    purpose: normalizeAutomationPurpose(input.purpose, { strict: true }),
     text,
     ...seed,
     lifetime,
@@ -549,6 +552,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
       ...current,
       ...patch,
       ...patchScheduledRuntime(current, patch),
+      purpose: normalizeAutomationPurpose(patch.purpose === undefined ? current.purpose : patch.purpose, { strict: true }),
       sourceSessionId,
       sessionTemplate,
       text,

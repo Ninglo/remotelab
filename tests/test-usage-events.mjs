@@ -23,7 +23,9 @@ test('collection is bounded, strips content and client attribution, survives ret
     assert.equal(summary.events[0].tool, undefined); assert.equal(summary.events[0].action, undefined);
     const restarted = createUsageEventStore({ directory });
     await restarted.record(input, { client: true, personId: 'verified-person' });
+    const samplingStart = summary.featureCollectionStarts.feedback;
     summary = await restarted.query(); assert.equal(summary.total, 1, 'durable IDs deduplicate across processes');
+    assert.equal(summary.featureCollectionStarts.feedback, samplingStart, 'new hook start persists across restart');
     assert.equal((await restarted.query({ sessionId: 'other' })).total, 0);
     const log = (await readdir(directory)).find(name => name.endsWith('.jsonl'));
     const raw = await readFile(join(directory, log), 'utf8');

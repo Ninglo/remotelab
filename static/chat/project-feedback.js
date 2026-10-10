@@ -2,7 +2,30 @@
 (function attachFeedback(globalScope) {
   const root = document.getElementById("monitoringFeedback");
   if (!root) return;
-  const t = (key, vars) => globalScope.remotelabT?.(`feedback.${key}`, vars) || key;
+  const activityText = {
+    started: ['开始日期', 'Start date'], usage: ['功能触发 · 近30天', 'Feature calls · 30 days'],
+    attention: ['关注状态', 'Attention'], recent: ['近14天', '14 days'],
+    groupNote: ['按大项目暂分组；子项目分别统计。最近反馈优先，30天未触发的成熟项目下沉。没有反馈不代表稳定，采集未覆盖不记作无人使用。此排序不改变巡检日程。',
+      'Grouped by parent project for review; counts remain per subproject. Recent feedback comes first; mature projects with no calls for 30 days move down. Silence does not establish quality. Missing sampling is unknown. This order does not change schedules.'],
+    groupTrial: ['展示分组', 'Review grouping'], registered: ['登记', 'Registered'], rollout: ['推广', 'Rollout'],
+    observation: ['开始观察', 'Observation started'], sampling: ['采集始于', 'Sampling since'],
+    noHook: ['使用度待接入', 'Usage not instrumented'], usageUnknown: ['采集不完整', 'Sampling incomplete'],
+    sampled: ['窗口内已采集', 'Observed in window'], succeeded: ['完成', 'Completed'],
+    human: ['人工直接触发', 'Direct human'], agent: ['Agent调用', 'Agent calls'], automated: ['自动任务', 'Automated'],
+    lastUse: ['最近触发', 'Latest call'], pending_analysis: ['有反馈待分析', 'Feedback awaiting analysis'],
+    cumulative: ['已记录累计操作', 'Recorded cumulative actions'], exposures: ['展示', 'Presented'],
+    qianyanScope: ['展开／打开原文／筛选／复制／播放／文档打开；累计数不当作近30天用量。', 'Expand / source open / filter / copy / play / document open; cumulative counts are not 30-day usage.'],
+    recent_feedback: ['近期有反馈', 'Recent feedback'], new_observation: ['新项目待观察', 'New project to observe'],
+    usage_failures: ['触发失败待核查', 'Invocation failures to review'], not_launched: ['尚未启动', 'Not launched'],
+    quiet_observation: ['少反馈，低频观察', 'Quiet; review less often'], sampling_new: ['新埋点待观察', 'New sampling to observe'],
+    coverage_unknown: ['使用度待核实', 'Usage needs verification'], idle_candidate: ['暂闲置，待确认', 'Possibly idle; verify'],
+    attentionPaused: ['暂停', 'Paused'], groupCount: ['子项目', 'Subprojects'], pendingCount: ['待分析', 'Awaiting analysis'],
+  };
+  const t = (key, vars) => {
+    const words = activityText[key];
+    if (words) return words[globalScope.remotelabGetActiveUiLanguage?.() === 'en' ? 1 : 0];
+    return globalScope.remotelabT?.(`feedback.${key}`, vars) || key;
+  };
   const node = (tag, text = "", cls = "") => {
     const n = document.createElement(tag); n.textContent = text; if (cls) n.className = cls; return n;
   };
@@ -10,6 +33,7 @@
   const button = (label, action) => { const b = node("button", label, "task-center-action"); b.type = "button"; b.addEventListener("click", action); return b; };
   let summary = null, detail = null, selected = new URL(globalScope.location.href).searchParams.get("feedback") || "";
   let serial = 0, detailSerial = 0, key = null, keyContent = "", related = "";
+  const groupOpen = new Map();
   const toolbar = node("div", "", "monitoring-toolbar");
   const refresh = button(t("refresh"), () => void load()); toolbar.appendChild(refresh);
   const note = node("p", "", "monitoring-note"); note.setAttribute("role", "status");
@@ -42,26 +66,63 @@
     composer.open = true; comment.focus();
   }
   project.addEventListener("change", () => { related = ""; relatedNote.hidden = true; clearRelated.hidden = true; });
+  function usageContent(p) {
+    const box = node('div', '', 'feedback-usage');
+    const u = p.usage;
+    if (!u || u.status === 'not_instrumented') { box.textContent = t('noHook'); return box; }
+    if (u.status === 'cumulative') {
+      box.append(node('strong', `${t('cumulative')} ${u.calls}`), node('small', `${t('exposures')} ${u.exposures}`),
+        node('small', `${t('lastUse')}：${time(u.latest_at)}`), node('small', t('qianyanScope')));
+      return box;
+    }
+    if (u.status === 'unknown') { box.textContent = t('usageUnknown'); return box; }
+    box.append(node('strong', `${u.calls} · ${t('succeeded')} ${u.completed}`));
+    box.append(node('small', `${t('human')} ${u.direct_human} · ${t('agent')} ${u.agent} · ${t('automated')} ${u.automated}`));
+    box.append(node('small', `${t('lastUse')}：${time(u.latest_at)}`));
+    box.append(node('small', `${t('sampling')}：${time(u.sampling_since)}`));
+    if (u.scope) box.append(node('small', u.scope));
+    return box;
+  }
+  function startContent(p) {
+    const box = node('div');
+    box.appendChild(node('span', p.started_at ? `${p.start_kind === 'project' ? '' : t(p.start_kind) + ' · '}${new Date(p.started_at).toLocaleDateString()}` : t('unknown')));
+    if (p.observation_started_at) box.appendChild(node('small', `${t('observation')}：${time(p.observation_started_at)}`));
+    sourceLink(p.start_source_url, t('source'), box); return box;
+  }
   function renderSummary() {
     list.replaceChildren();
     if (!summary) return;
     note.textContent = !summary.configured ? t("notConfigured") : t("scope", { count: summary.counts.raw_records, time: time(summary.review_at) });
     if (summary.gaps.length) list.appendChild(node("p", t("gaps", { count: summary.gaps.length }), "monitoring-note"));
     project.replaceChildren(); const unknown = node("option", t("unassigned")); unknown.value = ""; project.appendChild(unknown);
-    const table = node("table", "", "feedback-table"), head = node("thead"), tr = node("tr");
-    ["project", "count", "pending", "direction", "details"].forEach(k => { const th = node("th", t(k)); th.scope = "col"; tr.appendChild(th); });
-    head.appendChild(tr); table.appendChild(head); const body = node("tbody");
+    list.appendChild(node('p', t('groupNote'), 'monitoring-note'));
     for (const p of summary.projects) {
       const o = node("option", p.name); o.value = p.id; project.appendChild(o);
+    }
+    for (const g of summary.groups || []) {
+      const group = node('details', '', 'feedback-group'); group.dataset.feedbackGroup = g.id;
+      group.open = groupOpen.get(g.id) ?? g.attention_rank <= 40;
+      group.addEventListener('toggle', () => groupOpen.set(g.id, group.open));
+      group.appendChild(node('summary', `${g.name} · ${t('groupCount')} ${g.subproject_count} · ${t('count')} ${g.feedback_count} · ${t('recent')} ${g.recent_feedback_count} · ${t('pendingCount')} ${g.pending_analysis_count}`));
+      const table = node('table', '', 'feedback-table'), head = node('thead'), tr = node('tr');
+      const columns = ['project', 'count', 'pending', 'started', 'usage', 'attention', 'direction', 'details'];
+      columns.forEach(k => { const th = node('th', t(k)); th.scope = 'col'; tr.appendChild(th); });
+      head.appendChild(tr); table.appendChild(head); const body = node('tbody');
+      for (const p of summary.projects.filter(p => p.group_id === g.id)) {
       const row = node("tr"); row.dataset.subproject = p.id;
       const name = node("td"); name.appendChild(button(p.name, () => void select(p.id))); row.appendChild(name);
-      row.appendChild(node("td", p.coverage === "not_represented" ? t("notCovered") : String(p.feedback_count)));
+      const count = node('td', p.coverage === 'not_represented' ? t('notCovered') : String(p.feedback_count));
+      count.appendChild(node('small', `${t('recent')}：${p.recent_feedback_count}`)); row.appendChild(count);
       row.appendChild(node("td", String(p.pending_analysis_count)));
+      const start = node('td'); start.appendChild(startContent(p)); row.appendChild(start);
+      const calls = node('td'); calls.appendChild(usageContent(p)); row.appendChild(calls);
+      row.appendChild(node('td', t(p.attention.state === 'paused' ? 'attentionPaused' : p.attention.state)));
       row.appendChild(node("td", p.directions[0] || t("noDirection")));
       const actions = node("td"); actions.appendChild(button(t("give"), () => give(p.id))); row.appendChild(actions); body.appendChild(row);
+      }
+      for (const row of body.children) [...row.children].forEach((td, index) => { td.dataset.label = t(columns[index]); });
+      table.appendChild(body); const wrap = node('div', '', 'monitoring-table-wrap'); wrap.appendChild(table); group.appendChild(wrap); list.appendChild(group);
     }
-    for (const row of body.children) [...row.children].forEach((td, index) => { td.dataset.label = t(["project", "count", "pending", "direction", "details"][index]); });
-    table.appendChild(body); const wrap = node("div", "", "monitoring-table-wrap"); wrap.appendChild(table); list.appendChild(wrap);
     const extras = node("div", "", "feedback-extras");
     for (const [id, label] of [["unassigned_feedback", "unassigned"], ["related_context", "context"], ["paused_history", "paused"]]) {
       extras.appendChild(button(`${t(label)} · ${summary.counts[id]}`, () => void select(id)));
@@ -86,6 +147,9 @@
     const labels = { unassigned_feedback: "unassigned", related_context: "context", paused_history: "paused" };
     detailRoot.appendChild(node("h3", detail.project?.name || t(labels[selected] || "details")));
     if (detail.project) {
+      const facts = node('div', '', 'feedback-activity');
+      facts.append(node('p', t(detail.project.attention.state === 'paused' ? 'attentionPaused' : detail.project.attention.state)), startContent(detail.project), usageContent(detail.project));
+      detailRoot.appendChild(facts);
       detailRoot.appendChild(button(t("giveProject"), () => give(selected)));
       detailRoot.appendChild(node("p", t("directionNote"), "monitoring-note"));
       const directions = node("ul");

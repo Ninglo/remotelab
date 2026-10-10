@@ -1,5 +1,14 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Generate sidebar labels during execution and recover lost display receipts
+
+- Feedback: titles and descriptions appeared only after a long task ended; some Web topic rows continued showing running after their work was complete.
+- Change: reuse the existing metadata route for a small title/description call when a normal user input is recorded. It runs alongside the Harness, never assigns workflow outcome, organization or work summary, and a same-turn final classification takes precedence over a delayed input result. Quick tasks, internal operations and question answers do not start this call.
+- Display failure: the source had a newer state while the browser retained an old projection. A transport can remain writable while its projection receipt is lost, permanently holding the one-packet channel. Bound the receipt wait, reconnect on expiry, discard obsolete pending packets and send the latest verified snapshot. Persist projection snapshots by atomic replacement.
+- Evidence boundary: a completed prior goal does not make a later inspection idle. In the reported example a subsequent user request was actively executing; that live running state was correct, while the stale browser snapshot was a separate observed fault. Runtime and review state still come from existing records rather than a model guess.
+- Verification: isolated provider gates prove labels arrive before execution finishes without asserting completion; classifier, workflow, Quick task and channel tests cover final precedence, coalescing, missing receipts and late acknowledgements. Commit/CI, service loading and browser readback remain separate acceptance steps.
+
+
 ### 2026-10-10 — Inspect and submit subproject feedback from Monitor
 
 - Feedback: users need a subproject row with collected feedback and change directions, clickable original details, and a place to submit new opinions.
@@ -1632,3 +1641,9 @@ The requester clarified that the comparison concerns card types in Message Reply
 - Repair: reuse the existing conversation identity comparison for root and supplementary destinations, reserve additional destinations against existing final deliveries, and retain final-message annotations. Different topics continue to receive their own result.
 - Recurrence check: failed and cancelled shared executions may have no provider final ID, so their deliveries lack final annotations. A secondary topic represented by both root and thread aliases could still receive two failure notices. Compare those aliases against the existing durable destination reservations as well; no new identity registry or retry mechanism is needed.
 - Verification boundary: the original alias shape and the failed secondary-topic case reproduce duplicates before their respective changes. Isolated native integration covers bound and unbound topics, distinct-topic fan-out, secondary-topic aliases, failed and cancelled executions, and controller recovery. Provider receipt readback, CI, deployed source and subsequent natural use remain separate evidence; this incident does not establish the cause of every earlier duplicate.
+
+## 2026-10-10 — Group feedback attention and observe concrete feature use
+
+- Feedback: retain subproject counts but group them under parent projects, show sourced start dates, reduce attention to mature quiet projects, resurface fresh feedback, and keep new silent projects under observation with actual usage evidence.
+- Response: add a grouped monitor table with 14-day feedback, 30-day invocation evidence and pending analysis. Keep unknown dates and uncovered usage explicit. Reuse capability telemetry for narrow context, routing, workboard and feedback-save hooks; distinguish direct human, Agent and automation calls. Reuse Qianyan's cumulative engagement separately from presentation.
+- Boundary: presentation groups do not rewrite project ownership. A quiet or idle candidate is not proven quality or a scheduler pause. Page views are not feature invocations; cumulative engagement is not a rolling usage count. Source, sampling, verification and real adoption retain separate evidence.

@@ -12,6 +12,9 @@ import { validSettingObservation, validUsageSetting } from '../lib/usage-setting
 import { readSettingSnapshot } from '../lib/usage-setting-store.mjs';
 
 export const CLIENT_USAGE_EVENTS = new Set(['page_enter', 'session_open', 'page_visibility', 'ui_action', 'content_presented', 'artifact_open']);
+// New, narrowly named hooks have their own start dates. The older generic
+// capability sampling date cannot establish coverage before these hooks exist.
+const NAMED_FEATURES = ['project_context', 'work_routing', 'response_progress', 'feedback'];
 const SERVER_EVENTS = new Set(['message_submitted', 'request_state', 'run_state', 'question_state', 'tool_started', 'tool_finished',
   'artifact_generated', 'artifact_registered', 'artifact_attached', 'web_published', 'delivery_state', 'artifact_access_requested', 'session_created', 'session_linked',
   'capability_state', 'automation_change', 'intervention', 'material_submitted', 'knowledge_state', 'feishu_card_action', 'feishu_card_read', 'setting_state']);
@@ -148,6 +151,16 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
   }
   async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000, settingSnapshot } = {}) {
     await idle();
+    const featureCollectionStarts = {};
+    try {
+      await init();
+      for (const feature of NAMED_FEATURES) {
+        const pathname = join(directory, `feature-${feature}.json`);
+        try { await writeFile(pathname, JSON.stringify({ startedAt: new Date(activatedAt).toISOString() }), { flag: 'wx', mode: 0o600 }); }
+        catch (error) { if (error.code !== 'EEXIST') throw error; }
+        featureCollectionStarts[feature] = JSON.parse(await readFile(pathname, 'utf8')).startedAt;
+      }
+    } catch { /* Missing markers keep the board's observation coverage unknown. */ }
     days = Math.max(1, Math.min(30, Math.floor(Number(days) || 7)));
     limit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 100)));
     const now = Date.now(), start = now - days * 86_400_000;
@@ -231,11 +244,11 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     const feishuCardSampling = await readFeishuCardSamplingCoverage(join(directory, '..', 'feishu-card-reads'));
     return { generatedAt: new Date(now).toISOString(), collectionStartedAt: metadata?.startedAt || null,
       window: { start: new Date(start).toISOString(), end: new Date(now).toISOString(), days },
-      total: events.length, byEvent, bySurface, artifacts, paths: summarizeSurfacePaths(events),
+      total: events.length, byEvent, bySurface, artifacts, featureCollectionStarts, paths: summarizeSurfacePaths(events),
       feishuCards: { ...summarizeFeishuCardEngagement(events), sampling: feishuCardSampling },
       report: buildUsageInsights(events, { start, now, collectionStartedAt: metadata?.startedAt, gaps, scanIncomplete,
         dropped: lastIssueAt >= qualifiedStart ? dropped : 0, failures: lastIssueAt >= qualifiedStart ? failures : 0,
-        sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0, featureStartedAt, feishuCardSampling,
+        sessionOrigins: originFacts.origins, originLookupIncomplete: originFacts.truncated || originFacts.errors > 0, featureStartedAt, featureCollectionStarts, feishuCardSampling,
         settingEvents, settingSnapshot }),
       events: events.slice(-limit).reverse(), coverage: { incomplete, scanIncomplete, scanned, pending, dropped, failures, gaps, excludedCorruptLines, excludedFixtureLines,
         notes: ['仅包含采集启动后的可观测事件；不回填历史。', '飞书送达不代表已读；Web 呈现不代表理解或采纳。',

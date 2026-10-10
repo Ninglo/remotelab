@@ -4,7 +4,7 @@ import vm from 'node:vm';
 
 const context = vm.createContext({ Intl, Date });
 vm.runInContext(await readFile(new URL('../static/chat/automation-overview.js', import.meta.url), 'utf8'), context);
-const { category, purpose, days } = context.RemoteLabAutomationOverview;
+const { category, purpose, days, purposes, businessStatus } = context.RemoteLabAutomationOverview;
 const once = { kind: 'one_time', state: 'completed' };
 assert.equal(category(once), 'one_time', 'completed one-time work remains discoverable as one-time');
 assert.equal(category({ ...once, state: 'failed' }), 'one_time', 'a failed attempt does not change its type');
@@ -17,11 +17,25 @@ assert.equal(category({ members: [{ kind: 'recurring', state: 'cancelled' }, { .
   'one_time', 'a pending explicit follow-up is still visible after its schedule stops');
 
 for (const [title, expected] of [
-  ['每日项目审阅', 'review'], ['每周反馈复盘', 'review'], ['每日磁盘检查与必要清理（日报来源）', 'inspection'],
-  ['RoboDojo 自动报告', 'report'], ['数据同步', 'report'], ['到点提醒', 'reminder'], ['未分类任务', 'other'],
+  ['每日项目审阅', 'projects'], ['每周反馈复盘', 'improvement'], ['每日磁盘检查与必要清理（日报来源）', 'operations'],
+  ['RoboDojo 自动报告', 'execution'], ['具身前沿追踪 · 张思源每日单独阅读', 'research'],
+  ['张思源｜每晚新增个人记忆核验', 'memory'], ['每日项目 TODO 巡检', 'projects'], ['未分类任务', 'other'],
 ]) assert.equal(purpose({ title }), expected);
+assert.equal(purpose({ title: '磁盘检查', purpose: 'projects' }), 'projects', 'explicit purpose wins over a misleading title');
+assert.equal(purposes.length, 7, 'six purposes and an honest unclassified fallback');
 assert.equal(purpose({ title: '普通任务', prompt: 'Review reports and check daily monitoring' }), 'other',
   'unrelated keywords in long instructions must not invent a purpose');
+
+const now = Date.parse('2026-10-10T10:00:00Z');
+const held = { kind: 'recurring', state: 'active', check: { at: '2026-10-10T09:59:00Z', reason: 'retry_limit_reached' } };
+assert.equal(businessStatus(held, now), 'blocked');
+assert.equal(businessStatus({ ...held, check: { ...held.check, reason: 'consumer_disabled' } }, now), 'disabled');
+assert.equal(businessStatus({ ...held, check: { ...held.check, reason: 'no project due' } }, now), 'waiting');
+assert.equal(businessStatus({ ...held, state: 'paused' }, now), null, 'native stop state takes precedence');
+assert.equal(businessStatus({ ...held, check: { ...held.check, at: '2026-10-10T09:00:00Z' } }, now), null, 'stale business switches do not assert current state');
+assert.equal(businessStatus({ ...held, check: { ...held.check, at: '2026-10-10T10:01:00Z' } }, now), null);
+assert.equal(businessStatus({ ...held, check: { ...held.check, error: 'read failed' } }, now), null);
+assert.equal(businessStatus({ ...held, check: { ...held.check, reason: 'ordinary prose about a failure' } }, now), null);
 
 const entries = [
   { id: 'a', scheduledAt: '2026-10-03T10:00:00Z', state: 'completed', error: '', runtime: { model: 'fixture' } },

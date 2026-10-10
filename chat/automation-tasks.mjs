@@ -237,6 +237,7 @@ async function projectRecurringTask(schedule, occurrences) {
   const createdByIdentityId = await projectCreatedByIdentityId(schedule);
   return {
     id: schedule.id,
+    purpose: schedule.purpose || null,
     kind: 'recurring',
     title: schedule.title || 'Recurring task',
     prompt: schedule.text,

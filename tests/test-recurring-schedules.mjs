@@ -39,6 +39,7 @@ const schedule = await createRecurringSchedule({
   createdByIdentityId: 'identity_creator',
   sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Daily execution' },
   title: 'Daily date',
+  purpose: 'projects',
   text: 'Send the date',
   cron: '* * * * *',
   timezone: 'Asia/Shanghai',
@@ -54,6 +55,14 @@ assert.equal(schedule.nextRunAt, '2026-07-27T00:01:00.000Z');
 assert.equal(schedule.misfirePolicy, 'latest_once');
 assert.equal(schedule.overlapPolicy, 'latest_once');
 assert.equal(schedule.createdByIdentityId, 'identity_creator');
+assert.equal(schedule.purpose, 'projects');
+assert.equal((await listRecurringSchedules()).find(item => item.id === schedule.id).purpose, 'projects');
+await assert.rejects(() => updateRecurringSchedule(schedule.id, { purpose: 'invented' }), /purpose/);
+const recategorized = await updateRecurringSchedule(schedule.id, { purpose: 'research' });
+assert.equal(recategorized.purpose, 'research');
+assert.equal(recategorized.nextRunAt, schedule.nextRunAt, 'classification never changes the cadence');
+assert.equal(recategorized.sessionTemplate.conversation.target.chatId, 'oc_test');
+assert.equal((await updateRecurringSchedule(schedule.id, { title: 'Daily date' })).purpose, 'research', 'unrelated edits preserve purpose');
 
 const result = await materializeDueRecurringSchedulesNow({
   now: '2026-07-27T00:05:20.000Z',

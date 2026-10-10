@@ -25,7 +25,12 @@ await json(reviewFile, { created_at: '2026-10-10T12:00:00Z', subprojects: [
   themes: [{ id: 'one', subproject_id: 'reports', title: 'Current status', suggested_direction: 'Show the decision first.' }],
   classifications: [{ source_record_id: 'old_feedback', primary_subproject_id: 'reports', bucket: 'assigned_feedback', theme_id: 'one' }] });
 await json(qianyanFile, { stage_feedback: [], selection_feedback: [], analysis_feedback: [] });
-await json(join(config, 'feedback-board.json'), { legacyFile, reviewFile, qianyanFile });
+const metadataFile = join(home, 'metadata.json');
+await json(metadataFile, { groups: [{ id: 'collaboration', name: 'Collaboration' }, { id: 'devices', name: 'Devices' }], projects: {
+  reports: { group_id: 'collaboration', phase: 'existing', usage_features: ['feedback'], usage_scope: 'Saved web feedback only' },
+  recording: { group_id: 'devices', started_at: new Date().toISOString(), phase: 'existing', usage_features: ['recording'] },
+} });
+await json(join(config, 'feedback-board.json'), { legacyFile, reviewFile, qianyanFile, metadataFile });
 const reservation = createServer(); await new Promise(r => reservation.listen(0, '127.0.0.1', r));
 const port = reservation.address().port; await new Promise(r => reservation.close(r)); const base = `http://127.0.0.1:${port}`;
 const child = spawn(process.execPath, ['chat-server.mjs'], { env: { ...process.env, CHAT_PORT: String(port), REMOTELAB_CONFIG_DIR: config, SECURE_COOKIES: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -44,6 +49,9 @@ try {
   await page.goto(base + '/?tab=tasks&monitor=feedback');
   await page.locator('[data-subproject="reports"]').waitFor();
   assert.equal(await page.locator('#monitoringFeedbackTab').getAttribute('aria-selected'), 'true');
+  assert.equal(await page.locator('.feedback-group').count(), 2);
+  assert.match(await page.locator('[data-subproject="recording"]').innerText(), /New project to observe/);
+  assert.match(await page.locator('[data-subproject="reports"]').innerText(), /Observed in window|Sampling since/);
   assert.match(await page.locator('[data-subproject="recording"]').innerText(), /Not covered in this sample/);
   await page.getByRole('button', { name: 'Reports', exact: true }).click();
   await page.locator('[data-feedback-id="old_feedback"] summary').click();
@@ -55,9 +63,9 @@ try {
   await page.locator('#feedbackSignal').selectOption('useful');
   await page.locator('#feedbackSubmit').click();
   await page.waitForFunction(() => document.querySelector('#feedbackReceipt').textContent.includes('Saved at'));
-  await page.waitForFunction(() => document.querySelector('[data-subproject="reports"] td:nth-child(2)').textContent === '2');
+  await page.waitForFunction(() => document.querySelector('[data-subproject="reports"] td:nth-child(2)').firstChild.textContent === '2');
   await page.reload(); await page.locator('[data-subproject="reports"]').waitFor({ state: "attached" });
-  assert.equal(await page.locator('[data-subproject="reports"] td:nth-child(2)').innerText(), '2');
+  assert.match(await page.locator('[data-subproject="reports"] td:nth-child(2)').textContent(), /^2/);
   await page.locator('.feedback-record').first().locator('summary').click();
   assert.match(await page.locator('.feedback-detail').innerText(), /awaiting analysis/);
   assert.match(await page.locator('.feedback-detail').innerText(), /old_feedback/);
@@ -69,6 +77,9 @@ try {
   assert.equal(await page.locator('#monitoringOverviewTab').getAttribute('aria-selected'), 'true');
   await page.keyboard.press('End');
   assert.equal(await page.locator('#monitoringFeedbackTab').getAttribute('aria-selected'), 'true');
+  assert.equal(await page.locator('.feedback-group').count(), 2);
+  assert.match(await page.locator('[data-subproject="recording"]').innerText(), /New project to observe/);
+  assert.match(await page.locator('[data-subproject="reports"]').innerText(), /Observed in window|Sampling since/);
   assert.equal(await page.locator('#taskCenterCreateToggle').isVisible(), false);
   await page.evaluate(() => window.remotelabSetUiLanguagePreference("zh-CN"));
   await page.locator(".feedback-composer > summary").click();
@@ -90,7 +101,7 @@ try {
   assert.equal(await page.locator("#feedbackComment").inputValue(), "Fixture: the recording indicator should be visible.");
   await page.locator("#feedbackSubmit").click();
   await page.waitForFunction(() => document.querySelector("#feedbackReceipt").textContent.includes("已保存"));
-  await page.waitForFunction(() => document.querySelector('[data-subproject="recording"] td:nth-child(2)').textContent === "1");
+  await page.waitForFunction(() => document.querySelector('[data-subproject="recording"] td:nth-child(2)').firstChild.textContent === "1");
   await context.unroute("**/api/project-feedback");
   assert.deepEqual(errors, []);
   await writeFile(join(output, 'verification.json'), JSON.stringify({ desktop: true, mobile: true, save_readback: true, reload: true, reference_preserved: true, keyboard_tabs: true, bilingual: true, uncertain_save_retry: true, no_html_execution: true, page_errors: errors }, null, 2));

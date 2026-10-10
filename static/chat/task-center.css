@@ -498,7 +498,13 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 /* Project feedback shares the monitor's reading and form styles. */
 .feedback-table { width: 100%; border-collapse: collapse; }
 .feedback-table th, .feedback-table td { padding: 12px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
-.feedback-table td:nth-child(4) { min-width: 220px; max-width: 480px; overflow-wrap: anywhere; }
+.feedback-table td:nth-child(4) { min-width: 95px; max-width: 160px; overflow-wrap: anywhere; }
+.feedback-table td:nth-child(5) { min-width: 160px; max-width: 230px; }
+.feedback-table td:nth-child(7) { min-width: 180px; max-width: 320px; overflow-wrap: anywhere; }
+.feedback-table small, .feedback-activity small { display: block; color: var(--text-muted); font-size: 11px; line-height: 1.55; margin-top: 5px; }
+.feedback-group { margin: 18px 0; }
+.feedback-group > summary { cursor: pointer; font-weight: 600; padding: 14px 0; line-height: 1.7; overflow-wrap: anywhere; }
+.feedback-activity { margin: 14px 0; padding: 12px 0; border-block: 1px solid var(--border); }
 .feedback-table td:first-child { min-width: 170px; }
 .feedback-detail { margin-top: 28px; scroll-margin-top: 24px; }
 .feedback-detail h3 { margin-bottom: 12px; }
@@ -521,7 +527,7 @@ details.task-lifecycle-section > summary { cursor: pointer; }
   .feedback-table thead { display: none; }
   .feedback-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border); }
   .monitoring-table-wrap .feedback-table td { display: block; min-width: 0; max-width: none; padding: 0; border: 0; }
-  .feedback-table td:first-child, .feedback-table td:nth-child(4), .feedback-table td:last-child { grid-column: 1 / -1; }
-  .feedback-table td:nth-child(2)::before, .feedback-table td:nth-child(3)::before, .feedback-table td:nth-child(4)::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: 11px; margin-bottom: 4px; }
+  .feedback-table td:first-child, .feedback-table td:nth-child(5), .feedback-table td:nth-child(7), .feedback-table td:last-child { grid-column: 1 / -1; }
+  .feedback-table td:not(:first-child):not(:last-child)::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: 11px; margin-bottom: 4px; }
   .feedback-detail { margin-top: 20px; }
 }

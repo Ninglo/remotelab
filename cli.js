@@ -80,7 +80,7 @@ switch (command) {
   }
   case 'work': {
     const { runWorkAwarenessCommand } = await import(scriptPath('lib/work-awareness-command.mjs'));
-    try { process.exitCode = await runWorkAwarenessCommand(process.argv.slice(3)); }
+    try { process.exitCode = await runObservedCommand(command, args, io => runWorkAwarenessCommand(args, io)); }
     catch (error) { console.error(error.message); process.exitCode = 1; }
     break;
   }
@@ -258,7 +258,7 @@ switch (command) {
   case 'assistant-messages': {
     const { runAssistantMessageCommand } = await import(scriptPath('lib/assistant-message-command.mjs'));
     try {
-      process.exitCode = await runAssistantMessageCommand(args);
+      process.exitCode = await runObservedCommand('assistant-message', args, io => runAssistantMessageCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
@@ -269,7 +269,7 @@ switch (command) {
   case 'workboard': {
     const { runWorkboardCommand } = await import(scriptPath('lib/workboard-command.mjs'));
     try {
-      process.exitCode = await runWorkboardCommand(args);
+      process.exitCode = await runObservedCommand(command, args, io => runWorkboardCommand(args, io));
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
