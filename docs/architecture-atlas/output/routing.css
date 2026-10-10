@@ -1,0 +1,66 @@
+/* The shared guide owns type, color and navigation; this page owns its diagrams. */
+main { max-width:1176px; }
+.scope-note { border-left:3px solid var(--notice); padding:14px 20px; background:var(--blue-soft); }
+.reading-links { display:flex; flex-wrap:wrap; gap:8px 24px; margin-top:24px; }
+.reading-links a { padding-block:8px; }
+.table-wrap { overflow-x:auto; margin:24px 0; border-block:1px solid var(--line); }
+table { border-collapse:collapse; width:100%; min-width:660px; font-size:16px; line-height:1.8; }
+th,td { text-align:left; vertical-align:top; padding:16px 18px; border-bottom:1px solid var(--line); }
+th { background:var(--soft); font-weight:400; }
+th:first-child { width:20%; }
+.caption,figcaption { color:var(--muted); font-size:14px; line-height:1.8; }
+.flow-figure { margin:30px 0; padding:26px; border:1px solid var(--line); border-radius:8px; }
+.flow-stack { display:grid; gap:0; }
+.flow-node { display:flex; flex-direction:column; gap:6px; padding:18px 20px; background:var(--soft); border:1px solid var(--line); border-radius:6px; text-align:left; }
+.flow-node strong { font-size:18px; font-weight:400; }
+.flow-node>span:last-child { font-size:15px; line-height:1.8; color:var(--muted); }
+.node-role { font-size:13px; color:var(--muted); }
+.flow-arrow { text-align:center; padding:13px 0; font-size:14px; color:var(--muted); }
+.flow-fork { display:grid; gap:18px; position:relative; }
+.admission-fork { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.decision-fork,.compact-fork { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.condition { background:var(--blue-soft); border-color:#bfdbfe; }
+.work { background:#f0fdf4; border-color:#bbf7d0; }
+.answer { background:var(--blue-soft); border-color:#bfdbfe; }
+.flow-figure figcaption { margin-top:20px; }
+.scenario { padding:28px 0; border-bottom:1px solid var(--line); }
+.scenario p { max-width:860px; }
+.scenario-result { margin-top:18px; font-size:16px; color:var(--muted); }
+.mini-flow { display:flex; align-items:stretch; gap:10px; font-size:16px; line-height:1.7; }
+.mini-flow>div { flex:1; padding:15px; border:1px solid var(--line); background:var(--soft); border-radius:6px; }
+.mini-flow>span { flex:none; align-self:center; color:var(--muted); }
+.scenario-figure { margin:24px 0; }
+.scenario-figure figcaption { margin-top:14px; }
+.parallel-note { margin-top:14px; padding:12px 16px; border-left:2px solid var(--queue); color:var(--muted); font-size:15px; }
+.message-example { margin:28px 0; }
+.example-head,.example-row { display:grid; grid-template-columns:1fr 1.3fr 1.3fr; gap:14px; }
+.example-head { font-size:14px; color:var(--muted); padding:10px 16px; }
+.example-row { padding:14px 0; border-top:1px solid var(--line); }
+.example-row>div { padding:16px; border:1px solid var(--line); border-radius:6px; font-size:16px; }
+.example-row strong { display:block; font-weight:400; }
+.example-row small { display:block; color:var(--muted); margin-top:6px; }
+.message-example figcaption { margin-top:18px; }
+.sources { padding-left:24px; }
+.sources li { margin-bottom:14px; }
+.detail-body { padding:14px 0; }
+@media(max-width:650px) {
+  .flow-figure { padding:16px; }
+  .admission-fork,.decision-fork,.compact-fork { grid-template-columns:1fr; gap:12px; }
+  .flow-fork { border-left:2px solid var(--line); padding-left:14px; }
+  .flow-node { padding:14px; }
+  .flow-arrow { text-align:left; padding:14px 0; }
+  .mini-flow { flex-direction:column; gap:5px; }
+  .mini-flow>span { align-self:center; transform:rotate(90deg); }
+  .mini-flow>div { padding:14px; }
+  .example-head { display:none; }
+  .example-row { grid-template-columns:1fr; gap:8px; margin-bottom:12px; }
+  .example-row>div:nth-child(2)::before { content:'主线处理：'; display:block; color:var(--muted); font-size:13px; }
+  .example-row>div:nth-child(3)::before { content:'去向与回复：'; display:block; color:var(--muted); font-size:13px; }
+  .reading-links { gap:8px 18px; }
+}
+@media print {
+  .flow-figure,.scenario,.example-row { break-inside:avoid; }
+  .table-wrap { overflow:visible; }
+  table { min-width:0; }
+  .reading-links { display:none; }
+}

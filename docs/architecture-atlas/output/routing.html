@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="description" content="群消息分流提速实验：新消息如何追加到正在运行的执行，怎样分别保留事项归属、回复责任，以及补充、催问、纠正、停止和失败的处理流程。">
+<title>群消息分流提速实验 · RemoteLab 整体说明</title>
+<link rel="stylesheet" href="../guide.css?v=20261010routing">
+<link rel="stylesheet" href="./routing.css?v=20261010routing">
+<script type="module" src="../guide-shell.js?v=20261010routing"></script>
+</head>
+<body data-guide-page="output/routing.html" data-guide-chapter="routing">
+<main id="main">
+<header class="hero" id="purpose">
+<p class="eyebrow">群消息分流实验 · 2026-10-10 核对</p>
+<h1>及时接住新消息，分别承担回复责任</h1>
+<p class="lede">研究还在进行时，补充条件和催问可以进入正在运行的执行。系统不再要求它们等上一轮结束，但仍为每条消息保存作者、工作去向和回复位置。</p>
+<p>这个实验解决两种等待：后来的消息被前一轮长任务挡住；主线为了选择工作话题，先把业务问题研究了一遍。做法是让主线尽快确定去向，把深入工作交给工作话题，并允许状态答复提前发送。</p>
+<p class="scope-note"><strong>适用范围：</strong>已授权的单群分流试点中新接纳的主线输入。既有工作话题继续在原话题处理；不扩大到其他群或全部会话。实现已核，本实例已加载包含该改动的版本；真实群聊的响应时延和分流准确率仍待测量。</p>
+<nav class="reading-links" aria-label="本章快速阅读"><a href="#mechanism">看整体流程</a><a href="#situations">按消息情况查</a><a href="#recovery">看失败与重试</a><a href="#evidence">查实现与证据</a></nav>
+</header>
+
+<section id="problem">
+<h2>为什么原来会慢</h2>
+<p>接收、执行和发送本来就由不同程序推进，但分流主线仍按整轮串行：第一条没有结束，后来的消息便不能进入模型上下文。第一轮又提前调查设备和资料，补充、催问因此一起等待。</p>
+<p>当时禁用主线追加输入，是为了保护逐条分流和回复：旧结算会让同一次执行中的消息共享最终结果。第一条转到工作话题、关闭主线正文后，后来的催问可能也失去自己的回答。新版同时修改输入接续和结果结算，分别保存每条消息的处理决定。</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="原方案与本次调整对照">
+<table><thead><tr><th>环节</th><th>原方案的问题</th><th>本次机制</th></tr></thead><tbody>
+<tr><td>新消息进入执行</td><td>等前一轮结束，补充和催问也排队。</td><td>兼容输入可 steer，即追加进活跃执行；不固定延时收集消息。</td></tr>
+<tr><td>主线选择去向</td><td>为了分流先做业务研究，交接太晚。</td><td>只核作者、授权、已有话题和当前状态；深入核查交给工作话题。</td></tr>
+<tr><td>回复责任</td><td>共享一轮最终结果，难以同时满足转交和当场答复。</td><td>每条输入分别选择移交、本地答复或明确无需正文；兼容补充可显式合并。</td></tr>
+<tr><td>催问和接收反馈</td><td>催问也等调查完成；反馈受附件准备拖延。</td><td>依据已保存状态提前答复；表情反馈不等待完整附件、背景和正文准备。</td></tr>
+</tbody></table></div>
+<p class="caption">2026-10-09 的一个三消息案例中，接收均在 0.7 秒内；第一轮运行约 4 分 22.6 秒，后两条从接纳到启动约等了 4 分 30.6 秒和 5 分 42.9 秒。这两个等候数包含启动时间，不等于 steer 后实测节省的时间。工具批次之间的耗时也不能全部归因为模型思考。<a href="#evidence">来源与测量边界</a>。</p>
+</section>
+
+<section id="mechanism">
+<h2>整体流程：接续执行，逐条决定去向</h2>
+<p>Session 是保留上下文的工作会话，Run 是一次实际运行，Request 是一条输入的处理记录。多条 Request 可以进入同一个 Run，但不会因此变成同一项工作。</p>
+<figure class="flow-figure">
+<div class="flow-stack">
+<div class="flow-node"><span class="node-role">Connector · 消息接入</span><strong>收录原消息，保存作者和回复地址</strong><span>入箱去重；检查群、话题、参与状态和授权。</span></div>
+<div class="flow-arrow">↓ 允许进入执行；否则沿来源规则过滤、观察或暂停</div>
+<div class="flow-node"><span class="node-role">RemoteLab · 请求接纳</span><strong>为每条消息保存独立 Request</strong><span>正文、附件、身份和回复位置随这条输入保留；不依靠后来的消息覆盖它。</span></div>
+<div class="flow-arrow">↓ 按当前执行状态选择传递方式</div>
+<div class="flow-fork admission-fork">
+<div class="flow-node"><span class="node-role">空闲</span><strong>启动一轮执行</strong><span>将任务和必要上下文交给 Harness。</span></div>
+<div class="flow-node condition"><span class="node-role">正在运行，且契约兼容</span><strong>steer 追加输入</strong><span>不等整轮结束；保留本条身份、事项和回复责任。</span></div>
+<div class="flow-node"><span class="node-role">无法加入当前执行</span><strong>保留请求，按队列处理</strong><span>例如新旧协议不兼容、运行设置不同或专用操作。</span></div>
+</div>
+<div class="flow-arrow">↓ Harness 读到输入后，理解消息关系</div>
+<div class="flow-node"><span class="node-role">Harness · 主线判断</span><strong>这是补充、新事项、催问，还是纠正与停止要求？</strong><span>只核确定去向所需的状态。信息不足时询问必要条件，同时继续独立且已授权的工作。</span></div>
+<div class="flow-arrow">↓ 对每条输入明确选择处理方式</div>
+<div class="flow-fork decision-fork">
+<div class="flow-node work"><span class="node-role">需要深入工作</span><strong>新建或接续工作话题</strong><span>目标接纳成功后保留移交记录；工作话题承担后续正文，原消息保留接收反馈。</span></div>
+<div class="flow-node answer"><span class="node-role">可以当场答复</span><strong>按本条原地址提前入队</strong><span>催问、短答不必等整轮结束。明确无需正文时，保存理由并保留合适表情。</span></div>
+</div>
+<div class="flow-arrow">↓ 已形成的输出由各自投递记录推进</div>
+<div class="flow-node"><span class="node-role">Connector · 结果投递</span><strong>领取正文或表情 → 调用飞书 → 保存回执</strong><span>接收成功、目标接纳成功、工作完成和消息送达分别核对。</span></div>
+</div>
+<figcaption>图 1　主线判断与工作话题执行职责分开。表情、正文投递和业务执行可以独立推进；图中的纵向顺序表示交接依赖，不表示整个系统逐步停下来等待。</figcaption>
+</figure>
+<p class="scope-note">steer 消除的是“必须等前一轮结束”的依赖。模型仍要到自己的输入读取时机才看到消息；上下文准备、附件处理、工具执行和网络也可能耗时。保留这些必要等待，不承诺所有消息即时回答。</p>
+<details data-technical><summary>实现入口、兼容条件与逐条结算</summary><div class="detail-body">
+<p><code>canForwardNativeRequest</code> 检查原生运行和输入是否兼容。两条试点输入都须使用协议 2；执行工具、模型、思考档位一致，并通过新线程、取消中、内部操作、复核和文档绑定等现有边界。旧轮次继续沿接纳时的契约，不把旧请求强行转成新协议。</p>
+<p><code>work route</code> 为选择的输入保存工作话题移交；<code>work reply</code> 为指定输入保存答复并立即建立持久投递。两种处理互斥。合并回答须明确列出覆盖的输入，正文发送到选定首条输入的原地址，其他输入保留被该答复覆盖的记录；不向所有消息重复发送同文。</p>
+<p>追加输入没有移交或独立答复时，结算明确显示尚未处理，不复制第一条的最终正文。根输入未移交且未提前答复，仍可正常给出最终答复。已提交的答复计划和投递记录支持中断恢复，重复请求必须保持原正文、输入集合与目的地。</p>
+</div></details>
+</section>
+
+<section id="situations">
+<h2>不同消息，怎样处理</h2>
+<p>以下是按当前机制编写的情境示例，不是新增的真实运行样本。判断依据是消息内容、作者、原话题和已保存的工作状态；不能只按“紧接着到达”就合并。</p>
+
+<article class="scenario" id="new-work">
+<h3>1．新的独立事项</h3>
+<p>例如已有机械臂研究进行中，又提出“查一下录音按钮的反馈”。这属于另一项工作，可以共享主线执行，工作去向和回答仍分别保存。</p>
+<div class="mini-flow" role="group" aria-label="新事项流程"><div>核对作者、任务与授权</div><span>→</span><div>检查是否已有对应工作</div><span>→</span><div>在本群新建或接续对应话题</div><span>→</span><div>接纳确认后，结果在工作话题回答</div></div>
+<p class="scenario-result">原消息保留接收反馈。重复提交复用已预留的目的地；工作话题创建与首条飞书消息实际送达分别确认。</p>
+</article>
+
+<article class="scenario" id="supplement">
+<h3>2．同一事项的补充</h3>
+<p>例如“还要考虑成本”“用刚才那张图”。先确认它补的是哪个事项，把条件和附件接到原工作，不为每条补充另建任务。</p>
+<div class="mini-flow" role="group" aria-label="补充流程"><div>定位被补充的事项</div><span>→</span><div>接续原工作话题</div><span>→</span><div>工作端继续执行或接收原生追加</div><span>→</span><div>在原工作中采用条件并给出结果</div></div>
+<p class="scenario-result">相容的连续补充可以一次明确移交；各条仍有自己的作者和回执。含糊的“这个”若会改变任务归属，先问清指代，不猜着转交。</p>
+</article>
+
+<article class="scenario" id="status-question">
+<h3>3．催问、状态查询或插入短问题</h3>
+<p>例如“现在做到哪儿了？”主线先查已保存的接收、排队、运行、移交或投递状态，回答当前能确认的事实。需要调查原因时，调查继续在工作话题推进。</p>
+<figure class="scenario-figure"><div class="mini-flow" role="group" aria-label="催问流程"><div>读取相关工作的已有状态</div><span>→</span><div>形成短答，说明已知与未知</div><span>→</span><div>本条原地址立即进入发送队列</div></div><div class="parallel-note">与此同时：工作话题继续研究；需要深入排查的原因另在该话题核实。</div><figcaption>“已接收”“正在运行”“已转交”都有各自依据，不能用它们代替“任务已完成”。</figcaption></figure>
+</article>
+
+<article class="scenario" id="correction-stop">
+<h3>4．纠正条件或要求停止</h3>
+<p>例如“先别下单，只做方案”“停止刚才那项研究”。必须定位受影响的工作，保留原作者和权限边界，把最新条件接续到该事项。</p>
+<div class="flow-fork compact-fork"><div class="flow-node"><span class="node-role">纠正</span><strong>原事项接收新条件</strong><span>工作端调整后续行为，重查受影响的结论和验收；已执行动作另说明。</span></div><div class="flow-node"><span class="node-role">停止</span><strong>原事项落实停止并核状态</strong><span>明确对象后走该工作的控制路径，区分要求已接收与执行已停止。</span></div></div>
+<p class="scenario-result">在主线 steer 一条“停止”，不自动证明另一个工作话题已停止。明确的停止控件使用原有取消机制；自然语言仍由 Harness 理解和处理。停止正在执行的工具、恢复已发生的外部动作各有自己的限制。</p>
+</article>
+
+<article class="scenario" id="cross-topic">
+<h3>5．信息会影响另一个已有话题</h3>
+<p>补充原事项与影响另一项工作是两种情况。跨话题复核要先准备具体草稿，列明目标、内容、影响和返回范围，让人确认这一份同步。</p>
+<div class="mini-flow" role="group" aria-label="跨话题同步流程"><div>读相关记录，形成同步草稿</div><span>→</span><div>等待人确认具体同步范围</div><span>→</span><div>目标话题展示已批准信息并复核</div><span>→</span><div>复核结果回到来源话题</div></div>
+<p class="scenario-result">未确认时只保存草稿。同步限同一试点群；不搬移可见历史、不扩大群权限，不自动取消或替换目标工作。目标若已变化或不可用，按现有校验处理，不能把提交当成采纳。</p>
+</article>
+
+<article class="scenario" id="reaction-only">
+<h3>6．已读、致谢或无需正文的交流</h3>
+<p>Harness 可以记录无需正文的具体理由，保留适合语境的结果表情。需要工作话题答复时，成功移交后原消息可用“收到”Get 表达接收。</p>
+<div class="mini-flow" role="group" aria-label="无需正文的流程"><div>判断无需正文或正文将在工作话题继续</div><span>→</span><div>保存处理决定</div><span>→</span><div>投递合适的表情并核回执</div></div>
+<p class="scenario-result">表情库有 50 个内置选项，现有轻量判断可选其中 40 个情境表情。Get 表示收到或接下，不表示任务完成；移交成功由目标接纳记录证明，表情自身不证明它。</p>
+</article>
+</section>
+
+<section id="example">
+<h2>三条连续消息，如何共用执行又分别处理</h2>
+<p>假设甲先发研究需求，随后补充条件，乙又催问。这是工作分配示意，不表示实际秒数或客户端送达顺序。</p>
+<figure class="message-example">
+<div class="example-head"><span>输入</span><span>主线逐条决定</span><span>去向与可见结果</span></div>
+<div class="example-row"><div><strong>甲：研究需求</strong><small>输入 A</small></div><div>确定工作话题，保存 A 的移交</div><div class="work">工作话题执行；A 保留接收反馈</div></div>
+<div class="example-row"><div><strong>甲：补充条件</strong><small>输入 B</small></div><div>steer 进入活跃主线，确认与 A 同事项</div><div class="work">B 接续同一工作；不重复建话题</div></div>
+<div class="example-row"><div><strong>乙：状态催问</strong><small>输入 C</small></div><div>steer 进入活跃主线，读取已有状态</div><div class="answer">C 按自己的原地址提前答复</div></div>
+<figcaption>图 2　A、B 可以属于同一工作，C 由自己的状态答复负责。A 已移交、主线不发研究正文，不会使 C 自动失去回答。</figcaption>
+</figure>
+<p>每条追加输入需要明确处理。主线可以在一轮内安排多项工作，但不会自动把所有输入广播给每个工作话题，也不会让多个执行同时改写同一份会话状态。</p>
+</section>
+
+<section id="recovery">
+<h2>异常与重试：从缺失的环节恢复</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="异常情形和恢复路径"><table><thead><tr><th>情况</th><th>系统保留的依据</th><th>恢复方式与边界</th></tr></thead><tbody>
+<tr><td>当前运行不能接受追加</td><td>输入兼容性与原生回执。</td><td>明确未进入活跃执行时沿正常队列处理；传输结果不确定时先查回执，不能当作新任务重复执行。</td></tr>
+<tr><td>目标话题已归档或不属于本群</td><td>目标身份、可用状态和群绑定。</td><td>阻止移交，说明原因；重新确认有效去向，不静默搬到其他群。</td></tr>
+<tr><td>目标接纳失败或回执丢失</td><td>固定输入身份、已预留话题和目标请求。</td><td>按同一身份查询或重试。未接纳时恢复原消息报告失败的能力；不能先宣称成功。</td></tr>
+<tr><td>某条追加消息未处理</td><td>没有该条移交或独立答复记录。</td><td>结算显示处理未完成；不拿另一条的最终结果充当它的答复。</td></tr>
+<tr><td>服务重启、合并答复中断</td><td>已保存的答复计划、输入集合和投递记录。</td><td>恢复原答复；保持正文、地址和覆盖集合不变，避免重复正文。</td></tr>
+<tr><td>已生成正文，外部送达不确定</td><td>原正文、出站状态和提供方回执。</td><td>查原话题或回执，确认缺失后补发原投递；不重新做一遍研究、下单或其他工具动作。</td></tr>
+</tbody></table></div>
+<figure class="flow-figure recovery-figure"><div class="mini-flow" role="group" aria-label="投递异常恢复流程"><div>定位原输入、答复与投递</div><span>→</span><div>核对外部消息和回执</div><span>→</span><div>已送达则停止；确实缺失才重试原投递</div><span>→</span><div>保存回执，读回正文和位置</div></div><figcaption>图 3　补发恢复的是投递。只有执行本身失败且任务仍获授权，才另外判断是否恢复工作。</figcaption></figure>
+</section>
+
+<section id="evaluation">
+<h2>怎样判断实验有效</h2>
+<p>首先确认每条消息归对事项、回对位置、没有漏接或重复工作，再比较速度。隔离回放能验证传输和记录契约；真实模型是否及时采用补充、把主线调查控制住，仍要用自然消息检验。</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="实验验收指标"><table><thead><tr><th>维度</th><th>观察什么</th><th>当前证据边界</th></tr></thead><tbody>
+<tr><td>追加是否及时</td><td>首轮仍在运行时，后续输入能否进入同一次执行。</td><td>已有隔离回放；不能据此推导线上平均时延。</td></tr>
+<tr><td>归属和回复正确</td><td>补充接原工作；独立事项分开；不同作者地址正确；催问有答复。</td><td>已验证程序契约；自然群聊的语义准确率仍待测。</td></tr>
+<tr><td>人感到快不快</td><td>接收到反馈、目标接纳、首个有用答复的时间分别测量。</td><td>需包括准备、启动和上游等待，记录 p50、p95 与最差案例；不能只测模型生成。</td></tr>
+<tr><td>恢复和副作用</td><td>重启、重试、未知回执、目的地变化、停止纠正时是否重复或越界。</td><td>已有隔离测试；线上每次送达和业务结果仍需自己的证据。</td></tr>
+</tbody></table></div>
+<p class="scope-note"><strong>仍待验证：</strong>实际能快多少、复杂连续讨论的错分率，以及哪些准备步骤继续占用时间。本次机制没有增加独立分流模型，没有调整思考档位；后续比较模型或档位须用相同样例，同时衡量速度和归属准确性。</p>
+</section>
+
+<section id="evidence">
+<h2>依据、版本与维护位置</h2>
+<p>本章于 2026-10-10 对照源码 <code>093f2363</code> 核对。本实例服务自报 <code>4a55a868</code>，包含实验提交 <code>e0c218ad</code>；试点配置当前启用一个群。范围、代码存在、进程加载和自然消息效果分别成立，不相互替代。</p>
+<ul class="sources">
+<li><a href="https://github.com/Ninglo/remotelab/commit/c097a7fe6b00a928deeb2c3279c7d75e7d7cce6c">原分流试点改动</a>：主线禁用 steer 的历史原因。</li>
+<li><a href="https://github.com/Ninglo/remotelab/commit/e0c218ada949ee5e062d7efe07e12428f7fc96e1">逐条回复责任与 steer 改动</a>、<a href="https://github.com/Ninglo/remotelab/actions/runs/37932959581">该提交的 CI</a>：实现与测试依据。</li>
+<li><a href="https://github.com/Ninglo/remotelab/blob/093f2363/chat/native-request-dispatch.mjs">原生输入分发</a>、<a href="https://github.com/Ninglo/remotelab/blob/093f2363/chat/group-routing.mjs">移交与逐条答复</a>、<a href="https://github.com/Ninglo/remotelab/blob/093f2363/lib/group-routing-pilot.mjs">试点范围和协议</a>：图 1 与情境分支对应入口。</li>
+<li><a href="https://github.com/Ninglo/remotelab/blob/093f2363/notes/current/feishu-routing-latency.md">分流时延复盘</a>：旧案例时延、未能归因的部分与实验评估方法。</li>
+<li><a href="https://github.com/Ninglo/remotelab/blob/main/docs/session-work-awareness.md">工作分流和答复接口</a>、<a href="https://github.com/Ninglo/remotelab/blob/main/docs/native-harness-input.md">原生输入与恢复协议</a>、<a href="https://github.com/Ninglo/remotelab/blob/main/docs/external-message-protocol.md">外部消息和投递协议</a>：链接指向持续维护的主线原文，具体行为须核对其版本。</li>
+</ul>
+<details data-technical><summary>后续更新应该改哪里</summary><div class="detail-body"><p>正文和图维护在 <code>docs/architecture-atlas/output/routing.html</code>，图表样式在相邻 <code>routing.css</code>；目录登记在 <code>project.json</code>。章节随整体说明的统一构建、原站点发布和备份交付，不另设说明网站。</p><p>机制变化回到对应源码和协议核对；试点范围按实例设置核对；新时延数据标明采样日期、样本数与测量起止。更新本章不改其他章节历史样本的日期，也不把方案或隔离演示提升为现场验收。</p></div></details>
+<p class="guide-footer"><a href="../project.html?v=20261010routing#execution">返回消息全程</a> · <a href="./index.html?v=20261010routing#feedback">查运行中的补充输入</a> · <a href="../README.md">整体说明维护约定</a></p>
+</section>
+</main>
+</body>
+</html>

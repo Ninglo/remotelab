@@ -48,7 +48,7 @@ for (const page of pages) {
   await access(file);
 }
 const counts = { webProductGroups: webInventory.products.length, publishedWebEntries: webUrls.size, featureGroups: catalog.groups.length, featureCandidates: candidates.length, referencedSourceFiles: sourceFiles.length, explanationPages: pages.length, selectedDocuments: inventory.documents.length, historicalRecords: historical.length };
-const scope = `本章在 ${inventory.checkedAt} 归集了 ${counts.webProductGroups} 组独立 Web 产物，涵盖 ${counts.publishedWebEntries} 个网站与历史版本入口；同时定位 ${counts.featureGroups} 组、${counts.featureCandidates} 项候选功能及其 ${counts.referencedSourceFiles} 个源码或文档引用，${counts.explanationPages} 个原有说明页面、${counts.selectedDocuments} 个重点文档入口，以及 ${counts.historicalRecords} 条旧功能记录。数量分别描述不同对象，不能相加当作已完成成果总数。`;
+const scope = `本章在 ${inventory.checkedAt} 归集了 ${counts.webProductGroups} 组独立 Web 产物，涵盖 ${counts.publishedWebEntries} 个网站与历史版本入口；功能索引保留 ${counts.featureGroups} 组、${counts.featureCandidates} 项候选功能及其 ${counts.referencedSourceFiles} 个源码或文档引用。当前目录登记 ${counts.explanationPages} 个说明页面和 ${counts.selectedDocuments} 个重点文档入口，另保留 ${counts.historicalRecords} 条旧功能记录。新增页面沿用自己的核对日期；数量分别描述不同对象，不能相加当作已完成成果总数。`;
 const boundary = `本次核对到文件、目录和引用存在。功能清单沿用 ${catalog.checkedAt} 的候选记录，模块作者补漏与逐项实际使用验收尚未完成；历史目录也可能含已调整的入口。某项功能的当前启用、结果送达与业务效果，需要继续沿原记录查证。`;
 const provenance = `源码核对基线 ${inventory.sourceRevision}。页面、功能与文档保留各自的核对日期，本章整理日期不替代它们。`;
 const webScope = `独立网站、研究资料与试验页面也属于我们的产出，按原项目或主题归组。网站内容继续在各自项目维护，本章只登记入口、用途和发布时的状态。发布目录于 ${webInventory.checkedAt} 核对；发布记录时间不等于内容日期，也不表示试验已应用或设备已经验收。`;
