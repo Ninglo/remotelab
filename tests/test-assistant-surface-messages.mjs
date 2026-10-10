@@ -58,6 +58,9 @@ for (const example of ['`<reply>example</reply>`', '```xml\n<reply>example</repl
 for (const type of ['tool_result', 'tool_use', 'reasoning']) {
   assert.equal(collectAssistantSurfaceMessages([{ ...directReply, type }]).size, 0);
 }
+const quotedQuestion = { ...directReply, messageKind: 'user_question', nativeQuestion: { options: ['a', 'b'] } };
+assert.equal(collectAssistantSurfaceMessages([quotedQuestion]).get(quotedQuestion).surfaceKind, 'question',
+  'reply markup inside a native question cannot turn its controls into an ordinary text answer');
 const directFinal = message(11, 'final_answer', '<reply>补充问题已解决。</reply> 整体完成。');
 assert.equal(collectAssistantSurfaceMessages([directFinal]).get(directFinal).content, '补充问题已解决。 整体完成。');
 assert.equal(buildReplyDeliveries({ connector: 'feishu', target: { chatId: 'chat', threadId: 'topic' } },
