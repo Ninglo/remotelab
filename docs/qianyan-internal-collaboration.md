@@ -8,6 +8,22 @@ The public research API remains `/api/qianyan/v1/`. Employee documents and discu
 
 Instance configuration `qianyan-internal.json` contains `realm`, `tenantKey`, explicit `personIds` for previously provisioned RemoteLab staff, and `feishuConfigPath` pointing to the existing application configuration. Never store app secrets in source control.
 
+For paid MP reading, ask the agent to enable the private source-key input for the
+current verified contributor and return its HTTPS link. The unavoidable human
+step is pasting the Dajiala API Key into that form after purchasing credit.
+`sourceCredentialPersonIds` in the same instance configuration explicitly lists
+the contributor's verified Person ID; this is not inherited from general staff
+membership. `GET /api/qianyan/internal/source-credentials` reuses the existing
+employee/RemoteLab identity, while anonymous readers get a login link that returns
+to the form. Service identities and other employees are denied. A single-use,
+ten-minute form token and the normal same-origin check protect submission.
+`POST` saves only `DAJIALA_KEY` into the research project's
+`private/secrets/source-providers.json` with mode 0600 inside a 0700 directory,
+preserving other provider keys. `GET source-credentials/status` returns only
+whether a key is present. The form has no analytics, key readback or browser
+storage; key data never enters Session messages or public research data.
+Saving is not proof of provider balance, valid credentials or a successful read.
+
 An already authenticated and configured RemoteLab Person is reused. Feishu sign-in uses the existing application's device authorization flow; first-time visitors confirm their identity on Feishu, and the site then remembers it. The backend checks `tenant_key` and binds the verified app-scoped `open_id` to the exact existing Person identity. It does not merge by display name. A new employee receives a research-site cookie, not a RemoteLab control-plane credential. Redirect-based silent SSO can be added after its application redirect/domain settings are verified; it is not claimed by this implementation.
 
 For a normal Feishu webpage link, use the research site's `#/enter` entry. It checks the saved identity before rendering an authorization step; returning readers go straight to the daily page. First-time confirmation opens the existing Feishu authorization flow from the entry button. `GET auth/me` renews a still-valid, correctly bound research-site session to 30 days when at least one day has elapsed, so continued use does not repeatedly ask for consent. Inactive sessions expire, and clearing browser data or changing browsers can require confirmation again. Invalid, expired, foreign-tenant and unbound identities are never renewed. Ordinary links carry no trusted employee ID, and this flow does not claim container-based or callback SSO.

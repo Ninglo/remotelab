@@ -7,6 +7,7 @@ import { getCachedAuthDocument, loadAuthDocument, updateAuthDocument } from '../
 import { readBody } from '../lib/utils.mjs';
 import { createQianyanIdentity } from '../knowledge/qianyan-identity.mjs';
 import { createQianyanCollaboration } from '../knowledge/qianyan-collaboration.mjs';
+import { createQianyanSourceCredentials } from '../knowledge/qianyan-source-credentials.mjs';
 
 async function registerIdentity({ realm, openId, name }) {
   // Match verified IDs within an app realm. Names never authorize an account merge.
@@ -29,13 +30,14 @@ const collaboration = createQianyanCollaboration({ configDir: CONFIG_DIR,
   sourceCatalogPath: join(project, 'private/pipeline/source_catalog.json'),
   pipelineMetricsPath: join(project, 'private/observability/last_run.json'),
   corpusPath: process.env.REMOTELAB_QIANYAN_CORPUS || join(project, 'private/pipeline/agent_corpus.json') });
+const sourceCredentials = createQianyanSourceCredentials({ configDir: CONFIG_DIR, project });
 
 function sameOrigin(req) {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
   const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket?.encrypted ? 'https' : 'http');
   return !req.headers.origin && !!req.headers.authorization || req.headers.origin === `${proto}://${host}`;
 }
-export function createQianyanInternalHandler({ identityService = identity, collaborationService = collaboration,
+export function createQianyanInternalHandler({ identityService = identity, collaborationService = collaboration, sourceCredentialService = sourceCredentials,
   remoteSession = async req => { await authenticateBearerToken(req); return getAuthSession(req); } } = {}) {
   return async function handle({ req, res, pathname, writeJson }) {
     const prefix = '/api/qianyan/internal/'; if (!pathname.startsWith(prefix)) return false;
@@ -47,6 +49,7 @@ export function createQianyanInternalHandler({ identityService = identity, colla
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) { send(405, { error: 'Method not allowed' }); return true; }
       if (req.method !== 'GET' && !sameOrigin(req)) { send(403, { error: '请从本站提交' }); return true; }
       const person = await identityService.member(req, await remoteSession(req));
+      if (await sourceCredentialService({ req, res, pathname, person, writeJson })) return true;
       if (action === 'auth/me' && req.method === 'GET') {
         if (person) {
           const renewed = await identityService.renew?.(req, person);
