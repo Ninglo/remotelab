@@ -287,8 +287,13 @@ export async function startDocumentBindingEvents(runtime, { now = Date.now, reco
     if (recoveryTimer !== null) { cancel(recoveryTimer); recoveryTimer = null; }
     recoveryState.nextAt = now() + recoveryDelayMs;
     await writeBindingJson(recoveryPath, recoveryState);
+    const pending = await inbox.store.active();
     for (const binding of await listDocumentBindings(runtime.config.storageDir)) {
-      if (binding.sourceRouteId === runtime.config.sourceRouteId)
+      // A slow scan plus one successor covers the final connection gap. A
+      // prolonged reconnect storm must not grow a backlog of identical scans.
+      const queued = pending.filter(entry => !entry.complete && entry.fileToken === binding.fileToken
+        && entry.id.startsWith(`recover:${binding.generation}:`)).length;
+      if (binding.sourceRouteId === runtime.config.sourceRouteId && queued < 2)
         await enqueue(binding.fileToken, `recover:${binding.generation}:${randomUUID()}`);
     }
   });

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { startDocumentBindingEvents, bindingsDirectory, bindingKey, writeBindingJson } from '../connectors/feishu/document-bindings.mjs';
@@ -85,5 +85,23 @@ try {
   controller = await startDocumentBindingEvents(forbiddenRuntime, recoveryOptions);
   await controller.idle();
   assert.equal(forbiddenReads, 1, 'permanent failures do not make API calls after a new event or restart');
+  await controller.stop();
+  const stormStorage = join(storageDir, 'storm');
+  await writeBindingJson(join(bindingsDirectory(stormStorage), `${bindingKey('doc')}.binding.json`), binding);
+  let releaseScan, markStarted, stormReads = 0;
+  const scanGate = new Promise(resolve => { releaseScan = resolve; });
+  const started = new Promise(resolve => { markStarted = resolve; });
+  const stormRuntime = { ...runtime, config: { ...runtime.config, storageDir: stormStorage },
+    appClient: { drive: { v1: { fileComment: { list: async () => { stormReads++; return { data: { items: [] } }; } } } } },
+    requestRemoteLab: async () => { markStarted(); await scanGate;
+      return { response: { ok: true }, json: { session: { conversation: binding.conversation } } }; },
+  };
+  controller = await startDocumentBindingEvents(stormRuntime, recoveryOptions);
+  await started;
+  for (let i = 0; i < 20; i++) { clock += 30_000; await controller.recover(); }
+  assert.equal((await readdir(join(bindingsDirectory(stormStorage), 'events', 'active'))).filter(name => name.endsWith('.json')).length, 2,
+    'a prolonged reconnect storm retains only the in-flight scan and one trailing scan per document');
+  releaseScan(); await controller.idle();
+  assert.equal(stormReads, 2, 'bounded recovery backlog still performs its final catch-up');
   console.log('document events: immediate comments, burst/restart coalescing, trailing catch-up, deduplication and permanent rejection passed');
 } finally { await controller?.stop(); await rm(storageDir, { recursive: true, force: true }); }
