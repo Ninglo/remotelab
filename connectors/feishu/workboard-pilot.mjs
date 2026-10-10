@@ -255,6 +255,13 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
     throw new Error(`Feishu workboard create outcome is unknown for anchor ${card.anchorSeq}; inspect before retrying`);
   }
   if (cycle.latestSeq < card.latestSeq || (cycle.latestSeq === card.latestSeq && card.contentHash === contentHash)) return null;
+  if (card.contentHash === contentHash) {
+    // A new local sequence does not require an identical provider write.
+    card.latestSeq = cycle.latestSeq;
+    card.taskId = cycle.taskId;
+    await persist();
+    return null;
+  }
   // A renderer upgrade may change the same acknowledged snapshot. Patch its
   // existing message once, then persist the hash so restart cannot repeat it.
   const response = await app.im.v1.message.patch({

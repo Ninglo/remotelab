@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import WebSocket from 'ws';
 import * as Lark from '@larksuiteoapi/node-sdk';
+import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { createSerialTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createProgressCardRefresh } from '../connectors/feishu/progress-card-refresh.mjs';
@@ -62,6 +63,9 @@ if (disableOnly) {
 const expired = () => Boolean(pilot.expiresAt) && Date.now() >= Date.parse(pilot.expiresAt);
 if (expired()) process.exit(0);
 const app = new Lark.Client({
+  httpInstance: createFeishuHttpInstance(Lark.defaultHttpInstance, 30000, {
+    appId: botConfig.appId, sourceRouteId: pilot.sourceRouteId, component: 'workboard',
+  }),
   appId: botConfig.appId,
   appSecret: botConfig.appSecret,
   domain: botConfig.region === 'lark-global' ? Lark.Domain.Lark : Lark.Domain.Feishu,

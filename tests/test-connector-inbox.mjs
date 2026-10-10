@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
+import { feishuReadRetryPolicy } from '../lib/feishu-retry-policy.mjs';
 const root = await mkdtemp(join(tmpdir(), 'connector-inbox-'));
 try {
   let prepared;
@@ -106,5 +107,60 @@ try {
     assert.equal((await inbox.accept('invalid', { chat: 'chat-a' })).complete, true);
     assert.deepEqual(rejected, ['invalid', 'restore'], 'redelivery retains the original failure without re-executing it');
   } finally { inbox.stop(); await inbox.idle(); }
-  console.log('connector inbox: durable replay, immediate dispatch, ordered handoff, shutdown and stale-scan deduplication pass');
+  let clock = 1000, retryCalls = 0;
+  const retryRoot = join(root, 'bounded-retries');
+  const retryInbox = () => createConnectorInbox(retryRoot, {
+    conversationKey: entry => entry.chat, retryPolicy: feishuReadRetryPolicy, now: () => clock,
+    onError: () => {}, process: async () => { retryCalls++; throw Object.assign(new Error('rate limited'), {
+      code: 99991400, retryAfterMs: retryCalls === 1 ? 15_000 : 0,
+    }); },
+  });
+  inbox = retryInbox();
+  const rateLimited = await inbox.accept('rate-limited', { chat: 'doc' });
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    await inbox.tick(); await inbox.idle();
+    const record = await inbox.store.get(rateLimited.key);
+    assert.equal(record.attempts, attempt);
+    if (attempt < 5) {
+      assert.equal(record.nextAttemptAt - clock, attempt === 1 ? 15_000 : 5000 * 2 ** (attempt - 1));
+      await inbox.tick(); await inbox.idle();
+      assert.equal(retryCalls, attempt, 'a premature tick makes no request');
+      clock = record.nextAttemptAt;
+      inbox = retryInbox(); // The attempt budget and deadline survive process restart.
+    } else {
+      assert.equal(record.receipt.retryExhausted, true);
+      assert.equal(record.complete, true);
+      assert.equal((await inbox.store.active()).length, 0);
+    }
+  }
+  await inbox.tick(); await inbox.idle();
+  assert.equal(retryCalls, 5, 'transient failures stop at the durable attempt limit');
+  const interrupted = await inbox.accept('interrupted-final-attempt', { chat: 'doc' });
+  await inbox.store.mutate(interrupted.key, record => ({ ...record, attempts: 5 }));
+  inbox = retryInbox(); await inbox.tick(); await inbox.idle();
+  assert.equal(retryCalls, 5, 'a crash after persisting the final attempt cannot reset or exceed the budget');
+  assert.equal((await inbox.store.get(interrupted.key)).receipt.retryExhausted, true);
+  assert.equal(feishuReadRetryPolicy({ code: 99991672 }).retryable, false);
+  assert.equal(feishuReadRetryPolicy({ httpStatus: 404 }).retryable, false);
+  assert.equal(feishuReadRetryPolicy({ httpStatus: 503 }).retryable, true);
+
+  let activeCount = 0, maxActive = 0, cappedCalls = 0;
+  const releases = [];
+  inbox = createConnectorInbox(join(root, 'capped'), {
+    conversationKey: entry => entry.chat, maxConcurrency: 2,
+    process: async () => { cappedCalls++; activeCount++; maxActive = Math.max(maxActive, activeCount);
+      await new Promise(resolve => releases.push(resolve)); activeCount--; return {}; },
+  });
+  for (let i = 0; i < 4; i++) await inbox.accept(`capped-${i}`, { chat: `doc-${i}` });
+  await inbox.tick();
+  assert.equal(cappedCalls, 2, 'only two documents can start at once');
+  await inbox.tick();
+  assert.equal(cappedCalls, 2);
+  releases.splice(0).forEach(release => release());
+  await inbox.idle(); await inbox.tick();
+  assert.equal(cappedCalls, 4);
+  releases.splice(0).forEach(release => release());
+  await inbox.idle();
+  assert.equal(maxActive, 2);
+  console.log('connector inbox: durable replay, ordering, bounded concurrency and restart-safe retry budget pass');
 } finally { await rm(root, { recursive: true, force: true }); }

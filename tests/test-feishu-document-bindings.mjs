@@ -94,8 +94,8 @@ try {
   assert.equal(calls, 2);
   runtime.appClient.drive.v1.fileComment.list = async () => ({ data: { items: [], has_more: true } });
   await assert.rejects(readDocumentComments(runtime, binding), /pagination/);
-  runtime.requestRemoteLab = async () => ({ response: { ok: false }, json: {} });
-  await assert.rejects(reconcileDocumentBinding(runtime, binding), /Session missing/);
+  runtime.requestRemoteLab = async () => ({ response: { ok: false, status: 404 }, json: {} });
+  await assert.rejects(reconcileDocumentBinding(runtime, binding), /Session read failed \(404\)/);
   const head = { key: 'h', options: {}, runtimeSelection: {} };
   assert.equal(canForwardNativeRequest({ key: 'n', options: { sourceContext: { documentBinding: true } }, runtimeSelection: {} }, head), false);
   const template = normalizeScheduledSessionTemplate({ folder: '/tmp', tool: 'codex', reuse: 'calendar_day', reuseTimezone: 'Asia/Shanghai' });

@@ -81,6 +81,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
 - `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector
+- [Feishu API observability](feishu-api-observability.md) — local request ledger, usage aggregation, privacy and bounded document recovery
 - [Person-scoped workboard baseline](../notes/current/feishu-workboard-pilot.md) — accepted checklist/result behavior, opt-in scope, durable operation and isolated regression entry
 - `github-auto-triage.md` — model-first GitHub intake and auto-reply rollout contract
 - `shared-host-github-accounts.md` — per-person GitHub account and checkout trial on a shared host

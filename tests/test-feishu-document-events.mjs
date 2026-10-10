@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { startDocumentBindingEvents, bindingsDirectory, bindingKey, writeBindingJson } from '../connectors/feishu/document-bindings.mjs';
@@ -23,8 +23,17 @@ const runtime = { config: { storageDir, sourceRouteId: 'bot' }, botIdentity: { o
   },
 };
 let controller;
+let clock = 100_000, nextTimer = 0;
+const timers = new Map();
+const recoveryOptions = { now: () => clock,
+  schedule: (callback, delay) => { const id = nextTimer++; timers.set(id, { callback, at: clock + delay }); return id; },
+  cancel: id => timers.delete(id) };
+const advanceRecovery = async () => {
+  for (const [id, timer] of timers) if (timer.at <= clock) { timers.delete(id); timer.callback(); }
+  await controller.idle();
+};
 try {
-  controller = await startDocumentBindingEvents(runtime);
+  controller = await startDocumentBindingEvents(runtime, recoveryOptions);
   await controller.idle();
   assert.equal(reads, 1, 'one startup reconciliation');
   for (let i = 0; i < 10; i++) await controller.idle();
@@ -38,13 +47,43 @@ try {
   await controller.accept({ fileToken: 'doc', eventId: 'e' });
   await controller.idle();
   assert.equal(reads, afterEvent, 'duplicate events do not read again');
-  await controller.recover();
+  await Promise.all(Array.from({ length: 10 }, () => controller.recover()));
   await controller.idle();
-  assert.equal(reads, afterEvent + 1);
-  assert.equal(submissions, 1, 'reconnect read preserves input deduplication');
+  assert.equal(reads, afterEvent, 'a reconnect burst does not repeat remote reads');
+  assert.equal(timers.size, 1, 'all reconnects share one trailing recovery, including timer ID zero');
   await controller.stop();
-  controller = await startDocumentBindingEvents(runtime);
+  assert.equal(timers.size, 0, 'shutdown cancels scheduled recovery');
+  controller = await startDocumentBindingEvents(runtime, recoveryOptions);
   await controller.idle();
-  assert.equal(submissions, 1);
-  console.log('document events: startup, no idle remote reads, bound dispatch, event dedupe, reconnect and restart passed');
+  assert.equal(reads, afterEvent, 'recovery cooldown survives process restart');
+  replies.push({ reply_id: 'missed-during-gap', user_id: 'human', create_time: 1789690010,
+    content: { elements: [{ type: 'text_run', text_run: { text: 'missed event' } }] } });
+  clock += 30_000;
+  await advanceRecovery();
+  assert.equal(reads, afterEvent + 1, 'one trailing recovery catches a comment without its event');
+  assert.equal(submissions, 2);
+  await controller.recover();
+  clock += 30_000;
+  await advanceRecovery();
+  assert.equal(submissions, 2, 'recovery preserves comment admission deduplication');
+  await controller.stop();
+  let forbiddenReads = 0;
+  const forbiddenRuntime = { ...runtime, appClient: { drive: { v1: {
+    fileComment: { list: async () => { forbiddenReads++; return { code: 99991672, msg: 'permission required' }; } },
+  } } } };
+  clock += 30_000;
+  controller = await startDocumentBindingEvents(forbiddenRuntime, recoveryOptions);
+  await controller.idle();
+  assert.equal(forbiddenReads, 1);
+  const blocked = JSON.parse(await readFile(join(bindingsDirectory(storageDir), `${bindingKey('doc')}.state.json`), 'utf8'));
+  assert.equal(blocked.retryBlocked, true);
+  assert.equal(blocked.retryBlockedCode, 99991672);
+  await controller.accept({ fileToken: 'doc', eventId: 'new-event-without-permission' });
+  await controller.idle();
+  await controller.stop();
+  clock += 30_000;
+  controller = await startDocumentBindingEvents(forbiddenRuntime, recoveryOptions);
+  await controller.idle();
+  assert.equal(forbiddenReads, 1, 'permanent failures do not make API calls after a new event or restart');
+  console.log('document events: immediate comments, burst/restart coalescing, trailing catch-up, deduplication and permanent rejection passed');
 } finally { await controller?.stop(); await rm(storageDir, { recursive: true, force: true }); }

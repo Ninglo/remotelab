@@ -202,6 +202,29 @@ test('a group thread card replies once and patches that same message', async () 
   assert.equal(calls[1][1].path.message_id, 'om-group-card');
 });
 
+test('invisible event sequence changes advance the receipt without patch or readback', async () => {
+  let state = { ...pilot, cards: [] }, durable, patches = 0, reads = 0;
+  const app = { im: { v1: { message: {
+    create: async () => ({ code: 0, data: { message_id: 'om-same-content' } }),
+    patch: async () => { patches++; return { code: 0 }; },
+  } } } };
+  const options = () => ({ pilot: state, app,
+    persist: async () => { durable = structuredClone(state); },
+    verifyMessage: async () => { reads++; },
+  });
+  const first = { anchorSeq: 12, latestSeq: 12, content: list(12).content, closed: false };
+  await publishFeishuWorkboardCycle(first, options());
+  assert.equal(reads, 1);
+  assert.equal(await publishFeishuWorkboardCycle({ ...first, latestSeq: 20 }, options()), null);
+  assert.equal(durable.cards[0].latestSeq, 20);
+  state = structuredClone(durable);
+  assert.equal(await publishFeishuWorkboardCycle({ ...first, latestSeq: 21 }, options()), null);
+  assert.equal(patches, 0); assert.equal(reads, 1);
+  await publishFeishuWorkboardCycle({ ...first, latestSeq: 22, content: list(22, true).content }, options());
+  assert.equal(patches, 1); assert.equal(reads, 2, 'visible changes still patch and verify the original card');
+  assert.equal(state.cards[0].messageId, 'om-same-content');
+});
+
 
 test('instance cards follow turn admission across members and keep the original reply on steering', async () => {
   const state = { scope: 'instance', sourceRouteId: 'bot-2', chatId: 'group-1', sessionId: 'group-session', cards: [] };

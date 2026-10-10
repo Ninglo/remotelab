@@ -1,5 +1,7 @@
 import { watch } from 'node:fs';
 import { createConnectorInbox } from '../../lib/connector-inbox.mjs';
+import { serialQueue } from '../../lib/durable-records.mjs';
+import { feishuReadRetryPolicy } from '../../lib/feishu-retry-policy.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, mkdir, writeFile, rename, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -38,7 +40,8 @@ async function pages(method, params, path) {
   let token = '';
   for (let page = 0; page < 1000; page += 1) {
     const response = await method({ params: { ...params, page_size: 100, ...(token ? { page_token: token } : {}) }, path });
-    if (response.code && response.code !== 0) throw new Error(`Feishu comment read ${response.code}: ${response.msg}`);
+    if (response.code && response.code !== 0) throw Object.assign(
+      new Error(`Feishu comment read ${response.code}: ${response.msg}`), { code: response.code });
     if (!response.data) throw new Error('Feishu comment response has no data');
     items.push(...(response.data.items || []));
     if (!response.data.has_more) return items;
@@ -192,13 +195,17 @@ export function commentCandidates(binding, comments, state, botIdentity, authorN
 export async function reconcileDocumentBinding(runtime, binding) {
   const statePath = join(bindingsDirectory(runtime.config.storageDir), `${bindingKey(binding.fileToken)}.state.json`);
   const state = await readBindingJson(statePath, { seen: {}, pending: [], generation: binding.generation });
-  if (state.generation !== binding.generation) throw new Error('Binding generation mismatch');
+  if (state.generation !== binding.generation) throw Object.assign(new Error('Binding generation mismatch'), { retryable: false });
+  if (state.retryBlocked) throw Object.assign(new Error(state.lastError || 'Document binding needs repair'), { retryable: false });
   try {
     const result = await runtime.requestRemoteLab(`/api/sessions/${binding.sessionId}`);
     const current = result.json?.session?.conversation;
-    if (!result.response.ok || !current || !(sameConversation(current, refineConversation(binding.conversation, current))
+    if (!result.response.ok) throw Object.assign(new Error(`Bound Session read failed (${result.response.status})`), {
+      httpStatus: result.response.status,
+    });
+    if (!current || !(sameConversation(current, refineConversation(binding.conversation, current))
       || JSON.stringify(binding.conversation) === JSON.stringify(current))) {
-      throw new Error('Bound Session missing or conversation changed; rebind explicitly');
+      throw Object.assign(new Error('Bound Session missing or conversation changed; rebind explicitly'), { retryable: false });
     }
     // Persist the exact submission before admission. Lost acknowledgements replay
     // the same request and body, never a newly hydrated version of its context.
@@ -227,16 +234,23 @@ export async function reconcileDocumentBinding(runtime, binding) {
   } catch (error) {
     state.lastError = String(error.message || error);
     state.lastErrorAt = new Date().toISOString();
+    if (!feishuReadRetryPolicy(error).retryable) {
+      error.retryable = false;
+      state.retryBlocked = true;
+      state.retryBlockedCode = error.code ?? error.httpStatus ?? null;
+    }
     throw error;
   } finally {
     await writeBindingJson(statePath, state);
   }
 }
 
-export async function startDocumentBindingEvents(runtime) {
+export async function startDocumentBindingEvents(runtime, { now = Date.now, recoveryDelayMs = 30_000,
+  schedule = setTimeout, cancel = clearTimeout } = {}) {
   const directory = bindingsDirectory(runtime.config.storageDir);
   await mkdir(directory, { recursive: true });
   const inbox = createConnectorInbox(join(directory, 'events'), {
+    maxConcurrency: 2, retryPolicy: feishuReadRetryPolicy,
     conversationKey: entry => entry.fileToken,
     process: async entry => {
       const binding = (await listDocumentBindings(runtime.config.storageDir))
@@ -248,12 +262,29 @@ export async function startDocumentBindingEvents(runtime) {
     onError: error => console.error(`[feishu-document-event] ${error.message}`),
   });
   const enqueue = (fileToken, eventId) => inbox.accept(eventId, { fileToken });
-  const recover = async () => {
+  const recoveryPath = join(directory, 'recovery-state.json');
+  const recoveryState = await readBindingJson(recoveryPath, { nextAt: 0 });
+  const recoveryQueue = serialQueue();
+  let recoveryTimer = null, stopped = false;
+  const recover = () => recoveryQueue(async () => {
+    if (stopped) return;
+    if (now() < recoveryState.nextAt) {
+      // Reconnects in the cooldown share one trailing catch-up. Never simply
+      // skip the final gap: it may contain a comment whose event was missed.
+      if (recoveryTimer === null) recoveryTimer = schedule(() => {
+        recoveryTimer = null;
+        void recover().catch(error => console.error(`[feishu-document-recovery] ${error.message}`));
+      }, recoveryState.nextAt - now());
+      return;
+    }
+    if (recoveryTimer !== null) { cancel(recoveryTimer); recoveryTimer = null; }
+    recoveryState.nextAt = now() + recoveryDelayMs;
+    await writeBindingJson(recoveryPath, recoveryState);
     for (const binding of await listDocumentBindings(runtime.config.storageDir)) {
       if (binding.sourceRouteId === runtime.config.sourceRouteId)
         await enqueue(binding.fileToken, `recover:${binding.generation}:${randomUUID()}`);
     }
-  };
+  });
   // Local binding changes are filesystem events, never periodic remote scans.
   const watcher = watch(directory, (_event, filename) => {
     if (!String(filename).endsWith('.binding.json')) return;
@@ -274,7 +305,10 @@ export async function startDocumentBindingEvents(runtime) {
       return true;
     },
     recover,
-    async idle() { await inbox.tick(); await inbox.idle(); },
-    async stop() { watcher.close(); inbox.stop(); await inbox.idle(); },
+    async idle() { await recoveryQueue.idle(); await inbox.tick(); await inbox.idle(); },
+    async stop() {
+      stopped = true; if (recoveryTimer !== null) cancel(recoveryTimer);
+      watcher.close(); inbox.stop(); await recoveryQueue.idle(); await inbox.idle();
+    },
   };
 }

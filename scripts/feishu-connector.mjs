@@ -726,7 +726,9 @@ function createRuntimeContext(config, storagePaths) {
     config,
     storagePaths,
     appClient: new Lark.Client({
-      httpInstance: createFeishuHttpInstance(Lark.defaultHttpInstance),
+      httpInstance: createFeishuHttpInstance(Lark.defaultHttpInstance, 30000, {
+        appId: config.appId, sourceRouteId: config.sourceRouteId, component: 'connector',
+      }),
       appId: config.appId,
       appSecret: config.appSecret,
       domain: resolveDomain(config.region),
