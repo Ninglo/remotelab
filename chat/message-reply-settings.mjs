@@ -120,6 +120,7 @@ export function messageReplyPrompt(policy) {
         card_all: 'all progress records inside one card, initially collapsed, with in-card pages when needed',
         card: 'updates to one card, initially collapsed',
       })[policy.progress]}; a checklist is not required.`,
-    'Required questions and exceptional notices remain separate. Always deliver the final result for work you take on. These display choices do not change group participation, routing, permissions, or task acceptance.',
+    'When a user asks a supplementary question or reports a problem during ongoing work, answer that input with <reply>...</reply>. This direct answer is a separate text message even when opening text or ordinary progress is disabled or grouped in a card. State the concrete answer, what you incorporated, or what you still need to check; continue the original work. Use a separate message for ordinary <progress> updates. Do not use <reply> for routine receipts, internal process or periodic status.',
+    'Required questions, direct answers to supplementary user messages and exceptional notices remain separate. Always deliver the final result for work you take on. These display choices do not change group participation, routing, permissions, or task acceptance.',
   ].join('\n');
 }

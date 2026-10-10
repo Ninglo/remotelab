@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
+import { collectAssistantSurfaceMessages, parseProgressMessage, parseDirectReplyMessage } from '../lib/assistant-surface-messages.mjs';
+import { projectProgressStreams } from '../lib/progress-stream.mjs';
 import { buildSessionDisplayEvents, buildEventBlockEvents } from '../chat/session-display-events.mjs';
 import { buildReplyPublicationPayload } from '../chat/reply-publication.mjs';
 import { publishLiveAssistantReplies, excludePublishedFinalReplies, recoverTerminalReplyReceipt } from '../chat/native-final-publication.mjs';
@@ -32,6 +33,36 @@ assert.deepEqual(inFlight.filter(event => event.role === 'assistant' && event.ty
   .map(event => event.content), expected.slice(0, 2), 'opening and tagged progress appear before finalization');
 assert.equal(inFlight.at(-1).state, 'running');
 assert.equal(history[4].content, 'Unpublished context <progress>Found the cause.</progress> Hidden suffix', 'raw history stays intact');
+
+const directReply = message(10, 'commentary', 'Hidden prefix <reply>字体问题已纳入修正，原任务继续。</reply> Hidden suffix');
+for (const progress of ['card_all', 'card_latest', 'card', 'none']) {
+  const directHistory = [{ ...user, messageReplyPolicy: { version: 3, opening: false, progress } },
+    ...history.slice(1, -1), directReply];
+  for (const sessionRunning of [true, false]) {
+    assert.deepEqual(buildSessionDisplayEvents(directHistory, { sessionRunning })
+      .filter(event => event.type === 'message' && event.role === 'assistant').map(event => event.content),
+    ['字体问题已纳入修正，原任务继续。'], 'direct answers remain visible independently of opening/progress preferences');
+  }
+  assert.equal(projectProgressStreams(directHistory).some(stream =>
+    stream.progressHistory.some(event => event.seq === directReply.seq)), false,
+  'direct answers do not also enter the ordinary progress card');
+}
+assert.equal(collectAssistantSurfaceMessages([directReply], { includeProgress: false }).get(directReply).surfaceKind, 'reply');
+assert.deepEqual(parseDirectReplyMessage('<reply>One</reply> hidden <reply>Two</reply>'),
+  { reply: 'One\n\nTwo', text: 'One hidden Two' });
+assert.equal(parseDirectReplyMessage('<private><reply>Secret</reply></private><reply>Public</reply>').reply, 'Public');
+for (const example of ['`<reply>example</reply>`', '```xml\n<reply>example</reply>\n```',
+  '~~~xml\n<reply>example</reply>\n~~~', '<reply>unfinished']) {
+  assert.equal(parseDirectReplyMessage(example).reply, '', 'examples and incomplete tags cannot publish a reply');
+}
+for (const type of ['tool_result', 'tool_use', 'reasoning']) {
+  assert.equal(collectAssistantSurfaceMessages([{ ...directReply, type }]).size, 0);
+}
+const directFinal = message(11, 'final_answer', '<reply>补充问题已解决。</reply> 整体完成。');
+assert.equal(collectAssistantSurfaceMessages([directFinal]).get(directFinal).content, '补充问题已解决。 整体完成。');
+assert.equal(buildReplyDeliveries({ connector: 'feishu', target: { chatId: 'chat', threadId: 'topic' } },
+  { text: '<literal answer>' }, { running: true, surfaceKind: 'reply' })[0].text,
+  '【回复】\n\n<literal answer>', 'direct answers are labelled separately from task progress');
 
 assert.deepEqual(parseProgressMessage('<progress>One</progress> hidden <progress>Two</progress>'),
   { progress: 'One\n\nTwo', text: 'One hidden Two' });

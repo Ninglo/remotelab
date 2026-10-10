@@ -180,3 +180,50 @@ test('the accepted opening/progress policy still controls each request', async (
   await s.publish(history); await s.publish(history);
   assert.equal((await s.parts()).length, 1, 'default routine turns still omit additional openings');
 });
+
+test('direct supplementary answers bypass card/hidden progress without changing the task or final owner', async () => {
+  for (const progress of ['card_all', 'card_latest', 'card', 'none', 'messages']) {
+    const policy = { version: 3, opening: false, progress, final: true };
+    const s = await scenario(`direct-${progress}`, { baseline: false, policy });
+    const next = await s.steer('font-correction');
+    const history = [user(1, s.root), message(2, s.root, '普通开工文字'),
+      user(3, next), message(4, s.root, '<reply>正文被误当成代码；已纳入修正，原任务继续。</reply>'),
+      message(5, s.root, '<progress>正在验证原任务。</progress>')];
+    await Promise.all([s.publish(history), s.publish(history)]);
+    const replies = (await s.parts()).filter(part => part.surfaceKind === 'reply');
+    assert.equal(replies.length, 1);
+    assert.equal(replies[0].text, '【回复】\n\n正文被误当成代码；已纳入修正，原任务继续。');
+    assert.equal(replies[0].publicationRequestId, next.requestId);
+    assert.equal(replies[0].target.messageId, 'in-font-correction');
+    assert.equal(replies[0].target.threadId, 'font-correction');
+    assert.equal(replies[0].runId, s.root.runId);
+    assert.equal((await s.parts()).filter(part => part.surfaceKind === 'progress').length, progress === 'messages' ? 1 : 0);
+    assert.equal((await s.store.get(s.root.key)).result, null, 'answering the supplement does not finish the task');
+    assert.deepEqual(s.session.feishuProgressCards, { 2: { mode: 'expanded', revision: 4 } });
+    const reopened = structuredClone(await s.store.get(s.root.key));
+    await publishLiveRunReplies(reopened, history, { store: s.store, run: { id: s.root.runId },
+      plan: reopened.deliveryPlan, session: s.session });
+    assert.equal((await s.parts()).filter(part => part.surfaceKind === 'reply').length, 1);
+    history.push(message(6, s.root, '原任务已验证完成。', { phase: 'final_answer' }));
+    await s.publish(history);
+    assert.equal((await s.parts()).some(part => part.surfaceKind === 'final'), false);
+    await s.publish(history, false); await s.publish(history, false);
+    assert.equal((await s.parts()).filter(part => part.surfaceKind === 'final').length, 1);
+    assert.equal((await s.parts()).at(-1).target.messageId, 'in-root');
+  }
+});
+
+test('direct replies retain native input acknowledgement and stop-recovery boundaries', async () => {
+  const s = await scenario('direct-ack', { policy: { version: 3, opening: false, progress: 'card_all' } });
+  const next = await s.steer('next', {}, { nativeReceipt: { accepted: false } });
+  const history = [user(1, s.root), user(2, next),
+    message(3, s.root, '<reply>补充问题的独立答复。</reply>')];
+  await s.publish(history);
+  assert.deepEqual(await s.parts(), [], 'unacknowledged native inputs cannot acquire a reply');
+  await s.store.mutate(next.key, current => ({ ...current, nativeReceipt: { accepted: true } }));
+  await s.publish(history, false);
+  assert.deepEqual(await s.parts(), [], 'stopped recovery does not announce historical replies');
+  await s.publish(history); await s.publish(history);
+  assert.equal((await s.parts()).length, 1);
+  assert.equal((await s.parts())[0].publicationRequestId, next.requestId);
+});
