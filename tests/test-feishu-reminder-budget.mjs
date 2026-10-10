@@ -33,6 +33,7 @@ try {
   await mkdir(join(dir, 'display-private'));
   await writeFile(join(dir, 'display-private', 'feishu-reminders.json'), JSON.stringify({ version: 1,
     people: { person_a: { token: { realm: 'bot-2', openId: 'ou_expected', accessToken: 'private-token',
+      refreshToken: 'private-refresh', refreshExpiresAt: clock + 7 * 86_400_000,
       expiresAt: clock + 7_200_000, scope: 'im:message:readonly search:message calendar:calendar:read calendar:calendar.event:read' } } } }));
   const service = createFeishuUserReminders({ configDir: dir, now: () => clock, fetchImpl: fakeFetch,
     identityFor: async () => ({ realm: 'bot-2', openId: 'ou_expected' }) });
@@ -93,6 +94,10 @@ try {
   assert.equal((await quotaService.summary('person_a')).quotaBlocked, true);
   await quotaService.calendarSummary('person_a');
   assert.equal(calls.length, quotaCalls, 'monthly quota exhaustion stops all message and calendar requests for the application');
+  clock = Date.parse('2026-10-10T08:00:00Z') + 7_200_000 - 4 * 60_000;
+  await quotaService.maintain();
+  await quotaService.status('person_a');
+  assert.equal(calls.length, quotaCalls, 'token maintenance and status reads cannot keep calling an exhausted application');
   const logDir = join(dir, 'feishu-api-logs');
   const rows = (await Promise.all((await readdir(logDir)).filter(name => name.endsWith('.jsonl'))
     .map(name => readFile(join(logDir, name), 'utf8')))).join('').trim().split('\n').map(JSON.parse);

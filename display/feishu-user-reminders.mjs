@@ -103,6 +103,9 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   }
   async function request(url, { form, data, token, basic, realm } = {}) {
     const businessRead = /\/open-apis\/(?:im|calendar)\//.test(url);
+    if (providerPauses.get(realm) === Infinity && url.startsWith(`${OPEN}/open-apis/`)) {
+      throw Object.assign(new Error('Feishu monthly API quota exhausted'), { code: 99991403 });
+    }
     if (businessRead && providerPauses.get(realm) > now()) throw new Error('Feishu reads backing off');
     if (realm && !apiLoggers.has(realm)) await appFor(realm).catch(() => {});
     const headers = {};
@@ -118,7 +121,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       json = await response.json().catch(() => ({}));
       const ok = response.ok && (json.code === undefined || json.code === 0) && !json.error;
       if (ok) outcome = 'success';
-      else if (businessRead && isFeishuMonthlyQuotaError(json)) providerPauses.set(realm, Infinity);
+      else if (isFeishuMonthlyQuotaError(json)) providerPauses.set(realm, Infinity);
       else if (businessRead) {
         const retry = response.headers?.get?.('retry-after');
         const retryMs = retry && /^\d+(?:\.\d+)?$/.test(retry) ? Number(retry) * 1000 : Date.parse(retry || '') - now();
@@ -258,6 +261,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       const token = entry?.token;
       if (!token || token.openId !== identity.openId || token.realm !== identity.realm) return null;
       if (token.expiresAt > now() + 5 * 60_000) return token.accessToken;
+      if (providerPauses.get(identity.realm) === Infinity) return token.expiresAt > now() ? token.accessToken : null;
       if (entry.pending?.expiresAt > now()) return token.expiresAt > now() ? token.accessToken : null;
       if (!token.refreshToken || token.refreshExpiresAt <= now()) return null;
       const failed = refreshFailures.get(personId);
@@ -625,6 +629,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     const doc = await document();
     for (const [personId, entry] of Object.entries(doc.people || {})) {
       if (!entry?.token?.refreshToken || entry.token.expiresAt > now() + 5 * 60_000) continue;
+      if (providerPauses.get(entry.token.realm) === Infinity) continue;
       try {
         const identity = await expected(personId);
         if (identity) await accessToken(personId, identity);

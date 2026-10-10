@@ -67,7 +67,7 @@ An unsuccessful refresh is cached too, with exponential backoff. Provider
 errors pause other message/calendar reads for the same application, honoring
 `Retry-After` when it requires a longer pause. The normal reminder delay is up
 to five minutes; failures may extend it. Monthly quota exhaustion (`99991403`)
-stops that application's message/calendar reads until quota is restored and
+stops that application's message/calendar reads and token maintenance until quota is restored and
 the sidecar is restarted; short automatic retries cannot restore quota.
 These reads do not call a model.
 Actual outgoing Feishu requests are recorded with `component: display` in the
