@@ -1,5 +1,6 @@
 import { observeAutomationChange, observeIntervention, runtimeUsageChanged } from './usage-controls.mjs';
 import { settingActor, observeSettingRows, settingRows, personSettingValues } from './usage-settings.mjs';
+import { listAutomationBackground } from './automation-background.mjs';
 import { handleMessageReplySettings } from './router-message-reply-settings.mjs';
 import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
@@ -617,7 +618,8 @@ export async function handleControlRoutes({
 
   if (pathname === '/api/automation-tasks' && req.method === 'GET') {
     try {
-      writeJson(res, 200, { tasks: await listAutomationTasks() });
+      const [tasks, backgroundMechanisms] = await Promise.all([listAutomationTasks(), listAutomationBackground()]);
+      writeJson(res, 200, { tasks, backgroundMechanisms });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to load automation tasks' });
     }

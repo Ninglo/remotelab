@@ -46,6 +46,7 @@
   const list = document.getElementById("taskCenterList");
 
   let tasks = [];
+  let backgroundMechanisms = [];
   let loaded = false;
   let loading = false;
   let actionTaskId = "";
@@ -711,8 +712,12 @@
       dot.setAttribute("aria-label", translate("tasks.summary.hasFailures", "Failure records available"));
       dot.title = translate("tasks.summary.hasFailures", "Failure records available"); heading.appendChild(dot);
     }
-    heading.appendChild(createNode("span", "task-state-pill", stateLabel(task.state)));
+    const business = overview.businessStatus(task);
+    heading.appendChild(createNode("span", "task-state-pill", business
+      ? translate(`tasks.business.${business}`, business) : stateLabel(task.state)));
     main.appendChild(heading);
+    if (business) addMetaRow(main, translate("tasks.business.reason", "Current condition"),
+      translate(`tasks.condition.${(task.check?.reason || '').replaceAll(' ', '_')}`, ""));
     const brief = (task.prompt || "").split(/\n/).map(line => line.trim()).find(line => line && !/^#|^</.test(line));
     if (brief) main.appendChild(createNode("p", "task-summary-description", brief.split(/[。！？]/)[0].slice(0, 120)));
     main.appendChild(createNode("p", "task-summary-plan", taskScheduleText(task)));
@@ -792,7 +797,7 @@
       button.setAttribute("aria-pressed", String(value === filter));
     }
     let visibleCount = 0;
-    for (const purpose of ["review", "inspection", "report", "reminder", "other"]) {
+    for (const purpose of overview.purposes) {
       const visible = grouped.filter(task => (filter === "all" || lifecycle(task) === filter) && overview.purpose(task) === purpose);
       if (!visible.length) continue;
       visibleCount += visible.length;
@@ -818,6 +823,24 @@
       list.appendChild(section);
     }
     if (!visibleCount) list.appendChild(createNode("div", "task-center-empty", translate(tasks.length ? "tasks.emptyFiltered" : "tasks.empty", tasks.length ? "No automations match this filter." : "No automations yet.")));
+    if (filter === "all" && backgroundMechanisms.length) {
+      const section = createNode("details", "task-lifecycle-section");
+      section.dataset.background = "true";
+      section.appendChild(createNode("summary", "task-lifecycle-heading", translate("tasks.background.title", "Supporting mechanisms") + ` (${backgroundMechanisms.length})`));
+      section.appendChild(createNode("p", "task-history-note", translate("tasks.background.note", "Read-only source state; not counted as scheduled AI tasks.")));
+      const cards = createNode("div", "task-lifecycle-cards");
+      for (const mechanism of backgroundMechanisms) {
+        const card = createNode("article", "task-card");
+        const heading = createNode("div", "task-card-heading");
+        heading.append(createNode("h4", "task-card-title", mechanism.title), createNode("span", "task-state-pill",
+          translate(`tasks.background.${mechanism.state}`, mechanism.state)));
+        card.appendChild(heading);
+        card.appendChild(createNode("p", "task-summary-plan", mechanism.trigger));
+        if (mechanism.note) card.appendChild(createNode("p", "task-history-note", mechanism.note));
+        cards.appendChild(card);
+      }
+      section.appendChild(cards); list.appendChild(section);
+    }
   }
 
   async function refreshTasks({ force = false } = {}) {
@@ -832,6 +855,7 @@
         revalidate: false,
       });
       tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
+      backgroundMechanisms = Array.isArray(payload?.backgroundMechanisms) ? payload.backgroundMechanisms : [];
       executionHistory.clear();
       loaded = true;
       return tasks;
