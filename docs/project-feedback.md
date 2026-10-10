@@ -38,7 +38,7 @@ read separately and do not contribute to active feedback counts.
 `GET /api/project-feedback` returns subproject summaries. Pass `subproject=<id>`
 for that subproject's records or one of the three non-assigned buckets. All reads
 require authentication to this shared instance and are served private/no-store.
-Raw provider IDs, credentials and local evidence paths are not returned.
+Provider identity objects, credentials and local evidence paths are not returned; stable original record IDs are retained for traceability.
 
 `POST /api/project-feedback` accepts `client_id` (UUID), `subproject_id` (or empty
 for unassigned), `usefulness` (`useful`, `not_useful`, or empty), `comment`,
