@@ -76,6 +76,14 @@ function webRecord(raw, classification, themes) {
 export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feedback-board.json'),
   defaultWriteDir = join(CONFIG_DIR, 'project-feedback'), now = () => new Date().toISOString(),
   queryUsage = options => usageEvents.query(options) } = {}) {
+  let usageCache = null, usageReadAt = 0;
+  function usageSnapshot() {
+    if (!usageCache || Date.now() - usageReadAt >= 5000) {
+      usageReadAt = Date.now();
+      usageCache = queryUsage({ days: 30, limit: 1, maxScanned: 1_000_000, capabilityOnly: true });
+    }
+    return usageCache;
+  }
   async function snapshot() {
     let config;
     try { config = JSON.parse(await readFile(configFile, 'utf8')); }
@@ -129,7 +137,7 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     });
     let usage = null;
     if (data.activityMetadata?.projects) {
-      try { usage = await queryUsage({ days: 30, limit: 1 }); }
+      try { usage = await usageSnapshot(); }
       catch { data.gaps.push({ source: 'usage', code: 'unavailable' }); }
     }
     const activity = buildFeedbackActivity(summaries, data.records, data.activityMetadata || {}, usage, data.generated_at || now(), data.qianyanActivity);
@@ -159,6 +167,7 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     const repeat = async () => {
       const raw = JSON.parse(await readFile(pathname, 'utf8'));
       if (JSON.stringify(normalize(raw)) !== JSON.stringify(payload)) throw fault('FEEDBACK_CONFLICT', '提交编号已用于其他内容，请保留原记录并重新提交修改稿。');
+      usageCache = null;
       return { record: webRecord(raw, null, new Map()), duplicate: true };
     };
     try { return await repeat(); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -172,6 +181,7 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
       try { await file.writeFile(JSON.stringify(raw) + '\n'); await file.sync(); } finally { await file.close(); }
       try { await link(temp, pathname); } catch (error) { if (error.code === 'EEXIST') return await repeat(); throw error; }
     } finally { await unlink(temp).catch(() => {}); }
+    usageCache = null;
     return { record: webRecord(raw, null, new Map()), duplicate: false };
   }
   return { read, submit };

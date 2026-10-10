@@ -97,7 +97,11 @@ be silently assigned to a business subproject.
 
 New hook coverage has its own durable sampling start. Only observed intervals
 after collection loss qualify; source gaps and uninstrumented features stay
-unknown. `qianyanActivityFile` optionally reads the existing Qianyan collaboration
+unknown.
+The board retains capability events only, scans at most one million raw lines,
+and shares one read for five seconds between list/detail requests. A feedback
+save invalidates that cache. Truncation remains unknown, never a zero-use claim.
+`qianyanActivityFile` optionally reads the existing Qianyan collaboration
 state as an aggregate: presentation counts are separate from expand, source
 open, filter, copy, play and document-open operations. That source currently
 retains cumulative buckets, so the board labels them cumulative and never

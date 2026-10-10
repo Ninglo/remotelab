@@ -26,6 +26,11 @@ test('collection is bounded, strips content and client attribution, survives ret
     const samplingStart = summary.featureCollectionStarts.feedback;
     summary = await restarted.query(); assert.equal(summary.total, 1, 'durable IDs deduplicate across processes');
     assert.equal(summary.featureCollectionStarts.feedback, samplingStart, 'new hook start persists across restart');
+    await restarted.record({ eventId: 'capability-one', event: 'capability_state', feature: 'feedback',
+      operationId: 'saved-one', timestamp: Date.now(), actorKind: 'human', state: 'completed' });
+    const narrow = await restarted.query({ capabilityOnly: true });
+    assert.equal(narrow.total, 1); assert.equal(narrow.byEvent.session_open, undefined);
+    assert.equal(narrow.report.functions.features[0].feature, 'feedback');
     assert.equal((await restarted.query({ sessionId: 'other' })).total, 0);
     const log = (await readdir(directory)).find(name => name.endsWith('.jsonl'));
     const raw = await readFile(join(directory, log), 'utf8');

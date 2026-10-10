@@ -149,7 +149,7 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     await Promise.all([...admissions]);
     await tail;
   }
-  async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000, settingSnapshot } = {}) {
+  async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000, settingSnapshot, capabilityOnly = false } = {}) {
     await idle();
     const featureCollectionStarts = {};
     try {
@@ -209,7 +209,7 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
           ids.add(event.eventId);
           if (event.timestamp < Math.max(start, Date.parse(metadata?.startedAt) || start)
               || event.timestamp > now + 60_000) continue;
-          events.push(event);
+          if (!capabilityOnly || event.event === 'capability_state') events.push(event);
         }
       } catch { incomplete = true; }
       finally { lines.close(); stream.destroy(); }
