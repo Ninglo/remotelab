@@ -100,7 +100,8 @@
       const detail = node("div"); detail.appendChild(item.kind === "automation" ? executionLink(item) : node("strong", item.subject));
       detail.appendChild(node("p", alertDetail(item))); row.appendChild(detail); attention.appendChild(row);
     });
-    (value.recovery || []).filter(item => !["healthy", "paused"].includes(item.currentResourceStatus)).slice(-20).forEach(item => {
+    (value.recovery || []).filter(item => !["resolved", "cancelled"].includes(item.status)
+      && !["healthy", "paused"].includes(item.currentResourceStatus)).slice(-20).forEach(item => {
       const row = node("div", null, "monitoring-alert");
       const detail = node("div"); detail.appendChild(node("strong", `${item.subject} · ${item.label}`));
       detail.appendChild(node("p", item.reason || item.summary || "沿原任务检查点办理"));
