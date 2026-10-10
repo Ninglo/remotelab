@@ -117,10 +117,10 @@ export function messageReplyPrompt(policy) {
       : `Publish useful new findings with <progress>...</progress>. RemoteLab delivers them as ${({
         messages: policy.version >= 2 ? 'updates to one card plus separate text messages' : 'text messages',
         card_latest: 'the latest progress in one card, replacing its prior visible update',
-        card_all: 'all progress records inside one card, initially collapsed, with in-card pages when needed',
+        card_all: 'visible latest progress plus all records in one collapsed history, with pages when needed',
         card: 'updates to one card, initially collapsed',
       })[policy.progress]}; a checklist is not required.`,
-    'When a user asks a supplementary question or reports a problem during ongoing work, answer that input with <reply>...</reply>. This direct answer is a separate text message even when opening text or ordinary progress is disabled or grouped in a card. State the concrete answer, what you incorporated, or what you still need to check; continue the original work. Use a separate message for ordinary <progress> updates. Do not use <reply> for routine receipts, internal process or periodic status.',
+    'Answer supplementary questions or corrections with <reply>...</reply>; this sends separate text. Continue the task and keep ordinary progress in <progress>. No routine receipts or periodic status.',
     'Required questions, direct answers to supplementary user messages and exceptional notices remain separate. Always deliver the final result for work you take on. These display choices do not change group participation, routing, permissions, or task acceptance.',
   ].join('\n');
 }

@@ -238,7 +238,7 @@ test('the three version 2 modes retain one card, with distinct progress and one 
       assert.equal(calls.filter(call => call[0] === 'create').length, 1);
       const card = calls.at(-1)[1].data.content;
       assert.equal(card.includes('早期发现'), false);
-      assert.equal(card.includes('最新发现'), mode !== 'card_all');
+      assert.equal(card.includes('最新发现'), true, 'every card type keeps latest progress visible');
       assert.equal(card.includes('展开全部进展'), mode === 'card_all');
       if (mode === 'card_all') assert.equal(cycles[0].cardDisclosure.mode, 'collapsed', 'a new full-history card starts collapsed independently of the Run preference');
       assert.equal(card.includes('核对来源'), useChecklist);
@@ -271,7 +271,11 @@ test('all-progress pages retain every full record, including early updates, and 
     progress: history.at(-1), messageReplyPolicy: { version: 2, progress: 'card_all' },
     cardDisclosure: { mode: 'collapsed', revision: 0 } };
   const closed = JSON.stringify(buildFeishuWorkboardCard('', null, cycle.progress, { ...cycle, progressOnly: true }));
-  assert.equal(closed.includes('完整记录'), false, 'all progress starts inside the collapsed section');
+  assert.equal(closed.includes('完整记录24'), true, 'latest progress is visible while history is collapsed');
+  assert.equal(closed.includes('完整记录0'), false, 'early records stay in the collapsed history');
+  assert.equal(closed.includes('未来内容'), false);
+  const summary = JSON.parse(closed).body.elements.find(element => element.content?.startsWith('完整记录24'));
+  assert(summary.content.length < 210, 'a long latest update has a compact preview; complete text remains paged');
   for (let page = 0; page < pages.length; page++) {
     const card = buildFeishuWorkboardCard('', null, cycle.progress,
       { ...cycle, progressOnly: true, cardDisclosure: { mode: 'expanded', revision: 1, page } });

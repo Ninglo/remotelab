@@ -125,7 +125,7 @@ test('the same personal policy creates cards for private, main group and thread 
     assert.equal(cycles.length, 1, `${surface}/${mode}`);
     assert.equal(cycles[0].messageReplyPolicy.personId, 'person_alice');
     const card = JSON.stringify(buildFeishuWorkboardCard(cycles[0].content, cycles[0].board, cycles[0].progress, cycles[0]));
-    assert.equal(card.includes('最新发现'), mode !== 'card_all');
+    assert.equal(card.includes('最新发现'), true, 'latest is visible in private, group and thread cards');
     assert.equal(card.includes('展开全部进展'), mode === 'card_all');
   }
 });

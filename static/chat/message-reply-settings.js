@@ -37,8 +37,8 @@ function renderPreview() {
         item.append(details);
         const behavior = document.createElement('p');
         behavior.className = 'settings-section-note';
-        behavior.textContent = copy('记录较多时在原卡内翻页。后续更新保留上次展开、折叠和页码选择。',
-          'Long histories use pages in the original card. Updates preserve your expand, collapse and page choice.');
+        behavior.textContent = copy('外面始终显示最新进展，详情默认折叠；记录较多时在原卡内翻页。更新保留上次展开、折叠和页码选择。',
+          'Latest progress stays visible outside the collapsed history. Long histories use pages. Updates preserve your expand, collapse and page choice.');
         item.append(behavior);
       } else {
         const behavior = document.createElement('p');

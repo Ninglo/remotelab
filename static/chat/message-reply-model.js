@@ -47,7 +47,7 @@ export function buildReplyPreview(draft, locale = 'zh') {
       card_latest: 'Card · latest progress', card_all: 'Card · all progress (collapsed by default)', card: 'Previously saved card progress' }
       : { messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展',
         card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' };
-    steps.push({ kind: 'progress', title: titles[value.progress], text: value.progress === 'card_all' ? '' : history.at(-1),
+    steps.push({ kind: 'progress', title: titles[value.progress], text: history.at(-1),
       card: true, combined: value.checklist, collapsed: ['card', 'card_all'].includes(value.progress),
       history, textMessages: value.progress === 'messages' ? history : [] });
   }

@@ -13,7 +13,11 @@ export function replyProgressCardPanel(cycle, latest) {
       namespace: 'progress-card', sessionId: cycle.sessionId, anchorSeq: cycle.anchorSeq,
       revision: cycle.cardDisclosure?.revision || 0, mode, page: targetPage, ...(intent ? { intent } : {}),
     } }] });
-  return [{ tag: 'markdown', content: `**全部进展 · ${history.length} 条${expanded ? ` · 第 ${page + 1}/${pages.length} 页` : ''}**` },
+  const current = latest.length ? latest : [{ tag: 'markdown', content: cycle.progress?.content || '暂无进度更新' }];
+  const summary = current.map(element => ({ ...element, ...(element.content?.length > 180
+    ? { content: `${element.content.slice(0, 180)}…（展开全部进展查看）` } : {}) }));
+  return [{ tag: 'markdown', content: '**最新进展**' }, ...summary,
+    { tag: 'markdown', content: `**全部进展 · ${history.length} 条${expanded ? ` · 第 ${page + 1}/${pages.length} 页` : ''}**` },
     button(expanded ? '折叠全部进展' : '展开全部进展', expanded ? 'collapsed' : 'expanded'),
     ...(expanded ? [{ tag: 'markdown', content: pages[page] },
       ...(page > 0 ? [button('上一页', 'expanded', page - 1, 'page')] : []),
