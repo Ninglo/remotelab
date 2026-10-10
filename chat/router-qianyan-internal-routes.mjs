@@ -27,6 +27,7 @@ const identity = createQianyanIdentity({ configDir: CONFIG_DIR,
 const collaboration = createQianyanCollaboration({ configDir: CONFIG_DIR,
   documentsPath: join(project, 'private/pipeline/research_documents.json'), publicDataPath: join(project, 'build/data.json'),
   sourceCatalogPath: join(project, 'private/pipeline/source_catalog.json'),
+  pipelineMetricsPath: join(project, 'private/observability/last_run.json'),
   corpusPath: process.env.REMOTELAB_QIANYAN_CORPUS || join(project, 'private/pipeline/agent_corpus.json') });
 
 function sameOrigin(req) {
@@ -70,6 +71,9 @@ export function createQianyanInternalHandler({ identityService = identity, colla
       else if (action === 'comments' && req.method === 'POST') send(201, await api.addComment(person, body));
       else if (action === 'votes' && req.method === 'POST') send(200, await api.vote(person, body));
       else if (action === 'reactions' && req.method === 'GET') send(200, await api.reactions(person));
+      else if (action === 'feedback/review' && req.method === 'POST') send(200, await api.reviewFeedback(person, body));
+      else if (action === 'activity' && req.method === 'POST') send(201, await api.activity(person, body));
+      else if (action === 'observability' && req.method === 'GET') send(200, await api.observability());
       else if (action === 'submissions' && req.method === 'GET') send(200, await api.submissions());
       else if (action === 'submissions' && req.method === 'POST') send(201, await api.submit(person, body));
       else if (action === 'submissions/review' && req.method === 'POST') send(200, await api.review(person, body));
