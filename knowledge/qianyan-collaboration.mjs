@@ -266,6 +266,7 @@ export function createQianyanCollaboration({ configDir, documentsPath, publicDat
       catch (e) { if (e.code !== 'ENOENT') throw e; }
     }
     return { stages: QIANYAN_STAGES, feedback_by_stage: count(feedback.map(r => r.stage)),
+      reviewed_by_stage: count([...latest.values()].map(r => r.stage)),
       review_status: count([...latest.values()].map(r => r.status)),
       unreviewed: feedback.filter(r => ![...latest.values()].some(v => v.feedback_id === r.id)).length,
       activity_counts: Object.values(state.activity_counts || {}), pipeline,

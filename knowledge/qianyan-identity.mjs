@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 const clean = (v) => typeof v === 'string' ? v.trim() : '';
 const hash = (v) => createHash('sha256').update(v).digest('hex');
 const cookie = (req, name) => clean((req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(name + '='))?.slice(name.length + 1));
+const SESSION_AGE = 30 * 86400000;
 
 // Only this research site's session is issued by Feishu sign-in. It is not a
 // RemoteLab control-plane credential and cannot authenticate arbitrary APIs.
@@ -76,6 +77,21 @@ export function createQianyanIdentity({ configDir, authDocument, registerIdentit
         cookie: sessionCookie('qianyan_pending', token, 600, req) };
     });
   }
+  async function renew(req, person) {
+    // Only a valid research-site cookie can renew its own verified identity.
+    // At most one write per day keeps normal entry lightweight.
+    if (person?.auth_kind !== 'feishu') return null;
+    return serialized(async () => {
+      const token = cookie(req, 'qianyan_session'); if (!token) return null;
+      const d = await document(), entry = d.sessions[hash(token)];
+      const verified = await member(req, null);
+      if (!verified || verified.id !== person.id || entry?.personId !== person.id) return null;
+      if (entry.expiresAt - now() > SESSION_AGE - 86400000) return null;
+      entry.expiresAt = now() + SESSION_AGE;
+      await save(d);
+      return sessionCookie('qianyan_session', token, SESSION_AGE / 1000, req);
+    });
+  }
   async function poll(req) {
     return serialized(async () => {
       const cfg = await settings(), d = await document(), key = hash(cookie(req, 'qianyan_pending')), p = d.pending[key];
@@ -96,11 +112,11 @@ export function createQianyanIdentity({ configDir, authDocument, registerIdentit
       }
       const person = await registerIdentity({ realm: cfg.realm, openId: user.open_id, name: user.name });
       const token = randomBytes(32).toString('hex');
-      d.sessions[hash(token)] = { personId: person.id, openId: user.open_id, realm: cfg.realm, tenantKey: user.tenant_key, expiresAt: now() + 30 * 86400000 };
+      d.sessions[hash(token)] = { personId: person.id, openId: user.open_id, realm: cfg.realm, tenantKey: user.tenant_key, expiresAt: now() + SESSION_AGE };
       delete d.pending[key]; await save(d);
       return { state: 'connected', person: { id: person.id, name: person.name, auth_kind: 'feishu' },
-        cookies: [sessionCookie('qianyan_session', token, 30 * 86400, req), sessionCookie('qianyan_pending', '', 0, req)] };
+        cookies: [sessionCookie('qianyan_session', token, SESSION_AGE / 1000, req), sessionCookie('qianyan_pending', '', 0, req)] };
     });
   }
-  return { member, begin, poll };
+  return { member, begin, poll, renew };
 }

@@ -100,17 +100,37 @@ try {
   const connected=await identity.poll(req);assert.equal(connected.state,'connected');assert.equal(registered[0].openId,'verified-open-id');
   req.headers.cookie=connected.cookies[0].split(';')[0];assert.equal((await identity.member(req,null)).id,b.id);
   assert.ok(!req.headers.cookie.includes('session_token='),'site login does not issue RemoteLab credential');
+  const verifiedPerson=await identity.member(req,null);
+  assert.equal(await identity.renew(req,verifiedPerson),null,'same-day reads do not rewrite the session');
+  clock+=20*86400000;
+  const renewed=await identity.renew(req,verifiedPerson);
+  assert.match(renewed,/Max-Age=2592000.*Secure/);
+  assert.equal(renewed.split(';')[0],req.headers.cookie,'renewal keeps the browser identity');
+  assert.equal(await identity.renew(req,{...verifiedPerson,id:a.id}),null,'cannot renew as another employee');
+  clock+=20*86400000;
+  assert.equal((await identity.member(req,null)).id,b.id,'active reader passes the original fixed expiry without another OAuth request');
+  assert.equal(tokenCalls,2,'renewal does not repeat provider authorization');
+  const resumedIdentity=createQianyanIdentity({configDir:dir,now:()=>clock,authDocument:async()=>people,registerIdentity:async()=>b,fetchImpl});
+  assert.equal((await resumedIdentity.member(req,null)).id,b.id,'renewed identity survives process restart');
+  const bound=people.people[1].identities;people.people[1].identities=[];
+  assert.equal(await identity.renew(req,verifiedPerson),null,'removed identity cannot renew');people.people[1].identities=bound;
   clock+=31*86400000;assert.equal(await identity.member(req,null),null,'expired site session rejected');
+  assert.equal(await identity.renew(req,verifiedPerson),null,'expired identity cannot resurrect itself');
   req.headers.cookie='';tokenCalls=1;userTenant='another-company';const next=await identity.begin(req);req.headers.cookie=next.cookie.split(';')[0];clock+=5000;
   assert.equal((await identity.poll(req)).state,'wrong_company');assert.equal(registered.length,1,'foreign tenant cannot create employee');
 
   const {createQianyanInternalHandler}=await import('../chat/router-qianyan-internal-routes.mjs');
-  const handler=createQianyanInternalHandler({collaborationService:api,identityService:{member:async r=>r.person},remoteSession:async()=>null});
+  let renewalCalls=0;
+  const handler=createQianyanInternalHandler({collaborationService:api,identityService:{member:async r=>r.person,renew:async()=>{renewalCalls++;return 'qianyan_session=renewed-test; HttpOnly; SameSite=Lax';}},remoteSession:async()=>null});
   async function request(method,path,person,payload,origin='http://example.test') {
     const r=Readable.from(payload?JSON.stringify(payload):[]);r.method=method;r.url='/api/qianyan/internal/'+path;r.headers={host:'example.test',origin};r.person=person;
     const headers={};let output;await handler({req:r,res:{setHeader:(k,v)=>headers[k]=v},pathname:new URL(r.url,'http://example.test').pathname,writeJson:(_,status,data)=>output={status,data,headers}});return output;
   }
   assert.equal((await request('GET','documents',null)).status,401);
+  assert.equal((await request('GET','auth/me',null)).status,401);
+  assert.equal(renewalCalls,0,'anonymous identity checks cannot renew a cookie');
+  assert.equal((await request('GET','auth/me',b)).headers['Set-Cookie'],'qianyan_session=renewed-test; HttpOnly; SameSite=Lax');
+  assert.equal(renewalCalls,1,'verified identity checks deliver the renewal cookie to the browser');
   for(const path of ['source-catalog','source-proposals'])assert.equal((await request('GET',path,null)).status,401);
   assert.equal((await request('GET','source-catalog',b)).data.sources[0].name,'internal-source-canary');
   assert.equal((await request('POST','source-proposals',null,{client_id:id(),kind:'keyword',value:'robot'})).status,401);
@@ -150,5 +170,12 @@ try {
   const persisted=createQianyanCollaboration({configDir:dir,documentsPath,publicDataPath,corpusPath});
   assert.equal((await persisted.observability()).activity_counts[0].count,1);
   assert.equal((await persisted.exportFeedback(service)).feedback_reviews.length,2);
+  const general=await api.addComment(b,{client_id:id(),target,stage:'general',comment:'我想多看实际实验结果，不用宣传式的标题。'});
+  for(const stage of ['selection','editorial'])await api.reviewFeedback(service,{client_id:id(),feedback_id:general.comment.id,stage,status:'reviewed',reason:'根据这句意见归入对应环节，保留用户原话。'});
+  const classified=await api.observability();
+  assert.equal(classified.feedback_by_stage.general,1,'one-sentence feedback retains the original general stage');
+  assert.equal(classified.reviewed_by_stage.selection,1);
+  assert.equal(classified.reviewed_by_stage.editorial,2,'one comment can inform more than one stage');
+  assert.equal((await api.exportFeedback(service)).stage_feedback.find(r=>r.id===general.comment.id).stage,'general','review classification does not rewrite the user record');
   console.log('qianyan collaboration: shared comments and source proposals; verified author, restart persistence, idempotency, source/keyword normalization and dedupe, separate article queue, service review, private catalogue, scoped identity, CSRF and anonymous rejection PASS');
 } finally { await rm(dir,{recursive:true,force:true}); }

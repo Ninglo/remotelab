@@ -47,7 +47,13 @@ export function createQianyanInternalHandler({ identityService = identity, colla
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) { send(405, { error: 'Method not allowed' }); return true; }
       if (req.method !== 'GET' && !sameOrigin(req)) { send(403, { error: '请从本站提交' }); return true; }
       const person = await identityService.member(req, await remoteSession(req));
-      if (action === 'auth/me' && req.method === 'GET') { send(person ? 200 : 401, person ? { person, visibility: 'company' } : { error: '请使用员工身份登录', feishu_login: true }); return true; }
+      if (action === 'auth/me' && req.method === 'GET') {
+        if (person) {
+          const renewed = await identityService.renew?.(req, person);
+          if (renewed) res.setHeader('Set-Cookie', renewed);
+        }
+        send(person ? 200 : 401, person ? { person, visibility: 'company' } : { error: '请使用员工身份登录', feishu_login: true }); return true;
+      }
       if (action === 'auth/start' && req.method === 'POST') {
         if (person) { send(200, { state: 'connected', person }); return true; }
         const value = await identityService.begin(req); if (value.cookie) res.setHeader('Set-Cookie', value.cookie);
