@@ -285,7 +285,7 @@ export function triggerSessionStateSuggestion(sessionMeta, options = {}) {
   });
 }
 
-async function runSessionStateSuggestion(sessionMeta, _options = {}) {
+async function runSessionStateSuggestion(sessionMeta, options = {}) {
   const classifierSessionMeta = {
     ...sessionMeta,
     ...resolveSessionStateClassifierRuntime(sessionMeta),
@@ -306,7 +306,9 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
     queuedCount,
   } = sessionMeta;
 
-  const lastTurnEvents = await readLastTurnEvents(sessionId, { includeBodies: true });
+  const lastTurnEvents = options.inputEvent
+    ? [options.inputEvent]
+    : await readLastTurnEvents(sessionId, { includeBodies: true });
   if (lastTurnEvents.length === 0) {
     return { ok: false, skipped: 'no_history' };
   }
@@ -316,6 +318,34 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
   const turnText = formatTurnForPrompt(lastTurnEvents);
   if (!turnText.trim()) {
     return { ok: false, skipped: 'empty_turn' };
+  }
+
+  // Input labels run alongside execution and cannot assert an outcome, change
+  // organization, or replace the post-turn continuity summary.
+  if (options.phase === 'input') {
+    const prompt = [
+      "You are RemoteLab's input session-label generator.",
+      'Generate a concise semantic title and one-sentence description from the latest user request.',
+      'This request is still executing. Describe its purpose, never claim completion or invent results.',
+      'Omit sender headers, mentions and addressing prefixes. Use the language of the user request.',
+      'Keep the established title if the work remains the same; replace a temporary draft.',
+      `Current title: ${name || '(unnamed)'}`,
+      `Temporary draft: ${autoRenamePending === true}`,
+      `Current description: ${clipPromptText(description, 400)}`,
+      `Previous work: ${clipPromptText(workSummary?.summary || workSummary?.goal, 800)}`,
+      `Latest user request: ${formatEventsForPrompt(lastTurnEvents, { userLimit: 2400 })}`,
+      'Return ONLY JSON with "title" (2-6 words) and "description" (one compact sentence).',
+    ].join('\n');
+    const text = await runToolJsonPrompt(classifierSessionMeta, prompt, { operation: 'session_input_labels' });
+    const result = parseJsonObject(text);
+    if (!result || typeof result !== 'object') throw new Error(`Unexpected model output: ${text.slice(0, 200)}`);
+    return {
+      ok: true,
+      labelsOnly: true,
+      classifiedUserMessageSeq,
+      title: normalizeGeneratedSessionTitle(result.title || '', group),
+      description: normalizeSessionDescription(result.description || ''),
+    };
   }
 
   const currentSpace = normalizeSessionSpace(space || '');

@@ -1087,6 +1087,7 @@ const {
   maybeSendSessionCompletionPush,
   queueSessionCompletionTargets,
   runSessionTurnCompletionEffects,
+  scheduleSessionInputSuggestion,
 } = createSessionTurnCompletionHelpers({
   allowsSessionTurnCompletionEffects,
   applySessionStateSuggestion,
@@ -2840,6 +2841,9 @@ async function applySessionStateSuggestion(id, suggestion = {}, classification =
   const nextWorkSummary = normalizeSessionWorkSummary(suggestion.workSummary);
 
   const result = await mutateSessionMeta(id, (session) => {
+    const userSeq = classification.classifiedUserMessageSeq;
+    // A delayed input label must not overwrite this same turn's final result.
+    if (suggestion.labelsOnly && session.stateClassifiedUserMessageSeq >= userSeq) return false;
     let changed = false;
     const pendingDraftWasRewritten = !isSessionAutoRenamePending(session) || session.name !== nextTitle;
     if (nextTitle && pendingDraftWasRewritten && (isSessionAutoRenamePending(session) || !isSessionTitleLocked(session))) {
@@ -2864,6 +2868,14 @@ async function applySessionStateSuggestion(id, suggestion = {}, classification =
     }
     if (nextDescription && session.description !== nextDescription) {
       session.description = nextDescription;
+      changed = true;
+    }
+    if (suggestion.labelsOnly) {
+      if (changed) session.updatedAt = nowIso();
+      return changed;
+    }
+    if (session.stateClassifiedUserMessageSeq !== userSeq) {
+      session.stateClassifiedUserMessageSeq = userSeq;
       changed = true;
     }
     const currentWorkflowState = normalizeSessionWorkflowState(session.workflowState || '');
@@ -3530,7 +3542,7 @@ async function ensureRequestInput(record, manifest) {
     const sourceContext = normalizeSourceContext(record.options.sourceContext, Infinity);
     const recordedText = typeof record.options.recordedUserText === 'string' && record.options.recordedUserText.trim()
       ? record.options.recordedUserText.trim() : record.text;
-    await appendEvent(record.sessionId, messageEvent('user', recordedText, buildMessageAttachmentRefs(record.images), {
+    const inputEvent = await appendEvent(record.sessionId, messageEvent('user', recordedText, buildMessageAttachmentRefs(record.images), {
       requestId: record.requestId, responseId: record.responseId, runId: record.runId,
       ...(record.options.nativeQuestionId && record.options.nativeQuestionAnswerSource === 'control'
         ? { messageKind: 'native_question_answer', nativeQuestionId: record.options.nativeQuestionId,
@@ -3540,6 +3552,10 @@ async function ensureRequestInput(record, manifest) {
       ...(record.options.messageRoutingPolicy ? { messageRoutingPolicy: record.options.messageRoutingPolicy } : {}),
       ...(workboardAdmission(record.options) ? { workboardAdmission: workboardAdmission(record.options) } : {}),
     }));
+    const inputSession = await findSessionMeta(record.sessionId);
+    scheduleSessionInputSuggestion(inputSession, {
+      id: record.runId, ...record.runtimeSelection, state: 'accepted',
+    }, { ...manifest, options: record.options, viewPersonId: record.options.viewPersonId }, inputEvent);
   }
   if (record.options.workboardDraft && !events.some(event => event.type === 'message'
       && event.role === 'assistant' && event.source === 'workboard_checklist'

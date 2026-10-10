@@ -1,5 +1,14 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Generate sidebar labels during execution and recover lost display receipts
+
+- Feedback: titles and descriptions appeared only after a long task ended; some Web topic rows continued showing running after their work was complete.
+- Change: reuse the existing metadata route for a small title/description call when a normal user input is recorded. It runs alongside the Harness, never assigns workflow outcome, organization or work summary, and a same-turn final classification takes precedence over a delayed input result. Quick tasks, internal operations and question answers do not start this call.
+- Display failure: the source had a newer state while the browser retained an old projection. A transport can remain writable while its projection receipt is lost, permanently holding the one-packet channel. Bound the receipt wait, reconnect on expiry, discard obsolete pending packets and send the latest verified snapshot. Persist projection snapshots by atomic replacement.
+- Evidence boundary: a completed prior goal does not make a later inspection idle. In the reported example a subsequent user request was actively executing; that live running state was correct, while the stale browser snapshot was a separate observed fault. Runtime and review state still come from existing records rather than a model guess.
+- Verification: isolated provider gates prove labels arrive before execution finishes without asserting completion; classifier, workflow, Quick task and channel tests cover final precedence, coalescing, missing receipts and late acknowledgements. Commit/CI, service loading and browser readback remain separate acceptance steps.
+
+
 ### 2026-10-10 — Inspect and submit subproject feedback from Monitor
 
 - Feedback: users need a subproject row with collected feedback and change directions, clickable original details, and a place to submit new opinions.
