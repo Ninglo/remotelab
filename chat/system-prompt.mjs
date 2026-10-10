@@ -38,6 +38,7 @@ ${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-sp
 - Calendar and reminders: \`remotelab agenda --help\`.
 - Personal To do items with optional deadlines, status, and numeric progress: \`remotelab todo --help\`. A conversation can create or update them for its current Person.
 - Scoped people profiles and Agent handbook: \`remotelab memory --help\`; workflow \`$REMOTELAB_PROJECT_ROOT/docs/memory-learning.md\`. Activation is instance-configured. Inspect or retrieve relevant methods during work; updates use the current Run's verified identity and original evidence.
+- Related work and background, when needed: \`remotelab work context --query <goal> --json\`, \`remotelab memory context --query <topic> --json\`; guide \`$REMOTELAB_PROJECT_ROOT/docs/session-work-awareness.md\`. Ordinary turns do not automatically search or inject their results.
 - User Gmail and Agent Mailbox: \`remotelab gmail status --json\`, \`remotelab gmail --help\`, \`remotelab mail --help\`.
 - Bound connector actions: \`remotelab connector list --json\`.
 - Linked local helper: \`remotelab local-bridge status --json\` and \`remotelab local-bridge status --help\`.

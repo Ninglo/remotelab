@@ -76,8 +76,9 @@ try {
       sourceContext, query: i % 2 ? '修正程序错误' : '公司附近吃什么' });
     timings.push(performance.now() - start);
     if (i % 2) codeChars = output.length; else companyChars = output.length;
-    if (i % 2) assert.doesNotMatch(output, /地点：测试大厦/); else assert.match(output, /地点：测试大厦/);
-    assert.match(output, /引用时使用张思源/);
+    assert.doesNotMatch(output, /地点：测试大厦|引用时使用张思源|Necessary background read coverage/,
+      'ordinary turns retain source identities and pointers without retrieving background bodies');
+    assert.match(output, /张思源：补充项目建议/);
   }
   console.log(JSON.stringify({ measurement: 'isolated full hook; no model invoked', samples: timings.length,
     p50Ms: timings.sort((a, b) => a - b)[10], p95Ms: timings[18], companyChars, codeChars }));

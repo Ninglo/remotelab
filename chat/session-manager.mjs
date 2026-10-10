@@ -1498,7 +1498,6 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     pilotInputReplyContract: hasPilotInputReplyContract({ options }),
     messageRoutingPolicy: options.messageRoutingPolicy,
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
-    query: options.recordedUserText || options.memoryQuery || '',
     }),
   ));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',

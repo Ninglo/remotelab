@@ -47,8 +47,8 @@ await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(fixture));
 try {
   const m = await import('../chat/work-awareness.mjs');
   await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(deviceFixture));
-  const freshHook = await m.buildWorkAwarenessContext(deviceFixture[0], { query: '副屏' });
-  assert.match(freshHook, /副屏采用工作/, 'fresh hook forwards the actual input instead of searching an absent old summary');
+  const candidates = await m.queryWorkCandidates({ sessionId: 'fresh', query: '副屏' });
+  assert.equal(candidates[0].sessionId, 'display', 'explicit retrieval still finds a named topic without an old summary');
   await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(fixture));
   const { mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
   const actor = { personId: 'person_a', identityId: 'identity_a', name: '甲' };

@@ -9,7 +9,7 @@ process.env.REMOTELAB_CONFIG_DIR = path.join(root, 'config');
 process.env.REMOTELAB_MEMORY_DIR = path.join(root, 'memory');
 process.env.REMOTELAB_INSTANCE_ROOT = root;
 await fs.mkdir(process.env.REMOTELAB_CONFIG_DIR);
-const { inspectServiceAccess, readServiceAccessConfig, buildServiceAccessPromptBlock } = await import('../lib/service-access.mjs');
+const { inspectServiceAccess, readServiceAccessConfig } = await import('../lib/service-access.mjs');
 const configPath = path.join(process.env.REMOTELAB_CONFIG_DIR, 'service-access.json');
 const machineIdFile = path.join(root, 'machine-id');
 const machineId = 'a'.repeat(32);
@@ -75,20 +75,12 @@ try {
   }
   await fs.writeFile(configPath, JSON.stringify(config));
   assert.equal((await readServiceAccessConfig()).units.length, 2);
-  const ordinary = await buildServiceAccessPromptBlock('继续刚才的改动');
-  assert.match(ordinary, /service-access check --json/, 'old native threads need a small lookup pointer even without restart keywords');
-  assert.doesNotMatch(ordinary, /127\.0\.0\.1|remotelab-example/, 'ordinary turns do not need the full registration body');
-  const prompt = await buildServiceAccessPromptBlock('重启服务被 sudo 权限卡住');
-  assert.match(prompt, /service-access check --json/);
-  assert.match(prompt, /127\.0\.0\.1/);
-  assert.match(prompt, /not authorization/);
   const { buildTurnContextHook } = await import('../chat/turn-context-hook.mjs');
-  const hook = await buildTurnContextHook({}, { query: '部署时需要重启' });
-  assert.match(hook, /Service management capability lookup/, 'resumed turns need the new route even when their startup prefix is cached');
-  assert.match(hook, /older blocked reports and handbook entries are not current capability evidence/);
-  assert.match(await buildTurnContextHook({}, { query: '继续' }), /service-access check --json/);
-  await fs.unlink(configPath);
-  assert.equal(await buildServiceAccessPromptBlock('普通问答'), '', 'unconfigured instances keep ordinary turn context unchanged');
+  for (const query of ['部署时需要重启', '继续']) {
+    const hook = await buildTurnContextHook({}, { query });
+    assert.doesNotMatch(hook, /service-access|Configured instance services/,
+      'service discovery is available on demand, not repeated on ordinary turns');
+  }
   console.log('test-service-access: ok');
 } finally {
   await fs.rm(root, { recursive: true, force: true });

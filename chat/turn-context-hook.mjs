@@ -4,11 +4,6 @@ import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
 import { buildSourceContextPrompt } from './source-context-prompt.mjs';
 import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
-import { buildLearningContext } from './memory-learning.mjs';
-import { buildRelatedPersonContext } from './related-person-context.mjs';
-import { buildWorkAwarenessContext } from './work-awareness.mjs';
-import { buildNecessaryBackgroundContext } from './necessary-background.mjs';
-import { buildServiceAccessPromptBlock } from '../lib/service-access.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -25,30 +20,23 @@ function buildFeishuLogPromptBlock(sourceContext) {
   ].join('\n');
 }
 
-export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', pilotInputReplyContract = false, messageRoutingPolicy } = {}) {
+export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, pilotInputReplyContract = false, messageRoutingPolicy } = {}) {
+  // Ordinary turns carry accepted source/state and small identity/project
+  // pointers. The Harness chooses explicit work/memory reads for its task;
+  // keyword matches are never a reason to inject background bodies here.
   const sections = await Promise.allSettled([
-    buildLearningContext({ personId, identityId, query: `${query}\n${sourceContext?.connector || ''}`, session, sourceContext }),
     buildProjectMemoryPromptBlock(session, sourceContext),
-    buildRelatedPersonContext({ personId, identityId, sourceContext, query }),
-    buildWorkAwarenessContext(session, { query }),
-    query ? buildNecessaryBackgroundContext(session, { query, sourceContext }) : '',
-    buildServiceAccessPromptBlock(query),
     buildGroupRoutingContext(session, sourceContext, { inputReplyContract: pilotInputReplyContract, messageRoutingPolicy }),
   ]);
-  const [learning, project, people, work, background, serviceAccess, groupRouting] = sections.map((result, index) => result.status === 'fulfilled'
-    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['learning', 'project', 'people', 'work', 'background', 'service-access', 'group-routing'][index], reason: result.reason.message }));
+  const [project, groupRouting] = sections.map((result, index) => result.status === 'fulfilled'
+    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['project', 'group-routing'][index], reason: result.reason.message }));
   return [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
-    serviceAccess,
-    learning,
     project,
-    people,
-    work,
-    background,
     groupRouting,
     // Classifier summaries are derived UI state, not fresh execution evidence.
     // Keep them queryable on the session; do not replay stale blockers every turn.

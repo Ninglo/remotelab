@@ -34,11 +34,15 @@ try {
   const options = { skipSessionContinuation: true, workboardEnabled: false,
     viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId, memoryQuery: '解释方案' };
   const fresh = await buildPrompt(session.id, session, '解释方案', '', 'codex', { userMessageCount: 0 }, options);
-  assert.match(fresh, /confirmed.*具体例子/);
-  assert.match(fresh, new RegExp(`${result.results[0].id} v1`));
+  assert.match(fresh, /Person memory pointer/);
+  assert.doesNotMatch(fresh, /讲方案时使用具体例子|Scoped collaboration memory|mem_[a-f0-9]{16} v1/);
+  const retrieved = await m.buildLearningContext({ ...actor, query: '解释方案' });
+  assert.match(retrieved, /confirmed.*具体例子/);
+  assert.match(retrieved, new RegExp(`${result.results[0].id} v1`));
   const resumed = await buildPrompt(session.id, { ...session, resumeSessionId: 'native-thread' },
     '解释方案', 'codex', 'codex', { userMessageCount: 2 }, options);
-  assert.match(resumed, /confirmed.*具体例子/);
+  assert.match(resumed, /Person memory pointer/);
+  assert.doesNotMatch(resumed, /讲方案时使用具体例子/);
   const wrongActor = await buildPrompt(session.id, session, '解释方案', '', 'codex', { userMessageCount: 0 },
     { ...options, initiatedByIdentityId: 'identity_beta' });
   assert.doesNotMatch(wrongActor, /讲方案时使用具体例子/);
@@ -46,16 +50,18 @@ try {
     userMessage: '撤销具体例子这个默认要求', sourceEventSeq: 1 }), updates: [{ ...update, action: 'withdraw',
     expectedVersion: 1, evidence: [{ seq: 1, quote: '撤销具体例子这个默认要求' }] }] });
   const after = await buildPrompt(session.id, session, '解释方案', 'codex', 'codex', { userMessageCount: 3 }, options);
-  assert.match(after, /withdrawn.*具体例子/);
-  assert.doesNotMatch(after, /confirmed.*具体例子/);
-  assert.match(after, /must no longer guide work/);
+  assert.doesNotMatch(after, /讲方案时使用具体例子/);
+  const afterRetrieval = await m.buildLearningContext({ ...actor, query: '解释方案' });
+  assert.match(afterRetrieval, /withdrawn.*具体例子/);
+  assert.doesNotMatch(afterRetrieval, /confirmed.*具体例子/);
+  assert.match(afterRetrieval, /must no longer guide work/);
   // The reviewer sees actual turn delivery IDs, not a claim that retrieval
   // means the assistant followed them. No model is launched by this fixture.
   let calls = 0;
   await m.reviewMemoryLearning({ ...actor, sessionId: session.id, session, run: { id: 'run_review' },
     userMessage: '解释方案', sourceEventSeq: 1, assistantTurnText: '回答',
     turnEvents: [{ type: 'manager_context', runId: 'run_review', content: fresh, seq: 2 }],
-    runPrompt: async prompt => { calls += 1; assert.match(prompt, new RegExp(`Actually delivered entry versions:.*${result.results[0].id}`)); return '<hide>{"updates":[]}</hide>'; },
+    runPrompt: async prompt => { calls += 1; assert.match(prompt, new RegExp(`Actually delivered entry versions: \\[\\]`)); return '<hide>{"updates":[]}</hide>'; },
   });
   assert.equal(calls, 1);
   // CLI binds on-demand retrieval and edits to the accepted Request actor.
@@ -107,5 +113,5 @@ try {
   assert.equal(await resolveLearningProject(oldSession, { sourceRouteId: 'bot-a', chatId: 'alpha-chat' }), 'alpha');
   assert.equal(await resolveLearningProject(oldSession, { sourceRouteId: 'bot-a', chatId: 'mixed-chat' }), '');
   assert.equal(await resolveLearningProject(oldSession, { sourceRouteId: 'bot-a', chatId: 'unassigned' }), '');
-  console.log('MEMORY_LEARNING_TURN_VERIFIED: actual fresh/resumed buildPrompt receives bounded body and version; mismatched current identity excluded; withdrawal replaces active default; post-turn review receives delivery IDs; no live preference writes or model launch.');
+  console.log('MEMORY_LEARNING_TURN_VERIFIED: fresh/resumed buildPrompt keeps identity pointers; scoped bodies and withdrawals require explicit retrieval; mismatched current identity excluded; withdrawal replaces active default; post-turn review receives delivery IDs; no live preference writes or model launch.');
 } finally { await rm(home, { recursive: true, force: true }); }

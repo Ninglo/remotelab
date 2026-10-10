@@ -46,9 +46,7 @@ try {
   assert.equal((await m.workInbox('b'))[0].state, 'published');
   const before = (await findSessionMeta('b')).workAwareness.works[0];
   assert.equal(before.version, 1); assert.equal(before.goal, goal, 'publication does not change the receiving task');
-  const context = await m.buildWorkAwarenessContext(await findSessionMeta('b'), { query: goal });
-  assert.match(context, /reference-only until a human confirms/);
-  assert.match(context, /possible overlap/);
+  assert.equal((await m.queryRelatedWork({ sessionId: 'b', query: goal }))[0].authority, 'reference-only');
   const approve = await m.decideWorkSuggestion({ sessionId: 'b', suggestionId: sid, action: 'approve', actor: actorB, requestId: 'human-approve' });
   assert.equal(approve.suggestion.state, 'approved');
   assert.equal((await findSessionMeta('b')).workAwareness.works[0].version, 1, 'approval and execution are separate');

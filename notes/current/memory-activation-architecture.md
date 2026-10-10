@@ -1,6 +1,6 @@
 # Memory Activation Architecture
 
-Verified against the production call paths on 2026-10-03. The shared human/Agent
+Updated for the pointer-only normal preparation path on 2026-10-10. The shared human/Agent
 explanation is [Memory and organizational collaboration](../../docs/memory-architecture/README.md),
 with [interactive diagrams](../../docs/memory-architecture/index.html).
 Its project-pointer and existing-review enhancement is now opt-in through instance config;
@@ -18,12 +18,12 @@ Keep substantial memory on disk and activate only relevant material:
 - Fresh threads with usable prior Session history can receive bounded continuation
   from normalized history or existing continuation records. Hidden provider state
   cannot be fully reconstructed.
-- Topic discovery now reads bounded matching passages from registered navigation
-  and the enabled original project ledger on fresh/resumed turns. It records
-  path, lines and file version, without inferring a project binding or changing
-  the original storage. Matching task/topic/current links are followed within
-  registered instance regions; provider-private memory is not scanned. See
-  [Session work awareness](../../docs/session-work-awareness.md).
+- Ordinary fresh/resumed preparation carries verified Person/project pointers,
+  without automatically reading learning entries, related-person profiles,
+  work candidates or skills/company/topic-memory bodies. The Harness chooses
+  explicit `memory context`, `work context`, `work people` or original-source
+  reads. Topic discovery and coverage metadata belong to those explicit reads.
+  See [the context inventory](../../docs/connector-turn-context.md#default-context-inventory-and-october-2026-cleanup).
 - Source/runtime instructions, Session instructions, source snapshots, explicit
   agreements and local-bridge state are projected for the applicable turn.
 - workSummary is queryable Session metadata. The normal turn hook deliberately
@@ -116,16 +116,15 @@ operation rules and pointers; Skills/WORKFLOW hold reusable methods. Project
 status, personal tastes and office locations remain in their own maintenance
 locations. Native Harness loading rules still determine instruction activation.
 
-The bounded start/continuation path now also resolves involved source authors
-and mentioned people independently of project ownership, and reads relevant
-company sections directly from their original location. `memory context` and
-`work context` expose read coverage and source versions through the same modules.
-Missing matches, unavailable sources and budget skips remain different outcomes.
-Canonical Session work records provide non-exclusive overlap references;
-cross-Session publication and adoption require separate human chat decisions.
-This adds no foreground semantic model call or parallel project ledger. See
-[Session work awareness](../../docs/session-work-awareness.md) for commands,
-bounds, receipt semantics, recovery and actual acceptance limits.
+The normal turn path preserves source authors using the authentication
+registry, without reading their profile bodies. Current-request Person and
+configured project paths remain pointers. Explicit `memory context`, `work
+context` and `work people` provide scoped profiles, topic passages and coverage
+when the Harness needs them. Missing matches, unavailable sources and budget
+skips remain different outcomes in those reads. Canonical Session work records
+and the reference UI remain available; ordinary turns do not append search
+candidates or repeat review/publication instructions. Cross-Session publication
+and adoption retain their separate authorization boundaries.
 
 Start with all registered projects in an isolated collection/test-report area,
 consuming existing source outputs rather than adding a second group consumer.

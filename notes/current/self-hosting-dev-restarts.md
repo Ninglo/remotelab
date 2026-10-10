@@ -41,8 +41,8 @@ Before reporting a restart permission blocker, use the instance-scoped
 [service access workflow](../../docs/platform-skills/service-access.md).
 It checks the registered sudo and loopback SSH alternatives without
 restarting anything. A missing sudo entry alone is not evidence that every
-authorized management route is unavailable. Fresh and resumed Harness
-contexts carry the lookup entry; current capability evidence takes priority
+authorized management route is unavailable. The fresh-provider capability directory carries the lookup entry; resumed
+work can read the same guide or CLI help on demand, without repeated injection; current capability evidence takes priority
 over older blocked reports.
 
 1. Work and code from `7690`

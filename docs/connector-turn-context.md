@@ -16,4 +16,38 @@ Source/runtime and Session instructions are turn-scoped, so a connector configur
 
 RemoteLab can only project context it constructs or explicitly passes to a Harness. Harness-native system/developer policy, tool descriptions, or provider-side context that the Harness does not return cannot be reconstructed and must not be presented as if RemoteLab had captured it.
 
+## Default context inventory and October 2026 cleanup
+
+Ordinary preparation no longer searches background by the incoming text. The
+Harness chooses relevant reads using the small startup directory and verified
+Person/project pointers. This applies to fresh, resumed and supplementary
+inputs that prepare new model context. It adds no relevance classifier, token
+budget gate or separate planning call.
+
+| Source | Added / activation | Ordinary-turn behavior |
+| --- | --- | --- |
+| Request source snapshot | September; every accepted connector input | Keep current author, source, quotes and bounded conversation background. These are the input's actual sources, not keyword search hits. |
+| Person pointer | Verified Request identity | Keep the current Person's original profile path; do not read profiles automatically. Source author resolution still uses the authentication directory. |
+| Project pointers | October 3; configured source / Session association | Keep registered index, ledger and workflow paths plus exact project IDs; do not load ledger bodies. |
+| Work candidates and results | October 6, `55f2137b` | Remove automatic Session search, full candidates/results and repeated suggestion/review instructions. `work context`, review and reference UI remain explicit capabilities. |
+| Skills/company/project background | October 6, `55f2137b` | Remove automatic keyword matching, body reads and coverage envelopes. Read the existing skill index or query memory when needed. |
+| Learned Person/method entries | October 6, `00427dca` | Remove automatic scoped body projection. Original profiles, handbook, explicit retrieval, revisions and background writeback remain available. |
+| Related-person naming profiles | October 6, `55f2137b` | Remove automatic profile reads and deferred-person envelopes. Read a verified person's profile or use `work people` when referring to them. |
+| Topic-memory excerpts | October 8, `eaba71bd` | Remove normal-turn scans of navigation/task links and project ledger, excerpt/hash/omitted-source payloads. The bounded reader remains behind explicit `memory context` / `work context`. |
+| Service-access prompt | October 6, `ebabaf6f` | Remove repeated registration and keyword-triggered deployment instructions. Keep the startup capability pointer and live `service-access check` command. |
+| Local bridge, explicit agreements, /log diagnostic | Bound or requested state | Keep the applicable small state blocks and the diagnostic's fixed target; no speculative background retrieval. |
+| Surface/source/Session instructions, personal reply/routing/start choices | Current accepted configuration | Keep delivery contracts and actual opt-in choices. They control where/how this input is handled. Task-card state remains scoped to opted-in/existing work. |
+| Startup directory and history continuation | Fresh provider thread only | Keep pointers and existing bounded continuation; do not repeat the startup bundle on each resumed turn. |
+
+The removed automatic formatters have no production caller. On-demand readers
+retain their own provenance, scope and coverage checks; a search match is still
+only reference material. See [Session work awareness](session-work-awareness.md)
+and [scoped memory](memory-learning.md) for those commands.
+
+Deployment affects newly prepared context. Saved Run manifests and already
+accepted native input packets replay their original snapshots, and an existing
+Harness thread may still remember older material. This cleanup does not reset
+native threads or erase historical records. Character-count replay measures the
+payload change, not an independently measured latency or quality improvement.
+
 Verification covers first/resumed prompts, default/explicit forks, clean connector text, attachment failures, queue isolation, duplicate requests, and SIGKILL recovery with a missing Context event. All fixtures use isolated instances and local fake transports.

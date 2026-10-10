@@ -64,8 +64,10 @@ try {
   const { buildTurnContextHook } = await import('../chat/turn-context-hook.mjs');
   await writeFile(ledger, '# 主账\n\n副屏三区是工作、提醒、陪伴；当前设置应回读实际配置。');
   const hook = await buildTurnContextHook({ id: 'fresh' }, { query: originalQuery });
-  assert.match(hook, /副屏三区是工作、提醒、陪伴/, 'fresh turn preparation actually delivers matched body');
+  assert.doesNotMatch(hook, /副屏三区是工作、提醒、陪伴|Necessary background/, 'fresh turns do not automatically retrieve topic bodies');
   const resumed = await buildTurnContextHook({ id: 'resumed', codexThreadId: 'old-thread' }, { query: originalQuery });
-  assert.match(resumed, /副屏三区是工作、提醒、陪伴/, 'native resume shares retrieval without stale body caching');
-  console.log('TOPIC_MEMORY_VERIFIED: original fresh/unbound query, original file excerpts and versions, explicit/fresh/resumed hooks, no unrelated or cross-person bodies, whole-passage budgets, corrections, switches and bounded path/read failures.');
+  assert.doesNotMatch(resumed, /副屏三区是工作、提醒、陪伴|Necessary background/, 'native resume also keeps topic retrieval explicit');
+  const explicit = await retrieveNecessaryContext({ id: 'fresh' }, { query: originalQuery });
+  assert.match(explicit.context, /副屏三区是工作、提醒、陪伴/, 'explicit retrieval still discovers original topic passages');
+  console.log('TOPIC_MEMORY_VERIFIED: explicit fresh/unbound query, original excerpts and versions, no automatic fresh/resumed body injection, whole-passage budgets, corrections, switches and bounded path/read failures.');
 } finally { await rm(home, { recursive: true, force: true }); }
