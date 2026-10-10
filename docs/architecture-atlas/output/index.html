@@ -5,11 +5,11 @@
 <meta name="color-scheme" content="light">
 <meta name="description" content="按一条消息的真实先后顺序说明 RemoteLab：同步等待、异步执行、Session 两次交接、Jev 职责、飞书任务卡和当前待验边界。">
 <title>RemoteLab · 从一次工作到长期项目认识</title>
-<link rel="stylesheet" href="./reading.css?v=20261003l">
-<script type="module" src="./flow-reader.js?v=20261003l"></script>
-<script type="module" src="./memory-reader.js?v=20261003l"></script>
-<link rel="stylesheet" href="../guide.css?v=20261003l">
-<script type="module" src="../guide-shell.js?v=20261003l"></script>
+<link rel="stylesheet" href="./reading.css?v=20261010routing">
+<script type="module" src="./flow-reader.js?v=20261010routing"></script>
+<script type="module" src="./memory-reader.js?v=20261010routing"></script>
+<link rel="stylesheet" href="../guide.css?v=20261010routing">
+<script type="module" src="../guide-shell.js?v=20261010routing"></script>
 </head>
 <body data-guide-page="output/index.html" data-guide-chapter="message">
 <a class="skip" href="#main">跳到正文</a>
@@ -26,7 +26,7 @@
 <p>写入 Session 历史只是收录消息。可执行的 Request 被接纳后，才进入运行调度。部分入口由 Jev 先判断参与方式，实际任务交给所选 Harness。</p>
 <p class="metadata"><span id="reader-version"></span> · 源码与现有配置快照；现场状态不会自动更新</p>
 <p class="note">飞书收发仍有待验证的部分：已有修复通过回归和部署核对，但真实复杂任务的收发、即时表情前置、跨输出 Worker 到达顺序、提问分级和打断处理还没有全部完成验收。各节分别列出当前行为与目标。</p>
-<p>这里展开<a href="../project.html?v=20261003l#mechanisms">消息全程</a>中的组件交接与等待位置。下方时序图按来源查看；开工上下文在主流程中与执行相连，具体文件仍引用原记忆内容源。</p>
+<p>这里展开<a href="../project.html?v=20261010routing#mechanisms">消息全程</a>中的组件交接与等待位置。下方时序图按来源查看；开工上下文在主流程中与执行相连，具体文件仍引用原记忆内容源。</p>
 <details data-technical class="guide-chapter-context"><summary>文件与源码</summary><p>本章页面：<code>docs/architecture-atlas/output/index.html</code>；执行内容：<code>flow-data.js</code>；记忆内容：<code>docs/memory-architecture/reader-data.js</code>与<code>guide-data.js</code>。各内容源保留自己的核对基线。</p></details></header>
 
 <section id="journey"><h2>消息的执行流程</h2>
@@ -98,6 +98,7 @@
 </section>
 
 <section id="feedback"><h2>运行中的补充输入</h2>
+<p class="note">2026-10-09 更新了单群分流试点：兼容的新主线输入可以 steer 进入活跃执行，并分别保存移交或本地答复；不会让追加消息自动继承第一条的结果。详见<a href="./routing.html?v=20261010routing">分流提速实验流程</a>。下方一般输入机制与历史入口样本仍按各自日期和范围阅读。</p>
 <p>底座支持原生追加输入与停止，但目前并没有把所有自然语言反馈可靠分成独立业务事件。尤其是<strong>正在等选择题时，新文字可能被当作题目答案</strong>。这一点必须单独测试。</p>
 <div class="table-scroll"><table><thead><tr><th>用户动作</th><th>当前机制</th><th>目标与缺口</th></tr></thead><tbody id="feedback-rows"></tbody></table></div>
 <p class="note">超时选择是系统回退，不是用户回复，更不是授权。现有统一五分钟策略与目标的“可选 / 必要输入 / 授权”分级不等价；目标的持久待答、问题版本和独立交互卡还需要实现。</p>

@@ -111,7 +111,12 @@ second permanent chat service.
 Additional requests keep independent request/response IDs and reference the
 execution through `nativeDispatchRunId`. Their input text, attachment references
 and source Context are recorded before transport. Requests consumed by one
-execution share its final result. The root request atomically reserves reply
+execution normally share its final result. The authorized Feishu routing pilot
+uses a versioned per-input exception: each protocol-2 input saves its own topic
+handoff or explicit local reply, and an unhandled additional input remains
+incomplete rather than inheriting the root answer. See
+[the pilot reply contract](session-work-awareness.md) and the
+[human-facing experiment flow](architecture-atlas/output/routing.html). The root request atomically reserves reply
 destinations, so the same conversation gets one final reply while distinct
 destinations still receive their result.
 
