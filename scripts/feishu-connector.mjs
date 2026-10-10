@@ -2159,19 +2159,16 @@ async function main() {
     appSecret: config.appSecret,
     domain: resolveDomain(config.region),
     loggerLevel: resolveLoggerLevel(config.loggerLevel),
-    onReconnected: () => {
-      void documentPoller?.recover().catch(error => console.error(`[feishu-document-recovery] ${error.message}`));
-    },
   });
 
   let closed = false;
-  let documentPoller = await startDocumentBindingEvents(runtime);
+  const documentEvents = await startDocumentBindingEvents(runtime);
   const closeConnection = (reason) => {
     if (closed) return;
     closed = true;
     stopSourceDeliveryPoller(runtime);
     runtime.projectSurface?.stop();
-    void documentPoller?.stop();
+    void documentEvents.stop();
     inbox.stop();
     console.log(`[feishu-connector] closing connection (${reason})`);
     wsClient.close();
@@ -2180,7 +2177,7 @@ async function main() {
     closeConnection(reason);
     await inbox.idle();
     await runtime.sourceDeliveryPollPromise;
-    await documentPoller?.stop();
+    await documentEvents.stop();
     await releasePidLock();
     process.exit(code);
   };
@@ -2195,7 +2192,7 @@ async function main() {
   const persist = (sourceLabel, summarize) => async raw => {
     const receivedAt = performance.now();
     const summary = summarize(raw);
-    if (summary.fileToken && await documentPoller.accept(summary)) return {};
+    if (summary.fileToken && await documentEvents.accept(summary)) return {};
     const status = participationEnabled(runtime, summary) ? await participationController(runtime).state(summary) : null;
     const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel,
       ...(status ? { participationSnapshot: { key: status.key, mode: status.mode, epoch: status.epoch, receivedAt: Date.now() } } : {}),

@@ -1,9 +1,7 @@
-import { watch } from 'node:fs';
 import { createConnectorInbox } from '../../lib/connector-inbox.mjs';
-import { serialQueue } from '../../lib/durable-records.mjs';
 import { feishuReadRetryPolicy } from '../../lib/feishu-retry-policy.mjs';
 import { createFeishuReadPacer } from '../../lib/feishu-read-pacer.mjs';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { readFile, mkdir, writeFile, rename, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { sameConversation, refineConversation } from '../../lib/conversation-target.mjs';
@@ -252,14 +250,14 @@ export async function reconcileDocumentBinding(runtime, binding) {
   }
 }
 
-export async function startDocumentBindingEvents(runtime, { now = Date.now, recoveryDelayMs = 30_000,
-  schedule = setTimeout, cancel = clearTimeout } = {}) {
+export async function startDocumentBindingEvents(runtime) {
   const directory = bindingsDirectory(runtime.config.storageDir);
   await mkdir(directory, { recursive: true });
   const inbox = createConnectorInbox(join(directory, 'events'), {
     maxConcurrency: 2, retryPolicy: feishuReadRetryPolicy,
     conversationKey: entry => entry.fileToken,
     process: async entry => {
+      if (!entry.id.startsWith('comment:')) return { ignored: 'automatic_scan_disabled' };
       const binding = (await listDocumentBindings(runtime.config.storageDir))
         .find(item => item.fileToken === entry.fileToken && item.sourceRouteId === runtime.config.sourceRouteId);
       if (!binding) return { ignored: 'unbound' };
@@ -269,45 +267,15 @@ export async function startDocumentBindingEvents(runtime, { now = Date.now, reco
     onError: error => console.error(`[feishu-document-event] ${error.message}`),
   });
   const enqueue = (fileToken, eventId) => inbox.accept(eventId, { fileToken });
-  const recoveryPath = join(directory, 'recovery-state.json');
-  const recoveryState = await readBindingJson(recoveryPath, { nextAt: 0 });
-  const recoveryQueue = serialQueue();
-  let recoveryTimer = null, stopped = false;
-  const recover = () => recoveryQueue(async () => {
-    if (stopped) return;
-    if (now() < recoveryState.nextAt) {
-      // Reconnects in the cooldown share one trailing catch-up. Never simply
-      // skip the final gap: it may contain a comment whose event was missed.
-      if (recoveryTimer === null) recoveryTimer = schedule(() => {
-        recoveryTimer = null;
-        void recover().catch(error => console.error(`[feishu-document-recovery] ${error.message}`));
-      }, recoveryState.nextAt - now());
-      return;
-    }
-    if (recoveryTimer !== null) { cancel(recoveryTimer); recoveryTimer = null; }
-    recoveryState.nextAt = now() + recoveryDelayMs;
-    await writeBindingJson(recoveryPath, recoveryState);
-    const pending = await inbox.store.active();
-    for (const binding of await listDocumentBindings(runtime.config.storageDir)) {
-      // A slow scan plus one successor covers the final connection gap. A
-      // prolonged reconnect storm must not grow a backlog of identical scans.
-      const queued = pending.filter(entry => !entry.complete && entry.fileToken === binding.fileToken
-        && entry.id.startsWith(`recover:${binding.generation}:`)).length;
-      if (binding.sourceRouteId === runtime.config.sourceRouteId && queued < 2)
-        await enqueue(binding.fileToken, `recover:${binding.generation}:${randomUUID()}`);
-    }
-  });
-  // Local binding changes are filesystem events, never periodic remote scans.
-  const watcher = watch(directory, (_event, filename) => {
-    if (!String(filename).endsWith('.binding.json')) return;
-    void (async () => {
-      const binding = await readBindingJson(join(directory, String(filename)));
-      if (binding?.enabled && binding.sourceRouteId === runtime.config.sourceRouteId)
-        await enqueue(binding.fileToken, `bind:${binding.generation}`);
-    })().catch(error => console.error(`[feishu-document-event] ${error.message}`));
-  });
+  // Retire queued scans from older versions locally, including delayed retries.
+  // Only actual received comment events may resume after a process restart.
+  for (const entry of await inbox.store.active()) {
+    if (entry.complete || entry.id.startsWith('comment:')) continue;
+    await inbox.store.mutate(entry.key, current => ({ ...current, complete: true,
+      receipt: { ignored: 'automatic_scan_disabled' } }));
+    await inbox.store.archive(entry.key);
+  }
   inbox.start();
-  await recover();
   return {
     async accept(summary) {
       const binding = (await listDocumentBindings(runtime.config.storageDir))
@@ -316,11 +284,7 @@ export async function startDocumentBindingEvents(runtime, { now = Date.now, reco
       await enqueue(binding.fileToken, `comment:${summary.eventId || summary.messageId}`);
       return true;
     },
-    recover,
-    async idle() { await recoveryQueue.idle(); await inbox.tick(); await inbox.idle(); },
-    async stop() {
-      stopped = true; if (recoveryTimer !== null) cancel(recoveryTimer);
-      watcher.close(); inbox.stop(); await recoveryQueue.idle(); await inbox.idle();
-    },
+    async idle() { await inbox.tick(); await inbox.idle(); },
+    async stop() { inbox.stop(); await inbox.idle(); },
   };
 }

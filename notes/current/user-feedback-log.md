@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Document reads should follow received comment events
+
+- Feedback: repeated startup scans queried unused bound documents and increased the shared Feishu API quota pressure. The user explicitly chose to trust comment notifications and remove proactive catch-up.
+- Change: startup, reconnection and new bindings no longer trigger document reads. Retire older queued automatic scans locally without provider calls; keep actual received events durable across restarts, with their existing deduplication and finite retries.
+- Validation: isolated tests cover repeated starts, new bindings, delayed legacy scans, genuine event recovery and permanent rejection. Live connector readiness and observed startup API counts are checked separately from a human comment's end-to-end reply.
+
 ### 2026-10-10 — Dismiss delivery warnings after reading
 
 - Feedback: the composer shows a persistent delivery warning with no way to close it after reading; stopping the active task does not clear the warning.
