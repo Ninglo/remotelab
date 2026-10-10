@@ -77,14 +77,16 @@
 <path data-edge="ingress-record" class="chart-edge neutral dashed" d="M148 283 V355" marker-end="url(#architecture-wide-arrow)"/>
 <path data-edge="mainline-record" class="chart-edge neutral dashed" d="M565 273 H535 V472 H350 V408 H330" marker-end="url(#architecture-wide-arrow)"/>
 <text x="438" y="493" class="chart-label" text-anchor="middle">逐条保存处理决定</text>
+<path data-edge="handoff-feedback" class="chart-edge mainline" d="M1030 233 H1047 V547 H1030" marker-end="url(#architecture-wide-arrow)"/>
+<text x="1015" y="495" class="chart-label" text-anchor="end">接纳后反馈</text>
 <path data-edge="reply-outbox" class="chart-edge mainline" d="M665 443 V503" marker-end="url(#architecture-wide-arrow)"/>
 <path data-edge="execution-outbox" class="chart-edge work" d="M922 443 V503" marker-end="url(#architecture-wide-arrow)"/>
-<text x="976" y="480" class="chart-label" text-anchor="middle">工作端输出</text>
+<text x="866" y="480" class="chart-label" text-anchor="middle">工作端输出</text>
 <path data-edge="outbox-source" class="chart-edge mainline" d="M665 591 V658" marker-end="url(#architecture-wide-arrow)"/>
 <text x="705" y="630" class="chart-label" text-anchor="middle">原地址</text>
 <path data-edge="outbox-work" class="chart-edge work" d="M922 591 V658" marker-end="url(#architecture-wide-arrow)"/>
 <text x="972" y="630" class="chart-label" text-anchor="middle">工作地址</text></svg>
-<svg class="structure-chart mobile-chart" viewBox="0 0 320 1058" role="img" aria-labelledby="architecture-mobile-title architecture-mobile-desc" xmlns="http://www.w3.org/2000/svg"><title id="architecture-mobile-title">整体结构：手机布局</title><desc id="architecture-mobile-desc">与桌面图使用同样的组件和连接；主线短答与工作话题结果分别返回自己的地址。</desc><defs><marker id="architecture-mobile-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
+<svg class="structure-chart mobile-chart" viewBox="0 0 344 1058" role="img" aria-labelledby="architecture-mobile-title architecture-mobile-desc" xmlns="http://www.w3.org/2000/svg"><title id="architecture-mobile-title">整体结构：手机布局</title><desc id="architecture-mobile-desc">与桌面图使用同样的组件和连接；主线短答与工作话题结果分别返回自己的地址。</desc><defs><marker id="architecture-mobile-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
 <g data-node="source" class="chart-node neutral"><rect x="40" y="22" width="240" height="66" rx="6"/>
 <text x="160.0" y="51.0" class="chart-node-title" text-anchor="middle">群主线新消息</text>
 <text x="160.0" y="75.0" class="chart-node-sub" text-anchor="middle">保留作者与来源</text>
@@ -146,6 +148,8 @@
 <path data-edge="topic-execution" class="chart-edge work" d="M244 614 V668" marker-end="url(#architecture-mobile-arrow)"/>
 <path data-edge="ingress-record" class="chart-edge neutral dashed" d="M40 170 H1 V650 H76 V668" marker-end="url(#architecture-mobile-arrow)"/>
 <path data-edge="mainline-record" class="chart-edge neutral dashed" d="M40 436 H18 V490 H164 V708 H148" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="handoff-feedback" class="chart-edge mainline" d="M316 568 H340 V850 H280" marker-end="url(#architecture-mobile-arrow)"/>
+<text x="314" y="794" class="chart-label" text-anchor="end">接纳后反馈</text>
 <path data-edge="reply-outbox" class="chart-edge mainline" d="M76 614 V636 H157 V778 H100 V808" marker-end="url(#architecture-mobile-arrow)"/>
 <path data-edge="execution-outbox" class="chart-edge work" d="M244 748 V780 H220 V808" marker-end="url(#architecture-mobile-arrow)"/>
 <path data-edge="outbox-source" class="chart-edge mainline" d="M100 892 V936 H76 V968" marker-end="url(#architecture-mobile-arrow)"/>
@@ -153,7 +157,7 @@
 <text x="60" y="938" class="chart-label" text-anchor="middle">原地址</text>
 <text x="262" y="938" class="chart-label" text-anchor="middle">工作地址</text></svg>
 <div class="chart-legend"><span class="legend-mainline">蓝色：主线与原消息答复</span><span class="legend-work">绿色：工作话题与任务结果</span><span>实线：消息或任务流向</span><span>虚线：持久记录关联</span></div>
-<figcaption>主线只做确定去向所需的核查。业务工作和消息投递分别推进；每条输入的记录贯穿两条链路。</figcaption></figure>
+<figcaption>主线只做确定去向所需的核查。目标接纳后，原消息的接收反馈直接入队；工作进展与结果由工作端另行投递。</figcaption></figure>
 <p class="structure-rule">多条消息可以共用一轮执行；工作去向与回复责任仍逐条保存。需要合并答复时，明确记录所覆盖的输入，并按选定地址发送一次。</p></section>
 <section id="admission"><span id="recovery" class="guide-anchor-alias"></span><h2>输入接续：正在运行时，新消息怎样进入</h2>
 <figure class="structure-figure" id="admission-diagram"><div class="figure-heading"><span>02 · 执行状态决定传递方式</span><span>每条输入独立接纳</span></div><svg class="structure-chart desktop-chart" viewBox="0 0 1060 412" role="img" aria-labelledby="dispatch-wide-title dispatch-wide-desc" xmlns="http://www.w3.org/2000/svg"><title id="dispatch-wide-title">输入接续：按当前执行状态分发</title><desc id="dispatch-wide-desc">当前会话空闲时启动新一轮，运行中且兼容时将输入追加进同一轮，不兼容则保留请求等待可执行条件。</desc><defs><marker id="dispatch-wide-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>

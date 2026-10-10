@@ -27,7 +27,7 @@ main { max-width:1176px; }
 .detail-body { padding:14px 0; }.sources { padding-left:24px; }.sources li { margin-bottom:8px; }
 @media(max-width:1000px) {
  .desktop-chart { display:none; }.mobile-chart { display:block; }
- .mobile-chart .chart-node-title { font-size:17px; }.mobile-chart .chart-node-sub { font-size:14px; }
+ .mobile-chart .chart-node-title { font-size:18px; }.mobile-chart .chart-node-sub { font-size:15px; }
  .figure-heading { padding:14px; font-size:14px; }
  .structure-figure figcaption,.chart-legend { padding:12px 14px; }
  .reading-links { gap:8px 18px; }
