@@ -160,7 +160,7 @@ export function createSessionTurnCompletionHelpers(services) {
     return didPublish;
   }
 
-  function scheduleSessionStateSuggestion(session, run, manifest = {}) {
+  function scheduleSessionStateSuggestion(session, run, manifest = {}, options = {}) {
     if (
       !session?.id
       || !run
@@ -195,7 +195,7 @@ export function createSessionTurnCompletionHelpers(services) {
       thinking: false,
       runState: run.state,
       queuedCount: getSessionQueueCount(session),
-    });
+    }, options);
 
     suggestionDone.then(async (result) => {
       if (!result?.ok) return;
@@ -207,6 +207,13 @@ export function createSessionTurnCompletionHelpers(services) {
     });
 
     return true;
+  }
+
+  function scheduleSessionInputSuggestion(session, run, manifest = {}, inputEvent) {
+    if (!inputEvent || manifest.internalOperation || manifest.options?.internalOperation
+      || manifest.options?.nativeQuestionId || manifest.options?.workReference
+      || manifest.options?.executionProfile === 'quick') return false;
+    return scheduleSessionStateSuggestion(session, run, manifest, { phase: 'input', inputEvent });
   }
 
   async function runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest) {
@@ -247,5 +254,6 @@ export function createSessionTurnCompletionHelpers(services) {
     queueSessionCompletionTargets,
     runSessionTurnCompletionEffects,
     scheduleSessionStateSuggestion,
+    scheduleSessionInputSuggestion,
   };
 }
