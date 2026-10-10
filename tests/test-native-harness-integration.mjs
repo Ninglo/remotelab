@@ -177,7 +177,9 @@ try {
       assert.match(claimed.delivery.text, terminalState === 'failed' ? /任务执行失败/ : /任务已取消/);
       await rpc('complete', claimed.delivery.id, claimed.leaseId, { externalId: `${rootId}-final-${index}` });
     }
-    assert.deepEqual(terminalClaims.map(part => part.target.rootId || part.target.messageId).sort(), ['other-root', 'steering-root']);
+    // Either alias may win the reservation race; both must address the same
+    // original thread, regardless of which input's message anchor is kept.
+    assert.deepEqual(terminalClaims.map(part => part.target.threadId).sort(), ['other-thread', 'steering-thread']);
     assert.equal(await rpc('claim', { connector: 'feishu' }), null, terminalState + ' aliases cannot send a third notice');
     await rpc('shutdown'); await killController(); await boot();
     assert.equal(await rpc('claim', { connector: 'feishu' }), null, terminalState + ' recovery cannot repeat notices');
