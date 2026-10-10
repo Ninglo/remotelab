@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { readFeishuApiHealth, feishuApiAttention } from '../lib/feishu-api-health.mjs';
 import { dispatchMonitoringAlerts } from '../chat/monitoring-alerts.mjs';
 import { readService, createMonitoringReader } from '../chat/monitoring.mjs';
+import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 
 const now = Date.parse('2026-10-10T12:00:00Z');
 const config = { apps: [{ appId: 'app', label: 'Bot' }], callsPer5m: 10 };
@@ -114,4 +115,39 @@ test('configured service additions beyond twenty are observed instead of silentl
     getAccounts: async () => null, getTasks: async () => [], getService: async item => ({ ...item, status: 'healthy' }),
     getFs: async () => ({ blocks: 100, bsize: 1e9, bfree: 80, bavail: 80, files: 1, ffree: 1 }), getStat: async () => ({ dev: 1 }) });
   assert.equal((await reader()).services.length, 25);
+});
+
+test('component/hour accounting and unchanged reads expose design clues without retaining digests in the overview', async t => {
+  const directory = await logs(t, Array.from({ length: 20 }, () => row(1000, 0, { component: 'display', pid: 1,
+    readFingerprint: 'a'.repeat(64), dataFingerprint: 'b'.repeat(64) })));
+  const value = await readFeishuApiHealth({ directory, config: { ...config, callsPer5m: 100, tenantQuotaLimit: 1000000 }, now });
+  const provider = value.providers[0];
+  assert.equal(provider.components[0].calls, 20); assert.equal(provider.hours[0].calls, 20);
+  assert.equal(provider.duplicateReads[0].calls, 20); assert.equal(provider.comparedReads5m, 20);
+  assert.equal(feishuApiAttention(value)[0].severity, 'warning');
+  assert.doesNotMatch(JSON.stringify(value), /aaaaaaaa|bbbbbbbb/);
+  assert.equal(value.tenantQuotaLimit, 1000000); assert.equal(value.tenantQuota, null);
+});
+
+test('successful read digests distinguish parameters and data, exclude tokens/writes, and change after restart', async () => {
+  const records = [];
+  const audit = { logger: { record: value => { records.push(value); } } };
+  let response = { code: 0, data: { secretText: 'never-in-ledger' } };
+  const transport = { request: async () => response };
+  const client = createFeishuHttpInstance(transport, 1000, audit);
+  await client.get('/open-apis/im/v1/messages/private-id', { params: { page_token: 'private-page' } });
+  await client.get('/open-apis/im/v1/messages/private-id', { params: { page_token: 'private-page' } });
+  assert.equal(records[0].readFingerprint, records[1].readFingerprint);
+  assert.equal(records[0].dataFingerprint, records[1].dataFingerprint);
+  await client.get('/open-apis/im/v1/messages/private-id', { params: { page_token: 'another-page' } });
+  assert.notEqual(records[0].readFingerprint, records[2].readFingerprint);
+  response = { code: 0, data: { secretText: 'changed' } };
+  await client.get('/open-apis/im/v1/messages/private-id', { params: { page_token: 'private-page' } });
+  assert.notEqual(records[0].dataFingerprint, records[3].dataFingerprint);
+  await client.post('/open-apis/im/v1/messages', { private: 'write text' });
+  await client.get('/open-apis/auth/v3/token');
+  assert.equal(records[4].readFingerprint, undefined); assert.equal(records[5].dataFingerprint, undefined);
+  const restarted = createFeishuHttpInstance(transport, 1000, audit);
+  await restarted.get('/open-apis/im/v1/messages/private-id', { params: { page_token: 'private-page' } });
+  assert.notEqual(records[0].readFingerprint, records[6].readFingerprint);
 });

@@ -62,6 +62,17 @@ measurement. Direct CLI requests, other instances and billing eligibility
 remain explicit gaps. Reads are bounded to 31 days, 512 files and 32 MiB;
 truncation or malformed logs cannot establish healthy coverage.
 
+Component and hourly breakdowns distinguish chat/comments, progress cards and
+display reminders. Upgraded successful GETs compare request and data digests
+made with a random process-local HMAC key; no resource IDs, query values,
+responses, authentication data or payload hashes for writes are logged.
+Twenty identical successful reads in five minutes flag possible polling waste
+for the report. This is a design-review clue, not proof that a business request
+was redundant, and comparison across processes or old logs is not inferred.
+An operator-confirmed `tenantQuotaLimit` can retain the monthly ceiling without
+inventing the used count. Remaining allowance and early budget warnings still
+require the independent fresh administrator measurement below.
+
 Monthly rejection `99991403` is an immediate critical incident, latched in
 `feishu-api-health.json`. Token success, idle traffic, log retention and
 restarts cannot clear it. After an administrator restores quota, independently

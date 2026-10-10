@@ -138,9 +138,19 @@
       const endpoints = value.apiHealth.providers.flatMap(item => item.endpoints.map(endpoint =>
         [item.label, endpoint.endpoint, endpoint.calls, endpoint.failed]));
       if (endpoints.length) table(api, ["对象", "调用最多的接口", "已观察调用", "失败"], endpoints);
+      const componentName = component => ({ connector: "聊天与评论", workboard: "进展卡片", display: "副屏飞书提醒" }[component] || component);
+      const components = value.apiHealth.providers.flatMap(item => (item.components || []).map(component =>
+        [item.label, componentName(component.component), component.calls, component.failed]));
+      if (components.length) table(api, ["对象", "调用组件", "24h窗口调用", "失败"], components);
+      const hours = value.apiHealth.providers.flatMap(item => (item.hours || []).map(hour => [item.label, time(hour.at), hour.calls, hour.failed]));
+      if (hours.length) table(api, ["对象", "记录小时（部分小时不作完整日均）", "调用", "失败"], hours);
+      const repeats = value.apiHealth.providers.flatMap(item => (item.duplicateReads || []).map(read =>
+        [item.label, componentName(read.component), read.endpoint, read.calls]));
+      if (repeats.length) table(api, ["对象", "组件", "5分钟内反复返回相同数据的读取", "次数"], repeats);
+      api.appendChild(node("p", "相同读取比较仅覆盖升级后的成功请求，同一进程内使用临时密钥摘要；未记录的历史和进程间重复保留未知。", "monitoring-note"));
       value.apiHealth.providers.forEach(item => api.appendChild(node("p", `${item.label}：日志初次观测 ${time(item.firstObservedAt)}`, "monitoring-note")));
       api.appendChild(node("p", value.apiHealth.tenantQuota ? `企业额度已用 ${percent(value.apiHealth.tenantQuota.usedPercent)}`
-        : "企业真实剩余额度未知，需管理员后台读数；本地调用数不代表计费用量。", "monitoring-note"));
+        : `${value.apiHealth.tenantQuotaLimit ? `已确认月度上限 ${number(value.apiHealth.tenantQuotaLimit)} 次；` : ""}企业真实剩余额度未知，需管理员后台读数；本地调用数不代表计费用量。`, "monitoring-note"));
     }
     table(disks, [t("resource"), t("used"), t("free"), t("inodes")], value.disks.map(disk => [disk.label, percent(disk.usedPercent), bytes(disk.availableBytes), percent(disk.inodeUsedPercent)]));
     value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
