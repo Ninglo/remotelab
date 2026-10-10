@@ -1,66 +1,38 @@
-/* The shared guide owns type, color and navigation; this page owns its diagrams. */
+/* Diagrams follow the unified guide typography and color system. */
 main { max-width:1176px; }
-.scope-note { border-left:3px solid var(--notice); padding:14px 20px; background:var(--blue-soft); }
 .reading-links { display:flex; flex-wrap:wrap; gap:8px 24px; margin-top:24px; }
 .reading-links a { padding-block:8px; }
-.table-wrap { overflow-x:auto; margin:24px 0; border-block:1px solid var(--line); }
-table { border-collapse:collapse; width:100%; min-width:660px; font-size:16px; line-height:1.8; }
-th,td { text-align:left; vertical-align:top; padding:16px 18px; border-bottom:1px solid var(--line); }
-th { background:var(--soft); font-weight:400; }
-th:first-child { width:20%; }
-.caption,figcaption { color:var(--muted); font-size:14px; line-height:1.8; }
-.flow-figure { margin:30px 0; padding:26px; border:1px solid var(--line); border-radius:8px; }
-.flow-stack { display:grid; gap:0; }
-.flow-node { display:flex; flex-direction:column; gap:6px; padding:18px 20px; background:var(--soft); border:1px solid var(--line); border-radius:6px; text-align:left; }
-.flow-node strong { font-size:18px; font-weight:400; }
-.flow-node>span:last-child { font-size:15px; line-height:1.8; color:var(--muted); }
-.node-role { font-size:13px; color:var(--muted); }
-.flow-arrow { text-align:center; padding:13px 0; font-size:14px; color:var(--muted); }
-.flow-fork { display:grid; gap:18px; position:relative; }
-.admission-fork { grid-template-columns:repeat(3,minmax(0,1fr)); }
-.decision-fork,.compact-fork { grid-template-columns:repeat(2,minmax(0,1fr)); }
-.condition { background:var(--blue-soft); border-color:#bfdbfe; }
-.work { background:#f0fdf4; border-color:#bbf7d0; }
-.answer { background:var(--blue-soft); border-color:#bfdbfe; }
-.flow-figure figcaption { margin-top:20px; }
-.scenario { padding:28px 0; border-bottom:1px solid var(--line); }
-.scenario p { max-width:860px; }
-.scenario-result { margin-top:18px; font-size:16px; color:var(--muted); }
-.mini-flow { display:flex; align-items:stretch; gap:10px; font-size:16px; line-height:1.7; }
-.mini-flow>div { flex:1; padding:15px; border:1px solid var(--line); background:var(--soft); border-radius:6px; }
-.mini-flow>span { flex:none; align-self:center; color:var(--muted); }
-.scenario-figure { margin:24px 0; }
-.scenario-figure figcaption { margin-top:14px; }
-.parallel-note { margin-top:14px; padding:12px 16px; border-left:2px solid var(--queue); color:var(--muted); font-size:15px; }
-.message-example { margin:28px 0; }
-.example-head,.example-row { display:grid; grid-template-columns:1fr 1.3fr 1.3fr; gap:14px; }
-.example-head { font-size:14px; color:var(--muted); padding:10px 16px; }
-.example-row { padding:14px 0; border-top:1px solid var(--line); }
-.example-row>div { padding:16px; border:1px solid var(--line); border-radius:6px; font-size:16px; }
-.example-row strong { display:block; font-weight:400; }
-.example-row small { display:block; color:var(--muted); margin-top:6px; }
-.message-example figcaption { margin-top:18px; }
-.sources { padding-left:24px; }
-.sources li { margin-bottom:14px; }
-.detail-body { padding:14px 0; }
-@media(max-width:650px) {
-  .flow-figure { padding:16px; }
-  .admission-fork,.decision-fork,.compact-fork { grid-template-columns:1fr; gap:12px; }
-  .flow-fork { border-left:2px solid var(--line); padding-left:14px; }
-  .flow-node { padding:14px; }
-  .flow-arrow { text-align:left; padding:14px 0; }
-  .mini-flow { flex-direction:column; gap:5px; }
-  .mini-flow>span { align-self:center; transform:rotate(90deg); }
-  .mini-flow>div { padding:14px; }
-  .example-head { display:none; }
-  .example-row { grid-template-columns:1fr; gap:8px; margin-bottom:12px; }
-  .example-row>div:nth-child(2)::before { content:'主线处理：'; display:block; color:var(--muted); font-size:13px; }
-  .example-row>div:nth-child(3)::before { content:'去向与回复：'; display:block; color:var(--muted); font-size:13px; }
-  .reading-links { gap:8px 18px; }
+.structure-figure { margin:26px 0; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.figure-heading { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px 20px; padding:18px 22px; border-bottom:1px solid var(--line); font-size:15px; }
+.figure-heading span:last-child { color:var(--muted); }
+.structure-chart { display:block; width:100%; height:auto; font-family:var(--guide-sans); }
+.mobile-chart { display:none; max-width:440px; margin:auto; }
+.chart-node rect { fill:var(--soft); stroke:#c7c7cc; stroke-width:1.2; }
+.chart-node.mainline rect { fill:var(--blue-soft); stroke:#93b4e9; }
+.chart-node.work rect { fill:#f0fdf4; stroke:#92c9a8; }
+.chart-node.delivery rect { fill:#f3f5fb; stroke:#a0aac4; }
+.chart-node-title { font-size:19px; fill:var(--ink); }
+.chart-node-sub { font-size:15px; fill:var(--muted); }
+.chart-lane { font-size:16px; fill:var(--muted); }
+.chart-label { font-size:14px; fill:var(--muted); paint-order:stroke; stroke:white; stroke-width:6px; stroke-linejoin:round; }
+.chart-edge { fill:none; stroke:#8b8b95; stroke-width:1.8; }
+.chart-edge.mainline { stroke:#4d7cbc; }
+.chart-edge.work { stroke:#4e9a71; }
+.chart-edge.dashed { stroke-dasharray:5 5; }
+.chart-legend { display:flex; flex-wrap:wrap; gap:8px 20px; padding:12px 22px; font-size:13px; color:var(--muted); border-top:1px solid var(--line); }
+.legend-mainline { color:#365e95; }.legend-work { color:#35784e; }
+.structure-figure figcaption { margin:0; padding:14px 22px 18px; font-size:14px; line-height:1.8; color:var(--muted); }
+.structure-rule { font-size:16px; color:var(--muted); }
+.scope-note { border-left:2px solid var(--line); padding:8px 0 8px 18px; font-size:16px; }
+.detail-body { padding:14px 0; }.sources { padding-left:24px; }.sources li { margin-bottom:8px; }
+@media(max-width:1000px) {
+ .desktop-chart { display:none; }.mobile-chart { display:block; }
+ .mobile-chart .chart-node-title { font-size:17px; }.mobile-chart .chart-node-sub { font-size:14px; }
+ .figure-heading { padding:14px; font-size:14px; }
+ .structure-figure figcaption,.chart-legend { padding:12px 14px; }
+ .reading-links { gap:8px 18px; }
 }
 @media print {
-  .flow-figure,.scenario,.example-row { break-inside:avoid; }
-  .table-wrap { overflow:visible; }
-  table { min-width:0; }
-  .reading-links { display:none; }
+ .structure-figure { break-inside:avoid; }.reading-links { display:none; }
+ .desktop-chart { display:block; }.mobile-chart { display:none; }
 }

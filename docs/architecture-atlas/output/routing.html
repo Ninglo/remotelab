@@ -1,171 +1,393 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light">
-<meta name="description" content="群消息分流提速实验：新消息如何追加到正在运行的执行，怎样分别保留事项归属、回复责任，以及补充、催问、纠正、停止和失败的处理流程。">
-<title>群消息分流提速实验 · RemoteLab 整体说明</title>
-<link rel="stylesheet" href="../guide.css?v=20261010routing">
-<link rel="stylesheet" href="./routing.css?v=20261010routing">
-<script type="module" src="../guide-shell.js?v=20261010routing"></script>
-</head>
-<body data-guide-page="output/routing.html" data-guide-chapter="routing">
-<main id="main">
-<header class="hero" id="purpose">
-<p class="eyebrow">群消息分流实验 · 2026-10-10 核对</p>
-<h1>及时接住新消息，分别承担回复责任</h1>
-<p class="lede">研究还在进行时，补充条件和催问可以进入正在运行的执行。系统不再要求它们等上一轮结束，但仍为每条消息保存作者、工作去向和回复位置。</p>
-<p>这个实验解决两种等待：后来的消息被前一轮长任务挡住；主线为了选择工作话题，先把业务问题研究了一遍。做法是让主线尽快确定去向，把深入工作交给工作话题，并允许状态答复提前发送。</p>
-<p class="scope-note"><strong>适用范围：</strong>已授权的单群分流试点中新接纳的主线输入。既有工作话题继续在原话题处理；不扩大到其他群或全部会话。实现已核，本实例已加载包含该改动的版本；真实群聊的响应时延和分流准确率仍待测量。</p>
-<nav class="reading-links" aria-label="本章快速阅读"><a href="#mechanism">看整体流程</a><a href="#situations">按消息情况查</a><a href="#recovery">看失败与重试</a><a href="#evidence">查实现与证据</a></nav>
-</header>
-
-<section id="problem">
-<h2>为什么原来会慢</h2>
-<p>接收、执行和发送本来就由不同程序推进，但分流主线仍按整轮串行：第一条没有结束，后来的消息便不能进入模型上下文。第一轮又提前调查设备和资料，补充、催问因此一起等待。</p>
-<p>当时禁用主线追加输入，是为了保护逐条分流和回复：旧结算会让同一次执行中的消息共享最终结果。第一条转到工作话题、关闭主线正文后，后来的催问可能也失去自己的回答。新版同时修改输入接续和结果结算，分别保存每条消息的处理决定。</p>
-<div class="table-wrap" tabindex="0" role="region" aria-label="原方案与本次调整对照">
-<table><thead><tr><th>环节</th><th>原方案的问题</th><th>本次机制</th></tr></thead><tbody>
-<tr><td>新消息进入执行</td><td>等前一轮结束，补充和催问也排队。</td><td>兼容输入可 steer，即追加进活跃执行；不固定延时收集消息。</td></tr>
-<tr><td>主线选择去向</td><td>为了分流先做业务研究，交接太晚。</td><td>只核作者、授权、已有话题和当前状态；深入核查交给工作话题。</td></tr>
-<tr><td>回复责任</td><td>共享一轮最终结果，难以同时满足转交和当场答复。</td><td>每条输入分别选择移交、本地答复或明确无需正文；兼容补充可显式合并。</td></tr>
-<tr><td>催问和接收反馈</td><td>催问也等调查完成；反馈受附件准备拖延。</td><td>依据已保存状态提前答复；表情反馈不等待完整附件、背景和正文准备。</td></tr>
-</tbody></table></div>
-<p class="caption">2026-10-09 的一个三消息案例中，接收均在 0.7 秒内；第一轮运行约 4 分 22.6 秒，后两条从接纳到启动约等了 4 分 30.6 秒和 5 分 42.9 秒。这两个等候数包含启动时间，不等于 steer 后实测节省的时间。工具批次之间的耗时也不能全部归因为模型思考。<a href="#evidence">来源与测量边界</a>。</p>
-</section>
-
-<section id="mechanism">
-<h2>整体流程：接续执行，逐条决定去向</h2>
-<p>Session 是保留上下文的工作会话，Run 是一次实际运行，Request 是一条输入的处理记录。多条 Request 可以进入同一个 Run，但不会因此变成同一项工作。</p>
-<figure class="flow-figure">
-<div class="flow-stack">
-<div class="flow-node"><span class="node-role">Connector · 消息接入</span><strong>收录原消息，保存作者和回复地址</strong><span>入箱去重；检查群、话题、参与状态和授权。</span></div>
-<div class="flow-arrow">↓ 允许进入执行；否则沿来源规则过滤、观察或暂停</div>
-<div class="flow-node"><span class="node-role">RemoteLab · 请求接纳</span><strong>为每条消息保存独立 Request</strong><span>正文、附件、身份和回复位置随这条输入保留；不依靠后来的消息覆盖它。</span></div>
-<div class="flow-arrow">↓ 按当前执行状态选择传递方式</div>
-<div class="flow-fork admission-fork">
-<div class="flow-node"><span class="node-role">空闲</span><strong>启动一轮执行</strong><span>将任务和必要上下文交给 Harness。</span></div>
-<div class="flow-node condition"><span class="node-role">正在运行，且契约兼容</span><strong>steer 追加输入</strong><span>不等整轮结束；保留本条身份、事项和回复责任。</span></div>
-<div class="flow-node"><span class="node-role">无法加入当前执行</span><strong>保留请求，按队列处理</strong><span>例如新旧协议不兼容、运行设置不同或专用操作。</span></div>
-</div>
-<div class="flow-arrow">↓ Harness 读到输入后，理解消息关系</div>
-<div class="flow-node"><span class="node-role">Harness · 主线判断</span><strong>这是补充、新事项、催问，还是纠正与停止要求？</strong><span>只核确定去向所需的状态。信息不足时询问必要条件，同时继续独立且已授权的工作。</span></div>
-<div class="flow-arrow">↓ 对每条输入明确选择处理方式</div>
-<div class="flow-fork decision-fork">
-<div class="flow-node work"><span class="node-role">需要深入工作</span><strong>新建或接续工作话题</strong><span>目标接纳成功后保留移交记录；工作话题承担后续正文，原消息保留接收反馈。</span></div>
-<div class="flow-node answer"><span class="node-role">可以当场答复</span><strong>按本条原地址提前入队</strong><span>催问、短答不必等整轮结束。明确无需正文时，保存理由并保留合适表情。</span></div>
-</div>
-<div class="flow-arrow">↓ 已形成的输出由各自投递记录推进</div>
-<div class="flow-node"><span class="node-role">Connector · 结果投递</span><strong>领取正文或表情 → 调用飞书 → 保存回执</strong><span>接收成功、目标接纳成功、工作完成和消息送达分别核对。</span></div>
-</div>
-<figcaption>图 1　主线判断与工作话题执行职责分开。表情、正文投递和业务执行可以独立推进；图中的纵向顺序表示交接依赖，不表示整个系统逐步停下来等待。</figcaption>
-</figure>
-<p class="scope-note">steer 消除的是“必须等前一轮结束”的依赖。模型仍要到自己的输入读取时机才看到消息；上下文准备、附件处理、工具执行和网络也可能耗时。保留这些必要等待，不承诺所有消息即时回答。</p>
-<details data-technical><summary>实现入口、兼容条件与逐条结算</summary><div class="detail-body">
-<p><code>canForwardNativeRequest</code> 检查原生运行和输入是否兼容。两条试点输入都须使用协议 2；执行工具、模型、思考档位一致，并通过新线程、取消中、内部操作、复核和文档绑定等现有边界。旧轮次继续沿接纳时的契约，不把旧请求强行转成新协议。</p>
-<p><code>work route</code> 为选择的输入保存工作话题移交；<code>work reply</code> 为指定输入保存答复并立即建立持久投递。两种处理互斥。合并回答须明确列出覆盖的输入，正文发送到选定首条输入的原地址，其他输入保留被该答复覆盖的记录；不向所有消息重复发送同文。</p>
-<p>追加输入没有移交或独立答复时，结算明确显示尚未处理，不复制第一条的最终正文。根输入未移交且未提前答复，仍可正常给出最终答复。已提交的答复计划和投递记录支持中断恢复，重复请求必须保持原正文、输入集合与目的地。</p>
-</div></details>
-</section>
-
-<section id="situations">
-<h2>不同消息，怎样处理</h2>
-<p>以下是按当前机制编写的情境示例，不是新增的真实运行样本。判断依据是消息内容、作者、原话题和已保存的工作状态；不能只按“紧接着到达”就合并。</p>
-
-<article class="scenario" id="new-work">
-<h3>1．新的独立事项</h3>
-<p>例如已有机械臂研究进行中，又提出“查一下录音按钮的反馈”。这属于另一项工作，可以共享主线执行，工作去向和回答仍分别保存。</p>
-<div class="mini-flow" role="group" aria-label="新事项流程"><div>核对作者、任务与授权</div><span>→</span><div>检查是否已有对应工作</div><span>→</span><div>在本群新建或接续对应话题</div><span>→</span><div>接纳确认后，结果在工作话题回答</div></div>
-<p class="scenario-result">原消息保留接收反馈。重复提交复用已预留的目的地；工作话题创建与首条飞书消息实际送达分别确认。</p>
-</article>
-
-<article class="scenario" id="supplement">
-<h3>2．同一事项的补充</h3>
-<p>例如“还要考虑成本”“用刚才那张图”。先确认它补的是哪个事项，把条件和附件接到原工作，不为每条补充另建任务。</p>
-<div class="mini-flow" role="group" aria-label="补充流程"><div>定位被补充的事项</div><span>→</span><div>接续原工作话题</div><span>→</span><div>工作端继续执行或接收原生追加</div><span>→</span><div>在原工作中采用条件并给出结果</div></div>
-<p class="scenario-result">相容的连续补充可以一次明确移交；各条仍有自己的作者和回执。含糊的“这个”若会改变任务归属，先问清指代，不猜着转交。</p>
-</article>
-
-<article class="scenario" id="status-question">
-<h3>3．催问、状态查询或插入短问题</h3>
-<p>例如“现在做到哪儿了？”主线先查已保存的接收、排队、运行、移交或投递状态，回答当前能确认的事实。需要调查原因时，调查继续在工作话题推进。</p>
-<figure class="scenario-figure"><div class="mini-flow" role="group" aria-label="催问流程"><div>读取相关工作的已有状态</div><span>→</span><div>形成短答，说明已知与未知</div><span>→</span><div>本条原地址立即进入发送队列</div></div><div class="parallel-note">与此同时：工作话题继续研究；需要深入排查的原因另在该话题核实。</div><figcaption>“已接收”“正在运行”“已转交”都有各自依据，不能用它们代替“任务已完成”。</figcaption></figure>
-</article>
-
-<article class="scenario" id="correction-stop">
-<h3>4．纠正条件或要求停止</h3>
-<p>例如“先别下单，只做方案”“停止刚才那项研究”。必须定位受影响的工作，保留原作者和权限边界，把最新条件接续到该事项。</p>
-<div class="flow-fork compact-fork"><div class="flow-node"><span class="node-role">纠正</span><strong>原事项接收新条件</strong><span>工作端调整后续行为，重查受影响的结论和验收；已执行动作另说明。</span></div><div class="flow-node"><span class="node-role">停止</span><strong>原事项落实停止并核状态</strong><span>明确对象后走该工作的控制路径，区分要求已接收与执行已停止。</span></div></div>
-<p class="scenario-result">在主线 steer 一条“停止”，不自动证明另一个工作话题已停止。明确的停止控件使用原有取消机制；自然语言仍由 Harness 理解和处理。停止正在执行的工具、恢复已发生的外部动作各有自己的限制。</p>
-</article>
-
-<article class="scenario" id="cross-topic">
-<h3>5．信息会影响另一个已有话题</h3>
-<p>补充原事项与影响另一项工作是两种情况。跨话题复核要先准备具体草稿，列明目标、内容、影响和返回范围，让人确认这一份同步。</p>
-<div class="mini-flow" role="group" aria-label="跨话题同步流程"><div>读相关记录，形成同步草稿</div><span>→</span><div>等待人确认具体同步范围</div><span>→</span><div>目标话题展示已批准信息并复核</div><span>→</span><div>复核结果回到来源话题</div></div>
-<p class="scenario-result">未确认时只保存草稿。同步限同一试点群；不搬移可见历史、不扩大群权限，不自动取消或替换目标工作。目标若已变化或不可用，按现有校验处理，不能把提交当成采纳。</p>
-</article>
-
-<article class="scenario" id="reaction-only">
-<h3>6．已读、致谢或无需正文的交流</h3>
-<p>Harness 可以记录无需正文的具体理由，保留适合语境的结果表情。需要工作话题答复时，成功移交后原消息可用“收到”Get 表达接收。</p>
-<div class="mini-flow" role="group" aria-label="无需正文的流程"><div>判断无需正文或正文将在工作话题继续</div><span>→</span><div>保存处理决定</div><span>→</span><div>投递合适的表情并核回执</div></div>
-<p class="scenario-result">表情库有 50 个内置选项，现有轻量判断可选其中 40 个情境表情。Get 表示收到或接下，不表示任务完成；移交成功由目标接纳记录证明，表情自身不证明它。</p>
-</article>
-</section>
-
-<section id="example">
-<h2>三条连续消息，如何共用执行又分别处理</h2>
-<p>假设甲先发研究需求，随后补充条件，乙又催问。这是工作分配示意，不表示实际秒数或客户端送达顺序。</p>
-<figure class="message-example">
-<div class="example-head"><span>输入</span><span>主线逐条决定</span><span>去向与可见结果</span></div>
-<div class="example-row"><div><strong>甲：研究需求</strong><small>输入 A</small></div><div>确定工作话题，保存 A 的移交</div><div class="work">工作话题执行；A 保留接收反馈</div></div>
-<div class="example-row"><div><strong>甲：补充条件</strong><small>输入 B</small></div><div>steer 进入活跃主线，确认与 A 同事项</div><div class="work">B 接续同一工作；不重复建话题</div></div>
-<div class="example-row"><div><strong>乙：状态催问</strong><small>输入 C</small></div><div>steer 进入活跃主线，读取已有状态</div><div class="answer">C 按自己的原地址提前答复</div></div>
-<figcaption>图 2　A、B 可以属于同一工作，C 由自己的状态答复负责。A 已移交、主线不发研究正文，不会使 C 自动失去回答。</figcaption>
-</figure>
-<p>每条追加输入需要明确处理。主线可以在一轮内安排多项工作，但不会自动把所有输入广播给每个工作话题，也不会让多个执行同时改写同一份会话状态。</p>
-</section>
-
-<section id="recovery">
-<h2>异常与重试：从缺失的环节恢复</h2>
-<div class="table-wrap" tabindex="0" role="region" aria-label="异常情形和恢复路径"><table><thead><tr><th>情况</th><th>系统保留的依据</th><th>恢复方式与边界</th></tr></thead><tbody>
-<tr><td>当前运行不能接受追加</td><td>输入兼容性与原生回执。</td><td>明确未进入活跃执行时沿正常队列处理；传输结果不确定时先查回执，不能当作新任务重复执行。</td></tr>
-<tr><td>目标话题已归档或不属于本群</td><td>目标身份、可用状态和群绑定。</td><td>阻止移交，说明原因；重新确认有效去向，不静默搬到其他群。</td></tr>
-<tr><td>目标接纳失败或回执丢失</td><td>固定输入身份、已预留话题和目标请求。</td><td>按同一身份查询或重试。未接纳时恢复原消息报告失败的能力；不能先宣称成功。</td></tr>
-<tr><td>某条追加消息未处理</td><td>没有该条移交或独立答复记录。</td><td>结算显示处理未完成；不拿另一条的最终结果充当它的答复。</td></tr>
-<tr><td>服务重启、合并答复中断</td><td>已保存的答复计划、输入集合和投递记录。</td><td>恢复原答复；保持正文、地址和覆盖集合不变，避免重复正文。</td></tr>
-<tr><td>已生成正文，外部送达不确定</td><td>原正文、出站状态和提供方回执。</td><td>查原话题或回执，确认缺失后补发原投递；不重新做一遍研究、下单或其他工具动作。</td></tr>
-</tbody></table></div>
-<figure class="flow-figure recovery-figure"><div class="mini-flow" role="group" aria-label="投递异常恢复流程"><div>定位原输入、答复与投递</div><span>→</span><div>核对外部消息和回执</div><span>→</span><div>已送达则停止；确实缺失才重试原投递</div><span>→</span><div>保存回执，读回正文和位置</div></div><figcaption>图 3　补发恢复的是投递。只有执行本身失败且任务仍获授权，才另外判断是否恢复工作。</figcaption></figure>
-</section>
-
-<section id="evaluation">
-<h2>怎样判断实验有效</h2>
-<p>首先确认每条消息归对事项、回对位置、没有漏接或重复工作，再比较速度。隔离回放能验证传输和记录契约；真实模型是否及时采用补充、把主线调查控制住，仍要用自然消息检验。</p>
-<div class="table-wrap" tabindex="0" role="region" aria-label="实验验收指标"><table><thead><tr><th>维度</th><th>观察什么</th><th>当前证据边界</th></tr></thead><tbody>
-<tr><td>追加是否及时</td><td>首轮仍在运行时，后续输入能否进入同一次执行。</td><td>已有隔离回放；不能据此推导线上平均时延。</td></tr>
-<tr><td>归属和回复正确</td><td>补充接原工作；独立事项分开；不同作者地址正确；催问有答复。</td><td>已验证程序契约；自然群聊的语义准确率仍待测。</td></tr>
-<tr><td>人感到快不快</td><td>接收到反馈、目标接纳、首个有用答复的时间分别测量。</td><td>需包括准备、启动和上游等待，记录 p50、p95 与最差案例；不能只测模型生成。</td></tr>
-<tr><td>恢复和副作用</td><td>重启、重试、未知回执、目的地变化、停止纠正时是否重复或越界。</td><td>已有隔离测试；线上每次送达和业务结果仍需自己的证据。</td></tr>
-</tbody></table></div>
-<p class="scope-note"><strong>仍待验证：</strong>实际能快多少、复杂连续讨论的错分率，以及哪些准备步骤继续占用时间。本次机制没有增加独立分流模型，没有调整思考档位；后续比较模型或档位须用相同样例，同时衡量速度和归属准确性。</p>
-</section>
-
-<section id="evidence">
-<h2>依据、版本与维护位置</h2>
-<p>本章于 2026-10-10 对照源码 <code>093f2363</code> 核对。本实例服务自报 <code>4a55a868</code>，包含实验提交 <code>e0c218ad</code>；试点配置当前启用一个群。范围、代码存在、进程加载和自然消息效果分别成立，不相互替代。</p>
-<ul class="sources">
-<li><a href="https://github.com/Ninglo/remotelab/commit/c097a7fe6b00a928deeb2c3279c7d75e7d7cce6c">原分流试点改动</a>：主线禁用 steer 的历史原因。</li>
-<li><a href="https://github.com/Ninglo/remotelab/commit/e0c218ada949ee5e062d7efe07e12428f7fc96e1">逐条回复责任与 steer 改动</a>、<a href="https://github.com/Ninglo/remotelab/actions/runs/37932959581">该提交的 CI</a>：实现与测试依据。</li>
-<li><a href="https://github.com/Ninglo/remotelab/blob/093f2363/chat/native-request-dispatch.mjs">原生输入分发</a>、<a href="https://github.com/Ninglo/remotelab/blob/093f2363/chat/group-routing.mjs">移交与逐条答复</a>、<a href="https://github.com/Ninglo/remotelab/blob/093f2363/lib/group-routing-pilot.mjs">试点范围和协议</a>：图 1 与情境分支对应入口。</li>
-<li><a href="https://github.com/Ninglo/remotelab/blob/093f2363/notes/current/feishu-routing-latency.md">分流时延复盘</a>：旧案例时延、未能归因的部分与实验评估方法。</li>
-<li><a href="https://github.com/Ninglo/remotelab/blob/main/docs/session-work-awareness.md">工作分流和答复接口</a>、<a href="https://github.com/Ninglo/remotelab/blob/main/docs/native-harness-input.md">原生输入与恢复协议</a>、<a href="https://github.com/Ninglo/remotelab/blob/main/docs/external-message-protocol.md">外部消息和投递协议</a>：链接指向持续维护的主线原文，具体行为须核对其版本。</li>
-</ul>
-<details data-technical><summary>后续更新应该改哪里</summary><div class="detail-body"><p>正文和图维护在 <code>docs/architecture-atlas/output/routing.html</code>，图表样式在相邻 <code>routing.css</code>；目录登记在 <code>project.json</code>。章节随整体说明的统一构建、原站点发布和备份交付，不另设说明网站。</p><p>机制变化回到对应源码和协议核对；试点范围按实例设置核对；新时延数据标明采样日期、样本数与测量起止。更新本章不改其他章节历史样本的日期，也不把方案或隔离演示提升为现场验收。</p></div></details>
-<p class="guide-footer"><a href="../project.html?v=20261010routing#execution">返回消息全程</a> · <a href="./index.html?v=20261010routing#feedback">查运行中的补充输入</a> · <a href="../README.md">整体说明维护约定</a></p>
-</section>
-</main>
-</body>
-</html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">
+<meta name="description" content="当前群消息分流结构：消息接入、原生输入分发、主线判断、工作话题执行与逐条投递；包含 steer 接续及六类消息处理分支。">
+<title>群消息分流与回复结构 · RemoteLab 整体说明</title>
+<link rel="stylesheet" href="../guide.css?v=20261010structure"><link rel="stylesheet" href="./routing.css?v=20261010structure"><script type="module" src="../guide-shell.js?v=20261010structure"></script>
+</head><body data-guide-page="output/routing.html" data-guide-chapter="routing"><main id="main">
+<header class="hero" id="purpose"><p class="eyebrow">当前逻辑 · 2026-10-10 核对</p><h1>群消息分流与回复结构</h1>
+<p class="lede">主线及时接住新消息、判断去向；工作话题完成深入任务。每条输入保留自己的事项和回复地址。</p>
+<p>提速依靠三个机制：兼容输入直接追加到活跃执行（steer）；主线把深入工作交给对应话题；催问与短答可以提前投递。</p>
+<nav class="reading-links" aria-label="本章快速阅读"><a href="#mechanism">整体结构</a><a href="#admission">输入如何接续</a><a href="#situations">消息处理分支</a></nav></header>
+<section id="mechanism"><span id="problem" class="guide-anchor-alias"></span><span id="example" class="guide-anchor-alias"></span><h2>整体结构：谁接入、谁判断、谁执行、回复到哪里</h2>
+<figure class="structure-figure" id="architecture-diagram"><div class="figure-heading"><span>01 · 组件与消息流</span><span>当前单群分流试点</span></div>
+<svg class="structure-chart desktop-chart" viewBox="0 0 1060 748" role="img" aria-labelledby="architecture-wide-title architecture-wide-desc" xmlns="http://www.w3.org/2000/svg"><title id="architecture-wide-title">整体结构：主线判断与工作执行分开</title><desc id="architecture-wide-desc">消息接入后保留独立记录，经原生输入分发进入主线。主线短答回原消息，深入工作转到工作话题。两种输出由持久投递按各自保存地址发送。</desc><defs><marker id="architecture-wide-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
+<text x="30" y="29" class="chart-lane" text-anchor="start">来源与持久记录</text>
+<text x="320" y="29" class="chart-lane" text-anchor="start">输入分发与主线判断</text>
+<text x="815" y="29" class="chart-lane" text-anchor="start">工作话题执行</text>
+<g data-node="source" class="chart-node neutral"><rect x="30" y="56" width="235" height="70" rx="6"/>
+<text x="147.5" y="87.0" class="chart-node-title" text-anchor="middle">群主线新消息</text>
+<text x="147.5" y="111.0" class="chart-node-sub" text-anchor="middle">保留原作者与来源</text>
+</g>
+<g data-node="ingress" class="chart-node neutral"><rect x="30" y="183" width="235" height="100" rx="6"/>
+<text x="147.5" y="219.0" class="chart-node-title" text-anchor="middle">消息接入与请求接纳</text>
+<text x="147.5" y="243.0" class="chart-node-sub" text-anchor="middle">去重、参与与授权检查</text>
+<text x="147.5" y="263.0" class="chart-node-sub" text-anchor="middle">保存本条输入与回复地址</text>
+</g>
+<g data-node="dispatcher" class="chart-node neutral"><rect x="320" y="183" width="190" height="100" rx="6"/>
+<text x="415.0" y="219.0" class="chart-node-title" text-anchor="middle">原生输入分发</text>
+<text x="415.0" y="243.0" class="chart-node-sub" text-anchor="middle">启动 / steer / 排队</text>
+<text x="415.0" y="263.0" class="chart-node-sub" text-anchor="middle">详见下方接续图</text>
+</g>
+<g data-node="mainline" class="chart-node mainline"><rect x="565" y="183" width="200" height="100" rx="6"/>
+<text x="665.0" y="219.0" class="chart-node-title" text-anchor="middle">Harness 主线</text>
+<text x="665.0" y="243.0" class="chart-node-sub" text-anchor="middle">理解事项关系</text>
+<text x="665.0" y="263.0" class="chart-node-sub" text-anchor="middle">确定去向或当场回答</text>
+</g>
+<g data-node="topic" class="chart-node work"><rect x="815" y="183" width="215" height="100" rx="6"/>
+<text x="922.5" y="219.0" class="chart-node-title" text-anchor="middle">新建或接续工作话题</text>
+<text x="922.5" y="243.0" class="chart-node-sub" text-anchor="middle">确认目标接纳</text>
+<text x="922.5" y="263.0" class="chart-node-sub" text-anchor="middle">关联选定输入</text>
+</g>
+<g data-node="record" class="chart-node neutral"><rect x="30" y="355" width="300" height="105" rx="6"/>
+<text x="180.0" y="393.5" class="chart-node-title" text-anchor="middle">每条输入的独立记录</text>
+<text x="180.0" y="417.5" class="chart-node-sub" text-anchor="middle">作者 · 事项 · 回复地址</text>
+<text x="180.0" y="437.5" class="chart-node-sub" text-anchor="middle">移交 / 本地答复 / 无正文决定</text>
+</g>
+<g data-node="reply" class="chart-node mainline"><rect x="565" y="355" width="200" height="88" rx="6"/>
+<text x="665.0" y="395.0" class="chart-node-title" text-anchor="middle">主线短答 / 表情</text>
+<text x="665.0" y="419.0" class="chart-node-sub" text-anchor="middle">催问、短问题、交流</text>
+</g>
+<g data-node="execution" class="chart-node work"><rect x="815" y="355" width="215" height="88" rx="6"/>
+<text x="922.5" y="385.0" class="chart-node-title" text-anchor="middle">工作端独立执行</text>
+<text x="922.5" y="409.0" class="chart-node-sub" text-anchor="middle">研究、工具操作与验证</text>
+<text x="922.5" y="429.0" class="chart-node-sub" text-anchor="middle">采用补充或纠正条件</text>
+</g>
+<g data-node="outbox" class="chart-node delivery"><rect x="565" y="503" width="465" height="88" rx="6"/>
+<text x="797.5" y="543.0" class="chart-node-title" text-anchor="middle">持久投递队列 → 飞书 Connector</text>
+<text x="797.5" y="567.0" class="chart-node-sub" text-anchor="middle">按保存地址发送正文或表情；保存外部回执</text>
+</g>
+<g data-node="source-return" class="chart-node mainline"><rect x="565" y="658" width="200" height="70" rx="6"/>
+<text x="665.0" y="689.0" class="chart-node-title" text-anchor="middle">本条原消息地址</text>
+<text x="665.0" y="713.0" class="chart-node-sub" text-anchor="middle">主线答复 / 接收反馈</text>
+</g>
+<g data-node="work-return" class="chart-node work"><rect x="815" y="658" width="215" height="70" rx="6"/>
+<text x="922.5" y="689.0" class="chart-node-title" text-anchor="middle">对应工作话题</text>
+<text x="922.5" y="713.0" class="chart-node-sub" text-anchor="middle">工作进展 / 正文结果</text>
+</g>
+<path data-edge="source-ingress" class="chart-edge neutral" d="M148 126 V183" marker-end="url(#architecture-wide-arrow)"/>
+<path data-edge="ingress-dispatch" class="chart-edge neutral" d="M265 233 H320" marker-end="url(#architecture-wide-arrow)"/>
+<path data-edge="dispatch-mainline" class="chart-edge neutral" d="M510 233 H565" marker-end="url(#architecture-wide-arrow)"/>
+<path data-edge="mainline-topic" class="chart-edge work" d="M765 233 H815" marker-end="url(#architecture-wide-arrow)"/>
+<text x="790" y="217" class="chart-label" text-anchor="middle">移交</text>
+<path data-edge="mainline-reply" class="chart-edge mainline" d="M665 283 V355" marker-end="url(#architecture-wide-arrow)"/>
+<text x="715" y="326" class="chart-label" text-anchor="middle">当场回应</text>
+<path data-edge="topic-execution" class="chart-edge work" d="M922 283 V355" marker-end="url(#architecture-wide-arrow)"/>
+<text x="970" y="326" class="chart-label" text-anchor="middle">接续任务</text>
+<path data-edge="ingress-record" class="chart-edge neutral dashed" d="M148 283 V355" marker-end="url(#architecture-wide-arrow)"/>
+<path data-edge="mainline-record" class="chart-edge neutral dashed" d="M565 273 H535 V472 H350 V408 H330" marker-end="url(#architecture-wide-arrow)"/>
+<text x="438" y="493" class="chart-label" text-anchor="middle">逐条保存处理决定</text>
+<path data-edge="reply-outbox" class="chart-edge mainline" d="M665 443 V503" marker-end="url(#architecture-wide-arrow)"/>
+<path data-edge="execution-outbox" class="chart-edge work" d="M922 443 V503" marker-end="url(#architecture-wide-arrow)"/>
+<text x="976" y="480" class="chart-label" text-anchor="middle">工作端输出</text>
+<path data-edge="outbox-source" class="chart-edge mainline" d="M665 591 V658" marker-end="url(#architecture-wide-arrow)"/>
+<text x="705" y="630" class="chart-label" text-anchor="middle">原地址</text>
+<path data-edge="outbox-work" class="chart-edge work" d="M922 591 V658" marker-end="url(#architecture-wide-arrow)"/>
+<text x="972" y="630" class="chart-label" text-anchor="middle">工作地址</text></svg>
+<svg class="structure-chart mobile-chart" viewBox="0 0 320 1058" role="img" aria-labelledby="architecture-mobile-title architecture-mobile-desc" xmlns="http://www.w3.org/2000/svg"><title id="architecture-mobile-title">整体结构：手机布局</title><desc id="architecture-mobile-desc">与桌面图使用同样的组件和连接；主线短答与工作话题结果分别返回自己的地址。</desc><defs><marker id="architecture-mobile-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
+<g data-node="source" class="chart-node neutral"><rect x="40" y="22" width="240" height="66" rx="6"/>
+<text x="160.0" y="51.0" class="chart-node-title" text-anchor="middle">群主线新消息</text>
+<text x="160.0" y="75.0" class="chart-node-sub" text-anchor="middle">保留作者与来源</text>
+</g>
+<g data-node="ingress" class="chart-node neutral"><rect x="40" y="130" width="240" height="82" rx="6"/>
+<text x="160.0" y="157.0" class="chart-node-title" text-anchor="middle">消息接入与请求接纳</text>
+<text x="160.0" y="181.0" class="chart-node-sub" text-anchor="middle">去重、参与与授权检查</text>
+<text x="160.0" y="201.0" class="chart-node-sub" text-anchor="middle">保存输入与原回复地址</text>
+</g>
+<g data-node="dispatcher" class="chart-node neutral"><rect x="40" y="258" width="240" height="72" rx="6"/>
+<text x="160.0" y="290.0" class="chart-node-title" text-anchor="middle">原生输入分发</text>
+<text x="160.0" y="314.0" class="chart-node-sub" text-anchor="middle">启动 / steer / 排队</text>
+</g>
+<g data-node="mainline" class="chart-node mainline"><rect x="40" y="378" width="240" height="88" rx="6"/>
+<text x="160.0" y="408.0" class="chart-node-title" text-anchor="middle">Harness 主线</text>
+<text x="160.0" y="432.0" class="chart-node-sub" text-anchor="middle">理解事项关系</text>
+<text x="160.0" y="452.0" class="chart-node-sub" text-anchor="middle">选择去向或当场回应</text>
+</g>
+<g data-node="reply" class="chart-node mainline"><rect x="4" y="522" width="144" height="92" rx="6"/>
+<text x="76.0" y="553.0" class="chart-node-title" text-anchor="middle">主线短答</text>
+<text x="76.0" y="575.0" class="chart-node-title" text-anchor="middle">或表情</text>
+<text x="76.0" y="599.0" class="chart-node-sub" text-anchor="middle">催问、短问题</text>
+</g>
+<g data-node="topic" class="chart-node work"><rect x="172" y="522" width="144" height="92" rx="6"/>
+<text x="244.0" y="553.0" class="chart-node-title" text-anchor="middle">新建 / 接续</text>
+<text x="244.0" y="575.0" class="chart-node-title" text-anchor="middle">工作话题</text>
+<text x="244.0" y="599.0" class="chart-node-sub" text-anchor="middle">确认接纳后移交</text>
+</g>
+<g data-node="record" class="chart-node neutral"><rect x="4" y="668" width="144" height="80" rx="6"/>
+<text x="76.0" y="694.0" class="chart-node-title" text-anchor="middle">逐条独立记录</text>
+<text x="76.0" y="718.0" class="chart-node-sub" text-anchor="middle">作者、事项、地址</text>
+<text x="76.0" y="738.0" class="chart-node-sub" text-anchor="middle">处理决定</text>
+</g>
+<g data-node="execution" class="chart-node work"><rect x="172" y="668" width="144" height="80" rx="6"/>
+<text x="244.0" y="694.0" class="chart-node-title" text-anchor="middle">工作端执行</text>
+<text x="244.0" y="718.0" class="chart-node-sub" text-anchor="middle">研究、操作、验证</text>
+<text x="244.0" y="738.0" class="chart-node-sub" text-anchor="middle">采用补充与纠正</text>
+</g>
+<g data-node="outbox" class="chart-node delivery"><rect x="40" y="808" width="240" height="84" rx="6"/>
+<text x="160.0" y="836.0" class="chart-node-title" text-anchor="middle">持久投递 → Connector</text>
+<text x="160.0" y="860.0" class="chart-node-sub" text-anchor="middle">按保存地址发送</text>
+<text x="160.0" y="880.0" class="chart-node-sub" text-anchor="middle">保存飞书回执</text>
+</g>
+<g data-node="source-return" class="chart-node mainline"><rect x="4" y="968" width="144" height="74" rx="6"/>
+<text x="76.0" y="1001.0" class="chart-node-title" text-anchor="middle">本条原地址</text>
+<text x="76.0" y="1025.0" class="chart-node-sub" text-anchor="middle">短答 / 接收反馈</text>
+</g>
+<g data-node="work-return" class="chart-node work"><rect x="172" y="968" width="144" height="74" rx="6"/>
+<text x="244.0" y="1001.0" class="chart-node-title" text-anchor="middle">工作话题</text>
+<text x="244.0" y="1025.0" class="chart-node-sub" text-anchor="middle">进展 / 正文结果</text>
+</g>
+<path data-edge="source-ingress" class="chart-edge neutral" d="M160 88 V130" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="ingress-dispatch" class="chart-edge neutral" d="M160 212 V258" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="dispatch-mainline" class="chart-edge neutral" d="M160 330 V378" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="mainline-reply" class="chart-edge mainline" d="M100 466 V494 H76 V522" marker-end="url(#architecture-mobile-arrow)"/>
+<text x="63" y="496" class="chart-label" text-anchor="middle">当场回应</text>
+<path data-edge="mainline-topic" class="chart-edge work" d="M220 466 V494 H244 V522" marker-end="url(#architecture-mobile-arrow)"/>
+<text x="263" y="496" class="chart-label" text-anchor="middle">工作移交</text>
+<path data-edge="topic-execution" class="chart-edge work" d="M244 614 V668" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="ingress-record" class="chart-edge neutral dashed" d="M40 170 H1 V650 H76 V668" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="mainline-record" class="chart-edge neutral dashed" d="M40 436 H18 V490 H164 V708 H148" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="reply-outbox" class="chart-edge mainline" d="M76 614 V636 H157 V778 H100 V808" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="execution-outbox" class="chart-edge work" d="M244 748 V780 H220 V808" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="outbox-source" class="chart-edge mainline" d="M100 892 V936 H76 V968" marker-end="url(#architecture-mobile-arrow)"/>
+<path data-edge="outbox-work" class="chart-edge work" d="M220 892 V936 H244 V968" marker-end="url(#architecture-mobile-arrow)"/>
+<text x="60" y="938" class="chart-label" text-anchor="middle">原地址</text>
+<text x="262" y="938" class="chart-label" text-anchor="middle">工作地址</text></svg>
+<div class="chart-legend"><span class="legend-mainline">蓝色：主线与原消息答复</span><span class="legend-work">绿色：工作话题与任务结果</span><span>实线：消息或任务流向</span><span>虚线：持久记录关联</span></div>
+<figcaption>主线只做确定去向所需的核查。业务工作和消息投递分别推进；每条输入的记录贯穿两条链路。</figcaption></figure>
+<p class="structure-rule">多条消息可以共用一轮执行；工作去向与回复责任仍逐条保存。需要合并答复时，明确记录所覆盖的输入，并按选定地址发送一次。</p></section>
+<section id="admission"><span id="recovery" class="guide-anchor-alias"></span><h2>输入接续：正在运行时，新消息怎样进入</h2>
+<figure class="structure-figure" id="admission-diagram"><div class="figure-heading"><span>02 · 执行状态决定传递方式</span><span>每条输入独立接纳</span></div><svg class="structure-chart desktop-chart" viewBox="0 0 1060 412" role="img" aria-labelledby="dispatch-wide-title dispatch-wide-desc" xmlns="http://www.w3.org/2000/svg"><title id="dispatch-wide-title">输入接续：按当前执行状态分发</title><desc id="dispatch-wide-desc">当前会话空闲时启动新一轮，运行中且兼容时将输入追加进同一轮，不兼容则保留请求等待可执行条件。</desc><defs><marker id="dispatch-wide-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
+<g data-node="input" class="chart-node neutral"><rect x="20" y="154" width="185" height="82" rx="6"/>
+<text x="112.5" y="191.0" class="chart-node-title" text-anchor="middle">本条已接纳输入</text>
+<text x="112.5" y="215.0" class="chart-node-sub" text-anchor="middle">独立身份与回复地址</text>
+</g>
+<g data-node="idle" class="chart-node neutral"><rect x="285" y="30" width="235" height="78" rx="6"/>
+<text x="402.5" y="65.0" class="chart-node-title" text-anchor="middle">会话空闲</text>
+<text x="402.5" y="89.0" class="chart-node-sub" text-anchor="middle">启动新一轮</text>
+</g>
+<g data-node="compatible" class="chart-node mainline"><rect x="285" y="154" width="235" height="82" rx="6"/>
+<text x="402.5" y="191.0" class="chart-node-title" text-anchor="middle">运行中，输入兼容</text>
+<text x="402.5" y="215.0" class="chart-node-sub" text-anchor="middle">steer 追加到活跃执行</text>
+</g>
+<g data-node="queue" class="chart-node neutral"><rect x="285" y="284" width="235" height="82" rx="6"/>
+<text x="402.5" y="321.0" class="chart-node-title" text-anchor="middle">当前无法追加</text>
+<text x="402.5" y="345.0" class="chart-node-sub" text-anchor="middle">保留请求，按队列处理</text>
+</g>
+<g data-node="new-run" class="chart-node neutral"><rect x="700" y="30" width="325" height="78" rx="6"/>
+<text x="862.5" y="75.0" class="chart-node-title" text-anchor="middle">新一轮 Harness 执行</text>
+</g>
+<g data-node="same-run" class="chart-node mainline"><rect x="700" y="154" width="325" height="82" rx="6"/>
+<text x="862.5" y="191.0" class="chart-node-title" text-anchor="middle">同一轮 Harness 执行</text>
+<text x="862.5" y="215.0" class="chart-node-sub" text-anchor="middle">不等待这一整轮结束</text>
+</g>
+<g data-node="later-run" class="chart-node neutral"><rect x="700" y="284" width="325" height="82" rx="6"/>
+<text x="862.5" y="331.0" class="chart-node-title" text-anchor="middle">具备执行条件后运行</text>
+</g>
+<path data-edge="input-idle" class="chart-edge neutral" d="M205 195 H245 V69 H285" marker-end="url(#dispatch-wide-arrow)"/>
+<path data-edge="input-compatible" class="chart-edge mainline" d="M205 195 H285" marker-end="url(#dispatch-wide-arrow)"/>
+<path data-edge="input-queue" class="chart-edge neutral" d="M205 195 H245 V325 H285" marker-end="url(#dispatch-wide-arrow)"/>
+<path data-edge="idle-new" class="chart-edge neutral" d="M520 69 H700" marker-end="url(#dispatch-wide-arrow)"/>
+<path data-edge="compatible-same" class="chart-edge mainline" d="M520 195 H700" marker-end="url(#dispatch-wide-arrow)"/>
+<path data-edge="queue-later" class="chart-edge neutral" d="M520 325 H700" marker-end="url(#dispatch-wide-arrow)"/>
+<text x="530" y="403" class="chart-node-sub" text-anchor="middle">兼容：运行工具、模型与设置一致，逐条回复契约及输入边界允许。</text></svg><svg class="structure-chart mobile-chart" viewBox="0 0 320 750" role="img" aria-labelledby="dispatch-mobile-title dispatch-mobile-desc" xmlns="http://www.w3.org/2000/svg"><title id="dispatch-mobile-title">输入接续：手机布局</title><desc id="dispatch-mobile-desc">空闲启动，兼容追加，不兼容保留请求后运行。</desc><defs><marker id="dispatch-mobile-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
+<g data-node="input" class="chart-node neutral"><rect x="40" y="18" width="240" height="68" rx="6"/>
+<text x="160.0" y="48.0" class="chart-node-title" text-anchor="middle">本条已接纳输入</text>
+<text x="160.0" y="72.0" class="chart-node-sub" text-anchor="middle">独立身份与回复地址</text>
+</g>
+<g data-node="idle" class="chart-node neutral"><rect x="52" y="142" width="244" height="82" rx="6"/>
+<text x="174.0" y="179.0" class="chart-node-title" text-anchor="middle">会话空闲</text>
+<text x="174.0" y="203.0" class="chart-node-sub" text-anchor="middle">启动新一轮</text>
+</g>
+<g data-node="idle-run" class="chart-node neutral"><rect x="52" y="259" width="244" height="54" rx="6"/>
+<text x="174.0" y="292.0" class="chart-node-title" text-anchor="middle">新一轮执行</text>
+</g>
+<path data-edge="input-idle" class="chart-edge neutral" d="M160 86 V108 H22 V183 H52" marker-end="url(#dispatch-mobile-arrow)"/>
+<path data-edge="idle-run" class="chart-edge neutral" d="M174 224 V259" marker-end="url(#dispatch-mobile-arrow)"/>
+<g data-node="compatible" class="chart-node mainline"><rect x="52" y="344" width="244" height="82" rx="6"/>
+<text x="174.0" y="381.0" class="chart-node-title" text-anchor="middle">运行中且兼容</text>
+<text x="174.0" y="405.0" class="chart-node-sub" text-anchor="middle">steer 追加输入</text>
+</g>
+<g data-node="compatible-run" class="chart-node mainline"><rect x="52" y="461" width="244" height="54" rx="6"/>
+<text x="174.0" y="494.0" class="chart-node-title" text-anchor="middle">同一轮继续执行</text>
+</g>
+<path data-edge="input-compatible" class="chart-edge mainline" d="M160 86 V108 H22 V385 H52" marker-end="url(#dispatch-mobile-arrow)"/>
+<path data-edge="compatible-run" class="chart-edge mainline" d="M174 426 V461" marker-end="url(#dispatch-mobile-arrow)"/>
+<g data-node="queue" class="chart-node neutral"><rect x="52" y="546" width="244" height="82" rx="6"/>
+<text x="174.0" y="583.0" class="chart-node-title" text-anchor="middle">当前无法追加</text>
+<text x="174.0" y="607.0" class="chart-node-sub" text-anchor="middle">保留请求，按队列处理</text>
+</g>
+<g data-node="queue-run" class="chart-node neutral"><rect x="52" y="663" width="244" height="54" rx="6"/>
+<text x="174.0" y="696.0" class="chart-node-title" text-anchor="middle">具备条件后运行</text>
+</g>
+<path data-edge="input-queue" class="chart-edge neutral" d="M160 86 V108 H22 V587 H52" marker-end="url(#dispatch-mobile-arrow)"/>
+<path data-edge="queue-run" class="chart-edge neutral" d="M174 628 V663" marker-end="url(#dispatch-mobile-arrow)"/></svg>
+<figcaption>兼容要求运行工具、模型与设置一致，并满足逐条回复契约及输入边界。steer 免去等待整轮结束；模型仍在其输入读取时机采用新消息。</figcaption></figure></section>
+<section id="situations"><h2>消息处理分支：不同情况，动作与去向分别是什么</h2>
+<figure class="structure-figure" id="situations-diagram"><div class="figure-heading"><span>03 · 情况 → 处理 → 去向</span><span>由 Harness 理解事项关系</span></div><svg class="structure-chart desktop-chart" viewBox="0 0 1060 812" role="img" aria-labelledby="situations-wide-title situations-wide-desc" xmlns="http://www.w3.org/2000/svg"><title id="situations-wide-title">消息处理分支：情况、动作、回复位置</title><desc id="situations-wide-desc">六类输入分别选择工作移交、原工作接续、本地答复、纠正停止、经确认的跨话题复核或无正文决定。</desc><defs><marker id="situations-wide-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
+<text x="120" y="32" class="chart-lane" text-anchor="middle">消息情况</text>
+<text x="527" y="32" class="chart-lane" text-anchor="middle">主线判断与处理动作</text>
+<text x="919" y="32" class="chart-lane" text-anchor="middle">工作去向 / 回复位置</text>
+<g data-node="new-work" class="chart-node neutral"><rect x="20" y="64" width="200" height="88" rx="6"/>
+<text x="120.0" y="114.0" class="chart-node-title" text-anchor="middle">新独立事项</text>
+</g>
+<g data-node="new-work-action" class="chart-node work"><rect x="288" y="64" width="478" height="88" rx="6"/>
+<text x="527.0" y="102.0" class="chart-node-title" text-anchor="middle">查已有对应工作</text>
+<text x="527.0" y="126.0" class="chart-node-title" text-anchor="middle">新建或接续对应工作话题</text>
+</g>
+<g data-node="new-work-destination" class="chart-node work"><rect x="824" y="64" width="215" height="88" rx="6"/>
+<text x="931.5" y="104.0" class="chart-node-title" text-anchor="middle">对应工作话题</text>
+<text x="931.5" y="128.0" class="chart-node-sub" text-anchor="middle">原消息保留接收反馈</text>
+</g>
+<path data-edge="new-work-act" class="chart-edge work" d="M220 108 H288" marker-end="url(#situations-wide-arrow)"/>
+<path data-edge="new-work-dest" class="chart-edge work" d="M766 108 H824" marker-end="url(#situations-wide-arrow)"/>
+<g data-node="supplement" class="chart-node neutral"><rect x="20" y="188" width="200" height="88" rx="6"/>
+<text x="120.0" y="238.0" class="chart-node-title" text-anchor="middle">同事项补充</text>
+</g>
+<g data-node="supplement-action" class="chart-node work"><rect x="288" y="188" width="478" height="88" rx="6"/>
+<text x="527.0" y="226.0" class="chart-node-title" text-anchor="middle">定位原事项 → 接续原工作</text>
+<text x="527.0" y="250.0" class="chart-node-title" text-anchor="middle">将条件与附件交给工作端</text>
+</g>
+<g data-node="supplement-destination" class="chart-node work"><rect x="824" y="188" width="215" height="88" rx="6"/>
+<text x="931.5" y="228.0" class="chart-node-title" text-anchor="middle">原工作话题</text>
+<text x="931.5" y="252.0" class="chart-node-sub" text-anchor="middle">继续采用新条件</text>
+</g>
+<path data-edge="supplement-act" class="chart-edge work" d="M220 232 H288" marker-end="url(#situations-wide-arrow)"/>
+<path data-edge="supplement-dest" class="chart-edge work" d="M766 232 H824" marker-end="url(#situations-wide-arrow)"/>
+<g data-node="status-question" class="chart-node neutral"><rect x="20" y="312" width="200" height="88" rx="6"/>
+<text x="120.0" y="362.0" class="chart-node-title" text-anchor="middle">催问 / 短问题</text>
+</g>
+<g data-node="status-question-action" class="chart-node mainline"><rect x="288" y="312" width="478" height="88" rx="6"/>
+<text x="527.0" y="350.0" class="chart-node-title" text-anchor="middle">读取已有工作状态</text>
+<text x="527.0" y="374.0" class="chart-node-title" text-anchor="middle">主线形成短答并提前投递</text>
+</g>
+<g data-node="status-question-destination" class="chart-node mainline"><rect x="824" y="312" width="215" height="88" rx="6"/>
+<text x="931.5" y="352.0" class="chart-node-title" text-anchor="middle">本条原消息地址</text>
+<text x="931.5" y="376.0" class="chart-node-sub" text-anchor="middle">无需等研究结束</text>
+</g>
+<path data-edge="status-question-act" class="chart-edge mainline" d="M220 356 H288" marker-end="url(#situations-wide-arrow)"/>
+<path data-edge="status-question-dest" class="chart-edge mainline" d="M766 356 H824" marker-end="url(#situations-wide-arrow)"/>
+<g data-node="correction-stop" class="chart-node neutral"><rect x="20" y="436" width="200" height="88" rx="6"/>
+<text x="120.0" y="486.0" class="chart-node-title" text-anchor="middle">纠正 / 停止</text>
+</g>
+<g data-node="correction-stop-action" class="chart-node work"><rect x="288" y="436" width="478" height="88" rx="6"/>
+<text x="527.0" y="474.0" class="chart-node-title" text-anchor="middle">核对对象与授权 → 原工作处理</text>
+<text x="527.0" y="498.0" class="chart-node-title" text-anchor="middle">调整条件或执行停止并核状态</text>
+</g>
+<g data-node="correction-stop-destination" class="chart-node work"><rect x="824" y="436" width="215" height="88" rx="6"/>
+<text x="931.5" y="476.0" class="chart-node-title" text-anchor="middle">对应原工作</text>
+<text x="931.5" y="500.0" class="chart-node-sub" text-anchor="middle">报告已采用 / 已停止</text>
+</g>
+<path data-edge="correction-stop-act" class="chart-edge work" d="M220 480 H288" marker-end="url(#situations-wide-arrow)"/>
+<path data-edge="correction-stop-dest" class="chart-edge work" d="M766 480 H824" marker-end="url(#situations-wide-arrow)"/>
+<g data-node="cross-topic" class="chart-node neutral"><rect x="20" y="560" width="200" height="88" rx="6"/>
+<text x="120.0" y="610.0" class="chart-node-title" text-anchor="middle">影响另一话题</text>
+</g>
+<g data-node="cross-topic-action" class="chart-node work"><rect x="288" y="560" width="478" height="88" rx="6"/>
+<text x="527.0" y="598.0" class="chart-node-title" text-anchor="middle">具体同步草稿 → 人确认</text>
+<text x="527.0" y="622.0" class="chart-node-title" text-anchor="middle">目标话题限范围复核 → 返回</text>
+</g>
+<g data-node="cross-topic-destination" class="chart-node work"><rect x="824" y="560" width="215" height="88" rx="6"/>
+<text x="931.5" y="600.0" class="chart-node-title" text-anchor="middle">目标话题复核</text>
+<text x="931.5" y="624.0" class="chart-node-sub" text-anchor="middle">结果回来源话题</text>
+</g>
+<path data-edge="cross-topic-act" class="chart-edge work" d="M220 604 H288" marker-end="url(#situations-wide-arrow)"/>
+<path data-edge="cross-topic-dest" class="chart-edge work" d="M766 604 H824" marker-end="url(#situations-wide-arrow)"/>
+<g data-node="reaction-only" class="chart-node neutral"><rect x="20" y="684" width="200" height="88" rx="6"/>
+<text x="120.0" y="734.0" class="chart-node-title" text-anchor="middle">无需正文的交流</text>
+</g>
+<g data-node="reaction-only-action" class="chart-node mainline"><rect x="288" y="684" width="478" height="88" rx="6"/>
+<text x="527.0" y="722.0" class="chart-node-title" text-anchor="middle">保存无需正文的判断</text>
+<text x="527.0" y="746.0" class="chart-node-title" text-anchor="middle">保留适合语境的表情</text>
+</g>
+<g data-node="reaction-only-destination" class="chart-node mainline"><rect x="824" y="684" width="215" height="88" rx="6"/>
+<text x="931.5" y="724.0" class="chart-node-title" text-anchor="middle">本条原消息</text>
+<text x="931.5" y="748.0" class="chart-node-sub" text-anchor="middle">表情表示接收或态度</text>
+</g>
+<path data-edge="reaction-only-act" class="chart-edge mainline" d="M220 728 H288" marker-end="url(#situations-wide-arrow)"/>
+<path data-edge="reaction-only-dest" class="chart-edge mainline" d="M766 728 H824" marker-end="url(#situations-wide-arrow)"/></svg><svg class="structure-chart mobile-chart" viewBox="0 0 320 1714" role="img" aria-labelledby="situations-mobile-title situations-mobile-desc" xmlns="http://www.w3.org/2000/svg"><title id="situations-mobile-title">消息处理分支：手机布局</title><desc id="situations-mobile-desc">与桌面相同的六种处理路径，按情况、动作和去向自上而下阅读。</desc><defs><marker id="situations-mobile-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"/></marker></defs>
+<g data-node="new-work" class="chart-node neutral"><rect x="12" y="8" width="296" height="54" rx="6"/>
+<text x="160.0" y="41.0" class="chart-node-title" text-anchor="middle">新独立事项</text>
+</g>
+<g data-node="new-work-action" class="chart-node work"><rect x="12" y="95" width="296" height="78" rx="6"/>
+<text x="160.0" y="129.0" class="chart-node-title" text-anchor="middle">查对应工作</text>
+<text x="160.0" y="151.0" class="chart-node-title" text-anchor="middle">新建 / 接续工作话题</text>
+</g>
+<g data-node="new-work-destination" class="chart-node work"><rect x="12" y="206" width="296" height="62" rx="6"/>
+<text x="160.0" y="233.0" class="chart-node-title" text-anchor="middle">对应工作话题</text>
+<text x="160.0" y="257.0" class="chart-node-sub" text-anchor="middle">原消息保留接收反馈</text>
+</g>
+<path data-edge="new-work-act" class="chart-edge work" d="M160 62 V95" marker-end="url(#situations-mobile-arrow)"/>
+<path data-edge="new-work-dest" class="chart-edge work" d="M160 173 V206" marker-end="url(#situations-mobile-arrow)"/>
+<g data-node="supplement" class="chart-node neutral"><rect x="12" y="292" width="296" height="54" rx="6"/>
+<text x="160.0" y="325.0" class="chart-node-title" text-anchor="middle">同事项补充</text>
+</g>
+<g data-node="supplement-action" class="chart-node work"><rect x="12" y="379" width="296" height="78" rx="6"/>
+<text x="160.0" y="413.0" class="chart-node-title" text-anchor="middle">定位原事项 → 接续原工作</text>
+<text x="160.0" y="435.0" class="chart-node-title" text-anchor="middle">条件与附件交给工作端</text>
+</g>
+<g data-node="supplement-destination" class="chart-node work"><rect x="12" y="490" width="296" height="62" rx="6"/>
+<text x="160.0" y="517.0" class="chart-node-title" text-anchor="middle">原工作话题</text>
+<text x="160.0" y="541.0" class="chart-node-sub" text-anchor="middle">继续采用新条件</text>
+</g>
+<path data-edge="supplement-act" class="chart-edge work" d="M160 346 V379" marker-end="url(#situations-mobile-arrow)"/>
+<path data-edge="supplement-dest" class="chart-edge work" d="M160 457 V490" marker-end="url(#situations-mobile-arrow)"/>
+<g data-node="status-question" class="chart-node neutral"><rect x="12" y="576" width="296" height="54" rx="6"/>
+<text x="160.0" y="609.0" class="chart-node-title" text-anchor="middle">催问 / 短问题</text>
+</g>
+<g data-node="status-question-action" class="chart-node mainline"><rect x="12" y="663" width="296" height="78" rx="6"/>
+<text x="160.0" y="697.0" class="chart-node-title" text-anchor="middle">读取已有工作状态</text>
+<text x="160.0" y="719.0" class="chart-node-title" text-anchor="middle">形成短答，提前投递</text>
+</g>
+<g data-node="status-question-destination" class="chart-node mainline"><rect x="12" y="774" width="296" height="62" rx="6"/>
+<text x="160.0" y="801.0" class="chart-node-title" text-anchor="middle">本条原消息地址</text>
+<text x="160.0" y="825.0" class="chart-node-sub" text-anchor="middle">无需等研究结束</text>
+</g>
+<path data-edge="status-question-act" class="chart-edge mainline" d="M160 630 V663" marker-end="url(#situations-mobile-arrow)"/>
+<path data-edge="status-question-dest" class="chart-edge mainline" d="M160 741 V774" marker-end="url(#situations-mobile-arrow)"/>
+<g data-node="correction-stop" class="chart-node neutral"><rect x="12" y="860" width="296" height="54" rx="6"/>
+<text x="160.0" y="893.0" class="chart-node-title" text-anchor="middle">纠正 / 停止</text>
+</g>
+<g data-node="correction-stop-action" class="chart-node work"><rect x="12" y="947" width="296" height="78" rx="6"/>
+<text x="160.0" y="981.0" class="chart-node-title" text-anchor="middle">核对象与授权 → 原工作处理</text>
+<text x="160.0" y="1003.0" class="chart-node-title" text-anchor="middle">调整条件 / 停止并核状态</text>
+</g>
+<g data-node="correction-stop-destination" class="chart-node work"><rect x="12" y="1058" width="296" height="62" rx="6"/>
+<text x="160.0" y="1085.0" class="chart-node-title" text-anchor="middle">对应原工作</text>
+<text x="160.0" y="1109.0" class="chart-node-sub" text-anchor="middle">报告已采用 / 已停止</text>
+</g>
+<path data-edge="correction-stop-act" class="chart-edge work" d="M160 914 V947" marker-end="url(#situations-mobile-arrow)"/>
+<path data-edge="correction-stop-dest" class="chart-edge work" d="M160 1025 V1058" marker-end="url(#situations-mobile-arrow)"/>
+<g data-node="cross-topic" class="chart-node neutral"><rect x="12" y="1144" width="296" height="54" rx="6"/>
+<text x="160.0" y="1177.0" class="chart-node-title" text-anchor="middle">影响另一话题</text>
+</g>
+<g data-node="cross-topic-action" class="chart-node work"><rect x="12" y="1231" width="296" height="78" rx="6"/>
+<text x="160.0" y="1265.0" class="chart-node-title" text-anchor="middle">同步草稿 → 人确认</text>
+<text x="160.0" y="1287.0" class="chart-node-title" text-anchor="middle">目标限范围复核 → 返回</text>
+</g>
+<g data-node="cross-topic-destination" class="chart-node work"><rect x="12" y="1342" width="296" height="62" rx="6"/>
+<text x="160.0" y="1369.0" class="chart-node-title" text-anchor="middle">目标话题复核</text>
+<text x="160.0" y="1393.0" class="chart-node-sub" text-anchor="middle">结果回来源话题</text>
+</g>
+<path data-edge="cross-topic-act" class="chart-edge work" d="M160 1198 V1231" marker-end="url(#situations-mobile-arrow)"/>
+<path data-edge="cross-topic-dest" class="chart-edge work" d="M160 1309 V1342" marker-end="url(#situations-mobile-arrow)"/>
+<g data-node="reaction-only" class="chart-node neutral"><rect x="12" y="1428" width="296" height="54" rx="6"/>
+<text x="160.0" y="1461.0" class="chart-node-title" text-anchor="middle">无需正文的交流</text>
+</g>
+<g data-node="reaction-only-action" class="chart-node mainline"><rect x="12" y="1515" width="296" height="78" rx="6"/>
+<text x="160.0" y="1549.0" class="chart-node-title" text-anchor="middle">保存无需正文的判断</text>
+<text x="160.0" y="1571.0" class="chart-node-title" text-anchor="middle">保留适合语境的表情</text>
+</g>
+<g data-node="reaction-only-destination" class="chart-node mainline"><rect x="12" y="1626" width="296" height="62" rx="6"/>
+<text x="160.0" y="1653.0" class="chart-node-title" text-anchor="middle">本条原消息</text>
+<text x="160.0" y="1677.0" class="chart-node-sub" text-anchor="middle">表情表示接收或态度</text>
+</g>
+<path data-edge="reaction-only-act" class="chart-edge mainline" d="M160 1482 V1515" marker-end="url(#situations-mobile-arrow)"/>
+<path data-edge="reaction-only-dest" class="chart-edge mainline" d="M160 1593 V1626" marker-end="url(#situations-mobile-arrow)"/></svg>
+<figcaption>移交与本地正文答复按本条输入择一保存。停止须落实到对应工作并核对状态；跨话题复核须先取得对具体草稿的确认。</figcaption></figure></section>
+<section id="evidence"><span id="evaluation" class="guide-anchor-alias"></span><h2>适用范围与实现入口</h2>
+<p class="scope-note">适用于已授权单群试点的新主线输入；已有工作话题继续在原话题执行。这里说明当前机制，实际响应时延仍以自然消息测量为准。</p>
+<details data-technical><summary>查看源码与维护位置</summary><div class="detail-body"><p>源码核对：<code>c6250175</code>（2026-10-10）。结构图与正文同源维护于本章，目录沿统一说明书维护。</p><ul class="sources">
+<li><a href="https://github.com/Ninglo/remotelab/blob/c6250175d4555a959ec9d0e50c618a6962928280/chat/native-request-dispatch.mjs">原生输入分发与兼容条件</a></li>
+<li><a href="https://github.com/Ninglo/remotelab/blob/c6250175d4555a959ec9d0e50c618a6962928280/chat/group-routing.mjs">工作话题移交、逐条答复与跨话题确认</a></li>
+<li><a href="https://github.com/Ninglo/remotelab/blob/c6250175d4555a959ec9d0e50c618a6962928280/docs/session-work-awareness.md">主线与工作会话的现行契约</a></li>
+</ul></div></details></section></main></body></html>
