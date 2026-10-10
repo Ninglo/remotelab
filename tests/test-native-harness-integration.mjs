@@ -145,6 +145,44 @@ try {
   await rpc('shutdown'); await killController(); await boot();
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'recovery preserves one delivery per distinct topic');
   await evidence('PASS: unbound same-topic supplements and alternate root/thread aliases share one result, while a different topic retains one final across recovery.');
+  // Failure/cancellation notices have no provider final ID. Destination
+  // reservations must still recognize another topic's root/thread aliases.
+  for (const terminalState of ['failed', 'cancelled']) {
+    const failedSession = await rpc('create');
+    const rootId = `terminal-${terminalState}`;
+    const failedRun = await rpc('accept', failedSession.id, 'Hold shared execution', [],
+      multiOptions(rootId, firstReplyPlan));
+    await until(async () => (await logs()).some(event => event.runId === failedRun.run.id
+      && event.kind === 'turn/start'), terminalState + ' turn starts');
+    const terminalAlias = structuredClone(otherTopic);
+    delete terminalAlias.target.rootId; terminalAlias.target.messageId = 'terminal-followup';
+    const inputs = [`${rootId}-other`, `${rootId}-alias`];
+    for (const [index, plan] of [otherTopic, terminalAlias].entries()) {
+      await rpc('accept', failedSession.id, 'Apply this supplement', [], multiOptions(inputs[index], plan));
+      await until(async () => (await receipt(failedRun.run.id, inputs[index]))?.state === 'accepted', inputs[index] + ' accepted');
+    }
+    if (terminalState === 'failed') {
+      await rpc('accept', failedSession.id, 'FAIL_NATIVE_TURN', [], multiOptions(`${rootId}-failure`, firstReplyPlan));
+    } else {
+      await rpc('cancel', failedSession.id, { expectedRunId: failedRun.run.id });
+    }
+    for (const id of [rootId, ...inputs]) {
+      await until(async () => (await rpc('response', failedSession.id, id))?.state === terminalState, id + ' settles ' + terminalState);
+    }
+    const terminalClaims = [];
+    for (let index = 0; index < 2; index++) {
+      let claimed;
+      await until(async () => { claimed = await rpc('claim', { connector: 'feishu' }); return claimed; }, terminalState + ' topics receive notice');
+      terminalClaims.push(claimed.delivery);
+      assert.match(claimed.delivery.text, terminalState === 'failed' ? /任务执行失败/ : /任务已取消/);
+      await rpc('complete', claimed.delivery.id, claimed.leaseId, { externalId: `${rootId}-final-${index}` });
+    }
+    assert.deepEqual(terminalClaims.map(part => part.target.rootId || part.target.messageId).sort(), ['other-root', 'steering-root']);
+    assert.equal(await rpc('claim', { connector: 'feishu' }), null, terminalState + ' aliases cannot send a third notice');
+    await rpc('shutdown'); await killController(); await boot();
+    assert.equal(await rpc('claim', { connector: 'feishu' }), null, terminalState + ' recovery cannot repeat notices');
+    await evidence(`PASS: ${terminalState} shared Run publishes one notice per topic despite root/thread aliases, including recovery without a provider final ID.`);
+  }
   const questionSession = await rpc('create');
   const questioning = await accept(questionSession.id, 'question-root', 'ASK_NATIVE_QUESTION');
   let questionClaim;
