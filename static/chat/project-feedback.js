@@ -13,6 +13,7 @@
     sampled: ['窗口内已采集', 'Observed in window'], succeeded: ['完成', 'Completed'],
     human: ['人工直接触发', 'Direct human'], agent: ['Agent调用', 'Agent calls'], automated: ['自动任务', 'Automated'],
     lastUse: ['最近触发', 'Latest call'], pending_analysis: ['有反馈待分析', 'Feedback awaiting analysis'],
+    samplingScope: ['采集范围', 'Sampling scope'],
     cumulative: ['已记录累计操作', 'Recorded cumulative actions'], exposures: ['展示', 'Presented'],
     qianyanScope: ['展开／打开原文／筛选／复制／播放／文档打开；累计数不当作近30天用量。', 'Expand / source open / filter / copy / play / document open; cumulative counts are not 30-day usage.'],
     recent_feedback: ['近期有反馈', 'Recent feedback'], new_observation: ['新项目待观察', 'New project to observe'],
@@ -70,17 +71,19 @@
     const box = node('div', '', 'feedback-usage');
     const u = p.usage;
     if (!u || u.status === 'not_instrumented') { box.textContent = t('noHook'); return box; }
+    const scope = node('details', '', 'feedback-usage-scope'); scope.appendChild(node('summary', t('samplingScope')));
     if (u.status === 'cumulative') {
-      box.append(node('strong', `${t('cumulative')} ${u.calls}`), node('small', `${t('exposures')} ${u.exposures}`),
-        node('small', `${t('lastUse')}：${time(u.latest_at)}`), node('small', t('qianyanScope')));
+      box.append(node('strong', `${t('cumulative')} ${u.calls}`), node('small', `${t('exposures')} ${u.exposures}`));
+      if (u.latest_at) box.appendChild(node('small', `${t('lastUse')}：${time(u.latest_at)}`));
+      scope.appendChild(node('small', t('qianyanScope'))); box.appendChild(scope);
       return box;
     }
     if (u.status === 'unknown') { box.textContent = t('usageUnknown'); return box; }
     box.append(node('strong', `${u.calls} · ${t('succeeded')} ${u.completed}`));
     box.append(node('small', `${t('human')} ${u.direct_human} · ${t('agent')} ${u.agent} · ${t('automated')} ${u.automated}`));
-    box.append(node('small', `${t('lastUse')}：${time(u.latest_at)}`));
-    box.append(node('small', `${t('sampling')}：${time(u.sampling_since)}`));
-    if (u.scope) box.append(node('small', u.scope));
+    if (u.latest_at) box.append(node('small', `${t('lastUse')}：${time(u.latest_at)}`));
+    scope.appendChild(node('small', `${t('sampling')}：${time(u.sampling_since)}`));
+    if (u.scope) scope.appendChild(node('small', u.scope)); box.appendChild(scope);
     return box;
   }
   function startContent(p) {
@@ -105,18 +108,18 @@
       group.addEventListener('toggle', () => groupOpen.set(g.id, group.open));
       group.appendChild(node('summary', `${g.name} · ${t('groupCount')} ${g.subproject_count} · ${t('count')} ${g.feedback_count} · ${t('recent')} ${g.recent_feedback_count} · ${t('pendingCount')} ${g.pending_analysis_count}`));
       const table = node('table', '', 'feedback-table'), head = node('thead'), tr = node('tr');
-      const columns = ['project', 'count', 'pending', 'started', 'usage', 'attention', 'direction', 'details'];
+      const columns = ['project', 'count', 'started', 'usage', 'direction', 'details'];
       columns.forEach(k => { const th = node('th', t(k)); th.scope = 'col'; tr.appendChild(th); });
       head.appendChild(tr); table.appendChild(head); const body = node('tbody');
       for (const p of summary.projects.filter(p => p.group_id === g.id)) {
       const row = node("tr"); row.dataset.subproject = p.id;
-      const name = node("td"); name.appendChild(button(p.name, () => void select(p.id))); row.appendChild(name);
+      const name = node("td"); name.appendChild(button(p.name, () => void select(p.id)));
+      name.appendChild(node('small', t(p.attention.state === 'paused' ? 'attentionPaused' : p.attention.state))); row.appendChild(name);
       const count = node('td', p.coverage === 'not_represented' ? t('notCovered') : String(p.feedback_count));
-      count.appendChild(node('small', `${t('recent')}：${p.recent_feedback_count}`)); row.appendChild(count);
-      row.appendChild(node("td", String(p.pending_analysis_count)));
+      count.appendChild(node('small', `${t('recent')}：${p.recent_feedback_count}`));
+      count.appendChild(node('small', `${t('pending')}：${p.pending_analysis_count}`)); row.appendChild(count);
       const start = node('td'); start.appendChild(startContent(p)); row.appendChild(start);
       const calls = node('td'); calls.appendChild(usageContent(p)); row.appendChild(calls);
-      row.appendChild(node('td', t(p.attention.state === 'paused' ? 'attentionPaused' : p.attention.state)));
       row.appendChild(node("td", p.directions[0] || t("noDirection")));
       const actions = node("td"); actions.appendChild(button(t("give"), () => give(p.id))); row.appendChild(actions); body.appendChild(row);
       }

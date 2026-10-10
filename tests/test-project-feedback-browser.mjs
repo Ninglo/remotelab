@@ -51,7 +51,11 @@ try {
   assert.equal(await page.locator('#monitoringFeedbackTab').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('.feedback-group').count(), 2);
   assert.match(await page.locator('[data-subproject="recording"]').innerText(), /New project to observe/);
-  assert.match(await page.locator('[data-subproject="reports"]').innerText(), /Observed in window|Sampling since/);
+  await page.locator('[data-subproject="reports"] .feedback-usage-scope summary').click();
+  assert.match(await page.locator('[data-subproject="reports"]').innerText(), /Sampling since/);
+  await page.locator('[data-subproject="reports"] .feedback-usage-scope summary').click();
+  assert(await page.locator('[data-subproject="reports"]').getByRole('button', { name: 'Give feedback', exact: true }).isVisible());
+  assert(await page.evaluate(() => [...document.querySelectorAll('.feedback-group .monitoring-table-wrap')].every(n => n.scrollWidth <= n.clientWidth + 1)), 'desktop keeps the feedback action and directions in view');
   assert.match(await page.locator('[data-subproject="recording"]').innerText(), /Not covered in this sample/);
   await page.getByRole('button', { name: 'Reports', exact: true }).click();
   await page.locator('[data-feedback-id="old_feedback"] summary').click();
