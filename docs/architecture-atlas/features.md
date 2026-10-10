@@ -4,9 +4,9 @@
 
 这份清单是供使用和作者补漏的底稿。完整性和负责人尚未经过作者确认，不能称为完整说明书。
 
-本版对照主仓库的界面、主 CLI 分派和相关专题资料。命令下的每个子操作、仓库外脚本、其他实例配置和作者归属尚未全面核对。 2026-10-06增补人员学习与行动手册入口；其余功能沿用原盘点和待作者确认边界，不扩展为全部业务已验收。 2026-10-06增补 Session 开工登记、双向相关检索、人员与公司必要背景读取和人工核验参考建议。隔离状态与原生协议测试不能代替真实模型的全部行为验收。
+本版对照主仓库的界面、主 CLI 分派和相关专题资料。命令下的每个子操作、仓库外脚本、其他实例配置和作者归属尚未全面核对。 2026-10-06增补人员学习与行动手册入口；其余功能沿用原盘点和待作者确认边界，不扩展为全部业务已验收。 2026-10-06增补 Session 开工登记、双向相关检索、人员与公司必要背景读取和人工核验参考建议。隔离状态与原生协议测试不能代替真实模型的全部行为验收。 2026-10-10补充飞书 Web 设置接入，新增条目的维护线索单独标注源码版本；其他功能仍沿用原基线。
 
-本轮源码基线：c914b197be3e84c19cb558786d9cc78c71b06c28。8 组、43 项候选功能；35 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
+本轮源码基线：c914b197be3e84c19cb558786d9cc78c71b06c28。8 组、44 项候选功能；37 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
 
 ## 发起工作、接着做和找回历史
 
@@ -506,6 +506,20 @@ Agent 命令入口：`remotelab memory`。
 
 维护线索：[templates/chat.html](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/templates/chat.html)、[static/chat/settings-ui.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/settings-ui.js)、[static/chat/instance-settings.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/instance-settings.js)。
 
+### 飞书 Web 页面显示与个人消息设置
+
+在飞书设置主题、字体、阅读、宠物，以及个人回复展示、开工检查、实验分流和当前对话模型。
+
+入口：已安装的飞书 Web 插件 → 设置 → 页面显示／消息设置；首次从消息设置连接本人账号。
+
+使用条件：显示偏好保存在当前浏览器；消息选项共用服务器上的本人配置，后续新工作生效。实验分流保留现有试点群范围；模型只改变已关联飞书对话的后续消息，Quick 固定。代码、部署、安装与本人实际使用分别核验。
+
+可以这样说：“保留首条回复，收起全部进展，同时开启开工严格检查和实验分流。”
+
+维护线索：[docs/feishu-web-settings.md](https://github.com/Ninglo/remotelab/blob/37bac01af5f68241ee6c01be1eb582406371d0d0/docs/feishu-web-settings.md)、[chat/feishu-web-settings.mjs](https://github.com/Ninglo/remotelab/blob/37bac01af5f68241ee6c01be1eb582406371d0d0/chat/feishu-web-settings.mjs)、[chat/router-feishu-web-settings.mjs](https://github.com/Ninglo/remotelab/blob/37bac01af5f68241ee6c01be1eb582406371d0d0/chat/router-feishu-web-settings.mjs)、[chat/person-message-replies.mjs](https://github.com/Ninglo/remotelab/blob/37bac01af5f68241ee6c01be1eb582406371d0d0/chat/person-message-replies.mjs)、[lib/message-reply-command.mjs](https://github.com/Ninglo/remotelab/blob/37bac01af5f68241ee6c01be1eb582406371d0d0/lib/message-reply-command.mjs)。
+
+Agent 命令入口：`remotelab message-replies`。
+
 ### 安装到桌面与浏览器通知
 
 在支持的手机或桌面环境安装网页应用，并接收已启用的浏览器通知。
@@ -574,7 +588,7 @@ Agent 命令入口：`remotelab github-workspace`。
 
 维护线索：[docs/setup.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/setup.md)、[docs/request-state-upgrade.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/request-state-upgrade.md)、[docs/instance-factory-v1.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/instance-factory-v1.md)、[cli.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/cli.js)。
 
-Agent 命令入口：`remotelab setup`、`remotelab start`、`remotelab stop`、`remotelab restart`、`remotelab chat`、`remotelab upgrade-state`、`remotelab provision-host`、`remotelab bootstrap-host`、`remotelab install-profile`、`remotelab validate-profile`。
+Agent 命令入口：`remotelab setup`、`remotelab start`、`remotelab stop`、`remotelab restart`、`remotelab chat`、`remotelab upgrade-state`、`remotelab provision-host`、`remotelab bootstrap-host`、`remotelab install-profile`、`remotelab validate-profile`、`remotelab service-access`。
 
 ### 隔离的 guest 实例
 
@@ -637,6 +651,7 @@ Fleet Observer：它是监控数据源和独立管理入口；RemoteLab 监控�
 | start | 安装、运行、升级与实例健康检查 |
 | stop | 安装、运行、升级与实例健康检查 |
 | restart | 安装、运行、升级与实例健康检查 |
+| service-access | 安装、运行、升级与实例健康检查 |
 | upgrade-state | 安装、运行、升级与实例健康检查 |
 | provision-host | 安装、运行、升级与实例健康检查 |
 | bootstrap-host | 安装、运行、升级与实例健康检查 |
@@ -654,6 +669,7 @@ Fleet Observer：它是监控数据源和独立管理入口；RemoteLab 监控�
 | feishu | 飞书文档和办公操作 |
 | assistant-message | 结果文件与附件下载 |
 | workboard | 任务卡、进度和验收依据 |
+| message-replies | 飞书 Web 页面显示与个人消息设置 |
 | recording | 硬件讨论录音 |
 | local-bridge | 会话绑定的本地助手 |
 | agenda | 日历事件和订阅提醒 |

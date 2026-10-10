@@ -6,7 +6,7 @@ const directory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(directory, '../..');
 const data = JSON.parse(await readFile(path.join(directory, 'features.json'), 'utf8'));
 const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const github = file => `https://github.com/Ninglo/remotelab/blob/${data.sourceRevision}/${file}`;
+const github = (file, revision = data.sourceRevision) => `https://github.com/Ninglo/remotelab/blob/${revision}/${file}`;
 const features = data.groups.flatMap(group => group.features);
 const ids = [ ...data.groups.map(group => group.id), ...features.map(feature => feature.id) ];
 if (new Set(ids).size !== ids.length || ids.some(id => !/^[a-z][a-z0-9-]*$/.test(id))) throw new Error('Feature and group IDs must be unique, stable anchors');
@@ -15,6 +15,7 @@ for (const feature of features) {
   for (const field of ['name', 'purpose', 'entry', 'condition', 'example']) {
     if (!feature[field]) throw new Error(`Missing ${field}: ${feature.id}`);
   }
+  if (feature.sourceRevision && !/^[a-f0-9]{40}$/.test(feature.sourceRevision)) throw new Error('Use an exact feature source revision');
   if (!feature.sources.length) throw new Error(`Missing sources: ${feature.id}`);
 }
 for (const file of new Set(features.flatMap(feature => feature.sources))) {
@@ -28,7 +29,7 @@ const represented = new Set(features.flatMap(feature => feature.commands));
 const missing = commands.filter(command => !represented.has(command));
 const unexpected = [...represented].filter(command => !commands.includes(command));
 if (missing.length || unexpected.length) throw new Error(`CLI mapping: missing ${missing.join(', ')}; unexpected ${unexpected.join(', ')}`);
-const sourceLinks = feature => feature.sources.map(file => `<a href="${github(file)}"><code>${escape(file)}</code></a>`).join(' · ');
+const sourceLinks = feature => feature.sources.map(file => `<a href="${github(file, feature.sourceRevision)}"><code>${escape(file)}</code></a>`).join(' · ');
 const renderFeature = feature => `<article class="feature-row" id="${feature.id}"><h3>${escape(feature.name)}</h3><div><p>${escape(feature.purpose)}</p><p><strong>入口：</strong>${escape(feature.entry)}</p><p class="feature-condition"><strong>使用条件：</strong>${escape(feature.condition)}</p><details data-technical><summary>使用例子与维护线索</summary><p>可以这样说：“${escape(feature.example)}”</p><p>${sourceLinks(feature)}</p>${feature.commands.length ? `<p>Agent 入口：${feature.commands.map(command => `<code>remotelab ${escape(command)}</code>`).join('、')}。具体参数查当前实例的帮助。</p>` : ''}</details></div></article>`;
 const groups = data.groups.map(group => `<section id="${group.id}"><h2>${escape(group.title)}</h2><p>${escape(group.intro)}</p>${group.features.map(renderFeature).join('\n')}</section>`).join('\n');
 const commandRows = commands.map(command => {
@@ -53,7 +54,7 @@ const markdown = [`# ${data.title}`, '', `状态：${data.status}。核对日期
   `本轮源码基线：${data.sourceRevision}。${data.groups.length} 组、${features.length} 项候选功能；${commands.length} 个主 CLI 命令已有对应条目，${confirmed}/${data.groups.length} 组收到作者确认。`, '',
   ...data.groups.flatMap(group => [`## ${group.title}`, '', group.intro, '', ...group.features.flatMap(feature => [
     `### ${feature.name}`, '', feature.purpose, '', `入口：${feature.entry}`, '', `使用条件：${feature.condition}`, '',
-    `可以这样说：“${feature.example}”`, '', `维护线索：${feature.sources.map(file => `[${file}](${github(file)})`).join('、')}。`, '',
+    `可以这样说：“${feature.example}”`, '', `维护线索：${feature.sources.map(file => `[${file}](${github(file, feature.sourceRevision)})`).join('、')}。`, '',
     ...(feature.commands.length ? [`Agent 命令入口：${feature.commands.map(command => '`remotelab ' + command + '`').join('、')}。`, ''] : [])
   ])]), '## monitor 和 fleet', '',
   'RemoteLab 监控器的总览聚合本实例账号、用量、磁盘、自动化和已登记服务；Fleet Observer 跨机器采集账号额度、去重并保留来源及历史。RemoteLab 可读取配置好的 fleet 脱敏快照，现有集成不代表所有 fleet 管理功能已迁入 RemoteLab。', '',
