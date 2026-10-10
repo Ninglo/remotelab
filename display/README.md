@@ -52,6 +52,28 @@ own expiration rules.
 The conservative USB framing in `agent.py` is derived from the MIT-licensed
 `thermalright-display-bridge` project in this workspace.
 
+## Personal Feishu reminder refresh
+
+Frame playback and dashboard reads reuse one Person's Feishu snapshot. Personal
+message discovery and read-state reconciliation run at most once every five
+minutes; calendars refresh every fifteen minutes. Existing cached message
+classification is reused, while new and still-pending messages have their
+details checked. Reading or dismissing reminders does not force another search.
+The message search still covers the last 24 hours so marking a known message
+unread can restore its reminder; it is not an all-account event subscription.
+Bot message events do not cover the whole user's inbox or all read receipts.
+
+An unsuccessful refresh is cached too, with exponential backoff. Provider
+errors pause other message/calendar reads for the same application, honoring
+`Retry-After` when it requires a longer pause. The normal reminder delay is up
+to five minutes; failures may extend it. Monthly quota exhaustion (`99991403`)
+stops that application's message/calendar reads until quota is restored and
+the sidecar is restarted; short automatic retries cannot restore quota.
+These reads do not call a model.
+Actual outgoing Feishu requests are recorded with `component: display` in the
+existing private API ledger without tokens, bodies, query strings or resource
+IDs. Use `scripts/feishu-api-usage.mjs` to measure real counts after deployment.
+
 ## Signal-screen pilot
 
 The existing pairing, Person boundary, frame URL, and Mac USB agent stay unchanged. Set

@@ -99,7 +99,7 @@ try {
   await writeFile(join(config, 'config.json'), JSON.stringify({ appId: 'test-app', appSecret: 'test-secret' }));
   const service = createFeishuUserReminders({ configDir: dir,
     identityFor: async (id) => id === 'person_a' ? { realm: 'bot-2', openId: 'ou_expected' } : null,
-    fetchImpl: fakeFetch, now: () => clock });
+    fetchImpl: fakeFetch, now: () => clock, messageRefreshMs: 1000, calendarRefreshMs: 60_000 });
   assert.equal((await service.begin('person_b')).linked, false);
   const started = await service.begin('person_a');
   assert.equal(started.pending, true);
@@ -140,8 +140,10 @@ try {
   const later = await service.summary('person_a');
   assert.equal(later.newMessages, 2);
   assert.deepEqual(later.sources, [{ label: '私聊对话', count: 1 }, { label: '群聊 · 产品讨论群', count: 1 }]);
+  const beforeAcknowledgement = seen.length;
   assert.equal((await service.acknowledge('person_a', fresh.observedAt)).cleared, 1);
   assert.equal((await service.summary('person_a')).newMessages, 1, 'a message arriving after the reviewed snapshot remains visible');
+  assert.equal(seen.length, beforeAcknowledgement, 'a local acknowledgement and immediate summary issue no provider request');
   assert.equal((await service.acknowledge('person_a', later.observedAt)).cleared, 1);
   assert.equal((await service.summary('person_a')).newMessages, 0);
   messageIds = ['five', ...messageIds];
@@ -296,7 +298,6 @@ try {
   const saved = join(dir, 'display-private', 'feishu-reminders.json');
   assert.equal((await stat(saved)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(saved, 'utf8')).people.person_a.token.openId, 'ou_expected');
-  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 72);
   const upgrade = await service.begin('person_a');
   assert.equal(upgrade.connected, true, 'message access remains available during calendar authorization');
   assert.equal(upgrade.calendarConnected, false);

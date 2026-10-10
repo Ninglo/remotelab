@@ -2,6 +2,8 @@ import { readFile, chmod, mkdir, writeFile, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { readJson } from '../chat/fs-utils.mjs';
+import { createFeishuApiLogger } from '../lib/feishu-api-log.mjs';
+import { isFeishuMonthlyQuotaError } from '../lib/feishu-retry-policy.mjs';
 
 // The bot-2 application has calendar:calendar:read enabled. Requesting
 // calendar:calendar:readonly silently produced a partial user grant instead.
@@ -40,7 +42,8 @@ function clean(value) { return typeof value === 'string' ? value.trim() : ''; }
 function seconds(value, fallback) { return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback; }
 function safeRealm(value) { return /^[a-z0-9_-]+$/.test(value || '') ? value : ''; }
 
-export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = fetch, now = Date.now }) {
+export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = fetch, now = Date.now,
+  messageRefreshMs = 5 * 60_000, calendarRefreshMs = 15 * 60_000 }) {
   const privateDir = join(configDir, 'display-private');
   const file = join(privateDir, 'feishu-reminders.json');
   const notificationFile = join(privateDir, 'feishu-notifications.json');
@@ -52,6 +55,9 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   const tenantTokens = new Map();
   const chatSources = new Map();
   const refreshFailures = new Map();
+  const detailCaches = new Map();
+  const apiLoggers = new Map();
+  const providerPauses = new Map();
   const queued = (task) => {
     const running = lock.then(task);
     lock = running.catch(() => {});
@@ -90,19 +96,45 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       : join(configDir, 'feishu-connectors', name, 'config.json');
     const config = JSON.parse(await readFile(source, 'utf8'));
     if (!clean(config.appId) || !clean(config.appSecret)) throw new Error('飞书应用配置缺失');
+    if (!apiLoggers.has(realm)) apiLoggers.set(realm, createFeishuApiLogger({
+      directory: join(configDir, 'feishu-api-logs'), appId: config.appId, sourceRouteId: realm, component: 'display',
+    }));
     return { appId: config.appId, appSecret: config.appSecret };
   }
-  async function request(url, { form, data, token, basic } = {}) {
+  async function request(url, { form, data, token, basic, realm } = {}) {
+    const businessRead = /\/open-apis\/(?:im|calendar)\//.test(url);
+    if (businessRead && providerPauses.get(realm) > now()) throw new Error('Feishu reads backing off');
+    if (realm && !apiLoggers.has(realm)) await appFor(realm).catch(() => {});
     const headers = {};
     let body;
     if (form) { headers['Content-Type'] = 'application/x-www-form-urlencoded'; body = new URLSearchParams(form); }
     if (data) { headers['Content-Type'] = 'application/json'; body = JSON.stringify(data); }
     if (token) headers.Authorization = `Bearer ${token}`;
     if (basic) headers.Authorization = `Basic ${Buffer.from(`${basic.appId}:${basic.appSecret}`).toString('base64')}`;
-    const response = await fetchImpl(url, { method: body ? 'POST' : 'GET', headers, body,
-      signal: AbortSignal.timeout(10_000) });
-    const json = await response.json().catch(() => ({}));
-    return { ok: response.ok && (json.code === undefined || json.code === 0) && !json.error, json, status: response.status };
+    const startedAt = now(), method = body ? 'POST' : 'GET';
+    let response, json, outcome = 'failed', errorCode;
+    try {
+      response = await fetchImpl(url, { method, headers, body, signal: AbortSignal.timeout(10_000) });
+      json = await response.json().catch(() => ({}));
+      const ok = response.ok && (json.code === undefined || json.code === 0) && !json.error;
+      if (ok) outcome = 'success';
+      else if (businessRead && isFeishuMonthlyQuotaError(json)) providerPauses.set(realm, Infinity);
+      else if (businessRead) {
+        const retry = response.headers?.get?.('retry-after');
+        const retryMs = retry && /^\d+(?:\.\d+)?$/.test(retry) ? Number(retry) * 1000 : Date.parse(retry || '') - now();
+        providerPauses.set(realm, Math.max(providerPauses.get(realm) || 0,
+          now() + Math.max(messageRefreshMs, Number.isFinite(retryMs) ? retryMs : 0)));
+      }
+      return { ok, json, status: response.status };
+    } catch (error) {
+      errorCode = clean(error?.code) || 'network_error';
+      if (businessRead) providerPauses.set(realm, Math.max(providerPauses.get(realm) || 0, now() + messageRefreshMs));
+      throw error;
+    } finally {
+      await apiLoggers.get(realm)?.record({ ts: new Date(startedAt).toISOString(), requestId: randomUUID(), method, url,
+        durationMs: now() - startedAt, httpStatus: response?.status, code: json?.code,
+        outcome, errorCode: errorCode || json?.error, logId: response?.headers?.get?.('x-tt-logid') });
+    }
   }
   function publicStatus(entry, linked = true) {
     const pending = entry?.pending;
@@ -136,7 +168,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       if (entry.pending?.expiresAt > now() && entry.pending.realm === identity.realm) return publicStatus(entry);
       const app = await appFor(identity.realm);
       const response = await request(`${ACCOUNTS}/oauth/v1/device_authorization`, {
-        form: { client_id: app.appId, scope: SCOPES }, basic: app,
+        form: { client_id: app.appId, scope: SCOPES }, basic: app, realm: identity.realm,
       });
       const data = response.json;
       const verificationUrl = clean(data.verification_uri_complete || data.verification_uri);
@@ -181,7 +213,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       }
       if (pending.nextPollAt > now()) return publicStatus(entry);
       const app = await appFor(identity.realm);
-      const response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { form: {
+      const response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { realm: identity.realm, form: {
         grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: pending.deviceCode,
         client_id: app.appId, client_secret: app.appSecret,
       } });
@@ -191,7 +223,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         pending.intervalMs = error === 'slow_down' ? Math.min(60_000, pending.intervalMs + 5_000) : pending.intervalMs;
         pending.nextPollAt = now() + pending.intervalMs;
       } else if (response.ok && clean(data.access_token)) {
-        const user = await request(`${OPEN}/open-apis/authen/v1/user_info`, { token: data.access_token });
+        const user = await request(`${OPEN}/open-apis/authen/v1/user_info`, { token: data.access_token, realm: identity.realm });
         const actualOpenId = clean(user.json?.data?.open_id);
         if (!user.ok || actualOpenId !== identity.openId) {
           entry.error = '授权的飞书账号与当前 RemoteLab 账号不一致';
@@ -206,6 +238,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
           delete entry.pending;
           cached.delete(personId);
           calendarCached.delete(personId);
+          detailCaches.delete(messageKey(`${identity.realm}:${identity.openId}`));
           calendarRefreshing.delete(personId);
         }
       } else {
@@ -230,7 +263,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       const failed = refreshFailures.get(personId);
       if (failed?.until > now()) return token.expiresAt > now() ? token.accessToken : null;
       const app = await appFor(identity.realm);
-      const response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { data: {
+      const response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { realm: identity.realm, data: {
         grant_type: 'refresh_token', refresh_token: token.refreshToken, client_id: app.appId, client_secret: app.appSecret,
       } });
       if (!response.ok || !clean(response.json.access_token)) {
@@ -258,7 +291,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     if (saved?.expiresAt > now() + 60_000) return saved.value;
     const app = await appFor(realm);
     const result = await request(`${OPEN}/open-apis/auth/v3/tenant_access_token/internal`, {
-      data: { app_id: app.appId, app_secret: app.appSecret },
+      data: { app_id: app.appId, app_secret: app.appSecret }, realm,
     });
     if (!result.ok || !clean(result.json.tenant_access_token)) return null;
     const value = result.json.tenant_access_token;
@@ -274,7 +307,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     try {
       const token = await tenantToken(realm);
       if (!token) return { label: '群聊', topic: null };
-      const result = await request(`${OPEN}/open-apis/im/v1/chats/${encodeURIComponent(chatId)}?user_id_type=open_id`, { token });
+      const result = await request(`${OPEN}/open-apis/im/v1/chats/${encodeURIComponent(chatId)}?user_id_type=open_id`, { token, realm });
       const chat = result.ok ? result.json?.data : null;
       if (!chat) return { label: '群聊', topic: null };
       if (chat.chat_mode === 'p2p') return { label: '私聊对话', topic: false };
@@ -288,19 +321,31 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   async function chatSource(realm, chatId, isP2p) {
     return (await chatSourceInfo(realm, chatId, isP2p)).label;
   }
-  async function messageDetails(token, ids) {
+  async function messageDetails(token, ids, identityKey, realm, recheckIds) {
     const details = new Map();
     const valid = [...new Set(ids)].filter((id) => /^om_[a-zA-Z0-9_-]+$/.test(id || ''));
-    for (let index = 0; index < valid.length; index += 50) {
+    const cache = detailCaches.get(identityKey) || new Map();
+    detailCaches.set(identityKey, cache);
+    for (const id of valid) if (cache.has(id) && !recheckIds.has(id)) details.set(id, cache.get(id));
+    const missing = valid.filter((id) => !details.has(id));
+    for (let index = 0; index < missing.length; index += 50) {
       const url = new URL(`${OPEN}/open-apis/im/v1/messages/mget`);
-      for (const id of valid.slice(index, index + 50)) url.searchParams.append('message_ids', id);
-      const response = await request(url.toString(), { token });
+      for (const id of missing.slice(index, index + 50)) url.searchParams.append('message_ids', id);
+      const response = await request(url.toString(), { token, realm });
       if (!response.ok || !Array.isArray(response.json?.data?.items)) break;
-      for (const item of response.json.data.items) if (valid.includes(item?.message_id)) details.set(item.message_id, item);
+      for (const item of response.json.data.items) if (missing.includes(item?.message_id)) {
+        // Retain only reminder classification; never cache message bodies.
+        const detail = { message_id: item.message_id, deleted: item.deleted, parent_id: item.parent_id,
+          mentions: item.mentions?.map(({ id }) => ({ id })) };
+        details.set(item.message_id, detail);
+        cache.delete(item.message_id);
+        cache.set(item.message_id, detail);
+      }
     }
+    while (cache.size > 1000) cache.delete(cache.keys().next().value);
     return details;
   }
-  async function readStatuses(token, pending) {
+  async function readStatuses(token, pending, realm) {
     const ids = pending.map((item) => item.messageId).filter((id) => /^om_[a-zA-Z0-9_-]+$/.test(id || ''));
     if (!ids.length) return { available: true, values: new Map() };
     const values = new Map();
@@ -308,7 +353,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       for (let index = 0; index < ids.length; index += 50) {
         const batch = ids.slice(index, index + 50);
         const result = await request(`${OPEN}/open-apis/im/v1/messages/read_status`, {
-          token, data: { message_ids: batch },
+          token, data: { message_ids: batch }, realm,
         });
         if (!result.ok || !Array.isArray(result.json?.data?.items)) return { available: false, values: new Map() };
         for (const item of result.json.data.items) {
@@ -325,7 +370,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     const entry = (await document()).people?.[personId];
     if (!token || !hasCalendarScope(entry?.token?.scope)) return { available: false, authorizationRequired: true, events: [] };
     try {
-      const primary = await request(`${OPEN}/open-apis/calendar/v4/calendars/primary`, { token });
+      const primary = await request(`${OPEN}/open-apis/calendar/v4/calendars/primary`, { token, realm: identity.realm });
       if (!primary.ok) return { available: false, authorizationRequired: primary.json?.code === 99991679, events: [] };
       const primaryData = primary.json?.data;
       const calendarId = clean(primaryData?.calendar_id) || clean(primaryData?.calendar?.calendar_id)
@@ -337,7 +382,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       const url = new URL(`${OPEN}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events/instance_view`);
       url.searchParams.set('start_time', String(start));
       url.searchParams.set('end_time', String(end));
-      const response = await request(url.toString(), { token });
+      const response = await request(url.toString(), { token, realm: identity.realm });
       if (!response.ok) return { available: false, authorizationRequired: response.json?.code === 99991679, events: [] };
       // Feishu returns data: {} (without items) for an empty calendar window.
       const items = response.json?.data?.items ?? [];
@@ -356,7 +401,8 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     const saved = calendarCached.get(personId);
     if ((!saved || saved.expiresAt <= now()) && !calendarRefreshing.has(personId)) {
       const task = fetchCalendar(personId).catch(() => ({ available: false, authorizationRequired: false, events: [] })).then((value) => {
-        if (calendarRefreshing.get(personId) === task) calendarCached.set(personId, { value, expiresAt: now() + (value.available ? 60_000 : 15_000) });
+        if (calendarRefreshing.get(personId) === task) calendarCached.set(personId, { value,
+          expiresAt: now() + (value.available ? calendarRefreshMs : messageRefreshMs) });
         return value;
       }).finally(() => { if (calendarRefreshing.get(personId) === task) calendarRefreshing.delete(personId); });
       calendarRefreshing.set(personId, task);
@@ -385,7 +431,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     // Date#toISOString() emits milliseconds and Z, which this endpoint rejects.
     const timeRange = { start_time: feishuTime(now() - 24 * 60 * 60 * 1000), end_time: feishuTime(now()) };
     const search = async (filter) => request(`${OPEN}/open-apis/im/v1/messages/search?page_size=50`, {
-      token, data: { query: '', filter: { time_range: timeRange, ...filter } },
+      token, data: { query: '', filter: { time_range: timeRange, ...filter } }, realm: identity.realm,
     });
     try {
       const [all, mentions] = await Promise.all([search({}), search({ is_at_me: true })]);
@@ -431,7 +477,8 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         // Recalled messages may disappear from search and have no read receipt.
         // Recheck pending messages too, including private conversations.
         const detailCandidates = [...candidates.values()];
-        const details = await messageDetails(token, detailCandidates.map((item) => item.messageId));
+        const details = await messageDetails(token, detailCandidates.map((item) => item.messageId),
+          identityKey, identity.realm, new Set(pending.map((item) => item.messageId)));
         if (detailCandidates.some((item) => !details.has(item.messageId))) throw new Error('Feishu message details unavailable');
         const actionable = new Map([...candidates.values()].map((item) => {
           const detail = details.get(item.messageId);
@@ -454,7 +501,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
             && item.createdAt < grantAt && actionable.get(item.id)?.allowed === true),
           ...pending.filter((item) => Number.isFinite(item.createdAt) && item.createdAt < grantAt),
         ].map((item) => [item.id, item])).values()] : [];
-        const historicalRead = await readStatuses(token, historical);
+        const historicalRead = await readStatuses(token, historical, identity.realm);
         const reconciled = new Map((current.reconciled || []).map((item) => [item.id, item]));
         if (!sameIdentity || newPolicy) for (const item of incomingKeys) reconciled.set(item.id, {
           id: item.id, createdAt: item.createdAt, observedAt: now(), reconciledAt: now(),
@@ -466,7 +513,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
           apiIsRead: historicalRead.values.get(item.messageId) ?? null,
         });
         if (newGrant) pending = pending.filter((item) => !reconciled.has(item.id));
-        const read = await readStatuses(token, detailCandidates.filter((item) => details.get(item.messageId)?.deleted !== true));
+        const read = await readStatuses(token, detailCandidates.filter((item) => details.get(item.messageId)?.deleted !== true), identity.realm);
         if (sameIdentity && !newPolicy) {
           const pendingIds = new Set(pending.map((item) => item.id));
           for (const item of incomingKeys) if (!pendingIds.has(item.id)
@@ -514,10 +561,10 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         recentTruncated: Boolean(all.json.data.has_more), mentionsTruncated: Boolean(mentions.json.data.has_more),
         truncated: Boolean(all.json.data.has_more || mentions.json.data.has_more), observedAt: new Date(now()).toISOString(),
         calendar: calendarLatest(personId) };
-      cached.set(personId, { value, expiresAt: now() + 1_000 });
       return value;
     } catch {
-      return { connected: true, available: false, recentMessages: 0, mentions24h: 0 };
+      return { connected: true, available: false, recentMessages: 0, mentions24h: 0,
+        quotaBlocked: providerPauses.get(identity.realm) === Infinity };
     }
   }
   function summary(personId) {
@@ -525,7 +572,13 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     if (saved?.expiresAt > now()) return Promise.resolve(saved.value);
     const pending = refreshing.get(personId);
     if (pending) return pending;
-    const task = fetchSummary(personId).finally(() => refreshing.delete(personId));
+    const task = fetchSummary(personId).catch(() => ({ connected: Boolean(saved?.value?.connected), available: false,
+      recentMessages: 0, mentions24h: 0 })).then((value) => {
+      const failures = value.available ? 0 : (saved?.failures || 0) + 1;
+      const backoff = messageRefreshMs * 2 ** Math.min(Math.max(0, failures - 1), 3);
+      cached.set(personId, { value, failures, expiresAt: now() + backoff });
+      return value;
+    }).finally(() => refreshing.delete(personId));
     refreshing.set(personId, task);
     return task;
   }
@@ -533,7 +586,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     const saved = cached.get(personId);
     if (!saved || saved.expiresAt <= now()) void summary(personId).catch(() => {});
     const calendar = calendarLatest(personId);
-    if (saved && saved.expiresAt > now() - 10_000) return { ...saved.value, calendar };
+    if (saved) return { ...saved.value, calendar };
     return { connected: false, available: false, recentMessages: 0, mentions24h: 0, calendar };
   }
   async function acknowledge(personId, through) {
@@ -551,7 +604,20 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       current.dismissed = [...new Set([...(current.dismissed || []), ...removed.map((item) => item.id)])].slice(-1000);
       current.pending = (current.pending || []).filter((item) => item.observedAt > throughMs);
       await saveNotifications(doc);
-      cached.delete(personId);
+      // Dismissing a local reminder must not bypass the provider refresh budget.
+      const saved = cached.get(personId);
+      if (saved) {
+        const groups = new Map();
+        for (const item of [...current.pending].sort((a, b) => (b.createdAt || b.observedAt) - (a.createdAt || a.observedAt))) {
+          const key = item.chatId || item.chatKey || item.id;
+          const group = groups.get(key) || { label: item.isP2p ? '私聊对话'
+            : chatSources.get(`${identity.realm}:${item.chatId}`)?.value?.label || '群聊', count: 0 };
+          group.count++;
+          groups.set(key, group);
+        }
+        saved.value = { ...saved.value, newMessages: current.pending.length,
+          newMentions: current.pending.filter((item) => item.atMe).length, sources: [...groups.values()].slice(0, 3) };
+      }
       return { connected: true, cleared };
     });
   }

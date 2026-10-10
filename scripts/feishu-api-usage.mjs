@@ -42,6 +42,6 @@ for (const name of names) {
   }
 }
 console.log(JSON.stringify({ since, directory, files: names.length, invalidLines, totals,
-  coverage: 'SDK connector and workboard requests; direct lark-cli, other instances and billing eligibility are not inferred',
+  coverage: 'Connector/workboard SDK and display requests; direct lark-cli, other instances and billing eligibility are not inferred',
   byEndpoint: [...groups.values()].sort((a, b) => b.calls - a.calls).map(group => ({ ...group,
     averageDurationMs: Math.round(group.durationMs / group.calls) })) }, null, 2));
