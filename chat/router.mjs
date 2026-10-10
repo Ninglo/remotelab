@@ -90,6 +90,7 @@ import {
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { handleWorkAwarenessRoutes } from './router-work-awareness.mjs';
 import { handleFeishuWebSettings } from './router-feishu-web-settings.mjs';
+import { handleFeishuPersonalWorkspace } from './router-feishu-personal-workspace.mjs';
 import { handleSiteFeedbackRoutes } from './router-site-feedback-routes.mjs';
 import { handleProjectFeedbackRoutes } from './router-project-feedback-routes.mjs';
 import { handleQianyanRoutes } from './router-qianyan-routes.mjs';
@@ -1437,12 +1438,14 @@ export async function handleRequest(req, res) {
 
   // Auth required from here on
   const feishuWebRuntime = { getSession, getModels: getModelsForTool, updateRuntime: updateSessionRuntimePreferences };
+  if (await handleFeishuPersonalWorkspace({ req, res, pathname, writeJson, nonce })) return;
   if (await handleFeishuWebSettings({ req, res, pathname, parsedUrl, writeJson, nonce, runtime: feishuWebRuntime })) return;
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
 
   if (await handleFeishuWebSettings({ req, res, pathname, parsedUrl, authSession, writeJson, nonce, runtime: feishuWebRuntime })) return;
+  if (await handleFeishuPersonalWorkspace({ req, res, pathname, authSession, writeJson, nonce })) return;
 
   if (await handleWorkAwarenessRoutes({ req, res, pathname,
     parsedUrl: new URL(req.url, 'http://localhost'), authSession, writeJson })) return;
