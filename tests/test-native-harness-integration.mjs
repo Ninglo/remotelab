@@ -71,8 +71,13 @@ try {
     chatId: 'steering-chat', chatType: 'group', conversationKind: 'thread', threadId: 'steering-thread',
     rootId: 'steering-root', messageId, replyInThread: true,
   } });
-  const replySession = await rpc('create', { conversation: replyPlan('original') });
-  const replyOptions = id => ({ ...options(id), sourceDelivery: replyPlan(id) });
+  // A topic's first inbound post has its thread ID before it has a rootId;
+  // later supplements carry both aliases and their own message anchors.
+  const firstReplyPlan = replyPlan('steering-root');
+  delete firstReplyPlan.target.rootId;
+  const replySession = await rpc('create', { conversation: firstReplyPlan });
+  const replyOptions = id => ({ ...options(id), sourceDelivery: id === 'opening-root'
+    ? firstReplyPlan : replyPlan(id) });
   const openingRun = await rpc('accept', replySession.id, 'PUBLISH_OPENING', [], replyOptions('opening-root'));
   let openingClaim;
   await until(async () => { openingClaim = await rpc('claim', { connector: 'feishu' }); return openingClaim; }, 'original opening is published');
@@ -104,10 +109,42 @@ try {
   await awaitAnswer(replySession.id, 'opening-steer');
   const replyFinal = await rpc('claim', { connector: 'feishu' });
   assert.equal(replyFinal.delivery.surfaceKind, 'final');
-  assert.equal(replyFinal.delivery.target.messageId, 'opening-root');
+  assert.equal(replyFinal.delivery.target.messageId, 'steering-root');
   await rpc('complete', replyFinal.delivery.id, replyFinal.leaseId, { externalId: 'final-opening-test' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'a shared stopped Run publishes its result once');
-  await evidence('PASS steering opening: Web-before-ack event order, per-input Feishu target, duplicate submission, controller recovery, one native steer and one terminal result');
+  await evidence('PASS steering opening: Web-before-ack event order, per-input Feishu target, duplicate submission, controller recovery, thread/root aliases and one terminal result');
+  // Explicit per-request reply destinations also share a result without a
+  // Session binding. Another topic must still get its own single copy.
+  const multiSession = await rpc('create');
+  const multiOptions = (id, sourceDelivery) => ({ ...options(id), sourceDelivery });
+  const multiRun = await rpc('accept', multiSession.id, 'Hold shared execution', [],
+    multiOptions('multi-root', firstReplyPlan));
+  await until(async () => (await logs()).some(event => event.runId === multiRun.run.id
+    && event.kind === 'turn/start'), 'multiple-destination turn starts');
+  const otherTopic = replyPlan('other-input');
+  otherTopic.target.threadId = 'other-thread'; otherTopic.target.rootId = 'other-root';
+  const otherAlias = structuredClone(otherTopic);
+  delete otherAlias.target.threadId; otherAlias.target.messageId = 'other-supplement';
+  for (const [id, plan] of [['multi-same', replyPlan('same-supplement')],
+    ['multi-other', otherTopic], ['multi-alias', otherAlias]]) {
+    await rpc('accept', multiSession.id, 'Apply this supplement', [], multiOptions(id, plan));
+    await until(async () => (await receipt(multiRun.run.id, id))?.state === 'accepted', id + ' is acknowledged');
+  }
+  await writeFile(join(root, `${multiRun.run.id}.release`), 'finish execution');
+  for (const id of ['multi-root', 'multi-same', 'multi-other', 'multi-alias']) await awaitAnswer(multiSession.id, id);
+  const multiClaims = [];
+  for (let index = 0; index < 2; index++) {
+    let claimed;
+    await until(async () => { claimed = await rpc('claim', { connector: 'feishu' }); return claimed; }, 'each topic receives its result');
+    multiClaims.push(claimed.delivery);
+    await rpc('complete', claimed.delivery.id, claimed.leaseId, { externalId: `multi-final-${index}` });
+  }
+  assert.deepEqual(multiClaims.map(part => part.target.rootId || part.target.messageId).sort(), ['other-root', 'steering-root']);
+  assert(multiClaims.every(part => part.surfaceKind === 'final' && part.providerMessageId));
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'root and thread aliases cannot fan out another copy');
+  await rpc('shutdown'); await killController(); await boot();
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'recovery preserves one delivery per distinct topic');
+  await evidence('PASS: unbound same-topic supplements and alternate root/thread aliases share one result, while a different topic retains one final across recovery.');
   const questionSession = await rpc('create');
   const questioning = await accept(questionSession.id, 'question-root', 'ASK_NATIVE_QUESTION');
   let questionClaim;

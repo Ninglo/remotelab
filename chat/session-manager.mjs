@@ -1791,9 +1791,10 @@ async function settleNativeRequest(record, run) {
       t.commentId || thread, t.accountId || '']);
   };
   const ownDestination = destination(ownPlan);
-  const sharedBinding = record.boundConversation && root.boundConversation
-    && JSON.stringify(refineConversation(rootPlan, ownPlan)) === JSON.stringify(ownPlan);
-  if (ownPlan && !sharedBinding && ownDestination !== destination(rootPlan)) {
+  // A newer message anchor or a learned root/thread alias does not create a
+  // second conversation. Compare transport identity, not entire snapshots.
+  const sharedConversation = sameConversation(rootPlan, ownPlan);
+  if (ownPlan && !sharedConversation && ownDestination !== destination(rootPlan)) {
     const payload = root.result.state === 'completed' ? root.result.payload
       : { text: root.result.state === 'cancelled' ? '任务已取消。' : `任务执行失败：${root.result.error || root.result.state}`, attachments: [] };
     // The model selected a reaction for the root input only. A native turn may
@@ -1803,11 +1804,13 @@ async function settleNativeRequest(record, run) {
     // Reserve each destination and its deliveries in the same durable commit.
     // The root owns publication even if an input receipt arrives after finalization.
     await requests.mutate(root.key, current => {
-      if ((current.nativeReplyDestinations || []).includes(ownDestination)) return current;
+      if ((current.nativeReplyDestinations || []).includes(ownDestination)
+          || current.deliveries.some(part => part.surfaceKind === 'final'
+            && sameConversation(part, ownPlan))) return current;
       return { ...current, nativeReplyDestinations: [...(current.nativeReplyDestinations || []), ownDestination],
-        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, destinationPayload, {
+        deliveries: appendDeliveries(current, annotateTerminalReplyDeliveries(buildReplyDeliveries(ownPlan, destinationPayload, {
           running: false, automationTitle: root.options.automationTitle,
-        })) };
+        }), root.result.payload)) };
     });
     await requestRuntime.refresh(root.key);
   }

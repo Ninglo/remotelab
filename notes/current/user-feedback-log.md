@@ -1617,3 +1617,10 @@ The requester clarified that the comparison concerns card types in Message Reply
 - Feedback: expose the existing routing experiment as a fixed selectable mechanism in Settings, with no routing as the default, and rename Message replies to Message.
 - Response: store the mechanism with personal message settings and snapshot it for each accepted input. Reuse the existing pilot transport and per-input reply responsibility; a group configuration alone cannot opt people in. Keep display choices, strict-start checks, existing accepted work and explicit synchronization approvals on their own contracts.
 - Boundary: selecting the experiment does not add authorized groups or permissions. Program behavior, source delivery, deployed version and natural-message quality require their own evidence.
+
+## 2026-10-10 — Publish a shared native result once per conversation
+
+- Feedback: a topic received two identical final replies after supplementary messages were accepted into the same running native execution.
+- Evidence: one provider final produced two successful deliveries with different external message IDs. The initial topic post carried a thread ID without a root ID; later inputs carried both aliases and newer message anchors. Comparing complete reply-plan snapshots treated the same topic as another destination.
+- Repair: reuse the existing conversation identity comparison for root and supplementary destinations, reserve additional destinations against existing final deliveries, and retain final-message annotations. Different topics continue to receive their own result.
+- Verification boundary: the original alias shape reproduces the duplicate before the change. Isolated native integration covers bound and unbound topics, distinct-topic fan-out, aliases of a secondary topic and controller recovery. Provider receipt readback, CI, deployed source and subsequent natural use remain separate evidence; this incident does not establish the cause of every earlier duplicate.
