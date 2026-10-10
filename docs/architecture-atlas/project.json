@@ -40,11 +40,11 @@
     },
     {
       "id": "routing",
-      "title": "群消息分流提速实验",
+      "title": "群消息分流与回复结构",
       "source": "docs/architecture-atlas/output",
       "route": "output/routing.html",
-      "description": "解释主线steer、逐条工作去向与回复责任，覆盖补充、独立事项、催问、纠正停止和失败恢复。",
-      "navTitle": "群消息分流实验"
+      "description": "展示当前接入、输入接续、主线判断、工作话题执行与逐条投递结构，以及六类消息的处理分支。",
+      "navTitle": "分流与回复结构"
     },
     {
       "id": "memory",
@@ -55,7 +55,7 @@
       "navTitle": "记忆与协作"
     }
   ],
-  "edition": "20261010routing",
+  "edition": "20261010structure",
   "readingConvention": "从消息全程进入；具体环节内展开实现，专题引用保留原维护源和日期。",
   "pages": [
     {
@@ -359,35 +359,23 @@
       "sections": [
         [
           "purpose",
-          "目的与适用范围"
-        ],
-        [
-          "problem",
-          "原方案为什么慢"
+          "目的与当前范围"
         ],
         [
           "mechanism",
-          "整体流程与机制"
+          "整体结构"
+        ],
+        [
+          "admission",
+          "输入如何接续"
         ],
         [
           "situations",
-          "不同情况怎么处理"
-        ],
-        [
-          "example",
-          "连续消息示意"
-        ],
-        [
-          "recovery",
-          "异常与重试"
-        ],
-        [
-          "evaluation",
-          "怎样判断有效"
+          "消息处理分支"
         ],
         [
           "evidence",
-          "依据与维护位置"
+          "范围与实现入口"
         ]
       ]
     }

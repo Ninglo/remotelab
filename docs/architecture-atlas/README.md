@@ -17,18 +17,18 @@
 | 消息全程、并行读取与调优入口 | `docs/architecture-atlas/project.html`、`project.json` | `project.html` |
 | 系统总览：事件、状态、输入路径、机制与资源 | `docs/architecture-atlas/` 原图谱文件 | `index.html` |
 | 消息执行、Jev / Session 交接、异步与交付 | `docs/architecture-atlas/output/` | `output/index.html` |
-| 群消息分流提速实验 | `docs/architecture-atlas/output/routing.html`、`routing.css` | `output/routing.html` |
+| 群消息分流与回复结构 | `docs/architecture-atlas/output/routing.html`、`routing.css` | `output/routing.html` |
 | 记忆与组织协作 | `docs/memory-architecture/` | `memory/index.html` |
 
 消息阅读页09–14同时解释开工记忆、存储分类、项目进程、个人／公司背景和登录后的真实只读视图。正文数据维护于外置记忆章的 `reader-data.js`、`guide-data.js`，`output/memory-reader.js`引用同一源；构建器只重写章间相对路径，不再手工复制内容。
 
 记忆章节沿用原源码维护位置，由 `assemble-site.mjs` 纳入同一网站。发布目录中的 `memory/` 是构建产物，不能在源码中再复制一份独立维护。原记忆网站地址保留历史兼容；新的共同阅读、发布和备份以本项目为准。
 
-## 群消息分流提速实验（2026-10-10）
+## 群消息分流与回复结构（2026-10-10）
 
-[实验说明](output/routing.html)沿现有说明书补入目的、原方案复盘、整体框图、六类消息处理与异常恢复。它解释兼容的新主线输入如何追加到正在运行的执行，以及每条输入如何分别承担移交或本地答复责任。页面保留单群授权、新旧协议、原话题、跨话题确认和真实时延待测的边界；图中的连续消息是去标识示意，不作为现场测量。
+[当前结构图](output/routing.html)展示消息接入、原生输入分发、主线判断、工作话题执行与逐条投递的组件关系；另配执行状态分支和六类消息处理图。只解释当前逻辑，保留单群授权、兼容输入、原话题、停止与跨话题确认边界。
 
-正文与图在`output/routing.html`同源维护，布局在`output/routing.css`；目录在`project.json`，由统一构建器纳入同一发布和恢复包。核对源码基线`093f2363`，实例服务自报`4a55a868`，包含`e0c218ad`；这次更新说明页面，不改变实验配置或运行服务。其他章的历史核对日期保留。
+SVG 结构图与正文在 `output/routing.html` 同源维护；手机布局按相同节点和连接重新排布，避免把整张桌面图缩成小字。布局在 `output/routing.css`，目录在 `project.json`。核对源码基线 `c6250175`，真实响应时延仍以自然消息测量为准。本次更新说明书，不变更运行配置。
 
 ## 产出汇总（2026-10-08）
 
