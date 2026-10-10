@@ -39,6 +39,29 @@ Connect only explicit owned units, not unrelated users' services. Scope is `syst
 
 ## Observation contract
 
+### Responsibilities
+
+Monitoring owns fixed-resource and execution health: account allowance, usage,
+disk capacity, configured services, API dependencies and whether enabled
+automations actually execute. Project review owns the interpretation of project
+discussions and the creation/update of project Todos. The existing daily report
+combines project changes, existing Todo changes and a monitoring snapshot; it is
+a publication view, not another Todo generator. A project-review schedule shown
+on Automations is supervised as a running job, not as project content.
+
+On this instance the four project-group Todo scans remain independent jobs;
+their group notifications were removed and useful changes feed the existing
+reports. Consolidating publication does not establish that source reading is
+shared or duplicate scans eliminated. Preserve the original scan cursors,
+authorization, task list and private-review route when integrating those inputs.
+
+Before classifying an automation failure, inspect its current lifecycle and
+enabled flag. Paused, cancelled, finished or disabled tasks are not new runtime
+faults and cannot authorize automatic resumption. A skipped condition is not a
+failed execution: for example, an enabled scheduler with `consumer_disabled`
+is checking a deliberately disabled business consumer. The schedule's switch,
+business switch, Run outcome and result delivery have distinct meanings.
+
 `GET /api/monitoring/overview?days=1|7|30` uses existing authentication and shared-instance rights. Partial failures preserve the remaining observations. Same-window requests coalesce for 15 seconds. The page refreshes when opened, explicitly refreshed, its period changes or it returns to visibility. There is no model call or periodic browser poll.
 
 - Consumption comes from the instance ledger, with foreground/background work, cached tokens, daily trend and models. The rolling window is explicitly dated. Interface-reported costs and token-price estimates are separate; estimates are not subscription bills.
@@ -112,10 +135,13 @@ their state. Remove the maintenance annotation after the original operator
 scope permits resumption, and verify the real service and business result.
 
 Recovery rows include `currentResourceStatus` from the fresh disk/service
-measurement. Healthy and intentionally paused resources leave the Overview's
-current-problem area, while their original repair records and business
-acceptance remain in the report and ledger. A disk becoming healthy does not
-retroactively prove an old repair or delivery succeeded.
+measurement or current automation lifecycle. Healthy, intentionally paused,
+cancelled and finished objects leave the Overview's current-problem area;
+records remain under collapsed history and in the JSON/ledger. The daily source
+shows current repairs and a historical count, rather than repeating old errors.
+A later successful Run clears an older failure from current execution health;
+it does not retroactively prove an old repair's product or delivery acceptance.
+Missing task sources remain unknown and cannot establish recovery.
 
 `scripts/monitoring-report.mjs --output <prefix> --base-url <instance> --days 1` writes local JSON and a compact Markdown section. It publishes and sends nothing. The established daily workflow reads this source, incorporates actual maintenance and gaps, commits its Markdown and reuses its publisher and group delivery. No separate routine message or Base is needed.
 

@@ -9,6 +9,7 @@ import { listAutomationTasks } from './automation-tasks.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { RECOVERY_FILE, projectRecovery } from './monitoring-recovery.mjs';
 import { readFeishuApiHealth, feishuApiAttention } from '../lib/feishu-api-health.mjs';
+import { isStoppedAutomation, currentAutomationStatus, isCurrentRecovery } from '../lib/monitoring-status.mjs';
 
 const exec = promisify(execFile);
 const GiB = 1024 ** 3;
@@ -71,7 +72,7 @@ export async function readService(item, execute = exec) {
     observedAt: new Date().toISOString() };
 }
 
-export function analyzeResources({ accounts, disks, automations, services, recovery = [], apiHealth }) {
+export function analyzeResources({ accounts, disks, automations, services, recovery = [], apiHealth, now = Date.now() }) {
   const attention = feishuApiAttention(apiHealth);
   for (const disk of disks) if (disk.status === 'critical' || disk.status === 'warning') attention.push({ kind: 'disk', severity: disk.status,
     id: disk.path, subject: disk.label, availableBytes: disk.availableBytes, usedPercent: disk.usedPercent, inodeUsedPercent: disk.inodeUsedPercent });
@@ -81,7 +82,7 @@ export function analyzeResources({ accounts, disks, automations, services, recov
     subject: exhausted.map(account => account.label).join('、'), availableAccounts: available.length });
   const low = available.filter(account => account.windows.some(window => window.remainingPercent <= 10));
   if (low.length) attention.push({ kind: 'lowQuota', severity: 'warning', subject: low.map(account => account.label).join('、') });
-  for (const task of automations.items) if (!['completed', 'cancelled', 'paused'].includes(task.state)
+  for (const task of automations.items) if (!isStoppedAutomation(task, now)
     && (task.lastExecution?.state === 'failed' || task.lastError)
     && !(task.lastExecution?.runId && !task.lastError && recovery.some(item => item.kind === 'automation'
       && item.id === task.id && item.originRunId === task.lastExecution.runId && item.status === 'resolved'))) attention.push({ kind: 'automation',
@@ -144,7 +145,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       })),
       Promise.all((Array.isArray(config.services) ? config.services : []).slice(0, 64).map(item => observe(`service:${item.label || item.unit}`, () => getService(item),
         { label: text(item.label || item.unit), unit: item.unit, status: 'unknown', observedAt: generatedAt }))),
-      config.recovery?.enabled ? observe('recovery', () => readRecord(RECOVERY_FILE), null) : null,
+      config.recovery?.enabled ? observe('recovery', () => getRecord(RECOVERY_FILE), null) : null,
       config.feishuApi?.enabled ? observe('feishuApi', async () => getApiHealth({
         directory: config.feishuApi.directory || join(CONFIG_DIR, 'feishu-api-logs'), config: config.feishuApi,
         previous: await getRecord(join(CONFIG_DIR, 'feishu-api-health.json')) || {}, now: now() }), null) : null,
@@ -167,7 +168,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       || task.state === 'admitted' && recent(task.lastExecution?.admittedAt || task.lastExecution?.scheduledAt)
       || task.lastExecution?.state === 'failed' && recent(task.lastExecution.completedAt || task.lastExecution.attemptedAt || task.updatedAt));
     const automations = { total: tasks.length, active: liveTasks.filter(task => activeStates.includes(task.state)).length,
-      items: liveTasks.map(task => ({ id: task.id, title: text(task.title), state: task.state, nextRunAt: task.nextRunAt,
+      items: liveTasks.map(task => ({ id: task.id, title: text(task.title), state: task.state, enabled: task.enabled, nextRunAt: task.nextRunAt,
         check: task.check ? { at: task.check.at, reason: task.check.reason } : null,
         lastError: task.lastError ? text(task.lastError) : null, lastExecution: task.lastExecution ? {
           runId: task.lastExecution.runId, state: task.lastExecution.state, completedAt: task.lastExecution.completedAt, sessionId: task.lastExecution.sessionId,
@@ -176,13 +177,24 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       label: accounts.find(account => account.id === accountId)?.label || accountId.slice(0, 8), status: item.status,
       completedAt: item.completedAt || item.startedAt, model: item.model }));
     const recoveryItems = projectRecovery(recovery);
-    for (const item of recoveryItems) if (['disk', 'service'].includes(item.kind)) {
-      const current = item.kind === 'disk' ? disks.find(disk => disk.path === item.id) : services.find(service => service.unit === item.id);
-      item.currentResourceStatus = current?.status || 'unknown';
-      if (current?.status === 'healthy' && item.status === 'blocked') item.label = '当前指标正常；历史补救记录保留';
-      if (current?.status === 'paused') item.label = '按原指令停用；历史记录保留';
+    for (const item of recoveryItems) {
+      if (item.kind === 'automation') {
+        const task = tasks.find(task => task.id === item.id);
+        item.currentResourceStatus = currentAutomationStatus(task, item, now());
+        if (item.currentResourceStatus === 'cancelled') item.label = '原日程已取消；历史处理记录保留';
+        if (item.currentResourceStatus === 'completed') item.label = '原任务已结束；历史处理记录保留';
+        if (item.currentResourceStatus === 'paused') item.label = task?.check?.reason === 'consumer_disabled'
+          ? '业务执行入口已停用；历史处理记录保留' : '原自动化已停用；历史处理记录保留';
+        if (item.currentResourceStatus === 'healthy' && item.status === 'blocked') item.label = '后续执行已完成；历史处理记录保留';
+      } else if (['disk', 'service'].includes(item.kind)) {
+        const current = item.kind === 'disk' ? disks.find(disk => disk.path === item.id) : services.find(service => service.unit === item.id);
+        item.currentResourceStatus = current?.status || 'unknown';
+        if (current?.status === 'healthy' && item.status === 'blocked') item.label = '当前指标正常；历史补救记录保留';
+        if (current?.status === 'paused') item.label = '按原指令停用；历史记录保留';
+      }
+      item.currentIssue = isCurrentRecovery(item);
     }
-    const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth });
+    const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, now: now() });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
     const deliveryIssues = Object.values(alertState?.batches || {}).filter(batch => ['needs_review', 'blocked_dependency'].includes(batch.status));
     const alertDelivery = { unresolved: deliveryIssues.length, blocked: deliveryIssues.filter(batch => batch.status === 'blocked_dependency').length,

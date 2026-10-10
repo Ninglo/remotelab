@@ -143,6 +143,19 @@ test('daily Markdown includes the actual observation range and retains uncertain
   assert.match(report, /未知不当作可用/); assert.match(report, /ENOENT/); assert.match(report, /本轮没有已核验的七天富余额度/);
 });
 
+test('daily source keeps stopped automation repairs out of the current failure table without deleting their audit', () => {
+  const value = snapshot([]);
+  value.recovery = [
+    { subject: 'Cancelled evaluation', status: 'blocked', currentResourceStatus: 'cancelled', label: '已取消', reason: 'Old error requiring no work', attempts: 1 },
+    { subject: 'Current failure', status: 'blocked', currentResourceStatus: 'failed', label: '补救受阻', reason: 'Current dependency', attempts: 1 },
+  ];
+  const report = renderMonitoringReport(value);
+  assert.match(report, /当前故障处理[\s\S]*Current failure/);
+  assert.match(report, /历史处理记录.*1条/);
+  assert.doesNotMatch(report, /Cancelled evaluation|Old error requiring no work/);
+  assert.equal(value.recovery.length, 2);
+});
+
 test('one observer batches persistent service, account-loss and exhaustion incidents, with explicit recovery', async () => {
   const f = fixture(), config = { confirmationObservations: 3, accountAlerts: { enabled: true, sources: ['approved'] } };
   const value = snapshot([{ kind: 'service', id: 'app.service', subject: 'App', severity: 'critical' }]);

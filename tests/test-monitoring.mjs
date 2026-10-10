@@ -90,6 +90,57 @@ test('stopped automations do not create failure alerts and duplicate filesystem 
   assert.deepEqual(value.attention, []);
 });
 
+test('disabled, cancelled and superseded automation failures remain history while a new failure stays current', async () => {
+  const tasks = [
+    { id: 'cancelled', kind: 'recurring', state: 'cancelled', lastExecution: { state: 'failed', runId: 'old' } },
+    { id: 'disabled', kind: 'recurring', state: 'active', enabled: false, lastError: 'old gate error', lastExecution: { state: 'failed', runId: 'old' } },
+    { id: 'consumer', kind: 'recurring', state: 'active', enabled: true, check: { at, reason: 'consumer_disabled' }, lastExecution: { state: 'failed', runId: 'old' } },
+    { id: 'recovered', kind: 'recurring', state: 'active', enabled: true, lastExecution: { state: 'completed', runId: 'new' } },
+    { id: 'failing', kind: 'recurring', state: 'active', enabled: true, lastExecution: { state: 'failed', runId: 'new' } },
+  ];
+  const ledger = { incidents: Object.fromEntries(tasks.map(task => [task.id,
+    { kind: 'automation', id: task.id, status: 'blocked', originRunId: 'old', reason: 'Original delivery unknown' }])) };
+  const original = JSON.stringify(ledger);
+  const reader = createMonitoringReader({ now: () => now,
+    read: async () => JSON.stringify({ recovery: { enabled: true } }), getRecord: async () => ledger,
+    getUsage: async () => null, getAccounts: async () => null, getTasks: async () => tasks,
+    getFs: async () => ({ blocks: 100, bsize: 1024 ** 3, bfree: 80, bavail: 80, files: 0, ffree: 0 }), getStat: async () => ({ dev: 1 }),
+  });
+  const value = await reader();
+  assert.deepEqual(value.attention.map(item => item.id), ['failing']);
+  assert.deepEqual(value.recovery.map(item => [item.currentResourceStatus, item.currentIssue]),
+    [['cancelled', false], ['paused', false], ['paused', false], ['healthy', false], ['failed', true]]);
+  assert.ok(value.recovery.every(item => item.status === 'blocked' && item.reason === 'Original delivery unknown'));
+  assert.equal(JSON.stringify(ledger), original, 'a presentation correction cannot rewrite business acceptance');
+  assert.equal(value.automations.items.find(item => item.id === 'disabled').enabled, false);
+});
+
+test('an unmet or stale business condition cannot conceal a current execution or condition failure', () => {
+  const task = { id: 'test', state: 'active', enabled: true, lastExecution: { state: 'failed' }, check: { at, reason: 'consumer_disabled' } };
+  const input = { accounts: [], disks: [], services: [], automations: { items: [task] }, now };
+  assert.equal(analyzeResources(input).attention.length, 0);
+  task.check.at = new Date(now - 11 * 60_000).toISOString();
+  assert.equal(analyzeResources(input).attention.length, 1);
+  task.check = { at, reason: 'condition_not_met' };
+  assert.equal(analyzeResources(input).attention.length, 1);
+  task.check.reason = 'consumer_disabled'; task.lastError = 'Condition read failed';
+  assert.equal(analyzeResources(input).attention.length, 1);
+});
+
+test('an unavailable automation source leaves old acceptance unknown rather than claiming restoration', async () => {
+  const reader = createMonitoringReader({ now: () => now,
+    read: async () => JSON.stringify({ recovery: { enabled: true } }),
+    getRecord: async () => ({ incidents: { old: { kind: 'automation', id: 'missing', status: 'blocked', originRunId: 'old' } } }),
+    getTasks: async () => { throw Object.assign(new Error('unavailable'), { code: 'SOURCE_UNAVAILABLE' }); },
+    getUsage: async () => null, getAccounts: async () => null,
+    getFs: async () => ({ blocks: 100, bsize: 1024 ** 3, bfree: 80, bavail: 80, files: 0, ffree: 0 }), getStat: async () => ({ dev: 1 }),
+  });
+  const value = await reader();
+  assert.equal(value.recovery[0].currentResourceStatus, 'unknown');
+  assert.equal(value.recovery[0].currentIssue, true);
+  assert.ok(value.coverage.gaps.some(item => item.source === 'automations'));
+});
+
 test('historical admission records without a Run are not represented as hundreds of active jobs', async () => {
   const reader = createMonitoringReader({ now: () => now, read: async () => '{}',
     getUsage: async () => null, getAccounts: async () => null,

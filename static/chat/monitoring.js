@@ -92,16 +92,19 @@
     const snapshot = node("div", "", "monitoring-snapshot"); snapshot.id = "monitoringSnapshot"; content.appendChild(snapshot);
     snapshot.appendChild(node("h2", t("snapshotTitle"), "monitoring-snapshot-heading"));
     snapshot.appendChild(node("p", t("updated", { time: time(value.generatedAt) }), "monitoring-note"));
+    snapshot.appendChild(node("p", "这里检查固定资源、接口和自动化是否正常运行。项目 Todo 由项目巡检登记，日报汇总其变化。", "monitoring-note"));
+    const recoveries = value.recovery || [];
+    const currentRecovery = item => item.currentIssue ?? (!["resolved", "cancelled"].includes(item.status)
+      && !["healthy", "paused", "cancelled", "completed"].includes(item.currentResourceStatus));
     const attention = section(t("attention"), snapshot); attention.dataset.section = "attention";
-    if (!value.attention.length) attention.appendChild(node("p", t("clear"), "monitoring-note"));
+    if (!value.attention.length && !recoveries.some(currentRecovery)) attention.appendChild(node("p", t("clear"), "monitoring-note"));
     else value.attention.slice().sort((a, b) => (b.severity === "critical") - (a.severity === "critical")).forEach(item => {
       const row = node("div", "", "monitoring-alert"); row.dataset.severity = item.severity;
       row.appendChild(node("span", t(item.severity === "critical" ? "critical" : "warning"), "monitoring-alert-label"));
       const detail = node("div"); detail.appendChild(item.kind === "automation" ? executionLink(item) : node("strong", item.subject));
       detail.appendChild(node("p", alertDetail(item))); row.appendChild(detail); attention.appendChild(row);
     });
-    (value.recovery || []).filter(item => !["resolved", "cancelled"].includes(item.status)
-      && !["healthy", "paused"].includes(item.currentResourceStatus)).slice(-20).forEach(item => {
+    recoveries.filter(currentRecovery).slice(-20).forEach(item => {
       const row = node("div", null, "monitoring-alert");
       const detail = node("div"); detail.appendChild(node("strong", `${item.subject} · ${item.label}`));
       detail.appendChild(node("p", item.reason || item.summary || "沿原任务检查点办理"));
@@ -111,6 +114,15 @@
       }
       row.appendChild(detail); attention.appendChild(row);
     });
+    const historicalRecoveries = recoveries.filter(item => !currentRecovery(item));
+    if (historicalRecoveries.length) {
+      const history = node("details"); history.dataset.section = "recovery-history";
+      history.appendChild(node("summary", `历史处理记录（${historicalRecoveries.length}项）`));
+      history.appendChild(node("p", "当前已停用、结束或指标正常。旧处理结果及未核验的送达保留在记录中，不代表当前故障。以下展示最近20项。", "monitoring-note"));
+      table(history, ["对象", "当前状态", "原处理结果／待核验"], historicalRecoveries.slice(-20).map(item =>
+        [item.subject, item.label, item.reason || item.summary || "原记录保留"]));
+      content.appendChild(history);
+    }
     const accounts = section(t("accounts"), snapshot); accounts.dataset.section = "accounts";
     if (!value.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
     else {

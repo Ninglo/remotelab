@@ -3,11 +3,11 @@ import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
+import { isStoppedAutomation } from '../lib/monitoring-status.mjs';
 import { requests } from './requests.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 24);
 const terminal = state => ['completed', 'failed', 'cancelled'].includes(state);
-const stopped = state => ['paused', 'cancelled', 'completed'].includes(state);
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const stamp = value => Date.parse(value || '') || 0;
 export const RECOVERY_FILE = join(CONFIG_DIR, 'monitoring-recovery.json');
@@ -81,7 +81,7 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
   for (const failure of failures) {
     const id = failure.id || failure.subject;
     const task = taskById.get(id);
-    if (failure.kind === 'automation' && (!task?.lastExecution?.runId || stopped(task.state)
+    if (failure.kind === 'automation' && (!task?.lastExecution?.runId || isStoppedAutomation(task, now)
       || config.automationIds && !config.automationIds.includes('*') && !config.automationIds.includes(id))) continue;
     const subjectKey = `${failure.kind}:${id}`;
     let generation = task?.lastExecution?.runId;
@@ -165,7 +165,7 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     if (dryRun) continue;
     try {
       const brief = taskById.get(item.id);
-      if (brief && stopped(brief.state)) { touch(item, 'cancelled', '原任务已停止'); continue; }
+      if (brief && isStoppedAutomation(brief, now)) { touch(item, 'cancelled', '原任务已停止'); continue; }
       if (healthy(snapshot, item)) {
         item.summary = '本轮独立观测确认已恢复，无需重复补救'; item.evidence = [snapshot.generatedAt];
         touch(item, 'resolved'); continue;
@@ -192,7 +192,7 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
         if (session.activity?.run?.state !== 'idle' || session.activity?.queue?.count) { item.reason = '原会话忙，稍后沿同一记录继续'; continue; }
         if (item.attempts.length >= maxAttempts) { touch(item, 'blocked', '已达到本故障补救次数上限'); continue; }
         const task = item.kind === 'automation' ? (await api(`/api/automation-tasks/${item.id}`)).task : null;
-        if (task && (stopped(task.state) || task.lastExecution?.runId !== item.originRunId)) { touch(item, 'cancelled', '原任务已停止或已有更新执行'); continue; }
+        if (task && (isStoppedAutomation(task, now) || task.lastExecution?.runId !== item.originRunId)) { touch(item, 'cancelled', '原任务已停止或已有更新执行'); continue; }
         const origin = item.originRunId ? (await api(`/api/runs/${item.originRunId}`)).run : null;
         const models = (config.models || ['gpt-6-sol', 'gpt-5.6-sol']).filter(model => model !== origin?.model);
         const model = session.tool === 'codex' ? models[item.attempts.length] : session.model;

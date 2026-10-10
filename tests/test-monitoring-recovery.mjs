@@ -215,6 +215,23 @@ test('paused/updated jobs, unavailable reads and dry runs never create an extra 
   assert.equal(f.getAdmissions(), 0); assert.match(f.incident().reason, /ECONNREFUSED/);
 });
 
+test('an explicit disabled flag prevents recovery even if the scheduler lifecycle still reads active', async () => {
+  const f = fixture(); f.task.enabled = false;
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.getAdmissions(), 0);
+  assert.equal(Object.keys(f.getState().incidents).length, 0);
+});
+
+test('a task disabled after the snapshot is rechecked before any new recovery admission', async () => {
+  const f = fixture();
+  f.snapshot.automations.items = [structuredClone(f.task)];
+  f.task.enabled = false;
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.getAdmissions(), 0);
+  assert.equal(f.incident().status, 'cancelled');
+  assert.equal(f.session.model, 'auto');
+});
+
 test('resource repair is not verified by an AI claim while the independent measurement is still critical', async () => {
   const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish();
   await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'blocked');
