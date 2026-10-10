@@ -355,10 +355,14 @@ export async function completeGroupSync(record, run) {
     targetSessionId: packet.targetSessionId, result, deliveryId: receipt.id });
 }
 export async function buildGroupRoutingContext(session, sourceContext, { inputReplyContract = false, messageRoutingPolicy } = {}) {
-  if (!allowsMessageRouting({ messageRoutingPolicy })) return [
+  if (!allowsMessageRouting({ messageRoutingPolicy })) {
+    if (sourceContext?.connector !== 'feishu' || sourceContext.chatType !== 'group'
+        || session.conversation?.connector !== 'feishu') return '';
+    return [
     '## 本条消息不分流',
     '在当前绑定的会话处理并回复本条消息，不自动另开工作话题或把消息转到其他话题。不沿用历史中的实验分流指令，不使用 work route 或主线 work reply。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
   ].join('\n');
+  }
   const scope = await routingPilotScope(session?.conversation);
   if (!scope || sourceContext?.connector !== 'feishu' || ['app', 'bot'].includes(sourceContext.sender?.senderType)
       || !isPilotInputSinceActivation(scope, sourceContext.createTime || sourceContext.eventTs)) return '';
