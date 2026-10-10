@@ -49,6 +49,7 @@
     return link;
   }
   function alertDetail(item) {
+    if (item.detail) return item.detail;
     if (item.kind === "disk") return t("diskRisk", { free: bytes(item.availableBytes), used: percent(item.usedPercent), inodes: percent(item.inodeUsedPercent) });
     if (item.kind === "quota") return t("quotaRisk", { count: item.availableAccounts });
     if (item.kind === "lowQuota") return t("lowQuotaRisk");
@@ -99,10 +100,10 @@
       const detail = node("div"); detail.appendChild(item.kind === "automation" ? executionLink(item) : node("strong", item.subject));
       detail.appendChild(node("p", alertDetail(item))); row.appendChild(detail); attention.appendChild(row);
     });
-    (value.recovery || []).slice(-20).forEach(item => {
+    (value.recovery || []).filter(item => !["healthy", "paused"].includes(item.currentResourceStatus)).slice(-20).forEach(item => {
       const row = node("div", null, "monitoring-alert");
       const detail = node("div"); detail.appendChild(node("strong", `${item.subject} · ${item.label}`));
-      detail.appendChild(node("p", item.summary || item.reason || "沿原任务检查点办理"));
+      detail.appendChild(node("p", item.reason || item.summary || "沿原任务检查点办理"));
       if (item.sessionId) {
         const link = node("a", "查看处理记录"); link.href = `/?session=${encodeURIComponent(item.sessionId)}&tab=sessions`;
         detail.appendChild(link);
@@ -129,6 +130,18 @@
       accounts.appendChild(node("p", `${t("capacity", { count: item.accounts.length })} ${t("capacityNote")}`, "monitoring-note"));
     });
     const disks = section(t("disks")); disks.dataset.section = "disks";
+    if (value.apiHealth) {
+      const api = section("飞书 API");
+      table(api, ["对象", "状态与处理", "24h窗口调用／失败", "5分钟调用", "最近调用"], value.apiHealth.providers.map(item =>
+        [item.label, item.detail, `${item.calls24h}／${item.failed24h}`, item.calls5m, time(item.lastObservedAt)]));
+      api.appendChild(node("p", value.apiHealth.coverage.detail, "monitoring-note"));
+      const endpoints = value.apiHealth.providers.flatMap(item => item.endpoints.map(endpoint =>
+        [item.label, endpoint.endpoint, endpoint.calls, endpoint.failed]));
+      if (endpoints.length) table(api, ["对象", "调用最多的接口", "已观察调用", "失败"], endpoints);
+      value.apiHealth.providers.forEach(item => api.appendChild(node("p", `${item.label}：日志初次观测 ${time(item.firstObservedAt)}`, "monitoring-note")));
+      api.appendChild(node("p", value.apiHealth.tenantQuota ? `企业额度已用 ${percent(value.apiHealth.tenantQuota.usedPercent)}`
+        : "企业真实剩余额度未知，需管理员后台读数；本地调用数不代表计费用量。", "monitoring-note"));
+    }
     table(disks, [t("resource"), t("used"), t("free"), t("inodes")], value.disks.map(disk => [disk.label, percent(disk.usedPercent), bytes(disk.availableBytes), percent(disk.inodeUsedPercent)]));
     value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
     const usage = section(t("usage"));
@@ -158,7 +171,7 @@
     }
     const operations = section(t("operations")); operations.appendChild(node("p", t("jobs", { count: value.automations.active }), "monitoring-note"));
     table(operations, [t("job"), t("status"), t("lastRun"), t("nextRun")], [
-      ...value.services.map(service => [service.label, status(service.status), time(service.lastRunAt), "—"]),
+      ...value.services.map(service => [service.label, service.status === "paused" ? `按原指令停用：${service.maintenanceReason}` : status(service.status), time(service.lastRunAt), "—"]),
       ...value.automations.items.filter(task => !["completed", "cancelled"].includes(task.state)).map(task => [executionLink(task),
         `${status(task.state)}${task.lastExecution ? ` · ${status(task.lastExecution.state)}` : ""}`,
         time(task.lastExecution?.completedAt || task.lastExecution?.scheduledAt), time(task.nextRunAt)]),

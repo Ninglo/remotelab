@@ -49,6 +49,63 @@ Connect only explicit owned units, not unrelated users' services. Scope is `syst
 
 ## Reports and urgent alerts
 
+### Feishu API dependency
+
+Enable `feishuApi.enabled` in the same `monitoring.json` to observe the existing
+`feishu-api-logs/` ledger. Supply `apps: [{appId, label}]` and optionally
+`callsPer5m` (default 100). This uses the existing minute observer, Overview
+and daily-report source; it creates no probe, model task or additional timer.
+Each app shows observed calls/failures in a rolling 24-hour window, recent
+traffic, latency and the busiest sanitized endpoints. The first observation
+date is retained: a window with only a few hours of logs is not a full-day
+measurement. Direct CLI requests, other instances and billing eligibility
+remain explicit gaps. Reads are bounded to 31 days, 512 files and 32 MiB;
+truncation or malformed logs cannot establish healthy coverage.
+
+Monthly rejection `99991403` is an immediate critical incident, latched in
+`feishu-api-health.json`. Token success, idle traffic, log retention and
+restarts cannot clear it. After an administrator restores quota, independently
+verify a previously affected interface, then record `quotaRestoredAt` and
+`quotaRestorationEvidence` in the same configuration. A later rejection
+blocks it again. Rate spikes (100 calls in five minutes by default), at least
+five failures with a 20% failure share, or at least five calls taking five
+seconds with a 20% slow share use the existing confirmation count. The
+threshold is an initial operational setting, not a measured billing budget.
+
+True tenant quota is separate. An optional `tenantQuota` contains `used`,
+`limit`, `observedAt`, `source: "feishu_admin"` and an evidence reference from
+the administrator's Billing / My Quota page. Only readings within 24 hours
+qualify; 80% is a report warning and 90% triggers the unified critical route.
+Local call counts never substitute for tenant billing. Without a fresh
+administrator measurement the remaining allowance is unknown. Feishu's
+[official quota notice](https://open.feishu.cn/document/platform-notices/platform-updates-/custom-app-api-call-limit)
+also describes its native 90% and 100% notifications to administrators and
+developers. Check these in the existing authorized administrator workflow;
+this instance does not claim to have read or configured that console.
+
+When the provider has rejected monthly quota, the observer persists new
+notification intent as `blocked_dependency` without trying to send through
+that same provider or changing Bot. Overview and the report expose blocked
+and uncertain alert batches. Existing uncertain sends still need readback;
+no automatic replay is permitted. Local observation continues even while
+Feishu delivery is unavailable. This is visible in Web, not a claim that an
+independent phone/email notification was delivered.
+
+### Explicit service pauses and historical repairs
+
+A configured service may carry `maintenance: {reason, source}` citing the
+actual operator pause. Only an inactive service is then shown as paused;
+failed, missing and starting states retain their normal meaning. This avoids
+new repair admission for intentionally stopped components without deleting
+their state. Remove the maintenance annotation after the original operator
+scope permits resumption, and verify the real service and business result.
+
+Recovery rows include `currentResourceStatus` from the fresh disk/service
+measurement. Healthy and intentionally paused resources leave the Overview's
+current-problem area, while their original repair records and business
+acceptance remain in the report and ledger. A disk becoming healthy does not
+retroactively prove an old repair or delivery succeeded.
+
 `scripts/monitoring-report.mjs --output <prefix> --base-url <instance> --days 1` writes local JSON and a compact Markdown section. It publishes and sends nothing. The established daily workflow reads this source, incorporates actual maintenance and gaps, commits its Markdown and reuses its publisher and group delivery. No separate routine message or Base is needed.
 
 When a visual snapshot is authorized, enable the optional browser capability in the same instance configuration:

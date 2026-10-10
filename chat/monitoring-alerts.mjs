@@ -33,7 +33,7 @@ export async function sendMonitoringAlert(events, config, batchId) {
       ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
       : item.kind === 'account' ? '额度持续无法核实，请核对采集或登录状态；不能据此判断账号已耗尽'
       : item.kind === 'quota' ? '额度已耗尽，请选择有可用额度的账号'
-      : '运行持续异常，请核对原执行记录';
+      : item.detail || '运行持续异常，请核对原执行记录';
     return `| ${cell(item.subject)} | ${problem}${recovery ? `；${cell(recovery.label)}${recovery.reason ? `：${cell(recovery.reason)}` : ''}` : ''} |`;
   }).join('\n');
   const message = `**监管：需要及时处理**\n\n| 对象 | 当前问题 |\n|---|---|\n${rows}\n\n${config.overviewUrl || ''}\n日常状态继续并入日报，本条只报告新出现的紧急问题。`;
@@ -51,6 +51,8 @@ export async function sendMonitoringAlert(events, config, batchId) {
 export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = join(CONFIG_DIR, 'monitoring-alerts.json'),
   send = sendMonitoringAlert, load = readRecord, save = writeDurableJson, now = Date.now(), baseline = false, dryRun = false }) {
   const state = await load(stateFile) || { version: 1, incidents: {}, batches: {} };
+  const transportQuotaBlocked = snapshot.apiHealth?.providers?.some(provider => provider.quotaRejectedAt
+    && (!config.feishuAppId || provider.appId === config.feishuAppId));
   for (const batch of Object.values(state.batches)) if (batch.status === 'sending') {
     batch.status = 'needs_review';
     for (const key of batch.keys) if (state.incidents[key]) state.incidents[key].status = 'needs_review';
@@ -64,6 +66,11 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     if (['available', 'exhausted'].includes(account.status)) recovered.add(hash(`account:${account.id}`));
     if (account.status === 'available') recovered.add(hash(`quota:${account.id}`));
   }
+  for (const provider of snapshot.apiHealth?.providers || []) {
+    if (!provider.quotaRejectedAt && snapshot.apiHealth.coverage.complete) recovered.add(hash(`api:${provider.id}:quota`));
+    if (provider.status === 'observed') recovered.add(hash(`api:${provider.id}:traffic`));
+  }
+  if (snapshot.apiHealth?.tenantQuota?.usedPercent < 80) recovered.add(hash('api:feishu:tenant-quota'));
   if (!snapshot.coverage.gaps.some(gap => gap.source === 'automations')) {
     for (const item of snapshot.automations.items || []) {
       const stopped = ['paused', 'cancelled', 'completed'].includes(item.state);
@@ -74,7 +81,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
-  for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'automation'].includes(item.kind)
+  for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'automation', 'api'].includes(item.kind)
     && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
@@ -83,7 +90,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
-    const requiredCount = item.kind === 'disk' ? 1 : item.kind === 'automation' ? 3
+    const requiredCount = item.kind === 'disk' || item.kind === 'api' && item.code === 99991403 ? 1 : item.kind === 'automation' ? 3
       : ['account', 'quota'].includes(item.kind) ? Math.max(3, confirmationCount) : confirmationCount;
     const critical = eligible && count >= requiredCount;
     const incident = !previous?.active ? { cycle: (previous?.cycle || 0) + 1, status: 'observing', observations: count, active: true } : previous;
@@ -94,6 +101,8 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       && !['sent', 'needs_review'].includes(incident.status)) incident.status = 'baseline';
     if (critical && incident.status === 'observing') incident.status = 'pending';
     state.incidents[key] = incident;
+    if (incident.status === 'blocked_dependency' && !transportQuotaBlocked
+      && snapshot.apiHealth?.coverage.complete) incident.status = 'pending';
     if (critical && incident.status === 'pending') due.push({ key, ...item, cycle: incident.cycle });
   }
   for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key) && recovered.has(key)) incident.active = false;
@@ -104,6 +113,12 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   const batchId = hash(due.map(item => `${item.key}:${item.cycle}`).sort().join('\n'));
   const batch = { status: 'sending', keys: due.map(item => item.key), startedAt: state.observedAt };
   state.batches[batchId] = batch;
+  if (transportQuotaBlocked) {
+    batch.status = 'blocked_dependency'; batch.error = 'FEISHU_MONTHLY_QUOTA';
+    for (const item of due) state.incidents[item.key].status = batch.status;
+    await save(stateFile, state);
+    return { sent: 0, status: batch.status, observedAt: state.observedAt };
+  }
   for (const item of due) state.incidents[item.key].status = 'sending';
   await save(stateFile, state);
   try {
@@ -123,6 +138,7 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false } =
   if (!config.alertDelivery) return { enabled: false };
   // This independent observer needs no model and no running HTTP server.
   const snapshot = await createMonitoringReader({ getUsage: async () => null })({ days: 1 });
+  if (snapshot.apiHealth && !dryRun) await writeDurableJson(join(CONFIG_DIR, 'feishu-api-health.json'), snapshot.apiHealth);
   // Notification and recovery have separate receipts. A reported/baselined
   // incident remains eligible for repair; an uncertain send is never replayed.
   let recovery;
