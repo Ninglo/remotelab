@@ -1108,6 +1108,9 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
       : (Number.isInteger(data.archivedCount) ? data.archivedCount : 0),
   });
   lastSessionsListRefreshAt = Date.now();
+  if (typeof RemoteLabNotifications !== "undefined") {
+    RemoteLabNotifications.refreshDeliveryIssues().catch(() => {});
+  }
   if (typeof renderSettingsSessionPresentationPanel === "function") {
     renderSettingsSessionPresentationPanel();
   }

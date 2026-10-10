@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Use one notification record for delivery warnings
+
+- Feedback: the persistent red warning below a conversation looks like a second notification system beside the header bell. The user asked to unify them.
+- Change: the bell reads active delivery issues directly from the durable outbox, with conversation names and the existing version-checked dismissal. The composer keeps a compact entry that opens only that conversation's notices; the bell also offers all conversations. Store only read versions in the browser, alongside its existing local action history. Viewing marks notices read; explicitly dismissing synchronizes the bell, composer and sidebar without changing the send result.
+- Verification: cover stable issue IDs and versions, scoped reading, stale refreshes during dismissal, cross-conversation arrivals, cross-tab acknowledgment, failed refresh/dismissal, reload persistence, keyboard/mobile access, Chinese/English text and literal provider errors. Clearing local history cannot dismiss delivery warnings. Source, CI and production loading remain separate from the user's next actual click.
+
 ### 2026-10-10 — Failed recording uploads must remain usable locally
 
 - Feedback: while the provider interface was unavailable, an operator needed both the saved clip and an ongoing recording accessible locally, and asked to make that fallback a fixed mechanism.

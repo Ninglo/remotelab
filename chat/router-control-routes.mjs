@@ -34,6 +34,7 @@ import { getPublicKey, addSubscription } from './push.mjs';
 import { getAutomationResourceSnapshot } from './automation-resources.mjs';
 import { backfillBootstrapSessions } from './bootstrap-sessions.mjs';
 import { createSessionDetail } from './session-api-shapes.mjs';
+import { findSessionMeta } from './session-meta-store.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import { isQuickSession } from '../lib/quick-session-profile.mjs';
 import {
@@ -72,6 +73,7 @@ import {
   completeSourceDelivery,
   failSourceDelivery,
   listSourceDeliveries,
+  listSourceDeliveryIssues,
   listSourceDeliveryActivity,
 } from './source-deliveries.mjs';
 import {
@@ -878,6 +880,17 @@ export async function handleControlRoutes({
     observeAutomationChange(schedule, null, authSession, 'delete');
     writeJson(res, 200, { ok: true, schedule, cancellation });
     broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
+    return true;
+  }
+
+  if (pathname === '/api/source-delivery-issues' && req.method === 'GET') {
+    const issues = await listSourceDeliveryIssues();
+    const names = new Map(await Promise.all([...new Set(issues.map(issue => issue.sessionId))]
+      .map(async id => [id, await findSessionMeta(id)])));
+    writeJson(res, 200, { issues: issues.map(issue => ({ ...issue,
+      sessionName: names.get(issue.sessionId)?.name || '',
+      hasSession: Boolean(names.get(issue.sessionId)),
+    })) });
     return true;
   }
 

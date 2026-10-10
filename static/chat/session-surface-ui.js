@@ -487,60 +487,9 @@ function buildSessionMetaParts(session) {
 }
 
 function renderDeliveryIssues(session) {
-  const panel = document.getElementById("deliveryIssues");
-  if (!panel) return;
-  const issues = session?.id === currentSessionId && Array.isArray(session?.deliveryIssues) ? session.deliveryIssues : [];
-  const signature = JSON.stringify([session?.id, issues]);
-  if (panel.dataset.signature === signature) return;
-  const expanded = panel.dataset.sessionId === session?.id && panel.querySelector("details")?.open;
-  panel.dataset.signature = signature;
-  panel.dataset.sessionId = session?.id || "";
-  panel.replaceChildren();
-  panel.hidden = issues.length === 0;
-  if (!issues.length) return;
-  const disclosure = document.createElement("details");
-  disclosure.open = !!expanded;
-  const summary = document.createElement("summary");
-  summary.textContent = t("delivery.issues", { count: issues.length });
-  disclosure.append(summary);
-  const note = document.createElement("p");
-  note.textContent = t("delivery.note");
-  disclosure.append(note);
-  for (const issue of issues) {
-    const row = document.createElement("div");
-    row.className = "delivery-issue-row";
-    const text = document.createElement("p");
-    text.textContent = [issue.connector, issue.filename || t("delivery.message"),
-      t(`delivery.${issue.state}`), issue.lastError].filter(Boolean).join(" · ");
-    const dismiss = document.createElement("button");
-    dismiss.type = "button";
-    dismiss.className = "delivery-issue-dismiss";
-    dismiss.textContent = t("delivery.dismiss");
-    const errorLine = document.createElement("p");
-    errorLine.setAttribute("role", "alert");
-    errorLine.hidden = true;
-    dismiss.addEventListener("click", async () => {
-      if (dismiss.disabled) return;
-      dismiss.disabled = true;
-      errorLine.hidden = true;
-      try {
-        const data = await fetchJsonOrRedirect(`/api/source-deliveries/${encodeURIComponent(issue.id)}/dismiss`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ issueVersion: issue.issueVersion }),
-        });
-        if (data?.delivery) await refreshSidebarSession(session.id, { forceFresh: true });
-      } catch (error) {
-        errorLine.textContent = t("delivery.dismissFailed");
-        errorLine.hidden = false;
-      } finally {
-        dismiss.disabled = false;
-      }
-    });
-    row.append(text, dismiss, errorLine);
-    disclosure.append(row);
+  if (typeof RemoteLabNotifications !== "undefined") {
+    RemoteLabNotifications.setSessionContext(session?.id === currentSessionId ? session : null);
   }
-  panel.append(disclosure);
 }
 
 function renderSessionScopeContext(session) {

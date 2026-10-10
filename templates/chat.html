@@ -61,9 +61,11 @@
 <section class="notification-panel" id="notificationPanel" aria-labelledby="notificationTitle" hidden>
   <div class="notification-panel-header">
     <h2 id="notificationTitle" data-i18n="notifications.title">Notifications</h2>
-    <button type="button" id="notificationClear" data-i18n="notifications.clear">Clear</button>
+    <button type="button" id="notificationShowAll" data-i18n="notifications.all" hidden>All notifications</button>
+    <button type="button" id="notificationClear" data-i18n="notifications.clear" data-i18n-title="notifications.clearHint" title="Clear local notification history; dismiss delivery warnings individually">Clear</button>
     <button type="button" id="notificationClose" aria-label="Close" data-i18n-aria-label="action.close">&#x2715;</button>
   </div>
+  <p class="notification-status" id="notificationStatus" role="status" hidden></p>
   <div class="notification-list" id="notificationList"></div>
 </section>
 

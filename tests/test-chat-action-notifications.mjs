@@ -17,12 +17,12 @@ function page(storage = new Map(), person = 'person-a', storageUnavailable = fal
   function element(id = '') {
     const listeners = new Map();
     const node = {
-      id, hidden: true, children: [], textContent: '', attributes: {},
+      id, hidden: true, children: [], textContent: '', attributes: {}, dataset: {},
       appendChild(child) { child.parent = this; this.children.push(child); if (child.id) elements.set(child.id, child); },
       replaceChildren() { this.children = []; },
       setAttribute(name, value) { this.attributes[name] = value; },
       addEventListener(type, callback) { listeners.set(type, callback); },
-      click() { listeners.get('click')?.({ target: this }); },
+      click() { return listeners.get('click')?.({ target: this }); },
       focus() { this.focused = true; },
       contains(child) { return child === this || this.children.some(node => node.contains(child)); },
       remove() { if (this.parent) this.parent.children = this.parent.children.filter(node => node !== this); },
@@ -31,7 +31,7 @@ function page(storage = new Map(), person = 'person-a', storageUnavailable = fal
     if (id) elements.set(id, node);
     return node;
   }
-  for (const id of ['notificationToggle', 'notificationPanel', 'notificationBadge', 'notificationList', 'notificationClear', 'notificationClose']) element(id);
+  for (const id of ['notificationToggle', 'notificationPanel', 'notificationBadge', 'notificationList', 'notificationClear', 'notificationClose', 'notificationShowAll', 'notificationStatus', 'deliveryIssues']) element(id);
   const context = {
     console: { error() {} },
     document: {
@@ -115,4 +115,59 @@ const cancel = page();
 cancel.context.fetchJsonOrRedirect = async () => { throw new Error('Stop failed'); };
 assert.equal(await cancel.context.dispatchAction({ action: 'cancel' }), false);
 assert.equal(cancel.elements.get('notificationList').children[0].children[1].textContent, '操作失败：Stop failed', 'other user action failures also need visible feedback');
+
+const shared = page();
+const issueA = { id: 'delivery-a', issueVersion: 'version-a', sessionId: 'session-a', sessionName: 'A', hasSession: true,
+  state: 'delivery_failed', connector: 'feishu', lastError: 'A failed', createdAt: new Date().toISOString() };
+const issueB = { ...issueA, id: 'delivery-b', issueVersion: 'version-b', sessionId: 'session-b', sessionName: 'B', lastError: 'B failed' };
+let activeIssues = [issueA, issueB];
+let releaseRefresh;
+let holdRefresh = false;
+let acknowledged;
+const ack = new Promise(resolve => { acknowledged = resolve; });
+const dismissed = [];
+shared.context.fetchJsonOrRedirect = async (url, options) => {
+  if (url === '/api/source-delivery-issues') {
+    if (holdRefresh) {
+      holdRefresh = false;
+      const snapshot = activeIssues.slice();
+      return new Promise(resolve => { releaseRefresh = () => resolve({ issues: snapshot }); });
+    }
+    return { issues: activeIssues.slice() };
+  }
+  assert.match(url, /delivery-a\/dismiss$/);
+  assert.equal(JSON.parse(options.body).issueVersion, issueA.issueVersion);
+  dismissed.push(issueA.id);
+  activeIssues = [issueB];
+  acknowledged();
+  return { delivery: { ...issueA, state: 'delivery_failed', dismissedIssue: { issueVersion: issueA.issueVersion } } };
+};
+vm.runInContext('RemoteLabNotifications.setSessionContext({ id: "session-a", deliveryIssueCount: 1 })', shared.context);
+await vm.runInContext('RemoteLabNotifications.refreshDeliveryIssues()', shared.context);
+await vm.runInContext('RemoteLabNotifications.refreshDeliveryIssues()', shared.context);
+assert.equal(shared.elements.get('notificationList').children.length, 2, 'refreshes project each durable issue once');
+assert.equal(shared.elements.get('notificationBadge').textContent, '2');
+const entry = shared.elements.get('deliveryIssues');
+entry.children[1].click();
+assert.equal(shared.elements.get('notificationList').children.length, 1, 'the conversation entry opens only its related notices');
+assert.equal(shared.elements.get('notificationBadge').textContent, '1', 'a filtered view cannot mark other conversations read');
+assert.equal(entry.hidden, false, 'viewing does not dismiss the delivery failure');
+shared.elements.get('notificationClear').click();
+assert.equal(shared.elements.get('notificationList').children.length, 1, 'clearing local history does not erase durable errors');
+
+await vm.runInContext('RemoteLabNotifications.refreshDeliveryIssues()', shared.context);
+holdRefresh = true;
+const staleRefresh = vm.runInContext('RemoteLabNotifications.refreshDeliveryIssues()', shared.context);
+const dismissal = shared.elements.get('notificationList').children[0].children.at(-1).click();
+await ack;
+releaseRefresh();
+await Promise.all([staleRefresh, dismissal]);
+assert.deepEqual(dismissed, ['delivery-a']);
+assert.equal(entry.hidden, true, 'ignoring from the bell clears the conversation hint');
+assert.equal(shared.elements.get('notificationList').children[0].className, 'notification-empty',
+  'a refresh started before dismissal cannot revive its old warning');
+shared.elements.get('notificationShowAll').click();
+assert.equal(shared.elements.get('notificationList').children.length, 1, 'unrelated active warnings remain available');
+const saved = JSON.parse(shared.storage.get('remotelab.notifications:/:person-a:delivery-read'));
+assert.equal(saved['delivery-b'], 'version-b', 'store only read versions, not copies of delivery data');
 console.log('test-chat-action-notifications: ok');

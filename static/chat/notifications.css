@@ -23,7 +23,14 @@
 .notification-item--warn { border-left-color: #ed6c02; }
 .notification-item time { font-size: 11px; color: var(--text-muted); }
 .notification-item p { margin: 6px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notification-item h3 { margin: 0 0 5px; font-size: 13px; overflow-wrap: anywhere; }
 .notification-item button { font-size: 12px; color: var(--notice); }
+.notification-item .notification-dismiss { color: var(--error); margin-left: 10px; }
+.notification-status { padding: 10px 14px; margin: 0; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.notification-error { padding: 10px 14px; color: var(--error); font-size: 13px; }
+.delivery-issues { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.delivery-issues[hidden] { display: none; }
+.delivery-issues .delivery-issues-open { border: 0; padding: 2px 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 .notification-empty { padding: 18px; margin: 0; color: var(--text-muted); font-size: 14px; }
 #system-toast-container {
   position: fixed; top: calc(var(--safe-top, 0px) + 12px); left: 50%; transform: translateX(-50%);

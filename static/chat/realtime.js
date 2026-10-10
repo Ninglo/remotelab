@@ -455,6 +455,9 @@ function handleWsMessage(msg) {
       break;
 
     case "session_invalidated":
+      if (typeof RemoteLabNotifications !== "undefined") {
+        RemoteLabNotifications.refreshDeliveryIssues().catch(() => {});
+      }
       if (!msg.sessionId) {
         refreshRealtimeViews({ forceFresh: true }).catch(() => {});
         break;
