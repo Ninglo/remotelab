@@ -21,10 +21,21 @@ function adminTokenFile() {
   return join(configDir, 'display-admin-token');
 }
 
-async function studioPreviewConfig() {
+async function studioPreviewConfig(personId = '') {
   const configDir = process.env.REMOTELAB_CONFIG_DIR || join(homedir(), '.config', 'remotelab');
   let stored = {};
   try { stored = JSON.parse(await readFile(join(configDir, 'display-studio-preview.json'), 'utf8')); } catch {}
+  // Only the authenticated Session may choose a personal channel. Legacy links
+  // keep their original global channel and can never select another Person.
+  if (personId && Object.hasOwn(stored?.people || {}, personId)) {
+    const personal = stored.people[personId];
+    const baseUrl = trimString(personal?.baseUrl);
+    return {
+      baseUrl: /^http:\/\/127\.0\.0\.1:\d+$/.test(baseUrl) ? baseUrl : '',
+      tokenFile: trimString(personal?.tokenFile),
+      personId,
+    };
+  }
   const baseUrl = trimString(process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_BASE_URL || stored.baseUrl);
   return {
     baseUrl: /^http:\/\/127\.0\.0\.1:\d+$/.test(baseUrl) ? baseUrl : '',
@@ -225,9 +236,9 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       return true;
     }
     if (pathname === '/api/display/studio-preview/status' && req.method === 'GET') {
-      const config = await studioPreviewConfig();
+      const config = await studioPreviewConfig(personId);
       if (!config.baseUrl || !config.tokenFile) { writeJson(res, 503, { error: '副屏预览通道未配置。' }); return true; }
-      if (config.personId && config.personId !== personId) { writeJson(res, 403, { error: '当前账号没有连接到这块副屏。' }); return true; }
+      if (config.personId !== personId) { writeJson(res, 403, { error: '当前账号没有连接到这块副屏。' }); return true; }
       const response = await fetch(`${config.baseUrl}/api/paired-device`, {
         headers: { Authorization: `Bearer ${trimString(await readFile(config.tokenFile, 'utf8'))}`, 'X-Preview-Person-Id': personId },
         signal: AbortSignal.timeout(15_000),
@@ -236,10 +247,11 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       return true;
     }
     if (pathname === '/api/display/studio-preview' && req.method === 'POST') {
-      const config = await studioPreviewConfig();
+      const config = await studioPreviewConfig(personId);
       const endpoint = config.baseUrl;
       const tokenFile = config.tokenFile;
       if (!endpoint || !tokenFile) { writeJson(res, 503, { error: '副屏预览通道未配置。' }); return true; }
+      if (config.personId !== personId) { writeJson(res, 403, { error: '当前账号没有连接到这块副屏。' }); return true; }
       const requestOrigin = trimString(req.headers.origin);
       const expectedOrigin = `${forwardedOriginHeaders(req)['X-Forwarded-Proto']}://${forwardedOriginHeaders(req)['X-Forwarded-Host']}`;
       if (requestOrigin !== expectedOrigin) { writeJson(res, 403, { error: '副屏预览请求来源不符。' }); return true; }
@@ -263,9 +275,9 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       return true;
     }
     if (pathname === '/api/display/studio-preview' && req.method === 'DELETE') {
-      const config = await studioPreviewConfig();
+      const config = await studioPreviewConfig(personId);
       if (!config.baseUrl || !config.tokenFile) { writeJson(res, 200, { ok: true, configured: false }); return true; }
-      if (config.personId && config.personId !== personId) { writeJson(res, 200, { ok: true, configured: false }); return true; }
+      if (config.personId !== personId) { writeJson(res, 200, { ok: true, configured: false }); return true; }
       const response = await fetch(`${config.baseUrl}/api/preview`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${trimString(await readFile(config.tokenFile, 'utf8'))}`, 'X-Preview-Person-Id': personId },

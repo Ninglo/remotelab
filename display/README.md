@@ -158,6 +158,33 @@ sends it over USB. Run `node display/render-previews.mjs <output-directory>` to
 inspect official progress, confirmed-attention, and stale states before
 activating the pilot.
 
+## Authenticated studio channels
+
+Cookie-authenticated studio apply, status and reset operations select
+`display-studio-preview.json`'s `people[authenticatedPersonId]` entry. The
+entry's map key is authoritative, not a browser header or payload. An invalid
+entry fails closed. The existing top-level channel remains the default for its
+original Person and for legacy token-only links; it is never reassigned.
+
+For an already enrolled device, `node display/configure-person-studio.mjs
+--person person_ID --device display_ID --port PORT --source /path/concept-v14`
+validates current device ownership and prepares an isolated renderer under
+the instance's private config directory. It copies the existing renderer's
+three code modules and links only public assets/dependencies/browser libraries;
+it does not copy another Person's pairing, layout or private state. Credentials
+and registry are saved with mode 0600; setup is idempotent and refuses changes
+to an existing pairing/channel. Run that runtime's `preview-server.mjs` through
+the instance's service manager with the selected `PREVIEW_PORT`, local
+`PREVIEW_DISPLAY_BASE_URL` and `PREVIEW_ADMIN_TOKEN_FILE`. This does not create a
+second Feishu consumer, refresh a provider or enable boot startup.
+
+`display/studio-device-sync.js` is the repository-managed client for publishing
+to the existing studio's `device-sync.js`. Authenticated apply and detailed
+receipt checks both use `/api/display/studio-preview`; old dedicated links
+retain `/display/studio-preview`. Bump the page's script cache version when
+publishing. Status reports distinguish submission, device download, USB ACK and
+physical appearance; only the last still needs on-site observation.
+
 ## Waiting in the detailed studio
 
 Display metrics use the same Session status projection as the chat sidebar:

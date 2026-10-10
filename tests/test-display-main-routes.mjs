@@ -139,6 +139,17 @@ const previewServer = createServer(async (req, res) => {
   json(res, 200, req.method === 'GET' ? { devices: [{ name: 'Test display' }] } : { ok: true, frameId: 'sample-frame' });
 });
 const previewPort = await listen(previewServer);
+const personalServer = createServer(async (req, res) => {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  if (req.headers.authorization !== 'Bearer personal-secret' || req.headers['x-preview-person-id'] !== 'person-b') {
+    json(res, 403, { error: 'wrong personal channel' }); return;
+  }
+  if (req.method === 'DELETE') previewDeleteCall = { personId: req.headers['x-preview-person-id'] };
+  else previewCall = { personId: req.headers['x-preview-person-id'], body };
+  json(res, 200, req.method === 'GET' ? { devices: [{ name: 'Own MacBook' }] } : { ok: true, frameId: 'own-frame' });
+});
+const personalPort = await listen(personalServer);
 process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_BASE_URL = `http://127.0.0.1:${previewPort}`;
 process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_TOKEN_FILE = previewTokenFile;
 process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_PERSON_ID = 'person-a';
@@ -314,6 +325,12 @@ try {
   assert(!ownStatus.text.includes('preview-secret'), 'server credential must not be exposed to the browser');
   const otherStatus = await requestJson(`${base}/api/display/studio-preview/status`, { headers: { 'X-Test-Person': 'person-b', 'X-Preview-Person-Id': 'person-a' } });
   assert.equal(otherStatus.response.status, 403, 'browser headers cannot choose another Person for status reads');
+  const previousCall = previewCall;
+  const otherApply = await requestJson(`${base}/api/display/studio-preview`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-b' }, body: '{}',
+  });
+  assert.equal(otherApply.response.status, 403, 'unconfigured People must not submit to another Person renderer');
+  assert.equal(previewCall, previousCall);
   const deniedPublicStudio = await requestJson(`${base}/display/studio-preview`, {
     method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '{}',
   });
@@ -369,6 +386,38 @@ try {
   assert(!JSON.stringify(themeEvents).includes('person-a'), 'analytics excludes raw Person IDs and editor payloads');
   assert.equal((await stat(themeFile)).mode & 0o777, 0o600);
 
+  // The authenticated identity selects the channel, never browser payloads or headers.
+  const personalTokenFile = join(root, 'personal-preview-token');
+  await writeFile(personalTokenFile, 'personal-secret\n');
+  await writeFile(join(root, 'display-studio-preview.json'), JSON.stringify({
+    people: { 'person-b': { baseUrl: `http://127.0.0.1:${personalPort}`, tokenFile: personalTokenFile, personId: 'person-a' } },
+  }));
+  const personalStatus = await requestJson(`${base}/api/display/studio-preview/status`, {
+    headers: { 'X-Test-Person': 'person-b', 'X-Preview-Person-Id': 'person-a' },
+  });
+  assert.equal(personalStatus.response.status, 200);
+  assert.deepEqual(personalStatus.payload.devices, [{ name: 'Own MacBook' }]);
+  assert.equal(previewCall.personId, 'person-b');
+  const personalApply = await requestJson(`${base}/api/display/studio-preview`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-b', 'X-Preview-Person-Id': 'person-a' },
+    body: '{"personId":"person-a","version":21}',
+  });
+  assert.equal(personalApply.response.status, 200);
+  assert.equal(personalApply.payload.frameId, 'own-frame');
+  assert.equal(previewCall.personId, 'person-b');
+  const personalDelete = await requestJson(`${base}/api/display/studio-preview`, {
+    method: 'DELETE', headers: { 'X-Test-Person': 'person-b' },
+  });
+  assert.equal(personalDelete.response.status, 200);
+  assert.equal(previewDeleteCall.personId, 'person-b');
+  await requestJson(`${base}/display/studio-preview/status`, { headers: { Authorization: `Bearer ${privateToken}` } });
+  assert.equal(previewCall.personId, 'person-a', 'existing private links retain their original channel');
+  await writeFile(join(root, 'display-studio-preview.json'), JSON.stringify({
+    people: { 'person-b': { baseUrl: 'https://untrusted.example', tokenFile: personalTokenFile } },
+  }));
+  const invalidPersonal = await requestJson(`${base}/api/display/studio-preview/status`, { headers: { 'X-Test-Person': 'person-b' } });
+  assert.equal(invalidPersonal.response.status, 503, 'invalid personal entry must not fall back to someone else');
+
   assert.equal(calls.find((call) => call.path === '/install.sh').authorization, '');
   assert.equal(calls.find((call) => call.path === '/v1/enrollments').body, JSON.stringify({ personId: 'person-a' }));
   assert(calls.filter((call) => call.path.startsWith('/v1/devices?')).every(
@@ -380,6 +429,7 @@ try {
     new Promise((resolve) => main.close(resolve)),
     new Promise((resolve) => sidecar.close(resolve)),
     new Promise((resolve) => previewServer.close(resolve)),
+    new Promise((resolve) => personalServer.close(resolve)),
   ]);
   await rm(root, { recursive: true, force: true });
 }
