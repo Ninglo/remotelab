@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Dismiss delivery warnings after reading
+
+- Feedback: the composer shows a persistent delivery warning with no way to close it after reading; stopping the active task does not clear the warning.
+- Change: each expanded warning has a read-and-dismiss button. Record acknowledgment in the durable delivery record so the composer and sidebar stay clear after reload, while retaining the actual delivery state, error and retry behavior. A changed issue becomes visible again, and a stale dismissal cannot hide a newer failure.
+- Acceptance: verify the authenticated API, durable acknowledgment, late receipts and retries, changed-error protection, desktop/mobile buttons, keyboard access, failed dismissal, literal error text and reload persistence. Deployment and the reporting user's next click remain separate evidence.
+
 ### 2026-10-09 — A steered request's first useful reply must reach its source
 
 - Observed failure: an ordinary follow-up was acknowledged as native steering; Web displayed the first substantive answer about submission and incomplete concurrency validation, while Feishu showed only its input reaction. The exact assistant item had no outbox entry. A later explicitly published progress message did reach the original topic.

@@ -507,9 +507,37 @@ function renderDeliveryIssues(session) {
   note.textContent = t("delivery.note");
   disclosure.append(note);
   for (const issue of issues) {
-    const row = document.createElement("p");
-    row.textContent = [issue.connector, issue.filename || t("delivery.message"),
+    const row = document.createElement("div");
+    row.className = "delivery-issue-row";
+    const text = document.createElement("p");
+    text.textContent = [issue.connector, issue.filename || t("delivery.message"),
       t(`delivery.${issue.state}`), issue.lastError].filter(Boolean).join(" · ");
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "delivery-issue-dismiss";
+    dismiss.textContent = t("delivery.dismiss");
+    const errorLine = document.createElement("p");
+    errorLine.setAttribute("role", "alert");
+    errorLine.hidden = true;
+    dismiss.addEventListener("click", async () => {
+      if (dismiss.disabled) return;
+      dismiss.disabled = true;
+      errorLine.hidden = true;
+      try {
+        const data = await fetchJsonOrRedirect(`/api/source-deliveries/${encodeURIComponent(issue.id)}/dismiss`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ issueVersion: issue.issueVersion }),
+        });
+        if (data?.delivery) await refreshSidebarSession(session.id, { forceFresh: true });
+      } catch (error) {
+        errorLine.textContent = t("delivery.dismissFailed");
+        errorLine.hidden = false;
+      } finally {
+        dismiss.disabled = false;
+      }
+    });
+    row.append(text, dismiss, errorLine);
     disclosure.append(row);
   }
   panel.append(disclosure);

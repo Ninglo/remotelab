@@ -310,6 +310,28 @@ export async function failSourceDelivery(id, leaseId, error, options = {}) {
   }));
 }
 
+export async function dismissSourceDeliveryIssue(id, { issueVersion, personId = '' } = {}) {
+  return queue(async () => {
+    const { key, index } = parseId(id);
+    const record = await requests.mutate(key, current => {
+      const entry = current?.deliveries[index];
+      if (!entry) throw new Error('Delivery not found');
+      const issue = deliveryIssue(entry, Date.now(), { includeDismissed: true });
+      // A stale browser must not hide a new failure or change a completed send.
+      if (!issue) return current;
+      if (!issueVersion || issue.issueVersion !== issueVersion) {
+        throw Object.assign(new Error('Delivery issue changed; refresh before dismissing'), { status: 409 });
+      }
+      if (entry.dismissedIssue?.issueVersion === issueVersion) return current;
+      const deliveries = current.deliveries.slice();
+      deliveries[index] = { ...entry, dismissedIssue: { issueVersion, at: nowIso(), personId } };
+      return { ...current, deliveries };
+    });
+    broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
+    return record.deliveries[index];
+  });
+}
+
 export async function resolveSourceDelivery(id, resolution) {
   return queue(async () => {
     const current = await getSourceDelivery(id);

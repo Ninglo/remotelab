@@ -1306,7 +1306,7 @@ function parseScheduleRoute(pathname) {
 }
 
 function parseSourceDeliveryRoute(pathname) {
-  const match = /^\/api\/source-deliveries\/(srcd_[a-f0-9]{24}_\d+)\/(complete|fail|resolve)$/.exec(pathname || '');
+  const match = /^\/api\/source-deliveries\/(srcd_[a-f0-9]{24}_\d+)\/(complete|fail|resolve|dismiss)$/.exec(pathname || '');
   return match ? { deliveryId: match[1], action: match[2] } : null;
 }
 

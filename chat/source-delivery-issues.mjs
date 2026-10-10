@@ -1,9 +1,10 @@
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { createHash } from 'node:crypto';
 
 export const DELIVERY_LEASE_MS = 120_000;
 const elapsed = (now, stamp) => !Number.isFinite(Date.parse(stamp)) || now - Date.parse(stamp) >= DELIVERY_LEASE_MS;
 
-export function deliveryIssue(entry, now = Date.now()) {
+export function deliveryIssue(entry, now = Date.now(), { includeDismissed = false } = {}) {
   if (entry.kind === 'delivery_notice') return null;
   let state = entry.state;
   if (state === 'sending' && elapsed(now, entry.claimedAt)) state = 'unknown';
@@ -11,8 +12,11 @@ export function deliveryIssue(entry, now = Date.now()) {
     state = entry.attempts > 0 ? 'retrying' : elapsed(now, entry.createdAt) ? 'delayed' : '';
   }
   if (!['unknown', 'delivery_failed', 'retrying', 'delayed'].includes(state)) return null;
+  const issueVersion = createHash('sha256')
+    .update(JSON.stringify([state, entry.attempts, entry.lastError || '', entry.claimedAt || ''])).digest('hex');
+  if (!includeDismissed && entry.dismissedIssue?.issueVersion === issueVersion) return null;
   return {
-    id: entry.id, sessionId: entry.sessionId, connector: entry.connector, state,
+    id: entry.id, sessionId: entry.sessionId, connector: entry.connector, state, issueVersion,
     filename: String(entry.attachment?.originalName || entry.attachment?.filename || '').slice(0, 255),
     createdAt: entry.createdAt, attempts: entry.attempts,
     lastError: String(entry.lastError || '').slice(0, 2000),

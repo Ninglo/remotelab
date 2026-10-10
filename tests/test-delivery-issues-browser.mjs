@@ -67,13 +67,40 @@ try {
   await page.screenshot({ path: join(output, 'mobile.png') });
   assert(await panel.isVisible());
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-  await api(`/api/source-deliveries/${delivery.id}/resolve`, { state: 'cancelled', reason: 'owner acknowledged' });
+  const dismiss = panel.getByRole('button', { name: 'Read, dismiss' });
+  await page.route(`**/api/source-deliveries/${delivery.id}/dismiss`, route => route.fulfill({
+    status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'fixture unavailable' }),
+  }));
+  await dismiss.click();
+  await panel.getByRole('alert').waitFor({ state: 'visible' });
+  assert(await dismiss.isEnabled(), 'failed dismissal can be retried and must retain the warning');
+  await page.unroute(`**/api/source-deliveries/${delivery.id}/dismiss`);
+  await dismiss.focus();
+  await page.keyboard.press('Enter');
   await panel.waitFor({ state: 'hidden' });
+  await page.locator('.delivery-issue-badge').waitFor({ state: 'hidden' });
+  const retained = (await api('/api/source-deliveries?sessionId=' + session.id)).deliveries.find(item => item.id === delivery.id);
+  assert.equal(retained.state, 'delivery_failed', 'UI acknowledgment retains actual delivery status');
+  assert.match(retained.lastError, /230055/);
+  assert(retained.dismissedIssue.at, 'UI acknowledgment is durable');
   await page.reload();
   await page.waitForLoadState('networkidle');
-  assert.equal(await panel.isVisible(), false, 'resolved warning stays cleared on reload');
+  assert.equal(await panel.isVisible(), false, 'dismissed warning stays cleared on reload');
+  const { delivery: mobile } = await api('/api/source-deliveries', { sessionId: session.id, responseId: 'mobile',
+    text: 'mobile saved result', sourceDelivery: { connector: 'feishu', sourceRouteId: 'mobile', target: { chatId: 'chat' } } });
+  const { claim: mobileClaim } = await api('/api/source-deliveries/claim', { connector: 'feishu', sourceRouteId: 'mobile' });
+  await api(`/api/source-deliveries/${mobile.id}/fail`, { leaseId: mobileClaim.leaseId,
+    error: 'mobile failure', definiteFailure: true });
+  await panel.waitFor({ state: 'visible' });
+  await panel.locator('summary').click();
+  await panel.getByRole('button', { name: 'Read, dismiss' }).click();
+  await panel.waitFor({ state: 'hidden' });
+  const unauthenticated = await fetch(`${base}/api/source-deliveries/${mobile.id}/dismiss`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', redirect: 'manual',
+  });
+  assert([302, 401].includes(unauthenticated.status), 'dismissal requires authentication');
   assert.deepEqual(errors, []);
-  console.log('delivery issues browser: real API, sidebar badge, desktop/mobile, keyboard, literal error text, live clearing and reload passed');
+  console.log('delivery issues browser: real dismiss API, sidebar badge, mobile/keyboard, failed request, literal error text, authentication and reload passed');
 } finally {
   await browser?.close();
   child.kill('SIGTERM');

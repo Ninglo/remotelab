@@ -666,6 +666,18 @@
 }
 .delivery-issues summary { cursor: pointer; font-weight: 600; }
 .delivery-issues p { margin: 8px 0 0; }
+.delivery-issue-row { margin-top: 8px; }
+.delivery-issue-dismiss {
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.delivery-issue-dismiss:disabled { opacity: 0.5; cursor: wait; }
 .delivery-issue-badge { color: var(--error); }
 
 .work-awareness-panel {

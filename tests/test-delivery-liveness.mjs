@@ -101,8 +101,48 @@ try {
     await outbox.failSourceDelivery(entry.id, claim.leaseId, 'Feishu 230002: permission denied', { definiteFailure: true });
     assert.equal((await getSession(session.id)).deliveryIssues?.[0]?.id, entry.id, 'session API must expose the error');
     assert.equal((await listSessions()).find(s => s.id === session.id)?.deliveryIssueCount, 1, 'sidebar must expose an issue count');
-    await outbox.resolveSourceDelivery(entry.id, { state: 'cancelled', reason: 'owner acknowledged' });
+    const issue = (await getSession(session.id)).deliveryIssues[0];
+    const before = await outbox.getSourceDelivery(entry.id);
+    const dismissed = await outbox.dismissSourceDeliveryIssue(entry.id, { issueVersion: issue.issueVersion, personId: 'reader' });
     assert.equal((await getSession(session.id)).deliveryIssues.length, 0);
+    assert.equal((await listSessions()).find(s => s.id === session.id)?.deliveryIssueCount, 0, 'dismissal clears the sidebar count');
+    const { dismissedIssue, ...unchanged } = dismissed;
+    assert.deepEqual(unchanged, before, 'dismissal cannot alter failure, lease, attempts or original content');
+    assert.equal(dismissedIssue.personId, 'reader');
+    assert.equal((await outbox.dismissSourceDeliveryIssue(entry.id, { issueVersion: issue.issueVersion })).dismissedIssue.at,
+      dismissedIssue.at, 'duplicate acknowledgment retains its original timestamp');
+    const { createRequestStore } = await import('../chat/requests.mjs');
+    const { deliveryIssue } = await import('../chat/source-delivery-issues.mjs');
+    const disk = createRequestStore(join(home, '.config/remotelab/requests'));
+    const restored = await disk.get(entry.id.split('_')[1]);
+    assert.equal(deliveryIssue(restored.deliveries[0]), null, 'a fresh store retains the dismissed warning');
+
+    // Retrying explicitly creates a new issue; an old page cannot dismiss it.
+    await outbox.resolveSourceDelivery(entry.id, { state: 'pending', reason: 'retry requested' });
+    const retry = await outbox.claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visible' });
+    await outbox.failSourceDelivery(entry.id, retry.leaseId, 'new error', { definiteFailure: true });
+    assert.equal((await getSession(session.id)).deliveryIssues.length, 1, 'a new failed attempt is visible again');
+    await assert.rejects(outbox.dismissSourceDeliveryIssue(entry.id, { issueVersion: issue.issueVersion }),
+      error => error.status === 409, 'stale acknowledgment must not hide a new error');
+
+    const delayed = await outbox.enqueueSourceDelivery({ sessionId: session.id, responseId: 'delayed', text: 'waiting',
+      sourceDelivery: { connector: 'email', sourceRouteId: 'delayed', target: { to: 'fixture@example.test' } } });
+    await requests.mutate(delayed.id.split('_')[1], current => ({ ...current, deliveries: current.deliveries.map(part => ({
+      ...part, createdAt: new Date(Date.now() - 180_000).toISOString(),
+    })) }));
+    const delayedIssue = (await getSession(session.id)).deliveryIssues.find(part => part.id === delayed.id);
+    assert.equal(delayedIssue.state, 'delayed');
+    await outbox.dismissSourceDeliveryIssue(delayed.id, { issueVersion: delayedIssue.issueVersion });
+    const delayedClaim = await outbox.claimSourceDelivery({ connector: 'email', sourceRouteId: 'delayed' });
+    assert.equal(delayedClaim.delivery.id, delayed.id, 'dismissed delayed delivery remains claimable');
+    await outbox.failSourceDelivery(delayed.id, delayedClaim.leaseId, 'receipt unknown');
+    const unknownIssue = (await getSession(session.id)).deliveryIssues.find(part => part.id === delayed.id);
+    await outbox.dismissSourceDeliveryIssue(delayed.id, { issueVersion: unknownIssue.issueVersion });
+    assert.equal((await outbox.getSourceDelivery(delayed.id)).leaseId, delayedClaim.leaseId, 'unknown delivery retains its lease');
+    await outbox.completeSourceDelivery(delayed.id, delayedClaim.leaseId, { externalId: 'late-receipt' });
+    assert.equal((await outbox.getSourceDelivery(delayed.id)).state, 'delivered', 'late receipt remains accepted after dismissal');
+    await outbox.dismissSourceDeliveryIssue(delayed.id, { issueVersion: unknownIssue.issueVersion });
+    assert.equal((await outbox.getSourceDelivery(delayed.id)).state, 'delivered', 'late acknowledgment cannot change completed delivery');
   } else if (mode === 'receipts') {
     const receipts = createDeliveryReceipts(join(home, 'receipts'));
     await receipts.record({ deliveryId: 'poison', leaseId: 'old' });

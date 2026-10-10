@@ -67,6 +67,7 @@ import {
   claimSourceDelivery,
   claimSourceDeliveryWithWait,
   enqueueSourceDelivery,
+  dismissSourceDeliveryIssue,
   resolveSourceDelivery,
   completeSourceDelivery,
   failSourceDelivery,
@@ -934,13 +935,15 @@ export async function handleControlRoutes({
     try {
       const body = await readBody(req, 32768);
       payload = body ? JSON.parse(body) : {};
-      const delivery = sourceDeliveryRoute.action === 'resolve' ? await resolveSourceDelivery(sourceDeliveryRoute.deliveryId, payload) : sourceDeliveryRoute.action === 'complete'
+      const delivery = sourceDeliveryRoute.action === 'dismiss'
+        ? await dismissSourceDeliveryIssue(sourceDeliveryRoute.deliveryId, { issueVersion: payload.issueVersion, personId: authSession?.personId || 'authenticated' })
+        : sourceDeliveryRoute.action === 'resolve' ? await resolveSourceDelivery(sourceDeliveryRoute.deliveryId, payload) : sourceDeliveryRoute.action === 'complete'
         ? await completeSourceDelivery(sourceDeliveryRoute.deliveryId, payload.leaseId, payload)
         : await failSourceDelivery(sourceDeliveryRoute.deliveryId, payload.leaseId, payload.error || 'Delivery failed', payload);
       if (!delivery) writeJson(res, 404, { error: 'Source delivery not found' });
       else writeJson(res, 200, { delivery });
     } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to update source delivery' });
+      writeJson(res, error.status === 409 ? 409 : 400, { error: error.message || 'Failed to update source delivery' });
     }
     return true;
   }
