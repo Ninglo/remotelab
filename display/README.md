@@ -185,6 +185,10 @@ retain `/display/studio-preview`. Bump the page's script cache version when
 publishing. Status reports distinguish submission, device download, USB ACK and
 physical appearance; only the last still needs on-site observation.
 
+Device download receipts include both static and animated applied frames, scoped
+to the current source frame ID. A static download is not evidence of a USB
+write or a claim that the physical screen's appearance has been inspected.
+
 ## Waiting in the detailed studio
 
 Display metrics use the same Session status projection as the chat sidebar:

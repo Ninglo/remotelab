@@ -190,7 +190,7 @@ const devicePlayback = new Map();
 function trackAnimationDelivery(device, image, renderMs, format, bundleFrameCount = 0, sourceFrameId = '') {
   const now = Date.now();
   const frameId = createHash('sha256').update(image).digest('hex').slice(0, 12);
-  const recent = (animationDelivery.get(device.id)?.recent || []).filter((item) => now - item.at < 30_000);
+  const recent = (animationDelivery.get(device.id)?.recent || []).filter((item) => now - item.at < 30_000 && item.sourceFrameId === sourceFrameId);
   recent.push({ at: now, frameId, renderMs, format, bundleFrameCount, sourceFrameId });
   if (recent.length > 40) recent.shift();
   animationDelivery.set(device.id, { personId: device.personId, recent });
@@ -510,7 +510,7 @@ async function renderFrame(personId, jpeg = false) {
       const prepared = preparedPreviewFor(personId, preview);
       return { png: jpeg ? renderAnimatedPreviewJpeg(prepared) : renderAnimatedPreview(prepared), snapshot: { observedAt: preview.updatedAt }, pollSeconds: jpeg ? 0.18 : 0.45, animated: true, jpeg, sourceFrameId: preview.frameId };
     }
-    return { png: Buffer.from(preview.pngBase64, 'base64'), snapshot: { observedAt: preview.updatedAt }, pollSeconds: 1 };
+    return { png: Buffer.from(preview.pngBase64, 'base64'), snapshot: { observedAt: preview.updatedAt }, pollSeconds: 1, sourceFrameId: preview.frameId };
   }
   const personal = await personalFor(personId);
   if (personal) {
@@ -900,7 +900,7 @@ async function handle(req, res) {
       const wantsJpeg = deviceMatch[2] === 'frame.jpg' || (deviceMatch[2] === 'frame.png' && /(?:^|,)\s*image\/jpeg(?:\s*[,;]|\s*$)/i.test(String(req.headers.accept || '')));
       const { png, snapshot, pollSeconds, animated, jpeg, sourceFrameId } = await renderFrame(device.personId, wantsJpeg);
       const image = wantsJpeg && !jpeg ? renderStaticPreviewJpeg(png) : png;
-      if (animated) trackAnimationDelivery(device, image, performance.now() - renderStarted, wantsJpeg ? 'jpeg' : 'png', 0, sourceFrameId);
+      if (sourceFrameId) trackAnimationDelivery(device, image, performance.now() - renderStarted, wantsJpeg ? 'jpeg' : 'png', 0, sourceFrameId);
       sendText(res, 200, wantsJpeg ? 'image/jpeg' : 'image/png', image, {
         'X-RemoteLab-Display-Observed-At': snapshot.observedAt,
         'X-RemoteLab-Display-Running': String(snapshot.running ?? ''),

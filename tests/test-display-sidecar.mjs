@@ -274,6 +274,11 @@ try {
   const pairedJpegFrame = await fetch(`http://127.0.0.1:${displayPort}${jpegFramePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
   assert.equal(pairedJpegFrame.headers.get('content-type'), 'image/jpeg');
   assert.deepEqual([...Buffer.from(await pairedJpegFrame.arrayBuffer()).subarray(0, 2)], [255, 216]);
+  const staticDelivery = await (await fetch(previewUrl, { headers: publicHeaders })).json();
+  assert.equal(staticDelivery.animationDelivery[0]?.deviceId, joined.deviceId, 'static previews retain device download receipts too');
+  assert.equal(staticDelivery.animationDelivery[0]?.sourceFrameId, savedPreviewReceipt.frameId);
+  assert.equal(staticDelivery.animationDelivery[0]?.samples, 2);
+  assert.equal(staticDelivery.animationDelivery[0]?.lastFormat, 'jpeg');
   const otherPreview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/preview-frame`, { headers: publicHeaders });
   assert.equal((await otherPreview.json()).configured, false, 'another Person must not inherit the preview');
   const animation = [{ gifBase64: animatedGif.toString('base64'), box: { x: 100, y: 100, width: 40, height: 40 }, fit: 'contain' }];
