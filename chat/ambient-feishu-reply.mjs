@@ -22,6 +22,7 @@ export function resolveAmbientFeishuReplyPlan(record, plan, history = []) {
   if (record.replyPlacement?.connector === conversation.connector
       && record.replyPlacement.sourceRouteId === conversation.sourceRouteId
       && record.replyPlacement.target?.chatId === target.chatId) return normalizeConversation(record.replyPlacement);
+  if (record.options.messageRoutingPolicy?.mechanism === 'none') return plan;
   const selected = history.some(event => {
     if (event?.type !== 'message' || event.role !== 'assistant') return false;
     const text = String(event.content || '').trimStart();

@@ -4,6 +4,7 @@ import * as work from '../../chat/work-awareness.mjs';
 import * as routing from '../../chat/group-routing.mjs';
 import { requests } from '../../chat/requests.mjs';
 import { loadAuthDocument } from '../../lib/auth-config.mjs';
+import { changePersonMessageReplies } from '../../chat/person-message-replies.mjs';
 await loadAuthDocument({ persistMigration: false });
 await manager.startDetachedRunObservers();
 process.send({ ready: true });
@@ -22,6 +23,7 @@ process.on('message', async ({ id, action, args }) => {
       : action === 'work-inbox' ? await work.workInbox(args[0])
       : action === 'route-input' ? await routing.routeGroupWork(await requests.byRequest(args[0], args[1]), args[2])
       : action === 'reply-input' ? await routing.replyGroupInput(await requests.byRequest(args[0], args[1]), args[2])
+      : action === 'message-settings' ? await changePersonMessageReplies(...args)
       : action === 'request' ? await requests.byRequest(...args)
       : action === 'claim' ? await delivery.claimSourceDelivery(...args)
       : action === 'complete' ? await delivery.completeSourceDelivery(...args)

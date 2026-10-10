@@ -257,7 +257,11 @@ try {
   const pilotOptions = (requestId, person = 'a') => ({ ...options(requestId), sourceDelivery: pilotPlan(requestId),
     viewPersonId: 'person_' + person, initiatedByIdentityId: 'identity_' + person,
     feishuConnectorAuthenticated: true, allowGroupFeedWrite: true,
-    sourceContext: { connector: 'feishu', chatId: 'pilot-chat', createTime: Date.now(), sender: { senderType: 'user' } } });
+    sourceContext: { connector: 'feishu', sourceRouteId: 'default', chatType: 'group', messageId: requestId,
+      chatId: 'pilot-chat', createTime: Date.now(), sender: { senderType: 'user', openId: person } } });
+  for (const person of ['a', 'b']) await rpc('message-settings', { action: 'apply', expectedRevision: 0, confirm: true,
+    choices: { opening: true, checklist: true, progress: 'messages', routing: 'experimental' } },
+    { personId: `person_${person}`, identityId: `identity_${person}` });
   const pilot = await rpc('create', { conversation: pilotPlan('pilot-root'), sourceId: 'feishu' });
   const pilotRoot = await rpc('accept', pilot.id, 'Start held research A', [], pilotOptions('pilot-root'));
   await until(async () => (await logs()).some(event => event.runId === pilotRoot.run.id && event.kind === 'turn/start'), 'pilot mainline begins');

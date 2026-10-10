@@ -62,6 +62,10 @@ try {
   assert.equal(thread.target.rootId, 'question-1');
   assert.equal(thread.target.replyInThread, true);
   assert.equal(thread.target.sourceKind, 'ambient_thread_open');
+  assert.equal(resolveAmbientFeishuReplyPlan({ options: { ...record.options,
+    messageRoutingPolicy: { version: 1, mechanism: 'none' } } }, plan, [
+    { type: 'message', role: 'assistant', content: '<private>feishu-reply:thread</private>我来处理。' },
+  ]).target.conversationKind, 'main', 'no-routing inputs cannot open a thread through an old placement marker');
   assert.equal(resolveAmbientFeishuReplyPlan(record, plan, [
     { type: 'message', role: 'assistant', content: '<private><feishu-reaction emoji="OnIt"/></private><private>feishu-reply:thread</private>另开话题处理。' },
   ]).target.conversationKind, 'thread', 'reaction directive may precede a thread reply');
