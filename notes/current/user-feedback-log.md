@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Reuse Session review state in the Feishu Web topic list
+
+- Feedback: the reading shortcuts looked unlike the native navigation; topic rows lacked review and a new topic initially lacked its title, status and description. Review means a result awaiting review using the existing RemoteLab behavior; no separate Feishu unread mechanism is requested.
+- Change: consolidate the sidebar row decision in the existing Session state model. Live execution or a live wait comes first, then a result awaiting RemoteLab review, then a between-turn waiting workflow. Connector origin no longer suppresses the existing result review indicator; external message readership is not inferred and external completion dimming remains unchanged.
+- Display source: the Web topic adapter calls that same row model. Existing work goals provide temporary topic text while the normal post-turn classifier produces the title and description. Runtime status and synchronization do not wait for classification.
+- Validation boundary: shared model scenarios cover connector results, reviewed results, live waits, queues and new execution. Browser checks and the Mac mini display readback are separate from the mainline commit and service version checks.
+
 ### 2026-10-10 — Use one notification record for delivery warnings
 
 - Feedback: the persistent red warning below a conversation looks like a second notification system beside the header bell. The user asked to unify them.

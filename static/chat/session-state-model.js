@@ -6,6 +6,7 @@
     "status.running": "running",
     "status.waiting": "waiting",
     "status.waitingTitle": "Waiting for the next step",
+    "session.rowStatus.review": "review",
     "workflow.priority.high": "High",
     "workflow.priority.highTitle": "Needs user attention soon.",
     "workflow.priority.medium": "Medium",
@@ -304,7 +305,7 @@
   }
 
   function hasSessionUnreadUpdate(session) {
-    if (!usesChatUiReadState(session)) return false;
+    if (!session) return false;
     if (isSessionBusy(session)) return false;
     const unreadUpdateTime = getSessionUnreadUpdateTime(session);
     if (unreadUpdateTime <= 0) return false;
@@ -321,6 +322,18 @@
       "",
       t("workflow.status.unreadTitle"),
     );
+  }
+
+  // Review acknowledges the result in RemoteLab, regardless of where the
+  // conversation started. It does not claim that a connector message was read.
+  // A live wait wins; a result awaiting review wins over a between-turn wait.
+  function getSessionRowStatusInfo(session) {
+    const live = getSessionStatusSummary(session).primary;
+    if (normalizeSessionActivity(session).run.state === "running") return live;
+    if (isSessionBusy(session)) return null;
+    const review = getSessionReviewStatusInfo(session);
+    if (review) return { ...review, label: t("session.rowStatus.review") };
+    return live.key === "waiting" ? live : null;
   }
 
   function isSessionCompleteAndReviewed(session) {
@@ -367,6 +380,7 @@
     getSessionVisualStatus,
     hasSessionUnreadUpdate,
     getSessionReviewStatusInfo,
+    getSessionRowStatusInfo,
     isSessionCompleteAndReviewed,
     getSessionWorkflowPriorityInfo,
     getSessionAttentionBand,

@@ -548,14 +548,7 @@ function renderSessionStatusIndicator(statusInfo) {
 }
 
 function getSessionRowStatusInfo(session) {
-  const liveStatus = getSessionStatusSummary(session).primary;
-  if (liveStatus?.key === "running" || liveStatus?.key === "waiting") return liveStatus;
-  const reviewStatus = getSessionReviewStatusInfo(session);
-  if (!reviewStatus) return null;
-  return {
-    ...reviewStatus,
-    label: t("session.rowStatus.review"),
-  };
+  return window.RemoteLabSessionStateModel.getSessionRowStatusInfo(session);
 }
 
 function createActiveSessionItem(session) {

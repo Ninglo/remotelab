@@ -245,8 +245,8 @@ assert.equal(model.isSessionCompleteAndReviewed(completeAndReviewed), true, 'com
 for (const sourceId of ['feishu', 'feishu-bot:work', 'lark', 'email', 'gmail', 'wechat', 'automation', 'custom-bot']) {
   for (const session of [unreadDoneSession, completeAndReviewed]) {
     const external = { ...session, sourceId };
-    assert.equal(model.hasSessionUnreadUpdate(external), false, `${sourceId} should not infer unread state from Web UI visits`);
-    assert.equal(model.getSessionReviewStatusInfo(external), null, `${sourceId} should not show a review badge`);
+    assert.equal(model.hasSessionUnreadUpdate(external), session === unreadDoneSession, `${sourceId} uses the existing RemoteLab result review stamp`);
+    assert.equal(model.getSessionReviewStatusInfo(external)?.key || null, session === unreadDoneSession ? 'unread' : null, `${sourceId} exposes results awaiting RemoteLab review`);
     assert.equal(model.isSessionCompleteAndReviewed(external), false, `${sourceId} should not receive read-based dimming`);
   }
   const runningExternal = { ...runningSession, sourceId };
@@ -260,9 +260,16 @@ for (const sourceId of [undefined, '', 'chat', ' Chat ']) {
 const handoffChild = { ...unreadDoneSession, sourceId: 'chat', delegatedFromSessionId: 'feishu-parent' };
 assert.equal(model.getSessionReviewStatusInfo(handoffChild)?.key, 'unread', 'a Chat UI handoff child tracks its own readership');
 const boundChild = { ...handoffChild, conversation: { connector: 'feishu', chatId: 'chat', topicId: 'topic' } };
-assert.equal(model.getSessionReviewStatusInfo(boundChild), null, 'an external conversation binding disables browser read indicators');
+assert.equal(model.getSessionReviewStatusInfo(boundChild)?.key, 'unread', 'external bindings retain RemoteLab result review without inferring connector readership');
 assert.equal(model.isSessionCompleteAndReviewed({ ...boundChild, lastReviewedAt: boundChild.lastAssistantMessageAt }), false,
   'external bindings must not be styled as read even with an old Chat UI source label');
+
+const waitingResult = { ...unreadDoneSession, sourceId: 'feishu', workflowState: 'waiting_user' };
+assert.equal(model.getSessionRowStatusInfo(waitingResult)?.key, 'unread', 'a new result awaiting review precedes a between-turn wait');
+assert.equal(model.getSessionRowStatusInfo({ ...waitingResult, lastReviewedAt: waitingResult.lastAssistantMessageAt })?.key, 'waiting', 'reviewing the result reveals its existing waiting state');
+assert.equal(model.getSessionRowStatusInfo({ ...waitingResult, activity: waitingSession.activity })?.key, 'waiting', 'a live native wait still precedes review');
+assert.equal(model.getSessionRowStatusInfo({ ...waitingResult, activity: runningSession.activity })?.key, 'running', 'fresh execution still precedes review');
+assert.equal(model.getSessionRowStatusInfo({ ...waitingResult, activity: queuedSession.activity }), null, 'queued input does not resurrect a prior waiting or review badge');
 
 const runningUnreadCandidate = makeSession({
   lastEventAt: '2026-03-14T13:00:00.000Z',
