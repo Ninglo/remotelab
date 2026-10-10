@@ -17,6 +17,7 @@ process.on('message', async ({ id, action, args }) => {
       : action === 'session' ? await manager.getSession(args[0], { includeQueuedMessages: true })
       : action === 'runtime' ? await manager.updateSessionRuntimePreferences(...args)
       : action === 'remove' ? await manager.removeQueuedMessage(...args)
+      : action === 'cancel' ? await manager.cancelActiveRun(...args)
       : action === 'shutdown' ? await manager.killAll()
       : action === 'work-start' ? await work.startWork(args[0])
       : action === 'work-suggest' ? await work.createWorkSuggestion(args[0])

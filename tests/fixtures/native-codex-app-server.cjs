@@ -71,6 +71,7 @@ lines.on('line', line => {
       if (text.includes('ASK_ON_STEER')) askQuestion();
       if (text.includes('ASK_ASYNC_ON_STEER')) askQuestion(true);
       if (text.includes('RELEASE_NATIVE')) finish();
+      if (text.includes('FAIL_NATIVE_TURN')) finish('failed', false);
       if (text.includes('PUBLISH_FINAL_EARLY') || text.includes('PUBLISH_FINAL_FILE_EARLY')) {
         if (text.includes('PUBLISH_FINAL_FILE_EARLY')) {
           const file = path.join(root, 'early-result.txt');

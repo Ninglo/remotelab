@@ -1805,9 +1805,12 @@ async function settleNativeRequest(record, run) {
     // Reserve each destination and its deliveries in the same durable commit.
     // The root owns publication even if an input receipt arrives after finalization.
     await requests.mutate(root.key, current => {
-      if ((current.nativeReplyDestinations || []).includes(ownDestination)
-          || current.deliveries.some(part => part.surfaceKind === 'final'
-            && sameConversation(part, ownPlan))) return current;
+      const reserved = current.nativeReplyDestinations || [];
+      // Failed and cancelled Runs may have no provider final to annotate.
+      // Their reserved native deliveries still own that conversation's reply.
+      if (reserved.includes(ownDestination)
+          || current.deliveries.some(part => (part.surfaceKind === 'final'
+            || reserved.includes(destination(part))) && sameConversation(part, ownPlan))) return current;
       return { ...current, nativeReplyDestinations: [...(current.nativeReplyDestinations || []), ownDestination],
         deliveries: appendDeliveries(current, annotateTerminalReplyDeliveries(buildReplyDeliveries(ownPlan, destinationPayload, {
           running: false, automationTitle: root.options.automationTitle,
