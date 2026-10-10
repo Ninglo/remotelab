@@ -7,6 +7,8 @@ import { createSerialTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createProgressCardRefresh } from '../connectors/feishu/progress-card-refresh.mjs';
 import { createWorkboardEventReader } from '../connectors/feishu/workboard-event-reader.mjs';
+import { createWorkboardQuotaGate } from '../connectors/feishu/workboard-quota-gate.mjs';
+import { feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
 import {
   collectFeishuWorkboardCycles,
   collectFeishuGroupWorkboardCycles,
@@ -101,6 +103,7 @@ if (process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE === '2026-10-07'
 
 async function verifyMessage(messageId, { updated } = {}, chatId = pilot.chatId) {
   const readback = await app.im.v1.message.get({ path: { message_id: messageId } });
+  if (readback?.code !== 0) throw feishuResponseError(readback, 'Feishu workboard readback failed');
   const item = readback?.data?.items?.find(entry => entry.message_id === messageId);
   // IM get exposes a compatibility preview for v2 cards, not the card JSON.
   // The patch response is the content-write receipt; readback checks its
@@ -116,6 +119,13 @@ let syncing = false;
 const pending = new Set();
 const ignored = new Set();
 const retries = new Map();
+const quotaGate = createWorkboardQuotaGate({ onBlocked: async failure => {
+  for (const timer of retries.values()) clearTimeout(timer);
+  retries.clear();
+  pilot.quotaBlocked = failure;
+  await persist();
+  console.error('[feishu-workboard] monthly API quota exhausted; card publication paused until quota is restored and this route worker is restarted');
+} });
 const disclosures = createProgressCardRefresh(pilot);
 let socket = null;
 let reconnectTimer = null;
@@ -125,6 +135,7 @@ async function publishCycle(cycle, cardPilot, chatId) {
   cycle = disclosures.apply(cycle);
   const result = await publishFeishuWorkboardCycle(cycle, { pilot: cardPilot, app, persist,
     verifyMessage: (messageId, options) => verifyMessage(messageId, options, chatId) });
+  if (result && pilot.quotaBlocked) { delete pilot.quotaBlocked; await persist(); }
   disclosures.remember(cycle);
   if (result) console.log(`[feishu-workboard] ${result.action} session=${cycle.sessionId} anchor=${result.anchorSeq} revision=${result.revision}`);
 }
@@ -227,10 +238,10 @@ async function syncOne(sessionId) {
 }
 
 async function drain() {
-  if (syncing) return;
+  if (syncing || quotaGate.blocked) return;
   syncing = true;
   try {
-    while ((disclosures.size || pending.size) && !stopped) {
+    while ((disclosures.size || pending.size) && !stopped && !quotaGate.blocked) {
       // Human clicks take precedence over queued automatic refreshes. Keep
       // the same single writer and sequence fences for both update paths.
       const change = disclosures.take();
@@ -243,6 +254,7 @@ async function drain() {
         retries.delete(sessionId);
       } catch (error) {
         console.error(`[feishu-workboard] sync ${sessionId}: ${error.message}`);
+        if (await quotaGate.observe(error)) continue;
         // Patches are idempotent. An uncertain creation needs inspection rather
         // than another send; the publisher durably fences that outcome.
         if (!/outcome is unknown/.test(error.message) && !retries.has(sessionId)) {

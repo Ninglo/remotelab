@@ -26,6 +26,8 @@ try {
     ['timeout', () => { throw Object.assign(new Error('socket timed out'), { code: 'ETIMEDOUT' }); }, 'unknown'],
     ['gateway', () => { throw apiError(502, { error: 'gateway error' }); }, 'unknown'],
     ['rate-limit', () => { throw apiError(429, { code: 99991400, msg: 'rate limited' }); }, 'pending'],
+    ['monthly-quota', () => { throw apiError(429, { code: 99991403, msg: "This month's API call quota has been exceeded" }); }, 'delivery_failed'],
+    ['monthly-quota-business', () => ({ code: 99991403, msg: 'monthly quota exhausted' }), 'delivery_failed'],
     ['missing-receipt', () => ({ code: 0, data: {} }), 'unknown'],
   ]) {
     const plan = { connector: 'feishu', sourceRouteId: name, target: { chatId: `chat-${name}`, messageId: 'anchor', threadId: 'topic' } };

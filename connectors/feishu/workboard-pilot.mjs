@@ -6,6 +6,8 @@ import { projectWorkboards, workboardStatusLabel, workboardProgressText } from '
 import { parseProgressMessage } from '../../lib/assistant-surface-messages.mjs';
 import { progressPolicyForRun, progressPolicyForCard, usesOctober7GroupMessaging } from '../../lib/session-progress-policy.mjs';
 import { projectProgressStreams, progressExecutionLabel } from '../../lib/progress-stream.mjs';
+import { feishuResponseError } from './delivery-errors.mjs';
+import { isFeishuMonthlyQuotaError } from '../../lib/feishu-retry-policy.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -229,17 +231,28 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
       ...(cycle.messageReplyPolicy ? { progressMode: cycle.messageReplyPolicy.progress } : {}) };
     pilot.cards.push(card);
     await persist();
-    const response = cycle.replyMessageId
-      ? await app.im.v1.message.reply({
-        path: { message_id: cycle.replyMessageId },
-        data: { msg_type: 'interactive', content, reply_in_thread: true, uuid },
-      })
-      : await app.im.v1.message.create({
-        params: { receive_id_type: 'chat_id' },
-        data: { receive_id: pilot.chatId, msg_type: 'interactive', content, uuid },
-      });
-    if (response?.code !== 0 || !response.data?.message_id) {
-      throw new Error(response?.msg || 'Feishu workboard create failed');
+    let response;
+    try {
+      response = cycle.replyMessageId
+        ? await app.im.v1.message.reply({
+          path: { message_id: cycle.replyMessageId },
+          data: { msg_type: 'interactive', content, reply_in_thread: true, uuid },
+        })
+        : await app.im.v1.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: { receive_id: pilot.chatId, msg_type: 'interactive', content, uuid },
+        });
+      if (response?.code !== 0 || !response.data?.message_id) {
+        throw feishuResponseError(response, 'Feishu workboard create failed');
+      }
+    } catch (error) {
+      // This structured rejection proves no card was created. Keep unknown
+      // sends fenced, but do not strand a quota-rejected create as uncertain.
+      if (isFeishuMonthlyQuotaError(error)) {
+        pilot.cards.splice(pilot.cards.indexOf(card), 1);
+        await persist();
+      }
+      throw error;
     }
     card.messageId = response.data.message_id;
     card.createdAt = Number(response.data.create_time) || Date.now();
@@ -268,7 +281,7 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
     path: { message_id: card.messageId },
     data: { content },
   });
-  if (response?.code !== 0) throw new Error(response?.msg || 'Feishu workboard update failed');
+  if (response?.code !== 0) throw feishuResponseError(response, 'Feishu workboard update failed');
   await verifyMessage(card.messageId, { updated: true });
   card.latestSeq = cycle.latestSeq;
   card.taskId = cycle.taskId;

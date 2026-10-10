@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createWorkboardQuotaGate } from '../connectors/feishu/workboard-quota-gate.mjs';
 import {
   buildFeishuWorkboardCard,
   isFeishuInstanceWorkboardSession,
@@ -24,6 +25,50 @@ const user = (seq, sender = 'open-zhang') => ({ seq, type: 'message', role: 'use
   sourceContext: { sender: { openId: sender } } });
 const list = (seq, done = false) => ({ seq, type: 'message', role: 'assistant',
   source: 'workboard_checklist', content: `目标：交付结果\n[${done ? 'x' : ' '}] 核验 — 可核对。` });
+
+test('monthly quota blocks the route once; short throttling remains retryable', async () => {
+  const failures = [];
+  const gate = createWorkboardQuotaGate({ now: () => 0, onBlocked: async failure => failures.push(failure) });
+  assert.equal(await gate.observe({ code: 99991400, httpStatus: 429 }), false);
+  assert.equal(gate.blocked, false);
+  assert.equal(await gate.observe(Object.assign(new Error('monthly quota exhausted'), {
+    response: { status: 429, data: { code: 99991403 } },
+  })), true);
+  assert.equal(gate.blocked, true);
+  assert.equal(await gate.observe({ feishuCode: 99991403 }), true);
+  assert.equal(failures.length, 1, 'one route-wide operator notice rather than one notice per card/event');
+  assert.equal(failures[0].at, '1970-01-01T00:00:00.000Z');
+  assert.equal(createWorkboardQuotaGate().blocked, false, 'an operator restart can probe restored quota');
+});
+
+test('quota-rejected card creation can recover with the same UUID after restart', async () => {
+  for (const transportRejection of [false, true]) {
+    const state = { ...pilot, cards: [] };
+    const cycle = { sessionId: pilot.sessionId, anchorSeq: 12, latestSeq: 12,
+      content: list(12).content, closed: false };
+    const uuids = [];
+    let restored = false;
+    const app = { im: { v1: { message: { create: async ({ data }) => {
+      uuids.push(data.uuid);
+      if (restored) return { code: 0, data: { message_id: 'restored-card' } };
+      const rejection = { code: 99991403, msg: 'monthly quota exhausted' };
+      if (transportRejection) throw Object.assign(new Error(rejection.msg), { response: { status: 429, data: rejection } });
+      return rejection;
+    } } } } };
+    const options = { pilot: state, app, persist: async () => {}, verifyMessage: async () => {} };
+    const gate = createWorkboardQuotaGate();
+    await assert.rejects(publishFeishuWorkboardCycle(cycle, options), asyncError => {
+      return Number(asyncError.feishuCode ?? asyncError.response?.data?.code) === 99991403;
+    });
+    assert.equal(state.cards.length, 0, 'definite rejection does not become an uncertain creation');
+    assert.equal(await gate.observe({ code: 99991403 }), true);
+    restored = true;
+    const restarted = JSON.parse(JSON.stringify(state));
+    assert.equal((await publishFeishuWorkboardCycle(cycle, { ...options, pilot: restarted })).action, 'created');
+    assert.equal(restarted.cards[0].messageId, 'restored-card');
+    assert.equal(uuids[0], uuids[1], 'recovery retains source identity and provider deduplication key');
+  }
+});
 
 test('only the opted-in private chat can publish a checklist', () => {
   assert.equal(isFeishuWorkboardPilotSession(session, pilot), true);

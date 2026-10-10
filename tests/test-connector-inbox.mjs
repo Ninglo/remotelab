@@ -141,6 +141,9 @@ try {
   assert.equal(retryCalls, 5, 'a crash after persisting the final attempt cannot reset or exceed the budget');
   assert.equal((await inbox.store.get(interrupted.key)).receipt.retryExhausted, true);
   assert.equal(feishuReadRetryPolicy({ code: 99991672 }).retryable, false);
+  assert.equal(feishuReadRetryPolicy({ code: 99991403, httpStatus: 429 }).retryable, false,
+    'monthly quota needs operator action rather than short rate-limit retries');
+  assert.equal(feishuReadRetryPolicy({ feishuCode: 99991403 }).retryable, false);
   assert.equal(feishuReadRetryPolicy({ code: 1061004 }).retryable, false);
   assert.equal(feishuReadRetryPolicy({ code: 99999999 }).retryable, true, 'unfamiliar business errors use the bounded budget instead of freezing a binding');
   assert.equal(feishuReadRetryPolicy({ httpStatus: 404 }).retryable, false);
