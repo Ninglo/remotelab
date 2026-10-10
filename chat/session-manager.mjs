@@ -1,4 +1,5 @@
 import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
+import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
 import { strictStartCheckPrompt } from './strict-start-check.mjs';
@@ -3116,7 +3117,7 @@ async function updateSessionTool(id, tool) {
   return enrichSessionMeta(result.meta);
 }
 
-export async function updateSessionRuntimePreferences(id, patch = {}) {
+export async function updateSessionRuntimePreferences(id, patch = {}, { expectedRuntimeRevision } = {}) {
   const hasFeishuRuntimePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'feishuRuntimeSelection');
   const feishuRuntimeSelection = hasFeishuRuntimePatch ? normalizeExternalRuntimeOverride(patch.feishuRuntimeSelection) : null;
   const hasToolPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'tool');
@@ -3147,6 +3148,9 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
   let toolChanged = false;
 
   const result = await mutateSessionMeta(id, (session) => {
+    if (expectedRuntimeRevision !== undefined && sessionRuntimeRevision(session) !== expectedRuntimeRevision) {
+      throw Object.assign(new Error('当前对话模型已更新，请重新载入后再保存。'), { status: 409 });
+    }
     let changed = false;
 
     if (session.autoRouting) {
