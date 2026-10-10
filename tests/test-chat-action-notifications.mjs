@@ -152,6 +152,8 @@ entry.children[1].click();
 assert.equal(shared.elements.get('notificationList').children.length, 1, 'the conversation entry opens only its related notices');
 assert.equal(shared.elements.get('notificationBadge').textContent, '1', 'a filtered view cannot mark other conversations read');
 assert.equal(entry.hidden, false, 'viewing does not dismiss the delivery failure');
+shared.context.showSystemToast('New failure in B', 'error', { sessionId: 'session-b' });
+assert.equal(shared.elements.get('notificationBadge').textContent, '2', 'new local notices outside the visible conversation stay unread');
 shared.elements.get('notificationClear').click();
 assert.equal(shared.elements.get('notificationList').children.length, 1, 'clearing local history does not erase durable errors');
 
@@ -170,4 +172,16 @@ shared.elements.get('notificationShowAll').click();
 assert.equal(shared.elements.get('notificationList').children.length, 1, 'unrelated active warnings remain available');
 const saved = JSON.parse(shared.storage.get('remotelab.notifications:/:person-a:delivery-read'));
 assert.equal(saved['delivery-b'], 'version-b', 'store only read versions, not copies of delivery data');
+
+const uncertainDismissal = page();
+let committed = false;
+uncertainDismissal.context.fetchJsonOrRedirect = async url => {
+  if (url === '/api/source-delivery-issues') return { issues: committed ? [] : [issueA] };
+  committed = true;
+  throw new Error('Acknowledgment committed but HTTP response lost');
+};
+await vm.runInContext('RemoteLabNotifications.refreshDeliveryIssues()', uncertainDismissal.context);
+await uncertainDismissal.elements.get('notificationList').children[0].children.at(-1).click();
+assert.equal(uncertainDismissal.elements.get('notificationList').children[0].className, 'notification-empty',
+  'readback of a committed dismissal removes an uncertain-response error without retrying the write');
 console.log('test-chat-action-notifications: ok');

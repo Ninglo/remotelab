@@ -191,6 +191,7 @@ const RemoteLabNotifications = (() => {
             .map(issue => [issue.id, issue.issueVersion]));
           deliveryLoaded = true;
           refreshError = false;
+          if (dismissError && !deliveryIssues.some(issue => issue.id === dismissError)) dismissError = false;
           if (panel?.hidden === false) markVisibleRead();
           else persist();
         } catch {
@@ -222,7 +223,7 @@ const RemoteLabNotifications = (() => {
         typeof refreshSidebarSession === "function" ? refreshSidebarSession(issue.sessionId, { forceFresh: true }).catch(() => {}) : null,
       ]);
     } catch {
-      dismissError = true;
+      dismissError = issue.id;
       await refreshDeliveryIssues();
     } finally {
       dismissing.delete(issue.id);
@@ -266,7 +267,9 @@ const RemoteLabNotifications = (() => {
       const text = typeof message === "string" ? message.trim() : String(message || "");
       if (!text) return;
       const severity = ["error", "warn"].includes(level) ? level : "info";
-      notices.unshift({ message: text, level: severity, at: Date.now(), sessionId: options.sessionId || "", read: panel?.hidden === false });
+      const sessionId = options.sessionId || "";
+      notices.unshift({ message: text, level: severity, at: Date.now(), sessionId,
+        read: panel?.hidden === false && visible({ sessionId }) });
       notices = notices.slice(0, limit);
       persist();
       render();
