@@ -91,6 +91,7 @@ import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { handleWorkAwarenessRoutes } from './router-work-awareness.mjs';
 import { handleFeishuWebSettings } from './router-feishu-web-settings.mjs';
 import { handleSiteFeedbackRoutes } from './router-site-feedback-routes.mjs';
+import { handleProjectFeedbackRoutes } from './router-project-feedback-routes.mjs';
 import { handleQianyanRoutes } from './router-qianyan-routes.mjs';
 import { handleQianyanInternalRoutes } from './router-qianyan-internal-routes.mjs';
 import { getBootstrapInstanceSettings } from './instance-settings.mjs';
@@ -1449,6 +1450,7 @@ export async function handleRequest(req, res) {
   // ---- API endpoints ----
 
   if (await handleSiteFeedbackRoutes({ req, res, pathname, authSession, writeJson })) return;
+  if (await handleProjectFeedbackRoutes({ req, res, pathname, authSession, writeJson })) return;
 
   if (await handleDisplaySettingsRoutes({ req, res, pathname, authSession, writeJson })) {
     return;

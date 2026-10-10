@@ -114,6 +114,7 @@
           <button type="button" role="tab" id="monitoringOverviewTab" aria-controls="monitoringOverview" aria-selected="false" tabindex="-1" data-i18n="monitoring.overview">Overview</button>
           <button type="button" role="tab" id="monitoringUsageTab" aria-controls="monitoringUsage" aria-selected="false" tabindex="-1" data-i18n="monitoring.usageAnalysis">Usage analysis</button>
           <button type="button" role="tab" id="monitoringAutomationsTab" aria-controls="monitoringAutomations" aria-selected="true" data-i18n="monitoring.automations">Automations</button>
+          <button type="button" role="tab" id="monitoringFeedbackTab" aria-controls="monitoringFeedback" aria-selected="false" tabindex="-1" data-i18n="feedback.title">Feedback and improvement</button>
         </nav>
         <section id="monitoringOverview" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringOverviewTab" hidden>
           <div class="monitoring-toolbar">
@@ -130,6 +131,7 @@
           </div>
           <div id="usageAnalysisContent" aria-live="polite"></div>
         </section>
+        <section id="monitoringFeedback" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringFeedbackTab" hidden></section>
         <section id="monitoringAutomations" role="tabpanel" aria-labelledby="monitoringAutomationsTab">
         <form class="task-center-form" id="taskCenterForm" hidden>
           <label class="task-center-field">
@@ -826,6 +828,7 @@
 <script src="chat/display-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/automation-overview.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/task-center.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/project-feedback.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/monitoring.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/usage-analysis.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

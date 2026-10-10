@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Inspect and submit subproject feedback from Monitor
+
+- Feedback: users need a subproject row with collected feedback and change directions, clickable original details, and a place to submit new opinions.
+- Change: add Feedback and improvement inside the existing Monitor. Join the existing manually reviewed classification to private original sources; keep pending ownership, conversation context, paused history and missing coverage visible. New text, usefulness signals, examples and material links are attributed to the authenticated Person and saved durably with retry deduplication.
+- Evidence boundary: sample record counts are not unresolved issues or all-channel totals; analysis directions are proposals. Saving feedback enters the existing review workflow, without starting an extra classifier or treating a vote as approval. Private comments and instance paths stay out of shared Git.
+- Verification: synthetic source/route tests and browser checks cover source links and passages, attribution, duplicates, source failures, save/readback, reload, phone layout, keyboard tabs, language switching and literal HTML. CI and the active instance's loaded version are separate deployment checks.
+
 ### 2026-10-10 — Reuse Session review state in the Feishu Web topic list
 
 - Feedback: the reading shortcuts looked unlike the native navigation; topic rows lacked review and a new topic initially lacked its title, status and description. Review means a result awaiting review using the existing RemoteLab behavior; no separate Feishu unread mechanism is requested.

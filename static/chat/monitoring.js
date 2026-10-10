@@ -5,9 +5,10 @@
   const automations = document.getElementById("monitoringAutomations");
   const content = document.getElementById("monitoringContent");
   if (!overview || !automations || !content) return;
-  const views = ["overview", "usage", "automations"];
+  const views = ["overview", "usage", "automations", "feedback"];
+  const feedback = document.getElementById("monitoringFeedback");
   const usage = document.getElementById("monitoringUsage");
-  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab")];
+  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab"), document.getElementById("monitoringFeedbackTab")];
   const period = document.getElementById("monitoringPeriod");
   const refresh = document.getElementById("monitoringRefresh");
   const create = document.getElementById("taskCenterCreateToggle");
@@ -227,6 +228,7 @@
   function select(next, { sync = true } = {}) {
     view = next; overview.hidden = view !== "overview"; automations.hidden = view !== "automations";
     if (usage) usage.hidden = view !== "usage";
+    if (feedback) feedback.hidden = view !== "feedback";
     create.hidden = view !== "automations";
     tabs.forEach((tab, index) => { const selected = index === views.indexOf(view);
       tab.setAttribute("aria-selected", String(selected)); tab.tabIndex = selected ? 0 : -1;
@@ -237,6 +239,7 @@
       globalScope.history.replaceState(null, "", url);
       if (view === "overview") void load();
       else if (view === "usage") void globalScope.RemoteLabUsageAnalysis?.load();
+      else if (view === "feedback") void globalScope.RemoteLabProjectFeedback?.load();
       else void globalScope.RemoteLabTaskCenter?.onTabShown();
     }
   }
@@ -254,7 +257,7 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && view === "overview" && document.body.dataset.appView === "tasks") void load({ silent: true });
   });
-  globalScope.RemoteLabMonitoring = { isOverview: () => view !== "automations", onTabShown: () => view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
+  globalScope.RemoteLabMonitoring = { isOverview: () => view !== "automations", onTabShown: () => view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
   select(view, { sync: false });
   if (view === "overview" && document.body.dataset.appView === "tasks") void load();
 })(window);
