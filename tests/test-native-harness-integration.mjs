@@ -92,6 +92,10 @@ try {
   assert.equal(steeredClaim.delivery.publicationRequestId, 'opening-steer');
   await rpc('complete', steeredClaim.delivery.id, steeredClaim.leaseId, { externalId: 'steered-opening' });
   assert.equal((await rpc('accept', replySession.id, 'HOLD_OPENING_ACK', [], replyOptions('opening-steer'))).duplicate, true);
+  // This case checks publication recovery across an ordinary restart. Drain
+  // observers before stopping the controller so unfinished lock creation is
+  // not confused with that contract; dedicated SIGKILL cases remain below.
+  await rpc('shutdown');
   await killController(); await boot();
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'controller recovery cannot repeat either opening');
   assert.equal((await logs()).filter(event => event.clientId === 'opening-steer').length, 1);
