@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, open, link, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
+import { usageEvents } from './usage-events.mjs';
+import { buildFeedbackActivity } from './project-feedback-activity.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v, max) => typeof v === 'string' && v.trim().length <= max ? v.trim() : null;
@@ -72,7 +74,8 @@ function webRecord(raw, classification, themes) {
 }
 
 export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feedback-board.json'),
-  defaultWriteDir = join(CONFIG_DIR, 'project-feedback'), now = () => new Date().toISOString() } = {}) {
+  defaultWriteDir = join(CONFIG_DIR, 'project-feedback'), now = () => new Date().toISOString(),
+  queryUsage = options => usageEvents.query(options) } = {}) {
   async function snapshot() {
     let config;
     try { config = JSON.parse(await readFile(configFile, 'utf8')); }
@@ -84,6 +87,8 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
       catch (error) { gaps.push({ source: key, code: error.code || 'invalid_json' }); return null; }
     }
     const [review, ledger, qianyan] = await Promise.all([source('reviewFile'), source('legacyFile'), source('qianyanFile')]);
+    const activityMetadata = config.metadataFile ? await source('metadataFile') : {};
+    const qianyanActivity = config.qianyanActivityFile ? await source('qianyanActivityFile') : null;
     const classifications = new Map((review?.classifications || []).map(c => [c.source_record_id, c]));
     const themes = new Map((review?.themes || []).map(t => [t.id, t]));
     const records = new Map();
@@ -112,13 +117,24 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     }
     list.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '') || a.id.localeCompare(b.id));
     return { configured: Boolean(review), projects, records: list, gaps, writeDir,
-      review_at: review?.created_at || null, generated_at: now(), themes: [...themes.values()] };
+      review_at: review?.created_at || null, generated_at: now(), themes: [...themes.values()], activityMetadata, qianyanActivity };
   }
   async function read(subproject) {
     const data = await snapshot();
     const extras = ['unassigned_feedback', 'related_context', 'paused_history'];
+    const summaries = data.projects.map(p => {
+      const own = data.records.filter(r => r.bucket === 'assigned_feedback' && r.subproject_id === p.id);
+      return { ...p, feedback_count: own.length, pending_analysis_count: own.filter(r => r.review_state === 'collected').length,
+        latest_at: own[0]?.created_at || null, coverage: own.length ? 'sample' : 'not_represented', current_unresolved_count: null };
+    });
+    let usage = null;
+    if (data.activityMetadata?.projects) {
+      try { usage = await queryUsage({ days: 30, limit: 1 }); }
+      catch { data.gaps.push({ source: 'usage', code: 'unavailable' }); }
+    }
+    const activity = buildFeedbackActivity(summaries, data.records, data.activityMetadata || {}, usage, data.generated_at || now(), data.qianyanActivity);
     if (subproject !== undefined) {
-      const project = data.projects.find(p => p.id === subproject);
+      const project = activity.projects.find(p => p.id === subproject);
       if (!project && !extras.includes(subproject)) throw fault('NOT_FOUND', '子项目不存在。');
       return { configured: data.configured, project: project || null, gaps: data.gaps,
         records: data.records.filter(r => project ? r.bucket === 'assigned_feedback' && r.subproject_id === subproject : r.bucket === subproject),
@@ -127,11 +143,7 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     const counts = Object.fromEntries(extras.map(key => [key, data.records.filter(r => r.bucket === key).length]));
     return { configured: data.configured, generated_at: data.generated_at, review_at: data.review_at, gaps: data.gaps,
       counts: { ...counts, assigned_feedback: data.records.filter(r => r.bucket === 'assigned_feedback').length, raw_records: data.records.length },
-      projects: data.projects.map(p => {
-        const own = data.records.filter(r => r.bucket === 'assigned_feedback' && r.subproject_id === p.id);
-        return { ...p, feedback_count: own.length, pending_analysis_count: own.filter(r => r.review_state === 'collected').length,
-          latest_at: own[0]?.created_at || null, coverage: own.length ? 'sample' : 'not_represented', current_unresolved_count: null };
-      }) };
+      ...activity };
   }
   async function submit(actor, input) {
     const payload = normalize(input);

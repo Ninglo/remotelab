@@ -60,6 +60,51 @@ review, preserve stable original records, and write analysis into the existing
 review/plan records. Updating a review pointer refreshes the monitor projection;
 no automatic semantic classifier or separate review queue is introduced.
 
+## Parent groups, dates and attention
+
+Configure `metadataFile` in the same private board config. Its `groups` array
+contains `{id, name, classification_status}`; `projects` is keyed by subproject
+ID with optional `group_id`, `started_at`, `start_kind` (`project`, `registered`,
+`rollout`), `start_source_url`, `observation_started_at`, `phase` (`existing`,
+`planned`, `paused`), `usage_features` and `usage_scope`. This is a presentation
+projection with source pointers, not a second business project registry. Missing
+parents remain unconfirmed, and missing dates remain unknown. Never substitute
+the first feedback, file timestamp or telemetry start for the project start.
+
+The view groups subprojects under parents and orders attention by pending
+analysis, feedback in the last 14 days, a sourced start within 14 days, observed
+failed calls, and usage. New silent projects stay visible. Recent calls without
+feedback suggest less frequent observation, not proven quality. A mature project
+with no feedback in 14 days and no observed calls in a fully covered 30-day
+window becomes an idle **candidate**. New feedback brings it forward immediately.
+Unknown or short sampling cannot establish inactivity. Paused projects remain
+paused. These states change display order only; the existing review schedule is
+maintained independently.
+
+## Feature invocation evidence
+
+The board reuses `/api/usage`'s private event store and its deduplicated
+`capability_state` aggregation. Narrow hooks cover `work context`
+(`project_context`), `work route` (`work_routing`), task checklist publication
+and `workboard update` (`response_progress`), and successful feedback saves
+(`feedback`). CLI starts and settled receipts distinguish attempted calls,
+completed entries and failures; a completed entry is not business acceptance.
+Stable feedback record identity joins uncertain HTTP retries. Page views and
+opening feedback details do not count as feature invocations. Direct human,
+Agent and automation counts remain separate. Generic recording controls can be
+mapped with an explicit partial scope; generic search or memory counts must not
+be silently assigned to a business subproject.
+
+New hook coverage has its own durable sampling start. Only observed intervals
+after collection loss qualify; source gaps and uninstrumented features stay
+unknown. `qianyanActivityFile` optionally reads the existing Qianyan collaboration
+state as an aggregate: presentation counts are separate from expand, source
+open, filter, copy, play and document-open operations. That source currently
+retains cumulative buckets, so the board labels them cumulative and never
+interprets a recent last operation as a 30-day total. It does not expose people,
+comments, targets or authentication from that source, or use its cumulative
+count alone to declare a project active or idle.
+
 Verification: `npm run test:project-feedback` checks persistence, attribution,
 concurrent deduplication, source joins, unknown coverage, validation and routes.
 The optional synthetic browser gate in `tests/test-project-feedback-browser.mjs`

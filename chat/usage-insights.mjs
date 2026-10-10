@@ -21,7 +21,7 @@ const dayKey = timestamp => {
 };
 
 export function buildUsageInsights(events, { start = 0, now = Date.now(), collectionStartedAt = null,
-  gaps = [], scanIncomplete = false, dropped = 0, failures = 0, sessionOrigins = [], originLookupIncomplete = false, featureStartedAt = null,
+  gaps = [], scanIncomplete = false, dropped = 0, failures = 0, sessionOrigins = [], originLookupIncomplete = false, featureStartedAt = null, featureCollectionStarts = {},
   feishuCardSampling = { routes: [], incomplete: false, started: false }, settingEvents = null, settingSnapshot = {} } = {}) {
   // Following a known gap, begin a new continuous observation interval.
   // Pairing events across a missing interval would invent timings/conversions.
@@ -60,7 +60,7 @@ export function buildUsageInsights(events, { start = 0, now = Date.now(), collec
   const journeys = analyzeJourneys(qualified, reliable && !originLookupIncomplete, sessionOrigins);
   const execution = analyzeExecution(qualified, inputs, humanSessions, reliable, now);
   const artifacts = analyzeArtifacts(qualified, reliable);
-  const functions = buildFeatureInsights(qualified, { since, sessionOrigins, featureStartedAt });
+  const functions = buildFeatureInsights(qualified, { since, sessionOrigins, featureStartedAt, featureCollectionStarts });
   const cardEvents = qualified.filter(event => ['feishu_card_action', 'feishu_card_read'].includes(event.event)
     && event.surface === 'feishu' && event.actorKind === 'human' && event.actorKey && event.objectId);
   const feishuCards = summarizeFeishuCardEngagement(cardEvents);

@@ -7,6 +7,10 @@ export const CAPABILITIES = {
   automation: ['自动化配置', 'Automation configuration'], publishing: ['网页发布与预览', 'Publishing and previews'],
   devices: ['本地设备连接', 'Local devices'], delegation: ['会话分工', 'Session delegation'],
   connectors: ['连接器调用', 'Connector calls'], images: ['图像生成', 'Image generation'],
+  project_context: ['开工上下文查询', 'Work context lookup'],
+  work_routing: ['工作分流', 'Work routing'],
+  response_progress: ['任务清单与进展更新', 'Task checklist and progress updates'],
+  feedback: ['网页反馈保存', 'Web feedback saved'],
 };
 export function nativeCapability(tool) {
   return ({ web_search: 'search', web__run: 'search', qianyan_search: 'search', qianyan_read: 'search',
@@ -15,6 +19,12 @@ export function nativeCapability(tool) {
 export function commandCapability(command, args = []) {
   if (!args.length || args.some(arg => ['--help', '-h', '--guide', '--dry-run'].includes(arg))) return null;
   const action = args[0];
+  if (command === 'work' && ['context', 'route'].includes(action)) return {
+    feature: action === 'context' ? 'project_context' : 'work_routing', operation: 'work.' + action,
+  };
+  if (command === 'workboard' && action === 'update') return { feature: 'response_progress', operation: 'workboard.update' };
+  if (command === 'assistant-message' && (args.includes('--workboard-file')
+    || args.includes('--source') && args[args.indexOf('--source') + 1] === 'workboard_checklist')) return { feature: 'response_progress', operation: 'workboard.publish' };
   const allowed = {
     memory: ['context', 'apply'], recording: ['start', 'stop', 'toggle', 'retry'],
     todo: ['list', 'get', 'create', 'update', 'complete', 'delete'],

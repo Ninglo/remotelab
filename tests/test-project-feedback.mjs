@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { createProjectFeedbackStore } from '../chat/project-feedback.mjs';
 import { createProjectFeedbackHandler } from '../chat/router-project-feedback-routes.mjs';
+import { buildFeedbackActivity } from '../chat/project-feedback-activity.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'project-feedback-'));
 const configFile = join(root, 'board.json'), writeDir = join(root, 'web');
@@ -84,7 +85,9 @@ try {
   const noConfig = createProjectFeedbackStore({ configFile: join(root, 'none') });
   assert.equal((await noConfig.read()).configured, false);
   await assert.rejects(() => noConfig.submit(actor, quick), { code: 'NOT_CONFIGURED' });
-  const handle = createProjectFeedbackHandler({ store: fresh, personLookup: async id => ({ id, name: 'Verified name' }) });
+  const observed = [];
+  const handle = createProjectFeedbackHandler({ store: fresh, personLookup: async id => ({ id, name: 'Verified name' }),
+    usageStore: { record: async batch => { observed.push(...batch); return true; } } });
   async function route(method, body, headers = {}, person = 'person_test', url = '/api/project-feedback') {
     const req = Readable.from(body === undefined ? [] : [JSON.stringify(body)]);
     req.method = method; req.url = url; req.socket = {};
@@ -104,6 +107,46 @@ try {
   const result = await route('POST', { ...quick, actor: { name: 'Spoofed' } });
   assert.equal(result.status, 201); assert.equal(result.data.record.author, 'Verified name');
   assert.equal((await route('POST', quick)).status, 200);
+  assert.equal(new Set(observed.filter(e => e.state === 'completed').map(e => e.operationId)).size, 1);
+  assert(!JSON.stringify(observed).includes('Spoofed'));
   assert.equal((await route('POST', { ...quick, usefulness: 'useful' })).status, 409);
   console.log('Project feedback: source identity, deduplication, classification, gaps, durable writes, attribution, concurrency, validation and authenticated routes passed.');
 } finally { await rm(root, { recursive: true, force: true }); }
+
+// Rank evidence, not silence or historical totals. Page openings are not feature calls.
+{
+  const now = '2026-10-10T12:00:00Z', old = '2026-07-01T12:00:00Z';
+  const projects = ['idle', 'quiet', 'new', 'unknown', 'hot', 'failed', 'paused'].map(id => ({ id, name: id,
+    feedback_count: 0, pending_analysis_count: 0, latest_at: null }));
+  const metadata = { groups: [{ id: 'parent', name: 'Parent' }], projects: Object.fromEntries(projects.map(p => [p.id,
+    { group_id: 'parent', phase: p.id === 'paused' ? 'paused' : 'existing', started_at: p.id === 'new' ? '2026-10-09T00:00:00Z' : null,
+      usage_features: p.id === 'unknown' ? [] : [p.id] }])) };
+  const usage = { collectionStartedAt: old, report: { since: '2026-09-10T12:00:00Z', quality: { reliable: true }, functions: {
+    featureStartedAt: old, features: [{ feature: 'quiet', calls: 5, completed: 4, directHuman: 2, agent: 2, automated: 1, latestAt: now },
+      { feature: 'failed', calls: 1, failed: 1, completed: 0, latestAt: now }] } }, coverage: { incomplete: false } };
+  const get = (data, id) => data.projects.find(p => p.id === id);
+  const result = buildFeedbackActivity(projects, [], metadata, usage, now);
+  assert.equal(get(result, 'new').attention.state, 'new_observation', 'new and silent must stay visible');
+  assert.equal(get(result, 'idle').attention.state, 'idle_candidate');
+  assert.equal(get(result, 'quiet').attention.state, 'quiet_observation');
+  assert.equal(get(result, 'quiet').usage.direct_human, 2); assert.equal(get(result, 'quiet').usage.automated, 1);
+  assert.equal(get(result, 'unknown').usage.calls, null, 'missing hooks are not zero use');
+  assert.equal(get(result, 'unknown').started_at, null, 'first feedback cannot invent the project start');
+  assert.equal(get(result, 'failed').attention.state, 'usage_failures');
+  const reopened = buildFeedbackActivity(projects, [{ id: 'fresh', subproject_id: 'idle', bucket: 'assigned_feedback',
+    created_at: now, review_state: 'collected' }], metadata, usage, now);
+  assert.equal(reopened.projects[0].id, 'idle', 'new feedback resurfaces an idle project');
+  assert.equal(reopened.groups[0].recent_feedback_count, 1);
+  const short = buildFeedbackActivity(projects, [], metadata, { ...usage, report: { ...usage.report, since: '2026-10-09T00:00:00Z' } }, now);
+  assert.equal(get(short, 'idle').attention.state, 'sampling_new', 'a short/gap-truncated observation cannot prove idle');
+  const degraded = buildFeedbackActivity(projects, [], metadata, { ...usage, report: { ...usage.report, quality: { reliable: false } } }, now);
+  assert.equal(get(degraded, 'idle').usage.calls, null);
+  assert.equal(get(degraded, 'paused').attention.state, 'paused', 'telemetry cannot resume paused work');
+  metadata.projects.hot.usage_source = 'qianyan';
+  const cumulative = buildFeedbackActivity(projects, [], metadata, usage, now, { activity_counts: {
+    a: { event: 'source_open', count: 15, first_at: old, last_at: now }, b: { event: 'visible', count: 30 } } });
+  assert.equal(get(cumulative, 'hot').usage.calls, 15); assert.equal(get(cumulative, 'hot').usage.exposures, 30);
+  assert.equal(get(cumulative, 'hot').usage.status, 'cumulative'); assert.equal(get(cumulative, 'hot').usage.days, null);
+  assert.notEqual(get(cumulative, 'hot').attention.state, 'idle_candidate');
+  console.log('Feedback attention: parent grouping, new silent projects, idle resurfacing, usage attribution, partial coverage and cumulative source boundaries passed.');
+}

@@ -98,6 +98,24 @@ test('CLI entry observation preserves output, pairs states, distinguishes blocke
   assert.equal(commandCapability('bash', ['echo', 'code']), null);
 });
 
+test('subproject hooks observe concrete context, routing and workboard entries only', () => {
+  assert.deepEqual(commandCapability('work', ['context', '--query', 'private task']), { feature: 'project_context', operation: 'work.context' });
+  assert.equal(commandCapability('work', ['route', '--file', '/private/input']).feature, 'work_routing');
+  assert.equal(commandCapability('workboard', ['update', '--task', 'task']).feature, 'response_progress');
+  assert.equal(commandCapability('assistant-message', ['--source', 'workboard_checklist', '--text', 'private']).feature, 'response_progress');
+  assert.equal(commandCapability('assistant-message', ['--text', 'private']), null);
+  assert.equal(commandCapability('work', ['review', '--file', 'file']), null);
+  assert.equal(commandCapability('work', ['context', '--help']), null);
+});
+
+test('a retried old feedback receipt cannot backfill use before the named hook started', () => {
+  const events = [e(120, 'capability_state', { feature: 'feedback', operationId: 'old', state: 'completed', actorKind: 'human' }),
+    e(150, 'capability_state', { feature: 'feedback', operationId: 'new', state: 'completed', actorKind: 'human' })];
+  const row = buildUsageInsights(events, { start: 100, now: 1000,
+    featureCollectionStarts: { feedback: new Date(140).toISOString() } }).functions.features[0];
+  assert.equal(row.calls, 1); assert.equal(row.directHuman, 1); assert.equal(row.latestAt, new Date(150).toISOString());
+});
+
 test('failed telemetry does not prevent a CLI action or change its error', async () => {
   let invoked = false;
   const opts = { store: { record: async () => { throw new Error('disk full'); }, idle: async () => {} },
