@@ -14,6 +14,9 @@ export function canForwardNativeRequest(record, head) {
       || head.options?.routingRethink) return false;
   if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding
       || head.options?.sourceContext?.documentBinding || head.options?.internalOperation)) return false;
+  if (!record.options?.nativeQuestionId
+      && (record.options?.messageRoutingPolicy?.mechanism || 'legacy')
+        !== (head.options?.messageRoutingPolicy?.mechanism || 'legacy')) return false;
   // A pre-upgrade turn does not know the per-input reply contract. Preserve its
   // accepted behavior; only two new-protocol pilot inputs may share execution.
   if (!record.options?.nativeQuestionId && (record.options?.routingPilotMainline || head.options?.routingPilotMainline)

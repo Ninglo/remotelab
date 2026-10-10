@@ -25,7 +25,7 @@ function buildFeishuLogPromptBlock(sourceContext) {
   ].join('\n');
 }
 
-export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', pilotInputReplyContract = false } = {}) {
+export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', pilotInputReplyContract = false, messageRoutingPolicy } = {}) {
   const sections = await Promise.allSettled([
     buildLearningContext({ personId, identityId, query: `${query}\n${sourceContext?.connector || ''}`, session, sourceContext }),
     buildProjectMemoryPromptBlock(session, sourceContext),
@@ -33,7 +33,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     buildWorkAwarenessContext(session, { query }),
     query ? buildNecessaryBackgroundContext(session, { query, sourceContext }) : '',
     buildServiceAccessPromptBlock(query),
-    buildGroupRoutingContext(session, sourceContext, { inputReplyContract: pilotInputReplyContract }),
+    buildGroupRoutingContext(session, sourceContext, { inputReplyContract: pilotInputReplyContract, messageRoutingPolicy }),
   ]);
   const [learning, project, people, work, background, serviceAccess, groupRouting] = sections.map((result, index) => result.status === 'fulfilled'
     ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['learning', 'project', 'people', 'work', 'background', 'service-access', 'group-routing'][index], reason: result.reason.message }));

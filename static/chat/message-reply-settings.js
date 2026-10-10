@@ -8,6 +8,7 @@ const copy = (zh, en) => english() ? en : zh;
 const status = text => { byId('replySettingsStatus').textContent = text; };
 function readChoices() {
   return { opening: byId('replyOpening').checked, checklist: byId('replyChecklist').checked,
+    routing: byId('replyRouting').value,
     strictStartCheck: byId('replyStrictStartCheck').checked,
     progress: byId('replyShowProgress').checked ? byId('replyProgress').value : 'none' };
 }
@@ -65,19 +66,20 @@ function renderPreview() {
 }
 
 function describeChoices(value) {
-  return copy(`开工严格检查${value.strictStartCheck ? '开启' : '关闭'}；首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展', card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' })[value.progress]}`,
-    `strict work-start check ${value.strictStartCheck ? 'on' : 'off'}; first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'card + separate text updates', card_latest: 'latest progress in a card', card_all: 'all progress in a collapsed card', card: 'previously saved card progress' })[value.progress]}`);
+  return copy(`${value.routing === 'experimental' ? '实验分流' : '不分流'}；开工严格检查${value.strictStartCheck ? '开启' : '关闭'}；首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展', card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' })[value.progress]}`,
+    `${value.routing === 'experimental' ? 'experimental routing' : 'no routing'}; strict work-start check ${value.strictStartCheck ? 'on' : 'off'}; first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'card + separate text updates', card_latest: 'latest progress in a card', card_all: 'all progress in a collapsed card', card: 'previously saved card progress' })[value.progress]}`);
 }
 
 function renderCurrent() {
   byId('replySettingsCurrent').removeAttribute('data-i18n');
   byId('replySettingsCurrent').textContent = state?.active
     ? copy(`已生效：${describeChoices(state.active)}。`, `Active: ${describeChoices(state.active)}.`)
-    : copy('正在使用默认回复方式。保存后，网页与飞书将沿用你的选择。',
-      'Using default replies. Save to use your choices on Web and Feishu.');
+    : copy('正在使用默认方式：不分流。保存后，网页与飞书将沿用你的选择。',
+      'Using defaults: no routing. Save to use your choices on Web and Feishu.');
 }
 function renderState() {
   const value = state.choices;
+  byId('replyRouting').value = value.routing || 'none';
   byId('replyStrictStartCheck').checked = value.strictStartCheck === true;
   byId('replyOpening').checked = value.opening;
   byId('replyChecklist').checked = value.checklist;

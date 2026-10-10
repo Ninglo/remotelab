@@ -4,10 +4,10 @@ import { observeSettingRows, settingRows, replySettingValues } from './usage-set
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const choices = value => {
-  if (!value || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'strictStartCheck'].includes(key))) fail('消息回复设置无效。');
-  const { opening, checklist, progress, strictStartCheck = false } = validateReplyDraft({ ...value, groups: [] });
+  if (!value || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'strictStartCheck', 'routing'].includes(key))) fail('消息回复设置无效。');
+  const { opening, checklist, progress, strictStartCheck = false, routing = 'none' } = validateReplyDraft({ ...value, groups: [] });
   if (progress === 'card') fail('请选择三种进展展示方式之一。');
-  return { opening, checklist, progress, strictStartCheck };
+  return { opening, checklist, progress, strictStartCheck, routing };
 };
 const defaults = () => choices({ opening: DEFAULT_REPLY_DRAFT.opening,
   checklist: DEFAULT_REPLY_DRAFT.checklist, progress: DEFAULT_REPLY_DRAFT.progress });
@@ -18,9 +18,11 @@ function settingsFor(person) {
   if (stored.version !== 1 || !Number.isSafeInteger(stored.revision) || stored.revision < 1) fail('个人回复设置无法读取。', 500);
   if (stored.active && (stored.active.version !== 3 || stored.active.scope !== 'person' || stored.active.personId !== person.id)) fail('个人回复设置归属无法核对。', 500);
   const active = stored.active ? { ...stored.active, ...choices({ opening: stored.active.opening,
-    checklist: stored.active.checklist, progress: stored.active.progress, strictStartCheck: stored.active.strictStartCheck }) } : null;
+    checklist: stored.active.checklist, progress: stored.active.progress, strictStartCheck: stored.active.strictStartCheck,
+    routing: stored.active.routing }) } : null;
   return { personId: person.id, revision: stored.revision, active, choices: active ? choices({
-    opening: active.opening, checklist: active.checklist, progress: active.progress, strictStartCheck: active.strictStartCheck }) : defaults() };
+    opening: active.opening, checklist: active.checklist, progress: active.progress, strictStartCheck: active.strictStartCheck,
+    routing: active.routing }) : defaults() };
 }
 
 function requireActor(document, actor) {
@@ -47,6 +49,7 @@ export async function changePersonMessageReplies(input, actor) {
     if (input.expectedRevision !== current.revision) fail('你的设置已更新，请重新载入后再保存。', 409);
     const value = input.action === 'strict-start' ? { ...current.choices, strictStartCheck: input.enabled }
       : input.action === 'apply' ? choices({ ...input.choices,
+        routing: input.choices.routing ?? current.choices.routing,
         strictStartCheck: input.choices.strictStartCheck ?? current.choices.strictStartCheck }) : null;
     const revision = current.revision + 1, now = new Date().toISOString();
     const active = value ? { ...value, version: 3, scope: 'person', personId: person.id,

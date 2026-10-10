@@ -1591,3 +1591,10 @@ settings are separate from verified live deployment and delivery.
 ### 2026-10-10 · Full-history cards and visible latest progress
 
 The requester clarified that the comparison concerns card types in Message Reply Settings. The accepted personal policy uses full-history cards. This renderer hid every progress record when collapsed, unlike the prior agreed latest-outside/details-inside layout. Restore a compact latest preview in this mode and its Settings preview while preserving complete history, pages, shared disclosure choice and original message IDs. Existing click-refresh optimization remains in place; a contemporaneous natural click recorded 237 ms for state acknowledgement, 15 ms in the worker queue and 1,238 ms for provider update/readback. This is one observed click, not a latency guarantee across card types or client rendering.
+
+
+## 2026-10-10 — Make experimental message routing a personal choice
+
+- Feedback: expose the existing routing experiment as a fixed selectable mechanism in Settings, with no routing as the default, and rename Message replies to Message.
+- Response: store the mechanism with personal message settings and snapshot it for each accepted input. Reuse the existing pilot transport and per-input reply responsibility; a group configuration alone cannot opt people in. Keep display choices, strict-start checks, existing accepted work and explicit synchronization approvals on their own contracts.
+- Boundary: selecting the experiment does not add authorized groups or permissions. Program behavior, source delivery, deployed version and natural-message quality require their own evidence.

@@ -24,7 +24,7 @@ try {
   const { runMessageReplyCommand } = await import('../lib/message-reply-command.mjs');
   const alice = { personId: 'person_alice', identityId: 'web_alice' };
   const bobBefore = await loadPersonMessageReplies({ personId: 'person_bob', identityId: 'web_bob' });
-  const display = { opening: false, checklist: true, progress: 'card_all' };
+  const display = { opening: false, checklist: true, progress: 'card_all', routing: 'none' };
   assert.equal((await loadPersonMessageReplies(alice)).choices.strictStartCheck, false);
   await changePersonMessageReplies({ action: 'apply', expectedRevision: 0, confirm: true, choices: display }, alice);
   const record = (await requests.accept({ sessionId: 'strict-session', requestId: 'human', text: '为我开启开工严格检查',

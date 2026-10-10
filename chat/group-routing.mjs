@@ -8,6 +8,7 @@ import { appendEvent } from './history.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+import { allowsMessageRouting } from './message-routing-policy.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 20);
 const fail = message => { throw new Error(message); };
@@ -39,8 +40,9 @@ async function api(deps) { return deps || await import('./session-manager.mjs');
 async function save(sessionId, update) {
   return mutateSessionMeta(sessionId, draft => { draft.groupRouting = state(draft); update(draft.groupRouting); return true; });
 }
-async function sourceFor(record) {
+async function sourceFor(record, { explicitSyncDecision = false } = {}) {
   if (record.result || record.releasedAt) fail('Only an active accepted input can route work');
+  if (!explicitSyncDecision && !allowsMessageRouting(record.options)) fail('Message routing is disabled for this accepted input');
   const session = await findSessionMeta(record.sessionId);
   const scope = await routingPilotScope(session?.conversation);
   if (!isPilotInputSinceActivation(scope, record.acceptedAt)
@@ -179,6 +181,7 @@ export async function routeGroupWork(record, body, deps) {
     const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
     for (const input of inputs) {
       if (!input || input.result || input.mainlineReply || input.options?.routingRethink || input.options?.automationTitle
+          || !allowsMessageRouting(input.options)
           || input.options?.internalOperation
           || (input.deliveries || []).some(d => ['content', 'attachment'].includes(d.kind))
           || (input.runId !== record.runId && input.nativeDispatchRunId !== (record.nativeDispatchRunId || record.runId)
@@ -286,7 +289,9 @@ export async function acceptGroupSync(record, deps) {
   const decision = syncDecisionText(record);
   if (!decision) return '';
   return serial(record.sessionId, async () => {
-    const { session, origin } = await sourceFor(record);
+    // Confirming or rejecting an existing specific draft is an explicit action,
+    // independent of whether automatic routing is now enabled for the sender.
+    const { session, origin } = await sourceFor(record, { explicitSyncDecision: true });
     const proposal = state(session).proposals.find(p => p.id === decision[2]);
     if (!proposal) fail('Sync proposal is not in this conversation');
     if (proposal.confirmationRequestId === record.requestId && proposal.state !== 'draft') {
@@ -349,7 +354,11 @@ export async function completeGroupSync(record, run) {
   await appendEvent(source.id, { type: 'work_event', action: 'routing-sync-result', proposalId: packet.id,
     targetSessionId: packet.targetSessionId, result, deliveryId: receipt.id });
 }
-export async function buildGroupRoutingContext(session, sourceContext, { inputReplyContract = false } = {}) {
+export async function buildGroupRoutingContext(session, sourceContext, { inputReplyContract = false, messageRoutingPolicy } = {}) {
+  if (!allowsMessageRouting({ messageRoutingPolicy })) return [
+    '## 本条消息不分流',
+    '在当前绑定的会话处理并回复本条消息，不自动另开工作话题或把消息转到其他话题。不沿用历史中的实验分流指令，不使用 work route 或主线 work reply。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
+  ].join('\n');
   const scope = await routingPilotScope(session?.conversation);
   if (!scope || sourceContext?.connector !== 'feishu' || ['app', 'bot'].includes(sourceContext.sender?.senderType)
       || !isPilotInputSinceActivation(scope, sourceContext.createTime || sourceContext.eventTs)) return '';

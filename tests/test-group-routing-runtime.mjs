@@ -102,5 +102,25 @@ try {
   assert.equal(failed.returnDeliveryState, 'pending');
   const failureReturn = await requests.byRunId(failed.returnRunId);
   assert.match(failureReturn.deliveries[0].text, /目标讨论已变化/);
+  // Exercise the shipped admission path, independently of legacy pilot inputs.
+  const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
+  const actor = { personId: 'person_a', identityId: 'identity_a' };
+  const authenticated = { ...opts, feishuConnectorAuthenticated: true, sourceContext: {
+    connector: 'feishu', sourceRouteId: 'bot', chatId: 'pilot', chatType: 'group', messageId: 'input-root',
+    sender: { openId: 'a', senderType: 'user' } } };
+  const disabled = await manager.submitHttpMessage(main.id, '默认在原会话处理', [], { ...authenticated, requestId: 'routing-off' });
+  const disabledRecord = await requests.byRunId(disabled.run.id);
+  assert.equal(disabledRecord.options.messageRoutingPolicy.mechanism, 'none');
+  assert.equal(disabledRecord.options.routingPilotMainline, undefined);
+  await until(async () => (await requests.byRunId(disabled.run.id))?.result);
+  let setting = await loadPersonMessageReplies(actor);
+  setting = await changePersonMessageReplies({ action: 'apply', expectedRevision: setting.revision, confirm: true,
+    choices: { ...setting.choices, routing: 'experimental' } }, actor);
+  const enabled = await manager.submitHttpMessage(main.id, '选择实验分流', [], { ...authenticated, requestId: 'routing-on' });
+  assert.equal((await requests.byRunId(enabled.run.id)).options.routingPilotMainlineProtocol, 2);
+  await until(async () => (await requests.byRunId(enabled.run.id))?.result);
+  await changePersonMessageReplies({ action: 'reset', expectedRevision: setting.revision, confirm: true }, actor);
+  await manager.submitHttpMessage(main.id, '选择实验分流', [], { ...authenticated, requestId: 'routing-on' });
+  assert.equal((await requests.byRunId(enabled.run.id)).options.messageRoutingPolicy.mechanism, 'experimental', 'retry keeps the original selection');
   console.log('GROUP_ROUTING_RUNTIME_VERIFIED: actual admission, isolated worker, human approval dispatch, target completion hook and durable source outbox. No live model or Feishu send.');
 } finally { await manager.killAll(); await rm(home, { recursive: true, force: true }); }

@@ -1,5 +1,6 @@
-import { routingPilotScope, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
+import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
+import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
 import { strictStartCheckPrompt } from './strict-start-check.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
 import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink, pilotInputResult, recoverPilotReplies } from './group-routing.mjs';
@@ -1493,6 +1494,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     await buildTurnContextHook(session, {
     sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
     pilotInputReplyContract: hasPilotInputReplyContract({ options }),
+    messageRoutingPolicy: options.messageRoutingPolicy,
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
     query: options.recordedUserText || options.memoryQuery || '',
     }),
@@ -3403,13 +3405,6 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     session = await setSessionArchived(sessionId, false) || session;
   }
   options = applyQuickSessionRuntime(session, options);
-  // Mainline inputs may share execution; their explicit handoff/local reply
-  // remains per input rather than inheriting the root's final result.
-  if (session.conversation?.target?.conversationKind === 'main'
-      && options.sourceContext?.connector === 'feishu' && !options.automationTitle
-      && !['app', 'bot'].includes(options.sourceContext.sender?.senderType)
-      && isPilotInputSinceActivation(await routingPilotScope(session.conversation),
-        options.sourceContext.createTime || options.sourceContext.eventTs)) options = { ...options, routingPilotMainline: true, routingPilotMainlineProtocol: 2 };
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
@@ -3436,6 +3431,8 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
   // A question answer belongs to the awaiting Harness. It must not invoke Auto
   // routing or switch models just because the reply is a short number.
+  options = await captureMessageRoutingOptions(session, options,
+    priorRequest || routingOrigin || (options.nativeQuestionId ? activeRequest : null));
   const runtimeSelection = options.nativeQuestionId && (priorRequest || activeRequest)?.runtimeSelection
     ? { ...(priorRequest || activeRequest).runtimeSelection }
     : await resolveSessionRuntimeSelection(session, {
@@ -3473,7 +3470,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // These are admission-time projections, not user input. A retry keeps the
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
-    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy',
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy', 'messageRoutingPolicy',
       'usageSurface', 'usageActorKind', 'usagePersonId']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];
@@ -3533,6 +3530,7 @@ async function ensureRequestInput(record, manifest) {
           nativeQuestionRunId: record.nativeDispatchRunId || record.runId } : {}),
       ...(sourceContext ? { sourceContext } : {}),
       ...(record.options.messageReplyPolicy ? { messageReplyPolicy: record.options.messageReplyPolicy } : {}),
+      ...(record.options.messageRoutingPolicy ? { messageRoutingPolicy: record.options.messageRoutingPolicy } : {}),
       ...(workboardAdmission(record.options) ? { workboardAdmission: workboardAdmission(record.options) } : {}),
     }));
   }

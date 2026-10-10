@@ -10,7 +10,8 @@ export function replyProgressUsesCard(policy) {
 
 export function validateReplyDraft(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups', 'strictStartCheck'].includes(key))
+      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups', 'strictStartCheck', 'routing'].includes(key))
+      || value.routing !== undefined && !['none', 'experimental'].includes(value.routing)
       || value.strictStartCheck !== undefined && typeof value.strictStartCheck !== 'boolean'
       || typeof value.opening !== 'boolean' || typeof value.checklist !== 'boolean'
       || !['none', 'messages', 'card_latest', 'card_all', 'card'].includes(value.progress) || !Array.isArray(value.groups)
@@ -23,6 +24,7 @@ export function validateReplyDraft(value) {
   });
   return { opening: value.opening, checklist: value.checklist, progress: value.progress,
     ...(value.strictStartCheck !== undefined ? { strictStartCheck: value.strictStartCheck } : {}),
+    ...(value.routing !== undefined ? { routing: value.routing } : {}),
     groups: [...new Map(groups.map(group => [`${group.sourceRouteId}:${group.chatId}`, group])).values()] };
 }
 
@@ -30,6 +32,12 @@ export function buildReplyPreview(draft, locale = 'zh') {
   const value = validateReplyDraft(draft);
   const en = locale.startsWith('en');
   const steps = [];
+  steps.push({ kind: 'routing', title: en ? 'Message routing' : '消息分流',
+    text: value.routing === 'experimental'
+      ? en ? 'Experimental routing: in enabled trial groups, new matters open work threads and supplements continue the existing work. Status questions can be answered in the group.'
+        : '实验分流：在已启用试点的群中，新事项进入工作话题，补充接续原工作，催问可在群中先答复。'
+      : en ? 'No routing (default): handle work and reply in the current conversation.'
+        : '不分流（默认）：在当前会话中处理并回复。' });
   if (value.strictStartCheck) steps.push({ kind: 'start_check', title: en ? 'Strict work-start check' : '开工严格检查',
     text: en ? 'Check ownership, the existing mechanism and related work before starting. Decide work placement, reply destination and display separately.'
       : '先核对事项归属、现行机制和相关工作，再决定接续还是另开；回复位置与清单、进展展示分别判断。' });

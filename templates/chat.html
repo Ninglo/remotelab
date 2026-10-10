@@ -278,7 +278,7 @@
           <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
             <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
-            <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">消息回复机制</a>
+            <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">消息</a>
             <a class="settings-toc-link" href="#settings-people" data-settings-target="settings-people" data-i18n="settings.group.people">People</a>
             <a class="settings-toc-link" href="#settings-connections" data-settings-target="settings-connections" data-i18n="settings.group.connections">Connections</a>
             <a class="settings-toc-link" href="#settings-device" data-settings-target="settings-device" data-i18n="settings.group.device">This device</a>
@@ -374,7 +374,7 @@
 
             <section class="settings-group" id="settings-message-replies" data-settings-section>
               <header class="settings-group-header">
-                <h3 data-i18n="settings.replies.title">消息回复机制</h3>
+                <h3 data-i18n="settings.replies.title">消息</h3>
                 <p data-i18n="settings.replies.note">只影响你：网页和飞书私聊、群消息、话题消息，沿用同一套回复设置。</p>
               </header>
               <div class="settings-group-body">
@@ -384,6 +384,12 @@
                 </div>
                 <div class="settings-section reply-settings-parts">
                   <div class="settings-section-title" data-i18n="settings.replies.draft">我的回复设置</div>
+                  <label for="replyRouting" data-i18n="settings.replies.routing">分流机制</label>
+                  <select class="settings-inline-select" id="replyRouting">
+                    <option value="none" selected data-i18n="settings.replies.routingNone">不分流（默认）</option>
+                    <option value="experimental" data-i18n="settings.replies.routingExperimental">实验分流</option>
+                  </select>
+                  <p class="settings-section-note" data-i18n="settings.replies.routingNote">不分流时在当前会话处理并回复。实验分流在已启用试点的飞书群中，将新事项交给工作话题、把补充接到原工作，催问可先在群中答复。保存后对之后发来的群消息生效。</p>
                   <label><input id="replyStrictStartCheck" type="checkbox"><span data-i18n="settings.replies.strictStartCheck">开工严格检查</span></label>
                   <p class="settings-section-note" data-i18n="settings.replies.strictStartCheckNote">开工前核对事项归属、现行机制和相关工作，再分别确定执行位置、回复位置与展示方式。关闭此项即可恢复普通开工，不改变其他回复选择。</p>
                   <label><input id="replyOpening" type="checkbox" checked><span data-i18n="settings.replies.opening">发送首条文字回复</span></label>

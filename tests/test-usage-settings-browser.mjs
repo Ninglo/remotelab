@@ -113,27 +113,32 @@ try {
   await page.goto(base + '/?tab=settings#settings-message-replies', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('#replySettingsCurrent').textContent.includes('已生效'));
   assert.equal(await page.locator('#replyStrictStartCheck').isChecked(), false);
+  assert.equal(await page.locator('#replyRouting').inputValue(), 'none');
+  assert.equal(await page.locator('#settings-message-replies h3').textContent(), '消息');
   const replySave = () => page.waitForResponse(response => new URL(response.url()).pathname === '/api/message-reply-settings'
     && response.request().method() === 'POST').then(async response => {
       assert.equal(response.status(), 200); return response.json();
     });
   await page.locator('#replyStrictStartCheck').check();
+  await page.locator('#replyRouting').selectOption('experimental');
   let savedReply = replySave();
   await page.locator('#replyActivate').click();
   reply = await savedReply;
-  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: true });
+  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: true, routing: 'experimental' });
   await page.reload();
   await page.waitForFunction(() => document.querySelector('#replyStrictStartCheck').checked);
+  assert.equal(await page.locator('#replyRouting').inputValue(), 'experimental');
   await mkdir('/tmp/remotelab-settings-browser', { recursive: true });
   await page.locator('#settings-message-replies').screenshot({ path: '/tmp/remotelab-settings-browser/strict-start-check.png' });
   await page.locator('#replyStrictStartCheck').uncheck();
   savedReply = replySave();
   await page.locator('#replyActivate').click();
   reply = await savedReply;
-  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: false });
+  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: false, routing: 'experimental' });
   await page.goto(base + '/?tab=tasks&monitor=usage', { waitUntil: 'domcontentloaded' });
   const restored = await request('POST', '/api/message-reply-settings', { action: 'reset', expectedRevision: reply.settings.revision, confirm: true });
   assert.equal(restored.status, 200);
+  assert.equal(restored.json.settings.choices.routing, 'none');
   x = await report();
   for (const setting of ['instance.auto_archive', 'voice.review', 'person.mobile_input'])
     assert.equal(x.settings.rows.find(row => row.setting === setting).changes, 1, 'successful HTTP save is observed: ' + setting);
