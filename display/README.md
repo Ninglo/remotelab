@@ -52,27 +52,55 @@ own expiration rules.
 The conservative USB framing in `agent.py` is derived from the MIT-licensed
 `thermalright-display-bridge` project in this workspace.
 
-## Personal Feishu reminder refresh
+## Personal Feishu reminders: event-triggered synchronization
 
-Frame playback and dashboard reads reuse one Person's Feishu snapshot. Personal
-message discovery and read-state reconciliation run at most once every five
-minutes; calendars refresh every fifteen minutes. Existing cached message
-classification is reused, while new and still-pending messages have their
-details checked. Reading or dismissing reminders does not force another search.
-The message search still covers the last 24 hours so marking a known message
-unread can restore its reminder; it is not an all-account event subscription.
-Bot message events do not cover the whole user's inbox or all read receipts.
+Frame playback and dashboard reads only project cached data. Cache expiry,
+service startup and calendar reminder deadlines do not query Feishu. There is
+no recurring message/calendar poll or token-maintenance interval. Snapshots
+are saved privately with mode 0600 and restored without provider requests.
 
-An unsuccessful refresh is cached too, with exponential backoff. Provider
-errors pause other message/calendar reads for the same application, honoring
-`Retry-After` when it requires a longer pause. The normal reminder delay is up
-to five minutes; failures may extend it. Monthly quota exhaustion (`99991403`)
-stops that application's message/calendar reads and token maintenance until quota is restored and
-the sidecar is restarted; short automatic retries cannot restore quota.
-These reads do not call a model.
-Actual outgoing Feishu requests are recorded with `component: display` in the
-existing private API ledger without tokens, bodies, query strings or resource
-IDs. Use `scripts/feishu-api-usage.mjs` to measure real counts after deployment.
+The existing Feishu connector's verified SDK stream writes private change hints
+under `display-private/feishu-events/`; the display listens with native filesystem
+events. No second Feishu event consumer is started. New-message, read and recall
+hints wake message reconciliation; calendar changes wake calendar reconciliation
+only. Application realms stay separate. Calendar/read hints carrying recipient IDs
+wake only those recipients; IDs are hashed and no message content is copied.
+Duplicate events survive connector restarts without producing a new hint.
+
+Received events share the previous request budget: at most one message round per
+five minutes and one calendar round per fifteen minutes. A burst within that
+budget has one pending event deadline; completing it creates no recurring timer.
+New and still-pending messages have details checked, and each message's real read
+state determines whether its reminder clears. Failed reads back off; another
+actual event or an explicit refresh is required for another attempt.
+Calendar deadlines use the saved schedule and local clock without provider calls.
+
+This is **partial event coverage**, not a subscription to the entire user's inbox.
+Bot message events and bot P2P read receipts cannot establish all personal unread
+changes. Message snapshots older than five minutes are marked stale/unavailable,
+not asserted to be a current zero. Calendar snapshots cover the existing roughly
+25-hour window and become unavailable after 24 hours without another update.
+An explicit Person-scoped refresh can reconcile gaps with
+`POST /api/display/feishu/refresh` (or the local administrator endpoint
+`POST /v1/people/{personId}/feishu/refresh`). It respects the same request budget.
+
+Registering handlers in code does **not** configure platform subscriptions.
+Calendar changes require the application's user event subscription plus the
+calendar/user resource subscription described in the [official event guide](https://www.feishu.cn/content/917351528780--3333)
+and [schedule-change reference](https://open.feishu.cn/document/server-docs/calendar-v4/calendar-event/events/changed).
+The correct application connector must actually be receiving events. An inactive
+connector, missing event permission/subscription, or exhausted quota remains a
+reported activation gap; the sidecar never replaces it with automatic polling.
+
+Monthly quota exhaustion (`99991403`) stops that application's reads and token
+maintenance. The saved rejection survives restart. After an administrator has
+restored quota, an explicit refresh with `{ "quotaRestored": true }` clears the
+local application gate and verifies it with one bounded round. Routine frame
+reads and event hints cannot clear the rejection. Short retries cannot restore
+quota. These reads do not call a model.
+Actual outgoing requests retain `component: display` in the existing private API
+ledger without tokens, bodies, query strings or resource IDs. Use
+`scripts/feishu-api-usage.mjs` to measure counts after deployment.
 
 ## Signal-screen pilot
 

@@ -16,6 +16,7 @@ import { emptySignalStore, makeStatusSnapshot, replaceSource, selectOfficialScen
 import { remotelabStatusSource } from './remotelab-status-source.mjs';
 import { summarizeAutomationTasks, summarizeFeishuSessions } from './reminder-sources.mjs';
 import { createFeishuUserReminders } from './feishu-user-reminders.mjs';
+import { watchFeishuDisplayEvents } from '../lib/feishu-display-events.mjs';
 import { normalizeSentence, prepareContent, renderPersonalPng } from './personal-content.mjs';
 import { prepareAnimatedPreview, previewBundleId, previewFrameId, renderAnimatedPreview, renderAnimatedPreviewBundle, renderAnimatedPreviewJpeg, renderStaticPreviewJpeg } from './preview-animation.mjs';
 import { createTodoStore } from './todos.mjs';
@@ -342,11 +343,10 @@ const feishuUserReminders = createFeishuUserReminders({ configDir, identityFor: 
   const identity = (await personIdentityInfo(personId)).feishuIdentity;
   return identity ? { realm: identity.realm, openId: trimString(identity.subjectId) } : null;
 } });
-const maintainFeishuGrants = () => void feishuUserReminders.maintain().catch((error) => {
-  console.warn(JSON.stringify({ event: 'display_feishu_maintenance_failed', code: trimString(error?.code) || 'unavailable' }));
-});
-maintainFeishuGrants();
-setInterval(maintainFeishuGrants, 60_000).unref();
+await feishuUserReminders.restore();
+const feishuEvents = await watchFeishuDisplayEvents({ configDir,
+  onChange: (realm, change) => feishuUserReminders.notifyRealm(realm, change) });
+process.once('exit', () => { feishuEvents.stop(); feishuUserReminders.stop(); });
 
 async function getPersonIdentityIds(personId) {
   return (await personIdentityInfo(personId)).ids;
@@ -618,15 +618,16 @@ async function handle(req, res) {
     sendJson(res, 200, { configured: true, frameId, updatedAt, expiresAt, animationCount: animations.length });
     return;
   }
-  const feishuAuthMatch = /^\/v1\/people\/([^/]+)\/feishu\/(authorize|status|acknowledge)$/.exec(pathname);
-  if (feishuAuthMatch && ((['authorize', 'acknowledge'].includes(feishuAuthMatch[2]) && req.method === 'POST') || (feishuAuthMatch[2] === 'status' && req.method === 'GET'))) {
+  const feishuAuthMatch = /^\/v1\/people\/([^/]+)\/feishu\/(authorize|status|acknowledge|refresh)$/.exec(pathname);
+  if (feishuAuthMatch && ((['authorize', 'acknowledge', 'refresh'].includes(feishuAuthMatch[2]) && req.method === 'POST') || (feishuAuthMatch[2] === 'status' && req.method === 'GET'))) {
     if (!await requireAdmin(req, res, url)) return;
     const personId = decodeURIComponent(feishuAuthMatch[1]);
-    const acknowledgement = feishuAuthMatch[2] === 'acknowledge' ? await readRequestJson(req, 1024) : null;
+    const input = ['acknowledge', 'refresh'].includes(feishuAuthMatch[2]) ? await readRequestJson(req, 1024) : null;
     const result = feishuAuthMatch[2] === 'authorize'
       ? await feishuUserReminders.begin(personId)
+      : feishuAuthMatch[2] === 'refresh' ? await feishuUserReminders.refresh(personId, { quotaRestored: input?.quotaRestored === true })
       : feishuAuthMatch[2] === 'acknowledge'
-        ? await feishuUserReminders.acknowledge(personId, acknowledgement?.observedAt)
+        ? await feishuUserReminders.acknowledge(personId, input?.observedAt)
         : await feishuUserReminders.status(personId);
     sendJson(res, 200, result);
     return;

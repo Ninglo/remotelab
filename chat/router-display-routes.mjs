@@ -212,7 +212,7 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/feishu/authorize`, { authenticated: true });
       return true;
     }
-    if (pathname === '/api/display/feishu/acknowledge' && req.method === 'POST') {
+    if (['/api/display/feishu/acknowledge', '/api/display/feishu/refresh'].includes(pathname) && req.method === 'POST') {
       const origin = trimString(req.headers.origin);
       const forwarded = forwardedOriginHeaders(req);
       if (origin !== `${forwarded['X-Forwarded-Proto']}://${forwarded['X-Forwarded-Host']}`) {
@@ -220,7 +220,8 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
         return true;
       }
       const body = await readBody(req, 1024);
-      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/feishu/acknowledge`, { authenticated: true, body });
+      const action = pathname.endsWith('/refresh') ? 'refresh' : 'acknowledge';
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/feishu/${action}`, { authenticated: true, body });
       return true;
     }
     if (pathname === '/api/display/studio-preview/status' && req.method === 'GET') {

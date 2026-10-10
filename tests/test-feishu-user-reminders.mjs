@@ -116,7 +116,7 @@ try {
   const connected = await service.status('person_a');
   assert.equal(connected.connected, true);
   assert(!JSON.stringify(connected).includes('access-'));
-  const summary = await service.summary('person_a');
+  const summary = await service.refreshMessages('person_a');
   assert.deepEqual([summary.connected, summary.available, summary.recentMessages, summary.mentions24h], [true, true, 2, 1]);
   assert.deepEqual([summary.newMessages, summary.newMentions], [0, 0], 'old messages are a baseline, not new alerts');
   messageIds = ['three', ...messageIds];
@@ -124,9 +124,9 @@ try {
   clock += 5001;
   const searchesBefore = seen.filter(({ path }) => path.endsWith('/messages/search')).length;
   assert.equal(service.latest('person_a').newMessages, 0, 'a stale summary returns without waiting for Feishu');
-  const fresh = await service.summary('person_a');
+  const fresh = await service.refreshMessages('person_a');
   assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length - searchesBefore, 2,
-    'background and foreground reads share one Feishu search round');
+    'cache rendering does not query; explicit refresh performs one shared search round');
   assert.deepEqual([fresh.newMessages, fresh.newMentions], [1, 1]);
   assert.equal(fresh.readStateAvailable, true);
   assert.deepEqual(fresh.sources, [{ label: '群聊 · 产品讨论群', count: 1 }]);
@@ -134,124 +134,124 @@ try {
   messageIds = ['mine', 'old-unseen', ...messageIds];
   created.set('old-unseen', clock - 60_000);
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 1, 'outgoing and old unseen search results do not create alerts');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1, 'outgoing and old unseen search results do not create alerts');
   messageIds = ['four', ...messageIds];
   clock += 5001;
-  const later = await service.summary('person_a');
+  const later = await service.refreshMessages('person_a');
   assert.equal(later.newMessages, 2);
   assert.deepEqual(later.sources, [{ label: '私聊对话', count: 1 }, { label: '群聊 · 产品讨论群', count: 1 }]);
   const beforeAcknowledgement = seen.length;
   assert.equal((await service.acknowledge('person_a', fresh.observedAt)).cleared, 1);
-  assert.equal((await service.summary('person_a')).newMessages, 1, 'a message arriving after the reviewed snapshot remains visible');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1, 'a message arriving after the reviewed snapshot remains visible');
   assert.equal(seen.length, beforeAcknowledgement, 'a local acknowledgement and immediate summary issue no provider request');
   assert.equal((await service.acknowledge('person_a', later.observedAt)).cleared, 1);
-  assert.equal((await service.summary('person_a')).newMessages, 0);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0);
   messageIds = ['five', ...messageIds];
   numericTimestamps = true;
   clock += 5001;
   created.set('five', clock);
-  assert.equal((await service.summary('person_a')).newMessages, 1);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1);
   messageIds = ['reply', ...messageIds];
   clock += 5001;
   created.set('reply', clock);
-  assert.equal((await service.summary('person_a')).newMessages, 1,
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1,
     'replying in the same chat does not mark a still-unread message as read');
   messageIds = ['six', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 2);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 2);
   messageIds = messageIds.filter((id) => id !== 'reply');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 2);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 2);
   clock += 30_001;
-  assert.equal((await service.summary('person_a')).newMessages, 2, 'arrivals remain visible until individually read or dismissed');
-  const persistent = await service.summary('person_a');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 2, 'arrivals remain visible until individually read or dismissed');
+  const persistent = await service.refreshMessages('person_a');
   assert.equal(persistent.readStateAvailable, true);
   assert.equal((await service.acknowledge('person_a', persistent.observedAt)).cleared, 2);
-  assert.equal((await service.summary('person_a')).newMessages, 0, 'dismissed unread messages do not reappear');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0, 'dismissed unread messages do not reappear');
   messageIds = ['seven', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 1);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1);
   readIds.add('om_seven');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0, 'reading in Feishu clears the prompt without a display acknowledgement');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0, 'reading in Feishu clears the prompt without a display acknowledgement');
   readIds.delete('om_seven');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 1,
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1,
     'a known message that is currently unread must be restored to the reminder feed');
   readIds.add('om_seven');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0);
   messageIds = ['eight', ...messageIds];
   readStatusFailure = true;
   clock += 5001;
-  const unavailable = await service.summary('person_a');
+  const unavailable = await service.refreshMessages('person_a');
   assert.deepEqual([unavailable.newMessages, unavailable.readStateAvailable], [1, false], 'an API failure keeps the arrival without claiming it is unread');
   readStatusFailure = false;
   readIds.add('om_eight');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0);
   messageIds = ['recalledgroup', 'recalledprivate', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 2);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 2);
   deletedIds.add('om_recalledgroup');
   deletedIds.add('om_recalledprivate');
   // Recalled messages can disappear from search while remaining in pending.
   messageIds = messageIds.filter((id) => !id.startsWith('recalled'));
   clock += 5001;
-  const recalled = await service.summary('person_a');
+  const recalled = await service.refreshMessages('person_a');
   assert.equal(recalled.newMessages, 0, 'recalled group and private messages leave pending without a read receipt');
   assert.equal(recalled.readStateAvailable, true, 'recalled IDs do not make valid read receipts look unavailable');
   assert.deepEqual(recalled.sources, [], 'recalled chats no longer appear in reminder sources');
   messageIds = ['recalledgroup', 'recalledprivate', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0, 'stale search hits cannot restore recalled reminders');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0, 'stale search hits cannot restore recalled reminders');
   messageIds = ['unknownreceipt', ...messageIds];
   invalidReadIds.add('om_unknownreceipt');
   clock += 5001;
-  const unknownReceipt = await service.summary('person_a');
+  const unknownReceipt = await service.refreshMessages('person_a');
   assert.deepEqual([unknownReceipt.newMessages, unknownReceipt.readStateAvailable], [1, false],
     'an invalid read receipt alone is not evidence that a message was recalled or read');
   invalidReadIds.delete('om_unknownreceipt');
   readIds.add('om_unknownreceipt');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0);
   messageIds = ['topicreply', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0,
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0,
     'ordinary topic replies do not become false unread alerts');
   messageIds = ['topicmention', ...messageIds];
   mentionIds = ['topicmention', ...mentionIds];
   clock += 5001;
-  const topicMention = await service.summary('person_a');
+  const topicMention = await service.refreshMessages('person_a');
   assert.equal(topicMention.newMessages, 1, 'a topic reply that mentions this user remains actionable');
   assert.deepEqual(topicMention.sources, [{ label: '话题群 · AI 干活群', count: 1 }]);
   assert.equal((await service.acknowledge('person_a', topicMention.observedAt)).cleared, 1);
   messageIds = ['topicall', ...messageIds];
   mentionIds = ['topicall', ...mentionIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0,
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0,
     'a broad mention search hit without an exact @me does not alert in a topic');
   messageIds = ['topicroot', ...messageIds];
   clock += 5001;
-  const topicRoot = await service.summary('person_a');
+  const topicRoot = await service.refreshMessages('person_a');
   assert.equal(topicRoot.newMessages, 1,
     'a top-level message in a topic chat is a group message even without @me');
   assert.equal((await service.acknowledge('person_a', topicRoot.observedAt)).cleared, 1);
   const topicReadsBefore = seen.filter(({ path }) => path.endsWith('/messages/mget')).length;
   messageIds = ['topicdirect', ...messageIds];
   clock += 5001;
-  const directReply = await service.summary('person_a');
+  const directReply = await service.refreshMessages('person_a');
   assert.equal(directReply.newMessages, 0, 'a reply to my topic without an exact @me is ignored');
   assert(seen.filter(({ path }) => path.endsWith('/messages/mget')).length > topicReadsBefore,
     'topic replies are classified by parent_id even when @me search misses them');
   messageIds = ['groupreply', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0,
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0,
     'a reply thread inside an ordinary group also needs an exact @me');
   messageIds = ['groupmention', ...messageIds];
   mentionIds = ['groupmention', ...mentionIds];
   clock += 5001;
-  const groupMention = await service.summary('person_a');
+  const groupMention = await service.refreshMessages('person_a');
   assert.equal(groupMention.newMessages, 1, 'a reply thread inside an ordinary group alerts when it mentions this user');
   assert.equal((await service.acknowledge('person_a', groupMention.observedAt)).cleared, 1);
   const notificationPath = join(dir, 'display-private', 'feishu-notifications.json');
@@ -264,11 +264,11 @@ try {
   await writeFile(notificationPath, JSON.stringify(legacy));
   messageIds = ['topicmigration', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0,
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0,
     'policy changes baseline old topic messages and remove stale topic replies');
   messageIds = ['topicafter', ...messageIds];
   clock += 5001;
-  const afterPolicy = await service.summary('person_a');
+  const afterPolicy = await service.refreshMessages('person_a');
   assert.equal(afterPolicy.newMessages, 1, 'new topic roots alert after the policy migration');
   assert.equal((await service.acknowledge('person_a', afterPolicy.observedAt)).cleared, 1);
   messageIds = ['frontier-new', 'frontier-old', ...messageIds];
@@ -276,25 +276,25 @@ try {
   created.set('frontier-new', clock + 10_002);
   readIds.add('om_frontier-new');
   clock += 10_002;
-  const olderUnread = await service.summary('person_a');
+  const olderUnread = await service.refreshMessages('person_a');
   assert.equal(olderUnread.newMessages, 1,
     'a newer read message in the same group cannot clear an older unread message');
   assert.equal((await service.acknowledge('person_a', olderUnread.observedAt)).cleared, 1);
   messageIds = ['groupknown', ...messageIds];
   readIds.add('om_groupknown');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0);
   readIds.delete('om_groupknown');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 1,
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1,
     'a known ordinary group message must be restored if its own receipt is unread');
   readIds.add('om_groupknown');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0);
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 0);
   const notifications = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-notifications.json'), 'utf8'));
   assert.equal(notifications.people.person_a.pending.length, 0);
   assert.equal((await stat(join(dir, 'display-private', 'feishu-notifications.json'))).mode & 0o777, 0o600);
-  assert.equal((await service.summary('person_b')).connected, false);
+  assert.equal((await service.refreshMessages('person_b')).connected, false);
   const saved = join(dir, 'display-private', 'feishu-reminders.json');
   assert.equal((await stat(saved)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(saved, 'utf8')).people.person_a.token.openId, 'ou_expected');
@@ -313,13 +313,13 @@ try {
   messageIds = ['outage-old', ...messageIds];
   clock += 5001;
   created.set('outage-old', clock);
-  assert.equal((await service.summary('person_a')).newMessages, 1);
-  const calendar = await service.calendarSummary('person_a');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1);
+  const calendar = await service.refreshCalendar('person_a');
   assert.equal(calendar.available, true);
   assert.deepEqual(calendar.due.map((item) => item.title), ['项目同步', '半小时内日程']);
   emptyCalendar = true;
   clock += 60_001;
-  const empty = await service.calendarSummary('person_a');
+  const empty = await service.refreshCalendar('person_a');
   assert.equal(empty.available, true, 'an empty successful Feishu calendar response is still connected');
   assert.deepEqual(empty.due, []);
   const beforeRefresh = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-reminders.json'), 'utf8')).people.person_a.token;
@@ -341,7 +341,7 @@ try {
   rejectRefresh = false;
   clock += 5000;
   assert.equal((await service.status('person_a')).connected, true);
-  const reconnected = await service.summary('person_a');
+  const reconnected = await service.refreshMessages('person_a');
   assert.equal(reconnected.newMessages, 0, 'an old pending alert and disconnected backfill do not become new mail');
   const afterReconnect = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-notifications.json'), 'utf8')).people.person_a;
   assert.equal(afterReconnect.reconciled.filter((item) => item.reason === 'reconnect_backfill').length, 2,
@@ -350,7 +350,7 @@ try {
   messageIds = ['post-reconnect', ...messageIds];
   clock += 5001;
   created.set('post-reconnect', clock);
-  assert.equal((await service.summary('person_a')).newMessages, 1, 'a new message after reconnect still alerts');
+  assert.equal((await service.refreshMessages('person_a')).newMessages, 1, 'a new message after reconnect still alerts');
   const originalRefreshExpiry = maintained.refreshExpiresAt;
   clock = originalRefreshExpiry + 1000;
   await service.maintain();

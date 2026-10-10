@@ -94,7 +94,7 @@ const sidecar = createServer(async (req, res) => {
     json(res, 200, { personId: url.pathname.split('/')[3], body: body ? JSON.parse(body) : null });
     return;
   }
-  if (/^\/v1\/people\/[^/]+\/feishu\/acknowledge$/.test(url.pathname) && req.method === 'POST') {
+  if (/^\/v1\/people\/[^/]+\/feishu\/(acknowledge|refresh)$/.test(url.pathname) && req.method === 'POST') {
     if (req.headers.authorization !== `Bearer ${expectedAdmin}`) return json(res, 401, { error: 'bad admin' });
     json(res, 200, { connected: true, personId: url.pathname.split('/')[3] });
     return;
@@ -260,6 +260,17 @@ try {
   assert.equal(acknowledged.response.status, 200);
   assert.equal(acknowledged.payload.personId, 'person-a');
   assert.deepEqual(JSON.parse(calls.find((call) => call.path === '/v1/people/person-a/feishu/acknowledge').body), { observedAt: '2026-09-25T09:00:00.000Z' });
+
+  const deniedRefresh = await requestJson(`${base}/api/display/feishu/refresh`, {
+    method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a' },
+  });
+  assert.equal(deniedRefresh.response.status, 403);
+  const refreshed = await requestJson(`${base}/api/display/feishu/refresh`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ personId: 'person-b' }),
+  });
+  assert.equal(refreshed.response.status, 200);
+  assert.equal(refreshed.payload.personId, 'person-a', 'explicit sync stays bound to the signed-in Person');
 
   const deniedTodo = await requestJson(`${base}/api/display/todos`, {
     method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{"title":"筛选候选人"}',

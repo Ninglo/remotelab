@@ -16,6 +16,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
+import { createFeishuDisplayEventWriter } from '../lib/feishu-display-events.mjs';
 import {
   handleFeishuRuntimeCommands,
   prepareFeishuRuntimeCommandPlan,
@@ -2189,6 +2190,8 @@ async function main() {
     void shutdownAndExit('SIGTERM');
   });
 
+  const displayChanged = createFeishuDisplayEventWriter({ configDir: CONFIG_DIR, realm: config.sourceRouteId });
+  const displayHint = type => async raw => { await displayChanged(type, raw); return {}; };
   const persist = (sourceLabel, summarize) => async raw => {
     const receivedAt = performance.now();
     const summary = summarize(raw);
@@ -2198,6 +2201,7 @@ async function main() {
       ...(status ? { participationSnapshot: { key: status.key, mode: status.mode, epoch: status.epoch, receivedAt: Date.now() } } : {}),
     });
     if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {
+      if (sourceLabel === 'im.message.receive_v1') await displayChanged(sourceLabel, raw);
       if (participationEnabled(runtime, summary) && (
         (await participationController(runtime).state(summary)).mode !== 'active'
         || parseParticipationText(summary.messageText || summary.textPreview))) return {};
@@ -2239,7 +2243,13 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     ...meetingObserver.handlers,
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
-    'im.message.message_read_v1': raw => handleFeishuCardReadEvent(runtime, raw),
+    'im.message.message_read_v1': async raw => {
+      await displayChanged('im.message.message_read_v1', raw);
+      return handleFeishuCardReadEvent(runtime, raw);
+    },
+    'im.message.recalled_v1': displayHint('im.message.recalled_v1'),
+    'calendar.calendar.changed_v4': displayHint('calendar.calendar.changed_v4'),
+    'calendar.calendar.event.changed_v4': displayHint('calendar.calendar.event.changed_v4'),
     'card.action.trigger': async raw => {
       const questionFeedback = await handleNativeQuestionCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),

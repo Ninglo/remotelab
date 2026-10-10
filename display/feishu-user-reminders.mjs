@@ -1,7 +1,7 @@
 import { readFile, chmod, mkdir, writeFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { readJson } from '../chat/fs-utils.mjs';
+import { readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createFeishuApiLogger } from '../lib/feishu-api-log.mjs';
 import { isFeishuMonthlyQuotaError } from '../lib/feishu-retry-policy.mjs';
 
@@ -43,10 +43,12 @@ function seconds(value, fallback) { return Number.isFinite(value) && value > 0 ?
 function safeRealm(value) { return /^[a-z0-9_-]+$/.test(value || '') ? value : ''; }
 
 export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = fetch, now = Date.now,
-  messageRefreshMs = 5 * 60_000, calendarRefreshMs = 15 * 60_000 }) {
+  messageRefreshMs = 5 * 60_000, calendarRefreshMs = 15 * 60_000,
+  schedule = setTimeout, cancel = clearTimeout }) {
   const privateDir = join(configDir, 'display-private');
   const file = join(privateDir, 'feishu-reminders.json');
   const notificationFile = join(privateDir, 'feishu-notifications.json');
+  const snapshotFile = join(privateDir, 'feishu-snapshots.json');
   let lock = Promise.resolve();
   const cached = new Map();
   const refreshing = new Map();
@@ -58,6 +60,8 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   const detailCaches = new Map();
   const apiLoggers = new Map();
   const providerPauses = new Map();
+  const eventChanges = new Map(), eventTimers = new Map(), eventRealms = new Map(), eventRunning = new Set(), eventTasks = new Map();
+  let stopped = false;
   const queued = (task) => {
     const running = lock.then(task);
     lock = running.catch(() => {});
@@ -86,6 +90,40 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => {});
       throw error;
+    }
+  }
+  async function persistSnapshot(personId, kind, snapshot) {
+    const identity = await expected(personId);
+    if (!identity) return;
+    await queued(async () => {
+      const doc = await readJson(snapshotFile, { version: 1, people: {} });
+      const identityKey = messageKey(`${identity.realm}:${identity.openId}`);
+      const prior = doc.people?.[personId];
+      const entry = prior?.identityKey === identityKey ? prior : { identityKey };
+      entry[kind] = snapshot;
+      doc.people ||= {};
+      doc.people[personId] = entry;
+      await mkdir(privateDir, { recursive: true, mode: 0o700 });
+      await writeJsonAtomic(snapshotFile, doc, { mode: 0o600 });
+    });
+  }
+  async function restore() {
+    const doc = await readJson(snapshotFile, { version: 1, people: {} });
+    for (const [personId, entry] of Object.entries(doc.people || {})) {
+      const identity = await expected(personId);
+      if (!identity || entry.identityKey !== messageKey(`${identity.realm}:${identity.openId}`)) continue;
+      if (entry.messages) cached.set(personId, entry.messages);
+      if (entry.calendar) calendarCached.set(personId, entry.calendar);
+      // Restarting cannot turn a saved quota rejection into another retry.
+      if (entry.messages?.value?.quotaBlocked || entry.calendar?.value?.quotaBlocked) providerPauses.set(identity.realm, Infinity);
+    }
+    const grants = await document();
+    for (const [personId, entry] of Object.entries(grants.people || {})) {
+      if (cached.has(personId)) continue;
+      const identity = await expected(personId);
+      if (identity?.realm !== entry.token?.realm || identity?.openId !== entry.token?.openId) continue;
+      cached.set(personId, { value: { connected: entry.token.expiresAt > now() && hasMessageScope(entry.token.scope),
+        available: false, recentMessages: 0, mentions24h: 0 }, checkedAt: 0, expiresAt: 0 });
     }
   }
   async function appFor(realm) {
@@ -402,26 +440,32 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     } catch { return { available: false, authorizationRequired: false, events: [] }; }
   }
   function calendarLatest(personId) {
-    const saved = calendarCached.get(personId);
-    if ((!saved || saved.expiresAt <= now()) && !calendarRefreshing.has(personId)) {
-      const task = fetchCalendar(personId).catch(() => ({ available: false, authorizationRequired: false, events: [] })).then((value) => {
-        if (calendarRefreshing.get(personId) === task) calendarCached.set(personId, { value,
-          expiresAt: now() + (value.available ? calendarRefreshMs : messageRefreshMs) });
-        return value;
-      }).finally(() => { if (calendarRefreshing.get(personId) === task) calendarRefreshing.delete(personId); });
-      calendarRefreshing.set(personId, task);
-    }
-    const value = saved?.value || { available: false, authorizationRequired: false, events: [] };
+    const value = calendarCached.get(personId)?.value || { available: false, authorizationRequired: false, events: [] };
+    // Deadline display uses the saved schedule and the local clock, without
+    // another provider request when a reminder becomes due.
     const due = (value.events || []).filter((item) => item.startAt - 30 * 60_000 <= now()
       && item.startAt + 10 * 60_000 > now()).slice(0, 3);
     const next = (value.events || []).find((item) => item.startAt > now());
-    return { available: value.available, authorizationRequired: value.authorizationRequired,
-      due, next: next || null, observedAt: value.observedAt || null };
+    const stale = Boolean(value.observedAt && now() - Date.parse(value.observedAt) > 24 * 60 * 60_000);
+    return { available: value.available && !stale, authorizationRequired: value.authorizationRequired,
+      due: stale ? [] : due, next: stale ? null : next || null, observedAt: value.observedAt || null,
+      syncMode: 'events', stale, coverage: 'cached-calendar', quotaBlocked: Boolean(value.quotaBlocked) };
   }
-  async function calendarSummary(personId) {
-    calendarLatest(personId);
-    await calendarRefreshing.get(personId);
-    return calendarLatest(personId);
+  function calendarSummary(personId, { refresh = false } = {}) {
+    const saved = calendarCached.get(personId);
+    if (saved && (!refresh || saved.expiresAt > now())) return Promise.resolve(calendarLatest(personId));
+    if (calendarRefreshing.has(personId)) return calendarRefreshing.get(personId);
+    const task = fetchCalendar(personId).catch(() => ({ available: false, authorizationRequired: false, events: [] }))
+      .then(async value => {
+        const identity = await expected(personId);
+        value = { ...value, quotaBlocked: providerPauses.get(identity?.realm) === Infinity };
+        const snapshot = { value, checkedAt: now(), expiresAt: now() + (value.available ? calendarRefreshMs : messageRefreshMs) };
+        calendarCached.set(personId, snapshot);
+        await persistSnapshot(personId, 'calendar', snapshot);
+        return calendarLatest(personId);
+      }).finally(() => calendarRefreshing.delete(personId));
+    calendarRefreshing.set(personId, task);
+    return task;
   }
   async function fetchSummary(personId) {
     const identity = await expected(personId);
@@ -571,16 +615,18 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         quotaBlocked: providerPauses.get(identity.realm) === Infinity };
     }
   }
-  function summary(personId) {
+  function summary(personId, { refresh = false } = {}) {
     const saved = cached.get(personId);
-    if (saved?.expiresAt > now()) return Promise.resolve(saved.value);
+    if (saved && (!refresh || saved.expiresAt > now())) return Promise.resolve(saved.value);
     const pending = refreshing.get(personId);
     if (pending) return pending;
     const task = fetchSummary(personId).catch(() => ({ connected: Boolean(saved?.value?.connected), available: false,
-      recentMessages: 0, mentions24h: 0 })).then((value) => {
+      recentMessages: 0, mentions24h: 0 })).then(async value => {
       const failures = value.available ? 0 : (saved?.failures || 0) + 1;
       const backoff = messageRefreshMs * 2 ** Math.min(Math.max(0, failures - 1), 3);
-      cached.set(personId, { value, failures, expiresAt: now() + backoff });
+      const snapshot = { value, failures, checkedAt: now(), expiresAt: now() + backoff };
+      cached.set(personId, snapshot);
+      await persistSnapshot(personId, 'messages', snapshot);
       return value;
     }).finally(() => refreshing.delete(personId));
     refreshing.set(personId, task);
@@ -588,17 +634,118 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   }
   function latest(personId) {
     const saved = cached.get(personId);
-    if (!saved || saved.expiresAt <= now()) void summary(personId).catch(() => {});
     const calendar = calendarLatest(personId);
-    if (saved) return { ...saved.value, calendar };
-    return { connected: false, available: false, recentMessages: 0, mentions24h: 0, calendar };
+    const stale = Boolean(saved && now() - saved.checkedAt > messageRefreshMs);
+    // Rendering is a pure cache read, even after the last snapshot expires.
+    return { ...(saved?.value || { connected: false, available: false, recentMessages: 0, mentions24h: 0 }),
+      calendar, syncMode: 'events', coverage: 'partial', stale,
+      quotaBlocked: Boolean(saved?.value?.quotaBlocked || calendar.quotaBlocked),
+      available: Boolean(saved?.value?.available) && !stale,
+      readStateAvailable: Boolean(saved?.value?.readStateAvailable) && !stale,
+      syncPending: eventChanges.has(personId) };
+  }
+  const refreshMessages = personId => summary(personId, { refresh: true });
+  const refreshCalendar = personId => calendarSummary(personId, { refresh: true });
+  async function refresh(personId, { quotaRestored = false } = {}) {
+    // Only an explicit operator action after quota restoration may reset the
+    // saved application-wide rejection. Frame reads and events never do so.
+    if (quotaRestored) {
+      const identity = await expected(personId);
+      if (identity) {
+        providerPauses.delete(identity.realm);
+        await queued(async () => {
+          const grants = await document();
+          const doc = await readJson(snapshotFile, { version: 1, people: {} });
+          for (const [id, entry] of Object.entries(grants.people || {})) {
+            if (entry.token?.realm !== identity.realm) continue;
+            for (const [kind, store] of [['messages', cached], ['calendar', calendarCached]]) {
+              const snapshot = store.get(id) || doc.people?.[id]?.[kind];
+              if (!snapshot) continue;
+              snapshot.value.quotaBlocked = false;
+              snapshot.expiresAt = 0;
+              store.set(id, snapshot);
+              if (doc.people?.[id]) doc.people[id][kind] = snapshot;
+            }
+          }
+          await mkdir(privateDir, { recursive: true, mode: 0o700 });
+          await writeJsonAtomic(snapshotFile, doc, { mode: 0o600 });
+        });
+      }
+    }
+    await Promise.all([refreshMessages(personId), refreshCalendar(personId)]);
+    return latest(personId);
+  }
+  function planEvent(personId) {
+    if (stopped || eventRunning.has(personId)) return;
+    const change = eventChanges.get(personId);
+    const realm = eventRealms.get(personId);
+    if (!change || providerPauses.get(realm) === Infinity) {
+      eventChanges.delete(personId);
+      return;
+    }
+    if (eventTimers.has(personId)) cancel(eventTimers.get(personId));
+    const dueAt = Math.min(...Object.keys(change).map(kind => Math.max(
+      (kind === 'messages' ? cached : calendarCached).get(personId)?.expiresAt || 0, providerPauses.get(realm) || 0)));
+    if (dueAt > now()) {
+      // A coalesced event may wait for its API budget. This is one pending
+      // event deadline, not a recurring check or a retry on an unchanged failure.
+      const timer = schedule(() => { eventTimers.delete(personId); planEvent(personId); }, dueAt - now());
+      timer?.unref?.();
+      eventTimers.set(personId, timer);
+      return;
+    }
+    eventTimers.delete(personId);
+    eventRunning.add(personId);
+    const tasks = [];
+    for (const kind of Object.keys(change)) {
+      const snapshot = (kind === 'messages' ? cached : calendarCached).get(personId);
+      if (Math.max(snapshot?.expiresAt || 0, providerPauses.get(realm) || 0) > now()) continue;
+      delete change[kind];
+      tasks.push(kind === 'messages' ? refreshMessages(personId) : refreshCalendar(personId));
+    }
+    if (!Object.keys(change).length) eventChanges.delete(personId);
+    const task = Promise.all(tasks).catch(error => console.warn(`[display-events] ${error.message}`)).finally(() => {
+      eventTasks.delete(personId);
+      eventRunning.delete(personId);
+      planEvent(personId);
+    });
+    eventTasks.set(personId, task);
+  }
+  async function notifyRealm(realm, change) {
+    if (stopped || !safeRealm(realm) || providerPauses.get(realm) === Infinity) return;
+    const doc = await document();
+    for (const [personId, entry] of Object.entries(doc.people || {})) {
+      if (entry.token?.realm !== realm) continue;
+      const identity = await expected(personId);
+      if (identity?.realm !== realm || identity.openId !== entry.token.openId) continue;
+      const pending = eventChanges.get(personId) || {};
+      for (const kind of ['messages', 'calendar']) {
+        const signal = change?.[kind];
+        const at = typeof signal === 'number' ? signal : Math.max(signal?.everyoneAt || 0,
+          signal?.subjects?.[messageKey(`${realm}:${identity.openId}`)] || 0);
+        const snapshot = (kind === 'messages' ? cached : calendarCached).get(personId);
+        if (Number.isFinite(at) && at > (snapshot?.checkedAt || 0)) pending[kind] = at;
+      }
+      if (!Object.keys(pending).length) continue;
+      eventChanges.set(personId, pending);
+      eventRealms.set(personId, realm);
+      planEvent(personId);
+    }
+  }
+  async function idle() {
+    do { await Promise.all(eventTasks.values()); } while (eventTasks.size);
+  }
+  function stop() {
+    stopped = true;
+    for (const timer of eventTimers.values()) cancel(timer);
+    eventTimers.clear(); eventChanges.clear();
   }
   async function acknowledge(personId, through) {
     const throughMs = Date.parse(through || '');
     if (!Number.isFinite(throughMs) || throughMs > now() + 1_000) throw Object.assign(new Error('Invalid reminder snapshot'), { status: 400 });
     const identity = await expected(personId);
     if (!identity || !await accessToken(personId, identity)) return { connected: false, cleared: 0 };
-    return queued(async () => {
+    const result = await queued(async () => {
       const doc = await readJson(notificationFile, { version: 1, people: {} });
       const current = doc.people?.[personId];
       const identityKey = messageKey(`${identity.realm}:${identity.openId}`);
@@ -624,6 +771,8 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       }
       return { connected: true, cleared };
     });
+    if (cached.has(personId)) await persistSnapshot(personId, 'messages', cached.get(personId));
+    return result;
   }
   async function maintain() {
     const doc = await document();
@@ -638,5 +787,6 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       }
     }
   }
-  return { begin, status, summary, latest, calendarSummary, acknowledge, maintain };
+  return { begin, status, summary, latest, calendarSummary, acknowledge, maintain,
+    restore, refreshMessages, refreshCalendar, refresh, notifyRealm, stop, idle };
 }
