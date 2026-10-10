@@ -348,6 +348,39 @@ test('service shutdown aborts an in-flight upload without losing its pending man
   const saved = await loadRecord(root, record.id); assert.equal(saved.status, 'pending'); assert.equal(saved.attempts, undefined);
 });
 
+test('upload failures retain every original segment through retry exhaustion without stopping capture', async (t) => {
+  const root = await temporary(t), record = await pendingRecord(root);
+  const second = new WavWriter(join(recordDir(root, record.id), '00001.wav'));
+  await second.start(); await second.append(Buffer.from([234, 0])); await second.finish();
+  record.segments.push({ filename: '00001.wav' }); await saveRecord(root, record);
+  const originals = await Promise.all(record.segments.map(({ filename }) => readFile(join(recordDir(root, record.id), filename))));
+  const factory = captureFactory(), manager = new RecordingManager({ root, config: config(), spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  await manager.start('c'); await feed(manager, factory.captures.get('rx2'), 'rx2', stereo(321, 654));
+  const failedSubmit = async () => { throw Error('Recording provider unavailable'); };
+  const first = new RecordingUploadQueue({ root, config: config(), submit: failedSubmit });
+  try { await first.run(); } finally { await first.close(); }
+  const pending = await loadRecord(root, record.id);
+  assert.equal(pending.status, 'pending'); assert.equal(pending.attempts, 1);
+  assert.match(pending.lastError, /provider unavailable/); assert.ok(pending.retryAt);
+  // Resume at the last permitted attempt without waiting for retry timers.
+  pending.attempts = 5; delete pending.retryAt; await saveRecord(root, pending);
+  const resumed = new RecordingUploadQueue({ root, config: config(), submit: failedSubmit });
+  try { await resumed.run(); } finally { await resumed.close(); }
+  const blocked = await loadRecord(root, record.id);
+  assert.equal(blocked.status, 'blocked'); assert.equal(blocked.attempts, 6);
+  assert.equal(blocked.retryAt, undefined); assert.match(blocked.lastError, /provider unavailable/);
+  assert.equal(manager.status()[0].state, 'recording'); assert.equal(factory.captures.get('rx2').killed, false);
+  await feed(manager, factory.captures.get('rx2'), 'rx2', stereo(987, 654));
+  const captured = (await manager.stop('c')).recording;
+  assert.deepEqual(await samples(root, captured), [...Array(4).fill(321), ...Array(4).fill(987)]);
+  await recoverRecordings(root);
+  assert.equal((await loadRecord(root, record.id)).status, 'blocked');
+  for (let i = 0; i < record.segments.length; i++) {
+    assert.deepEqual(await readFile(join(recordDir(root, record.id), record.segments[i].filename)), originals[i]);
+  }
+});
+
 test('one damaged interrupted header cannot block recovery of other recordings', async (t) => {
   const root = await temporary(t), record = await pendingRecord(root);
   const damaged = { ...record, status: 'recording', id: 'rec_' + '9'.repeat(32) };

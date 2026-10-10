@@ -117,6 +117,23 @@ The service directly selects each receiver, does not change the system default m
 
 Disk usage, free space, duration and upload bandwidth are bounded. The service refuses additional data when the cache is full; it never deletes original audio automatically. Keep local originals until a deliberate archive/removal policy is agreed. A pending submission persists across outages/restarts; six failed attempts become `blocked`, with a reason and explicit `retry --recording ID`. Session IDs, finalized assets and a stable request ID are saved before subsequent steps, preventing duplicate AI turns after a lost response. Remote storage uploads never receive the instance auth cookie.
 
+### Upload failure keeps the original local
+
+> 固化录音上传失败时的本地暂存：录音先写到采集机，结束后再上传。网络、飞书接口或投递失败时保留原始 WAV、分段顺序和来源记录；有限重试仍失败就暂停该条提交，录音继续可用。需要桌面入口时，将已核实的 `records` 目录链接到桌面，并明确它是原音入口，不移动或重复复制正在写入的文件。恢复上传时复用原录音记录、已上传附件和原投递标识；回执不明确时先核对，避免重复发群。
+
+This is the normal automatic-mode preservation contract, not a switch to
+local-only capture. Every segment is written locally before any upload; failed
+uploads keep those files unchanged, and exhaustion of the submission retries
+does not stop an active capture. A durable desktop link to this instance's
+actual `records` directory exposes existing and future originals without a
+second writer, watcher, copy queue, or recorder restart. Do not expose private
+manifests as public attachments. Finished `.wav` segments can be read normally;
+the active `.wav.partial` segment is finalized when capture ends. A desktop
+entry or growing file proves local storage, not intelligible microphone audio
+or successful remote delivery. Recover the original saved recording with the
+existing retry command after checking the delivery state; do not create a new
+recording or Session merely to resend it.
+
 States mean different things:
 
 | State | Meaning |

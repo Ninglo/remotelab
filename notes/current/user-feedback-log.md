@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-10 — Failed recording uploads must remain usable locally
+
+- Feedback: while the provider interface was unavailable, an operator needed both the saved clip and an ongoing recording accessible locally, and asked to make that fallback a fixed mechanism.
+- Existing behavior: capture writes ordered original WAV segments before submission. Failed uploads preserve audio and the manifest; finite retries end with a blocked submission while capture remains independent. Preserve ordinary automatic submission rather than silently switching the whole recorder to local-only mode.
+- Verification: add a regression covering unchanged multi-segment originals after an initial failure, retry exhaustion and recovery, while another lane continues saving PCM. The operating guide documents a durable desktop link to the actual local originals, preserving the active writer without a watcher or restart. Local bytes, intelligible audio and provider delivery remain separate checks.
+
 ### 2026-10-10 — Document reads should follow received comment events
 
 - Feedback: repeated startup scans queried unused bound documents and increased the shared Feishu API quota pressure. The user explicitly chose to trust comment notifications and remove proactive catch-up.
