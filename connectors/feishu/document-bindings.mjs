@@ -2,6 +2,7 @@ import { watch } from 'node:fs';
 import { createConnectorInbox } from '../../lib/connector-inbox.mjs';
 import { serialQueue } from '../../lib/durable-records.mjs';
 import { feishuReadRetryPolicy } from '../../lib/feishu-retry-policy.mjs';
+import { createFeishuReadPacer } from '../../lib/feishu-read-pacer.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, mkdir, writeFile, rename, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -35,11 +36,17 @@ export async function listDocumentBindings(storageDir) {
   return bindings;
 }
 
-async function pages(method, params, path) {
+const readPacers = new WeakMap();
+function readPacer(runtime) {
+  if (!readPacers.has(runtime)) readPacers.set(runtime, createFeishuReadPacer());
+  return readPacers.get(runtime);
+}
+
+async function pages(request, method, params, path) {
   const items = [], tokens = new Set();
   let token = '';
   for (let page = 0; page < 1000; page += 1) {
-    const response = await method({ params: { ...params, page_size: 100, ...(token ? { page_token: token } : {}) }, path });
+    const response = await request(() => method({ params: { ...params, page_size: 100, ...(token ? { page_token: token } : {}) }, path }));
     if (response.code && response.code !== 0) throw Object.assign(
       new Error(`Feishu comment read ${response.code}: ${response.msg}`), { code: response.code });
     if (!response.data) throw new Error('Feishu comment response has no data');
@@ -52,15 +59,15 @@ async function pages(method, params, path) {
   throw new Error('Feishu comment pagination limit exceeded');
 }
 
-export async function readDocumentComments(runtime, binding) {
+export async function readDocumentComments(runtime, binding, request = readPacer(runtime)) {
   const drive = runtime.appClient.drive.v1;
   const params = { file_type: binding.fileType, user_id_type: 'open_id' };
   const path = { file_token: binding.fileToken };
-  const comments = await pages(args => drive.fileComment.list(args), {
+  const comments = await pages(request, args => drive.fileComment.list(args), {
     ...params, ...(binding.fileType === 'docx' ? { need_relation: true } : {}),
   }, path);
   for (const comment of comments) {
-    comment.replies = await pages(args => drive.fileCommentReply.list(args), params, { ...path, comment_id: comment.comment_id });
+    comment.replies = await pages(request, args => drive.fileCommentReply.list(args), params, { ...path, comment_id: comment.comment_id });
   }
   return comments;
 }
