@@ -359,13 +359,17 @@ export async function getRunResult(runId) {
   return getRunResultUnlocked(runId);
 }
 
-export async function writeRunResult(runId, result) {
-  await runMutationQueue(runId, async () => {
+export async function writeRunResult(runId, result, { onlyIfMissing = false } = {}) {
+  return runMutationQueue(runId, async () => {
     await ensureRunDirectory(runId);
+    // Reconciliation uses a stale liveness snapshot. Check again under the
+    // cross-process mutation lock before replacing a runner's real result.
+    if (onlyIfMissing && (await getRunResultUnlocked(runId)
+      || isTerminalRunState((await getRunUnlocked(runId))?.state))) return null;
     await writeJsonAtomic(runResultPath(runId), result || {});
     runResultCache.set(runId, result || {});
+    return clone(result || {});
   });
-  return getRunResultUnlocked(runId);
 }
 
 async function externalizeStringField(runId, container, field, prefix) {

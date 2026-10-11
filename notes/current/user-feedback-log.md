@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-11 — Completed work reported as a disappeared runner
+
+- Feedback: repeated `Detached runner disappeared before writing a result` errors replaced completed answers. The reported example retained its full final answer, exported artifact and provider completion event, then received the generic failure 54 ms later. All 17 matching local failures since October 8 retained final answers and provider completion events; this does not establish that every historical disappearance had the same cause.
+- Cause: the controller could read no result before the runner committed success, then observe the exited process and overwrite that success from its stale running snapshot. A missing-result timestamp set before the launch receipt appeared was never cleared when the process became visible, so the intended grace period had already expired by completion.
+- Change: clear the missing observation on recovered liveness, refresh durable status/result after liveness checks, and conditionally commit synthetic failure under the cross-process mutation lock. Emit the failure diagnostic only after that conditional commit succeeds.
+- Verification: the isolated regression reproduces success being overwritten on the old implementation, then checks successful completion, recovered liveness, late result arrival, actual disappearance and cancellation. Native runtime and HTTP lifecycle tests cover integration. Source/CI and live deployment are separate; historical failure receipts and business tasks are not silently rewritten or replayed.
+
 ### 2026-10-10 — Generate sidebar labels during execution and recover lost display receipts
 
 - Feedback: titles and descriptions appeared only after a long task ended; some Web topic rows continued showing running after their work was complete.

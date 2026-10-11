@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
+import net from 'node:net';
 import { spawn } from 'child_process';
 import WebSocket from 'ws';
 
@@ -12,8 +13,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
 
-function randomPort() {
-  return 33000 + Math.floor(Math.random() * 10000);
+async function availablePort() {
+  const reservation = net.createServer();
+  await new Promise((resolve, reject) => {
+    reservation.once('error', reject);
+    reservation.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = reservation.address();
+  await new Promise((resolve, reject) => reservation.close(error => error ? reject(error) : resolve()));
+  return port;
 }
 
 function sleep(ms) {
@@ -334,7 +342,7 @@ async function getEvents(port, sessionId, filter = 'visible') {
 
 async function phase1Contract() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port);
@@ -360,7 +368,7 @@ async function phase1Contract() {
 
 async function phase2HttpCanonical() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port, { name: 'Canonical', group: 'Tests', description: 'HTTP only' });
@@ -381,7 +389,7 @@ async function phase2HttpCanonical() {
 
 async function phase2bLegacyHttpCompat() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port, {
@@ -415,7 +423,7 @@ async function phase2bLegacyHttpCompat() {
 
 async function phase3Storage() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port, { name: 'Storage', group: 'Tests', description: 'Storage' });
@@ -441,7 +449,7 @@ async function phase3Storage() {
 
 async function phase4RunnerThin() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port, { name: 'Runner', group: 'Tests', description: 'Thin runner' });
@@ -461,7 +469,7 @@ async function phase4RunnerThin() {
 
 async function phase5RestartSurvival() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   let server = await startServer({ home, port, delayMs: 4000 });
   try {
     const session = await createSession(port, { name: 'Restart', group: 'Tests', description: 'Restart survival' });
@@ -528,7 +536,7 @@ async function phase5RestartSurvival() {
 
 async function phase6WsInvalidationOnly() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   let ws;
   try {
@@ -556,7 +564,7 @@ async function phase6WsInvalidationOnly() {
 
 async function phase7EtagRevalidation() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port, { name: 'ETag', group: 'Tests', description: 'Conditional GETs' });
@@ -618,7 +626,7 @@ async function phase7EtagRevalidation() {
 
 async function phase8CancelRecovery() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port, delayMs: 4000 });
   try {
     const session = await createSession(port, { name: 'Cancel', group: 'Tests', description: 'Cancel recovery' });
@@ -643,7 +651,7 @@ async function phase8CancelRecovery() {
 
 async function phase9StaleResultReconciliation() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   let server = await startServer({ home, port });
   try {
     const session = await createSession(port, { name: 'Stale', group: 'Tests', description: 'Stale result reconciliation' });
@@ -699,7 +707,7 @@ async function phase9StaleResultReconciliation() {
 
 async function phase10EventIndexContract() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port, { name: 'Event index', group: 'Tests', description: 'Display timeline + lazy hidden blocks' });
@@ -773,7 +781,7 @@ async function phase10EventIndexContract() {
 
 async function phase11ForkSession() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port, delayMs: 1200 });
   try {
     const session = await createSession(port, { name: 'Fork parent', group: 'Tests', description: 'Fork route contract' });
@@ -832,7 +840,7 @@ async function phase11ForkSession() {
 
 async function phase12QueuedMessageRouteContract() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port, delayMs: 1200 });
   try {
     const session = await createSession(port, {
@@ -881,7 +889,7 @@ async function phase12QueuedMessageRouteContract() {
 
 async function phase13DelegateSession() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port, delayMs: 1200 });
   try {
     const session = await createSession(port, {
@@ -1019,7 +1027,7 @@ async function phase13DelegateSession() {
 
 async function phase14SessionSpawnCli() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port, delayMs: 1200 });
   try {
     const session = await createSession(port, {
@@ -1065,7 +1073,7 @@ async function phase14SessionSpawnCli() {
 
 async function phase14bSessionSpawnCliInternalFinalOnly() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port, delayMs: 1200 });
   try {
     const session = await createSession(port, {
@@ -1111,7 +1119,7 @@ async function phase14bSessionSpawnCliInternalFinalOnly() {
 
 async function phase15NoDuplicateDuringReadHammer() {
   const { home } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port, delayMs: 1200 });
   try {
     const session = await createSession(port, {
@@ -1170,7 +1178,7 @@ async function phase15NoDuplicateDuringReadHammer() {
 
 async function phase16StaleMissingRunnerReconciliation() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   let server = await startServer({ home, port });
   try {
     const session = await createSession(port, {
@@ -1235,7 +1243,7 @@ async function phase16StaleMissingRunnerReconciliation() {
 
 async function phase17SidecarPreSpawnFailurePersistsRootCause() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   let server = await startServer({
     home,
     port,
@@ -1276,7 +1284,7 @@ async function phase17SidecarPreSpawnFailurePersistsRootCause() {
 
 async function phase18FinalizationMetricsFailureDoesNotMaskSuccess() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   let server = await startServer({
     home,
     port,
@@ -1309,7 +1317,7 @@ async function phase18FinalizationMetricsFailureDoesNotMaskSuccess() {
 
 async function phase19CodexMissingRolloutRecoversSameTurn() {
   const { home, configDir } = setupTempHome();
-  const port = randomPort();
+  const port = await availablePort();
   const server = await startServer({ home, port });
   try {
     const session = await createSession(port, {

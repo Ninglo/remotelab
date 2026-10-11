@@ -325,6 +325,8 @@ function normalizeSourceContext(value, maxBytes = MAX_SESSION_SOURCE_CONTEXT_BYT
 const synthesizeDetachedRunTermination = createDetachedRunReconciler({
   appendRunSpoolRecord,
   collectRunOutputPreview,
+  getRun,
+  getRunResult,
   graceMs: DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS,
   isTerminalRunState,
   nowIso,

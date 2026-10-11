@@ -53,6 +53,8 @@ export async function isRecordedRunnerUnitActive(unitName, unitScope, {
 export function createDetachedRunReconciler({
   appendRunSpoolRecord,
   collectRunOutputPreview,
+  getRun,
+  getRunResult,
   graceMs,
   isTerminalRunState,
   nowIso,
@@ -78,8 +80,18 @@ export function createDetachedRunReconciler({
     const runnerAlive = runnerProcessAlive || runnerUnitActive;
     const toolAlive = await isProcessIdentityAlive(run?.toolProcessIdentity);
     if (runnerAlive || toolAlive) {
+      if (run?.missingResultDetectedAt) {
+        await updateRun(runId, (current) => ({ ...current, missingResultDetectedAt: null }));
+      }
       return null;
     }
+
+    // The runner writes its result before exiting. It may have done so after
+    // the controller's earlier read but before the liveness probes above.
+    const current = await getRun(runId);
+    if (!current) return null;
+    if (isTerminalRunState(current.state) || await getRunResult(runId)) return current;
+    run = current;
 
     const completedAt = nowIso();
     const cancelled = run?.cancelRequested === true;
@@ -123,6 +135,16 @@ export function createDetachedRunReconciler({
       preview,
     };
     const error = cancelled ? null : (priorFailure || 'Detached runner disappeared before writing a result');
+    const result = {
+      completedAt,
+      exitCode: 1,
+      signal: null,
+      cancelled,
+      ...(error ? { error } : {}),
+    };
+    // Diagnostic reads also yield; commit conditionally so a late real result
+    // wins, and emit a failure diagnostic only when synthesis actually won.
+    if (!await writeRunResult(runId, result, { onlyIfMissing: true })) return getRun(runId);
     console.error(`[runs] Synthesizing missing-result failure for ${runId}: ${JSON.stringify(diagnostic)}`);
     try {
       await appendRunSpoolRecord(runId, {
@@ -137,14 +159,6 @@ export function createDetachedRunReconciler({
     } catch (appendError) {
       console.error(`[runs] Failed to append missing-result diagnostic for ${runId}: ${appendError.message}`);
     }
-    const result = {
-      completedAt,
-      exitCode: 1,
-      signal: null,
-      cancelled,
-      ...(error ? { error } : {}),
-    };
-    await writeRunResult(runId, result);
     return updateRun(runId, (current) => ({
       ...current,
       state: cancelled ? 'cancelled' : 'failed',
