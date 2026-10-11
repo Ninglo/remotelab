@@ -3435,7 +3435,16 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
   const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
   const routingOrigin = options.routingSource ? await requests.byRequest(options.routingSource.sessionId, options.routingSource.requestId) : null;
-  const inherited = priorRequest || (activeNative && !options.freshThread ? activeRequest : null) || routingOrigin;
+  // A native Run may accept messages from several people. Only continuations
+  // from the same verified Person can keep its frozen personal preferences;
+  // another sender must capture their own policy at admission.
+  const sameRequester = record => Boolean(options.viewPersonId && options.initiatedByIdentityId
+    && record?.options?.viewPersonId === options.viewPersonId
+    && (record.options.messageReplyPolicy?.scope !== 'person'
+      || record.options.messageReplyPolicy.personId === options.viewPersonId));
+  const inherited = priorRequest
+    || (activeNative && !options.freshThread && sameRequester(activeRequest) ? activeRequest : null)
+    || (sameRequester(routingOrigin) ? routingOrigin : null);
   const messageReplyPolicy = inherited ? inherited.options.messageReplyPolicy || null : await resolveMessageReplyPolicy(options);
   options = { ...options };
   if (messageReplyPolicy) options.messageReplyPolicy = messageReplyPolicy;

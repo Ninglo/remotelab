@@ -509,6 +509,44 @@ try {
   await writeFile(join(root, targetRun.run.id + '.release'), '');
   await awaitAnswer(sender.id, 'work-a'); await awaitAnswer(target.id, 'work-b'); await awaitAnswer(awaiting.id, 'work-question');
   await evidence('PASS: human-approved publication reaches a running Harness exactly once as reference-only; adoption requires a separate target human input; a reference cannot answer a pending question.');
+
+  // People can share an active native Run, but must not share personal reply
+  // or work-start defaults. Exercise admission, not only the settings resolver.
+  const policyActor = who => ({ personId: `person_${who}`, identityId: `identity_${who}` });
+  const originalPolicy = await rpc('message-settings', { action: 'apply', expectedRevision: 1, confirm: true,
+    choices: { opening: false, checklist: false, progress: 'none', strictStartCheck: true, routing: 'none' } }, policyActor('a'));
+  const otherPolicy = await rpc('message-settings', { action: 'apply', expectedRevision: 1, confirm: true,
+    choices: { opening: true, checklist: false, progress: 'card_latest', strictStartCheck: false, routing: 'none' } }, policyActor('b'));
+  const policySession = await rpc('create');
+  const policyOptions = (id, who) => ({ ...pilotOptions(id, who), sourceDelivery: replyPlan(id),
+    sourceContext: { ...pilotOptions(id, who).sourceContext, chatId: 'steering-chat' } });
+  const policyOtherOptions = policyOptions('policy-other', 'b');
+  const policyRoot = await rpc('accept', policySession.id, 'Hold personal-policy execution', [], policyOptions('policy-root', 'a'));
+  await until(async () => (await logs()).some(event => event.runId === policyRoot.run.id && event.kind === 'turn/start'), 'personal-policy turn starts');
+  await rpc('message-settings', { action: 'strict-start', expectedRevision: originalPolicy.revision,
+    confirm: true, enabled: false }, policyActor('a'));
+  for (const [id, who] of [['policy-other', 'b'], ['policy-same', 'a']]) {
+    await rpc('accept', policySession.id, 'Continue shared execution', [], who === 'b' ? policyOtherOptions : policyOptions(id, who));
+    await until(async () => (await receipt(policyRoot.run.id, id))?.state === 'accepted', id + ' steers once');
+  }
+  const admittedOther = await rpc('request', policySession.id, 'policy-other');
+  assert.deepEqual(admittedOther.options.messageReplyPolicy, { ...otherPolicy.active, final: true }, 'another Person captures their own strict-start and display choices');
+  assert.deepEqual((await rpc('request', policySession.id, 'policy-same')).options.messageReplyPolicy,
+    { ...originalPolicy.active, final: true }, 'same-Person continuation keeps the accepted work snapshot after a toggle');
+  const unknownOptions = policyOptions('policy-unknown', 'unknown');
+  delete unknownOptions.viewPersonId; delete unknownOptions.initiatedByIdentityId;
+  await rpc('accept', policySession.id, 'Continue without a verified Person', [], unknownOptions);
+  await until(async () => (await receipt(policyRoot.run.id, 'policy-unknown'))?.state === 'accepted', 'unknown-author input is acknowledged before completing the Run');
+  assert.equal((await rpc('request', policySession.id, 'policy-unknown')).options.messageReplyPolicy, undefined, 'unknown sender cannot borrow the head Person policy');
+  await rpc('message-settings', { action: 'strict-start', expectedRevision: otherPolicy.revision,
+    confirm: true, enabled: true }, policyActor('b'));
+  assert.equal((await rpc('accept', policySession.id, 'Continue shared execution', [], policyOtherOptions)).duplicate, true);
+  assert.deepEqual((await rpc('request', policySession.id, 'policy-other')).options.messageReplyPolicy,
+    admittedOther.options.messageReplyPolicy, 'retry retains its own saved policy despite later setting changes');
+  await writeFile(join(root, policyRoot.run.id + '.release'), '');
+  for (const id of ['policy-root', 'policy-other', 'policy-same', 'policy-unknown']) await awaitAnswer(policySession.id, id);
+  assert.equal((await logs()).filter(event => event.runId === policyRoot.run.id && event.kind === 'process-start').length, 1);
+  await evidence('PASS: shared native admission isolates each Person strict-start/display policy, preserves same-author continuations and retries, and refuses unknown-author inheritance.');
   succeeded = true;
   await evidence(`test-native-harness-integration: ok; validation log: ${validationLog}`);
 } catch (error) {
