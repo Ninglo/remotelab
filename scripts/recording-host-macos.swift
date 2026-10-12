@@ -410,10 +410,16 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         notice?.center(); notice?.orderFrontRegardless()
         window.deminiaturize(nil); window.orderFrontRegardless()
         emit(["feedback": message, "laneId": laneID, "at": ISO8601DateFormatter().string(from: Date())])
-        if started {
-            let cue = settings.root.appendingPathComponent("cues/started.mp3")
-            do { cuePlayer = try AVAudioPlayer(contentsOf: cue); cuePlayer?.prepareToPlay(); cuePlayer?.play() }
-            catch { NSSound(named: "Glass")?.play(); emit(["feedbackAudioError": "开始语音不可用，已用系统提示音"]) }
+        if started || message == "录音已结束 · 原音已保存" {
+            let cue = settings.root.appendingPathComponent(started ? "cues/started.mp3" : "cues/stopped.mp3")
+            do {
+                cuePlayer = try AVAudioPlayer(contentsOf: cue); cuePlayer?.prepareToPlay()
+                if cuePlayer?.play() == true { emit(["feedbackAudio": started ? "started" : "stopped", "laneId": laneID]) }
+                else { throw NSError(domain: "RecordingFeedback", code: 1) }
+            } catch {
+                NSSound(named: started ? "Glass" : "Pop")?.play()
+                emit(["feedbackAudioError": started ? "开始语音不可用，已用系统提示音" : "结束语音不可用，已用系统提示音"])
+            }
         } else { NSSound(named: "Pop")?.play() }
     }
 
