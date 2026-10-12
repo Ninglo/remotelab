@@ -4,7 +4,7 @@ async function initializeGuide() {
   const route = document.body.dataset.guidePage;
   if (!route) return;
   if (!document.querySelector('.guide-masthead')) {
-    const response = await fetch(new URL('./project.json?v=20261003l', import.meta.url));
+    const response = await fetch(new URL('./project.json?v=20261012context', import.meta.url));
     if (!response.ok) throw new Error('说明目录暂时不可读取');
     const catalog = await response.json();
     const page = catalog.pages.find(item => item.route === route);
@@ -52,6 +52,7 @@ async function initializeGuide() {
     let target;
     try { target = document.getElementById(decodeURIComponent(location.hash.slice(1))); } catch { return; }
     if (!target) return;
+    if (target instanceof HTMLDetailsElement) target.open = true;
     for (let parent = target.parentElement; parent; parent = parent.parentElement) {
       if (parent instanceof HTMLDetailsElement) parent.open = true;
     }

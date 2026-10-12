@@ -1,0 +1,32 @@
+.assembly-map { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:14px; align-items:center; margin:28px 0; }
+.assembly-map>div { padding:20px; background:var(--soft); border:1px solid var(--line); border-radius:var(--radius); min-width:0; }
+.assembly-map p { margin:0; font-size:15px; }
+.assembly-map>span { color:var(--muted); }
+.block-map { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.block-map>a { padding:20px; border:1px solid var(--line); border-radius:var(--radius); text-decoration:none; min-width:0; }
+.block-map>a:hover { background:var(--selected); }
+.block-map strong,.block-map span { display:block; font-weight:400; }
+.block-map strong { font-size:20px; margin-bottom:10px; }
+.block-map span:last-child { font-size:14px; color:var(--muted); }
+.assessment { display:grid; grid-template-columns:9em minmax(0,1fr); gap:18px 22px; }
+.assessment dt { color:var(--ink); }
+.assessment dd { margin:0; color:var(--muted); }
+.text-pair { display:grid; gap:14px; }
+.text-pair details { border:1px solid var(--line); padding:0 18px; }
+.text-pair summary { cursor:pointer; padding:16px 0; min-height:48px; }
+.text-pair pre { font-size:14px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; background:var(--soft); padding:20px; margin:0 0 18px; }
+.source-links { font-size:14px; line-height:1.9; overflow-wrap:anywhere; }
+.table-scroll { overflow-x:auto; margin:24px 0; }
+.table-scroll th,.table-scroll td { border-bottom:1px solid var(--line); }
+.back { font-size:14px; margin-top:20px; }
+@media(max-width:640px) {
+  .assembly-map { grid-template-columns:1fr; gap:8px; }
+  .assembly-map>span { transform:rotate(90deg); text-align:center; line-height:1; }
+  .block-map { grid-template-columns:1fr; }
+  .assessment { grid-template-columns:1fr; gap:8px; }
+  .assessment dd { margin-bottom:16px; }
+  .text-pair details { padding:0 12px; }
+  .text-pair pre { padding:12px; font-size:13px; }
+  .table-scroll table { min-width:480px; }
+}
+@media print { .text-pair details>pre { display:block!important; } .block-map { grid-template-columns:1fr 1fr; } }

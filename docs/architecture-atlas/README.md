@@ -13,6 +13,7 @@
 | 章节 | 唯一编辑位置 | 统一发布后的路径 |
 | --- | --- | --- |
 | 产出汇总 | 从 `project.json`、`features.json` 和仓库原交付记录生成；入口 `render-deliverables.mjs` | `deliverables.html` |
+| 上下文注入导航与压缩 | `context-injection.json` 与规则原源码；`render-context-injection.mjs` 生成 | `context-injection.html` |
 | 功能清单与使用说明（盘点初稿） | `docs/architecture-atlas/features.json`；由 `render-features.mjs` 生成 HTML／参考文本 | `features.html` |
 | 消息全程、并行读取与调优入口 | `docs/architecture-atlas/project.html`、`project.json` | `project.html` |
 | 系统总览：事件、状态、输入路径、机制与资源 | `docs/architecture-atlas/` 原图谱文件 | `index.html` |
@@ -23,6 +24,12 @@
 消息阅读页09–14同时解释开工记忆、存储分类、项目进程、个人／公司背景和登录后的真实只读视图。正文数据维护于外置记忆章的 `reader-data.js`、`guide-data.js`，`output/memory-reader.js`引用同一源；构建器只重写章间相对路径，不再手工复制内容。
 
 记忆章节沿用原源码维护位置，由 `assemble-site.mjs` 纳入同一网站。发布目录中的 `memory/` 是构建产物，不能在源码中再复制一份独立维护。原记忆网站地址保留历史兼容；新的共同阅读、发布和备份以本项目为准。
+
+## 上下文注入导航与压缩（2026-10-12）
+
+[来源地图](context-injection.html)提供首次启动目录、消息显示、严格开工检查、任务清单、飞书运行规则的通用展开原文、源码入口、触发条件和必要性评估。五块规则样本合计16,606字符；压缩草案与字符对照由同一内容源生成，未启用到运行提示词，不声称语义等价、提速或任务成功率改善。
+
+说明和草案维护于`context-injection.json`；原规则仍在`chat/`与`lib/`。运行`node docs/architecture-atlas/render-context-injection.mjs`生成页面和参考文本，生成器核对标记的规则源码版本，并把实例路径改为通用入口。随后运行`render-deliverables.mjs`与统一组装器。公开原文不含人员档案、消息、凭据或运行快照。
 
 ## 群消息分流与回复结构（2026-10-10）
 

@@ -31,6 +31,14 @@
       "navTitle": "系统如何工作"
     },
     {
+      "id": "context",
+      "title": "上下文注入导航与压缩",
+      "source": "docs/architecture-atlas",
+      "route": "context-injection.html",
+      "description": "直接阅读五块提示词的当前原文、维护来源、注入条件、必要性与压缩草案。",
+      "navTitle": "上下文注入与压缩"
+    },
+    {
       "id": "message",
       "title": "一次工作如何执行与交付",
       "source": "docs/architecture-atlas/output",
@@ -55,7 +63,7 @@
       "navTitle": "记忆与协作"
     }
   ],
-  "edition": "20261010structure",
+  "edition": "20261012context",
   "readingConvention": "从消息全程进入；具体环节内展开实现，专题引用保留原维护源和日期。",
   "pages": [
     {
@@ -378,11 +386,62 @@
           "范围与实现入口"
         ]
       ]
+    },
+    {
+      "route": "context-injection.html",
+      "chapter": "context",
+      "reference": "context-injection.md",
+      "sections": [
+        [
+          "scope",
+          "范围与结论"
+        ],
+        [
+          "map",
+          "来源导航地图"
+        ],
+        [
+          "comparison",
+          "压缩量对照"
+        ],
+        [
+          "startup",
+          "首次启动目录"
+        ],
+        [
+          "surface",
+          "消息显示规则"
+        ],
+        [
+          "strict",
+          "严格开工检查"
+        ],
+        [
+          "workboard",
+          "任务清单规则"
+        ],
+        [
+          "feishu",
+          "飞书运行规则"
+        ],
+        [
+          "boundaries",
+          "其他上下文"
+        ],
+        [
+          "verification",
+          "压缩验收"
+        ],
+        [
+          "maintenance",
+          "来源与维护"
+        ]
+      ]
     }
   ],
   "deliverables": {
     "checkedAt": "2026-10-08",
-    "sourceRevision": "4e8426e5e256f0ff49acf1b4af285965242c94d9",
+    "sourceRevision": "30eeb1e490e82d97291fd28df134d4647d92037e",
     "historyCheckedThrough": "2026-09-16",
     "documents": [
       {
