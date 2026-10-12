@@ -29,16 +29,38 @@
   // in the separate chat renderer; the list renderer owns the settings panel.
   style.textContent=nativeMain?'#rlfe-pet-host{display:none!important}':'#rlfe-host,#rlfe-sort-host,#rlfe-resource-nav-host,#rlfe-personal-nav,#rlfe-personal-workspace{display:none!important}';
   document.head.append(style);
-  // The native navigation is outside the messenger renderer. Mount the same
-  // Web components in a dedicated rail inside that renderer; never cover or
-  // intercept the official native navigation or editor.
+  // Native navigation lives outside this renderer. Keep enhancement actions in
+  // one horizontal toolbar, without taking width from the native message list.
+  let layoutObserver,toolbar,layout,root;
   if(nativeMain){
-    const rail=document.createElement('aside');rail.id='rlfe-native-rail';rail.className='appNavbar';
-    rail.innerHTML='<div class="appNavbar-navbarMenu"></div>';
-    document.body.append(rail);
-    const layout=document.createElement('style');layout.id='rlfe-native-rail-style';
-    layout.textContent=`#rlfe-native-rail{position:fixed;left:0;top:0;bottom:0;width:64px;z-index:1000;background:var(--rlfe-nav,var(--bg-body,#f5f6f7));border-right:1px solid var(--rlfe-border,#dee0e3);padding:12px 4px;box-sizing:border-box;display:flex;flex-direction:column}#rlfe-native-rail .appNavbar-navbarMenu{display:flex;flex-direction:column;gap:8px;overflow-y:auto}body>div:first-of-type:not([id^="rlfe-"]){max-width:calc(100% - 64px);margin-left:64px}#rlfe-host{--rlfe-launch-width:48px;--rlfe-panel-left:12px;--rlfe-launch-top:auto;--rlfe-launch-bottom:16px}#rlfe-personal-workspace{z-index:2147482900!important}`;
+    toolbar=document.createElement('aside');toolbar.id='rlfe-native-toolbar';toolbar.className='appNavbar';
+    toolbar.setAttribute('aria-label','增强功能');
+    toolbar.innerHTML='<div class="appNavbar-navbarMenu"></div><button id="rlfe-native-settings" type="button">设置</button>';
+    toolbar.lastElementChild.onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();
+    document.body.append(toolbar);
+    layout=document.createElement('style');layout.id='rlfe-native-layout-style';
+    layout.textContent=`
+      #rlfe-native-toolbar{position:fixed;inset:0 0 auto;height:44px;z-index:1000;background:var(--rlfe-nav,var(--bg-body,#f5f6f7));border-bottom:1px solid var(--rlfe-border,#dee0e3);padding:4px;box-sizing:border-box;display:flex;align-items:center;gap:4px}
+      #rlfe-native-toolbar .appNavbar-navbarMenu{display:flex;align-items:center;flex:1;min-width:0;gap:2px;overflow:hidden!important;max-height:none!important}
+      #rlfe-native-toolbar nav{flex:1;min-width:0;margin:0}
+      #rlfe-native-settings{flex:none;height:32px;padding:0 8px;border:0;border-radius:5px;color:var(--rlfe-text,#1f2329);background:transparent;font:12px system-ui;cursor:pointer}
+      #rlfe-native-settings:hover{background:var(--rlfe-hover,#e8e9eb)}
+      [data-rlfe-native-root]{position:fixed!important;inset:44px 0 0!important;width:100%!important;height:calc(100% - 44px)!important;max-height:calc(100% - 44px)!important;min-height:0!important;margin:0!important}
+      #rlfe-host{--rlfe-panel-left:8px;--rlfe-launch-top:4px;--rlfe-launch-bottom:auto}
+      #rlfe-personal-workspace{left:0!important;top:44px!important;z-index:2147482900!important}
+    `;
     document.head.append(layout);
+    const navCss=`:host{display:block!important;flex:1!important;min-width:0!important;margin:0!important}div,#entries{display:flex!important;gap:2px!important}button,a,:host([data-compact=true]) button,:host([data-compact=true]) a{display:flex!important;flex:1!important;flex-direction:row!important;align-items:center!important;justify-content:center!important;gap:3px!important;min-width:0!important;height:32px!important;padding:0 3px!important;font:12px/1 system-ui,sans-serif!important}svg,small.trial{display:none!important}span{overflow:hidden!important;text-overflow:ellipsis!important}`;
+    function mountLayout(){
+      const feed=document.querySelector('.feed-main-list');let next=feed;
+      while(next?.parentElement&&next.parentElement!==document.body)next=next.parentElement;
+      if(next&&next!==document.body&&next!==root){root?.removeAttribute('data-rlfe-native-root');root=next;root.setAttribute('data-rlfe-native-root','');}
+      for(const id of ['rlfe-resource-nav-host','rlfe-personal-nav','rlfe-host']){
+        const shadow=document.getElementById(id)?.shadowRoot;
+        if(shadow&&!shadow.getElementById('rlfe-native-horizontal')){const css=document.createElement('style');css.id='rlfe-native-horizontal';css.textContent=id==='rlfe-host'?'#launcher{display:none!important}':navCss;shadow.append(css);}
+      }
+    }
+    layoutObserver=new MutationObserver(mountLayout);layoutObserver.observe(document.body,{childList:true,subtree:true});mountLayout();
   }
   const added=new Map();
   globalThis.__RLFE_NATIVE_WEB_TOPIC_ROWS__=()=>{if(!nativeMain)return [...document.querySelectorAll('.threadWrapper[data-thread-id]')];return [...document.querySelectorAll('.feed-main-list [data-feed-id]')].map(row=>{if(!added.has(row))added.set(row,row.getAttribute('data-thread-id'));row.dataset.threadId=row.dataset.feedId;return row;});};
@@ -81,7 +103,7 @@
   observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-feed-id']});
   const onSettings=e=>{globalThis.__RLFE_SHARED_PROJECT__?.(projection);if(nativeMain)globalThis.__RLFE_SHARED_PREVIEW__?.(JSON.stringify(e.detail));};
   window.addEventListener('rlfe:settings',onSettings);
-  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:10,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
-  globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
+  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:11,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
+  globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();layoutObserver?.disconnect();toolbar?.remove();layout?.remove();root?.removeAttribute('data-rlfe-native-root');window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
   visible();
 })();

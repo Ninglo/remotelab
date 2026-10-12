@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';import fs from 'node:fs/promises';import
 const [modulePath,executablePath,runtimePath,out]=process.argv.slice(2);const {chromium}=await import(pathToFileURL(modulePath));
 const runtime=(await fs.readFile(runtimePath,'utf8')).replace('__CAPABILITY__',JSON.stringify('fixture-capability'));
 const browser=await chromium.launch({executablePath,headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:448,height:849}});const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE',e.message)});page.on('console',m=>{if(m.type()==='error')console.error('CONSOLE',m.text())});
-await page.route('https://fixture.feishu.cn/messenger/messenger/zh-CN.html',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><style>body{margin:0}#app{height:100vh}.feed-main-list{width:100%}</style><div id="app"><div class="feed-main-list"><div data-feed-id="1000000000000000011"><div class="a11y_feed_card_main"><span class="_9f5c521">现有话题</span><div class="_97ba617">原有摘要</div></div></div></div><div contenteditable="true">尚未发送的草稿</div></div>'}));
+await page.route('https://fixture.feishu.cn/messenger/messenger/zh-CN.html',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><meta charset="utf-8"><style>body{margin:0}#app{height:100vh;position:absolute;inset:0}.feed-main-list{width:100%;height:440px;overflow:auto}.a11y_feed_card_main{min-width:0;flex:1}.card{display:flex;padding:12px;gap:8px;height:56px}.avatar{width:36px;flex:none}.title-row,.detail-row{display:flex;min-width:0;gap:8px;height:24px}.title-slot{display:grid;grid-template-columns:1fr max-content minmax(0,auto);min-width:0;flex:1}._9f5c521{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.digest-slot{display:flex;min-width:0;flex:1;overflow:hidden}.native-digest{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.native-time,.native-action{flex:none}.app-heading{height:46px;padding:8px;box-sizing:border-box;font:18px system-ui}</style><div id="app"><div class="app-heading">消息</div><div class="feed-main-list"><div class="card" data-feed-id="1000000000000000011"><div class="avatar">头像</div><div class="a11y_feed_card_main"><div class="title-row"><div class="title-slot"><span class="_9f5c521">现有话题</span></div><span class="native-time">23:31</span></div><div class="detail-row"><div class="digest-slot"><div class="native-digest">原有摘要</div></div><button class="native-action">完成</button></div></div></div></div><div contenteditable="true">尚未发送的草稿</div></div>`}));
 await page.goto('https://fixture.feishu.cn/messenger/messenger/zh-CN.html');
 await page.evaluate(()=>{
  const account='1000000000000000001';globalThis.ShellAPI={app:{passport:{getAuthInfo:async()=>({userId:account})}}};
@@ -25,30 +25,48 @@ try{
  assert.equal(await page.locator('#rlfe-resource-nav-host a').count(),2);
  assert.equal(await page.locator('#rlfe-personal-nav button').count(),2);
  if(await page.locator('#rlfe-host #firstUseLater').count())await page.locator('#rlfe-host #firstUseLater').click();
- await page.locator('#rlfe-host #launcher').click();
+ await page.locator('#rlfe-native-settings').click();
  await page.locator('#rlfe-host #connectTopics').click();
  assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/connect').at(-1)?.body.kind),'topics');
- assert.equal((await page.locator('#rlfe-native-rail').boundingBox()).width,64);
- for(const width of [448,768,1280]){
+ assert.equal(await page.locator('#rlfe-native-rail').count(),0);
+ for(const width of [280,320,448,768,1280]){
   await page.setViewportSize({width,height:849});
-  const app=await page.locator('#app').boundingBox();assert.equal(app.x,64);assert(app.x+app.width<=width);
+  const app=await page.locator('#app').boundingBox();assert.equal(app.x,0);assert.equal(app.y,44);assert.equal(app.width,width);assert.equal(app.y+app.height,849);
+  const buttons=await page.locator('#rlfe-personal-nav button,#rlfe-resource-nav-host a,#rlfe-native-settings').all();
+  assert.equal(buttons.length,5);let lastRight=0;for(const button of buttons){const b=await button.boundingBox();assert(b&&b.x>=lastRight&&b.y>=0&&b.y+b.height<=44&&b.x+b.width<=width,JSON.stringify(b));lastRight=b.x+b.width;}
  }
  await page.setViewportSize({width:448,height:849});
  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
  const panel=await page.locator('#rlfe-host #panel').boundingBox();assert(panel.x>=0&&panel.x+panel.width<=448&&panel.y+panel.height<=849,JSON.stringify(panel));
  await page.locator('#rlfe-host [data-theme="mist"]').click();assert.equal(await page.evaluate(()=>fixture.prefs.theme),'sky');
  await page.locator('#rlfe-host #close').click();assert.equal(await page.evaluate(()=>__RLFE_SETTINGS_STATUS__().current.theme),'sky');
- await page.locator('#rlfe-host #launcher').click();await page.locator('#rlfe-host [data-theme="mist"]').click();await page.locator('#rlfe-host #apply').click();await page.waitForFunction(()=>fixture.prefs.theme==='mist');
+ await page.locator('#rlfe-native-settings').click();await page.locator('#rlfe-host [data-theme="mist"]').click();await page.locator('#rlfe-host #apply').click();await page.waitForFunction(()=>fixture.prefs.theme==='mist');
  await page.locator('#rlfe-personal-nav button').first().click();assert.equal(await page.evaluate(()=>__RLFE_WORKSPACE__.status().visible),true);await page.keyboard.press('Escape');
  await page.locator('#rlfe-personal-nav button').nth(1).click();assert.equal(await page.evaluate(()=>__RLFE_WORKSPACE__.status().surface),'thinking');await page.keyboard.press('Escape');
  await page.evaluate(()=>fixture.emit('topics',{sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'核对状态',status:'running'}]}));
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-name')?.textContent==='真实工作标题');
  assert.equal(await page.locator('.rlfe-feed-status').textContent(),'running');
+ // Regression: native title is a three-column grid, not the old flat Web fixture.
+ const slots=await page.evaluate(()=>{const get=s=>{const b=document.querySelector(s).getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height}};return {title:get('.rlfe-feed-headline'),badge:get('.rlfe-feed-status'),name:get('.rlfe-feed-name'),summary:get('.rlfe-feed-preview'),time:get('.native-time'),action:get('.native-action')};});
+ assert(slots.summary.y>=slots.title.y+slots.title.h,JSON.stringify(slots));
+ assert(slots.name.w>150,JSON.stringify(slots));assert(slots.badge.w>40);assert(slots.title.x+slots.title.w<=slots.time.x);
+ assert(slots.summary.x+slots.summary.w<=slots.action.x);
+ assert.equal(await page.locator('.native-digest').isVisible(),false);
+ // Unchanged stream projections do not churn the DOM and flicker the grid.
+ assert.equal(await page.evaluate(async()=>{let n=0;const o=new MutationObserver(rs=>n+=rs.length);o.observe(document.querySelector('.feed-main-list'),{subtree:true,childList:true,attributes:true,characterData:true});for(let i=0;i<20;i++)__RLFE_SET_TOPICS__({sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'核对状态',status:'running'}]});await new Promise(r=>requestAnimationFrame(r));o.disconnect();return n;}),0);
+ // Virtualized rows must shed the old Session immediately when reused.
+ await page.evaluate(()=>document.querySelector('[data-feed-id]').dataset.feedId='1000000000000000099');
+ await page.waitForFunction(()=>!document.querySelector('.rlfe-feed-headline'));
+ assert.equal(await page.locator('._9f5c521').isVisible(),true);assert.equal(await page.locator('.native-digest').isVisible(),true);
+ await page.evaluate(()=>document.querySelector('[data-feed-id]').dataset.feedId='1000000000000000011');
+ await page.waitForFunction(()=>document.querySelector('.rlfe-feed-headline'));
+ assert.equal(await page.locator('.rlfe-feed-headline').count(),1);
+
  await page.evaluate(()=>fixture.emit('topics',{sourceConnected:false,entries:[{webThreadId:'1000000000000000011',name:'真实工作标题',summary:'核对状态',status:'running'}]}));
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-status')?.textContent==='未同步');assert.equal(await page.locator('.rlfe-feed-status').textContent(),'未同步');assert.equal(await page.locator('[contenteditable=true]').textContent(),'尚未发送的草稿');
  // The separate chat renderer has no feed store; identity comes from committed header props.
  await page.evaluate(()=>{
-  const chat=document.createElement('div');chat.className='lark-chat';chat.innerHTML='<div class="chatContainer__headerWrapper"></div>';document.body.append(chat);
+  const chat=document.createElement('div');chat.className='lark-chat';chat.innerHTML='<div class="chatContainer__headerWrapper"></div>';document.getElementById('app').append(chat);
   chat.firstElementChild.__reactFiber$fixture={memoizedProps:{threadId:'1000000000000000011',chatId:'1000000000000000021'}};
   const topic={sessionId:'a'.repeat(32),webThreadId:'1000000000000000011',chatId:'group',name:'真实工作标题',summary:'核对状态',status:'running',usage:{cumulative:{totalTokens:1234}}};
   fixture.projection={sourceConnected:true,syncedAt:new Date().toISOString(),entries:[topic],boards:[{id:'fixture',name:'群',groups:[{chatId:'group',webChatId:'1000000000000000021',name:'群'}],topics:[{...topic,state:'running'}]}],webArtifacts:[]};fixture.emit('topics',fixture.projection);
@@ -70,5 +88,5 @@ try{
  await page.waitForFunction(()=>__RLFE_SYNC_STATUS__?.state==='connected');
  assert.equal(await page.locator('.rlfe-feed-status').textContent(),'waiting');
 
- assert.deepEqual(errors,[]);await fs.mkdir(out,{recursive:true});await page.screenshot({path:out+'/native-1.2-browser.png'});await fs.writeFile(out+'/native-browser-verification.json',JSON.stringify({navigation:true,settingsPreviewAndSave:true,indexAndThinkingOpen:true,topicStateAndDisconnect:true,editorPreserved:true,errors},null,2));console.log('Native browser component checks passed');
+ assert.deepEqual(errors,[]);await fs.mkdir(out,{recursive:true});await page.screenshot({path:out+'/native-1.2-browser.png'});await fs.writeFile(out+'/native-browser-verification.json',JSON.stringify({navigation:true,horizontalToolbar:true,nativeGridSlots:true,unchangedProjectionNoDomChurn:true,recycledRowRestored:true,settingsPreviewAndSave:true,indexAndThinkingOpen:true,topicStateAndDisconnect:true,editorPreserved:true,errors},null,2));console.log('Native browser component checks passed');
 }finally{await browser.close();}
