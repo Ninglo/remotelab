@@ -82,5 +82,37 @@
         - (Date.parse(a.scheduledAt || a.attemptedAt || "") || 0))[0] || null;
   }
 
-  scope.RemoteLabAutomationOverview = { category, purpose, purposes, displayPurpose, displayPurposes, businessStatus, days, latestExecutionSession };
+
+  // Read-only daily plan. Only an unambiguous daily cron is expanded; other
+  // expressions retain their next occurrence and original cadence, never guessed.
+  function timeline(tasks) {
+    const daily = new Map(), repeating = [], once = [], stopped = [];
+    for (const task of tasks) {
+      if (task.kind === 'one_time') {
+        if (isLive(task)) once.push(task); else stopped.push(task);
+        continue;
+      }
+      if (task.state !== 'active') { stopped.push(task); continue; }
+      const fields = (task.schedule?.cron || '').trim().split(/\s+/);
+      const [minute, hours, date, month, weekday] = fields;
+      const fixed = task.schedule?.type === 'cron' && fields.length === 5
+        && /^\d+$/.test(minute) && Number(minute) < 60
+        && /^\d+(?:,\d+)*$/.test(hours) && hours.split(',').every(h => Number(h) < 24)
+        && [date, month, weekday].every(v => v === '*');
+      if (!fixed) { repeating.push(task); continue; }
+      const timezone = task.schedule.timezone || 'Asia/Shanghai';
+      for (const hour of new Set(hours.split(',').map(Number))) {
+        const time = String(hour).padStart(2, '0') + ':' + minute.padStart(2, '0');
+        const id = timezone + ':' + time;
+        if (!daily.has(id)) daily.set(id, { time, timezone, tasks: [] });
+        daily.get(id).tasks.push(task);
+      }
+    }
+    return { daily: [...daily.values()].sort((a,b) => a.timezone.localeCompare(b.timezone) || a.time.localeCompare(b.time)),
+      repeating: repeating.sort((a,b) => (a.schedule?.everySeconds || 86400) - (b.schedule?.everySeconds || 86400)),
+      once: once.sort((a,b) => String(a.schedule?.scheduledAt || '').localeCompare(String(b.schedule?.scheduledAt || ''))),
+      stopped, recurringCount: tasks.filter(t => t.kind === 'recurring' && t.state === 'active').length };
+  }
+
+  scope.RemoteLabAutomationOverview = { category, purpose, purposes, displayPurpose, displayPurposes, businessStatus, days, latestExecutionSession, timeline };
 })(typeof window === "undefined" ? globalThis : window);
