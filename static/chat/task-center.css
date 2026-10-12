@@ -533,3 +533,28 @@ details.task-lifecycle-section > summary { cursor: pointer; }
   .feedback-table td:not(:first-child):not(:last-child)::before { content: attr(data-label); display: block; color: var(--text-muted); font-size: 11px; margin-bottom: 4px; }
   .feedback-detail { margin-top: 20px; }
 }
+
+/* Native monitoring: compact priorities, independent loading, detail on demand. */
+#monitoringSessions { min-width: 0; border-top: 1px solid var(--border); padding-top: 16px; }
+#monitoringSessions h2 { font-size: 18px; margin: 4px 0; }
+#monitoringResourceAttention .monitoring-alert { display: flex; gap: 12px; flex-wrap: wrap; padding: 9px 12px; }
+.monitoring-action { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; text-align: left; cursor: pointer; font: inherit; }
+.monitoring-action:hover, .monitoring-action[data-selected="true"] { border-color: var(--accent); }
+.monitoring-session-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.monitoring-session-stats button { display: grid; gap: 6px; }
+.monitoring-session-stats small { color: var(--text-muted); font-size: 12px; }
+.monitoring-session-stats strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.monitoring-session-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.monitoring-session-controls h3 { margin: 0; font-size: 15px; }
+.monitoring-session-controls select, .monitoring-session-controls input { min-width: 0; max-width: 100%; background: var(--bg); color: var(--text-primary); padding: 7px; border: 1px solid var(--border); border-radius: 6px; }
+.monitoring-session-controls input { flex: 1; min-width: 140px; }
+.monitoring-owner { display: block; margin-top: 5px; color: var(--text-muted); font-size: 10px; }
+#monitoringSessions summary { cursor: pointer; overflow-wrap: anywhere; font-weight: 600; }
+#monitoringSessions td:first-child { min-width: 220px; max-width: 360px; }
+#monitoringSessions details table { font-size: 11px; }
+.monitoring-session-signals { display: grid; gap: 6px; }
+.monitoring-session-signals button { display: grid; gap: 5px; font-size: 12px; border-left: 3px solid #b7791f; }
+.monitoring-session-signals button[data-severity="critical"] { border-left-color: var(--danger, #c2413c); }
+.monitoring-session-coverage, .monitoring-resource-details { margin: 18px 0; padding: 12px 0; border-top: 1px solid var(--border); }
+.monitoring-resource-details > summary { cursor: pointer; font-weight: 600; }
+@media(max-width: 600px) { .monitoring-session-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .monitoring-session-controls { gap: 6px; } }

@@ -97,7 +97,7 @@ import {
 import { queryUsageLedger } from './usage-ledger.mjs';
 import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
-import { readSessionMonitoring } from './monitoring-sessions.mjs';
+import { readSessionMonitoring, compactSessionMonitoring } from './monitoring-sessions.mjs';
 import { updateSessionProgressPolicy, updateProgressCardDisclosure } from './session-progress-policy.mjs';
 import {
   buildClientInstanceSettings,
@@ -113,6 +113,7 @@ import {
   getHistory,
   getSession,
   getSessionRunInitiatorIdentity,
+  getSessionMonitoringActivity,
   getSessionSourceContext,
   mergeSessionPersonViewOwnership,
   renameSession,
@@ -1131,7 +1132,10 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/monitoring/sessions' && req.method === 'GET') {
-    try { writeJson(res, 200, await readSessionMonitoring({ days: parsedUrl?.query?.days })); }
+    try {
+      const data = await readSessionMonitoring({ days: parsedUrl?.query?.days });
+      writeJson(res, 200, parsedUrl?.query?.compact === '1' ? await compactSessionMonitoring(data, getSessionMonitoringActivity) : data);
+    }
     catch { writeJson(res, 503, { error: 'Session monitoring is temporarily unavailable' }); }
     return true;
   }

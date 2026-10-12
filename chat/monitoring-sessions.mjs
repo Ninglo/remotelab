@@ -104,8 +104,8 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     const started=now(), coverage={bytesRead:0,cacheHits:0,limitedFiles:0,readErrors:0,missingRuns:0,missingRequests:0};
     const [usage, people, raw] = await Promise.all([getUsage({days,top:10000}),getPeople(),readFile(sessionsFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '[]';throw e;})]);
     const metadata=JSON.parse(raw), list=Array.isArray(metadata)?metadata:metadata.sessions||[];
-    const rows=new Map(list.filter(s=>!s.archived).map(s=>[s.id,{sessionId:s.id,...sessionOwnership(s,people)}]));
-    for(const bucket of usage.bySession||[]) { const s=list.find(s=>s.id===bucket.sessionId); if(!rows.has(bucket.sessionId))rows.set(bucket.sessionId,{sessionId:bucket.sessionId,...sessionOwnership(s||{},people),archived:s?.archived===true}); }
+    const rows=new Map(list.filter(s=>!s.archived).map(s=>[s.id,{sessionId:s.id,name:label(s.name),model:label(s.model),activeRunId:s.activeRunId,...sessionOwnership(s,people)}]));
+    for(const bucket of usage.bySession||[]) { const s=list.find(s=>s.id===bucket.sessionId); if(!rows.has(bucket.sessionId))rows.set(bucket.sessionId,{sessionId:bucket.sessionId,name:label(s?.name||bucket.sessionName),model:label(s?.model),activeRunId:s?.activeRunId,...sessionOwnership(s||{},people),archived:s?.archived===true}); }
     const ledger=(usage.topRuns||[]).slice().sort((a,b)=>time(b.ts)-time(a.ts)).slice(0,maxRuns), grouped=new Map();
     for(let i=0;i<ledger.length;i+=8) await Promise.all(ledger.slice(i,i+8).map(async l=>{
       if(!safeId(l.runId)||!safeId(l.sessionId))return;
@@ -135,3 +135,24 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
   };
 }
 export const readSessionMonitoring=createSessionMonitoringReader();
+
+// Compact native Monitor projection. No sidebar, prompts or duplicated bucket totals.
+export async function compactSessionMonitoring(value, getActivity) {
+  const usage = new Map((value.usage.bySession || []).map(s => [s.sessionId, s]));
+  const sessions = [];
+  for (let i = 0; i < value.sessions.length; i += 8) {
+    sessions.push(...await Promise.all(value.sessions.slice(i, i + 8).map(async s => {
+      let activity;
+      try { activity = await getActivity({ id: s.sessionId, activeRunId: s.activeRunId }); }
+      catch { activity = { run: { state: 'unknown' }, queue: { count: null } }; }
+      return { sessionId: s.sessionId, name: s.name, model: s.model, archived: s.archived === true,
+        groupId: s.groupId, personId: s.personId, activity,
+        totalTokens: usage.get(s.sessionId)?.totalTokens ?? null,
+        metrics: Object.fromEntries(Object.entries(s.metrics).filter(([, m]) => m.count > 0)), signals: s.signals };
+    })));
+  }
+  return { generatedAt: value.generatedAt, stateObservedAt: new Date().toISOString(), window: value.window,
+    coverage: value.coverage, totals: value.usage.totals,
+    groups: Object.fromEntries(value.sessions.map(s => [s.groupId, s.groupName])),
+    people: Object.fromEntries(value.sessions.map(s => [s.personId, s.personName])), sessions };
+}

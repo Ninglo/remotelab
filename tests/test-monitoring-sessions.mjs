@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { sessionOwnership, projectRequest, runMeasurement, summarizeMeasurements, measurementSignals, createSessionMonitoringReader } from '../chat/monitoring-sessions.mjs';
+import { compactSessionMonitoring, sessionOwnership, projectRequest, runMeasurement, summarizeMeasurements, measurementSignals, createSessionMonitoringReader } from '../chat/monitoring-sessions.mjs';
 const people=[{id:'p1',name:'A',identities:[{id:'i1'},{id:'i2'}]}];
 const source={connector:'feishu',chatId:'c1',chatType:'group',chatName:'Team',tenantKey:'t1'};
 const own=sessionOwnership({initiatedByIdentityId:'i2',sourceContext:source},people);
@@ -41,5 +41,12 @@ try {
  clock=61000;const second=await reader();assert.equal(calls,2);assert.equal(second.coverage.bytesRead,0);assert.equal(second.coverage.cacheHits,2);
  const bounded=createSessionMonitoringReader({configDir:root,runsDir:join(root,'runs'),sessionsFile:join(root,'sessions.json'),maxReadBytes:0,getPeople:async()=>people,getUsage:async()=>({runCount:1,topRuns:[ledger],bySession:[]})});
  const c=await bounded();assert(c.coverage.truncated);assert.equal(c.sessions[0].metrics.prepareMs.count,0);
+ const compact=await compactSessionMonitoring({...a,usage:{bySession:[{sessionId:'s1',totalTokens:400}],totals:{totalTokens:400}}},async()=>({run:{state:'running',waiting:true},queue:{count:0}}));
+ assert.equal(compact.sessions[0].totalTokens,400);assert.equal(compact.sessions[0].activity.run.waiting,true);
+ assert.equal(compact.groups[compact.sessions[0].groupId],'Team');assert.equal(compact.people.p1,'A');
+ assert.equal(compact.sessions[0].metrics.prepareMs.mean,3000);assert(!('basis' in compact.sessions[0]));
+ assert(!('groupName' in compact.sessions[0]));assert(!JSON.stringify(compact).includes('private'));
+ const unknown=await compactSessionMonitoring(a,async()=>{throw Error('missing')});assert.equal(unknown.sessions[0].activity.run.state,'unknown');
+ const noSamples=await compactSessionMonitoring(c,async()=>({run:{state:'idle'}}));assert(!noSamples.sessions[0].metrics.prepareMs);
  console.log('monitoring sessions: ownership, phase pairing, missing data, cohorts, sample bounds, read cache and privacy passed');
 }finally{await rm(root,{recursive:true,force:true});}

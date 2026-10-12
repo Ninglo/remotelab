@@ -232,11 +232,11 @@ For a shared project inspection, `scripts/project-inspection-plan.mjs` takes the
 The next natural source read, task readback, report publication and delivery each need their own evidence after consolidation. A passing planner test or a saved schedule is not that acceptance.
 
 
-## Read-only Session monitoring page
+## Read-only Session monitoring
 
-`static/monitoring-live/` is the independent authenticated-data view. Public static
-assets contain no instance records. The page uses the existing login and only GET
-queries. Session ownership comes from the canonical external conversation binding
+`/?tab=tasks&monitor=overview` is the native authenticated monitoring view.
+The former `static/monitoring-live/` entry redirects here and contains no instance
+records. Monitoring panels use the existing login and only GET queries. Session ownership comes from the canonical external conversation binding
 and `initiatedByIdentityId`, joined to People; personal sidebar folders are not
 source chats and later participants do not become Session initiators. Unknown
 ownership stays explicit. Shared accounts, storage and services remain instance
@@ -270,3 +270,29 @@ is a review clue, can reflect different task complexity and does not assess task
 quality. The page never invokes alert delivery, recovery, benchmarks or feedback
 collection. Feishu API logs currently lack a reliable Session association; only
 instance API totals are shown, never apportioned to people or groups.
+
+
+### Native Monitor integration (2026-10-12)
+
+Open `/?tab=tasks&monitor=overview`. The native Overview now loads shared-resource
+attention and Session supervision independently. It defaults to 24 hours. Group
+and initiator summaries sort attention/running work first; select an owner to
+scope the Session list, or filter running/waiting/attention. Expand a Session title
+for stage means, P95 and sample counts. Shared-resource details remain available
+below in a collapsed section, with their instance ownership. Feedback and task
+controls retain their separate views. No alert or recovery switch is changed.
+
+The native view uses `/api/monitoring/sessions?days=1&compact=1`, with title, state,
+window usage and measured fields only. Group/person labels are dictionary encoded,
+zero-sample metric objects are omitted, and the page no longer requests the full
+Session/sidebar projection. State reads use the runtime's accepted queue and the
+persisted current Run/question without reconciliation. Statistics retain the
+60-second cache; state has its own observation time. The UI renders only the first
+50 matching Sessions and eight owner groups, with explicit expansion. Queries
+coalesce in the browser, and each panel has a 15-second deadline and its own error
+state. A failed request never produces a zero-anomaly summary. This is bounded
+on-demand observation, not new background scanning or model analysis.
+
+The former independent monitoring page is now a small entry linking to this native
+view, so there is one maintained monitoring interface. Existing saved links remain
+usable; the change does not publish instance data to the unauthenticated entry.

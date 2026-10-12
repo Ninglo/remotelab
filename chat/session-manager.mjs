@@ -2178,6 +2178,20 @@ async function sessionResourceFromMeta(meta) {
     runState: runActivity.state, run: runActivity.run, queuedCount: getFollowUpQueueCount(meta),
   }) };
 }
+// Monitoring must not reconcile runs or enrich every sidebar/history entry.
+export async function getSessionMonitoringActivity(meta) {
+  const active = requestRuntime.active(meta.id)[0];
+  const id = active?.runId || meta.activeRunId;
+  const run = id ? await readRecord(join(runDir(id), 'status.json')) : null;
+  const running = run ? !isTerminalRunState(run.state) : Boolean(active);
+  const question = running && id ? await readNativeQuestion(runDir(active?.nativeDispatchRunId || id)) : null;
+  if (id && !run && !active) return { run: { state: 'unknown' }, queue: { count: getFollowUpQueueCount(meta) } };
+  return buildSessionActivity(meta, sessionRuntimeStateById.get(meta.id), {
+    runState: running ? 'running' : 'idle', run: run || (active ? { id, state: 'accepted' } : null),
+    queuedCount: getFollowUpQueueCount(meta), nativeQuestion: question,
+  });
+}
+
 export async function listSessionResources() {
   return Promise.all((await loadSessionsMeta()).map(sessionResourceFromMeta));
 }
