@@ -725,6 +725,9 @@ export function buildMessageSourceContext(summary) {
       .map((entry) => ({
         sender: trimString(entry?.sender),
         messageId: trimString(entry?.messageId),
+        ...(entry.messageRevision ? { messageRevision: String(entry.messageRevision) } : {}),
+        ...(typeof entry.edited === 'boolean' ? { edited: entry.edited } : {}),
+        ...(entry.senderType ? { senderType: entry.senderType } : {}),
         ...(entry.authorRef ? { authorRef: entry.authorRef } : {}),
         time: trimString(entry?.time),
         text: trimString(entry?.text),

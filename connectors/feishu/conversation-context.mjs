@@ -230,7 +230,9 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
     .map((item) => {
       const message = normalizeFeishuHistoryItem(item, { timeZone: options.timeZone, sourceRouteId: runtime?.config?.sourceRouteId || summary.sourceRouteId });
       return message ? { ...message, messageId: trimString(item?.message_id),
-        senderType: trimString(item?.sender?.sender_type), senderId: trimString(item?.sender?.id) } : null;
+        senderType: trimString(item?.sender?.sender_type), senderId: trimString(item?.sender?.id),
+        messageRevision: String(item.update_time || item.create_time || ''),
+        edited: item.updated === true || parseFeishuMessageTime(item.update_time) > message.timestamp } : null;
     })
     .filter((item) => item && item.timestamp <= now
       && (!sinceTimeMs || item.timestamp >= sinceTimeMs));
@@ -238,10 +240,10 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
   const fitted = fitCharacterBudget(relevant, maxCharacters);
   if (fitted.messages.length === 0) return null;
   return {
-    messages: fitted.messages.map(({ sender, time, text, timestamp, messageId, senderType, senderId, authorRef }) => ({
+    messages: fitted.messages.map(({ sender, time, text, timestamp, messageId, senderType, senderId, authorRef, messageRevision, edited }) => ({
       sender, time, text, messageId,
       ...(authorRef ? { authorRef } : {}),
-      ...(options.includeMetadata ? { timestamp, messageId, senderType, senderId } : {}),
+      ...(options.includeMetadata ? { timestamp, messageId, senderType, senderId, messageRevision, edited } : {}),
     })),
     truncated: fitted.truncated || rawItems.length >= maxMessages,
   };

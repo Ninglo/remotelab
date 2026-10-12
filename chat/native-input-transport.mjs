@@ -11,6 +11,14 @@ const receiptPath = (directory, id) => join(directory, 'native-inputs', `${diges
 const fault = (message, code) => Object.assign(new Error(message), { code });
 export const readNativeInputReceipt = (directory, id) => readRecord(receiptPath(directory, id));
 
+export async function recordInitialNativeInputReceipt(directory, input, result) {
+  if (!input.id || result?.accepted !== true) return;
+  await writeDurableJson(receiptPath(directory, input.id), {
+    id: input.id, fingerprint: canonicalJson(input), state: 'accepted', result,
+    acceptedAt: new Date().toISOString(),
+  });
+}
+
 function replay(receipt, input) {
   if (receipt.fingerprint !== canonicalJson(input)) throw fault('Native input id already has different content', 'NATIVE_CONFLICT');
   if (receipt.state === 'accepted') return receipt.result;

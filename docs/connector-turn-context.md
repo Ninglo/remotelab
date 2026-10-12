@@ -72,3 +72,40 @@ is not part of a universal baseline. These are text lengths, not token counts,
 latency measurements or task-success evidence. Existing prompt, publication,
 personal-isolation, workboard state/patch/opt-in and surface-parsing regressions
 cover the deterministic contracts; model adherence still needs real task evidence.
+
+## Evidence-based Feishu history deduplication (2026-10-12)
+
+The connector fetches the same bounded recent window; it no longer moves the
+window forward merely because a previous user input was admitted. Admission,
+preparation and actual Harness acceptance are different events. The explicit
+participation-resume boundary still applies. This is a message/character window,
+not a fixed number of conversational rounds or an estimate of what a model remembers.
+
+Before first or supplementary input delivery, the manager projects that frozen
+source snapshot for the actual resumed provider thread. It removes an exact
+message ID/version only when an earlier input was acknowledged by that Harness,
+or a durable outbound receipt links the unedited bot reply to output generated
+in that same Session and provider thread. Other bots, unknown receipts, changed
+messages, fresh provider threads and different Sessions retain their background.
+Linked-project messages also use source-scoped IDs and content versions. A lookup
+failure keeps the source unchanged. No additional model call is involved.
+
+The derived selection and counts live in the existing Run manifest or native
+input Request, and acceptance uses the existing native-input receipt directory.
+There is no parallel read-state database. Original Request source snapshots stay
+unchanged; the recorded model-context projection reflects the filtered prompt.
+Only accepted selections can suppress a later input. Historical inputs without
+these receipts may repeat once; a bounded scan of 5,000 metadata events / 40 prior
+inputs may also retain old duplicates. Missing proof must not cause message loss.
+Unsupported provider identity paths conservatively retain history.
+
+The 100-message / 48,000-character window, normal-chat 24-hour / 4-hour activity
+limits and per-message truncation remain. Deduplication is not a promise to ingest
+all older chat history. Truncated backgrounds remain explicitly marked even when
+all included messages were duplicates. Full originals remain available at source.
+Frozen pending inputs keep their original selection; simultaneous preparation
+may still include the same background when neither input is acknowledged yet.
+
+This change does not deduplicate turn-scoped display, checklist, source, Session
+or personal instructions. Shortening those texts and avoiding their repeated
+insertion are separate changes; startup context remains fresh-provider-only.

@@ -21,6 +21,7 @@ await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryP
 ] }));
 await writeFile(join(config, 'tools.json'), JSON.stringify([
   { id: 'fake-native', name: 'Fake native', command: 'fake-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
+  { id: 'fake-context', name: 'Context native', command: 'fake-native', runtimeFamily: 'codex-json', inputMode: 'native' },
   { id: 'fake-switch', name: 'Other runtime', command: 'fake-native', runtimeFamily: 'codex-json', inputMode: 'batch', promptMode: 'bare-user' },
 ]));
 await writeFile(join(config, 'group-routing-pilot.json'), JSON.stringify({ version: 1, enabled: true,
@@ -547,6 +548,40 @@ try {
   for (const id of ['policy-root', 'policy-other', 'policy-same', 'policy-unknown']) await awaitAnswer(policySession.id, id);
   assert.equal((await logs()).filter(event => event.runId === policyRoot.run.id && event.kind === 'process-start').length, 1);
   await evidence('PASS: shared native admission isolates each Person strict-start/display policy, preserves same-author continuations and retries, and refuses unknown-author inheritance.');
+
+  {
+  // Real manager -> native transport -> durable receipt -> next prompt, including
+  // controller recovery. No model or Feishu network is involved.
+  const contextSession = await rpc('create');
+  const background = { messageId: 'bg', messageRevision: '1', sender: 'Alice', time: 'today', text: 'UNSEEN_GROUP_FACT' };
+  const contextOptions = id => ({ requestId: id, tool: 'fake-context', suppressSourceDelivery: true,
+    sourceContext: { connector: 'feishu', sourceRouteId: 'default', chatId: 'context-chat', messageId: id,
+      messageRevision: '1', conversationContext: { messages: [background] } } });
+  const contextRoot = await rpc('accept', contextSession.id, 'first context', [], contextOptions('context-first'));
+  await until(async () => (await receipt(contextRoot.run.id, 'context-first'))?.state === 'accepted', 'root context input accepted');
+  const initialManifest = JSON.parse(await readFile(join(config, 'chat-runs', contextRoot.run.id, 'manifest.json'), 'utf8'));
+  assert.equal(initialManifest.feishuContextDelivery.entries.length, 2);
+  assert.match(initialManifest.prompt, /UNSEEN_GROUP_FACT/);
+  await rpc('accept', contextSession.id, 'second context', [], contextOptions('context-second'));
+  await until(async () => (await receipt(contextRoot.run.id, 'context-second'))?.state === 'accepted', 'supplementary context accepted');
+  const supplement = await rpc('request', contextSession.id, 'context-second');
+  assert.equal(supplement.nativeContextDelivery.stats.removed, 1);
+  assert.doesNotMatch(supplement.nativeInput.text, /UNSEEN_GROUP_FACT/);
+  await killController(); await boot();
+  await writeFile(join(root, contextRoot.run.id + '.release'), '');
+  await awaitAnswer(contextSession.id, 'context-first');
+  const contextNext = await rpc('accept', contextSession.id, 'third context', [], contextOptions('context-third'));
+  await until(async () => (await receipt(contextNext.run.id, 'context-third'))?.state === 'accepted', 'resumed context accepted');
+  const nextManifest = JSON.parse(await readFile(join(config, 'chat-runs', contextNext.run.id, 'manifest.json'), 'utf8'));
+  assert.equal(nextManifest.feishuContextDelivery.stats.removed, 1);
+  assert.doesNotMatch(nextManifest.prompt, /UNSEEN_GROUP_FACT/);
+  assert.doesNotMatch(nextManifest.modelContext, /UNSEEN_GROUP_FACT/, 'inspection equals delivered projection');
+  const retained = await rpc('request', contextSession.id, 'context-third');
+  assert.equal(retained.options.sourceContext.conversationContext.messages[0].text, 'UNSEEN_GROUP_FACT');
+  await writeFile(join(root, contextNext.run.id + '.release'), '');
+  await awaitAnswer(contextSession.id, 'context-third');
+  await evidence('PASS: Feishu context delivered once across root, native supplement, restart and resumed Run; original source retained and model-context inspection matches actual prompt.');
+  }
   succeeded = true;
   await evidence(`test-native-harness-integration: ok; validation log: ${validationLog}`);
 } catch (error) {

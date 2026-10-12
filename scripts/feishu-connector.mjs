@@ -68,7 +68,6 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
 import {
-  feishuConversationBoundary,
   loadFeishuConversationContext,
 } from '../connectors/feishu/conversation-context.mjs';
 import {
@@ -981,18 +980,6 @@ async function resolveFeishuRuntimeSelection(runtime) {
   });
 }
 
-async function loadFeishuContextBoundary(requester, sessionId, summary) {
-  try {
-    const result = await requester(`/api/sessions/${encodeURIComponent(sessionId)}/source-context`);
-    if (!result.response?.ok) return null;
-    return feishuConversationBoundary(result.json?.sourceContext, summary);
-  } catch {
-    // The existing full-history path remains available if the local metadata
-    // lookup fails. Losing the boundary must not lose conversation context.
-    return null;
-  }
-}
-
 async function submitRemoteLabRequest(runtime, summary, {
   prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
   observedRecent = null, legacyGroupWorkThread = false,
@@ -1118,12 +1105,12 @@ async function submitRemoteLabRequest(runtime, summary, {
     ? await participationController(runtime).state(effectiveSummary) : null;
   const [attachmentResolution, conversationContext, linkedProjectContext] = await Promise.all([
     resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
-    loadFeishuContextBoundary(requester, session.id, effectiveSummary)
-      .then((boundary) => loadFeishuConversationContext(runtime, effectiveSummary, {
-        ...boundary,
-        ...(participationStatus?.contextAfterMs ? { sinceTimeMs: Math.max(boundary?.sinceTimeMs || 0,
-          participationStatus.contextAfterMs) } : {}),
-      }))
+    // Admission time is not a Harness receipt. Fetch the bounded window;
+    // preparation removes only context proven present in the resumed thread.
+    loadFeishuConversationContext(runtime, effectiveSummary, {
+      includeMetadata: true,
+      ...(participationStatus?.contextAfterMs ? { sinceTimeMs: participationStatus.contextAfterMs } : {}),
+    })
       .catch((error) => {
         console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
         return null;

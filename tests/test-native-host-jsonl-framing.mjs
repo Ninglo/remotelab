@@ -4,6 +4,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runNativeHost } from '../chat/native-host.mjs';
+import { readNativeInputReceipt } from '../chat/native-input-transport.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'remotelab-native-jsonl-'));
 const command = join(root, 'fake-codex.cjs');
@@ -47,7 +48,7 @@ try {
     directory: root,
     command,
     runtimeFamily: 'codex-json',
-    options: {},
+    options: { requestId: 'root-input' },
     prompt: 'test',
     cwd: root,
     env: { PATH: process.env.PATH },
@@ -58,6 +59,7 @@ try {
     onStderr: async () => {},
   });
   assert.equal(result.code, 0);
+  assert.equal((await readNativeInputReceipt(root, 'root-input'))?.state, 'accepted');
   const commandEvent = events.find(event => event.type === 'item.completed' && event.item?.id === 'command-jsonl');
   assert.equal(commandEvent?.item?.aggregated_output, 'x'.repeat(2048 * 512) + 'before\u2028after\u2029done');
   const previews = events.filter(event => event.type === 'item.updated');

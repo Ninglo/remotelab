@@ -89,9 +89,9 @@ function buildFeishuSourceContextPrompt(sourceContext) {
     : [];
   if (messages.length > 0) {
     lines.push('', '当前消息之前的聊天（不同成员的说法可能冲突；按发言人分别理解）：', ...messages);
-    if (sourceContext.conversationContext.truncated === true) {
-      lines.push('（更早的消息未展示；确有需要时再查询。）');
-    }
+  }
+  if (sourceContext.conversationContext?.truncated === true) {
+    lines.push('（聊天背景达到条数或长度上限，仍有未展示的内容；需要完整原文时请查询来源，不能视为已经读过。）');
   }
 
   const linked = sourceContext.linkedProjectContext;

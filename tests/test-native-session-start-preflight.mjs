@@ -11,6 +11,7 @@ const command = join(root, 'fake-codex');
 await copyFile(join(repo, 'tests/fixtures/native-codex-preflight-app-server.cjs'), command);
 await chmod(command, 0o755);
 const { runNativeHost } = await import('../chat/native-host.mjs');
+const { readNativeInputReceipt } = await import('../chat/native-input-transport.mjs');
 
 async function runCase(name, preflightAnswer) {
   const directory = join(root, name);
@@ -31,6 +32,8 @@ async function runCase(name, preflightAnswer) {
     onProcess: async () => {},
   });
   const prompts = (await readFile(logPath, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
+  const accepted = await readNativeInputReceipt(directory, `${name}-request`);
+  assert.equal(accepted?.state === 'accepted', preflightAnswer === '3.1', 'only the real accepted prompt counts, never preflight alone');
   return { result, events, prompts };
 }
 

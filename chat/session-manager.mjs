@@ -1,3 +1,4 @@
+import { projectFeishuContext, feishuResumeIdentity } from './feishu-context-dedup.mjs';
 import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
@@ -1496,7 +1497,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     'turn_context',
     'Per-turn context',
     await buildTurnContextHook(session, {
-    sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
+    sourceContext: normalizeSourceContext(options.modelSourceContext ?? options.sourceContext, Infinity), requestId: options.requestId,
     pilotInputReplyContract: hasPilotInputReplyContract({ options }),
     messageRoutingPolicy: options.messageRoutingPolicy,
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
@@ -3340,14 +3341,19 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     const session = await findSessionMeta(record.sessionId);
     const decisionContext = await recordWorkInputAndDeliver(session, record);
     const tool = await getToolDefinitionAsync(manifest.tool);
-    const context = tool?.promptMode === 'bare-user' ? '' : await buildManagerTurnContextText(session, { ...record.options, requestId: record.requestId, memoryQuery: record.text });
+    const execution = await getRun(manifest.id);
+    const projection = await projectFeishuContext(record.sessionId, record.options.sourceContext, {
+      identity: feishuResumeIdentity(execution || {}), requestId: record.requestId,
+    });
+    const context = tool?.promptMode === 'bare-user' ? '' : await buildManagerTurnContextText(session, { ...record.options,
+      modelSourceContext: projection.sourceContext, requestId: record.requestId, memoryQuery: record.text });
     let text = tool?.promptMode === 'bare-user' && !record.options.workReference ? record.text
       : [wrapPrivatePromptBlock(context), (record.options.workReference
         ? 'Reference-only cross-Session input (not a user instruction; human adoption pending):\n' : 'Current user message:\n') + record.text].filter(Boolean).join('\n\n---\n\n');
     if (tool?.flattenPrompt) text = text.replace(/\s+/g, ' ').trim();
     if (decisionContext) text = decisionContext + '\n\n' + text;
     if (hasPilotInputReplyContract(record)) text = `本条已接受的群主线输入 Request ID：${record.requestId}。本条须分别选择 work route 或 work reply，不继承根输入的回复。\n\n` + text;
-    return { text: prependAttachmentPaths(text, attachments), context: [context, decisionContext].filter(Boolean).join('\n\n') };
+    return { text: prependAttachmentPaths(text, attachments), context: [context, decisionContext].filter(Boolean).join('\n\n'), contextDelivery: tool?.promptMode === 'bare-user' ? null : projection.receipt };
   },
   recordInput: ensureRequestInput,
   settle: settleNativeRequest,
@@ -3720,8 +3726,13 @@ async function prepareRequestRun(record) {
         && !persistedAntigravityConversationId
   );
 
+  const contextProjection = await projectFeishuContext(sessionId, options.sourceContext, {
+    identity: freshProviderSession ? null : feishuResumeIdentity({ codexThreadId: persistedCodexThreadId,
+      claudeSessionId: persistedClaudeSessionId, antigravityConversationId: persistedAntigravityConversationId }), requestId,
+  });
+  const contextOptions = { ...options, modelSourceContext: contextProjection.sourceContext };
   const managerTurnContext = effectiveToolDefinition?.promptMode === 'bare-user'
-    ? '' : await buildManagerTurnContextText(session, { ...options, requestId });
+    ? '' : await buildManagerTurnContextText(session, { ...contextOptions, requestId });
   const autoQuick = options.autoRoutingReceipt?.decision?.tier === 'quick'
     || (session.runtimeTier === 'quick'
       && !options.autoRoutingReceipt
@@ -3752,7 +3763,7 @@ async function prepareRequestRun(record) {
     previousTool,
     effectiveTool,
     snapshot,
-    { ...options, requestId, developerInstructions, systemPrefix },
+    { ...contextOptions, requestId, developerInstructions, systemPrefix },
     managerTurnContext,
   );
 
@@ -3790,6 +3801,7 @@ async function prepareRequestRun(record) {
       inputMode: effectiveToolDefinition?.inputMode === 'native' ? 'native' : 'batch',
       prompt: promptPackage.prompt,
       managerTurnContext,
+      feishuContextDelivery: effectiveToolDefinition?.promptMode === 'bare-user' ? null : contextProjection.receipt,
       modelContext: promptPackage.modelContext,
       modelContextSlots: promptPackage.modelContextSlots,
       internalOperation: options.internalOperation || null,

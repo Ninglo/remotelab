@@ -558,7 +558,7 @@ async function main() {
     const resolvedCommand = await resolveCommand(invocation.command);
     if (manifest.inputMode === 'native') return runNativeHost({
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
-      options: { ...invocationOptions, ...(options.invocationOptions || {}),
+      options: { ...invocationOptions, ...(options.invocationOptions || {}), requestId: manifest.requestId,
         observeCodexUsage: Boolean(codexAccount),
         ...(codexAccount && codexAccount.id !== 'default' ? { codexConfigOverrides: [
           ...(invocationOptions.codexConfigOverrides || []), 'cli_auth_credentials_store="file"'] } : {}) },

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { createNativeInputServer } from './native-input-transport.mjs';
+import { createNativeInputServer, recordInitialNativeInputReceipt } from './native-input-transport.mjs';
 import { createCodexDriver } from './native/codex.mjs';
 import { createPiDriver } from './native/pi.mjs';
 import { createClaudeDriver } from './native/claude.mjs';
@@ -162,6 +162,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
         nativeResult = null;
         const receipt = await driver.submit({ id: options.requestId, text: prompt });
         acceptingExternalInputs = receipt?.accepted === true;
+        queueWrite(() => recordInitialNativeInputReceipt(directory, { id: options.requestId, text: prompt }, receipt));
       }).catch((error) => {
         fatalError ||= error instanceof Error ? error : new Error(String(error?.message || error));
         nativeResult = { status: 'failed', error: fatalError.message };
@@ -224,7 +225,10 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     // Drivers perform their own handshake gating. Their start promise is a
     // reception receipt and must not block accepting further stdin messages.
     started = true;
-    if (!preflight) initial.then((receipt) => { acceptingExternalInputs = receipt?.accepted === true; }).catch(() => {});
+    if (!preflight) initial.then((receipt) => {
+      acceptingExternalInputs = receipt?.accepted === true;
+      queueWrite(() => recordInitialNativeInputReceipt(directory, { id: options.requestId, text: prompt }, receipt));
+    }).catch(() => {});
     initial.catch(error => { fatalError ||= error; stop(); });
     const exit = await closed;
     await phaseTransition;
