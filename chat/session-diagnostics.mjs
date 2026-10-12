@@ -24,7 +24,7 @@ export function sessionDiagnosisCard(item, config) {
   try { const u = new URL(config.overviewUrl); if (u.protocol === 'https:' || u.protocol === 'http:') url=u.href; } catch {}
   return { config:{wide_screen_mode:true,update_multi:true}, header:{title:{tag:'plain_text',content:`会话巡检${item.test?'测试':''} · ${resolved?'已恢复':'已排查，待复核'}`},template:resolved?'green':'blue'},
     elements:[{tag:'div',text:{tag:'plain_text',content}},
-      ...(url ? [{tag:'action',actions:[{tag:'button',text:{tag:'plain_text',content:'查看巡检证据'},url,type:'default'}]}] : [])] };
+      ...(url ? [{tag:'action',actions:[{tag:'button',text:{tag:'plain_text',content:'打开监控器'},url,type:'default'}]}] : [])] };
 }
 
 // Private-only transport. Never inherit the general monitoring group recipient.
