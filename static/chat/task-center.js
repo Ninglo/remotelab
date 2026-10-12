@@ -52,6 +52,8 @@
   const openFlowNotes = new Set();
   let flowTaskIds = null;
   const flowsPanel = document.getElementById("taskCenterFlows");
+  const timelinePanel = document.getElementById("taskCenterTimeline");
+  const openTimelineRows = new Set();
   let loaded = false;
   let loading = false;
   let actionTaskId = "";
@@ -72,6 +74,17 @@
       ? globalScope.remotelabT(key, vars)
       : key;
     return value === key ? fallback : value;
+  }
+
+  function flowTranslate(key, fallback = key, vars = undefined) {
+    const value = globalScope.remotelabT?.(key, vars, automationFlows.language || globalScope.remotelabGetActiveUiLanguage?.()) || key;
+    return value === key ? fallback : value;
+  }
+
+  function flowState(task) {
+    const business = overview.businessStatus(task);
+    return business ? flowTranslate('tasks.business.' + business, business)
+      : flowTranslate('tasks.state.' + task.state, task.state);
   }
 
   function activeSessions() {
@@ -237,15 +250,15 @@
     return translate(`tasks.state.${state}`, state || translate("tasks.state.unknown", "Unknown"));
   }
 
-  function taskScheduleText(task) {
+  function taskScheduleText(task, tr = translate) {
     if (task?.kind !== "recurring") return task.members?.length > 1
-      ? translate("tasks.summary.followup", "Follow-ups for this task") : formatDateTime(task?.schedule?.scheduledAt);
+      ? tr("tasks.summary.followup", "Follow-ups for this task") : formatDateTime(task?.schedule?.scheduledAt);
     if (task.schedule?.type === "interval") {
       const seconds = task.schedule.everySeconds;
       const [count, unit] = seconds % 86400 === 0 ? [seconds / 86400, "days"]
         : seconds % 3600 === 0 ? [seconds / 3600, "hours"]
           : seconds % 60 === 0 ? [seconds / 60, "minutes"] : [seconds, "seconds"];
-      return translate(`tasks.summary.every.${unit}`, `Every ${count} ${unit}`, { count });
+      return tr(`tasks.summary.every.${unit}`, `Every ${count} ${unit}`, { count });
     }
     const [minute, hours, date, month, weekdays] = (task.schedule?.cron || "").split(/\s+/);
     const simpleTimes = /^\d+$/.test(minute) && /^\d+(?:,\d+)*$/.test(hours) && date === "*" && month === "*";
@@ -253,14 +266,16 @@
     const withZone = text => task.schedule?.timezone && task.schedule.timezone !== localZone ? `${text} · ${task.schedule.timezone}` : text;
     if (simpleTimes) {
       const times = hours.split(",").map(hour => `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`).join(" / ");
-      if (weekdays === "*") return withZone(translate("tasks.summary.daily", "Daily at {times}", { times }));
-      if (weekdays === "1-5") return withZone(translate("tasks.summary.weekdays", "Weekdays at {times}", { times }));
+      if (weekdays === "*") return withZone(tr("tasks.summary.daily", "Daily at {times}", { times }));
+      if (weekdays === "1-5") return withZone(tr("tasks.summary.weekdays", "Weekdays at {times}", { times }));
       if (/^[0-7](?:,[0-7])*$/.test(weekdays)) {
-        const days = weekdays.split(",").map(day => translate(`tasks.summary.day.${Number(day) % 7}`, day)).join(" / ");
-        return withZone(translate("tasks.summary.weekly", "{days} at {times}", { days, times }));
+        const days = weekdays.split(",").map(day => tr(`tasks.summary.day.${Number(day) % 7}`, day)).join(" / ");
+        return withZone(tr("tasks.summary.weekly", "{days} at {times}", { days, times }));
       }
     }
-    return translate("tasks.summary.customSchedule", "Custom schedule");
+    if (/^\d+$/.test(minute) && [hours, date, month, weekdays].every(v => v === "*"))
+      return withZone(tr("tasks.flows.hourly", "Hourly at :{minute}", { minute: minute.padStart(2, "0") }));
+    return withZone(tr("tasks.flows.custom", "Schedule {cron}", { cron: task.schedule?.cron || "—" }));
   }
 
   function taskTargetText(task) {
@@ -280,20 +295,20 @@
     });
   }
 
-  function notificationText(task, { compact = false } = {}) {
+  function notificationText(task, { compact = false, tr = translate } = {}) {
     const notification = task?.resultDelivery || task?.notification || {};
     if (notification.mode !== "conversation") {
-      return translate("tasks.notification.remotelab", "RemoteLab only");
+      return tr("tasks.notification.remotelab", "RemoteLab only");
     }
-    const connector = notification.connector || translate("tasks.notification.external", "External source");
+    const connector = notification.connector || tr("tasks.notification.external", "External source");
     const target = notification.target || {};
     const destination = target.chatName || target.name || target.label || target.chatId || target.openId || target.email || "";
     if (compact) {
-      const provider = translate(`tasks.notification.${connector}`, connector);
+      const provider = tr(`tasks.notification.${connector}`, connector);
       const named = target.chatName || target.name || target.label || target.email;
-      const address = named || (target.chatId ? translate("tasks.notification.chat", "Chat")
+      const address = named || (target.chatId ? tr("tasks.notification.chat", "Chat")
         + ` · …${target.chatId.slice(-8)}` : destination);
-      return [provider, address, target.threadId ? translate("tasks.notification.thread", "Topic") : ""].filter(Boolean).join(" · ");
+      return [provider, address, target.threadId ? tr("tasks.notification.thread", "Topic") : ""].filter(Boolean).join(" · ");
     }
     return [connector, destination, target.threadId, notification.sourceRouteId].filter(Boolean).join(" · ");
   }
@@ -799,32 +814,33 @@
   function renderFlows() {
     if (!flowsPanel) return;
     flowsPanel.replaceChildren();
+    flowsPanel.lang = automationFlows.language || "";
     const groups = automationFlows.groups || [];
     flowsPanel.hidden = !groups.length && !automationFlows.unavailable;
     if (automationFlows.unavailable) {
-      flowsPanel.appendChild(createNode("p", "task-history-note", translate("tasks.flows.unavailable", "Flow descriptions unavailable; task list remains available.")));
+      flowsPanel.appendChild(createNode("p", "task-history-note", flowTranslate("tasks.flows.unavailable", "Flow descriptions unavailable; task list remains available.")));
       return;
     }
     if (!groups.length) return;
     if (!groups.some(group => group.id === selectedFlow)) selectedFlow = groups[0].id;
     const nav = createNode("div", "task-flow-tabs");
     nav.setAttribute("role", "group");
-    nav.setAttribute("aria-label", translate("tasks.flows.title", "Automation flows"));
+    nav.setAttribute("aria-label", flowTranslate("tasks.flows.title", "Automation flows"));
     for (const group of groups) {
-      const button = createNode("button", "task-center-secondary", translate(`tasks.flows.${group.id}`, group.id));
+      const button = createNode("button", "task-center-secondary", flowTranslate(`tasks.flows.${group.id}`, group.id));
       button.type = "button";
       button.setAttribute("aria-pressed", String(selectedFlow === group.id));
       button.addEventListener("click", () => { selectedFlow = group.id; renderFlows(); flowsPanel.querySelector('button[aria-pressed="true"]')?.focus(); });
       nav.appendChild(button);
     }
     const title = createNode("div", "task-flow-intro");
-    title.append(createNode("h3", "", translate("tasks.flows.title", "Automation flows")), createNode("p", "", translate("tasks.flows.intro", "See when work starts, what it reads, and where results go. Current schedules are shown below.")));
+    title.append(createNode("h3", "", flowTranslate("tasks.flows.title", "Automation flows")), createNode("p", "", flowTranslate("tasks.flows.intro", "See when work starts, what it reads, and where results go. Current schedules are shown below.")));
     flowsPanel.append(title, nav);
     const group = groups.find(item => item.id === selectedFlow);
     const diagram = createNode("div", "task-flow-diagram");
-    diagram.setAttribute("aria-label", translate(`tasks.flows.${group.id}`, group.id));
+    diagram.setAttribute("aria-label", flowTranslate(`tasks.flows.${group.id}`, group.id));
     const source = createNode("div", "task-flow-read");
-    source.appendChild(createNode("span", "task-flow-label", translate("tasks.flows.read", "01 · Read source")));
+    source.appendChild(createNode("span", "task-flow-label", flowTranslate("tasks.flows.read", "01 · Read source")));
     if (group.readAt) source.appendChild(createNode("strong", "task-flow-read-time", group.readAt));
     source.appendChild(createNode("p", "", group.read));
     diagram.appendChild(source);
@@ -836,20 +852,25 @@
       heading.appendChild(createNode("h4", "", row.title));
       const linked = row.taskIds.map(id => tasks.find(task => task.id === id)).filter(Boolean);
       const background = (row.backgroundIds || []).map(id => backgroundMechanisms.find(item => item.id === id)).filter(Boolean);
-      const times = [...new Set(linked.map(task => `${taskScheduleText(task)} · ${overview.businessStatus(task) ? translate(`tasks.business.${overview.businessStatus(task)}`, stateLabel(task.state)) : stateLabel(task.state)}`))];
-      times.push(...background.map(item => `${item.trigger} · ${translate(`tasks.background.${item.state}`, item.state)}`));
-      heading.appendChild(createNode("span", "task-flow-time", times.join(" / ") || translate("tasks.flows.missing", "Task not found")));
+      const times = [...new Set(linked.map(task => `${taskScheduleText(task, flowTranslate)} · ${overview.businessStatus(task) ? flowTranslate(`tasks.business.${overview.businessStatus(task)}`, flowState(task)) : flowState(task)}`))];
+      times.push(...background.map(item => `${item.trigger} · ${flowTranslate(`tasks.background.${item.state}`, item.state)}`));
+      heading.appendChild(createNode("span", "task-flow-time", times.join(" / ") || flowTranslate("tasks.flows.missing", "Task not found")));
       route.appendChild(heading);
-      if (row.needsReview) route.appendChild(createNode("p", "task-flow-review", translate("tasks.flows.review", "Task definition changed or is missing; the explanation below needs review.")));
+      if (row.needsReview) route.appendChild(createNode("p", "task-flow-review", flowTranslate("tasks.flows.review", "Task definition changed or is missing; the explanation below needs review.")));
       const steps = createNode("div", "task-flow-steps");
       for (const key of ["process", "write", "send"]) {
         const step = createNode("div", "task-flow-step");
-        step.append(createNode("span", "task-flow-label", translate(`tasks.flows.${key}`, key)), createNode("p", "", row[key]));
+        step.append(createNode("span", "task-flow-label", flowTranslate(`tasks.flows.${key}`, key)), createNode("p", "", row[key]));
         if (key === "write") for (const item of row.links || []) {
           // Defense in depth for read-only descriptor links; never render HTML.
           try { if (!["https:", "http:"].includes(new URL(item.url).protocol)) continue; } catch { continue; }
           const link = createNode("a", "task-flow-link", item.title);
           link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; step.appendChild(link);
+        }
+        if (key === "write" && row.writeDetails) {
+          const detail = createNode("details", "task-flow-paths");
+          detail.append(createNode("summary", "", flowTranslate("tasks.flows.paths", "File locations")), createNode("p", "", row.writeDetails));
+          step.appendChild(detail);
         }
         steps.appendChild(step);
       }
@@ -858,11 +879,11 @@
       if (row.note) {
         const note = createNode("details", "task-flow-note");
         const noteKey = `${group.id}:${row.title}`; note.open = openFlowNotes.has(noteKey);
-        note.append(createNode("summary", "", translate("tasks.flows.boundary", "Current scope / planned changes")), createNode("p", "", row.note));
+        note.append(createNode("summary", "", flowTranslate("tasks.flows.boundary", "Current scope / planned changes")), createNode("p", "", row.note));
         note.addEventListener("toggle", () => { if (!note.isConnected) return; if (note.open) openFlowNotes.add(noteKey); else openFlowNotes.delete(noteKey); });
         bottom.appendChild(note);
       }
-      const locate = createNode("button", "task-center-action", translate("tasks.flows.locate", "Related tasks"));
+      const locate = createNode("button", "task-center-action", flowTranslate("tasks.flows.locate", "Related tasks"));
       locate.type = "button"; locate.disabled = !linked.length;
       locate.addEventListener("click", () => {
         flowTaskIds = new Set(row.taskIds); selectedFilter = "all";
@@ -873,13 +894,13 @@
         const execution = overview.latestExecutionSession(task);
         if (!execution) continue;
         const link = createNode("a", "task-center-action", linked.length === 1
-          ? translate("tasks.session.openLatest", "Open latest execution")
-          : `${translate("tasks.session.openLatest", "Open latest execution")} · ${taskTitle(task)}`);
+          ? flowTranslate("tasks.session.openLatest", "Open latest execution")
+          : `${flowTranslate("tasks.session.openLatest", "Open latest execution")} · ${taskTitle(task)}`);
         link.href = `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions`;
         bottom.appendChild(link);
       }
       if (background.length) {
-        const inspect = createNode("button", "task-center-action", translate("tasks.flows.monitor", "Open monitoring overview"));
+        const inspect = createNode("button", "task-center-action", flowTranslate("tasks.flows.monitor", "Open monitoring overview"));
         inspect.type = "button";
         inspect.addEventListener("click", () => document.getElementById("monitoringOverviewTab")?.click());
         bottom.appendChild(inspect);
@@ -889,9 +910,83 @@
     if (group.note) flowsPanel.appendChild(createNode("p", "task-history-note", group.note));
   }
 
+  function locateTimelineTask(task) {
+    flowTaskIds = new Set([task.id]); selectedFilter = "all";
+    closedPurposeSections.clear(); renderTasks(); list.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderTimeline() {
+    if (!timelinePanel || !overview.timeline) return;
+    timelinePanel.replaceChildren(); timelinePanel.hidden = !loaded || Boolean(loadError);
+    if (timelinePanel.hidden) return;
+    timelinePanel.lang = automationFlows.language || "";
+    const tr = (key, vars) => flowTranslate("tasks.flows." + key, key, vars);
+    const plan = overview.timeline(tasks);
+    timelinePanel.append(createNode("h3", "", tr("timeline")), createNode("p", "task-timeline-note", tr("timelineNote")),
+      createNode("p", "task-timeline-count", tr("scope", { recurring: plan.recurringCount, once: plan.once.length, background: backgroundMechanisms.length })));
+    const descriptions = task => (automationFlows.groups || []).flatMap(group =>
+      (group.rows || []).filter(row => row.taskIds.includes(task.id)).map(row => ({ ...row, group: group.id })));
+    const stamp = value => {
+      const date = new Date(value || "");
+      return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(automationFlows.language || undefined,
+        { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date) + " · Asia/Shanghai" : tr("noTime");
+    };
+    const taskRow = (task, key) => {
+      const rows = descriptions(task), details = createNode("details", "task-timeline-task");
+      details.dataset.taskId = task.id; details.open = openTimelineRows.has(key);
+      const summary = createNode("summary");
+      const main = createNode("span", "task-timeline-main");
+      main.append(createNode("strong", "", taskTitle(task)), createNode("small", "", task.gate?.mode === "script" ? tr("gate") : tr("direct")));
+      summary.append(main, createNode("span", "task-timeline-status", flowState(task))); details.appendChild(summary);
+      const body = createNode("div", "task-timeline-detail");
+      body.appendChild(createNode("p", "", tr("next", { time: stamp(task.nextRunAt) })));
+      if (rows.length) for (const row of rows) {
+        if (row.needsReview) body.appendChild(createNode("p", "task-flow-review", flowTranslate("tasks.flows.review")));
+        body.append(createNode("p", "", tr("writeLabel") + " · " + row.write), createNode("p", "", tr("sendLabel") + " · " + row.send));
+      } else {
+        body.append(createNode("p", "", tr("unknownOutput")), createNode("p", "", tr("sendLabel") + " · " + notificationText(task, { compact: true, tr: flowTranslate })));
+      }
+      const button = createNode("button", "task-center-action", tr("showTasks")); button.type = "button";
+      button.addEventListener("click", () => locateTimelineTask(task)); body.appendChild(button); details.appendChild(body);
+      details.addEventListener("toggle", () => { if (!details.isConnected) return; if (details.open) openTimelineRows.add(key); else openTimelineRows.delete(key); });
+      return details;
+    };
+    const section = (label, entries, renderer) => {
+      const root = createNode("section", "task-timeline-section"); root.appendChild(createNode("h4", "", label));
+      const line = createNode("div", "task-timeline-line"); root.appendChild(line);
+      for (const [i, entry] of entries.entries()) {
+        const row = createNode("div", "task-timeline-entry"); renderer(row, entry, i); line.appendChild(row);
+      }
+      if (!entries.length) line.appendChild(createNode("p", "task-timeline-note", tr("empty")));
+      timelinePanel.appendChild(root);
+    };
+    section(tr("daily"), plan.daily, (row, entry) => {
+      const time = createNode("div", "task-timeline-time", entry.time); time.appendChild(createNode("small", "", entry.timezone));
+      const items = createNode("div", "task-timeline-items"); entry.tasks.forEach(task => items.appendChild(taskRow(task, entry.time + task.id)));
+      row.append(time, items);
+    });
+    section(tr("cycle"), plan.repeating, (row, task) => {
+      row.append(createNode("div", "task-timeline-time task-timeline-cadence", taskScheduleText(task, flowTranslate)), taskRow(task, task.id));
+    });
+    section(tr("once"), plan.once, (row, task) => {
+      row.append(createNode("div", "task-timeline-time task-timeline-cadence", stamp(task.schedule?.scheduledAt)), taskRow(task, task.id));
+    });
+    const background = createNode("details", "task-timeline-background"); background.open = openTimelineRows.has("background");
+    background.appendChild(createNode("summary", "", tr("background") + " · " + backgroundMechanisms.length));
+    for (const item of backgroundMechanisms) {
+      const row = createNode("div", "task-timeline-background-row"); row.dataset.backgroundId = item.id;
+      row.append(createNode("strong", "", item.title), createNode("span", "", item.trigger),
+        createNode("small", "", flowTranslate("tasks.background." + item.state, item.state)));
+      background.appendChild(row);
+    }
+    background.addEventListener("toggle", () => { if (!background.isConnected) return; if (background.open) openTimelineRows.add("background"); else openTimelineRows.delete("background"); });
+    timelinePanel.append(background, createNode("p", "task-timeline-note", tr("inactive") + " · " + plan.stopped.length), createNode("p", "task-timeline-note", tr("coverage")));
+  }
+
   function renderTasks() {
     if (!list) return;
     list.replaceChildren();
+    renderTimeline();
     renderFlows();
     if (loading && !loaded) { list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…"))); return; }
     if (loadError && tasks.length === 0) { list.appendChild(createNode("div", "task-center-empty", loadError)); return; }

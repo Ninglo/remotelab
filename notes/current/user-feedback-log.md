@@ -1731,3 +1731,5 @@ A separate interactive proposal made an already understood flow harder to use. T
 ### 2026-10-12: automate flow explanations in the existing Monitor
 
 A user wanted the original Automations page to show a connected read → process → write → notify flow, with actual times and destinations, and to include system monitoring in the same four-category view. Keep the existing task list and monitoring overview, reuse their sources, and distinguish proposed task consolidation from actual schedules. The presentation now joins shared source blocks to branches, exposes scope notes on demand, supports existing background mechanism references, and uses the workbench theme and readable mobile controls. This change does not authorize runtime policy, schedule or delivery changes.
+
+- 2026-10-12: Automation UI feedback: align the content column with Monitor navigation, keep instance explanation labels in the same language as their prose, move paths into expandable detail, and show a complete schedule-oriented overview. Preserve original task records and distinguish configured times from actual completed work.
