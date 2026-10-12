@@ -384,3 +384,20 @@ test('cards distinguish execution, approval and information, and assistance chan
   recovery.status = 'blocked'; delete recovery.plan; delete recovery.humanAction;
   assert.match(card().elements[0].text.content, /尚未形成需要你执行的具体动作/);
 });
+
+test('the first warning delivers one complete card containing both the risk and the human action', async () => {
+  const { sendMonitoringAlert } = await import('../chat/monitoring-alert-message.mjs');
+  const calls = [], events = [{ ...disk, id: '/data', recovery: {
+    sessionId: 'original', status: 'awaiting_confirmation',
+    humanAction: { type: 'input', summary: '提供扩容报价' },
+  } }];
+  const id = await sendMonitoringAlert(events, { chatId: 'oc_expected', overviewUrl: 'https://example.test/' }, 'one-incident',
+    async (...args) => { calls.push(args); return { message_id: 'om_one' }; });
+  assert.equal(id, 'om_one'); assert.equal(calls.length, 1);
+  const body = calls[0][3], card = JSON.parse(body.content);
+  assert.equal(body.msg_type, 'interactive');
+  assert.match(card.elements[0].text.content, /当前风险/);
+  assert.match(card.elements[0].text.content, /需要你补充：提供扩容报价/);
+  assert.equal(card.elements[1].actions[0].text.content, '进入会话补充信息');
+  assert.match(card.elements[1].actions[0].url, /session=original/);
+});
