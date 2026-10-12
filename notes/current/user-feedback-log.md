@@ -1693,3 +1693,14 @@ for ending. Final interaction: key 1 starts; double-press key 3 stops; key 2
 has no recording action. The start popup, spoken cue and actual waveform were
 confirmed by the operator. Preserve a distinction between software gesture
 tests and each transport's final physical acceptance.
+
+
+## 2026-10-12 — Feishu cards must share connector operations
+
+A task card appeared on the Web while its Feishu topic had no card. The message
+connector was healthy but the independent card service had remained stopped
+after quota errors. The user requested consolidation to reduce fragmented
+services and future maintenance. Task-card publication now belongs to the
+connector lifecycle, retaining separate queues and durable card receipts.
+Acceptance includes stopping legacy writers, same-card restart recovery and
+visible component degradation; a running connector alone is not delivery proof.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -65,7 +65,7 @@ get:async input=>({code:0,data:{items:[{message_id:input.path.message_id,chat_id
 `);
 await writeFile(join(root, 'loader.mjs'), `export async function resolve(specifier,context,next){if(specifier==='@larksuiteoapi/node-sdk')return {url:new URL('./sdk.mjs',import.meta.url).href,shortCircuit:true};return next(specifier,context)}\n`);
 const connected = once(sockets, 'connection');
-const child = spawn(process.execPath, ['--loader', join(root, 'loader.mjs'), 'scripts/feishu-workboard-pilot.mjs', statePath], {
+const child = spawn(process.execPath, ['--loader', join(root, 'loader.mjs'), 'tests/fixtures/workboard-host.mjs', statePath], {
   env: { ...process.env, REMOTELAB_CONFIG_DIR: root }, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let output = '';
@@ -125,6 +125,18 @@ try {
   const refreshed = JSON.parse(calls.at(-1).data.content);
   assert.equal(refreshed.body.elements.find(e => e.tag === 'button').text.content, '点击折叠进展', 'ordinary refresh with older metadata preserves the accepted click');
   assert.match(JSON.stringify(refreshed), /新的过程/);
+  // Shutdown must wait for the provider receipt before the connector exits.
+  const shutdownGate = deferred(); holdPatch = shutdownGate; patchObserved = deferred();
+  events.push({ ...events[2], seq: 5, content: '<progress>退出前保留回执</progress>' });
+  socket.send(JSON.stringify({ type: 'session_invalidated', sessionId: 's' }));
+  await patchObserved.promise;
+  const exiting = once(child, 'exit');
+  child.kill('SIGTERM');
+  shutdownGate.resolve();
+  await exiting;
+  const saved = JSON.parse(await readFile(statePath, 'utf8'));
+  assert.equal(saved.sessions.s.cards[0].messageId, 'original');
+  assert.equal(saved.sessions.s.cards[0].latestSeq, 5, 'shutdown drains and saves the acknowledged patch');
   console.log('PASS: actual route worker repaints clicks without history I/O, coalesces rapid choices and prioritizes them over automatic refreshes.');
 } finally {
   bootGate.resolve(); holdPatch?.resolve(); holdBusy?.resolve();

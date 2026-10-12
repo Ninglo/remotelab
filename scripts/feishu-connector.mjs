@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { loadDailyReportMemory } from '../connectors/feishu/daily-report-memory.mjs';
@@ -2164,9 +2165,16 @@ async function main() {
 
   let closed = false;
   const documentEvents = await startDocumentBindingEvents(runtime);
+  runtime.workboards = await startFeishuWorkboards(runtime, { configDir: CONFIG_DIR, configPath: options.configPath,
+    remote: { baseUrl: config.chatBaseUrl,
+      request: (path, options) => requestRemoteLab(runtime, path, options),
+      ensureAuthCookie: () => ensureAuthCookie(runtime) },
+  });
+  let cardsStopped = null;
   const closeConnection = (reason) => {
     if (closed) return;
     closed = true;
+    cardsStopped = runtime.workboards.stop();
     stopSourceDeliveryPoller(runtime);
     runtime.projectSurface?.stop();
     void documentEvents.stop();
@@ -2179,6 +2187,7 @@ async function main() {
     await inbox.idle();
     await runtime.sourceDeliveryPollPromise;
     await documentEvents.stop();
+    await cardsStopped;
     await releasePidLock();
     process.exit(code);
   };

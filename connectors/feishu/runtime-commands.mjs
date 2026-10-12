@@ -1,3 +1,4 @@
+import { describeFeishuWorkboards } from './workboard-component.mjs';
 import { buildExternalTriggerId } from './index.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 import { buildFeishuSessionConversationTarget, isFeishuThreadConversation } from './reply-routing.mjs';
@@ -197,12 +198,12 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
     }
     if (command.name === 'status') {
       if (isQuickSession(session)) {
-        notes.push(`模式：Quick（创建后固定）\n${describeSessionProgressPolicy(session)}\n${await describeFeishuMuteSetting(runtime, summary)}`);
+        notes.push(`模式：Quick（创建后固定）\n${describeSessionProgressPolicy(session)}\n${await describeFeishuMuteSetting(runtime, summary)}${describeFeishuWorkboards(runtime)}`);
         continue;
       }
       catalog = catalog || await catalogFor(selection.tool);
       selection = completeSelection(selection, catalog);
-      notes.push(`${describe(selection)}\n${describeSessionProgressPolicy(session)}\n${await describeFeishuMuteSetting(runtime, summary)}`);
+      notes.push(`${describe(selection)}\n${describeSessionProgressPolicy(session)}\n${await describeFeishuMuteSetting(runtime, summary)}${describeFeishuWorkboards(runtime)}`);
       continue;
     }
     if (!CONFIG_COMMANDS.has(command.name)) continue;

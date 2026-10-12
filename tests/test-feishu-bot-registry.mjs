@@ -89,6 +89,9 @@ try {
     ],
   );
 
+  mkdirSync(botBStorageDir, { recursive: true });
+  writeFileSync(join(botBStorageDir, 'workboard-health.json'), JSON.stringify({ pid: 2202, state: 'quota_blocked' }));
+  writeFileSync(join(configDir, 'feishu-connector', 'workboard-health.json'), JSON.stringify({ pid: 9999, state: 'ready' }));
   const registry = await discoverFeishuBots({
     configDir,
     defaultConfigPath,
@@ -117,6 +120,10 @@ try {
   assert.equal(botB.runtime.unit, 'remotelab-feishu-bot-b.service');
   assert.equal(botB.runtime.pid, 2202);
   assert.equal(botB.status, 'running');
+  assert.equal(botB.components.cards.state, 'quota_blocked');
+  assert.ok(botB.issues.includes('cards_quota_blocked'));
+  assert.equal(defaultBot.components.cards.state, 'stopped', 'another PID cannot certify card health');
+  assert.ok(defaultBot.issues.includes('cards_stopped'));
   assert.equal('appSecret' in botB, false, 'registry must not persist Bot secrets');
 
   assert.deepEqual(buildFeishuBotRestartPlan(botB, {

@@ -16,10 +16,12 @@ export function upgradeFeishuWorkboardState(previous = {}, { sourceRouteId, botC
     ...(previous.senderOpenId ? { legacySenderOpenId: previous.senderOpenId } : {}) };
 }
 
-export function buildFeishuWorkboardService({ node, projectRoot, statePath, configDir, sourceFreezePath }) {
-  for (const value of [node, projectRoot, statePath, configDir, ...(sourceFreezePath ? [sourceFreezePath] : [])]) {
-    if (typeof value !== 'string' || !value.startsWith('/') || /[\r\n\0]/.test(value)) throw new Error('Service paths must be absolute');
-  }
-  const quote = value => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
-  return `[Unit]\nDescription=RemoteLab instance Feishu task cards\nAfter=network-online.target\n${sourceFreezePath ? `ConditionPathExists=!${sourceFreezePath.replace(/%/g, '%%')}\n` : ''}StartLimitIntervalSec=60\nStartLimitBurst=5\n\n[Service]\nType=simple\nWorkingDirectory=${projectRoot.replace(/%/g, '%%')}\nEnvironment=${quote(`REMOTELAB_CONFIG_DIR=${configDir}`)}\nExecStart=${quote(node)} ${quote(`${projectRoot}/scripts/feishu-workboard-pilot.mjs`)} ${quote(statePath)}\nRestart=on-failure\nRestartSec=2\nRuntimeMaxSec=infinity\nUMask=0077\n\n[Install]\nWantedBy=default.target\n`;
+// Fail closed when an earlier standalone worker or connector still owns state.
+// PID reuse may require operator inspection; it must never authorize a second writer.
+export function assertWorkboardOwnerStopped(state) {
+  const pid = state?.runtime?.pid;
+  if (!pid || pid === process.pid) return;
+  try { process.kill(pid, 0); }
+  catch (error) { if (error.code === 'ESRCH') return; }
+  throw new Error(`Card state still owned by pid ${pid}; retire the old writer before starting this connector`);
 }
