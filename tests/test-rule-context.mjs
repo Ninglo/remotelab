@@ -13,7 +13,7 @@ const rules = [
   { id: 'turn_context', title: 'Current facts', content: 'NEW_FACT', delivery: 'turn' },
   { id: 'session_workboard_state', title: 'Task state', content: 'CURRENT_TASK', delivery: 'turn' },
 ];
-const options = { enabled: true, requestId: 'current', personId: 'a', identityId: 'identity-a',
+const options = { enabled: true, recovery: 'codex-session-start', requestId: 'current', personId: 'a', identityId: 'identity-a',
   identity: { field: 'codexThreadId', id: 'thread' } };
 const deps = { head: async () => 42,
   history: async () => [{ type: 'message', role: 'user', requestId: 'previous' }],
@@ -36,7 +36,7 @@ try {
   assert.match(renderModelContextSlots(next.slots), /CURRENT_TASK/);
   assert.match(renderModelContextSlots(next.slots), /after compaction/);
   assert.deepEqual(JSON.parse(await readFile(next.receipt.file, 'utf8')), snapshot, 'recovery reference contains complete immutable rules');
-  for (const opts of [{ identity: null }, { identity: { field: 'codexThreadId', id: 'new-thread' } },
+  for (const opts of [{ recovery: '' }, { identity: null }, { identity: { field: 'codexThreadId', id: 'new-thread' } },
     { personId: 'b' }, { identityId: 'new-id' }, { sourceContext: { connector: 'feishu', chatId: 'other' } }]) {
     assert.equal((await project(rules, opts, acknowledged)).receipt.mode, 'full');
   }

@@ -243,3 +243,17 @@ function harness(options = {}, onQuestion) {
   assert.equal(h.sent.filter(value => value.method === 'turn/start').length, 4, 'cancellation must not invent another user turn');
 }
 console.log('test-native-codex: ok');
+
+{
+  const h = harness({ruleRecoverySessionId:'hook-test'});
+  const promise=h.driver.start('initial');await tick();h.reply('initialize',{});await tick();
+  h.reply('config/read',{config:{features:{hooks:false},hooks:{state:{old:{trusted_hash:'keep-existing'}}}}});await tick();
+  const override=h.driver.args.find(value=>value.startsWith('hooks.SessionStart='));
+  const command=JSON.parse(override.match(/command=("(?:\\.|[^"\\])*")/)[1]);
+  h.reply('hooks/list',{data:[{hooks:[{key:'own',currentHash:'only-our-hash',command,eventName:'sessionStart',matcher:'compact',source:'sessionFlags',additionalContextLimit:0},
+    {key:'old',command:'existing-plugin'}]}]});await tick();
+  const config=h.sent.findLast(x=>x.method==='thread/start').params.config;
+  assert.deepEqual(config['hooks.state'].old,{trusted_hash:'keep-existing',enabled:false});
+  assert.deepEqual(config['hooks.state'].own,{trusted_hash:'only-our-hash',enabled:true});
+  h.reply('thread/start',{thread:{id:'thread-1'}});await tick();h.reply('turn/start',{turn:{id:'turn-1',status:'inProgress'}});await promise;h.driver.close();
+}

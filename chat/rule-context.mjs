@@ -40,7 +40,7 @@ async function previousReceipt(sessionId, identity, requestId, deps) {
 }
 
 export async function projectRuleContext(sessionId, slots, { enabled = false, identity = null,
-  requestId = '', personId = '', identityId = '', sourceContext = null } = {}, deps = {}) {
+  recovery = '', requestId = '', personId = '', identityId = '', sourceContext = null } = {}, deps = {}) {
   if (!enabled || !sessionId || !requestId) return { slots, receipt: null };
   const rules = slots.filter(slot => stable.has(slot.id));
   if (!rules.length) return { slots, receipt: null };
@@ -59,8 +59,9 @@ export async function projectRuleContext(sessionId, slots, { enabled = false, id
       await writeJsonAtomic(file, snapshot, { mode: 0o600 });
     }
     const previous = await previousReceipt(sessionId, identity, requestId, deps);
-    const unchanged = previous?.version === 1 && previous.fingerprint === fingerprint;
-    const receipt = { version: 1, fingerprint, file, mode: unchanged ? 'reference' : 'full',
+    const unchanged = recovery === 'codex-session-start' && previous?.recovery === recovery
+      && previous?.version === 1 && previous.fingerprint === fingerprint;
+    const receipt = { version: 1, recovery, fingerprint, file, mode: unchanged ? 'reference' : 'full',
       ruleChars: rules.reduce((sum, slot) => sum + slot.content.length, 0) };
     const notice = createModelContextSlot('active_rule_context', 'Current RemoteLab rules',
       `For this input, RemoteLab display/checklist/source/Session/personal-reply/strict-start rules use snapshot ${fingerprint.slice(0, 12)}. `

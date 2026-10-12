@@ -54,5 +54,10 @@ const linked = { ...source([]), linkedProjectContext: { sourceChatId: 'other-gro
 const linkedReceipt = (await projectFeishuContext('session', linked)).receipt;
 assert.equal((await project(linked, { manifest: async () => ({ feishuContextDelivery: linkedReceipt }) })).receipt.stats.removed, 1);
 assert.equal((await project({ ...linked, linkedProjectContext: { ...linked.linkedProjectContext, sourceChatId: 'third-group' } }, { manifest: async () => ({ feishuContextDelivery: linkedReceipt }) })).receipt.stats.removed, 0);
+const distant = await project(raw, {
+  history: async () => [...events, ...Array.from({length:45},(_,i)=>({type:'message',role:'user',requestId:'later-'+i,sourceContext:prior}))],
+  request: async (_id,req) => req === 'prior' ? {runId:'prior-run',requestId:'prior',options:{}} : null,
+});
+assert.equal(distant.receipt.stats.removed,3,'complete replay retains delivery evidence older than 40 inputs');
 console.log('Feishu context dedup: same thread, fresh thread, scoped IDs, edited messages, unknown receipt, native supplement, linked group, immutable snapshot and fail-open passed');
 await rm(home, { recursive: true, force: true });
