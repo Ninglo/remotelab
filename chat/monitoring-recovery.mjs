@@ -21,7 +21,7 @@ export function projectRecovery(state) {
     subject: item.subject, status: item.status, label: recoveryLabels[item.status] || item.status,
     sessionId: item.sessionId || null, originRunId: item.originRunId || null,
     attempts: item.attempts?.length || 0, runId: item.attempts?.at(-1)?.runId || item.externalRunId || null,
-    reason: trim(item.reason).slice(0, 240), summary: trim(item.summary).slice(0, 240),
+    reason: trim(item.reason).slice(0, 240), summary: ['pending', 'admitting', 'running', 'waiting'].includes(item.status) ? '' : trim(item.summary).slice(0, 1200),
     error: trim(item.error).slice(0, 240),
     plan: recoveryPlan(item.plan), riskStage: item.riskStage || 0,
     updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
@@ -40,7 +40,7 @@ function promptFor(item, attempt, task, config) {
     + `先核对现实：原任务是否已有人恢复、停止、被替代或已完成；查已保存材料和实际错误，保留已通过的检查。没有新的修正或证据，不重复失败动作。\n`
     + `先判断是否影响业务，再按拟执行动作的影响与恢复成本分级。账号正常消耗或耗尽不是待修故障；关注已有授权账号的备用准备、提前切换及切换失败，不要求人解决正常消耗。\n`
     + `低风险、已有授权且可验证恢复的动作自行完成，不额外索要确认；包括只读定位、符合现行流程的安全缓存处理及已核验重复副本处理。中高风险动作先形成具体方案并等待人在原会话确认，不能先执行；例如删除唯一数据、打断业务、整目录迁移、购买扩容、借用新账号或扩大权限。事故很严重不代表处置动作可免确认。\n`
-    + `需要确认时先完成所有可独立进行的低风险诊断，在回执写status=awaiting_confirmation及plan，plan必须含risk=medium或high、summary（拟执行步骤）、target（具体对象）、impact（影响和收益）、rollback（恢复方式或不可恢复说明）、verification（验收办法）；面向人的消息包含该方案与待确认动作。正常状态不打扰，低风险结果留台账；不能只写“请负责人处理”。已有人执行的清理先核对结果，不重复清理。\n`
+    + `需要确认时先完成所有可独立进行的低风险诊断，在回执写status=awaiting_confirmation及plan，plan必须含risk=medium或high、summary（拟执行步骤）、target（具体对象，非空文字或扁平键值对象，其余字段均为非空文字）、impact（影响和收益）、rollback（恢复方式或不可恢复说明）、verification（验收办法）；面向人的消息包含该方案与待确认动作。正常状态不打扰，低风险结果留台账；不能只写“请负责人处理”。已有人执行的清理先核对结果，不重复清理。\n`
     + `模型以本轮Run记录为准，不能凭提示文字声称已换。沿原任务检查点继续，数据读取、代码/配置、执行、产物验收、对外送达分别核验。写入/发送结果不明先回读，避免重复提交、重复文档、重复消息。\n`
     + `保留原目标、数据、日程、话题、评论与历史证据。不擅自接管其他Run，不删除历史，不动其他用户的数据/服务，不扩大业务范围；execute_here=false、暂停和原任务禁发要求继续有效。权限缺口先查既有授权/备用入口；只有真正缺少授权、凭据或不可逆高风险动作才留给人，并说明最小动作。\n`
     + `服务故障先辨别正常停用、启动中与真实故障，只处理本实例已配置的服务；磁盘问题只沿已授权维护流程，不泛删目录。已有诊断/维护工作进行中就保存证据并说明依赖，不再起第二份。\n`
@@ -131,7 +131,11 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
   // Reconcile every in-flight attempt before considering a new admission.
   for (const item of ordered) {
     if (item.status === 'admitting') { active++; continue; }
-    if (['resolved', 'blocked', 'cancelled', 'pending', 'admitting'].includes(item.status)) continue;
+    // Reconcile repaired receipts without launching another model attempt.
+    // Also recover the exact legacy formatting failure; unrelated blocks stay put.
+    const receiptBlocked = item.status === 'blocked' && (item.receiptIssue === 'invalid_plan'
+      || item.reason === '确认方案缺少具体对象、影响、恢复方式、验收办法或证据，不能据此执行');
+    if (['resolved', 'blocked', 'cancelled', 'pending', 'admitting'].includes(item.status) && !receiptBlocked) continue;
     try {
       const attempt = item.attempts.at(-1);
       const runId = attempt?.runId || item.externalRunId;
@@ -151,9 +155,11 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       if (valid && receipt.status === 'awaiting_confirmation') {
         const plan = recoveryPlan(receipt.plan);
         item.evidence = receipt.evidence || []; item.summary = receipt.summary;
-        if (!plan?.requiresConfirmation || !item.evidence.length) {
-          touch(item, 'blocked', '确认方案缺少具体对象、影响、恢复方式、验收办法或证据，不能据此执行'); continue;
+        if (!plan?.requiresConfirmation || !Array.isArray(item.evidence) || !item.evidence.length) {
+          item.receiptIssue = 'invalid_plan';
+          touch(item, 'verifying', '处理回执格式待修正，已有执行结果保留；尚无可执行的确认方案'); continue;
         }
+        delete item.receiptIssue;
         item.plan = plan;
         touch(item, 'awaiting_confirmation', receipt.requiredHumanAction || plan.summary); continue;
       }

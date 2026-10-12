@@ -272,3 +272,26 @@ test('a medium-risk plan remains waiting through worsening; only an updated veri
   receipt.status = 'resolved'; f.snapshot.attention = []; f.snapshot.disks = [{ path: '/', status: 'healthy' }];
   await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'resolved');
 });
+
+test('a structured target is reconciled as a concrete plan without granting approval or admitting another run', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const receipt = f.receipts.get(f.incident().attempts[0].receiptFile);
+  receipt.plan = { risk: 'high', summary: 'Expand after confirmation', target: { mount: '/data', newSizeGiB: 1536 },
+    impact: 'cost', rollback: 'cannot shrink', verification: 'df and original paths' };
+  // Existing deployments may already have stored the old formatting failure.
+  f.incident().status = 'blocked'; f.incident().reason = '确认方案缺少具体对象、影响、恢复方式、验收办法或证据，不能据此执行';
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().status, 'awaiting_confirmation'); assert.match(f.incident().plan.target, /mount: \/data/);
+  assert.equal(f.incident().plan.requiresConfirmation, true); assert.equal(f.getAdmissions(), 1);
+});
+
+test('invalid receipt stays awaiting verification, then accepts its correction without rerunning business actions', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const receipt = f.receipts.get(f.incident().attempts[0].receiptFile);
+  receipt.plan = { risk: 'high', summary: 'Expand' };
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'verifying');
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  Object.assign(receipt.plan, { target: '/data', impact: 'cost', rollback: 'cannot shrink', verification: 'df' });
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'awaiting_confirmation');
+  assert.equal(f.getAdmissions(), 1);
+});

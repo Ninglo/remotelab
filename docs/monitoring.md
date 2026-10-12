@@ -210,7 +210,17 @@ Use `scripts/monitoring-snapshot.mjs --output <prefix> --base-url <instance> --d
 
 `--upload` uploads as the explicitly configured Bot and writes a Markdown image-key block plus a receipt; it does not send. Include that block in the existing daily summary. The Feishu converter embeds a standalone `![label](img_key)` as a native image in that same post. It does not fetch remote URLs or local paths, and fenced examples stay literal. Keep the full editable table in the original report. Capture or upload failures must be reported as a snapshot gap and retain the ordinary daily text, not reuse an older image as today's observation.
 
-An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches new critical disk/service incidents and important native task failures persisting for three observations. Normal account exhaustion stays in the account table; actionable local backup/switching failures use the continuity route below. Normal, restored and lower-priority states go into the report.
+An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches newly actionable disk/service incidents and important native task failures persisting for three observations into shared, updateable Feishu cards. Normal account exhaustion stays in the account table; actionable local backup/switching failures use the continuity route below. Normal, restored and lower-priority states go into the report.
+
+### One incident, one message
+
+An unresolved incident keeps its original message ID. Starting recovery, switching models, changing a plan, reaching a worse disk risk stage or completing verification edits that message rather than sending another one. Minor disk-byte fluctuations do not trigger edits. Batch updates preserve the other subjects in the original message, including their recovery results. Only explicit healthy evidence followed by a new failure starts a new incident and message.
+
+Cards show current risk, actions actually reported, their outcome, the specific next decision, and a link to the original recovery Session. Critical risk and pending human decisions are red; the observation time is secondary text. A running attempt cannot display an older attempt's summary as work it has just completed. Normal account exhaustion remains silent; a local lack of qualified backups or a disabled/failing switch is a continuity risk, not a request to fix normal consumption.
+
+Set `alertDelivery.enabled` to `false` to mute both sends and message edits while keeping the existing observer, snapshot collection and authorized recovery running. `recovery.enabled` remains a separate control. Do not stop the combined timer just to silence notifications. Unmuting reuses existing message IDs; use the existing baseline mode to acknowledge known unmessaged incidents when appropriate. A later real escalation or a new concrete confirmation plan can notify a baselined incident once.
+
+New messages use shared cards (`update_multi: true`); existing rich-text notifications are edited in place without changing their IDs. Edits use Feishu's original-message APIs and their platform limits. An unavailable/recalled/expired message, a changed recipient, an interrupted edit or uncertain acknowledgement is retained as `needs_review`; none permits creating a replacement message automatically. Keep recalled receipts as audit, explicitly reconcile them before resuming, and never clear the ledger to retry a send. Existing card updates: https://open.feishu.cn/document/server-docs/im-v1/message-card/patch ; legacy message edits: https://open.feishu.cn/document/server-docs/im-v1/message/update .
 
 Keep the observer's own service and timer visible in Overview, but list them in `alertDelivery.ignoreUnits`: it cannot reliably supervise its own absence, and an explicit maintenance pause must not notify as a new outage. Their health remains inspectable from the application and daily report.
 
@@ -256,6 +266,8 @@ Use `--dry-run` to inspect pending recovery without saving state, admitting work
 ## Verification
 
 Recovery, delayed publication and acceptance replies do not inherit a scheduled report's all-member mention. The recovery prompt explicitly overrides that scheduled rule; use a full-group mention only when the user requests it for this recovery.
+
+A confirmation receipt requires concrete steps, target, impact, rollback and verification, plus evidence. A flat target object containing identifiers is normalized into readable text without approving the plan. Malformed confirmation receipts remain in verification, preserving real completed actions, and can be corrected in place without another model run. The former exact “missing confirmation plan” formatting block is also re-read for compatibility. Other business or authorization blocks remain blocked.
 
 Final delivery acceptance reads the original durable Request aggregate, including archived Requests; absence from the active outbox is not a delivery failure.
 

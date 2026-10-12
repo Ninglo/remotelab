@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dispatchMonitoringAlerts, renderMonitoringAlert } from '../chat/monitoring-alerts.mjs';
+import { dispatchMonitoringAlerts, renderMonitoringAlert, runMonitoringAlerts, renderMonitoringAlertCard, updateMonitoringAlert } from '../chat/monitoring-alerts.mjs';
 import { renderMonitoringReport } from '../lib/monitoring-report.mjs';
 
 const disk = { kind: 'disk', subject: 'System disk', severity: 'critical', availableBytes: 3 * 1024 ** 3, usedPercent: 97 };
@@ -9,10 +9,11 @@ const snapshot = attention => ({ generatedAt: '2026-10-03T06:00:00Z', attention,
   automations: { active: 3 }, opportunities: [], usage: null });
 
 function fixture() {
-  let state = null, sends = 0;
+  let state = null, sends = 0, updates = 0;
   return { options: { config: {}, load: async () => structuredClone(state), save: async (_file, value) => { state = structuredClone(value); },
-    send: async (_events, _config, id) => { sends++; assert.ok(id.length <= 50); return 'om_batch'; } },
-  getState: () => state, getSends: () => sends };
+    send: async (_events, _config, id) => { sends++; assert.ok(id.length <= 50); return `om_batch_${sends}`; },
+    update: async (_events, _config, id) => { updates++; return id; } },
+  getState: () => state, getSends: () => sends, getUpdates: () => updates };
 }
 
 test('normal observations are silent; simultaneous urgent issues send once and survive restart', async () => {
@@ -117,13 +118,13 @@ test('the existing incident can be baselined without a deployment-time group mes
   await dispatchMonitoringAlerts({ ...f.options, snapshot: snapshot([disk]) }); assert.equal(f.getSends(), 0);
 });
 
-test('a disk leaving the critical range rearms a later critical event with a new delivery key', async () => {
+test('a disk fluctuating within an unresolved incident edits its original message', async () => {
   const f = fixture(), keys = [];
   const options = { ...f.options, send: async (_events, _config, key) => { keys.push(key); return 'om_batch'; } };
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([disk]) });
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([{ ...disk, severity: 'warning', availableBytes: 30 * 1024 ** 3, usedPercent: 88 }]) });
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([disk]) });
-  assert.equal(keys.length, 2); assert.notEqual(keys[0], keys[1]);
+  assert.equal(keys.length, 1); assert.equal(f.getUpdates(), 2);
 });
 
 test('an observer does not alert on its own timer being stopped during operator maintenance', async () => {
@@ -207,17 +208,99 @@ test('local continuity incidents require persistence; fleet exhaustion alone sta
   assert.equal(f.getSends(), 2);
 });
 
-test('disk warning starts early, deterioration and a concrete confirmation plan each notify once', async () => {
+test('disk deterioration and a concrete confirmation plan update the original message', async () => {
   const f = fixture(), value = snapshot([{ ...disk, id: '/data', severity: 'warning', usedPercent: 86, availableBytes: 100 * 1024 ** 3 }]);
   await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 1);
   await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 1);
   Object.assign(value.attention[0], { severity: 'critical', usedPercent: 98, availableBytes: 12 * 1024 ** 3 });
-  await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 2);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
   const plan = { risk: 'high', requiresConfirmation: true, summary: 'Migrate finished archive', target: 'owned/archive',
     impact: 'brief read interruption', rollback: 'restore original pointer', verification: 'hash and original-path read' };
   const config = { recoveryIncidents: [{ kind: 'disk', id: '/data', status: 'awaiting_confirmation', plan }] };
-  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 3);
-  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 3);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 2);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 2);
   const message = renderMonitoringAlert(value.attention, config);
   assert.match(message, /确认前不执行/); assert.match(message, /owned\/archive/); assert.match(message, /hash and original-path read/);
+});
+
+test('blocked/running/blocked, small metric changes and observer restarts cannot create another alert', async () => {
+  const f = fixture(), value = snapshot([{ ...disk, id: '/data' }]);
+  for (const status of ['blocked', 'running', 'blocked']) {
+    const config = { recoveryIncidents: [{ kind: 'disk', id: '/data', status, reason: `Internal state ${status}` }] };
+    await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+    value.attention[0].availableBytes -= 1024;
+    await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  }
+  assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 2);
+});
+
+test('editing one subject preserves the other batch members, including independently recovered members', async () => {
+  const f = fixture(), value = snapshot([{ ...disk, id: '/data' }, { kind: 'service', id: 'app', subject: 'App', severity: 'critical' }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value });
+  value.attention = [value.attention[0]]; value.services = [{ unit: 'app', status: 'healthy' }];
+  let edited;
+  const config = { recoveryIncidents: [{ kind: 'disk', id: '/data', status: 'running' }] };
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, update: async (events, _config, id) => { edited = events; return id; } });
+  assert.equal(edited.length, 2); assert.equal(edited.find(e => e.id === 'app').recovered, true);
+  assert.equal(edited.find(e => e.id === '/data').recovery.status, 'running'); assert.equal(f.getSends(), 1);
+});
+
+test('a recalled message or uncertain edit freezes delivery instead of falling back to another send', async () => {
+  const f = fixture(), value = snapshot([{ ...disk, id: '/data' }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value });
+  const config = { recoveryIncidents: [{ kind: 'disk', id: '/data', status: 'running' }] };
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, update: async () => { throw new Error('lost update acknowledgement'); } });
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  assert.equal(f.getSends(), 1); assert.equal(Object.values(f.getState().incidents)[0].status, 'needs_review');
+});
+
+test('muted observer still samples and reconciles recovery, but neither sends nor edits', async () => {
+  const f = fixture(), value = snapshot([{ ...disk, id: '/data' }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value });
+  let recoveries = 0;
+  const result = await runMonitoringAlerts({ config: { alertDelivery: { enabled: false }, recovery: { enabled: true } },
+    reader: async () => value, recover: async () => { recoveries++; return { incidents: [{ kind: 'disk', id: '/data', status: 'running' }] }; },
+    dispatch: args => dispatchMonitoringAlerts({ ...f.options, ...args }) });
+  assert.equal(result.muted, true); assert.equal(recoveries, 1); assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 0);
+  await dispatchMonitoringAlerts({ ...f.options, config: { recoveryIncidents: result.recovery.incidents }, snapshot: value });
+  assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
+});
+
+test('known baselined risk remains silent until a real escalation or a new complete decision', async () => {
+  const f = fixture(), value = snapshot([{ ...disk, id: '/data', usedPercent: 98, availableBytes: 12 * 1024 ** 3 }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value, baseline: true });
+  for (const status of ['running', 'blocked']) await dispatchMonitoringAlerts({ ...f.options, snapshot: value,
+    config: { recoveryIncidents: [{ kind: 'disk', id: '/data', status }] } });
+  assert.equal(f.getSends(), 0);
+  value.attention[0].availableBytes = 4 * 1024 ** 3;
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 1);
+});
+
+test('card shows real results and red decisions, hides prior-attempt results while running and escapes mentions', () => {
+  const events = [{ ...disk, id: '/data' }], config = { overviewUrl: 'https://example.test/?tab=tasks',
+    recoveryIncidents: [{ kind: 'disk', id: '/data', status: 'awaiting_confirmation', sessionId: 'original', summary: 'Cleared 44 MiB; risk remains <at id=all>all</at>',
+      plan: { requiresConfirmation: true, summary: 'Expand after approval', target: 'disk1', impact: 'cost', rollback: 'cannot shrink', verification: 'df' } }] };
+  const card = renderMonitoringAlertCard(events, config), content = card.elements[0].text.content;
+  assert.match(content, /Cleared 44 MiB/); assert.match(content, /<font color="red">需要确认/);
+  assert.match(content, /session=original/); assert.doesNotMatch(content, /<at|低风险处理自行完成/);
+  config.recoveryIncidents[0].status = 'running'; delete config.recoveryIncidents[0].plan;
+  assert.doesNotMatch(renderMonitoringAlert(events, config), /Cleared 44 MiB/);
+});
+
+test('transport edits the same card, supports existing rich-text alerts, and refuses recalled/cross-chat messages', async () => {
+  for (const type of ['interactive', 'post']) {
+    const calls = [], config = { chatId: 'oc_expected' };
+    const api = async (_config, method, path, body) => { calls.push({ method, path, body });
+      return method === 'GET' ? { items: [{ message_id: 'om_original', chat_id: config.chatId, msg_type: type }] } : {}; };
+    assert.equal(await updateMonitoringAlert([disk], config, 'om_original', api), 'om_original');
+    assert.deepEqual(calls.map(c => c.method), ['GET', type === 'interactive' ? 'PATCH' : 'PUT']);
+    assert.ok(calls.every(c => c.path.endsWith('/om_original')));
+  }
+  for (const message of [{ deleted: true }, { chat_id: 'oc_other' }]) {
+    let writes = 0;
+    await assert.rejects(updateMonitoringAlert([disk], { chatId: 'oc_expected' }, 'om_original', async (_c, method) => {
+      if (method !== 'GET') writes++; return { items: [{ message_id: 'om_original', ...message }] };
+    }));
+    assert.equal(writes, 0);
+  }
 });

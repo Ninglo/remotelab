@@ -1,8 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createMonitoringReader } from './monitoring.mjs';
@@ -10,55 +8,18 @@ import { processMonitoringRecovery } from './monitoring-recovery.mjs';
 import { diskRiskStage } from '../lib/monitoring-actions.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('base64url');
-const cell = (value, limit = 180) => String(value || '—').replace(/\|/g, '／').replace(/[\r\n]+/g, ' ').slice(0, limit);
 const errorCode = error => error.code || 'DELIVERY_UNCERTAIN';
+import { sendMonitoringAlert, updateMonitoringAlert } from './monitoring-alert-message.mjs';
+export { renderMonitoringAlert, renderMonitoringAlertCard, sendMonitoringAlert, updateMonitoringAlert } from './monitoring-alert-message.mjs';
 
 function accountAlerts(snapshot, config) {
   if (config.accountAlerts?.enabled !== true) return [];
-  return snapshot.attention.filter(item => item.kind === 'accountContinuity');
-}
-
-export function renderMonitoringAlert(events, config) {
-  const rows = events.map(item => {
-    const recovery = config.recoveryIncidents?.slice().reverse().find(record => record.kind === item.kind && record.id === item.id);
-    const problem = item.kind === 'disk'
-      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
-      : item.detail || '运行持续异常，请核对原执行记录';
-    const plan = recovery?.plan || item.action;
-    const fallback = item.kind === 'disk' ? '先定位增长和写入者，按已授权维护流程处理可再生缓存、核验过的重复副本；逐项复测。迁移、删除唯一数据或扩容先出具体方案。'
-      : '先核对原执行和已有结果，只自动处理可验证的低风险问题；涉及业务中断或新增影响先提交方案确认。';
-    const handling = plan?.requiresConfirmation ? `待确认：${plan.summary}`
-      : recovery?.status === 'blocked' ? `低风险处理受阻：${recovery.reason}；需补齐具体处置方案`
-      : recovery ? `${recovery.label}；${plan?.summary || fallback}` : plan?.summary || fallback;
-    return `| ${cell(item.subject)} | ${cell(problem)} | ${cell(handling)} |`;
-  }).join('\n');
-  const plans = events.flatMap(item => {
-    const record = config.recoveryIncidents?.slice().reverse().find(r => r.kind === item.kind && r.id === item.id);
-    const plan = record?.plan;
-    if (!plan?.requiresConfirmation) return [];
-    return [`**${cell(item.subject)}：${plan.risk === 'high' ? '高' : '中'}风险方案，确认前不执行**\n`
-      + `方案：${cell(plan.summary, 1200)}\n对象：${cell(plan.target, 1200)}\n影响：${cell(plan.impact, 1200)}\n恢复：${cell(plan.rollback, 1200)}\n验收：${cell(plan.verification, 1200)}\n`
-      + (record.sessionId && config.overviewUrl ? `在原处理会话确认：${new URL(`/?session=${encodeURIComponent(record.sessionId)}`, config.overviewUrl).href}` : '')];
-  }).join('\n\n');
-  return `**监管：风险与处置**\n\n| 对象 | 业务风险 | 已有处置／待确认事项 |\n|---|---|---|\n${rows}\n\n${plans}\n\n${config.overviewUrl || ''}\n低风险处理自行完成并留存验收；中高风险方案经人确认后执行。正常账号消耗不要求人处理。`;
-}
-
-export async function sendMonitoringAlert(events, config, batchId) {
-  if (!/^oc_[\w]+$/.test(config.chatId || '') || !/^[\w.-]+$/.test(config.profile || '')) throw new Error('INVALID_RECIPIENT');
-  const message = renderMonitoringAlert(events, config);
-  const { stdout } = await promisify(execFile)('lark-cli', ['--profile', config.profile, 'im', '+messages-send',
-    '--chat-id', config.chatId, '--as', 'bot', '--markdown', message, '--idempotency-key', batchId], {
-    timeout: 25_000, maxBuffer: 100_000, env: { ...process.env,
-      ...(config.configDir ? { LARKSUITE_CLI_CONFIG_DIR: config.configDir } : {}),
-      LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' },
-  });
-  const value = JSON.parse(stdout), receipt = value.data?.message_id || value.message_id;
-  if (!receipt?.startsWith('om_')) throw new Error('MISSING_RECEIPT');
-  return receipt;
+  return snapshot.attention.filter(item => item.kind === 'accountContinuity')
+    .map(item => ({ ...item, continuity: snapshot.accountContinuity }));
 }
 
 export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = join(CONFIG_DIR, 'monitoring-alerts.json'),
-  send = sendMonitoringAlert, load = readRecord, save = writeDurableJson, now = Date.now(), baseline = false, dryRun = false }) {
+  send = sendMonitoringAlert, update = updateMonitoringAlert, load = readRecord, save = writeDurableJson, now = Date.now(), baseline = false, dryRun = false }) {
   const state = await load(stateFile) || { version: 1, incidents: {}, batches: {} };
   const transportQuotaBlocked = snapshot.apiHealth?.providers?.some(provider => provider.quotaRejectedAt
     && !(provider.notificationDelivery?.status === 'available'
@@ -66,11 +27,11 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       && Date.parse(provider.notificationDelivery.observedAt) > Date.parse(provider.quotaRejectedAt)
       && Date.parse(provider.notificationDelivery.observedAt) <= now + 5000)
     && (!config.feishuAppId || provider.appId === config.feishuAppId));
-  for (const batch of Object.values(state.batches)) if (batch.status === 'sending') {
+  for (const batch of Object.values(state.batches)) if (['sending', 'updating'].includes(batch.status)) {
     batch.status = 'needs_review';
     for (const key of batch.keys) if (state.incidents[key]) state.incidents[key].status = 'needs_review';
   }
-  const current = new Set(), recovered = new Set(), due = [];
+  const current = new Set(), recovered = new Set(), due = [], edits = new Set();
   // Retire old per-account exhaustion alerts as normal lifecycle records.
   // Keep receipts/batches; never replay an uncertain send during this change.
   for (const incident of Object.values(state.incidents)) if (['account', 'quota'].includes(incident.kind)) {
@@ -115,15 +76,22 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     const incident = !previous?.active ? { cycle: (previous?.cycle || 0) + 1, status: 'observing', observations: count, active: true } : previous;
     const repair = config.recoveryIncidents?.slice().reverse().find(r => r.kind === item.kind && r.id === item.id);
     const stage = diskRiskStage(item);
-    const actionVersion = hash(JSON.stringify({ plan: repair?.plan || item.action || null,
-      blocked: repair?.status === 'blocked' ? repair.reason : null }));
-    if ((incident.actionVersion && actionVersion !== incident.actionVersion || stage > (incident.riskStage || stage))
-      && ['sent', 'baseline', 'blocked_dependency'].includes(incident.status)) {
-      incident.status = 'observing'; incident.cycle++;
-    }
-    incident.actionVersion = actionVersion;
+    // The incident identity survives runtime retries, plan wording and disk
+    // stage changes. These update its existing message, never rearm a send.
+    const version = hash(JSON.stringify({ stage, severity: item.severity, repair: repair ? {
+      status: repair.status, summary: ['running', 'pending', 'admitting', 'waiting'].includes(repair.status) ? null : repair.summary,
+      plan: repair.plan, runId: repair.runId,
+    } : null, action: item.action || null, continuity: item.continuity ? {
+      status: item.continuity.status, backupCount: item.continuity.backupCount, autoSwitch: item.continuity.autoSwitch,
+    } : null }));
+    const decisionVersion = repair?.plan?.requiresConfirmation ? hash(JSON.stringify(repair.plan)) : null;
+    if (!baseline && incident.status === 'baseline' && (stage > (incident.riskStage || stage)
+      || decisionVersion && incident.decisionVersion !== decisionVersion)) incident.status = 'observing';
+    incident.decisionVersion = decisionVersion;
     incident.riskStage = stage;
-    if (!critical && incident.lastCritical) { incident.status = 'observing'; incident.cycle++; }
+    incident.event = { ...item, recovery: repair, observedAt: snapshot.generatedAt || new Date(now).toISOString() };
+    incident.version = version;
+    if (incident.status === 'sent' && incident.messageId && incident.presentedVersion !== version) edits.add(incident.messageId);
     Object.assign(incident, { observations: count, active: true, subject: item.subject, kind: item.kind });
     incident.lastCritical = critical;
     if (baseline && eligible
@@ -137,17 +105,54 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
           && (!config.feishuAppId || p.appId === config.feishuAppId)) )) incident.status = 'pending';
     if (critical && incident.status === 'pending') due.push({ key, ...item, cycle: incident.cycle });
   }
-  for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key) && recovered.has(key)) incident.active = false;
+  for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key) && recovered.has(key)) {
+    if (incident.active && incident.status === 'sent' && incident.messageId && incident.event) {
+      incident.event = { ...incident.event, recovered: true, observedAt: snapshot.generatedAt || new Date(now).toISOString() };
+      incident.version = hash('recovered'); edits.add(incident.messageId);
+    }
+    incident.active = false;
+  }
   for (const batch of Object.values(state.batches)) if (batch.status === 'blocked_dependency'
     && batch.keys.every(key => state.incidents[key]?.active === false || state.incidents[key]?.status === 'sent')) {
     batch.status = 'superseded'; batch.closedAt = new Date(now).toISOString();
   }
   state.observedAt = new Date(now).toISOString();
-  if (dryRun) return { sent: 0, dryRun: true, baseline, wouldSend: baseline ? 0 : due.length,
-    subjects: baseline ? [] : due.map(item => item.subject), observedAt: state.observedAt };
-  if (!due.length || baseline) { await save(stateFile, state); return { sent: 0, baseline, observedAt: state.observedAt }; }
+  const muted = config.enabled === false;
+  if (dryRun) return { sent: 0, dryRun: true, baseline, muted, wouldSend: baseline || muted ? 0 : due.length,
+    wouldUpdate: baseline || muted ? 0 : edits.size,
+    subjects: baseline || muted ? [] : due.map(item => item.subject), observedAt: state.observedAt };
+  // Keep observation and recovery alive while silencing both new sends and edits.
+  if (baseline || muted) { await save(stateFile, state); return { sent: 0, updated: 0, baseline, muted, observedAt: state.observedAt }; }
+  let updated = 0;
+  for (const messageId of edits) {
+    const batch = Object.values(state.batches).find(b => b.messageId === messageId);
+    if (!batch || batch.status !== 'sent' || transportQuotaBlocked) continue;
+    // Use each member's saved event: editing a shared alert must not drop other
+    // subjects or reuse a new failure's data in an old, recovered message.
+    batch.events ||= {};
+    for (const key of batch.keys) {
+      const incident = state.incidents[key];
+      if (incident?.messageId === messageId && incident.event) batch.events[key] = incident.event;
+      else batch.events[key] ||= { subject: incident?.subject || '历史事件', detail: '详见原处理记录', recovered: true };
+    }
+    batch.status = 'updating'; await save(stateFile, state);
+    try {
+      const receipt = await update(Object.values(batch.events), { ...config, recoveryIncidents: [] }, messageId);
+      if (receipt !== messageId) throw new Error('UPDATE_RECEIPT_MISMATCH');
+      batch.status = 'sent'; batch.updatedAt = state.observedAt; updated++;
+      for (const key of batch.keys) if (state.incidents[key]?.messageId === messageId) {
+        state.incidents[key].presentedVersion = state.incidents[key].version;
+      }
+    } catch (error) {
+      batch.status = 'needs_review'; batch.error = errorCode(error);
+      for (const key of batch.keys) if (state.incidents[key]?.messageId === messageId) state.incidents[key].status = 'needs_review';
+    }
+    await save(stateFile, state);
+  }
+  if (!due.length) { await save(stateFile, state); return { sent: 0, updated, baseline, observedAt: state.observedAt }; }
   const batchId = hash(due.map(item => `${item.key}:${item.cycle}`).sort().join('\n'));
-  const batch = { status: 'sending', keys: due.map(item => item.key), startedAt: state.observedAt };
+  const batch = { status: 'sending', keys: due.map(item => item.key), startedAt: state.observedAt,
+    events: Object.fromEntries(due.map(item => [item.key, state.incidents[item.key].event])) };
   state.batches[batchId] = batch;
   if (transportQuotaBlocked) {
     batch.status = 'blocked_dependency'; batch.error = 'FEISHU_MONTHLY_QUOTA';
@@ -158,31 +163,33 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   for (const item of due) state.incidents[item.key].status = 'sending';
   await save(stateFile, state);
   try {
-    batch.messageId = await send(due, config, batchId);
+    batch.messageId = await send(Object.values(batch.events), config, batchId);
     if (!batch.messageId?.startsWith('om_')) throw new Error('MISSING_RECEIPT');
     batch.status = 'sent';
   } catch (error) { batch.status = 'needs_review'; batch.error = errorCode(error); }
-  for (const item of due) Object.assign(state.incidents[item.key], { status: batch.status, messageId: batch.messageId || null });
+  for (const item of due) Object.assign(state.incidents[item.key], { status: batch.status, messageId: batch.messageId || null, presentedVersion: state.incidents[item.key].version });
   await save(stateFile, state);
-  return { sent: batch.status === 'sent' ? due.length : 0, status: batch.status, messageId: batch.messageId || null };
+  return { sent: batch.status === 'sent' ? due.length : 0, updated, status: batch.status, messageId: batch.messageId || null };
 }
 
-export async function runMonitoringAlerts({ baseline = false, dryRun = false } = {}) {
-  let config;
-  try { config = JSON.parse(await readFile(join(CONFIG_DIR, 'monitoring.json'), 'utf8')); }
+export async function runMonitoringAlerts({ baseline = false, dryRun = false, config: suppliedConfig,
+  reader = createMonitoringReader({ getUsage: async () => null }), recover = processMonitoringRecovery,
+  dispatch = dispatchMonitoringAlerts } = {}) {
+  let config = suppliedConfig;
+  try { config ||= JSON.parse(await readFile(join(CONFIG_DIR, 'monitoring.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return { enabled: false }; throw error; }
   if (!config.alertDelivery) return { enabled: false };
   // This independent observer needs no model and no running HTTP server.
-  const snapshot = await createMonitoringReader({ getUsage: async () => null })({ days: 1 });
+  const snapshot = await reader({ days: 1 });
   if (snapshot.apiHealth && !dryRun) await writeDurableJson(join(CONFIG_DIR, 'feishu-api-health.json'), snapshot.apiHealth);
   // Notification and recovery have separate receipts. A reported/baselined
   // incident remains eligible for repair; an uncertain send is never replayed.
   let recovery;
-  try { recovery = baseline ? { skipped: 'baseline' } : await processMonitoringRecovery({
+  try { recovery = baseline ? { skipped: 'baseline' } : await recover({
     config: { ...config.recovery, ignoreUnits: config.alertDelivery.ignoreUnits,
       serviceConfirmationObservations: config.alertDelivery.confirmationObservations }, snapshot, dryRun }); }
   catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
-  const alerts = await dispatchMonitoringAlerts({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds,
+  const alerts = await dispatch({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds,
     recoveryIncidents: recovery.incidents }, snapshot, baseline, dryRun });
   return { ...alerts, recovery };
 }
