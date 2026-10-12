@@ -1,3 +1,4 @@
+import { processSessionDiagnostics } from './session-diagnostics.mjs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -203,7 +204,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
 
 export async function runMonitoringAlerts({ baseline = false, dryRun = false, config: suppliedConfig,
   reader = createMonitoringReader({ getUsage: async () => null }), recover = processMonitoringRecovery,
-  dispatch = dispatchMonitoringAlerts } = {}) {
+  dispatch = dispatchMonitoringAlerts, diagnose = processSessionDiagnostics } = {}) {
   let config = suppliedConfig;
   try { config ||= JSON.parse(await readFile(join(CONFIG_DIR, 'monitoring.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return { enabled: false }; throw error; }
@@ -220,5 +221,8 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
   catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
   const alerts = await dispatch({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds,
     recoveryIncidents: recovery.incidents || snapshot.recovery }, snapshot, baseline, dryRun });
-  return { ...alerts, recovery };
+  let sessionDiagnostics;
+  try { sessionDiagnostics = await diagnose({ config: config.sessionDiagnostics, snapshot: { ...snapshot, recovery: recovery.incidents || snapshot.recovery }, baseline, dryRun }); }
+  catch { sessionDiagnostics = { enabled: config.sessionDiagnostics?.enabled === true, error: 'SESSION_DIAGNOSIS_UNAVAILABLE' }; }
+  return { ...alerts, recovery, sessionDiagnostics };
 }

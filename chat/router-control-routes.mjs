@@ -1,3 +1,4 @@
+import { readSessionDiagnostics } from './session-diagnostics.mjs';
 import { ensureAutomationHome, readAutomationHomeView, recordAutomationHomeChange } from './automation-home.mjs';
 import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { listAutomationFlows } from './automation-flows.mjs';
@@ -1163,7 +1164,10 @@ export async function handleControlRoutes({
   if (pathname === '/api/monitoring/sessions' && req.method === 'GET') {
     try {
       const data = await readSessionMonitoring({ days: parsedUrl?.query?.days });
-      writeJson(res, 200, parsedUrl?.query?.compact === '1' ? await compactSessionMonitoring(data, getSessionMonitoringActivity) : data);
+      const view = parsedUrl?.query?.compact === '1' ? await compactSessionMonitoring(data, getSessionMonitoringActivity) : { ...data };
+      try { view.diagnostics = await readSessionDiagnostics(); }
+      catch { view.diagnostics = { unavailable: true, incidents: [] }; }
+      writeJson(res, 200, view);
     }
     catch { writeJson(res, 503, { error: 'Session monitoring is temporarily unavailable' }); }
     return true;

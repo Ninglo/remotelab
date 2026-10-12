@@ -31,6 +31,74 @@ The ledger deduplicates by Run and attributes each retained snapshot to its ledg
 
 `queryUsageLedger({ includeDailyTrend: true })` extends the existing file scan only as far as the first of those seven dates, aggregates `dailyTrend` from all matching records before top-N truncation, and keeps the selected-window totals and ranked lists unchanged. Overview returns this projection with its existing 15-second coalesced cache. Charts share the existing request, need no extra Run/manifest reads, model calls, quota RPCs, timers, notification or remediation actions. Frontend SVGs and meters add no chart library. Collection gaps remain explicitly visible.
 
+## Session changes and automatic diagnosis
+
+Session metric changes are neutral statistical clues, separate from the actual
+running/idle state. The row disclosure holds ratios, evidence and diagnosis
+history; opening/closing it survives data refresh. A longer task or larger
+cumulative input alone is not a fault and does not start a diagnosis.
+
+Opt in with `sessionDiagnostics.enabled: true` in `monitoring.json`. The existing
+minute observer runs the bounded local analysis at most once per five minutes;
+opening the page never starts it. No new timer or model call is created.
+`node scripts/session-diagnose.mjs --dry-run` previews candidates without state
+writes, sends or recovery admission.
+
+Initial admission compares the same Session/model/Harness: three newest distinct
+foreground Runs against 10–20 prior samples from the last seven days. Preparation
+(including queue time) or launch must reach both 15 seconds and three times the
+baseline median in all three Runs within 30 minutes. Three Sessions with a latest
+qualifying sample within ten minutes also trigger a shared stage investigation.
+Missing timestamps, background work, archived Sessions and duplicate Run IDs do
+not qualify. Execution duration, context and cumulative input remain display-only
+clues until measurements can separate normal work and waiting from failure.
+
+The fixed diagnostic records stage, sample evidence, simultaneous service/disk/
+account risks and links to existing recovery records. It distinguishes correlation
+from a proven cause. It does not restart services, alter queues, modify prompts or
+admit an additional model worker. Preparation substeps, active tool progress and
+per-call input attribution remain gaps; unexplained cases say so explicitly.
+
+One stage/model/Harness incident combines up to 20 affected Sessions; one new
+analysis is admitted per observation. Unchanged evidence never reruns; changed
+evidence has a 30-minute cooldown. The original incident stays open without new
+traffic. Recovery requires three newer successful Runs below 80% of the original
+threshold for each recorded member; natural recovery is not labelled a repair.
+Retain at most 100 incidents, pruning resolved entries first; a full unresolved
+store admits no additional incidents. Sampling is bounded to 1,000 recorded Runs
+and 64 MiB per collection without reading prompt manifests. Coverage limits are
+reported rather than treated as healthy samples.
+
+Private trial delivery is configured separately:
+
+```json
+{
+  "sessionDiagnostics": {
+    "enabled": true,
+    "notification": {
+      "enabled": true,
+      "profile": "approved-bot-profile",
+      "configDir": "/path/to/existing/lark-config",
+      "feishuAppId": "cli_approved_app",
+      "openId": "ou_approved_recipient",
+      "overviewUrl": "https://instance.example/?tab=tasks&monitor=overview"
+    }
+  }
+}
+```
+
+Resolve the recipient from the same Bot's verified source identity. Group IDs are
+rejected and the general monitoring group is never a fallback. A paused general
+alert route remains paused. Cards contain stage/count and diagnostic conclusions,
+not conversation titles or message contents. Each incident gets one private card;
+changed conclusions and recovery edit it after verifying the original Bot and
+chat. A recipient/profile change never redirects an old card. One notification
+operation is allowed per observation. Write intent is durable before external
+I/O; uncertain sends or edits require receipt inspection, not automatic replay.
+The authenticated page shows delivery uncertainty in the affected row. The first
+version reports completed fixed analysis and waits for new evidence; it never
+claims a model is working or displays a nonfunctional approval button.
+
 ## Routine task health reads
 
 The overview and independent minute observer use `readAutomationHealth`, not the
@@ -322,7 +390,7 @@ input is separately named. Neither is the mean of every model invocation.
 
 Page-only deviations compare the same Session, model and Harness: recent three
 foreground samples against the preceding up to twenty (minimum ten). A ratio of
-two is amber, three is red, with minimum absolute increases of one second
+two or more is a neutral change clue, with minimum absolute increases of one second
 (execution: one minute) or 10,000 tokens. Zero baselines and insufficient samples
 are not classified. Cohorts are limited to the selected window. The comparison
 is a review clue, can reflect different task complexity and does not assess task
@@ -344,8 +412,10 @@ requests or model calls. It does not claim to audit each Session's full prompt.
 
 The Overview shows three compact panels in order: Session, shared resources, and API.
 Each presents totals and observation/exception status first. Session totals are
-followed by up to three named exceptions with every affected metric, recent value
-and baseline, plus three group/initiator summaries. Without exceptions, up to
+followed by up to three named metric changes with a compact diagnosis status,
+plus three group/initiator summaries. Ratios, recent values, baseline and diagnosis
+evidence are disclosed beside the corresponding Session rather than repeated in
+the default row. Without exceptions, up to
 three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources start directly with disk capacity, account quotas and period Token usage.
 Each metric has a closed-by-default “何时提醒、怎么处理” disclosure beside its data.
 The text states when a notification is sent, what the system does, when human help

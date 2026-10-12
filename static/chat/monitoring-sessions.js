@@ -11,6 +11,26 @@
   let data = null, error = '', pending = null, serial = 0, days = 1, loadedAt = 0;
   let mode = 'group', scope = '', filter = 'all', search = '', limit = 50, allGroups = false, expanded = false, selectedSession = '';
   let contextExpanded = false;
+  const rowOpen = new Map(), diagnosisOpen = new Map();
+  const diagnosisFor = s => (data?.diagnostics?.incidents || []).filter(i => !i.test && i.sessionIds.includes(s.sessionId)).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
+  const diagnosisLabel = i => i.status === 'resolved' ? '已恢复' : '已排查 · 待复核';
+  function diagnosisDetails(s) {
+    const list = diagnosisFor(s), fold = el('details', '', 'monitoring-session-diagnosis');
+    fold.open = diagnosisOpen.get(s.sessionId) === true;
+    fold.append(el('summary', list.length ? `巡检：${diagnosisLabel(list[0])}` : '指标变化与巡检规则'));
+    fold.addEventListener('toggle', () => { if (fold.isConnected) diagnosisOpen.set(s.sessionId, fold.open); });
+    if (s.signals.length) fold.append(signalList(s));
+    fold.append(el('p', '准备或启动持续变慢才触发巡检；执行时长、输入量上涨先作为变化记录。页面标记不等于故障。', 'monitoring-note'));
+    if (!list.length) fold.append(el('p', data?.diagnostics?.unavailable ? '巡检记录暂时无法读取。' : '尚无自动巡检记录。', 'monitoring-note'));
+    for (const i of list.slice(0,3)) {
+      fold.append(el('p', `${diagnosisLabel(i)}：${i.summary}`), el('p', i.nextStep, 'monitoring-note'));
+      for (const e of i.evidence || []) fold.append(el('p', e, 'monitoring-note'));
+      if (i.limitations) fold.append(el('p', i.limitations, 'monitoring-note'));
+      for (const r of i.relatedRecovery || []) if (r.sessionId) { const a=el('a', `相关${r.kind === 'disk' ? '磁盘' : '服务'}处理记录`); a.href=`/?tab=sessions&session=${encodeURIComponent(r.sessionId)}`; fold.append(a); }
+      fold.append(el('small', `${new Date(i.checkedAt).toLocaleString()} · ${i.deliveryStatus === 'delivered' ? '已私信通知' : ['uncertain','sending'].includes(i.deliveryStatus) ? '私信送达待核实' : '未发送通知'}`, 'monitoring-note'));
+    }
+    return fold;
+  }
   const running = s => s.activity?.run?.state === 'running';
   const waiting = s => s.activity?.run?.waiting || (s.activity?.queue?.count || 0) > 0;
   const state = s => s.archived ? '已归档' : s.activity?.run?.waiting ? '运行中 · 等待' : running(s) ? '运行中' : waiting(s) ? '排队' : s.activity?.run?.state === 'idle' ? '空闲' : '状态未知';
@@ -22,7 +42,7 @@
   function signalList(s, visual = false) {
     const list = el('span', '', 'monitoring-session-anomalies');
     for (const x of s.signals) {
-      const line = el('span', '', 'monitoring-metric-signal'); line.dataset.severity = x.severity;
+      const line = el('span', '', 'monitoring-metric-signal'); line.dataset.severity = 'neutral';
       if (!visual) line.textContent = signalText(x);
       else {
         const heading = el('span', '', 'monitoring-signal-heading');
@@ -41,8 +61,8 @@
   function metricValue(s, key, value) {
     const x = s.signals.find(signal => signal.metric === key);
     if (!x) return val(key, value);
-    const node = el('span', val(key, value), 'monitoring-metric-signal'); node.dataset.severity = x.severity;
-    node.title = signalText(x); node.append(el('small', '近期突增', 'monitoring-metric-caption')); return node;
+    const node = el('span', val(key, value), 'monitoring-metric-signal'); node.dataset.severity = 'neutral';
+    node.title = signalText(x); node.append(el('small', '变化待核', 'monitoring-metric-caption')); return node;
   }
   function focusSession(s) { selectedSession = s.sessionId; scope = ''; search = ''; filter = 'all'; expanded = true; render(); root.querySelector('[data-testid="session-selection"]')?.scrollIntoView({ block: 'nearest' }); }
   const queryViews = new Map();
@@ -112,21 +132,22 @@
     ]) { const card = el('div'); card.append(el('small', label), el('strong', count), el('small', hint)); stats.append(card); }
     root.append(stats);
     const statusBar = el('div', '', 'monitoring-summary-status');
-    const statusText = flagged.length ? `${flagged.length} 个 Session 指标突增` : '已测样本未发现突增';
+    const statusText = flagged.length ? `${flagged.length} 个 Session 指标变化` : '已测样本未发现突增';
     const badge = button(statusText, () => { expanded = true; filter = flagged.length ? 'attention' : 'all'; scope = ''; search = ''; selectedSession = ''; render(); });
-    badge.dataset.severity = flagged.some(s => s.signals.some(x => x.severity === 'critical')) ? 'critical' : flagged.length ? 'warning' : 'neutral';
+    badge.dataset.severity = 'neutral';
     statusBar.append(badge);
     const c = data.coverage;
     const partial = c.truncated || c.readErrors || c.missingRuns || c.missingRequests || c.missingInjections;
     statusBar.append(el('span', partial ? '部分数据缺失 · 不能据此判断全部正常' : '仅比较样本充足的指标', 'monitoring-note'));
     root.append(statusBar);
+    if (data.diagnostics?.checkedAt) root.append(el('small', `巡检最近检查：${new Date(data.diagnostics.checkedAt).toLocaleString()} · 结果见各会话的折叠说明`, 'monitoring-note'));
     const body = el('div'); root.append(body);
     if (flagged.length) {
       const box = el('div', '', 'monitoring-session-signals'); box.dataset.testid = 'session-anomaly-preview';
       for (const s of flagged.slice(0, 3)) {
         const b = button('', () => focusSession(s));
-        b.dataset.severity = s.signals.some(x => x.severity === 'critical') ? 'critical' : 'warning';
-        b.append(el('strong', title(s), 'monitoring-signal-title'), signalList(s, true)); box.append(b);
+        b.dataset.severity = 'neutral';
+        b.append(el('strong', title(s), 'monitoring-signal-title'), el('small', diagnosisFor(s).length ? diagnosisLabel(diagnosisFor(s)[0]) : `${s.signals.length} 项指标变化 · 尚未确认故障`)); box.append(b);
       }
       body.append(box);
       if (flagged.length > 3) body.append(button(`查看全部 ${flagged.length} 个指标突增的 Session`, () => { expanded = true; selectedSession = ''; scope = ''; search = ''; filter = 'attention'; render(); }));
@@ -134,12 +155,12 @@
     const bar = el('div', '', 'monitoring-session-controls');
     const groupLabel = el('label', '汇总 '), select = el('select'); select.setAttribute('aria-label', 'Session 汇总方式'); for (const [value, label] of [['group', '按群'], ['person', '按发起人']]) { const option = el('option', label); option.value = value; select.append(option); } select.value = mode; select.onchange = () => { mode = select.value; scope = ''; selectedSession = ''; search = ''; filter = 'all'; allGroups = false; limit = 50; render(); }; groupLabel.append(select); bar.append(groupLabel);
     const input = el('input'); input.type = 'search'; input.placeholder = '搜索标题、群或发起人'; input.setAttribute('aria-label', input.placeholder); input.value = search; input.oninput = () => { search = input.value; selectedSession = ''; expanded = true; limit = 50; render(); const next = root.querySelector('input'); next.focus(); }; bar.append(input);
-    const filterSelect = el('select'); filterSelect.setAttribute('aria-label', 'Session 状态筛选'); for (const [value, label] of [['all', '全部状态'], ['attention', '仅需关注'], ['running', '运行中'], ['waiting', '等待／排队']]) { const option = el('option', label); option.value = value; filterSelect.append(option); } filterSelect.value = filter; filterSelect.onchange = () => { filter = filterSelect.value; selectedSession = ''; expanded = true; limit = 50; render(); }; bar.append(filterSelect); body.append(bar);
+    const filterSelect = el('select'); filterSelect.setAttribute('aria-label', 'Session 状态筛选'); for (const [value, label] of [['all', '全部状态'], ['attention', '仅指标变化'], ['running', '运行中'], ['waiting', '等待／排队']]) { const option = el('option', label); option.value = value; filterSelect.append(option); } filterSelect.value = filter; filterSelect.onchange = () => { filter = filterSelect.value; selectedSession = ''; expanded = true; limit = 50; render(); }; bar.append(filterSelect); body.append(bar);
     const field = mode === 'person' ? 'personId' : 'groupId', dictionary = mode === 'person' ? data.people : data.groups;
     const buckets = new Map();
     for (const s of rows) { const k = s[field]; if (!buckets.has(k)) buckets.set(k, { id: k, total: 0, running: 0, waiting: 0, attention: 0, tokens: 0 }); const b = buckets.get(k); b.total++; b.running += Number(running(s)); b.waiting += Number(waiting(s)); b.attention += Number(s.signals.length > 0); b.tokens += s.totalTokens || 0; }
     const groups = [...buckets.values()].sort((a, b) => b.attention - a.attention || b.running - a.running || b.tokens - a.tokens);
-    if (!scope && !search && !selectedSession) { const gt = table([mode === 'person' ? '发起人' : '群／入口', '总数', '运行／等待', '需关注'], groups.slice(0, allGroups ? undefined : 3).map(b => [button(dictionary[b.id] || '未知', () => { scope = b.id; selectedSession = ''; expanded = true; limit = 50; render(); }), b.total, `${b.running} / ${b.waiting}`, b.attention])); gt.dataset.testid = 'monitor-groups'; gt.classList.add('monitoring-owner-summary'); body.append(gt); if (groups.length > 3) body.append(button(allGroups ? '收起' : `查看全部 ${groups.length} 项归属`, () => { allGroups = !allGroups; render(); })); }
+    if (!scope && !search && !selectedSession) { const gt = table([mode === 'person' ? '发起人' : '群／入口', '总数', '运行／等待', '指标变化'], groups.slice(0, allGroups ? undefined : 3).map(b => [button(dictionary[b.id] || '未知', () => { scope = b.id; selectedSession = ''; expanded = true; limit = 50; render(); }), b.total, `${b.running} / ${b.waiting}`, b.attention])); gt.dataset.testid = 'monitor-groups'; gt.classList.add('monitoring-owner-summary'); body.append(gt); if (groups.length > 3) body.append(button(allGroups ? '收起' : `查看全部 ${groups.length} 项归属`, () => { allGroups = !allGroups; render(); })); }
     if (!expanded && !flagged.length) {
       const preview = el('div', '', 'monitoring-session-preview'); preview.dataset.testid = 'session-running-preview';
       const active = rows.filter(s => running(s) || waiting(s)).slice(0, 3);
@@ -160,14 +181,16 @@
     const matches = rows.filter(s => (!selectedSession || s.sessionId === selectedSession) && (!scope || s[field] === scope) && (!needle || [s.sessionId, title(s), data.groups[s.groupId], data.people[s.personId]].join(' ').toLowerCase().includes(needle)) && (filter === 'all' || filter === 'attention' && s.signals.length || filter === 'running' && running(s) || filter === 'waiting' && waiting(s))).sort((a, b) => Number(b.signals.length > 0) - Number(a.signals.length > 0) || Number(running(b)) - Number(running(a)) || (b.totalTokens || 0) - (a.totalTokens || 0));
     const sessionTable = table(['标题／归属', '状态', '期间用量 Token', '平均准备', '平均执行', '平均上下文', '平均注入'], matches.slice(0, limit).map(s => {
       const cell = el('div'), details = el('details'), summary = el('summary', title(s)); details.append(summary);
+      details.open = rowOpen.get(s.sessionId) === true;
+      details.addEventListener('toggle', () => { if (details.isConnected) rowOpen.set(s.sessionId, details.open); });
       const link = el('a', '打开 Session'); link.href = `/?tab=sessions&session=${encodeURIComponent(s.sessionId)}`; details.append(link);
       const queries = el('div', '', 'monitoring-context-queries'); queries.dataset.testid = 'context-query-records'; queryPanel(s, queries); details.append(queries);
       details.append(table(['阶段／指标', '均值', 'P95', '样本'], Object.entries(s.metrics).map(([k, v]) => [metricName(k), metricValue(s, k, v.mean), val(k, v.p95), v.count])));
       for (const x of s.signals) details.append(el('p', `${metricName(x.metric)}：最近 ${x.recentCount} 个 / 此前 ${x.baselineCount} 个样本 · ${x.model}`, 'monitoring-note'));
       const group = `群：${data.groups[s.groupId] || '未知'}`, person = `发起人：${data.people[s.personId] || '未知'}`;
       cell.append(details, el('small', mode === 'person' ? `${person} · ${group}` : `${group} · ${person}`, 'monitoring-owner'));
-      if (s.signals.length) cell.append(signalList(s));
-      const flag = el('span', state(s), 'monitoring-account-status'); if (s.signals.length) { flag.dataset.status = 'exhausted'; flag.textContent += ' · 需关注'; }
+      if (s.signals.length || diagnosisFor(s).length) cell.append(diagnosisDetails(s));
+      const flag = el('span', state(s), 'monitoring-account-status');
       return [cell, flag, fmt(s.totalTokens), metricValue(s, 'prepareMs', s.metrics.prepareMs?.mean), metricValue(s, 'runMs', s.metrics.runMs?.mean), metricValue(s, 'contextTokens', s.metrics.contextTokens?.mean), metricValue(s, 'injectionBytes', s.metrics.injectionBytes?.mean)];
     })); sessionTable.dataset.testid = 'monitor-sessions'; detailBody.append(sessionTable);
     if (!matches.length) detailBody.append(el('p', '没有符合当前筛选的 Session。', 'monitoring-note'));
@@ -175,7 +198,7 @@
     const coverage = el('details', '', 'monitoring-session-coverage'); coverage.append(el('summary', '数据范围与统计口径'));
     coverage.append(el('p', `阶段统计 ${c.sampledRuns} / ${c.eligibleRuns} 个已落账 Run${c.truncated ? '，达到读取上限，属于部分统计' : ''}；缺失 Run ${c.missingRuns}、Request ${c.missingRequests}，读取错误 ${c.readErrors}。统计缓存 60 秒；当前状态另行读取。`, 'monitoring-note'));
     coverage.append(el('p', '按实际群绑定和发起身份汇总；未知归属单列。运行和等待可能重叠。上下文为各 Run 最新回传值的均值，不是每次模型调用均值。阶段缺少配对时间戳时显示“—”。', 'monitoring-note'));
-    coverage.append(el('p', '突增比较同 Session、模型、Harness：最近 3 个样本对比此前至少 10 个、最多 20 个；2 倍黄色、3 倍红色，并要求最小绝对增量。仅页面提示。API 当前只统计实例总量。', 'monitoring-note')); detailBody.append(coverage);
+    coverage.append(el('p', '突增比较同 Session、模型、Harness：最近 3 个样本对比此前至少 10 个、最多 20 个；达到 2 倍且超过最小绝对增量时显示变化；这是统计线索，不等于故障。巡检单独核对新鲜样本与绝对耗时。API 当前只统计实例总量。', 'monitoring-note')); detailBody.append(coverage);
     coverage.append(el('p', '平均 Session 用量＝所选期间已记录用量之和 ÷ 有用量记录的 Session 数；包含期间有记录的已归档 Session，不把未记录用量当零。平均注入按有效前台 Run 样本加权，统计 RemoteLab 保存的 modelContext UTF-8 字节数，不含 Harness 历史、工具输出和用户正文，不能视为 Token。缺失注入 ' + (c.missingInjections || 0) + ' 个样本。', 'monitoring-note'));
   }
   async function load(nextDays = 1, force = false) {
