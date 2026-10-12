@@ -340,6 +340,6 @@ The Automations tab also explains system monitoring as a source → processing �
 
 Codex 按 Run 起止时间读取用量时，只使用该时间段内的增量。时间段没有用量记录、边界无效或缺少起点时，返回未知，不使用整个原生会话的累计 token 兜底。没有指定时间段的上下文大小查询保留原行为；这里不改变提示词、消息读取量或 UI。
 
-已确认错误的旧账保留原 JSONL。维护者先用 `node scripts/repair-codex-usage-attribution.mjs --run run_ID` 定向复核，再加 `--apply` 追加校正记录。脚本只处理明确指定、来源为旧 Codex fallback 的已取消 Run，并完整扫描原生日志确认运行时间内没有用量记录。它不按数值大小或取消状态批量删账。校正记录包含原账哈希、原因、日志哈希和时间范围，原始事件不改写；`recordUsageCorrection` 的 restore 动作可以撤回校正。
+已确认错误的旧账保留原 JSONL。维护者先用 `node scripts/repair-codex-usage-attribution.mjs --run run_ID` 定向复核，再加 `--apply` 追加校正记录。脚本只处理明确指定、来源为旧 Codex fallback 的已取消 Run，并完整扫描原生日志确认运行时间内没有用量记录。它不按数值大小或取消状态批量删账。校正记录包含原账哈希、原因、日志哈希和时间范围，同一错误 Run 跨日期文件存在多个旧版本时逐个保存哈希并校正，确保历史时间窗口也适用。原始事件不改写；`recordUsageCorrection` 的 restore 动作可以撤回校正。
 
 读取账本时，只有当前记录的 Run、Session 和内容哈希都匹配，校正才生效。未知用量从 token、费用和均值样本中排除，不当作零消耗；有效的取消任务仍保留。之后同一 Run 出现新的有效记录时，旧校正不覆盖新证据。API 的 `quality.excludedRuns` 与紧凑 Monitor API 的 `usageQuality` 提供缺口和原因。现有界面沿用同一个统计源，60 秒缓存到期或服务重启后刷新；本次不调整页面布局。

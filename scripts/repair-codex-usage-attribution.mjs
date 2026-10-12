@@ -19,12 +19,15 @@ for (const name of (await readdir(USAGE_LEDGER_DIR)).filter(n => /^\d{4}-\d{2}-\
   const stream = createReadStream(join(USAGE_LEDGER_DIR, name));
   try { for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
     let value; try { value = JSON.parse(line); } catch { continue; }
-    if (selected.has(value.runId)) records.set(value.runId, value);
+    if (selected.has(value.runId)) {
+      if (!records.has(value.runId)) records.set(value.runId, new Map());
+      records.get(value.runId).set(usageRecordHash(value), value);
+    }
   } } finally { stream.destroy(); }
 }
 const reports = [];
 for (const id of selected) {
-  const record = records.get(id);
+  const versions = [...(records.get(id)?.values() || [])], record = versions.at(-1);
   const run = JSON.parse(await readFile(join(CHAT_RUNS_DIR, id, 'status.json'), 'utf8'));
   const start = Date.parse(run.startedAt), end = Date.parse(run.completedAt);
   if (!record || record.contextSource !== 'provider_last_token_count' || record.state !== 'cancelled'
@@ -48,8 +51,10 @@ for (const id of selected) {
     startedAt: run.startedAt, completedAt: run.completedAt, windowRecords, nearestBefore: before, nearestAfter: after };
   if (windowRecords) { reports.push({ runId: id, action: 'unchanged', reason: 'Provider usage exists inside the Run window', evidence }); continue; }
   const reason = 'Legacy fallback attributed a thread lifetime total to a cancelled Run with no provider usage record in its window; actual Run usage remains unknown.';
-  if (apply) await recordUsageCorrection({ ledgerDir: USAGE_LEDGER_DIR, record, reason, evidence });
+  const eligible = versions.filter(value => value.sessionId === record.sessionId
+    && value.contextSource === 'provider_last_token_count' && value.state === 'cancelled');
+  if (apply) for (const version of eligible) await recordUsageCorrection({ ledgerDir: USAGE_LEDGER_DIR, record: version, reason, evidence });
   reports.push({ runId: id, action: apply ? 'excluded-unknown' : 'would-exclude-unknown',
-    recordHash: usageRecordHash(record), excludedTokens: record.totalTokens, evidence });
+    recordHash: usageRecordHash(record), correctedVersionHashes: eligible.map(usageRecordHash), excludedTokens: record.totalTokens, evidence });
 }
 console.log(JSON.stringify({ applied: apply, reports }, null, 2));
