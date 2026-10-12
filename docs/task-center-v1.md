@@ -360,7 +360,9 @@ binding, immutable definition revisions, authenticated API-actor attribution,
 change/stop events and per-trigger input snapshots. Client-provided discussion
 references are explicitly **reported, unverified** provenance, not authority.
 The creator recorded by the original task is not necessarily the human proposer;
-unknown historical authors and versions are not reconstructed from guesses.
+unknown historical authors and versions are not reconstructed from guesses. Corrupt
+home records fail visibly rather than being replaced; independent task records use
+separate mutation queues.
 
 At first admission each selected worker receives a bounded home/task/version
 reference in addition to its original prompt. Its input definition is retained;

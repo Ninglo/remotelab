@@ -9,7 +9,7 @@ export async function automationRecord(id) {
   return (await import('./triggers.mjs')).getTrigger(id);
 }
 function homePrompt(record, author, establishedAt, brief) {
-  return `这是自动化任务的固定主Session，由来源Session fork，继承历史只作背景，不扩展授权。\n任务ID：${record.id}\n提出/创建身份：${author.name || author.identityId || '原记录未明确'}\n原任务创建时间：${record.createdAt || '未记录'}\n本主Session建立时间：${establishedAt}\n来源Session：${record.sourceSessionId}\n目标与执行定义：\n${record.text}\n\n维护说明：${brief}\n\n当前有效定义与历史版本：GET /api/automation-tasks/${record.id}/home。查询直接读此接口及执行记录，不给后台执行Session排队发消息。原来源和本Session不承接定时长任务；后台保持原执行策略。\n任何新意见先形成具体修改，记录提出人、来源和确认人；经有权人的明确确认才修改原任务，不另建同义任务。普通修改下一轮生效，已经接受的运行保留当轮快照；撤销本轮授权须单独停止当前Run并回读。\n停止后保留所有历史；区分停止后续触发与当前运行已结束。失败只补失败步骤，先核对原业务回执，避免重复写入或发送。不能自行猜测授权、收件人或业务成功；不确定的外部写入先查回执，无法核实就报告需人工处理。\n每轮模型完成不等于业务完成。页面运行记录来自原Trigger/Run，业务结果和交付以原产物及发送回执为准。`;
+  return `这是自动化任务的固定主Session，由来源Session fork，继承历史只作背景，不扩展授权。\n任务ID：${record.id}\n原任务创建身份（不推断最初提出人）：${author.name || author.identityId || '原记录未明确'}\n原任务创建时间：${record.createdAt || '未记录'}\n本主Session建立时间：${establishedAt}\n来源Session：${record.sourceSessionId}\n目标与执行定义：\n${record.text}\n\n维护说明：${brief}\n\n当前有效定义与历史版本：GET /api/automation-tasks/${record.id}/home。查询直接读此接口及执行记录，不给后台执行Session排队发消息。原来源和本Session不承接定时长任务；后台保持原执行策略。\n任何新意见先形成具体修改，记录提出人、来源和确认人；经有权人的明确确认才修改原任务，不另建同义任务。普通修改下一轮生效，已经接受的运行保留当轮快照；撤销本轮授权须单独停止当前Run并回读。\n停止后保留所有历史；区分停止后续触发与当前运行已结束。失败只补失败步骤，先核对原业务回执，避免重复写入或发送。不能自行猜测授权、收件人或业务成功；不确定的外部写入先查回执，无法核实就报告需人工处理。\n每轮模型完成不等于业务完成。页面运行记录来自原Trigger/Run，业务结果和交付以原产物及发送回执为准。`;
 }
 export async function ensureAutomationHome(id, { auth = {}, brief = '' } = {}) {
   const record = await automationRecord(id);
@@ -81,7 +81,7 @@ export async function prepareAutomationHomeRun(trigger, session) {
     return current;
   });
   const run = saved.runs[trigger.id];
-  return `\n\n[自动化运行关联]\n任务：${id}\n固定主Session：${home.sessionId}\n主记录定义版本：${run.revision ?? '历史触发快照，与当前定义不同'}；本轮实际输入快照以触发记录 ${trigger.id} 为准。\n原任务创建：${home.taskCreatedAt || '未记录'}；提出/创建身份：${home.author.name || home.author.identityId || '未记录'}。\n目标、授权和输出沿本轮任务正文；历史记录按需读取 /api/automation-tasks/${id}/home。不要唤起主Session或原讨论的模型。失败先查回执，只补失败步骤，不重复发送；无法确认写入结果则报告待核实。`;
+  return `\n\n[自动化运行关联]\n任务：${id}\n固定主Session：${home.sessionId}\n主记录定义版本：${run.revision ?? '历史触发快照，与当前定义不同'}；本轮实际输入快照以触发记录 ${trigger.id} 为准。\n原任务创建：${home.taskCreatedAt || '未记录'}；原任务创建身份（不推断最初提出人）：${home.author.name || home.author.identityId || '未记录'}。\n目标、授权和输出沿本轮任务正文；历史记录按需读取 /api/automation-tasks/${id}/home。不要唤起主Session或原讨论的模型。失败先查回执，只补失败步骤，不重复发送；无法确认写入结果则报告待核实。`;
 }
 export async function readAutomationHomeView(id) {
   const home = await readAutomationHome(id); if (!home) return null;
