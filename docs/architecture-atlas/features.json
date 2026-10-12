@@ -374,7 +374,16 @@
           "example": "在当前话题继续刚才的工作，把结果也回到这里。",
           "sources": [
             "docs/platform-skills/feishu-cli.md",
-            "docs/feishu-bot-setup.md"
+            "docs/feishu-bot-setup.md",
+            "docs/session-work-awareness.md",
+            "docs/feishu-daily-report-memory.md",
+            "chat/ambient-feishu-reply.mjs",
+            "chat/group-routing.mjs",
+            "chat/session-observations.mjs",
+            "connectors/feishu/group-settings.mjs",
+            "connectors/feishu/participation-state.mjs",
+            "connectors/feishu/quick-participation.mjs",
+            "scripts/feishu-connector.mjs"
           ],
           "commands": []
         },

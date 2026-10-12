@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../lib/feishu-reaction-catalog.mjs';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { createRecordStore } from '../lib/durable-records.mjs';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
@@ -24,7 +25,8 @@ async function ensureDecisionEvent(sessionId, sourceMessageId, key, record) {
   const decisionEventSeq = prior?.seq || (await appendEvent(sessionId, {
     type: 'reaction_decision', role: 'system', timestamp: Date.now(),
     sourceMessageId,
-    participation: record.decision.participation, emojiType: record.decision.emojiType,
+    ...(record.decision.purpose ? { purpose: record.decision.purpose } : { participation: record.decision.participation }),
+    emojiType: record.decision.emojiType,
     ...(record.decision.workMode ? { workMode: record.decision.workMode } : {}),
     ...(record.decision.contextSources ? { contextSources: record.decision.contextSources } : {}),
   })).seq;
@@ -95,17 +97,22 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
     const emojiType = trim(proposed?.emojiType);
     const workMode = trim(proposed?.workMode);
     if (!record.decision) {
-      if (!['reply', 'silent'].includes(participation)
+      const reactionOnly = proposed?.purpose === 'reaction';
+      if (reactionOnly && (participation !== undefined || workMode || (emojiType && !Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, emojiType)))) {
+        throw new Error('Invalid social reaction decision');
+      }
+      if (!reactionOnly && (!['reply', 'silent'].includes(participation)
           || (participation === 'reply' && !(
             (['short', 'complex'].includes(workMode) && emojiType === 'OnIt')
             || (workMode === 'reaction' && ['Yes', 'No'].includes(emojiType))))
           || (participation === 'silent' && workMode !== '')
           || (participation === 'silent' && emojiType !== ''
-            && !['WOW', 'TOASTED'].includes(emojiType))) {
+            && !['WOW', 'TOASTED'].includes(emojiType)))) {
         throw new Error('Invalid Jev reaction decision');
       }
       const decision = {
-        participation, emojiType: emojiType || null, workMode: workMode || null,
+        ...(reactionOnly ? { purpose: 'reaction' } : { participation, workMode: workMode || null }),
+        emojiType: emojiType || null,
         ...(proposed.groupRoutingPilot === true ? { groupRoutingPilot: true } : {}),
         reason: trim(proposed?.reason),
         decidedAt: new Date().toISOString(),

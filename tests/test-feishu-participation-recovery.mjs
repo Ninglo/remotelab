@@ -102,21 +102,8 @@ try {
         sourceDelivery: { target: { participationEpoch: String(ongoingEpoch) } },
       } } })).runId, 'fixture-run');
 
-    let resumeClassifier;
-    let classificationEntered;
-    const entered = new Promise(resolve => { classificationEntered = resolve; });
-    const classificationGate = new Promise(resolve => { resumeClassifier = resolve; });
-    if (topic) await send('listen-race', '/mute');
-    const slow = send('slow', '帮忙看看', {}, { classifyJevReaction: async () => {
-      classificationEntered(); await classificationGate;
-      return { decision: 'reply', workMode: 'short', invited: true };
-    } });
-    await entered;
-    await runtime.participation.change({ ...base, messageId: 'pause-race' }, 'paused');
-    await runtime.participation.change({ ...base, messageId: 'resume-race' }, 'active');
-    resumeClassifier(); await slow;
-    assert.equal(effects.runs.length, count, 'a late classification cannot survive pause and resume');
-
+    // Main input no longer waits on a small model; stale reactions are covered
+    // by test-feishu-jev-reactions, while outbox epochs remain tested below.
     const current = await runtime.participation.state(base);
     await addProcessingReaction(runtime, { ...base, messageId: 'cancel-me', participationEpoch: String(current.epoch) });
     const reactionStore = runtime.readReactionStore;
@@ -169,6 +156,7 @@ try {
       await deliver('routing-source-stale');
       assert.equal(sent, 1, 'source epoch still fences pending routing after pause and resume');
     }
+    await Promise.all([...(runtime.jevReactionJobs?.values() || [])]);
     if (topic) {
       await send('resume-metadata', '/unmute');
       const raw = { threadId: '', rootId: '' };
