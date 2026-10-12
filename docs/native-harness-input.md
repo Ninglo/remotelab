@@ -67,8 +67,9 @@ question or runtime wait remains. The original question stays in history and the
 new message reaches the Harness unchanged, so the Harness decides whether it
 answers the question, changes the task, or still requires clarification. No option
 or authorization is inferred. Blocking tools return the answers already supplied
-and leave unanswered fields empty; async questions inject no additional answer
-turn. Rejected inputs preserve the pending question. A concurrent answer, a new
+and leave unanswered fields empty. Async questions inject no additional answer
+turn when nothing was answered; genuine answers already collected from a partial
+batch still reach the Harness, with remaining questions marked unanswered. Rejected inputs preserve the pending question. A concurrent answer, a new
 question, an internal reference or a duplicate receipt cannot retire a different
 question. Already running detached hosts keep their loaded implementation until
 their run finishes; restarting the controller does not upgrade those hosts.
