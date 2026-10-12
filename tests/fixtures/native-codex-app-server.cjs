@@ -39,6 +39,13 @@ lines.on('line', line => {
   if (id === 'question-request' && request.result) { log({ kind: 'question-answer', result: request.result }); if (!holdQuestion) finish(); return; }
   log({ kind: method, text, clientId: params.clientUserMessageId || null, expectedTurnId: params.expectedTurnId });
   if (method === 'initialize') emit({ id, result: {} });
+  else if (method === 'config/read') emit({ id, result: { config: {} } });
+  else if (method === 'hooks/list') {
+    const override = process.argv.find(value => value.startsWith('hooks.SessionStart=')) || '';
+    const match = override.match(/command=("(?:\\.|[^"\\])*")/);
+    emit({ id, result: { data: [{ hooks: match ? [{ command: JSON.parse(match[1]), eventName: 'sessionStart',
+      matcher: 'compact', source: 'sessionFlags', additionalContextLimit: 0, key: 'fixture-hook', currentHash: 'fixture-hash', enabled: true }] : [] }] } });
+  }
   else if (method === 'thread/start' || method === 'thread/resume') emit({ id, result: { thread: { id: 'native-thread' } } });
   else if (method === 'turn/start') {
     activeTurn = `turn-${++nextTurn}`;

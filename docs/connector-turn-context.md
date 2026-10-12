@@ -8,7 +8,17 @@ For standard prompts, `buildTurnContextHook` projects this request's sourceConte
 
 The projection never looks up the latest message in the Session and never reads `sourceDelivery`. Feishu chat turns use a readable transcript instead of JSON: the model sees the group name, current sender and time, followed by earlier messages as time, display name and content. Transport IDs stay out of the prompt and remain available through `/api/sessions/:id/source-context?requestId=:requestId`; the active Run exposes its request ID as `REMOTELAB_REQUEST_ID` when that lookup is genuinely needed. Other connectors retain their bounded provider-specific projection. Stable Session source metadata keeps its existing size limit.
 
-The Feishu connector freezes the transcript into the Request before submission. A topic contributes up to the latest 100 earlier messages in that topic. A normal chat contributes the current activity segment: at most 100 messages from the prior 24 hours, stopping when two adjacent messages are separated by more than four hours. The readable transcript has a 48,000-character cap. Fetch or permission failures do not block the user message, and replay uses the saved snapshot instead of fetching a different history later.
+The Feishu connector freezes the authorized source before submission. Normal
+message admission fetches all provider pages in the selected topic or bound chat,
+up to the current input time; it does not treat a Session creation/admission time,
+24-hour window, four-hour gap or message-count cap as proof of reading. The legacy
+bounded reader remains available to preview callers. Large source snapshots are
+immutable local archives referenced by the Request, avoiding the admission HTTP
+body limit. Preparation validates their Session/source/hash before hydration.
+Fetch or permission failures are visible as incomplete background, while the
+current user message can still proceed. Retries use the frozen source, not a new
+history fetch. Provider permissions, retention, deleted messages and unavailable
+attachments still constrain what can actually be retrieved.
 
 An initial Feishu group input may have a message ID but no thread ID: the platform thread can be created only when the connector replies. Preserve that absence. Subsequent inputs carry their observed thread ID and use the existing binding mechanism.
 
@@ -75,11 +85,10 @@ cover the deterministic contracts; model adherence still needs real task evidenc
 
 ## Evidence-based Feishu history deduplication (2026-10-12)
 
-The connector fetches the same bounded recent window; it no longer moves the
-window forward merely because a previous user input was admitted. Admission,
-preparation and actual Harness acceptance are different events. The explicit
-participation-resume boundary still applies. This is a message/character window,
-not a fixed number of conversational rounds or an estimate of what a model remembers.
+The connector fetches the authorized source container before applying a delivery
+budget. Neither admission nor fetching counts as Harness acceptance. This is
+message-identity deduplication, not sentence similarity or deleting repeated
+words from a person's statement.
 
 Before first or supplementary input delivery, the manager projects that frozen
 source snapshot for the actual resumed provider thread. It removes an exact
@@ -95,8 +104,8 @@ input Request, and acceptance uses the existing native-input receipt directory.
 There is no parallel read-state database. Original Request source snapshots stay
 unchanged; the recorded model-context projection reflects the filtered prompt.
 Only accepted selections can suppress a later input. Historical inputs without
-these receipts may repeat once; a bounded scan of 5,000 metadata events / 40 prior
-inputs may also retain old duplicates. Missing proof must not cause message loss.
+these receipts may repeat once; complete source replay scans canonical delivery metadata rather than dropping
+evidence older than 40 inputs. Missing proof must not cause message loss.
 Unsupported provider identity paths conservatively retain history.
 
 ## Stable rule snapshots (2026-10-12)
@@ -118,14 +127,32 @@ existing policy snapshot; this change does not redefine when a personal toggle
 applies to work already in flight.
 
 Every projected native input points to an immutable, content-addressed JSON
-snapshot under the instance config's `rule-context/` directory. After native
-compaction, the Harness is instructed to read it if the rule bodies are no longer
-in retained context and to preserve the reference in summaries. This is a
-recovery instruction, not a claim that the transport can observe the model's
-memory or prove adherence. A fresh thread receives full rules again. Snapshot
-files are not a second authority or mutable "latest" preference store; earlier
-queued inputs keep their own exact snapshot. Snapshots are retained alongside
-the durable input evidence; no TTL currently removes older snapshots.
+snapshot under the instance config's `rule-context/` directory. Codex native
+inputs use its `SessionStart` hook with the `compact` matcher to restore the
+current snapshot **before the next inference**, including automatic mid-turn
+compaction. Recovery scans native consumed user records for the latest snapshot;
+a queued input cannot change an active turn's rules. The hook validates Session
+and content hash, restores full rules without a model call, and stops continuation
+if the selected snapshot is unreadable. Such a stop is reported as a failed Run,
+not a successful empty response, even when the native turn ends as completed.
+Its native additional-context wrapper
+explicitly keeps RemoteLab preferences at user scope and defers to current human
+instructions and Harness policy; no group-message body is elevated into rules.
+
+Only Codex inputs carrying this recovery capability may reuse an unchanged rule
+reference. Other Harness paths currently resend full rules; they have no claimed
+mid-turn recovery integration. The Codex adapter requires native `hooks/list`,
+`SessionStart/compact` and per-thread hook configuration (verified with installed
+Codex 0.159.2). It trusts only its generated command/hash in the process, does not
+write the user's config, and keeps other hooks disabled when enabling this feature
+for an installation where hooks were disabled. Missing native capability fails
+with an explicit recovery error rather than starting a reference-only turn.
+
+Fresh threads receive full rules. Changed identity/settings replace old slots,
+including revoked preferences. The snapshot is not a mutable latest-policy store;
+old accepted work and queued inputs retain their own rules. No TTL removes these
+files. Existing running native hosts need a new Run to install the hook; their
+supplementary inputs retain full rules until then.
 
 Current message facts, source identity and task state still arrive on each
 input. Task summaries and explicit work/memory retrieval may therefore repeat;
@@ -134,16 +161,46 @@ history/prompt-cache accounting remains separate from new appended text.
 Prompt delivery and model-context inspection now use the same assembled slots
 instead of rebuilding the turn context a second time.
 
-The 100-message / 48,000-character window, normal-chat 24-hour / 4-hour activity
-limits and per-message truncation remain. Deduplication is not a promise to ingest
-all older chat history. Truncated backgrounds remain explicitly marked even when
-all included messages were duplicates. Full originals remain available at source.
-Frozen pending inputs keep their original selection; simultaneous preparation
-may still include the same background when neither input is acknowledged yet.
+After dedup, up to 100 whole messages / about 48,000 characters are placed inline.
+A message is never cut at 6,000 characters. The remaining original messages are
+stored together in an immutable source archive, in original order with author,
+message identity and reply relation. The prompt directs the Harness to read every
+continuation page before claiming complete background. Each page is an exact
+substring with offsets and a next cursor, not a generated summary or relevance
+filter. No semantic deduplication operates on these segments. Full source files
+are retained; no TTL currently deletes them. A disk failure retains original
+messages without the old renderer's silent 100-message cut.
 
-This change does not deduplicate turn-scoped display, checklist, source, Session
-or personal instructions. Shortening those texts and avoiding their repeated
-insertion are separate changes; startup context remains fresh-provider-only.
+A pointer does **not** create a read receipt: overflow entries are excluded from
+delivered-message receipts. They may recur on later inputs until consumption has
+stronger evidence. Full provider pagination currently costs a history fetch each
+input; durable incremental ingestion and accepted page-read accounting remain
+follow-up work. Linked-project background retains its separate bounded policy;
+this change concerns the selected topic/bound chat. Images and files need their
+normal attachment readers; a text placeholder is not proof of reading them.
+
+Verification uses isolated fixtures for 151-message multi-page history, long
+final caveats, Unicode reconstruction, reply/author identity, changed messages,
+archive/hash failures and unread receipts. A loopback Responses fixture drives
+installed Codex through manual and automatic mid-turn compaction, identity change,
+repeated compaction and missing-snapshot failure, without calling a real model or
+posting group messages. This proves delivery/recovery behavior, **not** unchanged
+model comprehension or task-success rate.
+
+A 2026-10-12 real-model smoke comparison used Codex 0.159.2 with
+`gpt-6-astra` at medium effort, isolated local files and the same synthetic CSV
+task. Both full repeated context and the paged/reference mode passed all four
+checks: a caveat at the end of a long message, a later quantity correction,
+an operator/rule change, and an idempotent retry after native compaction
+(8/8 checked results). The paged model actually read both source pages; the
+post-compaction rule hook ran, and the current operator's code and CSV contents
+remained correct. The fixture lowered the inline threshold to 1,000 characters
+to exercise production paging with a small input; the page reader kept its
+6,000-character limit. Local files and structured answers were checked, not
+only the model's claim of success. This is one scenario per mode, not a
+statistical non-inferiority result or evidence of faster/cheaper execution.
+Broader tasks and natural-use feedback remain necessary before claiming a
+general quality improvement.
 
 
 ## Personal procedures and concise replies (2026-10-12)

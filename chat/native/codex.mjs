@@ -1,3 +1,4 @@
+import { codexRuleRecoveryHook } from '../codex-rule-recovery.mjs';
 import { buildCodexArgs } from '../adapters/codex.mjs';
 import { normalizeLimits } from '../../lib/codex-account-status.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
@@ -56,6 +57,8 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     else if (arg === '-m') args.push('-c', `model=${JSON.stringify(legacyArgs[++index])}`);
   }
   args.push('-c', 'approval_policy="never"');
+  const recoveryHook = options.ruleRecoverySessionId ? codexRuleRecoveryHook(options.ruleRecoverySessionId) : null;
+  if (recoveryHook) args.push('-c', recoveryHook.override);
 
   let sequence = 0, closed = null, initialization = null, threadId = '', activeTurnId = '';
   let operationTail = Promise.resolve(), inputsInFlight = 0, asyncQuestionsPending = 0, lastTerminal = null, settledTerminalId = '';
@@ -64,6 +67,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   const announcedThreads = new Set();
   const asyncQuestions = new Set();
   const finalAnswerTurns = new Set();
+  const ruleRecoveryFailures = new Map();
 
   function askAsync(item) {
     if (asyncQuestions.has(item.id)) return;
@@ -257,8 +261,18 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           if (params.thread?.id === threadId) announceThread(threadId);
           break;
         case 'turn/started': activateTurn(params.turn?.id); break;
+        case 'hook/completed': {
+          const failure = (params.run?.entries || []).find(entry => entry.kind === 'stop'
+            && entry.text?.startsWith('RemoteLab rule recovery failed:'));
+          if (recoveryHook && params.run?.eventName === 'sessionStart' && failure) {
+            ruleRecoveryFailures.set(params.turnId || activeTurnId, failure.text);
+          }
+          break;
+        }
         case 'turn/completed': {
-          const turn = params.turn;
+          let turn = params.turn;
+          const recoveryError = ruleRecoveryFailures.get(turn?.id);
+          if (recoveryError) { turn = { ...turn, status: 'failed', error: {message: recoveryError} };ruleRecoveryFailures.delete(turn.id); }
           if (!turn?.id || completedTurns.has(turn.id)) break;
           completedTurns.add(turn.id);
           if (activeTurnId === turn.id) activeTurnId = '';
@@ -312,9 +326,29 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     initialization = inputOperation(async () => {
       await request('initialize', { clientInfo: { name: 'remotelab', version: '1.0.0' } });
       send({ method: 'initialized' });
+      let recoveryConfig;
+      if (recoveryHook) {
+        const existing = await request('config/read', { includeLayers: false, ...(cwd ? { cwd } : {}) });
+        const listing = await request('hooks/list', { cwds: cwd ? [cwd] : [] });
+        const own = listing.data?.flatMap(entry => entry.hooks || []).find(hook =>
+          hook.command === recoveryHook.command && hook.eventName === 'sessionStart' && hook.matcher === 'compact'
+          && hook.source === 'sessionFlags' && hook.additionalContextLimit === 0);
+        if (!own?.currentHash || !own.key) throw new Error('Codex native rule recovery hook unavailable; refusing reference-only continuation');
+        // Trust only our exact generated command for this process/thread. Do
+        // not persist settings or enable/trust any other user/plugin hooks.
+        const hookState = { ...(existing.config?.hooks?.state || {}) };
+        if (existing.config?.features?.hooks !== true) {
+          for (const hook of listing.data?.flatMap(entry => entry.hooks || []) || []) {
+            if (hook.key !== own.key) hookState[hook.key] = { ...hookState[hook.key], enabled: false };
+          }
+        }
+        recoveryConfig = { 'hooks.state': { ...hookState, [own.key]: { enabled: true, trusted_hash: own.currentHash } }, 'features.hooks': true,
+          'hooks.SessionStart': [{ matcher: 'compact', hooks: [{ type: 'command', command: recoveryHook.command, timeout: 30, additionalContextLimit: 0 }] }] };
+      }
       const resumeId = configuredOptions.threadId;
       const result = await request(resumeId ? 'thread/resume' : 'thread/start', {
         approvalPolicy: 'never', sandbox,
+        ...(recoveryConfig ? { config: recoveryConfig } : {}),
         ...(resumeId ? { threadId: resumeId } : {}),
         ...(cwd ? { cwd } : {}),
         ...(options.model ? { model: options.model } : {}),

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
 import { topicAnnouncementContext } from '../connectors/feishu/group-announcement.mjs';
+
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
@@ -1107,15 +1109,17 @@ async function submitRemoteLabRequest(runtime, summary, {
     ? await participationController(runtime).state(effectiveSummary) : null;
   const [attachmentResolution, conversationContext, linkedProjectContext, groupAnnouncement] = await Promise.all([
     resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
-    // Admission time is not a Harness receipt. Fetch the bounded window;
+    // Admission time is not a Harness receipt. Fetch the authorized source;
     // preparation removes only context proven present in the resumed thread.
     loadFeishuConversationContext(runtime, effectiveSummary, {
-      includeMetadata: true,
-      ...(participationStatus?.contextAfterMs ? { sinceTimeMs: participationStatus.contextAfterMs } : {}),
+      includeMetadata: true, complete: true,
+      // The source container is the scope: a topic or the bound group.
+      // Neither Session creation nor the last admission proves older messages
+      // were read. Fetch every provider page before delivery dedup/budgeting.
     })
       .catch((error) => {
         console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
-        return null;
+        return { messages: [], truncated: true, error: String(error?.message || error) };
       }),
     loadLinkedFeishuProjectContext(runtime, effectiveSummary).catch((error) => {
       console.warn(`[feishu-connector] failed to load linked project context for ${effectiveSummary.messageId}: ${error?.message || error}`);
@@ -1130,9 +1134,8 @@ async function submitRemoteLabRequest(runtime, summary, {
   } : null;
   const messageSummary = {
     ...effectiveSummary,
-    ...(groupObservationContext?.messages.length
-      ? { conversationContext: groupObservationContext }
-      : conversationContext ? { conversationContext } : {}),
+    ...(conversationContext ? { conversationContext }
+      : groupObservationContext?.messages.length ? { conversationContext: groupObservationContext } : {}),
     ...(linkedProjectContext ? { linkedProjectContext } : {}),
     ...(groupAnnouncement ? { groupAnnouncement } : {}),
     ...(attachmentResolution.failures.length > 0
@@ -1188,6 +1191,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     payload.text = `[群参与状态：${participationStatus.mode}。状态由连接器执行并同步卡片；本条没有执行状态切换，不要宣称已切换。自然文字“先旁听”“暂停接收消息”“恢复参与”可切换。]\n` + payload.text;
     payload.sourceContext.feishuParticipationMode = participationStatus.mode;
   }
+  payload.sourceContext = await freezeLargeSourceContext(session.id, payload.sourceContext);
   const handoff = { sessionId: session.id, payload, receipt: {
     externalTriggerId, attachmentCount: attachmentResolution.attachments.length,
     attachmentDownloadFailureCount: attachmentResolution.failures.length,

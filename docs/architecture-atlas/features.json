@@ -22,6 +22,27 @@
       "maintainer": null,
       "features": [
         {
+          "id": "context-integrity",
+          "name": "完整上下文与规则恢复",
+          "purpose": "保留完整消息，按消息身份去重，并在原生历史压缩后恢复当前规则。",
+          "entry": "同一会话正常续聊；上下文来源见专题说明。",
+          "condition": "Codex 原生压缩恢复须支持 SessionStart compact hook；其他执行器保守重发规则。群历史受来源权限限制；超长原文分页读取，链接不算已读。功能验证不代表任务质量提升。",
+          "example": "同事长消息末尾的限制条件保留；换人或规则修改后，压缩恢复采用新规则。",
+          "sources": [
+            "docs/connector-turn-context.md",
+            "chat/codex-rule-recovery.mjs",
+            "chat/source-context-pages.mjs",
+            "chat/feishu-context-dedup.mjs",
+            "chat/rule-context.mjs",
+            "chat/source-context-prompt.mjs",
+            "connectors/feishu/conversation-context.mjs",
+            "connectors/feishu/index.mjs",
+            "scripts/feishu-connector.mjs",
+            "chat/native/codex.mjs"
+          ],
+          "commands": []
+        },
+        {
           "id": "work-awareness",
           "name": "开工背景、相关工作与参考建议",
           "purpose": "开工和继续工作时读取必要背景，发现可能重复的工作，并从已完成的成果中寻找可复用方法。",
@@ -685,7 +706,9 @@
           "example": "正在执行的话题立即显示running，结束后跟随真实状态变化；插件设置入口常驻显示v1.2.0。",
           "sources": [
             "docs/feishu-web-topics.md",
-            "chat/feishu-web-topics.mjs", "chat/feishu-web-group-boards.mjs", "chat/feishu-web-topic-text.mjs",
+            "chat/feishu-web-topics.mjs",
+            "chat/feishu-web-group-boards.mjs",
+            "chat/feishu-web-topic-text.mjs",
             "chat/router-feishu-web-topics.mjs",
             "chat/feishu-web-settings.mjs"
           ],

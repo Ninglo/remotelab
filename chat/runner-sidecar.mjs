@@ -560,6 +560,7 @@ async function main() {
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: { ...invocationOptions, ...(options.invocationOptions || {}), requestId: manifest.requestId,
         observeCodexUsage: Boolean(codexAccount),
+        ...(manifest.ruleContextDelivery?.recovery === 'codex-session-start' ? { ruleRecoverySessionId: manifest.sessionId } : {}),
         ...(codexAccount && codexAccount.id !== 'default' ? { codexConfigOverrides: [
           ...(invocationOptions.codexConfigOverrides || []), 'cli_auth_credentials_store="file"'] } : {}) },
       prompt: options.prompt ?? prompt, cwd: resolvedFolder.cwd, env: spawnEnv,

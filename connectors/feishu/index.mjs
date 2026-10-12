@@ -726,6 +726,8 @@ export function buildMessageSourceContext(summary) {
       .map((entry) => ({
         sender: trimString(entry?.sender),
         messageId: trimString(entry?.messageId),
+        ...(entry.parentId ? { parentId: entry.parentId } : {}),
+        ...(entry.rootId ? { rootId: entry.rootId } : {}),
         ...(entry.messageRevision ? { messageRevision: String(entry.messageRevision) } : {}),
         ...(typeof entry.edited === 'boolean' ? { edited: entry.edited } : {}),
         ...(entry.senderType ? { senderType: entry.senderType } : {}),
@@ -734,9 +736,11 @@ export function buildMessageSourceContext(summary) {
         text: trimString(entry?.text),
       }))
       .filter((entry) => entry.sender && entry.time && entry.text);
-    if (messages.length > 0) {
+    if (messages.length > 0 || summary.conversationContext.truncated || summary.conversationContext.error) {
       context.conversationContext = {
         messages,
+        ...(summary.conversationContext.coverage ? { coverage: summary.conversationContext.coverage } : {}),
+        ...(summary.conversationContext.error ? { error: summary.conversationContext.error } : {}),
         ...(summary.conversationContext.truncated === true ? { truncated: true } : {}),
       };
     }

@@ -32,6 +32,19 @@ visible in the Session queue, and can be removed until execution or native
 handoff starts. Admission and dispatch share the request compatibility checks;
 native capability alone does not mean a follow-up can join the active request.
 
+## Rule recovery after native compaction
+
+Codex standard native inputs install a process-local `SessionStart` / `compact`
+hook. It restores the current immutable RemoteLab rule snapshot before the next
+inference, including automatic compaction during a turn. Rule-reference reuse
+requires this recovery capability; other Harnesses conservatively receive full
+rules per input. An unavailable hook or unreadable selected snapshot stops
+reference-only continuation with an explicit error. A rule-recovery hook stop
+settles the RemoteLab Run as failed, even if Codex labels the stopped turn
+completed; it must not appear as a successful empty result. This requires a Codex build
+supporting native hooks (verified on 0.159.2); no persistent user configuration is
+rewritten. Existing active hosts acquire it on their next Run, not by silently
+changing an already accepted input. See [context delivery and validation limits](connector-turn-context.md).
 ## Personal Feishu input-tool trial (v1)
 
 This optional trial is off by default. A person can ask the assistant to enable
@@ -90,6 +103,7 @@ rule-context modules. Validation is included in `test:native-harness`;
 `tests/test-inflight-trial.mjs` covers personal scope, mixed senders, uncertain
 acceptance, outbox/history recovery, native publication deduplication, exact-run
 stop and disabling. Live user experience remains a separate trial acceptance.
+
 
 ## Answering native questions
 

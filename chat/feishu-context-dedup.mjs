@@ -1,5 +1,6 @@
+import { pageSourceContext, hydrateSourceContext } from './source-context-pages.mjs';
 import { createHash } from 'node:crypto';
-import { getHistoryHeadSeq, loadHistory } from './history.mjs';
+import { loadHistory } from './history.mjs';
 import { getRun, getRunManifest, runDir } from './runs.mjs';
 import { requests } from './requests.mjs';
 import { readNativeInputReceipt } from './native-input-transport.mjs';
@@ -21,13 +22,12 @@ const signature = entry => digest([entry.text, entry.sender, entry.authorRef || 
 async function project(sessionId, source, { identity, requestId = '' } = {}, deps = {}) {
   if (source?.connector !== 'feishu' || !sessionId) return { sourceContext: source, receipt: null };
   const history = deps.history || loadHistory;
-  const head = deps.head || getHistoryHeadSeq;
   const readRun = deps.run || getRun;
   const readManifest = deps.manifest || getRunManifest;
   const readRequest = deps.request || ((id, request) => requests.byRequest(id, request));
   const readAccepted = deps.accepted || ((run, request) => readNativeInputReceipt(runDir(run), request));
   const groups = [
-    ['conversationContext', source.chatId, 100],
+    ['conversationContext', source.chatId, Infinity],
     ['groupAnnouncement', source.chatId, 1],
     ['linkedProjectContext', source.linkedProjectContext?.sourceChatId, 20],
   ];
@@ -41,10 +41,9 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
   const sameThread = value => identity && value?.sessionId === sessionId && value[identity.field] === identity.id;
   let scanned = 0;
   if (identity && wanted.size) {
-    const last = await head(sessionId);
-    // A bounded metadata scan is intentionally conservative for long threads.
-    // It may miss an old duplicate; it cannot declare unseen history consumed.
-    const events = await history(sessionId, { fromSeq: Math.max(1, last - 4999), includeBodies: false });
+    // Complete source replay needs the canonical prior delivery evidence, not
+    // only the last 40 inputs. No semantic history or second memory is created.
+    const events = await history(sessionId, { fromSeq: 1, includeBodies: false });
     const candidates = new Map();
     for (const event of [...events].reverse()) {
       if (event.type === 'source_delivery' && event.kind === 'content' && event.state === 'delivered'
@@ -52,7 +51,7 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
         own.add(event.externalId);
       }
       if (event.type === 'message' && event.role === 'user' && event.requestId !== requestId
-          && event.sourceContext?.connector === 'feishu' && candidates.size < 40) candidates.set(event.requestId, event);
+          && event.sourceContext?.connector === 'feishu') candidates.set(event.requestId, event);
     }
     for (const event of candidates.values()) {
       const record = await readRequest(sessionId, event.requestId);
@@ -100,13 +99,23 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
   }
   const directKey = key(source, source);
   if (directKey && version(source)) receipt.entries.push({ key: directKey, direct: true, revision: version(source) });
-  return { sourceContext: result, receipt };
+  const paged = await (deps.page || pageSourceContext)(sessionId, result);
+  // Only inline whole messages have been delivered. A file pointer is not a
+  // read receipt; never mark overflow as seen merely because it was archived.
+  const inline = new Set((paged.conversationContext?.messages || []).map(entry => key(source, entry)));
+  const conversationKeys = new Set((result.conversationContext?.messages || []).map(entry => key(source, entry)));
+  receipt.entries = receipt.entries.filter(item => item.direct || !conversationKeys.has(item.key) || inline.has(item.key));
+  return { sourceContext: paged, receipt };
 }
 
 export async function projectFeishuContext(sessionId, source, options, deps) {
-  try { return await project(sessionId, source, options, deps); }
+  try {
+    source = await hydrateSourceContext(sessionId, source);
+    return await project(sessionId, source, options, deps);
+  }
   catch (error) {
     console.warn(`[feishu-context] retaining source after unavailable receipt evidence: ${error.message}`);
-    return { sourceContext: source, receipt: null };
+    return { sourceContext: source?.conversationContext?.frozenArchive
+      ? { ...source, conversationContext: { ...source.conversationContext, error: error.message, truncated: true } } : source, receipt: null };
   }
 }

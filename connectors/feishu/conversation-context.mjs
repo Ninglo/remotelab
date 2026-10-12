@@ -14,7 +14,6 @@ export const FEISHU_CONTEXT_MAX_CHARACTERS = 48_000;
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const PAGE_SIZE = 50;
-const MAX_MESSAGE_CHARACTERS = 6_000;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -88,9 +87,7 @@ function historyMessageText(item) {
   const messageText = renderMentionPreview(summary.messageText || summary.textPreview, item?.mentions);
   const fallback = attachmentPlaceholder(messageType, summary.textPreview) || summary.contentSummary;
   const text = trimString(messageText || fallback);
-  return text.length > MAX_MESSAGE_CHARACTERS
-    ? `${text.slice(0, MAX_MESSAGE_CHARACTERS)}…`
-    : text;
+  return text;
 }
 
 function isConnectorReceiptOnly(text, item) {
@@ -109,6 +106,8 @@ export function normalizeFeishuHistoryItem(item, options = {}) {
   return {
     sender: senderName(item),
     messageId: trimString(item.message_id),
+    ...(trimString(item.parent_id) ? { parentId: trimString(item.parent_id) } : {}),
+    ...(trimString(item.root_id) ? { rootId: trimString(item.root_id) } : {}),
     ...(trimString(item.sender?.id || item.sender?.open_id) ? { authorRef: {
       kind: 'feishu', subjectId: trimString(item.sender?.id || item.sender?.open_id),
       senderType: trimString(item.sender?.sender_type), realm: trimString(options.sourceRouteId),
@@ -125,22 +124,27 @@ async function listMessages(runtime, {
   endTimeMs,
   startTimeMs = 0,
   maxMessages,
+  complete = false,
   timeoutMs,
 }) {
   const list = runtime?.appClient?.im?.v1?.message?.list;
-  if (typeof list !== 'function') return [];
+  if (typeof list !== 'function') {
+    if (complete) throw new Error('Feishu history API unavailable');
+    return [];
+  }
   const items = [];
   const seenMessageIds = new Set();
   let pageToken = '';
-  while (items.length < maxMessages) {
+  const pages = new Set();
+  while (complete || items.length < maxMessages) {
     const params = {
       container_id_type: containerIdType,
       container_id: containerId,
       sort_type: 'ByCreateTimeDesc',
-      page_size: Math.min(PAGE_SIZE, maxMessages - items.length),
+      page_size: complete ? PAGE_SIZE : Math.min(PAGE_SIZE, maxMessages - items.length),
       with_sender_name: true,
       ...(startTimeMs ? { start_time: String(Math.floor(startTimeMs / 1000)) } : {}),
-      ...(endTimeMs ? { end_time: String(Math.floor(endTimeMs / 1000)) } : {}),
+      ...(endTimeMs ? { end_time: String(Math.floor(endTimeMs / 1000) + (complete ? 1 : 0)) } : {}),
       ...(pageToken ? { page_token: pageToken } : {}),
     };
     const response = await withTimeout(
@@ -157,10 +161,12 @@ async function listMessages(runtime, {
       if (messageId && seenMessageIds.has(messageId)) continue;
       if (messageId) seenMessageIds.add(messageId);
       items.push(item);
-      if (items.length >= maxMessages) break;
+      if (!complete && items.length >= maxMessages) break;
     }
     pageToken = trimString(response?.data?.page_token);
-    if (response?.data?.has_more !== true || !pageToken || pageItems.length === 0) break;
+    if (response?.data?.has_more !== true) break;
+    if (!pageToken || pageItems.length === 0 || pages.has(pageToken)) throw new Error('Feishu history pagination stopped before all messages were fetched');
+    pages.add(pageToken);
   }
   return items;
 }
@@ -216,11 +222,13 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
   const sinceTimeMs = positiveInteger(options.sinceTimeMs, 0);
   const sinceMessageId = trimString(options.sinceMessageId);
   const topicId = buildFeishuTopicId(summary);
+  const complete = options.complete === true;
   const rawItems = await listMessages(runtime, {
     containerId: topicId || chatId,
     containerIdType: topicId ? 'thread' : 'chat',
     endTimeMs: now,
-    startTimeMs: Math.max(topicId ? 0 : now - maxAgeMs, sinceTimeMs),
+    startTimeMs: complete ? sinceTimeMs : Math.max(topicId ? 0 : now - maxAgeMs, sinceTimeMs),
+    complete,
     maxMessages,
     timeoutMs,
   });
@@ -236,15 +244,18 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
     })
     .filter((item) => item && item.timestamp <= now
       && (!sinceTimeMs || item.timestamp >= sinceTimeMs));
-  const relevant = topicId ? normalized : keepCurrentActivity(normalized, maxGapMs);
-  const fitted = fitCharacterBudget(relevant, maxCharacters);
+  const relevant = complete || topicId ? normalized : keepCurrentActivity(normalized, maxGapMs);
+  const fitted = options.deferBudget === true || complete
+    ? { messages: relevant.sort((a, b) => a.timestamp - b.timestamp), truncated: false }
+    : fitCharacterBudget(relevant, maxCharacters);
   if (fitted.messages.length === 0) return null;
   return {
-    messages: fitted.messages.map(({ sender, time, text, timestamp, messageId, senderType, senderId, authorRef, messageRevision, edited }) => ({
-      sender, time, text, messageId,
+    messages: fitted.messages.map(({ sender, time, text, timestamp, messageId, senderType, senderId, authorRef, messageRevision, edited, parentId, rootId }) => ({
+      sender, time, text, messageId, ...(parentId ? { parentId } : {}), ...(rootId ? { rootId } : {}),
       ...(authorRef ? { authorRef } : {}),
       ...(options.includeMetadata ? { timestamp, messageId, senderType, senderId, messageRevision, edited } : {}),
     })),
-    truncated: fitted.truncated || rawItems.length >= maxMessages,
+    truncated: fitted.truncated || (!complete && rawItems.length >= maxMessages),
+    ...(complete ? { coverage: { sinceTimeMs, throughTimeMs: now, fetchedAllPages: true } } : {}),
   };
 }

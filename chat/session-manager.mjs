@@ -3395,7 +3395,8 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     const turnSlots = tool?.promptMode === 'bare-user' ? [] : await buildManagerTurnContextSlots(session, { ...record.options,
       modelSourceContext: projection.sourceContext, requestId: record.requestId, memoryQuery: record.text });
     const ruleProjection = await projectRuleContext(record.sessionId, turnSlots, {
-      enabled: manifest.inputMode === 'native', identity: feishuResumeIdentity(execution || {}),
+      enabled: manifest.inputMode === 'native',
+      recovery: manifest.ruleContextDelivery?.recovery || '', identity: feishuResumeIdentity(execution || {}),
       requestId: record.requestId, personId: record.options.viewPersonId,
       identityId: record.options.initiatedByIdentityId, sourceContext: record.options.sourceContext,
     });
@@ -3791,6 +3792,7 @@ async function prepareRequestRun(record) {
     ? [] : await buildManagerTurnContextSlots(session, { ...contextOptions, requestId });
   const ruleProjection = await projectRuleContext(sessionId, turnSlots, {
     enabled: effectiveToolDefinition?.inputMode === 'native',
+    recovery: effectiveRuntimeFamily === 'codex-json' ? 'codex-session-start' : '',
     identity: freshProviderSession ? null : feishuResumeIdentity({ codexThreadId: persistedCodexThreadId,
       claudeSessionId: persistedClaudeSessionId, antigravityConversationId: persistedAntigravityConversationId }),
     requestId, personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
