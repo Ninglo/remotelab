@@ -39,10 +39,10 @@ async function mutateConnections(fn) {
   });
 }
 export async function connectFeishuWebSettings(input, actor, capability = 'settings') {
-  if (!['settings', 'workspace'].includes(capability)) fail('Unknown connection capability');
+  if (!['settings', 'workspace', 'topics'].includes(capability)) fail('Unknown connection capability');
   if (!input || Object.keys(input).some(key => !['origin', 'nativeAccount', 'confirm'].includes(key)) || input.confirm !== true) fail('请明确连接你自己的消息设置。');
   const verified = await personActor(actor), origin = feishuOrigin(input.origin), nativeAccount = account(input.nativeAccount);
-  const token = `${capability === 'workspace' ? 'fwspace' : 'fwset'}_${randomBytes(32).toString('base64url')}`, expiresAt = Date.now() + 30 * 86400000;
+  const token = `${capability === 'topics' ? 'fwtops' : capability === 'workspace' ? 'fwspace' : 'fwset'}_${randomBytes(32).toString('base64url')}`, expiresAt = Date.now() + 30 * 86400000;
   await mutateConnections(data => {
     data.connections = data.connections.filter(entry => !(entry.personId === verified.personId && entry.origin === origin && entry.nativeAccount === nativeAccount && (entry.capability || 'settings') === capability));
     data.connections.push({ ...verified, origin, nativeAccount, capability, tokenHash: hash(token), expiresAt });
@@ -51,7 +51,7 @@ export async function connectFeishuWebSettings(input, actor, capability = 'setti
   return { token, expiresAt, person: { id: verified.personId, name: verified.personName }, origin, nativeAccount };
 }
 export async function authorizeFeishuWebSettings(token, origin, nativeAccount, capability = 'settings') {
-  const pattern = capability === 'workspace' ? /^fwspace_[a-zA-Z0-9_-]{43}$/ : /^fwset_[a-zA-Z0-9_-]{43}$/;
+  const pattern = capability === 'topics' ? /^fwtops_[a-zA-Z0-9_-]{43}$/ : capability === 'workspace' ? /^fwspace_[a-zA-Z0-9_-]{43}$/ : /^fwset_[a-zA-Z0-9_-]{43}$/;
   if (typeof token !== 'string' || !pattern.test(token)) fail('请先连接本人的账号。', 401);
   feishuOrigin(origin); account(nativeAccount);
   const data = await readRecord(file);
