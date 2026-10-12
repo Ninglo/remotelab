@@ -5,6 +5,7 @@ import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createMonitoringReader } from './monitoring.mjs';
 import { processMonitoringRecovery } from './monitoring-recovery.mjs';
+import { monitoringNotificationDecision } from '../lib/monitoring-policy.mjs';
 import { diskRiskStage } from '../lib/monitoring-actions.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('base64url');
@@ -66,16 +67,32 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     // A local optimization signal must not pre-confirm a new outage.
-    const count = previous?.active && previous.event?.severity === item.severity ? previous.observations + 1 : 1;
+    let count = previous?.active && previous.event?.severity === item.severity ? previous.observations + 1 : 1;
     const eligible = item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
-    const requiredCount = item.kind === 'disk' || item.kind === 'api' && item.code === 99991403 ? 1 : item.kind === 'automation' ? 3
+    let requiredCount = item.kind === 'disk' || item.kind === 'api' && item.code === 99991403 ? 1 : item.kind === 'automation' ? 3
       : item.kind === 'accountContinuity' ? Math.max(3, confirmationCount) : confirmationCount;
-    const critical = eligible && count >= requiredCount;
     const incident = !previous?.active ? { cycle: (previous?.cycle || 0) + 1, status: 'observing', observations: count, active: true } : previous;
-    const repair = config.recoveryIncidents?.slice().reverse().find(r => r.kind === item.kind && r.id === item.id);
+    const originRunId = item.kind === 'automation'
+      ? snapshot.automations.items?.find(task => task.id === item.id)?.lastExecution?.runId : null;
+    const repair = config.recoveryIncidents?.slice().reverse().find(r => r.kind === item.kind && r.id === item.id
+      && (!originRunId || r.originRunId === originRunId));
+    const sameSignal = previous?.active && previous.observations > 0
+      && previous.event?.severity === item.severity
+      && previous.event?.continuity?.status === item.continuity?.status
+      && JSON.stringify(previous.event?.signals) === JSON.stringify(item.signals);
+    const decision = monitoringNotificationDecision(item, { policy: config.noisePolicy, repair, now });
+    if (config.noisePolicy?.mode === 'risk_only') {
+      const sameQualification = previous?.notificationDecision?.notify && decision.notify
+        && previous.notificationDecision.reason === decision.reason;
+      const repeatSample = snapshot.generatedAt && previous?.event?.observedAt === snapshot.generatedAt;
+      count = sameSignal && sameQualification ? previous.observations + (repeatSample ? 0 : 1) : 1;
+      requiredCount = decision.confirmations || requiredCount;
+    }
+    incident.notificationDecision = decision;
+    const critical = (eligible || decision.reason === 'concrete_human_action') && count >= requiredCount && decision.notify;
     const stage = diskRiskStage(item);
     // The incident identity survives runtime retries, plan wording and disk
     // stage changes. These update its existing message, never rearm a send.

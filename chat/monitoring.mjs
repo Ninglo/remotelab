@@ -10,7 +10,7 @@ import { readRecord } from '../lib/durable-records.mjs';
 import { RECOVERY_FILE, projectRecovery } from './monitoring-recovery.mjs';
 import { readFeishuApiHealth, feishuApiAttention } from '../lib/feishu-api-health.mjs';
 import { isStoppedAutomation, currentAutomationStatus, isCurrentRecovery } from '../lib/monitoring-status.mjs';
-import { monitoringPolicies } from '../lib/monitoring-policy.mjs';
+import { monitoringPolicies, monitoringDestinations } from '../lib/monitoring-policy.mjs';
 import { accountContinuity, continuityAttention } from '../lib/monitoring-actions.mjs';
 
 const exec = promisify(execFile);
@@ -121,7 +121,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     async function observe(source, fn, fallback) {
       try { return await fn(); } catch (error) { gaps.push({ source, code: error.code || 'UNAVAILABLE' }); return fallback; }
     }
-    const [usage, tasks, runtime, fleet, requests, disks, services, recovery, apiHealth, alertState, background] = await Promise.all([
+    const [usage, tasks, runtime, fleet, requests, disks, services, recovery, apiHealth, alertState, background, savedSessions] = await Promise.all([
       observe('usage', () => getUsage({ days, top: Math.max(5, days + 1), includeTopRuns: false, includeDailyTrend: true }), null),
       observe('automations', getTasks, []), observe('accounts', getAccounts, null),
       config.fleetStateFile ? observe('fleet', async () => {
@@ -153,6 +153,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
         previous: await getRecord(join(CONFIG_DIR, 'feishu-api-health.json')) || {}, now: now() }), null) : null,
       config.alertDelivery ? observe('alertDelivery', () => getRecord(join(CONFIG_DIR, 'monitoring-alerts.json')), null) : null,
       observe('inspectionRegistration', () => getRecord(join(CONFIG_DIR, 'automation-background.json')), null),
+      observe('recoveryDestinations', () => getRecord(join(CONFIG_DIR, 'chat-sessions.json')), []),
     ]);
     const accounts = projectAccounts(runtime, fleet, now());
     if (config.services?.length > 64) gaps.push({ source: 'services', code: 'SERVICE_LIMIT_EXCEEDED' });
@@ -218,7 +219,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
-      handling: { policies: monitoringPolicies, diagnosticScript: 'scripts/monitoring-diagnose.mjs', recoveryEnabled: config.recovery?.enabled === true,
+      handling: { destinations: monitoringDestinations(config, savedSessions, tasks, recoveryItems), noisePolicy: config.alertDelivery?.noisePolicy || null, policies: monitoringPolicies, diagnosticScript: 'scripts/monitoring-diagnose.mjs', recoveryEnabled: config.recovery?.enabled === true,
         coordinatorSessionId: text(config.recovery?.coordinatorSessionId),
         automationRecoveryEnabled: config.recovery?.enabled === true && (!config.recovery.automationIds || config.recovery.automationIds.length > 0) },
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,

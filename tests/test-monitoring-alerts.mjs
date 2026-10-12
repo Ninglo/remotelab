@@ -424,3 +424,30 @@ test('old traffic volume observations do not pre-confirm a new API failure', asy
   assert.equal(f.getSends(), 0, 'unknown source breaks confirmation but does not rearm incident');
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1);
 });
+
+test('real warnings expose ongoing repair and recovery in one card; duplicate samples do not qualify', async () => {
+  const f=fixture(),start=Date.parse('2026-10-12T12:00:00Z');
+  const config={noisePolicy:{mode:'risk_only'},recoveryIncidents:[{kind:'service',id:'app.service',status:'running'}]};
+  const value=snapshot([{kind:'service',id:'app.service',subject:'App',severity:'critical'}]);
+  for(let i=0;i<10;i++) await dispatchMonitoringAlerts({...f.options,config,snapshot:value,now:start});
+  assert.equal(f.getSends(),0,'cached sample is not five independent failures');
+  for(let i=1;i<5;i++) {value.generatedAt=new Date(start+i*60000).toISOString();await dispatchMonitoringAlerts({...f.options,config,snapshot:value,now:start+i*60000});}
+  assert.equal(f.getSends(),1,'repair running does not hide a confirmed warning');
+  const healthy=snapshot([]);healthy.services=[{unit:'app.service',status:'healthy'}];
+  await dispatchMonitoringAlerts({...f.options,config,snapshot:healthy,now:start+6*60000});
+  assert.equal(f.getSends(),1);assert.equal(f.getUpdates(),1,'success updates the original card');
+});
+
+test('low-level API failures do not pre-confirm high failure rates and muted warnings never escape', async () => {
+  const f=fixture(),start=Date.parse('2026-10-12T12:00:00Z'),config={noisePolicy:{mode:'risk_only'}};
+  const value=snapshot([{kind:'api',id:'feishu:a:traffic',severity:'critical',signals:{errors:true},calls5m:30,failed5m:6}]);
+  for(let i=0;i<6;i++){value.generatedAt=new Date(start+i*60000).toISOString();await dispatchMonitoringAlerts({...f.options,config,snapshot:value,now:start+i*60000});}
+  assert.equal(f.getSends(),0);
+  value.attention[0].failed5m=15;
+  for(let i=6;i<8;i++){value.generatedAt=new Date(start+i*60000).toISOString();await dispatchMonitoringAlerts({...f.options,config,snapshot:value,now:start+i*60000});}
+  assert.equal(f.getSends(),0);
+  value.generatedAt=new Date(start+8*60000).toISOString();
+  await dispatchMonitoringAlerts({...f.options,config:{...config,enabled:false},snapshot:value,now:start+8*60000});
+  assert.equal(f.getSends(),0);assert.equal(f.getUpdates(),0);
+  await dispatchMonitoringAlerts({...f.options,config,snapshot:value,now:start+8*60000});assert.equal(f.getSends(),1);
+});
