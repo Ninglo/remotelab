@@ -238,7 +238,7 @@ async function main() {
     assert.equal((await request(port, 'PATCH', `/api/sessions/${completedIndependent.lastExecution.sessionId}`, {sessionCollection:'invalid'})).status, 400);
 
 
-    // A home is a true source fork and never starts a model or changes delivery.
+    // A home is a task-brief source branch and never starts a model or changes delivery.
     const homeCreate = await request(port, 'POST', '/api/automation-tasks', {
       kind: 'recurring', title: 'Stable home fixture', prompt: 'Only inspect fixture data.',
       schedule: { type: 'interval', everySeconds: 86400 }, lifetime: { mode: 'continuous' },
@@ -255,6 +255,9 @@ async function main() {
     assert.equal(home.author.name, 'Primary');
     const homeSession = (await request(port, 'GET', `/api/sessions/${home.sessionId}`)).json.session;
     assert.equal(homeSession.forkedFromSessionId, templateSession.id);
+    assert.equal(homeSession.forkContextMode, 'task_brief');
+    assert.equal(home.contextMode, 'task_brief');
+    assert.equal(homeSession.latestSeq, 1, 'only the explicit handoff receipt is added');
     assert.equal(homeSession.internalRole, 'automation_home');
     assert.equal(homeSession.automationTaskId, homeTaskId);
     assert.equal(homeSession.sessionCollection, 'automations');

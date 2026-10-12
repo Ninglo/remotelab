@@ -10,3 +10,5 @@
 .automation-home-nav button { padding: 3px 8px; cursor: pointer; }
 .chat-area:has(> .automation-home-panel:not([hidden])) { grid-template-rows: auto minmax(0, 1fr) auto auto; }
 .automation-home-panel { min-height: 0; }
+
+.automation-home-nav a { display: inline-block; text-decoration: none; padding: 6px 10px; border: 1px solid var(--border, #ddd); border-radius: 6px; }

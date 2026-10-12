@@ -669,7 +669,7 @@ export async function handleControlRoutes({
       const id = homeMatch[1];
       if (req.method === 'POST') {
         const payload = JSON.parse(await readBody(req, 32768) || '{}');
-        await ensureAutomationHome(id, { auth: authSession, brief: payload.brief });
+        await ensureAutomationHome(id, { auth: authSession, brief: payload.brief, replaceSessionId: payload.replaceSessionId });
         broadcastAll({ type: 'sessions_invalidated' });
         broadcastAll({ type: 'automation_tasks_updated', taskId: id });
       }

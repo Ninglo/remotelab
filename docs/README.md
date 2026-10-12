@@ -68,7 +68,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Current Core
 
-- [Stable automation homes](task-center-v1.md#stable-automation-home-explicit-opt-in) — source forks, bidirectional task links, retained definitions and lifecycle history without occupying worker queues.
+- [Stable automation homes](task-center-v1.md#stable-automation-home-explicit-opt-in) — task-only context branches (no copied source chat), clear bidirectional links, retained definitions and lifecycle history without occupying worker queues.
 - [Automation tasks and execution Sessions](task-center-v1.md#automation-session-collection) — explicit collection membership, existing-run migration and direct execution links.
 
 - [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.

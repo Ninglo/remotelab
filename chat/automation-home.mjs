@@ -9,9 +9,9 @@ export async function automationRecord(id) {
   return (await import('./triggers.mjs')).getTrigger(id);
 }
 function homePrompt(record, author, establishedAt, brief) {
-  return `这是自动化任务的固定主Session，由来源Session fork，继承历史只作背景，不扩展授权。\n任务ID：${record.id}\n原任务创建身份（不推断最初提出人）：${author.name || author.identityId || '原记录未明确'}\n原任务创建时间：${record.createdAt || '未记录'}\n本主Session建立时间：${establishedAt}\n来源Session：${record.sourceSessionId}\n目标与执行定义：\n${record.text}\n\n维护说明：${brief}\n\n当前有效定义与历史版本：GET /api/automation-tasks/${record.id}/home。查询直接读此接口及执行记录，不给后台执行Session排队发消息。原来源和本Session不承接定时长任务；后台保持原执行策略。\n任何新意见先形成具体修改，记录提出人、来源和确认人；经有权人的明确确认才修改原任务，不另建同义任务。普通修改下一轮生效，已经接受的运行保留当轮快照；撤销本轮授权须单独停止当前Run并回读。\n停止后保留所有历史；区分停止后续触发与当前运行已结束。失败只补失败步骤，先核对原业务回执，避免重复写入或发送。不能自行猜测授权、收件人或业务成功；不确定的外部写入先查回执，无法核实就报告需人工处理。\n每轮模型完成不等于业务完成。页面运行记录来自原Trigger/Run，业务结果和交付以原产物及发送回执为准。`;
+  return `这是自动化任务的固定主Session，从来源Session分支，仅注入本任务交接信息，不继承原聊天、模型上下文或原会话协议；来源仅供追溯，不扩展授权。\n任务ID：${record.id}\n原任务创建身份（不推断最初提出人）：${author.name || author.identityId || '原记录未明确'}\n原任务创建时间：${record.createdAt || '未记录'}\n本主Session建立时间：${establishedAt}\n来源Session：${record.sourceSessionId}\n目标与执行定义：\n${record.text}\n\n维护说明：${brief}\n\n当前有效定义与历史版本：GET /api/automation-tasks/${record.id}/home。查询直接读此接口及执行记录，不给后台执行Session排队发消息。原来源和本Session不承接定时长任务；后台保持原执行策略。\n任何新意见先形成具体修改，记录提出人、来源和确认人；经有权人的明确确认才修改原任务，不另建同义任务。普通修改下一轮生效，已经接受的运行保留当轮快照；撤销本轮授权须单独停止当前Run并回读。\n停止后保留所有历史；区分停止后续触发与当前运行已结束。失败只补失败步骤，先核对原业务回执，避免重复写入或发送。不能自行猜测授权、收件人或业务成功；不确定的外部写入先查回执，无法核实就报告需人工处理。\n每轮模型完成不等于业务完成。页面运行记录来自原Trigger/Run，业务结果和交付以原产物及发送回执为准。`;
 }
-export async function ensureAutomationHome(id, { auth = {}, brief = '' } = {}) {
+export async function ensureAutomationHome(id, { auth = {}, brief = '', replaceSessionId = '' } = {}) {
   const record = await automationRecord(id);
   if (!record) throw new Error('Automation task not found');
   if (record.sessionTemplate?.sessionCollection !== 'automations') throw new Error('Only explicitly selected automations can have a home');
@@ -23,29 +23,39 @@ export async function ensureAutomationHome(id, { auth = {}, brief = '' } = {}) {
   const safeSessions = [...new Set(triggers.map(item => item.executionSessionId).filter(Boolean))].filter(sessionId =>
     !sourceIds.has(sessionId) && !allTriggers.some(item => item.executionSessionId === sessionId && (item.scheduleId || item.id) !== id));
   const home = await mutateAutomationHome(id, async existing => {
-    if (existing) return existing;
+    if (existing?.contextMode === 'task_brief' || (existing && !replaceSessionId)) return existing;
+    if (replaceSessionId && existing?.sessionId !== replaceSessionId) throw new Error('Automation home changed; read current binding before migrating');
     const { forkSession } = await import('./session-manager.mjs');
     const identified = findIdentity(await loadAuthDocument(), record.createdByIdentityId);
     const author = { identityId: record.createdByIdentityId || '', name: identified?.person?.name || identified?.identity?.displayName || '' };
     const at = now();
-    const maintenance = String(brief || '沿用原任务正文、业务规则和交付回执；不擅自改变时间、输出目标或发送对象。').slice(0, 8000);
+    const maintenance = String(brief || existing?.brief || '沿用原任务正文、业务规则和交付回执；不擅自改变时间、输出目标或发送对象。').slice(0, 8000);
     const session = await forkSession(record.sourceSessionId, { name: record.title || '自动化任务',
       group: '自动化任务', description: '自动化固定入口：任务定义、历次运行、变更与停止记录',
-      externalTriggerId: `automation-home:${id}`, automationTaskId: id, internalRole: 'automation_home',
+      externalTriggerId: `automation-home:task-brief:${id}`, contextMode: 'task_brief', automationTaskId: id, internalRole: 'automation_home',
       sessionCollection: 'automations', initiatedByIdentityId: record.createdByIdentityId,
       viewPersonId: auth.personId, sourceId: 'remotelab', sourceName: 'RemoteLab', sourceContext: null,
       systemPrompt: homePrompt(record, author, at, maintenance) });
     if (!session) throw new Error('Source Session cannot currently be forked; retry after its current context boundary is available');
-    return { version: 1, taskId: id, sessionId: session.id, sourceSessionId: record.sourceSessionId, author,
+    const replacement = { version: 2, contextMode: 'task_brief', taskId: id, sessionId: session.id, sourceSessionId: record.sourceSessionId, author,
       taskCreatedAt: record.createdAt || '', establishedAt: at, brief: maintenance,
       definitions: [{ revision: 1, at, definition: automationDefinition(record), note: '建立主Session时的定义；不是历史各轮的追溯版本' }],
-      events: [{ type: 'established', at, actor: actor(auth), state: record.status, note: '从原来源fork；此前运行沿用原记录，未重跑' }], runs: {} };
+      events: [{ type: 'established', at, actor: actor(auth), state: record.status, note: '建立独立任务分支，仅注入任务上下文；历史执行未重跑' }], runs: {} };
+    if (existing) {
+      replacement.definitions = existing.definitions; replacement.runs = existing.runs;
+      replacement.previousSessions = [...(existing.previousSessions || []), { sessionId: existing.sessionId, establishedAt: existing.establishedAt, replacedAt: at }];
+      replacement.events = [...existing.events, { type: 'home_migrated', at, actor: actor(auth), state: record.status,
+        previousSessionId: existing.sessionId, sessionId: session.id, note: '替换完整历史fork，改为仅任务上下文；原会话与运行历史保留' }];
+    }
+    return replacement;
   });
   // Repeat safely after a partial migration: neither fork nor business execution repeats.
-  const { bindSessionAutomation } = await import('./session-manager.mjs');
+  const { bindSessionAutomation, setSessionArchived } = await import('./session-manager.mjs');
+  const previousHomeSessionIds = (home.previousSessions || []).map(item => item.sessionId);
   for (const sessionId of safeSessions) {
-    await bindSessionAutomation(sessionId, { taskId: id, homeSessionId: home.sessionId });
+    await bindSessionAutomation(sessionId, { taskId: id, homeSessionId: home.sessionId, previousHomeSessionIds });
   }
+  for (const oldId of previousHomeSessionIds) await setSessionArchived(oldId, true);
   return home;
 }
 export async function recordAutomationHomeChange(record, before, auth, operation = '', details = {}) {
@@ -71,7 +81,8 @@ export async function prepareAutomationHomeRun(trigger, session) {
   const id = trigger.scheduleId || trigger.id, home = await readAutomationHome(id);
   if (!home) return '';
   const { bindSessionAutomation } = await import('./session-manager.mjs');
-  await bindSessionAutomation(session.id, { taskId: id, homeSessionId: home.sessionId });
+  await bindSessionAutomation(session.id, { taskId: id, homeSessionId: home.sessionId,
+    previousHomeSessionIds: (home.previousSessions || []).map(item => item.sessionId) });
   const saved = await mutateAutomationHome(id, current => {
     if (!current.runs[trigger.id]?.taskTextHash) {
       current.runs[trigger.id] = { at: now(), revision: hash([trigger.text, trigger.sessionTemplate]) === hash([current.definitions.at(-1).definition.text, current.definitions.at(-1).definition.sessionTemplate]) ? current.definitions.at(-1).revision : null,
