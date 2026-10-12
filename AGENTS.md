@@ -44,6 +44,8 @@ Human-facing system and feature explanations belong to the single RemoteLab expl
 
 ## Documentation Rule
 
+Before committing implementation changes, run `node scripts/check-documentation-impact.mjs --staged` and update the associated current documentation. For changes with no documentation impact, record a specific `Docs-Impact: none — reason` trailer for review. Follow `docs/documentation-delivery.md` for generated source pages and instance-local publishing; do not edit generated copies.
+
 For setup, deployment, integration, and feature-activation docs, use a model-first, prompt-first shape:
 
 - assume the operator is a human delegating to their own AI coding agent

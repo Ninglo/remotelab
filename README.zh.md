@@ -435,3 +435,7 @@ remotelab restart tunnel
 ## License
 
 MIT
+
+## 使用与维护说明
+
+[副屏使用说明](display/USER_GUIDE.md) · [专题文档目录](docs/README.md) · [说明更新与发布](docs/documentation-delivery.md)。整体说明网站的“使用与维护”从这些仓库原文生成，不另维护一份正文。

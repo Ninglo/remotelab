@@ -61,9 +61,17 @@
       "route": "memory/index.html",
       "description": "项目、人员和公司资料各存在哪里，Agent 何时读取，人的纠正怎样更新原记录。",
       "navTitle": "记忆与协作"
+    },
+    {
+      "id": "manuals",
+      "title": "使用与维护文档",
+      "navTitle": "使用与维护",
+      "source": "docs/architecture-atlas",
+      "route": "manuals.html",
+      "description": "仓库原文生成的使用与维护说明"
     }
   ],
-  "edition": "20261012context",
+  "edition": "20261012documentation",
   "readingConvention": "从消息全程进入；具体环节内展开实现，专题引用保留原维护源和日期。",
   "pages": [
     {
@@ -437,6 +445,36 @@
           "来源与维护"
         ]
       ]
+    },
+    {
+      "route": "manuals.html",
+      "chapter": "manuals",
+      "reference": "reference-manual-documentation.md",
+      "sections": []
+    },
+    {
+      "route": "manual-remotelab.html",
+      "chapter": "manuals",
+      "reference": "reference-manual-remotelab.md",
+      "sections": []
+    },
+    {
+      "route": "manual-documentation.html",
+      "chapter": "manuals",
+      "reference": "reference-manual-documentation.md",
+      "sections": []
+    },
+    {
+      "route": "manual-display.html",
+      "chapter": "manuals",
+      "reference": "reference-manual-display.md",
+      "sections": []
+    },
+    {
+      "route": "manual-display-maintenance.html",
+      "chapter": "manuals",
+      "reference": "reference-manual-display-maintenance.md",
+      "sections": []
     }
   ],
   "deliverables": {
@@ -950,5 +988,31 @@
         }
       ]
     }
-  }
+  },
+  "documentation": [
+    {
+      "source": "README.zh.md",
+      "route": "manual-remotelab.html",
+      "title": "RemoteLab 入门",
+      "description": "用途、安装和日常操作的仓库原文"
+    },
+    {
+      "source": "docs/documentation-delivery.md",
+      "route": "manual-documentation.html",
+      "title": "说明如何持续更新",
+      "description": "变更检查、网站生成、发布与恢复"
+    },
+    {
+      "source": "display/USER_GUIDE.md",
+      "route": "manual-display.html",
+      "title": "副屏使用说明",
+      "description": "日常操作、提醒含义和问题处理"
+    },
+    {
+      "source": "display/README.md",
+      "route": "manual-display-maintenance.html",
+      "title": "副屏维护说明",
+      "description": "部署、身份、配置和接口边界"
+    }
+  ]
 }

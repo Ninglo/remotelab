@@ -1,5 +1,7 @@
 # RemoteLab Display v0
 
+For everyday use, reminder meanings and recovery, read [副屏使用说明](USER_GUIDE.md). The system guide renders that same source; this file remains the deployment and interface reference.
+
 This is an instance-local companion for a RemoteLab Server. There is no central
 display control plane or separate user-facing display hostname: each RemoteLab
 deployment exposes the feature in its existing Settings UI and serves its own

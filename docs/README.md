@@ -22,6 +22,10 @@ Read these first when you need the current truth:
 9. `../notes/current/model-sovereign-control-architecture.md` — current ownership model for manager, prompt, memory, and durable work-state boundaries
 10. `../notes/current/session-control-state-phase1.md` — current carrier-to-object mapping and first code landing for manager/work-state projection
 
+## Documentation delivery
+
+[说明交付流程](documentation-delivery.md)规定提交检查、原文生成及实例事件发布；网站“使用与维护”读取原文生成页。[副屏使用说明](../display/USER_GUIDE.md)面向日常用户，部署与接口仍沿原维护文档。
+
 ## Keep These In Sync
 
 When the system changes, update the matching surface instead of letting discussion notes carry the only truth:

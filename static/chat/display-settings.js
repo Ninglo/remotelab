@@ -15,7 +15,7 @@
       placeholder: "例如：我正在处理今天最重要的事", save: "保存并显示", reset: "恢复状态屏",
       empty: "选择 GIF 后可在这里预览", saving: "正在保存画面…", saved: "画面已保存；设备配对后会自动显示。",
       loading: "正在读取画面…", failed: "画面设置失败", tooLarge: "GIF 不能超过 3 MB。",
-      required: "请选择 GIF 并填写一句话。", resetDone: "已恢复状态屏。", details: "打开详细设置 ↗",
+      required: "请选择 GIF 并填写一句话。", resetDone: "已恢复状态屏。", details: "打开详细设置 ↗", guide: "使用说明",
     };
     const en = {
       heading: "Simple display", note: "Upload a GIF and write one sentence. Saving switches the display from detailed mode to this simple view.",
@@ -23,7 +23,7 @@
       placeholder: "For example: Working on today's most important task", save: "Save and show", reset: "Restore status screen",
       empty: "Choose a GIF to preview it here", saving: "Saving display…", saved: "Saved. Your display will show this after pairing.",
       loading: "Loading display…", failed: "Could not save display", tooLarge: "GIF must be 3 MB or smaller.",
-      required: "Choose a GIF and enter one sentence.", resetDone: "Status screen restored.", details: "Detailed settings ↗",
+      required: "Choose a GIF and enter one sentence.", resetDone: "Status screen restored.", details: "Detailed settings ↗", guide: "User guide",
     };
     return (document.documentElement.lang || "").toLowerCase().startsWith("zh") ? zh[key] : en[key];
   }
@@ -47,6 +47,7 @@
         </div>
         <div class="settings-display-heading-actions">
           <a class="settings-app-btn settings-display-details" id="settingsDisplayDetails" href="/public-pages/secondary-display-studio/index.html"></a>
+          <a class="settings-app-btn" id="settingsDisplayGuide" href="/public-pages/remotelab-architecture-atlas/manual-display.html" target="_blank" rel="noopener"></a>
           <button class="settings-app-btn settings-display-generate" id="settingsDisplayGenerate" type="button"></button>
         </div>
       </div>
@@ -102,7 +103,7 @@
       ["settingsDisplayGifLabel", "gif"], ["settingsDisplaySentenceLabel", "sentence"],
       ["settingsDisplaySave", "save"], ["settingsDisplayReset", "reset"],
       ["settingsDisplayPreviewEmpty", "empty"],
-      ["settingsDisplayDetails", "details"],
+      ["settingsDisplayDetails", "details"], ["settingsDisplayGuide", "guide"],
     ]) {
       const node = document.getElementById(id);
       if (node) node.textContent = personalCopy(key);
