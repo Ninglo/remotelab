@@ -25,7 +25,8 @@ Read these first when you need the current truth:
 ## Documentation delivery
 
 [Monitoring and recovery](monitoring.md) separates normal account consumption
-from local backup readiness and failed switching. Disk warnings enter bounded
+from local backup readiness and failed switching, including a positive-balance
+fallback after confirmed exhaustion. Disk warnings enter bounded
 low-risk recovery; medium/high-risk plans include scope, impact, rollback and
 verification and wait for human confirmation. The same guide defines verified
 message-transport recovery without treating unrelated API restrictions as a

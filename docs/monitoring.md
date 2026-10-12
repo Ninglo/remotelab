@@ -369,6 +369,10 @@ selection changes subsequent requests; a persistent failure to do so is an
 incident. Unknown current quota is an observation problem, never exhaustion.
 Three observations confirm a continuity notification. Running requests retain
 their authorization and are never automatically replayed by rotation.
+If the current account is confirmed exhausted and no backup exceeds 10%, the
+selector uses the highest fresh positive local balance. The reserve requirement
+must not strand subsequent requests on an exhausted account. Low positive
+accounts do not bounce between one another.
 
 Disk warnings now enter the existing recovery broker at the warning threshold,
 before a critical outage. A repair Harness first investigates the actual source
