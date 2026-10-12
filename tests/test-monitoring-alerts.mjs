@@ -304,3 +304,14 @@ test('transport edits the same card, supports existing rich-text alerts, and ref
     assert.equal(writes, 0);
   }
 });
+
+test('a recovery observed while muted updates the old message even if a new incident starts before unmuting', async () => {
+  const f = fixture(), failed = snapshot([{ ...disk, id: '/data' }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: failed });
+  const good = snapshot([]); good.disks = [{ path: '/data', status: 'healthy' }];
+  await dispatchMonitoringAlerts({ ...f.options, config: { enabled: false }, snapshot: good });
+  await dispatchMonitoringAlerts({ ...f.options, config: { enabled: false }, snapshot: failed });
+  let oldEvents;
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: failed, update: async (events, _config, id) => { oldEvents = events; return id; } });
+  assert.equal(oldEvents[0].recovered, true); assert.equal(f.getSends(), 2);
+});

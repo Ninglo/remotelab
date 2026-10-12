@@ -116,6 +116,19 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     && batch.keys.every(key => state.incidents[key]?.active === false || state.incidents[key]?.status === 'sent')) {
     batch.status = 'superseded'; batch.closedAt = new Date(now).toISOString();
   }
+  // Persist pending edits even while muted or quota-blocked. A recovery update
+  // must survive unmuting and a subsequent new cycle of the same resource.
+  for (const batch of Object.values(state.batches)) if (batch.status === 'sent' && batch.messageId) {
+    batch.events ||= {};
+    for (const key of batch.keys) {
+      const incident = state.incidents[key];
+      if (incident?.messageId === batch.messageId && incident.event) {
+        batch.events[key] = incident.event;
+        if (incident.presentedVersion !== incident.version) batch.dirty = true;
+      } else batch.events[key] ||= { subject: incident?.subject || '历史事件', detail: '历史状态未核实，详见原处理记录' };
+    }
+    if (batch.dirty) edits.add(batch.messageId);
+  }
   state.observedAt = new Date(now).toISOString();
   const muted = config.enabled === false;
   if (dryRun) return { sent: 0, dryRun: true, baseline, muted, wouldSend: baseline || muted ? 0 : due.length,
@@ -127,19 +140,11 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   for (const messageId of edits) {
     const batch = Object.values(state.batches).find(b => b.messageId === messageId);
     if (!batch || batch.status !== 'sent' || transportQuotaBlocked) continue;
-    // Use each member's saved event: editing a shared alert must not drop other
-    // subjects or reuse a new failure's data in an old, recovered message.
-    batch.events ||= {};
-    for (const key of batch.keys) {
-      const incident = state.incidents[key];
-      if (incident?.messageId === messageId && incident.event) batch.events[key] = incident.event;
-      else batch.events[key] ||= { subject: incident?.subject || '历史事件', detail: '详见原处理记录', recovered: true };
-    }
     batch.status = 'updating'; await save(stateFile, state);
     try {
       const receipt = await update(Object.values(batch.events), { ...config, recoveryIncidents: [] }, messageId);
       if (receipt !== messageId) throw new Error('UPDATE_RECEIPT_MISMATCH');
-      batch.status = 'sent'; batch.updatedAt = state.observedAt; updated++;
+      batch.status = 'sent'; batch.dirty = false; batch.updatedAt = state.observedAt; updated++;
       for (const key of batch.keys) if (state.incidents[key]?.messageId === messageId) {
         state.incidents[key].presentedVersion = state.incidents[key].version;
       }
