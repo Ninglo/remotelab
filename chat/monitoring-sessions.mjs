@@ -46,7 +46,7 @@ export function runMeasurement(ledger, run, request) {
   const ds = validRequest ? request.deliveries || [] : [];
   const deliveryEnd = ds.length && ds.every(d => d.state === 'delivered' && Number.isFinite(time(d.deliveredAt))) ? Math.max(...ds.map(d => time(d.deliveredAt))) : null;
   return { runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
-    background: ledger.backgroundOperation === true,
+    background: ledger.backgroundOperation === true || request?.excluded === true,
     metrics: { prepareMs: validRequest ? span(request.acceptedAt, request.preparedAt) : null,
       launchMs: validRequest ? span(request.preparedAt, run.startedAt) : null,
       runMs: validRun ? span(run.startedAt, run.completedAt) : null,
