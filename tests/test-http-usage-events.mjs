@@ -201,5 +201,8 @@ try {
   }
   console.log('http usage events: authenticated cross-surface identity, native waits, retries, privacy and analysis passed');
 } finally {
-  server.kill('SIGTERM'); await once(server, 'exit'); await rm(home, { recursive: true, force: true });
+  server.kill('SIGTERM'); await once(server, 'exit');
+  // Detached cancellation can finish its last state write after the controller exits.
+  // Bound cleanup retries for ENOTEMPTY rather than racing that final write.
+  await rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 }
