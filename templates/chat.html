@@ -264,8 +264,19 @@
           </div>
           <div class="task-center-feedback" id="taskCenterFormStatus" role="status" aria-live="polite"></div>
         </form>
-        <section id="taskCenterTimeline" class="task-center-timeline" hidden></section>
-        <section id="taskCenterFlows" class="task-center-flows" hidden></section>
+        <nav id="taskCenterViews" class="task-view-tabs" role="tablist" aria-label="Automation views">
+          <button type="button" id="taskViewTimeline" role="tab" aria-controls="taskViewTimelinePanel" aria-selected="true" data-task-view="timeline">自动化总览</button>
+          <button type="button" id="taskViewFlows" role="tab" aria-controls="taskViewFlowsPanel" aria-selected="false" tabindex="-1" data-task-view="flows">自动化流程</button>
+          <button type="button" id="taskViewTasks" role="tab" aria-controls="taskViewTasksPanel" aria-selected="false" tabindex="-1" data-task-view="tasks">详细任务</button>
+        </nav>
+        <p id="taskViewStatus" class="task-history-note" role="status" hidden></p>
+        <section id="taskViewTimelinePanel" role="tabpanel" aria-labelledby="taskViewTimeline">
+          <section id="taskCenterTimeline" class="task-center-timeline" hidden></section>
+        </section>
+        <section id="taskViewFlowsPanel" role="tabpanel" aria-labelledby="taskViewFlows" hidden>
+          <section id="taskCenterFlows" class="task-center-flows" hidden></section>
+        </section>
+        <section id="taskViewTasksPanel" role="tabpanel" aria-labelledby="taskViewTasks" hidden>
         <h3 class="task-list-heading" data-i18n="tasks.flows.taskList">Task list</h3>
         <div class="task-center-toolbar">
           <div id="taskCenterFilter" class="task-filter-buttons" role="group" aria-label="Filter automations" data-i18n-aria-label="tasks.filter.ariaLabel">
@@ -279,6 +290,7 @@
         <div class="task-center-list" id="taskCenterList">
           <div class="task-center-empty" data-i18n="tasks.loading">Loading automations…</div>
         </div>
+        </section>
         </section>
       </div>
       <div class="settings-panel" id="settingsPanel">
