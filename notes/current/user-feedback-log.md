@@ -1704,3 +1704,14 @@ services and future maintenance. Task-card publication now belongs to the
 connector lifecycle, retaining separate queues and durable card receipts.
 Acceptance includes stopping legacy writers, same-card restart recovery and
 visible component degradation; a running connector alone is not delivery proof.
+
+## 2026-10-12 — Recording rollout must cover wireless stop and recoverable uploads
+
+After a successful wired recording test, the operator found Bluetooth could
+start but not stop, and requested normal upload behavior before wider use.
+Physical disconnection must be distinguished from a missing desktop reminder;
+a running listener alone is not evidence that a keypad event arrived. Two
+normal-mode samples reached uploaded originals and accepted analysis. The
+operator requested three days of local retention during an initial three-day
+observation, then one day only after stability is verified. Never prune a
+failed upload or a local-only capture, and recheck remote audio before deletion.

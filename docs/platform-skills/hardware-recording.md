@@ -228,3 +228,17 @@ The local control socket's `input-events` diagnostic returns only the latest
 It is not a global keyboard monitor. Verify real key overlap, visible popup,
 audible cue, changing waveforms and saved audio on the target Mac; compilation
 and synthetic tests alone do not establish those outcomes.
+
+### Local retention after verified upload
+
+Retention is disabled by default. An explicitly authorized policy such as
+`retention: { days: 3, startedAt: "2026-10-12T06:15:00Z" }` keeps a full initial
+observation window and then checks hourly. It removes only old local WAVs from
+submitted recordings with accepted analysis, and confirmed original publication
+when configured. Every segment must still have a ready remote asset in the same
+Session, with matching byte length. Failed uploads, local-only captures, partial
+files, unverifiable remote copies and manifests remain untouched. The manifest
+retains remote references and a deletion audit; `retention-status.json` records
+each check. A later reduction from three days to one requires the authorized
+health review; elapsed time alone must not reduce retention. Use a one-time
+RemoteLab Trigger for that review, keeping the original policy start timestamp.
