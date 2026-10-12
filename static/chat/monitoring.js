@@ -58,7 +58,7 @@
     const automationEntry = node("div"), link = node("a", "查看自动化执行记录");
     link.href = "/?tab=tasks&monitor=automations"; automationEntry.append(link,
       node("small", policy?.automationRecoveryEnabled ? "已配置任务范围；失败补救回到该任务的执行会话。" : "自动化失败补救未启用。", "monitoring-owner"));
-    table(root, ["监管对象", "预警说明", "补救说明", "执行与记录"], [
+    const guides = [
       ["磁盘", "容量或 inode 达到85%预警、92%严重；系统盘可用不足15 GiB／8 GiB同样触发。受阻后继续恶化会升级。",
         "先核对已有清理和安全候选；只处理符合现行流程的可重建缓存、已核验重复副本，并复测。删除唯一数据、迁移或扩容先给方案待确认。", resourceEntry],
       ["账号连续性", "正常消耗和耗尽只记录；20%检查备用准备。没有可用备用、无法采集或切换持续未完成才提醒。",
@@ -66,7 +66,17 @@
         "后台切换器直接执行；本页账户额度显示开关、备用数量和最近切换，不另开 AI 会话。"],
       ["自动化失败", "核对真实失败和当前任务状态；已停用或已结束的任务不重新启动。",
         "先检查原产物和回执，只补失败步骤；结果不确定的发送先核实。中高风险动作在原处理会话确认。", automationEntry],
-    ]);
+    ];
+    const cards = node("div", "", "monitoring-account-grid");
+    for (const [title, warning, remedy, destination] of guides) {
+      const card = node("article", "", "monitoring-account"); card.appendChild(node("h4", title));
+      for (const [label, description] of [["预警说明", warning], ["补救说明", remedy], ["执行与记录", destination]]) {
+        const paragraph = node("div"); paragraph.appendChild(node("strong", label));
+        paragraph.appendChild(description?.nodeType ? description : node("p", description)); card.appendChild(paragraph);
+      }
+      cards.appendChild(card);
+    }
+    root.appendChild(cards);
     root.appendChild(node("p", "待确认方案会列出具体对象、步骤、影响、恢复方式和验收办法。下方记录来自实际补救状态；任务结束不等于风险已经解除。", "monitoring-note"));
     const repairs = (value.recovery || []).slice().sort((a, b) => Number(Boolean(b.currentIssue)) - Number(Boolean(a.currentIssue))
       || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
