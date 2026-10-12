@@ -203,6 +203,9 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
+      handling: { recoveryEnabled: config.recovery?.enabled === true,
+        coordinatorSessionId: text(config.recovery?.coordinatorSessionId),
+        automationRecoveryEnabled: config.recovery?.enabled === true && (!config.recovery.automationIds || config.recovery.automationIds.length > 0) },
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,
         unknownAccounts: accounts.filter(account => ['unknown', 'conflicting'].includes(account.status)).length, unverifiedAdmissions, gaps } };
   }

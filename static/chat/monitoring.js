@@ -44,6 +44,43 @@
     }); body.appendChild(tr); });
     table.appendChild(body); wrap.appendChild(table); root.appendChild(wrap);
   }
+  function handlingGuide(parent) {
+    const root = section("预警与自动补救", parent); root.dataset.section = "handling";
+    const policy = value.handling;
+    root.appendChild(node("p", !policy ? "处置配置尚未取得，执行状态未知。" : policy.recoveryEnabled
+      ? "自动补救已启用。低风险、已有授权且可验证的动作自行执行；中高风险先给出具体方案，等待人在处理会话确认。"
+      : "自动补救未启用；以下为预警与补救规则，不代表已经执行。", "monitoring-note"));
+    const resourceEntry = node("div");
+    if (policy?.coordinatorSessionId) {
+      const link = node("a", "打开固定补救会话"); link.href = `/?session=${encodeURIComponent(policy.coordinatorSessionId)}`;
+      resourceEntry.append(link, node("small", "磁盘、服务补救沿用此会话，保留每次执行与确认记录。", "monitoring-owner"));
+    } else resourceEntry.textContent = "尚未配置固定补救会话";
+    const automationEntry = node("div"), link = node("a", "查看自动化执行记录");
+    link.href = "/?tab=tasks&monitor=automations"; automationEntry.append(link,
+      node("small", policy?.automationRecoveryEnabled ? "已配置任务范围；失败补救回到该任务的执行会话。" : "自动化失败补救未启用。", "monitoring-owner"));
+    table(root, ["监管对象", "预警说明", "补救说明", "执行与记录"], [
+      ["磁盘", "容量或 inode 达到85%预警、92%严重；系统盘可用不足15 GiB／8 GiB同样触发。受阻后继续恶化会升级。",
+        "先核对已有清理和安全候选；只处理符合现行流程的可重建缓存、已核验重复副本，并复测。删除唯一数据、迁移或扩容先给方案待确认。", resourceEntry],
+      ["账号连续性", "正常消耗和耗尽只记录；20%检查备用准备。没有可用备用、无法采集或切换持续未完成才提醒。",
+        "自动切换开启时，10%切换后续请求到已登录且额度高于10%的本地备用；确已耗尽时可用正余额账号兜底。在途任务保留原账号。",
+        "后台切换器直接执行；本页账户额度显示开关、备用数量和最近切换，不另开 AI 会话。"],
+      ["自动化失败", "核对真实失败和当前任务状态；已停用或已结束的任务不重新启动。",
+        "先检查原产物和回执，只补失败步骤；结果不确定的发送先核实。中高风险动作在原处理会话确认。", automationEntry],
+    ]);
+    root.appendChild(node("p", "待确认方案会列出具体对象、步骤、影响、恢复方式和验收办法。下方记录来自实际补救状态；任务结束不等于风险已经解除。", "monitoring-note"));
+    const repairs = value.recovery || [];
+    const history = node("details"); history.appendChild(node("summary", `补救记录（${repairs.length}）`));
+    if (!repairs.length) history.appendChild(node("p", "尚无已记录的补救。", "monitoring-note"));
+    for (const repair of repairs) {
+      const detail = node("details"); detail.appendChild(node("summary", `${repair.subject} · ${repair.label}`));
+      detail.appendChild(node("p", repair.summary || repair.reason || "等待执行记录", "monitoring-note"));
+      if (repair.plan) table(detail, ["处置方案", "内容"], [["执行条件", repair.plan.requiresConfirmation ? "等待人确认" : "低风险自行处理"],
+        ["步骤", repair.plan.summary], ["对象", repair.plan.target], ["影响", repair.plan.impact], ["恢复方式", repair.plan.rollback], ["验收", repair.plan.verification]]);
+      if (repair.sessionId) { const entry = node("a", "查看这次补救的处理会话"); entry.href = `/?session=${encodeURIComponent(repair.sessionId)}`; detail.appendChild(entry); }
+      history.appendChild(detail);
+    }
+    root.appendChild(history);
+  }
   function alertDetail(item) {
     if (item.detail) return item.detail;
     if (item.kind === "disk") return t("diskRisk", { free: bytes(item.availableBytes), used: percent(item.usedPercent), inodes: percent(item.inodeUsedPercent) });
@@ -190,6 +227,7 @@
     if (!value) { content.appendChild(node("p", t(loading ? "loading" : "failed"), "monitoring-note")); return; }
     const snapshot = node("div", "", "monitoring-snapshot"); snapshot.id = "monitoringSnapshot"; content.appendChild(snapshot);
     snapshot.appendChild(node("h2", t("snapshotTitle"), "monitoring-snapshot-heading"));
+    handlingGuide(snapshot);
     const disks = section("磁盘容量", snapshot); disks.dataset.section = "disks";
     if (!value.disks.length) disks.appendChild(node("p", "尚未取得磁盘数据，状态未知。", "monitoring-note"));
     else table(disks, ["磁盘", "状态", "已用", "可用空间", "inode 已用"], value.disks.map(disk => {
@@ -219,6 +257,11 @@
     const accounts = section("账户额度", snapshot); accounts.dataset.section = "accounts";
     const continuity = value.accountContinuity;
     if (continuity) accounts.appendChild(node("p", `本实例自动切换${continuity.autoSwitch ? "已开启" : "未开启"}；已登录且额度高于10%的备用 ${continuity.backupCount} 个。20%进入备用准备区，10%切换后续请求；在途任务保留原账号。其他机器账号不算本实例备用。`, "monitoring-note"));
+    if (continuity?.lastSwitch) {
+      const change = continuity.lastSwitch;
+      const label = id => value.accounts.find(account => account.id === id)?.label || "已登录账号";
+      accounts.appendChild(node("p", `最近自动切换：${time(change.at)} · ${label(change.from)} → ${label(change.to)}。${({ reserve: "提前保留余额", confirmed_exhaustion: "原账号已耗尽", remaining_balance_fallback: "使用仍有余额的本地账号兜底" })[change.reason] || "后台切换已记录"}。`, "monitoring-note"));
+    }
     for (const item of (value.attention || []).filter(a => a.kind === "accountContinuity")) {
       const line = node("p", alertDetail(item), "monitoring-alert"); line.dataset.severity = item.severity; accounts.appendChild(line);
     }
