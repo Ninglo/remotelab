@@ -39,7 +39,9 @@ hook. It restores the current immutable RemoteLab rule snapshot before the next
 inference, including automatic compaction during a turn. Rule-reference reuse
 requires this recovery capability; other Harnesses conservatively receive full
 rules per input. An unavailable hook or unreadable selected snapshot stops
-reference-only continuation with an explicit error. This requires a Codex build
+reference-only continuation with an explicit error. A rule-recovery hook stop
+settles the RemoteLab Run as failed, even if Codex labels the stopped turn
+completed; it must not appear as a successful empty result. This requires a Codex build
 supporting native hooks (verified on 0.159.2); no persistent user configuration is
 rewritten. Existing active hosts acquire it on their next Run, not by silently
 changing an already accepted input. See [context delivery and validation limits](connector-turn-context.md).

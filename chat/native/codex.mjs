@@ -67,6 +67,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   const announcedThreads = new Set();
   const asyncQuestions = new Set();
   const finalAnswerTurns = new Set();
+  const ruleRecoveryFailures = new Map();
 
   function askAsync(item) {
     if (asyncQuestions.has(item.id)) return;
@@ -259,8 +260,18 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           if (params.thread?.id === threadId) announceThread(threadId);
           break;
         case 'turn/started': activateTurn(params.turn?.id); break;
+        case 'hook/completed': {
+          const failure = (params.run?.entries || []).find(entry => entry.kind === 'stop'
+            && entry.text?.startsWith('RemoteLab rule recovery failed:'));
+          if (recoveryHook && params.run?.eventName === 'sessionStart' && failure) {
+            ruleRecoveryFailures.set(params.turnId || activeTurnId, failure.text);
+          }
+          break;
+        }
         case 'turn/completed': {
-          const turn = params.turn;
+          let turn = params.turn;
+          const recoveryError = ruleRecoveryFailures.get(turn?.id);
+          if (recoveryError) { turn = { ...turn, status: 'failed', error: {message: recoveryError} };ruleRecoveryFailures.delete(turn.id); }
           if (!turn?.id || completedTurns.has(turn.id)) break;
           completedTurns.add(turn.id);
           if (activeTurnId === turn.id) activeTurnId = '';

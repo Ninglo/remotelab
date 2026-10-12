@@ -255,5 +255,9 @@ console.log('test-native-codex: ok');
   const config=h.sent.findLast(x=>x.method==='thread/start').params.config;
   assert.deepEqual(config['hooks.state'].old,{trusted_hash:'keep-existing',enabled:false});
   assert.deepEqual(config['hooks.state'].own,{trusted_hash:'only-our-hash',enabled:true});
-  h.reply('thread/start',{thread:{id:'thread-1'}});await tick();h.reply('turn/start',{turn:{id:'turn-1',status:'inProgress'}});await promise;h.driver.close();
+  h.reply('thread/start',{thread:{id:'thread-1'}});await tick();h.reply('turn/start',{turn:{id:'turn-1',status:'inProgress'}});await promise;
+  h.notify('hook/completed',{turnId:'turn-1',run:{eventName:'sessionStart',entries:[{kind:'stop',text:'RemoteLab rule recovery failed: fixture missing snapshot'}]}});
+  h.notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});
+  assert.equal(h.settled.at(-1).status,'failed');assert.match(h.settled.at(-1).error,/missing snapshot/);
+  h.driver.close();
 }

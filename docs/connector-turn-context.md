@@ -133,7 +133,9 @@ current snapshot **before the next inference**, including automatic mid-turn
 compaction. Recovery scans native consumed user records for the latest snapshot;
 a queued input cannot change an active turn's rules. The hook validates Session
 and content hash, restores full rules without a model call, and stops continuation
-if the selected snapshot is unreadable. Its native additional-context wrapper
+if the selected snapshot is unreadable. Such a stop is reported as a failed Run,
+not a successful empty response, even when the native turn ends as completed.
+Its native additional-context wrapper
 explicitly keeps RemoteLab preferences at user scope and defers to current human
 instructions and Harness policy; no group-message body is elevated into rules.
 

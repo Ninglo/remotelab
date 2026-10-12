@@ -95,7 +95,9 @@ test('installed Codex restores current scoped RemoteLab rules before inference a
   assert.doesNotMatch(restoredBody(),/MUST_KEEP_FINAL_CAVEAT_791/);
   settled=nextSettled();await request('thread/compact/start',{threadId:first.threadId});await settled;
   await rm(b.receipt.file);const beforeFailure=bodies.length;
-  settled=nextSettled();await driver.submit({id:'missing',text:'Continue with a missing rule snapshot.'});await settled;
+  settled=nextSettled();await driver.submit({id:'missing',text:'Continue with a missing rule snapshot.'});const stopped=await settled;
+  assert.equal(stopped.status,'failed','recovery failure must not look like successful task completion');
+  assert.match(stopped.error,/RemoteLab rule recovery failed/);
   assert.equal(bodies.length,beforeFailure,'unreadable rules stop continuation before another inference');
   console.log('verified installed native compaction recovery across '+bodies.length+' loopback inference requests');
  } catch(error) { console.error(error.message.slice(0,700), stderr.slice(-3));throw error; } finally {driver.close();const closed=child.exitCode===null&&child.signalCode===null?once(child,'close'):Promise.resolve();child.kill('SIGKILL');await closed;server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(home,{recursive:true,force:true});}
