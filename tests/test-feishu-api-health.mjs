@@ -210,3 +210,9 @@ test('a calendar restriction does not disable a proven message transport or infe
   await dispatchMonitoringAlerts({ ...options, now: now + 3600000, snapshot: { ...snapshot, apiHealth: rejected } });
   assert.equal(sends, 2, 'a newer rejection blocks delivery until recovery is verified again');
 });
+
+test('high successful traffic is an optimization signal, not an outage; failures and slowness stay actionable', () => {
+  const provider = { id: 'feishu:test', status: 'degraded', burst: true, errors: false, slow: false };
+  assert.equal(feishuApiAttention({ providers: [provider] })[0].severity, 'warning');
+  for (const signal of ['errors', 'slow']) assert.equal(feishuApiAttention({ providers: [{ ...provider, [signal]: true }] })[0].severity, 'critical');
+});
