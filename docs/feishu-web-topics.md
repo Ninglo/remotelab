@@ -17,19 +17,24 @@
 查看共享 Session，连接不是新增 Session 权限隔离。旧设置和 workspace 凭据
 不能进入该通道，旧授权不会自动扩权。
 
-首次使用在插件设置中点“连接状态同步”，登录 RemoteLab 并核对姓名。
+首次打开飞书时，插件直接显示启用引导，连接一次本人账号并核对姓名。
+已在同一飞书来源和原生账号下连接 Index/thinking 的浏览器自动复用该身份，
+换取独立只读话题令牌，过期时间不超过原连接；无需再去设置启用。
 连接 30 天有效，绑定 Person、当前飞书来源和浏览器账号；服务器只保存
 `fwtops_…` 的哈希。切换账号立即清除之前的显示和连接，断线显示“未同步”，
-不继续把旧 running 当成当前状态。
+不继续把旧 running 当成当前状态。review 的可见性读取飞书原生预览的
+`unreadCount`，已读后隐藏，新未读结果再次显示；不把点击话题猜成已读，
+也不修改共享 RemoteLab Session 的审阅状态。running 不被阅读动作清除。
 
 - `GET /page/feishu-web-topics/connect`：本人连接页。
 - `POST /api/feishu-web-topics/grant`：同源且明确确认的本人连接。
-- `GET /api/feishu-web-topics/snapshot?ids=…`：最多 200 个原生列表编号。
+- `POST /api/feishu-web-topics/activate`：用已确认的同账号 `fwspace_…` 连接启用只读状态；不能用消息设置、话题或服务令牌。
+- `GET /api/feishu-web-topics/snapshot?ids=…&groups=…`：最多 200 个原生列表编号，及当前原生群编号。
 - `GET /api/feishu-web-topics/stream?ids=…`：同一范围的服务端事件流。
 - `DELETE /api/feishu-web-topics/connection`：撤销当前连接。
 
 请求带 `Authorization: Bearer fwtops_…`、`X-Feishu-Origin`、
-`X-Feishu-Account`；普通服务令牌和其他插件连接不能代用。状态推送沿原
+`X-Feishu-Account`；读取和推送仍只接受话题令牌，普通服务令牌和其他插件连接不能代用。状态推送沿原
 Session 变更通知，单项变化只刷新对应会话，列表或验证对应变化才重新映射。
 每 15 秒传输心跳并重验连接；撤销或过期会结束事件流。浏览器 45 秒未收心跳
 标记失效，重连在 120 秒期限内退避；耗尽后等焦点、网络或账号变化重新启动。
@@ -37,7 +42,10 @@ Session 变更通知，单项变化只刷新对应会话，列表或验证对应
 实例配置 `CONFIG_DIR/feishu-web-topics.json`：`version: 1` 和绝对路径
 `bindingsFile`。文件引用现有、已核实的 API 首帖 → 原生列表编号索引；不复制
 项目主账，不按群名、标题或浏览器传入的 Session 编号猜对应。配置仅由维护者
-注册，接口不接受任意路径。只读取受限大小索引，不向公开安装包打入聊天快照
+注册，接口不接受任意路径。可选 `groupsFile` 和 `boardPairsFile` 引用原有
+已核群编号索引和配对配置；只有两边群编号都核实且浏览器当前群匹配时，
+才返回该配对的群汇总。汇总沿原 Mini 模型和当前 Session 来源，排除私聊、
+其他连接器路由及无关群；不新增业务账本或模型分析。只读取受限大小索引，不向公开安装包打入聊天快照
 或凭据。首次安装与索引发现的原流程分别维护。
 
 Mac 完整安装器注册用户级 `dev.remotelab.feishu-web-updater` LaunchAgent，
@@ -56,3 +64,5 @@ Mac 完整安装器注册用户级 `dev.remotelab.feishu-web-updater` LaunchAgen
 代码、接口、安装器、独立浏览器和本人真实使用分别核对。不能以 Mini 联调
 窗口成功替代普通扩展验证；本人 MacBook 的最后一次安装和首次连接仍由其
 现场操作确认。
+
+原生浏览器桥接只提供账号、当前群/话题编号和未读数，以及用户点击后的固定原生话题导航。没有任意执行代码、远程脚本或消息发送入口。
