@@ -18,6 +18,7 @@ const run={id:'r1',sessionId:'s1',startedAt:'2026-01-01T00:00:05Z',completedAt:'
 const request={sessionId:'s1',runId:'r1',acceptedAt:'2026-01-01T00:00:00Z',preparedAt:'2026-01-01T00:00:03Z',settledAt:'2026-01-01T00:05:01Z',deliveries:[{state:'delivered',deliveredAt:'2026-01-01T00:05:04Z'}]};
 const sample=runMeasurement(ledger,run,request);assert.equal(sample.metrics.prepareMs,3000);assert.equal(sample.metrics.launchMs,2000);assert.equal(sample.metrics.deliveryMs,3000);assert.equal(sample.metrics.contextTokens,0);
 assert.equal(runMeasurement(ledger,run,{...request,nativeDispatchRunId:'r0'}).metrics.prepareMs,null);
+assert.equal(runMeasurement(ledger,run,{...request,excluded:true}).background,true);
 assert.equal(runMeasurement(ledger,run,{...request,preparedAt:'2025-01-01'}).metrics.prepareMs,null);
 assert.equal(runMeasurement(ledger,{...run,sessionId:'wrong'},request).metrics.runMs,null);
 assert.equal(runMeasurement(ledger,run,{...request,deliveries:[{state:'pending'}]}).metrics.deliveryMs,null);
