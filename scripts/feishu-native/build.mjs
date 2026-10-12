@@ -26,7 +26,7 @@ const topicEnd=content.indexOf('\n})();',topicStart)+7;
 if(topicStart<0||topicEnd<topicStart)throw Error('Unrecognized Web topic renderer');
 content=content.slice(0,topicStart)+await fs.readFile(path.join(here,'topic-view.js'),'utf8')+content.slice(topicEnd);
 // Personal panels fill their native renderer below the enhancement toolbar.
-content=content.replaceAll('height:calc(100dvh - 68px)', 'height:calc(100% - 68px)');
+for(const height of [68,76])content=content.replaceAll('height:calc(100dvh - '+height+'px)', 'height:calc(100% - '+height+'px)');
 // The Web Live controller loads these two additional components outside content.js.
 const live=process.argv[4];if(!live)throw Error('Expected reviewed Mac Web Live extension directory');
 const extras={};for(const name of ['usage-view.js','web-artifact.js'])extras[name]=await fs.readFile(path.join(live,name),'utf8');
