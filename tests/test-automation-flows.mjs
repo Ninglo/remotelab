@@ -34,3 +34,21 @@ config.language='zh-CN';config.groups[0].rows[0].writeDetails='Original path /da
 result=await listAutomationFlows([task],{load});
 assert.equal(result.language,'zh-CN');assert.equal(result.groups[0].rows[0].writeDetails,'Original path /data/project.md');
 config.language='invalid';assert.equal((await listAutomationFlows([task],{load})).language,'');
+
+// A displayed plan is bounded inert content, not a task definition or scheduler change.
+config.groups[0].plan={title:'Shared project context',status:'Execution changes pending',stages:[
+  null,{connector:'Ready context is reused',kind:'shared',nodes:[null,{title:'Context <script>bad()</script>',lines:['Evidence and sources',null,{}]}]},
+  {connector:'Independent consumers',kind:'executable',nodes:[{title:'Tasks',lines:['Read current task status']}],run:{command:'must not execute'}},
+],run:{command:'must not execute'}};
+const planned=await listAutomationFlows([task],{load});
+assert.equal(planned.groups[0].plan.status,'Execution changes pending');
+assert.equal(planned.groups[0].plan.stages.length,2);
+assert.equal(planned.groups[0].plan.stages[0].nodes[0].title,'Context <script>bad()</script>');
+assert.deepEqual(planned.groups[0].plan.stages[0].nodes[0].lines,['Evidence and sources']);
+assert.equal(planned.groups[0].plan.stages[1].kind,'');
+assert.equal(planned.groups[0].plan.run,undefined);
+assert.equal(planned.groups[0].plan.stages[1].run,undefined);
+assert.equal(JSON.stringify(task),before);
+config.groups[0].plan={stages:'invalid'};
+assert.equal((await listAutomationFlows([task],{load})).groups[0].plan,null,'invalid optional plan leaves task rows available');
+console.log('Plan projection preserves explicit pending status, inert text and original task state.');

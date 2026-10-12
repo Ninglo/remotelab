@@ -15,6 +15,19 @@ export function automationBackgroundHash(item) {
   return createHash('sha256').update(JSON.stringify({ id: item.id, title: item.title, trigger: item.trigger, note: item.note })).digest('hex');
 }
 const text = value => typeof value === 'string' ? value.slice(0, 1500) : '';
+function flowPlan(value) {
+  if (!value || typeof value !== 'object' || !Array.isArray(value.stages)) return null;
+  return { title: text(value.title), status: text(value.status), summary: text(value.summary),
+    stages: value.stages.filter(stage => stage && Array.isArray(stage.nodes)).slice(0, 10).map(stage => ({
+      connector: text(stage.connector), kind: ['shared', 'delivery'].includes(stage.kind) ? stage.kind : '',
+      nodes: stage.nodes.filter(node => node && typeof node === 'object').slice(0, 4).map(node => ({
+        title: text(node.title), label: text(node.label),
+        lines: (Array.isArray(node.lines) ? node.lines : []).filter(line => typeof line === 'string').slice(0, 8).map(text),
+      })),
+    })),
+    footer: text(value.footer),
+  };
+}
 function safeUrl(value) {
   try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? u.href : ''; }
   catch { return ''; }
@@ -26,7 +39,7 @@ export async function listAutomationFlows(tasks, { path = join(CONFIG_DIR, 'auto
   const byId = new Map(tasks.map(task => [task.id, task]));
   const backgroundById = new Map(backgroundMechanisms.map(item => [item.id, item]));
   return { unavailable: false, language: ['zh-CN', 'en'].includes(config.language) ? config.language : '', groups: config.groups.filter(g => ['operations', 'memory', 'tracking', 'knowledge'].includes(g?.id)).slice(0, 4).map(group => ({
-    id: group.id, readAt: text(group.readAt), read: text(group.read), note: text(group.note),
+    id: group.id, title: text(group.title), readAt: text(group.readAt), read: text(group.read), note: text(group.note), plan: flowPlan(group.plan),
     rows: (Array.isArray(group.rows) ? group.rows : []).filter(row => row && typeof row === 'object').slice(0, 20).map(row => {
       const ids = [...new Set((Array.isArray(row.taskIds) ? row.taskIds : []).filter(id => typeof id === 'string'))];
       const backgroundIds = [...new Set((Array.isArray(row.backgroundIds) ? row.backgroundIds : []).filter(id => typeof id === 'string'))];
