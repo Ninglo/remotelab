@@ -18,7 +18,7 @@ export function renderMonitoringAlert(events, config, { color = false } = {}) {
     const plan = recovery?.plan;
     const account = item.continuity;
     const problem = item.kind === 'disk' && Number.isFinite(item.availableBytes) && Number.isFinite(item.usedPercent)
-      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%`
+      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
       : account ? `当前剩余 ${account.remainingPercent ?? '未知'}%，额度高于10%的已登录备用 ${account.backupCount} 个`
       : text(item.detail || '详见处理记录');
     const resolved = item.recovered === true;

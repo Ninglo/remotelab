@@ -83,6 +83,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       plan: repair.plan, runId: repair.runId,
     } : null, action: item.action || null, continuity: item.continuity ? {
       status: item.continuity.status, backupCount: item.continuity.backupCount, autoSwitch: item.continuity.autoSwitch,
+      currentId: item.continuity.current?.id, lastSwitch: item.continuity.lastSwitch,
     } : null }));
     const decisionVersion = repair?.plan?.requiresConfirmation ? hash(JSON.stringify(repair.plan)) : null;
     if (!baseline && incident.status === 'baseline' && (stage > (incident.riskStage || stage)

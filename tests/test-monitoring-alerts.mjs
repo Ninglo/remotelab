@@ -327,3 +327,14 @@ test('baseline records the existing confirmation plan without admitting repair o
   await dispatchMonitoringAlerts({ ...f.options, config: { recoveryIncidents: value.recovery }, snapshot: value });
   assert.equal(f.getSends(), 0);
 });
+
+test('inode-only critical pressure remains visible and an actual account switch updates its existing alert', async () => {
+  assert.match(renderMonitoringAlert([{ ...disk, usedPercent: 40, availableBytes: 100 * 1024 ** 3, inodeUsedPercent: 99.9 }], {}), /inode 已用 99.9%/);
+  const f = fixture(), config = { accountAlerts: { enabled: true } };
+  const value = snapshot([{ kind: 'accountContinuity', id: 'local-codex', severity: 'warning', subject: 'Account' }]);
+  value.accountContinuity = { status: 'no_backup', backupCount: 0, autoSwitch: true, current: { id: 'a' }, lastSwitch: null };
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  value.accountContinuity.current.id = 'b'; value.accountContinuity.lastSwitch = { at: '2026-10-03T07:00:00Z' };
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
+});
