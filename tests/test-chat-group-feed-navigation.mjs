@@ -150,7 +150,8 @@ assert.equal(context.matchesCurrentFilters(automation), true);
 assert.equal(context.matchesCurrentFilters(personal), false);
 assert.equal(context.matchesCurrentFilters(group), false);
 context.sessions = [automation, {id:'evaluation',internalRole:'scheduled_execution'}, personal,
-  { ...automation, id:'archived-auto', archived:true }];
+  { ...automation, id:'archived-auto', archived:true },
+  { ...automation, id:'linked-run', automationHomeSessionId:'home' }];
 vm.runInContext(['getActiveSessions', 'getArchivedSessions', 'getArchivedSessionSortTime'].map(name => extractFunction(catalog,name)).join('\n'), context);
 assert.deepEqual(Array.from(context.getActiveSessions(), item => item.id), ['automated-run','mine']);
 assert.deepEqual(Array.from(context.getArchivedSessions(), item => item.id), ['archived-auto']);

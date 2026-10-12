@@ -326,6 +326,61 @@ This distinction is visible in the interface copy. `paused` or `cancelled` is ne
 - Authenticated routes: `chat/router-control-routes.mjs`
 - UI: `static/chat/task-center.js`, `static/chat/task-center.css`, `templates/chat.html`
 
+## Stable automation home (explicit opt-in)
+
+Handoff: “Create this non-evaluation automation with independent execution and a
+stable home forked from its source. Record the actual creator, original creation
+time, objective, authorization/output boundaries and failure recovery rules.
+Preserve the task ID and delivery targets. Check task → home → task and history
+links. Adopt later definition changes only after the authorized human confirms.”
+
+A home is a real fork with `internalRole: automation_home`, collected under
+Automations. It is a fixed reading/discussion entry, not the worker queue. Existing
+per-occurrence/calendar-day execution stays intact. Linked workers disappear from
+the collection list but remain directly accessible through the home history.
+The home header links to the exact task using `?tab=tasks&monitor=automations&task=ID`,
+the source conversation and each execution. Task detail, timeline and flow views
+link back to the home. Stopped/deleted tasks retain their home and definitions.
+
+- `POST /api/automation-tasks/:id/home` idempotently establishes a home for a task
+  already explicitly marked `sessionTemplate.sessionCollection: automations`.
+  It accepts an optional `brief` with concrete maintenance/recovery instructions.
+  Source forks preserve their history; the original connector binding is not copied.
+  No model or business execution is started by this operation.
+- `GET /api/automation-tasks/:id/home` reads definitions, change events, live native
+  execution projections and retained trigger snapshots, without queuing a model.
+- New unified task creation accepts `automationHome: true` and optional `homeBrief`,
+  only with `target.mode: new_session`. Raw Schedule/Trigger creation opts in with
+  the collection marker. Existing/evaluation tasks are never globally opted in.
+- If task creation succeeds but its source cannot yet be forked, creation returns
+  201 with `homeError`; retry only the home endpoint, not task creation.
+
+`automation-homes/<taskId>.json` under the instance config directory keeps the
+binding, immutable definition revisions, authenticated API-actor attribution,
+change/stop events and per-trigger input snapshots. Client-provided discussion
+references are explicitly **reported, unverified** provenance, not authority.
+The creator recorded by the original task is not necessarily the human proposer;
+unknown historical authors and versions are not reconstructed from guesses. Corrupt
+home records fail visibly rather than being replaced; independent task records use
+separate mutation queues.
+
+At first admission each selected worker receives a bounded home/task/version
+reference in addition to its original prompt. Its input definition is retained;
+retry uses that association, and future schedule edits do not rewrite it. Source
+conversation history is not appended to each run. Failure/dedup instructions are
+model guidance; the original business receipt remains the authority for writes
+and delivery. The home uses native Trigger/Run state; model completion is not
+business acceptance. Historical rows without captured versions say so.
+
+HTTP task/schedule/trigger edits record definition revisions and lifecycle events.
+Natural completion is recorded when observed with an explicitly labelled
+observation timestamp. Both the current task state and active executions remain
+visible: pausing/cancelling future triggers does not assert active runs stopped.
+Shared instance authentication still applies; this feature does not add a new
+per-task authorization system or automatically route every conversational opinion
+into a task edit. Humans can discuss elsewhere, confirm a concrete adjustment,
+and have it applied to the same task with the source/reason recorded.
+
 ## Routine monitoring reads
 
 The monitoring observer uses a separate current-health projection from the same

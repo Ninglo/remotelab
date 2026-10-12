@@ -947,7 +947,7 @@ function upsertSession(session) {
   }
   // Run output changes neither ownership nor source-filter counts. Avoid
   // rebuilding every filter option for every background invalidation.
-  if (!previous || ["archived", "internalRole", "sessionCollection", "groupFeed", "initiatedByIdentityId"]
+  if (!previous || ["archived", "internalRole", "sessionCollection", "automationHomeSessionId", "groupFeed", "initiatedByIdentityId"]
     .some((key) => previous[key] !== normalized[key])
     || getEffectiveSessionSourceId(previous) !== getEffectiveSessionSourceId(normalized)) {
     refreshSessionCatalog();
@@ -1191,6 +1191,7 @@ async function organizeSessionList({ closeSidebar = false } = {}) {
 }
 
 function applyAttachedSessionState(id, session) {
+  if (typeof updateAutomationHomeSession === "function") updateAutomationHomeSession(session);
   // Direct URL restoration can hydrate state before attachSession receives the
   // full Session record. Select the collection on that path as well.
   if (session?.sessionCollection === "automations"

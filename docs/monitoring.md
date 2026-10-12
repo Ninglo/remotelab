@@ -434,5 +434,8 @@ independently proven message transport. A successful message send/reply of the
 same app, newer than its rejection and within 15 minutes, permits the observer
 to deliver current alerts. The affected API's rejection and the unknown tenant
 balance remain recorded; its warning is not described as a proven total
-messaging outage. No extra probe or test group message is sent. If there is no
-fresh positive sending evidence, the existing dependency block remains.
+messaging outage. No extra probe or test group message is sent. The verified receipt survives quiet periods and log rotation. A newer quota
+rejection invalidates it and requires fresh positive sending evidence before
+the dependency block can be lifted again.
+
+Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#stable-automation-home-explicit-opt-in). Its header reads native execution state directly and distinguishes future-trigger cancellation from active runs. Monitoring and evaluation configuration remain separate; a home is not a new supervisor.

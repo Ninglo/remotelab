@@ -1,3 +1,4 @@
+import { prepareAutomationHomeRun } from './automation-home.mjs';
 import { normalizeAutomationPolicy } from '../lib/automation-execution-policy.mjs';
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
@@ -738,11 +739,12 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
     }
 
     const accepted = await requests.byRequest(session.id, current.requestId);
+    const homeContext = accepted ? '' : await prepareAutomationHomeRun(current, session);
     // Admission is already durable. An upgrade must not reconstruct different
     // options for that identity or execute it again after a lost acknowledgement.
     const outcome = accepted ? { duplicate: true, run: { id: accepted.runId },
       queued: !accepted.result && !await getRun(accepted.runId),
-    } : await submitHttpMessage(session.id, current.text, [], {
+    } : await submitHttpMessage(session.id, current.text + homeContext, [], {
       requestId: current.requestId,
       tool: current.executionRuntime?.tool || current.tool || undefined,
       model: current.executionRuntime?.model || current.model || undefined,

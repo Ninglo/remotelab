@@ -47,6 +47,7 @@
 
   const viewTabs = document.getElementById("taskCenterViews");
   let selectedView = "timeline";
+  let requestedTaskId = new URLSearchParams(window.location.search).get("task") || "";
   let tasks = [];
   let backgroundMechanisms = [];
   let automationFlows = { groups: [] };
@@ -783,6 +784,9 @@
       else addMetaRow(context, translate("tasks.session.execution", "Execution Session"),
         translate("tasks.session.notStarted", "Available after the first run"));
     }
+    for (const member of members) if (member.homeSessionId) addMetaRow(context,
+      translate("tasks.session.home", "Automation home"), translate("tasks.session.openHome", "Open automation home"),
+      { link: `/?session=${encodeURIComponent(member.homeSessionId)}&tab=sessions` });
     main.appendChild(context);
     const stats = createNode("dl", "task-summary-stats");
     const latest = latestActivity(task);
@@ -915,6 +919,10 @@
       });
       if (linked.length || !background.length) bottom.appendChild(locate);
       for (const task of linked) {
+        for (const member of task.members || [task]) if (member.homeSessionId) {
+          const homeLink = createNode("a", "task-center-action", translate("tasks.session.openHome", "Open automation home"));
+          homeLink.href = `/?session=${encodeURIComponent(member.homeSessionId)}&tab=sessions`; bottom.appendChild(homeLink);
+        }
         const execution = overview.latestExecutionSession(task);
         if (!execution) continue;
         const link = createNode("a", "task-center-action", linked.length === 1
@@ -971,7 +979,12 @@
         body.append(createNode("p", "", tr("unknownOutput")), createNode("p", "", tr("sendLabel") + " · " + notificationText(task, { compact: true, tr: flowTranslate })));
       }
       const button = createNode("button", "task-center-action", tr("showTasks")); button.type = "button";
-      button.addEventListener("click", () => locateTimelineTask(task)); body.appendChild(button); details.appendChild(body);
+      button.addEventListener("click", () => locateTimelineTask(task)); body.appendChild(button);
+      if (task.homeSessionId) {
+        const homeLink = createNode("a", "task-center-action", translate("tasks.session.openHome", "Open automation home"));
+        homeLink.href = `/?session=${encodeURIComponent(task.homeSessionId)}&tab=sessions`; body.appendChild(homeLink);
+      }
+      details.appendChild(body);
       details.addEventListener("toggle", () => { if (!details.isConnected) return; if (details.open) openTimelineRows.add(key); else openTimelineRows.delete(key); });
       return details;
     };
@@ -1090,6 +1103,11 @@
       backgroundMechanisms = Array.isArray(payload?.backgroundMechanisms) ? payload.backgroundMechanisms : [];
       automationFlows = payload?.automationFlows || { groups: [] };
       executionHistory.clear();
+      if (requestedTaskId) {
+        const match = tasks.find(item => item.id === requestedTaskId || item.members?.some(member => member.id === requestedTaskId));
+        if (match) { flowTaskIds = new Set([requestedTaskId, match.id]); selectedFilter = "all"; selectedView = "tasks"; openTaskIds.add(match.id); }
+        requestedTaskId = "";
+      }
       loaded = true;
       return tasks;
     } catch (error) {
