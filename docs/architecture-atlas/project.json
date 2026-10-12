@@ -35,7 +35,7 @@
       "title": "上下文注入导航与压缩",
       "source": "docs/architecture-atlas",
       "route": "context-injection.html",
-      "description": "直接阅读五块提示词的当前原文、维护来源、注入条件、必要性与压缩草案。",
+      "description": "显示与清单精简时的五块规则快照、维护来源与历史草案；两轮治理现状见使用与维护中的上下文治理专题。",
       "navTitle": "上下文注入与压缩"
     },
     {
@@ -1001,6 +1001,12 @@
       "route": "manual-documentation.html",
       "title": "说明如何持续更新",
       "description": "变更检查、网站生成、发布与恢复"
+    },
+    {
+      "source": "docs/connector-turn-context.md",
+      "route": "manual-context-governance.html",
+      "title": "上下文治理：两轮效果与边界",
+      "description": "10月11—12日默认注入清理、消息与规则去重、完整性恢复、量化结果及剩余问题"
     },
     {
       "source": "display/USER_GUIDE.md",

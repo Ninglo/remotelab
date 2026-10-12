@@ -26,6 +26,44 @@ Source/runtime and Session instructions are turn-scoped, so a connector configur
 
 RemoteLab can only project context it constructs or explicitly passes to a Harness. Harness-native system/developer policy, tool descriptions, or provider-side context that the Harness does not return cannot be reconstructed and must not be presented as if RemoteLab had captured it.
 
+## 两轮上下文治理合并总结（2026-10-11—12）
+
+两轮治理已经进入同一主线：第一轮取消默认自动检索并注入大段背景，第二轮减少已接收消息和稳定规则的重复发送，同时补齐长消息与压缩后的恢复机制。当前可以确认的是默认输入更精简、重复发送有明确依据、必要内容有完整保留和恢复路径；还不能给出整个系统统一的节省比例，或把这些改动等同于任务普遍提速。
+
+### 两轮分别改变了什么
+
+| 轮次 | 之前的问题 | 已交付行为与依据 |
+| --- | --- | --- |
+| 10 月 11 日凌晨（北京时间）：默认注入清理 | 每轮自动检索其他工作、技能、公司、项目、主题记忆和人员正文，容易把弱相关材料带入任务 | 取消这些自动正文注入，保留当前来源、明确约定、人员／项目指针和按需查询能力。[实现 28f3e00e](https://github.com/Ninglo/remotelab/commit/28f3e00e488e3c30e7065b33c6a859cd29ec58f8)；[完整 CI](https://github.com/Ninglo/remotelab/actions/runs/38069475861)。原生产回放与运行版本读回确认该轮已生效。 |
+| 10 月 12 日：重复发送治理 | 历史消息和规则在续聊时重复加入；简单压短又可能漏掉长消息尾部或让压缩后的模型丢失规则 | 按消息 ID、版本和原生接收回执去重；稳定规则未变时复用快照引用，换人或规则改变时发送完整当前规则。保留整条消息，超量部分以原文分页补读；Codex 原生压缩后、下一次推理前恢复规则，恢复失败明确报错。[集成与真实模型验证 17167329](https://github.com/Ninglo/remotelab/commit/171673294ee3d534e84a68689e44611a6d39927e)；[完整 CI](https://github.com/Ninglo/remotelab/actions/runs/38264877862)。 |
+
+这些改动没有清空旧线程已经积累的历史，也没有删除记忆资料。模型仍需在任务相关时沿指针读取原件。规则引用复用及自动压缩恢复目前以具备恢复能力的 Codex 路径为限；其他 Harness 保守发送完整规则。服务上线、已准备输入和原生线程状态分别核对，不能用源码存在替代生效证据。
+
+### 优化程度：按各自口径计量
+
+| 测量对象 | 前后变化 | 可以支持的结论 |
+| --- | --- | --- |
+| 第一轮同一原请求的每轮附加正文 | 12,899 → 645 字符，约减少 95.0% | 该请求自动附加背景显著减少；645 不是整个提示词，生产回放的完整提示词仍有 10,628 字符。不是所有会话的统一降幅。 |
+| 第二轮默认显示规则＋清单规则 | 6,185 → 3,578 个 UTF-16 字符，减少 42.2% | 两块同时启用时的文本缩减；不含个人开工等其他规则，后续独立文案调整也不归入这次固定比较。 |
+| 同一合成任务的四步真实模型对照 | 完整重复模式 4/4、分页／引用模式 4/4；缺失输入与恢复重试再各核对 2 项，共 12/12 | 已检查的长消息尾部约束、更正、换人、原生压缩、输入不可用及重试没有产生错误结果或重复输出。是小样本正确性验证，未证明总体任务成功率提高。 |
+
+上述比例的分母不同，不能相加或相乘得到“整体节省”。历史去重及规则引用的收益随实际消息重叠、规则变化、Harness 接收证明和分页读取而变，没有一个固定百分比。
+
+同一四步对照记录的原生累计总 token 为 201,795 → 170,279，约少 15.6%，但其中包含缓存输入；非缓存输入为 43,318 → 46,766，四步调用耗时合计为 57.6 → 72.6 秒。分页读取有额外工具往返，因此这组记录不支持“更快”或“费用下降”的结论，也不是从第一轮清理前到现在的端到端对照。历史 token 账本的统计修复不计为这两轮带来的真实节省。
+
+### 已验收与仍需改进
+
+确定性回归覆盖多页历史、长消息尾部、消息修改、同秒消息、身份切换、接收回执、归档校验和失败处理；已安装 Codex 的隔离协议测试覆盖手动／自动压缩及恢复失败。真实模型验证使用隔离本地 CSV 任务并核对文件内容，不向真实群发送消息。两项可选原生提问测试在未修改的主线上也失败，属于已记录的独立问题；“完整 CI 通过”不表示所有可选本机测试均通过。
+
+剩余优先级是验证实际任务效果及降低来源读取成本：
+
+1. 在更广的真实任务中对照成功率、遗漏、返工、人工补救、时延和非缓存用量，才能判断总体收益。
+2. 飞书当前每次输入仍抓取所选话题／绑定群的完整可访问历史；持久增量接入还未实现。
+3. 超量原文有分页入口，但“给了入口”不等于“模型读过”。分页内容尚无足够强的接收记账，可能在后续输入重复出现；当前宁可重复也不凭推测省略。
+4. 其他 Harness 的原生压缩恢复尚未接通；旧线程历史、当前任务状态、按需读取内容和个人规则也不属于已经消除的重复。
+
+因此，本轮完成的是已明确范围的默认注入清理、消息／规则去重和完整性补救。更广泛的质量与成本评估、增量接入和跨 Harness 恢复仍开放，不能把“这批交付完成”写成“所有上下文优化已完成”。
+
 ## Default context inventory and October 2026 cleanup
 
 Ordinary preparation no longer searches background by the incoming text. The
@@ -110,9 +148,9 @@ Unsupported provider identity paths conservatively retain history.
 
 ## Stable rule snapshots (2026-10-12)
 
-Native inputs now project the six stable rule slots (surface, workboard
-instructions, source runtime, Session instructions, personal reply choices and
-strict-start policy) together. The first input carries their complete applicable
+Native inputs now project the seven stable rule slots (surface, workboard
+instructions, source runtime, Session instructions, personal reply choices,
+strict-start policy and personally scoped in-flight tools) together. The first input carries their complete applicable
 set. A subsequent input in the same native thread carries a short recovery
 reference when its set and identity/source scope match the **latest accepted**
 input. A version/scope change sends the full current set and explicitly replaces
@@ -199,8 +237,11 @@ to exercise production paging with a small input; the page reader kept its
 6,000-character limit. Local files and structured answers were checked, not
 only the model's claim of success. This is one scenario per mode, not a
 statistical non-inferiority result or evidence of faster/cheaper execution.
-Broader tasks and natural-use feedback remain necessary before claiming a
-general quality improvement.
+An additional missing-input/restored-input sequence passed in each mode
+(4 more checked results; 12/12 in total): unavailable source data did not create
+a fabricated output file, and retry after restoration produced the expected
+CSV and current rule code. Broader tasks and natural-use feedback remain
+necessary before claiming a general quality improvement.
 
 
 ## Personal procedures and concise replies (2026-10-12)
