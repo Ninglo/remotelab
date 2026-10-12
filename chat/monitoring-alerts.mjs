@@ -195,6 +195,6 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
       serviceConfirmationObservations: config.alertDelivery.confirmationObservations }, snapshot, dryRun }); }
   catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
   const alerts = await dispatch({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds,
-    recoveryIncidents: recovery.incidents }, snapshot, baseline, dryRun });
+    recoveryIncidents: recovery.incidents || snapshot.recovery }, snapshot, baseline, dryRun });
   return { ...alerts, recovery };
 }

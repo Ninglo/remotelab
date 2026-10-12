@@ -315,3 +315,15 @@ test('a recovery observed while muted updates the old message even if a new inci
   await dispatchMonitoringAlerts({ ...f.options, snapshot: failed, update: async (events, _config, id) => { oldEvents = events; return id; } });
   assert.equal(oldEvents[0].recovered, true); assert.equal(f.getSends(), 2);
 });
+
+test('baseline records the existing confirmation plan without admitting repair or later replaying it as new', async () => {
+  const f = fixture(), value = snapshot([{ ...disk, id: '/data' }]);
+  value.recovery = [{ kind: 'disk', id: '/data', status: 'awaiting_confirmation', plan: {
+    risk: 'high', requiresConfirmation: true, summary: 'Known expansion', target: '/data', impact: 'cost', rollback: 'cannot shrink', verification: 'df',
+  } }];
+  await runMonitoringAlerts({ baseline: true, config: { alertDelivery: {}, recovery: { enabled: true } }, reader: async () => value,
+    recover: async () => { throw new Error('baseline must not start a repair'); },
+    dispatch: args => dispatchMonitoringAlerts({ ...f.options, ...args }) });
+  await dispatchMonitoringAlerts({ ...f.options, config: { recoveryIncidents: value.recovery }, snapshot: value });
+  assert.equal(f.getSends(), 0);
+});
