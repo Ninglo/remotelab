@@ -38,6 +38,19 @@ struct RecordingPanelStateTests {
         var warning = idle; warning["inputError"] = "listener stopped"
         assert(state(warning).tone == "warning")
         assert(state(warning).action == "start", "Mouse controls remain usable if the keypad fails")
+        let savedRecord: [String: Any] = ["id": "r", "status": "pending", "startedAt": "2026-01-01T00:00:00Z", "endedAt": "2026-01-01T00:01:00Z"]
+        var row = savedRecord
+        assert(RecordingRowState.project(row, activeIDs: [], serviceRunning: true).status == "已保存 · 发送中")
+        row["status"] = "submitted"
+        assert(RecordingRowState.project(row, activeIDs: [], serviceRunning: true).status == "已上传", "Admission alone must not claim group delivery")
+        row["audioPublishedAt"] = "2026-01-01T00:02:00Z"
+        assert(RecordingRowState.project(row, activeIDs: [], serviceRunning: true).status == "已发送到群")
+        row["speakers"] = [["name": "Guess", "verified": false]]
+        assert(RecordingRowState.project(row, activeIDs: [], serviceRunning: true).speaker == "未识别")
+        row["speakers"] = [["name": "Confirmed", "verified": true]]
+        assert(RecordingRowState.project(row, activeIDs: [], serviceRunning: true).speaker == "Confirmed")
+        assert(RecordingRowState.project(row, activeIDs: ["r"], serviceRunning: true).status == "正在录音")
+        assert(RecordingRowState.project(row, activeIDs: ["r"], serviceRunning: false).status == "录音状态待确认")
         print("Recording panel state tests passed")
     }
 }

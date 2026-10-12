@@ -187,7 +187,7 @@ Reference: [FFmpeg AVFoundation](https://ffmpeg.org/ffmpeg-devices.html#avfounda
 A single start binding can use `action: "start"` so repeated presses do not
 stop an existing recording.
 For a keypad that sends click macros, bind a different physical stop key with
-`action: "stop", gesture: "double"`. Two released presses 80–500 ms apart
+`action: "stop", gesture: "double"`. Two released presses 80–800 ms apart
 are required while the lane is active. A single stop press does nothing;
 double-stop never starts an idle lane. The first second after a keypad start
 is protected against accidental follow-on clicks. Real HID timestamps preserve
@@ -242,3 +242,18 @@ retains remote references and a deletion audit; `retention-status.json` records
 each check. A later reduction from three days to one requires the authorized
 health review; elapsed time alone must not reduce retention. Use a one-time
 RemoteLab Trigger for that review, keeping the original policy start timestamp.
+
+### Recording history in the Mac panel
+
+The side column counts saved recording records (one discussion may contain
+multiple WAV segments) and shows newest first, with local start/end times,
+individual capture/delivery status and verified speaker names when available.
+Without verified names it says “未识别”; no speaker is inferred from the operator
+or microphone binding. The panel does not start additional transcription.
+“已发送到群” requires the original-audio publication receipt; accepted analysis
+alone is only “已上传”. Local-only recordings remain visible as “仅本地保存”.
+
+A successful stop plays `<recording-root>/cues/stopped.mp3` after the WAV is
+saved. Missing or unplayable cues fall back to Pop with an error in the panel
+log. Failure/interruption notices never play a successful-save voice. Reopening
+the panel adopts an ongoing capture silently rather than replaying its start.

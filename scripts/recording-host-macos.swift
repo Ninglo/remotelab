@@ -99,6 +99,10 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let io = DispatchQueue(label: "remotelab.recording-panel.files")
     var window: NSWindow!
     var footer: NSTextField!
+    var historyStack: NSStackView!
+    var historyCount: NSTextField!
+    var historySummary: NSTextField!
+    var historyKey = ""
     var controls = [String: LaneControls]()
     var service: Process?
     var daemonPID: Int32?
@@ -149,11 +153,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func buildWindow(_ lanes: [[String: Any]]) {
-        let width: CGFloat = 560
-        let height = min(CGFloat(lanes.count) * 220 + 120, NSScreen.main.map { $0.visibleFrame.height - 80 } ?? 700)
+        let width: CGFloat = 920
+        let height = min(max(520, CGFloat(lanes.count) * 220 + 120), NSScreen.main.map { $0.visibleFrame.height - 80 } ?? 700)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = settings.mode == "preview" ? "录音窗口预览（不会录音）" : "讨论录音"
-        window.minSize = NSSize(width: 480, height: 300); window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 820, height: 420); window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self; window.backgroundColor = .windowBackgroundColor; window.level = .floating
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
@@ -206,7 +210,34 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = true
         scroll.backgroundColor = .windowBackgroundColor
-        scroll.documentView = stack; window.contentView = scroll
+        scroll.documentView = stack
+        let sidebar = NSStackView(); sidebar.orientation = .vertical; sidebar.alignment = .leading; sidebar.spacing = 8
+        sidebar.edgeInsets = NSEdgeInsets(top: 20, left: 16, bottom: 16, right: 16)
+        sidebar.wantsLayer = true; sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        historyCount = text("录音记录", size: 18); historyCount.font = .boldSystemFont(ofSize: 18)
+        historySummary = text("正在读取", size: 12, color: .secondaryLabelColor)
+        sidebar.addArrangedSubview(historyCount); sidebar.addArrangedSubview(historySummary)
+        let historyScroll = NSScrollView(); historyScroll.hasVerticalScroller = true; historyScroll.drawsBackground = false
+        historyStack = NSStackView(); historyStack.orientation = .vertical; historyStack.alignment = .leading; historyStack.spacing = 10
+        historyScroll.documentView = historyStack; sidebar.addArrangedSubview(historyScroll)
+        historyStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            historyStack.widthAnchor.constraint(equalTo: historyScroll.contentView.widthAnchor),
+            historyStack.topAnchor.constraint(equalTo: historyScroll.contentView.topAnchor),
+            historyStack.leadingAnchor.constraint(equalTo: historyScroll.contentView.leadingAnchor),
+            historyScroll.widthAnchor.constraint(equalTo: sidebar.widthAnchor, constant: -32),
+            historyCount.widthAnchor.constraint(equalTo: historyScroll.widthAnchor),
+            historySummary.widthAnchor.constraint(equalTo: historyScroll.widthAnchor)
+        ])
+        historyScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+        let content = NSView(); window.contentView = content
+        for view in [scroll, sidebar] { content.addSubview(view); view.translatesAutoresizingMaskIntoConstraints = false }
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor), scroll.topAnchor.constraint(equalTo: content.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor), scroll.trailingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            sidebar.trailingAnchor.constraint(equalTo: content.trailingAnchor), sidebar.topAnchor.constraint(equalTo: content.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: content.bottomAnchor), sidebar.widthAnchor.constraint(equalToConstant: 340)
+        ])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
         stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor).isActive = true
@@ -327,6 +358,10 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let candidate = (value["pid"] as? NSNumber)?.int32Value
             let verified = settings.mode != "panel" || (candidate != nil && candidate! > 0 && kill(candidate!, 0) == 0 && ((!verifyService && candidate == daemonPID) || probeService()))
             DispatchQueue.main.async {
+                if self.lastSnapshot == nil {
+                    // Reopening the status panel adopts existing capture without replaying its start cue.
+                    self.announced.formUnion((value["active"] as? [[String: Any]] ?? []).compactMap { $0["recordingId"] as? String })
+                }
                 self.lastSnapshot = value; self.lastMeter = meter; self.readError = verified ? nil : "录音服务尚未就绪，请重新打开窗口"
                 if self.settings.mode == "panel", verified, let pid = candidate {
                     // A verified live socket supersedes a previous exit/launch error.
@@ -381,18 +416,58 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if hasDouble && !preview && serviceError == nil && !shuttingDown {
             footer?.stringValue = (config["keypadHint"] as? String ?? "开始键单按开始 · 结束键双击结束。") + (localOnly ? "仅本地保存。" : "结束后保存并回传。")
         }
+        renderHistory(serviceRunning: running)
         renderElapsed(); renderMeters()
         let projection = controls.values.sorted { $0.id < $1.id }.map {
             ["laneId": $0.id, "title": $0.status.stringValue, "buttonTitle": $0.button.title, "detail": $0.detail.stringValue,
              "tone": $0.state?.tone ?? "unknown", "enabled": $0.button.isEnabled,
              "action": $0.state?.action ?? ""] as [String: Any]
         }
-        let viewState: [String: Any] = ["lanes": projection, "serviceRunning": running, "preview": preview]
+        let viewState: [String: Any] = ["lanes": projection, "serviceRunning": running, "preview": preview, "recordingHistory": historySummary?.stringValue ?? ""]
         let bytes = (try? JSONSerialization.data(withJSONObject: viewState, options: [.sortedKeys])) ?? Data()
         let key = String(data: bytes, encoding: .utf8) ?? ""
         if key != lastRenderKey {
             lastRenderKey = key; emit(viewState)
             if let path = settings.snapshot { saveSnapshot(path) }
+        }
+    }
+
+    func recordingTime(_ raw: String?) -> String {
+        guard let raw else { return "—" }
+        let parser = ISO8601DateFormatter(); parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = parser.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+        guard let date else { return "—" }
+        let format = DateFormatter(); format.dateFormat = "MM月dd日 HH:mm:ss"
+        return format.string(from: date)
+    }
+
+    func renderHistory(serviceRunning: Bool) {
+        guard historyStack != nil, let snapshot = lastSnapshot else { return }
+        let records = (snapshot["records"] as? [[String: Any]] ?? []).sorted { ($0["startedAt"] as? String ?? "") > ($1["startedAt"] as? String ?? "") }
+        let activeIDs = Set((snapshot["active"] as? [[String: Any]] ?? []).compactMap { $0["recordingId"] as? String })
+        let data = (try? JSONSerialization.data(withJSONObject: ["records": records, "active": activeIDs.sorted(), "running": serviceRunning], options: [.sortedKeys])) ?? Data()
+        let key = String(data: data, encoding: .utf8) ?? ""
+        guard key != historyKey else { return }; historyKey = key
+        let rows = records.map { RecordingRowState.project($0, activeIDs: activeIDs, serviceRunning: serviceRunning) }
+        historyCount.stringValue = "录音记录 · \(rows.count) 段"
+        let sent = rows.filter { $0.tone == "sent" }.count, pending = rows.filter { $0.tone == "pending" || $0.tone == "warning" }.count
+        let local = rows.filter { $0.tone == "local" }.count
+        historySummary.stringValue = "录音中 \(activeIDs.count) · 已上传 \(sent)\n待发送/异常 \(pending) · 仅本地 \(local)"
+        for view in historyStack.arrangedSubviews { historyStack.removeArrangedSubview(view); view.removeFromSuperview() }
+        if rows.isEmpty { historyStack.addArrangedSubview(text("还没有录音，按1号键开始。", size: 13, color: .secondaryLabelColor)) }
+        for row in rows {
+            let card = NSStackView(); card.orientation = .vertical; card.alignment = .leading; card.spacing = 5
+            card.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+            card.wantsLayer = true; card.layer?.cornerRadius = 8; card.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            let title = text(row.label, size: 13); title.font = .boldSystemFont(ofSize: 13)
+            let color: NSColor = row.tone == "recording" ? .systemRed : row.tone == "warning" ? .systemOrange : row.tone == "sent" ? .systemGreen : .secondaryLabelColor
+            let fields = [title, text(row.status, size: 12, color: color),
+                          text("开始  " + recordingTime(row.startedAt), size: 12, color: .secondaryLabelColor),
+                          text("结束  " + (row.endedAt == nil && row.tone == "recording" ? "录音中" : recordingTime(row.endedAt)), size: 12, color: .secondaryLabelColor),
+                          text("发言人  " + row.speaker, size: 12, color: .secondaryLabelColor)]
+            for field in fields { card.addArrangedSubview(field); field.widthAnchor.constraint(equalTo: card.widthAnchor, constant: -24).isActive = true }
+            card.toolTip = row.id; historyStack.addArrangedSubview(card)
+            card.widthAnchor.constraint(equalTo: historyStack.widthAnchor).isActive = true
         }
     }
 

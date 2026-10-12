@@ -461,9 +461,9 @@ test('start-only key and double-stop work with click-macro keypads and protect t
   const tap = (at) => { now = at; const action = input.accept({ deviceId: 'pad', key: 27, pressed: true, timestampMs: at }); input.accept({ deviceId: 'pad', key: 27, pressed: false }); return action?.action; };
   assert.equal(tap(0), 'start'); recording = true;
   assert.equal(tap(150), undefined); assert.equal(tap(300), undefined);
-  assert.equal(tap(1100), undefined); assert.equal(tap(1700), undefined);
-  assert.equal(tap(2500), undefined); assert.equal(tap(2750), 'stop');
-  recording = false; assert.equal(tap(3500), 'start'); recording = true;
+  assert.equal(tap(1100), undefined); assert.equal(tap(2000), undefined);
+  assert.equal(tap(3000), undefined); assert.equal(tap(3250), 'stop');
+  recording = false; assert.equal(tap(3600), 'start'); recording = true;
   assert.equal(tap(4800), undefined); input.reset('pad'); assert.equal(tap(4900), undefined);
   assert.equal(tap(5300), 'stop');
   assert.throws(() => config({ bindings: [{ deviceId: 'pad', key: 27, laneId: 'a', action: 'stop', gesture: 'double' }] }), /start-only/);
@@ -482,8 +482,8 @@ test('separate key 2 double-stop never starts from idle; key 1 never stops an ac
   assert.equal(tap(27, 1000), 'start'); recording = true;
   assert.equal(tap(25, 1100), undefined); assert.equal(tap(25, 1300), undefined);
   assert.equal(tap(27, 2200), 'start'); assert.equal(tap(27, 2400), 'start');
-  assert.equal(tap(25, 3000), undefined); assert.equal(tap(25, 3700), undefined);
-  assert.equal(tap(25, 4000), 'stop');
+  assert.equal(tap(25, 3000), undefined); assert.equal(tap(25, 3900), undefined);
+  assert.equal(tap(25, 4470), 'stop');
 });
 
 test('retention waits for observation window and preserves pending, local and unverified audio', async (t) => {
