@@ -395,6 +395,14 @@ per-task authorization system or automatically route every conversational opinio
 into a task edit. Humans can discuss elsewhere, confirm a concrete adjustment,
 and have it applied to the same task with the source/reason recorded.
 
+## Conditional experience review
+
+[Dreaming](dreaming-automation.md) reuses this same Schedule, idle-event wake, script
+gate and execution-hook path. It incrementally reviews explicitly configured
+project material, retains source-backed candidates and later validation, and is
+shown as a peer task in the memory flow. Its instance-local activation does not
+resume old bounded trials or block daily report publication.
+
 ## Routine monitoring reads
 
 The monitoring observer uses a separate current-health projection from the same
