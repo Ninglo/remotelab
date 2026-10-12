@@ -150,3 +150,5 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 - [All-scope project memory rollout](project-memory-rollout.md) — incremental pointers, existing daily-review rules, frozen baselines, live confirmation and separate disable controls.
 
 The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for aligned start/process/write/notify stages, explicit input reuse, visible scope notes and collapsible Session mechanics.
+
+Mac 原生飞书增强的独立安装、本人连接、紧凑导航和保留数据升级见 [试装入口](../scripts/feishu-native/INSTALL.zh-CN.md)；群状态、用量与消息成果的数据边界见 [话题同步](feishu-web-topics.md)。

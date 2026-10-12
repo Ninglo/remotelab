@@ -4,6 +4,7 @@ const {randomBytes}=require('node:crypto'),{execFile}=require('node:child_proces
 const root=process.env.RLFE_TRIAL_ROOT||path.join(os.homedir(),'Library/Application Support/RemoteLab/Feishu Native Trial');
 const origin='http://127.0.0.1:19342', remote='https://index.jiujianian.dev';
 const {createLiveSource}=require('./live-source.cjs');
+const {createTopicSource}=require('./topic-source.cjs');
 const token=fs.readFileSync(path.join(root,'native-asset-capability'),'utf8').trim();
 const states=new Map(),streams=new Map(),pairings=new Map(),subscriptions=new Map(),navigations=new Map();
 const disk=path.join(root,'native-v8-storage.json');
@@ -15,9 +16,17 @@ function persist(){fs.writeFileSync(disk+'.next',JSON.stringify(store),{mode:0o6
 function own(account){if(!accountOK(account))fail('请先登录本地飞书账号');if(!store.accounts[account]){store.accounts[account]={storage:{},prefs:{}};if(!store.migratedTo){store.accounts[account].prefs=JSON.parse(fs.readFileSync(path.join(root,'web-display-choice.json'),'utf8'));store.migratedTo=account;}persist();}return store.accounts[account];}
 function emit(account,type,value,except){for(const [id,s]of streams)if(s.account===account&&id!==except)s.res.write(JSON.stringify({type,value})+'\n');}
 const source=createLiveSource({root,web:path.join(os.homedir(),'Library/Application Support/RemoteLab/Feishu Web Live'),onChange:publishTopics});
-function nativeProjection(account){const pages=[...states.values()].filter(s=>s.account===account),ids=pages.flatMap(s=>s.ids||[]);return {...source.projection(account,ids),nativeContext:pages.find(s=>s.kind==='chat')?.nativeContext||null};}
+const personalSource=createTopicSource({remote,origin,onChange:publishTopics});
+const topicKey=account=>'feishuWebExplore.topicConnection.v1:'+encodeURIComponent(origin+':'+account);
+function legacyAccount(){try{return JSON.parse(fs.readFileSync(path.join(root,'native-source-account.json'),'utf8')).account;}catch{return '';}}
+function nativeProjection(account){
+ const pages=[...states.values()].filter(s=>s.account===account),ids=pages.flatMap(s=>s.ids||[]);
+ const legacy=legacyAccount()===account;
+ if(!legacy)personalSource.update(account,own(account).storage[topicKey(account)],ids,pages.map(s=>s.nativeContext?.webChatId).filter(Boolean));
+ return {...(legacy?source.projection(account,ids):personalSource.projection(account)),nativeContext:pages.find(s=>s.kind==='chat')?.nativeContext||null};
+}
 function publishTopics(){for(const account of new Set([...streams.values()].map(s=>s.account)))emit(account,'topics',nativeProjection(account));}
-function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:9,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
+function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:10,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
 function safePrefs(v,account){const fields=['enabled','usageEnabled','theme','font','bodyFont','readingEnabled','size','line','width','density','layout','expand','aliases','petEnabled','petKind','petMotion','petSize','petX','petY','sortMode','pins'];if(!v||Array.isArray(v)||Object.keys(v).some(k=>!fields.includes(k))||JSON.stringify(v).length>131072)fail('显示设置无效');const old=own(account).prefs;const ids=new Set([...states.values()].filter(s=>s.account===account).flatMap(s=>s.ids||[]));if(Object.entries(v.aliases||{}).some(([k,n])=>!/^:\d{10,30}$/.test(k)||typeof n!=='string'||n.length>60||!ids.has(k.slice(1))&&!Object.hasOwn(old.aliases||{},k)))fail('只允许修改当前账号的话题别名');return v;}
 const routes={
  'rlfe:message-settings-request':{prefix:'feishu-web-settings',pattern:/^fwset_[\w-]{43}$/,ops:{read:['GET','replies'],save:['POST','replies'],runtime:['GET','runtime'],model:['POST','runtime'],disconnect:['DELETE','connection']}},
@@ -41,16 +50,16 @@ const server=http.createServer(async(req,res)=>{
   if(u.pathname.startsWith('/pair/')){
    const key=u.searchParams.get('key'),p=pairings.get(key);if(!p||p.until<Date.now())fail('连接页面已过期，请从飞书重新打开');
    if(u.pathname==='/pair/start'&&req.method==='GET'){res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'");res.end(publicPairPage(p,key));return;}
-   if(u.pathname==='/pair/finish'&&req.method==='POST'&&req.headers.origin===origin){const data=JSON.parse(await readBody(req,12000));const tag=p.kind==='workspace'?'workspace':p.kind==='topics'?'topics':'settings';const pattern=tag==='workspace'?/^fwspace_[\w-]{43}$/:tag==='topics'?/^fwtops_[\w-]{43}$/:/^fwset_[\w-]{43}$/;if(data.state!==p.state||data.origin!==origin||data.nativeAccount!==p.account||data.type!==`remotelab:feishu-${tag}-connected`||!pattern.test(data.token||'')||!(data.expiresAt>Date.now()))fail('账号连接信息不匹配');const prefix=tag==='workspace'?'workspaceConnection':tag==='topics'?'topicConnection':'messageConnection';const storageKey='feishuWebExplore.'+prefix+'.v1:'+encodeURIComponent(origin+':'+p.account);own(p.account).storage[storageKey]=data;persist();emit(p.account,'storage',{[storageKey]:{newValue:data}});emit(p.account,'connected',{...data,nativePopup:p.popup});pairings.delete(key);reply(200,{ok:true});return;}fail('连接请求无效');
+   if(u.pathname==='/pair/finish'&&req.method==='POST'&&req.headers.origin===origin){const data=JSON.parse(await readBody(req,12000));const tag=p.kind==='workspace'?'workspace':p.kind==='topics'?'topics':'settings';const pattern=tag==='workspace'?/^fwspace_[\w-]{43}$/:tag==='topics'?/^fwtops_[\w-]{43}$/:/^fwset_[\w-]{43}$/;if(data.state!==p.state||data.origin!==origin||data.nativeAccount!==p.account||data.type!==`remotelab:feishu-${tag}-connected`||!pattern.test(data.token||'')||!(data.expiresAt>Date.now()))fail('账号连接信息不匹配');const prefix=tag==='workspace'?'workspaceConnection':tag==='topics'?'topicConnection':'messageConnection';const storageKey='feishuWebExplore.'+prefix+'.v1:'+encodeURIComponent(origin+':'+p.account);own(p.account).storage[storageKey]=data;persist();emit(p.account,'storage',{[storageKey]:{newValue:data}});emit(p.account,'connected',{...data,nativePopup:p.popup});pairings.delete(key);publishTopics();reply(200,{ok:true});return;}fail('连接请求无效');
   }
   const cors=req.headers.origin;if(cors&&cors!=='null'&&cors!==origin){reply(403,{error:'Invalid origin'});return;}res.setHeader('Access-Control-Allow-Origin',cors||'null');res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-Native-Account, X-Native-Client');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   if(req.headers.authorization!=='Bearer '+token){reply(403,{error:'Invalid helper capability'});return;}
   const account=req.headers['x-native-account'],id=req.headers['x-native-client'];
-  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:9,pages:[...states.values()]});return;}
+  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:10,pages:[...states.values()]});return;}
   if(u.pathname==='/verify'&&req.method==='POST'){for(const s of streams.values())s.res.write(JSON.stringify({type:'verify'})+'\n');reply(200,{requested:true});return;}
   if(!clientOK(id)||!accountOK(account))fail('请先确认当前本地飞书账号');
-  if(u.pathname==='/events'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'application/x-ndjson'});res.flushHeaders();streams.get(id)?.res.end();streams.set(id,{res,account});res.write(JSON.stringify({type:'settings',value:own(account).prefs})+'\n');res.write(JSON.stringify({type:'topics',value:nativeProjection(account)})+'\n');res.on('close',()=>{if(streams.get(id)?.res===res){streams.delete(id);states.delete(id);subscriptions.get(id)?.abort();record();}});return;}
+  if(u.pathname==='/events'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'application/x-ndjson'});res.flushHeaders();streams.get(id)?.res.end();streams.set(id,{res,account});res.write(JSON.stringify({type:'settings',value:own(account).prefs})+'\n');res.write(JSON.stringify({type:'topics',value:nativeProjection(account)})+'\n');res.on('close',()=>{if(streams.get(id)?.res===res){streams.delete(id);states.delete(id);subscriptions.get(id)?.abort();if(![...streams.values()].some(s=>s.account===account))personalSource.remove(account);record();}});return;}
   const b=req.method==='POST'?JSON.parse(await readBody(req,180000)):{};let result;
   if(u.pathname==='/initial')result={settings:own(account).prefs,topics:nativeProjection(account)};
   else if(u.pathname==='/state'){if(!['list','chat'].includes(b.kind)||!Array.isArray(b.ids)||b.ids.length>250)fail('Invalid state');states.set(id,{...b,id,account});record();publishTopics();result={ok:true};}
@@ -78,4 +87,4 @@ const server=http.createServer(async(req,res)=>{
 async function readBody(req,limit){const chunks=[];let n=0;for await(const b of req){n+=b.length;if(n>limit)fail('请求过大');chunks.push(b);}return Buffer.concat(chunks).toString();}
 server.listen(19342,'127.0.0.1',()=>{record();console.log('Native 1.2 helper ready');});
 const heartbeat=setInterval(()=>{for(const s of streams.values())s.res.write(JSON.stringify({type:'heartbeat'})+'\n');},15000);heartbeat.unref();
-process.on('SIGTERM',()=>{clearInterval(heartbeat);source.close();for(const c of subscriptions.values())c.abort();for(const s of streams.values())s.res.end();server.close();process.exit(0);});
+process.on('SIGTERM',()=>{clearInterval(heartbeat);source.close();personalSource.close();for(const c of subscriptions.values())c.abort();for(const s of streams.values())s.res.end();server.close();process.exit(0);});

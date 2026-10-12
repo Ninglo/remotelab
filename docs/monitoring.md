@@ -552,3 +552,5 @@ Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#
 公共运行问题的执行会话不需要绑定群：磁盘、服务、账号和API的补救摘要沿 `alertDelivery.chatId` 更新原预警卡。页面分别展示执行入口、补救摘要位置及业务任务结果位置；缺少 Session 绑定不等于缺少回报。业务自动化的原群／话题不变，也不因此额外发第二条消息。
 
 任务没有外部 `resultDelivery` 只说明平台不自动转发其 final，不能断言其固定脚本不投递。核对原任务和脚本配置后，可在实例 `automationReportLocations[taskId]` 保存 `label`、`evidence`、`verifiedAt`，用于展示流程内投递位置；这不是新路由，不替代脚本配置。未核验则明确显示“流程内投递待核实”。明确禁止公共群转发的个人或静默任务列入 `alertDelivery.ignoreAutomationIds`，即使失败或需要人工帮助，也不由统一告警出口外发；原补救及原流程的回报不受影响。不得仅凭缺少绑定就覆盖私聊、禁发或仅本地的决定。
+
+累计 Session token 总数由 chat/session-token-totals.mjs 共享 60 秒缓存；监控 HTTP 入口和飞书已关联话题读取同一账本结果，累计用量与当前上下文占用仍分别显示。

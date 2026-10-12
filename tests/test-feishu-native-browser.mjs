@@ -26,7 +26,16 @@ try{
  assert.equal(await page.locator('#rlfe-personal-nav button').count(),2);
  if(await page.locator('#rlfe-host #firstUseLater').count())await page.locator('#rlfe-host #firstUseLater').click();
  await page.locator('#rlfe-host #launcher').click();
- const panel=await page.locator('#rlfe-host #panel').boundingBox();assert(panel.x>=0&&panel.x+panel.width<=448&&panel.y+panel.height<=849);
+ await page.locator('#rlfe-host #connectTopics').click();
+ assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/connect').at(-1)?.body.kind),'topics');
+ assert.equal((await page.locator('#rlfe-native-rail').boundingBox()).width,64);
+ for(const width of [448,768,1280]){
+  await page.setViewportSize({width,height:849});
+  const app=await page.locator('#app').boundingBox();assert.equal(app.x,64);assert(app.x+app.width<=width);
+ }
+ await page.setViewportSize({width:448,height:849});
+ await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ const panel=await page.locator('#rlfe-host #panel').boundingBox();assert(panel.x>=0&&panel.x+panel.width<=448&&panel.y+panel.height<=849,JSON.stringify(panel));
  await page.locator('#rlfe-host [data-theme="mist"]').click();assert.equal(await page.evaluate(()=>fixture.prefs.theme),'sky');
  await page.locator('#rlfe-host #close').click();assert.equal(await page.evaluate(()=>__RLFE_SETTINGS_STATUS__().current.theme),'sky');
  await page.locator('#rlfe-host #launcher').click();await page.locator('#rlfe-host [data-theme="mist"]').click();await page.locator('#rlfe-host #apply').click();await page.waitForFunction(()=>fixture.prefs.theme==='mist');

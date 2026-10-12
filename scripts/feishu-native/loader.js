@@ -13,7 +13,7 @@
  const changed=new Set(),messages=new Set(),ports=new Map();
  const chrome={storage:{local:{get:key=>call('/storage/get',{key}),set:values=>call('/storage/set',{values})},onChanged:{addListener:f=>changed.add(f),removeListener:f=>changed.delete(f)}},runtime:{
   getManifest:()=>({version:'1.2.0'}),onMessage:{addListener:f=>messages.add(f),removeListener:f=>messages.delete(f)},
-  sendMessage:async m=>{if(m.type==='rlfe:check-update'){for(const f of messages)f({type:'rlfe:update-status',text:'本地增强 1.2 · 当前使用固定发布版本'});return {ok:true};}return call('/request',m);},
+  sendMessage:async m=>{if(m.type==='rlfe:check-update'){for(const f of messages)f({type:'rlfe:update-status',text:'本地增强 r10 · 重新运行安装命令可更新'});return {ok:true};}return call('/request',m);},
   connect:()=>{const id=crypto.randomUUID(),listeners=new Set(),disconnects=new Set();const p={onMessage:{addListener:f=>listeners.add(f)},onDisconnect:{addListener:f=>disconnects.add(f)},postMessage:m=>{void call('/topics/start',{...m,portId:id}).catch(e=>{for(const f of listeners)f({type:'error',error:e.message});});},disconnect:()=>{ports.delete(id);void call('/topics/stop',{portId:id});},receive:m=>{for(const f of listeners)f(m);}};ports.set(id,p);return p;}
  }};
  const open=window.open.bind(window);window.open=(url,...args)=>{let u;try{u=new URL(url,location.href);}catch{return open(url,...args);}const match=u.origin==='https://index.jiujianian.dev'&&u.pathname.match(/^\/page\/feishu-web-(settings|workspace|topics)\/connect$/);if(!match)return open(url,...args);const popup={nativePopup:crypto.randomUUID()};void call('/connect',{kind:match[1],state:u.searchParams.get('state'),popup:popup.nativePopup}).catch(e=>console.error(e.message));return popup;};
@@ -21,7 +21,7 @@
  globalThis.__RLFE_NATIVE_NAVIGATE__=id=>call('/navigate',{id});
  const kind=location.pathname.includes('/messenger-chat/')?'chat':'list';let ids=[],queued=false,loaded=false,last='';
  function state(){if(!loaded)return;const status=globalThis.__RLFE_SHARED_STATUS__?.(),shadow=document.getElementById('rlfe-host')?.shadowRoot;const thread=globalThis.__RLFE_NATIVE_CHAT_THREAD__?.();const context=globalThis.__RLFE_NATIVE_CONTEXT__?.();const own=[...ids,context?.webChatId].filter(Boolean);if(/^\d{10,30}$/.test(thread||''))own.push(thread);
- const info={kind,nativeContext:context,groupBoard:globalThis.__RLFE_GROUP_BOARD_STATUS__?.(),usage:globalThis.__RLFE_USAGE_STATUS__?.(),artifacts:globalThis.__RLFE_WEB_ARTIFACT_STATUS__?.(),displayedRows:[...document.querySelectorAll('.rlfe-feed-headline')].map(e=>({id:e.closest('[data-feed-id]')?.dataset.feedId,sessionId:e.dataset.sessionId,status:e.querySelector('.rlfe-feed-status')?.textContent})),ids:[...new Set(own)],revision:9,webVersion:'1.2.0',theme:status?.settings?.current?.theme,font:status?.settings?.current?.font,open:status?.settings?.open,previewing:status?.settings?.previewing,tabs:[...shadow?.querySelectorAll('.tabs button')||[]].map(e=>e.textContent),themes:shadow?.querySelectorAll('[data-theme]').length,resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),workspace:globalThis.__RLFE_WORKSPACE__?.status(),messages:globalThis.__RLFE_MESSAGES__?.status(),sync:globalThis.__RLFE_SYNC_STATUS__,viewport:{w:innerWidth,h:innerHeight},accountBound:globalThis.__RLFE_PREFS__?.status().accountBound,editorCount:document.querySelectorAll('[contenteditable=true]').length,hasDraft:[...document.querySelectorAll('[contenteditable=true]')].some(e=>e.textContent.replace(/[\u200B-\u200D\uFEFF]/g,'').trim()),nativeFeedStore:!!globalThis.__feedStore};const digest=JSON.stringify(info);if(digest===last)return;last=digest;void call('/state',info).catch(()=>{});}
+ const info={kind,nativeContext:context,groupBoard:globalThis.__RLFE_GROUP_BOARD_STATUS__?.(),usage:globalThis.__RLFE_USAGE_STATUS__?.(),artifacts:globalThis.__RLFE_WEB_ARTIFACT_STATUS__?.(),displayedRows:[...document.querySelectorAll('.rlfe-feed-headline')].map(e=>({id:e.closest('[data-feed-id]')?.dataset.feedId,sessionId:e.dataset.sessionId,status:e.querySelector('.rlfe-feed-status')?.textContent})),ids:[...new Set(own)],revision:10,webVersion:'1.2.0',theme:status?.settings?.current?.theme,font:status?.settings?.current?.font,open:status?.settings?.open,previewing:status?.settings?.previewing,tabs:[...shadow?.querySelectorAll('.tabs button')||[]].map(e=>e.textContent),themes:shadow?.querySelectorAll('[data-theme]').length,resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),workspace:globalThis.__RLFE_WORKSPACE__?.status(),messages:globalThis.__RLFE_MESSAGES__?.status(),sync:globalThis.__RLFE_SYNC_STATUS__,viewport:{w:innerWidth,h:innerHeight},accountBound:globalThis.__RLFE_PREFS__?.status().accountBound,editorCount:document.querySelectorAll('[contenteditable=true]').length,hasDraft:[...document.querySelectorAll('[contenteditable=true]')].some(e=>e.textContent.replace(/[\u200B-\u200D\uFEFF]/g,'').trim()),nativeFeedStore:!!globalThis.__feedStore};const digest=JSON.stringify(info);if(digest===last)return;last=digest;void call('/state',info).catch(()=>{});}
  function schedule(){if(queued||!loaded)return;queued=true;queueMicrotask(()=>{queued=false;state();});}
  globalThis.__RLFE_NATIVE_VISIBLE_FEEDS__=raw=>{ids=JSON.parse(raw);schedule();};
  let streamController=new AbortController();
@@ -30,7 +30,12 @@
  loaded=true;
  let latestTopics=initial.topics;
  const applyTopics=data=>{latestTopics=data;globalThis.__RLFE_SHARED_PROJECT__?.(data);globalThis.__RLFE_SYNC_STATUS__={state:data.sourceConnected?'connected':'disconnected',text:data.sourceConnected?'已与 RemoteLab 同步':data.error||'来源未同步'};window.dispatchEvent(new CustomEvent('rlfe:sync-status'));};
- globalThis.__RLFE_CONNECT_TOPICS__=()=>call('/refresh-source',{});
+ globalThis.__RLFE_CONNECT_TOPICS__=async()=>{
+  try{
+   if(latestTopics.transport==='existing-mac-live')await call('/refresh-source',{});
+   else{const state=[...crypto.getRandomValues(new Uint8Array(16))].map(n=>n.toString(16).padStart(2,'0')).join('');await call('/connect',{kind:'topics',state,popup:crypto.randomUUID()});}
+  }catch(e){globalThis.__RLFE_SYNC_STATUS__={state:'disconnected',text:e.message};window.dispatchEvent(new CustomEvent('rlfe:sync-status'));}
+ };
  applyTopics(initial.topics);
 
  if(kind==='chat'){globalThis.__RLFE_OPEN_SETTINGS__=()=>{void call('/open-settings',{});};}
@@ -42,7 +47,7 @@
  let verifying=false;
  async function verify(){
   if(kind!=='list'||verifying)return;verifying=true;const before=(await call('/initial')).settings,shadow=document.getElementById('rlfe-host').shadowRoot;
-  const report={revision:9,originalWebUi:true,fullOneToOneCompleted:false,remaining:[]};
+  const report={revision:10,originalWebUi:true,fullOneToOneCompleted:false,remaining:[]};
   try{
    if(globalThis.__RLFE_SETTINGS_STATUS__().open)throw Error('用户正在编辑设置，本轮测试未执行');
    await document.fonts.load("14px 'Smiley Sans'");__RLFE_OPEN_SETTINGS__();
