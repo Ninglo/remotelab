@@ -797,7 +797,10 @@ export async function queryUsageLedger(options = {}) {
     model: trimString(options.model),
   };
 
-  const files = await listLedgerFiles(startMs, endMs, ledgerDir);
+  // Optional overview trend shares this scan, independently of the selected summary window.
+  const trendStartMs = Math.floor(endMs / DAY_MS) * DAY_MS - 6 * DAY_MS;
+  const scanStartMs = options.includeDailyTrend ? Math.min(startMs, trendStartMs) : startMs;
+  const files = await listLedgerFiles(scanStartMs, endMs, ledgerDir);
   const deduped = new Map();
   let recordsScanned = 0;
 
@@ -818,9 +821,9 @@ export async function queryUsageLedger(options = {}) {
 
         const record = normalizeLedgerRecord(parsed);
         if (!record) continue;
-        if (record.timestampMs < startMs || record.timestampMs > endMs) continue;
+        if (record.timestampMs < scanStartMs || record.timestampMs > endMs) continue;
 
-        recordsScanned += 1;
+        if (record.timestampMs >= startMs) recordsScanned += 1;
         deduped.set(record.runId, record);
       }
     } finally {
@@ -829,7 +832,7 @@ export async function queryUsageLedger(options = {}) {
     }
   }
 
-  const records = [...deduped.values()]
+  const scannedRecords = [...deduped.values()]
     .filter((record) => matchesRecordFilters(record, filters))
     .sort((left, right) => {
       if ((right.totalTokens || 0) !== (left.totalTokens || 0)) {
@@ -843,6 +846,12 @@ export async function queryUsageLedger(options = {}) {
       return right.timestampMs - left.timestampMs;
     });
 
+  const records = scannedRecords.filter(record => record.timestampMs >= startMs);
+  const daily = options.includeDailyTrend ? Array.from({ length: 7 }, (_, i) => ({
+    day: new Date(trendStartMs + i * DAY_MS).toISOString().slice(0, 10),
+    sessions: new Set(), runCount: 0, foregroundRuns: 0, contextSamples: 0,
+    contextSum: 0, totalTokens: 0,
+  })) : null;
   const totals = createTotals();
   const byIdentity = new Map();
   const byTool = new Map();
@@ -859,7 +868,21 @@ export async function queryUsageLedger(options = {}) {
   let foregroundTokens = 0;
   let foregroundRuns = 0;
 
-  for (const record of records) {
+  for (const record of scannedRecords) {
+    if (daily && record.timestampMs >= trendStartMs) {
+      const day = daily[Math.floor((record.timestampMs - trendStartMs) / DAY_MS)];
+      day.runCount += 1;
+      day.totalTokens += record.totalTokens || 0;
+      if (record.sessionId) day.sessions.add(record.sessionId);
+      if (!record.backgroundOperation) {
+        day.foregroundRuns += 1;
+        if (Number.isInteger(record.contextTokens)) {
+          day.contextSum += record.contextTokens;
+          day.contextSamples += 1;
+        }
+      }
+    }
+    if (record.timestampMs < startMs) continue;
     appendMetrics(totals, record);
 
     if (Number.isInteger(record.contextTokens)) {
@@ -969,6 +992,16 @@ export async function queryUsageLedger(options = {}) {
     byOperationGroup: sortBuckets(byOperationGroup, top),
     byOperationCategory: sortBuckets(byOperationCategory, top),
     byDay: sortBuckets(byDay, top),
+    ...(daily ? { dailyTrend: {
+      start: new Date(trendStartMs).toISOString(), end: new Date(endMs).toISOString(), timezone: 'UTC',
+      attribution: 'run_finalized_completed_or_recorded_timestamp',
+      days: daily.map(day => ({ day: day.day, runCount: day.runCount,
+        sessionCount: day.runCount ? day.sessions.size : null,
+        totalTokens: day.runCount ? day.totalTokens : null,
+        foregroundRuns: day.foregroundRuns, contextSamples: day.contextSamples,
+        avgContextTokens: day.contextSamples ? roundAverage(day.contextSum / day.contextSamples) : null,
+      })),
+    } } : {}),
     bySession: sortBuckets(bySession, top),
     topRuns: options.includeTopRuns === false ? [] : records.slice(0, top).map(summarizeTopRun),
   };

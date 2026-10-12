@@ -170,3 +170,54 @@ test('a configured important automation missing after a source change is an expl
   assert.deepEqual(value.automations.items[0].check, { at, reason: 'no_match' });
   assert.equal(value.attention.filter(item => item.kind === 'automation').length, 0);
 });
+
+test('seven-day trends use all deduplicated records, keep summary window and distinguish gaps from observed zero', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { queryUsageLedger } = await import('../chat/usage-ledger.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'monitor-trends-'));
+  const endMs = Date.parse('2026-10-12T12:00:00Z');
+  const record = (day, runId, sessionId, totalTokens, extra = {}) => ({
+    ts: `2026-10-${day}T10:00:00Z`, runId, sessionId, totalTokens, ...extra,
+  });
+  const rows = [
+    record('05', 'outside', 'outside', 999),
+    record('06', 'zero', 's1', 0, { contextTokens: 0 }),
+    record('08', 'old', 's1', 10, { contextTokens: 100 }),
+    record('08', 'old', 's1', 20, { contextTokens: 200 }),
+    record('08', 'same-session', 's1', 30, { contextTokens: 400 }),
+    record('08', 'other-session', 's2', 40),
+    record('08', 'background', 'bg', 50, { contextTokens: 999999, operation: 'session_state_suggestion' }),
+    record('10', 'before-midnight', 'boundary', 5, { ts: '2026-10-10T23:59:59Z' }),
+    record('11', 'midnight', 'boundary', 7, { ts: '2026-10-11T00:00:00Z' }),
+    record('12', 'today', 's3', 60, { contextTokens: 600 }),
+    record('12', 'future', 's4', 100, { ts: '2026-10-12T13:00:00Z' }),
+  ];
+  try {
+    // Ledger filenames follow the server's local dates; trend buckets explicitly use UTC.
+    const files = new Map();
+    for (const row of rows) {
+      const d = new Date(row.ts), key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      files.set(key, [...(files.get(key) || []), row]);
+    }
+    for (const [key, records] of files) await writeFile(join(dir, `${key}.jsonl`), records.map(r => JSON.stringify(r)).join('\n'));
+    const options = { ledgerDir: dir, days: 1, endMs, top: 1 };
+    const plain = await queryUsageLedger(options);
+    const result = await queryUsageLedger({ ...options, includeDailyTrend: true });
+    assert.deepEqual(result.totals, plain.totals);
+    assert.deepEqual(result.topRuns, plain.topRuns);
+    assert.equal(result.totals.totalTokens, 60);
+    const days = result.dailyTrend.days;
+    assert.equal(days.length, 7); assert.equal(days[0].day, '2026-10-06');
+    assert.equal(days[0].totalTokens, 0); assert.equal(days[0].avgContextTokens, 0);
+    assert.equal(days[1].totalTokens, null); assert.equal(days[1].sessionCount, null);
+    assert.equal(days[2].runCount, 4); assert.equal(days[2].sessionCount, 3);
+    assert.equal(days[2].totalTokens, 140);
+    assert.equal(days[2].contextSamples, 2); assert.equal(days[2].foregroundRuns, 3);
+    assert.equal(days[2].avgContextTokens, 300);
+    assert.equal(days[4].totalTokens, 5); assert.equal(days[5].totalTokens, 7);
+    assert.equal(days[5].avgContextTokens, null); assert.equal(days[6].totalTokens, 60);
+    assert.equal((await queryUsageLedger({ ...options, includeDailyTrend: true, sessionId: 's1' })).dailyTrend.days[2].sessionCount, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

@@ -1,6 +1,16 @@
 # Operations overview
 
-Operations (运行中心) helps people avoid interruptions and choose useful work for available resources. The existing `?tab=tasks` workspace now has Overview and Automations; Automations is the default. Overview (`?tab=tasks&monitor=overview`) starts with urgent issues, then account allowance cards with percentages, meters, resets and observation times. Storage, consumption and execution details follow. Exhausted accounts foreground their depleted window; unknown readings have no invented meter. Allowances across different plans are never added together. Settings keeps its current controls. Project tasks and daily reports stay in their existing local Markdown and publication workflows.
+Monitor Overview (`?tab=tasks&monitor=overview`) presents Session, shared resources, and API in that order. The default view shows current summary metrics and named anomalies; details expand on demand. Resources contain only disks, account allowance, and Token consumption. Historical charts use recorded samples, never invented daily totals. Automations, settings, project tasks and their controls retain their existing separate views.
+
+## Capacity and seven-day charts
+
+Disk rings show the observed percentage of capacity used, alongside the existing disk table. Account quota meters retain each independent allowance window; unknown quotas have no filled meter. Neither graphic is task completion or a combined account allowance.
+
+Session has two always-visible seven-day lines: distinct Sessions with usage records (including background work), and average reported context Tokens per foreground Run. Token consumption has its own seven-day line in Resources, including foreground/background usage. These fixed charts cover seven UTC calendar dates including today, independently of the selected 1/7/30-day rolling summary window; today is partial. Context means use the latest recorded value per Run, not per-call input or prompt-injection bytes. Each chart exposes exact daily values and sample counts in a table. Missing days/contexts remain gaps, while a recorded zero remains zero.
+
+The ledger deduplicates by Run and attributes each retained snapshot to its ledger timestamp (Run finalized/completed time, or recording time when unavailable). These are observed records, not a historical Session inventory, live usage completeness guarantee, or allocation of a multi-day Run's individual calls. Late records can revise a day. Session counts deduplicate within each day, not across days. Context coverage shows reporting foreground Runs over all recorded foreground Runs; tokens and Sessions show recorded Run counts.
+
+`queryUsageLedger({ includeDailyTrend: true })` extends the existing file scan only as far as the first of those seven dates, aggregates `dailyTrend` from all matching records before top-N truncation, and keeps the selected-window totals and ranked lists unchanged. Overview returns this projection with its existing 15-second coalesced cache. Charts share the existing request, need no extra Run/manifest reads, model calls, quota RPCs, timers, notification or remediation actions. Frontend SVGs and meters add no chart library. Collection gaps remain explicitly visible.
 
 ## Activate on an instance
 
