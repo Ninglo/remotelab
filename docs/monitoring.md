@@ -329,10 +329,20 @@ The Overview shows three compact panels in order: Session, shared resources, and
 Each presents totals and observation/exception status first. Session totals are
 followed by up to three named exceptions with every affected metric, recent value
 and baseline, plus three group/initiator summaries. Without exceptions, up to
-three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources contain exactly three visible sections, in order: disk capacity,
-account quotas, and period Token usage. Disk and account tables stay visible;
+three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources start with a persistent **预警与自动补救** guide, followed by disk capacity,
+account quotas, and period Token usage. The guide explains warning conditions,
+remediation boundaries and execution destinations even when there is no incident.
+Its enabled state and fixed resource-recovery Session link come from the current
+instance configuration. A configured Session does not prove a repair has run.
+Disk and service recovery reuse that Session; failed automations reuse their own
+execution Session. Account switching runs directly in the background switcher,
+with the latest switch shown beside local backup readiness. It does not create
+an AI Session for each switch. The guide is a view of the existing automation,
+not a second timer or controller. Its collapsed recovery history retains actual
+states, concrete confirmation plans and links to the handling Sessions.
+Disk and account tables stay visible;
 account reset details and Token breakdowns open on demand. There is no additional
-resource overview counter, service/task table, recovery history, notification
+resource overview counter, service/task table, notification
 pipeline status or capacity advice in this panel. Disk and account state appear
 in their rows; source gaps appear beside the affected section. Runtime collectors,
 alert/recovery configuration and records are unchanged. Existing automation and

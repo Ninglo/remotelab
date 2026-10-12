@@ -22,6 +22,7 @@ export function projectRecovery(state) {
     sessionId: item.sessionId || null, originRunId: item.originRunId || null,
     attempts: item.attempts?.length || 0, runId: item.attempts?.at(-1)?.runId || item.externalRunId || null,
     reason: trim(item.reason).slice(0, 240), summary: trim(item.summary).slice(0, 240),
+    error: trim(item.error).slice(0, 240),
     plan: recoveryPlan(item.plan), riskStage: item.riskStage || 0,
     updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
 }

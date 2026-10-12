@@ -57,18 +57,20 @@ test('missing, expired and unrelated quota windows never become zero or availabl
 
 test('partial failures remain visible, observations share a bounded cache, and credential fields never leave the projection', async () => {
   let reads = 0;
-  const config = { fleetStateFile: 'fleet', disks: [{ path: '/', system: true }, { path: '/missing' }], services: [{ unit: 'test.service', scope: 'user', label: 'Test' }] };
+  const config = { fleetStateFile: 'fleet', recovery: { enabled: true, coordinatorSessionId: 'operations', baseUrl: 'never-expose', workflowPaths: { '/': '/private/credentials' } }, disks: [{ path: '/', system: true }, { path: '/missing' }], services: [{ unit: 'test.service', scope: 'user', label: 'Test' }] };
   const reader = createMonitoringReader({ now: () => now,
     read: async path => JSON.stringify(path === 'fleet' ? { schemaVersion: 2, adapters: { a: entry([sample(80, { secret: 'never-expose' })]) } } : config),
     getUsage: async () => { reads++; return { window: {}, totals: { totalTokens: 100, costUsd: 0.2, estimatedCostUsd: 1.5 }, topRuns: [{ private: 'never-expose' }], byIdentity: [{ private: 'never-expose' }] }; },
     getTasks: async () => [{ id: 'sch_test', kind: 'recurring', title: 'Daily', state: 'active', lastExecution: { state: 'failed', sessionId: 'session_test' } }],
     getAccounts: async () => ({ activeId: 'account', accounts: [{ id: 'account', identityId: 'account', account: { accessToken: 'never-expose' }, usage: null, home: '/private/credentials' }] }),
+    getRecord: async () => null,
     getService: async () => { throw Object.assign(new Error('secret error text'), { code: 'SERVICE_UNAVAILABLE' }); },
     getFs: async path => { if (path === '/missing') throw Object.assign(new Error('secret error text'), { code: 'ENOENT' });
       return { blocks: 100, bsize: 1024 ** 3, bfree: 10, bavail: 4, files: 100, ffree: 20 }; }, getStat: async () => ({ dev: 1 }),
   });
   const [a, b] = await Promise.all([reader(), reader()]);
   assert.equal(a, b); assert.equal(reads, 1);
+  assert.deepEqual(a.handling, { recoveryEnabled: true, coordinatorSessionId: 'operations', automationRecoveryEnabled: true });
   assert.equal(a.disks[0].status, 'critical'); assert.equal(a.disks[1].status, 'unknown');
   assert.equal(a.disks[1].availableBytes, undefined);
   assert.equal(a.services[0].status, 'unknown');

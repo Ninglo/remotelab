@@ -718,6 +718,7 @@
             "docs/monitoring.md",
             "static/chat/monitoring.js",
             "chat/monitoring.mjs",
+            "chat/monitoring-recovery.mjs",
             "chat/usage-ledger.mjs",
             "static/chat/compose.js",
             "chat/router-control-routes.mjs",
