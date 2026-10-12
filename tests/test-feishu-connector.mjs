@@ -1174,11 +1174,46 @@ await sendFeishuText(fakeSendRuntime, {
 }, transportTable, 'uuid-regular-table');
 assert.equal(tableThreadReply.data.reply_in_thread, true);
 assert.equal(feishuReplyPayload.data.reply_in_thread, false);
-assert.equal(feishuReplyPayload.data.msg_type, 'post');
+assert.equal(feishuReplyPayload.data.msg_type, 'interactive');
 assert.equal(feishuReplyPayload.data.content, tableThreadReply.data.content,
   'Thread and regular group replies must use the same Markdown payload');
-assert.deepEqual(JSON.parse(feishuReplyPayload.data.content).zh_cn.content,
-  [[{ tag: 'md', text: transportTable }]]);
+assert.deepEqual(JSON.parse(feishuReplyPayload.data.content).body.elements[0].rows,
+  [{ column_0: 'Wiki', column_1: '正常' }]);
+
+await import('./test-feishu-table-card.mjs');
+
+const directCalls = [];
+const directRuntime = { appClient: { im: { v1: { message: { create: async payload => {
+  directCalls.push(payload);
+  return { code: 0, data: { message_id: 'direct-table' } };
+} } } } } };
+await sendFeishuText(directRuntime, { chatId: 'chat_table' }, transportTable, 'direct-table');
+assert.equal(directCalls[0].data.msg_type, 'interactive');
+assert.equal(directCalls[0].data.receive_id, 'chat_table');
+await sendFeishuText(directRuntime, { chatId: 'chat_table', deliveryNotice: true }, transportTable, 'notice-table');
+assert.equal(directCalls[1].data.msg_type, 'text', 'delivery notices bypass card conversion');
+
+for (const failure of [230099, 'rejected-card', 99991400, 'timeout']) {
+  const calls = [];
+  const runtime = { appClient: { im: { v1: { message: { reply: async payload => {
+    calls.push(payload);
+    if (failure === 'timeout') throw new Error('timeout');
+    if (failure === 'rejected-card' && calls.length === 1) {
+      throw Object.assign(new Error('card rejected'), { response: { data: { code: 230099 } } });
+    }
+    return calls.length === 1 ? { code: failure, msg: 'provider error' }
+      : { code: 0, data: { message_id: 'fallback-message' } };
+  } } } } } };
+  if (failure === 230099 || failure === 'rejected-card') {
+    await sendFeishuText(runtime, topicSummary, transportTable, 'fallback-table');
+    assert.deepEqual(calls.map(call => call.data.msg_type), ['interactive', 'post']);
+    assert.equal(calls[0].data.uuid, calls[1].data.uuid);
+    assert.equal(calls[0].path.message_id, calls[1].path.message_id);
+  } else {
+    await assert.rejects(sendFeishuText(runtime, topicSummary, transportTable, 'fallback-table'));
+    assert.equal(calls.length, 1, 'uncertain sends and rate limits must never trigger a second send');
+  }
+}
 
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-whitelist-'));
 const whitelistPath = join(tempDir, 'allowed-senders.json');

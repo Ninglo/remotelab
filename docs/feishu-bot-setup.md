@@ -712,17 +712,32 @@ admission tests alone do not prove platform event delivery.
 
 ### Markdown rendering
 
-The model can emit ordinary Markdown. The connector sends adjacent Markdown
-lines together in a single `post` / `md` element so GFM tables, numbered lists,
-task lists, and block quotes retain their structure. Thread replies and normal
-chat messages use the same renderer; no table-specific prompt or Skill is needed.
-Known mentions become Feishu's inline `<at user_id="...">...</at>` extension,
-including inside table cells. Native `at` elements must not share a paragraph
-with `md`. Fenced code and rendered formula images remain separate native blocks.
+The model can emit ordinary Markdown. Replies with supported top-level GFM
+tables automatically become one JSON 2.0 card: Markdown prose and native table
+components retain their original order. The card fills the available width;
+up to four columns share that width according to their content, while wider
+tables use readable pixel widths and horizontal scrolling. Rows use automatic
+height (up to 999px), with ten rows per page; every row is retained. Feishu may
+clip very long cells, whose full content can be inspected in the client.
+Automatic row height requires Feishu 7.33 or newer.
+
+The converter reuses the shipped GFM parser, excludes code examples, and keeps
+cell formatting, links, alignment, known mentions, code and formula images.
+Thread replies and normal chat messages use the same renderer and existing
+delivery UUID/receipt path; no additional model call, prompt or Skill is needed.
+Ordinary replies still use `post` / `md`, retaining adjacent Markdown blocks.
+Known mentions use `user_id` in posts and `id` in cards.
+
+Replies outside supported card limits (five tables, fifty columns, a conservative
+28KB payload budget), reference-style link definitions, and unsupported post
+elements retain the original rich-text post. An explicit card-construction
+rejection (230099) falls back to that post. Uncertain sends and rate limits do
+not cause a second send. Delivery notices and document comments are unchanged.
 
 See the [official message content contract](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json).
-Some Markdown styles require a recent Feishu client. Tables need blank lines
-around them, and Feishu does not support nested tables or images inside table cells.
+See also the [native table contract](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/content-components/table).
+Some Markdown styles require a recent Feishu client. Use blank lines around
+tables. Nested tables remain Markdown rather than becoming native table components.
 
 ### Formula rendering
 

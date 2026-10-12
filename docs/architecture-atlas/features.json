@@ -421,6 +421,7 @@
             "connectors/feishu/group-settings.mjs",
             "connectors/feishu/participation-state.mjs",
             "connectors/feishu/quick-participation.mjs",
+            "connectors/feishu/table-card.mjs",
             "scripts/feishu-connector.mjs"
           ],
           "commands": []
