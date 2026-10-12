@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { topicAnnouncementContext } from '../connectors/feishu/group-announcement.mjs';
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
@@ -980,7 +981,7 @@ async function resolveFeishuRuntimeSelection(runtime) {
 
 async function submitRemoteLabRequest(runtime, summary, {
   prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
-  observedRecent = null, legacyGroupWorkThread = false,
+  observedRecent = null, legacyGroupWorkThread = false, observedSessionId = null,
 } = {}) {
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   if (!observeOnly && participationEnabled(runtime, summary)) {
@@ -994,7 +995,10 @@ async function submitRemoteLabRequest(runtime, summary, {
   if (prepared) {
     const submission = await submitConnectorMessage(requester, prepared.sessionId, {
       ...prepared.payload,
-      ...(skipUserMessage ? { recordUserMessage: false } : {}),
+      // A pre-upgrade prepared worker submission owns its original topology.
+      // Its user event has not been observed in the mainline Session.
+      ...(skipUserMessage && (!observedSessionId || prepared.sessionId === observedSessionId)
+        ? { recordUserMessage: false } : {}),
     });
     return { ...prepared.receipt, sessionId: prepared.sessionId, runId: submission.runId,
       requestId: submission.requestId, responseId: submission.responseId,
@@ -1101,7 +1105,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   }
   const participationStatus = participationEnabled(runtime, effectiveSummary)
     ? await participationController(runtime).state(effectiveSummary) : null;
-  const [attachmentResolution, conversationContext, linkedProjectContext] = await Promise.all([
+  const [attachmentResolution, conversationContext, linkedProjectContext, groupAnnouncement] = await Promise.all([
     resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
     // Admission time is not a Harness receipt. Fetch the bounded window;
     // preparation removes only context proven present in the resumed thread.
@@ -1117,6 +1121,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       console.warn(`[feishu-connector] failed to load linked project context for ${effectiveSummary.messageId}: ${error?.message || error}`);
       return null;
     }),
+    topicAnnouncementContext(runtime, effectiveSummary, session.id),
   ]);
   const groupObservationContext = Array.isArray(observedRecent) ? {
     messages: observedRecent.slice(0, -1)
@@ -1129,6 +1134,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       ? { conversationContext: groupObservationContext }
       : conversationContext ? { conversationContext } : {}),
     ...(linkedProjectContext ? { linkedProjectContext } : {}),
+    ...(groupAnnouncement ? { groupAnnouncement } : {}),
     ...(attachmentResolution.failures.length > 0
       ? { attachmentDownloadFailures: attachmentResolution.failures }
       : {}),
@@ -1270,7 +1276,7 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     startJevReaction(runtime, summary, observationReceipt, helpers, controller);
   }
   const workReceipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(
-    runtime, summary, { skipUserMessage: true });
+    runtime, summary, { skipUserMessage: true, observedSessionId: sessionId });
   if (workReceipt?.ignored) return { sessionId, externalTriggerId, observedOnly: true };
   return { sessionId, externalTriggerId,
     ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId,

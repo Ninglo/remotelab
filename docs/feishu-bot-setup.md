@@ -544,7 +544,9 @@ the main task does not wait for its recovery. Concurrent processing in the
 same process shares a reaction job; persisted decisions and outbox identity
 prevent replay from choosing a second outcome. Historical decisions retain
 their records, but their workMode, participation and binary-answer fields no
-longer determine new admission or placement.
+longer determine new admission or placement. A submission already durably
+prepared before upgrade keeps its original Session and delivery target;
+reusing a mainline observation must not omit the worker Session user event.
 
 Topics retain ordinary topic replies. Commands, explicit mute/pause state,
 access controls and Bot handoff limits retain their own admission paths.

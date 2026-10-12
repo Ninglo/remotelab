@@ -8,9 +8,12 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'feishu-participation-recovery-'));
 setIsolatedTestHome(home);
 let submissions = 0;
+const submittedBodies = [];
 const server = createServer((req, res) => {
   assert.match(req.url, /^\/api\/sessions\/s\/messages$/);
-  req.resume();
+  let body = '';
+  req.on('data', chunk => { body += chunk; });
+  req.on('end', () => submittedBodies.push(JSON.parse(body)));
   submissions += 1;
   res.writeHead(200, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ run: { id: 'fixture-run' } }));
@@ -77,6 +80,11 @@ try {
     assert.equal((await submitRemoteLabRequest(runtime, invited, { prepared })).runId, 'fixture-run');
     assert.equal(submissions, before + 1, 'a listening invitation may submit, including a new mainline work topic');
 
+    await submitRemoteLabRequest(runtime, invited, { prepared, skipUserMessage: true, observedSessionId: 's' });
+    assert.equal(submittedBodies.at(-1).recordUserMessage, false, 'observation in the same Session is reused');
+    await submitRemoteLabRequest(runtime, invited, { prepared, skipUserMessage: true, observedSessionId: 'old-mainline' });
+    assert.equal(submittedBodies.at(-1).recordUserMessage, undefined,
+      'a previously prepared worker keeps its own user event on upgrade replay');
     const snapshot = { ...await runtime.participation.state(base), receivedAt: Date.now() - 10 };
     await send('resume', '/unmute');
     const count = effects.runs.length;
@@ -84,7 +92,7 @@ try {
     assert.equal(old.reason, 'participation_before_resume');
     assert.equal(effects.runs.length, count, 'resume cannot turn queued listening content into tasks');
     assert.equal((await submitRemoteLabRequest(runtime, invited, { prepared })).ignored, true);
-    assert.equal(submissions, before + 1, 'a prepared request from before resume cannot enter the model queue');
+    assert.equal(submissions, before + 3, 'a prepared request from before resume cannot enter the model queue');
 
     const activeSnapshot = { ...await runtime.participation.state(base), receivedAt: Date.now() };
     await send('mute-queued', '/mute');
