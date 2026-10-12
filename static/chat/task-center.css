@@ -774,3 +774,11 @@ details.task-lifecycle-section > summary { cursor: pointer; }
   .monitoring-line-card { padding: 12px; }
   .monitoring-disk-visual { width: 100%; padding: 10px; }
 }
+
+/* Peer views within Automations; each keeps its own filters and expanded rows. */
+.task-view-tabs { display: flex; gap: 4px; margin: 20px 0; border-bottom: 1px solid var(--border); }
+.task-view-tabs button { flex: 1; min-width: 0; padding: 12px 6px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.task-view-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
+.task-view-tabs button:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+#taskViewTimelinePanel[hidden], #taskViewFlowsPanel[hidden], #taskViewTasksPanel[hidden] { display: none; }
+#taskViewFlowsPanel .task-center-flows { margin-top: 0; padding-top: 0; border-top: 0; }

@@ -45,6 +45,8 @@
   const refreshButton = document.getElementById("taskCenterRefresh");
   const list = document.getElementById("taskCenterList");
 
+  const viewTabs = document.getElementById("taskCenterViews");
+  let selectedView = "timeline";
   let tasks = [];
   let backgroundMechanisms = [];
   let automationFlows = { groups: [] };
@@ -79,6 +81,28 @@
   function flowTranslate(key, fallback = key, vars = undefined) {
     const value = globalScope.remotelabT?.(key, vars, automationFlows.language || globalScope.remotelabGetActiveUiLanguage?.()) || key;
     return value === key ? fallback : value;
+  }
+
+  function renderViews() {
+    for (const button of viewTabs?.querySelectorAll("[data-task-view]") || []) {
+      const active = button.dataset.taskView === selectedView;
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+      button.textContent = flowTranslate("tasks.views." + button.dataset.taskView);
+      document.getElementById(button.getAttribute("aria-controls")).hidden = !active;
+    }
+    viewTabs?.setAttribute("aria-label", flowTranslate("tasks.views.label"));
+    const status = document.getElementById("taskViewStatus");
+    if (status) {
+      status.textContent = loadError || (!loaded ? flowTranslate("tasks.loading") : "");
+      status.hidden = selectedView === "tasks" || !status.textContent;
+    }
+  }
+
+  function selectView(view, { focus = false } = {}) {
+    selectedView = view;
+    renderViews();
+    if (focus) viewTabs?.querySelector('[aria-selected="true"]')?.focus();
   }
 
   function flowState(task) {
@@ -887,7 +911,7 @@
       locate.type = "button"; locate.disabled = !linked.length;
       locate.addEventListener("click", () => {
         flowTaskIds = new Set(row.taskIds); selectedFilter = "all";
-        closedPurposeSections.clear(); renderTasks(); list.scrollIntoView({ behavior: "smooth", block: "start" });
+        closedPurposeSections.clear(); renderTasks(); selectView("tasks", { focus: true }); list.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       if (linked.length || !background.length) bottom.appendChild(locate);
       for (const task of linked) {
@@ -912,7 +936,7 @@
 
   function locateTimelineTask(task) {
     flowTaskIds = new Set([task.id]); selectedFilter = "all";
-    closedPurposeSections.clear(); renderTasks(); list.scrollIntoView({ behavior: "smooth", block: "start" });
+    closedPurposeSections.clear(); renderTasks(); selectView("tasks", { focus: true }); list.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function renderTimeline() {
@@ -988,6 +1012,7 @@
     list.replaceChildren();
     renderTimeline();
     renderFlows();
+    renderViews();
     if (loading && !loaded) { list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…"))); return; }
     if (loadError && tasks.length === 0) { list.appendChild(createNode("div", "task-center-empty", loadError)); return; }
     const filter = selectedFilter;
@@ -1188,6 +1213,19 @@
   for (const button of filterSelect?.querySelectorAll("[data-task-filter]") || []) {
     button.addEventListener("click", () => { selectedFilter = button.dataset.taskFilter; flowTaskIds = null; visibleTaskLimits.clear(); renderTasks(); });
   }
+  viewTabs?.addEventListener("click", event => {
+    const button = event.target.closest("[data-task-view]");
+    if (button) selectView(button.dataset.taskView);
+  });
+  viewTabs?.addEventListener("keydown", event => {
+    const buttons = [...viewTabs.querySelectorAll("[data-task-view]")];
+    const index = buttons.indexOf(event.target);
+    if (index < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+      : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+    selectView(buttons[next].dataset.taskView, { focus: true });
+  });
   refreshButton?.addEventListener("click", () => void refreshTasks({ force: true }));
   form?.addEventListener("submit", (event) => void submitTask(event));
   globalScope.addEventListener("remotelab:localechange", () => {
