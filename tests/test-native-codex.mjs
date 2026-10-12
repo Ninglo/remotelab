@@ -242,6 +242,22 @@ function harness(options = {}, onQuestion) {
   assert.equal(h.settled.length, 1, 'retiring the old question cannot settle twice');
   assert.equal(h.sent.filter(value => value.method === 'turn/start').length, 4, 'cancellation must not invent another user turn');
 }
+for (const partialAnswer of [false, true]) {
+  const h = harness({}, async () => ({ superseded: true, answers: partialAnswer ? { '0': ['Detailed'] } : {},
+    resolutions: [{ key: '1', origin: 'superseded' }] }));
+  await h.start();
+  h.notify('item/completed', { turnId: 'turn-1', item: { id: 'superseded-question', type: 'agentMessage', delivery: 'async',
+    questions: [{ title: 'Format?', options: ['Brief', 'Detailed'] }, { title: 'Authorize?', options: ['Yes', 'No'] }] } });
+  await tick();
+  const answer = h.sent.findLast(value => value.method === 'turn/steer');
+  if (partialAnswer) {
+    assert.match(answer.params.input[0].text, /Format\?: Detailed/);
+    assert.match(answer.params.input[0].text, /Authorize\?: No answer \[superseded/);
+    h.reply('turn/steer', { turnId: 'turn-1' }); await tick();
+  } else assert.equal(answer, undefined, 'no answer input is fabricated on supersession');
+  h.driver.close();
+}
+
 console.log('test-native-codex: ok');
 
 {

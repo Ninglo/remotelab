@@ -79,12 +79,13 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     // Codex's Default-mode question tool is an async agentMessage, not a
     // server RPC. Its native contract delivers answers as a new user input.
     void Promise.resolve().then(() => onQuestion({ id: `async:${item.id}`, protocol: 'codex', questions }))
-      .then(result => result.cancelled || result.superseded ? null : inputOperation(() => submitInput({ id: `question:${item.id}`, text: [
+      .then(result => result.cancelled || (result.superseded && !Object.keys(result.answers).length) ? null : inputOperation(() => submitInput({ id: `question:${item.id}`, text: [
         'Answers to the previous questions:',
         ...questions.map(q => {
           const origin = result.resolutions?.find(r => r.key === q.id)?.origin;
           const value = result.answers[q.id]?.join(', ') || 'No answer';
-          return `${q.question}: ${value}${origin === 'timeout' ? ' [system timeout fallback; not a user response]' : ''}`;
+          return `${q.question}: ${value}${origin === 'timeout' ? ' [system timeout fallback; not a user response]'
+            : origin === 'superseded' ? ' [superseded by a later user message; not a user choice]' : ''}`;
         }),
       ].join('\n') })))
       .catch(error => { if (!closed) onError(error); })
