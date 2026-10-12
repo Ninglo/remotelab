@@ -45,337 +45,112 @@ try {
     /Keep replies in the same topic/);
   assert.equal(resolveFeishuGroupSettings(config, workSummary).responseMode, 'all');
 
-  const classified = await classifyFeishuQuickParticipation('Ada: 你这次做得真棒', {
-    key: 'fixture', includeHandoff: false, fetchImpl: async (_url, request) => {
-      const { questions } = JSON.parse(request.body);
-      assert(questions.reaction.criteria.Get);
-      assert(questions.reaction.criteria.THANKS);
-      assert(questions.reaction.criteria.FACEPALM);
-      assert.equal(questions.reaction.criteria.DONE, undefined, 'tone cannot claim completion');
-      assert.equal(questions.emotion, undefined);
-      assert.deepEqual(Object.keys(questions.binaryAnswer.criteria), ['yes', 'no', 'none']);
-      assert.deepEqual(Object.keys(questions.workMode.criteria), ['short', 'complex']);
-      assert.match(questions.workMode.instructions, /status reply first/);
-      assert.match(questions.workMode.instructions, /actually requests diagnosis/);
-      assert.match(questions.participation.instructions, /only praises, criticizes, or rejects/);
-      assert.match(questions.participation.instructions, /how many groups have this bot/);
-      assert.match(questions.participation.instructions, /mention alone does not authorize work/);
-      return { ok: true, json: async () => ({ answers: {
-      participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
-      emotion: { choice: 'praise', probabilities: { praise: 0.96, criticism: 0.01, none: 0.03 } },
-    } }) }; },
-  });
-  assert.equal(classified.decision, 'silent');
-  assert.equal(classified.workMode, null);
-  assert.equal(classified.emojiType, 'WOW');
-
-  const receiptAnswer = await classifyFeishuQuickParticipation(
-    'Ada: 再试一下\nNEWEST MESSAGE TO CLASSIFY: Ada: 你能不能看到这条消息', {
-      key: 'fixture', includeHandoff: false, newestText: '你能不能看到这条消息',
-      fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-        participation: { choice: 'silent', probabilities: { silent: 0.93, reply: 0.07 } },
-        binaryAnswer: { choice: 'yes', probabilities: { yes: 0.98, no: 0.01, none: 0.01 } },
-      } }) }),
-    });
-  assert.equal(receiptAnswer.decision, 'reply');
-  assert.equal(receiptAnswer.workMode, 'reaction');
-  assert.equal(receiptAnswer.emojiType, 'Yes');
-
-  const olderQuestion = await classifyFeishuQuickParticipation(
-    'Ada: 你能不能看到这条消息\nNEWEST MESSAGE TO CLASSIFY: Ada: 看来是不中', {
-      key: 'fixture', includeHandoff: false, newestText: '看来是不中',
-      fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-        participation: { choice: 'silent', probabilities: { silent: 0.95, reply: 0.05 } },
-        binaryAnswer: { choice: 'yes', probabilities: { yes: 0.98, no: 0.01, none: 0.01 } },
-        emotion: { choice: 'criticism', probabilities: { criticism: 0.96 } },
-      } }) }),
-    });
-  assert.equal(olderQuestion.decision, 'silent');
-  assert.equal(olderQuestion.emojiType, 'TOASTED');
-
-  for (const id of ['Get', 'THANKS', 'FACEPALM', 'HUG', 'JIAYI', 'HIGHFIVE']) {
-    const choice = await classifyFeishuQuickParticipation('NEWEST MESSAGE TO CLASSIFY: Ada: 请结合上下文回应', {
-      key: 'fixture', includeHandoff: false,
-      fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-        participation: { choice: 'reply', probabilities: { reply: 0.98, silent: 0.02 } },
-        reaction: { choice: id, probabilities: { [id]: 0.94 } },
-      } }) }),
-    });
-    assert.equal(choice.emojiType, id, 'a text reply does not discard a fitting social reaction');
-  }
 
   for (const [choice, probability, expected] of [
-    ['short', 0.93, 'short'], ['short', 0.59, 'complex'], ['complex', 0.92, 'complex'],
+    ['WOW', .96, 'WOW'], ['Get', .94, 'Get'], ['THANKS', .94, 'THANKS'],
+    ['none', .99, null], ['Yes', .99, null], ['DONE', .99, null], ['WOW', .5, null], ['WOW', 2, null],
   ]) {
-    const verdict = await classifyFeishuQuickParticipation('Ada: 请答复这个问题', {
-      key: 'fixture', includeHandoff: false,
-      fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-        participation: { choice: 'reply', probabilities: { silent: 0.02, reply: 0.98 } },
-        workMode: { choice, probabilities: { [choice]: probability } },
-      } }) }),
-    });
-    assert.equal(verdict.workMode, expected);
-  }
-
-  for (const [choice, probability, expected] of [
-    ['criticism', 0.94, 'TOASTED'], ['none', 0.99, null], ['praise', 0.61, null],
-  ]) {
-    const verdict = await classifyFeishuQuickParticipation('Ada: 这次答得不对', {
-      key: 'fixture', includeHandoff: false,
-      fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-        participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
-        emotion: { choice, probabilities: { [choice]: probability } },
-      } }) }),
+    const verdict = await classifyFeishuQuickParticipation('NEWEST MESSAGE TO CLASSIFY: thanks', {
+      key: 'fixture', projectMemory: { secret: 'must not be sent' }, participationState: { mode: 'active' },
+      fetchImpl: async (_url, req) => {
+        const body = JSON.parse(req.body);
+        assert.deepEqual(Object.keys(body.questions), ['reaction']);
+        assert.deepEqual(Object.keys(body.state), ['discussion']);
+        assert.equal(body.questions.reaction.criteria.Yes, undefined);
+        return { ok: true, json: async () => ({ answers: {
+          reaction: { choice, probabilities: { [choice]: probability } },
+          participation: { choice: 'silent' }, workMode: { choice: 'complex' },
+        } }) };
+      },
     });
     assert.equal(verdict.emojiType, expected);
+    for (const field of ['decision', 'workMode', 'controlMode', 'invited', 'handoffDecision']) assert.equal(field in verdict, false);
   }
+  assert.equal((await classifyFeishuQuickParticipation('test', { key: 'fixture',
+    fetchImpl: async () => ({ ok: false, status: 402 }) })).reason, 'http_402');
 
-  await classifyFeishuQuickParticipation('Ada: old group', {
-    key: 'fixture', fetchImpl: async (_url, request) => {
-      const questions = JSON.parse(request.body).questions;
-      assert.equal(questions.emotion, undefined, 'other groups keep their original Jev request size');
-      assert.equal(questions.reaction, undefined);
-      assert.equal(questions.reactionOnly, undefined);
-      assert.equal(questions.workMode, undefined);
-      assert(questions.projectHandoff);
-      assert.doesNotMatch(questions.participation.instructions, /only praises, criticizes, or rejects/);
-      return { ok: true, json: async () => ({ answers: {
-        participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
-      } }) };
-    },
-  });
+  const { observeSessionMessage, recordSessionObservationDecision } = await import('../chat/session-observations.mjs');
+  await observeSessionMessage('social', { sourceMessageId: 'source', text: 'thanks' });
+  const stored = await recordSessionObservationDecision('social', 'source', { purpose: 'reaction', emojiType: 'THANKS' });
+  assert.equal(stored.participation, undefined);
+  assert.equal(stored.workMode, undefined);
+  assert.equal((await recordSessionObservationDecision('social', 'source', { purpose: 'reaction', emojiType: 'WOW' })).emojiType, 'THANKS');
+  await observeSessionMessage('social', { sourceMessageId: 'invalid', text: 'done?' });
+  await assert.rejects(recordSessionObservationDecision('social', 'invalid', { purpose: 'reaction', emojiType: 'Yes' }), /Invalid social/);
+  await assert.rejects(recordSessionObservationDecision('social', 'invalid', { purpose: 'reaction', emojiType: 'Get', participation: 'reply' }), /Invalid social/);
 
-  const emojiOnly = await classifyFeishuQuickParticipation('Ada @Bot: 只回个表情就行，太惊喜了', {
-    key: 'fixture', includeHandoff: false, fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-      participation: { choice: 'reply', probabilities: { silent: 0.02, reply: 0.98 } },
-      emotion: { choice: 'praise', probabilities: { praise: 0.97 } },
-      reactionOnly: { choice: 'yes', probabilities: { yes: 0.97, no: 0.03 } },
-    } }) }),
-  });
-  assert.equal(emojiOnly.reactionOnly, true);
-
-  const effects = [];
-  const runtime = { config, botIdentity: { openId: 'bot' }, storagePaths: {},
-    quickParticipation: { handle: () => { throw new Error('temporary read reaction must not run'); } } };
+  const runtime = { config, botIdentity: { openId: 'bot' }, storagePaths: {} };
+  const sent = [], submissions = [];
   const helpers = {
-    addProcessingReaction: () => { throw new Error('temporary read reaction must not run'); },
-    observeRemoteLabMessage: async (_runtime, summary) => {
-      effects.push(`observe:${summary.messageId}`);
-      return { sessionId: 'group-session', externalTriggerId: 'group-binding',
-        observation: { eventSeq: 1, recent: [
-          { time: Date.now(), sender: 'Ada', text: summary.messageText },
-        ] } };
+    observeRemoteLabMessage: async (_r, summary) => ({ sessionId: 'group-session',
+      observation: { eventSeq: 1, recent: [{ text: summary.messageText }] } }),
+    classifyJevReaction: async () => ({ emojiType: 'WOW' }),
+    recordJevDecision: async (_s, _m, decision) => ({ decision }),
+    submitRemoteLabRequest: async (_r, summary, options) => {
+      submissions.push({ summary, options });
+      assert.equal(options.skipUserMessage, true);
+      assert.equal(options.legacyGroupWorkThread, undefined);
+      assert.notEqual(summary.startThread, true);
+      return { sessionId: 'group-session', runId: 'run' };
     },
-    classifyJevReaction: async context => {
-      effects.push('jev');
-      assert.match(context, /你这次做得真棒|请处理这个问题|只回个表情/);
-      return { decision: 'silent', emojiType: 'WOW' };
-    },
-    recordJevDecision: async (_sessionId, _messageId, decision) => {
-      effects.push(`decision:${decision.participation}:${decision.workMode}:${decision.emojiType}`);
-      return { decision };
-    },
-    submitRemoteLabRequest: async (_runtime, workSummary, options) => {
-      effects.push(`run:${options.skipUserMessage === true ? 'group' : 'new'}:${workSummary.replyModeOverride || 'inline'}`);
-      return { sessionId: options.skipUserMessage ? 'group-session' : 'thread-session',
-        runId: 'work-run', requestId: 'work-request' };
-    },
-    enqueueJevReaction: async (_runtime, _summary, _sessionId, emojiType) => {
-      effects.push(`reaction:${emojiType}`);
-      return { id: 'delivery' };
-    },
+    enqueueJevReaction: async (_r, summary, _s, emoji) => { sent.push([summary.messageId, emoji]); return { id: 'reaction' }; },
   };
-  const silent = await handleMessage(runtime, base, 'test', helpers);
-  assert.equal(silent.decision.emojiType, 'WOW');
-  assert.equal(silent.workSessionId, 'group-session');
-  assert.deepEqual(effects, ['observe:praise', 'jev', 'decision:silent:null:WOW', 'reaction:WOW', 'run:group:inline'],
-    'Jev keeps the social reaction while the Session model judges whether text is needed');
-
-  effects.length = 0;
-  const direct = await handleMessage(runtime, { ...base, messageId: 'work',
-    messageText: '请处理这个问题', mentions: [{ openId: 'bot' }] }, 'test', {
-      ...helpers, classifyJevReaction: async () => {
-        effects.push('jev');
-        return { decision: 'reply', workMode: 'complex', emojiType: null };
-      },
+  const drain = () => Promise.all([...runtime.jevReactionJobs.values()]);
+  // A deliberately unresolved classifier must not hold the input or receipt.
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const first = await handleMessage(runtime, base, 'test', { ...helpers, classifyJevReaction: () => gate });
+  assert.equal(first.runId, 'run');
+  assert.equal(sent.length, 0);
+  release({ decision: 'silent', workMode: 'complex', controlMode: 'paused', emojiType: 'WOW' });
+  await drain();
+  assert.deepEqual(sent, [['praise', 'WOW']]);
+  for (const failure of ['throw', 'record', 'enqueue']) {
+    const receipt = await handleMessage(runtime, { ...base, messageId: failure }, 'test', {
+      ...helpers,
+      ...(failure === 'throw' ? { classifyJevReaction: () => { throw new Error('classifier offline'); } } : {}),
+      ...(failure === 'record' ? { recordJevDecision: async () => { throw new Error('record offline'); } } : {}),
+      ...(failure === 'enqueue' ? { enqueueJevReaction: async () => { throw new Error('queue offline'); } } : {}),
     });
-  assert.equal(direct.runId, 'work-run');
-  assert.equal(direct.workSessionId, 'thread-session');
-  assert.deepEqual(effects, ['observe:work', 'jev', 'decision:reply:complex:Get', 'reaction:Get', 'run:new:thread'],
-    'complex work starts its own Session and Thread after the group observation');
-
-  effects.length = 0;
-  const short = await handleMessage(runtime, { ...base, messageId: 'short',
-    messageText: '这个词是什么意思？' }, 'test', {
-      ...helpers, classifyJevReaction: async () => {
-        effects.push('jev');
-        return { decision: 'reply', workMode: 'short' };
-      },
-    });
-  assert.equal(short.workSessionId, 'group-session');
-  assert.deepEqual(effects, ['observe:short', 'jev', 'decision:reply:short:OnIt', 'reaction:OnIt', 'run:group:inline'],
-    'short work stays in the original Session and group mainline');
-
-  effects.length = 0;
-  await handleMessage(runtime, { ...base, messageId: 'legacy-work' }, 'test', {
-    ...helpers, observeRemoteLabMessage: async () => ({ sessionId: 'group-session',
-      observation: { eventSeq: 2, decision: { participation: 'reply', emojiType: 'OnIt' } } }),
-    classifyJevReaction: () => { throw new Error('a persisted decision must not be reclassified'); },
-    submitRemoteLabRequest: async (_runtime, _summary, options) => {
-      effects.push(`legacy:${options.skipUserMessage}:${options.legacyGroupWorkThread}`);
-      return { sessionId: 'group-session', runId: 'old-run' };
-    },
-  });
-  assert.deepEqual(effects, ['reaction:OnIt', 'legacy:true:true'],
-    'older decisions replay in their original topology');
-
-  effects.length = 0;
-  const mentionedPraise = await handleMessage(runtime, { ...base, messageId: 'mentioned-praise',
-    messageText: '你这次做得真棒', mentions: [{ openId: 'bot' }] }, 'test', helpers);
-  assert.equal(mentionedPraise.decision.participation, 'reply');
-  assert.deepEqual(effects, ['observe:mentioned-praise', 'jev', 'decision:reply:short:WOW',
-    'reaction:WOW', 'run:group:inline'],
-    'a direct mention falls back to the existing group Session with one work reaction');
-
-  effects.length = 0;
-  const mentionedCriticism = await handleMessage(runtime, { ...base, messageId: 'mentioned-criticism',
-    messageText: '你这次回答得很差', mentions: [{ openId: 'bot' }] }, 'test', {
-      ...helpers, classifyJevReaction: async () => {
-        effects.push('jev');
-        return { decision: 'silent', emojiType: 'TOASTED' };
-      },
-    });
-  assert.equal(mentionedCriticism.decision.participation, 'reply');
-  assert.deepEqual(effects, ['observe:mentioned-criticism', 'jev',
-    'decision:reply:short:TOASTED', 'reaction:TOASTED', 'run:group:inline']);
-
-  effects.length = 0;
-  const testMention = await handleMessage(runtime, { ...base, messageId: 'test-mention',
-    messageText: '用户彻底怒了！', mentions: [{ openId: 'bot' }] }, 'test', {
-      ...helpers, classifyJevReaction: async () => {
-        effects.push('jev');
-        return { decision: 'unknown', reason: 'low_support', emojiType: null };
-      },
-    });
-  assert.equal(testMention.decision.participation, 'reply');
-  assert.deepEqual(effects, ['observe:test-mention', 'jev', 'decision:reply:short:OnIt',
-    'reaction:OnIt', 'run:group:inline'],
-    'an uncertain @ mention wakes the existing group Session with only OnIt');
-
-  effects.length = 0;
-  const onlyReaction = await handleMessage(runtime, { ...base, messageId: 'emoji-only',
-    messageText: '只回个表情就行，太惊喜了', mentions: [{ openId: 'bot' }] }, 'test', {
-    ...helpers, classifyJevReaction: async () => {
-      effects.push('jev');
-      return { decision: 'reply', reactionOnly: true, emojiType: 'WOW' };
-    },
-  });
-  assert.equal(onlyReaction.decision.participation, 'silent');
-  assert.equal(onlyReaction.runId, 'work-run');
-  assert.deepEqual(effects, ['observe:emoji-only', 'jev', 'decision:silent:null:WOW', 'reaction:WOW', 'run:group:inline'],
-    'a reaction-only classification cannot suppress the Session model');
-
-  effects.length = 0;
-  const yes = await handleMessage(runtime, { ...base, messageId: 'receipt-question',
-    messageText: '你能不能看到这条消息' }, 'test', {
-      ...helpers, classifyJevReaction: async () => {
-        effects.push('jev');
-        return { decision: 'reply', workMode: 'reaction', emojiType: 'Yes' };
-      },
-    });
-  assert.equal(yes.decision.participation, 'reply');
-  assert.equal(yes.runId, 'work-run');
-  assert.equal(yes.workSessionId, 'group-session');
-  assert.deepEqual(effects, ['observe:receipt-question', 'jev',
-    'decision:reply:reaction:Yes', 'reaction:Yes', 'run:group:inline'],
-    'a binary reaction is preserved and still reaches the existing Session for reply judgment');
-
-  for (const [messageId, messageText, emojiType] of [
-    ['criticism', '你这次答得不对', 'TOASTED'],
-    ['neutral', '今天下午三点开会', null],
-    ['thanks', '谢谢', null],
-  ]) {
-    effects.length = 0;
-    const outcome = await handleMessage(runtime, { ...base, messageId, messageText }, 'test', {
-      ...helpers, classifyJevReaction: async () => {
-        effects.push('jev');
-        return { decision: 'silent', emojiType };
-      },
-    });
-    assert.equal(outcome.decision.emojiType, emojiType);
-    assert.equal(outcome.runId, 'work-run');
-    assert.deepEqual(effects, ['observe:' + messageId, 'jev',
-      `decision:silent:null:${emojiType}`, ...(emojiType ? [`reaction:${emojiType}`] : []), 'run:group:inline']);
-    assert.equal('deliveryId' in outcome, Boolean(emojiType));
+    assert.equal(receipt.runId, 'run');
+    await drain();
   }
-
-  for (const reason of ['timeout', 'missing_key', 'low_support', 'request_error']) {
-    effects.length = 0;
-    const outcome = await handleMessage(runtime, { ...base, messageId: reason,
-      messageText: '刚才的问题还没有回答，请再看一下' }, 'test', {
-      ...helpers, classifyJevReaction: async () => {
-        effects.push('jev');
-        return { decision: 'unknown', reason };
-      },
+  // Persisted old semantics never choose a new Session or answer a fact.
+  for (const emoji of ['Yes', 'OnIt', 'THANKS']) {
+    const receipt = await handleMessage(runtime, { ...base, messageId: 'old-' + emoji }, 'test', {
+      ...helpers, observeRemoteLabMessage: async () => ({ sessionId: 'group-session', observation: {
+        eventSeq: 2, decision: { participation: 'reply', workMode: 'complex', emojiType: emoji },
+      } }),
+      classifyJevReaction: () => { throw new Error('do not reclassify'); },
     });
-    assert.equal(outcome.runId, 'work-run');
-    assert.equal(outcome.workSessionId, 'group-session');
-    assert.deepEqual(effects, [`observe:${reason}`, 'jev', 'decision:silent:null:null', 'run:group:inline'],
-      'failed or uncertain Jev classification must forward an unmentioned message without a fallback reaction');
+    assert.equal(receipt.workSessionId, 'group-session');
+    await drain();
   }
-
-  effects.length = 0;
-  const replay = await handleMessage(runtime, { ...base, messageId: 'replay' }, 'test', {
-    ...helpers, observeRemoteLabMessage: async () => ({ sessionId: 'group-session',
-      observation: { eventSeq: 2, decision: { participation: 'silent', emojiType: 'TEARS' } } }),
-    classifyJevReaction: () => { throw new Error('replay must reuse the persisted decision'); },
+  assert.deepEqual(sent.slice(1), [['old-THANKS', 'THANKS']]);
+  // Feedback also runs while input preparation is slow, using its own address.
+  let releaseInput, feedbackDone;
+  const input = new Promise(resolve => { releaseInput = resolve; });
+  const feedback = new Promise(resolve => { feedbackDone = resolve; });
+  const pending = handleMessage(runtime, { ...base, messageId: 'slow-input' }, 'test', {
+    ...helpers, submitRemoteLabRequest: () => input,
+    enqueueJevReaction: async (_r, summary) => { assert.equal(summary.messageId, 'slow-input'); feedbackDone(); },
   });
-  assert.equal(replay.decision.emojiType, 'TEARS');
-  assert.deepEqual(effects, ['reaction:TEARS', 'run:group:inline'],
-    'replay reuses the reaction decision while resubmitting through the idempotent Session request path');
-
-  effects.length = 0;
-  let releasePreparation, preparationStarted;
-  const preparation = new Promise(resolve => { releasePreparation = resolve; });
-  const started = new Promise(resolve => { preparationStarted = resolve; });
-  const pending = handleMessage(runtime, { ...base, messageId: 'slow-preparation', messageText: '请处理这个问题' }, 'test', {
-    ...helpers,
-    classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex', emojiType: 'Get' }),
-    submitRemoteLabRequest: async () => { preparationStarted(); await preparation; return { sessionId: 'work' }; },
-  });
-  await started;
-  assert(effects.includes('reaction:Get'), 'receipt is queued while attachment/context admission is still blocked');
-  releasePreparation();
+  await feedback;
+  releaseInput({ sessionId: 'group-session' });
   await pending;
-  effects.length = 0;
-  await assert.rejects(handleMessage(runtime, { ...base, messageId: 'feedback-failed', messageText: '请处理这个问题' }, 'test', {
-    ...helpers,
-    classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex' }),
-    enqueueJevReaction: async () => { throw new Error('feedback queue offline'); },
-  }), /feedback queue offline/);
-  assert(effects.includes('run:new:thread'), 'feedback failure cannot discard accepted work');
-  const { GROUP_ROUTING_PILOT_FILE } = await import('../lib/group-routing-pilot.mjs');
-  await mkdir(join(home, '.config/remotelab'), { recursive: true });
-  await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({ version: 1, enabled: true,
-    groups: [{ sourceRouteId: 'pilot-bot', chatId: 'pilot', tenantKey: 'tenant', folder: home }] }));
-  effects.length = 0;
-  const routedPilot = await handleMessage(runtime, { ...base, tenantKey: 'tenant', messageId: 'pilot-complex' }, 'test', {
-    ...helpers, classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex' }),
-  });
-  assert.equal(routedPilot.workSessionId, 'group-session', 'pilot lets the main Harness choose new work versus supplement');
-  assert(effects.includes('run:group:inline')); assert(!effects.includes('run:new:thread'));
-  effects.length = 0;
-  const otherTenant = await handleMessage(runtime, { ...base, tenantKey: 'another', messageId: 'other-tenant-complex' }, 'test', {
-    ...helpers, classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex' }),
-  });
-  assert.equal(otherTenant.workSessionId, 'thread-session', 'all non-pilot routes preserve Jev placement');
-  effects.length = 0;
-  const replayPilot = await handleMessage(runtime, { ...base, tenantKey: 'another', messageId: 'replay-pilot' }, 'test', {
-    ...helpers, observeRemoteLabMessage: async () => ({ sessionId: 'group-session', observation: { eventSeq: 2,
-      decision: { participation: 'reply', workMode: 'complex', emojiType: 'OnIt', groupRoutingPilot: true } } }),
-  });
-  assert.equal(replayPilot.workSessionId, 'group-session', 'persisted pilot routing survives configuration changes on replay');
+  await drain();
+  // A late reaction cannot survive an explicit pause/resume epoch change.
+  let epoch = 1, releaseLate;
+  runtime.config.groups.pilot.participationControls = true;
+  runtime.participation = {
+    state: async () => ({ mode: 'active', epoch }), intake: async () => null,
+    remember: async () => {}, assess: async () => {},
+  };
+  const late = new Promise(resolve => { releaseLate = resolve; });
+  await handleMessage(runtime, { ...base, messageId: 'late' }, 'test', { ...helpers, classifyJevReaction: () => late });
+  epoch++;
+  releaseLate({ emojiType: 'Get' });
+  await drain();
+  assert(!sent.some(([id]) => id === 'late'));
   console.log('test-feishu-jev-reactions: ok');
-} finally {
-  await rm(home, { recursive: true, force: true });
-}
+} finally { await rm(home, { recursive: true, force: true }); }

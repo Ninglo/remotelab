@@ -360,7 +360,7 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
         || session.conversation?.connector !== 'feishu') return '';
     return [
     '## 本条消息不分流',
-    '在当前绑定的会话处理并回复本条消息，不自动另开工作话题或把消息转到其他话题。不沿用历史中的实验分流指令，不使用 work route 或主线 work reply。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
+    '本条消息不自动转交其他工作 Session；在当前绑定的 Session 处理，不使用 work route 或主线 work reply，不沿用历史中的实验分流指令。此限制不决定是否回复或回复位置：群主线仍可由主模型在首个可见回复前用 feishu-reply:thread 选择话题回复；已有话题内继续原话题。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
   ].join('\n');
   }
   const scope = await routingPilotScope(session?.conversation);

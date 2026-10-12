@@ -117,7 +117,7 @@ remotelab work update --file update.json --json
 
 三个身份字段必须同时匹配。启用时间以前的消息保留原路径；未知时间的历史重放不进入试点。仅新增的人类飞书输入可用，自动任务、其他群、其他 Bot 和 Web 入口不获得此权限。关闭 `enabled` 停止新增分流和确认，已经接受的工作按其原话题继续，已确认复核的回传保留。不要删除 Request、Session、投递回执或重放旧群消息。
 
-试点把消息接收、事项归属、执行位置、回复位置与展示分别保存。运行中的群主线可接收兼容的人类原生追加，每条输入保留作者、消息地址和自己的处理回执；共用执行不意味着同一业务任务或共用最终正文。主线 Harness 尽快确定去向，核对作者、授权和目标状态后把深入业务检查交到工作话题，不先做完整研究再分流。工作话题也可接收原生补充。Jev 的表情和参与控制保留，工作位置由主线 Harness 判断，不再由 Jev 同时新开话题。关闭开头展示不会清除已经选定的回复位置。
+试点把消息接收、事项归属、执行位置、回复位置与展示分别保存。运行中的群主线可接收兼容的人类原生追加，每条输入保留作者、消息地址和自己的处理回执；共用执行不意味着同一业务任务或共用最终正文。主线 Harness 尽快确定去向，核对作者、授权和目标状态后把深入业务检查交到工作话题，不先做完整研究再分流。工作话题也可接收原生补充。Jev 仅异步选择社交表情，工作位置由主线 Harness 判断，不再由 Jev 同时新开话题或判断参与控制。人工静音、暂停、状态卡和明确命令仍独立生效。关闭开头展示不会清除已经选定的回复位置。
 
 Harness 用 `remotelab work route --file packet.json --json`：
 
@@ -142,3 +142,5 @@ Harness 用 `remotelab work route --file packet.json --json`：
 验证入口：`tests/test-group-routing.mjs` 检查归属、范围、拒绝、重复确认、过期和恢复；`tests/test-group-routing-runtime.mjs` 使用隔离假 Harness 验证接受、执行、完成钩子和回传队列。既有飞书回复、原生追加、参与状态和任务卡测试覆盖兼容性。真实群只由获准试测的人发送测试内容。
 
 For explicitly selected recurring work, the [automation home](task-center-v1.md#stable-automation-home-explicit-opt-in) is a stable task-context branch with source/task links and durable definition revisions. It records source lineage but does not inherit the source transcript, model context or agreements; older full-history homes can be explicitly replaced while retaining their history. Individual execution Sessions point back to that home. Reading status does not send a message to the worker or queue behind its active Run. Discussion references supplied with an adjustment are retained as reported provenance, not verified authorization.
+
+个人 `routing=none` 限制自动转交工作 Session，不限制主模型在群主线首个可见回复前选择话题回复。话题回复标记不会自行创建独立工作 Session；已有可见投递继续锁定原位置。另开或接续工作 Session 仍遵循本条输入的授权与分流策略，表情不参与这两项选择。

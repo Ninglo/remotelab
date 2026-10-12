@@ -14,9 +14,8 @@ export function participationEnabled(runtime, summary) {
   return group?.participationMode === 'ambient' && group.participationControls === true;
 }
 
-// Fast, unambiguous controls also work while reception is paused. Broader
-// contextual language is interpreted by the existing Jev call, never by a
-// second classifier. Quoted examples and human-to-human messages aren't commands.
+// Explicit controls also work while reception is paused. No small model
+// interprets or changes participation state.
 export function parseParticipationText(text) {
   const s = String(text || '').replace(/^\s*(?:@_[A-Za-z0-9_]+\s*)+/, '').trim();
   if (s === '/mute') return 'listening';
@@ -35,7 +34,7 @@ export function parseParticipationText(text) {
 export function buildParticipationCard(record) {
   const scope = record.source.topicId ? '这个话题' : '本群主讨论';
   const detail = { active: '持续接收消息，自主判断是否参与。',
-    listening: '持续接收消息；只回应明确邀请。', paused: '后续普通消息不进入 Session；说“恢复接收消息”唤醒。' }[record.mode];
+    listening: '持续接收消息；@我或使用任务命令可单次邀请。', paused: '后续普通消息不进入 Session；说“恢复接收消息”唤醒。' }[record.mode];
   const actions = [...MODES].map(mode => ({ tag: 'button', type: mode === record.mode ? 'primary' : 'default',
     text: { tag: 'plain_text', content: LABELS[mode] }, value: {
       namespace: 'participation', key: record.key, mode, epoch: record.epoch || 0,
@@ -53,7 +52,7 @@ export function buildParticipationCard(record) {
   ] };
 }
 
-export function createParticipationController(runtime, { resolveSession, cancelSession, cleanup, interpretControl,
+export function createParticipationController(runtime, { resolveSession, cancelSession, cleanup,
   authorize = async () => false } = {}) {
   const records = createRecordStore(join(runtime.config.storageDir, 'participation-state'));
   const queues = new Map();
@@ -168,18 +167,17 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       return publish(record);
     });
   }
-  async function assess(summary, verdict, { mentioned = false, taskCommand = false } = {}) {
+  async function assess(summary, { mentioned = false, taskCommand = false } = {}) {
     const key = keyFor(summary);
     return exclusive(key, async () => {
       let record = await state(summary);
       if (record.mode === 'paused') return false;
       if (record.mode === 'active') return true;
       const forOther = summary.mentions?.length && !mentioned;
-      const invited = !forOther && (mentioned || taskCommand || verdict?.invited === true);
+      const invited = !forOther && (mentioned || taskCommand);
       record = await records.mutate(key, current => ({ ...record, ...current,
         ...(invited ? { invitedMessages: [...(current?.invitedMessages || []), summary.messageId].slice(-100), topicHint: false }
-          : verdict?.topicChanged ? { topicHint: true,
-            topicAnchor: String(summary.messageText || summary.textPreview || '').slice(0, 1200) } : {}),
+          : {}),
       }));
       await publish(record);
       return invited;
@@ -203,18 +201,6 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       return { ignored: true, reason: 'participation_before_resume' };
     }
     if (record.mode === 'paused') {
-      const text = String(summary.messageText || summary.textPreview || '').slice(0, 500);
-      // Only an explicit attempt to restore reception may be interpreted.
-      // Ordinary paused-period content is never sent to a model or Session.
-      if ((!others || addressed) && (addressed || /^(?:你|请|现在|茵蒂克丝|AI|Agent)/.test(text))
-          && /恢复|继续|重新|回来/.test(text) && /参与|接收|读取|旁听|读消息|听/.test(text)
-          && !/别|不要|不用|不需要|[“”"`]/.test(text)) {
-        const interpreted = await interpretControl?.(text, record);
-        if (['active', 'listening'].includes(interpreted)) {
-          await change(summary, interpreted);
-          return { participationControl: true, mode: interpreted };
-        }
-      }
       return { ignored: true, reason: 'participation_paused' };
     }
     return null;

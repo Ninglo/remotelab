@@ -1,57 +1,9 @@
-# Give Jev dated project context from published daily reports
+# 已退役的 Jev 日报输入
 
-Operator prompt:
+Jev 现仅异步选择社交表情，不再回答事实问题、判断是否回复或选择工作位置。因此 `dailyReportMemory` 不再由飞书消息路径读取，也不再向 Jev 发送日报段落。已有配置仍可解析，升级不要求修改实例设置；它不代表当前仍在使用这项输入。
 
-> Connect the selected Jev group to our existing daily project reports. Use the
-> local Markdown directory and publisher receipt directory below. Validate that
-> each source is the published, body-verified version; keep dates and caveats;
-> select bounded relevant excerpts without another model call. Verify supported
-> yes/no questions, unknown facts, stale publications, and normal group routing.
+主模型需要项目资料时，沿已有项目原件和频道上下文入口按需读取，保留日期、来源及限定条件。本次收敛没有新增全量日报注入或另一套知识库。
 
-Supply the Bot route, selected chat ID, absolute `reportsDir` and `receiptsDir`,
-and the report timezone (default `Asia/Shanghai`). Enable `dailyReportMemory`
-only on a group already using `jevReactions`, `quickReactions`, ambient
-participation, and `groupFeed`:
+`connectors/feishu/daily-report-memory.mjs` 保留发布版本验证工具：从绝对路径 `reportsDir` 和 `receiptsDir` 检查最近三天、48 小时内的发布回执，要求 `ok=true`、`body_verified=true`、`dry_run=false`、日期和来源一致、正文 SHA-256 匹配。未发布编辑、失败、未来或过期回执均不可作为已发布证据。其独立测试继续覆盖这些约束。
 
-```json
-{
-  "dailyReportMemory": {
-    "reportsDir": "/instance-workspace/project-knowledge/daily",
-    "receiptsDir": "/instance-workspace/project-review/publication-receipts",
-    "timeZone": "Asia/Shanghai"
-  }
-}
-```
-
-The connector checks today's and the preceding two dates for the latest
-publication no older than 48 hours. A usable receipt has `ok=true`,
-`body_verified=true`, `dry_run=false`, a document URL, matching date and source,
-and a `body_sha256` equal to the local Markdown. An unpublished edit is not
-treated as the published report. Missing, failed, future, or expired inputs
-leave the existing decision path available without project memory.
-
-Local file metadata invalidates a bounded process cache. Each incoming
-question selects at most four complete relevant paragraphs, totaling at most
-3,200 characters including section names. Whole paragraphs retain evidence
-links and qualifications. The report is not copied into a second knowledge
-store, and its normal publisher remains the only writer. The next message
-automatically reads a newly published version. No polling task, Feishu fetch,
-Harness startup, or additional Jev request is introduced.
-
-Jev receives `state.project_memory` alongside the existing recent discussion.
-Its instructions distinguish explicit dated evidence from plans, oral reports,
-and live state requiring a new check. Missing information produces no binary
-answer; it is not evidence for No. Recent corrections supersede older reports.
-The 85% binary probability gate and @-mention text routing are unchanged. An
-additional parallel evidence question must also reach 85% support for using
-current discussion or the dated project snapshot. It blocks a high-probability
-Yes/No when the report cannot establish the requested live fact; it shares the
-same Jev call and does not add a network round trip.
-If evidence is insufficient, a requested reply follows the existing complex
-work route rather than treating the report as enough for a brief factual answer.
-Source date, URL, publication time and body hash are retained in the decision
-and its Session event. A structured connector log also records input use and
-Jev latency without storing the report text in the log.
-
-This provides project snapshots. Architecture and stable identity facts are a
-separate input source, and are not inferred from the daily report's prose.
+原方案曾把最多四段、3,200 字符的完整相关段落交给 Jev，并让同一次请求判断 Yes/No 与证据。该行为已停止；不能沿旧方案把表情模型的预测当作项目事实或执行授权。现行行为见 [飞书接入说明](feishu-bot-setup.md)。
