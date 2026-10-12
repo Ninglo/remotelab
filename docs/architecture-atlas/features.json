@@ -788,6 +788,7 @@
             "lib/feishu-api-health.mjs",
             "chat/automation-tasks.mjs",
             "chat/context-query-monitoring.mjs",
+            "chat/context-query-ledger-reader.mjs",
             "chat/usage-events.mjs",
             "chat/router-work-awareness.mjs",
             "lib/memory-learning-command.mjs",

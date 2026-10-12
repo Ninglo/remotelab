@@ -176,7 +176,7 @@ additional-context bytes, not the complete native context or a Token count.
 成功返回不证明模型实际阅读、采纳或完成业务；需要与原消息、工具轨迹和产物一起核验。
 埋点写入失败不阻断原查询，沿用用量账本的采集异常记录；磁盘故障也可能使异常自身无法持久化。
 鉴权读取入口为 `GET /api/monitoring/context-queries?sessionId=…&days=1|7|30`，
-每次最多扫描账本 200,000 行，显示最新 100 次查询；达到上限时标为部分记录。
+从最新账本记录向前读取，每次最多 200,000 行／32 MiB，显示最新 100 次查询；达到上限时标为部分记录。
 
 ## Stable rule snapshots (2026-10-12)
 

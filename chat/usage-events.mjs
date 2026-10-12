@@ -1,3 +1,4 @@
+import { reverseLedgerLines } from './context-query-ledger-reader.mjs';
 import { appendFile, chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -199,10 +200,10 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     try { files = (await readdir(directory)).filter(name => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)
       && name.slice(0, 10) >= new Date(start).toISOString().slice(0, 10)).sort().reverse(); } catch (error) { if (error.code !== 'ENOENT') incomplete = true; }
     let events = [];
-    const ids = new Set();
+    const ids = new Set(), reverseBudget = { remaining: 32 * 1024 * 1024, incomplete: false };
     for (const file of files) {
-      const stream = createReadStream(join(directory, file), { encoding: 'utf8' });
-      const lines = createInterface({ input: stream, crlfDelay: Infinity });
+      const stream = contextOnly ? null : createReadStream(join(directory, file), { encoding: 'utf8' });
+      const lines = contextOnly ? reverseLedgerLines(join(directory, file), reverseBudget) : createInterface({ input: stream, crlfDelay: Infinity });
       try {
         for await (const line of lines) {
           if (++scanned > maxScanned) { incomplete = true; break; }
@@ -222,8 +223,9 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
           if (contextOnly ? event.event === 'context_query' && (!sessionId || event.sessionId === sessionId) : !capabilityOnly || event.event === 'capability_state') events.push(event);
         }
       } catch { incomplete = true; }
-      finally { lines.close(); stream.destroy(); }
-      if (scanned > maxScanned) break;
+      finally { if (stream) { lines.close(); stream.destroy(); } }
+      if (reverseBudget.incomplete) incomplete = true;
+      if (scanned > maxScanned || contextOnly && reverseBudget.remaining <= 0) break;
     }
     if (contextOnly) {
       events.sort((a, b) => a.timestamp - b.timestamp || a.eventId.localeCompare(b.eventId));

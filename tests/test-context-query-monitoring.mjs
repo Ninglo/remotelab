@@ -1,10 +1,11 @@
 import './isolate-test-environment.mjs';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createUsageEventStore, normalizeUsageEvent } from '../chat/usage-events.mjs';
 import { createContextQueryObserver, summarizeContextQueries } from '../chat/context-query-monitoring.mjs';
+import { reverseLedgerLines } from '../chat/context-query-ledger-reader.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'context-query-'));
 try {
   const store = createUsageEventStore({ directory });
@@ -28,6 +29,16 @@ try {
   const reopened = createUsageEventStore({ directory });
   await reopened.record(query.events);
   assert.equal(summarizeContextQueries(await reopened.query({ contextOnly: true, sessionId: 'session_a' })).summary.attempts, 4);
+  const fixture = join(directory, 'reverse-test');
+  const line = JSON.stringify({ text: '中文内容'.repeat(200) });
+  await writeFile(fixture, `${Array(300).fill(line).join('\n')}\n${'z'.repeat(90000)}\n${line}\nlatest\n`);
+  let budget = { remaining: 4096, incomplete: false }, reversed = [];
+  for await (const line of reverseLedgerLines(fixture, budget)) reversed.push(line);
+  assert.equal(reversed[0], 'latest'); assert.equal(reversed[1], line); assert(budget.incomplete);
+  budget = { remaining: 2 * 1024 * 1024, incomplete: false }; reversed = [];
+  for await (const line of reverseLedgerLines(fixture, budget)) reversed.push(line);
+  assert.equal(reversed.length, 303); assert.equal(reversed[2].length, 4097);
+  assert.equal(reversed.at(-1), line); assert.equal(budget.incomplete, false);
   const limited = await reopened.query({ contextOnly: true, sessionId: 'session_a', maxScanned: 1 });
   assert(limited.coverage.incomplete);
   assert.equal(normalizeUsageEvent({ ...query.events[0], query: 'private', body: 'private' }).query, undefined);
