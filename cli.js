@@ -52,7 +52,8 @@ Usage:
   remotelab feishu                   Run reusable Bot-only Feishu office actions
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab workboard                Read task evidence and submit compact state updates
-  remotelab message-replies          Manage the current requester's strict work-start check
+  remotelab message-replies          Manage personal work-start and in-flight input trials
+  remotelab input-trial             Inspect, answer or stop opted-in in-flight work
   remotelab recording                Enable device-bound hardware recording and submit saved audio
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
@@ -81,6 +82,12 @@ switch (command) {
   case 'work': {
     const { runWorkAwarenessCommand } = await import(scriptPath('lib/work-awareness-command.mjs'));
     try { process.exitCode = await runObservedCommand(command, args, io => runWorkAwarenessCommand(args, io)); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
+  case 'input-trial': {
+    const { runInflightTrialCommand } = await import(scriptPath('lib/inflight-trial-command.mjs'));
+    try { process.exitCode = await runInflightTrialCommand(args); }
     catch (error) { console.error(error.message); process.exitCode = 1; }
     break;
   }

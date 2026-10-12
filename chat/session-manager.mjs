@@ -1,3 +1,4 @@
+import { captureInflightTrial, inflightTrialPrompt } from './inflight-trial.mjs';
 import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { projectFeishuContext, feishuResumeIdentity } from './feishu-context-dedup.mjs';
 import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
@@ -1513,6 +1514,11 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     || Boolean(options.viewPersonId && options.initiatedByIdentityId) });
   if (startCheck) slots.push(createModelContextSlot('strict_start_check',
     strictStartEnabled ? '开工严格检查 (personal trial)' : 'Personal work-start mode', startCheck));
+  const trialPrompt = inflightTrialPrompt(options);
+  if (trialPrompt) {
+    slots.push(createModelContextSlot('inflight_trial', 'Personal in-flight input tools', trialPrompt));
+    slots.push(createModelContextSlot('inflight_trial_input', 'Current trial input address', JSON.stringify({ requestId: options.requestId })));
+  }
   return slots.filter(Boolean);
 }
 
@@ -3482,6 +3488,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  options = { ...options };
+  const inputTrial = priorRequest ? priorRequest.options.inflightTrial : await captureInflightTrial(options);
+  if (inputTrial) options.inflightTrial = inputTrial; else delete options.inflightTrial;
   const activeRequest = requestRuntime.active(sessionId)[0];
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
   const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
