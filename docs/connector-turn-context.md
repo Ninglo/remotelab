@@ -99,6 +99,41 @@ these receipts may repeat once; a bounded scan of 5,000 metadata events / 40 pri
 inputs may also retain old duplicates. Missing proof must not cause message loss.
 Unsupported provider identity paths conservatively retain history.
 
+## Stable rule snapshots (2026-10-12)
+
+Native inputs now project the six stable rule slots (surface, workboard
+instructions, source runtime, Session instructions, personal reply choices and
+strict-start policy) together. The first input carries their complete applicable
+set. A subsequent input in the same native thread carries a short recovery
+reference when its set and identity/source scope match the **latest accepted**
+input. A version/scope change sends the full current set and explicitly replaces
+older versions, including rules removed by an opt-out. A → B → A reloads A;
+an old matching receipt is not evidence of the currently applicable policy.
+
+Receipts live in Run manifests and supplementary Request records and only count
+after native acknowledgement. Missing evidence, unknown native identity, legacy
+inputs or lookup/write failures retain full rules. Batch and bare-user tools do
+not opt into this reuse. Work-start preferences still follow the accepted work's
+existing policy snapshot; this change does not redefine when a personal toggle
+applies to work already in flight.
+
+Every projected native input points to an immutable, content-addressed JSON
+snapshot under the instance config's `rule-context/` directory. After native
+compaction, the Harness is instructed to read it if the rule bodies are no longer
+in retained context and to preserve the reference in summaries. This is a
+recovery instruction, not a claim that the transport can observe the model's
+memory or prove adherence. A fresh thread receives full rules again. Snapshot
+files are not a second authority or mutable "latest" preference store; earlier
+queued inputs keep their own exact snapshot. Snapshots are retained alongside
+the durable input evidence; no TTL currently removes older snapshots.
+
+Current message facts, source identity and task state still arrive on each
+input. Task summaries and explicit work/memory retrieval may therefore repeat;
+this change does not pretend to eliminate all context duplication. Native
+history/prompt-cache accounting remains separate from new appended text.
+Prompt delivery and model-context inspection now use the same assembled slots
+instead of rebuilding the turn context a second time.
+
 The 100-message / 48,000-character window, normal-chat 24-hour / 4-hour activity
 limits and per-message truncation remain. Deduplication is not a promise to ingest
 all older chat history. Truncated backgrounds remain explicitly marked even when

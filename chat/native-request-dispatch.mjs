@@ -34,7 +34,7 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
     await store.settle(record.key, { state: 'failed', payload: null, error });
     await store.mutate(record.key, current => ({ ...current, releasedAt: now(), postCompletionPending: false }));
   });
-  const clear = record => store.mutate(record.key, current => ({ ...current, nativeDispatchRunId: null, nativeInput: null, nativeReceipt: null, nativeContextDelivery: null }));
+  const clear = record => store.mutate(record.key, current => ({ ...current, nativeDispatchRunId: null, nativeInput: null, nativeReceipt: null, nativeContextDelivery: null, nativeRuleContextDelivery: null }));
   const send = async record => {
     const rootId = record.nativeDispatchRunId;
     const run = await getRun(rootId);
@@ -84,6 +84,7 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
             ...(record.options?.nativeQuestionId ? { questionId: record.options.nativeQuestionId, answerText: nativeQuestionReplyText(record) } : {}),
           }, nativeContext: context,
           nativeContextDelivery: prepared.contextDelivery || null,
+          nativeRuleContextDelivery: prepared.ruleContextDelivery || null,
           nativeInputBaseSeq: current.nativeInputBaseSeq ?? manifest.forkBaseSeq ?? 0,
         }));
         await changed(record.key);
