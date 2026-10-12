@@ -1,17 +1,17 @@
-// A personal Harness policy, separate from display and transport routing.
-// Admission freezes the flag with the accepted reply policy; no extra model,
-// group permission, auto-dispatch or shared project binding is introduced.
-export function strictStartCheckPrompt(policy, { resetDisabled = false } = {}) {
+import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
+
+// The accepted switch belongs to a Person; the procedure belongs to their
+// profile. Shared code only routes to that record, never supplies a default
+// procedure or borrows one from another participant in the same Session.
+export function strictStartCheckPrompt(policy, { resetDisabled = false, personId = '', identityId = '',
+  authDocument, memoryDir } = {}) {
   if (policy?.scope !== 'person' || policy.strictStartCheck !== true) return resetDisabled
-    ? 'Strict work-start check is OFF for this accepted work. Any earlier enabled trial belongs to its earlier work/requester; do not inherit it from Session history. Use the ordinary Harness workflow and current authorization. This does not undo completed actions or remove normal source verification.' : '';
+    ? 'Strict work-start check is OFF for this accepted work; do not inherit it from Session history. Continue with the ordinary Harness workflow and current authorization.' : '';
+  if (policy.personId !== personId || !buildPersonMemoryPromptBlock({ personId, identityId, authDocument, memoryDir })) {
+    return 'The work-start preference has no matching verified requester. Do not inherit personal requirements from Session history; use the ordinary Harness workflow.';
+  }
   return [
-    'The requester has enabled 开工严格检查 (strict work-start check) for their new work. This is a personal opt-in policy for the current Harness, separate from reply visibility.',
-    'Before starting substantive work, creating a work topic or changing the goal, complete these checks using the current input and fresh source evidence. Simple questions, explicit continuations and answers to pending questions need only the checks relevant to their change; do not restart the whole audit.',
-    '1. Ownership: preserve the input author, original message/source, existing channel/topic/Session binding and confirmed project association. Distinguish source location from business ownership. Keep inferred project/channel tags as candidates; do not force an uncertain association or create a task for ordinary chatter.',
-    '2. Existing mechanism and related work: first read the relevant project source and current implementation/capability. Use remotelab work context --query <understood goal> --json, then read the actual source and current state of relevant candidates. Check overlap, dependency and reusable results across projects when needed. A keyword/tag match, title or old summary is not proof of relevance, completion or absence. Register actual new work with work start; keep continuations on the same work and update real outcomes with work update. Do not copy the project ledger or task state into a competing record.',
-    '3. Work placement: choose continuation, new work, reuse or a reference based on the checks. Existing topic bindings take priority. Use only available, authorized routing; the personal switch does not expand the single-group routing pilot, create cross-group permissions, move visible history, cancel another work or authorize business changes. Cross-topic sync follows its existing human confirmation and bounded reconsideration/return protocol. Where ownership or material impact is unresolved, ask one concrete question and continue independent authorized work.',
-    '4. Reply and display: separately determine whether to participate, the saved reply destination and the response form; then apply the accepted opening/checklist/progress choices. Never let hidden opening text or a changed progress mode change reply ownership. A supplementary question needs an identifiable answer while the original work continues. No extra checklist, receipt or progress message is required merely to announce the checks.',
-    'Retain concrete source-read evidence in the process record and use work review for verified related-work references when useful (an empty review is valid). Report any material unread source or unresolved dependency instead of claiming the audit passed. Use bounded indexed reads, not all sibling topic transcripts; do not launch a separate classifier or broadcast to other Sessions. Before consequential action or sending, recheck relevant changes only.',
-    'This toggle requests Harness behavior; it is not a tool-layer execution lock and does not prove the checks were actually completed. Use actual evidence for acceptance. Disabling it affects future work; already accepted work retains its snapshot, provenance and existing authorization.',
+    'This requester enabled their personal work-start preference. Read the work-start requirements in their verified Person profile identified in Per-turn context; apply only what that record specifies for this task.',
+    "There is no shared default checklist. If that profile has no work-start requirements, use the ordinary Harness workflow; never borrow another person's procedure. These checks do not require a separate user-facing report.",
   ].join('\n');
 }

@@ -18,7 +18,7 @@ function buildFeishuRuntimePrompt(session) {
   return [
     `You are interacting through a ${sourceName} bot powered by RemoteLab on the user's own machine.`,
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, or run something, actually do the work before replying.',
-    'Do not collapse action requests into a one-line acknowledgement when real work is needed.',
+    'Do the requested work before reporting its result. A short result is enough when it answers the question; completing work does not require narrating the process.',
     'Match the user\'s language when practical.',
     documentComment
       ? `Produce concise plain text suitable for posting as a ${sourceName} document-comment reply; markdown formatting is not rendered in document comments.`

@@ -71,15 +71,27 @@ try {
   const snapshot = await resolveMessageReplyPolicy({ usageSurface: 'web', viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId });
   for (const resumed of [false, true]) {
     const prompt = await buildPrompt('strict-session', { id: 'strict-session', systemPrompt: '',
-      ...(resumed ? { codexThreadId: 'existing-thread' } : {}) }, '开始修改当前功能', 'codex', 'codex', null, { messageReplyPolicy: snapshot });
+      ...(resumed ? { codexThreadId: 'existing-thread' } : {}) }, '开始修改当前功能', 'codex', 'codex', null, { messageReplyPolicy: snapshot, viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId });
     assert.match(prompt, /开工严格检查 \(personal trial\)/);
-    assert.match(prompt, /work context --query/);
-    assert.match(prompt, /does not expand the single-group routing pilot/);
-    assert.match(prompt, /independent/);
+    assert.match(prompt, /Read the work-start requirements in their verified Person profile/);
+    assert.match(prompt, /person_alice\.md/);
+    assert.doesNotMatch(prompt, /person_bob\.md/);
+    assert.doesNotMatch(prompt.split('## 开工严格检查 (personal trial)')[1], /work context --query/, 'shared prompt no longer contains a personal procedure');
     assert.match(prompt, /disabled the opening text/);
   }
   assert.equal(strictStartCheckPrompt({ ...snapshot, scope: 'group' }), '');
   assert.equal(strictStartCheckPrompt(null), '');
+  assert.match(strictStartCheckPrompt(snapshot, { ...alice, identityId: 'web_bob' }), /no matching verified requester/);
+  assert.match(strictStartCheckPrompt(snapshot, { personId: 'person_bob', identityId: 'web_bob' }), /no matching verified requester/);
+  assert.match(strictStartCheckPrompt(snapshot), /no matching verified requester/);
+  const bobOn = await buildPrompt('strict-session', { id: 'strict-session', systemPrompt: '', codexThreadId: 'existing-thread' },
+    '开始我的工作', 'codex', 'codex', null, { viewPersonId: 'person_bob', initiatedByIdentityId: 'web_bob',
+      messageReplyPolicy: { ...snapshot, personId: 'person_bob' } });
+  assert.match(bobOn, /person_bob\.md/);
+  assert.doesNotMatch(bobOn, /person_alice\.md/);
+  assert.match(bobOn, /If that profile has no work-start requirements, use the ordinary Harness workflow/);
+  assert.doesNotMatch(bobOn.split('## 开工严格检查 (personal trial)')[1], /work context --query/);
+
   // A stale frontend that doesn't know the new field cannot accidentally turn it off.
   const applied = await changePersonMessageReplies({ action: 'apply', expectedRevision: enabled.revision,
     confirm: true, choices: display }, alice);
