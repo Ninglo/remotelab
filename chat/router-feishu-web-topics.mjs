@@ -22,20 +22,27 @@ export async function handleFeishuWebTopics({ req, res, pathname, authSession, w
     const origin = req.headers.origin;
     if (origin) { try { feishuOrigin(origin); res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); } catch {} }
     res.setHeader('Cache-Control', 'private, no-store');
-    if (req.method === 'OPTIONS') { feishuOrigin(origin); res.setHeader('Access-Control-Allow-Methods', 'GET, DELETE'); res.setHeader('Access-Control-Allow-Headers', 'Authorization, X-Feishu-Origin, X-Feishu-Account'); res.writeHead(204); res.end(); return true; }
+    if (req.method === 'OPTIONS') { feishuOrigin(origin); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE'); res.setHeader('Access-Control-Allow-Headers', 'Authorization, X-Feishu-Origin, X-Feishu-Account'); res.writeHead(204); res.end(); return true; }
+    if (pathname === prefix + 'activate' && req.method === 'POST') {
+      const feishu = req.headers['x-feishu-origin'] || origin, account = req.headers['x-feishu-account'];
+      const actor = await authorizeFeishuWebSettings(req.headers.authorization?.replace(/^Bearer /, ''), feishu, account, 'workspace');
+      // The same Person already confirmed this exact native account. Reuse that
+      // identity while retaining a separate read-only token and expiry boundary.
+      writeJson(res, 201, await connectFeishuWebSettings({ origin: feishu, nativeAccount: account, confirm: true }, actor, 'topics')); return true;
+    }
     const authorize = () => authorizeFeishuWebSettings(req.headers.authorization?.replace(/^Bearer /, ''), req.headers['x-feishu-origin'] || origin, req.headers['x-feishu-account'], 'topics');
     const actor = await authorize();
     if (pathname === prefix + 'connection' && req.method === 'DELETE') { await disconnectFeishuWebSettings(actor); writeJson(res, 200, { disconnected: true }); return true; }
     if (!['snapshot', 'stream'].some(name => pathname === prefix + name) || req.method !== 'GET') { writeJson(res, 404, { error: 'Unknown topic operation' }); return true; }
-    const ids = topicIds(url.searchParams.get('ids'));
-    if (pathname.endsWith('/snapshot')) { writeJson(res, 200, await source.snapshot(ids)); return true; }
+    const ids = topicIds(url.searchParams.get('ids')), groups = topicIds(url.searchParams.get('groups'));
+    if (pathname.endsWith('/snapshot')) { writeJson(res, 200, await source.snapshot(ids, '', null, groups)); return true; }
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no' }); res.flushHeaders?.();
     let off, closed = false;
     const stop = () => { if (closed) return; closed = true; clearInterval(heartbeat); off?.(); res.end(); };
     const send = data => { if (!closed) res.write('data: ' + JSON.stringify(data) + '\n\n'); };
     const heartbeat = setInterval(() => { void authorize().then(() => { if (!closed) res.write(': heartbeat\n\n'); }).catch(() => stop()); }, 15000); heartbeat.unref?.();
     res.on('close', stop);
-    off = await source.subscribe(ids, send, error => { send({ sourceConnected: false, error: error.message }); stop(); });
+    off = await source.subscribe(ids, send, error => { send({ sourceConnected: false, error: error.message }); stop(); }, groups);
     if (closed) off();
   } catch (error) { if (res.headersSent) res.end(); else writeJson(res, error.status || 400, { error: error.message }); }
   return true;

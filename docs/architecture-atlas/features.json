@@ -653,7 +653,7 @@
           "example": "正在执行的话题立即显示running，结束后跟随真实状态变化；插件设置入口常驻显示v1.2.0。",
           "sources": [
             "docs/feishu-web-topics.md",
-            "chat/feishu-web-topics.mjs",
+            "chat/feishu-web-topics.mjs", "chat/feishu-web-group-boards.mjs", "chat/feishu-web-topic-text.mjs",
             "chat/router-feishu-web-topics.mjs",
             "chat/feishu-web-settings.mjs"
           ],
