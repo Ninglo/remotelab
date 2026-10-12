@@ -146,6 +146,17 @@ these receipts may repeat once; complete source replay scans canonical delivery 
 evidence older than 40 inputs. Missing proof must not cause message loss.
 Unsupported provider identity paths conservatively retain history.
 
+## Monitoring explanation (2026-10-12)
+
+The monitoring Session section includes a closed-by-default “上下文如何注入”
+disclosure covering startup rules, per-input context, Feishu history and shared
+announcements, native continuation/reuse, and on-demand reading. It describes
+general behavior rather than claiming to inspect each Session's complete prompt.
+The text is rendered locally, including while statistics are unavailable, with
+no additional API requests, model calls or Session scans. Its open/closed choice
+survives statistics refreshes. The injection metric remains RemoteLab's saved
+additional-context bytes, not the complete native context or a Token count.
+
 ## Stable rule snapshots (2026-10-12)
 
 Native inputs now project the seven stable rule slots (surface, workboard

@@ -337,6 +337,11 @@ Monitor defaults to Overview from the normal homepage (`/?tab=tasks`);
 explicit `monitor=automations|usage|feedback` links preserve those destinations.
 Clicking Monitor while the homepage is loading keeps that workspace selected
 when the initial Session list arrives.
+The Session heading includes a closed-by-default “上下文如何注入” explanation of
+the [general context rules](connector-turn-context.md#monitoring-explanation-2026-10-12).
+It preserves the reader's open/closed choice during refresh and makes no extra
+requests or model calls. It does not claim to audit each Session's full prompt.
+
 The Overview shows three compact panels in order: Session, shared resources, and API.
 Each presents totals and observation/exception status first. Session totals are
 followed by up to three named exceptions with every affected metric, recent value

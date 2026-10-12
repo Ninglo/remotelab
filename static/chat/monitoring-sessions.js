@@ -10,6 +10,7 @@
   const val = (k, v) => k.endsWith('Ms') ? duration(v) : k === 'injectionBytes' ? size(v) : fmt(v);
   let data = null, error = '', pending = null, serial = 0, days = 1, loadedAt = 0;
   let mode = 'group', scope = '', filter = 'all', search = '', limit = 50, allGroups = false, expanded = false, selectedSession = '';
+  let contextExpanded = false;
   const running = s => s.activity?.run?.state === 'running';
   const waiting = s => s.activity?.run?.waiting || (s.activity?.queue?.count || 0) > 0;
   const state = s => s.archived ? '已归档' : s.activity?.run?.waiting ? '运行中 · 等待' : running(s) ? '运行中' : waiting(s) ? '排队' : s.activity?.run?.state === 'idle' ? '空闲' : '状态未知';
@@ -45,7 +46,21 @@
   }
   function focusSession(s) { selectedSession = s.sessionId; scope = ''; search = ''; filter = 'all'; expanded = true; render(); root.querySelector('[data-testid="session-selection"]')?.scrollIntoView({ block: 'nearest' }); }
   function render() {
+    contextExpanded = root.querySelector('[data-testid="session-context-guide"]')?.open ?? contextExpanded;
     root.replaceChildren(); root.append(el('h2', 'Session 监管'));
+    const context = el('details', '', 'monitoring-fold'); context.open = contextExpanded; context.dataset.testid = 'session-context-guide';
+    context.append(el('summary', '上下文如何注入'));
+    context.append(el('p', '通用规则，实际内容随入口和配置变化；这里不逐条读取 Session。', 'monitoring-note'));
+    const contextRules = el('ul', '', 'monitoring-note');
+    for (const text of [
+      '启动：Harness 自身规则、工作区约定与 Skill 目录，加上 RemoteLab 的能力和记忆入口。',
+      '每轮：当前消息、来源身份、适用的个人／Session 规则与任务状态；人员和项目资料通常先给目录指针。',
+      '飞书：所选话题及绑定群的聊天背景，过长内容提供分页原文；新话题读取群公告，同项目讨论群与干活群共用讨论群公告，已有话题保留首次版本。',
+      '续聊：沿用原生历史，确认已送入的来源内容去重。支持恢复的 Codex 可复用未变规则的快照引用，压缩后恢复；规则或身份变化时重发。',
+      '按需：Agent 再读取资料正文、记忆、Skill 和工具结果，不在每轮预先全量塞入。',
+    ]) contextRules.append(el('li', text));
+    context.append(contextRules, el('p', '下方“平均注入”只计 RemoteLab 保存的附加上下文字节，不含用户正文、Harness 原生规则与历史、工具输出，也不是 Token 数。', 'monitoring-note'));
+    root.append(context);
     if (pending) root.append(el('p', data ? '正在更新，以下保留上次数据…' : '正在读取 Session 统计…', 'monitoring-note'));
     if (error) { const warning = el('div', '', 'monitoring-alert'); warning.dataset.severity = 'critical'; warning.setAttribute('role', 'alert'); warning.append(el('strong', `Session 查询失败：${error}`), button('重试', () => load(days, true))); root.append(warning); }
     if (!data) { if (!pending) root.append(el('p', '数据尚未取得，无法判断异常数量。资源板块独立加载。', 'monitoring-note')); return; }
