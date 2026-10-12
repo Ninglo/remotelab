@@ -1,5 +1,6 @@
 import { readBody } from '../lib/utils.mjs';
 import { loadPersonMessageReplies, changePersonMessageReplies } from './person-message-replies.mjs';
+import { loadInflightTrial, changeInflightTrial } from './inflight-trial.mjs';
 import { requests } from './requests.mjs';
 
 // Conversation-driven changes use the accepted human Request, not the CLI's
@@ -24,11 +25,15 @@ export async function handleMessageReplySettings({ req, res, pathname, parsedUrl
     if (pathname.endsWith('/current-run')) {
       if (!['GET', 'POST'].includes(req.method)) { writeJson(res, 405, { error: 'Method not allowed' }); return true; }
       const input = req.method === 'POST' ? JSON.parse(await readBody(req, 32768) || '{}') : {};
-      if (Object.keys(input).some(key => !['runId', 'enabled', 'expectedRevision', 'confirm'].includes(key))) {
-        throw new Error('未知的开工严格检查操作。');
+      if (Object.keys(input).some(key => !['runId', 'setting', 'enabled', 'expectedRevision', 'confirm'].includes(key))) {
+        throw new Error('未知的个人试用设置操作。');
       }
       const actor = await currentRunActor(input.runId || parsedUrl?.query?.runId, authSession, req.method === 'POST');
-      const settings = req.method === 'GET' ? await loadPersonMessageReplies(actor)
+      const setting = input.setting || parsedUrl?.query?.setting || 'strict-start';
+      if (!['strict-start', 'input-trial'].includes(setting)) throw new Error('Unknown personal trial');
+      const settings = setting === 'input-trial'
+        ? (req.method === 'GET' ? await loadInflightTrial(actor) : await changeInflightTrial(input, actor))
+        : req.method === 'GET' ? await loadPersonMessageReplies(actor)
         : await changePersonMessageReplies({ action: 'strict-start', enabled: input.enabled,
           expectedRevision: input.expectedRevision, confirm: input.confirm }, actor);
       writeJson(res, 200, { settings });
