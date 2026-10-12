@@ -13,7 +13,7 @@
   const refresh = document.getElementById("monitoringRefresh");
   const create = document.getElementById("taskCenterCreateToggle");
   const requested = new URL(globalScope.location.href).searchParams.get("monitor");
-  let view = views.includes(requested) ? requested : "automations";
+  let view = views.includes(requested) ? requested : "overview";
   let value = null, serial = 0, loading = false, loadedAt = 0, loadedDays = 0;
   const priority = document.getElementById("monitoringResourceAttention");
   const t = (key, vars) => globalScope.remotelabT?.(`monitoring.${key}`, vars) || key;
@@ -88,20 +88,51 @@
     card.appendChild(node("p", t("accountObserved", { time: time(account.observedAt) }), "monitoring-account-observed"));
     return card;
   }
+  const apiSummary = document.getElementById("monitoringApiSummary");
+  const apiDetails = document.getElementById("monitoringApiDetails");
+  function summaryMetrics(parent, entries) {
+    const grid = node("div", "", "monitoring-summary-metrics");
+    for (const [label, metric, hint] of entries) {
+      const card = node("div"); card.append(node("small", label), node("strong", metric));
+      if (hint) card.appendChild(node("small", hint)); grid.appendChild(card);
+    }
+    parent.appendChild(grid);
+  }
+  function summaryStatus(parent, label, severity, details) {
+    const button = node("button", label, "monitoring-action"); button.type = "button";
+    button.dataset.severity = severity;
+    button.addEventListener("click", () => { const fold = details?.closest("details"); if (fold) fold.open = true; });
+    parent.appendChild(button);
+  }
   function render() {
     content.replaceChildren();
-    if (priority) {
-      priority.replaceChildren();
-      if (!value) priority.appendChild(node("p", loading ? "共享资源正在加载…" : "共享资源查询失败，异常数量未知。点击刷新重试。", loading ? "monitoring-note" : "monitoring-alert"));
+    if (apiSummary) {
+      apiSummary.replaceChildren(node("h2", "API")); apiDetails?.replaceChildren();
+      if (!value) apiSummary.appendChild(node("p", loading ? "正在读取 API 观测…" : "API 数据未取得，状态未知。", "monitoring-note"));
       else {
-        const alerts = (value.attention || []).filter(a => ['disk', 'quota', 'lowQuota', 'service', 'api', 'automation'].includes(a.kind));
-        const heading = node("h3", `共享资源 · ${alerts.length ? alerts.length + ' 项需关注' : '当前观测未发现异常'}`); priority.appendChild(heading);
-        for (const item of alerts.slice(0, 4)) {
-          const line = node("div", "", "monitoring-alert"); line.dataset.severity = item.severity;
-          line.appendChild(node("strong", item.subject)); line.appendChild(node("span", alertDetail(item))); priority.appendChild(line);
-        }
-        if (value.coverage?.gaps?.length) priority.appendChild(node("p", `资源数据有 ${value.coverage.gaps.length} 项缺口，详见资源明细。`, "monitoring-alert"));
-        priority.appendChild(node("p", `当前实例共享资源 · ${time(value.generatedAt)} · 展开下方查看全部明细`, "monitoring-note"));
+        const health = value.apiHealth, providers = health?.providers || [];
+        const calls = providers.reduce((sum, p) => sum + p.calls24h, 0), failed = providers.reduce((sum,p) => sum+p.failed24h,0);
+        const alerts = (value.attention || []).filter(a => a.kind === "api");
+        summaryMetrics(apiSummary, [["24 小时调用", health ? number(calls) : "—", "本实例已记录的飞书 API"],
+          ["24 小时失败率", calls ? percent(failed / calls * 100) : "—", health ? `${number(failed)} 次失败` : "尚未取得"],
+          ["近 5 分钟调用", health ? number(providers.reduce((sum,p) => sum+p.calls5m,0)) : "—", "不发起额外探测"]]);
+        const unknown = !health || !health.coverage?.complete || !providers.length || providers.some(p => p.status === "unknown");
+        summaryStatus(apiSummary, alerts.length ? `${alerts.length} 项 API 异常 · 查看原因` : unknown ? "API 观测不足 · 查看范围" : "已记录 API 未发现异常",
+          alerts.some(a => a.severity === "critical") ? "critical" : alerts.length ? "warning" : "neutral", apiDetails);
+        apiSummary.appendChild(node("p", `实例级 · ${time(health?.observedAt)} · 仅覆盖已记录调用`, "monitoring-note"));
+      }
+    }
+    if (priority) {
+      priority.replaceChildren(node("h2", "基础资源"));
+      if (!value) priority.appendChild(node("p", loading ? "正在读取资源观测…" : "资源查询失败，异常数量未知。点击刷新重试。", "monitoring-note"));
+      else {
+        const alerts = (value.attention || []).filter(a => a.kind !== "api");
+        summaryMetrics(priority, [["账号可用", `${value.accounts.filter(a => a.status === "available").length} / ${value.accounts.length}`, "共享模型账号"],
+          ["磁盘", String(value.disks.length), "已接入磁盘"], ["服务与自动任务", `${value.services.length} / ${value.automations.active}`, "已接入服务 / 启用任务"]]);
+        const unknown = value.coverage?.gaps?.length || value.coverage?.unknownAccounts || !value.coverage?.servicesConfigured;
+        summaryStatus(priority, alerts.length ? `${alerts.length} 项资源需关注 · 查看原因` : unknown ? "资源数据有缺口 · 查看范围" : "已观测资源未发现异常",
+          alerts.some(a => a.severity === "critical") ? "critical" : alerts.length ? "warning" : "neutral", content);
+        priority.appendChild(node("p", `当前实例共享资源 · ${time(value.generatedAt)}`, "monitoring-note"));
       }
     }
     if (!value) { content.appendChild(node("p", t(loading ? "loading" : "failed"), "monitoring-note")); return; }
@@ -114,7 +145,7 @@
       && !["healthy", "paused", "cancelled", "completed"].includes(item.currentResourceStatus));
     const attention = section(t("attention"), snapshot); attention.dataset.section = "attention";
     if (!value.attention.length && !recoveries.some(currentRecovery)) attention.appendChild(node("p", t("clear"), "monitoring-note"));
-    else value.attention.slice().sort((a, b) => (b.severity === "critical") - (a.severity === "critical")).forEach(item => {
+    else value.attention.filter(item => item.kind !== "api").slice().sort((a, b) => (b.severity === "critical") - (a.severity === "critical")).forEach(item => {
       const row = node("div", "", "monitoring-alert"); row.dataset.severity = item.severity;
       row.appendChild(node("span", t(item.severity === "critical" ? "critical" : "warning"), "monitoring-alert-label"));
       const detail = node("div"); detail.appendChild(item.kind === "automation" ? executionLink(item) : node("strong", item.subject));
@@ -160,7 +191,8 @@
     });
     const disks = section(t("disks")); disks.dataset.section = "disks";
     if (value.apiHealth) {
-      const api = section("飞书 API");
+      const api = section("飞书 API", apiDetails || content);
+      for (const item of (value.attention || []).filter(a => a.kind === "api")) { const line = node("p", `${item.subject}：${alertDetail(item)}`, "monitoring-alert"); line.dataset.severity = item.severity; api.prepend(line); }
       table(api, ["对象", "状态与处理", "24h窗口调用／失败", "5分钟调用", "最近调用"], value.apiHealth.providers.map(item =>
         [item.label, item.detail, `${item.calls24h}／${item.failed24h}`, item.calls5m, time(item.lastObservedAt)]));
       api.appendChild(node("p", value.apiHealth.coverage.detail, "monitoring-note"));
@@ -256,7 +288,7 @@
     });
     if (sync) {
       const url = new URL(globalScope.location.href); url.searchParams.set("tab", "tasks");
-      if (view !== "automations") url.searchParams.set("monitor", view); else url.searchParams.delete("monitor");
+      url.searchParams.set("monitor", view);
       globalScope.history.replaceState(null, "", url);
       if (view === "overview") void load();
       else if (view === "usage") void globalScope.RemoteLabUsageAnalysis?.load();

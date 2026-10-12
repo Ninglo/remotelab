@@ -558,3 +558,22 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .monitoring-session-coverage, .monitoring-resource-details { margin: 18px 0; padding: 12px 0; border-top: 1px solid var(--border); }
 .monitoring-resource-details > summary { cursor: pointer; font-weight: 600; }
 @media(max-width: 600px) { .monitoring-session-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .monitoring-session-controls { gap: 6px; } }
+
+/* The overview is three compact summaries; investigation stays inside folds. */
+.monitoring-summary-panel { border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin: 14px 0; min-width: 0; }
+.monitoring-summary-panel h2 { margin: 0 0 8px; font-size: 17px; }
+.monitoring-summary-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.monitoring-summary-metrics > div { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.monitoring-summary-metrics small { color: var(--text-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.monitoring-summary-metrics strong { font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.monitoring-summary-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.monitoring-summary-panel .monitoring-action[data-severity="critical"] { color: var(--danger, #c2413c); border-color: var(--danger, #c2413c); }
+.monitoring-summary-panel .monitoring-action[data-severity="warning"] { color: #a46716; border-color: #b7791f; }
+.monitoring-fold { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.monitoring-fold > summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); padding: 5px 0; }
+.monitoring-fold[open] > summary { margin-bottom: 16px; }
+@media (max-width: 600px) {
+  .monitoring-summary-panel { padding: 14px 12px; }
+  .monitoring-summary-metrics { gap: 9px; }
+  .monitoring-summary-metrics strong { font-size: 19px; }
+}

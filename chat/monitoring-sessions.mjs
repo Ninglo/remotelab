@@ -40,7 +40,13 @@ export function projectRun(r) {
   return { id: r.id, sessionId: r.sessionId, requestId: r.requestId, state: r.state,
     startedAt: r.startedAt, completedAt: r.completedAt, contextTokens: r.contextInputTokens };
 }
-export function runMeasurement(ledger, run, request) {
+export function projectInjection(manifest) {
+  // Retain only a size, never a second copy of prompts or user text.
+  const text = manifest?.modelContext;
+  return { id: manifest?.id, sessionId: manifest?.sessionId,
+    injectionBytes: typeof text === 'string' ? Buffer.byteLength(text, 'utf8') : null };
+}
+export function runMeasurement(ledger, run, request, injection = null) {
   const validRun = run?.id === ledger.runId && run.sessionId === ledger.sessionId;
   const validRequest = validRun && request?.runId === ledger.runId && request.sessionId === ledger.sessionId && !request.excluded && !request.nativeDispatchRunId;
   const ds = validRequest ? request.deliveries || [] : [];
@@ -53,9 +59,11 @@ export function runMeasurement(ledger, run, request) {
       deliveryMs: deliveryEnd !== null ? span(request.settledAt, deliveryEnd) : null,
       requestMs: validRequest ? span(request.acceptedAt, request.settledAt) : null,
       contextTokens: finite(ledger.contextTokens) ? ledger.contextTokens : validRun && finite(run.contextTokens) ? run.contextTokens : null,
-      inputTokens: finite(ledger.inputTokens) ? ledger.inputTokens : null } };
+      inputTokens: finite(ledger.inputTokens) ? ledger.inputTokens : null,
+      injectionBytes: validRun && injection?.id === ledger.runId && injection.sessionId === ledger.sessionId
+        && finite(injection.injectionBytes) ? injection.injectionBytes : null } };
 }
-const metricNames = ['prepareMs', 'launchMs', 'runMs', 'deliveryMs', 'requestMs', 'contextTokens', 'inputTokens'];
+const metricNames = ['prepareMs', 'launchMs', 'runMs', 'deliveryMs', 'requestMs', 'contextTokens', 'inputTokens', 'injectionBytes'];
 export function summarizeMeasurements(samples) {
   return Object.fromEntries(metricNames.map(name => {
     const values = samples.map(s => s.metrics[name]).filter(finite).sort((a, b) => a - b);
@@ -71,7 +79,7 @@ export function measurementSignals(samples) {
   const signals = [];
   for (const cohort of cohorts.values()) {
     cohort.sort((a,b) => b.at-a.at);
-    for (const name of ['prepareMs','launchMs','runMs','contextTokens','inputTokens']) {
+    for (const name of ['prepareMs','launchMs','runMs','contextTokens','inputTokens','injectionBytes']) {
       const recent = cohort.slice(0, 3).filter(s => finite(s.metrics[name]));
       const baseline = cohort.slice(3, 23).filter(s => finite(s.metrics[name]));
       if (recent.length < 3 || baseline.length < 10) continue;
@@ -101,7 +109,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     } catch(e) { if(e.code!=='ENOENT')coverage.readErrors++; return null; }
   }
   async function collect(days) {
-    const started=now(), coverage={bytesRead:0,cacheHits:0,limitedFiles:0,readErrors:0,missingRuns:0,missingRequests:0};
+    const started=now(), coverage={bytesRead:0,cacheHits:0,limitedFiles:0,readErrors:0,missingRuns:0,missingRequests:0,missingInjections:0};
     const [usage, people, raw] = await Promise.all([getUsage({days,top:10000}),getPeople(),readFile(sessionsFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '[]';throw e;})]);
     const metadata=JSON.parse(raw), list=Array.isArray(metadata)?metadata:metadata.sessions||[];
     const rows=new Map(list.filter(s=>!s.archived).map(s=>[s.id,{sessionId:s.id,name:label(s.name),model:label(s.model),activeRunId:s.activeRunId,...sessionOwnership(s,people)}]));
@@ -118,10 +126,13 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       }
       if(!run)coverage.missingRuns++;
       if(!request)coverage.missingRequests++;
-      const sample=runMeasurement(l,run,request); if(!grouped.has(l.sessionId))grouped.set(l.sessionId,[]);grouped.get(l.sessionId).push(sample);
+      const injection=await projected(join(runsDir,l.runId,'manifest.json'),projectInjection,coverage);
+      const sample=runMeasurement(l,run,request,injection);
+      if(!sample.background && !finite(sample.metrics.injectionBytes))coverage.missingInjections++;
+      if(!grouped.has(l.sessionId))grouped.set(l.sessionId,[]);grouped.get(l.sessionId).push(sample);
     }));
     for(const row of rows.values()) {const samples=grouped.get(row.sessionId)||[];row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);}
-    return {generatedAt:new Date(now()).toISOString(),window:usage.window,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
+    return {generatedAt:new Date(now()).toISOString(),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
       coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.length,truncated:usage.runCount>ledger.length||coverage.limitedFiles>0,
         collectionMs:now()-started,cacheSeconds:60,apiAttribution:'unavailable'},
       semantics:{timing:'已落账 Run 的 Request/Run 时间戳；受理到准备包含排队，执行包含等待，阶段有各自样本数',
@@ -135,6 +146,19 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
   };
 }
 export const readSessionMonitoring=createSessionMonitoringReader();
+
+export function summarizeSessionOverview(sessions) {
+  const measured = sessions.filter(s => finite(s.totalTokens));
+  const injections = sessions.map(s => s.metrics.injectionBytes).filter(m => m?.count > 0 && finite(m.mean));
+  const injectionCount = injections.reduce((sum, m) => sum + m.count, 0);
+  return {
+    currentSessions: sessions.filter(s => !s.archived).length,
+    usageSessions: measured.length,
+    meanUsageTokens: measured.length ? measured.reduce((sum,s) => sum+s.totalTokens,0)/measured.length : null,
+    injectionCount, injectionSessions: injections.length,
+    meanInjectionBytes: injectionCount ? injections.reduce((sum,m) => sum+m.mean*m.count,0)/injectionCount : null,
+  };
+}
 
 // Compact native Monitor projection. No sidebar, prompts or duplicated bucket totals.
 export async function compactSessionMonitoring(value, getActivity) {
@@ -152,7 +176,7 @@ export async function compactSessionMonitoring(value, getActivity) {
     })));
   }
   return { generatedAt: value.generatedAt, stateObservedAt: new Date().toISOString(), window: value.window,
-    coverage: value.coverage, totals: value.usage.totals,
+    coverage: value.coverage, totals: value.usage.totals, summary: { ...summarizeSessionOverview(sessions), currentSessions: value.currentSessionCount ?? summarizeSessionOverview(sessions).currentSessions },
     groups: Object.fromEntries(value.sessions.map(s => [s.groupId, s.groupName])),
     people: Object.fromEntries(value.sessions.map(s => [s.personId, s.personName])), sessions };
 }
