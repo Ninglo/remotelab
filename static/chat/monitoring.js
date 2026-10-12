@@ -68,12 +68,15 @@
         "先检查原产物和回执，只补失败步骤；结果不确定的发送先核实。中高风险动作在原处理会话确认。", automationEntry],
     ]);
     root.appendChild(node("p", "待确认方案会列出具体对象、步骤、影响、恢复方式和验收办法。下方记录来自实际补救状态；任务结束不等于风险已经解除。", "monitoring-note"));
-    const repairs = value.recovery || [];
+    const repairs = (value.recovery || []).slice().sort((a, b) => Number(Boolean(b.currentIssue)) - Number(Boolean(a.currentIssue))
+      || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
     const history = node("details"); history.appendChild(node("summary", `补救记录（${repairs.length}）`));
     if (!repairs.length) history.appendChild(node("p", "尚无已记录的补救。", "monitoring-note"));
     for (const repair of repairs) {
       const detail = node("details"); detail.appendChild(node("summary", `${repair.subject} · ${repair.label}`));
-      detail.appendChild(node("p", repair.summary || repair.reason || "等待执行记录", "monitoring-note"));
+      detail.appendChild(node("p", `最近更新：${time(repair.updatedAt)} · ${repair.reason || repair.label}`, "monitoring-note"));
+      if (repair.error && repair.status === "blocked") detail.appendChild(node("p", `执行错误：${repair.error}`, "monitoring-note"));
+      if (repair.summary) detail.appendChild(node("p", `已记录检查：${repair.summary}`, "monitoring-note"));
       if (repair.plan) table(detail, ["处置方案", "内容"], [["执行条件", repair.plan.requiresConfirmation ? "等待人确认" : "低风险自行处理"],
         ["步骤", repair.plan.summary], ["对象", repair.plan.target], ["影响", repair.plan.impact], ["恢复方式", repair.plan.rollback], ["验收", repair.plan.verification]]);
       if (repair.sessionId) { const entry = node("a", "查看这次补救的处理会话"); entry.href = `/?session=${encodeURIComponent(repair.sessionId)}`; detail.appendChild(entry); }
@@ -248,7 +251,8 @@
     value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
     for (const repair of (value.recovery || []).filter(r => r.kind === "disk" && r.currentIssue)) {
       const details = node("details"); details.appendChild(node("summary", `${repair.subject}处置：${repair.label}`));
-      details.appendChild(node("p", repair.summary || repair.reason || "正在核对安全处置方案", "monitoring-note"));
+      details.appendChild(node("p", repair.reason || repair.summary || "正在核对安全处置方案", "monitoring-note"));
+      if (repair.error && repair.status === "blocked") details.appendChild(node("p", `执行错误：${repair.error}`, "monitoring-note"));
       if (repair.plan) table(details, ["方案", "内容"], [["执行条件", repair.plan.requiresConfirmation ? "经人确认后执行" : "低风险自行处理"],
         ["步骤", repair.plan.summary], ["对象", repair.plan.target], ["影响", repair.plan.impact], ["恢复方式", repair.plan.rollback], ["验收", repair.plan.verification]]);
       if (repair.sessionId) { const link = node("a", "查看原处理会话"); link.href = `/?session=${encodeURIComponent(repair.sessionId)}`; details.appendChild(link); }
@@ -259,8 +263,7 @@
     if (continuity) accounts.appendChild(node("p", `本实例自动切换${continuity.autoSwitch ? "已开启" : "未开启"}；已登录且额度高于10%的备用 ${continuity.backupCount} 个。20%进入备用准备区，10%切换后续请求；在途任务保留原账号。其他机器账号不算本实例备用。`, "monitoring-note"));
     if (continuity?.lastSwitch) {
       const change = continuity.lastSwitch;
-      const label = id => value.accounts.find(account => account.id === id)?.label || "已登录账号";
-      accounts.appendChild(node("p", `最近自动切换：${time(change.at)} · ${label(change.from)} → ${label(change.to)}。${({ reserve: "提前保留余额", confirmed_exhaustion: "原账号已耗尽", remaining_balance_fallback: "使用仍有余额的本地账号兜底" })[change.reason] || "后台切换已记录"}。`, "monitoring-note"));
+      accounts.appendChild(node("p", `最近自动切换：${time(change.at)} · ${({ reserve: "提前保留余额", confirmed_exhaustion: "原账号已耗尽", remaining_balance_fallback: "使用仍有余额的本地账号兜底" })[change.reason] || "后台切换已记录"}。`, "monitoring-note"));
     }
     for (const item of (value.attention || []).filter(a => a.kind === "accountContinuity")) {
       const line = node("p", alertDetail(item), "monitoring-alert"); line.dataset.severity = item.severity; accounts.appendChild(line);
