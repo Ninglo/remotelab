@@ -196,4 +196,11 @@ test('a calendar restriction does not disable a proven message transport or infe
   await dispatchMonitoringAlerts(options); assert.equal(sends, 1);
   await dispatchMonitoringAlerts(options); assert.equal(sends, 1);
   assert.equal(Object.values(state.batches).filter(b => b.status === 'blocked_dependency').length, 0);
+  const file = join(directory, '2026-10-10.1.abcdef.0.jsonl');
+  await rm(file);
+  const quiet = await readFeishuApiHealth({ directory, config, previous: health, now: now + 3600000 });
+  assert.equal(quiet.providers[0].notificationDelivery.status, 'available', 'idle time and log rotation retain the verified transport receipt');
+  await writeFile(file, JSON.stringify(row(-3599000, 99991403, { method: 'POST', endpoint: '/open-apis/im/v1/messages' })) + '\n');
+  const rejected = await readFeishuApiHealth({ directory, config, previous: quiet, now: now + 3600000 });
+  assert.equal(rejected.providers[0].notificationDelivery.status, 'unknown', 'a newer quota rejection invalidates the transport receipt');
 });

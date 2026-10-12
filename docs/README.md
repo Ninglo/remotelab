@@ -31,6 +31,8 @@ low-risk recovery; medium/high-risk plans include scope, impact, rollback and
 verification and wait for human confirmation. The same guide defines verified
 message-transport recovery without treating unrelated API restrictions as a
 total notification outage.
+Verified message-transport recovery persists through quiet periods and log
+rotation; a newer quota rejection requires fresh success evidence.
 
 [飞书 Web 话题状态同步](feishu-web-topics.md)说明普通插件的只读账号连接、真实运行状态推送、可见版本号和 Mac 后台更新；[消息设置](feishu-web-settings.md)继续维护本人回复选择与对话模型。
 [Mac 原生飞书增强试验](../scripts/feishu-native/README.md)复用已核 Web 1.2 与 Mac 联调组件，恢复同账号群看板和 RemoteLab 状态来源，说明个人连接、断线恢复、本机验证及回退；尚不代表完整日用版或外层导航像素一致。
