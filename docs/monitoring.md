@@ -278,10 +278,14 @@ Monitor defaults to Overview from the normal homepage (`/?tab=tasks`);
 explicit `monitor=automations|usage|feedback` links preserve those destinations.
 Clicking Monitor while the homepage is loading keeps that workspace selected
 when the initial Session list arrives.
-The Overview shows three compact panels: Session, API, and shared resources.
-Each presents totals and observation/exception status first. All lists, provider
-endpoints, accounts and operational records start collapsed. Clicking an exception
-opens its panel; Session exceptions also select the affected list. Expansions and
+The Overview shows three compact panels in order: Session, shared resources, and API.
+Each presents totals and observation/exception status first. Session totals are
+followed by up to three named exceptions with every affected metric, recent value
+and baseline, plus three group/initiator summaries. Without exceptions, up to
+three running/waiting Session names are visible. Full metric tables, provider
+endpoints, accounts and operational records start collapsed. Clicking a Session
+exception selects its titled detail view without putting an opaque ID in search.
+Affected table metrics are marked, with sample comparisons beside the Session name. Expansions and
 owner filters reuse fetched data and do not start another query. Manual refresh
 preserves the user's fold state.
 
@@ -298,7 +302,9 @@ The panel labels units and denominators, with exact scope under statistics detai
 API totals always cover the observer's own 24-hour / five-minute windows and are
 labelled separately from the Session selector. No data is presented as all-clear.
 
-Expand Sessions for group/initiator summaries, runtime state, period tokens,
+Switch group/initiator mode to change the visible ownership summaries and Session
+owner labels; switching clears the previous owner, Session and search selection.
+Expand Sessions for runtime state, period tokens,
 phase means, latest-context means, injection means, P95 and sample counts.
 Existing cohort-based deviations now also include injection bytes (10,000-byte
 minimum increase). They remain page-only investigation clues. Shared-resource
@@ -310,7 +316,7 @@ zero-sample metric objects are omitted, and the page no longer requests the full
 Session/sidebar projection. State reads use the runtime's accepted queue and the
 persisted current Run/question without reconciliation. Statistics retain the
 60-second cache; state has its own observation time. The UI renders only the first
-50 matching Sessions and eight owner groups, with explicit expansion. Queries
+50 matching Sessions and three owner groups, with explicit expansion. Queries
 coalesce in the browser, and each panel has a 15-second deadline and its own error
 state. A failed request never produces a zero-anomaly summary. This is bounded
 on-demand observation, not new background scanning or model analysis.

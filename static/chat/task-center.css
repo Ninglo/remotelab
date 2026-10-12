@@ -605,3 +605,20 @@ details.task-lifecycle-section > summary { cursor: pointer; }
   .task-flow-time { display: block; width: 100%; }
   .task-flow-bottom { align-items: flex-start; }
 }
+
+/* Keep the affected Session and metric visible before opening technical details. */
+.monitoring-session-anomalies { display: grid; gap: 5px; margin-top: 6px; }
+.monitoring-metric-signal { color: var(--text-primary); font-size: 12px; }
+.monitoring-metric-signal[data-severity="warning"] { color: #a86b14; }
+.monitoring-metric-signal[data-severity="critical"] { color: var(--danger, #c2413c); }
+.monitoring-metric-caption { display: block; font-size: 10px; margin-top: 3px; }
+.monitoring-session-signals button { text-align: left; overflow-wrap: anywhere; white-space: normal; }
+.monitoring-session-preview { display: grid; gap: 6px; margin: 10px 0; }
+.monitoring-session-preview button { text-align: left; white-space: normal; }
+
+#monitoringSessions .monitoring-owner-summary table { table-layout: fixed; }
+#monitoringSessions .monitoring-owner-summary th,
+#monitoringSessions .monitoring-owner-summary td { min-width: 0; max-width: none; padding-right: 6px; }
+#monitoringSessions .monitoring-owner-summary th:first-child,
+#monitoringSessions .monitoring-owner-summary td:first-child { width: 40%; }
+#monitoringSessions .monitoring-owner-summary button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
