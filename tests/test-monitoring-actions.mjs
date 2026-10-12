@@ -72,3 +72,45 @@ test('diagnosis CLI emits parseable JSON without starting recovery or accepting 
   assert.ok(report.resources.every(item => item.kind === 'service'));
   await assert.rejects(exec(process.execPath, ['scripts/monitoring-diagnose.mjs', '--apply']), /Unknown option/);
 });
+
+import { monitoringNotificationDecision } from '../lib/monitoring-policy.mjs';
+test('validation phase raises thresholds but keeps recovery visible after a real warning', () => {
+  const options = { policy: { mode: 'risk_only' }, now };
+  for (const item of [
+    { kind: 'api', id: 'feishu:tenant-quota', severity: 'critical' },
+    { kind: 'api', signals: { slow: true } },
+    { kind: 'api', signals: { errors: true }, calls5m: 100, failed5m: 10 },
+    { kind: 'api', code: 99991403, quotaRejectedAt: new Date(now - 86400000).toISOString() },
+    { kind: 'accountContinuity', continuity: { status: 'unknown' } },
+    { kind: 'accountContinuity', continuity: { status: 'no_backup', remainingPercent: 20 } },
+    { kind: 'disk', severity: 'warning', availableBytes: 100 * 1024 ** 3, usedPercent: 86 },
+  ]) assert.equal(monitoringNotificationDecision(item, options).notify, false);
+  assert.equal(monitoringNotificationDecision({ kind: 'api', code: 99991403, quotaRejectedAt: new Date(now - 1000).toISOString() }, options).notify, true);
+  assert.equal(monitoringNotificationDecision({ kind: 'api', signals: { errors: true }, calls5m: 20, failed5m: 10 }, options).notify, true);
+  assert.equal(monitoringNotificationDecision({ kind: 'disk', availableBytes: 4 * 1024 ** 3 }, options).confirmations, 1);
+  assert.equal(monitoringNotificationDecision({ kind: 'accountContinuity', continuity: { status: 'no_backup', remainingPercent: 10 } }, options).notify, true);
+  const service=monitoringNotificationDecision({ kind: 'service' }, { ...options, repair: { status: 'running' } });
+  assert.equal(service.notify,true);assert.equal(service.confirmations,5);
+  const repair = { status: 'awaiting_confirmation', evidence: ['readback'], plan: recoveryPlan({ risk: 'medium', summary: 'Restart', target: 'a.service', impact: 'brief downtime', rollback: 'revert config', verification: 'health probe' }) };
+  assert.equal(monitoringNotificationDecision({ kind: 'service' }, { ...options, repair }).reason, 'concrete_human_action');
+  assert.equal(monitoringNotificationDecision({ kind: 'service' }, { ...options, repair: { ...repair, evidence: [] } }).confirmations, 5);
+});
+
+import { monitoringDestinations } from '../lib/monitoring-policy.mjs';
+test('monitor maps alert group, execution Session and actual result delivery without exporting secrets', () => {
+  const sessions=[{id:'disk',name:'Disk',privatePrompt:'SECRET'},
+    {id:'job',name:'Daily',conversation:{connector:'feishu',target:{chatId:'group',threadId:'thread',tenantKey:'SECRET'}},sourceContext:{chatId:'group',chatName:'Team'},privatePrompt:'SECRET'}];
+  const config={alertDelivery:{chatId:'group',enabled:false},recovery:{coordinatorSessionId:'disk'}};
+  const tasks=[{id:'a',kind:'recurring',title:'A',target:{sessionId:'job'},resultDelivery:{mode:'remotelab'}},
+    {id:'b',kind:'recurring',title:'B',lastExecution:{sessionId:'job'},resultDelivery:{mode:'conversation',connector:'feishu',target:{chatId:'fallback'}}},
+    {id:'c',kind:'recurring',title:'C',resultDelivery:{mode:'conversation',connector:'feishu',target:{chatId:'unknown'}}}];
+  tasks.push({id:'stopped',kind:'recurring',state:'cancelled',title:'Stopped'});
+  const value=monitoringDestinations(config,sessions,tasks);
+  assert.equal(value.automations.length,3);
+  assert.equal(value.alert.chatName,'Team');assert.equal(value.alert.enabled,false);
+  assert.equal(value.resources.result.mode,'remotelab');assert.equal(value.automations[0].delivery.mode,'remotelab');
+  assert.equal(value.automations[1].delivery.chatName,'Team');assert.equal(value.automations[1].delivery.threadId,'thread');
+  assert.equal(value.automations[2].delivery.chatName,null);assert.equal(value.automations[2].sessionId,null);
+  assert.doesNotMatch(JSON.stringify(value),/SECRET/);
+  assert.equal(monitoringDestinations(config,null,[]).resources.result.mode,'unknown');
+});

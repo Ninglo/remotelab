@@ -36,3 +36,11 @@ Ordinary progress and delivery use these two labels; direct answers to supplemen
 Confirmed personal settings offer card plus text updates, latest-only cards, or cards with full progress history. Every enabled card type displays the latest progress. Full-history cards keep a compact latest preview outside the collapsed detail and retain complete records on in-card pages; the last accepted show/hide and page choice survives subsequent updates. The Settings preview follows the same layout. This does not change the saved personal selection or turn ordinary progress into separate messages.
 
 Disclosure callbacks retain one route worker as the provider writer. The worker prioritizes clicks over queued refreshes and repaints its acknowledged snapshot without another history request. Actual latency still includes authorization/state persistence and Feishu network updates; a successful click receipt alone does not prove the client has repainted.
+
+## When an acceptance checklist is useful
+
+Enabling checklists permits their use; it does not require a card for each request. Default to direct execution and a final reply. Create a card when the user explicitly requests one, or when at least two distinct outcomes benefit from separate progress and acceptance. Complexity, uncertainty, duration and tool use alone are insufficient.
+
+A document and its source checks are one delivery. A feature change with testing and deployment is also one delivery. Keep those steps inside the work instead of turning them into separate checklist items. Continue the original card for the same outcomes; supplementary questions, corrections and revisions do not create a new card. Useful progress can still be delivered without an acceptance checklist.
+
+The shared criteria live in `lib/workboard-context.mjs`; `chat/message-reply-settings.mjs` projects whether the current Person permits new checklists. The criteria apply to all enabled people when the updated service prepares subsequent inputs. Personal opt-outs and accepted in-flight inputs retain their existing boundaries. The dated context-injection compression snapshot records its earlier source revision; this section describes the current creation policy.

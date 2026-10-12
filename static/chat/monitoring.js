@@ -50,6 +50,26 @@
     root.appendChild(node("p", !policy ? "处置配置尚未取得，执行状态未知。" : policy.recoveryEnabled
       ? "自动补救已启用。低风险、已有授权且可验证的动作自行执行；中高风险先给出具体方案，等待人在处理会话确认。"
       : "自动补救未启用；以下为预警与补救规则，不代表已经执行。", "monitoring-note"));
+    if (policy?.noisePolicy?.mode === "risk_only") root.appendChild(node("p",
+      "通知策略：达到较高风险门槛才推送；触发后展示补救动作和核验结果，持续更新同一张卡。", "monitoring-note"));
+    const destinations = policy?.destinations;
+    if (destinations) {
+      const places = node("details"); places.dataset.section = "handling-destinations";
+      places.appendChild(node("summary", "预警、补救与回报在哪里"));
+      const entry = place => {
+        if (!place?.sessionId) return "尚无处理会话";
+        const a = node("a", place.sessionName || "打开处理会话"); a.href = `/?session=${encodeURIComponent(place.sessionId)}`; return a;
+      };
+      table(places, ["对象", "执行位置", "回报位置"], [
+        ["统一预警", "现有观察器", `${destinations.alert.configured ? destinations.alert.label : "未配置接收群"}${destinations.alert.enabled ? "" : "（推送暂停）"}`],
+        ["磁盘、服务", entry(destinations.resources), destinations.resources.result.label],
+        ["账号切换", "本实例后台切换器", "监控器中的账号状态与切换记录"],
+        ["API诊断", "本实例固定检查脚本", "监控器；尚无独立补救会话"],
+        ...(destinations.automations || []).map(task => [task.title, entry(task), task.delivery.label]),
+      ]);
+      places.appendChild(node("p", "仅列当前未停用任务；群名来自已保存的来源记录。执行会话和通知接收群可能不同，此处不改变回报出口。", "monitoring-note"));
+      root.appendChild(places);
+    }
     const resourceEntry = node("div");
     if (policy?.coordinatorSessionId) {
       const link = node("a", "打开固定补救会话"); link.href = `/?session=${encodeURIComponent(policy.coordinatorSessionId)}`;

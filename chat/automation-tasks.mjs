@@ -443,6 +443,7 @@ export function createAutomationHealthReader({ getSchedules = listRecurringSched
           enabled: record.enabled === true,
           nextRunAt: kind === 'recurring' ? (record.status === 'active' ? record.nextRunAt : '')
             : (record.status === 'pending' ? record.scheduledAt : ''),
+          target: projectTarget(record), resultDelivery: projectNotification(record),
           lastExecution: execution, createdAt: record.createdAt, updatedAt: record.updatedAt,
           ...(kind === 'recurring' ? { lastError: record.lastError || '',
             check: { at: record.lastCheckAt || '', reason: record.lastGateReason || '' } } : {}),

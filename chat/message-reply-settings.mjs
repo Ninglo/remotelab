@@ -116,7 +116,7 @@ export function messageReplyPrompt(policy) {
     : 'This accepted Feishu request uses the separately confirmed modular message-reply mode. These choices replace default Feishu opening/progress/checklist visibility rules for this request; Web history remains unchanged.',
     policy.opening ? 'For substantial work, briefly state the issue and first action. Simple answers and quick checks need no extra RemoteLab opening or progress report.'
       : 'The user has disabled the opening text. Start the work directly; do not create a receipt message to replace it.',
-    policy.checklist ? 'Use an acceptance checklist when independent deliverables make it useful. Simple answers need no artificial checklist.'
+    policy.checklist ? 'Acceptance checklists are available when useful; enabling them does not require creating one. Default to direct execution and a final reply. Apply the shared task-card criteria; ordinary steps and revisions of one result do not justify a new checklist.'
       : 'The user has disabled new acceptance checklists. Do not publish a new task checklist; an explicitly resumed existing task retains its original card.',
     policy.progress === 'none' ? 'The user has disabled ordinary progress delivery.'
       : `Publish findings that affect the user’s understanding or next step with <progress>...</progress>; do not narrate routine checks or repeat a finished result as progress. RemoteLab delivers them as ${({
