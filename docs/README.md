@@ -54,7 +54,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Current Core
 
-- [Session work awareness](session-work-awareness.md) — personal work-start switches read each requester's own profile; shared prompts contain no default personal procedure.
+- [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.
 - [Connector turn context](connector-turn-context.md) — current rule projection, recovery snapshots and concise reply guidance for simple answers and quick checks.
 
 - [RemoteLab deliverables](architecture-atlas/deliverables.html) — a generated chapter of the unified explanation project; reuses the feature catalog, page catalog and original source records instead of maintaining a separate memory document.

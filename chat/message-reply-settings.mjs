@@ -7,6 +7,7 @@ import { DEFAULT_REPLY_DRAFT, validateReplyDraft } from '../static/chat/message-
 import { observeSettingRows, replySettingRows } from './usage-settings.mjs';
 
 import { resolvePersonMessageReplyPolicy } from './person-message-replies.mjs';
+import { captureStrictStartRule } from './strict-start-check.mjs';
 
 const path = join(CONFIG_DIR, 'message-reply-settings.json');
 const serial = createSerialTaskQueue();
@@ -88,7 +89,11 @@ export async function resolveMessageReplyPolicy(options = {}) {
   if (!feishu && !web) return null;
   try {
     const personal = await resolvePersonMessageReplyPolicy(options);
-    if (personal) return { ...personal, final: true };
+    if (personal) {
+      const rule = await captureStrictStartRule(personal, { personId: options.viewPersonId,
+        identityId: options.initiatedByIdentityId, sessionId: options.sessionId, requestId: options.requestId });
+      return { ...personal, final: true, ...(rule ? { strictStartRule: rule } : {}) };
+    }
   } catch (error) {
     console.warn(`[message-reply-mode] ${error.message}; preserving default display`);
     return null;

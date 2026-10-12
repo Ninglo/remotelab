@@ -17,7 +17,7 @@ try {
   });
   const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { resolveMessageReplyPolicy } = await import('../chat/message-reply-settings.mjs');
-  const { strictStartCheckPrompt } = await import('../chat/strict-start-check.mjs');
+  const { strictStartCheckPrompt, captureStrictStartRule } = await import('../chat/strict-start-check.mjs');
   const { buildPrompt } = await import('../chat/session-manager.mjs');
   const { requests } = await import('../chat/requests.mjs');
   const { handleMessageReplySettings } = await import('../chat/router-message-reply-settings.mjs');
@@ -73,10 +73,11 @@ try {
     const prompt = await buildPrompt('strict-session', { id: 'strict-session', systemPrompt: '',
       ...(resumed ? { codexThreadId: 'existing-thread' } : {}) }, '开始修改当前功能', 'codex', 'codex', null, { messageReplyPolicy: snapshot, viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId });
     assert.match(prompt, /开工严格检查 \(personal trial\)/);
-    assert.match(prompt, /Read the work-start requirements in their verified Person profile/);
+    assert.match(prompt, /# 开工检查 v1/);
+    assert.equal(snapshot.strictStartRule.version, 'v1');
     assert.match(prompt, /person_alice\.md/);
     assert.doesNotMatch(prompt, /person_bob\.md/);
-    assert.doesNotMatch(prompt.split('## 开工严格检查 (personal trial)')[1], /work context --query/, 'shared prompt no longer contains a personal procedure');
+    assert.match(prompt, /work context --query/, 'the opted-in request receives its selected rule body');
     assert.match(prompt, /disabled the opening text/);
   }
   assert.equal(strictStartCheckPrompt({ ...snapshot, scope: 'group' }), '');
@@ -84,13 +85,38 @@ try {
   assert.match(strictStartCheckPrompt(snapshot, { ...alice, identityId: 'web_bob' }), /no matching verified requester/);
   assert.match(strictStartCheckPrompt(snapshot, { personId: 'person_bob', identityId: 'web_bob' }), /no matching verified requester/);
   assert.match(strictStartCheckPrompt(snapshot), /no matching verified requester/);
+  let reads = 0;
+  const readAsset = async () => { reads++; return 'FROZEN_RULE_BODY'; };
+  for (const [policy, context] of [[null, alice], [{ ...snapshot, strictStartCheck: false }, alice],
+    [snapshot, {}], [snapshot, { ...alice, identityId: 'web_bob' }],
+    [{ ...snapshot, scope: 'group' }, alice]]) {
+    assert.equal(await captureStrictStartRule(policy, context, { readAsset }), undefined);
+  }
+  assert.equal(reads, 0, 'disabled, absent, unknown and mismatched identities do not read the asset');
+  const frozen = await captureStrictStartRule(snapshot, { ...alice, requestId: 'origin', sessionId: 'strict-session' }, { readAsset });
+  assert.equal(reads, 1);
+  assert.equal(frozen.origin.requestId, 'origin');
+  const frozenPolicy = { ...snapshot, strictStartRule: frozen };
+  assert.match(strictStartCheckPrompt(frozenPolicy, alice), /FROZEN_RULE_BODY/);
+  assert.equal(reads, 1, 'projection reuses the captured body without a file read');
+  assert.doesNotMatch(strictStartCheckPrompt({ ...frozenPolicy,
+    strictStartRule: { ...frozen, content: 'TAMPERED_BODY' } }, alice), /TAMPERED_BODY/);
+  const unavailable = await captureStrictStartRule(snapshot, alice, { readAsset: async () => { throw new Error('missing'); } });
+  assert.equal(unavailable.status, 'unavailable');
+  assert.match(strictStartCheckPrompt({ ...snapshot, strictStartRule: unavailable }, alice), /unavailable/);
+  assert.equal((await captureStrictStartRule({ ...snapshot, strictStartRuleVersion: '../outside' }, alice, { readAsset })).reason, 'unknown-version');
+  assert.equal((await captureStrictStartRule({ ...snapshot, strictStartRuleVersion: 'constructor' }, alice, { readAsset })).reason, 'unknown-version');
+  assert.equal(reads, 1, 'unknown versions cannot select arbitrary files');
+  const legacy = { ...snapshot }; delete legacy.strictStartRule;
+  assert.match(strictStartCheckPrompt(legacy, alice), /legacy accepted work/);
+  assert.doesNotMatch(strictStartCheckPrompt(legacy, alice), /# 开工检查 v1/);
+  const bob = { personId: 'person_bob', identityId: 'web_bob' };
+  const bobPolicy = { ...snapshot, personId: bob.personId, policyId: 'reply_bob' };
+  bobPolicy.strictStartRule = await captureStrictStartRule(bobPolicy, bob);
   const bobOn = await buildPrompt('strict-session', { id: 'strict-session', systemPrompt: '', codexThreadId: 'existing-thread' },
-    '开始我的工作', 'codex', 'codex', null, { viewPersonId: 'person_bob', initiatedByIdentityId: 'web_bob',
-      messageReplyPolicy: { ...snapshot, personId: 'person_bob' } });
-  assert.match(bobOn, /person_bob\.md/);
-  assert.doesNotMatch(bobOn, /person_alice\.md/);
-  assert.match(bobOn, /If that profile has no work-start requirements, use the ordinary Harness workflow/);
-  assert.doesNotMatch(bobOn.split('## 开工严格检查 (personal trial)')[1], /work context --query/);
+    '开始我的工作', 'codex', 'codex', null, { viewPersonId: bob.personId, initiatedByIdentityId: bob.identityId, messageReplyPolicy: bobPolicy });
+  assert.match(bobOn, /# 开工检查 v1/);
+  assert.doesNotMatch(bobOn, /person_alice/);
 
   // A stale frontend that doesn't know the new field cannot accidentally turn it off.
   const applied = await changePersonMessageReplies({ action: 'apply', expectedRevision: enabled.revision,
@@ -117,9 +143,11 @@ try {
     '另一位成员开始新的工作', 'codex', 'codex', null, { viewPersonId: 'person_bob', initiatedByIdentityId: 'web_bob' });
   assert.doesNotMatch(bobPrompt, /开工严格检查 \(personal trial\)/);
   assert.match(bobPrompt, /do not inherit it from Session history/);
+  assert.doesNotMatch(bobPrompt, /# 开工检查 v1/);
+  assert.doesNotMatch(offPrompt, /# 开工检查 v1/);
   await requests.mutate(record.key, r => ({ ...r, result: { state: 'completed' } }));
   assert.equal((await call(path, { ...payload, expectedRevision: JSON.parse(output).settings.revision })).status, 403);
   const analytics = JSON.parse(await readFile(join(home, '.config/remotelab/usage-settings/current.json'), 'utf8'));
   assert(Object.values(analytics.rows).some(row => row.setting === 'reply.strict_start_check' && row.value === 'off'));
-  console.log('strict-start: personal isolation, all surfaces, frozen prompt, rollback, run attribution and analytics passed');
+  console.log('strict-start: conditional reads, immutable version/body, missing/tampered rules, legacy continuation, personal isolation and rollback passed');
 } finally { await rm(home, { recursive: true, force: true }); }

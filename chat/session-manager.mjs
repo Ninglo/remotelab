@@ -3472,7 +3472,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const inherited = priorRequest
     || (activeNative && !options.freshThread && sameRequester(activeRequest) ? activeRequest : null)
     || (sameRequester(routingOrigin) ? routingOrigin : null);
-  const messageReplyPolicy = inherited ? inherited.options.messageReplyPolicy || null : await resolveMessageReplyPolicy(options);
+  const messageReplyPolicy = inherited ? inherited.options.messageReplyPolicy || null : await resolveMessageReplyPolicy({ ...options, sessionId });
   options = { ...options };
   if (messageReplyPolicy) options.messageReplyPolicy = messageReplyPolicy;
   else delete options.messageReplyPolicy;

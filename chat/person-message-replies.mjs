@@ -1,4 +1,5 @@
 import { findPerson, findIdentity, loadAuthDocument, updateAuthDocument } from '../lib/auth-config.mjs';
+import { LEGACY_STRICT_START_VERSION } from './strict-start-check.mjs';
 import { DEFAULT_REPLY_DRAFT, validateReplyDraft } from '../static/chat/message-reply-model.js';
 import { observeSettingRows, settingRows, replySettingValues } from './usage-settings.mjs';
 
@@ -20,6 +21,7 @@ function settingsFor(person) {
   const active = stored.active ? { ...stored.active, ...choices({ opening: stored.active.opening,
     checklist: stored.active.checklist, progress: stored.active.progress, strictStartCheck: stored.active.strictStartCheck,
     routing: stored.active.routing }) } : null;
+  if (active?.strictStartCheck && !active.strictStartRuleVersion) active.strictStartRuleVersion = LEGACY_STRICT_START_VERSION;
   return { personId: person.id, revision: stored.revision, active, choices: active ? choices({
     opening: active.opening, checklist: active.checklist, progress: active.progress, strictStartCheck: active.strictStartCheck,
     routing: active.routing }) : defaults() };
@@ -53,7 +55,8 @@ export async function changePersonMessageReplies(input, actor) {
         strictStartCheck: input.choices.strictStartCheck ?? current.choices.strictStartCheck }) : null;
     const revision = current.revision + 1, now = new Date().toISOString();
     const active = value ? { ...value, version: 3, scope: 'person', personId: person.id,
-      policyId: `reply_${person.id}_${revision}`, activatedAt: now } : null;
+      policyId: `reply_${person.id}_${revision}`, activatedAt: now,
+      ...(value.strictStartCheck ? { strictStartRuleVersion: current.active?.strictStartRuleVersion || LEGACY_STRICT_START_VERSION } : {}) } : null;
     const previous = person.preferences?.messageReplies;
     person.preferences = { ...person.preferences, messageReplies: { version: 1, revision, active,
       audit: [...(previous?.audit || []), { action: input.action, revision, time: now,
