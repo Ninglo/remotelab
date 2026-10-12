@@ -70,6 +70,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   let phaseTransition = Promise.resolve();
   let writes = Promise.resolve();
   let writeError = null;
+  let questionRetirement = Promise.resolve();
   const queueWrite = fn => { writes = writes.then(fn).catch(error => { writeError ||= error; }); };
   const stop = () => {
     if (closing) return;
@@ -84,7 +85,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     // Close admission before retiring superseded questions. Their cancellation
     // must not inject an invented answer or race a newly accepted model input.
     stop();
-    if (questions.pending) void questions.cancel().catch(error => { fatalError ||= error; });
+    if (questions.pending) questionRetirement = questions.cancel().catch(error => { fatalError ||= error; });
   };
   const outputUpdates = new Map();
   const emit = event => {
@@ -227,6 +228,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     initial.catch(error => { fatalError ||= error; stop(); });
     const exit = await closed;
     await phaseTransition;
+    await questionRetirement;
     driver.close(fatalError || new Error('Native Harness process exited'));
     await readersClosed;
     await writes;
