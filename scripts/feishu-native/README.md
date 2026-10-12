@@ -1,4 +1,4 @@
-# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 9)
+# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 10)
 
 Ask the maintaining agent: “Update the existing isolated Feishu Native Trial
 with the verified Web 1.2.0 component bundle and the existing Mac Web Live capabilities. Restore the same-account read-only status source, including group boards and usage; never replace it with a fresh personal-login requirement. Keep the official App and profile
@@ -34,16 +34,14 @@ Old failed whole-file transfers were deleted by that version and are unrecoverab
 `install-preview.py` validates the official version, archive hash, signature and
 package checksums. It creates its own profile, injects the reviewed runtime with
 `archive_patch.py`, rebuilds signatures and checks original source hashes. An
-identical installed runtime and archive can be reopened without overwriting
-account data or preferences; different/partial installations are preserved and
-refused. A lock prevents concurrent bootstrap installations. Failure never
-changes the official App. Automatic migration of an older trial is not included.
+identical installed runtime, helper build hash and archive can be reopened without overwriting
+account data or preferences; verified older standalone installations can upgrade after the test App exits; partial or unknown installations are preserved and refused. A lock prevents concurrent bootstrap installations. Failure never
+changes the official App. The upgrade signs a staged clone before replacing the isolated App, keeps a local rollback copy, restores old files if replacement fails, and never replaces the profile or account settings.
 `package-preview.py` packages only reviewed code/assets with a checksum manifest;
 no official App, profile, local capability or connection record is distributed.
 
 The standalone package does not create the Mini's already-authorized read-only
-source on another machine. It initially displays “未同步”; group boards, Session
-state, usage and message artifacts require a separately verified source.
+source on another machine. Settings → 连接状态同步 now opens the normal personal grant page. The helper uses that exact account/origin token to subscribe to visible topic IDs and the native chat header’s group ID. Group boards and Session state come directly from the server. The topic endpoint also projects scoped cumulative/context usage, current quota display fields and verified HTML artifacts from the configured registry. It never returns account credentials or other Sessions’ histories. Missing telemetry stays unknown.
 Personal workspace/settings retain the real login/grant flow. Installed and
 signature-verified does not mean all 8.1.17 logged-in components or meeting media
 have been verified.
@@ -57,9 +55,7 @@ launcher is backed up locally. The bridge and process observer inherit the
 explicit test root for isolated verification.
 
 On the existing Mac Live setup, Session and group **data** already update live.
-Enhancement **code** remains
-embedded in the trial archive: updates currently use `update.py`, a verified
-backup and a graceful trial restart. Neither the new shortcut nor the existing
+Enhancement **code** remains embedded in the trial archive. Standalone users quit the enhancement App and rerun the same installation command; `upgrade-preview.py` stages and verifies the update while preserving the profile. The existing Mini flow continues to use `update.py`. Neither the new shortcut nor the existing
 data stream provides automatic code hot updates. A future code updater would
 need a verified version manifest, atomic installation and rollback; in-process
 reload additionally needs complete component cleanup and draft preservation.
@@ -109,8 +105,7 @@ activating the ordinary extension grant-only stream. Its navigation/settings
 checks did not establish live state parity. Revision 9 keeps the Live guard and
 restores the original source instead of requiring a new status login.
 
-The same four navigation components are mounted **inside the message-list
-renderer**. The outer official native navigation remains intact; this is not
+The same four navigation components use their existing compact layout in a 64 px rail **inside the message-list renderer**, validated at 448/768/1280 px viewport widths. The outer official native navigation remains intact; this is not
 pixel-identical placement. Index/thinking run in that renderer. Native-window
 layout, meetings, notifications, global shortcuts and distribution updates are
 separate from Web component verification. Voice input was not in Web 1.2.0 and
@@ -120,6 +115,8 @@ Validation:
 
 - `python3 tests/test-feishu-native-download.py` (520, truncation, corruption, resumed cache and Range fallback)
 - `python3 tests/test-feishu-native-launcher.py` (one cold start, preserved running App, private runtime/root)
+- `python3 tests/test-feishu-native-upgrade.py` (replacement failure restores old App and helper)
+- `node tests/test-feishu-native-topic-source.mjs` (standalone grant, groups, account isolation and stale/recovery)
 - `python3 tests/test-feishu-native-installer.py` (archive entry integrity and duplicate injection refusal)
 - `node --test tests/test-feishu-web-settings.mjs tests/test-feishu-web-topics.mjs tests/test-feishu-personal-workspace.mjs`
 - `node tests/test-feishu-native-live-source.mjs` (scope, account changes, live transitions, stale snapshots and recovery)
@@ -142,7 +139,7 @@ Current capability audit:
 | Personal Index/thinking and reply/model settings | Original components + personal grant broker | Real content/read/write still needs the requester's login |
 | Sorting, reading, pet and preference export/import | Original components retained | Native selector/model prerequisites still apply; no blanket daily-use claim |
 | Desktop launcher | Stable shortcut to existing trial, activates running window | Private-runtime launcher; no code hot update |
-| First install on another Apple Silicon Mac | Exact official 8.1.17 build, isolated clone/profile, checksummed preview package | Group/Session data source and logged-in functional acceptance remain separate |
+| First install on another Apple Silicon Mac | Exact official 8.1.17 build, isolated clone/profile, checksummed preview package | Personal grant and logged-in functional acceptance remain separate |
 | Voice, meeting media, global shortcuts, distribution upgrades | Not added by this adaptation | Separate work/real-device acceptance needed |
 
 A screenshot cannot be inferred from DOM verification. The helper's real
@@ -155,3 +152,5 @@ signature, and launch with the original trial launcher. Preserve
 `native-v8-storage.json` for recovery; do not copy its grants elsewhere.
 
 The updater uses graceful App exit and snapshots the isolated profile on the Mac when a restored editor draft is present. It never clears or sends drafts. Profile snapshots contain private login data and must stay in the private local trial directory.
+
+Standalone server setup: the existing feishu-web-topics.json binding/group configuration may include an absolute artifactsFile path to the existing schema-1 HTML registry. The adapter reuses that registry, checks source hashes and exact Session/chat/root identity, and exports only verified visible-topic artifacts. Usage comes from the shared ledger and usage events (metadata only, bounded initial backscan); quota exports percentages/timestamps only. State updates retain normal invalidations; telemetry refreshes at the existing 60-second cadence. Tests: tests/test-feishu-web-topic-details.mjs.

@@ -15,8 +15,8 @@ content=content.replaceAll('location.origin','globalThis.__RLFE_NATIVE_ORIGIN__'
 content=content.replaceAll('const storage = live ?', 'const storage = false ?');
 content=content.replaceAll('if (!live) result = await chrome.runtime.sendMessage','if (true) result = await chrome.runtime.sendMessage');
 content=content.replaceAll('event.source !== popup', 'event.data?.nativePopup !== popup?.nativePopup');
-// Keep the Web Live guard: this Mac already has an authorized read-only source.
-// Personal settings/workspace still use their separate account grants.
+// The broker selects either the existing same-account source or a standalone
+// personal topic grant. Do not start a competing renderer-owned stream.
 content=content.replace('if (!chrome?.runtime?.getManifest || globalThis.__RLFE_LIVE__) return;','if (!chrome?.runtime?.getManifest) return;');
 content=content.replaceAll('Mac 后台自动检查更新；有未保存内容时延后应用','本地增强 1.2 · 更新由本机安装器管理').replaceAll('以后自动连接和更新，无需再到设置里启用。','连接按当前本地飞书账号保存。');
 // Native list names have stable classes for the explicitly supported 8.0.3 build.
@@ -46,5 +46,6 @@ const font=await fs.readFile(path.join(web,'fonts/SmileySans-Oblique.woff2'));
 let loader=await fs.readFile(path.join(here,'loader.js'),'utf8');loader=loader.replace('__FONT_URL__',JSON.stringify('data:font/woff2;base64,'+font.toString('base64'))).replace('__WEB_BUNDLE__',content);
 await fs.writeFile(path.join(output,'runtime-template.js'),loader);await fs.copyFile(path.join(here,'bridge.cjs'),path.join(output,'native_asset_bridge.cjs'));
 await fs.copyFile(path.join(here,'live-source.cjs'),path.join(output,'live-source.cjs'));
-await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:9,liveComponentHashes:Object.fromEntries(Object.entries(extras).map(([name,value])=>[name,hash(value)])),webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
+await fs.copyFile(path.join(here,'topic-source.cjs'),path.join(output,'topic-source.cjs'));
+await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:10,liveComponentHashes:Object.fromEntries(Object.entries(extras).map(([name,value])=>[name,hash(value)])),webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),buildHash:hash(loader+await fs.readFile(path.join(here,'bridge.cjs'),'utf8')+await fs.readFile(path.join(here,'topic-source.cjs'),'utf8')+await fs.readFile(path.join(here,'live-source.cjs'),'utf8')),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
 console.log(JSON.stringify({webVersion:manifest.version,sourceContentSha256:hash(original),bytes:loader.length}));

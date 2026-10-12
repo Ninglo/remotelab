@@ -37,7 +37,7 @@
     rail.innerHTML='<div class="appNavbar-navbarMenu"></div>';
     document.body.append(rail);
     const layout=document.createElement('style');layout.id='rlfe-native-rail-style';
-    layout.textContent=`#rlfe-native-rail{position:fixed;left:0;top:0;bottom:0;width:132px;z-index:1000;background:var(--rlfe-nav,var(--bg-body,#f5f6f7));border-right:1px solid var(--rlfe-border,#dee0e3);padding:12px 4px;box-sizing:border-box;display:flex;flex-direction:column}#rlfe-native-rail .appNavbar-navbarMenu{display:flex;flex-direction:column;gap:8px;overflow-y:auto}body>div:not([id^="rlfe-"]){max-width:calc(100% - 132px);margin-left:132px}#rlfe-host{--rlfe-launch-width:116px;--rlfe-panel-left:12px;--rlfe-launch-top:auto;--rlfe-launch-bottom:16px}#rlfe-personal-workspace{z-index:2147482900!important}`;
+    layout.textContent=`#rlfe-native-rail{position:fixed;left:0;top:0;bottom:0;width:64px;z-index:1000;background:var(--rlfe-nav,var(--bg-body,#f5f6f7));border-right:1px solid var(--rlfe-border,#dee0e3);padding:12px 4px;box-sizing:border-box;display:flex;flex-direction:column}#rlfe-native-rail .appNavbar-navbarMenu{display:flex;flex-direction:column;gap:8px;overflow-y:auto}body>div:first-of-type:not([id^="rlfe-"]){max-width:calc(100% - 64px);margin-left:64px}#rlfe-host{--rlfe-launch-width:48px;--rlfe-panel-left:12px;--rlfe-launch-top:auto;--rlfe-launch-bottom:16px}#rlfe-personal-workspace{z-index:2147482900!important}`;
     document.head.append(layout);
   }
   const added=new Map();
@@ -81,7 +81,7 @@
   observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-feed-id']});
   const onSettings=e=>{globalThis.__RLFE_SHARED_PROJECT__?.(projection);if(nativeMain)globalThis.__RLFE_SHARED_PREVIEW__?.(JSON.stringify(e.detail));};
   window.addEventListener('rlfe:settings',onSettings);
-  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:9,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
+  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:10,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
   globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
   visible();
 })();

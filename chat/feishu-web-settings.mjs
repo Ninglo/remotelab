@@ -43,13 +43,14 @@ async function mutateConnections(fn) {
 }
 export async function connectFeishuWebSettings(input, actor, capability = 'settings') {
   if (!['settings', 'workspace', 'topics'].includes(capability)) fail('Unknown connection capability');
-  if (!input || Object.keys(input).some(key => !['origin', 'nativeAccount', 'confirm'].includes(key)) || input.confirm !== true) fail('请明确连接你自己的消息设置。');
+  if (!input || Object.keys(input).some(key => !['origin', 'nativeAccount', 'confirm', ...(capability === 'topics' ? ['topicDetails'] : [])].includes(key)) || input.confirm !== true) fail('请明确连接你自己的消息设置。');
   const verified = await personActor(actor), origin = feishuOrigin(input.origin), nativeAccount = account(input.nativeAccount);
   const token = `${capability === 'topics' ? 'fwtops' : capability === 'workspace' ? 'fwspace' : 'fwset'}_${randomBytes(32).toString('base64url')}`;
+  const topicDetails = capability === 'topics' && input.topicDetails === true;
   const expiresAt = Math.min(Date.now() + 30 * 86400000, actor.connectionExpiresAt || Infinity);
   await mutateConnections(data => {
     data.connections = data.connections.filter(entry => !(entry.personId === verified.personId && entry.origin === origin && entry.nativeAccount === nativeAccount && (entry.capability || 'settings') === capability));
-    data.connections.push({ ...verified, origin, nativeAccount, capability, tokenHash: hash(token), expiresAt });
+    data.connections.push({ ...verified, origin, nativeAccount, capability, topicDetails, tokenHash: hash(token), expiresAt });
     if (data.connections.filter(entry => entry.personId === verified.personId).length > 20) fail('个人消息设置连接过多，请先断开旧连接。');
   });
   return { token, expiresAt, person: { id: verified.personId, name: verified.personName }, origin, nativeAccount };
@@ -61,7 +62,7 @@ export async function authorizeFeishuWebSettings(token, origin, nativeAccount, c
   const data = await readRecord(file);
   const connection = data?.connections?.find(entry => entry.tokenHash === hash(token) && entry.origin === origin && entry.nativeAccount === nativeAccount && entry.expiresAt > Date.now());
   if (!connection || (connection.capability || 'settings') !== capability) fail('连接已失效，请重新连接。', 401);
-  return { ...await personActor(connection), authKind: 'feishu-web-settings', tokenHash: connection.tokenHash, connectionExpiresAt: connection.expiresAt };
+  return { ...await personActor(connection), authKind: 'feishu-web-settings', tokenHash: connection.tokenHash, connectionExpiresAt: connection.expiresAt, topicDetails: connection.topicDetails === true };
 }
 export async function disconnectFeishuWebSettings(actor) {
   await mutateConnections(data => { data.connections = data.connections.filter(entry => entry.tokenHash !== actor.tokenHash); });

@@ -46,7 +46,7 @@ def install_runtime(root,app,node):
  subprocess.run([node,'--check',str(root/'native-asset-runtime.js')],check=True)
  archive=app/'Contents/Frameworks/Lark Framework.framework/Versions/147.0.7727.149/Resources/webcontent/messenger.asar'
  original=archive.read_bytes();packed,report=patch_archive(original,runtime.encode());archive.write_bytes(packed)
- for name in ['native_asset_bridge.cjs','live-source.cjs']:shutil.copy2(build/name,root/name)
+ for name in ['native_asset_bridge.cjs','live-source.cjs','topic-source.cjs']:shutil.copy2(build/name,root/name)
  shutil.copy2(package/'observe_native_app.py',root/'observe_native_app.py')
  (root/'node-path').write_text(node)
  (root/'web-display-choice.json').write_text('{}')
@@ -62,11 +62,17 @@ if root.exists():
  if receipt_path.is_file():
   installed=json.loads(receipt_path.read_text());deployed=json.loads((root/'native-v8-deployment.json').read_text());incoming=json.loads((package/'v8-build/source-manifest.json').read_text())
   archive=dst/'Contents/Frameworks/Lark Framework.framework/Resources/webcontent/messenger.asar'
-  if installed.get('version')==version and deployed.get('runtimeSha256')==incoming['runtimeSha256'] and hashlib.sha256(archive.read_bytes()).hexdigest()==deployed['archiveAfterSha256']:
+  if installed.get('version')==version and deployed.get('runtimeSha256')==incoming['runtimeSha256'] and deployed.get('buildHash')==incoming.get('buildHash') and hashlib.sha256(archive.read_bytes()).hexdigest()==deployed['archiveAfterSha256']:
    subprocess.run(['/usr/bin/codesign','--verify','--deep','--strict',str(dst)],check=True)
    subprocess.run([sys.executable,str(package/'install-launcher.py')],check=True,env={**os.environ,'RLFE_INSTALL_HOME':str(home)})
    (root/'node-path').write_text(node)
    print('已经是本次试装版本，保留账号、草稿与设置。');raise SystemExit(0)
+  if installed.get('version')==version and deployed.get('revision',0)<=incoming['revision']:
+   from importlib.machinery import SourceFileLoader
+   upgrade=SourceFileLoader('native_upgrade',str(package/'upgrade-preview.py')).load_module()
+   upgrade.upgrade(root,package,home,node)
+   subprocess.run([sys.executable,str(package/'install-launcher.py')],check=True,env={**os.environ,'RLFE_INSTALL_HOME':str(home)})
+   raise SystemExit(0)
  raise SystemExit('检测到不同版本或未完成的旧安装，已保留原目录。请反馈这条提示，不需要删除原飞书。')
 assert src.is_dir() and not root.exists() and not profile.exists(), '已有试装目录，未覆盖。请先退出增强版，并按说明将旧试装目录移入废纸篓。'
 root.mkdir(parents=True,exist_ok=False);os.chmod(root,0o700)
@@ -137,9 +143,9 @@ assert check.returncode==0,check.stderr
 assert before=={str(p):sha(p) for p in key_files},'Source app changed; stop'
 result={'trialApp':str(dst),'trialProfile':str(profile),'version':manifest['appVersion'],'patchedDirectoryReferences':patched,'signedComponents':len(objects),'strictSignatureValid':True,'sourceHashesUnchanged':True,'urlHandlersRemoved':True,'cloneUpdaterDisabled':bool(seen)}
 (root/'prepare-result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
-result['revision']=9
+result['revision']=json.loads((package/'v8-build/source-manifest.json').read_text())['revision']
 result['installedAt']=time.time()
 (root/'install-receipt.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
 subprocess.run([sys.executable,str(package/'install-launcher.py')],check=True,env={**os.environ,'RLFE_INSTALL_HOME':str(home)})
 print('安装完成。“飞书增强版”已放入个人应用程序目录。')
-print('此包可试用界面与个人连接；群看板和 Session 实时数据尚需这台 Mac 的状态来源，未自动接通。')
+print('首次使用请在设置里连接状态同步，并在浏览器核对本人姓名。')

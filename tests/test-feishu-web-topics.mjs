@@ -28,13 +28,13 @@ test('snapshot reads only requested verified bot-2 group topics and omits privat
   const valid = session('a'.repeat(32), 'root'), privateChat = session('b'.repeat(32), 'private'); privateChat.conversation.target.chatType = 'p2p';
   const wrong = session('c'.repeat(32), 'wrong'); wrong.conversation.sourceRouteId = 'bot-1';
   const records = [valid, privateChat, wrong]; const reads = [];
-  const api = createFeishuTopicSource({ sessions: async () => records, session: async id => { reads.push(id); return records.find(s => s.id === id); }, bindings: async () => ({ bindings: { root: 'native', private: 'private', wrong: 'wrong' } }) });
+  const api = createFeishuTopicSource({ details:async entries=>({entries}), sessions: async () => records, session: async id => { reads.push(id); return records.find(s => s.id === id); }, bindings: async () => ({ bindings: { root: 'native', private: 'private', wrong: 'wrong' } }) });
   const data = await api.snapshot(['native', 'private', 'wrong']); assert.equal(data.entries.length, 1); assert.deepEqual(reads, [valid.id]);
   records.push(session('d'.repeat(32), 'root')); assert.equal((await api.snapshot(['native'])).entries.length, 0);
   assert.throws(() => topicIds('../etc/passwd')); assert.throws(() => topicIds(Array(201).fill('id').join(',')));
 });
 test('source pushes changed real state and releases its listener when the browser disconnects', async () => {
-  const s = session('a'.repeat(32), 'root'); const api = createFeishuTopicSource({ sessions: async () => [s], session: async () => s, bindings: async () => ({ bindings: { root: 'native' } }) });
+  const s = session('a'.repeat(32), 'root'); const api = createFeishuTopicSource({ details:async entries=>({entries}), sessions: async () => [s], session: async () => s, bindings: async () => ({ bindings: { root: 'native' } }) });
   const delivered = []; let wake; const next = () => new Promise(resolve => { wake = resolve; });
   const initial = next(); const off = await api.subscribe(['native'], data => { delivered.push(data); wake?.(); }, error => { throw error; }); await initial;
   assert.equal(delivered[0].entries[0].status, 'running');
@@ -83,7 +83,7 @@ test('group boards reuse paired-group source and exclude private, unrelated and 
   b.privateSecret = 'must not appear in projection';
   const privateChat = { ...b, id: 'c'.repeat(32), conversation: { ...b.conversation, target: { ...b.conversation.target, chatType: 'p2p' } } };
   const records = [a, b, privateChat], reads = [];
-  const api = createFeishuTopicSource({ sessions: async () => records, session: async id => { reads.push(id); return records.find(s => s.id === id); },
+  const api = createFeishuTopicSource({ details:async entries=>({entries}), sessions: async () => records, session: async id => { reads.push(id); return records.find(s => s.id === id); },
     bindings: async () => ({ bindings: { 'root-a': 'native-a', 'root-b': 'native-b' }, groups: { work: 'native-work', discussion: 'native-discussion' },
       pairs: [{ id: 'pair', name: 'Shared', workChatId: 'work', discussionChatId: 'discussion', workChatName: 'Work', discussionChatName: 'Discussion' }] }) });
   const data = await api.snapshot(['native-a'], '', null, ['native-work']);
@@ -96,4 +96,15 @@ test('group boards reuse paired-group source and exclude private, unrelated and 
   const first = next(); const off = await api.subscribe([], data => { pushed.push(data); wake?.(); }, error => { throw error; }, ['native-work']); await first;
   a.activity.run.state = 'idle'; const changed = next(); broadcastAll({ type: 'session_invalidated', sessionId: a.id }); await changed;
   assert.notEqual(pushed.at(-1).boards[0].topics.find(t => t.sessionId === a.id).state, 'running'); off();
+});
+test('topic details require explicit new confirmation; old and activated grants keep their scope', async () => {
+  const input={origin:'http://127.0.0.1:19342',nativeAccount:'1000000000000000001',confirm:true};
+  const old=await auth.connectFeishuWebSettings(input,actor,'topics');
+  assert.equal((await auth.authorizeFeishuWebSettings(old.token,input.origin,input.nativeAccount,'topics')).topicDetails,false);
+  const current=await auth.connectFeishuWebSettings({...input,topicDetails:true},actor,'topics');
+  assert.equal((await auth.authorizeFeishuWebSettings(current.token,input.origin,input.nativeAccount,'topics')).topicDetails,true);
+  let enriched=0;
+  const api=createFeishuTopicSource({sessions:async()=>[],bindings:async()=>({bindings:{}}),details:async entries=>{enriched++;return {entries,quota:{status:'ready'}};}});
+  assert.equal((await api.snapshot([], '', null, [], false)).quota,undefined);assert.equal(enriched,0);
+  assert.equal((await api.snapshot([], '', null, [], true)).quota.status,'ready');assert.equal(enriched,1);
 });
