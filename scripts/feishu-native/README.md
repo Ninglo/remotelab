@@ -14,30 +14,40 @@ clones an exact verified official build into a new isolated trial. It is not an
 installer for arbitrary Feishu versions; a different archive digest is refused.
 It does not enable DevTools or alter the machine's debugging policy.
 
+`bootstrap.sh` is the one-command entry: it verifies the exact source archive,
+fetches SHA-256-pinned Node and portable Python into a private user directory,
+and invokes `install-preview.py`. No system runtime, Homebrew, sudo or developer
+tools are required. `package-cli.py BUILD FONT_LICENSE OUTPUT PUBLIC_BASE`
+validates the two runtime archives already present in OUTPUT/runtime, builds the
+reviewed code/assets ZIP and fills the bootstrap's release pins. Publish OUTPUT
+as a static directory and verify the complete public command on a Mac before
+handing it out. Runtime origins and hashes are recorded in release.json;
+upstream licenses remain inside their runtime archives.
+
 `install-preview.py` validates the official version, archive hash, signature and
-dependencies before creating files. It creates its own profile, injects the
-reviewed runtime with `archive_patch.py`, rebuilds signatures, checks original
-source hashes, and installs the Desktop launcher. It refuses an existing trial.
-`package-preview.py BUILD FONT_LICENSE OUTPUT` packages only code/assets with a
-checksum manifest; no official App, user profile, local capability or connection
-record is distributed. Node 20+ is discovered locally and stored for future
-launches, so another machine does not need the Mini's fixed executable path.
+package checksums. It creates its own profile, injects the reviewed runtime with
+`archive_patch.py`, rebuilds signatures and checks original source hashes. An
+identical installed runtime and archive can be reopened without overwriting
+account data or preferences; different/partial installations are preserved and
+refused. A lock prevents concurrent bootstrap installations. Failure never
+changes the official App. Automatic migration of an older trial is not included.
+`package-preview.py` packages only reviewed code/assets with a checksum manifest;
+no official App, profile, local capability or connection record is distributed.
 
-The standalone package deliberately does not create the Mini's already-authorized
-read-only source on another machine. It initially displays “未同步”; group boards,
-Session state, usage and message artifacts require a separately verified source.
-Personal workspace/settings retain the real login/grant flow, pending the user's
-own acceptance. Installed/signature-verified does not mean all 8.1.17 logged-in
-components or meeting media have been verified.
+The standalone package does not create the Mini's already-authorized read-only
+source on another machine. It initially displays “未同步”; group boards, Session
+state, usage and message artifacts require a separately verified source.
+Personal workspace/settings retain the real login/grant flow. Installed and
+signature-verified does not mean all 8.1.17 logged-in components or meeting media
+have been verified.
 
-For an already prepared Mac, run `install-launcher.py` with `launch.py` and
-`activate-trial.swift` beside it. It adds **飞书增强版.app** to the user's
-Applications folder and a Desktop shortcut. Both open the same isolated trial;
-repeated clicks activate its existing window without restarting it or losing
-drafts. The original launcher is backed up locally. This needs the existing
-Python/Node tools and Swift compiler; it is not a self-contained installer for
-another Mac. The application and installed enhancement revision come from
-the local deployment record, independently of the Web component's 1.2 label.
+`install-launcher.py` adds 飞书增强版.app to the user's Applications directory,
+using the installed private Python. It no longer compiles Swift or writes a new
+Desktop shortcut. Existing shortcuts remain valid. Cold starts invoke the exact
+isolated binary once with its profile argument; reopening an already running
+exact-path process uses LaunchServices without restarting it. The original
+launcher is backed up locally. The bridge and process observer inherit the
+explicit test root for isolated verification.
 
 On the existing Mac Live setup, Session and group **data** already update live.
 Enhancement **code** remains
@@ -101,6 +111,7 @@ is not added by this adapter.
 
 Validation:
 
+- `python3 tests/test-feishu-native-launcher.py` (one cold start, preserved running App, private runtime/root)
 - `python3 tests/test-feishu-native-installer.py` (archive entry integrity and duplicate injection refusal)
 - `node --test tests/test-feishu-web-settings.mjs tests/test-feishu-web-topics.mjs tests/test-feishu-personal-workspace.mjs`
 - `node tests/test-feishu-native-live-source.mjs` (scope, account changes, live transitions, stale snapshots and recovery)
@@ -122,7 +133,7 @@ Current capability audit:
 | Four navigation entries and latest report | Original components and source quick links | Native rail remains inside the message-list renderer |
 | Personal Index/thinking and reply/model settings | Original components + personal grant broker | Real content/read/write still needs the requester's login |
 | Sorting, reading, pet and preference export/import | Original components retained | Native selector/model prerequisites still apply; no blanket daily-use claim |
-| Desktop launcher | Stable shortcut to existing trial, activates running window | Existing Mac only; no general installer or code hot update |
+| Desktop launcher | Stable shortcut to existing trial, activates running window | Private-runtime launcher; no code hot update |
 | First install on another Apple Silicon Mac | Exact official 8.1.17 build, isolated clone/profile, checksummed preview package | Group/Session data source and logged-in functional acceptance remain separate |
 | Voice, meeting media, global shortcuts, distribution upgrades | Not added by this adaptation | Separate work/real-device acceptance needed |
 

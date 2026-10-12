@@ -20,9 +20,8 @@ expected_archive='ee29206c3e424adced06ea95533e46e7f52c5e28f41a380e1d430b670c83a8
 source_archive=src/'Contents/Frameworks/Lark Framework.framework/Versions/147.0.7727.149/Resources/webcontent/messenger.asar'
 if hashlib.sha256(source_archive.read_bytes()).hexdigest()!=expected_archive:raise SystemExit('8.1.17 内部资源与已核版本不同，未修改任何文件。请反馈版本与安装来源。')
 subprocess.run(['/usr/bin/codesign','--verify','--strict','--deep',str(src)],check=True)
-if subprocess.run(['/usr/bin/xcode-select','-p'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:raise SystemExit('请先运行 xcode-select --install 安装 Apple 命令行工具。')
 node=None
-for candidate in [shutil.which('node'),'/opt/homebrew/bin/node','/usr/local/bin/node']:
+for candidate in [os.environ.get('RLFE_NODE'),shutil.which('node'),'/opt/homebrew/bin/node','/usr/local/bin/node']:
  if not candidate or not pathlib.Path(candidate).is_file():continue
  try:
   v=subprocess.check_output([candidate,'-p','process.versions.node'],text=True).strip()
@@ -58,6 +57,17 @@ dst=root/'Feishu Native Trial.app'
 profile=home/'Library/Application Support/RlfeTrial'
 old=b'LarkShell';new=b'RlfeTrial'
 assert len(old)==len(new)
+if root.exists():
+ receipt_path=root/'install-receipt.json'
+ if receipt_path.is_file():
+  installed=json.loads(receipt_path.read_text());deployed=json.loads((root/'native-v8-deployment.json').read_text());incoming=json.loads((package/'v8-build/source-manifest.json').read_text())
+  archive=dst/'Contents/Frameworks/Lark Framework.framework/Resources/webcontent/messenger.asar'
+  if installed.get('version')==version and deployed.get('runtimeSha256')==incoming['runtimeSha256'] and hashlib.sha256(archive.read_bytes()).hexdigest()==deployed['archiveAfterSha256']:
+   subprocess.run(['/usr/bin/codesign','--verify','--deep','--strict',str(dst)],check=True)
+   subprocess.run([sys.executable,str(package/'install-launcher.py')],check=True,env={**os.environ,'RLFE_INSTALL_HOME':str(home)})
+   (root/'node-path').write_text(node)
+   print('已经是本次试装版本，保留账号、草稿与设置。');raise SystemExit(0)
+ raise SystemExit('检测到不同版本或未完成的旧安装，已保留原目录。请反馈这条提示，不需要删除原飞书。')
 assert src.is_dir() and not root.exists() and not profile.exists(), '已有试装目录，未覆盖。请先退出增强版，并按说明将旧试装目录移入废纸篓。'
 root.mkdir(parents=True,exist_ok=False);os.chmod(root,0o700)
 manifest_src=src/'Contents/Frameworks/Lark Framework.framework/Resources/manifest.json'
@@ -130,6 +140,6 @@ result={'trialApp':str(dst),'trialProfile':str(profile),'version':manifest['appV
 result['revision']=9
 result['installedAt']=time.time()
 (root/'install-receipt.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
-subprocess.run(['/usr/bin/python3',str(package/'install-launcher.py')],check=True,env={**os.environ,'RLFE_INSTALL_HOME':str(home)})
-print('安装完成。请打开桌面的“飞书增强版”，在独立试验版中登录你本人的飞书账号。')
+subprocess.run([sys.executable,str(package/'install-launcher.py')],check=True,env={**os.environ,'RLFE_INSTALL_HOME':str(home)})
+print('安装完成。“飞书增强版”已放入个人应用程序目录。')
 print('此包可试用界面与个人连接；群看板和 Session 实时数据尚需这台 Mac 的状态来源，未自动接通。')

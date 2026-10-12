@@ -1,10 +1,11 @@
 """Install a stable user-facing launcher for an already prepared Mac trial.
 
-Run with launch.py and activate-trial.swift beside this file. No credentials,
+Run with launch.py beside this file. No credentials,
 profile, official application or injected runtime are changed.
 """
 import json
 import os
+import sys
 import pathlib
 import plistlib
 import shutil
@@ -18,15 +19,9 @@ info = plistlib.loads((trial / 'Contents/Info.plist').read_bytes())
 assert info['CFBundleIdentifier'] == 'dev.remotelab.feishu-native-trial'
 deployment = json.loads((root / 'native-v8-deployment.json').read_text())
 app = home / 'Applications/飞书增强版.app'
-desktop = home / 'Desktop/飞书增强版.app'
 bundle_id = 'dev.remotelab.feishu-native-launcher'
 if app.exists():
     assert plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleIdentifier'] == bundle_id
-if desktop.exists() or desktop.is_symlink():
-    assert desktop.is_symlink() and desktop.resolve() == app.resolve()
-subprocess.run(['/usr/bin/swiftc', str(source / 'activate-trial.swift'),
-                '-o', str(root / 'activate-trial.next')], check=True)
-(root / 'activate-trial.next').replace(root / 'activate-trial')
 launcher = root / 'launch_web_replica.py'
 backup = root / 'launch_web_replica.before-desktop.py'
 if launcher.exists() and not backup.exists():
@@ -36,7 +31,8 @@ shutil.copy2(source / 'launch.py', root / 'launch_web_replica.next.py')
 (app / 'Contents/MacOS').mkdir(parents=True, exist_ok=True)
 (app / 'Contents/Resources').mkdir(exist_ok=True)
 executable = app / 'Contents/MacOS/launch'
-executable.write_text('#!/bin/sh\nexec /usr/bin/python3 "$HOME/Library/Application Support/RemoteLab/Feishu Native Trial/launch_web_replica.py" >> "$HOME/Library/Application Support/RemoteLab/Feishu Native Trial/launcher.log" 2>&1\n')
+(root/'python-path').write_text(sys.executable)
+executable.write_text('#!/bin/sh\nexec "$(/bin/cat "$HOME/Library/Application Support/RemoteLab/Feishu Native Trial/python-path")" "$HOME/Library/Application Support/RemoteLab/Feishu Native Trial/launch_web_replica.py" >> "$HOME/Library/Application Support/RemoteLab/Feishu Native Trial/launcher.log" 2>&1\n')
 executable.chmod(0o755)
 metadata = {'CFBundleIdentifier': bundle_id, 'CFBundleName': '飞书增强版',
             'CFBundleDisplayName': '飞书增强版', 'CFBundleExecutable': 'launch',
@@ -53,7 +49,5 @@ if icon_name and icon.is_file():
 (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(metadata))
 subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(app)], check=True)
 subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(app)], check=True)
-if not desktop.is_symlink():
-    desktop.symlink_to(app)
-print(json.dumps({'launcher': str(app), 'desktop': str(desktop),
+print(json.dumps({'launcher': str(app),
                   'revision': deployment['revision']}, ensure_ascii=False))

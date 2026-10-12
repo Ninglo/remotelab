@@ -1,13 +1,16 @@
 """Launch only the independent test copy and its private display bridge."""
-import pathlib,json,subprocess,urllib.request,fcntl,socket
+import pathlib,json,subprocess,urllib.request,fcntl,socket,sys,os
 # Serialize double clicks without changing or stopping an existing App.
 lock=None
-r=pathlib.Path.home()/'Library/Application Support/RemoteLab/Feishu Native Trial'
+trial_home=pathlib.Path(os.environ.get('RLFE_INSTALL_HOME',str(pathlib.Path.home())))
+r=trial_home/'Library/Application Support/RemoteLab/Feishu Native Trial'
 app=r/'Feishu Native Trial.app';binary=app/'Contents/MacOS/Feishu'
 lock=(r/'launcher.lock').open('a')
 fcntl.flock(lock,fcntl.LOCK_EX)
 def focus(pid):
- subprocess.run([str(r/'activate-trial'),str(pid)],check=True)
+ # Only activate an already running exact-path App. A cold start uses one
+ # direct launch; a second LaunchServices launch during startup drops flags.
+ subprocess.run(['/usr/bin/open','-a',str(app)],check=True)
 deployment=json.loads((r/'native-v8-deployment.json').read_text())
 revision=deployment['revision']
 rows=subprocess.check_output(['/bin/ps','-axo','pid=,comm='],text=True).splitlines()
@@ -28,11 +31,10 @@ with socket.socket() as probe:
  try:probe.bind(('127.0.0.1',19342))
  except OSError:raise SystemExit('19342 端口被其他程序占用；未启动第二份服务。')
 with (r/'native-asset-bridge.log').open('ab') as log:
- bridge=subprocess.Popen([(r/'node-path').read_text().strip() if (r/'node-path').exists() else '/usr/local/bin/node',str(r/'native_asset_bridge.cjs')],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+ bridge=subprocess.Popen([(r/'node-path').read_text().strip() if (r/'node-path').exists() else '/usr/local/bin/node',str(r/'native_asset_bridge.cjs')],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True,env={**os.environ,'RLFE_TRIAL_ROOT':str(r)})
 with (r/'startup.log').open('ab') as log:
- proc=subprocess.Popen([str(binary),'--user-data-dir='+str(pathlib.Path.home()/'Library/Application Support/RlfeTrial')],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
-(r/'started.json').write_text(json.dumps({'pid':proc.pid,'app':str(app),'profile':str(pathlib.Path.home()/'Library/Application Support/RlfeTrial'),'revision':revision,'bridgePid':bridge.pid}))
+ proc=subprocess.Popen([str(binary),'--user-data-dir='+str(trial_home/'Library/Application Support/RlfeTrial')],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+(r/'started.json').write_text(json.dumps({'pid':proc.pid,'app':str(app),'profile':str(trial_home/'Library/Application Support/RlfeTrial'),'revision':revision,'bridgePid':bridge.pid}))
 with (r/'native-app-observer.log').open('ab') as log:
- subprocess.Popen(['/usr/bin/python3',str(r/'observe_native_app.py'),str(proc.pid),str(bridge.pid)],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
-focus(proc.pid)
+ subprocess.Popen([sys.executable,str(r/'observe_native_app.py'),str(proc.pid),str(bridge.pid)],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
 print('已启动飞书增强版，第 '+str(revision)+' 版。')
