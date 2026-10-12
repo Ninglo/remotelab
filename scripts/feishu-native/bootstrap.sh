@@ -116,13 +116,13 @@ download() {
     pids+=("$!")
     count=$((count + 1))
     if [ "${#pids[@]}" = 4 ]; then
-      for pid in "${pids[@]}"; do if wait "$pid"; then :; else failed=1; fi; done
+      for pid in ${pids[@]+"${pids[@]}"}; do if wait "$pid"; then :; else failed=1; fi; done
       pids=()
       if [ "$failed" = 1 ]; then return 1; fi
       printf '已校验 %s/%s 片段\n' "$count" "$total"
     fi
   done <<< "$manifest"
-  for pid in "${pids[@]}"; do if wait "$pid"; then :; else failed=1; fi; done
+  for pid in ${pids[@]+"${pids[@]}"}; do if wait "$pid"; then :; else failed=1; fi; done
   if [ "$failed" = 1 ]; then return 1; fi
   # Keep completed parts until the reconstructed full file also passes its pin.
   local assembled="$destination.next"

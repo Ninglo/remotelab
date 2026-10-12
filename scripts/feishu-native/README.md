@@ -24,7 +24,7 @@ as a static directory and verify the complete public command on a Mac before
 handing it out. Runtime origins and hashes are recorded in release.json;
 upstream licenses remain inside their runtime archives. The release includes 1 MiB
 content-addressed chunks with hashes pinned in the bootstrap. Four bounded
-downloads run at a time; verified chunks survive errors and subsequent runs. The
+downloads run at a time using macOS system Bash 3.2-compatible array handling; verified chunks survive errors and subsequent runs. The
 public mirror is primary; upstream byte ranges are fallback only. Corrupt chunks,
 520 responses and truncated transfers cannot be installed. The entry command
 retries HTTP/network failures, downloads the complete script before execution,
