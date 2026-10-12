@@ -16,17 +16,35 @@ activation on one instance never automatically activates another.
 > original live card, restart recovery and result delivery after deployment.
 > Never backfill historical cards or send unsolicited test cards to groups.
 
-Supply instance config directory, base URL, verified main source checkout,
-active Bot config paths, any old pilot state/service, and any source-freeze
-marker in one handoff. The agent resolves actual local IDs and credentials;
-shared source contains none. The rollout script is
-`scripts/configure-instance-workboards.mjs`; `--help` lists inputs, the default
-prints a read-only plan, and `--apply` performs the already-authorized rollout.
-It validates the selected Bots belong to the supplied instance, stops old
-writers before copying receipts, installs enabled user services and saves
-private backups. The caller verifies lingering, worker readiness and delivery;
-`is-active` alone is not delivery acceptance. Preserve an existing migration
-freeze marker with `--source-freeze-path` when applicable.
+Card synchronization is owned by each Feishu connector process. It shares the
+connector's provider client and credentials, with its own serial queue and
+RemoteLab invalidation subscription. It has no independent systemd/launchd
+service, PID, signal handler or operator restart procedure. Ordinary messages
+and final replies continue if card publication fails.
+
+For an existing installation, stop the selected connector and retire its legacy
+card services before loading this version. Preserve the route receipt file at
+`workboards/feishu-<route>.json`; the embedded component adopts it in place.
+The old standalone script is a fail-closed retirement notice and never sends.
+Never run an older standalone writer alongside the connector.
+
+`scripts/configure-instance-workboards.mjs` still plans activation and migrates
+Person-scoped receipts, but no longer installs or starts services. Its default
+is read-only; `--apply` requires the selected connectors stopped. Use explicit
+`--retire-service` names with `--service-scope user|system` for legacy units,
+then restart only the selected connectors through their existing manager.
+Preserve backups and verify receipt identity, not just process health. Existing
+activation and opt-outs are unchanged by connector startup; the activation
+script deliberately enables the instance default only when applied.
+
+Component status is included in Bot discovery as `components.cards`, in the
+connector's `workboard-health.json`, and in Feishu `/status`. It distinguishes
+startup, controller reconnect, partial failure, quota pause and stopped state.
+Health from a different PID is not evidence about the current connector. Monthly
+quota rejection pauses card calls without stopping the connector; after quota
+restoration, restarting the connector resumes from durable receipts. No idle
+provider polling is used to check quota. Failed Session writes remain isolated;
+uncertain creates stay fenced rather than being resent.
 
 ## Activation and scope
 
@@ -49,7 +67,7 @@ unchanged: `personId`, `identityIds`, exact `feishuPrivateChats` (`sourceRouteId
 follow their actual sender, not the Session's creator or last owner. Removing
 an opt-in stops future card decisions; existing cards and evidence remain.
 To return to the pilot scope, set `defaultEnabled: false` and retain the
-original entries. Keep the route workers running for existing task updates;
+original entries. Keep the connectors running for existing task updates;
 do not restore an old receipt file over newer acknowledgements.
 
 The executing Harness decides whether actual work needs a card. A single
@@ -152,7 +170,7 @@ decides whether the work satisfies the user's goal.
 The canonical snapshot and receipt contract is in
 [External Message Protocol](../../docs/external-message-protocol.md#8-reading-normalized-events).
 
-One worker per Bot route mirrors all enabled private/group task Sessions of
+One embedded component per Bot route mirrors all enabled private/group task Sessions of
 that instance, with the same web projection and one original card per task.
 Each new Feishu inbound turn durably records its admission Person/identity and
 sender/route. The publisher validates it against the Session destination rather
@@ -193,11 +211,11 @@ An acknowledged content hash lets a renderer upgrade refresh an existing card
 once even when its event sequence has not changed. Older snapshots remain
 fenced; this patches the known message and never creates a historical test card.
 
-For a durable Linux worker, verify service enablement, user lingering when using
-a user service, restart-on-failure, `RuntimeMaxSec=infinity`, no stop hook that
-disables opt-in, and no `expiresAt` in private state. Preserve these settings
-when changing the source checkout. Other instances and explicitly opted-out people remain outside the selected
-instance's activation scope.
+Connector shutdown stops subscriptions and retry timers, then waits for in-flight
+publication and state persistence before releasing its PID lock. Controller
+restarts use the existing bounded reconnect path without starting another
+process. Keep the connector enabled in the normal instance service lifecycle.
+Inactive instances and explicitly opted-out people remain outside activation.
 
 ## Regression and evidence boundary
 
@@ -216,8 +234,8 @@ inside the normal `npm test` / required CI check. Existing scenarios cover:
   text-to-JSON task IDs, historical projection, and stale progress responses;
 - HTTP and CLI snapshots, concurrent updates and exact retries;
 - card patch failure, uncertain creation, restart replay and migration fences;
-- a real worker process with delayed controller startup and WebSocket reconnect,
-  retaining its PID/state without contacting the Feishu provider;
+- the embedded component with delayed controller startup and WebSocket reconnect,
+  retaining its host PID/state without contacting the Feishu provider;
 - native final delivery after Run end, ready assets, restart/terminal dedupe,
   task-bound multi-part receipts and reused provider IDs.
 
@@ -235,7 +253,7 @@ receipts before claiming live delivery.
 
 An instance can restore the 2026-10-07 group-message contract (main
 `a103380f`) with `REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE=2026-10-07` on its
-core, Feishu connectors and card workers. Group turns publish their useful
+core and Feishu connectors. Group turns publish their useful
 opening and explicit progress messages again; the original card offers
 session-scoped messages/card/default controls. Unlisted group progress can
 create a lightweight card and a later checklist upgrades the same message.
@@ -243,7 +261,7 @@ Questions and terminal results retain their separate delivery identities.
 Private chats, Web display and instances without this setting keep the
 current contract below. Existing Run/card disclosure records are retained.
 Before enabling it, fence active group Requests at the current history head
-while the core writer is stopped. Workers persist `groupProgressRestoredAt`
+while the core writer is stopped. Card components persist `groupProgressRestoredAt`
 before processing history, preserving original card IDs and acknowledgements
 without creating cards for old suppressed progress. Keep all coupled services
 on the same verified commit. Remove the setting to return to the current

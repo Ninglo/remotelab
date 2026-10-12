@@ -20,7 +20,7 @@ await writeFile(join(root, 'auth.json'), JSON.stringify({ version: 2, serviceTok
 await writeFile(join(root, 'bot.json'), JSON.stringify({ appId: 'fixture-app', appSecret: 'fixture-secret', chatBaseUrl: `http://127.0.0.1:${server.address().port}` }));
 const statePath = join(root, 'state.json');
 await writeFile(statePath, JSON.stringify({ scope: 'instance', sourceRouteId: 'default', botConfigPath: join(root, 'bot.json'), sessions: {}, protocolVersion: 2 }));
-const child = spawn(process.execPath, ['scripts/feishu-workboard-pilot.mjs', statePath], {
+const child = spawn(process.execPath, ['tests/fixtures/workboard-host.mjs', statePath], {
   env: { ...process.env, REMOTELAB_CONFIG_DIR: root }, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let output = '';
