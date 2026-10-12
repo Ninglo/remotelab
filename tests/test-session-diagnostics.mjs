@@ -46,6 +46,14 @@ try {
  await processSessionDiagnostics(uncertain);
  await processSessionDiagnostics({...uncertain,now:now+6*60000,deliver:async()=>{throw Error('must not resend');}});
  assert.equal(Object.values((await readRecord(uncertain.stateFile)).incidents)[0].delivery.status,'uncertain');
+ let growthSends=0;
+ const growth={...args,stateFile:join(root,'growth.json'),deliver:async item=>{growthSends++;return {messageId:'om_growth',chatId:'oc_dm',recipientKey:item.delivery.recipientKey};}};
+ await processSessionDiagnostics(growth);
+ const growthRows=[row('s'),row('other')];
+ for(const r of growthRows)for(const m of r.diagnosisMeasurements)for(const x of m.recent){x.at+=31*60000;x.runId+='-new';}
+ await processSessionDiagnostics({...growth,now:now+31*60000,readSessions:async()=>({sessions:growthRows,coverage:{}})});
+ assert.equal(growthSends,2,'a changed affected-session count edits the existing card');
+ assert.equal(Object.keys((await readRecord(growth.stateFile)).incidents).length,1);
  const invalid={...args,stateFile:join(root,'invalid.json'),config:{enabled:true,notification:{...notification,chatId:'oc_group'}}};
  await processSessionDiagnostics(invalid);assert.equal(sent,2,'group destination never sends');
  let entered; const gate=new Promise(resolve=>{entered=resolve;});let release;const held=new Promise(resolve=>{release=resolve;});

@@ -102,7 +102,7 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     await writeDurableJson(stateFile,state);
     for(const item of Object.values(state.incidents)) {
       if(!validDiagnosisRecipient(config.notification) || sent >= 1) break;
-      const version=diagnosisKey([item.status,item.summary,item.nextStep]);
+      const version=diagnosisKey(sessionDiagnosisCard(item,config.notification));
       if(item.delivery?.version === version || ['sending','uncertain'].includes(item.delivery?.status)) continue;
       // Save intent before I/O. Uncertain sends/edits require readback, never a second card.
       item.delivery={...item.delivery,status:'sending',recipientKey:item.delivery?.recipientKey || recipientKey(config.notification)};
