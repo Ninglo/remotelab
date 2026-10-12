@@ -51,7 +51,7 @@ try {
   await nav.getByText('thinking', { exact: true }).click(); await host.getByText('分析已完成', { exact: true }).waitFor();
   mode = 'running'; await host.getByText('开始分析', { exact: true }).click(); await page.waitForFunction(() => { const r = document.getElementById('rlfe-personal-workspace').shadowRoot; return !r.getElementById('analyze').disabled && r.getElementById('analysisState').textContent === '分析已完成'; }); assert.equal(postCount, 1); assert(requests.find(r => r.method === 'POST').body.requestId.length >= 16);
   await page.screenshot({ path: join(artifacts, 'desktop.png') });
-  for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); await host.locator('#title').waitFor();
+  for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); await page.waitForFunction(expected => Math.round(document.getElementById('rlfe-personal-workspace').getBoundingClientRect().width) === expected, width);
     const geometry = await host.evaluate(h => ({ width: h.getBoundingClientRect().width, scroll: h.shadowRoot.getElementById('content').scrollWidth, content: h.shadowRoot.getElementById('content').clientWidth }));
     assert.equal(Math.round(geometry.width), width); assert(geometry.scroll <= geometry.content + 1, JSON.stringify(geometry)); await page.screenshot({ path: join(artifacts, 'mobile-' + width + '.png') }); }
   await page.setViewportSize({ width: 1440, height: 1000 });
