@@ -765,7 +765,9 @@
             "static/chat/monitoring-sessions.js",
             "chat/session-manager.mjs",
             "templates/chat.html",
-            "static/monitoring-live/index.html"
+            "static/monitoring-live/index.html",
+            "lib/monitoring-policy.mjs",
+            "scripts/monitoring-diagnose.mjs"
           ],
           "commands": [
             "usage-summary"

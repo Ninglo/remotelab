@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { monitoringDisposition } from '../lib/monitoring-policy.mjs';
 import { recoveryHumanAction } from '../lib/monitoring-actions.mjs';
 import { buildFeishuPostContent } from '../connectors/feishu/index.mjs';
 
@@ -42,6 +43,8 @@ export function monitoringNextStep(item, config) {
     summary: item.continuity?.status === 'switch_disabled' ? '需要你决定是否开启自动切号，请在账号设置中选择。'
       : '需要你选择：登录另一个已获授权账号，或等待额度重置。',
   };
+  const disposition = monitoringDisposition(item);
+  if (!recovery && disposition) return { ...disposition, url: config.overviewUrl };
   return { ...ordinary, summary: recovery?.status === 'blocked'
     ? '处理受阻，尚未形成需要你执行的具体动作。' : '我这边继续核查，暂不需要你操作。' };
 }

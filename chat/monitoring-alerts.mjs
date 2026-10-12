@@ -65,8 +65,9 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
-    const count = previous?.active ? previous.observations + 1 : 1;
-    const eligible = item.severity === 'critical' || ['disk', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
+    // A local optimization signal must not pre-confirm a new outage.
+    const count = previous?.active && previous.event?.severity === item.severity ? previous.observations + 1 : 1;
+    const eligible = item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
@@ -81,7 +82,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     const version = hash(JSON.stringify({ stage, severity: item.severity, repair: repair ? {
       status: repair.status, summary: ['running', 'pending', 'admitting', 'waiting'].includes(repair.status) ? null : repair.summary,
       plan: repair.plan, humanAction: repair.humanAction, runId: repair.runId,
-    } : null, action: item.action || null, continuity: item.continuity ? {
+    } : null, signals: item.signals || null, notificationAvailable: item.notificationAvailable ?? null, action: item.action || null, continuity: item.continuity ? {
       status: item.continuity.status, backupCount: item.continuity.backupCount, autoSwitch: item.continuity.autoSwitch,
       currentId: item.continuity.current?.id, lastSwitch: item.continuity.lastSwitch,
     } : null }));
@@ -106,6 +107,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
           && (!config.feishuAppId || p.appId === config.feishuAppId)) )) incident.status = 'pending';
     if (critical && incident.status === 'pending') due.push({ key, ...item, cycle: incident.cycle });
   }
+  for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key)) incident.observations = 0;
   for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key) && recovered.has(key)) {
     if (incident.active && incident.status === 'sent' && incident.messageId && incident.event) {
       incident.event = { ...incident.event, recovered: true, observedAt: snapshot.generatedAt || new Date(now).toISOString() };

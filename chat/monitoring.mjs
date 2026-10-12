@@ -10,6 +10,7 @@ import { readRecord } from '../lib/durable-records.mjs';
 import { RECOVERY_FILE, projectRecovery } from './monitoring-recovery.mjs';
 import { readFeishuApiHealth, feishuApiAttention } from '../lib/feishu-api-health.mjs';
 import { isStoppedAutomation, currentAutomationStatus, isCurrentRecovery } from '../lib/monitoring-status.mjs';
+import { monitoringPolicies } from '../lib/monitoring-policy.mjs';
 import { accountContinuity, continuityAttention } from '../lib/monitoring-actions.mjs';
 
 const exec = promisify(execFile);
@@ -217,7 +218,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
-      handling: { recoveryEnabled: config.recovery?.enabled === true,
+      handling: { policies: monitoringPolicies, diagnosticScript: 'scripts/monitoring-diagnose.mjs', recoveryEnabled: config.recovery?.enabled === true,
         coordinatorSessionId: text(config.recovery?.coordinatorSessionId),
         automationRecoveryEnabled: config.recovery?.enabled === true && (!config.recovery.automationIds || config.recovery.automationIds.length > 0) },
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,
