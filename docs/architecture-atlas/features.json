@@ -258,11 +258,13 @@
         {
           "id": "workboard",
           "name": "任务卡、进度和验收依据",
-          "purpose": "对较复杂的工作显示目标、交付项、验收条件和证据。",
+          "purpose": "需要分别跟踪和验收多项成果时，显示目标、交付项、验收条件和证据。",
           "entry": "已启用的会话任务卡；由 Agent 提交和更新。",
-          "condition": "需要相应部署和会话启用条件。卡片更新或执行结束不证明业务结果通过验收。",
+          "condition": "开启功能只表示允许按需使用，默认直接执行并给最终答复。用户明确要求清单，或至少两项独立成果值得分别跟踪和验收时才建卡；复杂、耗时、使用工具都不是单独的触发理由。一份文档及其核对、一项功能及其测试上线仍算一项交付，补充和修订不另建卡。关闭者不新建清单，已有任务续接原卡。卡片更新或执行结束不证明业务结果通过验收。",
           "example": "这项工作列出可验收的交付项，每项完成后附上依据。",
           "sources": [
+            "lib/workboard-context.mjs",
+            "chat/message-reply-settings.mjs",
             "lib/workboard-command.mjs",
             "lib/workboard-state.mjs",
             "docs/assistant-message-visibility.md"
