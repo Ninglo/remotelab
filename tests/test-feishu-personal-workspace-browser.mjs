@@ -37,7 +37,7 @@ try {
     const scope = location.origin + ':' + userId; localStorage.setItem('feishuWebExplore.workspaceConnection.v1:' + encodeURIComponent(scope), JSON.stringify({ token: 'fwspace_' + 'a'.repeat(43), expiresAt: Date.now() + 60000, person: { id: 'person_alice', name: 'Alice' } })); });
   await page.addScriptTag({ content: source });
   const nav = page.locator('#rlfe-personal-nav'), host = page.locator('#rlfe-personal-workspace');
-  assert.deepEqual(await nav.locator('button').allTextContents(), ['Index', 'thinking']);
+  assert.deepEqual(await nav.locator('button').allTextContents(), ['Index测试中', 'thinking测试中']);
   assert.equal(await page.locator('#rlfe-resource-nav-host').textContent(), '具身前沿 · 每日日报');
   await nav.getByText('Index', { exact: true }).click(); await host.getByText('Index 的持续对话。', { exact: true }).waitFor();
   const first = await page.evaluate(() => __RLFE_WORKSPACE__.status().sessionId);
