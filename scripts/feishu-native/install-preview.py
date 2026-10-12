@@ -62,12 +62,12 @@ if root.exists():
  if receipt_path.is_file():
   installed=json.loads(receipt_path.read_text());deployed=json.loads((root/'native-v8-deployment.json').read_text());incoming=json.loads((package/'v8-build/source-manifest.json').read_text())
   archive=dst/'Contents/Frameworks/Lark Framework.framework/Resources/webcontent/messenger.asar'
-  if installed.get('version')==version and deployed.get('runtimeSha256')==incoming['runtimeSha256'] and hashlib.sha256(archive.read_bytes()).hexdigest()==deployed['archiveAfterSha256']:
+  if installed.get('version')==version and deployed.get('runtimeSha256')==incoming['runtimeSha256'] and deployed.get('buildHash')==incoming.get('buildHash') and hashlib.sha256(archive.read_bytes()).hexdigest()==deployed['archiveAfterSha256']:
    subprocess.run(['/usr/bin/codesign','--verify','--deep','--strict',str(dst)],check=True)
    subprocess.run([sys.executable,str(package/'install-launcher.py')],check=True,env={**os.environ,'RLFE_INSTALL_HOME':str(home)})
    (root/'node-path').write_text(node)
    print('已经是本次试装版本，保留账号、草稿与设置。');raise SystemExit(0)
-  if installed.get('version')==version and deployed.get('revision',0)<incoming['revision']:
+  if installed.get('version')==version and deployed.get('revision',0)<=incoming['revision']:
    from importlib.machinery import SourceFileLoader
    upgrade=SourceFileLoader('native_upgrade',str(package/'upgrade-preview.py')).load_module()
    upgrade.upgrade(root,package,home,node)

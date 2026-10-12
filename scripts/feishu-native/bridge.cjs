@@ -23,7 +23,7 @@ function nativeProjection(account){
  const pages=[...states.values()].filter(s=>s.account===account),ids=pages.flatMap(s=>s.ids||[]);
  const legacy=legacyAccount()===account;
  if(!legacy)personalSource.update(account,own(account).storage[topicKey(account)],ids,pages.map(s=>s.nativeContext?.webChatId).filter(Boolean));
- return {...(legacy?source.projection(account,ids):personalSource.projection(account)),nativeContext:pages.find(s=>s.kind==='chat')?.nativeContext||null};
+ return {...(legacy?source.projection(account,ids):personalSource.projection(account)),transport:legacy?'existing-mac-live':'personal-grant',nativeContext:pages.find(s=>s.kind==='chat')?.nativeContext||null};
 }
 function publishTopics(){for(const account of new Set([...streams.values()].map(s=>s.account)))emit(account,'topics',nativeProjection(account));}
 function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:10,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
