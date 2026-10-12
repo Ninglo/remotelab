@@ -100,7 +100,7 @@ export async function readAutomationHomeView(id) {
   });
   const byId = new Map(occurrences.map(item => [item.id, item]));
   for (const run of Object.values(home.runs)) if (!byId.has(run.triggerId)) byId.set(run.triggerId, run.trigger);
-  const executions = await Promise.all([...byId.values()].map(projectExecution));
+  const executions = await Promise.all([...byId.values()].map(trigger => projectExecution(trigger)));
   executions.sort((a,b) => String(b.scheduledAt).localeCompare(String(a.scheduledAt)));
   return { ...home, task, executions: executions.map(run => ({ ...run, definitionRevision: home.runs[run.id]?.revision || null })),
     activeExecutions: executions.filter(run => ['running','starting','queued'].includes(run.state)),
