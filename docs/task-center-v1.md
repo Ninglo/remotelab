@@ -431,3 +431,5 @@ of their source discussion, with actual Session associations recorded per run
 sharing a Session. Flow controls follow the flow description language, avoiding
 mixed-language buttons within a Chinese task card. Runtime configuration and
 evaluation collection membership are unchanged.
+
+自动任务页在任务数据旁提供默认折叠的“何时提醒、怎么处理”：展开可看失败提醒条件、补救边界、原执行会话及结果出口。说明复用监管快照，不增加执行器；页面刷新保留展开选择。磁盘、账号、API、服务和用量说明分别放在各自数据旁，不再在基础资源顶部排列说明卡片。

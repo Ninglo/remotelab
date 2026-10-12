@@ -341,17 +341,16 @@ The Overview shows three compact panels in order: Session, shared resources, and
 Each presents totals and observation/exception status first. Session totals are
 followed by up to three named exceptions with every affected metric, recent value
 and baseline, plus three group/initiator summaries. Without exceptions, up to
-three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources start with a persistent **预警与自动补救** guide, followed by disk capacity,
-account quotas, and period Token usage. The guide explains warning conditions,
-remediation boundaries and execution destinations even when there is no incident.
-Its enabled state and fixed resource-recovery Session link come from the current
-instance configuration. A configured Session does not prove a repair has run.
-Disk and service recovery reuse that Session; failed automations reuse their own
-execution Session. Account switching runs directly in the background switcher,
-with the latest switch shown beside local backup readiness. It does not create
-an AI Session for each switch. The guide is a view of the existing automation,
-not a second timer or controller. Its collapsed recovery history retains actual
-states, concrete confirmation plans and links to the handling Sessions.
+three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources start directly with disk capacity, account quotas and period Token usage.
+Each metric has a closed-by-default “何时提醒、怎么处理” disclosure beside its data.
+The text states when a notification is sent, what the system does, when human help
+is needed, and where results are reported. API guidance sits with the API summary;
+service guidance sits with the service table; automation guidance and delivery
+locations sit with the automation list. Collection guidance sits with check scope.
+There is no separate policy card grid or global destination table. Open/closed
+choices survive data refreshes. Each disclosure retains that kind's recovery
+records, concrete plans and links. Threshold copy follows the active notification
+policy, and a configured execution Session does not claim that a repair has run.
 Disk and account tables stay visible;
 account reset details and Token breakdowns open on demand. There is no additional
 resource overview counter, service/task table, notification
@@ -542,7 +541,7 @@ Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#
 `alertDelivery.enabled:false` 仍同时禁止发送和修改卡片。配置风险门槛并不授权恢复推送。
 
 
-“预警与自动补救”中的“预警、补救与回报在哪里”可展开查看统一告警接收群、磁盘／服务固定会话、各自动化实际执行会话及结果出口。账号切换显示后台执行器，API诊断显示固定脚本，不虚构独立群或会话。自动化回报按照实际任务发送配置及执行会话绑定展示；仅有飞书会话绑定、但任务配置为仅RemoteLab时，不声称会发送到群。群名只读取已保存的来源记录；缺名称或未取得会话时明确显示未核实，不为页面刷新额外调用飞书，也不改变任何路由。
+各项监管数据旁的“何时提醒、怎么处理”可展开查看统一告警接收群、磁盘／服务固定会话、各自动化实际执行会话及结果出口。账号切换显示后台执行器，API诊断显示固定脚本，不虚构独立群或会话。自动化回报按照实际任务发送配置及执行会话绑定展示；仅有飞书会话绑定、但任务配置为仅RemoteLab时，不声称会发送到群。群名只读取已保存的来源记录；缺名称或未取得会话时明确显示未核实，不为页面刷新额外调用飞书，也不改变任何路由。
 
 
 公共运行问题的执行会话不需要绑定群：磁盘、服务、账号和API的补救摘要沿 `alertDelivery.chatId` 更新原预警卡。页面分别展示执行入口、补救摘要位置及业务任务结果位置；缺少 Session 绑定不等于缺少回报。业务自动化的原群／话题不变，也不因此额外发第二条消息。

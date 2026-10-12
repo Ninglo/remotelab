@@ -1319,6 +1319,7 @@
     refresh: refreshTasks,
     onTabShown() {
       if (globalScope.RemoteLabMonitoring?.isOverview()) return globalScope.RemoteLabMonitoring.onTabShown();
+      void globalScope.RemoteLabMonitoring?.loadHandling?.();
       renderSessionOptions();
       if (!loaded) return refreshTasks();
       renderTasks();

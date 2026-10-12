@@ -828,3 +828,9 @@ details.task-lifecycle-section > summary { cursor: pointer; }
   .task-flow-plan h3 { font-size: 22px; }
   .task-flow-plan-node { padding: 16px; }
 }
+
+/* Keep operating guidance next to its metric, without a separate card grid. */
+.monitoring-handling { margin: 8px 0 12px; font-size: 12px; line-height: 1.6; }
+.monitoring-handling > summary { margin-top: 0; cursor: pointer; color: var(--text-secondary); }
+.monitoring-handling > p { margin: 8px 0; font-size: 12px; line-height: 1.6; }
+.monitoring-handling a { color: var(--accent); }

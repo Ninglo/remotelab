@@ -44,77 +44,79 @@
     }); body.appendChild(tr); });
     table.appendChild(body); wrap.appendChild(table); root.appendChild(wrap);
   }
-  function handlingGuide(parent) {
-    const root = section("预警与自动补救", parent); root.dataset.section = "handling";
-    const policy = value.handling;
-    root.appendChild(node("p", !policy ? "处置配置尚未取得，执行状态未知。" : policy.recoveryEnabled
-      ? "自动补救已启用。低风险、已有授权且可验证的动作自行执行；中高风险先给出具体方案，等待人在处理会话确认。"
-      : "自动补救未启用；以下为预警与补救规则，不代表已经执行。", "monitoring-note"));
-    if (policy?.noisePolicy?.mode === "risk_only") root.appendChild(node("p",
-      "通知策略：达到较高风险门槛才推送；触发后展示补救动作和核验结果，持续更新同一张卡。", "monitoring-note"));
-    const destinations = policy?.destinations;
-    if (destinations) {
-      const places = node("details"); places.dataset.section = "handling-destinations";
-      places.appendChild(node("summary", "预警、补救与回报在哪里"));
-      const entry = place => {
-        if (!place?.sessionId) return "尚无处理会话";
-        const a = node("a", place.sessionName || "打开处理会话"); a.href = `/?session=${encodeURIComponent(place.sessionId)}`; return a;
-      };
-      const taskReport = task => {
-        const result = node("div", `原任务结果：${task.delivery.label}`);
-        result.appendChild(node("small", `达到通知门槛的补救摘要：${task.summary.label}`, "monitoring-owner"));
-        return result;
-      };
-      table(places, ["对象", "执行位置", "补救摘要与结果"], [
-        ["统一预警", "现有观察器", `${destinations.alert.configured ? destinations.alert.label : "未配置接收群"}${destinations.alert.enabled ? "" : "（推送暂停）"}`],
-        ["磁盘、服务", entry(destinations.resources), destinations.resources.summary.label],
-        ["账号切换", destinations.account.executor, destinations.account.summary.label],
-        ["API诊断", destinations.api.executor, destinations.api.summary.label],
-        ...(destinations.automations || []).map(task => [task.title, entry(task), taskReport(task)]),
-      ]);
-      places.appendChild(node("p", "补救摘要随预警发在同一张卡，后续更新原卡；仅列当前未停用任务。业务结果保留原群、话题或仅网页设置，不因处理会话未绑群而另发消息。群名来自已保存的来源记录。", "monitoring-note"));
-      root.appendChild(places);
+  const handlingOpen = new Map();
+  function handlingDetails(key, title) {
+    const details = node("details", "", "monitoring-handling"); details.dataset.handling = key;
+    details.open = handlingOpen.get(key) === true;
+    details.appendChild(node("summary", title));
+    details.addEventListener("toggle", () => { if (details.isConnected) handlingOpen.set(key, details.open); });
+    return details;
+  }
+  function handlingGuide(parent, kind) {
+    const root = handlingDetails(kind, "何时提醒、怎么处理"); parent.appendChild(root);
+    const policy = value?.handling, destinations = policy?.destinations;
+    if (!policy) { root.appendChild(node("p", "处理规则尚未读取，暂时无法确认。")); return; }
+    const strict = policy.noisePolicy?.mode === "risk_only";
+    const rules = {
+      disk: ["容量或文件数量占用达到92%，连续两次巡检确认后提醒；可用空间不足20 GiB，或占用达到97%，立即提醒。",
+        "先检查可安全清理的缓存和重复副本，处理后复测空间。",
+        "需要删除唯一数据、迁移或扩容时，先列出对象、影响和恢复办法，等你确认。"],
+      service: ["服务连续五次巡检失败才提醒；启动中、计划停用不算故障。",
+        "先查退出原因和依赖，在固定处理会话中修复。",
+        "重启可能打断任务时先请你确认；缺权限时明确说明需要什么。"],
+      api: ["5分钟内至少10次失败、失败比例达到50%，连续三次巡检确认后提醒。新出现额度拒绝且消息发送未恢复时也会提醒；只有调用量高或响应慢不推送。",
+        "读取已有调用日志，找出失败接口和调用来源；目前提供诊断，不自动停业务或购买额度。",
+        "需要管理员核对额度时说明所需信息；扩容、停业务或换应用先请你确认。"],
+      accountContinuity: ["剩余不高于10%，且无可用备用、未开启切换或切换仍未完成，连续三次巡检确认后提醒。正常用完、暂时读不到额度不报耗尽。",
+        "剩余20%时准备备用；开启自动切换后，在10%预留线切换后续请求，在途任务继续运行。",
+        "没有备用时，需要你登录已获授权的账号或选择等待重置。"],
+      automation: ["重要任务连续三次巡检确认失败后提醒；暂停、条件未满足和已经完成不算故障。",
+        "回到原执行会话，先查产物和送达回执，只补失败步骤。",
+        "需要批准或补充资料时，会写清具体动作；点击查看不等于批准。"],
+      coverage: ["数据过期或读取失败会在页面标明，不当作正常，也不单独反复推送。",
+        "检查采集时间和送达回执；发送结果不确定时先核对原消息。",
+        "确需登录或授权时，会明确说明需要你完成哪一步。"],
+      usage: ["用量高、任务运行时间长，本身不会触发预警。",
+        "结合任务进度、产物和错误排查，不自动中断任务或更换模型。",
+        "需要调整预算或停止业务时，先向你说明影响和可选方案。"],
+    };
+    const inherited = policy.policies?.find(p => p.kind === kind);
+    const rows = rules[kind];
+    const warning = strict ? rows[0] : inherited?.warning || "容量或文件数量占用达到85%标为预警、92%标为严重；系统盘可用不足15／8 GiB同样标记。通知按当前实例配置确认。";
+    for (const [label, text] of [["什么时候提醒", warning], ["系统怎么处理", rows[1]], ["什么时候需要你", rows[2]]]) {
+      const p = node("p"); p.append(node("strong", `${label}：`), document.createTextNode(text)); root.appendChild(p);
     }
-    const resourceEntry = node("div");
-    if (policy?.coordinatorSessionId) {
-      const link = node("a", "打开固定补救会话"); link.href = `/?session=${encodeURIComponent(policy.coordinatorSessionId)}`;
-      resourceEntry.append(link, node("small", "磁盘、服务补救沿用此会话，保留每次执行与确认记录。", "monitoring-owner"));
-    } else resourceEntry.textContent = "尚未配置固定补救会话";
-    const automationEntry = node("div"), link = node("a", "查看自动化执行记录");
-    link.href = "/?tab=tasks&monitor=automations"; automationEntry.append(link,
-      node("small", policy?.automationRecoveryEnabled ? "已配置任务范围；失败补救回到该任务的执行会话。" : "自动化失败补救未启用。", "monitoring-owner"));
-    const guides = [
-      ["磁盘", "容量或 inode 达到85%预警、92%严重；系统盘可用不足15 GiB／8 GiB同样触发。受阻后继续恶化会升级。",
-        "先核对已有清理和安全候选；只处理符合现行流程的可重建缓存、已核验重复副本，并复测。删除唯一数据、迁移或扩容先给方案待确认。", resourceEntry],
-      ...(policy?.policies || []).map(entry => [entry.title, entry.warning, entry.remedy,
-        entry.kind === "automation" ? automationEntry : entry.intervention]),
-    ];
-    const cards = node("div", "", "monitoring-account-grid");
-    for (const [title, warning, remedy, destination] of guides) {
-      const card = node("article", "", "monitoring-account"); card.appendChild(node("h4", title));
-      for (const [label, description] of [[policy?.noisePolicy?.mode === "risk_only" ? "风险识别（推送另按较高门槛）" : "预警说明", warning], ["补救说明", remedy], ["执行与记录", destination]]) {
-        const paragraph = node("div"); paragraph.appendChild(node("strong", label));
-        paragraph.appendChild(description?.nodeType ? description : node("p", description)); card.appendChild(paragraph);
-      }
-      cards.appendChild(card);
+    if (["disk", "service", "automation"].includes(kind)) root.appendChild(node("p",
+      (kind === "automation" ? policy.automationRecoveryEnabled : policy.recoveryEnabled)
+        ? "自动补救已开启；有明确处理方案或资料请求时，会直接提醒你。"
+        : "自动补救未开启；以上是处理规则，当前不会自动执行。", "monitoring-note"));
+    const place = ["disk", "service"].includes(kind) ? destinations?.resources
+      : kind === "api" ? destinations?.api : kind === "accountContinuity" ? destinations?.account : null;
+    if (place?.summary) root.appendChild(node("p", `处理结果：${place.summary.label}。补救过程和结果更新同一张卡。`, "monitoring-note"));
+    if (place?.sessionId) {
+      const link = node("a", "打开处理会话"); link.href = `/?session=${encodeURIComponent(place.sessionId)}`; root.appendChild(link);
     }
-    root.appendChild(cards);
-    root.appendChild(node("p", "待确认方案会列出具体对象、步骤、影响、恢复方式和验收办法。下方记录来自实际补救状态；任务结束不等于风险已经解除。", "monitoring-note"));
-    const repairs = (value.recovery || []).slice().sort((a, b) => Number(Boolean(b.currentIssue)) - Number(Boolean(a.currentIssue))
+    if (kind === "coverage") root.appendChild(node("p", destinations?.alert?.enabled
+      ? `告警接收：${destinations.alert.label}。`
+      : "当前告警推送暂停；后台检查与已开启的补救继续运行。", "monitoring-note"));
+    if (kind === "automation" && destinations?.automations?.length) table(root, ["任务", "处理会话", "结果发到哪里"], destinations.automations.map(task => {
+      const entry = task.sessionId ? node("a", "打开原会话") : node("span", "尚无执行会话");
+      if (task.sessionId) entry.href = `/?session=${encodeURIComponent(task.sessionId)}`;
+      const report = node("div", task.delivery.label);
+      report.appendChild(node("small", `补救摘要：${task.summary?.label || "位置待核实"}`, "monitoring-owner"));
+      return [task.title, entry, report];
+    }));
+    const repairs = (value.recovery || []).filter(r => r.kind === kind).sort((a, b) => Number(Boolean(b.currentIssue)) - Number(Boolean(a.currentIssue))
       || (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
-    const history = node("details"); history.appendChild(node("summary", `补救记录（${repairs.length}）`));
-    if (!repairs.length) history.appendChild(node("p", "尚无已记录的补救。", "monitoring-note"));
     for (const repair of repairs) {
-      const detail = node("details"); detail.appendChild(node("summary", `${repair.subject} · ${repair.label}`));
-      detail.appendChild(node("p", `最近更新：${time(repair.updatedAt)} · ${repair.reason || repair.label}`, "monitoring-note"));
+      const detail = handlingDetails(`record:${kind}:${repair.key || repair.id}`, `${repair.subject} · ${repair.label}`);
+      detail.appendChild(node("p", `${time(repair.updatedAt)} · ${repair.reason || repair.summary || repair.label}`, "monitoring-note"));
       if (repair.error && repair.status === "blocked") detail.appendChild(node("p", `执行错误：${repair.error}`, "monitoring-note"));
-      if (repair.summary) detail.appendChild(node("p", `已记录检查：${repair.summary}`, "monitoring-note"));
-      if (repair.plan) table(detail, ["处置方案", "内容"], [["执行条件", repair.plan.requiresConfirmation ? "等待人确认" : "低风险自行处理"],
+      if (repair.plan) table(detail, ["处置方案", "内容"], [["执行条件", repair.plan.requiresConfirmation ? "等待你确认" : "低风险自行处理"],
         ["步骤", repair.plan.summary], ["对象", repair.plan.target], ["影响", repair.plan.impact], ["恢复方式", repair.plan.rollback], ["验收", repair.plan.verification]]);
-      if (repair.sessionId) { const entry = node("a", "查看这次补救的处理会话"); entry.href = `/?session=${encodeURIComponent(repair.sessionId)}`; detail.appendChild(entry); }
-      history.appendChild(detail);
+      if (repair.sessionId) { const link = node("a", "查看这次处理记录"); link.href = `/?session=${encodeURIComponent(repair.sessionId)}`; detail.appendChild(link); }
+      root.appendChild(detail);
     }
-    root.appendChild(history);
   }
   function alertDetail(item) {
     if (item.detail) return item.detail;
@@ -240,6 +242,7 @@
     const wasOpen = root.querySelector("details")?.open || false;
     root.replaceChildren(node("h2", "检查范围与开销"));
     if (!value) { root.appendChild(node("p", "检查配置尚未取得，不能确认后台巡检是否运行。", "monitoring-note")); return; }
+    handlingGuide(root, "coverage");
     const observation = value.observation || {};
     const cadence = observation.cadenceSeconds === 60 ? "每分钟" : "频率待核实";
     const live = observation.configured && observation.status === "healthy";
@@ -269,6 +272,7 @@
     if (value.services?.length) {
       const scope = node("details"); scope.appendChild(node("summary", "查看纳入巡检的服务"));
       table(scope, ["服务", "当前状态"], value.services.map(service => [service.label, status(service.status)]));
+      handlingGuide(scope, "service");
       details.appendChild(scope);
     }
     details.appendChild(node("p", "Token 总量累计所选期间内有记录的模型输入与输出，包含前台和后台；输入可能重复使用历史上下文，不等于新增注入量。后台 Token 也不全是监管消耗。", "monitoring-note"));
@@ -280,6 +284,10 @@
   function render() {
     renderScope();
     renderSessionTrends();
+    automations.querySelector('[data-handling="automation"]')?.remove();
+    if (value) {
+      const guide = node("div"); handlingGuide(guide, "automation"); automations.prepend(guide.firstChild);
+    }
     content.replaceChildren();
     if (apiSummary) {
       apiSummary.replaceChildren(node("h2", "API")); apiDetails?.replaceChildren();
@@ -291,6 +299,7 @@
         summaryMetrics(apiSummary, [["24 小时调用", health ? number(calls) : "—", "本实例已记录的飞书 API"],
           ["24 小时失败率", calls ? percent(failed / calls * 100) : "—", health ? `${number(failed)} 次失败` : "尚未取得"],
           ["近 5 分钟调用", health ? number(providers.reduce((sum,p) => sum+p.calls5m,0)) : "—", "不发起额外探测"]]);
+        handlingGuide(apiSummary, "api");
         const unknown = !health || !health.coverage?.complete || !providers.length || providers.some(p => p.status === "unknown");
         summaryStatus(apiSummary, alerts.length ? `${alerts.length} 项 API 异常 · 查看原因` : unknown ? "API 观测不足 · 查看范围" : "已记录 API 未发现异常",
           alerts.some(a => a.severity === "critical") ? "critical" : alerts.length ? "warning" : "neutral", apiDetails);
@@ -306,8 +315,8 @@
     if (!value) { content.appendChild(node("p", t(loading ? "loading" : "failed"), "monitoring-note")); return; }
     const snapshot = node("div", "", "monitoring-snapshot"); snapshot.id = "monitoringSnapshot"; content.appendChild(snapshot);
     snapshot.appendChild(node("h2", t("snapshotTitle"), "monitoring-snapshot-heading"));
-    handlingGuide(snapshot);
     const disks = section("磁盘容量", snapshot); disks.dataset.section = "disks";
+    handlingGuide(disks, "disk");
     if (!value.disks.length) disks.appendChild(node("p", "尚未取得磁盘数据，状态未知。", "monitoring-note"));
     else table(disks, ["磁盘", "状态", "已用", "可用空间", "inode 已用"], value.disks.map(disk => {
       const badge = node("span", status(disk.status), "monitoring-account-status");
@@ -335,6 +344,7 @@
       disks.appendChild(details);
     }
     const accounts = section("账户额度", snapshot); accounts.dataset.section = "accounts";
+    handlingGuide(accounts, "accountContinuity");
     const continuity = value.accountContinuity;
     if (continuity) accounts.appendChild(node("p", `本实例自动切换${continuity.autoSwitch ? "已开启" : "未开启"}；已登录且额度高于10%的备用 ${continuity.backupCount} 个。20%进入备用准备区，10%切换后续请求；在途任务保留原账号。其他机器账号不算本实例备用。`, "monitoring-note"));
     if (continuity?.lastSwitch) {
@@ -395,6 +405,7 @@
         : `${value.apiHealth.tenantQuotaLimit ? `已确认月度上限 ${number(value.apiHealth.tenantQuotaLimit)} 次；` : ""}企业真实剩余额度未知，需管理员后台读数；本地调用数不代表计费用量。`, "monitoring-note"));
     }
     const usage = section("Token 消耗", snapshot); usage.dataset.section = "tokens";
+    handlingGuide(usage, "usage");
     if (!value.usage) usage.appendChild(node("p", t("noUsage"), "monitoring-note"));
     else {
       const totals = value.usage.totals;
@@ -474,7 +485,7 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && view === "overview" && document.body.dataset.appView === "tasks") void load({ silent: true });
   });
-  globalScope.RemoteLabMonitoring = { isOverview: () => view !== "automations", onTabShown: () => view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
+  globalScope.RemoteLabMonitoring = { loadHandling: () => load({ silent: Boolean(value) }), isOverview: () => view !== "automations", onTabShown: () => view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
   select(view, { sync: false });
   if (view === "overview" && document.body.dataset.appView === "tasks") void load();
 })(window);
