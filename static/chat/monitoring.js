@@ -60,14 +60,19 @@
         if (!place?.sessionId) return "尚无处理会话";
         const a = node("a", place.sessionName || "打开处理会话"); a.href = `/?session=${encodeURIComponent(place.sessionId)}`; return a;
       };
-      table(places, ["对象", "执行位置", "回报位置"], [
+      const taskReport = task => {
+        const result = node("div", `原任务结果：${task.delivery.label}`);
+        result.appendChild(node("small", `达到通知门槛的补救摘要：${task.summary.label}`, "monitoring-owner"));
+        return result;
+      };
+      table(places, ["对象", "执行位置", "补救摘要与结果"], [
         ["统一预警", "现有观察器", `${destinations.alert.configured ? destinations.alert.label : "未配置接收群"}${destinations.alert.enabled ? "" : "（推送暂停）"}`],
-        ["磁盘、服务", entry(destinations.resources), destinations.resources.result.label],
-        ["账号切换", "本实例后台切换器", "监控器中的账号状态与切换记录"],
-        ["API诊断", "本实例固定检查脚本", "监控器；尚无独立补救会话"],
-        ...(destinations.automations || []).map(task => [task.title, entry(task), task.delivery.label]),
+        ["磁盘、服务", entry(destinations.resources), destinations.resources.summary.label],
+        ["账号切换", destinations.account.executor, destinations.account.summary.label],
+        ["API诊断", destinations.api.executor, destinations.api.summary.label],
+        ...(destinations.automations || []).map(task => [task.title, entry(task), taskReport(task)]),
       ]);
-      places.appendChild(node("p", "仅列当前未停用任务；群名来自已保存的来源记录。执行会话和通知接收群可能不同，此处不改变回报出口。", "monitoring-note"));
+      places.appendChild(node("p", "补救摘要随预警发在同一张卡，后续更新原卡；仅列当前未停用任务。业务结果保留原群、话题或仅网页设置，不因处理会话未绑群而另发消息。群名来自已保存的来源记录。", "monitoring-note"));
       root.appendChild(places);
     }
     const resourceEntry = node("div");
@@ -87,7 +92,7 @@
     const cards = node("div", "", "monitoring-account-grid");
     for (const [title, warning, remedy, destination] of guides) {
       const card = node("article", "", "monitoring-account"); card.appendChild(node("h4", title));
-      for (const [label, description] of [["预警说明", warning], ["补救说明", remedy], ["执行与记录", destination]]) {
+      for (const [label, description] of [[policy?.noisePolicy?.mode === "risk_only" ? "风险识别（推送另按较高门槛）" : "预警说明", warning], ["补救说明", remedy], ["执行与记录", destination]]) {
         const paragraph = node("div"); paragraph.appendChild(node("strong", label));
         paragraph.appendChild(description?.nodeType ? description : node("p", description)); card.appendChild(paragraph);
       }

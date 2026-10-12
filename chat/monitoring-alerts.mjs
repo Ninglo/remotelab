@@ -63,7 +63,8 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     }
   }
   for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'automation', 'api'].includes(item.kind)
-    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
+    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))
+    && !(item.kind === 'automation' && (config.ignoreAutomationIds || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     // A local optimization signal must not pre-confirm a new outage.
