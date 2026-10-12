@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-12 — Ordinary replies continue past unanswered choice cards
+
+- Feedback: a person replied in ordinary conversation instead of clicking a choice card, yet the Session kept showing waiting. The requested behavior covers Web and Feishu.
+- Change: after native acceptance of a human continuation, retire the questions captured before dispatch without selecting options. Preserve the user message and original question; update the original card, disable its controls, and let the Harness decide whether clarification remains necessary. Rejected inputs, concurrent answers and questions raised during dispatch retain their own state. Internal references do not dismiss questions.
+- Verification: isolated HTTP tests cover both surfaces and Codex blocking/async input, ordinary replies, empty tool answers, rejected input, stale controls and replay deduplication. Broker and native-host tests cover concurrent selection, later questions, Claude queue acknowledgement and no invented answer turn. Card tests cover Web disabled controls and Feishu in-place updates. Existing detached hosts retain their loaded code; controller deployment is not an upgrade of an already running host.
+
 ### 2026-10-12 — Completed answers held behind an old async question
 
 - Feedback: ordinary follow-ups reached Codex and produced completed final answers, but earlier unanswered question cards retained their native hosts. The controller still saw running executions and withheld Feishu finals. The live audit found this pattern on both standard instances.

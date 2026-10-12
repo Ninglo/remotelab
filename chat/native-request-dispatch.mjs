@@ -81,6 +81,9 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         record = await store.mutate(record.key, current => ({ ...current,
           nativeDispatchRunId: head.runId, liveReplyPublicationVersion: 1, nativeInput: { id: record.requestId, text,
             ...(record.options?.workReference ? { referenceOnly: true } : {}),
+            ...(!record.options?.nativeQuestionId && !record.options?.workReference
+              && !record.options?.routingSource && record.options?.recordUserMessage !== false
+              ? { supersedeQuestions: true } : {}),
             ...(record.options?.nativeQuestionId ? { questionId: record.options.nativeQuestionId, answerText: nativeQuestionReplyText(record) } : {}),
           }, nativeContext: context,
           nativeContextDelivery: prepared.contextDelivery || null,

@@ -32,7 +32,8 @@ function renderNativeQuestionMessage(container, evt) {
   const controls = [], selections = [], optionRows = [];
   const hint = document.createElement("div");
   hint.className = "native-question-hint";
-  hint.textContent = options.length ? (question.multiSelect ? "可多选，选好后提交" : "点选即提交") : "填写后提交";
+  hint.textContent = (options.length ? (question.multiSelect ? "可多选，选好后提交" : "点选即提交") : "填写后提交")
+    + "，也可直接发消息继续沟通";
   if (pending) heading.appendChild(hint);
   const answerBody = document.createElement("div");
   answerBody.className = "native-question-answer-body";

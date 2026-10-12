@@ -74,7 +74,7 @@ try {
 
 // An ordinary follow-up can supply the missing detail without answering the
 // old card. A completed final must then retire that card and stop the host.
-for (const finalImmediately of [false, true]) {
+for (const [finalImmediately, supersedeQuestions] of [[false, false], [true, false], [false, true]]) {
   const root = await fs.mkdtemp(join(tmpdir(), 'native-question-final-'));
   const peer = join(root, 'peer.cjs');
   await fs.writeFile(peer, `#!/usr/bin/env node
@@ -110,7 +110,7 @@ lines.on('close',()=>process.exit(0));
   try {
     if (!finalImmediately) {
       await asked.promise;
-      const receipt = await submitNativeInput(root,{id:'ordinary-follow-up',text:'Here are the details; finish.'});
+      const receipt = await submitNativeInput(root,{id:'ordinary-follow-up',text:'Here are the details; finish.', ...(supersedeQuestions ? { supersedeQuestions: true } : {})});
       assert.equal(receipt.accepted,true);
     }
     const result = await Promise.race([hosted,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error('Completed final remained held by old question')),2000);})]);
@@ -120,16 +120,62 @@ lines.on('close',()=>process.exit(0));
     const journalFiles = await fs.readdir(join(root,'native-questions'));
     assert.equal(journalFiles.length,1);
     const journal = JSON.parse(await fs.readFile(join(root,'native-questions',journalFiles[0]),'utf8'));
-    assert.equal(journal.state,'cancelled','old question is retired');
+    assert.equal(journal.state,supersedeQuestions?'superseded':'cancelled','old question is retired');
     assert.deepEqual(journal.answers,{},'cancellation cannot invent an answer');
     if (events.some(event=>event.type==='remotelab.user_question'&&event.state==='pending')) {
       const question=JSON.parse(await fs.readFile(join(root,'native-question.json'),'utf8'));
-      assert.equal(question.state,'cancelled','a visible question must also retire its current pointer');
-      assert.ok(events.some(event=>event.type==='remotelab.user_question'&&event.state==='cancelled'));
+      assert.equal(question.state,supersedeQuestions?'superseded':'cancelled','a visible question must also retire its current pointer');
+      assert.ok(events.some(event=>event.type==='remotelab.user_question'&&event.state===(supersedeQuestions?'superseded':'cancelled')));
     }
     assert.equal(events.filter(event=>event.type==='turn.started').length,finalImmediately?1:2,'retiring the card cannot start another model turn');
     assert.ok(events.some(event=>event.type==='item.completed'&&event.item?.phase==='final_answer'));
     console.log('native host settlement: completed final retires an obsolete async question');
+  } finally {
+    clearTimeout(deadline);child?.kill('SIGKILL');await hosted;await fs.rm(root,{recursive:true,force:true});
+  }
+}
+
+// Claude's queue receipt releases the blocking tool before the next user turn
+// is consumed. No default answer or extra user input is manufactured.
+{
+  const root = await fs.mkdtemp(join(tmpdir(), 'claude-question-continuation-'));
+  const peer = join(root, 'peer.cjs');
+  await fs.writeFile(peer, `#!/usr/bin/env node
+const lines = require('node:readline').createInterface({input:process.stdin});
+const emit = value => console.log(JSON.stringify(value));
+const users = [];
+lines.on('line', line => {
+  const message = JSON.parse(line);
+  if (message.type === 'user') {
+    users.push(message.uuid);
+    emit({type:'command_lifecycle',command_uuid:message.uuid,state:'queued'});
+    if (users.length === 1) emit({type:'control_request',request_id:'question',request:{subtype:'can_use_tool',tool_name:'AskUserQuestion',
+      input:{questions:[{question:'Approve?',options:[{label:'Yes'},{label:'No'}]}]}}});
+  }
+  if (message.type === 'control_response') {
+    const answers = message.response.response.updatedInput.answers;
+    if (Object.keys(answers).length) process.exit(9);
+    emit({type:'result',subtype:'success',user_message_uuids:users,result:'continued',queued_turn_count:0});
+  }
+});
+lines.on('close',()=>process.exit(0));
+`, {mode:0o755});
+  const asked = deferred();
+  const events = [];
+  let child, deadline;
+  const hosted = runNativeHost({directory:root,command:peer,runtimeFamily:'claude-stream-json',options:{},prompt:'initial',cwd:root,
+    env:{PATH:process.env.PATH},onProcess:async value=>{child=value;},
+    onStdout:async line=>{const event=JSON.parse(line);events.push(event);if(event.type==='remotelab.user_question'&&event.state==='pending')asked.resolve();},
+    onStderr:async()=>{},
+  });
+  try {
+    await asked.promise;
+    assert.equal((await submitNativeInput(root,{id:'human',text:'I have a different requirement',supersedeQuestions:true})).accepted,true);
+    const result = await Promise.race([hosted,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error('Claude question held its accepted continuation')),2000);})]);
+    assert.equal(result.code,0);
+    assert.ok(events.some(event=>event.type==='remotelab.user_question'&&event.state==='superseded'));
+    assert.equal(events.some(event=>event.type==='remotelab.user_question'&&event.state==='answered'),false);
+    console.log('native host continuation: Claude releases its question without inventing consent');
   } finally {
     clearTimeout(deadline);child?.kill('SIGKILL');await hosted;await fs.rm(root,{recursive:true,force:true});
   }

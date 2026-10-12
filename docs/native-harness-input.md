@@ -38,9 +38,11 @@ Codex and Claude questions appear once in the existing Web conversation and
 bound chat. Web users click an option, select several checkboxes, or type a
 custom answer in the original question. Feishu uses one interactive card with
 option buttons and a custom-answer form; multi-select questions use a dropdown.
-Replying `1`, `2`, or `3` still selects an in-range option. Other text, including
-an out-of-range number, is a custom answer. Claude multi-select also accepts
-comma-separated numbers such as `1,2`. Several questions appear in order.
+Replying `1`, `2`, or `3` still selects an in-range option. Custom answers are
+submitted in the card form. Other ordinary text, including an out-of-range
+number, continues the conversation without selecting an option. Claude
+multi-select also accepts comma-separated numbers such as `1,2`. Several
+questions appear in order.
 
 Web controls submit with `nativeQuestionAnswerSource: "control"`; Feishu callback
 Request IDs identify the same control path. The answer stays in raw history as
@@ -53,10 +55,23 @@ every state. Completion adds a stronger tint and a check mark instead of changin
 to an unrelated success color. System appearance follows the OS light/dark mode.
 
 Ordinary questions have no automatic timeout. The original question and its
-controls remain pending until the person answers or stops the run. Opening or
-refreshing the conversation does not start a five-minute countdown, hide the
+controls remain pending until the person answers, sends a continuation, or stops
+the run. Opening or refreshing the conversation does not start a five-minute countdown, hide the
 options or choose on the person's behalf. The detached host stays available
 while waiting; the final result settles after the answer and resulting work.
+
+When an ordinary human message is accepted by the native Harness, the host
+retires the questions captured before dispatch as `superseded`. Web and Feishu
+update the original card and disable its controls; waiting clears unless another
+question or runtime wait remains. The original question stays in history and the
+new message reaches the Harness unchanged, so the Harness decides whether it
+answers the question, changes the task, or still requires clarification. No option
+or authorization is inferred. Blocking tools return the answers already supplied
+and leave unanswered fields empty; async questions inject no additional answer
+turn. Rejected inputs preserve the pending question. A concurrent answer, a new
+question, an internal reference or a duplicate receipt cannot retire a different
+question. Already running detached hosts keep their loaded implementation until
+their run finishes; restarting the controller does not upgrade those hosts.
 
 The broker still supports an explicitly configured finite timeout, with the
 fallback disclosed before waiting. Such a deadline updates the original

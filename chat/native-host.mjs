@@ -211,7 +211,9 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
         try {
           const answer = await questions.answer({ id: input.id, text: input.answerText || input.text, questionId: input.questionId });
           if (answer) return answer;
+          const previousQuestions = input.supersedeQuestions && !input.referenceOnly ? await questions.snapshot() : [];
           const receipt = await driver.submit(input);
+          if (receipt?.accepted === true && previousQuestions.length) await questions.supersede(previousQuestions, input.id);
           // A definite rejection must not erase an already settled turn. A
           // successful input needs another completion unless its driver emitted
           // that completion before resolving the reception promise.
