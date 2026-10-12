@@ -230,6 +230,13 @@ async function main() {
     const independentSession = await request(port, 'GET', `/api/sessions/${completedIndependent.lastExecution.sessionId}`);
     assert.equal(independentSession.status, 200, independentSession.text);
     assert.equal(independentSession.json.session.initiatedByIdentityId, 'identity_web_second');
+    const collected = await request(port, 'PATCH', `/api/sessions/${completedIndependent.lastExecution.sessionId}`, {sessionCollection:'automations'});
+    assert.equal(collected.status, 200, collected.text);
+    assert.equal((await request(port, 'GET', `/api/sessions/${completedIndependent.lastExecution.sessionId}`)).json.session.sessionCollection, 'automations');
+    assert.equal((await request(port, 'PATCH', `/api/sessions/${templateSession.id}`, {sessionCollection:'automations'})).status, 400,
+      'human discussion cannot be moved into execution collection');
+    assert.equal((await request(port, 'PATCH', `/api/sessions/${completedIndependent.lastExecution.sessionId}`, {sessionCollection:'invalid'})).status, 400);
+
 
     const controllable = await request(port, 'POST', '/api/automation-tasks', {
       kind: 'one_time',

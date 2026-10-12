@@ -887,6 +887,7 @@ export async function ensureExecutionSession(trigger) {
       description: template.description || `Execution for ${trigger.title || trigger.id}`,
       systemPrompt: template.systemPrompt,
       internalRole: template.internalRole,
+      sessionCollection: template.sessionCollection,
       model: trigger.executionRuntime.model || undefined,
       effort: trigger.executionRuntime.effort || undefined,
       thinking: trigger.executionRuntime.thinking,

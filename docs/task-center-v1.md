@@ -12,6 +12,31 @@ The optional instance file `CONFIG_DIR/automation-flows.json` holds version 1 an
 
 Updating this presentation does not apply a proposed time change, merge tasks, reopen a consumer, change Session/context policy or send notifications. Planned changes must be marked in notes, separate from the current schedule. The explanation is not evidence that a run read, wrote or delivered anything; actual records remain in the existing execution history.
 
+## Automation Session collection
+
+The Session selector has an **Automations / 自动化** collection alongside People and
+Feishu group chats. Participation is explicit: a schedule or trigger template
+sets `sessionCollection: "automations"`. New `scheduled_execution` Sessions
+inherit that marker. Unselected internal Sessions remain hidden as before;
+ordinary People lists exclude collected runs. Archived runs retain their marker.
+Opening a collected Session, including a direct URL restored before the sidebar
+loads, selects the collection automatically.
+
+The automation API projection exposes the template's `sessionCollection`.
+Opted-in task cards and flow rows link to the newest retained execution Session,
+not the source discussion. Before the first execution, the card explains that no
+execution is available. Execution history retains all its existing links.
+
+For an authorized migration, snapshot the selected schedules and existing
+execution Sessions. Patch only selected `sessionTemplate.sessionCollection`, and
+use `PATCH /api/sessions/:id` with `sessionCollection: "automations"` for eligible
+historical executions. The API rejects human/group-feed Sessions. Check trigger
+associations too: never move a discussion or a Session shared with excluded work.
+Empty `sessionCollection` removes the marker. Pending occurrences retain their
+captured templates and must be reviewed separately. Collection membership does
+not change execution reuse, cadence, ownership, delivery or authorization. There
+is no implicit migration of all tasks, and no automatic cross-topic edit routing.
+
 ## Task browsing and failure diagnosis
 
 The default automation list shows **current tasks**, with compact summaries of cadence, next trigger, last execution and failures in the last seven days. Task enablement and execution health are separate: an enabled schedule can have a failed run, while a successful latest run does not erase earlier failures. Attention and recent failures sort first; the failure filter includes both. A historical admission without a retained Run is unverified, not an active job.

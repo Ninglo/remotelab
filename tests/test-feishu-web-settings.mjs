@@ -96,3 +96,15 @@ test('runtime limits changes to bound Feishu sessions, validates catalog, reject
   await assert.rejects(api.saveFeishuWebRuntime({ ...input, expectedRevision: stale.revision, model: 'gpt-6.1-sol' }, racing), /已更新/);
   assert.equal((await getSession(session.id)).model, 'gpt-6-astra', 'late writes cannot overwrite a newer selection');
 });
+
+test('native loopback grants stay bound to the exact helper origin, account and capability', async () => {
+  const nativeOrigin='http://127.0.0.1:19342';
+  assert.equal(api.feishuOrigin(nativeOrigin),nativeOrigin);
+  for(const bad of ['null','http://localhost:19342','http://127.0.0.1:19343','http://127.0.0.1:19342/','http://127.0.0.1:19342@evil.test','http://192.168.1.1:19342']) assert.throws(()=>api.feishuOrigin(bad));
+  const grant=await api.connectFeishuWebSettings({origin:nativeOrigin,nativeAccount,confirm:true},actor('alice'));
+  assert.equal((await api.authorizeFeishuWebSettings(grant.token,nativeOrigin,nativeAccount)).personId,'person_alice');
+  await assert.rejects(api.authorizeFeishuWebSettings(grant.token,origin,nativeAccount));
+  await assert.rejects(api.authorizeFeishuWebSettings(grant.token,nativeOrigin,'1000000000000000002'));
+  await assert.rejects(api.authorizeFeishuWebSettings(grant.token,nativeOrigin,nativeAccount,'workspace'));
+  await assert.rejects(api.connectFeishuWebSettings({origin:nativeOrigin,nativeAccount,confirm:false},actor('alice')));
+});

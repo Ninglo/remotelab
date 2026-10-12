@@ -189,6 +189,7 @@ async function projectOneTimeTask(trigger) {
     lifetime: { mode: 'bounded', maxExecutions: 1 },
     gate: { mode: 'direct' },
     target: projectTarget(trigger),
+    sessionCollection: trigger.sessionTemplate?.sessionCollection || '',
     runtime: scheduledRuntimeIntent(trigger),
     resultDelivery,
     notification: resultDelivery,
@@ -237,6 +238,7 @@ async function projectRecurringTask(schedule, occurrences) {
   const createdByIdentityId = await projectCreatedByIdentityId(schedule);
   return {
     id: schedule.id,
+    sessionCollection: schedule.sessionTemplate?.sessionCollection || '',
     purpose: schedule.purpose || null,
     kind: 'recurring',
     title: schedule.title || 'Recurring task',

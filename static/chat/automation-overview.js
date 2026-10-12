@@ -73,5 +73,14 @@
     if (original === "improvement") return "memory";
     return original;
   }
-  scope.RemoteLabAutomationOverview = { category, purpose, purposes, displayPurpose, displayPurposes, businessStatus, days };
+  function latestExecutionSession(task) {
+    const members = task.members || [task];
+    if (!members.some(item => item.sessionCollection === "automations")) return null;
+    return members.filter(item => item.sessionCollection === "automations").flatMap(item => [item.lastExecution, item.summary?.latestExecution, ...(item.recentExecutions || [])])
+      .filter(item => item?.sessionId)
+      .sort((a, b) => (Date.parse(b.scheduledAt || b.attemptedAt || "") || 0)
+        - (Date.parse(a.scheduledAt || a.attemptedAt || "") || 0))[0] || null;
+  }
+
+  scope.RemoteLabAutomationOverview = { category, purpose, purposes, displayPurpose, displayPurposes, businessStatus, days, latestExecutionSession };
 })(typeof window === "undefined" ? globalThis : window);

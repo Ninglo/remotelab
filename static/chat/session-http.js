@@ -947,7 +947,7 @@ function upsertSession(session) {
   }
   // Run output changes neither ownership nor source-filter counts. Avoid
   // rebuilding every filter option for every background invalidation.
-  if (!previous || ["archived", "internalRole", "groupFeed", "initiatedByIdentityId"]
+  if (!previous || ["archived", "internalRole", "sessionCollection", "groupFeed", "initiatedByIdentityId"]
     .some((key) => previous[key] !== normalized[key])
     || getEffectiveSessionSourceId(previous) !== getEffectiveSessionSourceId(normalized)) {
     refreshSessionCatalog();
@@ -1191,6 +1191,12 @@ async function organizeSessionList({ closeSidebar = false } = {}) {
 }
 
 function applyAttachedSessionState(id, session) {
+  // Direct URL restoration can hydrate state before attachSession receives the
+  // full Session record. Select the collection on that path as well.
+  if (session?.sessionCollection === "automations"
+    && typeof setPersonScope === "function" && getCurrentPersonFilter() !== "__automations__") {
+    setPersonScope("__automations__");
+  }
   const attachedSessionRenderState = getAttachedSessionRenderState();
   const nextSignature = getComparableAttachedSessionStateSignature(session || null);
   const shouldRefreshUi = attachedSessionRenderState.sessionId !== id
