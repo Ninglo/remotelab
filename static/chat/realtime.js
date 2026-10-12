@@ -497,6 +497,7 @@ function handleWsMessage(msg) {
       break;
 
     case "automation_tasks_updated":
+      window.refreshAutomationHome?.();
       if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") === "tasks") {
         window.RemoteLabTaskCenter?.refresh?.({ force: true }).catch(() => {});
       }

@@ -238,6 +238,47 @@ async function main() {
     assert.equal((await request(port, 'PATCH', `/api/sessions/${completedIndependent.lastExecution.sessionId}`, {sessionCollection:'invalid'})).status, 400);
 
 
+    // A home is a true source fork and never starts a model or changes delivery.
+    const homeCreate = await request(port, 'POST', '/api/automation-tasks', {
+      kind: 'recurring', title: 'Stable home fixture', prompt: 'Only inspect fixture data.',
+      schedule: { type: 'interval', everySeconds: 86400 }, lifetime: { mode: 'continuous' },
+      target: { mode: 'new_session', sessionId: templateSession.id }, automationHome: true,
+      notification: { mode: 'remotelab' },
+    });
+    assert.equal(homeCreate.status, 201, homeCreate.text);
+    assert.equal(homeCreate.json.homeError, undefined, homeCreate.text);
+    const homeTaskId = homeCreate.json.task.id;
+    const homePath = `/api/automation-tasks/${homeTaskId}/home`;
+    const home = (await request(port, 'GET', homePath)).json.home;
+    assert.ok(home.sessionId);
+    assert.equal(home.sourceSessionId, templateSession.id);
+    assert.equal(home.author.name, 'Primary');
+    const homeSession = (await request(port, 'GET', `/api/sessions/${home.sessionId}`)).json.session;
+    assert.equal(homeSession.forkedFromSessionId, templateSession.id);
+    assert.equal(homeSession.internalRole, 'automation_home');
+    assert.equal(homeSession.automationTaskId, homeTaskId);
+    assert.equal(homeSession.sessionCollection, 'automations');
+    assert.equal(homeSession.sourceContext || null, null);
+    assert.equal(home.executions.length, 0, 'creating a home must not trigger business work');
+    assert.equal((await request(port, 'POST', homePath, {})).json.home.sessionId, home.sessionId, 'repeat is idempotent');
+    assert.equal((await request(port, 'POST', `/api/automation-tasks/${fixedCreate.json.task.id}/home`, {})).status, 409, 'unselected tasks remain untouched');
+    assert.equal((await request(port, 'GET', homePath, null, '')).status, 401);
+    await request(port, 'PATCH', `/api/schedules/${homeTaskId}`, {text:'Updated fixture goal.', changeReason:'Confirmed fixture change'});
+    await request(port, 'POST', `/api/automation-tasks/${homeTaskId}/pause`, {});
+    await request(port, 'POST', `/api/automation-tasks/${homeTaskId}/resume`, {});
+    const revised = (await request(port, 'GET', homePath)).json.home;
+    assert.equal(revised.definitions.length, 2);
+    assert.equal(revised.definitions[0].definition.text, 'Only inspect fixture data.');
+    assert.equal(revised.definitions[1].definition.text, 'Updated fixture goal.');
+    assert.ok(revised.events.some(item => item.type === 'pause'));
+    assert.ok(revised.events.some(item => item.type === 'resume'));
+    assert.equal(revised.activeExecutions.length, 0);
+    await request(port, 'DELETE', `/api/schedules/${homeTaskId}`);
+    const deletedHome = (await request(port, 'GET', homePath)).json.home;
+    assert.equal(deletedHome.task, null);
+    assert.equal(deletedHome.events.at(-1).type, 'delete');
+    assert.equal(deletedHome.sessionId, home.sessionId, 'stopping/deleting retains the home and definitions');
+
     const controllable = await request(port, 'POST', '/api/automation-tasks', {
       kind: 'one_time',
       title: 'Controllable one-time task',

@@ -1,3 +1,4 @@
+import { readAutomationHome } from './automation-home-store.mjs';
 import {
   cancelScheduleTriggers,
   createTrigger,
@@ -106,7 +107,7 @@ function projectExecutionState(trigger, run) {
   }
 }
 
-async function projectExecution(trigger) {
+export async function projectExecution(trigger) {
   if (!trigger) return null;
   const runId = trimString(trigger.runId);
   const storedRun = runId ? await getRun(runId) : null;
@@ -177,6 +178,7 @@ async function projectOneTimeTask(trigger) {
   const createdByIdentityId = await projectCreatedByIdentityId(trigger);
   return {
     id: trigger.id,
+    homeSessionId: (await readAutomationHome(trigger.id))?.sessionId || '',
     kind: 'one_time',
     title: trigger.title || 'One-time task',
     prompt: trigger.text,
@@ -238,6 +240,7 @@ async function projectRecurringTask(schedule, occurrences) {
   const createdByIdentityId = await projectCreatedByIdentityId(schedule);
   return {
     id: schedule.id,
+    homeSessionId: (await readAutomationHome(schedule.id))?.sessionId || '',
     sessionCollection: schedule.sessionTemplate?.sessionCollection || '',
     purpose: schedule.purpose || null,
     kind: 'recurring',

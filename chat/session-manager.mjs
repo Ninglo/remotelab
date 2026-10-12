@@ -2566,6 +2566,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedEffort) session.effort = requestedEffort;
     if (hasRequestedThinking) session.thinking = requestedThinking;
     if (extra.internalRole) session.internalRole = extra.internalRole;
+    if (/^(sch|trg)_[a-f0-9]{24}$/.test(extra.automationTaskId || '')) session.automationTaskId = extra.automationTaskId;
     const collection = normalizeSessionCollection(extra.sessionCollection);
     if (collection && canCollectAutomationSession(session)) session.sessionCollection = collection;
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
@@ -2730,6 +2731,17 @@ export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT
     broadcastSessionInvalidation(id);
   }
   return projectSessionPersonView(await enrichSessionMeta(result.meta), personId);
+}
+
+export async function bindSessionAutomation(id, { taskId, homeSessionId }) {
+  const result = await mutateSessionMeta(id, session => {
+    if (session.internalRole !== 'scheduled_execution' || session.groupFeed) return false;
+    if (session.automationHomeSessionId && session.automationHomeSessionId !== homeSessionId) throw new Error('Execution Session already belongs to a different automation');
+    if (session.automationTaskId === taskId && session.automationHomeSessionId === homeSessionId) return false;
+    session.automationTaskId = taskId; session.automationHomeSessionId = homeSessionId; return true;
+  });
+  if (result?.changed) broadcastSessionsInvalidation();
+  return result?.meta || null;
 }
 
 export async function updateSessionSystemPrompt(id, systemPrompt) {
@@ -4058,11 +4070,13 @@ export async function forkSession(sessionId, options = {}) {
     activeAgreements: source.activeAgreements || [],
     externalTriggerId: requestedExternalTriggerId,
     ...(hasSourceContextOverride ? { sourceContext: options.sourceContext } : {}),
+    ...(options.internalRole === 'automation_home' ? { internalRole: 'automation_home',
+      automationTaskId: options.automationTaskId, sessionCollection: 'automations' } : {}),
     forkedFromSessionId: source.id,
     forkedFromSeq: forkThroughSeq,
     rootSessionId: source.rootSessionId || source.id,
     forkedAt: nowIso(),
-    ...(isQuickSession(source) ? { executionProfile: QUICK_SESSION_PROFILE } : {}),
+    ...(isQuickSession(source) && options.internalRole !== 'automation_home' ? { executionProfile: QUICK_SESSION_PROFILE } : {}),
   });
   if (!child) return null;
 

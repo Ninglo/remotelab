@@ -643,7 +643,7 @@ function getActiveSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && !session.archived && (!session.internalRole || session.sessionCollection === "automations"));
+    .filter((session) => session && !session.automationHomeSessionId && !session.archived && (!session.internalRole || session.sessionCollection === "automations"));
 }
 
 function getArchivedSessions() {
@@ -653,7 +653,7 @@ function getArchivedSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && session.archived && (!session.internalRole || session.sessionCollection === "automations"))
+    .filter((session) => session && !session.automationHomeSessionId && session.archived && (!session.internalRole || session.sessionCollection === "automations"))
     .slice()
     .sort((a, b) => getArchivedSessionSortTime(b) - getArchivedSessionSortTime(a));
 }

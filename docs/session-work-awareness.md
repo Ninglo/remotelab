@@ -140,3 +140,5 @@ Harness 用 `remotelab work route --file packet.json --json`：
 该试点不增加前置语义分类模型。主线接收和目标执行各有自己的必要调用；明确接续不等待后台相关工作检索，跨话题复核异步排队。实际响应速度仍需用真实输入的接收、分流、目标接受、首次回复送达时间测量，不能用本地回放耗时替代。
 
 验证入口：`tests/test-group-routing.mjs` 检查归属、范围、拒绝、重复确认、过期和恢复；`tests/test-group-routing-runtime.mjs` 使用隔离假 Harness 验证接受、执行、完成钩子和回传队列。既有飞书回复、原生追加、参与状态和任务卡测试覆盖兼容性。真实群只由获准试测的人发送测试内容。
+
+For explicitly selected recurring work, the [automation home](task-center-v1.md#stable-automation-home-explicit-opt-in) is a stable forked entry with source/task links and durable definition revisions. Individual execution Sessions point back to that home. Reading status does not send a message to the worker or queue behind its active Run. Discussion references supplied with an adjustment are retained as reported provenance, not verified authorization.
