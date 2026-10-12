@@ -14,10 +14,10 @@ import { readSettingSnapshot } from '../lib/usage-setting-store.mjs';
 export const CLIENT_USAGE_EVENTS = new Set(['page_enter', 'session_open', 'page_visibility', 'ui_action', 'content_presented', 'artifact_open']);
 // New, narrowly named hooks have their own start dates. The older generic
 // capability sampling date cannot establish coverage before these hooks exist.
-const NAMED_FEATURES = ['project_context', 'work_routing', 'response_progress', 'feedback'];
+const NAMED_FEATURES = ['project_context', 'work_routing', 'response_progress', 'feedback', 'context_query'];
 const SERVER_EVENTS = new Set(['message_submitted', 'request_state', 'run_state', 'question_state', 'tool_started', 'tool_finished',
   'artifact_generated', 'artifact_registered', 'artifact_attached', 'web_published', 'delivery_state', 'artifact_access_requested', 'session_created', 'session_linked',
-  'capability_state', 'automation_change', 'intervention', 'material_submitted', 'knowledge_state', 'feishu_card_action', 'feishu_card_read', 'setting_state']);
+  'context_query', 'capability_state', 'automation_change', 'intervention', 'material_submitted', 'knowledge_state', 'feishu_card_action', 'feishu_card_read', 'setting_state']);
 const identifier = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,160}$/.test(value) ? value : '';
 const token = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,64}$/.test(value) ? value : '';
 const CLIENT_TOKENS = {
@@ -54,6 +54,12 @@ export function normalizeUsageEvent(input, { personId = '', verifiedPersonHash =
     actorKind: client ? 'human' : ['human', 'agent', 'automation', 'system'].includes(input.actorKind) ? input.actorKind : 'system' };
   if (personId) event.personHash = usageKey(`person:${personId}`);
   else if (!client && /^[a-f0-9]{64}$/.test(verifiedPersonHash)) event.personHash = verifiedPersonHash;
+  if (input.event === 'context_query') {
+    if (!['work', 'memory', 'people'].includes(input.kind) || !['started', 'succeeded', 'partial', 'failed'].includes(input.state)) return null;
+    if (/^[a-f0-9]{64}$/.test(input.queryHash || '')) event.queryHash = input.queryHash;
+    for (const key of ['resultCount', 'unavailableSources']) if (Number.isInteger(input[key]) && input[key] >= 0) event[key] = input[key];
+    if (token(input.errorCode)) event.errorCode = token(input.errorCode);
+  }
   if (input.event === 'setting_state') {
     if (!validSettingObservation({ setting: input.setting, value: input.settingValue, scope: input.settingScope,
       scopeKey: input.scopeKey, stage: input.stage, authority: input.authority })) return null;
@@ -116,6 +122,10 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
         // Retries (including after a restart) retain eventId. Readers deduplicate
         // by that durable ID as well; no duplicate retry changes counts.
         const unique = [...new Map(fresh.map(event => [event.eventId, event])).values()];
+        if (unique.some(event => event.event === 'context_query')) {
+          try { await writeFile(join(directory, 'feature-context_query.json'), JSON.stringify({ startedAt: new Date(activatedAt).toISOString() }), { flag: 'wx', mode: 0o600 }); }
+          catch (error) { if (error.code !== 'EEXIST') throw error; }
+        }
         if (unique.length) {
           const file = join(directory, `${new Date().toISOString().slice(0, 10)}.jsonl`);
           await appendFile(file, unique.map(event => JSON.stringify(event)).join('\n') + '\n', { mode: 0o600 });
@@ -149,7 +159,7 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
     await Promise.all([...admissions]);
     await tail;
   }
-  async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000, settingSnapshot, capabilityOnly = false } = {}) {
+  async function query({ days = 7, sessionId = '', limit = 100, maxScanned = 200_000, settingSnapshot, capabilityOnly = false, contextOnly = false } = {}) {
     await idle();
     const featureCollectionStarts = {};
     try {
@@ -209,11 +219,17 @@ export function createUsageEventStore({ directory = join(CONFIG_DIR, 'usage-even
           ids.add(event.eventId);
           if (event.timestamp < Math.max(start, Date.parse(metadata?.startedAt) || start)
               || event.timestamp > now + 60_000) continue;
-          if (!capabilityOnly || event.event === 'capability_state') events.push(event);
+          if (contextOnly ? event.event === 'context_query' && (!sessionId || event.sessionId === sessionId) : !capabilityOnly || event.event === 'capability_state') events.push(event);
         }
       } catch { incomplete = true; }
       finally { lines.close(); stream.destroy(); }
       if (scanned > maxScanned) break;
+    }
+    if (contextOnly) {
+      events.sort((a, b) => a.timestamp - b.timestamp || a.eventId.localeCompare(b.eventId));
+      return { generatedAt: new Date(now).toISOString(), collectionStartedAt: featureCollectionStarts.context_query || null,
+        window: { start: new Date(start).toISOString(), end: new Date(now).toISOString(), days },
+        events, coverage: { incomplete: incomplete || gaps.length > 0 || dropped > 0 || failures > 0, scanned, dropped, failures, gaps } };
     }
     const settingEvents = events.filter(event => event.event === 'setting_state');
     settingSnapshot ||= await readSettingSnapshot(join(directory, '..', 'usage-settings'));

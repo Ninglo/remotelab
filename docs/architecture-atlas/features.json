@@ -786,7 +786,12 @@
             "lib/monitoring-policy.mjs",
             "scripts/monitoring-diagnose.mjs",
             "lib/feishu-api-health.mjs",
-            "chat/automation-tasks.mjs"
+            "chat/automation-tasks.mjs",
+            "chat/context-query-monitoring.mjs",
+            "chat/usage-events.mjs",
+            "chat/router-work-awareness.mjs",
+            "lib/memory-learning-command.mjs",
+            "docs/connector-turn-context.md"
           ],
           "commands": [
             "usage-summary"

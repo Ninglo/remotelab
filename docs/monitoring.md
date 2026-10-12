@@ -387,6 +387,14 @@ Switch group/initiator mode to change the visible ownership summaries and Sessio
 owner labels; switching clears the previous owner, Session and search selection.
 Expand Sessions for runtime state, period tokens,
 phase means, latest-context means, injection means, P95 and sample counts.
+Inside a Session, “查看按需背景查询记录” fetches explicit work/memory/people lookups
+only when clicked. It shows starts, successful/partial returns, failures, unmatched
+starts, elapsed time, result bytes and exact-query repeat counts for the selected
+window. This reuses the usage-event ledger; no model analysis or chat transcript
+scan runs when opening the panel. Query bodies are not copied into monitoring.
+Collection start, partial scan and unavailable records remain explicit; zero
+observed lookups cannot establish missed reading or task quality. See the
+[lookup coverage and endpoint](connector-turn-context.md#按需查询记录).
 Existing cohort-based deviations now also include injection bytes (10,000-byte
 minimum increase). They remain page-only investigation clues. Shared-resource
 and API thresholds and all alert/recovery configuration are unchanged.

@@ -45,6 +45,43 @@
     node.title = signalText(x); node.append(el('small', '近期突增', 'monitoring-metric-caption')); return node;
   }
   function focusSession(s) { selectedSession = s.sessionId; scope = ''; search = ''; filter = 'all'; expanded = true; render(); root.querySelector('[data-testid="session-selection"]')?.scrollIntoView({ block: 'nearest' }); }
+  const queryViews = new Map();
+  function queryPanel(session, host) {
+    const key = `${session.sessionId}:${days}`, view = queryViews.get(key);
+    host.replaceChildren();
+    if (!view) { host.append(button('查看按需背景查询记录', () => loadQueries(session, host))); return; }
+    if (view.pending) { host.append(el('p', '正在读取查询记录…', 'monitoring-note')); return; }
+    if (view.error) { host.append(el('p', `查询记录暂不可用：${view.error}`, 'monitoring-note'), button('重试查询记录', () => loadQueries(session, host))); return; }
+    const q = view.data, c = q.summary;
+    host.append(el('h4', '按需背景查询'), el('p', `${c.attempts} 次查询 · 成功 ${c.succeeded} · 部分返回 ${c.partial} · 失败 ${c.failed} · 未见结束 ${c.unfinished}`, 'monitoring-note'));
+    host.append(el('p', `同类同关键词重复查询 ${c.repeated} 次（包含首次，不等于无效重复）。采集起点：${q.collectionStartedAt ? new Date(q.collectionStartedAt).toLocaleString() : '未知'}。`, 'monitoring-note'));
+    if (!c.attempts) host.append(el('p', '所选期间未观测到已接入的查询；可能不需要查询、使用了其他读取方式，或发生在采集前。', 'monitoring-note'));
+    const states = { started: '未见结束', succeeded: '成功返回', partial: '部分返回', failed: '失败' };
+    const kinds = { work: '相关工作与背景', memory: '记忆与背景', people: '人员资料' };
+    if (q.records.length) host.append(table(['时间／类型', '结果', '返回量／耗时', '查询标识'], q.records.map(r => [
+      `${new Date(r.timestamp).toLocaleString()} · ${kinds[r.kind] || r.kind} · ${{ agent: 'Agent', human: '人工入口', system: '服务入口' }[r.actorKind] || '来源未知'}`,
+      `${states[r.state] || r.state}${Number.isInteger(r.resultCount) ? ` · ${r.resultCount} 条工作候选` : ''}${r.errorCode ? ` · ${r.errorCode}` : ''}`,
+      `${size(r.sizeBytes)} / ${duration(r.durationMs)}`,
+      `${(r.queryHash || '').slice(0, 10)}${r.runId ? ' · ' + r.runId : ''}`,
+    ])));
+    if (q.coverage.incomplete || q.hasMore) host.append(el('p', '记录不完整或已达展示上限，以上只是部分记录。', 'monitoring-note'));
+    host.append(el('p', '仅记录 work context、work people、memory context。返回不代表已读或采纳；直接读文件、其他工具不在覆盖范围。关键词以标识去重，原查询内容在 Session 的工具记录中查看。', 'monitoring-note'));
+    host.append(button('刷新查询记录', () => loadQueries(session, host)));
+  }
+  async function loadQueries(session, host) {
+    const requestedDays = days, key = `${session.sessionId}:${requestedDays}`;
+    if (queryViews.get(key)?.pending) return;
+    queryViews.set(key, { pending: true }); queryPanel(session, host);
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(`/api/monitoring/context-queries?sessionId=${encodeURIComponent(session.sessionId)}&days=${requestedDays}`, { credentials: 'same-origin', signal: controller.signal });
+      if (!response.ok) throw Error(`HTTP ${response.status}`);
+      const value = await response.json();
+      if (!value.summary || !Array.isArray(value.records)) throw Error('返回格式不正确');
+      queryViews.set(key, { data: value });
+    } catch (e) { queryViews.set(key, { error: e.name === 'AbortError' ? '超过 15 秒' : e.message }); }
+    finally { clearTimeout(timer); if (days === requestedDays) queryPanel(session, host); }
+  }
   function render() {
     contextExpanded = root.querySelector('[data-testid="session-context-guide"]')?.open ?? contextExpanded;
     root.replaceChildren(); root.append(el('h2', 'Session 监管'));
@@ -124,6 +161,7 @@
     const sessionTable = table(['标题／归属', '状态', '期间用量 Token', '平均准备', '平均执行', '平均上下文', '平均注入'], matches.slice(0, limit).map(s => {
       const cell = el('div'), details = el('details'), summary = el('summary', title(s)); details.append(summary);
       const link = el('a', '打开 Session'); link.href = `/?tab=sessions&session=${encodeURIComponent(s.sessionId)}`; details.append(link);
+      const queries = el('div', '', 'monitoring-context-queries'); queries.dataset.testid = 'context-query-records'; queryPanel(s, queries); details.append(queries);
       details.append(table(['阶段／指标', '均值', 'P95', '样本'], Object.entries(s.metrics).map(([k, v]) => [metricName(k), metricValue(s, k, v.mean), val(k, v.p95), v.count])));
       for (const x of s.signals) details.append(el('p', `${metricName(x.metric)}：最近 ${x.recentCount} 个 / 此前 ${x.baselineCount} 个样本 · ${x.model}`, 'monitoring-note'));
       const group = `群：${data.groups[s.groupId] || '未知'}`, person = `发起人：${data.people[s.personId] || '未知'}`;
