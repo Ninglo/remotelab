@@ -4,7 +4,7 @@ import { readRecord, serialQueue, writeDurableJson } from '../lib/durable-record
 import { messageEvent } from './normalizer.mjs';
 import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mjs';
 
-// Ordinary human questions stay open until answered or cancelled. An explicit
+// Ordinary human questions stay open until answered, superseded or cancelled. An explicit
 // finite timeout remains available to callers that have declared a fallback.
 export const QUESTION_TIMEOUT_MS = null;
 const currentPath = directory => join(directory, 'native-question.json');
@@ -120,7 +120,7 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
     const options = q.options.map((o, i) => `${i + 1}. ${o.label}${o.description ? `：${o.description}` : ''}`);
     return [entry.questions.length > 1 ? `问题 ${entry.index + 1}/${entry.questions.length}：${q.question}` : q.question,
       ...options, '', q.multiSelect ? '回复编号选择；多选可回复 1,2。' : '回复 1、2、3 等编号选择。',
-      '自定义答案请在问题卡片中填写并提交；普通消息继续作为任务补充。',
+      '也可以直接发消息继续沟通，旧问题会结束等待；这不代表选择任何选项。',
       !hasTimeout ? '等待你的回答，不会超时自动选择。'
         : q.options.length ? `${minutes} 分钟内未回复，将超时自动选择第 1 项「${q.options[0].label}」。`
           : `${minutes} 分钟内未回复，将按“超时未答”返回，让 AI 继续处理。`].join('\n');
@@ -184,6 +184,33 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
   }
   return {
     get pending() { return queue.length + Number(Boolean(active)); },
+    // Capture before dispatch, then retire only after the new input is accepted.
+    // A click or newly raised question during dispatch must keep its own state.
+    snapshot() {
+      return serial(() => [active, ...queue].filter(Boolean).map(entry => ({ id: entry.id, index: entry.index })));
+    },
+    supersede(snapshot, inputId) {
+      return serial(async () => {
+        for (const entry of [active, ...queue].filter(Boolean)) {
+          if (!snapshot.some(item => item.id === entry.id && item.index === entry.index)) continue;
+          const wasActive = entry === active;
+          if (wasActive) clearTimer(timer);
+          entry.state = 'superseded';
+          for (const question of entry.questions.slice(entry.index)) {
+            entry.resolutions.push({ key: question.key, origin: 'superseded', inputId, at: now() });
+          }
+          await save(entry);
+          if (wasActive) {
+            await writeDurableJson(currentPath(directory), { state: 'superseded', id: `${entry.id}:${entry.index}`, deadline: null });
+            emit(entry, 'superseded', '已收到后续消息，旧问题已结束等待；未替你选择任何选项。', 'superseded');
+            active = null;
+          } else queue.splice(queue.indexOf(entry), 1);
+          entry.resolve({ superseded: true, answers: entry.answers, resolutions: entry.resolutions });
+        }
+        await showNext();
+        onIdle();
+      });
+    },
     ask({ id = randomUUID(), protocol, questions }) {
       if (closed) return Promise.reject(new Error('Native question host closed'));
       const normalized = normalizeNativeQuestions(questions, protocol);

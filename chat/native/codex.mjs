@@ -79,7 +79,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     // Codex's Default-mode question tool is an async agentMessage, not a
     // server RPC. Its native contract delivers answers as a new user input.
     void Promise.resolve().then(() => onQuestion({ id: `async:${item.id}`, protocol: 'codex', questions }))
-      .then(result => result.cancelled ? null : inputOperation(() => submitInput({ id: `question:${item.id}`, text: [
+      .then(result => result.cancelled || result.superseded ? null : inputOperation(() => submitInput({ id: `question:${item.id}`, text: [
         'Answers to the previous questions:',
         ...questions.map(q => {
           const origin = result.resolutions?.find(r => r.key === q.id)?.origin;

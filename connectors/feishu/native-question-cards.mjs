@@ -33,6 +33,7 @@ function questionHeader(question, options) {
       ? '可选多项，选好后提交' : '点击一个选项即可提交' : '填写后提交'),
   };
   if (question.state === 'answered') return { template: 'green', title: plain('已回答') };
+  if (question.state === 'superseded') return { template: 'grey', title: plain('已接续后续消息') };
   if (question.state === 'timeout') return { template: 'blue',
     title: plain(options.length ? '已采用默认' : '超时未答') };
   return { template: 'grey', title: plain(question.state === 'cancelled' ? '已取消' : '问题已结束') };
@@ -67,7 +68,7 @@ export function buildNativeQuestionCard(identity, question) {
     if (options.length) customAnswer.elements = [collapsed('填写其他答案', customAnswer.elements)];
     if (options.length) elements.push({ tag: 'hr' });
     elements.push(customAnswer);
-    elements.push(markdown(!Number.isFinite(question.deadline) ? '等你回答，不会超时自动选择。'
+    elements.push(markdown(!Number.isFinite(question.deadline) ? '可直接发消息继续沟通；旧问题会结束等待，不会自动选择。'
       : options.length ? '到期未答时默认选第 1 项。' : '到期未答时按未答继续。'));
   } else {
     elements.push(markdown(question.statusText));

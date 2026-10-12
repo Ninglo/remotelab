@@ -18,9 +18,23 @@
   const table = (headings, rows) => { const wrap = el('div', '', 'monitoring-table-wrap'), t = el('table'), h = el('thead'), tr = el('tr'); for (const htext of headings) { const th = el('th', htext); th.scope = 'col'; tr.append(th); } h.append(tr); t.append(h); const body = el('tbody'); for (const cells of rows) { const r = el('tr'); for (const c of cells) { const d = el('td'); d.append(c?.nodeType ? c : document.createTextNode(String(c ?? '—'))); r.append(d); } body.append(r); } t.append(body); wrap.append(t); return wrap; };
   const metricName = k => names[k] || k;
   const signalText = x => `${metricName(x.metric)}突增 ${x.ratio.toFixed(1)} 倍 · 近期 ${val(x.metric, x.current)} / 基线 ${val(x.metric, x.baseline)}`;
-  function signalList(s) {
-    const list = el('div', '', 'monitoring-session-anomalies');
-    for (const x of s.signals) { const line = el('div', signalText(x), 'monitoring-metric-signal'); line.dataset.severity = x.severity; list.append(line); }
+  function signalList(s, visual = false) {
+    const list = el('span', '', 'monitoring-session-anomalies');
+    for (const x of s.signals) {
+      const line = el('span', '', 'monitoring-metric-signal'); line.dataset.severity = x.severity;
+      if (!visual) line.textContent = signalText(x);
+      else {
+        const heading = el('span', '', 'monitoring-signal-heading');
+        heading.append(el('span', metricName(x.metric)), el('strong', `${x.ratio.toFixed(1)} 倍`, 'monitoring-signal-ratio')); line.append(heading);
+        const max = Math.max(x.current, x.baseline);
+        for (const [label, value, kind] of [['近期', x.current, 'recent'], ['基线', x.baseline, 'baseline']]) {
+          const row = el('span', '', 'monitoring-comparison-row'), track = el('span', '', 'monitoring-comparison-track'), fill = el('span');
+          track.setAttribute('aria-hidden', 'true'); fill.style.width = `${max > 0 ? Math.min(100, Math.max(0, value / max * 100)) : 0}%`; track.dataset.kind = kind; track.append(fill);
+          row.append(el('small', label), track, el('span', val(x.metric, value))); line.append(row);
+        }
+      }
+      list.append(line);
+    }
     return list;
   }
   function metricValue(s, key, value) {
@@ -60,7 +74,7 @@
       for (const s of flagged.slice(0, 3)) {
         const b = button('', () => focusSession(s));
         b.dataset.severity = s.signals.some(x => x.severity === 'critical') ? 'critical' : 'warning';
-        b.append(el('strong', title(s)), signalList(s)); box.append(b);
+        b.append(el('strong', title(s), 'monitoring-signal-title'), signalList(s, true)); box.append(b);
       }
       body.append(box);
       if (flagged.length > 3) body.append(button(`查看全部 ${flagged.length} 个指标突增的 Session`, () => { expanded = true; selectedSession = ''; scope = ''; search = ''; filter = 'attention'; render(); }));

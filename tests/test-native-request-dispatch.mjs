@@ -37,6 +37,7 @@ try {
   assert.deepEqual(received, ['second', 'third'], 'delayed native acknowledgements cannot block later input');
   assert.equal((await store.get(second.key)).nativeDispatchRunId, head.runId);
   assert.equal((await store.get(second.key)).nativeInputBaseSeq, 42, 'recovery scans only the active execution history, retaining its original boundary after a declined handoff');
+  assert.equal((await store.get(second.key)).nativeInput.supersedeQuestions, true, 'ordinary input can retire captured questions');
   state = 'completed'; unblock(); await dispatcher.idle();
   assert.equal((await store.get(third.key)).result.state, 'completed');
   assert.deepEqual(recorded.slice(0, 2), [['second', 'Context for second'], ['third', 'Context for third']]);
@@ -47,6 +48,14 @@ try {
   await dispatcher.forward(interruptedRecord); await dispatcher.idle();
   assert.deepEqual(recorded.at(-1), ['recovered', 'Durable recovered context'], 'recovery records the saved input Context before handoff');
   state = 'running';
+  for (const [id, options] of [['reference', { workReference: { id: 'reference' } }],
+    ['internal-message', { recordUserMessage: false }], ['explicit-answer', { nativeQuestionId: 'question-one' }]]) {
+    const record = await accepted(id);
+    const scoped = await store.mutate(record.key, current => ({ ...current, options }));
+    await dispatcher.forward(scoped, head); await dispatcher.idle();
+    assert.equal((await store.get(record.key)).nativeInput.supersedeQuestions, undefined,
+      'references, internal messages and explicit answers must not retire unrelated questions');
+  }
   const uncertain = await accepted('uncertain');
   await dispatcher.forward(uncertain, head); await dispatcher.idle();
   state = 'failed';

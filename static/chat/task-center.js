@@ -49,6 +49,7 @@
   let backgroundMechanisms = [];
   let automationFlows = { groups: [] };
   let selectedFlow = "memory";
+  const openFlowNotes = new Set();
   let flowTaskIds = null;
   const flowsPanel = document.getElementById("taskCenterFlows");
   let loaded = false;
@@ -808,15 +809,27 @@
       button.addEventListener("click", () => { selectedFlow = group.id; renderFlows(); flowsPanel.querySelector('button[aria-pressed="true"]')?.focus(); });
       nav.appendChild(button);
     }
-    flowsPanel.appendChild(nav);
+    const title = createNode("div", "task-flow-intro");
+    title.append(createNode("h3", "", translate("tasks.flows.title", "Automation flows")), createNode("p", "", translate("tasks.flows.intro", "See when work starts, what it reads, and where results go. Current schedules are shown below.")));
+    flowsPanel.append(title, nav);
     const group = groups.find(item => item.id === selectedFlow);
-    if (group.read) flowsPanel.appendChild(createNode("p", "task-flow-read", group.read));
+    const diagram = createNode("div", "task-flow-diagram");
+    diagram.setAttribute("aria-label", translate(`tasks.flows.${group.id}`, group.id));
+    const source = createNode("div", "task-flow-read");
+    source.appendChild(createNode("span", "task-flow-label", translate("tasks.flows.read", "01 · Read source")));
+    if (group.readAt) source.appendChild(createNode("strong", "task-flow-read-time", group.readAt));
+    source.appendChild(createNode("p", "", group.read));
+    diagram.appendChild(source);
+    const branches = createNode("div", "task-flow-branches");
+    diagram.appendChild(branches); flowsPanel.appendChild(diagram);
     for (const row of group.rows || []) {
       const route = createNode("article", "task-flow-row");
       const heading = createNode("div", "task-flow-heading");
       heading.appendChild(createNode("h4", "", row.title));
       const linked = row.taskIds.map(id => tasks.find(task => task.id === id)).filter(Boolean);
+      const background = (row.backgroundIds || []).map(id => backgroundMechanisms.find(item => item.id === id)).filter(Boolean);
       const times = [...new Set(linked.map(task => `${taskScheduleText(task)} · ${overview.businessStatus(task) ? translate(`tasks.business.${overview.businessStatus(task)}`, stateLabel(task.state)) : stateLabel(task.state)}`))];
+      times.push(...background.map(item => `${item.trigger} · ${translate(`tasks.background.${item.state}`, item.state)}`));
       heading.appendChild(createNode("span", "task-flow-time", times.join(" / ") || translate("tasks.flows.missing", "Task not found")));
       route.appendChild(heading);
       if (row.needsReview) route.appendChild(createNode("p", "task-flow-review", translate("tasks.flows.review", "Task definition changed or is missing; the explanation below needs review.")));
@@ -834,14 +847,27 @@
       }
       route.appendChild(steps);
       const bottom = createNode("div", "task-flow-bottom");
-      if (row.note) bottom.appendChild(createNode("span", "task-history-note", row.note));
+      if (row.note) {
+        const note = createNode("details", "task-flow-note");
+        const noteKey = `${group.id}:${row.title}`; note.open = openFlowNotes.has(noteKey);
+        note.append(createNode("summary", "", translate("tasks.flows.boundary", "Current scope / planned changes")), createNode("p", "", row.note));
+        note.addEventListener("toggle", () => { if (!note.isConnected) return; if (note.open) openFlowNotes.add(noteKey); else openFlowNotes.delete(noteKey); });
+        bottom.appendChild(note);
+      }
       const locate = createNode("button", "task-center-action", translate("tasks.flows.locate", "Related tasks"));
       locate.type = "button"; locate.disabled = !linked.length;
       locate.addEventListener("click", () => {
         flowTaskIds = new Set(row.taskIds); selectedFilter = "all";
         closedPurposeSections.clear(); renderTasks(); list.scrollIntoView({ behavior: "smooth", block: "start" });
       });
-      bottom.appendChild(locate); route.appendChild(bottom); flowsPanel.appendChild(route);
+      if (linked.length || !background.length) bottom.appendChild(locate);
+      if (background.length) {
+        const inspect = createNode("button", "task-center-action", translate("tasks.flows.monitor", "Open monitoring overview"));
+        inspect.type = "button";
+        inspect.addEventListener("click", () => document.getElementById("monitoringOverviewTab")?.click());
+        bottom.appendChild(inspect);
+      }
+      route.appendChild(bottom); branches.appendChild(route);
     }
     if (group.note) flowsPanel.appendChild(createNode("p", "task-history-note", group.note));
   }
