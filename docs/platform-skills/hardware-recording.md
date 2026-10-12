@@ -257,3 +257,14 @@ A successful stop plays `<recording-root>/cues/stopped.mp3` after the WAV is
 saved. Missing or unplayable cues fall back to Pop with an error in the panel
 log. Failure/interruption notices never play a successful-save voice. Reopening
 the panel adopts an ongoing capture silently rather than replaying its start.
+
+
+### Audio filenames
+
+New uploaded originals use the capture machine's local date and start/end times,
+for example `2026-10-12_15-06-50至15-15-32.wav`. Cross-midnight recordings include
+both dates. Multiple segments keep their ordered `第01段` suffix. A verified
+single speaker or explicitly verified main speaker adds their name; unknown or
+ambiguous speakers add nothing. The filename is saved before upload and reused
+on retries. Existing published files are not resent just to change a filename;
+internal numbered WAV paths remain stable for recovery and local retention.

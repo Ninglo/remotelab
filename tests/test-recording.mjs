@@ -509,3 +509,15 @@ test('retention waits for observation window and preserves pending, local and un
   for (const record of records.slice(1)) assert.equal((await stat(join(recordDir(root, record.id), '00000.wav'))).size, 100);
   assert.deepEqual((await pruneUploadedRecordings(root, policy, { now, verifyAsset })).removed, []);
 });
+
+
+test('audio filenames use local start/end, stable segment order and only verified main speakers', async () => {
+  const { recordingFileName } = await import('../lib/recording/file-name.mjs');
+  const record = { id: 'rec_example', timeZone: 'Asia/Shanghai', startedAt: '2026-10-12T07:06:50Z', endedAt: '2026-10-12T07:15:32Z', segments: [{}] };
+  assert.equal(recordingFileName(record), '2026-10-12_15-06-50至15-15-32.wav');
+  assert.equal(recordingFileName({ ...record, speakers: [{ name: 'Guess', verified: false }] }), recordingFileName(record));
+  assert.equal(recordingFileName({ ...record, speakers: [{ name: '张三', verified: true }] }), '2026-10-12_15-06-50至15-15-32_张三.wav');
+  assert.equal(recordingFileName({ ...record, speakers: [{ name: 'A', verified: true }, { name: 'B', verified: true }] }), recordingFileName(record));
+  assert.equal(recordingFileName({ ...record, segments: [{}, {}] }, 1), '2026-10-12_15-06-50至15-15-32_第02段.wav');
+  assert.equal(recordingFileName({ ...record, endedAt: '2026-10-12T16:01:00Z' }), '2026-10-12_15-06-50至2026-10-13_00-01-00.wav');
+});
