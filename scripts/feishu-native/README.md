@@ -15,14 +15,21 @@ installer for arbitrary Feishu versions; a different archive digest is refused.
 It does not enable DevTools or alter the machine's debugging policy.
 
 `bootstrap.sh` is the one-command entry: it verifies the exact source archive,
-fetches SHA-256-pinned Node and portable Python directly from upstream into a private user directory,
+fetches SHA-256-pinned Node and portable Python into a private user directory,
 and invokes `install-preview.py`. No system runtime, Homebrew, sudo or developer
 tools are required. `package-cli.py BUILD FONT_LICENSE OUTPUT PUBLIC_BASE`
 validates the two runtime archives already present in OUTPUT/runtime, builds the
 reviewed code/assets ZIP and fills the bootstrap's release pins. Publish OUTPUT
 as a static directory and verify the complete public command on a Mac before
 handing it out. Runtime origins and hashes are recorded in release.json;
-upstream licenses remain inside their runtime archives.
+upstream licenses remain inside their runtime archives. The release includes 1 MiB
+content-addressed chunks with hashes pinned in the bootstrap. Four bounded
+downloads run at a time; verified chunks survive errors and subsequent runs. The
+public mirror is primary; upstream byte ranges are fallback only. Corrupt chunks,
+520 responses and truncated transfers cannot be installed. The entry command
+retries HTTP/network failures, downloads the complete script before execution,
+and preserves already complete runtime files from the previous installer.
+Old failed whole-file transfers were deleted by that version and are unrecoverable.
 
 `install-preview.py` validates the official version, archive hash, signature and
 package checksums. It creates its own profile, injects the reviewed runtime with
@@ -111,6 +118,7 @@ is not added by this adapter.
 
 Validation:
 
+- `python3 tests/test-feishu-native-download.py` (520, truncation, corruption, resumed cache and Range fallback)
 - `python3 tests/test-feishu-native-launcher.py` (one cold start, preserved running App, private runtime/root)
 - `python3 tests/test-feishu-native-installer.py` (archive entry integrity and duplicate injection refusal)
 - `node --test tests/test-feishu-web-settings.mjs tests/test-feishu-web-topics.mjs tests/test-feishu-personal-workspace.mjs`
