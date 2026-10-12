@@ -4,6 +4,16 @@ import { buildFeishuPostContent } from '../connectors/feishu/index.mjs';
 
 const text = (value, limit = 1200) => String(value || '').replace(/[\r\n]+/g, ' ').slice(0, limit)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// The card is a short status, not the approval document. Keep complete
+// evidence and decision details in the existing recovery Session.
+const brief = (value, limit = 80) => {
+  const normalized = String(value || '').replace(/[\r\n]+/g, ' ').trim();
+  const first = normalized.split(/(?<=[。！？])/u)[0];
+  if (first.length <= limit) return text(first);
+  const head = first.slice(0, limit);
+  const boundary = Math.max(head.lastIndexOf('；'), head.lastIndexOf('，'), head.lastIndexOf('; '));
+  return text((boundary >= limit / 2 ? head.slice(0, boundary) : head).trimEnd()) + '…';
+};
 const repairFor = (item, config) => config.recoveryIncidents?.slice().reverse()
   .find(record => record.kind === item.kind && record.id === item.id) || item.recovery;
 const link = (sessionId, base) => {
@@ -18,29 +28,28 @@ export function renderMonitoringAlert(events, config, { color = false } = {}) {
     const plan = recovery?.plan;
     const account = item.continuity;
     const problem = item.kind === 'disk' && Number.isFinite(item.availableBytes) && Number.isFinite(item.usedPercent)
-      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
+      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) && item.inodeUsedPercent >= 85 ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
       : account ? `当前剩余 ${account.remainingPercent ?? '未知'}%，额度高于10%的已登录备用 ${account.backupCount} 个`
-      : text(item.detail || '详见处理记录');
+      : brief(item.detail || '详见处理记录');
     const resolved = item.recovered === true;
     const inFlight = ['pending', 'waiting', 'admitting', 'running'].includes(recovery?.status);
     const hasResult = !inFlight && recovery?.summary;
     const progress = resolved ? '最新独立观测已确认恢复。'
-      : hasResult ? text(recovery.summary)
+      : hasResult ? brief(recovery.summary)
       : account ? `已核对本实例账号；自动切换${account.autoSwitch ? '已开启' : '未开启'}。${account.lastSwitch ? '最近切换记录见监管总览。' : '尚无已核验的切换记录。'}`
       : recovery?.status === 'running' ? '补救任务已启动；本轮执行结果尚未回报。'
       : recovery?.status === 'waiting' ? '原会话已有任务执行，正在等待结果。'
       : recovery?.status === 'blocked' ? '本轮补救未通过验收，详细原因见处理记录。'
       : '已记录风险；尚无本轮已执行动作的回执。';
     const decision = resolved ? '无需处理。'
-      : plan?.requiresConfirmation ? emphasize('需要确认；确认前不执行。')
-      : item.kind === 'accountContinuity' && item.action?.requiresConfirmation ? text(item.action.summary)
+      : plan?.requiresConfirmation ? emphasize('需要确认后续方案；确认前不执行。')
+      : item.kind === 'accountContinuity' && item.action?.requiresConfirmation ? brief(item.action.summary, 60)
       : inFlight ? '暂不需要你操作，结果在原消息更新。'
       : '尚无可供确认的完整方案，继续在处理记录中核对。';
     const sessionUrl = link(recovery?.sessionId, config.overviewUrl);
     return `**${text(item.subject, 120)}${resolved ? ' · 已恢复' : ''}**\n`
       + `当前风险：${resolved ? '已解除' : item.severity === 'critical' ? emphasize(problem) : problem}\n`
-      + `实际进展：${progress}\n下一步：${decision}`
-      + (!resolved && plan?.requiresConfirmation ? `\n方案：${text(plan.summary)}\n对象：${text(plan.target)}\n影响：${text(plan.impact)}\n恢复：${text(plan.rollback)}\n验收：${text(plan.verification)}` : '')
+      + `处理：${progress}\n下一步：${decision}`
       + (sessionUrl ? `\n[查看处理会话${plan?.requiresConfirmation ? '／确认方案' : ''}](${sessionUrl})` : '')
       + (!color && item.observedAt ? `\n更新：${text(item.observedAt, 40)}` : '');
   });

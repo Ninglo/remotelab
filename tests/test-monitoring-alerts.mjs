@@ -220,7 +220,7 @@ test('disk deterioration and a concrete confirmation plan update the original me
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 2);
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 2);
   const message = renderMonitoringAlert(value.attention, config);
-  assert.match(message, /确认前不执行/); assert.match(message, /owned\/archive/); assert.match(message, /hash and original-path read/);
+  assert.match(message, /确认前不执行/); assert.doesNotMatch(message, /owned\/archive|hash and original-path read/);
 });
 
 test('blocked/running/blocked, small metric changes and observer restarts cannot create another alert', async () => {
@@ -337,4 +337,23 @@ test('inode-only critical pressure remains visible and an actual account switch 
   value.accountContinuity.current.id = 'b'; value.accountContinuity.lastSwitch = { at: '2026-10-03T07:00:00Z' };
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
   assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
+});
+
+
+test('a verbose recovery report stays behind the Session link rather than filling the card', () => {
+  const summary = '已清理两份重复副本，释放约0.73 GiB，但评测仍持续写入。' + '完整处理记录。'.repeat(100);
+  const plan = { requiresConfirmation: true, summary: '完整扩容方案'.repeat(80),
+    target: 'private-disk-uuid', impact: '详细影响', rollback: '详细恢复办法', verification: '详细验收步骤' };
+  const events = [{ ...disk, id: '/data', availableBytes: 2 * 1024 ** 3, usedPercent: 99.8, inodeUsedPercent: 82,
+    recovery: { status: 'awaiting_confirmation', summary, plan, sessionId: 'disk-recovery' } }];
+  const card = renderMonitoringAlertCard(events, { overviewUrl: 'https://example.test/?tab=tasks' });
+  const content = card.elements[0].text.content;
+  assert.match(content, /0.73 GiB/);
+  assert.match(content, /评测仍持续写入/);
+  assert.match(content, /确认前不执行/);
+  assert.match(content, /session=disk-recovery/);
+  assert.doesNotMatch(content, /完整处理记录|private-disk-uuid|详细验收|完整扩容方案|inode/);
+  assert.ok(content.length < 400, 'one incident fits in a short card');
+  assert.equal(events[0].recovery.summary, summary, 'the original evidence remains intact');
+  assert.equal(events[0].recovery.plan, plan);
 });

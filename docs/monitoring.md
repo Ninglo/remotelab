@@ -482,3 +482,8 @@ The dispatch gate uses that same durable evidence and does not impose an
 independent expiry that could resurrect the old restriction.
 
 Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#stable-automation-home-explicit-opt-in). The primary link opens the dedicated task-context Session; the original discussion is a secondary reference. Its header reads native execution state directly and distinguishes future-trigger cancellation from active runs. Monitoring and evaluation configuration remain separate; a home is not a new supervisor.
+
+
+### 群提醒的正文长度
+
+群里的同一事件卡片只保留当前风险、简短处理结果和下一步三行，关键风险和待确认状态标红。处理回执只摘取首句并限制长度；完整方案、对象、影响、恢复办法和验收证据保留在原补救会话及监管详情中，通过卡片链接查看，确认前不执行。低于预警线的 inode 读数不占用卡片正文。更新仍沿用原消息，不因版式变化另发提醒。
