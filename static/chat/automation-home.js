@@ -27,26 +27,32 @@
       panel.replaceChildren(); panel.hidden = false;
       const nav = node('div'); nav.className = 'automation-home-nav';
       nav.append(link(tr('返回自动化页面 · 查看此任务','Back to Automations · this task'), `/?tab=tasks&monitor=automations&task=${encodeURIComponent(home.taskId)}`));
-      if (session.id !== home.sessionId) nav.append(sessionLink(home.sessionId, tr('打开当前自动化会话','Open current automation session')));
+      if (session.id !== home.sessionId) nav.append(sessionLink(home.sessionId, tr('查看固定任务会话与全部记录','Open task home and all records')));
       const refresh = node('button', tr('刷新状态','Refresh status')); refresh.type = 'button'; refresh.onclick = () => render(true); nav.append(refresh);
       panel.append(nav);
       if (session.id !== home.sessionId) {
-        panel.append(node('p', tr('这里是历史会话。当前任务内容和完整运行记录请进入上面的自动化会话。', 'This is a historical session. Open the current automation session above for task context and all runs.')));
+        const isWorker = session.internalRole === 'scheduled_execution';
+        panel.append(node('p', isWorker
+          ? tr('这里是实际执行任务的运行 Session。每次触发各有一条执行记录；同一 Session 可以按任务配置承接多轮运行。上面的入口可返回历史记录和固定任务会话。', 'This Session executes the work. Each trigger has its own record; task settings may reuse a Session across runs. Use the links above for history and the task home.')
+          : tr('这是迁移前保留的会话；上面的固定任务会话入口指向当前版本。', 'This is a retained previous home. The task home link above opens the current version.')));
         return;
       }
       panel.append(node('strong', home.task?.title || home.definitions.at(-1)?.definition.title || home.taskId));
       panel.append(node('p', `${tr('任务状态','Task status')}: ${label(home.task?.state || 'deleted')} · ${tr('当前运行','Active runs')}: ${home.activeExecutions.length}`));
-      panel.append(node('p', tr('独立自动化会话 · 仅带入任务上下文。展开下方记录，可查看每次执行和任务变更。', 'Dedicated automation session · task context only. Expand the records below for runs and task changes.')));
+      panel.append(node('p', tr('这是固定任务会话，保存任务说明和变更。到点后由独立的运行 Session 执行；每轮结果汇入下方历史，点开记录可进入对应的运行 Session。', 'This is the task home for instructions and changes. Scheduled work executes in separate run Sessions; each run appears below with a link to its Session.')));
       const origin = disclosure(tr('任务内容与交接说明','Task instructions and handoff'));
       origin.append(node('p', `${tr('原创建身份','Original creator')}: ${home.author.name || home.author.identityId || tr('原记录未明确','Not recorded')} · ${stamp(home.taskCreatedAt)}`),
         node('p', `${tr('主 Session 建立','Home established')}: ${stamp(home.establishedAt)}`), node('p', home.brief));
       const latest = home.definitions.at(-1); origin.append(node('pre', latest?.definition.text || ''));
       const history = disclosure(`${tr('历次运行','Execution history')} (${home.executions.length})`);
       history.open = previousOpen.has(history.firstChild.textContent);
+      const sessionCounts = new Map();
+      for (const run of home.executions) if (run.sessionId) sessionCounts.set(run.sessionId, (sessionCounts.get(run.sessionId) || 0) + 1);
       for (const run of home.executions) {
         const row = node('div'); row.className = 'automation-home-row';
         row.append(node('span', `${stamp(run.scheduledAt)} · ${label(run.state)} · ${run.definitionRevision ? `v${run.definitionRevision}` : tr('旧版本未记录','Version not recorded')}`));
-        if (run.sessionId) row.append(sessionLink(run.sessionId, tr('打开本次运行会话','Open this run’s session')));
+        if (run.sessionId) row.append(sessionLink(run.sessionId, tr('查看运行 Session','View run Session')));
+        if (sessionCounts.get(run.sessionId) > 1) row.append(node('span', tr(`此 Session 对应 ${sessionCounts.get(run.sessionId)} 条执行记录`, `This Session contains ${sessionCounts.get(run.sessionId)} execution records`)));
         if (run.error) row.append(node('p', run.error)); history.append(row);
       }
       const changes = disclosure(`${tr('创建、调整与停止记录','Creation, changes and stops')} (${home.events.length})`);

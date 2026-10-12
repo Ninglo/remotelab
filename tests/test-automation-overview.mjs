@@ -91,3 +91,8 @@ assert.equal(timetable([{...daily,schedule:{...daily.schedule,cron:'0 99 * * *'}
 assert.equal(timetable([{...daily,schedule:{...daily.schedule,cron:'0 4 * * 1-5'}}]).repeating.length,1,'weekdays are not shown as daily');
 assert.equal(timetable([{...pending,state:'admitted',lastExecution:{runAvailable:false}}]).once.length,0);
 console.log('Timeline: complete task coverage, repeated daily times, non-daily fallback and immutable input passed.');
+
+assert.equal(latest({ ...collected, recentExecutions: [
+  { sessionId: 'still-running', state: 'running', scheduledAt: '2026-10-10T00:00:00Z' },
+  { sessionId: 'newer-completed', state: 'completed', scheduledAt: '2026-10-12T00:00:00Z' },
+]}).sessionId, 'still-running', 'the run entry prioritizes an active execution over a newer completed one');

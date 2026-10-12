@@ -397,3 +397,24 @@ The monitoring observer uses a separate current-health projection from the same
 Schedule, Trigger and Run/Request records. It does not build this page’s complete
 execution history, package lineage or ownership enrichment on every check. The
 Task Center still retains those details and full history. See [Operations overview](monitoring.md#routine-task-health-reads) for collection scope and failure semantics.
+
+
+### History versus running Session
+
+For opted-in automations, expanded timeline and flow rows expose two distinct
+entries: **View execution history** opens the retained trigger timeline directly;
+**View run Session** opens an active execution when one is present in the current
+projection, otherwise the most recent retained execution Session. Before any
+execution Session exists the latter is disabled. Neither action starts work.
+The history page retains a separate **Task home** link for instructions and
+changes; that home is not labeled as an actual execution.
+
+A short transition line explains trigger → execution record → run Session →
+recorded result. Reuse comes from the projected target: calendar-day tasks reuse
+one Session within the configured timezone's day and create another on the next
+day; fixed targets keep the configured Session. Other tasks execute independently
+of their source discussion, with actual Session associations recorded per run
+(including any connector-bound reuse). The home history marks multiple records
+sharing a Session. Flow controls follow the flow description language, avoiding
+mixed-language buttons within a Chinese task card. Runtime configuration and
+evaluation collection membership are unchanged.

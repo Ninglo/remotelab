@@ -787,3 +787,7 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .monitoring-scope-checks > section { min-width: 0; padding: 12px; border: 1px solid var(--border-color, #ddd); border-radius: 8px; }
 .monitoring-scope-checks h3 { margin: 0 0 8px; font-size: 14px; }
 .monitoring-scope-checks p { margin: 6px 0; overflow-wrap: anywhere; }
+
+.task-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.task-entry-actions .task-center-action { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; margin: 0; }
+.task-flow-bottom > .task-entry-actions, .task-flow-bottom > .task-run-transition, .task-flow-bottom > .task-run-policy { flex-basis: 100%; }

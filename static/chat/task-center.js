@@ -911,25 +911,19 @@
         note.addEventListener("toggle", () => { if (!note.isConnected) return; if (note.open) openFlowNotes.add(noteKey); else openFlowNotes.delete(noteKey); });
         bottom.appendChild(note);
       }
-      const locate = createNode("button", "task-center-action", flowTranslate("tasks.flows.locate", "Related tasks"));
-      locate.type = "button"; locate.disabled = !linked.length;
-      locate.addEventListener("click", () => {
-        flowTaskIds = new Set(row.taskIds); selectedFilter = "all";
-        closedPurposeSections.clear(); renderTasks(); selectView("tasks", { focus: true }); list.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-      if (linked.length || !background.length) bottom.appendChild(locate);
-      for (const task of linked) {
-        for (const member of task.members || [task]) if (member.homeSessionId) {
-          const homeLink = createNode("a", "task-center-action", translate("tasks.session.openHome", "Open automation home"));
-          homeLink.href = `/?session=${encodeURIComponent(member.homeSessionId)}&tab=sessions`; bottom.appendChild(homeLink);
-        }
-        const execution = overview.latestExecutionSession(task);
-        if (!execution) continue;
-        const link = createNode("a", "task-center-action", linked.length === 1
-          ? flowTranslate("tasks.session.openLatest", "Open latest execution")
-          : `${flowTranslate("tasks.session.openLatest", "Open latest execution")} · ${taskTitle(task)}`);
-        link.href = `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions`;
-        bottom.appendChild(link);
+      const selected = linked.filter(task => task.sessionCollection === "automations");
+      for (const task of selected) {
+        if (selected.length > 1) bottom.appendChild(createNode("strong", "", taskTitle(task)));
+        appendExecutionEntries(bottom, task);
+      }
+      if (!selected.length || linked.some(task => task.sessionCollection !== "automations")) {
+        const locate = createNode("button", "task-center-action", flowTranslate("tasks.flows.locate", "Related tasks"));
+        locate.type = "button"; locate.disabled = !linked.length;
+        locate.addEventListener("click", () => {
+          flowTaskIds = new Set(row.taskIds); selectedFilter = "all";
+          closedPurposeSections.clear(); renderTasks(); selectView("tasks", { focus: true }); list.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        if (linked.length || !background.length) bottom.appendChild(locate);
       }
       if (background.length) {
         const inspect = createNode("button", "task-center-action", flowTranslate("tasks.flows.monitor", "Open monitoring overview"));
@@ -943,8 +937,30 @@
   }
 
   function locateTimelineTask(task) {
+    const grouped = displayTasks().find(item => item.id === task.id || item.members?.some(member => member.id === task.id));
+    openTaskIds.add(grouped?.id || task.id);
     flowTaskIds = new Set([task.id]); selectedFilter = "all";
     closedPurposeSections.clear(); renderTasks(); selectView("tasks", { focus: true }); list.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function appendExecutionEntries(parent, task) {
+    const actions = createNode("div", "task-entry-actions");
+    const history = createNode("button", "task-center-action", flowTranslate("tasks.session.viewHistory", "View execution history"));
+    history.type = "button"; history.dataset.automationEntry = "history";
+    history.addEventListener("click", () => locateTimelineTask(task)); actions.appendChild(history);
+    const execution = overview.latestExecutionSession(task);
+    const run = createNode(execution ? "a" : "button", "task-center-action", flowTranslate("tasks.session.viewRun", "View run Session"));
+    run.dataset.automationEntry = "run";
+    if (execution) run.href = `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions`;
+    else { run.type = "button"; run.disabled = true; }
+    actions.appendChild(run); parent.appendChild(actions);
+    const active = execution && ["running", "starting", "queued"].includes(execution.state);
+    parent.appendChild(createNode("p", "task-history-note", execution
+      ? flowTranslate(active ? "tasks.session.currentRun" : "tasks.session.latestRun", "", {time: formatDateTime(execution.scheduledAt || execution.attemptedAt)})
+      : flowTranslate("tasks.session.noRun", "No execution Session has been created yet.")));
+    parent.appendChild(createNode("p", "task-history-note task-run-transition", flowTranslate("tasks.session.transition", "Trigger → execution record → run Session → result saved in history")));
+    const policy = task.target?.mode === "calendar_day_session" ? "dayReuse" : task.target?.mode === "fixed_session" ? "fixedReuse" : "separateRuns";
+    parent.appendChild(createNode("p", "task-history-note task-run-policy", flowTranslate("tasks.session." + policy, "", {timezone: task.target?.timezone || task.schedule?.timezone || "Asia/Shanghai"})));
   }
 
   function renderTimeline() {
@@ -978,11 +994,10 @@
       } else {
         body.append(createNode("p", "", tr("unknownOutput")), createNode("p", "", tr("sendLabel") + " · " + notificationText(task, { compact: true, tr: flowTranslate })));
       }
-      const button = createNode("button", "task-center-action", tr("showTasks")); button.type = "button";
-      button.addEventListener("click", () => locateTimelineTask(task)); body.appendChild(button);
-      if (task.homeSessionId) {
-        const homeLink = createNode("a", "task-center-action", translate("tasks.session.openHome", "Open automation home"));
-        homeLink.href = `/?session=${encodeURIComponent(task.homeSessionId)}&tab=sessions`; body.appendChild(homeLink);
+      if (task.sessionCollection === "automations") appendExecutionEntries(body, task);
+      else {
+        const button = createNode("button", "task-center-action", tr("showTasks")); button.type = "button";
+        button.addEventListener("click", () => locateTimelineTask(task)); body.appendChild(button);
       }
       details.appendChild(body);
       details.addEventListener("toggle", () => { if (!details.isConnected) return; if (details.open) openTimelineRows.add(key); else openTimelineRows.delete(key); });
@@ -1105,7 +1120,7 @@
       executionHistory.clear();
       if (requestedTaskId) {
         const match = tasks.find(item => item.id === requestedTaskId || item.members?.some(member => member.id === requestedTaskId));
-        if (match) { flowTaskIds = new Set([requestedTaskId, match.id]); selectedFilter = "all"; selectedView = "tasks"; openTaskIds.add(match.id); }
+        if (match) { flowTaskIds = new Set([requestedTaskId, match.id]); selectedFilter = "all"; selectedView = "tasks"; openTaskIds.add(displayTasks().find(item => item.id === match.id || item.members?.some(member => member.id === match.id))?.id || match.id); }
         requestedTaskId = "";
       }
       loaded = true;
