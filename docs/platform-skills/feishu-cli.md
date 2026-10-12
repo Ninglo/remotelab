@@ -12,7 +12,7 @@ same answer across surfaces.
 
 | User's actual need | Suitable action or display |
 | --- | --- |
-| Understand an answer, reasoning, comparison, or open-ended discussion | Reply normally; the bound Connector publishes rich-text `post`. |
+| Understand an answer, reasoning, comparison, or open-ended discussion | Reply normally; the bound Connector publishes rich-text `post`, or a mixed Markdown/native-table card for supported GFM tables. |
 | Scan a compact status, decision, warning, or next action with a few stable fields | Consider a fixed status card even without an explicit card request. Use it when the header and concise body make the result materially easier to act on. |
 | Put a real time commitment on a calendar | For a Bot-owned event, use `calendar.create` after resolving the calendar, time zone, start, and end; read back the event. For attendees or invitations use `lark-calendar`. A proposed time alone is a reply, not an event. |
 | Assign or track a concrete follow-up | Use `task.create` with the intended owner and due date when known; read back the task. A discussion of possible next steps is a reply. |
@@ -23,16 +23,21 @@ same answer across surfaces.
 
 The fixed `card.send` action constructs card JSON in code from the selected
 title, body, status, recipient, and stable key. It sends a separate message;
-today a normal bound Session reply still becomes a `post`, so keep any companion
-reply brief and avoid repeating the card body. Native card selection inside the
-durable source-delivery reply is not yet implemented. A card cannot stand in
+keep any companion reply brief and avoid repeating the card body. Bound Session
+replies containing supported Markdown tables automatically become native table
+cards within durable source delivery; other replies remain rich-text posts.
+A card cannot stand in
 for an actual calendar event, task, or Base record. `card.send` targets a user
 or chat, not the source thread; do not move a thread result into the top-level
 chat. Use the thread-aware `lark-im` workflow only when that placement and its
 Bot permissions have been verified.
 
 For a Session whose reply destination is a Feishu chat or thread, source
-delivery automatically converts the final text or Markdown answer to a `post`.
+delivery automatically converts the final text or Markdown answer to a `post`,
+or one JSON 2.0 card when it contains supported top-level GFM tables. Text and
+native tables stay in order in the same message; no separate card send is needed.
+Tables use content-based column widths, automatic row height and pagination.
+See [rendering limits and fallback](../feishu-bot-setup.md#markdown-rendering).
 The connector's local code handles Markdown, known mentions, code blocks, and
 math; formulas may be rendered locally and uploaded as images. Delivery
 notices use plain `text`. This conversion and the fixed office actions make no

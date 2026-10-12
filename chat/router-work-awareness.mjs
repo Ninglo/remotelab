@@ -1,3 +1,4 @@
+import { observeContextQuery, readContextQueries } from './context-query-monitoring.mjs';
 import { routeGroupWork, replyGroupInput, readGroupRoutingState } from './group-routing.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { requests } from './requests.mjs';
@@ -9,6 +10,13 @@ import { broadcastAll } from './ws-clients.mjs';
 import { retrieveNecessaryContext } from './necessary-background.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
+  if (pathname === '/api/monitoring/context-queries' && req.method === 'GET') {
+    const sessionId = parsedUrl.searchParams.get('sessionId');
+    if (!sessionId || !await findSessionMeta(sessionId)) { writeJson(res, 404, { error: 'Session not found' }); return true; }
+    try { writeJson(res, 200, await readContextQueries({ sessionId, days: parsedUrl.searchParams.get('days') })); }
+    catch { writeJson(res, 503, { error: 'Context query records unavailable' }); }
+    return true;
+  }
   if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
@@ -17,24 +25,28 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     const sessionId = record?.sessionId || parsedUrl.searchParams.get('sessionId');
     const session = sessionId ? await findSessionMeta(sessionId) : null;
     if (!session) throw Object.assign(new Error('A current Session is required'), { statusCode: 404 });
+    const observation = { sessionId, runId: record?.runId, requestId: record?.requestId, actorKind: record ? 'agent' : authSession?.authKind === 'service' ? 'system' : 'human' };
     const query = body.query || parsedUrl.searchParams.get('query') || record?.text || '';
     if (pathname.endsWith('/people') && ['GET', 'POST'].includes(req.method)) {
-      const context = await buildRelatedPersonContext({ query, sourceContext: record?.options?.sourceContext,
+      const context = await observeContextQuery({ ...observation, kind: 'people', query }, () => buildRelatedPersonContext({ query, sourceContext: record?.options?.sourceContext,
         personId: record?.options?.viewPersonId || authSession?.personId,
-        identityId: record?.options?.initiatedByIdentityId || authSession?.identityId });
+        identityId: record?.options?.initiatedByIdentityId || authSession?.identityId }));
       writeJson(res, 200, { context });
       return true;
     }
     if (req.method === 'GET' && pathname === '/api/work-awareness') {
       const scope = { sessionId, query: parsedUrl.searchParams.get('query') || '', object: parsedUrl.searchParams.get('object') || '',
         projectId: parsedUrl.searchParams.get('project') || '', limit: parsedUrl.searchParams.get('limit') || 5 };
-      const [related, candidates, suggestions] = await Promise.all([
-        queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId, { describe: true }),
-      ]);
-      writeJson(res, 200, { sessionId, current: session.workAwareness || null, routing: await readGroupRoutingState(session), related, candidates, suggestions,
-        ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : { background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
-          personId: record?.options?.viewPersonId || authSession?.personId,
-          identityId: record?.options?.initiatedByIdentityId || authSession?.identityId }) }) });
+      const result = await observeContextQuery({ ...observation, kind: 'work', query }, async () => {
+        const [related, candidates, suggestions] = await Promise.all([
+          queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId, { describe: true }),
+        ]);
+        return { sessionId, current: session.workAwareness || null, routing: await readGroupRoutingState(session), related, candidates, suggestions,
+          ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : { background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
+            personId: record?.options?.viewPersonId || authSession?.personId,
+            identityId: record?.options?.initiatedByIdentityId || authSession?.identityId }) }) };
+      });
+      writeJson(res, 200, result);
       return true;
     }
     const actor = verifiedWorkActor(record?.options?.viewPersonId, record?.options?.initiatedByIdentityId);

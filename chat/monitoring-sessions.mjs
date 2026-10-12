@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { CONFIG_DIR, CHAT_RUNS_DIR, CHAT_SESSIONS_FILE } from '../lib/config.mjs';
 import { listPeopleForClient } from '../lib/auth.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
+import { diagnosisMeasurements } from '../lib/session-diagnosis.mjs';
 
 const safeId = value => typeof value === 'string' && /^[a-zA-Z0-9_:-]{1,160}$/.test(value);
 const key = (a, b) => createHash('sha256').update(JSON.stringify([a, b])).digest('hex').slice(0, 24);
@@ -52,6 +53,7 @@ export function runMeasurement(ledger, run, request, injection = null) {
   const ds = validRequest ? request.deliveries || [] : [];
   const deliveryEnd = ds.length && ds.every(d => d.state === 'delivered' && Number.isFinite(time(d.deliveredAt))) ? Math.max(...ds.map(d => time(d.deliveredAt))) : null;
   return { runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
+    state: validRun ? run.state : 'unknown',
     background: ledger.backgroundOperation === true || request?.excluded === true,
     metrics: { prepareMs: validRequest ? span(request.acceptedAt, request.preparedAt) : null,
       launchMs: validRequest ? span(request.preparedAt, run.startedAt) : null,
@@ -95,7 +97,7 @@ export function measurementSignals(samples) {
 }
 
 export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CHAT_RUNS_DIR, sessionsFile=CHAT_SESSIONS_FILE,
-  getUsage=queryUsageLedger, getPeople=listPeopleForClient, now=Date.now, maxRuns=1000, maxReadBytes=64*1024*1024 }={}) {
+  getUsage=queryUsageLedger, getPeople=listPeopleForClient, now=Date.now, maxRuns=1000, maxReadBytes=64*1024*1024, includeInjection=true }={}) {
   const windows=new Map(), files=new Map();
   async function projected(file, project, coverage, limit=2*1024*1024) {
     try {
@@ -126,12 +128,12 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       }
       if(!run)coverage.missingRuns++;
       if(!request)coverage.missingRequests++;
-      const injection=await projected(join(runsDir,l.runId,'manifest.json'),projectInjection,coverage);
+      const injection=includeInjection ? await projected(join(runsDir,l.runId,'manifest.json'),projectInjection,coverage) : null;
       const sample=runMeasurement(l,run,request,injection);
-      if(!sample.background && !finite(sample.metrics.injectionBytes))coverage.missingInjections++;
+      if(includeInjection && !sample.background && !finite(sample.metrics.injectionBytes))coverage.missingInjections++;
       if(!grouped.has(l.sessionId))grouped.set(l.sessionId,[]);grouped.get(l.sessionId).push(sample);
     }));
-    for(const row of rows.values()) {const samples=grouped.get(row.sessionId)||[];row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);}
+    for(const row of rows.values()) {const samples=grouped.get(row.sessionId)||[];row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
     return {generatedAt:new Date(now()).toISOString(),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
       coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.length,truncated:usage.runCount>ledger.length||coverage.limitedFiles>0,
         collectionMs:now()-started,cacheSeconds:60,apiAttribution:'unavailable'},

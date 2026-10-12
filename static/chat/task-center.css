@@ -834,3 +834,10 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .monitoring-handling > summary { margin-top: 0; cursor: pointer; color: var(--text-secondary); }
 .monitoring-handling > p { margin: 8px 0; font-size: 12px; line-height: 1.6; }
 .monitoring-handling a { color: var(--accent); }
+
+/* Statistical changes are clues, distinct from confirmed resource faults. */
+.monitoring-session-diagnosis { margin-top: 8px; font-size: 12px; }
+.monitoring-session-diagnosis summary { cursor: pointer; color: var(--text-secondary); }
+.monitoring-session-diagnosis p { margin: 6px 0; overflow-wrap: anywhere; }
+#monitoringOverview .monitoring-session-signals > button[data-severity="neutral"] { border-top-color: var(--border); padding: 10px 12px; }
+#monitoringSessions .monitoring-account-status { white-space: nowrap; }

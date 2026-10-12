@@ -157,6 +157,27 @@ no additional API requests, model calls or Session scans. Its open/closed choice
 survives statistics refreshes. The injection metric remains RemoteLab's saved
 additional-context bytes, not the complete native context or a Token count.
 
+### 按需查询记录
+
+监管 → Session → 展开 Session 列表与指标明细 → 展开某个 Session →
+“查看按需背景查询记录”。按当前选择的 24 小时／7 天／30 天窗口读取，点击时才查询，
+刷新记录不会调用模型或触发背景检索，也不扫描该 Session 的原始聊天正文。
+
+目前接入 `work context`、`work people`、`memory context` 的实际执行入口，
+复用现有用量事件账本，分别记录开始、成功返回、部分返回和失败。
+可以查看调用时间、所属 Run、耗时、返回字节数、工作候选数和同关键词重复次数。
+只有开始记录时显示“未见结束”，不擅自认定运行中或失败；服务重启后保留记录。
+部分返回包含来源不可用及已知预算遗漏。原查询和返回正文不复制到监管账本，
+查询标识仅用于同 Session、同查询类型的精确关键词重复比较；原内容仍查 Session 工具记录。
+重复次数包含首次调用，不能直接认定无效重复。
+
+采集起点、读取上限和记录缺失明确展示；旧任务不补猜。
+没有查询记录不代表漏读：直接读文件、其他工具和既有原生历史均不在这些埋点的覆盖范围。
+成功返回不证明模型实际阅读、采纳或完成业务；需要与原消息、工具轨迹和产物一起核验。
+埋点写入失败不阻断原查询，沿用用量账本的采集异常记录；磁盘故障也可能使异常自身无法持久化。
+鉴权读取入口为 `GET /api/monitoring/context-queries?sessionId=…&days=1|7|30`，
+从最新账本记录向前读取，每次最多 200,000 行／32 MiB，显示最新 100 次查询；达到上限时标为部分记录。
+
 ## Stable rule snapshots (2026-10-12)
 
 Native inputs now project the seven stable rule slots (surface, workboard

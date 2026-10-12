@@ -163,5 +163,17 @@ try {
       return { response: { ok: true }, json: localReply.json };
     } },
   });
+  const beforeLookups = await call('/api/monitoring/context-queries?sessionId=a&days=1');
+  assert.equal(beforeLookups.status, 200);
+  assert(beforeLookups.json.summary.attempts > 0);
+  assert(beforeLookups.json.records.every(row => row.sessionId === 'a'));
+  assert.equal((await call('/api/monitoring/context-queries?sessionId=missing')).status, 404);
+  const { runMemoryLearningCommand } = await import('../lib/memory-learning-command.mjs');
+  await appendEvent('a', { type: 'message', role: 'user', content: record.text, runId: record.runId, requestId: record.requestId });
+  let memoryOutput = '';
+  await runMemoryLearningCommand(['context', '--run-id', record.runId, '--query', 'test memory', '--json'], { stdout: { write(text) { memoryOutput += text; } } });
+  assert(JSON.parse(memoryOutput).coverage);
+  const lookups = await call('/api/monitoring/context-queries?sessionId=a');
+  assert(lookups.json.records.some(row => row.kind === 'memory' && row.runId === record.runId && ['succeeded', 'partial'].includes(row.state)));
   console.log('WORK_ROUTES_VERIFIED: accepted Request attribution; missing/wrong actor rejected; fabricated evidence rejected; Agent drafts cannot approve; routing stays a reviewed packet; CLI shares the same read entry.');
 } finally { await rm(home, { recursive: true, force: true }); }
