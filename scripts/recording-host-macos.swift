@@ -45,6 +45,27 @@ func emit(_ value: [String: Any]) {
     }
 }
 
+final class WaveformView: NSView {
+    var samples = [Double]() { didSet { needsDisplay = true } }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.controlBackgroundColor.setFill(); bounds.fill()
+        let line = NSBezierPath(); line.lineWidth = 1
+        NSColor.tertiaryLabelColor.setStroke()
+        line.move(to: NSPoint(x: 0, y: bounds.midY)); line.line(to: NSPoint(x: bounds.width, y: bounds.midY)); line.stroke()
+        guard !samples.isEmpty else { return }
+        let wave = NSBezierPath(); wave.lineWidth = 3
+        NSColor.systemBlue.setStroke()
+        for (i, value) in samples.enumerated() {
+            // Fixed logarithmic scale; silence stays flat, with no invented activity.
+            let level = value > 0 ? max(0, min(1, (20 * log10(value) + 72) / 72)) : 0
+            let x = (CGFloat(i) + 0.5) * bounds.width / CGFloat(samples.count)
+            let h = CGFloat(level) * (bounds.height / 2 - 3)
+            wave.move(to: NSPoint(x: x, y: bounds.midY - h)); wave.line(to: NSPoint(x: x, y: bounds.midY + h))
+        }
+        wave.stroke()
+    }
+}
+
 final class LaneControls {
     let id: String
     let button: NSButton
@@ -54,6 +75,8 @@ final class LaneControls {
     let indicator: NSView
     let card: NSView
     var state: RecordingPanelState?
+    let wave = WaveformView()
+    let signal = NSTextField(labelWithString: "尚未采音")
     var busy = false
     var actionError: String?
     init(id: String, button: NSButton, detail: NSTextField, elapsed: NSTextField, status: NSTextField, indicator: NSView, card: NSView) {
@@ -82,6 +105,13 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var readError: String?
     var config = [String: Any]()
     var lastRenderKey = ""
+    var lastMeter: [String: Any]?
+    var announced = Set<String>()
+    var cuePlayer: AVAudioPlayer?
+    var notice: NSPanel?
+    var noticeText: NSTextField?
+    var lastNoticeLane: String?
+
     let dateParser = ISO8601DateFormatter()
 
     init(settings: HostSettings) { self.settings = settings; super.init() }
@@ -111,10 +141,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func buildWindow(_ lanes: [[String: Any]]) {
         let width: CGFloat = 560
-        let height = min(CGFloat(lanes.count) * 128 + 112, NSScreen.main.map { $0.visibleFrame.height - 80 } ?? 700)
+        let height = min(CGFloat(lanes.count) * 220 + 120, NSScreen.main.map { $0.visibleFrame.height - 80 } ?? 700)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = settings.mode == "preview" ? "录音窗口预览（不会录音）" : "讨论录音"
         window.minSize = NSSize(width: 480, height: 300); window.isReleasedWhenClosed = false
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.delegate = self; window.backgroundColor = .windowBackgroundColor; window.level = .floating
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 16, right: 20)
@@ -153,7 +184,12 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.heightAnchor.constraint(equalToConstant: 40).isActive = true
             button.widthAnchor.constraint(equalToConstant: 112).isActive = true
             card.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
-            controls[id] = LaneControls(id: id, button: button, detail: detail, elapsed: elapsed, status: status, indicator: indicator, card: card)
+            let control = LaneControls(id: id, button: button, detail: detail, elapsed: elapsed, status: status, indicator: indicator, card: card)
+            card.addArrangedSubview(control.wave); card.addArrangedSubview(control.signal)
+            control.wave.heightAnchor.constraint(equalToConstant: 54).isActive = true
+            control.wave.widthAnchor.constraint(equalTo: card.widthAnchor, constant: -32).isActive = true
+            control.signal.font = .systemFont(ofSize: 12); control.signal.textColor = .secondaryLabelColor
+            controls[id] = control
         }
         footer = text("按一次开始，再按一次停止。停止后自动回传。", size: 12, color: .secondaryLabelColor)
         stack.addArrangedSubview(footer)
@@ -169,7 +205,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         let menu = NSMenu(); let item = NSMenuItem(); menu.addItem(item)
         let submenu = NSMenu(); submenu.addItem(withTitle: "退出录音程序", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"); item.submenu = submenu; NSApp.mainMenu = menu
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.renderElapsed() }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.renderElapsed(); self?.renderMeters() }
         render()
     }
 
@@ -278,10 +314,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         do {
             let data = try Data(contentsOf: settings.root.appendingPathComponent("status.json"))
             guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw NSError(domain: "Recording", code: 2) }
+            let meter = (try? Data(contentsOf: settings.root.appendingPathComponent("meter.json"))).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
             let candidate = (value["pid"] as? NSNumber)?.int32Value
             let verified = settings.mode != "panel" || (candidate != nil && candidate! > 0 && kill(candidate!, 0) == 0 && ((!verifyService && candidate == daemonPID) || probeService()))
             DispatchQueue.main.async {
-                self.lastSnapshot = value; self.readError = verified ? nil : "录音服务尚未就绪，请重新打开窗口"
+                self.lastSnapshot = value; self.lastMeter = meter; self.readError = verified ? nil : "录音服务尚未就绪，请重新打开窗口"
                 if self.settings.mode == "panel", verified, let pid = candidate {
                     // A verified live socket supersedes a previous exit/launch error.
                     self.serviceError = nil
@@ -300,7 +337,18 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let pid = preview ? (lastSnapshot?["pid"] as? NSNumber)?.int32Value : settings.mode == "panel" ? daemonPID : service?.processIdentifier
         for lane in controls.values {
             let state = shuttingDown ? RecordingPanelState(title: "正在停止并保存", detail: "保存完成后退出", action: nil, tone: "starting", startedAt: nil) : RecordingPanelState.project(laneID: lane.id, snapshot: lastSnapshot, servicePID: pid, serviceRunning: running, error: serviceError ?? readError)
+            let previousTone = lane.state?.tone
             lane.state = state
+            if !preview, state.tone == "recording",
+               let active = (lastSnapshot?["active"] as? [[String: Any]])?.first(where: { $0["laneId"] as? String == lane.id }),
+               let id = active["recordingId"] as? String, !announced.contains(id) {
+                announced.insert(id); showNotice("录音已开始", laneID: lane.id, started: true)
+            } else if !preview, previousTone == "recording", state.tone != "recording" {
+                cuePlayer?.stop()
+                let last = (lastSnapshot?["records"] as? [[String: Any]])?.filter { $0["laneId"] as? String == lane.id }.max { ($0["startedAt"] as? String ?? "") < ($1["startedAt"] as? String ?? "") }
+                let message = state.action != "start" ? state.title : last?["status"] as? String == "failed" ? "录音失败 · 请检查设备" : last?["interrupted"] as? Bool == true ? "录音中断 · 已保留采到的音频" : "录音已结束 · 原音已保存"
+                showNotice(message, laneID: lane.id, started: false)
+            }
             lane.status.stringValue = state.title
             lane.button.title = lane.busy ? "处理中…" : state.action == "stop" ? "停止并保存" : state.action == "start" ? "开始录音" : "暂不可用"
             lane.button.isEnabled = !preview && !lane.busy && state.action != nil
@@ -316,7 +364,15 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let localOnly = config["submissionMode"] as? String == "local"
         footer?.stringValue = preview ? "界面预览：按钮不会开始录音。" : serviceError ?? (shuttingDown ? "正在保存并退出，请稍候…" : localOnly ? "按小键盘或点按钮启停。只保存在本机，暂不上传。" : "按小键盘或点按钮启停。停止后自动回传。")
-        renderElapsed()
+        let hasChord = (config["bindings"] as? [[String: Any]])?.contains(where: { $0["keys"] != nil }) == true
+        if hasChord && !preview && serviceError == nil && !shuttingDown {
+            footer?.stringValue = "1号键开始 · 三键同时按下结束。" + (localOnly ? "原音保存在本机。" : "结束后保存并回传。")
+        }
+        let hasDouble = (config["bindings"] as? [[String: Any]])?.contains(where: { $0["gesture"] as? String == "double" }) == true
+        if hasDouble && !preview && serviceError == nil && !shuttingDown {
+            footer?.stringValue = (config["keypadHint"] as? String ?? "开始键单按开始 · 结束键双击结束。") + (localOnly ? "仅本地保存。" : "结束后保存并回传。")
+        }
+        renderElapsed(); renderMeters()
         let projection = controls.values.sorted { $0.id < $1.id }.map {
             ["laneId": $0.id, "title": $0.status.stringValue, "buttonTitle": $0.button.title, "detail": $0.detail.stringValue,
              "tone": $0.state?.tone ?? "unknown", "enabled": $0.button.isEnabled,
@@ -328,6 +384,51 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if key != lastRenderKey {
             lastRenderKey = key; emit(viewState)
             if let path = settings.snapshot { saveSnapshot(path) }
+        }
+    }
+
+    func showNotice(_ message: String, laneID: String, started: Bool) {
+        if notice == nil {
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 110), styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
+            panel.title = "录音提醒"; panel.level = .statusBar; panel.isReleasedWhenClosed = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]; panel.hidesOnDeactivate = false
+            let label = text("", size: 22); label.alignment = .center
+            label.frame = NSRect(x: 12, y: 30, width: 356, height: 55)
+            panel.contentView?.addSubview(label); noticeText = label; notice = panel
+        }
+        lastNoticeLane = laneID; noticeText?.stringValue = message
+        noticeText?.textColor = started ? .systemRed : .labelColor
+        notice?.center(); notice?.orderFrontRegardless()
+        window.deminiaturize(nil); window.orderFrontRegardless()
+        emit(["feedback": message, "laneId": laneID, "at": ISO8601DateFormatter().string(from: Date())])
+        if started {
+            let cue = settings.root.appendingPathComponent("cues/started.mp3")
+            do { cuePlayer = try AVAudioPlayer(contentsOf: cue); cuePlayer?.prepareToPlay(); cuePlayer?.play() }
+            catch { NSSound(named: "Glass")?.play(); emit(["feedbackAudioError": "开始语音不可用，已用系统提示音"]) }
+        } else { NSSound(named: "Pop")?.play() }
+    }
+
+    func renderMeters() {
+        let meterPID = (lastMeter?["pid"] as? NSNumber)?.int32Value
+        let statusPID = (lastSnapshot?["pid"] as? NSNumber)?.int32Value
+        for lane in controls.values {
+            guard lane.state?.tone == "recording" else { lane.wave.samples = []; lane.signal.stringValue = "尚未采音"; continue }
+            let active = (lastSnapshot?["active"] as? [[String: Any]])?.first { $0["laneId"] as? String == lane.id }
+            let meter = (lastMeter?["active"] as? [[String: Any]])?.first { $0["laneId"] as? String == lane.id && $0["recordingId"] as? String == active?["recordingId"] as? String }
+            let timestamp = (meter?["updatedAt"] as? NSNumber)?.doubleValue ?? 0
+            guard meterPID == statusPID, Date().timeIntervalSince1970 * 1000 - timestamp < 2000 else {
+                lane.wave.samples = []; lane.signal.stringValue = "未收到实时音频 · 请检查接收器"
+                lane.signal.textColor = .systemOrange; lane.status.stringValue = "等待音频"; lane.indicator.layer?.backgroundColor = NSColor.systemOrange.cgColor
+                if lastNoticeLane == lane.id { noticeText?.stringValue = "录音中 · 等待音频输入" }
+                continue
+            }
+            lane.status.stringValue = "正在录音"; lane.indicator.layer?.backgroundColor = NSColor.systemRed.cgColor
+            let peak = (meter?["peak"] as? NSNumber)?.doubleValue ?? 0
+            let db = (meter?["rmsDb"] as? NSNumber)?.doubleValue ?? -96
+            lane.wave.samples = meter?["waveform"] as? [Double] ?? []
+            lane.signal.stringValue = peak == 0 ? "未检测到声音 · 请检查麦克风电源和连接" : String(format: "正在收到声音 · 音量 %.1f dBFS", db)
+            lane.signal.textColor = peak == 0 ? .systemOrange : .secondaryLabelColor
+            if lastNoticeLane == lane.id { noticeText?.stringValue = peak == 0 ? "录音中 · 未检测到声音" : "录音已开始 · 正在收声" }
         }
     }
 
@@ -375,7 +476,10 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let png = bitmap.representation(using: .png, properties: [:]) { io.async { try? png.write(to: URL(fileURLWithPath: path), options: .atomic) } }
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool { NSApp.terminate(nil); return false }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if settings.mode == "panel" { sender.orderOut(nil); return false }
+        NSApp.terminate(nil); return false
+    }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if settings.mode == "panel" {
             if ownsDaemon, daemonPID != nil || service?.isRunning == true {

@@ -181,3 +181,50 @@ Automated tests use synthetic audio, two receiver streams, real local asset uplo
 When physical checks are authorized, use actual receivers/keypads to record distinct short samples on all lanes; stagger starts/stops, disconnect one receiver, reconnect it, and confirm all raw files, destination bindings, transcripts and final deliveries. Also confirm normal office audio/typing and screen sleep behavior. Hardware permission grants, stable identity on reconnect, free3p event compatibility, USB stereo output and real transcription remain host-level acceptance items. Add receivers within measured USB/CPU/disk capacity; the implementation imposes no global two-channel ceiling and makes no unmeasured promise about maximum concurrent receivers.
 
 Reference: [FFmpeg AVFoundation](https://ffmpeg.org/ffmpeg-devices.html#avfoundation), [DJI Mic Mini 2 manual](https://dl.djicdn.com/downloads/MIC_MINI_2/20260421/UM/MINI2_um_en2.pdf).
+
+## Protected stop gestures and real audio feedback
+
+A single start binding can use `action: "start"` so repeated presses do not
+stop an existing recording.
+For a keypad that sends click macros, bind a different physical stop key with
+`action: "stop", gesture: "double"`. Two released presses 80–500 ms apart
+are required while the lane is active. A single stop press does nothing;
+double-stop never starts an idle lane. The first second after a keypad start
+is protected against accidental follow-on clicks. Real HID timestamps preserve
+spacing even if the host receives several buffered events together. Verify the
+stop key on USB and Bluetooth separately; do not infer identical codes.
+An optional `keypadHint` names the physical start/stop buttons in the panel.
+Explicitly selected keypads may also emit their stop button on HID button
+page 9; normal keyboards and mice remain outside the device allowlist.
+ An optional same-device stop binding has
+`keys: [104, 105, 106]`, `action: "stop"` and the same `laneId`/`usagePage`.
+Those numbers are an example, not a Free3 factory mapping: learn all three
+physical keys on the actual transport before applying it. Exactly three
+unique keys must be held concurrently, with their down events within 250 ms.
+Sequential taps, auto-repeat, another device/page and releases cannot stop.
+After a stop chord, release every key before starting again. Device removal
+clears held state. The macOS/Linux helpers now emit releases as well as downs;
+a keypad firmware that sends complete click macros instead of physical holds
+must be reconfigured or reported as unable to satisfy a held-key chord.
+
+The native panel displays a fixed-scale audio envelope and RMS level derived
+from the selected lane's PCM after it is appended to the local WAV. Silence
+stays flat; missing meter updates for two seconds clear the waveform and show
+an input warning. A meter from another process or recording is never reused.
+Capture state and acoustic signal remain separate: a receiver may send zeros.
+The lightweight `meter.json` updates at most ten times per second independently
+of saved recording manifests and uploads.
+
+On a verified new recording, the panel opens a nonmodal reminder above other
+windows and plays `<recording-root>/cues/started.mp3` locally. Prepare that cue
+before deployment; a missing cue uses the system Glass sound and emits a
+feedback error. Stop/failure clears the active reminder. The panel's close
+button hides its main window while feedback stays active; Quit still exits.
+For a desktop that must always receive keypad feedback, install the panel as
+an explicitly configured per-user login agent and verify it alongside the
+existing recorder. Keep the permission-bearing recorder app unchanged.
+The local control socket's `input-events` diagnostic returns only the latest
+32 events from explicitly bound devices, in memory, for physical calibration.
+It is not a global keyboard monitor. Verify real key overlap, visible popup,
+audible cue, changing waveforms and saved audio on the target Mac; compilation
+and synthetic tests alone do not establish those outcomes.

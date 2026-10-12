@@ -404,3 +404,84 @@ test('spawn failures settle capture and incomplete PCM frames do not claim recor
   const child = factory.captures.get('rx1'); child.emit('error', Error('spawn ffmpeg ENOENT')); child.stdout.end(); child.emit('close');
   await failed; assert.equal(manager.status().length, 0);
 });
+
+test('three held keys stop only within the chord window, on one device, without release retriggers', async () => {
+  const { RecordingKeypad } = await import('../lib/recording/keypad.mjs');
+  let now = 0;
+  const cfg = config({ bindings: [
+    { deviceId: 'pad', key: 104, laneId: 'a', action: 'start' },
+    { deviceId: 'pad', keys: [104, 105, 106], laneId: 'a', action: 'stop' },
+  ] });
+  const input = new RecordingKeypad(cfg.bindings, () => now);
+  const key = (code, pressed = true, deviceId = 'pad') => input.accept({ deviceId, key: code, pressed });
+  assert.equal(key(104).action, 'start'); assert.equal(key(104), undefined);
+  key(104, false); now = 100; assert.equal(key(105), undefined); key(105, false);
+  now = 150; assert.equal(key(106), undefined); key(106, false);
+  now = 300; key(104); now = 450; key(105); now = 550;
+  assert.equal(key(106).action, 'stop'); assert.equal(key(106), undefined);
+  key(104, false); assert.equal(key(104), undefined); key(104, false); key(105, false); key(106, false);
+  now = 1000; assert.equal(key(104).action, 'start'); now = 1300; key(105); assert.equal(key(106), undefined);
+  input.reset(); now = 2000; key(104); key(105, true, 'other'); assert.equal(key(106), undefined);
+  input.accept({ deviceId: 'pad', disconnected: true }); assert.equal(key(104).action, 'start');
+  input.reset(); key(106); key(105); assert.equal(key(104).action, 'stop');
+  assert.throws(() => config({ bindings: [{ deviceId: 'pad', keys: [1, 1, 2], laneId: 'a', action: 'stop' }] }), /three distinct/);
+  assert.throws(() => config({ bindings: [{ deviceId: 'pad', keys: [1, 2, 3], laneId: 'a', action: 'toggle' }] }), /only stop/);
+});
+
+test('meter uses saved selected-channel PCM, distinguishes silence, and clears after stop', async (t) => {
+  const root = await temporary(t), factory = captureFactory();
+  const manager = new RecordingManager({ root, config: config(), spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  await manager.start('a'); await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(0, 32767));
+  assert.equal(manager.meters()[0].peak, 0);
+  await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(16384, 0));
+  const meter = manager.meters()[0]; assert.equal(meter.peak, 0.5); assert.equal(meter.rms, 0.5);
+  assert.ok(Math.abs(meter.rmsDb + 6.0206) < 0.001); assert.ok(meter.waveform.every((x) => x === 0.5));
+  assert.equal(meter.recordingId, manager.status()[0].recordingId);
+  const saved = await manager.stop('a'); assert.equal(manager.meters().length, 0);
+  assert.deepEqual(await samples(root, saved.recording), [0,0,0,0,16384,16384,16384,16384]);
+});
+
+test('queued HID events retain hardware timing instead of inventing simultaneous presses', async () => {
+  const { RecordingKeypad } = await import('../lib/recording/keypad.mjs');
+  const input = new RecordingKeypad([{ deviceId: 'pad', keys: [1,2,3], action: 'stop', laneId: 'a' }], () => 9000);
+  assert.equal(input.accept({ deviceId: 'pad', key: 1, pressed: true, timestampMs: 1000 }), undefined);
+  assert.equal(input.accept({ deviceId: 'pad', key: 2, pressed: true, timestampMs: 1400 }), undefined);
+  assert.equal(input.accept({ deviceId: 'pad', key: 3, pressed: true, timestampMs: 1500 }), undefined);
+});
+
+test('start-only key and double-stop work with click-macro keypads and protect the first second', async () => {
+  const { RecordingKeypad } = await import('../lib/recording/keypad.mjs');
+  let now = 0, recording = false;
+  const bindings = config({ bindings: [
+    { deviceId: 'pad', key: 27, laneId: 'a', action: 'start' },
+    { deviceId: 'pad', key: 27, laneId: 'a', action: 'stop', gesture: 'double' },
+  ] }).bindings;
+  const input = new RecordingKeypad(bindings, () => now, () => recording);
+  const tap = (at) => { now = at; const action = input.accept({ deviceId: 'pad', key: 27, pressed: true, timestampMs: at }); input.accept({ deviceId: 'pad', key: 27, pressed: false }); return action?.action; };
+  assert.equal(tap(0), 'start'); recording = true;
+  assert.equal(tap(150), undefined); assert.equal(tap(300), undefined);
+  assert.equal(tap(1100), undefined); assert.equal(tap(1700), undefined);
+  assert.equal(tap(2500), undefined); assert.equal(tap(2750), 'stop');
+  recording = false; assert.equal(tap(3500), 'start'); recording = true;
+  assert.equal(tap(4800), undefined); input.reset('pad'); assert.equal(tap(4900), undefined);
+  assert.equal(tap(5300), 'stop');
+  assert.throws(() => config({ bindings: [{ deviceId: 'pad', key: 27, laneId: 'a', action: 'stop', gesture: 'double' }] }), /start-only/);
+});
+
+test('separate key 2 double-stop never starts from idle; key 1 never stops an active recording', async () => {
+  const { RecordingKeypad } = await import('../lib/recording/keypad.mjs');
+  let now = 0, recording = false;
+  const bindings = config({ bindings: [
+    { deviceId: 'pad', key: 27, laneId: 'a', action: 'start' },
+    { deviceId: 'pad', key: 25, laneId: 'a', action: 'stop', gesture: 'double' },
+  ] }).bindings;
+  const input = new RecordingKeypad(bindings, () => now, () => recording);
+  const tap = (key, at) => { now = at; const action = input.accept({ deviceId: 'pad', key, pressed: true, timestampMs: at }); input.accept({ deviceId: 'pad', key, pressed: false }); return action?.action; };
+  assert.equal(tap(25, 0), undefined); assert.equal(tap(25, 200), undefined);
+  assert.equal(tap(27, 1000), 'start'); recording = true;
+  assert.equal(tap(25, 1100), undefined); assert.equal(tap(25, 1300), undefined);
+  assert.equal(tap(27, 2200), 'start'); assert.equal(tap(27, 2400), 'start');
+  assert.equal(tap(25, 3000), undefined); assert.equal(tap(25, 3700), undefined);
+  assert.equal(tap(25, 4000), 'stop');
+});
