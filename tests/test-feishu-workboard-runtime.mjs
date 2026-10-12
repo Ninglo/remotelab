@@ -73,8 +73,10 @@ test('quota pause is isolated, durable and resumes on connector restart with one
   const server = createServer();
   const sockets = new WebSocketServer({ server });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const pilot = { scope: 'instance', sourceRouteId: 'default', protocolVersion: 2, sessions: {} };
-  const session = { id: 's', workboardPilot: true, conversation: { connector: 'feishu', sourceRouteId: 'default',
+  const pilot = { scope: 'instance', sourceRouteId: 'default', protocolVersion: 2,
+    sessions: { old: { chatId: 'chat', cards: [], protocolAfterSeq: 0 } } };
+  const visited = [];
+  const session = { id: 's', workboardPilot: true, activity: { run: { state: 'running' } }, conversation: { connector: 'feishu', sourceRouteId: 'default',
     target: { chatId: 'chat', chatType: 'p2p', conversationKind: 'main' } } };
   const events = [{ seq: 1, type: 'message', role: 'user', runId: 'r', sourceContext: { connector: 'feishu',
     sourceRouteId: 'default', chatId: 'chat', chatType: 'p2p', messageId: 'input', sender: { openId: 'person' } },
@@ -83,8 +85,14 @@ test('quota pause is isolated, durable and resumes on connector restart with one
     workboard: { taskId: 'task', goal: '交付', revision: 1, status: 'running', reason: '',
       items: [{ id: 'item', title: '交付', condition: '核对', status: 'pending', evidenceRefs: [] }] } }];
   const remote = { baseUrl: `http://127.0.0.1:${server.address().port}`, ensureAuthCookie: async () => '',
-    request: async path => ({ response: { ok: true, status: 200 }, json: path.includes('/events')
-      ? { events } : path.includes('?sourceId') ? { sessions: [session] } : { session } }) };
+    request: async path => {
+      visited.push(path);
+      const old = { ...session, id: 'old', activity: { run: { state: 'idle' } } };
+      return { response: { ok: true, status: 200 }, json: path.includes('/events')
+        ? { events: path.includes('/old/') ? [] : events }
+        : path.includes('?sourceId') ? { sessions: [old, session] }
+          : { session: path.includes('/old?') ? old : session } };
+    } };
   let rejected = true, creates = 0;
   const app = { im: { v1: { message: {
     create: async () => { creates++; if (rejected) throw Object.assign(new Error('monthly quota'), { code: 99991403 });
@@ -103,6 +111,8 @@ test('quota pause is isolated, durable and resumes on connector restart with one
   try {
     const health = await start('quota_blocked', pilot);
     assert.equal(health.failures.s, 'monthly quota');
+    assert.match(visited.find(path => path.includes('view=summary')), /sessions\/s\?/,
+      'live task is processed before the stored historical backlog');
     await component.stop();
     assert.equal(creates, 1);
     const paused = JSON.parse(await readFile(statePath));

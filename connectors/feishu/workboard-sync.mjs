@@ -76,6 +76,7 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
   let initializePromise = Promise.resolve();
   let expiryTimer = null;
   const pending = new Set();
+  const urgent = new Set();
   const ignored = new Set();
   const retries = new Map();
   const quotaGate = createWorkboardQuotaGate({ onBlocked: async failure => {
@@ -179,7 +180,11 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
   async function discoverGroupSessions() {
     if (!instanceScope && !pilot.groupEnabled) return [];
     const list = await requestJson('/api/sessions?sourceId=feishu');
+    const sessions = Array.isArray(list.sessions) ? list.sessions : [];
+    const live = sessions.filter(session => session.activity?.run?.state === 'running'
+      && session.workboardPilot === true && session.conversation?.sourceRouteId === pilot.sourceRouteId);
     return [...new Set([
+      ...live.map(session => session.id),
       ...Object.keys(instanceScope ? pilot.sessions : pilot.groupSessions),
       ...(Array.isArray(list.sessions) ? list.sessions : [])
         .filter(session => session?.workboardPilot === true
@@ -209,12 +214,12 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
     if (syncing || quotaGate.blocked) return;
     syncing = true;
     try {
-      while ((disclosures.size || pending.size) && !stopped && !quotaGate.blocked) {
+      while ((disclosures.size || urgent.size || pending.size) && !stopped && !quotaGate.blocked) {
         // Human clicks take precedence over queued automatic refreshes. Keep
         // the same single writer and sequence fences for both update paths.
         const change = disclosures.take();
-        const sessionId = change?.sessionId || pending.values().next().value;
-        if (!change) pending.delete(sessionId);
+        const sessionId = change?.sessionId || urgent.values().next().value || pending.values().next().value;
+        if (!change) { pending.delete(sessionId); urgent.delete(sessionId); }
         try {
           if (change) await syncDisclosure(change);
           else await syncOne(sessionId);
@@ -239,9 +244,10 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
     } finally { syncing = false; }
   }
 
-  function enqueue(sessionId) {
+  function enqueue(sessionId, live = false) {
     if (!sessionId || stopped) return;
-    pending.add(sessionId);
+    if (live) urgent.add(sessionId);
+    else pending.add(sessionId);
     void drain();
   }
 
@@ -275,7 +281,7 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
       try { message = JSON.parse(data); } catch { return; }
       if (message.type === 'session_invalidated' && (instanceScope || message.sessionId === pilot.sessionId || pilot.groupEnabled)) {
         if (disclosures.accept(message)) void drain();
-        else enqueue(message.sessionId);
+        else enqueue(message.sessionId, true);
       }
     });
     socket.on('error', error => console.error(`[feishu-workboard] socket: ${error.message}`));

@@ -16,7 +16,9 @@ activation on one instance never automatically activates another.
 > original live card, restart recovery and result delivery after deployment.
 > Never backfill historical cards or send unsolicited test cards to groups.
 
-Card synchronization is owned by each Feishu connector process. It shares the
+Card synchronization is owned by each Feishu connector process.
+Cold start visits running Sessions first; fresh invalidations take priority over
+the historical queue, while human card clicks retain the highest priority. It shares the
 connector's provider client and credentials, with its own serial queue and
 RemoteLab invalidation subscription. It has no independent systemd/launchd
 service, PID, signal handler or operator restart procedure. Ordinary messages
