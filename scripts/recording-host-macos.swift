@@ -46,6 +46,8 @@ func emit(_ value: [String: Any]) {
 }
 
 final class WaveformView: NSView {
+    // Display-only floor: leave the captured PCM and uploaded original untouched.
+    static let noiseFloorDb = -52.0
     var samples = [Double]() { didSet { needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlBackgroundColor.setFill(); bounds.fill()
@@ -56,8 +58,7 @@ final class WaveformView: NSView {
         let wave = NSBezierPath(); wave.lineWidth = 3
         NSColor.systemBlue.setStroke()
         for (i, value) in samples.enumerated() {
-            // Fixed logarithmic scale; silence stays flat, with no invented activity.
-            let level = value > 0 ? max(0, min(1, (20 * log10(value) + 72) / 72)) : 0
+            let level = value > 0 ? max(0, min(1, (20 * log10(value) - Self.noiseFloorDb) / -Self.noiseFloorDb)) : 0
             let x = (CGFloat(i) + 0.5) * bounds.width / CGFloat(samples.count)
             let h = CGFloat(level) * (bounds.height / 2 - 3)
             wave.move(to: NSPoint(x: x, y: bounds.midY - h)); wave.line(to: NSPoint(x: x, y: bounds.midY + h))
@@ -425,10 +426,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             lane.status.stringValue = "正在录音"; lane.indicator.layer?.backgroundColor = NSColor.systemRed.cgColor
             let peak = (meter?["peak"] as? NSNumber)?.doubleValue ?? 0
             let db = (meter?["rmsDb"] as? NSNumber)?.doubleValue ?? -96
-            lane.wave.samples = meter?["waveform"] as? [Double] ?? []
-            lane.signal.stringValue = peak == 0 ? "未检测到声音 · 请检查麦克风电源和连接" : String(format: "正在收到声音 · 音量 %.1f dBFS", db)
+            let quiet = db < WaveformView.noiseFloorDb
+            lane.wave.samples = quiet ? [] : meter?["waveform"] as? [Double] ?? []
+            lane.signal.stringValue = peak == 0 ? "未检测到声音 · 请检查麦克风电源和连接" : quiet ? "音频已接通 · 当前较安静" : String(format: "检测到明显声音 · 音量 %.1f dBFS", db)
             lane.signal.textColor = peak == 0 ? .systemOrange : .secondaryLabelColor
-            if lastNoticeLane == lane.id { noticeText?.stringValue = peak == 0 ? "录音中 · 未检测到声音" : "录音已开始 · 正在收声" }
+            if lastNoticeLane == lane.id { noticeText?.stringValue = peak == 0 ? "录音中 · 未检测到声音" : quiet ? "录音中 · 当前较安静" : "录音已开始 · 正在收声" }
         }
     }
 
