@@ -891,7 +891,7 @@
     flowsPanel.append(title, nav);
     const group = groups.find(item => item.id === selectedFlow);
     const diagram = createNode("div", "task-flow-diagram");
-    diagram.setAttribute("aria-label", flowTranslate(`tasks.flows.${group.id}`, group.id));
+    diagram.setAttribute("aria-label", group.title || flowTranslate(`tasks.flows.${group.id}`, group.id));
     let current = diagram;
     if (group.plan) {
       diagram.appendChild(renderFlowPlan(group.plan));
