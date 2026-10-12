@@ -66,6 +66,19 @@
     ])));
     if (q.coverage.incomplete || q.hasMore) host.append(el('p', '记录不完整或已达展示上限，以上只是部分记录。', 'monitoring-note'));
     host.append(el('p', '仅记录 work context、work people、memory context。返回不代表已读或采纳；直接读文件、其他工具不在覆盖范围。关键词以标识去重，原查询内容在 Session 的工具记录中查看。', 'monitoring-note'));
+    if (q.rules) {
+      const r = q.rules, s = r.summary;
+      const labels = { accepted: '输入接收回执', compacted: '原生压缩完成', started: '恢复开始', prepared: '恢复内容已生成', skipped: '未找到可恢复快照', failed: '恢复失败' };
+      host.append(el('h4', '规则与压缩'), el('p', `规则输入 ${s.accepted} · 压缩 ${s.compacted} · 恢复内容已生成 ${s.prepared} · 恢复失败 ${s.failed} · 未见结束 ${s.unfinished}`, 'monitoring-note'));
+      host.append(el('p', `采集起点：${r.collectionStartedAt ? new Date(r.collectionStartedAt).toLocaleString() : '尚未观测到事件'}。`, 'monitoring-note'));
+      if (r.records.length) host.append(table(['时间', '证据', '规则版本／Run'], r.records.map(x => [
+        new Date(x.timestamp).toLocaleString(), `${labels[x.state] || x.state}${x.kind === 'reference' ? '（沿用版本）' : x.kind === 'full' ? '（完整规则）' : ''}${x.errorCode ? ' · ' + x.errorCode : ''}`,
+        `${(x.fingerprint || '').slice(0, 12)}${x.runId ? ' · ' + x.runId : ''}`,
+      ])));
+      if (!r.records.length) host.append(el('p', '未观测到规则事件；不能据此判断规则仍在或已经丢失。已有执行可能尚未加载新埋点。', 'monitoring-note'));
+      if (r.hasMore) host.append(el('p', '仅展示最近 100 条规则记录。', 'monitoring-note'));
+      host.append(el('p', '覆盖 RemoteLab 投射的七类规则。压缩与恢复观测目前接入 Codex；“恢复内容已生成”不等于原生已应用，更不证明模型理解或遵守。原生系统规则、AGENTS.md、Skill 和直接读文件不在此快照覆盖范围。', 'monitoring-note'));
+    }
     host.append(button('刷新查询记录', () => loadQueries(session, host)));
   }
   async function loadQueries(session, host) {

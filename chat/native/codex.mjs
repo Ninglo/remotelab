@@ -297,6 +297,9 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
             const turnId = params.turnId || activeTurnId;
             if (turnId) finalAnswerTurns.add(turnId);
           }
+          if (message.method === 'item/completed' && params.item?.type === 'contextCompaction') {
+            onEvent({ type: 'remotelab.context_compacted', itemId: params.item.id });
+          }
           const item = execItem(params.item);
           if (!item) break;
           items.set(item.id, item);

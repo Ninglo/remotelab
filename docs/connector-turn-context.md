@@ -327,3 +327,11 @@ threads or missing acceptance evidence receive it again; later accepted receipts
 carry the proven announcement hash. This adds no model call or read-state store.
 The announcement is group context and relevant collaboration guidance, not new
 authorization. Linked documents and media are not automatically read.
+
+### 规则与压缩记录
+
+同一处按需查询详情还展示规则输入回执、Codex 原生压缩完成，以及恢复开始、内容已生成、失败、未找到快照等事件。规则版本使用快照内容哈希，可核对压缩后准备恢复的是哪个版本；未结束的恢复与错误码单独显示。采集采用同一事件账本与读取限额，不复制规则正文、路径或个人资料。输入回执只在原生明确接受输入后记录，沿用版本与完整规则分别标示；拒绝、准备中的输入不算已送入。
+
+这些是传输与恢复过程的证据。“恢复内容已生成”发生在恢复钩子输出之前，不能当作原生已应用的回执，更不能证明模型理解、记住或遵守了规则。未看到事件也不能判断规则已经丢失：历史记录、已有执行未加载新埋点、其他 Harness 和采集故障都可能留下空白。恢复失败保留原有停止继续推理的行为，埋点失败不改变恢复结果。
+
+目前快照只覆盖 RemoteLab 的七类规则：消息显示、任务清单、来源运行、Session、个人回复、开工检查和运行中输入。原生系统指令、AGENTS.md、Skill 以及临时文件读取不在此快照内。压缩和恢复事件目前接入 Codex；其他 Harness 不显示虚构的“规则正常”结论。实际任务中的遗漏和不遵守仍需结合输出和工具行为检查。
