@@ -295,3 +295,15 @@ test('invalid receipt stays awaiting verification, then accepts its correction w
   await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'awaiting_confirmation');
   assert.equal(f.getAdmissions(), 1);
 });
+
+test('a reopened diagnosis cannot present old completed actions as the result of its failed new attempt', async () => {
+  const f = fixture({ kind: 'disk' }); f.options.config.policyVersion = 'v1';
+  await processMonitoringRecovery(f.options); f.finish('blocked'); await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().summary, 'Verified real output');
+  f.options.config.policyVersion = 'v2'; await processMonitoringRecovery(f.options);
+  assert.equal(f.getAdmissions(), 2); assert.equal(f.incident().summary, '');
+  f.runs.get(f.incident().attempts.at(-1).runId).state = 'failed';
+  await processMonitoringRecovery(f.options);
+  assert.equal(projectRecovery(f.getState())[0].summary, '');
+  assert.equal(f.incident().previousBlocks[0].summary, 'Verified real output');
+});

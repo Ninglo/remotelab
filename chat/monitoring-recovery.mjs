@@ -241,6 +241,9 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
           previousRuntime: { tool: session.tool, model: session.model || '', effort: session.effort || '', thinking: session.thinking === true },
           receiptFile: join(CONFIG_DIR, 'monitoring-recovery-receipts', `${item.key}-${item.attempts.length + 1}.json`),
           sourceDelivery: task?.resultDelivery?.mode === 'conversation' ? session.conversation || task.resultDelivery : null };
+        // A new attempt must not inherit a previous attempt's completed actions.
+        // Their source receipts and previousBlocks remain available for audit.
+        item.summary = ''; item.evidence = []; delete item.plan;
         item.attempts.push(attempt);
         attempt.body = { requestId, text: promptFor(item, attempt, task, config), tool: session.tool,
           model: attempt.model, effort: attempt.effort, ...(attempt.sourceDelivery ? { sourceDelivery: attempt.sourceDelivery } : {}) };
