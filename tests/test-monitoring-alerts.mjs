@@ -461,3 +461,14 @@ test('explicit no-group automations cannot escalate into the common group even w
     snapshot: { ...snapshot([{ kind: 'automation', id: 'private', severity: 'critical' }]), generatedAt: new Date(Date.now() + i * 60000).toISOString() } });
   assert.equal(f.getSends(), 0); assert.equal(f.getUpdates(), 0);
 });
+
+test('changing a workflow to no-group also protects edits of existing mixed incident cards', async () => {
+  const f = fixture();
+  const job = { kind: 'automation', id: 'private', subject: 'Private task', severity: 'critical' };
+  const config = { criticalAutomationIds: ['private'] };
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: snapshot([job]) });
+  assert.equal(f.getSends(), 1);
+  const healthy = snapshot([]); healthy.automations.items = [{ id: 'private', state: 'completed' }];
+  await dispatchMonitoringAlerts({ ...f.options, config: { ...config, ignoreAutomationIds: ['private'] }, snapshot: healthy });
+  assert.equal(f.getUpdates(), 0);
+});
