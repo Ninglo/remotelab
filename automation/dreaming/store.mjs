@@ -97,8 +97,16 @@ export function selectBatch(state, config) {
     if (items.length >= (config.maxBatchItems || 4) || chars + item.excerpt.length > max) break;
     items.push(item); chars += item.excerpt.length;
   }
+  const candidates = []; let candidateChars = 0;
+  for (const original of state.candidates.filter(c => c.status === 'pending')) {
+    const candidate = { id: original.id, kind: original.kind, runId: original.runId, status: original.status };
+    for (const key of ['change', 'overlap', 'validation', 'destination']) candidate[key] = original[key].slice(0, 600);
+    const size = JSON.stringify(candidate).length;
+    if (candidateChars + size > 6000 || candidates.length === 5) break;
+    candidates.push(candidate); candidateChars += size;
+  }
   return { id: hash(items.map(x => x.id).join('\n')).slice(0, 24), items,
-    candidates: state.candidates.filter(c => c.status === 'pending').slice(0, 5), coverage: state.coverage };
+    candidates, coverage: state.coverage };
 }
 export function validateResult(result, batch) {
   if (result.batchId !== batch.id || typeof result.finding !== 'string' || !result.finding.trim() || result.finding.length > 3000) throw new Error('Invalid batch or finding');

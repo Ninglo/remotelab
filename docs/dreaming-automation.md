@@ -36,7 +36,8 @@ support one review; collection is independent of the daily report's publication.
 The worker first calls `claim`, reads only the supplied batch and relevant existing
 memory, writes the supplied draft JSON, then calls `finish`. At most two candidates
 carry source IDs, existing-rule overlap, destination and a future validation plan.
-Later batches include up to five pending candidates; a supported/rejected outcome
+Later batches include up to five pending candidates within 6,000 characters,
+without accumulating their full histories; a supported/rejected outcome
 requires new batch evidence. No observation is promoted to a confirmed personal
 preference or global rule by this workflow. Candidates stay in this task's one
 ledger; changes to canonical project/personal/method records use their existing

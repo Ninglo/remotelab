@@ -48,6 +48,11 @@ try {
   await commitReview(root, state, active, result);
   await commitReview(root, state, active, result);
   assert.equal(state.pending.length, 0); assert.equal(state.candidates.length, 1, 'idempotent commit');
+  const oversized = Array.from({ length: 8 }, (_, i) => ({ ...state.candidates[0], id: `candidate-${i}`,
+    change: 'x'.repeat(1600), overlap: 'x'.repeat(1600), validation: 'x'.repeat(1600), destination: 'x'.repeat(1600), history: [{ details: 'x'.repeat(100000) }] }));
+  const context = selectBatch({ ...state, candidates: oversized }, config).candidates;
+  assert.ok(JSON.stringify(context).length <= 6005);
+  assert.ok(context.every(c => !c.history), 'old review histories cannot accumulate in the next model context');
   await ingest(root, config, state); assert.equal(state.pending.length, 0);
   const noIdle = { status: 'ready', sessions: [], idleSince: new Date().toISOString(), host: { loadPerCpu: 0.1, freeMemoryRatio: 0.5 } };
   assert.equal(resourceDecision(config, noIdle).trigger, false);
