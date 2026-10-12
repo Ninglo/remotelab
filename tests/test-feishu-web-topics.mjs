@@ -97,3 +97,14 @@ test('group boards reuse paired-group source and exclude private, unrelated and 
   a.activity.run.state = 'idle'; const changed = next(); broadcastAll({ type: 'session_invalidated', sessionId: a.id }); await changed;
   assert.notEqual(pushed.at(-1).boards[0].topics.find(t => t.sessionId === a.id).state, 'running'); off();
 });
+test('topic details require explicit new confirmation; old and activated grants keep their scope', async () => {
+  const input={origin:'http://127.0.0.1:19342',nativeAccount:'1000000000000000001',confirm:true};
+  const old=await auth.connectFeishuWebSettings(input,actor,'topics');
+  assert.equal((await auth.authorizeFeishuWebSettings(old.token,input.origin,input.nativeAccount,'topics')).topicDetails,false);
+  const current=await auth.connectFeishuWebSettings({...input,topicDetails:true},actor,'topics');
+  assert.equal((await auth.authorizeFeishuWebSettings(current.token,input.origin,input.nativeAccount,'topics')).topicDetails,true);
+  let enriched=0;
+  const api=createFeishuTopicSource({sessions:async()=>[],bindings:async()=>({bindings:{}}),details:async entries=>{enriched++;return {entries,quota:{status:'ready'}};}});
+  assert.equal((await api.snapshot([], '', null, [], false)).quota,undefined);assert.equal(enriched,0);
+  assert.equal((await api.snapshot([], '', null, [], true)).quota.status,'ready');assert.equal(enriched,1);
+});

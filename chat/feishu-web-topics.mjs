@@ -41,7 +41,7 @@ async function bindingsConfig() {
 export function createFeishuTopicSource(deps = {}) {
   const sessions = deps.sessions || loadSessionsMeta, session = deps.session || getSession, bindings = deps.bindings || bindingsConfig;
   const details=deps.details||topicDetails;
-  async function snapshot(ids, changedId = '', previous = null, groupIds = []) {
+  async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true) {
     const config = await bindings(), wanted = new Set(ids), visibleGroups = new Set(groupIds);
     const pairs = (config.pairs || []).filter(p => [p.workChatId, p.discussionChatId].some(id => visibleGroups.has(String(config.groups?.[id]))));
     const boardChats = new Set(pairs.flatMap(p => [p.workChatId, p.discussionChatId]));
@@ -63,16 +63,16 @@ export function createFeishuTopicSource(deps = {}) {
     const names = pairs.length ? personNames((await loadAuthDocument({ persistMigration: false })).people) : new Map();
     const data = { schema: 3, syncedAt: new Date().toISOString(), sourceConnected: true, entries: [...entries.values()],
       boards: buildGroupBoards(cache, { pairs, groups: config.groups, names, bindings: safeBindings, viewFor: s => topicProjection(s, '') }) };
-    Object.assign(data,await details(data.entries,config));
+    if(includeDetails)Object.assign(data,await details(data.entries,config));
     Object.defineProperty(data, sourceRecords, { value: cache }); return data;
   }
-  async function subscribe(ids, emit, fail, groupIds = []) {
+  async function subscribe(ids, emit, fail, groupIds = [], includeDetails = true) {
     let alive = true, busy = false, pending = false, nextId = '', last = null;
     const refresh = id => {
       if (!alive) return;
       if (busy) { pending = true; nextId = ''; return; }
       busy = true;
-      void snapshot(ids, id, last, groupIds).then(data => { if (alive) { last = data; emit(data); } }).catch(error => { if (alive) fail(error); }).finally(() => {
+      void snapshot(ids, id, last, groupIds, includeDetails).then(data => { if (alive) { last = data; emit(data); } }).catch(error => { if (alive) fail(error); }).finally(() => {
         busy = false; if (pending && alive) { pending = false; refresh(nextId); }
       });
     };
