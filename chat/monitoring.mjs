@@ -10,6 +10,7 @@ import { readRecord } from '../lib/durable-records.mjs';
 import { RECOVERY_FILE, projectRecovery } from './monitoring-recovery.mjs';
 import { readFeishuApiHealth, feishuApiAttention } from '../lib/feishu-api-health.mjs';
 import { isStoppedAutomation, currentAutomationStatus, isCurrentRecovery } from '../lib/monitoring-status.mjs';
+import { accountContinuity, continuityAttention } from '../lib/monitoring-actions.mjs';
 
 const exec = promisify(execFile);
 const GiB = 1024 ** 3;
@@ -72,16 +73,12 @@ export async function readService(item, execute = exec) {
     observedAt: new Date().toISOString() };
 }
 
-export function analyzeResources({ accounts, disks, automations, services, recovery = [], apiHealth, now = Date.now() }) {
+export function analyzeResources({ accounts, disks, automations, services, recovery = [], apiHealth, continuity, now = Date.now() }) {
   const attention = feishuApiAttention(apiHealth);
   for (const disk of disks) if (disk.status === 'critical' || disk.status === 'warning') attention.push({ kind: 'disk', severity: disk.status,
     id: disk.path, subject: disk.label, availableBytes: disk.availableBytes, usedPercent: disk.usedPercent, inodeUsedPercent: disk.inodeUsedPercent });
   const available = accounts.filter(account => account.status === 'available');
-  const exhausted = accounts.filter(account => account.status === 'exhausted');
-  if (exhausted.length) attention.push({ kind: 'quota', severity: !available.length || exhausted.some(account => account.active) ? 'critical' : 'warning',
-    subject: exhausted.map(account => account.label).join('、'), availableAccounts: available.length });
-  const low = available.filter(account => account.windows.some(window => window.remainingPercent <= 10));
-  if (low.length) attention.push({ kind: 'lowQuota', severity: 'warning', subject: low.map(account => account.label).join('、') });
+  attention.push(...continuityAttention(continuity));
   for (const task of automations.items) if (!isStoppedAutomation(task, now)
     && (task.lastExecution?.state === 'failed' || task.lastError)
     && !(task.lastExecution?.runId && !task.lastError && recovery.some(item => item.kind === 'automation'
@@ -194,7 +191,8 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       }
       item.currentIssue = isCurrentRecovery(item);
     }
-    const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, now: now() });
+    const continuity = accountContinuity(runtime, now());
+    const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, continuity, now: now() });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
     const deliveryIssues = Object.values(alertState?.batches || {}).filter(batch => ['needs_review', 'blocked_dependency'].includes(batch.status));
     const alertDelivery = { unresolved: deliveryIssues.length, blocked: deliveryIssues.filter(batch => batch.status === 'blocked_dependency').length,
@@ -204,7 +202,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     return { generatedAt, windowDays: days,
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
-      accounts, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
+      accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,
         unknownAccounts: accounts.filter(account => ['unknown', 'conflicting'].includes(account.status)).length, unverifiedAdmissions, gaps } };
   }

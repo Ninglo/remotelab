@@ -208,7 +208,20 @@
     }
     disks.insertBefore(diskVisuals, disks.children[1] || null);
     value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
+    for (const repair of (value.recovery || []).filter(r => r.kind === "disk" && r.currentIssue)) {
+      const details = node("details"); details.appendChild(node("summary", `${repair.subject}处置：${repair.label}`));
+      details.appendChild(node("p", repair.summary || repair.reason || "正在核对安全处置方案", "monitoring-note"));
+      if (repair.plan) table(details, ["方案", "内容"], [["执行条件", repair.plan.requiresConfirmation ? "经人确认后执行" : "低风险自行处理"],
+        ["步骤", repair.plan.summary], ["对象", repair.plan.target], ["影响", repair.plan.impact], ["恢复方式", repair.plan.rollback], ["验收", repair.plan.verification]]);
+      if (repair.sessionId) { const link = node("a", "查看原处理会话"); link.href = `/?session=${encodeURIComponent(repair.sessionId)}`; details.appendChild(link); }
+      disks.appendChild(details);
+    }
     const accounts = section("账户额度", snapshot); accounts.dataset.section = "accounts";
+    const continuity = value.accountContinuity;
+    if (continuity) accounts.appendChild(node("p", `本实例自动切换${continuity.autoSwitch ? "已开启" : "未开启"}；已登录且额度高于10%的备用 ${continuity.backupCount} 个。20%进入备用准备区，10%切换后续请求；在途任务保留原账号。其他机器账号不算本实例备用。`, "monitoring-note"));
+    for (const item of (value.attention || []).filter(a => a.kind === "accountContinuity")) {
+      const line = node("p", alertDetail(item), "monitoring-alert"); line.dataset.severity = item.severity; accounts.appendChild(line);
+    }
     if (!value.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
     else {
       const summary = node("div", "", "monitoring-account-summary");
