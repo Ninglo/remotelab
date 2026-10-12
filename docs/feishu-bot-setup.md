@@ -532,19 +532,33 @@ reaction receives no visible text after the reaction is added.
 For a selected group mainline, add `jevReactions: true` to a group that
 already has `quickReactions: true`, `participationMode: "ambient"`, and
 `groupFeed: true`. Each admitted human message is appended once to its bound
-group Session. The main Harness receives it without waiting for Jev, reaction
+group Session. The main Harness receives it without waiting for the fast reaction model, reaction
 persistence or the reaction provider. It decides whether to reply, where the
 reply belongs and whether authorized work needs a separate Session.
 
-Jev receives a bounded recent Session window (at most 20 messages and 5,000
+OpenAI Decisions (`gpt-6-luna`, `POST /v1/decisions`) receives a bounded recent Session window (at most 20 messages and 5,000
 characters) and a single social-reaction question. It cannot classify
 participation, invitations, mode changes, work placement or handoff. It cannot
 answer factual questions with Yes/No or claim work is underway or complete.
 Its optional Get only acknowledges receipt. Weak support, missing credentials,
 timeout and provider failure produce no reaction, never a fallback work signal.
 No project report is loaded into this call; `dailyReportMemory` is retained as
-compatible configuration but no longer feeds Jev. See the
+compatible configuration but no longer feeds the reaction model. See the
 [retired report input](feishu-daily-report-memory.md).
+
+The existing `jevReactions` name is retained as the per-group opt-in; it now
+selects OpenAI Decisions, not TypeSafe. No group is opted in by this provider
+change. Groups without this flag, legacy `quickReactions`, topic replies, and
+explicit participation controls keep their existing paths. Supply an OpenAI
+API key through the connector service's `OPENAI_API_KEY`, or `OPENAI_KEY_FILE`
+(default: `<config-dir>/openai.env`, containing `OPENAI_API_KEY=...`). This
+requires API credentials; a Codex ChatGPT login is not read or repurposed.
+Missing credentials produce no reaction and never fall back to TypeSafe.
+The deadline remains 1,600 ms; verify real latency and Chinese examples before
+claiming the provider is usable on an instance. The request has one named
+`choice` question with social emoji values and `none`; a selected emoji needs
+at least 0.8 probability. Refusals and malformed or unsupported answers are
+ignored. See the [official Decisions contract](https://developers.openai.com/api/docs/guides/decisions).
 
 The reaction runs independently. A successful selection is saved under the
 source message and sent through the existing durable source-delivery outbox.

@@ -9,9 +9,9 @@ import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../../lib/feishu-reaction-catal
 const MAX_MESSAGES = 20;
 const MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const MAX_CONTEXT_CHARACTERS = 5_000;
-const JEV_TIMEOUT_MS = 1_600;
-const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
-const JEV_MODEL = 'jev-1.13.0';
+const REACTION_TIMEOUT_MS = 1_600;
+const DECISIONS_URL = 'https://api.openai.com/v1/decisions';
+const REACTION_MODEL = 'gpt-6-luna';
 export function buildFeishuSessionReactionContext(recent, { mentioned = false } = {}) {
   const lines = (Array.isArray(recent) ? recent : []).map(entry =>
     `${new Date(entry.time || Date.now()).toISOString()} ${entry.sender || '群成员'}: ${String(entry.text || '').slice(0, 1200)}`);
@@ -63,34 +63,45 @@ export async function feishuJevApiKey() {
   return parseKeyFile(await readFile(file, 'utf8').catch(() => ''));
 }
 
-// Compatibility export name; this call only chooses a social reaction.
+export async function feishuReactionApiKey() {
+  if (process.env.OPENAI_API_KEY?.trim()) return process.env.OPENAI_API_KEY.trim();
+  const file = process.env.OPENAI_KEY_FILE?.trim() || join(CONFIG_DIR, 'openai.env');
+  const content = await readFile(file, 'utf8').catch(() => '');
+  const line = content.split(/\r?\n/).find(value => /^\s*(?:export\s+)?OPENAI_API_KEY\s*=/.test(value));
+  return line?.replace(/^\s*(?:export\s+)?OPENAI_API_KEY\s*=\s*/, '').trim().replace(/^['"]|['"]$/g, '').trim() || '';
+}
+
+// Compatibility export name and group opt-in stay unchanged; only the social
+// reaction provider changes. The legacy handoff verifier retains its own key.
+// https://developers.openai.com/api/docs/guides/decisions
 export async function classifyFeishuQuickParticipation(context, {
-  fetchImpl = fetch, key, timeoutMs = JEV_TIMEOUT_MS,
+  fetchImpl = fetch, key, timeoutMs = REACTION_TIMEOUT_MS,
 } = {}) {
-  const token = key || await feishuJevApiKey();
+  const token = key || await feishuReactionApiKey();
   if (!token) return { emojiType: null, reason: 'missing_key', latencyMs: 0 };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const started = performance.now();
   try {
-    const response = await fetchImpl(process.env.TYPESAFE_BASE_URL || JEV_URL, {
+    const response = await fetchImpl(DECISIONS_URL, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: JEV_MODEL, state: { discussion: context }, questions: {
-        reaction: {
-          type: 'choice',
+      body: JSON.stringify({ model: REACTION_MODEL, input: context, questions: [{
+          type: 'choice', name: 'reaction',
           instructions: 'Choose one fitting social reaction to the NEWEST message, or none. Older messages only clarify its recipient and tone. Do not answer factual questions, decide whether to reply, choose a work Session, infer permission, or change participation mode. Get only acknowledges receipt; it does not accept a task or prove handoff or completion. Praise, thanks, humor, criticism and empathy can use different reactions. Never laugh at bad news or misfortune. Neutral human-to-human updates and ambiguous tone need none.',
-          criteria: { ...FEISHU_SOCIAL_REACTION_CRITERIA, Get: 'Received the message; no task acceptance or completion claim.',
-            none: 'No fitting social reaction is needed or sufficiently supported.' },
-        },
-      } }),
+          choices: Object.entries({ ...FEISHU_SOCIAL_REACTION_CRITERIA, Get: 'Received the message; no task acceptance or completion claim.',
+            none: 'No fitting social reaction is needed or sufficiently supported.' })
+            .map(([value, description]) => ({ value, description })),
+      }] }),
       signal: controller.signal,
     });
     if (!response.ok) return { emojiType: null, reason: `http_${response.status}`, latencyMs: Math.round(performance.now() - started) };
     const result = await response.json();
-    const answer = result?.answers?.reaction;
+    const answer = Array.isArray(result?.answers)
+      ? result.answers.find(item => item?.name === 'reaction' && item.type === 'choice') : null;
     const choice = answer?.choice;
-    const probability = Number(answer?.probabilities?.[choice]);
+    const probability = Array.isArray(answer?.probabilities)
+      ? answer.probabilities.find(item => item?.value === choice)?.probability : undefined;
     const valid = choice === 'none' || Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, choice || '');
     const supported = valid && Number.isFinite(probability) && probability >= 0.8 && probability <= 1;
     return { emojiType: supported && choice !== 'none' ? choice : null,

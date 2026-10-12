@@ -35,7 +35,7 @@ const QUICK_REACTION_SESSION_PROMPT = [
 
 const JEV_REACTION_SESSION_PROMPT = [
   'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, without treating a social reaction as a factual answer or task acceptance.',
-  'Jev only selects an optional social reaction asynchronously. Its speed, failure or reaction choice cannot control your input, reply, work placement or participation mode. Its Get reaction only acknowledges receipt; it does not accept work or prove handoff. A successful routing handoff produces its own Get receipt on each original message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
+  'OpenAI Decisions only selects an optional social reaction asynchronously. Its speed, failure or reaction choice cannot control your input, reply, work placement or participation mode. Its Get reaction only acknowledges receipt; it does not accept work or prove handoff. A successful routing handoff produces its own Get receipt on each original message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
 ].join('\n');
 
 const GROUP_TIMELINE_SESSION_PROMPT = [

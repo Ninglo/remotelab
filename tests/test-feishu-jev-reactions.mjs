@@ -54,13 +54,19 @@ try {
       key: 'fixture', projectMemory: { secret: 'must not be sent' }, participationState: { mode: 'active' },
       fetchImpl: async (_url, req) => {
         const body = JSON.parse(req.body);
-        assert.deepEqual(Object.keys(body.questions), ['reaction']);
-        assert.deepEqual(Object.keys(body.state), ['discussion']);
-        assert.equal(body.questions.reaction.criteria.Yes, undefined);
-        return { ok: true, json: async () => ({ answers: {
-          reaction: { choice, probabilities: { [choice]: probability } },
-          participation: { choice: 'silent' }, workMode: { choice: 'complex' },
-        } }) };
+        assert.equal(_url, 'https://api.openai.com/v1/decisions');
+        assert.equal(body.model, 'gpt-6-luna');
+        assert.equal(body.input, 'NEWEST MESSAGE TO CLASSIFY: thanks');
+        assert.deepEqual(Object.keys(body).sort(), ['input', 'model', 'questions']);
+        assert.equal(body.questions.length, 1);
+        assert.equal(body.questions[0].name, 'reaction');
+        assert.equal(body.questions[0].type, 'choice');
+        assert(!body.questions[0].choices.some(item => item.value === 'Yes'));
+        assert(body.questions[0].choices.some(item => item.value === 'none'));
+        return { ok: true, json: async () => ({ answers: [
+          { name: 'reaction', type: 'choice', choice, probabilities: [{ value: choice, probability }] },
+          { name: 'participation', choice: 'silent' }, { name: 'workMode', choice: 'complex' },
+        ] }) };
       },
     });
     assert.equal(verdict.emojiType, expected);
@@ -68,6 +74,45 @@ try {
   }
   assert.equal((await classifyFeishuQuickParticipation('test', { key: 'fixture',
     fetchImpl: async () => ({ ok: false, status: 402 }) })).reason, 'http_402');
+
+  // Credential lookup must not reuse the exhausted TypeSafe key or touch the
+  // network when OpenAI credentials are missing. File changes are picked up.
+  const { feishuReactionApiKey } = await import('../connectors/feishu/quick-participation.mjs');
+  const savedEnv = Object.fromEntries(['OPENAI_API_KEY', 'OPENAI_KEY_FILE', 'TYPESAFE_API_KEY'].map(name => [name, process.env[name]]));
+  try {
+    delete process.env.OPENAI_API_KEY;
+    process.env.OPENAI_KEY_FILE = join(home, 'openai.env');
+    process.env.TYPESAFE_API_KEY = 'must-not-reuse';
+    const missing = await classifyFeishuQuickParticipation('test', { fetchImpl: () => assert.fail('no API key must not call provider') });
+    assert.equal(missing.reason, 'missing_key');
+    await writeFile(process.env.OPENAI_KEY_FILE, 'export OPENAI_API_KEY="file-fixture"\n');
+    assert.equal(await feishuReactionApiKey(), 'file-fixture');
+    process.env.OPENAI_API_KEY = 'env-fixture';
+    assert.equal(await feishuReactionApiKey(), 'env-fixture');
+  } finally {
+    for (const [name, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
+  for (const answers of [null, {}, [{ name: 'reaction', type: 'refusal' }],
+    [{ name: 'other', type: 'choice', choice: 'WOW', probabilities: [{ value: 'WOW', probability: .99 }] }],
+    [{ name: 'reaction', type: 'choice', choice: 'WOW', probabilities: [{ value: 'WOW', probability: '0.99' }] }]]) {
+    assert.equal((await classifyFeishuQuickParticipation('test', { key: 'fixture',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ answers }) }) })).emojiType, null);
+  }
+  const timedOut = await classifyFeishuQuickParticipation('test', { key: 'fixture', timeoutMs: 1,
+    fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+    }) });
+  assert.equal(timedOut.reason, 'timeout');
+  assert.equal((await classifyFeishuQuickParticipation('test', { key: 'fixture',
+    fetchImpl: async () => { throw new Error('fixture secret must not escape'); } })).reason, 'request_error');
+  for (const settings of [{ responseMode: 'all' }, { responseMode: 'mention_only' },
+    { participationMode: 'ambient', quickReactions: true }, { participationMode: 'ambient', groupFeed: true }]) {
+    const other = resolveFeishuGroupSettings({ groups: { other: settings } }, { ...base, chatId: 'other' });
+    assert.equal(other.jevReactions, undefined, 'only explicit per-group opt-in may call Decisions');
+    assert.doesNotMatch(other.systemPrompt, /OpenAI Decisions/);
+  }
 
   const { observeSessionMessage, recordSessionObservationDecision } = await import('../chat/session-observations.mjs');
   await observeSessionMessage('social', { sourceMessageId: 'source', text: 'thanks' });
