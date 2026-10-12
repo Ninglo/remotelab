@@ -7,12 +7,13 @@ import { pathToFileURL } from 'node:url';
 const exec = promisify(execFile);
 export function documentationImpact(files, features, message = '') {
   const changed = new Set(files);
-  const implementation = files.filter(file => /^(chat|lib|static|templates|display|connectors|knowledge)\/.*\.(?:m?js|html|py|swift)$/.test(file) || /^(cli\.js|chat-server\.mjs|scripts\/recording[^/]*\.(?:mjs|py|swift))$/.test(file));
+  const implementation = files.filter(file => /^(chat|lib|static|templates|display|connectors|knowledge|automation|local-helper|scripts|cloudflare)\/.*\.(?:m?js|html|py|swift|sh)$/.test(file) || /^[^/]+\.(?:m?js|sh)$/.test(file));
   const exemption = /^Docs-Impact:\s*none\s*(?:—|--|:)\s*(.{12,})$/mi.exec(message);
   const updates = [], missing = [];
   for (const file of implementation) {
     const related = features.filter(feature => feature.sources.includes(file));
     const docs = new Set(related.flatMap(feature => feature.sources.filter(source => source.endsWith('.md'))));
+    if (/^scripts\/(?:check-documentation-impact|documentation-site)\.mjs$/.test(file)) docs.add('docs/documentation-delivery.md');
     if (file.startsWith('display/') || /display-settings/.test(file)) {
       docs.add('display/USER_GUIDE.md'); docs.add('display/README.md');
     }

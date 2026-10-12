@@ -34,7 +34,18 @@ export async function renderDocuments(source, revision) {
   for (const doc of documents) {
     if (path.isAbsolute(doc.source) || doc.source.split('/').includes('..') || !/^[a-z0-9-]+\.html$/.test(doc.route)) throw Error('Invalid documentation route');
     const text = await readFile(path.join(source, doc.source), 'utf8'); inputs[doc.source] = sha(text);
-    const renderer = new context.marked.Renderer();
+    const renderer = new context.marked.Renderer(), images = new Map();
+    renderer.image = function(token) {
+      let href = token.href;
+      if (!/^(?:[a-z]+:|\/)/i.test(href)) {
+        const target = path.posix.normalize(path.posix.join(path.posix.dirname(doc.source), href));
+        if (target.startsWith('../') || !/\.(png|jpe?g|gif|webp|svg)$/i.test(target)) throw Error(`Invalid document image: ${href}`);
+        href = `manual-assets/${target}`;
+        images.set(target, href);
+      }
+      if (/^(?:javascript|data):/i.test(href)) throw Error('Unsafe document image');
+      return `<img src="${escape(href)}" alt="${escape(token.text)}"${token.title ? ` title="${escape(token.title)}"` : ''}>`;
+    };
     renderer.heading = function(token) { return `<h${token.depth} id="${escape(sectionId(token.text))}">${this.parser.parseInline(token.tokens)}</h${token.depth}>`; };
     renderer.link = function(token) {
       let href = token.href;
@@ -47,6 +58,11 @@ export async function renderDocuments(source, revision) {
       return `<a href="${escape(href)}">${this.parser.parseInline(token.tokens)}</a>`;
     };
     const body = context.marked.parse(text, { renderer });
+    for (const [input, output] of images) {
+      const bytes = await readFile(path.join(source, input)); inputs[input] = sha(bytes);
+      await mkdir(path.dirname(path.join(atlas, output)), { recursive: true });
+      await writeFile(path.join(atlas, output), bytes);
+    }
     const reference = `reference-${doc.route.replace('.html', '.md')}`;
     await writeFile(path.join(atlas, reference), text);
     await writeFile(path.join(atlas, doc.route), `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(doc.title)} · RemoteLab</title><link rel="stylesheet" href="guide.css"><script type="module" src="guide-shell.js"></script><style>.manual{max-width:900px;padding:28px} .manual pre,.manual table{display:block;overflow:auto} .manual td,.manual th{padding:10px;border-bottom:1px solid #ddd}.manual img{max-width:100%}.manual p,.manual li{overflow-wrap:anywhere}</style></head><body data-guide-page="${doc.route}" data-guide-chapter="manuals"><main class="manual"><p><a href="manuals.html">使用与维护文档</a> · <a href="project.html">整体说明</a></p><p>来自 <a href="https://github.com/Ninglo/remotelab/blob/${revision}/${escape(doc.source)}">${escape(doc.source)}</a> · 源码 ${revision.slice(0, 8)} · <a href="${reference}">下载原文</a></p><p>此版本标记说明来源；实例运行、配置与历史案例沿各自证据核对。</p>${body}</main></body></html>`);
