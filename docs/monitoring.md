@@ -450,4 +450,4 @@ the dependency block can be lifted again.
 The dispatch gate uses that same durable evidence and does not impose an
 independent expiry that could resurrect the old restriction.
 
-Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#stable-automation-home-explicit-opt-in). Its header reads native execution state directly and distinguishes future-trigger cancellation from active runs. Monitoring and evaluation configuration remain separate; a home is not a new supervisor.
+Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#stable-automation-home-explicit-opt-in). The primary link opens the dedicated task-context Session; the original discussion is a secondary reference. Its header reads native execution state directly and distinguishes future-trigger cancellation from active runs. Monitoring and evaluation configuration remain separate; a home is not a new supervisor.

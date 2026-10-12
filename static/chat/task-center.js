@@ -666,7 +666,7 @@
     addMetaRow(meta, translate("tasks.meta.creator", "Creator"), creator || translate("tasks.meta.notRecorded", "Not recorded"));
     if (task.createdAt) addMetaRow(meta, translate("tasks.meta.created", "Created"), formatDateTime(task.createdAt));
     if (task.updatedAt) addMetaRow(meta, translate("tasks.meta.updated", "Updated"), formatDateTime(task.updatedAt));
-    if (task.sourceSessionId) addMetaRow(meta, translate("tasks.meta.source", "Source"), sessionName(task.sourceSessionId),
+    if (task.sourceSessionId) addMetaRow(meta, translate("tasks.session.sourceDiscussion", "Original discussion (reference)"), sessionName(task.sourceSessionId),
       { link: `/?session=${encodeURIComponent(task.sourceSessionId)}&tab=sessions` });
     addMetaRow(meta, translate("tasks.record.taskId", "Task ID"), task.id);
     addMetaRow(
@@ -772,11 +772,11 @@
       || translate("tasks.meta.notRecorded", "Not recorded")))];
     addMetaRow(context, translate("tasks.overview.initiator", "Initiator"), creators.join(" · "));
     const sourceId = task.package?.sourceSessionId || task.sourceSessionId;
-    addMetaRow(context, translate("tasks.meta.source", "Source"), task.package?.sourceSessionName || sessionName(sourceId),
+    addMetaRow(context, translate("tasks.session.sourceDiscussion", "Original discussion (reference)"), task.package?.sourceSessionName || sessionName(sourceId),
       sourceId ? { link: `/?session=${encodeURIComponent(sourceId)}&tab=sessions` } : {});
     addMetaRow(context, translate("tasks.overview.delivery", "Results go to"), [...new Set(members.map(member => notificationText(member, { compact: true })))].join(" · "));
     if (task.kind === "recurring" && task.lifetime?.mode === "bounded") addMetaRow(context, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
-    if ((task.members || [task]).some(item => item.sessionCollection === "automations")) {
+    if (!members.some(item => item.homeSessionId) && members.some(item => item.sessionCollection === "automations")) {
       const execution = overview.latestExecutionSession(task);
       if (execution) addMetaRow(context, translate("tasks.session.execution", "Execution Session"),
         translate("tasks.session.openLatest", "Open latest execution"),

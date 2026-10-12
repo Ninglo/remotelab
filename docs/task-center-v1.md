@@ -334,18 +334,28 @@ time, objective, authorization/output boundaries and failure recovery rules.
 Preserve the task ID and delivery targets. Check task → home → task and history
 links. Adopt later definition changes only after the authorized human confirms.”
 
-A home is a real fork with `internalRole: automation_home`, collected under
+A home is an independent task-context fork with `internalRole: automation_home`
+and `forkContextMode: task_brief`, collected under
 Automations. It is a fixed reading/discussion entry, not the worker queue. Existing
 per-occurrence/calendar-day execution stays intact. Linked workers disappear from
 the collection list but remain directly accessible through the home history.
 The home header links to the exact task using `?tab=tasks&monitor=automations&task=ID`,
-the source conversation and each execution. Task detail, timeline and flow views
+each execution, and the original discussion under a secondary reference disclosure.
+The primary task link reads “Open automation session”; the home return link names
+the Automations page. Task detail, timeline and flow views
 link back to the home. Stopped/deleted tasks retain their home and definitions.
 
 - `POST /api/automation-tasks/:id/home` idempotently establishes a home for a task
   already explicitly marked `sessionTemplate.sessionCollection: automations`.
   It accepts an optional `brief` with concrete maintenance/recovery instructions.
-  Source forks preserve their history; the original connector binding is not copied.
+  Only the explicit task prompt and maintenance brief are injected. Parent transcript,
+  model context/usage, resume state, agreements and connector binding are not copied.
+  Source lineage remains recorded; ordinary conversation forks still copy history.
+  The new transcript begins with a short handoff receipt, not old discussion.
+  To migrate an older full-history home, send `replaceSessionId` matching its
+  current binding. The operation retains definitions, runs and lifecycle events,
+  rebinds only that task’s independent workers and archives the old home without
+  deleting its history. Repeating a completed migration returns the same new home.
   No model or business execution is started by this operation.
 - `GET /api/automation-tasks/:id/home` reads definitions, change events, live native
   execution projections and retained trigger snapshots, without queuing a model.

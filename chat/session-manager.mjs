@@ -2583,6 +2583,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (Number.isInteger(extra.forkedFromSeq)) session.forkedFromSeq = extra.forkedFromSeq;
     if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;
     if (extra.forkedAt) session.forkedAt = extra.forkedAt;
+    if (extra.forkContextMode === 'task_brief') session.forkContextMode = 'task_brief';
     if (extra.delegatedFromSessionId) session.delegatedFromSessionId = extra.delegatedFromSessionId;
     if (Number.isInteger(extra.delegationDepth) && extra.delegationDepth > 0) session.delegationDepth = extra.delegationDepth;
     if (completionTargets.length > 0) session.completionTargets = completionTargets;
@@ -2739,10 +2740,11 @@ export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT
   return projectSessionPersonView(await enrichSessionMeta(result.meta), personId);
 }
 
-export async function bindSessionAutomation(id, { taskId, homeSessionId }) {
+export async function bindSessionAutomation(id, { taskId, homeSessionId, previousHomeSessionIds = [] }) {
   const result = await mutateSessionMeta(id, session => {
     if (session.internalRole !== 'scheduled_execution' || session.groupFeed) return false;
-    if (session.automationHomeSessionId && session.automationHomeSessionId !== homeSessionId) throw new Error('Execution Session already belongs to a different automation');
+    if (session.automationHomeSessionId && session.automationHomeSessionId !== homeSessionId
+      && !(session.automationTaskId === taskId && previousHomeSessionIds.includes(session.automationHomeSessionId))) throw new Error('Execution Session already belongs to a different automation');
     if (session.automationTaskId === taskId && session.automationHomeSessionId === homeSessionId) return false;
     session.automationTaskId = taskId; session.automationHomeSessionId = homeSessionId; return true;
   });
@@ -4037,10 +4039,17 @@ export async function forkSession(sessionId, options = {}) {
   const source = await getSession(sessionId, { viewPersonId });
   if (!source) return null;
 
+  const briefOnly = options.contextMode === 'task_brief';
+  if (briefOnly && (options.internalRole !== 'automation_home' || !options.systemPrompt?.trim())) {
+    throw new Error('Task-brief forks require an automation home and explicit task context');
+  }
   const running = isSessionRunning(source);
   let forkThroughSeq;
   let contextHead;
-  if (running) {
+  if (briefOnly) {
+    forkThroughSeq = (await getHistorySnapshot(sessionId)).latestSeq;
+    contextHead = null;
+  } else if (running) {
     const runId = getSessionRunId(source);
     const manifest = runId ? await getRunManifest(runId) : null;
     if (!Number.isInteger(manifest?.forkBaseSeq) || manifest.forkBaseSeq < 0) return null;
@@ -4055,12 +4064,12 @@ export async function forkSession(sessionId, options = {}) {
     contextHead = currentContextHead;
   }
 
-  const history = await loadHistory(sessionId, {
+  const history = briefOnly ? [] : await loadHistory(sessionId, {
     toSeq: forkThroughSeq,
     includeBodies: true,
   });
   const forkSnapshot = { latestSeq: forkThroughSeq };
-  const forkContext = running
+  const forkContext = briefOnly ? null : running
     ? await prepareForkContextSnapshot(sessionId, forkSnapshot, contextHead)
     : await getOrPrepareForkContext(sessionId, forkSnapshot, contextHead);
 
@@ -4076,11 +4085,12 @@ export async function forkSession(sessionId, options = {}) {
       : (source.initiatedByIdentityId || ''),
     viewPersonId,
     systemPrompt: Object.prototype.hasOwnProperty.call(options, 'systemPrompt') && typeof options.systemPrompt === 'string' ? options.systemPrompt : (source.systemPrompt || ''),
-    activeAgreements: source.activeAgreements || [],
+    activeAgreements: briefOnly ? [] : (source.activeAgreements || []),
     externalTriggerId: requestedExternalTriggerId,
     ...(hasSourceContextOverride ? { sourceContext: options.sourceContext } : {}),
     ...(options.internalRole === 'automation_home' ? { internalRole: 'automation_home',
       automationTaskId: options.automationTaskId, sessionCollection: 'automations' } : {}),
+    forkContextMode: briefOnly ? 'task_brief' : undefined,
     forkedFromSessionId: source.id,
     forkedFromSeq: forkThroughSeq,
     rootSessionId: source.rootSessionId || source.id,
@@ -4112,6 +4122,10 @@ export async function forkSession(sessionId, options = {}) {
     });
   } else {
     await clearForkContext(child.id);
+  }
+
+  if (briefOnly) {
+    await appendEvent(child.id, messageEvent('assistant', `已为「${child.name}」建立独立自动化会话。\n\n这里只带入任务定义和交接说明；原讨论保留在来源记录中。上方可查看任务内容、历次执行，以及调整和停止记录。后续自动执行使用独立运行会话，状态查询不会排在运行队列后。`, undefined, { messageKind: 'automation_handoff' }));
   }
 
   observeUsage({ eventId: usageKey(`fork:${source.id}:${child.id}`), event: 'session_linked',
