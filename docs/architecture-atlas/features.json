@@ -23,6 +23,7 @@
       "features": [
         {
           "id": "context-integrity",
+          "sourceRevision": "171673294ee3d534e84a68689e44611a6d39927e",
           "name": "完整上下文与规则恢复",
           "purpose": "保留完整消息，按消息身份去重，并在原生历史压缩后恢复当前规则。",
           "entry": "同一会话正常续聊；上下文来源见专题说明。",
