@@ -106,7 +106,7 @@ try {
     const late = await request('POST', messages, { ...payload, nativeQuestionId: question.questionId, requestId: `late-${caseId}` });
     assert.equal(late.status, 409); assert.equal(late.json.code, 'QUESTION_EXPIRED');
   }
-  for (const [protocol, answer] of [['blocking', '2'], ['blocking', '请用中文，保留代码例子'], ['async', '2']]) {
+  for (const [protocol, answer] of [['blocking', 'web'], ['blocking', 'feishu'], ['async', 'web'], ['async', 'feishu']]) {
     const caseId = `${protocol}-${answer}`;
     const created = await request('POST', '/api/sessions', { folder: home, tool: 'fake-native', model: 'fake-model' }, true);
     const sessionId = created.json.session.id, messages = `/api/sessions/${sessionId}/messages`;
@@ -132,46 +132,49 @@ try {
     await until(async () => (await log()).some(event => event.clientId === `${caseId}-before-question`));
     await send(ordinary('create-question', protocol === 'async' ? 'ASK_ASYNC_ON_STEER' : 'ASK_ON_STEER'));
     const question = await until(async () => (await events()).find(event => event.questionState === 'pending'));
-    const supplements = [ordinary('forward', 'Feishu merge_forward message reference', 'merge_forward'),
-      ordinary('supplement', '应参考上例返回应当返回的各种配置状态'),
-      ordinary('early-number', '2', 'text', question.timestamp - 60_000),
-      ordinary('out-of-range', '55')];
-    await Promise.all(supplements.map(send));
-    for (const payload of supplements) {
-      await until(async () => (await log()).some(event => event.clientId === payload.requestId));
-      assert.equal((await events()).some(event => event.questionState === 'answered'), false,
-        'ordinary, forwarded and pre-question messages must not resolve a choice');
-      const duplicate = await request('POST', messages, payload, true);
-      assert.equal(duplicate.json.duplicate, true);
-      assert.equal((await log()).filter(event => event.clientId === payload.requestId).length, 1,
-        'duplicate ordinary messages steer once');
+    if (protocol === 'blocking') {
+      const rejected = await send(ordinary('rejected', 'REJECT_NATIVE_INPUT'));
+      await until(async () => {
+        const receiptFiles = await readdir(join(config, 'chat-runs', runId, 'native-inputs'));
+        for (const file of receiptFiles) {
+          const receipt = JSON.parse(await readFile(join(config, 'chat-runs', runId, 'native-inputs', file), 'utf8'));
+          if (receipt.id === `${caseId}-rejected` && receipt.state === 'rejected') return true;
+        }
+      });
+      assert.equal((await request('GET', `/api/sessions/${sessionId}?view=sidebar`)).json.session.activity.run.waiting, true,
+        'native rejection cannot dismiss the unanswered question');
     }
-    const chosen = { text: answer, requestId: `feishu-question:${caseId}`, nativeQuestionId: question.questionId,
-      sourceContext: { connector: 'feishu' } };
-    await Promise.all([send(chosen), send(ordinary('with-answer', '回答同时到达的任务补充'))]);
-    await until(async () => (await events()).find(event => event.questionState === 'answered'));
-    const duplicateAnswer = await request('POST', messages, chosen, true);
-    assert.equal(duplicateAnswer.json.duplicate, true);
-    await send(ordinary('after-answer', '继续返回配置状态'));
-    await until(async () => (await log()).some(event => event.clientId === `${caseId}-with-answer`));
-    assert.equal((await log()).filter(event => event.clientId === `${caseId}-with-answer`).length, 1);
-    await until(async () => (await log()).some(event => event.clientId === `${caseId}-after-answer`));
-    const answers = (await events()).filter(event => event.questionState === 'answered');
-    assert.equal(answers.length, 1);
-    assert.deepEqual(answers[0].questionAnswers, [answer === '2' ? '详细' : answer]);
+    const payload = answer === 'web'
+      ? { requestId: `${caseId}-supplement`, text: '先按新需求继续处理' }
+      : ordinary('supplement', '【飞书群消息｜发言人：测试成员】\n先按新需求继续处理');
+    const received = await request('POST', messages, payload, answer === 'feishu');
+    assert.equal(received.status, 202, JSON.stringify(received.json));
+    await until(async () => (await events()).find(event => event.questionState === 'superseded'));
+    await until(async () => (await request('GET', `/api/sessions/${sessionId}?view=sidebar`)).json.session.activity.run.waiting === false);
+    const visible = (await request('GET', `/api/sessions/${sessionId}/events?filter=visible`)).json.events;
+    assert.equal(visible.filter(event => event.questionId === question.questionId).length, 1);
+    assert.equal(visible.find(event => event.questionId === question.questionId).questionState, 'superseded');
+    assert.ok(visible.some(event => event.role === 'user' && event.requestId === payload.requestId));
+    const late = await request('POST', messages, { text: '2', requestId: `late-${caseId}`, nativeQuestionId: question.questionId });
+    assert.equal(late.status, 409);
+    const duplicate = await request('POST', messages, payload, answer === 'feishu');
+    assert.equal(duplicate.json.duplicate, true);
+    assert.equal((await log()).filter(event => event.clientId === payload.requestId).length, 1);
+    assert.equal((await events()).some(event => event.questionState === 'answered'), false);
     const journals = await readdir(join(config, 'chat-runs', runId, 'native-questions'));
     const journal = JSON.parse(await readFile(join(config, 'chat-runs', runId, 'native-questions', journals[0]), 'utf8'));
-    assert.equal(journal.resolutions.length, 1, 'one native answer survives repeated submission');
-    if (protocol === 'blocking') assert.equal((await log()).filter(event => event.kind === 'question-answer').length, 1);
-    else {
-      await until(async () => (await log()).find(event => event.clientId === 'question:async-question'));
-      assert.equal((await log()).filter(event => event.clientId === 'question:async-question').length, 1);
-    }
+    assert.equal(journal.state, 'superseded');
+    assert.deepEqual(journal.answers, {}, 'continuation must not select an option or fabricate consent');
+    if (protocol === 'blocking') {
+      await until(async () => (await log()).some(event => event.kind === 'question-answer'));
+      assert.deepEqual((await log()).find(event => event.kind === 'question-answer').result.answers, {});
+    } else assert.equal((await log()).some(event => event.clientId === 'question:async-question'), false,
+      'superseding an async question must not inject another model input');
     await send(ordinary('release', 'RELEASE_NATIVE'));
     await until(async () => (await request('GET', `/api/sessions/${sessionId}?view=sidebar`)).json.session.activity.run.state !== 'running');
   }
   console.log('native question HTTP: Web/Feishu controls reach native tools once, retain raw audit and update the original question without a user bubble; typed replies, stale IDs, group access and retries passed');
-  console.log('native question interleaving: partial connector Auto snapshots, ordinary inputs before/during/after questions, merge-forward placeholders, early and invalid numbers, blocking/async answers and retries passed');
+  console.log('native question continuation: Web and Feishu ordinary replies release blocking/async questions, preserve audit, reject old cards and replay once');
 } finally {
   const exited = once(server, 'exit'); server.kill('SIGTERM'); await exited;
   await rm(home, { recursive: true, force: true });

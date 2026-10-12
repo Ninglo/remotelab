@@ -13,6 +13,9 @@ const queue = serialQueue();
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 export function feishuOrigin(value) {
+  // Fixed loopback helper origin. Grants still require the signed-in person
+  // and explicit confirmation, and remain bound to origin + native account.
+  if (value === 'http://127.0.0.1:19342') return value;
   try {
     const url = new URL(value);
     if (url.protocol === 'https:' && /^(?:[a-z0-9-]+\.)?feishu\.cn$/.test(url.hostname) && url.origin === value) return value;

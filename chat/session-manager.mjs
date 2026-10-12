@@ -1,3 +1,4 @@
+import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { projectFeishuContext, feishuResumeIdentity } from './feishu-context-dedup.mjs';
 import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
@@ -2565,6 +2566,8 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedEffort) session.effort = requestedEffort;
     if (hasRequestedThinking) session.thinking = requestedThinking;
     if (extra.internalRole) session.internalRole = extra.internalRole;
+    const collection = normalizeSessionCollection(extra.sessionCollection);
+    if (collection && canCollectAutomationSession(session)) session.sessionCollection = collection;
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
     if (requestedSourceContext) session.sourceContext = requestedSourceContext;
@@ -2684,6 +2687,15 @@ export async function renameSession(id, name, options = {}) {
 export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT_PERSON_ID } = {}) {
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
+    if (Object.hasOwn(patch, 'sessionCollection')) {
+      const next = normalizeSessionCollection(patch.sessionCollection);
+      if (next && !canCollectAutomationSession(session)) throw new Error('Only scheduled execution Sessions can enter automations');
+      if ((session.sessionCollection || '') !== next) {
+        if (next) session.sessionCollection = next;
+        else delete session.sessionCollection;
+        changed = true;
+      }
+    }
     if (
       Object.prototype.hasOwnProperty.call(patch, 'space')
       || Object.prototype.hasOwnProperty.call(patch, 'group')

@@ -50,7 +50,7 @@ const PERSON_FILTER_UNASSIGNED_VALUE = "__unassigned__";
 function getCurrentPersonFilter() {
   const value = getActivePersonFilterValue();
   if (value === FILTER_ALL_VALUE || value === PERSON_FILTER_UNASSIGNED_VALUE
-    || value === GROUP_FEED_FILTER_VALUE) return value;
+    || value === GROUP_FEED_FILTER_VALUE || value === "__automations__") return value;
   return getPeopleDirectory().some((person) => person.id === value) ? value : FILTER_ALL_VALUE;
 }
 
@@ -304,7 +304,7 @@ function refreshSessionCatalog() {
 }
 
 function getFilteredActiveSessions({ ignoreSource = false, ignorePerson = false } = {}) {
-  return getActiveSessions().filter((session) => session.groupFeed !== true && (
+  return getActiveSessions().filter((session) => session.groupFeed !== true && session.sessionCollection !== "automations" && (
     (ignoreSource || matchesSourceFilter(session))
     && (ignorePerson || matchesPersonFilter(session))
   ));
@@ -330,6 +330,8 @@ function getSessionPersonId(session) {
 }
 
 function matchesPersonFilter(session, personFilter = getCurrentPersonFilter()) {
+  if (personFilter === "__automations__") return session.sessionCollection === "automations";
+  if (session.sessionCollection === "automations") return false;
   if (personFilter === GROUP_FEED_FILTER_VALUE) return session.groupFeed === true;
   if (session.groupFeed === true) return false;
   if (personFilter === FILTER_ALL_VALUE) return true;
@@ -358,6 +360,9 @@ function matchesSessionSpace(session, spaceFilter = activeSessionSpace) {
 }
 
 function matchesCurrentFilters(session) {
+  if (session.sessionCollection === "automations" || getCurrentPersonFilter() === "__automations__") {
+    return getCurrentPersonFilter() === "__automations__" && session.sessionCollection === "automations" && matchesSearchQuery(session);
+  }
   if (session.groupFeed === true) {
     return getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE && matchesSearchQuery(session);
   }
@@ -386,6 +391,7 @@ function getSessionCountForSourceFilter(sourceFilter) {
 }
 
 function getSessionCountForPersonFilter(personFilter) {
+  if (personFilter === "__automations__") return getActiveSessions().filter(session => session.sessionCollection === "automations").length;
   if (personFilter === GROUP_FEED_FILTER_VALUE) {
     return getActiveSessions().filter((session) => session.groupFeed === true).length;
   }
@@ -436,6 +442,10 @@ function renderPersonFilterOptions() {
       ? t("sidebar.filter.mine")
       : person.name;
     entries.push([person.id, `${label} (${count})`]);
+  }
+  const automationCount = getSessionCountForPersonFilter("__automations__");
+  if (automationCount > 0 || selected === "__automations__") {
+    entries.push(["__automations__", `${t("sidebar.automations")} (${automationCount})`]);
   }
   const groupCount = getSessionCountForPersonFilter(GROUP_FEED_FILTER_VALUE);
   if (groupCount > 0 || selected === GROUP_FEED_FILTER_VALUE) {
@@ -527,7 +537,7 @@ function commitPersonFilterSelection() {
   const selected = personFilterSelect?.value || FILTER_ALL_VALUE;
   if (selected === getCurrentPersonFilter()) return;
   const current = typeof getCurrentSession === "function" ? getCurrentSession() : null;
-  if (current?.groupFeed !== true && current?.id
+  if (current?.groupFeed !== true && current?.sessionCollection !== 'automations' && current?.id
     && getSessionPersonId(current) === currentPerson?.id) {
     lastMineSessionId = current.id;
   }
@@ -633,7 +643,7 @@ function getActiveSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && !session.archived && !session.internalRole);
+    .filter((session) => session && !session.archived && (!session.internalRole || session.sessionCollection === "automations"));
 }
 
 function getArchivedSessions() {
@@ -643,7 +653,7 @@ function getArchivedSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && session.archived && !session.internalRole)
+    .filter((session) => session && session.archived && (!session.internalRole || session.sessionCollection === "automations"))
     .slice()
     .sort((a, b) => getArchivedSessionSortTime(b) - getArchivedSessionSortTime(a));
 }
@@ -677,8 +687,8 @@ function resolveRestoreTargetSession() {
   }
   const filteredSession = getLatestActiveSessionForCurrentFilters();
   if (filteredSession) return filteredSession;
-  if (getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) return null;
-  return getActiveSessions().find((session) => session.groupFeed !== true) || null;
+  if ([GROUP_FEED_FILTER_VALUE, "__automations__"].includes(getCurrentPersonFilter())) return null;
+  return getActiveSessions().find((session) => session.groupFeed !== true && session.sessionCollection !== "automations") || null;
 }
 
 function applyNavigationState(rawState) {

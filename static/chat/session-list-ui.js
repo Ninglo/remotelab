@@ -147,6 +147,7 @@ function getSessionSpaceEntries() {
   for (const session of getActiveSessions()) {
     if (
       session.groupFeed === true
+      || session.sessionCollection === "automations"
       || !matchesSourceFilter(session)
       || !matchesSearchQuery(session)
     ) continue;
@@ -164,7 +165,7 @@ function getSessionSpaceEntries() {
 
 function renderSessionSpaceSwitcher() {
   if (!sidebarSpaceSwitcher) return;
-  if (getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
+  if ([GROUP_FEED_FILTER_VALUE, "__automations__"].includes(getCurrentPersonFilter())) {
     sidebarSpaceSwitcher.hidden = true;
     return;
   }
@@ -568,13 +569,15 @@ function attachSession(id, session, { forceComposerFocus = false } = {}) {
   const attachedSession = (typeof getChatStoreSession === "function" ? getChatStoreSession(id) : null)
     || session
     || { id };
-  if (attachedSession.groupFeed === true && getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE) {
+  if (attachedSession.sessionCollection === "automations") {
+    setPersonScope("__automations__");
+  } else if (attachedSession.groupFeed === true && getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE) {
     setPersonScope(GROUP_FEED_FILTER_VALUE);
-  } else if (attachedSession.groupFeed !== true && getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
+  } else if (attachedSession.groupFeed !== true && [GROUP_FEED_FILTER_VALUE, "__automations__"].includes(getCurrentPersonFilter())) {
     const personId = getSessionPersonId(attachedSession);
     setPersonScope(personId === PERSON_FILTER_UNASSIGNED_VALUE ? FILTER_ALL_VALUE : personId);
   }
-  if (attachedSession.groupFeed !== true && getSessionPersonId(attachedSession) === currentPerson?.id) {
+  if (attachedSession.groupFeed !== true && attachedSession.sessionCollection !== "automations" && getSessionPersonId(attachedSession) === currentPerson?.id) {
     lastMineSessionId = id;
   }
   if (typeof holdAttachedSessionSidebarState === "function") {

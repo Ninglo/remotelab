@@ -578,32 +578,45 @@ details.task-lifecycle-section > summary { cursor: pointer; }
   .monitoring-summary-metrics strong { font-size: 19px; }
 }
 
-/* Compact workflow explanations inside the existing Automations view. */
-.task-center-flows { width: min(100%, 880px); margin: 0 0 28px; }
-.task-flow-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+/* Flow map shares the existing canvas, theme tokens and task controls. */
+.task-center-flows { width: min(100%, 880px); margin: 0 0 32px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+.task-flow-intro h3 { margin: 0; font-size: 20px; font-weight: 650; }
+.task-flow-intro p { color: var(--text-secondary); font-size: 14px; line-height: 1.7; margin: 8px 0 20px; }
+.task-flow-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+.task-flow-tabs button { min-height: 44px; padding: 10px 16px; font: inherit; font-size: 14px; }
 .task-flow-tabs button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
-.task-flow-read { padding: 12px 14px; background: var(--bg-secondary); border-left: 3px solid var(--border); color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
-.task-flow-row { border-bottom: 1px solid var(--border); padding: 16px 0; }
-.task-flow-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.task-flow-heading h4 { margin: 0; font-size: 14px; font-weight: 600; }
-.task-flow-time { color: var(--text-muted); font-size: 11px; }
-.task-flow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 12px; }
-.task-flow-step { min-width: 0; position: relative; }
-.task-flow-step:not(:last-child)::after { content: '→'; position: absolute; right: -18px; top: 23px; color: var(--text-muted); }
-.task-flow-label { font-size: 11px; color: var(--text-muted); }
-.task-flow-step p { margin: 6px 0 0; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
-.task-flow-link { display: inline-block; color: var(--accent); margin: 6px 10px 0 0; font-size: 12px; }
-.task-flow-bottom { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; margin-top: 8px; }
-.task-flow-bottom .task-history-note { margin: 0; }
-.task-flow-bottom button { flex: 0 0 auto; }
-.task-flow-review { color: var(--danger, #a25320); font-size: 12px; margin: 8px 0 0; }
-.task-list-heading { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+.task-flow-read { padding: 16px 20px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; color: var(--text-secondary); position: relative; }
+.task-flow-read-time { display: block; margin: 7px 0; font-size: 16px; font-weight: 600; color: var(--text); }
+.task-flow-read p { margin: 6px 0 0; font-size: 14px; line-height: 1.7; }
+.task-flow-branches { margin-left: 16px; padding-left: 24px; border-left: 1px solid var(--border); }
+.task-flow-row { position: relative; border-bottom: 1px solid var(--border); padding: 24px 0; }
+.task-flow-row::before { content: ''; position: absolute; top: 35px; left: -25px; width: 17px; border-top: 1px solid var(--border); }
+.task-flow-heading { display: flex; gap: 8px; flex-direction: column; }
+.task-flow-heading h4 { margin: 0; font-size: 16px; font-weight: 600; }
+.task-flow-time { color: var(--text-secondary); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.task-flow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 16px; }
+.task-flow-step { min-width: 0; position: relative; padding: 12px; border-radius: 8px; background: var(--bg-secondary); }
+.task-flow-step:not(:last-child)::after { content: '→'; position: absolute; right: -22px; top: 35px; color: var(--text-muted); }
+.task-flow-label { font-size: 12px; font-weight: 550; color: var(--text-muted); }
+.task-flow-step p { margin: 8px 0 0; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.task-flow-link { display: inline-flex; align-items: center; min-height: 32px; color: var(--accent); margin: 8px 10px 0 0; font-size: 13px; }
+.task-flow-bottom { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; margin-top: 12px; }
+.task-flow-bottom button { flex: 0 0 auto; min-height: 44px; font-size: 13px; }
+.task-flow-note { font-size: 13px; color: var(--text-secondary); line-height: 1.7; min-width: 0; }
+.task-flow-note summary { cursor: pointer; min-height: 44px; display: list-item; align-content: center; }
+.task-flow-note p { margin: 4px 0 8px; overflow-wrap: anywhere; }
+.task-flow-review { color: var(--danger, #a25320); font-size: 13px; margin: 10px 0 0; line-height: 1.6; }
+.task-list-heading { font-size: 17px; font-weight: 600; margin: 0 0 16px; padding-top: 8px; }
 @media (max-width: 720px) {
-  .task-flow-steps { grid-template-columns: 1fr; gap: 18px; }
-  .task-flow-step:not(:last-child)::after { content: '↓'; left: 0; right: auto; top: auto; bottom: -18px; font-size: 12px; }
-  .task-flow-heading { gap: 4px; }
-  .task-flow-time { display: block; width: 100%; }
-  .task-flow-bottom { align-items: flex-start; }
+  .task-flow-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .task-flow-read { padding: 16px; }
+  .task-flow-branches { margin-left: 7px; padding-left: 16px; }
+  .task-flow-row::before { left: -17px; width: 10px; }
+  .task-flow-steps { grid-template-columns: 1fr; gap: 24px; }
+  .task-flow-step { padding: 14px 16px; }
+  .task-flow-step:not(:last-child)::after { content: '↓'; left: 16px; right: auto; top: auto; bottom: -22px; font-size: 14px; }
+  .task-flow-step p { font-size: 15px; }
+  .task-flow-bottom { align-items: flex-start; flex-wrap: wrap; }
 }
 
 /* Keep the affected Session and metric visible before opening technical details. */
@@ -622,3 +635,106 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 #monitoringSessions .monitoring-owner-summary th:first-child,
 #monitoringSessions .monitoring-owner-summary td:first-child { width: 40%; }
 #monitoringSessions .monitoring-owner-summary button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+
+/* Monitor reading hierarchy: metrics, comparisons, then the resource tables. */
+#monitoringOverview { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; font-style: normal; }
+#monitoringOverview .monitoring-summary-panel { padding: 22px 24px; border-radius: 14px; margin: 18px 0; }
+#monitoringOverview .monitoring-summary-panel h2 { font-size: 18px; letter-spacing: .01em; }
+#monitoringOverview .monitoring-summary-metrics { gap: 12px; margin: 18px 0; }
+#monitoringOverview .monitoring-summary-metrics > div { padding: 16px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 4%, var(--bg-secondary)); border: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
+#monitoringOverview .monitoring-summary-metrics strong { font-size: clamp(21px, 2.4vw, 30px); line-height: 1.2; letter-spacing: -.025em; }
+#monitoringOverview .monitoring-summary-metrics small { line-height: 1.55; }
+#monitoringOverview .monitoring-summary-status { margin-bottom: 14px; }
+#monitoringOverview .monitoring-session-signals { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin: 14px 0 22px; }
+#monitoringOverview .monitoring-session-signals > button { align-content: start; padding: 14px 16px; border: 1px solid var(--border); border-top: 3px solid #b7791f; border-radius: 10px; color: var(--text-primary); background: var(--bg); }
+#monitoringOverview .monitoring-session-signals > button[data-severity="critical"] { border-top-color: var(--danger, #c2413c); }
+#monitoringOverview .monitoring-session-signals > button:hover { background: var(--bg-secondary); border-right-color: var(--accent); border-left-color: var(--accent); }
+.monitoring-signal-title { display: block; font-size: 13px; line-height: 1.6; color: var(--text-primary); }
+.monitoring-session-signals .monitoring-session-anomalies { gap: 14px; margin-top: 6px; }
+.monitoring-signal-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; font-size: 11px; }
+.monitoring-signal-ratio { flex-shrink: 0; border-radius: 4px; padding: 2px 5px; background: color-mix(in srgb, currentColor 8%, transparent); font-size: 12px; }
+.monitoring-comparison-row { display: grid; grid-template-columns: 28px minmax(20px, 1fr) 74px; align-items: center; gap: 7px; margin: 5px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
+.monitoring-comparison-row > small { color: var(--text-muted); font-size: 10px; }
+.monitoring-comparison-row > span:last-child { text-align: right; color: var(--text-secondary); }
+.monitoring-comparison-track { height: 6px; border-radius: 4px; overflow: hidden; background: var(--bg-secondary); }
+.monitoring-comparison-track > span { display: block; height: 100%; background: currentColor; border-radius: 4px; }
+.monitoring-comparison-track[data-kind="baseline"] > span { background: var(--text-muted); opacity: .5; }
+#monitoringOverview .monitoring-table-wrap { border: 1px solid var(--border); border-radius: 9px; }
+#monitoringOverview .monitoring-table-wrap th { background: var(--bg-secondary); font-size: 11px; white-space: nowrap; }
+#monitoringOverview .monitoring-table-wrap th, #monitoringOverview .monitoring-table-wrap td { padding: 11px 12px; }
+#monitoringOverview .monitoring-table-wrap tbody > tr:last-child > td { border-bottom: 0; }
+#monitoringOverview .monitoring-table-wrap tbody > tr:hover { background: color-mix(in srgb, var(--accent) 3%, var(--bg)); }
+#monitoringOverview .monitoring-owner-summary th, #monitoringOverview .monitoring-owner-summary td { padding: 10px 8px; }
+#monitoringOverview .monitoring-owner-summary button { background: transparent; border-color: transparent; padding: 3px 0; font-weight: 550; }
+#monitoringOverview .monitoring-session-controls input, #monitoringOverview .monitoring-session-controls select { font: inherit; font-size: 12px; }
+.monitoring-quota-cell { min-width: 120px; display: grid; gap: 8px; }
+.monitoring-quota-cell meter { display: block; width: 100%; height: 7px; margin-top: 3px; accent-color: var(--accent); }
+#monitoringResourcePanel .monitoring-section { margin-top: 24px; padding-top: 18px; }
+#monitoringResourcePanel .monitoring-section h3 { margin-bottom: 10px; }
+@media(max-width: 600px) {
+  #monitoringOverview .monitoring-summary-panel { padding: 16px 12px; }
+  #monitoringOverview .monitoring-summary-metrics { gap: 6px; }
+  #monitoringOverview .monitoring-summary-metrics > div { padding: 10px 7px; }
+  #monitoringOverview .monitoring-summary-metrics strong { font-size: 19px; }
+  #monitoringOverview .monitoring-summary-metrics small { font-size: 10px; }
+  #monitoringOverview .monitoring-session-signals { grid-template-columns: 1fr; gap: 10px; }
+  #monitoringOverview .monitoring-owner-summary th, #monitoringOverview .monitoring-owner-summary td { padding: 9px 5px; font-size: 11px; }
+}
+
+.monitoring-quota-cell meter::-webkit-meter-bar { border: 0; background: var(--bg-secondary); border-radius: 4px; }
+.monitoring-quota-cell meter::-webkit-meter-optimum-value { background: #438461; }
+.monitoring-quota-cell meter::-webkit-meter-suboptimum-value { background: #b7791f; }
+.monitoring-quota-cell meter::-webkit-meter-even-less-good-value { background: var(--danger, #c2413c); }
+
+/* One centered reading column for the existing Automations tab. */
+#monitoringAutomations { width: min(100%, 880px); margin-inline: auto; min-width: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+.task-center-header { margin-inline: auto; }
+.task-center-flows { margin-inline: auto; }
+.task-flow-step p { word-break: normal; overflow-wrap: break-word; }
+.task-flow-bottom { flex-wrap: wrap; justify-content: flex-start; }
+.task-flow-paths { margin-top: 12px; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.task-flow-paths summary { cursor: pointer; min-height: 36px; align-content: center; }
+.task-flow-paths p { overflow-wrap: anywhere; font-size: 12px; }
+.task-center-timeline { margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.task-center-timeline[hidden] { display: none; }
+.task-center-timeline h3 { margin: 0 0 8px; font-size: 20px; font-weight: 650; }
+.task-timeline-note { margin: 8px 0; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.task-timeline-count { margin: 16px 0 24px; font-size: 13px; color: var(--text-secondary); }
+.task-timeline-section { margin: 24px 0; }
+.task-timeline-section h4 { margin: 0 0 16px; font-size: 15px; font-weight: 600; }
+.task-timeline-line { display: grid; gap: 16px; }
+.task-timeline-entry { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 24px; position: relative; }
+.task-timeline-entry::before { content: ""; position: absolute; left: 140px; top: 0; bottom: -16px; border-left: 1px solid var(--border); }
+.task-timeline-entry:last-child::before { bottom: 0; }
+.task-timeline-time { padding-top: 12px; color: var(--text); font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; position: relative; }
+.task-timeline-time::after { content: ""; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); right: -16px; top: 20px; }
+.task-timeline-time small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.task-timeline-cadence { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.task-timeline-task { min-width: 0; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; background: var(--bg); }
+.task-timeline-task summary { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; min-height: 44px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.task-timeline-task summary::-webkit-details-marker { display: none; }
+.task-timeline-task summary::after { content: "+"; color: var(--text-muted); font-size: 18px; flex-shrink: 0; }
+.task-timeline-task[open] summary::after { content: "−"; }
+.task-timeline-task summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.task-timeline-main { flex: 1; min-width: 0; }
+.task-timeline-main strong { font-size: 14px; line-height: 1.6; font-weight: 550; overflow-wrap: anywhere; }
+.task-timeline-main small { display: block; color: var(--text-muted); font-size: 12px; line-height: 1.6; margin-top: 4px; }
+.task-timeline-status { flex-shrink: 0; color: var(--text-secondary); padding: 3px 6px; border-radius: 4px; font-size: 11px; background: var(--bg-secondary); }
+.task-timeline-detail { border-top: 1px solid var(--border); padding: 12px 14px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.task-timeline-detail p { margin: 4px 0 10px; }
+.task-timeline-detail button { min-height: 44px; }
+.task-timeline-background { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 20px 0; padding: 4px 0; font-size: 13px; }
+.task-timeline-background > summary { min-height: 44px; align-content: center; cursor: pointer; }
+.task-timeline-background-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 80px; gap: 16px; border-top: 1px solid var(--border); padding: 12px 0; line-height: 1.6; }
+.task-timeline-background-row strong { font-weight: 550; }
+.task-timeline-background-row span, .task-timeline-background-row small { color: var(--text-secondary); }
+@media (max-width: 600px) {
+  .task-timeline-entry { grid-template-columns: 1fr; gap: 8px; padding-left: 18px; }
+  .task-timeline-entry::before { left: 3px; }
+  .task-timeline-time { padding-top: 0; font-size: 19px; }
+  .task-timeline-time::after { left: -18px; right: auto; top: 8px; }
+  .task-timeline-time small { display: inline; margin-left: 10px; }
+  .task-timeline-cadence { font-size: 13px; }
+  .task-timeline-task summary { padding: 12px; gap: 6px; }
+  .task-timeline-background-row { grid-template-columns: 1fr; gap: 4px; }
+}

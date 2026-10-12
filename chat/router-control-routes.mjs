@@ -1,3 +1,4 @@
+import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { listAutomationFlows } from './automation-flows.mjs';
 import { observeAutomationChange, observeIntervention, runtimeUsageChanged } from './usage-controls.mjs';
 import { settingActor, observeSettingRows, settingRows, personSettingValues } from './usage-settings.mjs';
@@ -622,7 +623,7 @@ export async function handleControlRoutes({
   if (pathname === '/api/automation-tasks' && req.method === 'GET') {
     try {
       const [tasks, backgroundMechanisms] = await Promise.all([listAutomationTasks(), listAutomationBackground()]);
-      const automationFlows = await listAutomationFlows(tasks);
+      const automationFlows = await listAutomationFlows(tasks, { backgroundMechanisms });
       writeJson(res, 200, { tasks, backgroundMechanisms, automationFlows });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to load automation tasks' });
@@ -1209,6 +1210,15 @@ export async function handleControlRoutes({
     }
     const hasSpacePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'space');
     const hasGroupPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'group');
+    const hasSessionCollectionPatch = Object.hasOwn(patch || {}, 'sessionCollection');
+    if (hasSessionCollectionPatch) {
+      try {
+        const collection = normalizeSessionCollection(patch.sessionCollection);
+        if (collection && !canCollectAutomationSession(await getSession(sessionId))) {
+          throw new Error('Only scheduled execution Sessions can enter automations');
+        }
+      } catch (error) { writeJson(res, 400, { error: error.message }); return true; }
+    }
     const hasDescriptionPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'description');
     const hasSystemPromptPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'systemPrompt');
     const hasWorkboardPilotPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workboardPilot');
@@ -1372,8 +1382,9 @@ export async function handleControlRoutes({
     if (hasPinnedPatch) {
       session = await setSessionPinned(sessionId, patch.pinned) || session;
     }
-    if (hasSpacePatch || hasGroupPatch || hasDescriptionPatch || hasSidebarOrderPatch) {
+    if (hasSpacePatch || hasGroupPatch || hasDescriptionPatch || hasSidebarOrderPatch || hasSessionCollectionPatch) {
       session = await updateSessionGrouping(sessionId, {
+        ...(hasSessionCollectionPatch ? { sessionCollection: patch.sessionCollection } : {}),
         ...(hasSpacePatch ? { space: patch.space ?? '' } : {}),
         ...(hasGroupPatch ? { group: patch.group ?? '' } : {}),
         ...(hasDescriptionPatch ? { description: patch.description ?? '' } : {}),

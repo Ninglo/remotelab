@@ -39,7 +39,7 @@ try {
   assert.equal(customFields[1].text.content, '提交答案');
   assert.equal(customFields[1].type, 'primary', 'submission has a clear action hierarchy');
   assert.equal(first.body.elements.filter(e => e.tag === 'markdown').map(e => e.content).join('\n'),
-    '输出形式？\n等你回答，不会超时自动选择。', 'labels appear on buttons rather than twice');
+    '输出形式？\n可直接发消息继续沟通；旧问题会结束等待，不会自动选择。', 'labels appear on buttons rather than twice');
   const finiteCard = buildNativeQuestionCard(identity, { ...question, deadline: Date.now() + 300000 });
   assert.equal(finiteCard.body.elements.at(-1).content, '到期未答时默认选第 1 项。');
   const requests = [];
@@ -87,6 +87,21 @@ try {
   assert.equal((await handleNativeQuestionCardAction({ ...runtime }, secondClick, actionOptions)).toast.type, 'success',
     'the accepted answer is still acknowledged after the original card closes and the Connector restarts');
   assert.equal(requests.length, 2, 'expired or repeated buttons do not launch unrelated work');
+  const continuedRuntime = { ...customRuntime, config: { ...customRuntime.config, storageDir: join(root, 'continued') } };
+  await sendNativeQuestionCard(continuedRuntime, delivery);
+  const continued = { ...delivery, nativeQuestion: { ...question, state: 'superseded', answers: [],
+    statusText: '已收到后续消息，旧问题已结束等待；未替你选择任何选项。' } };
+  await sendNativeQuestionCard(continuedRuntime, continued);
+  const continuedCard = JSON.parse(calls.at(-1)[1].data.content);
+  assert.equal(continuedCard.header.title.content, '已接续后续消息');
+  assert.ok(!JSON.stringify(continuedCard).includes('callback'));
+  const requestCount = requests.length;
+  await handleNativeQuestionCardAction(continuedRuntime, rawAction({ option: 2 }), actionOptions);
+  assert.equal(requests.length, requestCount, 'old Feishu card cannot dispatch another answer');
+  const patchCount = calls.length;
+  await sendNativeQuestionCard(continuedRuntime, continued);
+  await sendNativeQuestionCard(continuedRuntime, delivery);
+  assert.equal(calls.length, patchCount, 'restart/replay neither patches twice nor reopens the card');
   const retryRuntime = { ...customRuntime, config: { ...customRuntime.config, storageDir: join(root, 'retry') } };
   await sendNativeQuestionCard(retryRuntime, delivery);
   const retryRequests = [];
@@ -300,6 +315,12 @@ try {
   panel = context.renderNativeQuestionMessage(new Element('div'), questions[0]);
   assert.ok(optionRows(panel).every(c => c.disabled));
   assert.equal(statusOf(panel).textContent, '已采用系统默认：简短（非你的选择）');
+  panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionState: 'superseded',
+    questionAnswers: [], questionStatusText: '已收到后续消息，旧问题已结束等待；未替你选择任何选项。' });
+  assert.match(statusOf(panel).textContent, /旧问题已结束等待/);
+  assert.ok(optionRows(panel).every(c => c.disabled));
+  assert.ok(!descendants(panel).some(c => c.tag === 'form'));
+  assert.ok(!optionRows(panel).some(c => c.className.includes('is-selected')));
   context.refreshCurrentSession = async () => { throw new Error('Refresh offline'); };
   panel = context.renderNativeQuestionMessage(new Element('div'), { ...pending, questionId: 'refresh-failed' });
   optionRows(panel)[0].listeners.click(); await new Promise(resolve => setImmediate(resolve));

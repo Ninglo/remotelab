@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-12 — Ordinary replies continue past unanswered choice cards
+
+- Feedback: a person replied in ordinary conversation instead of clicking a choice card, yet the Session kept showing waiting. The requested behavior covers Web and Feishu.
+- Change: after native acceptance of a human continuation, retire the questions captured before dispatch without selecting options. Preserve the user message and original question; update the original card, disable its controls, and let the Harness decide whether clarification remains necessary. Rejected inputs, concurrent answers and questions raised during dispatch retain their own state. Internal references do not dismiss questions.
+- Verification: isolated HTTP tests cover both surfaces and Codex blocking/async input, ordinary replies, empty tool answers, rejected input, stale controls and replay deduplication. Broker and native-host tests cover concurrent selection, later questions, Claude queue acknowledgement and no invented answer turn. Card tests cover Web disabled controls and Feishu in-place updates. Existing detached hosts retain their loaded code; controller deployment is not an upgrade of an already running host.
+
 ### 2026-10-12 — Completed answers held behind an old async question
 
 - Feedback: ordinary follow-ups reached Codex and produced completed final answers, but earlier unanswered question cards retained their native hosts. The controller still saw running executions and withheld Feishu finals. The live audit found this pattern on both standard instances.
@@ -1720,3 +1726,10 @@ failed upload or a local-only capture, and recheck remote audio before deletion.
 ## 2026-10-12: Automation explanation belongs in the existing Monitor
 
 A separate interactive proposal made an already understood flow harder to use. The requested iteration is in Monitor → Automations: a compact shared-reading and processing/write/delivery view, with the original task list and controls retained underneath. Keep actual configured times distinct from proposed changes. More tabs, repeated task snapshots and a second explanation site do not solve this navigation need.
+
+
+### 2026-10-12: automate flow explanations in the existing Monitor
+
+A user wanted the original Automations page to show a connected read → process → write → notify flow, with actual times and destinations, and to include system monitoring in the same four-category view. Keep the existing task list and monitoring overview, reuse their sources, and distinguish proposed task consolidation from actual schedules. The presentation now joins shared source blocks to branches, exposes scope notes on demand, supports existing background mechanism references, and uses the workbench theme and readable mobile controls. This change does not authorize runtime policy, schedule or delivery changes.
+
+- 2026-10-12: Automation UI feedback: align the content column with Monitor navigation, keep instance explanation labels in the same language as their prose, move paths into expandable detail, and show a complete schedule-oriented overview. Preserve original task records and distinguish configured times from actual completed work.

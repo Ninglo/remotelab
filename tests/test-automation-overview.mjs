@@ -61,3 +61,33 @@ assert.equal(JSON.stringify(entries), before, 'view grouping must never mutate e
 assert.equal(days(entries, 'Invalid/Timezone').find(group => group.day === '2026-10-03').records.length, 3);
 assert.equal(days([], 'UTC').length, 0, 'missing dates do not fabricate daily execution records');
 console.log('Automation categories, purposes and complete daily history passed.');
+
+const latest = context.RemoteLabAutomationOverview.latestExecutionSession;
+const collected = { sessionCollection: 'automations', sourceSessionId: 'discussion', recentExecutions: [
+  { sessionId: 'older', scheduledAt: '2026-10-11T00:00:00Z' },
+  { sessionId: 'latest', scheduledAt: '2026-10-12T00:00:00Z' },
+] };
+assert.equal(latest(collected).sessionId, 'latest');
+assert.equal(latest({ sessionCollection: 'automations', sourceSessionId: 'discussion' }), null);
+assert.equal(latest({ sourceSessionId: 'discussion', lastExecution: { sessionId: 'evaluation' } }), null);
+assert.equal(latest({ members: [collected, { lastExecution: { sessionId: 'evaluation', scheduledAt: '2026-10-13T00:00:00Z' } }] }).sessionId, 'latest');
+
+const timetable = context.RemoteLabAutomationOverview.timeline;
+const daily = {id:'daily',kind:'recurring',state:'active',schedule:{type:'cron',cron:'0 18,4,4 * * *',timezone:'Asia/Shanghai'}};
+const interval = {id:'interval',kind:'recurring',state:'active',schedule:{type:'interval',everySeconds:60}};
+const weekly = {id:'weekly',kind:'recurring',state:'active',schedule:{type:'cron',cron:'0 8 * * 1'}};
+const pending = {id:'pending',kind:'one_time',state:'scheduled',schedule:{scheduledAt:'2026-10-15T00:00:00Z'}};
+const paused = {id:'paused',kind:'recurring',state:'paused',schedule:daily.schedule};
+const records = [daily,interval,weekly,pending,paused,{id:'done',kind:'one_time',state:'completed'}];
+const original=JSON.stringify(records), plan=timetable(records);
+assert.deepEqual(Array.from(plan.daily,x=>x.time),['04:00','18:00']);
+assert.equal(plan.daily[0].tasks[0],daily);
+assert.equal(plan.recurringCount,3);
+assert.deepEqual(Array.from(plan.repeating,x=>x.id),['interval','weekly']);
+assert.deepEqual(Array.from(plan.once,x=>x.id),['pending']);
+assert.deepEqual(Array.from(plan.stopped,x=>x.id),['paused','done']);
+assert.equal(JSON.stringify(records),original);
+assert.equal(timetable([{...daily,schedule:{...daily.schedule,cron:'0 99 * * *'}}]).daily.length,0,'invalid hour is not fabricated into a timeline');
+assert.equal(timetable([{...daily,schedule:{...daily.schedule,cron:'0 4 * * 1-5'}}]).repeating.length,1,'weekdays are not shown as daily');
+assert.equal(timetable([{...pending,state:'admitted',lastExecution:{runAvailable:false}}]).once.length,0);
+console.log('Timeline: complete task coverage, repeated daily times, non-daily fallback and immutable input passed.');

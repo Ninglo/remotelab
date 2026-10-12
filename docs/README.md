@@ -25,6 +25,8 @@ Read these first when you need the current truth:
 ## Documentation delivery
 
 [飞书 Web 话题状态同步](feishu-web-topics.md)说明普通插件的只读账号连接、真实运行状态推送、可见版本号和 Mac 后台更新；[消息设置](feishu-web-settings.md)继续维护本人回复选择与对话模型。
+[Mac 原生飞书增强试验](../scripts/feishu-native/README.md)复用已核 Web 1.2 组件，说明独立副本、账号连接、本机验证及回退；尚不代表完整日用版或外层导航像素一致。
+
 
 [说明交付流程与候选标准操作](documentation-delivery.md)包含可复用的五步流程、适用条件、失败处理，以及RemoteLab的提交检查、原文生成及实例事件发布；网站“使用与维护”读取原文生成页。[副屏使用说明](../display/USER_GUIDE.md)面向日常用户，部署与接口仍沿原维护文档。
 
@@ -55,6 +57,8 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 ## What Lives In `docs/`
 
 ### Current Core
+
+- [Automation tasks and execution Sessions](task-center-v1.md#automation-session-collection) — explicit collection membership, existing-run migration and direct execution links.
 
 - [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.
 - [Connector turn context](connector-turn-context.md) — current rule projection, recovery snapshots and concise reply guidance for simple answers and quick checks.
@@ -133,3 +137,5 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 - explicit `[HUMAN]` checkpoints only when unavoidable
 
 - [All-scope project memory rollout](project-memory-rollout.md) — incremental pointers, existing daily-review rules, frozen baselines, live confirmation and separate disable controls.
+
+The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for the source, destination and notification contract.
