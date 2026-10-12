@@ -49,6 +49,14 @@ try {
   assert.equal(repaired.topRuns[0].runId, 'good', 'a legitimate cancelled Run is retained');
   assert.equal((await queryUsageLedger({ ...options, sessionId: 'another' })).quality.excludedRunCount, 0);
   assert.equal(await readFile(file, 'utf8'), raw, 'original ledger remains byte-for-byte intact');
+  const trend = await queryUsageLedger({ ...options, includeDailyTrend: true });
+  assert.equal(trend.dailyTrend.days.reduce((sum, day) => sum + (day.totalTokens || 0), 0), 220,
+    'daily trends use the same corrected records as the selected summary');
+  const narrow = await queryUsageLedger({ ...options, startMs: Date.parse('2026-10-12T03:00:00Z'), includeDailyTrend: true });
+  assert.equal(narrow.runCount, 0);
+  assert.equal(narrow.quality.excludedRunCount, 0, 'summary quality stays scoped to its selected window');
+  assert.equal(narrow.dailyTrend.days.reduce((sum, day) => sum + (day.totalTokens || 0), 0), 220,
+    'older trend records are still corrected outside the summary window');
   await recordUsageCorrection({ ...correction, action: 'restore' });
   assert.equal((await queryUsageLedger(options)).runCount, 2, 'correction can be explicitly reversed');
   await recordUsageCorrection(correction);

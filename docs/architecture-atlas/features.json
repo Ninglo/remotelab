@@ -687,13 +687,15 @@
         {
           "id": "monitor",
           "name": "监控器的总览与自动化列表",
-          "purpose": "依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；完整明细按需展开。",
+          "purpose": "依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；磁盘圆盘、账户进度与近 7 天 Session／上下文／Token 曲线展示真实样本，缺失留空；完整明细按需展开。",
           "entry": "从首页顶部或侧栏进入监控器，默认总览；加载期间的点击不会被会话恢复覆盖。",
           "condition": "需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。统计按需读取并缓存，不新增告警或补救。账号、磁盘、服务与 API 属于实例共享资源。",
           "example": "查看本实例的紧急问题和覆盖缺口，给我最新观测时间。",
           "sources": [
             "docs/monitoring.md",
             "static/chat/monitoring.js",
+            "chat/monitoring.mjs",
+            "chat/usage-ledger.mjs",
             "static/chat/compose.js",
             "chat/router-control-routes.mjs",
             "chat/monitoring-sessions.mjs",
