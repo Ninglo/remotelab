@@ -230,3 +230,43 @@ For a shared project inspection, `scripts/project-inspection-plan.mjs` takes the
 `scripts/research-candidate-handoff.mjs` exports deduplicated public original links from a source-candidate snapshot. It preserves capture editions, review status and the original source hash, excludes private references/internal links/credentials, and performs no collection or dataset admission. The existing dataset workflow consumes this input first, reuses evidence and probes only missing discovery coverage and its distinct license/payload/catalog requirements. Export time cannot make old material fresh, and a captured link does not prove original reading or dataset eligibility.
 
 The next natural source read, task readback, report publication and delivery each need their own evidence after consolidation. A passing planner test or a saved schedule is not that acceptance.
+
+
+## Read-only Session monitoring page
+
+`static/monitoring-live/` is the independent authenticated-data view. Public static
+assets contain no instance records. The page uses the existing login and only GET
+queries. Session ownership comes from the canonical external conversation binding
+and `initiatedByIdentityId`, joined to People; personal sidebar folders are not
+source chats and later participants do not become Session initiators. Unknown
+ownership stays explicit. Shared accounts, storage and services remain instance
+resources; this page reuses Overview's observations, attention and thresholds.
+
+`GET /api/monitoring/sessions?days=1|7|30` returns narrow ownership and measurement
+projections plus the existing deduplicated usage summary. It uses a 60-second
+per-window single-flight cache and reuses unchanged projected files by file
+version. It never invokes a Run reconciler, notification or recovery operation.
+Stage measurements read only the most recent 1,000 ledger Run references and their
+Request/Run metadata, in batches of eight, with a 64 MiB cold-read budget and a
+2 MiB per-record limit. Coverage reports sample counts, limits, missing records,
+errors and generation time. Parsed request text, deliveries' bodies and runtime
+secrets never enter the response or projection cache. This does not backfill all
+history or instrument each model call. Full Session usage aggregates and bounded
+stage samples have separate coverage.
+
+Each stage has its own paired sample count: accepted→prepared includes queuing,
+prepared→started covers launch, started→completed includes explicit waits, and
+settled→all final content parts delivered covers final transport. Requests
+steered into an existing Run do not manufacture additional Run samples. Foreground
+context is the mean of each Run's latest reported context; per-Run accumulated
+input is separately named. Neither is the mean of every model invocation.
+
+Page-only deviations compare the same Session, model and Harness: recent three
+foreground samples against the preceding up to twenty (minimum ten). A ratio of
+two is amber, three is red, with minimum absolute increases of one second
+(execution: one minute) or 10,000 tokens. Zero baselines and insufficient samples
+are not classified. Cohorts are limited to the selected window. The comparison
+is a review clue, can reflect different task complexity and does not assess task
+quality. The page never invokes alert delivery, recovery, benchmarks or feedback
+collection. Feishu API logs currently lack a reliable Session association; only
+instance API totals are shown, never apportioned to people or groups.

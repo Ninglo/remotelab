@@ -97,6 +97,7 @@ import {
 import { queryUsageLedger } from './usage-ledger.mjs';
 import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
+import { readSessionMonitoring } from './monitoring-sessions.mjs';
 import { updateSessionProgressPolicy, updateProgressCardDisclosure } from './session-progress-policy.mjs';
 import {
   buildClientInstanceSettings,
@@ -1126,6 +1127,12 @@ export async function handleControlRoutes({
       model,
     });
     writeJsonCached(req, res, summary);
+    return true;
+  }
+
+  if (pathname === '/api/monitoring/sessions' && req.method === 'GET') {
+    try { writeJson(res, 200, await readSessionMonitoring({ days: parsedUrl?.query?.days })); }
+    catch { writeJson(res, 503, { error: 'Session monitoring is temporarily unavailable' }); }
     return true;
   }
 
