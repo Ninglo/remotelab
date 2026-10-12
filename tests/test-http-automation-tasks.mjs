@@ -260,6 +260,14 @@ async function main() {
     assert.equal(homeSession.sessionCollection, 'automations');
     assert.equal(homeSession.sourceContext || null, null);
     assert.equal(home.executions.length, 0, 'creating a home must not trigger business work');
+    const historicalTrigger = await request(port, 'POST', '/api/triggers', {
+      scheduleId: homeTaskId, sessionId: templateSession.id, text: 'Retained occurrence',
+      scheduledAt: new Date(Date.now() + 86400000).toISOString(),
+    });
+    assert.equal(historicalTrigger.status, 201, historicalTrigger.text);
+    const withHistory = await request(port, 'GET', homePath);
+    assert.equal(withHistory.status, 200, withHistory.text);
+    assert.equal(withHistory.json.home.executions.length, 1, 'home projects existing occurrences through the native run resolver');
     assert.equal((await request(port, 'POST', homePath, {})).json.home.sessionId, home.sessionId, 'repeat is idempotent');
     assert.equal((await request(port, 'POST', `/api/automation-tasks/${fixedCreate.json.task.id}/home`, {})).status, 409, 'unselected tasks remain untouched');
     assert.equal((await request(port, 'GET', homePath, null, '')).status, 401);
