@@ -108,17 +108,26 @@ lines.on('close',()=>process.exit(0));
     onStderr:async()=>{},
   });
   try {
-    await asked.promise;
     if (!finalImmediately) {
+      await asked.promise;
       const receipt = await submitNativeInput(root,{id:'ordinary-follow-up',text:'Here are the details; finish.'});
       assert.equal(receipt.accepted,true);
     }
     const result = await Promise.race([hosted,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error('Completed final remained held by old question')),2000);})]);
     assert.equal(result.code,0);
-    const question=JSON.parse(await fs.readFile(join(root,'native-question.json'),'utf8'));
-    assert.equal(question.state,'cancelled','old question is retired without inventing an answer');
+    // A same-turn final may cancel the queued question before showNext runs.
+    // That case has a durable journal but no visible pending card or pointer.
+    const journalFiles = await fs.readdir(join(root,'native-questions'));
+    assert.equal(journalFiles.length,1);
+    const journal = JSON.parse(await fs.readFile(join(root,'native-questions',journalFiles[0]),'utf8'));
+    assert.equal(journal.state,'cancelled','old question is retired');
+    assert.deepEqual(journal.answers,{},'cancellation cannot invent an answer');
+    if (events.some(event=>event.type==='remotelab.user_question'&&event.state==='pending')) {
+      const question=JSON.parse(await fs.readFile(join(root,'native-question.json'),'utf8'));
+      assert.equal(question.state,'cancelled','a visible question must also retire its current pointer');
+      assert.ok(events.some(event=>event.type==='remotelab.user_question'&&event.state==='cancelled'));
+    }
     assert.equal(events.filter(event=>event.type==='turn.started').length,finalImmediately?1:2,'retiring the card cannot start another model turn');
-    assert.ok(events.some(event=>event.type==='remotelab.user_question'&&event.state==='cancelled'));
     assert.ok(events.some(event=>event.type==='item.completed'&&event.item?.phase==='final_answer'));
     console.log('native host settlement: completed final retires an obsolete async question');
   } finally {

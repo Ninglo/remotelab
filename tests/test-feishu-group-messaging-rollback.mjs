@@ -52,11 +52,11 @@ test('the executing Harness receives the historical group contract and the curre
   const prompt = await buildPrompt(session.id, { ...session, folder: home, systemPrompt: '' },
     '核查群消息', 'codex', 'codex', null, { workboardEnabled: true });
   assert.match(prompt, /Feishu also sends each useful progress update as a new message/);
-  assert.doesNotMatch(prompt, /Feishu sends the opening only when a new conversation starts/);
+  assert.doesNotMatch(prompt, /Feishu sends the opening only for a new conversation/);
   assert.doesNotMatch(prompt, /--progress-mode expanded\|collapsed/);
   const privatePrompt = await buildPrompt('private-session', { ...privateSession, id: 'private-session', folder: home, systemPrompt: '' },
     '核查私聊', 'codex', 'codex', null, {});
-  assert.match(privatePrompt, /Feishu sends the opening only when a new conversation starts/);
+  assert.match(privatePrompt, /Feishu sends the opening only for a new conversation/);
 });
 
 test('later group turns publish openings and meaningful progress once, keep reply anchors, and send one terminal result', async () => {
