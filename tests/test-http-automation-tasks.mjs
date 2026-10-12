@@ -258,6 +258,7 @@ async function main() {
     assert.equal(homeSession.internalRole, 'automation_home');
     assert.equal(homeSession.automationTaskId, homeTaskId);
     assert.equal(homeSession.sessionCollection, 'automations');
+    assert.ok((await request(port, 'GET', '/api/sessions')).json.sessions.some(session => session.id === home.sessionId), 'home must survive sidebar catalog refresh');
     assert.equal(homeSession.sourceContext || null, null);
     assert.equal(home.executions.length, 0, 'creating a home must not trigger business work');
     const historicalTrigger = await request(port, 'POST', '/api/triggers', {

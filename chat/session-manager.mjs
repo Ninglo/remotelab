@@ -594,7 +594,7 @@ function hasExplicitSessionSource(meta) {
 }
 
 function shouldExposeSession(meta) {
-  return !isInternalSession(meta) || getInternalSessionRole(meta) === 'scheduled_execution';
+  return !isInternalSession(meta) || ['scheduled_execution', 'automation_home'].includes(getInternalSessionRole(meta));
 }
 
 function isWelcomeStarterSession(meta) {
