@@ -8,3 +8,5 @@
 .automation-home-row { padding: 6px 0; border-bottom: 1px solid var(--border, #ddd); }
 .automation-home-panel a { color: var(--accent, #2563eb); }
 .automation-home-nav button { padding: 3px 8px; cursor: pointer; }
+.chat-area:has(> .automation-home-panel:not([hidden])) { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.automation-home-panel { min-height: 0; }
