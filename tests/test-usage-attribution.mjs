@@ -28,6 +28,7 @@ try {
   assert.equal(delta.outputTokens, 0);
   assert.equal((await readLatestCodexSessionMetrics(thread)).contextTokens, 100, 'unbounded context inspection is unchanged');
   assert.equal(await readLatestCodexSessionMetrics(thread, { startedAt: 'invalid' }), null);
+  assert.equal(await readLatestCodexSessionMetrics(thread, { startedAt: null, completedAt: null }), null);
   assert.equal(await readLatestCodexSessionMetrics(thread, { completedAt: '2026-10-12T01:05:00Z' }), null);
   assert.equal(await readLatestCodexSessionMetrics(thread, { startedAt: '2026-10-12T01:11:00Z', completedAt: '2026-10-12T01:05:00Z' }), null);
   const ledgerDir = join(home, 'ledger'); await mkdir(ledgerDir);

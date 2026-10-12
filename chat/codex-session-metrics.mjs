@@ -227,7 +227,7 @@ async function readLatestTokenUsageWindow(filePath, options = {}) {
 
 export async function readLatestCodexSessionMetrics(threadId, options = {}) {
   const bounds = ['startedAt', 'completedAt', 'finalizedAt', 'endAt'];
-  const bounded = bounds.some(key => options[key] != null);
+  const bounded = bounds.some(key => Object.hasOwn(options, key));
   // A Run lookup must never fall back to the lifetime total of its thread.
   // Missing/invalid evidence is unknown usage, not zero or a cumulative bill.
   if (bounded && (!Number.isFinite(normalizeTimestampMs(options.startedAt))
