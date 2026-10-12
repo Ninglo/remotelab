@@ -10,7 +10,7 @@ import { readNativeInputReceipt } from './native-input-transport.mjs';
 import { createModelContextSlot } from './model-context-slots.mjs';
 
 const stable = new Set(['surface_messages', 'session_workboard', 'source_runtime',
-  'session_instructions', 'message_reply_mode', 'strict_start_check']);
+  'session_instructions', 'message_reply_mode', 'strict_start_check', 'inflight_trial']);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 // Use the latest input, not any historical matching version: A -> B -> A must
@@ -64,9 +64,9 @@ export async function projectRuleContext(sessionId, slots, { enabled = false, id
     const receipt = { version: 1, recovery, fingerprint, file, mode: unchanged ? 'reference' : 'full',
       ruleChars: rules.reduce((sum, slot) => sum + slot.content.length, 0) };
     const notice = createModelContextSlot('active_rule_context', 'Current RemoteLab rules',
-      `For this input, RemoteLab display/checklist/source/Session/personal-reply/strict-start rules use snapshot ${fingerprint.slice(0, 12)}. `
+      `For this input, RemoteLab display/checklist/source/Session/personal-reply/strict-start/in-flight-tool rules use snapshot ${fingerprint.slice(0, 12)}. `
       + (unchanged ? 'It is unchanged from the previous accepted input; use the rules already in context. '
-        : 'The rule blocks below replace earlier versions of those six slots; omitted slots no longer apply to this input. Other instructions retain their authority. ')
+        : 'The rule blocks below replace earlier versions of those seven slots; omitted slots no longer apply to this input. Other instructions retain their authority. ')
       + `Recovery snapshot: ${file}. If those rules are missing from retained context (including after compaction), read this snapshot before acting; do not guess or use an older personal setting. `
       + 'Preserve this recovery reference when summarizing. Current message facts and task state follow separately.');
     return { slots: [notice, ...slots.filter(slot => !unchanged || !stable.has(slot.id))], receipt };

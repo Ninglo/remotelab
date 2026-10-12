@@ -1,0 +1,14 @@
+.automation-home-panel { flex: 0 1 auto; max-height: 52vh; overflow: auto; padding: 12px 18px; border-bottom: 1px solid var(--border, #ddd); font-size: 13px; overflow-wrap: anywhere; }
+.automation-home-panel[hidden] { display: none; }
+.automation-home-panel p { margin: 7px 0; }
+.automation-home-panel details { margin-top: 10px; }
+.automation-home-panel summary { cursor: pointer; font-weight: 600; }
+.automation-home-panel pre { white-space: pre-wrap; font-size: 12px; }
+.automation-home-nav, .automation-home-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; }
+.automation-home-row { padding: 6px 0; border-bottom: 1px solid var(--border, #ddd); }
+.automation-home-panel a { color: var(--accent, #2563eb); }
+.automation-home-nav button { padding: 3px 8px; cursor: pointer; }
+.chat-area:has(> .automation-home-panel:not([hidden])) { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.automation-home-panel { min-height: 0; }
+
+.automation-home-nav a { display: inline-block; text-decoration: none; padding: 6px 10px; border: 1px solid var(--border, #ddd); border-radius: 6px; }

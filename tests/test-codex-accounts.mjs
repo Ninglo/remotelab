@@ -79,6 +79,22 @@ try {
   const later = await pool.acquireForRun(); assert.equal(later.id, backup.id);
   await later.lease.release(); await running.lease.release();
 
+  await pool.mutate(data => {
+    data.activeId = 'default';
+    data.accounts.find(a => a.id === 'default').usage = usage(0);
+    data.accounts.find(a => a.id === backup.id).usage = usage(7);
+  });
+  await pool.policy(true);
+  assert.equal((await pool.read()).activeId, backup.id, 'confirmed exhaustion uses a fresh positive backup even below the reserve');
+  assert.equal((await pool.read()).lastSwitch.reason, 'remaining_balance_fallback');
+  await pool.observeUsage('default', usage(4));
+  assert.equal((await pool.read()).activeId, backup.id, 'low positive accounts do not bounce between one another');
+  await pool.markExhausted(backup.id);
+  assert.equal((await pool.read()).activeId, 'default', 'confirmed failure can use the last positive local balance');
+  await pool.mutate(data => {
+    for (const account of data.accounts) { account.usage = usage(100); delete account.blockedUntil; }
+  });
+
   await pool.select('default'); await pool.observeUsage('default', usage(11));
   assert.equal((await pool.read()).activeId, 'default', '11% remains on the current account');
   await pool.observeUsage('default', { status: 'unavailable', buckets: [] });

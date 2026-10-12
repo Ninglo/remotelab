@@ -100,16 +100,20 @@ lines.on('line', line => {
 lines.on('close',()=>process.exit(0));
 `, {mode:0o755});
   const asked = deferred();
+  const initialCompleted = deferred();
   const events = [];
   let child, deadline;
   const hosted = runNativeHost({directory:root,command:peer,runtimeFamily:'codex-json',options:{},prompt:'initial',cwd:root,
     env:{PATH:process.env.PATH}, onProcess:async value=>{child=value;},
-    onStdout:async line=>{const event=JSON.parse(line);events.push(event);if(event.type==='remotelab.user_question'&&event.state==='pending')asked.resolve();},
+    onStdout:async line=>{const event=JSON.parse(line);events.push(event);if(event.type==='remotelab.user_question'&&event.state==='pending')asked.resolve();if(event.type==='turn.completed')initialCompleted.resolve();},
     onStderr:async()=>{},
   });
   try {
     if (!finalImmediately) {
       await asked.promise;
+      // This fixture models a new turn after an async question, not turn/steer.
+      // Seeing the card does not prove the first turn has emitted completion.
+      await initialCompleted.promise;
       const receipt = await submitNativeInput(root,{id:'ordinary-follow-up',text:'Here are the details; finish.', ...(supersedeQuestions ? { supersedeQuestions: true } : {})});
       assert.equal(receipt.accepted,true);
     }
@@ -128,7 +132,8 @@ lines.on('close',()=>process.exit(0));
       assert.ok(events.some(event=>event.type==='remotelab.user_question'&&event.state===(supersedeQuestions?'superseded':'cancelled')));
     }
     assert.equal(events.filter(event=>event.type==='turn.started').length,finalImmediately?1:2,'retiring the card cannot start another model turn');
-    assert.ok(events.some(event=>event.type==='item.completed'&&event.item?.phase==='final_answer'));
+    assert.ok(events.some(event=>event.type==='item.completed'&&event.item?.phase==='final_answer'
+      && event.item.id===(finalImmediately?'same-turn-final':'final')), 'the actual final answer must arrive, not only the question');
     console.log('native host settlement: completed final retires an obsolete async question');
   } finally {
     clearTimeout(deadline);child?.kill('SIGKILL');await hosted;await fs.rm(root,{recursive:true,force:true});

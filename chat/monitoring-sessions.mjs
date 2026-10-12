@@ -176,7 +176,7 @@ export async function compactSessionMonitoring(value, getActivity) {
     })));
   }
   return { generatedAt: value.generatedAt, stateObservedAt: new Date().toISOString(), window: value.window,
-    coverage: value.coverage, totals: value.usage.totals, summary: { ...summarizeSessionOverview(sessions), currentSessions: value.currentSessionCount ?? summarizeSessionOverview(sessions).currentSessions },
+    coverage: value.coverage, totals: value.usage.totals, usageQuality: value.usage.quality, summary: { ...summarizeSessionOverview(sessions), currentSessions: value.currentSessionCount ?? summarizeSessionOverview(sessions).currentSessions },
     groups: Object.fromEntries(value.sessions.map(s => [s.groupId, s.groupName])),
     people: Object.fromEntries(value.sessions.map(s => [s.personId, s.personName])), sessions };
 }

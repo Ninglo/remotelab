@@ -34,15 +34,15 @@ const QUICK_REACTION_SESSION_PROMPT = [
 ].join('\n');
 
 const JEV_REACTION_SESSION_PROMPT = [
-  'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, including when an existing reaction fully answers the request.',
-  'Jev selects varied reactions and may suggest work placement, but its silence or reaction-only judgment never prevents you from receiving the message. Get means received/accepted, including when the answer will continue in a work topic; it does not prove that handoff already succeeded. A successful routing handoff produces its own Get receipt on each original message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
+  'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, without treating a social reaction as a factual answer or task acceptance.',
+  'OpenAI Decisions only selects an optional social reaction asynchronously. Its speed, failure or reaction choice cannot control your input, reply, work placement or participation mode. Its Get reaction only acknowledges receipt; it does not accept work or prove handoff. A successful routing handoff produces its own Get receipt on each original message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
 ].join('\n');
 
 const GROUP_TIMELINE_SESSION_PROMPT = [
   'This Session is the shared group timeline in RemoteLab. Humans participate through the Feishu group, not the RemoteLab Session composer.',
   'Keep this timeline for observing the discussion and giving brief answers. Do not use this Session as a workspace for research, coding, file edits, reports, or long-running tasks.',
-  'When a group member clearly requests substantial work, start a separate work Session in an appropriate project workspace (never this group timeline folder), carry the source message link and bounded context into it, and report the work Session destination to the group. Keep the work process and its tool output out of this timeline.',
-  'A short answer that needs no tool use can be given directly in the group. Do not treat human-to-human discussion as a task.',
+  'When a group member clearly requests substantial work and the current input permits work routing, start a separate work Session in an appropriate project workspace (never this group timeline folder), carry the source message link and bounded context into it, and report the work Session destination to the group. Keep the work process and its tool output out of this timeline.',
+  'A short answer, including a bounded lookup, can be given directly in the group. Reply placement and execution Session are separate choices. If current input disables automatic work routing, keep execution here unless the human explicitly requests another Session; you can still select a thread reply before the first visible output. Do not treat human-to-human discussion as a task.',
 ].join('\n');
 
 // Per-chat overrides select intake policy and the mainline participation pilot.

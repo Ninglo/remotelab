@@ -9,6 +9,8 @@ const { projectRuleContext } = await import('../chat/rule-context.mjs');
 const { renderModelContextSlots } = await import('../chat/model-context-slots.mjs');
 const rules = [
   { id: 'surface_messages', title: 'Display', content: 'DISPLAY_RULE', delivery: 'turn' },
+  { id: 'inflight_trial', title: 'Personal tools', content: 'PERSONAL_TOOL_RULE', delivery: 'turn' },
+  { id: 'inflight_trial_input', title: 'Input address', content: 'CURRENT_INPUT_ID', delivery: 'turn' },
   { id: 'strict_start_check', title: 'Personal', content: 'PERSON_A_STRICT', delivery: 'turn' },
   { id: 'turn_context', title: 'Current facts', content: 'NEW_FACT', delivery: 'turn' },
   { id: 'session_workboard_state', title: 'Task state', content: 'CURRENT_TASK', delivery: 'turn' },
@@ -26,13 +28,14 @@ try {
   const first = await project();
   assert.equal(first.receipt.mode, 'full');
   const snapshot = JSON.parse(await readFile(first.receipt.file, 'utf8'));
-  assert.equal(snapshot.rules.length, 2);
+  assert.equal(snapshot.rules.length, 3);
   assert.doesNotMatch(JSON.stringify(snapshot), /NEW_FACT|CURRENT_TASK/);
   const acknowledged = { manifest: async () => ({ ruleContextDelivery: first.receipt }) };
   const next = await project(rules, {}, acknowledged);
   assert.equal(next.receipt.mode, 'reference');
-  assert.doesNotMatch(renderModelContextSlots(next.slots), /DISPLAY_RULE|PERSON_A_STRICT/);
+  assert.doesNotMatch(renderModelContextSlots(next.slots), /DISPLAY_RULE|PERSON_A_STRICT|PERSONAL_TOOL_RULE/);
   assert.match(renderModelContextSlots(next.slots), /NEW_FACT/);
+  assert.match(renderModelContextSlots(next.slots), /CURRENT_INPUT_ID/);
   assert.match(renderModelContextSlots(next.slots), /CURRENT_TASK/);
   assert.match(renderModelContextSlots(next.slots), /after compaction/);
   assert.deepEqual(JSON.parse(await readFile(next.receipt.file, 'utf8')), snapshot, 'recovery reference contains complete immutable rules');

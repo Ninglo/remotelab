@@ -1,3 +1,5 @@
+import { captureInflightTrial, inflightTrialPrompt } from './inflight-trial.mjs';
+import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { projectFeishuContext, feishuResumeIdentity } from './feishu-context-dedup.mjs';
 import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
@@ -593,7 +595,7 @@ function hasExplicitSessionSource(meta) {
 }
 
 function shouldExposeSession(meta) {
-  return !isInternalSession(meta) || getInternalSessionRole(meta) === 'scheduled_execution';
+  return !isInternalSession(meta) || ['scheduled_execution', 'automation_home'].includes(getInternalSessionRole(meta));
 }
 
 function isWelcomeStarterSession(meta) {
@@ -1512,6 +1514,11 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     || Boolean(options.viewPersonId && options.initiatedByIdentityId) });
   if (startCheck) slots.push(createModelContextSlot('strict_start_check',
     strictStartEnabled ? '开工严格检查 (personal trial)' : 'Personal work-start mode', startCheck));
+  const trialPrompt = inflightTrialPrompt(options);
+  if (trialPrompt) {
+    slots.push(createModelContextSlot('inflight_trial', 'Personal in-flight input tools', trialPrompt));
+    slots.push(createModelContextSlot('inflight_trial_input', 'Current trial input address', JSON.stringify({ requestId: options.requestId })));
+  }
   return slots.filter(Boolean);
 }
 
@@ -2565,6 +2572,9 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedEffort) session.effort = requestedEffort;
     if (hasRequestedThinking) session.thinking = requestedThinking;
     if (extra.internalRole) session.internalRole = extra.internalRole;
+    if (/^(sch|trg)_[a-f0-9]{24}$/.test(extra.automationTaskId || '')) session.automationTaskId = extra.automationTaskId;
+    const collection = normalizeSessionCollection(extra.sessionCollection);
+    if (collection && canCollectAutomationSession(session)) session.sessionCollection = collection;
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
     if (requestedSourceContext) session.sourceContext = requestedSourceContext;
@@ -2573,6 +2583,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (Number.isInteger(extra.forkedFromSeq)) session.forkedFromSeq = extra.forkedFromSeq;
     if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;
     if (extra.forkedAt) session.forkedAt = extra.forkedAt;
+    if (extra.forkContextMode === 'task_brief') session.forkContextMode = 'task_brief';
     if (extra.delegatedFromSessionId) session.delegatedFromSessionId = extra.delegatedFromSessionId;
     if (Number.isInteger(extra.delegationDepth) && extra.delegationDepth > 0) session.delegationDepth = extra.delegationDepth;
     if (completionTargets.length > 0) session.completionTargets = completionTargets;
@@ -2684,6 +2695,15 @@ export async function renameSession(id, name, options = {}) {
 export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT_PERSON_ID } = {}) {
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
+    if (Object.hasOwn(patch, 'sessionCollection')) {
+      const next = normalizeSessionCollection(patch.sessionCollection);
+      if (next && !canCollectAutomationSession(session)) throw new Error('Only scheduled execution Sessions can enter automations');
+      if ((session.sessionCollection || '') !== next) {
+        if (next) session.sessionCollection = next;
+        else delete session.sessionCollection;
+        changed = true;
+      }
+    }
     if (
       Object.prototype.hasOwnProperty.call(patch, 'space')
       || Object.prototype.hasOwnProperty.call(patch, 'group')
@@ -2718,6 +2738,18 @@ export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT
     broadcastSessionInvalidation(id);
   }
   return projectSessionPersonView(await enrichSessionMeta(result.meta), personId);
+}
+
+export async function bindSessionAutomation(id, { taskId, homeSessionId, previousHomeSessionIds = [] }) {
+  const result = await mutateSessionMeta(id, session => {
+    if (session.internalRole !== 'scheduled_execution' || session.groupFeed) return false;
+    if (session.automationHomeSessionId && session.automationHomeSessionId !== homeSessionId
+      && !(session.automationTaskId === taskId && previousHomeSessionIds.includes(session.automationHomeSessionId))) throw new Error('Execution Session already belongs to a different automation');
+    if (session.automationTaskId === taskId && session.automationHomeSessionId === homeSessionId) return false;
+    session.automationTaskId = taskId; session.automationHomeSessionId = homeSessionId; return true;
+  });
+  if (result?.changed) broadcastSessionsInvalidation();
+  return result?.meta || null;
 }
 
 export async function updateSessionSystemPrompt(id, systemPrompt) {
@@ -3459,6 +3491,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  options = { ...options };
+  const inputTrial = priorRequest ? priorRequest.options.inflightTrial : await captureInflightTrial(options);
+  if (inputTrial) options.inflightTrial = inputTrial; else delete options.inflightTrial;
   const activeRequest = requestRuntime.active(sessionId)[0];
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
   const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
@@ -4006,10 +4041,17 @@ export async function forkSession(sessionId, options = {}) {
   const source = await getSession(sessionId, { viewPersonId });
   if (!source) return null;
 
+  const briefOnly = options.contextMode === 'task_brief';
+  if (briefOnly && (options.internalRole !== 'automation_home' || !options.systemPrompt?.trim())) {
+    throw new Error('Task-brief forks require an automation home and explicit task context');
+  }
   const running = isSessionRunning(source);
   let forkThroughSeq;
   let contextHead;
-  if (running) {
+  if (briefOnly) {
+    forkThroughSeq = (await getHistorySnapshot(sessionId)).latestSeq;
+    contextHead = null;
+  } else if (running) {
     const runId = getSessionRunId(source);
     const manifest = runId ? await getRunManifest(runId) : null;
     if (!Number.isInteger(manifest?.forkBaseSeq) || manifest.forkBaseSeq < 0) return null;
@@ -4024,12 +4066,12 @@ export async function forkSession(sessionId, options = {}) {
     contextHead = currentContextHead;
   }
 
-  const history = await loadHistory(sessionId, {
+  const history = briefOnly ? [] : await loadHistory(sessionId, {
     toSeq: forkThroughSeq,
     includeBodies: true,
   });
   const forkSnapshot = { latestSeq: forkThroughSeq };
-  const forkContext = running
+  const forkContext = briefOnly ? null : running
     ? await prepareForkContextSnapshot(sessionId, forkSnapshot, contextHead)
     : await getOrPrepareForkContext(sessionId, forkSnapshot, contextHead);
 
@@ -4045,14 +4087,17 @@ export async function forkSession(sessionId, options = {}) {
       : (source.initiatedByIdentityId || ''),
     viewPersonId,
     systemPrompt: Object.prototype.hasOwnProperty.call(options, 'systemPrompt') && typeof options.systemPrompt === 'string' ? options.systemPrompt : (source.systemPrompt || ''),
-    activeAgreements: source.activeAgreements || [],
+    activeAgreements: briefOnly ? [] : (source.activeAgreements || []),
     externalTriggerId: requestedExternalTriggerId,
     ...(hasSourceContextOverride ? { sourceContext: options.sourceContext } : {}),
+    ...(options.internalRole === 'automation_home' ? { internalRole: 'automation_home',
+      automationTaskId: options.automationTaskId, sessionCollection: 'automations' } : {}),
+    forkContextMode: briefOnly ? 'task_brief' : undefined,
     forkedFromSessionId: source.id,
     forkedFromSeq: forkThroughSeq,
     rootSessionId: source.rootSessionId || source.id,
     forkedAt: nowIso(),
-    ...(isQuickSession(source) ? { executionProfile: QUICK_SESSION_PROFILE } : {}),
+    ...(isQuickSession(source) && options.internalRole !== 'automation_home' ? { executionProfile: QUICK_SESSION_PROFILE } : {}),
   });
   if (!child) return null;
 
@@ -4079,6 +4124,10 @@ export async function forkSession(sessionId, options = {}) {
     });
   } else {
     await clearForkContext(child.id);
+  }
+
+  if (briefOnly) {
+    await appendEvent(child.id, messageEvent('assistant', `已为「${child.name}」建立独立自动化会话。\n\n这里只带入任务定义和交接说明；原讨论保留在来源记录中。上方可查看任务内容、历次执行，以及调整和停止记录。后续自动执行使用独立运行会话，状态查询不会排在运行队列后。`, undefined, { messageKind: 'automation_handoff' }));
   }
 
   observeUsage({ eventId: usageKey(`fork:${source.id}:${child.id}`), event: 'session_linked',

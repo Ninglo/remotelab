@@ -245,3 +245,80 @@ test('resource work waits for a busy coordinator and recovery projection exposes
   await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 0); assert.equal(f.incident().status, 'pending');
   assert.doesNotMatch(JSON.stringify(projectRecovery(f.getState())), /original daily|sourceDelivery|receiptFile|Selected model/);
 });
+
+test('warning disks admit low-risk diagnosis before critical, and evidence-based worsening reopens a bounded blocked attempt', async () => {
+  const f = fixture({ kind: 'disk' });
+  Object.assign(f.snapshot.attention[0], { severity: 'warning', usedPercent: 86, availableBytes: 100 * 1024 ** 3 });
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  assert.match(f.incident().attempts[0].body.text, /中高风险动作先形成具体方案/);
+  f.finish('blocked'); await processMonitoringRecovery(f.options);
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  Object.assign(f.snapshot.attention[0], { severity: 'critical', usedPercent: 98, availableBytes: 12 * 1024 ** 3 });
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 2);
+  assert.equal(f.incident().previousBlocks.length, 1);
+  f.finish('blocked'); await processMonitoringRecovery(f.options);
+  f.snapshot.attention[0].availableBytes = 1;
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 2, 'bounded attempts remain bounded');
+});
+
+test('a medium-risk plan remains waiting through worsening; only an updated verified receipt closes it', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const attempt = f.incident().attempts[0], receipt = f.receipts.get(attempt.receiptFile);
+  receipt.plan = { risk: 'medium', summary: 'Move ended data', target: '/owned/archive', impact: 'read interruption', rollback: 'old pointer', verification: 'hash' };
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'awaiting_confirmation');
+  f.snapshot.attention[0].availableBytes = 1; f.options.config.policyVersion = 'new';
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  assert.equal(projectRecovery(f.getState())[0].plan.requiresConfirmation, true);
+  receipt.status = 'resolved'; f.snapshot.attention = []; f.snapshot.disks = [{ path: '/', status: 'healthy' }];
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'resolved');
+});
+
+test('a structured target is reconciled as a concrete plan without granting approval or admitting another run', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const receipt = f.receipts.get(f.incident().attempts[0].receiptFile);
+  receipt.plan = { risk: 'high', summary: 'Expand after confirmation', target: { mount: '/data', newSizeGiB: 1536 },
+    impact: 'cost', rollback: 'cannot shrink', verification: 'df and original paths' };
+  // Existing deployments may already have stored the old formatting failure.
+  f.incident().status = 'blocked'; f.incident().reason = '确认方案缺少具体对象、影响、恢复方式、验收办法或证据，不能据此执行';
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().status, 'awaiting_confirmation'); assert.match(f.incident().plan.target, /mount: \/data/);
+  assert.equal(f.incident().plan.requiresConfirmation, true); assert.equal(f.getAdmissions(), 1);
+});
+
+test('invalid receipt stays awaiting verification, then accepts its correction without rerunning business actions', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const receipt = f.receipts.get(f.incident().attempts[0].receiptFile);
+  receipt.plan = { risk: 'high', summary: 'Expand' };
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'verifying');
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  Object.assign(receipt.plan, { target: '/data', impact: 'cost', rollback: 'cannot shrink', verification: 'df' });
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'awaiting_confirmation');
+  assert.equal(f.getAdmissions(), 1);
+});
+
+test('a reopened diagnosis cannot present old completed actions as the result of its failed new attempt', async () => {
+  const f = fixture({ kind: 'disk' }); f.options.config.policyVersion = 'v1';
+  await processMonitoringRecovery(f.options); f.finish('blocked'); await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().summary, 'Verified real output');
+  f.options.config.policyVersion = 'v2'; await processMonitoringRecovery(f.options);
+  assert.equal(f.getAdmissions(), 2); assert.equal(f.incident().summary, '');
+  f.runs.get(f.incident().attempts.at(-1).runId).state = 'failed';
+  await processMonitoringRecovery(f.options);
+  assert.equal(projectRecovery(f.getState())[0].summary, '');
+  assert.equal(f.incident().previousBlocks[0].summary, 'Verified real output');
+});
+
+
+test('receipt distinguishes missing information from approval without admitting another execution', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const receipt = f.receipts.get(f.incident().attempts[0].receiptFile);
+  receipt.plan = { risk: 'high', summary: 'Expand', target: '/data', impact: 'cost', rollback: 'cannot shrink', verification: 'df' };
+  receipt.humanAction = { type: 'input', summary: 'Provide quote and backup confirmation' };
+  await processMonitoringRecovery(f.options);
+  assert.deepEqual(projectRecovery(f.getState())[0].humanAction, receipt.humanAction);
+  receipt.humanAction = { type: 'approval', summary: 'Approve expansion after reviewing the quote' };
+  await processMonitoringRecovery(f.options);
+  assert.equal(projectRecovery(f.getState())[0].humanAction.type, 'approval');
+  assert.equal(f.getAdmissions(), 1);
+  assert.equal(f.incident().status, 'awaiting_confirmation');
+});

@@ -24,7 +24,19 @@ Read these first when you need the current truth:
 
 ## Documentation delivery
 
+[Monitoring and recovery](monitoring.md) separates normal account consumption
+from local backup readiness and failed switching, including a positive-balance
+fallback after confirmed exhaustion. Disk warnings enter bounded
+low-risk recovery; medium/high-risk plans include scope, impact, rollback and
+verification and wait for human confirmation. The same guide defines verified
+message-transport recovery without treating unrelated API restrictions as a
+total notification outage.
+Health projection and alert dispatch retain verified message-transport recovery
+through quiet periods and log rotation; a newer quota rejection requires fresh success evidence.
+
 [飞书 Web 话题状态同步](feishu-web-topics.md)说明普通插件的只读账号连接、真实运行状态推送、可见版本号和 Mac 后台更新；[消息设置](feishu-web-settings.md)继续维护本人回复选择与对话模型。
+[Mac 原生飞书增强试验](../scripts/feishu-native/README.md)复用已核 Web 1.2 与 Mac 联调组件，恢复同账号群看板和 RemoteLab 状态来源，说明个人连接、断线恢复、本机验证及回退；另有 [M 系列 Mac、飞书 8.1.17 一条命令试装](../scripts/feishu-native/INSTALL.zh-CN.md)，从官方来源校验下载私有运行环境、安装并打开，无需手动安装开发工具，重复执行保留数据；新机器仍需连接状态来源，代码热更新尚未提供。尚不代表完整日用版或外层导航像素一致。
+
 
 [说明交付流程与候选标准操作](documentation-delivery.md)包含可复用的五步流程、适用条件、失败处理，以及RemoteLab的提交检查、原文生成及实例事件发布；网站“使用与维护”读取原文生成页。[副屏使用说明](../display/USER_GUIDE.md)面向日常用户，部署与接口仍沿原维护文档。
 
@@ -56,8 +68,11 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Current Core
 
+- [Stable automation homes](task-center-v1.md#stable-automation-home-explicit-opt-in) — task-only context branches (no copied source chat), distinct history/run entries, cross-run reuse explanations, clear bidirectional links, retained definitions and lifecycle history without occupying worker queues.
+- [Automation tasks and execution Sessions](task-center-v1.md#automation-session-collection) — explicit collection membership, existing-run migration and direct execution links.
+
 - [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.
-- [Connector turn context](connector-turn-context.md) — current rule projection, recovery snapshots and concise reply guidance for simple answers and quick checks.
+- [Connector turn context](connector-turn-context.md) — current rule projection, recovery snapshots, shared project announcements for bound Feishu chats, topic snapshots and acceptance-based deduplication.
 
 - [RemoteLab deliverables](architecture-atlas/deliverables.html) — a generated chapter of the unified explanation project; reuses the feature catalog, page catalog and original source records instead of maintaining a separate memory document.
 
@@ -70,7 +85,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - [Request state upgrade](request-state-upgrade.md) — required offline conversion for legacy instances, rollback and the 2026-09-07 incident; read before updating existing services
 - `external-message-protocol.md` — canonical integration contract for external channels
 - [Inline flow display](inline-flow-display.md) — accepted strategy for readable prose, complete left-to-right message previews and in-page enlargement; retains branches, conditions, joins and original source
-- [Native Harness input](native-harness-input.md) — active input transport, native lifecycle, recovery and validation
+- [Native Harness input](native-harness-input.md) — active input transport, personal in-flight tool trial, native lifecycle, recovery and validation
 - [Session start preflight](session-start-preflight.md) — optional fresh-provider knowledge probe, replacement retry, and daily outcome statistics
 - [Memory and organizational collaboration](memory-architecture/README.md) — shared human/Agent reference and [interactive diagrams](memory-architecture/index.html) for actual startup retrieval, post-turn collection, memory scopes, and the separately labeled organization-governance proposal
 - [Message and task output architecture](architecture-atlas/output/README.md) — planning reference and [interactive diagrams](architecture-atlas/output/index.html) for intake ownership, asynchronous execution/delivery, progress cards, user feedback and separate task/run/delivery states; the proposed changes are not a deployment claim
@@ -134,4 +149,4 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 
 - [All-scope project memory rollout](project-memory-rollout.md) — incremental pointers, existing daily-review rules, frozen baselines, live confirmation and separate disable controls.
 
-The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for the source, destination and notification contract.
+The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for aligned start/process/write/notify stages, explicit input reuse, visible scope notes and collapsible Session mechanics.

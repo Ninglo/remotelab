@@ -19,6 +19,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v={{ASSET_VERSION}}">
 <title>{{PAGE_TITLE}}</title>
 <link rel="stylesheet" href="chat/chat.css?v={{ASSET_VERSION}}">
+<link rel="stylesheet" href="chat/automation-home.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="chat/amber-usage-pilot.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="chat/amber-todos.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="chat/amber-pet.css?v={{ASSET_VERSION}}">
@@ -121,7 +122,11 @@
             <label><span data-i18n="monitoring.period">Usage period</span> <select id="monitoringPeriod"><option value="1" selected data-i18n="monitoring.day">Last 24 hours</option><option value="7" data-i18n="monitoring.week">Last 7 days</option><option value="30" data-i18n="monitoring.month">Last 30 days</option></select></label>
             <button class="task-center-icon-btn" id="monitoringRefresh" type="button" data-icon="refresh" title="Refresh overview" aria-label="Refresh overview" data-i18n-title="monitoring.refresh" data-i18n-aria-label="monitoring.refresh"></button>
           </div>
-          <div id="monitoringSessions" class="monitoring-summary-panel" aria-live="polite"></div>
+          <div id="monitoringScope" class="monitoring-summary-panel" aria-live="polite"></div>
+          <div class="monitoring-summary-panel">
+            <div id="monitoringSessions" aria-live="polite"></div>
+            <div id="monitoringSessionTrends" aria-live="polite"></div>
+          </div>
           <section id="monitoringResourcePanel" class="monitoring-summary-panel"><div id="monitoringResourceAttention" aria-live="polite"></div><div id="monitoringContent" aria-live="polite"></div></section>
           <section id="monitoringApiPanel" class="monitoring-summary-panel"><div id="monitoringApiSummary" aria-live="polite"></div><details class="monitoring-fold"><summary>查看 API 明细 · 接口 / 组件 / 时段</summary><div id="monitoringApiDetails"></div></details></section>
         </section>
@@ -261,7 +266,19 @@
           </div>
           <div class="task-center-feedback" id="taskCenterFormStatus" role="status" aria-live="polite"></div>
         </form>
-        <section id="taskCenterFlows" class="task-center-flows" hidden></section>
+        <nav id="taskCenterViews" class="task-view-tabs" role="tablist" aria-label="Automation views">
+          <button type="button" id="taskViewTimeline" role="tab" aria-controls="taskViewTimelinePanel" aria-selected="true" data-task-view="timeline">自动化总览</button>
+          <button type="button" id="taskViewFlows" role="tab" aria-controls="taskViewFlowsPanel" aria-selected="false" tabindex="-1" data-task-view="flows">自动化流程</button>
+          <button type="button" id="taskViewTasks" role="tab" aria-controls="taskViewTasksPanel" aria-selected="false" tabindex="-1" data-task-view="tasks">详细任务</button>
+        </nav>
+        <p id="taskViewStatus" class="task-history-note" role="status" hidden></p>
+        <section id="taskViewTimelinePanel" role="tabpanel" aria-labelledby="taskViewTimeline">
+          <section id="taskCenterTimeline" class="task-center-timeline" hidden></section>
+        </section>
+        <section id="taskViewFlowsPanel" role="tabpanel" aria-labelledby="taskViewFlows" hidden>
+          <section id="taskCenterFlows" class="task-center-flows" hidden></section>
+        </section>
+        <section id="taskViewTasksPanel" role="tabpanel" aria-labelledby="taskViewTasks" hidden>
         <h3 class="task-list-heading" data-i18n="tasks.flows.taskList">Task list</h3>
         <div class="task-center-toolbar">
           <div id="taskCenterFilter" class="task-filter-buttons" role="group" aria-label="Filter automations" data-i18n-aria-label="tasks.filter.ariaLabel">
@@ -275,6 +292,7 @@
         <div class="task-center-list" id="taskCenterList">
           <div class="task-center-empty" data-i18n="tasks.loading">Loading automations…</div>
         </div>
+        </section>
         </section>
       </div>
       <div class="settings-panel" id="settingsPanel">
@@ -593,6 +611,7 @@
 
   <!-- Chat area -->
   <main class="chat-area" id="sessionWorkspace">
+    <section id="automationHomePanel" class="automation-home-panel" aria-label="Automation history" hidden></section>
     <div class="messages" id="messages">
       <div class="messages-inner" id="messagesInner">
         <div class="empty-state" id="emptyState">
@@ -809,6 +828,7 @@
 <script src="chat/bootstrap-session-catalog.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/session-http-helpers.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/session-http-list-state.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/automation-home.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/session-http.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/layout-tooling.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/tooling.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

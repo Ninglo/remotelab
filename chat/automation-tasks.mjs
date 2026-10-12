@@ -1,3 +1,4 @@
+import { readAutomationHome } from './automation-home-store.mjs';
 import {
   cancelScheduleTriggers,
   createTrigger,
@@ -106,14 +107,20 @@ function projectExecutionState(trigger, run) {
   }
 }
 
-async function projectExecution(trigger) {
-  if (!trigger) return null;
-  const runId = trimString(trigger.runId);
-  const storedRun = runId ? await getRun(runId) : null;
-  const receipt = !storedRun && runId ? await requests.byRunId(runId) : null;
-  const run = storedRun || (receipt?.nativeDispatchRunId ? await getRunState(runId)
+async function resolveExecutionRun(runId, { readRun = getRun, readRequest = id => requests.byRunId(id),
+  readNativeRun = getRunState } = {}) {
+  const storedRun = runId ? await readRun(runId) : null;
+  const receipt = !storedRun && runId ? await readRequest(runId) : null;
+  const run = storedRun || (receipt?.nativeDispatchRunId ? await readNativeRun(runId)
     : receipt?.result ? { state: receipt.result.state, sessionId: receipt.sessionId,
       completedAt: receipt.settledAt, failureReason: receipt.result.error } : null);
+  return { storedRun, receipt, run };
+}
+
+export async function projectExecution(trigger, resolve = resolveExecutionRun) {
+  if (!trigger) return null;
+  const runId = trimString(trigger.runId);
+  const { storedRun, receipt, run } = await resolve(runId);
   const runAvailable = Boolean(storedRun || run?.createdAt || ['completed', 'failed', 'cancelled'].includes(run?.state));
   return {
     id: trigger.id,
@@ -177,6 +184,7 @@ async function projectOneTimeTask(trigger) {
   const createdByIdentityId = await projectCreatedByIdentityId(trigger);
   return {
     id: trigger.id,
+    homeSessionId: (await readAutomationHome(trigger.id))?.sessionId || '',
     kind: 'one_time',
     title: trigger.title || 'One-time task',
     prompt: trigger.text,
@@ -189,6 +197,7 @@ async function projectOneTimeTask(trigger) {
     lifetime: { mode: 'bounded', maxExecutions: 1 },
     gate: { mode: 'direct' },
     target: projectTarget(trigger),
+    sessionCollection: trigger.sessionTemplate?.sessionCollection || '',
     runtime: scheduledRuntimeIntent(trigger),
     resultDelivery,
     notification: resultDelivery,
@@ -210,7 +219,7 @@ async function projectOneTimeTask(trigger) {
 async function projectRecurringTask(schedule, occurrences) {
   const selected = [...occurrences]
     .sort((a, b) => timestamp(b.scheduledAt) - timestamp(a.scheduledAt));
-  const projected = await Promise.all(selected.map(projectExecution));
+  const projected = await Promise.all(selected.map(trigger => projectExecution(trigger)));
   const recentExecutions = projected.slice(0, RECENT_EXECUTION_LIMIT);
   const timezone = schedule.timezone || schedule.sessionTemplate?.reuseTimezone || 'Asia/Shanghai';
   const summary = summarizeAutomationExecutions(projected, { timezone });
@@ -237,6 +246,8 @@ async function projectRecurringTask(schedule, occurrences) {
   const createdByIdentityId = await projectCreatedByIdentityId(schedule);
   return {
     id: schedule.id,
+    homeSessionId: (await readAutomationHome(schedule.id))?.sessionId || '',
+    sessionCollection: schedule.sessionTemplate?.sessionCollection || '',
     purpose: schedule.purpose || null,
     kind: 'recurring',
     title: schedule.title || 'Recurring task',
@@ -390,6 +401,60 @@ export async function listAutomationTasks() {
   for (const task of tasks) attachPackage(task, packages, schedules);
   return tasks.sort(taskSort);
 }
+
+// Monitoring consumes current health, not the task browser's full history,
+// ownership, prompts or package summaries. Keep every task (including old
+// one-time tasks) so coverage counts, recovery lookup and unknowns remain exact.
+export function createAutomationHealthReader({ getSchedules = listRecurringSchedules,
+  getTriggers = listTriggers, ...executionReaders } = {}) {
+  return async function readAutomationHealth() {
+    const [schedules, triggers] = await Promise.all([getSchedules(), getTriggers()]);
+    const latest = new Map();
+    const singles = [];
+    for (const trigger of triggers) {
+      const scheduleId = trimString(trigger.scheduleId);
+      if (!scheduleId) singles.push(trigger);
+      else {
+        const previous = latest.get(scheduleId);
+        // Same stable tie order as the full history projection.
+        if (!previous || timestamp(trigger.scheduledAt) > timestamp(previous.scheduledAt)) latest.set(scheduleId, trigger);
+      }
+    }
+    // A collection-local promise cache also shares concurrent reads. Never
+    // retain terminal/active state across collections: late corrections and
+    // recovery must be visible on the next check, including after a restart.
+    const runs = new Map();
+    const resolve = id => {
+      if (!runs.has(id)) runs.set(id, resolveExecutionRun(id, executionReaders));
+      return runs.get(id);
+    };
+    const inputs = [...schedules.map(record => ({ record, kind: 'recurring', trigger: latest.get(record.id) })),
+      ...singles.map(record => ({ record, kind: 'one_time', trigger: record }))];
+    const tasks = new Array(inputs.length);
+    let cursor = 0;
+    async function worker() {
+      while (cursor < inputs.length) {
+        const index = cursor++;
+        const { record, kind, trigger } = inputs[index];
+        const execution = await projectExecution(trigger, resolve);
+        tasks[index] = { id: record.id, kind,
+          title: record.title || (kind === 'recurring' ? 'Recurring task' : 'One-time task'),
+          state: kind === 'recurring' ? record.status : oneTimeState(record, execution),
+          enabled: record.enabled === true,
+          nextRunAt: kind === 'recurring' ? (record.status === 'active' ? record.nextRunAt : '')
+            : (record.status === 'pending' ? record.scheduledAt : ''),
+          lastExecution: execution, createdAt: record.createdAt, updatedAt: record.updatedAt,
+          ...(kind === 'recurring' ? { lastError: record.lastError || '',
+            check: { at: record.lastCheckAt || '', reason: record.lastGateReason || '' } } : {}),
+        };
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(16, inputs.length) }, worker));
+    return tasks.sort(taskSort);
+  };
+}
+
+export const readAutomationHealth = createAutomationHealthReader();
 
 // Browse a task's durable occurrences without making each trigger a top-level task.
 export async function listAutomationTaskExecutions(taskId, { cursor = '', limit = 25, status = 'all', scope = 'task' } = {}) {

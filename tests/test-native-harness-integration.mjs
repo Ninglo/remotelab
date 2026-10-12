@@ -51,7 +51,15 @@ async function killController() {
   if (!child || child.exitCode !== null || child.signalCode) return;
   const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited;
 }
-async function logs() { return (await readFile(join(root, 'native-log.jsonl'), 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line)); }
+async function logs() {
+  const text = await readFile(join(root, 'native-log.jsonl'), 'utf8').catch(error => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  });
+  // The fixture appends while this observer reads. A trailing partial line is
+  // not a completed event yet; malformed newline-terminated events still fail.
+  return text.slice(0, text.lastIndexOf('\n') + 1).split('\n').filter(Boolean).map(line => JSON.parse(line));
+}
 async function until(predicate, description) {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 25)); }

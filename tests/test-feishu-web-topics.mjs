@@ -59,3 +59,41 @@ test('topics use a new exact-account read-only capability and cannot borrow sett
   await auth.disconnectFeishuWebSettings(await auth.authorizeFeishuWebSettings(linked.token, input.origin, input.nativeAccount, 'topics'));
   assert.equal((await request(linked.token)).status, 401);
 });
+test('existing verified workspace connection activates a distinct read-only token without another login', async () => {
+  const input = { origin: 'https://fixture.feishu.cn', nativeAccount: '1000000000000000001', confirm: true };
+  const workspace = await auth.connectFeishuWebSettings(input, actor, 'workspace');
+  async function activate(token, nativeAccount = input.nativeAccount) {
+    const req = Readable.from([]); req.url = '/api/feishu-web-topics/activate'; req.method = 'POST';
+    req.headers = { authorization: 'Bearer ' + token, 'x-feishu-origin': input.origin, 'x-feishu-account': nativeAccount };
+    let result; await handleFeishuWebTopics({ req, res: { setHeader() {} }, pathname: req.url, writeJson: (_, status, body) => { result = { status, body }; } }); return result;
+  }
+  const linked = await activate(workspace.token); assert.equal(linked.status, 201); assert.match(linked.body.token, /^fwtops_/);
+  assert.ok(linked.body.expiresAt <= workspace.expiresAt);
+  assert.equal((await auth.authorizeFeishuWebSettings(linked.body.token, input.origin, input.nativeAccount, 'topics')).personId, actor.personId);
+  assert.equal((await activate(workspace.token, '1000000000000000002')).status, 401);
+  assert.equal((await activate(linked.body.token)).status, 401);
+  const settings = await auth.connectFeishuWebSettings(input, actor); assert.equal((await activate(settings.token)).status, 401);
+  await auth.disconnectFeishuWebSettings(await auth.authorizeFeishuWebSettings(workspace.token, input.origin, input.nativeAccount, 'workspace'));
+  assert.equal((await activate(workspace.token)).status, 401);
+});
+test('group boards reuse paired-group source and exclude private, unrelated and unverified groups', async () => {
+  const a = session('a'.repeat(32), 'root-a'); a.conversation.target.chatId = 'work'; a.workflowState = 'done';
+  const b = session('b'.repeat(32), 'root-b', 'idle'); b.conversation.target.chatId = 'discussion';
+  b.workAwareness = { works: [{ status: 'completed', updatedAt: '2026-10-12T10:00:00Z' }] }; b.lastUserMessageAt = '2026-10-12T09:00:00Z';
+  b.privateSecret = 'must not appear in projection';
+  const privateChat = { ...b, id: 'c'.repeat(32), conversation: { ...b.conversation, target: { ...b.conversation.target, chatType: 'p2p' } } };
+  const records = [a, b, privateChat], reads = [];
+  const api = createFeishuTopicSource({ sessions: async () => records, session: async id => { reads.push(id); return records.find(s => s.id === id); },
+    bindings: async () => ({ bindings: { 'root-a': 'native-a', 'root-b': 'native-b' }, groups: { work: 'native-work', discussion: 'native-discussion' },
+      pairs: [{ id: 'pair', name: 'Shared', workChatId: 'work', discussionChatId: 'discussion', workChatName: 'Work', discussionChatName: 'Discussion' }] }) });
+  const data = await api.snapshot(['native-a'], '', null, ['native-work']);
+  assert.equal(data.entries.length, 1); assert.equal(data.boards.length, 1); assert.equal(data.boards[0].topics.length, 2);
+  assert.equal(data.boards[0].topics.find(t => t.sessionId === a.id).state, 'running');
+  assert.equal(data.boards[0].topics.find(t => t.sessionId === b.id).state, 'done');
+  assert.equal(reads.includes(privateChat.id), false); assert.equal(JSON.stringify(data).includes(b.privateSecret), false);
+  assert.equal((await api.snapshot([], '', null, ['unknown-group'])).boards.length, 0);
+  const pushed = []; let wake; const next = () => new Promise(resolve => { wake = resolve; });
+  const first = next(); const off = await api.subscribe([], data => { pushed.push(data); wake?.(); }, error => { throw error; }, ['native-work']); await first;
+  a.activity.run.state = 'idle'; const changed = next(); broadcastAll({ type: 'session_invalidated', sessionId: a.id }); await changed;
+  assert.notEqual(pushed.at(-1).boards[0].topics.find(t => t.sessionId === a.id).state, 'running'); off();
+});

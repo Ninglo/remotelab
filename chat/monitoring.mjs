@@ -5,11 +5,12 @@ import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { codexAccounts } from '../lib/codex-accounts.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
-import { listAutomationTasks } from './automation-tasks.mjs';
+import { readAutomationHealth } from './automation-tasks.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { RECOVERY_FILE, projectRecovery } from './monitoring-recovery.mjs';
 import { readFeishuApiHealth, feishuApiAttention } from '../lib/feishu-api-health.mjs';
 import { isStoppedAutomation, currentAutomationStatus, isCurrentRecovery } from '../lib/monitoring-status.mjs';
+import { accountContinuity, continuityAttention } from '../lib/monitoring-actions.mjs';
 
 const exec = promisify(execFile);
 const GiB = 1024 ** 3;
@@ -59,7 +60,7 @@ export function projectAccounts(runtime, fleet, now = Date.now()) {
 export async function readService(item, execute = exec) {
   if (!/^[\w@.-]+\.(service|timer)$/.test(item.unit || '') || !['user', 'system'].includes(item.scope)) throw new Error('INVALID_UNIT');
   const { stdout } = await execute('systemctl', [...(item.scope === 'user' ? ['--user'] : []), 'show', item.unit,
-    '--property=LoadState,ActiveState,SubState,Result,Type,ExecMainStatus,ExecMainStartTimestamp,LastTriggerUSec'], { timeout: 3000, maxBuffer: 8192 });
+    '--property=LoadState,ActiveState,SubState,Result,Type,ExecMainStatus,ExecMainStartTimestamp,LastTriggerUSec,TimersCalendar,TimersMonotonic'], { timeout: 3000, maxBuffer: 8192 });
   const state = Object.fromEntries(stdout.trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
   const known = state.LoadState === 'loaded';
   const neverRan = state.Type === 'oneshot' && state.ActiveState === 'inactive' && !state.ExecMainStartTimestamp;
@@ -69,19 +70,19 @@ export async function readService(item, execute = exec) {
   return { label: text(item.label || item.unit), unit: item.unit, status: paused ? 'paused' : !known || neverRan ? 'unknown' : healthy ? 'healthy' : starting ? 'running' : 'failed',
     ...(paused ? { maintenanceReason: text(item.maintenance.reason), maintenanceSource: text(item.maintenance.source) } : {}),
     state: state.ActiveState, lastResult: state.Result || null, lastRunAt: state.ExecMainStartTimestamp || state.LastTriggerUSec || null,
+    ...(item.unit.endsWith('.timer') ? { timer: {
+      calendars: [...(state.TimersCalendar || '').matchAll(/OnCalendar=(.*?)\s*;/g)].map(match => match[1]),
+      monotonic: state.TimersMonotonic || '', lastTriggeredAt: state.LastTriggerUSec || null,
+    } } : {}),
     observedAt: new Date().toISOString() };
 }
 
-export function analyzeResources({ accounts, disks, automations, services, recovery = [], apiHealth, now = Date.now() }) {
+export function analyzeResources({ accounts, disks, automations, services, recovery = [], apiHealth, continuity, now = Date.now() }) {
   const attention = feishuApiAttention(apiHealth);
   for (const disk of disks) if (disk.status === 'critical' || disk.status === 'warning') attention.push({ kind: 'disk', severity: disk.status,
     id: disk.path, subject: disk.label, availableBytes: disk.availableBytes, usedPercent: disk.usedPercent, inodeUsedPercent: disk.inodeUsedPercent });
   const available = accounts.filter(account => account.status === 'available');
-  const exhausted = accounts.filter(account => account.status === 'exhausted');
-  if (exhausted.length) attention.push({ kind: 'quota', severity: !available.length || exhausted.some(account => account.active) ? 'critical' : 'warning',
-    subject: exhausted.map(account => account.label).join('、'), availableAccounts: available.length });
-  const low = available.filter(account => account.windows.some(window => window.remainingPercent <= 10));
-  if (low.length) attention.push({ kind: 'lowQuota', severity: 'warning', subject: low.map(account => account.label).join('、') });
+  attention.push(...continuityAttention(continuity));
   for (const task of automations.items) if (!isStoppedAutomation(task, now)
     && (task.lastExecution?.state === 'failed' || task.lastError)
     && !(task.lastExecution?.runId && !task.lastError && recovery.some(item => item.kind === 'automation'
@@ -95,7 +96,7 @@ export function analyzeResources({ accounts, disks, automations, services, recov
 }
 
 export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitoring.json'), getUsage = queryUsageLedger,
-  getTasks = listAutomationTasks, getAccounts = () => codexAccounts.read(), getService = readService,
+  getTasks = readAutomationHealth, getAccounts = () => codexAccounts.read(), getService = readService,
   getFs = statfs, getStat = stat, read = readFile, getApiHealth = readFeishuApiHealth, getRecord = readRecord, now = Date.now } = {}) {
   const cache = new Map();
   return async function overview({ days = 7 } = {}) {
@@ -119,8 +120,8 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     async function observe(source, fn, fallback) {
       try { return await fn(); } catch (error) { gaps.push({ source, code: error.code || 'UNAVAILABLE' }); return fallback; }
     }
-    const [usage, tasks, runtime, fleet, requests, disks, services, recovery, apiHealth, alertState] = await Promise.all([
-      observe('usage', () => getUsage({ days, top: Math.max(5, days + 1), includeTopRuns: false }), null),
+    const [usage, tasks, runtime, fleet, requests, disks, services, recovery, apiHealth, alertState, background] = await Promise.all([
+      observe('usage', () => getUsage({ days, top: Math.max(5, days + 1), includeTopRuns: false, includeDailyTrend: true }), null),
       observe('automations', getTasks, []), observe('accounts', getAccounts, null),
       config.fleetStateFile ? observe('fleet', async () => {
         const value = JSON.parse(await read(config.fleetStateFile, 'utf8'));
@@ -150,6 +151,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
         directory: config.feishuApi.directory || join(CONFIG_DIR, 'feishu-api-logs'), config: config.feishuApi,
         previous: await getRecord(join(CONFIG_DIR, 'feishu-api-health.json')) || {}, now: now() }), null) : null,
       config.alertDelivery ? observe('alertDelivery', () => getRecord(join(CONFIG_DIR, 'monitoring-alerts.json')), null) : null,
+      observe('inspectionRegistration', () => getRecord(join(CONFIG_DIR, 'automation-background.json')), null),
     ]);
     const accounts = projectAccounts(runtime, fleet, now());
     if (config.services?.length > 64) gaps.push({ source: 'services', code: 'SERVICE_LIMIT_EXCEEDED' });
@@ -194,17 +196,30 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       }
       item.currentIssue = isCurrentRecovery(item);
     }
-    const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, now: now() });
+    const continuity = accountContinuity(runtime, now());
+    const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, continuity, now: now() });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
     const deliveryIssues = Object.values(alertState?.batches || {}).filter(batch => ['needs_review', 'blocked_dependency'].includes(batch.status));
     const alertDelivery = { unresolved: deliveryIssues.length, blocked: deliveryIssues.filter(batch => batch.status === 'blocked_dependency').length,
       uncertain: deliveryIssues.filter(batch => batch.status === 'needs_review').length };
     if (deliveryIssues.length) analysis.attention.push({ kind: 'alertDelivery', severity: 'warning', id: 'monitoring-alerts', subject: '监管告警投递',
       detail: `${alertDelivery.blocked} 批因外部依赖未发送；${alertDelivery.uncertain} 批发送结果待核对。不会自动重发不确定消息。` });
-    return { generatedAt, windowDays: days,
-      usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, byModel: usage.byModel?.slice(0, 5),
+    const registration = background?.mechanisms?.find(item => item.id === 'resource-alerts');
+    const timer = registration?.source?.kind === 'systemd'
+      ? services.find(item => item.unit === registration.source.unit && item.unit.endsWith('.timer')) : null;
+    const observation = { configured: Boolean(config.alertDelivery), status: timer?.status || 'unknown',
+      cadenceSeconds: timer?.timer?.calendars?.length === 1 && timer.timer.calendars[0] === '*-*-* *:*:00'
+        && !timer.timer.monotonic ? 60 : null,
+      calendars: timer?.timer?.calendars || [], lastTriggeredAt: timer?.timer?.lastTriggeredAt || null,
+      lastObservedAt: alertState?.observedAt || null,
+      source: timer ? 'service_manager' : 'unverified', recoveryEnabled: config.recovery?.enabled === true };
+    return { generatedAt, windowDays: days, observation,
+      usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
-      accounts, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
+      accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
+      handling: { recoveryEnabled: config.recovery?.enabled === true,
+        coordinatorSessionId: text(config.recovery?.coordinatorSessionId),
+        automationRecoveryEnabled: config.recovery?.enabled === true && (!config.recovery.automationIds || config.recovery.automationIds.length > 0) },
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,
         unknownAccounts: accounts.filter(account => ['unknown', 'conflicting'].includes(account.status)).length, unverifiedAdmissions, gaps } };
   }

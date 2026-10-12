@@ -61,6 +61,8 @@ const context = vm.createContext({
   sessionSearchQuery: '',
   sessionSearchInput: { value: '' },
   sessionListRenderDepth: 0,
+  sessionSidebarRenderRevision: 0,
+  pendingSessionSidebarUpdates: new Map(),
   isDesktop: true,
   archivedSessionsLoaded: false,
   localStorage: { setItem() {} },
@@ -134,3 +136,33 @@ vm.runInContext('commitPersonFilterSelection()', context);
 assert.equal(scope, 'person_mine');
 assert.equal(attached, 'mine');
 console.log('test-chat-group-feed-navigation: ok');
+
+const automation = { id: 'automated-run', internalRole: 'scheduled_execution', sessionCollection: 'automations' };
+active.unshift(automation);
+scope = '__all__';
+assert.equal(context.matchesCurrentFilters(automation), false);
+assert.equal(context.getSessionCountForPersonFilter('__all__'), 2);
+assert.equal(context.getSessionCountForPersonFilter('__automations__'), 1);
+context.renderPersonFilterOptions();
+assert.ok(personFilterSelect.children.some(option => option.value === '__automations__'));
+scope = '__automations__';
+assert.equal(context.matchesCurrentFilters(automation), true);
+assert.equal(context.matchesCurrentFilters(personal), false);
+assert.equal(context.matchesCurrentFilters(group), false);
+context.sessions = [automation, {id:'evaluation',internalRole:'scheduled_execution'}, personal,
+  { ...automation, id:'archived-auto', archived:true },
+  { ...automation, id:'linked-run', automationHomeSessionId:'home' }];
+vm.runInContext(['getActiveSessions', 'getArchivedSessions', 'getArchivedSessionSortTime'].map(name => extractFunction(catalog,name)).join('\n'), context);
+assert.deepEqual(Array.from(context.getActiveSessions(), item => item.id), ['automated-run','mine']);
+assert.deepEqual(Array.from(context.getArchivedSessions(), item => item.id), ['archived-auto']);
+console.log('Automation collection separates ordinary, group, archived and unselected internal Sessions.');
+
+const httpSource = readFileSync(join(root, 'static/chat/session-http.js'), 'utf8');
+Object.assign(context, {
+ getAttachedSessionRenderState: () => ({sessionId:automation.id,signature:'same'}),
+ getComparableAttachedSessionStateSignature: () => 'same', syncForkButton() {}, syncShareButton() {},
+});
+vm.runInContext(extractFunction(httpSource,'applyAttachedSessionState'),context);
+scope='__all__';
+context.applyAttachedSessionState(automation.id, automation);
+assert.equal(scope,'__automations__','direct URL hydration selects the collection without a prior attach');

@@ -720,6 +720,7 @@ export function buildMessageSourceContext(summary) {
       ...(fileCount > 0 ? { fileCount } : {}),
     };
   }
+  if (summary?.groupAnnouncement) context.groupAnnouncement = summary.groupAnnouncement;
   if (Array.isArray(summary?.conversationContext?.messages)) {
     const messages = summary.conversationContext.messages
       .map((entry) => ({

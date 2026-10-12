@@ -211,3 +211,32 @@ messages for quick checks. Progress carries findings that change understanding
 or next steps, not routine lookups or a duplicate final result. These are
 communication instructions; existing display choices, delivery and native
 Harness requirements continue to apply.
+
+## Feishu topic announcements (2026-10-12)
+
+Group topics/threads read their announcement on first processing. For configured
+`projectLinks`, both discussion and work chats use the discussion chat announcement
+as the shared project source; unbound chats use their own announcement. Version-1
+local snapshots (including empty work-chat snapshots) are invalidated on the next
+input. A binding/source change also invalidates the cached snapshot and receipt. The
+connector stores a bounded source snapshot per route/chat/Session under its
+`announcement-snapshots` directory. New topics fetch the current announcement;
+existing topics retain their captured version across connector restarts. Topics
+already present at rollout capture a snapshot on their next processed input.
+Private chats, document comments and the group mainline are excluded.
+
+The SDK reads announcement metadata and paginated Docx blocks, or legacy Doc
+content for `announcement_type=doc`. Bot scope `im:chat.announcement:read` and
+membership/resource access are required. No announcement is edited. Metadata
+is checked after Docx pagination to reject a mixed-version read. Text and links
+are preserved; unsupported media are explicit placeholders. The input is capped
+at 16,000 characters and ten pages, with a visible truncation notice. Empty and
+failed reads remain distinguishable; failures retry on the next input.
+
+Every accepted Request retains the snapshot as `sourceContext.groupAnnouncement`.
+The existing Harness-acceptance deduplication projects it into the first input
+and omits it once the same native thread has acknowledged it. Fresh native
+threads or missing acceptance evidence receive it again; later accepted receipts
+carry the proven announcement hash. This adds no model call or read-state store.
+The announcement is group context and relevant collaboration guidance, not new
+authorization. Linked documents and media are not automatically read.

@@ -151,3 +151,62 @@ test('successful read digests distinguish parameters and data, exclude tokens/wr
   await restarted.get('/open-apis/im/v1/messages/private-id', { params: { page_token: 'private-page' } });
   assert.notEqual(records[0].readFingerprint, records[6].readFingerprint);
 });
+
+
+test('same affected business endpoint can prove recovery without a quota probe, even with an unrelated malformed log', async t => {
+  const directory = await logs(t, [row(3600000, 99991403), row(1000)]);
+  const file = join(directory, '2026-10-10.1.abcdef.0.jsonl');
+  const { appendFile } = await import('node:fs/promises'); await appendFile(file, 'broken legacy record\n');
+  const result = await readFeishuApiHealth({ directory, config, now });
+  assert.equal(result.providers[0].quotaRejectedAt, null);
+  assert.match(result.providers[0].quotaRestorationEvidence, /GET.*success/);
+  assert.equal(result.coverage.complete, false); assert.equal(result.providers[0].status, 'unknown');
+  assert.equal(result.tenantQuota, null);
+  await rm(file);
+  const restarted = await readFeishuApiHealth({ directory, config, previous: result, now: now + 1000 });
+  assert.equal(restarted.providers[0].quotaRejectedAt, null);
+  await writeFile(file, JSON.stringify(row(-2000, 99991403)) + '\n');
+  const rejectedAgain = await readFeishuApiHealth({ directory, config, previous: restarted, now: now + 3000 });
+  assert.equal(rejectedAgain.providers[0].status, 'quota_exhausted');
+});
+
+test('success from another app or another business endpoint cannot clear an affected endpoint rejection', async t => {
+  const directory = await logs(t, [row(3600000, 99991403), row(1000, 0, { appId: 'other' }),
+    row(1000, 0, { endpoint: '/open-apis/im/v1/chats/another-id' })]);
+  const result = await readFeishuApiHealth({ directory, config, now });
+  assert.equal(result.providers.find(p => p.appId === 'app').status, 'quota_exhausted');
+});
+
+test('a calendar restriction does not disable a proven message transport or infer billing recovery', async t => {
+  const directory = await logs(t, [row(3600000, 99991403, { endpoint: '/open-apis/calendar/v4/calendars/primary' }),
+    row(1000, 0, { method: 'POST', endpoint: '/open-apis/im/v1/messages/private-id/reply' })]);
+  const health = await readFeishuApiHealth({ directory, config, now });
+  const p = health.providers[0];
+  assert.ok(p.quotaRejectedAt); assert.equal(p.notificationDelivery.status, 'available');
+  assert.equal(health.tenantQuota, null); assert.equal(feishuApiAttention(health)[0].severity, 'warning');
+  const snapshot = { disks: [], services: [], accounts: [], automations: { items: [] }, coverage: { gaps: [] },
+    apiHealth: health, attention: [{ kind: 'disk', id: '/data', subject: 'Data', severity: 'critical', availableBytes: 1, usedPercent: 99 }] };
+  let state = null, sends = 0;
+  const options = { config: { feishuAppId: 'app' }, snapshot, now,
+    load: async () => structuredClone(state), save: async (_p, v) => { state = structuredClone(v); },
+    send: async () => { sends++; return 'om_delivered'; } };
+  const blockedHealth = { ...health, providers: [{ ...p, notificationDelivery: { status: 'unknown' } }] };
+  await dispatchMonitoringAlerts({ ...options, snapshot: { ...snapshot, apiHealth: blockedHealth } }); assert.equal(sends, 0);
+  health.coverage.complete = false;
+  await dispatchMonitoringAlerts(options); assert.equal(sends, 1);
+  await dispatchMonitoringAlerts(options); assert.equal(sends, 1);
+  assert.equal(Object.values(state.batches).filter(b => b.status === 'blocked_dependency').length, 0);
+  const file = join(directory, '2026-10-10.1.abcdef.0.jsonl');
+  await rm(file);
+  const quiet = await readFeishuApiHealth({ directory, config, previous: health, now: now + 3600000 });
+  assert.equal(quiet.providers[0].notificationDelivery.status, 'available', 'idle time and log rotation retain the verified transport receipt');
+  state = null;
+  await dispatchMonitoringAlerts({ ...options, now: now + 3600000, snapshot: { ...snapshot, apiHealth: quiet } });
+  assert.equal(sends, 2, 'the actual dispatch gate accepts retained recovery after a quiet hour');
+  await writeFile(file, JSON.stringify(row(-3599000, 99991403, { method: 'POST', endpoint: '/open-apis/im/v1/messages' })) + '\n');
+  const rejected = await readFeishuApiHealth({ directory, config, previous: quiet, now: now + 3600000 });
+  assert.equal(rejected.providers[0].notificationDelivery.status, 'unknown', 'a newer quota rejection invalidates the transport receipt');
+  state = null;
+  await dispatchMonitoringAlerts({ ...options, now: now + 3600000, snapshot: { ...snapshot, apiHealth: rejected } });
+  assert.equal(sends, 2, 'a newer rejection blocks delivery until recovery is verified again');
+});

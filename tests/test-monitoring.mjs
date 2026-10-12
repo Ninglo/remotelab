@@ -57,18 +57,20 @@ test('missing, expired and unrelated quota windows never become zero or availabl
 
 test('partial failures remain visible, observations share a bounded cache, and credential fields never leave the projection', async () => {
   let reads = 0;
-  const config = { fleetStateFile: 'fleet', disks: [{ path: '/', system: true }, { path: '/missing' }], services: [{ unit: 'test.service', scope: 'user', label: 'Test' }] };
+  const config = { fleetStateFile: 'fleet', recovery: { enabled: true, coordinatorSessionId: 'operations', baseUrl: 'never-expose', workflowPaths: { '/': '/private/credentials' } }, disks: [{ path: '/', system: true }, { path: '/missing' }], services: [{ unit: 'test.service', scope: 'user', label: 'Test' }] };
   const reader = createMonitoringReader({ now: () => now,
     read: async path => JSON.stringify(path === 'fleet' ? { schemaVersion: 2, adapters: { a: entry([sample(80, { secret: 'never-expose' })]) } } : config),
     getUsage: async () => { reads++; return { window: {}, totals: { totalTokens: 100, costUsd: 0.2, estimatedCostUsd: 1.5 }, topRuns: [{ private: 'never-expose' }], byIdentity: [{ private: 'never-expose' }] }; },
     getTasks: async () => [{ id: 'sch_test', kind: 'recurring', title: 'Daily', state: 'active', lastExecution: { state: 'failed', sessionId: 'session_test' } }],
     getAccounts: async () => ({ activeId: 'account', accounts: [{ id: 'account', identityId: 'account', account: { accessToken: 'never-expose' }, usage: null, home: '/private/credentials' }] }),
+    getRecord: async () => null,
     getService: async () => { throw Object.assign(new Error('secret error text'), { code: 'SERVICE_UNAVAILABLE' }); },
     getFs: async path => { if (path === '/missing') throw Object.assign(new Error('secret error text'), { code: 'ENOENT' });
       return { blocks: 100, bsize: 1024 ** 3, bfree: 10, bavail: 4, files: 100, ffree: 20 }; }, getStat: async () => ({ dev: 1 }),
   });
   const [a, b] = await Promise.all([reader(), reader()]);
   assert.equal(a, b); assert.equal(reads, 1);
+  assert.deepEqual(a.handling, { recoveryEnabled: true, coordinatorSessionId: 'operations', automationRecoveryEnabled: true });
   assert.equal(a.disks[0].status, 'critical'); assert.equal(a.disks[1].status, 'unknown');
   assert.equal(a.disks[1].availableBytes, undefined);
   assert.equal(a.services[0].status, 'unknown');
@@ -169,4 +171,80 @@ test('a configured important automation missing after a source change is an expl
   assert.deepEqual(value.coverage.gaps, [{ source: 'automation:sch_missing', code: 'NOT_FOUND' }]);
   assert.deepEqual(value.automations.items[0].check, { at, reason: 'no_match' });
   assert.equal(value.attention.filter(item => item.kind === 'automation').length, 0);
+});
+
+test('seven-day trends use all deduplicated records, keep summary window and distinguish gaps from observed zero', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { queryUsageLedger } = await import('../chat/usage-ledger.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'monitor-trends-'));
+  const endMs = Date.parse('2026-10-12T12:00:00Z');
+  const record = (day, runId, sessionId, totalTokens, extra = {}) => ({
+    ts: `2026-10-${day}T10:00:00Z`, runId, sessionId, totalTokens, ...extra,
+  });
+  const rows = [
+    record('05', 'outside', 'outside', 999),
+    record('06', 'zero', 's1', 0, { contextTokens: 0 }),
+    record('08', 'old', 's1', 10, { contextTokens: 100 }),
+    record('08', 'old', 's1', 20, { contextTokens: 200 }),
+    record('08', 'same-session', 's1', 30, { contextTokens: 400 }),
+    record('08', 'other-session', 's2', 40),
+    record('08', 'background', 'bg', 50, { contextTokens: 999999, operation: 'session_state_suggestion' }),
+    record('10', 'before-midnight', 'boundary', 5, { ts: '2026-10-10T23:59:59Z' }),
+    record('11', 'midnight', 'boundary', 7, { ts: '2026-10-11T00:00:00Z' }),
+    record('12', 'today', 's3', 60, { contextTokens: 600 }),
+    record('12', 'future', 's4', 100, { ts: '2026-10-12T13:00:00Z' }),
+  ];
+  try {
+    // Ledger filenames follow the server's local dates; trend buckets explicitly use UTC.
+    const files = new Map();
+    for (const row of rows) {
+      const d = new Date(row.ts), key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      files.set(key, [...(files.get(key) || []), row]);
+    }
+    for (const [key, records] of files) await writeFile(join(dir, `${key}.jsonl`), records.map(r => JSON.stringify(r)).join('\n'));
+    const options = { ledgerDir: dir, days: 1, endMs, top: 1 };
+    const plain = await queryUsageLedger(options);
+    const result = await queryUsageLedger({ ...options, includeDailyTrend: true });
+    assert.deepEqual(result.totals, plain.totals);
+    assert.deepEqual(result.topRuns, plain.topRuns);
+    assert.equal(result.totals.totalTokens, 60);
+    const days = result.dailyTrend.days;
+    assert.equal(days.length, 7); assert.equal(days[0].day, '2026-10-06');
+    assert.equal(days[0].totalTokens, 0); assert.equal(days[0].avgContextTokens, 0);
+    assert.equal(days[1].totalTokens, null); assert.equal(days[1].sessionCount, null);
+    assert.equal(days[2].runCount, 4); assert.equal(days[2].sessionCount, 3);
+    assert.equal(days[2].totalTokens, 140);
+    assert.equal(days[2].contextSamples, 2); assert.equal(days[2].foregroundRuns, 3);
+    assert.equal(days[2].avgContextTokens, 300);
+    assert.equal(days[4].totalTokens, 5); assert.equal(days[5].totalTokens, 7);
+    assert.equal(days[5].avgContextTokens, null); assert.equal(days[6].totalTokens, 60);
+    assert.equal((await queryUsageLedger({ ...options, includeDailyTrend: true, sessionId: 's1' })).dailyTrend.days[2].sessionCount, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('observer cadence comes from its registered live timer and completion time stays separate from page time', async () => {
+  let registered = true, calendar = '*-*-* *:*:00', state = 'active';
+  const item = { label: 'Observer', unit: 'observer.timer', scope: 'system' };
+  const reader = () => createMonitoringReader({ now: () => now,
+    read: async () => JSON.stringify({ services: [item], alertDelivery: {}, recovery: { enabled: true } }),
+    getRecord: async file => file.endsWith('automation-background.json') ? { mechanisms: registered
+      ? [{ id: 'resource-alerts', source: { kind: 'systemd', unit: item.unit } }] : [] }
+      : file.endsWith('monitoring-alerts.json') ? { observedAt: '2026-10-03T05:59:00Z' } : null,
+    getTasks: async () => [], getAccounts: async () => null, getUsage: async () => null,
+    getFs: async () => ({ blocks: 100, bsize: 1024 ** 3, bfree: 80, bavail: 80, files: 0, ffree: 0 }), getStat: async () => ({ dev: 1 }),
+    getService: entry => readService(entry, async () => ({ stdout: `LoadState=loaded\nActiveState=${state}\nResult=success\nTimersCalendar={ OnCalendar=${calendar} ; next_elapse=Sat 2026-10-03 06:01:00 UTC }\nLastTriggerUSec=Sat 2026-10-03 06:00:00 UTC\n` })),
+  });
+  let value = await reader()();
+  assert.equal(value.observation.cadenceSeconds, 60);
+  assert.equal(value.observation.status, 'healthy');
+  assert.notEqual(value.observation.lastObservedAt, value.generatedAt);
+  calendar = '*-*-* 04:00:00';
+  value = await reader()(); assert.equal(value.observation.cadenceSeconds, null);
+  state = 'inactive'; value = await reader()(); assert.notEqual(value.observation.status, 'healthy');
+  registered = false; value = await reader()();
+  assert.equal(value.observation.source, 'unverified');
+  assert.equal(value.observation.cadenceSeconds, null);
+  assert.equal(value.observation.status, 'unknown');
 });

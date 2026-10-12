@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+const fixture = await mkdtemp(join(tmpdir(), 'automation-home-run-'));
+process.env.REMOTELAB_CONFIG_DIR = fixture;
+const { createTrigger, ensureExecutionSession } = await import('../chat/triggers.mjs');
+const { prepareAutomationHomeRun, ensureAutomationHome } = await import('../chat/automation-home.mjs');
+const { mutateAutomationHome, readAutomationHome, automationDefinition } = await import('../chat/automation-home-store.mjs');
+const { getSession, createSession, forkSession, getHistory, bindSessionAutomation } = await import('../chat/session-manager.mjs');
+const { appendEvents, getContextHead, getForkContext, setContextHead } = await import('../chat/history.mjs');
+try {
+  const taskId = 'sch_1234567890abcdef12345678', homeId = '1234567890abcdef1234567890abcdef';
+  const trigger = await createTrigger({text:'original goal',scheduleId:taskId,scheduledAt:'2026-10-12T00:00:00Z',
+    sessionTemplate:{folder:'/tmp',tool:'codex',sessionCollection:'automations'}});
+  await mutateAutomationHome(taskId, () => ({taskId,sessionId:homeId,author:{name:'Creator'},taskCreatedAt:'2026-10-01T00:00:00Z',
+    definitions:[{revision:1,definition:automationDefinition(trigger)}],runs:{}}));
+  const execution = await ensureExecutionSession(trigger);
+  const initial = await prepareAutomationHomeRun(execution.trigger,execution.session);
+  assert.ok(initial.includes(homeId));
+  assert.ok(initial.includes('定义版本：1'));
+  assert.equal((await getSession(execution.session.id)).automationHomeSessionId,homeId);
+  await mutateAutomationHome(taskId, home => {home.definitions.push({revision:2,definition:{text:'new goal'}});return home;});
+  assert.equal(await prepareAutomationHomeRun(execution.trigger,execution.session),initial,'retry retains original definition association');
+  const saved = await readAutomationHome(taskId);
+  assert.equal(saved.runs[trigger.id].definition.text,'original goal');
+  assert.equal(saved.runs[trigger.id].revision,1);
+  const untouched = await createTrigger({text:'unselected',scheduledAt:'2026-10-13T00:00:00Z',sessionTemplate:{folder:'/tmp',tool:'codex'}});
+  const separate = await ensureExecutionSession(untouched);
+  assert.equal(await prepareAutomationHomeRun(separate.trigger,separate.session),'');
+  assert.equal((await getSession(separate.session.id)).automationHomeSessionId,undefined);
+  // Migrate a real full-history home without inheriting the source's context.
+  const source = await createSession('/tmp','codex','Source discussion',{systemPrompt:'unrelated source instruction'});
+  await appendEvents(source.id,[{type:'message',role:'user',content:'PRIVATE SOURCE HISTORY',timestamp:1}]);
+  await setContextHead(source.id,{activeFromSeq:1,compactedThroughSeq:0,inputTokens:212000,updatedAt:new Date().toISOString()});
+  const legacy = await forkSession(source.id,{name:'Legacy home',internalRole:'automation_home',automationTaskId:'trg_1234567890abcdef12345678'});
+  const migratedTask = await createTrigger({sourceSessionId:source.id,text:'Only inspect allowed task data',scheduledAt:'2027-01-01T00:00:00Z',sessionTemplate:{folder:'/tmp',tool:'codex',sessionCollection:'automations'}});
+  const worker = await ensureExecutionSession(migratedTask);
+  await bindSessionAutomation(worker.session.id,{taskId:migratedTask.id,homeSessionId:legacy.id});
+  const definitions=[{revision:1,definition:automationDefinition(migratedTask)}];
+  await mutateAutomationHome(migratedTask.id,()=>({version:1,taskId:migratedTask.id,sessionId:legacy.id,sourceSessionId:source.id,author:{},brief:'Do not duplicate delivery',definitions,events:[{type:'established'}],runs:{}}));
+  await assert.rejects(ensureAutomationHome(migratedTask.id,{replaceSessionId:'wrong'}),/changed/);
+  const moved = await ensureAutomationHome(migratedTask.id,{replaceSessionId:legacy.id});
+  assert.notEqual(moved.sessionId,legacy.id);
+  assert.equal(moved.contextMode,'task_brief');
+  assert.deepEqual(moved.definitions,definitions);
+  assert.equal(moved.events.at(-1).type,'home_migrated');
+  assert.equal(moved.previousSessions[0].sessionId,legacy.id);
+  const fresh=await getSession(moved.sessionId);
+  assert.equal(fresh.forkedFromSessionId,source.id);
+  assert.equal(fresh.forkContextMode,'task_brief');
+  assert.ok(fresh.systemPrompt.includes(migratedTask.text));
+  assert.ok(!fresh.systemPrompt.includes('unrelated source instruction'));
+  assert.equal(fresh.codexThreadId,undefined);
+  assert.equal(fresh.claudeSessionId,undefined);
+  assert.ok(!(await getContextHead(fresh.id))?.inputTokens);
+  assert.ok(!(await getForkContext(fresh.id))?.text);
+  const messages=await getHistory(fresh.id);
+  assert.equal(messages.length,1,'new home contains only its explicit handoff receipt');
+  assert.ok(!JSON.stringify(messages).includes('PRIVATE SOURCE HISTORY'));
+  assert.equal((await getSession(worker.session.id)).automationHomeSessionId,fresh.id);
+  assert.equal((await getSession(legacy.id)).archived,true);
+  assert.ok(JSON.stringify(await getHistory(legacy.id)).includes('PRIVATE SOURCE HISTORY'));
+  assert.equal((await ensureAutomationHome(migratedTask.id,{replaceSessionId:legacy.id})).sessionId,fresh.id,'retry does not create another home');
+  await assert.rejects(bindSessionAutomation(worker.session.id,{taskId:'different',homeSessionId:'another',previousHomeSessionIds:[fresh.id]}),/different automation/);
+  console.log('Automation home: isolated execution linkage, frozen retry definition and opt-in boundary passed');
+} finally { await rm(fixture,{recursive:true,force:true}); }

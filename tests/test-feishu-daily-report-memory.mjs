@@ -71,84 +71,16 @@ try {
   assert.equal(await loadDailyReportMemory(settings, question, { now }), null,
     'never truncate a long paragraph before its qualification');
   await publish();
-  let requests = 0;
-  const verdict = await classifyFeishuQuickParticipation(question, { key: 'fixture',
-    includeHandoff: false, newestText: question, projectMemory: memory,
-    fetchImpl: async (_url, request) => {
-      requests++;
-      const sent = JSON.parse(request.body);
-      assert.deepEqual(sent.state.project_memory, memory);
-      assert.match(sent.questions.binaryAnswer.instructions, /Missing information means none, not No/);
-      assert.match(sent.questions.binaryAnswer.instructions, /current changing status/);
-      return { ok: true, json: async () => ({ answers: {
-        participation: { choice: 'reply', probabilities: { reply: 0.99, silent: 0.01 } },
-        binaryAnswer: { choice: 'yes', probabilities: { yes: 0.99, no: 0, none: 0.01 } },
-        binaryEvidence: { choice: 'project_snapshot', probabilities: { project_snapshot: 0.99, current_context: 0, insufficient: 0.01 } },
-      } }) };
+  // Keep publication verification available, but never feed reports to the
+  // social-reaction model or let it answer factual questions.
+  const verdict = await classifyFeishuQuickParticipation(question, { key: 'fixture', projectMemory: memory,
+    fetchImpl: async (_url, req) => {
+      const sent = JSON.parse(req.body);
+      assert.equal(sent.state, undefined);
+      assert.equal(sent.input, question);
+      assert.deepEqual(sent.questions.map(item => item.name), ['reaction']);
+      return { ok: true, json: async () => ({ answers: { binaryAnswer: { choice: 'yes', probabilities: { yes: .99 } } } }) };
     } });
-  assert.equal(requests, 1);
-  assert.equal(verdict.emojiType, 'Yes');
-  assert.deepEqual(verdict.contextSources, memory.sources);
-  const unsupportedLive = await classifyFeishuQuickParticipation('现在 V2V seed 2 跑完了吗？', {
-    key: 'fixture', includeHandoff: false, newestText: '现在 V2V seed 2 跑完了吗？', projectMemory: memory,
-    fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-      participation: { choice: 'reply', probabilities: { reply: 0.99, silent: 0.01 } },
-      binaryAnswer: { choice: 'no', probabilities: { no: 0.99, yes: 0, none: 0.01 } },
-      binaryEvidence: { choice: 'insufficient', probabilities: { insufficient: 0.99, current_context: 0, project_snapshot: 0.01 } },
-      workMode: { choice: 'short', probabilities: { short: 0.99, complex: 0.01 } },
-    } }) }),
-  });
-  assert.equal(unsupportedLive.emojiType, null, 'an unsupported high-probability No must be blocked');
-  assert.equal(unsupportedLive.workMode, 'complex');
-  await classifyFeishuQuickParticipation(question, { key: 'fixture', projectMemory: memory,
-    fetchImpl: async (_url, request) => {
-      assert.equal(JSON.parse(request.body).state.project_memory, undefined,
-        'legacy Jev groups must keep their existing request shape');
-      return { ok: true, json: async () => ({ answers: {
-        participation: { choice: 'silent', probabilities: { reply: 0.01, silent: 0.99 } },
-      } }) };
-    } });
-  const event = await observeSessionMessage('memory-test', { sourceMessageId: 'memory-source', text: question });
-  const saved = await recordSessionObservationDecision('memory-test', 'memory-source', {
-    participation: 'reply', workMode: 'reaction', emojiType: 'Yes', contextSources: memory.sources,
-  });
-  assert.deepEqual(saved.contextSources, memory.sources);
-  const history = await readEventsAfter('memory-test', event.eventSeq);
-  assert.deepEqual(history.find(item => item.type === 'reaction_decision').contextSources, memory.sources);
-  const effects = [];
-  const actualQuestion = '日报里 OpenWAM 训练归 Auto Research 吗？';
-  const actualDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
-  const actualBodyPath = join(settings.reportsDir, `${actualDate}.md`);
-  await writeFile(actualBodyPath, body);
-  await writeFile(join(settings.receiptsDir, `${actualDate}.json`), JSON.stringify({ ...receipt,
-    date: actualDate, source: actualBodyPath, generated_at: new Date(Date.now() - 1000).toISOString() }));
-  const outcome = await handleMessage({ config, storagePaths: {}, botIdentity: { openId: 'bot' } }, {
-    chatId: 'group', chatType: 'group', messageType: 'text', messageId: 'memory-reaction',
-    messageText: actualQuestion, mentions: [], sender: { senderType: 'user', openId: 'person' },
-  }, 'test', {
-    observeRemoteLabMessage: async () => ({ sessionId: 'timeline', observation: { eventSeq: 1,
-      recent: [{ time: Date.now(), sender: 'Person', text: actualQuestion }] } }),
-    classifyJevReaction: async (_context, options) => {
-      effects.push('jev');
-      assert(options.projectMemory?.sources[0].date === actualDate);
-      return { decision: 'reply', workMode: 'reaction', emojiType: 'Yes', contextSources: options.projectMemory.sources };
-    },
-    recordJevDecision: async (_session, _message, decision) => ({ decision }),
-    enqueueJevReaction: async (_runtime, _summary, _session, emojiType) => {
-      effects.push(emojiType); return { id: 'delivery' };
-    },
-    submitRemoteLabRequest: async (_runtime, _summary, options) => {
-      assert.equal(options.skipUserMessage, true);
-      assert.equal(options.legacyGroupWorkThread, undefined);
-      effects.push('run');
-      return { sessionId: 'timeline', runId: 'memory-run' };
-    },
-  });
-  assert.equal(outcome.decision.contextSources[0].date, actualDate);
-  assert.deepEqual(effects, ['jev', 'Yes', 'run'], 'feedback need not wait for work input preparation');
-  assert.equal(outcome.runId, 'memory-run');
-  assert.deepEqual(JSON.parse(await readFile(receiptPath, 'utf8')).body_sha256, receipt.body_sha256);
+  assert.equal(verdict.emojiType, null);
   console.log('test-feishu-daily-report-memory: ok');
-} finally {
-  await rm(home, { recursive: true, force: true });
-}
+} finally { await rm(home, { recursive: true, force: true }); }

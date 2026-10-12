@@ -109,6 +109,17 @@ Notes:
 - `backfill` creates a fresh reply session and drafts a catch-up reply for recent silent text messages; add `--dry-run` to inspect the target and prompt without sending
 - if `backfill` fails with `Bot/User can NOT be out of the chat`, the bot is no longer in that chat, so the draft exists but Feishu will refuse delivery until the bot is added back
 
+### Group announcement context
+
+New group topics/threads automatically read their group's announcement using
+Bot scope `im:chat.announcement:read`. Bound discussion/work chats both use the
+discussion chat announcement as their shared project context. Text and links are captured per topic;
+subsequent replies reuse that snapshot and omit it from the model input after
+confirmed Harness receipt. New topics read later edits. Empty, unreadable,
+truncated and non-text content are marked explicitly. No announcement is edited.
+See [topic announcement context](connector-turn-context.md#feishu-topic-announcements-2026-10-12)
+for limits, legacy support, retries and existing-topic rollout behavior.
+
 ### Harness-side Feishu CLI access
 
 RemoteLab does not expose document or Wiki reads as connector tools. The four
@@ -495,15 +506,13 @@ therefore has an outcome reaction even when the model gives no usable choice.
 This is a connector-native action selected through structured model output.
 An explicit model tool call would give immediate reaction feedback but needs a
 per-turn tool binding and round trip; launching the general connector CLI for
-every message adds a process and source-context lookup. The fast classifier is
-kept for handoff hints, not outcome reactions, because its independent guess
-can disagree with the Session that actually read and answered the discussion.
+every message adds a process and source-context lookup. This legacy receipt path no longer calls a fast classifier or nominates work
+handoffs. Receipt latency does not delay Session submission.
 A reaction-only final contains only the directive; reaction plus text puts the
 normal reply after it. Human-to-human discussion normally receives `EatingFood`
 without a text reply. If several inbound messages share one native turn, only
 the root message gets the model-selected reaction; the other messages get
-`EatingFood`. The quick classifier remains for handoff nomination and
-diagnostics but does not choose or post the outcome reaction. `contextReactions`
+`EatingFood`. Work and handoff decisions belong to the main Session model. `contextReactions`
 is retained as a compatible setting but does not make an automatic reaction.
 Ambient group Sessions use the same light timeline instructions whether or not
 `groupFeed` is enabled in ChatUI. A message addressed only to another person is
@@ -520,50 +529,54 @@ hints; topics use direct replies. An explicit @ mention normally asks for a text
 the model includes `OnIt` before a normal answer. A message asking for only a
 reaction receives no visible text after the reaction is added.
 
-For a single group mainline pilot, add `jevReactions: true` to a group that
+For a selected group mainline, add `jevReactions: true` to a group that
 already has `quickReactions: true`, `participationMode: "ambient"`, and
-`groupFeed: true`. Each admitted human message is first appended once to the
-same bound group Session, including messages that need no text answer. The
-connector sends the last 20 Session messages from at most the preceding two
-hours, capped at 5,000 characters, to one Jev judgment. **Temporary policy as
-of 2026-10-01: Jev does not gate Session submission.** Every admitted human
-message reaches a Harness Run, even when Jev recommends silence, a reaction-only
-answer, or returns an uncertain or failed classification. The Session model
-decides whether a useful text reply or task is needed and may stay silent.
-Jev still selects reactions and supplies the existing work-placement hint.
-`short` stays in the group Session and replies on the group mainline.
-Research, coding, multistep or uncertain work uses `complex`: the connector
-creates a separate work Session bound to a new Feishu Thread rooted at that
-message, includes recent group context, and delivers its visible result there.
-An uncertain work-mode judgment for a Jev `reply` also uses `complex`.
-Jev `silent`, unknown, and reaction-only judgments reach the existing group
-Session rather than opening a work Thread. For Jev no-work judgments, explicit praise of the
-assistant or its work gets `WOW` (惊喜), explicit criticism or rejection gets
-`TOASTED` (衰), and all other messages get no reaction. Weak or missing emotion
-support also gets no reaction. Direct mentions retain the existing `OnIt`
-fallback. A supported binary answer may still receive a `Yes` or `No` reaction,
-and an explicit emoji-only request retains its selected reaction; neither
-skips the Session model. For Jev work judgments, the outcome remains `OnIt`.
-The connector records every Jev judgment as a reaction and routing hint in the
-Session and queues a reaction only when one was chosen. The durable
-source-delivery outbox and Feishu Bot SDK send that reaction. This path does not add a temporary
-`THINKING` or generic read reaction, and it does not ask the Harness to select
-or post the outcome. The group Session retains one observation and the durable
-Jev decision for every message. A group Run uses that observation without
-duplicating the user message; a complex Run records the task in its own Session.
-Later messages inside the new Thread continue its work Session. Ordinary social
-messages also reach the Session model, which can leave them without a text reply.
-Commands still use their existing script response path after entering the
-Session. Only the selected group mainline uses Jev reactions; topics and threads
-use ordinary topic replies without the legacy quick-reaction prompt. Other
-groups keep their existing behavior. Disable `jevReactions` to
-return to the existing `quickReactions` flow.
+`groupFeed: true`. Each admitted human message is appended once to its bound
+group Session. The main Harness receives it without waiting for the fast reaction model, reaction
+persistence or the reaction provider. It decides whether to reply, where the
+reply belongs and whether authorized work needs a separate Session.
 
-The observation and decision are keyed by Feishu message ID so connector
-replay reuses them. The short Jev window is an active-context limit, not a
-retention limit. A selected Jev group can also consume bounded, dated excerpts
-from published daily reports through the opt-in
-[daily report memory input](feishu-daily-report-memory.md).
+OpenAI Decisions (`gpt-6-luna`, `POST /v1/decisions`) receives a bounded recent Session window (at most 20 messages and 5,000
+characters) and a single social-reaction question. It cannot classify
+participation, invitations, mode changes, work placement or handoff. It cannot
+answer factual questions with Yes/No or claim work is underway or complete.
+Its optional Get only acknowledges receipt. Weak support, missing credentials,
+timeout and provider failure produce no reaction, never a fallback work signal.
+No project report is loaded into this call; `dailyReportMemory` is retained as
+compatible configuration but no longer feeds the reaction model. See the
+[retired report input](feishu-daily-report-memory.md).
+
+The existing `jevReactions` name is retained as the per-group opt-in; it now
+selects OpenAI Decisions, not TypeSafe. No group is opted in by this provider
+change. Groups without this flag, legacy `quickReactions`, topic replies, and
+explicit participation controls keep their existing paths. Supply an OpenAI
+API key through the connector service's `OPENAI_API_KEY`, or `OPENAI_KEY_FILE`
+(default: `<config-dir>/openai.env`, containing `OPENAI_API_KEY=...`). This
+requires API credentials; a Codex ChatGPT login is not read or repurposed.
+Missing credentials produce no reaction and never fall back to TypeSafe.
+The deadline remains 1,600 ms; verify real latency and Chinese examples before
+claiming the provider is usable on an instance. The request has one named
+`choice` question with social emoji values and `none`; a selected emoji needs
+at least 0.8 probability. Refusals and malformed or unsupported answers are
+ignored. See the [official Decisions contract](https://developers.openai.com/api/docs/guides/decisions).
+
+The reaction runs independently. A successful selection is saved under the
+source message and sent through the existing durable source-delivery outbox.
+It does not add temporary THINKING or ask the main model for another reaction.
+A failure is logged without retrying the admitted task. If the connector exits
+before selection is persisted/queued, this optional reaction can be absent;
+the main task does not wait for its recovery. Concurrent processing in the
+same process shares a reaction job; persisted decisions and outbox identity
+prevent replay from choosing a second outcome. Historical decisions retain
+their records, but their workMode, participation and binary-answer fields no
+longer determine new admission or placement. A submission already durably
+prepared before upgrade keeps its original Session and delivery target;
+reusing a mainline observation must not omit the worker Session user event.
+
+Topics retain ordinary topic replies. Commands, explicit mute/pause state,
+access controls and Bot handoff limits retain their own admission paths.
+Disable `jevReactions` to return to the legacy quickReactions receipt/final
+reaction flow. Neither flow uses a small model to choose work placement.
 
 All observed messages remain in the Session. The
 group-feed nightly review preserves incremental provenance and current work
@@ -594,7 +607,9 @@ Session, including messages without an @ mention. The Session can return an
 empty answer to stay silent, a normal answer for an inline reply, or start its
 answer with `<private>feishu-reply:thread</private>` to place the visible answer
 in a Thread rooted at that input. The private marker is removed before
-publication. Ordinary observation turns have no processing reaction or
+publication. This reply-location choice remains available when personal
+`routing=none` disables automatic work-Session routing. It does not itself
+create a work Session. Ordinary observation turns have no processing reaction or
 Session-created notice; a standalone @ mention asks the Session to reconsider
 the recent unanswered discussion. The first Thread answer comes from the main
 Session; later Thread inputs use the normal independent Thread Session and
@@ -608,7 +623,8 @@ withdraw the existing message and its top notice separately when requested.
 
 Participation controls apply independently to the main timeline and each existing
 Thread. `/mute` selects listening: messages are recorded without a model turn unless
-that message explicitly invites the Bot. `/unmute` restores active participation for
+that message @ mentions the Bot or uses a task command. Jev does not interpret
+natural-language invitations, mode changes or topic changes. `/unmute` restores active participation for
 new messages; queued content from before restoration is not replayed as new work.
 Pausing or entering listening cancels that conversation's ongoing work and removes
 its retained THINKING reactions. Definite observation rejections are archived with

@@ -30,3 +30,7 @@ assert.equal((await listAutomationFlows([task],{load,backgroundMechanisms:[{...b
 assert.equal((await listAutomationFlows([task],{load,backgroundMechanisms:[{...background,trigger:'Every hour'}]})).groups[1].rows[0].needsReview,true);
 assert.equal((await listAutomationFlows([task],{load})).groups[1].rows[0].needsReview,true);
 console.log('Background bindings: live states, changed cadence and missing sources passed.');
+config.language='zh-CN';config.groups[0].rows[0].writeDetails='Original path /data/project.md';
+result=await listAutomationFlows([task],{load});
+assert.equal(result.language,'zh-CN');assert.equal(result.groups[0].rows[0].writeDetails,'Original path /data/project.md');
+config.language='invalid';assert.equal((await listAutomationFlows([task],{load})).language,'');

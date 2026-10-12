@@ -65,7 +65,7 @@ try {
   assert.equal(resolveAmbientFeishuReplyPlan({ options: { ...record.options,
     messageRoutingPolicy: { version: 1, mechanism: 'none' } } }, plan, [
     { type: 'message', role: 'assistant', content: '<private>feishu-reply:thread</private>我来处理。' },
-  ]).target.conversationKind, 'main', 'no-routing inputs cannot open a thread through an old placement marker');
+  ]).target.conversationKind, 'thread', 'execution routing never controls the main model reply placement');
   assert.equal(resolveAmbientFeishuReplyPlan(record, plan, [
     { type: 'message', role: 'assistant', content: '<private><feishu-reaction emoji="OnIt"/></private><private>feishu-reply:thread</private>另开话题处理。' },
   ]).target.conversationKind, 'thread', 'reaction directive may precede a thread reply');

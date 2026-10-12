@@ -6,11 +6,44 @@ This is the authenticated control surface for RemoteLab's durable automated task
 
 ## Compact flow explanations
 
-Inside **Monitor → Automations**, an instance can show a small flow panel above the existing task list. System monitoring, memory, progress tracking and knowledge discovery each show the shared reading step, then processing → write destination → delivery timing and recipient. Links open the original resources. “Related tasks” filters the original list by task ID, including packaged members; it does not create a duplicate list or alter a producer. Lifecycle filters or “Show all tasks” clear this local selection. Records, settings and lifecycle controls remain on the original cards. Task purposes are grouped for display into monitoring, memory, progress and knowledge, with an unclassified fallback; persisted purposes are unchanged.
+Inside **Monitor → Automations**, an instance can show a small flow panel above the existing task list. System monitoring, memory, progress tracking and knowledge discovery each show input and reuse explanations, then peer task rows with start → processing → write destination → delivery timing and recipient. Links open the original resources. “Related tasks” filters the original list by task ID, including packaged members; it does not create a duplicate list or alter a producer. Lifecycle filters or “Show all tasks” clear this local selection. Records, settings and lifecycle controls remain on the original cards. Task purposes are grouped for display into monitoring, memory, progress and knowledge, with an unclassified fallback; persisted purposes are unchanged.
 
-The optional instance file `CONFIG_DIR/automation-flows.json` holds version 1 and `groups` with IDs `operations`, `memory`, `tracking`, `knowledge`. Each group has `read`, optional `readAt` (a human explanation, not a second schedule), optional `note`, and `rows`. A row has `title`, `taskIds`, optional `backgroundIds`, `process`, `write`, `send`, optional `note` and HTTP(S) `links` (`title`, `url`). The `definitions` map stores `automationDefinitionHash(task)` for each bound task after its explanation is reviewed. The hash covers instructions, cadence, execution target and result delivery, excluding changing run counters. Schedule times and lifecycle status always come from the current task projection. Background references reuse the existing mechanism projection and `automationBackgroundHash` of its ID, title, trigger and note; changing observation state does not invalidate the explanation. Missing or revised background definitions need review too. Background-only rows open the existing monitoring overview, without introducing another collector or alert sender. The source block connects visually to processing branches, each with write and delivery steps; narrow screens retain the same sequence vertically. Scope notes expand in place and keep their state during refresh. Missing or changed definitions show a review notice; absent configuration hides the panel, while invalid/unreadable configuration shows a warning without blocking the original list. The authenticated task API adds the read-only `automationFlows` projection. Descriptors contain human explanations, not executable instructions or another scheduler. Instance destinations and personal details never belong in shared source examples.
+The optional instance file `CONFIG_DIR/automation-flows.json` holds version 1 and `groups` with IDs `operations`, `memory`, `tracking`, `knowledge`. Optional `language` (`zh-CN` or `en`) keeps the explanation labels and schedule text in the same language as the instance-authored content without changing browser language preferences. A row can put exact storage paths in `writeDetails`, shown under “File locations”, while `write` stays readable. Each group has `read`, optional `readAt` (a human explanation, not a second schedule), optional `note`, and `rows`. A row has `title`, `taskIds`, optional `backgroundIds`, `process`, `write`, `send`, optional `note` and HTTP(S) `links` (`title`, `url`). The `definitions` map stores `automationDefinitionHash(task)` for each bound task after its explanation is reviewed. The hash covers instructions, cadence, execution target and result delivery, excluding changing run counters. Schedule times and lifecycle status always come from the current task projection. Background references reuse the existing mechanism projection and `automationBackgroundHash` of its ID, title, trigger and note; changing observation state does not invalidate the explanation. Missing or revised background definitions need review too. Background-only rows open the existing monitoring overview, without introducing another collector or alert sender. The input block describes reuse without implying that every row shares one completed read. Each task has four aligned stages, with arrows only within that task; narrow containers stack the same stages vertically. Group scope and proposed changes appear above the tasks, and row caveats remain visible. Session continuation mechanics are collapsed below the two execution/history links and preserve their expansion state during refresh. Missing or changed definitions show a review notice; absent configuration hides the panel, while invalid/unreadable configuration shows a warning without blocking the original list. The authenticated task API adds the read-only `automationFlows` projection. Descriptors contain human explanations, not executable instructions or another scheduler. Instance destinations and personal details never belong in shared source examples.
 
 Updating this presentation does not apply a proposed time change, merge tasks, reopen a consumer, change Session/context policy or send notifications. Planned changes must be marked in notes, separate from the current schedule. The explanation is not evidence that a run read, wrote or delivered anything; actual records remain in the existing execution history.
+
+## Timeline in the original automation tab
+
+Automations presents Overview, Flows and Task details as three peer tabs, with only one visible at a time. Overview opens by default; selecting a related task switches to Task details and retains the targeted filter. Switching views and refreshing retain expanded rows and flow selection. The tabs support arrow keys, Home and End.
+
+The timeline, flow descriptions and task list share the same centered 880px reading column as Monitor navigation. The timeline uses the complete task projection, independently of task-list filters. Active daily cron schedules with numeric hours and minute are expanded into sorted daily time groups (including both occurrences of a twice-daily task); time zones stay explicit. Intervals and other cron expressions retain their cadence and next occurrence rather than being guessed into daily times. Pending/running one-time work is listed by its actual scheduled timestamp; accepted runs whose retained state cannot be verified stay discoverable in the original task records.
+
+Rows distinguish direct AI starts from condition checks, show current producer/business state, and expand to the next run and existing write/delivery explanations. Missing explanations link to the original task rather than invent destinations. A separate expander covers all registered background mechanisms including disabled ones; it makes no completeness claim for unregistered OS services. Stopped and finished records remain in the original list. Refresh preserves expanded timeline rows. The view is a schedule, not an execution/completion promise; it makes no writes, extra collector, model call or change to producer configuration.
+
+## Automation Session collection
+
+The Session selector has an **Automations / 自动化** collection alongside People and
+Feishu group chats. Participation is explicit: a schedule or trigger template
+sets `sessionCollection: "automations"`. New `scheduled_execution` Sessions
+inherit that marker. Unselected internal Sessions remain hidden as before;
+ordinary People lists exclude collected runs. Archived runs retain their marker.
+Opening a collected Session, including a direct URL restored before the sidebar
+loads, selects the collection automatically.
+
+The automation API projection exposes the template's `sessionCollection`.
+Opted-in task cards and flow rows link to the newest retained execution Session,
+not the source discussion. Before the first execution, the card explains that no
+execution is available. Execution history retains all its existing links.
+
+For an authorized migration, snapshot the selected schedules and existing
+execution Sessions. Patch only selected `sessionTemplate.sessionCollection`, and
+use `PATCH /api/sessions/:id` with `sessionCollection: "automations"` for eligible
+historical executions. The API rejects human/group-feed Sessions. Check trigger
+associations too: never move a discussion or a Session shared with excluded work.
+Empty `sessionCollection` removes the marker. Pending occurrences retain their
+captured templates and must be reviewed separately. Collection membership does
+not change execution reuse, cadence, ownership, delivery or authorization. There
+is no implicit migration of all tasks, and no automatic cross-topic edit routing.
 
 ## Task browsing and failure diagnosis
 
@@ -292,3 +325,97 @@ This distinction is visible in the interface copy. `paused` or `cancelled` is ne
 - Fixed/new Session contract: `lib/scheduled-session.mjs`
 - Authenticated routes: `chat/router-control-routes.mjs`
 - UI: `static/chat/task-center.js`, `static/chat/task-center.css`, `templates/chat.html`
+
+## Stable automation home (explicit opt-in)
+
+Handoff: “Create this non-evaluation automation with independent execution and a
+stable home forked from its source. Record the actual creator, original creation
+time, objective, authorization/output boundaries and failure recovery rules.
+Preserve the task ID and delivery targets. Check task → home → task and history
+links. Adopt later definition changes only after the authorized human confirms.”
+
+A home is an independent task-context fork with `internalRole: automation_home`
+and `forkContextMode: task_brief`, collected under
+Automations. It is a fixed reading/discussion entry, not the worker queue. Existing
+per-occurrence/calendar-day execution stays intact. Linked workers disappear from
+the collection list but remain directly accessible through the home history.
+The home header links to the exact task using `?tab=tasks&monitor=automations&task=ID`,
+each execution, and the original discussion under a secondary reference disclosure.
+The primary task link reads “Open automation session”; the home return link names
+the Automations page. Task detail, timeline and flow views
+link back to the home. Stopped/deleted tasks retain their home and definitions.
+
+- `POST /api/automation-tasks/:id/home` idempotently establishes a home for a task
+  already explicitly marked `sessionTemplate.sessionCollection: automations`.
+  It accepts an optional `brief` with concrete maintenance/recovery instructions.
+  Only the explicit task prompt and maintenance brief are injected. Parent transcript,
+  model context/usage, resume state, agreements and connector binding are not copied.
+  Source lineage remains recorded; ordinary conversation forks still copy history.
+  The new transcript begins with a short handoff receipt, not old discussion.
+  To migrate an older full-history home, send `replaceSessionId` matching its
+  current binding. The operation retains definitions, runs and lifecycle events,
+  rebinds only that task’s independent workers and archives the old home without
+  deleting its history. Repeating a completed migration returns the same new home.
+  No model or business execution is started by this operation.
+- `GET /api/automation-tasks/:id/home` reads definitions, change events, live native
+  execution projections and retained trigger snapshots, without queuing a model.
+- New unified task creation accepts `automationHome: true` and optional `homeBrief`,
+  only with `target.mode: new_session`. Raw Schedule/Trigger creation opts in with
+  the collection marker. Existing/evaluation tasks are never globally opted in.
+- If task creation succeeds but its source cannot yet be forked, creation returns
+  201 with `homeError`; retry only the home endpoint, not task creation.
+
+`automation-homes/<taskId>.json` under the instance config directory keeps the
+binding, immutable definition revisions, authenticated API-actor attribution,
+change/stop events and per-trigger input snapshots. Client-provided discussion
+references are explicitly **reported, unverified** provenance, not authority.
+The creator recorded by the original task is not necessarily the human proposer;
+unknown historical authors and versions are not reconstructed from guesses. Corrupt
+home records fail visibly rather than being replaced; independent task records use
+separate mutation queues.
+
+At first admission each selected worker receives a bounded home/task/version
+reference in addition to its original prompt. Its input definition is retained;
+retry uses that association, and future schedule edits do not rewrite it. Source
+conversation history is not appended to each run. Failure/dedup instructions are
+model guidance; the original business receipt remains the authority for writes
+and delivery. The home uses native Trigger/Run state; model completion is not
+business acceptance. Historical rows without captured versions say so.
+
+HTTP task/schedule/trigger edits record definition revisions and lifecycle events.
+Natural completion is recorded when observed with an explicitly labelled
+observation timestamp. Both the current task state and active executions remain
+visible: pausing/cancelling future triggers does not assert active runs stopped.
+Shared instance authentication still applies; this feature does not add a new
+per-task authorization system or automatically route every conversational opinion
+into a task edit. Humans can discuss elsewhere, confirm a concrete adjustment,
+and have it applied to the same task with the source/reason recorded.
+
+## Routine monitoring reads
+
+The monitoring observer uses a separate current-health projection from the same
+Schedule, Trigger and Run/Request records. It does not build this page’s complete
+execution history, package lineage or ownership enrichment on every check. The
+Task Center still retains those details and full history. See [Operations overview](monitoring.md#routine-task-health-reads) for collection scope and failure semantics.
+
+
+### History versus running Session
+
+For opted-in automations, expanded timeline and flow rows expose two distinct
+entries: **View execution history** opens the retained trigger timeline directly;
+**View run Session** opens an active execution when one is present in the current
+projection, otherwise the most recent retained execution Session. Before any
+execution Session exists the latter is disabled. Neither action starts work.
+The history page retains a separate **Task home** link for instructions and
+changes; that home is not labeled as an actual execution.
+
+A short transition line explains trigger → execution record → run Session →
+recorded result. Latest-run timestamps use the same task timezone as the schedule,
+even when the browser language or timezone differs. Reuse comes from the projected target: calendar-day tasks reuse
+one Session within the configured timezone's day and create another on the next
+day; fixed targets keep the configured Session. Other tasks execute independently
+of their source discussion, with actual Session associations recorded per run
+(including any connector-bound reuse). The home history marks multiple records
+sharing a Session. Flow controls follow the flow description language, avoiding
+mixed-language buttons within a Chinese task card. Runtime configuration and
+evaluation collection membership are unchanged.

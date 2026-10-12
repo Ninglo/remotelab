@@ -1,7 +1,10 @@
+import { ensureAutomationHome, readAutomationHomeView, recordAutomationHomeChange } from './automation-home.mjs';
+import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { listAutomationFlows } from './automation-flows.mjs';
 import { observeAutomationChange, observeIntervention, runtimeUsageChanged } from './usage-controls.mjs';
 import { settingActor, observeSettingRows, settingRows, personSettingValues } from './usage-settings.mjs';
 import { listAutomationBackground } from './automation-background.mjs';
+import { handleInflightTrialRoutes } from './router-inflight-trial.mjs';
 import { handleMessageReplySettings } from './router-message-reply-settings.mjs';
 import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
@@ -328,6 +331,10 @@ async function prepareAutomationTask(payload = {}, authSession = null) {
   if (targetMode === 'new_session') delete input.sessionTemplate;
   if (resultDeliveryMode === 'source_conversation') input.deliverTo = 'session_source';
   const prepared = await prepareScheduledTask(input, { authSession });
+  if (payload.automationHome === true) {
+    if (targetMode !== 'new_session') throw new Error('Automation homes require independent execution');
+    prepared.sessionTemplate.sessionCollection = 'automations';
+  }
   return { ...prepared, kind };
 }
 
@@ -351,6 +358,7 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  if (await handleInflightTrialRoutes({ req, res, pathname, authSession, writeJson })) return true;
   if (await handleMessageReplySettings({ req, res, pathname, parsedUrl, authSession, writeJson })) return true;
   if (pathname === '/api/automation/resources' && req.method === 'GET') {
     writeJson(res, 200, { resources: await getAutomationResourceSnapshot() });
@@ -641,12 +649,33 @@ export async function handleControlRoutes({
     }
     try {
       const task = await createAutomationTask(await prepareAutomationTask(payload, authSession));
+      let homeError = '';
+      if (payload.automationHome === true) {
+        try { task.homeSessionId = (await ensureAutomationHome(task.id, { auth: authSession, brief: payload.homeBrief })).sessionId; }
+        catch (error) { homeError = error.message; }
+      }
       observeAutomationChange(task, null, authSession);
-      writeJson(res, 201, { task });
+      writeJson(res, 201, { task, ...(homeError ? { homeError } : {}) });
       broadcastAll({ type: 'automation_tasks_updated', taskId: task.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create automation task' });
     }
+    return true;
+  }
+
+  const homeMatch = /^\/api\/automation-tasks\/((?:trg|sch)_[a-f0-9]{24})\/home$/.exec(pathname);
+  if (homeMatch && ['GET', 'POST'].includes(req.method)) {
+    try {
+      const id = homeMatch[1];
+      if (req.method === 'POST') {
+        const payload = JSON.parse(await readBody(req, 32768) || '{}');
+        await ensureAutomationHome(id, { auth: authSession, brief: payload.brief, replaceSessionId: payload.replaceSessionId });
+        broadcastAll({ type: 'sessions_invalidated' });
+        broadcastAll({ type: 'automation_tasks_updated', taskId: id });
+      }
+      const home = await readAutomationHomeView(id);
+      writeJson(res, home ? 200 : 404, home ? { home } : { error: 'Automation home not found' });
+    } catch (error) { writeJson(res, 409, { error: error.message }); }
     return true;
   }
 
@@ -684,6 +713,7 @@ export async function handleControlRoutes({
       await (recurring ? updateRecurringSchedule(id, patch) : updateTrigger(id, patch));
       const saved = await getAutomationTask(id);
       observeAutomationChange(await (recurring ? getRecurringSchedule(id) : getTrigger(id)), current, authSession);
+      await recordAutomationHomeChange(await (recurring ? getRecurringSchedule(id) : getTrigger(id)), current, authSession);
       writeJson(res, 200, { task: saved });
       broadcastAll({ type: 'automation_tasks_updated', taskId: id });
     } catch (error) { writeJson(res, 400, { error: error.message }); }
@@ -699,6 +729,7 @@ export async function handleControlRoutes({
         return true;
       }
       observeAutomationChange(await (recurring ? getRecurringSchedule(automationTaskMatch[1]) : getTrigger(automationTaskMatch[1])), before, authSession, automationTaskMatch[2]);
+      await recordAutomationHomeChange(await (recurring ? getRecurringSchedule(automationTaskMatch[1]) : getTrigger(automationTaskMatch[1])), before, authSession, automationTaskMatch[2], { cancellation: result.cancellation });
       writeJson(res, 200, result);
       broadcastAll({ type: 'automation_tasks_updated', taskId: result.task.id });
     } catch (error) {
@@ -747,8 +778,14 @@ export async function handleControlRoutes({
         return true;
       }
       const trigger = await createTrigger(await prepareScheduledTask(payload, { authSession }));
+      let homeError = '';
+      if (!trigger.scheduleId && trigger.sessionTemplate?.sessionCollection === 'automations') {
+        try { await ensureAutomationHome(trigger.id, { auth: authSession }); }
+        catch (error) { homeError = error.message; }
+      }
       observeAutomationChange(trigger, null, authSession);
-      writeJson(res, 201, { trigger });
+      await recordAutomationHomeChange(trigger, null, authSession);
+      writeJson(res, 201, { trigger, ...(homeError ? { homeError } : {}) });
       broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create trigger' });
@@ -791,6 +828,7 @@ export async function handleControlRoutes({
         return true;
       }
       observeAutomationChange(trigger, current, authSession);
+      await recordAutomationHomeChange(trigger, current, authSession);
       writeJson(res, 200, { trigger });
       broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
@@ -806,6 +844,7 @@ export async function handleControlRoutes({
       return true;
     }
     observeAutomationChange(trigger, null, authSession, 'delete');
+    await recordAutomationHomeChange(trigger, null, authSession, 'delete');
     writeJson(res, 200, { ok: true, trigger });
     broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     return true;
@@ -828,8 +867,14 @@ export async function handleControlRoutes({
     }
     try {
       const schedule = await createRecurringSchedule(await prepareScheduledTask(payload, { authSession }));
+      let homeError = '';
+      if (schedule.sessionTemplate?.sessionCollection === 'automations') {
+        try { await ensureAutomationHome(schedule.id, { auth: authSession }); }
+        catch (error) { homeError = error.message; }
+      }
       observeAutomationChange(schedule, null, authSession);
-      writeJson(res, 201, { schedule });
+      await recordAutomationHomeChange(schedule, null, authSession);
+      writeJson(res, 201, { schedule, ...(homeError ? { homeError } : {}) });
       broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create schedule' });
@@ -868,6 +913,7 @@ export async function handleControlRoutes({
         cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: payload.includeActive === true });
       }
       observeAutomationChange(schedule, current, authSession);
+      await recordAutomationHomeChange(schedule, current, authSession, '', { reason: payload.changeReason, sourceSessionId: payload.changeSourceSessionId, sourceRequestId: payload.changeSourceRequestId, includeActive: payload.includeActive, cancellation });
       writeJson(res, 200, { schedule, cancellation });
       broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
@@ -884,6 +930,7 @@ export async function handleControlRoutes({
     }
     const cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: false });
     observeAutomationChange(schedule, null, authSession, 'delete');
+    await recordAutomationHomeChange(schedule, null, authSession, 'delete');
     writeJson(res, 200, { ok: true, schedule, cancellation });
     broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     return true;
@@ -1209,6 +1256,15 @@ export async function handleControlRoutes({
     }
     const hasSpacePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'space');
     const hasGroupPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'group');
+    const hasSessionCollectionPatch = Object.hasOwn(patch || {}, 'sessionCollection');
+    if (hasSessionCollectionPatch) {
+      try {
+        const collection = normalizeSessionCollection(patch.sessionCollection);
+        if (collection && !canCollectAutomationSession(await getSession(sessionId))) {
+          throw new Error('Only scheduled execution Sessions can enter automations');
+        }
+      } catch (error) { writeJson(res, 400, { error: error.message }); return true; }
+    }
     const hasDescriptionPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'description');
     const hasSystemPromptPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'systemPrompt');
     const hasWorkboardPilotPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workboardPilot');
@@ -1372,8 +1428,9 @@ export async function handleControlRoutes({
     if (hasPinnedPatch) {
       session = await setSessionPinned(sessionId, patch.pinned) || session;
     }
-    if (hasSpacePatch || hasGroupPatch || hasDescriptionPatch || hasSidebarOrderPatch) {
+    if (hasSpacePatch || hasGroupPatch || hasDescriptionPatch || hasSidebarOrderPatch || hasSessionCollectionPatch) {
       session = await updateSessionGrouping(sessionId, {
+        ...(hasSessionCollectionPatch ? { sessionCollection: patch.sessionCollection } : {}),
         ...(hasSpacePatch ? { space: patch.space ?? '' } : {}),
         ...(hasGroupPatch ? { group: patch.group ?? '' } : {}),
         ...(hasDescriptionPatch ? { description: patch.description ?? '' } : {}),

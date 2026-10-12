@@ -210,6 +210,16 @@ try {
     const result = await request('GET', `/api/runs/${groupMessage.body.run.id}`);
     return result.body.run?.state === 'completed';
   }, 'group conversation response completion');
+  await connectorRequest('POST', observePath, {
+    sourceMessageId: 'observed-social', text: 'thanks', sourceContext: { ...observedSource, messageId: 'observed-social' },
+  });
+  const social = await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-social', purpose: 'reaction', emojiType: 'THANKS',
+  });
+  assert.equal(social.status, 200);
+  assert.equal(social.body.decision.purpose, 'reaction');
+  assert.equal(social.body.decision.participation, undefined);
+  assert.equal(social.body.decision.workMode, undefined);
   const workObservation = await connectorRequest('POST', observePath, {
     sourceMessageId: 'observed-work', requestId: 'feishu:observed-work',
     text: '请调查这个问题', sourceContext: { ...observedSource, messageId: 'observed-work' },

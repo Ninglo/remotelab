@@ -78,6 +78,15 @@ The installed Bot must already have a configured `card.action.trigger`
 subscription; enabling that subscription in Feishu's console is a human step
 only if it is absent.
 
+## Shared announcement context
+
+Both chats in `projectLinks` use the discussion chat announcement as their shared
+project background. New topics capture its current version, and existing topics
+replace any pre-binding/local snapshot on their next input. The source is labelled
+in the prompt. This does not copy or overwrite either Feishu announcement, change
+reply destinations, or replace each topic’s own conversation history. Unbound
+groups continue to read their own announcements.
+
 ## Linked conversation context
 
 An instance may explicitly pair one discussion chat with one work chat in its

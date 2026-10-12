@@ -84,7 +84,7 @@ try {
   });
   await readFirst.handle({ chatId: 'pilot', chatType: 'group', messageId: 'read-first',
     createTime: String(Date.now()), sender: { senderType: 'user', openId: 'human' } });
-  assert.deepEqual(callOrder, ['reaction', 'classify']);
+  assert.deepEqual(callOrder, ['reaction']);
   const pilotReactionOrder = [];
   let completeThinking;
   const orderedPilot = createFeishuQuickParticipationPilot({
@@ -129,10 +129,9 @@ try {
     submitOrder.push('submit'); return { sessionId: 'session' };
   } });
   await readStartedPromise;
-  assert.deepEqual(submitOrder, ['start:THINKING']);
-  releaseRead();
   await admission;
-  assert.deepEqual(submitOrder, ['start:THINKING', 'done:THINKING', 'submit']);
+  assert.deepEqual(submitOrder, ['start:THINKING', 'submit'], 'receipt latency never blocks admission');
+  releaseRead();
   const config = {
     storageDir: home, appId: 'self-app',
     groups: { pilot: { participationMode: 'ambient', quickReactions: true, contextReactions: true } },
@@ -160,18 +159,17 @@ try {
   assert.deepEqual(reactions, [
     ['first', 'THINKING'], ['second', 'THINKING'],
   ]);
-  assert.match(inputs[1], /链接打不开/);
-  assert.match(inputs[1], /下午要用/);
+  assert.equal(inputs.length, 0, 'legacy receipt path no longer calls a classifier');
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(handoffCandidates, ['second']);
+  assert.deepEqual(handoffCandidates, []);
   await pilot.handle({ ...base, messageId: 'second', messageText: '是机器人发的测试报告，下午要用。' });
   await pilot.handle({ ...base, chatId: 'other', messageId: 'other' });
   await pilot.handle({ ...base, threadId: 'thread', messageId: 'thread', messageText: '话题里的问题' });
   await pilot.handle({ ...base, sender: { senderType: 'bot', openId: 'other-bot' }, messageId: 'bot' });
   assert.equal(reactions.length, 2, 'topics bypass quick-participation judgment and use direct replies');
-  assert.equal(inputs.length, 2);
+  assert.equal(inputs.length, 0);
   const records = (await readFile(join(home, 'quick-participation.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.deepEqual(records.map(item => item.decision), ['silent', 'reply']);
+  assert(records.every(item => item.decision === undefined));
   await pilot.handle({ ...base, threadId: 'unbound', messageId: 'unbound', messageText: '在话题里决定开工' },
     { reactionMode: 'none' });
   assert.equal(reactions.length, 2, 'unbound topic intake must not add a quick reaction');
@@ -185,7 +183,7 @@ try {
   });
   await restored.restore(eventsPath);
   await restored.handle({ ...base, messageId: 'now', messageText: '下午评审。' });
-  assert.match(restoredInput, /早上说过报告打不开/);
+  assert.equal(restoredInput, '');
   assert.deepEqual(reactions.at(-1), ['restored-test', 'THINKING']);
 
   restored.seedConversation(base, [
@@ -193,33 +191,8 @@ try {
       sender: '茵蒂克丝', text: '我可以继续处理报告链接。' },
   ]);
   await restored.handle({ ...base, messageId: 'follow-up', messageText: '那就继续处理。' });
-  assert.match(restoredInput, /assistant: 我可以继续处理报告链接/);
+  assert.equal(restoredInput, '');
 
-  const uncertain = await classifyFeishuQuickParticipation('A: @bot', {
-    key: 'test-key',
-    fetchImpl: async () => ({ ok: true, json: async () => ({
-      model: 'jev-test', answers: { participation: {
-        choice: 'reply', confidence: 0.01, probabilities: { reply: 0.5, silent: 0.5 },
-      } },
-    }) }),
-  });
-  assert.equal(uncertain.decision, 'unknown');
-  assert.equal(uncertain.reason, 'low_support');
-  const weakSilent = await classifyFeishuQuickParticipation('A: 怎么压缩时间', {
-    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({
-      answers: { participation: { choice: 'silent', confidence: 0.7,
-        probabilities: { reply: 0.21, silent: 0.79 } } },
-    }) }),
-  });
-  assert.equal(weakSilent.decision, 'unknown', 'weak silence must not promise to ignore a possible request');
-  const handoff = await classifyFeishuQuickParticipation('A: 方案定了，转干活群开始做', {
-    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-      participation: { choice: 'reply', probabilities: { reply: 0.95, silent: 0.05 } },
-      projectHandoff: { choice: 'offer', probabilities: { offer: 0.94, none: 0.06 } },
-    } }) }),
-  });
-  assert.equal(handoff.handoffDecision, 'offer');
-  assert.equal(weakSilent.handoffDecision, 'none');
   const contextualReactions = [];
   const expressive = createFeishuQuickParticipationPilot(runtime, {
     classify: async context => ({ decision: 'silent',

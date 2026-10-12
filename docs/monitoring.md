@@ -1,6 +1,53 @@
 # Operations overview
 
-Operations (运行中心) helps people avoid interruptions and choose useful work for available resources. The existing `?tab=tasks` workspace now has Overview and Automations; Automations is the default. Overview (`?tab=tasks&monitor=overview`) starts with urgent issues, then account allowance cards with percentages, meters, resets and observation times. Storage, consumption and execution details follow. Exhausted accounts foreground their depleted window; unknown readings have no invented meter. Allowances across different plans are never added together. Settings keeps its current controls. Project tasks and daily reports stay in their existing local Markdown and publication workflows.
+Monitor Overview (`?tab=tasks&monitor=overview`) presents Session, shared resources, and API in that order. The default view shows current summary metrics and named anomalies; details expand on demand. Resources contain only disks, account allowance, and Token consumption. Historical charts use recorded samples, never invented daily totals. Automations, settings, project tasks and their controls retain their existing separate views.
+
+## Inspection scope and cost labels
+
+The overview's “检查范围与开销” panel distinguishes the independent periodic
+observer, on-demand Session/usage queries and incident-driven alerts/recovery.
+It explains local script work, model Tokens and recorded Feishu API calls
+separately. Background Tokens include other background operations and are not a
+monitoring-only bill; CPU/memory/local-read costs have no continuous aggregate yet.
+The panel does not extrapolate an old benchmark into current costs.
+
+Observer registration comes from the existing `resource-alerts` entry in
+`automation-background.json`. Cadence is verified from its timer in the configured
+service observations (same systemctl call, no extra polling). Only a verified
+minute-only calendar receives “每分钟”; other/unknown schedules remain unverified.
+A missing registration or unavailable timer never appears as an enabled minute
+observer. Last completed observation comes from the alert ledger, separately from
+page query generation time; a minute observer with a record older than three
+periods gets a stale-record note. Merely viewing the panel starts no monitor,
+model job, external API probe or new timer. Existing refresh/cache behavior stays.
+
+## Capacity and seven-day charts
+
+Disk rings show the observed percentage of capacity used, alongside the existing disk table. Account quota meters retain each independent allowance window; unknown quotas have no filled meter. Neither graphic is task completion or a combined account allowance.
+
+Session has two always-visible seven-day lines: distinct Sessions with usage records (including background work), and average reported context Tokens per foreground Run. Token consumption has its own seven-day line in Resources, including foreground/background usage. These fixed charts cover seven UTC calendar dates including today, independently of the selected 1/7/30-day rolling summary window; today is partial. Context means use the latest recorded value per Run, not per-call input or prompt-injection bytes. Each chart exposes exact daily values and sample counts in a table. Missing days/contexts remain gaps, while a recorded zero remains zero.
+
+The ledger deduplicates by Run and attributes each retained snapshot to its ledger timestamp (Run finalized/completed time, or recording time when unavailable). These are observed records, not a historical Session inventory, live usage completeness guarantee, or allocation of a multi-day Run's individual calls. Late records can revise a day. Session counts deduplicate within each day, not across days. Context coverage shows reporting foreground Runs over all recorded foreground Runs; tokens and Sessions show recorded Run counts.
+
+`queryUsageLedger({ includeDailyTrend: true })` extends the existing file scan only as far as the first of those seven dates, aggregates `dailyTrend` from all matching records before top-N truncation, and keeps the selected-window totals and ranked lists unchanged. Overview returns this projection with its existing 15-second coalesced cache. Charts share the existing request, need no extra Run/manifest reads, model calls, quota RPCs, timers, notification or remediation actions. Frontend SVGs and meters add no chart library. Collection gaps remain explicitly visible.
+
+## Routine task health reads
+
+The overview and independent minute observer use `readAutomationHealth`, not the
+full automation browser projection. They keep all task identities, current
+schedule/gate state and latest execution, including paused/cancelled tasks needed
+for recovery attribution and unknown admissions. Recurring tasks resolve only
+the latest occurrence (same stable timestamp ordering as the browser). One-time
+tasks retain their existing Run/Request receipt fallback. No age cutoff silently
+removes a task or substitutes a success for missing evidence.
+
+Each collection shares pending Run/receipt lookups by Run ID, limits resolution
+to 16 concurrent workers, and omits ownership/Session enrichment, prompts,
+package lineage and full-history statistics. The cache ends with that collection;
+late state corrections and recovery are read again next time. Source errors still
+produce coverage gaps. Task-browser history, alert/recovery policy, timer cadence,
+nightly review, evaluation reports and message context are unchanged. API log
+scanning and historical recovery-log verbosity are separate remaining costs.
 
 ## Activate on an instance
 
@@ -163,11 +210,21 @@ Use `scripts/monitoring-snapshot.mjs --output <prefix> --base-url <instance> --d
 
 `--upload` uploads as the explicitly configured Bot and writes a Markdown image-key block plus a receipt; it does not send. Include that block in the existing daily summary. The Feishu converter embeds a standalone `![label](img_key)` as a native image in that same post. It does not fetch remote URLs or local paths, and fenced examples stay literal. Keep the full editable table in the original report. Capture or upload failures must be reported as a snapshot gap and retain the ordinary daily text, not reuse an older image as today's observation.
 
-An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches new critical disk/service incidents and important native task failures persisting for three observations. Account exhaustion and account-observation loss remain with the account observer. Normal, restored and lower-priority states go into the report.
+An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches newly actionable disk/service incidents and important native task failures persisting for three observations into shared, updateable Feishu cards. Normal account exhaustion stays in the account table; actionable local backup/switching failures use the continuity route below. Normal, restored and lower-priority states go into the report.
+
+### One incident, one message
+
+An unresolved incident keeps its original message ID. Starting recovery, switching models, changing a plan, reaching a worse disk risk stage or completing verification edits that message rather than sending another one. Minor disk-byte fluctuations do not trigger edits. Batch updates preserve the other subjects in the original message, including their recovery results. Only explicit healthy evidence followed by a new failure starts a new incident and message.
+
+Cards show current risk, actions actually reported, their outcome, the specific next decision, and a link to the original recovery Session. Critical risk and pending human decisions are red; the observation time is secondary text. A running attempt cannot display an older attempt's summary as work it has just completed. Normal account exhaustion remains silent; a local lack of qualified backups or a disabled/failing switch is a continuity risk, not a request to fix normal consumption.
+
+Set `alertDelivery.enabled` to `false` to mute both sends and message edits while keeping the existing observer, snapshot collection and authorized recovery running. `recovery.enabled` remains a separate control. Do not stop the combined timer just to silence notifications. Unmuting reuses existing message IDs; use the existing baseline mode to acknowledge known unmessaged incidents when appropriate. A later real escalation or a new concrete confirmation plan can notify a baselined incident once.
+
+New messages use shared cards (`update_multi: true`); existing rich-text notifications are edited in place without changing their IDs. Edits use Feishu's original-message APIs and their platform limits. An unavailable/recalled/expired message, a changed recipient, an interrupted edit or uncertain acknowledgement is retained as `needs_review`; none permits creating a replacement message automatically. Keep recalled receipts as audit, explicitly reconcile them before resuming, and never clear the ledger to retry a send. Existing card updates: https://open.feishu.cn/document/server-docs/im-v1/message-card/patch ; legacy message edits: https://open.feishu.cn/document/server-docs/im-v1/message/update .
 
 Keep the observer's own service and timer visible in Overview, but list them in `alertDelivery.ignoreUnits`: it cannot reliably supervise its own absence, and an explicit maintenance pause must not notify as a new outage. Their health remains inspectable from the application and daily report.
 
-To consolidate account and resource notifications, set `alertDelivery.accountAlerts` to `{ "enabled": true, "sources": ["approved-adapter-id"] }` and `alertDelivery.confirmationObservations` to `3`. The same observer then batches account-observation loss, exhausted allowances, service failures and resource incidents in one message and one durable delivery ledger. Account readings use the existing identity deduplication across sources; one unavailable adapter does not report a loss when another source has a fresh valid reading. Account incidents require at least three observations. Services use the configured confirmation count (1–10, default 1); disk emergencies remain immediate. A baseline acknowledges existing account and service incidents even before they reach the confirmation count. Unknown readings never rearm an exhausted-account incident. Turn off the account dashboard's separate notification recipient before enabling this route, retain its collection and history, and verify that the old observer/timer is stopped on the retired host. Keep routine observations in the existing report.
+To consolidate account and resource notifications, set `alertDelivery.accountAlerts` to `{ "enabled": true, "sources": ["approved-adapter-id"] }` and `alertDelivery.confirmationObservations` to `3`. The same observer then batches local account-continuity risks, service failures and resource incidents in one message and one durable delivery ledger. Account readings use the existing identity deduplication across sources; one unavailable adapter does not report a loss when another source has a fresh valid reading. Account-continuity incidents require at least three observations. Services use the configured confirmation count (1–10, default 1); disk emergencies remain immediate. A baseline acknowledges existing account and service incidents even before they reach the confirmation count. Unknown readings never rearm an exhausted-account incident. Turn off the account dashboard's separate notification recipient before enabling this route, retain its collection and history, and verify that the old observer/timer is stopped on the retired host. Keep routine observations in the existing report.
 
 During migration, `--baseline` records already-known critical incidents without repeating a group notification. Recovery rearms a recurrence; unreadable sources cannot establish recovery. The observer persists sending intent before delivery, then saves the shared verified message receipt. Interrupted or uncertain delivery becomes `needs_review` and requires readback before retrying. Preserve state across restarts. This observer does not replace task result delivery.
 
@@ -179,7 +236,7 @@ Use `scripts/monitoring-alerts.mjs --dry-run` against the target instance enviro
 
 When the operator authorizes recovery, extend the same observer instead of adding another timer. Observation, incident notification and repair have separate durable records. Reporting or baselining a problem does not resolve it. The Harness still diagnoses the error, chooses permitted work and verifies business results; this broker supplies incident identity, bounds, admission and receipt reconciliation.
 
-Service recovery inherits `alertDelivery.confirmationObservations`, so a brief restart cannot start a repair before the configured number of distinct failed snapshots. Counts survive observer restarts and reset after an explicit healthy observation. An unknown measurement cannot authorize a new service repair. Disk emergencies remain immediate, and already admitted work continues normal receipt reconciliation.
+Service recovery inherits `alertDelivery.confirmationObservations`, so a brief restart cannot start a repair before the configured number of distinct failed snapshots. Counts survive observer restarts and reset after an explicit healthy observation. An unknown measurement cannot authorize a new service repair. Disk warning investigations and emergencies remain immediate, and already admitted work continues normal receipt reconciliation.
 
 Add an explicit instance-local configuration:
 
@@ -209,6 +266,8 @@ Use `--dry-run` to inspect pending recovery without saving state, admitting work
 ## Verification
 
 Recovery, delayed publication and acceptance replies do not inherit a scheduled report's all-member mention. The recovery prompt explicitly overrides that scheduled rule; use a full-group mention only when the user requests it for this recovery.
+
+A confirmation receipt requires concrete steps, target, impact, rollback and verification, plus evidence. A flat target object containing identifiers is normalized into readable text without approving the plan. Malformed confirmation receipts remain in verification, preserving real completed actions, and can be corrected in place without another model run. The former exact “missing confirmation plan” formatting block is also re-read for compatibility. Other business or authorization blocks remain blocked.
 
 Final delivery acceptance reads the original durable Request aggregate, including archived Requests; absence from the active outbox is not a delivery failure.
 
@@ -282,10 +341,20 @@ The Overview shows three compact panels in order: Session, shared resources, and
 Each presents totals and observation/exception status first. Session totals are
 followed by up to three named exceptions with every affected metric, recent value
 and baseline, plus three group/initiator summaries. Without exceptions, up to
-three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources contain exactly three visible sections, in order: disk capacity,
-account quotas, and period Token usage. Disk and account tables stay visible;
+three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources start with a persistent **预警与自动补救** guide, followed by disk capacity,
+account quotas, and period Token usage. The guide explains warning conditions,
+remediation boundaries and execution destinations even when there is no incident.
+Its enabled state and fixed resource-recovery Session link come from the current
+instance configuration. A configured Session does not prove a repair has run.
+Disk and service recovery reuse that Session; failed automations reuse their own
+execution Session. Account switching runs directly in the background switcher,
+with the latest switch shown beside local backup readiness. It does not create
+an AI Session for each switch. The guide is a view of the existing automation,
+not a second timer or controller. Its collapsed recovery history retains actual
+states, concrete confirmation plans and links to the handling Sessions.
+Disk and account tables stay visible;
 account reset details and Token breakdowns open on demand. There is no additional
-resource overview counter, service/task table, recovery history, notification
+resource overview counter, service/task table, notification
 pipeline status or capacity advice in this panel. Disk and account state appear
 in their rows; source gaps appear beside the affected section. Runtime collectors,
 alert/recovery configuration and records are unchanged. Existing automation and
@@ -334,3 +403,96 @@ view, so there is one maintained monitoring interface. Existing saved links rema
 usable; the change does not publish instance data to the unauthenticated entry.
 
 The Automations tab also explains system monitoring as a source → processing → write → notification flow. It references the existing background mechanism states and opens this overview for live readings; it does not add a collector or a notification channel. See [Automation flows](task-center-v1.md#compact-flow-explanations).
+
+
+## 用量归属与旧账校正
+
+Codex 按 Run 起止时间读取用量时，只使用该时间段内的增量。时间段没有用量记录、边界无效或缺少起点时，返回未知，不使用整个原生会话的累计 token 兜底。没有指定时间段的上下文大小查询保留原行为；这里不改变提示词、消息读取量或 UI。
+
+已确认错误的旧账保留原 JSONL。维护者先用 `node scripts/repair-codex-usage-attribution.mjs --run run_ID` 定向复核，再加 `--apply` 追加校正记录。脚本只处理明确指定、来源为旧 Codex fallback 的已取消 Run，并完整扫描原生日志确认运行时间内没有用量记录。它不按数值大小或取消状态批量删账。校正记录包含原账哈希、原因、日志哈希和时间范围，同一错误 Run 跨日期文件存在多个旧版本时逐个保存哈希并校正，确保历史时间窗口也适用。原始事件不改写；`recordUsageCorrection` 的 restore 动作可以撤回校正。
+
+读取账本时，只有当前记录的 Run、Session 和内容哈希都匹配，校正才生效。未知用量从 token、费用和均值样本中排除，不当作零消耗；有效的取消任务仍保留。之后同一 Run 出现新的有效记录时，旧校正不覆盖新证据。API 的 `quality.excludedRuns` 与紧凑 Monitor API 的 `usageQuality` 提供缺口和原因。现有界面沿用同一个统计源，60 秒缓存到期或服务重启后刷新；本次不调整页面布局。
+
+## Action risk and account continuity (2026-10-12)
+
+Classify business risk separately from the risk of the proposed action. Normal
+subscription consumption and an exhausted individual account remain visible in
+the account table but do not create an incident or ask a person to replenish it.
+The local runtime pool is the authority for usable backups: fleet observations
+must never authorize using another instance's credentials. Overview exposes
+`accountContinuity`, including the automatic-switch policy, fresh local backups
+above 10%, the current balance and the last background switch receipt.
+At 20% without a qualified local backup, request a concrete choice (wait for the
+reset or authorize/login another account). At 10% with a backup, background
+selection changes subsequent requests; a persistent failure to do so is an
+incident. Unknown current quota is an observation problem, never exhaustion.
+Three observations confirm a continuity notification. Running requests retain
+their authorization and are never automatically replayed by rotation.
+If the current account is confirmed exhausted and no backup exceeds 10%, the
+selector uses the highest fresh positive local balance. The reserve requirement
+must not strand subsequent requests on an exhausted account. Low positive
+accounts do not bounce between one another.
+
+Disk warnings now enter the existing recovery broker at the warning threshold,
+before a critical outage. A repair Harness first investigates the actual source
+and existing work, executes authorized low-risk, recoverable steps and verifies
+the result. Medium/high-risk operations wait for human confirmation in the
+original handling Session. The durable receipt uses `awaiting_confirmation`
+and a `plan` with `risk`, `summary`, `target`, `impact`, `rollback` and
+`verification`, plus actual evidence. The observer never treats that state as
+permission to execute. Human-authorized execution updates the same receipt;
+independent recovery verification still applies.
+
+A blocked disk investigation can reopen within the existing attempt limit when
+risk materially worsens or the explicitly configured `recovery.policyVersion`
+changes. The previous block and every attempt remain recorded. Warning,
+critical, below 20 GiB/97%, and below 5 GiB/99.5% (inodes 97%/99%) are distinct
+escalation stages. A worsening stage or a new concrete confirmation plan sends
+one new notification. Repeated identical observations stay silent; uncertain
+sends still require readback. A waiting confirmation never auto-reopens as a
+repair. `workflowPaths` must cover each managed filesystem, including data disks;
+root-to-data migration is not a remedy when the data disk is itself full.
+
+Alert messages include the business risk, existing low-risk handling or the
+specific plan requiring confirmation. They do not equate urgency with permission
+to delete unique data, interrupt work, buy capacity or use another account.
+Known-unsent batches whose incidents retired or were subsequently delivered are
+marked superseded, preserving history without keeping them as current failures.
+
+Feishu quota rejection remains latched across restarts and log retention. A
+later real successful call of the same app, HTTP method and sanitized affected
+business endpoint (observed within 15 minutes) is now sufficient evidence that
+that interface works again. It clears the operational latch and records the
+restoration evidence; auth/token success, another app/endpoint and an estimated
+monthly balance cannot do so. A new rejection relatches it. Explicit operator
+restoration remains supported. Incomplete logging stays visible even with this
+positive recovery evidence; it no longer prevents the proven transport from
+resuming known-unsent current notifications. This does not infer the tenant's
+remaining billing quota or automatically replay uncertain deliveries.
+
+A restriction on another API (for example calendar) must not disable an
+independently proven message transport. A successful message send/reply of the
+same app, newer than its rejection and within 15 minutes, permits the observer
+to deliver current alerts. The affected API's rejection and the unknown tenant
+balance remain recorded; its warning is not described as a proven total
+messaging outage. No extra probe or test group message is sent. The verified receipt survives quiet periods and log rotation. A newer quota
+rejection invalidates it and requires fresh positive sending evidence before
+the dependency block can be lifted again.
+The dispatch gate uses that same durable evidence and does not impose an
+independent expiry that could resurrect the old restriction.
+
+Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#stable-automation-home-explicit-opt-in). The primary link opens the dedicated task-context Session; the original discussion is a secondary reference. Its header reads native execution state directly and distinguishes future-trigger cancellation from active runs. Monitoring and evaluation configuration remain separate; a home is not a new supervisor.
+
+
+### 群提醒的正文长度
+
+群里的同一事件卡片只保留当前风险、简短处理结果和下一步三行，关键风险和待确认状态标红。处理回执只摘取首句并限制长度；完整方案、对象、影响、恢复办法和验收证据保留在原补救会话及监管详情中，通过卡片链接查看，确认前不执行。低于预警线的 inode 读数不占用卡片正文。更新仍沿用原消息，不因版式变化另发提醒。
+
+
+### 谁处理、如何介入
+
+卡片下一步区分“我在处理／无需操作”“需要你批准”和“需要你补充信息”。补救回执可用 `humanAction: {type: "approval" | "input", summary: "具体最小动作"}` 标明人的动作；该字段只说明需求，不构成批准。资料、登录或外部操作未齐备时应为 input，不能把仍缺前提的方案显示成只待批准。新一轮执行清除旧的人的动作，执行中不展示上一轮待答事项。
+
+卡片提供对应按钮：查看处理进展、进入会话补充信息、查看方案并回复批准。按钮打开原处理会话，由人看完完整方案后发文字确认或补充资料；点击跳转本身不批准、不启动执行。现有告警卡没有接入一键批准的回调，不能将导航按钮标为“批准并执行”。
+
+首次预警就一次性发送包含风险、处理结果、人的具体动作及按钮的完整卡片，不先发预警文本再补发交互卡。后续沿同一 messageId 更新。用户要求只改代码、暂不改卡或发新消息时，将 `alertDelivery.enabled` 关闭；已有观察与补救继续运行，但新消息与原消息更新都保持关闭，不能因发布完成自动恢复。

@@ -63,14 +63,16 @@ try {
   await send('new-topic', '换个话题，周末去哪玩');
   const changed = await runtime.participation.state(base);
   assert.equal(changed.mode, 'listening');
-  assert.equal(changed.topicHint, true);
-  assert.match(JSON.stringify(buildParticipationCard(changed)), /换了话题，要我参与吗/);
+  assert.equal(changed.topicHint, false, 'emoji service cannot interpret topic changes');
+  assert.doesNotMatch(JSON.stringify(buildParticipationCard(changed)), /换了话题，要我参与吗/);
   assert.equal(calls.submitted.length, 0);
 
   verdict = { ...verdict, invited: true };
   await send('other-person', '@_human_2 帮忙看看', { mentions: [{ openId: 'human_2' }] });
   assert.equal(calls.submitted.length, 0, 'cannot take a request addressed to another human');
-  await send('invited-once', '你帮忙回答一下');
+  await send('not-invited', '你帮忙回答一下');
+  assert.equal(calls.submitted.length, 0, 'a small-model invitation cannot override explicit listening');
+  await send('invited-once', '@_bot 你帮忙回答一下', { mentions: [{ openId: 'bot' }] });
   assert.equal(calls.submitted.length, 1);
   assert.equal(calls.submitted[0].participationOnce, true);
   assert.equal((await runtime.participation.state(base)).mode, 'listening');
@@ -123,22 +125,6 @@ try {
   await runtime.participation.publish({ ...await runtime.participation.state(base), mode: 'paused', cardSuppressed: true });
   assert.equal(calls.cards.length, cardCallsBeforeHide, 'durable suppression also protects a withdrawn card');
 
-  const result = await classifyFeishuQuickParticipation('换个话题，聊一下打印机', {
-    key: 'fixture', includeHandoff: false, participationState: { mode: 'listening', topicAnchor: '预算' },
-    fetchImpl: async (_url, req) => {
-      const body = JSON.parse(req.body);
-      assert.equal(body.state.agent_participation.mode, 'listening');
-      assert.match(body.questions.topicChange.instructions, /never restores participation/);
-      return { ok: true, json: async () => ({ answers: {
-        participation: { choice: 'reply', probabilities: { reply: 0.99, silent: 0.01 } },
-        participationControl: { choice: 'none', probabilities: { none: 0.99 } },
-        invitation: { choice: 'no', probabilities: { no: 0.99 } },
-        topicChange: { choice: 'yes', probabilities: { yes: 0.98 } },
-      } }) };
-    },
-  });
-  assert.equal(result.controlMode, null);
-  assert.equal(result.invited, false);
-  assert.equal(result.topicChanged, true);
+  await Promise.all([...(runtime.jevReactionJobs?.values() || [])]);
   console.log('Feishu participation: observation, pause/resume, invitations, topic hints, scope and persistence passed');
 } finally { await rm(home, { recursive: true, force: true }); }
