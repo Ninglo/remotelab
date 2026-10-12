@@ -2182,7 +2182,7 @@ async function sessionResourceFromMeta(meta) {
 export async function getSessionMonitoringActivity(meta) {
   const active = requestRuntime.active(meta.id)[0];
   const id = active?.runId || meta.activeRunId;
-  const run = id ? await readRecord(join(runDir(id), 'status.json')) : null;
+  const run = id ? await readRecord(joinRequestPath(runDir(id), 'status.json')) : null;
   const running = run ? !isTerminalRunState(run.state) : Boolean(active);
   const question = running && id ? await readNativeQuestion(runDir(active?.nativeDispatchRunId || id)) : null;
   if (id && !run && !active) return { run: { state: 'unknown' }, queue: { count: getFollowUpQueueCount(meta) } };
