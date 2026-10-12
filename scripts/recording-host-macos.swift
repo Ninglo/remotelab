@@ -49,6 +49,15 @@ final class WaveformView: NSView {
     // Display-only floor: leave the captured PCM and uploaded original untouched.
     static let noiseFloorDb = -52.0
     var samples = [Double]() { didSet { needsDisplay = true } }
+    func update(samples raw: [Double], rmsDb: Double) {
+        // A soft knee keeps quiet backgrounds small without snapping to a flat line.
+        let knee = max(0, min(1, (rmsDb + 60) / 12))
+        let gain = knee * knee * (3 - 2 * knee)
+        samples = raw.map { value in
+            let scaled = value > 0 ? max(0, min(1, (20 * log10(value) + 60) / 34)) : 0
+            return pow(scaled, 0.65) * gain
+        }
+    }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlBackgroundColor.setFill(); bounds.fill()
         let line = NSBezierPath(); line.lineWidth = 1
@@ -57,8 +66,7 @@ final class WaveformView: NSView {
         guard !samples.isEmpty else { return }
         let wave = NSBezierPath(); wave.lineWidth = 3
         NSColor.systemBlue.setStroke()
-        for (i, value) in samples.enumerated() {
-            let level = value > 0 ? max(0, min(1, (20 * log10(value) - Self.noiseFloorDb) / -Self.noiseFloorDb)) : 0
+        for (i, level) in samples.enumerated() {
             let x = (CGFloat(i) + 0.5) * bounds.width / CGFloat(samples.count)
             let h = CGFloat(level) * (bounds.height / 2 - 3)
             wave.move(to: NSPoint(x: x, y: bounds.midY - h)); wave.line(to: NSPoint(x: x, y: bounds.midY + h))
@@ -427,7 +435,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let peak = (meter?["peak"] as? NSNumber)?.doubleValue ?? 0
             let db = (meter?["rmsDb"] as? NSNumber)?.doubleValue ?? -96
             let quiet = db < WaveformView.noiseFloorDb
-            lane.wave.samples = quiet ? [] : meter?["waveform"] as? [Double] ?? []
+            lane.wave.update(samples: meter?["waveform"] as? [Double] ?? [], rmsDb: db)
             lane.signal.stringValue = peak == 0 ? "未检测到声音 · 请检查麦克风电源和连接" : quiet ? "音频已接通 · 当前较安静" : String(format: "检测到明显声音 · 音量 %.1f dBFS", db)
             lane.signal.textColor = peak == 0 ? .systemOrange : .secondaryLabelColor
             if lastNoticeLane == lane.id { noticeText?.stringValue = peak == 0 ? "录音中 · 未检测到声音" : quiet ? "录音中 · 当前较安静" : "录音已开始 · 正在收声" }
