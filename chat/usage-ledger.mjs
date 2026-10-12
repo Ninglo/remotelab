@@ -7,6 +7,7 @@ import { USAGE_LEDGER_DIR } from '../lib/config.mjs';
 import { SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
 import { estimateUsageCost } from '../lib/model-pricing.mjs';
 import { ensureDir } from './fs-utils.mjs';
+import { usageRecordHash, readUsageCorrections, applyUsageCorrections } from './usage-ledger-corrections.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 7;
@@ -799,6 +800,7 @@ export async function queryUsageLedger(options = {}) {
 
   const files = await listLedgerFiles(startMs, endMs, ledgerDir);
   const deduped = new Map();
+  const sourceHashes = new Map();
   let recordsScanned = 0;
 
   for (const filePath of files) {
@@ -822,6 +824,7 @@ export async function queryUsageLedger(options = {}) {
 
         recordsScanned += 1;
         deduped.set(record.runId, record);
+        sourceHashes.set(record.runId, usageRecordHash(parsed));
       }
     } finally {
       input.close();
@@ -829,6 +832,8 @@ export async function queryUsageLedger(options = {}) {
     }
   }
 
+  const excluded = applyUsageCorrections(deduped, sourceHashes, await readUsageCorrections(ledgerDir))
+    .filter(record => matchesRecordFilters(record, filters));
   const records = [...deduped.values()]
     .filter((record) => matchesRecordFilters(record, filters))
     .sort((left, right) => {
@@ -939,6 +944,10 @@ export async function queryUsageLedger(options = {}) {
     filesScanned: files.length,
     recordsScanned,
     runCount: records.length,
+    quality: { excludedRunCount: excluded.length, excludedRuns: excluded.map(record => ({
+      runId: record.runId, sessionId: record.sessionId, usageStatus: 'unknown',
+      reason: record.correction.reason, evidence: record.correction.evidence,
+    })) },
     totals: {
       ...totals,
       costUsd: roundUsd(totals.costUsd || 0),
