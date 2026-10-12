@@ -947,7 +947,7 @@ function upsertSession(session) {
   }
   // Run output changes neither ownership nor source-filter counts. Avoid
   // rebuilding every filter option for every background invalidation.
-  if (!previous || ["archived", "internalRole", "groupFeed", "initiatedByIdentityId"]
+  if (!previous || ["archived", "internalRole", "sessionCollection", "groupFeed", "initiatedByIdentityId"]
     .some((key) => previous[key] !== normalized[key])
     || getEffectiveSessionSourceId(previous) !== getEffectiveSessionSourceId(normalized)) {
     refreshSessionCatalog();

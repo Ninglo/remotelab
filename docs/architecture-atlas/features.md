@@ -6,7 +6,7 @@
 
 本版对照主仓库的界面、主 CLI 分派和相关专题资料。命令下的每个子操作、仓库外脚本、其他实例配置和作者归属尚未全面核对。 2026-10-06增补人员学习与行动手册入口；其余功能沿用原盘点和待作者确认边界，不扩展为全部业务已验收。 2026-10-06增补 Session 开工登记、双向相关检索、人员与公司必要背景读取和人工核验参考建议。隔离状态与原生协议测试不能代替真实模型的全部行为验收。 2026-10-10补充飞书 Web 设置接入，新增条目的维护线索单独标注源码版本；其他功能仍沿用原基线。
 
-本轮源码基线：c914b197be3e84c19cb558786d9cc78c71b06c28。8 组、44 项候选功能；37 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
+本轮源码基线：c914b197be3e84c19cb558786d9cc78c71b06c28。8 组、45 项候选功能；37 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
 
 ## 发起工作、接着做和找回历史
 
@@ -160,11 +160,11 @@ Agent 命令入口：`remotelab quick-stats`。
 
 入口：原会话输入框、问题控件和停止入口。
 
-使用条件：是否支持运行中直接追加取决于执行工具。默认选项与没有回复都不能当作用户批准。
+使用条件：是否支持运行中直接追加取决于执行工具。网页或飞书的普通回复被执行工具接收后，旧问题结束等待，原卡片不可再提交；不自动选择选项或视作批准。
 
 可以这样说：“保留刚才的目标，把输出语言改成中文。”
 
-维护线索：[docs/native-harness-input.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/native-harness-input.md)、[static/chat/native-question-ui.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/native-question-ui.js)、[chat/native-user-questions.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/native-user-questions.mjs)。
+维护线索：[docs/native-harness-input.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/native-harness-input.md)、[static/chat/native-question-ui.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/native-question-ui.js)、[chat/native-user-questions.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/native-user-questions.mjs)、[chat/native-host.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/native-host.mjs)、[chat/native-request-dispatch.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/native-request-dispatch.mjs)、[chat/native/codex.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/native/codex.mjs)、[connectors/feishu/native-question-cards.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/native-question-cards.mjs)。
 
 ### 任务卡、进度和验收依据
 
@@ -228,7 +228,7 @@ Agent 命令入口：`remotelab schedule`。
 
 ### 浏览、暂停和复查自动化
 
-查看常规、一次性和已停止任务，进入源会话查运行、失败和结果去向。
+查看常规、一次性和已停止任务，进入源讨论或执行会话查运行、失败和结果去向。选定自动化的执行会话集中在自动化收纳夹。
 
 入口：监控器的自动化列表与任务详情。
 
@@ -236,7 +236,7 @@ Agent 命令入口：`remotelab schedule`。
 
 可以这样说：“列出最近失败的自动化，解释失败阶段和已有结果。”
 
-维护线索：[static/chat/task-center.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/task-center.js)、[docs/task-center-v1.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/task-center-v1.md)。
+维护线索：[static/chat/task-center.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/task-center.js)、[static/chat/automation-overview.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/automation-overview.js)、[chat/automation-flows.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/automation-flows.mjs)、[docs/task-center-v1.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/task-center-v1.md)、[chat/automation-tasks.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/automation-tasks.mjs)、[lib/session-collection.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/session-collection.mjs)、[static/chat/bootstrap-session-catalog.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/bootstrap-session-catalog.js)。
 
 ### 日历事件和订阅提醒
 
@@ -520,6 +520,18 @@ Agent 命令入口：`remotelab memory`。
 
 Agent 命令入口：`remotelab message-replies`。
 
+### 飞书 Web 话题状态与版本更新
+
+在普通插件显示真实running、标题与摘要，并看见实际加载版本，减少后续手动更新。
+
+入口：已安装的1.2及后续插件 → 设置 → 连接状态同步，本人登录并核对姓名。
+
+使用条件：只读当前列表中已核实对应的Bot-2群话题；账号切换清除旧显示，断线标记未同步。Mac后台检查确认版本、校验文件后由插件自动应用；首次升级仍需刷新旧插件。源码、部署、安装和本人使用分别核对。
+
+可以这样说：“正在执行的话题立即显示running，结束后跟随真实状态变化；插件设置入口常驻显示v1.2.0。”
+
+维护线索：[docs/feishu-web-topics.md](https://github.com/Ninglo/remotelab/blob/453bb5e5adc3407bc31580235900ab3cf7417d19/docs/feishu-web-topics.md)、[chat/feishu-web-topics.mjs](https://github.com/Ninglo/remotelab/blob/453bb5e5adc3407bc31580235900ab3cf7417d19/chat/feishu-web-topics.mjs)、[chat/router-feishu-web-topics.mjs](https://github.com/Ninglo/remotelab/blob/453bb5e5adc3407bc31580235900ab3cf7417d19/chat/router-feishu-web-topics.mjs)、[chat/feishu-web-settings.mjs](https://github.com/Ninglo/remotelab/blob/453bb5e5adc3407bc31580235900ab3cf7417d19/chat/feishu-web-settings.mjs)。
+
 ### 安装到桌面与浏览器通知
 
 在支持的手机或桌面环境安装网页应用，并接收已启用的浏览器通知。
@@ -538,15 +550,15 @@ Agent 命令入口：`remotelab message-replies`。
 
 ### 监控器的总览与自动化列表
 
-查看紧急问题、账号额度、用量、磁盘、自动化和已配置服务。
+依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；完整明细按需展开。
 
-入口：顶部或侧栏的监控器；总览使用 ?tab=tasks&monitor=overview。
+入口：从首页顶部或侧栏进入监控器，默认总览；加载期间的点击不会被会话恢复覆盖。
 
-使用条件：默认只覆盖本实例已有来源；fleet、额外磁盘和独立服务需明确配置。缺失或过期的采样不是零余额。
+使用条件：需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。统计按需读取并缓存，不新增告警或补救。账号、磁盘、服务与 API 属于实例共享资源。
 
 可以这样说：“查看本实例的紧急问题和覆盖缺口，给我最新观测时间。”
 
-维护线索：[docs/monitoring.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/monitoring.md)、[static/chat/monitoring.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/monitoring.js)、[chat/router-control-routes.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/router-control-routes.mjs)。
+维护线索：[docs/monitoring.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/monitoring.md)、[static/chat/monitoring.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/monitoring.js)、[static/chat/compose.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/compose.js)、[chat/router-control-routes.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/router-control-routes.mjs)、[chat/monitoring-sessions.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/monitoring-sessions.mjs)、[static/chat/monitoring-sessions.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/monitoring-sessions.js)、[chat/session-manager.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-manager.mjs)、[templates/chat.html](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/templates/chat.html)、[static/monitoring-live/index.html](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/monitoring-live/index.html)。
 
 Agent 命令入口：`remotelab usage-summary`。
 

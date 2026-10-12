@@ -61,3 +61,13 @@ assert.equal(JSON.stringify(entries), before, 'view grouping must never mutate e
 assert.equal(days(entries, 'Invalid/Timezone').find(group => group.day === '2026-10-03').records.length, 3);
 assert.equal(days([], 'UTC').length, 0, 'missing dates do not fabricate daily execution records');
 console.log('Automation categories, purposes and complete daily history passed.');
+
+const latest = context.RemoteLabAutomationOverview.latestExecutionSession;
+const collected = { sessionCollection: 'automations', sourceSessionId: 'discussion', recentExecutions: [
+  { sessionId: 'older', scheduledAt: '2026-10-11T00:00:00Z' },
+  { sessionId: 'latest', scheduledAt: '2026-10-12T00:00:00Z' },
+] };
+assert.equal(latest(collected).sessionId, 'latest');
+assert.equal(latest({ sessionCollection: 'automations', sourceSessionId: 'discussion' }), null);
+assert.equal(latest({ sourceSessionId: 'discussion', lastExecution: { sessionId: 'evaluation' } }), null);
+assert.equal(latest({ members: [collected, { lastExecution: { sessionId: 'evaluation', scheduledAt: '2026-10-13T00:00:00Z' } }] }).sessionId, 'latest');

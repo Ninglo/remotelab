@@ -24,3 +24,17 @@ assert.equal(nextEvening.session.id, nextMorning.session.id);
 const retry = await ensureExecutionSession(nextEvening.trigger);
 assert.equal(retry.session.id, nextMorning.session.id);
 console.log('scheduled day sessions: legacy adoption, same-day topic reuse, next-day isolation and restart retry passed');
+
+const collectedTrigger = await createTrigger({text:'collected', scheduleId:'collection-test', scheduledAt:'2026-10-12T00:00:00Z',
+  sessionTemplate:{folder:'/tmp',tool:'codex',sessionCollection:'automations'}});
+const collected = await ensureExecutionSession(collectedTrigger);
+assert.equal(collected.session.sessionCollection, 'automations');
+assert.equal(collected.session.internalRole, 'scheduled_execution');
+assert.equal(morning.session.sessionCollection, undefined, 'unselected tasks keep their current visibility');
+const { updateSessionGrouping, getSession } = await import('../chat/session-manager.mjs');
+await updateSessionGrouping(morning.session.id, {sessionCollection:'automations'});
+assert.equal((await getSession(morning.session.id)).sessionCollection, 'automations');
+await updateSessionGrouping(morning.session.id, {sessionCollection:''});
+assert.equal((await getSession(morning.session.id)).sessionCollection, undefined);
+await assert.rejects(() => updateSessionGrouping(morning.session.id, {sessionCollection:'unknown'}));
+console.log('Automation collection inheritance, opt-in isolation and reversible migration passed.');

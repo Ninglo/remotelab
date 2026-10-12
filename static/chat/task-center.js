@@ -736,6 +736,14 @@
       sourceId ? { link: `/?session=${encodeURIComponent(sourceId)}&tab=sessions` } : {});
     addMetaRow(context, translate("tasks.overview.delivery", "Results go to"), [...new Set(members.map(member => notificationText(member, { compact: true })))].join(" · "));
     if (task.kind === "recurring" && task.lifetime?.mode === "bounded") addMetaRow(context, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
+    if ((task.members || [task]).some(item => item.sessionCollection === "automations")) {
+      const execution = overview.latestExecutionSession(task);
+      if (execution) addMetaRow(context, translate("tasks.session.execution", "Execution Session"),
+        translate("tasks.session.openLatest", "Open latest execution"),
+        { link: `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions` });
+      else addMetaRow(context, translate("tasks.session.execution", "Execution Session"),
+        translate("tasks.session.notStarted", "Available after the first run"));
+    }
     main.appendChild(context);
     const stats = createNode("dl", "task-summary-stats");
     const latest = latestActivity(task);
@@ -861,6 +869,15 @@
         closedPurposeSections.clear(); renderTasks(); list.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       if (linked.length || !background.length) bottom.appendChild(locate);
+      for (const task of linked) {
+        const execution = overview.latestExecutionSession(task);
+        if (!execution) continue;
+        const link = createNode("a", "task-center-action", linked.length === 1
+          ? translate("tasks.session.openLatest", "Open latest execution")
+          : `${translate("tasks.session.openLatest", "Open latest execution")} · ${taskTitle(task)}`);
+        link.href = `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions`;
+        bottom.appendChild(link);
+      }
       if (background.length) {
         const inspect = createNode("button", "task-center-action", translate("tasks.flows.monitor", "Open monitoring overview"));
         inspect.type = "button";
