@@ -276,6 +276,8 @@ instance API totals are shown, never apportioned to people or groups.
 
 Monitor defaults to Overview from the normal homepage (`/?tab=tasks`);
 explicit `monitor=automations|usage|feedback` links preserve those destinations.
+Clicking Monitor while the homepage is loading keeps that workspace selected
+when the initial Session list arrives.
 The Overview shows three compact panels: Session, API, and shared resources.
 Each presents totals and observation/exception status first. All lists, provider
 endpoints, accounts and operational records start collapsed. Clicking an exception

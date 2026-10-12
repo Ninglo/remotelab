@@ -1250,6 +1250,11 @@ function switchTab(tab, { syncState = true } = {}) {
   const resolvedSortSessionListBtn = typeof sortSessionListBtn !== "undefined" ? sortSessionListBtn : null;
   const resolvedNewSessionBtn = typeof newSessionBtn !== "undefined" ? newSessionBtn : null;
   const nextTab = normalizeSidebarTab(tab);
+  // A user can navigate before the initial Session catalog finishes loading.
+  // Restore the pending Session, but respect their newer workspace choice.
+  if (syncState && typeof pendingNavigationState !== "undefined" && pendingNavigationState) {
+    pendingNavigationState = { ...pendingNavigationState, tab: nextTab };
+  }
   if (typeof setChatActiveTab === "function") {
     setChatActiveTab(nextTab, {
       normalizeTab: normalizeSidebarTab,
