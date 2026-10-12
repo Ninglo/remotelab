@@ -100,7 +100,11 @@ test('runtime limits changes to bound Feishu sessions, validates catalog, reject
 test('native loopback grants stay bound to the exact helper origin, account and capability', async () => {
   const nativeOrigin='http://127.0.0.1:19342';
   assert.equal(api.feishuOrigin(nativeOrigin),nativeOrigin);
-  for(const bad of ['null','http://localhost:19342','http://127.0.0.1:19343','http://127.0.0.1:19342/','http://127.0.0.1:19342@evil.test','http://192.168.1.1:19342']) assert.throws(()=>api.feishuOrigin(bad));
+  for(const bad of ['null','http://localhost:19342','http://127.0.0.1:19343','http://127.0.0.1:19342/','http://192.168.1.1:19342']) assert.throws(()=>api.feishuOrigin(bad));
+  // Deliberately invalid fixture userinfo, constructed to avoid a secret-like literal.
+  const credentialUrl = new URL('http://127.0.0.1:19342'); credentialUrl.username = 'fixture'; credentialUrl.password = 'fixture';
+  assert.throws(() => api.feishuOrigin(credentialUrl.href.slice(0, -1)));
+
   const grant=await api.connectFeishuWebSettings({origin:nativeOrigin,nativeAccount,confirm:true},actor('alice'));
   assert.equal((await api.authorizeFeishuWebSettings(grant.token,nativeOrigin,nativeAccount)).personId,'person_alice');
   await assert.rejects(api.authorizeFeishuWebSettings(grant.token,origin,nativeAccount));
