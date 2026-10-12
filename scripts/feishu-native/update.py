@@ -28,6 +28,7 @@ loader=(r/'v8-build/runtime-template.js').read_text();m=json.loads((r/'v8-build/
 _,n,_,l=struct.unpack('<4I',b[:16]);h=json.loads(b[16:16+l]);body=bytearray(b[8+n:]);h['files']['remotelab-native-v7.js']={'size':len(loader.encode()),'offset':str(len(body))};body.extend(loader.encode());hb=json.dumps(h,ensure_ascii=False,separators=(',',':')).encode();hp=struct.pack('<I',len(hb))+hb;hp+=b'\0'*((-len(hp))%4);pick=struct.pack('<I',len(hp))+hp;packed=struct.pack('<II',4,len(pick))+pick+body;a.write_bytes(packed)
 shutil.copy2(r/'v8-build/native_asset_bridge.cjs',r/'native_asset_bridge.cjs')
 shutil.copy2(r/'v8-build/live-source.cjs',r/'live-source.cjs')
+shutil.copy2(r/'v8-build/topic-source.cjs',r/'topic-source.cjs')
 for target in [app/'Contents/Frameworks/Lark Framework.framework',app]:
  q=subprocess.run(['/usr/bin/codesign','--force','--sign','-','--preserve-metadata=entitlements',str(target)],capture_output=True,text=True,timeout=60);assert q.returncode==0,q.stderr
 subprocess.run(['/usr/bin/codesign','--verify','--strict','--deep',str(app)],check=True,capture_output=True,timeout=60)

@@ -34,7 +34,7 @@ Old failed whole-file transfers were deleted by that version and are unrecoverab
 `install-preview.py` validates the official version, archive hash, signature and
 package checksums. It creates its own profile, injects the reviewed runtime with
 `archive_patch.py`, rebuilds signatures and checks original source hashes. An
-identical installed runtime and archive can be reopened without overwriting
+identical installed runtime, helper build hash and archive can be reopened without overwriting
 account data or preferences; verified older standalone installations can upgrade after the test App exits; partial or unknown installations are preserved and refused. A lock prevents concurrent bootstrap installations. Failure never
 changes the official App. The upgrade signs a staged clone before replacing the isolated App, keeps a local rollback copy, restores old files if replacement fails, and never replaces the profile or account settings.
 `package-preview.py` packages only reviewed code/assets with a checksum manifest;
