@@ -32,6 +32,65 @@ visible in the Session queue, and can be removed until execution or native
 handoff starts. Admission and dispatch share the request compatibility checks;
 native capability alone does not mean a follow-up can join the active request.
 
+## Personal Feishu input-tool trial (v1)
+
+This optional trial is off by default. A person can ask the assistant to enable
+or disable it using `remotelab message-replies input-trial on|off|status --json`.
+The current accepted human Request supplies the verified identity; callers do
+not supply a Person ID. Only `preferences.inflightTrial` changes, preserving
+existing opening, checklist, progress and work-start preferences. This is a
+Feishu trial; the setting can be managed through either authenticated surface.
+
+New Feishu inputs capture the sender's setting. Tool use requires BOTH the
+current input and the root task to have opted in for the same Person, in the
+same conversation, and the saved personal switch to remain on. Other people do
+not inherit it from a shared Session. Turning it off disables new tool use
+immediately; already queued deliveries retain their existing outbox lifecycle.
+A shared Session still has shared model history, so this is a capability scope,
+not a private-context sandbox. Start a new task after enabling to exercise v1;
+an execution accepted before opt-in keeps its original contract.
+
+The Harness decides when these tools help; there is no extra classifier or
+parallel worker. Ordinary steer admission, request IDs, uncertain-input recovery
+and native reply publication are unchanged. The optional capability description
+joins the stable rule-context snapshot; only the current input address is new
+per input. Unknown acceptance still conservatively retains context rather than
+claiming it was consumed. This does not promise zero repeated background text.
+
+- `input-trial inspect --request-id <id> --json` reads this execution's accepted
+  opted-in inputs, retained unanswered questions and delivery receipts. Input
+  bodies are omitted unless `--include-text` is requested. It does not inject,
+  resend or acknowledge input; do not poll it.
+- `input-trial reply --file <json> --json` accepts
+  `{sourceRequestId,replyId,requestIds,text}`. It can answer several of the
+  person's inputs together through the existing source outbox. A stable replyId
+  reserves the immutable packet and native-publication marker atomically with
+  the delivery. An identical retry returns that receipt, including after an
+  uncertain response; different content with the same ID is rejected. A missing
+  history mirror is repaired on retry. This prevents duplicate enqueueing for
+  the same ID, not semantically equivalent answers with different IDs. The
+  Harness must not repeat the answer in a reply tag or the task's final result.
+  The source's existing publication policy still applies.
+- `input-trial stop --request-id <id> --expected-run <runId> --json` requests
+  cancellation of that exact execution. It never falls through to the next
+  active run or changes participation mode. It does not stop independently
+  running external jobs or guarantee immediate interruption of a tool call.
+
+The response rule is to send useful established answers promptly. Combine
+compatible questions if that helps; do not wait for a slow second query or use
+a fixed debounce window. New facts that invalidate an unsent answer require a
+revision. Already delivered answers require a concise correction. Superseded
+native question controls are not kept alive by this trial: inspect retains the
+unanswered requirement, and the Harness asks again if still needed. Silence,
+continued discussion and side answers are never approvals.
+
+Implementation: `chat/inflight-trial.mjs`, `chat/router-inflight-trial.mjs`,
+`lib/inflight-trial-command.mjs`, and the existing settings, admission and
+rule-context modules. Validation is included in `test:native-harness`;
+`tests/test-inflight-trial.mjs` covers personal scope, mixed senders, uncertain
+acceptance, outbox/history recovery, native publication deduplication, exact-run
+stop and disabling. Live user experience remains a separate trial acceptance.
+
 ## Answering native questions
 
 Codex and Claude questions appear once in the existing Web conversation and

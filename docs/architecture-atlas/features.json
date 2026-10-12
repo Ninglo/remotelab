@@ -137,6 +137,29 @@
             "docs/historical-file-diffs.md"
           ],
           "commands": []
+        },
+        {
+          "id": "personal-inflight-trial",
+          "name": "个人运行中输入工具试用",
+          "purpose": "由同一 Harness 按需查看本人输入、合并答复和停止明确指定的当前执行，沿用现有 steer 与投递。",
+          "entry": "向助手要求开启或关闭；CLI message-replies input-trial on|off|status。",
+          "condition": "默认关闭，仅为已核实本人启用；输入与任务发起人均须匹配。共享历史仍共享，关闭后拒绝新工具调用。真实体验由本人试用验收。",
+          "example": "任务执行中连续问两个问题，先回答已确定的部分，再继续主任务。",
+          "sources": [
+            "docs/native-harness-input.md",
+            "chat/inflight-trial.mjs",
+            "chat/router-inflight-trial.mjs",
+            "chat/router-control-routes.mjs",
+            "chat/router-message-reply-settings.mjs",
+            "chat/rule-context.mjs",
+            "lib/inflight-trial-command.mjs",
+            "lib/message-reply-command.mjs",
+            "cli.js"
+          ],
+          "commands": [
+            "input-trial",
+            "message-replies"
+          ]
         }
       ]
     },

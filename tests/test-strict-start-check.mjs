@@ -49,6 +49,13 @@ try {
   const io = { runId: record.runId, client, stdout: { write: value => { output = value; } } };
   await runMessageReplyCommand(['strict-start', 'on', '--json'], io);
   const enabled = JSON.parse(output).settings;
+  await runMessageReplyCommand(['input-trial', 'on', '--json'], io);
+  assert.equal(JSON.parse(output).settings.enabled, true);
+  assert.equal(JSON.parse(output).settings.personId, alice.personId);
+  await runMessageReplyCommand(['input-trial', 'off', '--json'], io);
+  assert.equal(JSON.parse(output).settings.enabled, false);
+  assert.deepEqual((await loadPersonMessageReplies(alice)).choices, enabled.choices);
+
   assert.equal(enabled.personId, alice.personId);
   assert.deepEqual(enabled.choices, { ...display, strictStartCheck: true });
   assert.deepEqual(await loadPersonMessageReplies({ personId: 'person_bob', identityId: 'web_bob' }), bobBefore);
