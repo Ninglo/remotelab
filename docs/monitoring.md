@@ -282,11 +282,14 @@ The Overview shows three compact panels in order: Session, shared resources, and
 Each presents totals and observation/exception status first. Session totals are
 followed by up to three named exceptions with every affected metric, recent value
 and baseline, plus three group/initiator summaries. Without exceptions, up to
-three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resource tables
-start expanded: accounts show status and quota bars, followed by disk and
-service/task tables. Resource exception and existing recovery records open from the status button or
-their own fold, so they do not push tables below a long incident list. Complete
-account reset-window cards remain under a fold.
+three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources contain exactly three visible sections, in order: disk capacity,
+account quotas, and period Token usage. Disk and account tables stay visible;
+account reset details and Token breakdowns open on demand. There is no additional
+resource overview counter, service/task table, recovery history, notification
+pipeline status or capacity advice in this panel. Disk and account state appear
+in their rows; source gaps appear beside the affected section. Runtime collectors,
+alert/recovery configuration and records are unchanged. Existing automation and
+operational tools remain separate from this resource display.
 Session exception cards compare recent values with their baseline using labelled
 bars; metrics keep units and textual values, rather than relying on colour alone. Clicking a Session
 exception selects its titled detail view without putting an opaque ID in search.
