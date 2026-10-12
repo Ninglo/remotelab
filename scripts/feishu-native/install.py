@@ -30,6 +30,7 @@ hb=json.dumps(h,ensure_ascii=False,separators=(',',':')).encode();hp=struct.pack
 # The loader reference is unchanged. Every pre-existing entry is untouched.
 a.write_bytes(packed)
 shutil.copy2(r/'v8-build/native_asset_bridge.cjs',r/'native_asset_bridge.cjs')
+shutil.copy2(r/'v8-build/live-source.cjs',r/'live-source.cjs')
 for target in [app/'Contents/Frameworks/Lark Framework.framework',app]:
  q=subprocess.run(['/usr/bin/codesign','--force','--sign','-','--preserve-metadata=entitlements',str(target)],capture_output=True,text=True,timeout=60);assert q.returncode==0,q.stderr
 q=subprocess.run(['/usr/bin/codesign','--verify','--strict','--deep',str(app)],capture_output=True,text=True,timeout=60);assert q.returncode==0,q.stderr
