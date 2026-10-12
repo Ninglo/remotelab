@@ -239,7 +239,7 @@
   function renderScope() {
     const root = document.getElementById("monitoringScope");
     if (!root) return;
-    const wasOpen = root.querySelector("details")?.open || false;
+    const wasOpen = root.querySelector(":scope > details:not([data-handling])")?.open || false;
     root.replaceChildren(node("h2", "检查范围与开销"));
     if (!value) { root.appendChild(node("p", "检查配置尚未取得，不能确认后台巡检是否运行。", "monitoring-note")); return; }
     handlingGuide(root, "coverage");
