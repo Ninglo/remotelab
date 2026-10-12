@@ -12,6 +12,24 @@ The ledger deduplicates by Run and attributes each retained snapshot to its ledg
 
 `queryUsageLedger({ includeDailyTrend: true })` extends the existing file scan only as far as the first of those seven dates, aggregates `dailyTrend` from all matching records before top-N truncation, and keeps the selected-window totals and ranked lists unchanged. Overview returns this projection with its existing 15-second coalesced cache. Charts share the existing request, need no extra Run/manifest reads, model calls, quota RPCs, timers, notification or remediation actions. Frontend SVGs and meters add no chart library. Collection gaps remain explicitly visible.
 
+## Routine task health reads
+
+The overview and independent minute observer use `readAutomationHealth`, not the
+full automation browser projection. They keep all task identities, current
+schedule/gate state and latest execution, including paused/cancelled tasks needed
+for recovery attribution and unknown admissions. Recurring tasks resolve only
+the latest occurrence (same stable timestamp ordering as the browser). One-time
+tasks retain their existing Run/Request receipt fallback. No age cutoff silently
+removes a task or substitutes a success for missing evidence.
+
+Each collection shares pending Run/receipt lookups by Run ID, limits resolution
+to 16 concurrent workers, and omits ownership/Session enrichment, prompts,
+package lineage and full-history statistics. The cache ends with that collection;
+late state corrections and recovery are read again next time. Source errors still
+produce coverage gaps. Task-browser history, alert/recovery policy, timer cadence,
+nightly review, evaluation reports and message context are unchanged. API log
+scanning and historical recovery-log verbosity are separate remaining costs.
+
 ## Activate on an instance
 
 Give the instance's coding agent this prompt, with the instance URL and approved sources and alert recipient:
