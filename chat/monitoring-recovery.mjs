@@ -5,6 +5,7 @@ import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { isStoppedAutomation } from '../lib/monitoring-status.mjs';
 import { requests } from './requests.mjs';
+import { monitoringPolicyFor } from '../lib/monitoring-policy.mjs';
 import { diskRiskStage, recoveryPlan, recoveryHumanAction } from '../lib/monitoring-actions.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 24);
@@ -33,7 +34,10 @@ function healthy(snapshot, item) {
 }
 
 function promptFor(item, attempt, task, config) {
+  const policy = monitoringPolicyFor(item);
   return `处理现有警报器登记的故障，沿原任务的授权和工作流完成补救与验收。\n`
+    + `常见检查入口：node scripts/monitoring-diagnose.mjs（在当前源码目录运行，只读本实例状态，无外部发送及变更）。先复用采集结果，不反复全盘扫描。\n`
+    + (policy ? `本类处置规则：${policy.remedy} ${policy.intervention}\n` : '')
     + `对象：${item.subject}；类型：${item.kind}；ID：${item.id}；原失败Run：${item.originRunId || '无'}。\n`
     + `已观测问题：${item.error || item.reason || '见本轮监管快照'}。本次是第${item.attempts.length}次，最多${config.maxAttempts || 2}次；执行方不可再建恢复任务、日程或自我重试循环。\n`
     + (attempt.mode === 'verify' ? '已有一次后续执行结束。本次先只读核对该执行及真实产物；不能把整份任务从头再执行，不能重发已有成功消息。\n' : '')

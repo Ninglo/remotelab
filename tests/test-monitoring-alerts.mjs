@@ -401,3 +401,26 @@ test('the first warning delivers one complete card containing both the risk and 
   assert.equal(card.elements[1].actions[0].text.content, '进入会话补充信息');
   assert.match(card.elements[1].actions[0].url, /session=original/);
 });
+
+test('measured monthly quota warns at 80 percent while a traffic burst alone stays local', async () => {
+  const f = fixture(), config = { confirmationObservations: 3 };
+  const quota = snapshot([{ kind: 'api', id: 'feishu:tenant-quota', severity: 'warning', subject: 'Monthly quota' }]);
+  for (let i = 0; i < 2; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: quota });
+  assert.equal(f.getSends(), 0);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: quota }); assert.equal(f.getSends(), 1);
+  const burst = snapshot([{ kind: 'api', id: 'feishu:a:traffic', severity: 'warning', signals: { burst: true } }]);
+  for (let i = 0; i < 4; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: burst });
+  assert.equal(f.getSends(), 1);
+});
+
+test('old traffic volume observations do not pre-confirm a new API failure', async () => {
+  const f = fixture(), config = { confirmationObservations: 3 };
+  const value = snapshot([{ kind: 'api', id: 'feishu:a:traffic', severity: 'warning' }]);
+  for (let i = 0; i < 4; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  value.attention[0].severity = 'critical';
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 0);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: snapshot([]) });
+  for (let i = 0; i < 2; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  assert.equal(f.getSends(), 0, 'unknown source breaks confirmation but does not rearm incident');
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1);
+});

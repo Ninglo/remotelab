@@ -61,11 +61,8 @@
     const guides = [
       ["磁盘", "容量或 inode 达到85%预警、92%严重；系统盘可用不足15 GiB／8 GiB同样触发。受阻后继续恶化会升级。",
         "先核对已有清理和安全候选；只处理符合现行流程的可重建缓存、已核验重复副本，并复测。删除唯一数据、迁移或扩容先给方案待确认。", resourceEntry],
-      ["账号连续性", "正常消耗和耗尽只记录；20%检查备用准备。没有可用备用、无法采集或切换持续未完成才提醒。",
-        "自动切换开启时，10%切换后续请求到已登录且额度高于10%的本地备用；确已耗尽时可用正余额账号兜底。在途任务保留原账号。",
-        "后台切换器直接执行；本页账户额度显示开关、备用数量和最近切换，不另开 AI 会话。"],
-      ["自动化失败", "核对真实失败和当前任务状态；已停用或已结束的任务不重新启动。",
-        "先检查原产物和回执，只补失败步骤；结果不确定的发送先核实。中高风险动作在原处理会话确认。", automationEntry],
+      ...(policy?.policies || []).map(entry => [entry.title, entry.warning, entry.remedy,
+        entry.kind === "automation" ? automationEntry : entry.intervention]),
     ];
     const cards = node("div", "", "monitoring-account-grid");
     for (const [title, warning, remedy, destination] of guides) {

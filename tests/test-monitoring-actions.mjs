@@ -35,3 +35,40 @@ test('confirmation requires concrete action scope, impact, rollback and validati
   const p = recoveryPlan({ risk: 'medium', summary: 'Move ended archive', target: '/owned/archive', impact: 'read interruption', rollback: 'old pointer', verification: 'hash' });
   assert.equal(p.requiresConfirmation, true);
 });
+
+import { monitoringDisposition, monitoringDiagnosticReport } from '../lib/monitoring-policy.mjs';
+import { monitoringNextStep } from '../chat/monitoring-alert-message.mjs';
+test('metric guidance never claims execution and separates help from approval', () => {
+  const config = { overviewUrl: 'https://example.test/' };
+  for (const kind of ['service', 'automation', 'api']) {
+    const next = monitoringNextStep({ kind }, config);
+    assert.equal(next.type, 'notice'); assert.doesNotMatch(next.summary, /我在处理|我这边继续核查/);
+  }
+  assert.equal(monitoringDisposition({ kind: 'api', code: 99991403 }).type, 'input');
+  assert.equal(monitoringDisposition({ kind: 'api', code: 99991403, notificationAvailable: true }).type, 'notice');
+  const item = { kind: 'service', recovery: { status: 'running', sessionId: 's' } };
+  assert.match(monitoringNextStep(item, config).summary, /我在处理/);
+  item.recovery = { status: 'awaiting_confirmation', sessionId: 's', plan: { requiresConfirmation: true, summary: 'Restart scoped service' } };
+  assert.equal(monitoringNextStep(item, config).type, 'approval');
+});
+test('fixed diagnosis preserves unknown and paused resources, scopes IDs and excludes task prompts', () => {
+  const snapshot = { generatedAt: 'now', services: [{ unit: 'a.service', status: 'paused' }, { unit: 'b.service', status: 'unknown' }],
+    automations: { items: [{ id: 'task', prompt: 'PRIVATE', state: 'paused' }] },
+    coverage: { gaps: [{ source: 'accounts' }] }, attention: [], recovery: [] };
+  const report = monitoringDiagnosticReport(snapshot);
+  assert.equal(report.mode, 'read_only'); assert.doesNotMatch(JSON.stringify(report), /PRIVATE/);
+  assert.deepEqual(report.resources.slice(0, 2).map(r => r.status), ['paused', 'unknown']);
+  assert.deepEqual(monitoringDiagnosticReport(snapshot, { kind: 'service', id: 'a.service' }).resources.map(r => r.id), ['a.service']);
+  assert.deepEqual(report.coverage, snapshot.coverage);
+});
+
+test('diagnosis CLI emits parseable JSON without starting recovery or accepting mutation flags', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const exec = promisify(execFile);
+  const { stdout } = await exec(process.execPath, ['scripts/monitoring-diagnose.mjs', '--kind', 'service'], { timeout: 10000, maxBuffer: 1024 * 1024 });
+  const report = JSON.parse(stdout);
+  assert.equal(report.mode, 'read_only');
+  assert.ok(report.resources.every(item => item.kind === 'service'));
+  await assert.rejects(exec(process.execPath, ['scripts/monitoring-diagnose.mjs', '--apply']), /Unknown option/);
+});

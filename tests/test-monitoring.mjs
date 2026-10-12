@@ -70,7 +70,11 @@ test('partial failures remain visible, observations share a bounded cache, and c
   });
   const [a, b] = await Promise.all([reader(), reader()]);
   assert.equal(a, b); assert.equal(reads, 1);
-  assert.deepEqual(a.handling, { recoveryEnabled: true, coordinatorSessionId: 'operations', automationRecoveryEnabled: true });
+  assert.equal(a.handling.recoveryEnabled, true);
+  assert.equal(a.handling.coordinatorSessionId, 'operations');
+  assert.equal(a.handling.automationRecoveryEnabled, true);
+  assert.ok(a.handling.policies.some(p => p.kind === 'api' && p.intervention));
+  assert.equal(a.handling.diagnosticScript, 'scripts/monitoring-diagnose.mjs');
   assert.equal(a.disks[0].status, 'critical'); assert.equal(a.disks[1].status, 'unknown');
   assert.equal(a.disks[1].availableBytes, undefined);
   assert.equal(a.services[0].status, 'unknown');
