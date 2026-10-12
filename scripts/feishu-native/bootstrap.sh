@@ -40,7 +40,7 @@ main() {
   fi
   # EXIT also runs on network, checksum or installer failure; only remove our lock.
   rlfe_install_lock="$cache/install.lock"
-  trap '/bin/rmdir "$rlfe_install_lock" 2>/dev/null || true' EXIT
+  trap 'for rlfe_child in $(jobs -p); do kill "$rlfe_child" 2>/dev/null || true; done; wait 2>/dev/null || true; /bin/rmdir "$rlfe_install_lock" 2>/dev/null || true' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   echo '正在准备增强版运行环境，无需安装开发工具。'
@@ -71,18 +71,67 @@ main() {
 }
 
 digest() { /usr/bin/shasum -a 256 "$1" | /usr/bin/awk '{print $1}'; }
+# Part hashes are pinned inside this script, not trusted from a remote manifest.
+part_manifest() {
+  case "$1" in
+__DOWNLOAD_PARTS__
+    *) echo '安装清单中没有此文件，停止下载。' >&2; return 1;;
+  esac
+}
+download_part() {
+  local directory="$1" whole="$2" index="$3" expected="$4" start="$5" end="$6" upstream="$7"
+  local file="$directory/$index" temporary="$directory/$index.next" attempt url
+  if [ -f "$file" ] && [ "$(digest "$file")" = "$expected" ]; then return 0; fi
+  for attempt in 1 2 3 4; do
+    url="__PUBLIC_BASE__/chunks/$whole/$index"
+    if [ "$((attempt % 2))" = 0 ] && [ -n "$upstream" ]; then
+      # Upstream is only a fallback for one bounded byte range. Servers ignoring
+      # Range cannot publish an unchecked chunk or an unbounded full download.
+      if /usr/bin/curl -fLsS --connect-timeout 10 --max-time 90 --speed-limit 1024 --speed-time 20 --max-filesize 1048576 --range "$start-$end" "$upstream" -o "$temporary" 2>/dev/null; then :; fi
+    else
+      if /usr/bin/curl -fLsS --connect-timeout 10 --max-time 90 --speed-limit 1024 --speed-time 20 --max-filesize 1048576 "$url" -o "$temporary" 2>/dev/null; then :; fi
+    fi
+    if [ -f "$temporary" ] && [ "$(digest "$temporary")" = "$expected" ]; then
+      /bin/mv "$temporary" "$file"; return 0
+    fi
+    /bin/rm -f "$temporary"
+  done
+  printf '片段 %s 下载未完成，已保存其他完成片段。\n' "$index" >&2
+  return 1
+}
 download() {
-  local relative="$1" expected="$2" destination="$3" temporary url
-  if [ -f "$destination" ] && [ "$(digest "$destination")" = "$expected" ]; then return 0; fi
-  temporary=$(/usr/bin/mktemp "$destination.next.XXXXXX")
-  case "$relative" in https://*) url="$relative";; *) url="__PUBLIC_BASE__/$relative";; esac
-  if ! /usr/bin/curl --fail --location --progress-bar --show-error --retry 2 --connect-timeout 15 --max-time 300 "$url" -o "$temporary"; then
-    /bin/rm -f "$temporary"; echo '下载中断，请重新运行同一条命令；已校验的文件会继续复用。' >&2; return 1
+  local relative="$1" expected="$2" destination="$3" upstream=''
+  if [ -f "$destination" ] && [ "$(digest "$destination")" = "$expected" ]; then
+    printf '复用已下载文件：%s\n' "${destination##*/}"; return 0
   fi
-  if [ "$(digest "$temporary")" != "$expected" ]; then
-    /bin/rm -f "$temporary"; echo '下载校验未通过，未安装。请重新运行同一条命令。' >&2; return 1
+  case "$relative" in https://*) upstream="$relative";; esac
+  local directory="$destination.chunks/$expected" manifest index checksum start end pid failed=0 count=0 total=0
+  local pids=()
+  /bin/mkdir -p "$directory"
+  manifest=$(part_manifest "$expected")
+  total=$(printf '%s\n' "$manifest" | /usr/bin/wc -l | /usr/bin/tr -d ' ')
+  printf '下载 %s：共 %s 个小片段，中断后可继续。\n' "${destination##*/}" "$total"
+  while read -r index checksum start end; do
+    download_part "$directory" "$expected" "$index" "$checksum" "$start" "$end" "$upstream" &
+    pids+=("$!")
+    count=$((count + 1))
+    if [ "${#pids[@]}" = 4 ]; then
+      for pid in ${pids[@]+"${pids[@]}"}; do if wait "$pid"; then :; else failed=1; fi; done
+      pids=()
+      if [ "$failed" = 1 ]; then return 1; fi
+      printf '已校验 %s/%s 片段\n' "$count" "$total"
+    fi
+  done <<< "$manifest"
+  for pid in ${pids[@]+"${pids[@]}"}; do if wait "$pid"; then :; else failed=1; fi; done
+  if [ "$failed" = 1 ]; then return 1; fi
+  # Keep completed parts until the reconstructed full file also passes its pin.
+  local assembled="$destination.next"
+  : > "$assembled"
+  while read -r index checksum start end; do /bin/cat "$directory/$index" >> "$assembled"; done <<< "$manifest"
+  if [ "$(digest "$assembled")" != "$expected" ]; then
+    /bin/rm -f "$assembled"; echo '合并文件校验未通过，未安装。' >&2; return 1
   fi
-  /bin/mv "$temporary" "$destination"
+  /bin/mv "$assembled" "$destination"
 }
 extract_runtime() {
   local archive="$1" destination="$2" temporary

@@ -63,7 +63,8 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     }
   }
   for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'automation', 'api'].includes(item.kind)
-    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
+    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))
+    && !(item.kind === 'automation' && (config.ignoreAutomationIds || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     // A local optimization signal must not pre-confirm a new outage.
@@ -160,9 +161,12 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   for (const messageId of edits) {
     const batch = Object.values(state.batches).find(b => b.messageId === messageId);
     if (!batch || batch.status !== 'sent' || transportQuotaBlocked) continue;
+    const events = Object.values(batch.events).filter(event => !(event.kind === 'automation'
+      && (config.ignoreAutomationIds || []).includes(event.id)));
+    if (!events.length) continue;
     batch.status = 'updating'; await save(stateFile, state);
     try {
-      const receipt = await update(Object.values(batch.events), { ...config, recoveryIncidents: [] }, messageId);
+      const receipt = await update(events, { ...config, recoveryIncidents: [] }, messageId);
       if (receipt !== messageId) throw new Error('UPDATE_RECEIPT_MISMATCH');
       batch.status = 'sent'; batch.dirty = false; batch.updatedAt = state.observedAt; updated++;
       for (const key of batch.keys) if (state.incidents[key]?.messageId === messageId) {

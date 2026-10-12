@@ -3,12 +3,12 @@
 适用于 **M 系列 Mac、飞书 8.1.17**。打开“终端”，粘贴运行：
 
 ```bash
-curl -fsSL https://index.jiujianian.dev/public-pages/feishu-native-install/install.sh | /bin/bash
+curl -fL --retry 5 --retry-all-errors --connect-timeout 15 --max-time 120 https://index.jiujianian.dev/public-pages/feishu-native-install/install.sh -o /tmp/feishu-native-install.sh && /bin/bash /tmp/feishu-native-install.sh
 ```
 
-命令会检查飞书版本，自动准备所需文件，安装并打开独立增强版。无需手动装 Node、Python、Homebrew 或 Xcode，也无需管理员密码。首次下载约 80 MB；完成后在新窗口登录**你本人的飞书账号**。之后可从个人“应用程序”目录打开“飞书增强版”。
+命令会检查飞书版本，自动准备所需文件，安装并打开独立增强版。无需手动装 Node、Python、Homebrew 或 Xcode，也无需管理员密码。首次下载约 80 MB，按小片段校验保存；网络失败后重跑会复用完整文件和已完成片段，不再整包从头下载。入口会自动重试网络错误，完整下载后才执行。GitHub 不是必需主下载源。完成后在新窗口登录**你本人的飞书账号**。之后可从个人“应用程序”目录打开“飞书增强版”。
 
-正式飞书和原登录数据保留。重复运行同一命令会保留本次试装的账号、草稿和设置；遇到不同版本或未完成的旧安装会停止并保留现场，反馈终端提示即可，不要删除原飞书或为试装降级。
+正式飞书和原登录数据保留。重复运行同一命令会保留本次试装的账号、草稿和设置；遇到不同版本或未完成的旧安装会停止并保留现场，反馈终端提示即可，不要删除原飞书或为试装降级。旧脚本失败时已删除的半包无法恢复，但此前完整下载的 Node 文件仍可直接复用。
 
 ## 试用范围与更新
 

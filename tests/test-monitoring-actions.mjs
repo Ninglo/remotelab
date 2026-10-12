@@ -114,3 +114,21 @@ test('monitor maps alert group, execution Session and actual result delivery wit
   assert.doesNotMatch(JSON.stringify(value),/SECRET/);
   assert.equal(monitoringDestinations(config,null,[]).resources.result.mode,'unknown');
 });
+
+test('workflow-owned delivery and no-group decisions survive centralized recovery reporting', () => {
+  const config = { alertDelivery: { chatId: 'ops', enabled: false, ignoreAutomationIds: ['private'] },
+    automationReportLocations: { private: { label: '专用脚本私聊', evidence: 'verified workflow', verifiedAt: 'now' },
+      unchecked: { label: 'unverified claim' } } };
+  const tasks = ['private', 'unchecked'].map(id => ({ id, kind: 'recurring', resultDelivery: { mode: 'remotelab' } }));
+  const value = monitoringDestinations(config, [], tasks);
+  assert.equal(value.resources.summary.chatId, 'ops');
+  assert.equal(value.resources.summary.updateMode, 'existing_incident_card');
+  assert.equal(value.account.summary.enabled, false);
+  assert.equal(value.api.summary.chatId, 'ops');
+  assert.equal(value.automations[0].delivery.mode, 'workflow');
+  assert.equal(value.automations[0].summary.enabled, false);
+  assert.equal(value.automations[0].summary.chatId, undefined);
+  assert.equal(value.automations[1].delivery.mode, 'remotelab');
+  assert.match(value.automations[1].delivery.label, /待核实/);
+  assert.equal(monitoringDestinations({}, [], []).resources.summary.configured, false);
+});

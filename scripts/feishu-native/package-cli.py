@@ -33,10 +33,24 @@ with tempfile.TemporaryDirectory(prefix='feishu-cli-package-') as tmp:
  subprocess.run([sys.executable,str(source/'package-preview.py'),str(a.build),str(a.font_license),tmp],check=True)
  shutil.copyfile(pathlib.Path(tmp)/'Feishu-Native-M2-8.1.17-preview9.zip',a.output/'preview9-cli1.zip')
 digest = sha(a.output/'preview9-cli1.zip')
-script = (source/'bootstrap.sh').read_text().replace('__PUBLIC_BASE__',base).replace('__PACKAGE_SHA256__',digest)
-assert '__PUBLIC_BASE__' not in script and '__PACKAGE_SHA256__' not in script
+parts = []
+for archive in [a.output/'runtime'/name for name in runtimes] + [a.output/'preview9-cli1.zip']:
+ whole = sha(archive)
+ directory = a.output/'chunks'/whole
+ directory.mkdir(parents=True,exist_ok=True)
+ records = []
+ with archive.open('rb') as stream:
+  offset = 0
+  for index, data in enumerate(iter(lambda:stream.read(1024*1024),b'')):
+   name = f'{index:04d}'
+   (directory/name).write_bytes(data)
+   records.append(f'{name} {hashlib.sha256(data).hexdigest()} {offset} {offset+len(data)-1}')
+   offset += len(data)
+ parts.append('    '+whole+") cat <<'RLFE_PARTS'\n"+'\n'.join(records)+"\nRLFE_PARTS\n      ;;")
+script = (source/'bootstrap.sh').read_text().replace('__PUBLIC_BASE__',base).replace('__PACKAGE_SHA256__',digest).replace('__DOWNLOAD_PARTS__','\n'.join(parts))
+assert all(pin not in script for pin in ['__PUBLIC_BASE__','__PACKAGE_SHA256__','__DOWNLOAD_PARTS__'])
 (a.output/'install.sh').write_text(script)
 (a.output/'release.json').write_text(json.dumps({'release':'preview9-cli1','supportedFeishu':'8.1.17','architecture':'arm64','packageSha256':digest,'runtimes':runtimes},indent=2)+'\n')
-command = 'curl -fsSL '+base+'/install.sh | /bin/bash'
+command = 'curl -fL --retry 5 --retry-all-errors --connect-timeout 15 --max-time 120 '+base+'/install.sh -o /tmp/feishu-native-install.sh && /bin/bash /tmp/feishu-native-install.sh'
 (a.output/'index.html').write_text('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>飞书增强版试装</title><body><h1>飞书增强版试装</h1><p>M 系列 Mac · 飞书 8.1.17</p><p>在终端执行，安装完成后自动打开；首次使用登录本人账号。</p><pre>'+html.escape(command)+'</pre><p>原飞书和数据保留。群看板和 Session 同步仍需单独连接。当前不支持代码热更新。</p></body></html>')
 print(json.dumps({'command':command,'packageSha256':digest,'bootstrapSha256':sha(a.output/'install.sh')}))

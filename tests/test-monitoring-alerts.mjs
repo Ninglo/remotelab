@@ -451,3 +451,24 @@ test('low-level API failures do not pre-confirm high failure rates and muted war
   assert.equal(f.getSends(),0);assert.equal(f.getUpdates(),0);
   await dispatchMonitoringAlerts({...f.options,config,snapshot:value,now:start+8*60000});assert.equal(f.getSends(),1);
 });
+
+test('explicit no-group automations cannot escalate into the common group even with a human request', async () => {
+  const f = fixture();
+  const config = { noisePolicy: { mode: 'risk_only' }, criticalAutomationIds: ['private'], ignoreAutomationIds: ['private'],
+    recoveryIncidents: [{ kind: 'automation', id: 'private', status: 'blocked', evidence: ['checked'],
+      humanAction: { type: 'input', summary: 'Private login required' } }] };
+  for (let i = 0; i < 6; i++) await dispatchMonitoringAlerts({ ...f.options, config,
+    snapshot: { ...snapshot([{ kind: 'automation', id: 'private', severity: 'critical' }]), generatedAt: new Date(Date.now() + i * 60000).toISOString() } });
+  assert.equal(f.getSends(), 0); assert.equal(f.getUpdates(), 0);
+});
+
+test('changing a workflow to no-group also protects edits of existing mixed incident cards', async () => {
+  const f = fixture();
+  const job = { kind: 'automation', id: 'private', subject: 'Private task', severity: 'critical' };
+  const config = { criticalAutomationIds: ['private'] };
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: snapshot([job]) });
+  assert.equal(f.getSends(), 1);
+  const healthy = snapshot([]); healthy.automations.items = [{ id: 'private', state: 'completed' }];
+  await dispatchMonitoringAlerts({ ...f.options, config: { ...config, ignoreAutomationIds: ['private'] }, snapshot: healthy });
+  assert.equal(f.getUpdates(), 0);
+});
