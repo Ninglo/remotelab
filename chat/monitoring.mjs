@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { codexAccounts } from '../lib/codex-accounts.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
-import { listAutomationTasks } from './automation-tasks.mjs';
+import { readAutomationHealth } from './automation-tasks.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { RECOVERY_FILE, projectRecovery } from './monitoring-recovery.mjs';
 import { readFeishuApiHealth, feishuApiAttention } from '../lib/feishu-api-health.mjs';
@@ -95,7 +95,7 @@ export function analyzeResources({ accounts, disks, automations, services, recov
 }
 
 export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitoring.json'), getUsage = queryUsageLedger,
-  getTasks = listAutomationTasks, getAccounts = () => codexAccounts.read(), getService = readService,
+  getTasks = readAutomationHealth, getAccounts = () => codexAccounts.read(), getService = readService,
   getFs = statfs, getStat = stat, read = readFile, getApiHealth = readFeishuApiHealth, getRecord = readRecord, now = Date.now } = {}) {
   const cache = new Map();
   return async function overview({ days = 7 } = {}) {

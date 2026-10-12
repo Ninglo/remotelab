@@ -378,3 +378,10 @@ Shared instance authentication still applies; this feature does not add a new
 per-task authorization system or automatically route every conversational opinion
 into a task edit. Humans can discuss elsewhere, confirm a concrete adjustment,
 and have it applied to the same task with the source/reason recorded.
+
+## Routine monitoring reads
+
+The monitoring observer uses a separate current-health projection from the same
+Schedule, Trigger and Run/Request records. It does not build this page’s complete
+execution history, package lineage or ownership enrichment on every check. The
+Task Center still retains those details and full history. See [Operations overview](monitoring.md#routine-task-health-reads) for collection scope and failure semantics.
