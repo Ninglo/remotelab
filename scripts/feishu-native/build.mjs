@@ -15,14 +15,36 @@ content=content.replaceAll('location.origin','globalThis.__RLFE_NATIVE_ORIGIN__'
 content=content.replaceAll('const storage = live ?', 'const storage = false ?');
 content=content.replaceAll('if (!live) result = await chrome.runtime.sendMessage','if (true) result = await chrome.runtime.sendMessage');
 content=content.replaceAll('event.source !== popup', 'event.data?.nativePopup !== popup?.nativePopup');
-content=content.replace('  if (globalThis.__RLFE_LIVE__) return;\n  globalThis.__RLFE_SYNC_CLEANUP__?.();','  globalThis.__RLFE_SYNC_CLEANUP__?.();');
+// Keep the Web Live guard: this Mac already has an authorized read-only source.
+// Personal settings/workspace still use their separate account grants.
 content=content.replace('if (!chrome?.runtime?.getManifest || globalThis.__RLFE_LIVE__) return;','if (!chrome?.runtime?.getManifest) return;');
 content=content.replaceAll('Mac 后台自动检查更新；有未保存内容时延后应用','本地增强 1.2 · 更新由本机安装器管理').replaceAll('以后自动连接和更新，无需再到设置里启用。','连接按当前本地飞书账号保存。');
 // Native list names have stable classes for the explicitly supported 8.0.3 build.
 content=content.replace('if(!main||!originalName||!originalPreview)continue;', 'if(!main||!originalName)continue;').replace('originalPreview.before(preview);', '(originalPreview||originalName).after(preview);');
 content=content.replaceAll('._2b17aec6','._9f5c521').replaceAll('._5d806a78','._97ba617');
+// The Web Live controller loads these two additional components outside content.js.
+const live=process.argv[4];if(!live)throw Error('Expected reviewed Mac Web Live extension directory');
+const extras={};for(const name of ['usage-view.js','web-artifact.js'])extras[name]=await fs.readFile(path.join(live,name),'utf8');
+let usage=extras['usage-view.js'].replace('const selected=globalThis.__feedStore?.getState?.().status?.activeFeedId;','const selected=globalThis.__RLFE_NATIVE_CONTEXT__?.().threadId || globalThis.__feedStore?.getState?.().status?.activeFeedId;');
+usage=usage.replace('const oldSync = !Number.isFinite(syncAt)', 'const oldSync = data.sourceConnected===false || entry.sourceStale || !Number.isFinite(syncAt)');
+content=content.replaceAll("globalThis.__RLFE_USAGE_STATUS__?.().activeSession", "(globalThis.__RLFE_NATIVE_ACTIVE_SESSION__?.() || globalThis.__RLFE_USAGE_STATUS__?.().activeSession)");
+content+='\n'+usage+'\n'+extras['web-artifact.js'];
+// Native chat and list are separate renderers; the committed native header
+// supplies chat identity, while only the list renderer performs navigation.
+content=content.replace('function nativeContext(header){',`function nativeContext(header){
+  const native=globalThis.__RLFE_NATIVE_CONTEXT__?.();
+  if(native){const entry=(projection.entries||[]).find(e=>e.webThreadId===native.threadId);
+   if(entry)return {chatId:entry.chatId,selected:native.threadId};
+   const group=(projection.boards||[]).flatMap(b=>b.groups||[]).find(g=>g.webChatId===native.webChatId);
+   return group?{chatId:group.chatId,selected:native.threadId||native.webChatId}:null;}
+`);
+content=content.replace('function nativeContext(header){','globalThis.__RLFE_NATIVE_LIST_LOCATE__=navigate;\n function nativeContext(header){');
+content=content.replace("get('counts').textContent=current?","get('counts').textContent=projection.sourceConnected===false?'未同步':current?").replace("t.sourceStale?'状态待核（暂未同步）'","(projection.sourceConnected===false||t.sourceStale)?'状态待核（暂未同步）'");
+content=content.replace("const text=['running','waiting','review'].includes(r.status)?r.status:'';","const text=r.sourceStale||projection.sourceConnected===false?'未同步':['running','waiting','review'].includes(r.status)?r.status:'';");
+content=content.replace('await navigate(t.webThreadId);','await globalThis.__RLFE_NATIVE_NAVIGATE__(t.webThreadId);');
 const font=await fs.readFile(path.join(web,'fonts/SmileySans-Oblique.woff2'));
 let loader=await fs.readFile(path.join(here,'loader.js'),'utf8');loader=loader.replace('__FONT_URL__',JSON.stringify('data:font/woff2;base64,'+font.toString('base64'))).replace('__WEB_BUNDLE__',content);
 await fs.writeFile(path.join(output,'runtime-template.js'),loader);await fs.copyFile(path.join(here,'bridge.cjs'),path.join(output,'native_asset_bridge.cjs'));
-await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:8,webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
+await fs.copyFile(path.join(here,'live-source.cjs'),path.join(output,'live-source.cjs'));
+await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:9,liveComponentHashes:Object.fromEntries(Object.entries(extras).map(([name,value])=>[name,hash(value)])),webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
 console.log(JSON.stringify({webVersion:manifest.version,sourceContentSha256:hash(original),bytes:loader.length}));

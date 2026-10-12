@@ -43,17 +43,22 @@
   const added=new Map();
   globalThis.__RLFE_NATIVE_WEB_TOPIC_ROWS__=()=>{if(!nativeMain)return [...document.querySelectorAll('.threadWrapper[data-thread-id]')];return [...document.querySelectorAll('.feed-main-list [data-feed-id]')].map(row=>{if(!added.has(row))added.set(row,row.getAttribute('data-thread-id'));row.dataset.threadId=row.dataset.feedId;return row;});};
   globalThis.__RLFE_NATIVE_WEB_TOPIC_NAME__=el=>el.querySelector('._9f5c521')?.textContent||'';
-  function chatThread(){
-    const ids=new Set();
+  function nativeContext(){
+    const threads=new Set(),chats=new Set();
     const header=document.querySelector('.lark-chat .groupDetail_content--TopicDetailPage')?.firstElementChild||document.querySelector('.lark-chat .chatContainer__headerWrapper');
+    const rootOf=n=>{for(let i=0;n?.return&&i<100;i++)n=n.return;return n;};
     for(const el of [header,header?.querySelector('.threadMoreButton'),...(header?.children||[])].filter(Boolean)){
       let f=el[Object.keys(el).find(k=>/^__react(?:Fiber|InternalInstance)/.test(k))];
-      for(let d=0;f&&d<28;d++,f=f.return){const p=f.memoizedProps||{},read=(o,k)=>typeof o?.get==='function'?o.get(k):o?.[k];for(const id of [p.threadId,read(p.thread,'id')])if(/^\d{10,30}$/.test(String(id||'')))ids.add(String(id));}
+      const root=rootOf(f),alt=rootOf(f?.alternate);if(root?.stateNode?.current&&root.stateNode.current!==root&&alt?.stateNode?.current===alt)f=f.alternate;
+      for(let d=0;f&&d<28;d++,f=f.return){const p=f.memoizedProps||{},read=(o,k)=>typeof o?.get==='function'?o.get(k):o?.[k];
+       for(const [set,values]of [[threads,[p.threadId,read(p.thread,'id')]],[chats,[p.chatId,read(p.chat,'id'),read(p.originChat,'id')]]])for(const id of values)if(/^\d{10,30}$/.test(String(id||'')))set.add(String(id));}
     }
-    return ids.size===1?[...ids][0]:null;
+    return {threadId:threads.size===1?[...threads][0]:null,webChatId:chats.size===1?[...chats][0]:null};
   }
+  function chatThread(){return nativeContext().threadId;}
+  globalThis.__RLFE_NATIVE_CONTEXT__=nativeContext;
   globalThis.__RLFE_NATIVE_CHAT_THREAD__=chatThread;
-  globalThis.__RLFE_USAGE_STATUS__=()=>({activeSession,visible:false});
+  globalThis.__RLFE_NATIVE_ACTIVE_SESSION__=()=>activeSession;
   globalThis.__RLFE_SHARED_PROJECT__=data=>{
     projection=data;
     const prefs=globalThis.__RLFE_SETTINGS_STATUS__?.().current||saved;
@@ -61,11 +66,11 @@
     const visible=new Set([...document.querySelectorAll('.feed-main-list [data-feed-id]')].map(n=>n.dataset.feedId));
     for(const [key,name]of Object.entries(prefs.aliases||{})){const id=key.slice(1);if(visible.has(id)&&!entries.some(e=>e.webThreadId===id))entries.push({webThreadId:id,name,summary:'',status:''});}
     globalThis.__RLFE_SET_TOPICS__?.({...data,entries});
-    const selected=nativeMain?String(globalThis.__feedStore?.getState?.().status?.activeFeedId||''):chatThread();
+    const selected=nativeMain?String(globalThis.__feedStore?.getState?.().status?.activeFeedId||data.nativeContext?.threadId||''):chatThread();
     activeSession=entries.find(e=>e.webThreadId===selected)?.sessionId||null;
     return {sourceConnected:!!data.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length,visibleRows:document.querySelectorAll('.feed-main-list [data-feed-id]').length,activeSession,resourceNavMounted:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.().visible===true};
   };
-  window.addEventListener('rlfe:topics',e=>{projection=e.detail||{entries:[]};const selected=nativeMain?String(globalThis.__feedStore?.getState?.().status?.activeFeedId||document.querySelector('[data-feed-active=true]')?.dataset.feedId||''):chatThread();activeSession=(projection.entries||[]).find(x=>x.webThreadId===selected)?.sessionId||null;});
+  window.addEventListener('rlfe:topics',e=>{projection=e.detail||{entries:[]};const selected=nativeMain?String(globalThis.__feedStore?.getState?.().status?.activeFeedId||document.querySelector('[data-feed-active=true]')?.dataset.feedId||projection.nativeContext?.threadId||''):chatThread();activeSession=(projection.entries||[]).find(x=>x.webThreadId===selected)?.sessionId||null;});
   function visible(){
     const ids=[...new Set([...document.querySelectorAll('.feed-main-list [data-feed-id]')].map(e=>e.dataset.feedId).filter(id=>/^\d{10,30}$/.test(id)))];
     if(nativeMain)globalThis.__RLFE_NATIVE_VISIBLE_FEEDS__?.(JSON.stringify(ids));
@@ -76,7 +81,7 @@
   observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-feed-id']});
   const onSettings=e=>{globalThis.__RLFE_SHARED_PROJECT__?.(projection);if(nativeMain)globalThis.__RLFE_SHARED_PREVIEW__?.(JSON.stringify(e.detail));};
   window.addEventListener('rlfe:settings',onSettings);
-  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:8,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
-  globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_USAGE_STATUS__'])delete globalThis[key];};
+  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:9,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
+  globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
   visible();
 })();

@@ -3,8 +3,9 @@ const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),
 const {randomBytes}=require('node:crypto'),{execFile}=require('node:child_process');
 const root=process.env.RLFE_TRIAL_ROOT||path.join(os.homedir(),'Library/Application Support/RemoteLab/Feishu Native Trial');
 const origin='http://127.0.0.1:19342', remote='https://index.jiujianian.dev';
+const {createLiveSource}=require('./live-source.cjs');
 const token=fs.readFileSync(path.join(root,'native-asset-capability'),'utf8').trim();
-const states=new Map(),streams=new Map(),pairings=new Map(),subscriptions=new Map();
+const states=new Map(),streams=new Map(),pairings=new Map(),subscriptions=new Map(),navigations=new Map();
 const disk=path.join(root,'native-v8-storage.json');
 const store=fs.existsSync(disk)?JSON.parse(fs.readFileSync(disk,'utf8')):{version:1,accounts:{}};
 const accountOK=x=>typeof x==='string'&&/^\d{10,30}$/.test(x);
@@ -13,7 +14,10 @@ const fail=message=>{throw Error(message)};
 function persist(){fs.writeFileSync(disk+'.next',JSON.stringify(store),{mode:0o600});fs.renameSync(disk+'.next',disk);}
 function own(account){if(!accountOK(account))fail('请先登录本地飞书账号');if(!store.accounts[account]){store.accounts[account]={storage:{},prefs:{}};if(!store.migratedTo){store.accounts[account].prefs=JSON.parse(fs.readFileSync(path.join(root,'web-display-choice.json'),'utf8'));store.migratedTo=account;}persist();}return store.accounts[account];}
 function emit(account,type,value,except){for(const [id,s]of streams)if(s.account===account&&id!==except)s.res.write(JSON.stringify({type,value})+'\n');}
-function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:8,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
+const source=createLiveSource({root,web:path.join(os.homedir(),'Library/Application Support/RemoteLab/Feishu Web Live'),onChange:publishTopics});
+function nativeProjection(account){const pages=[...states.values()].filter(s=>s.account===account),ids=pages.flatMap(s=>s.ids||[]);return {...source.projection(account,ids),nativeContext:pages.find(s=>s.kind==='chat')?.nativeContext||null};}
+function publishTopics(){for(const account of new Set([...streams.values()].map(s=>s.account)))emit(account,'topics',nativeProjection(account));}
+function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:9,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
 function safePrefs(v,account){const fields=['enabled','usageEnabled','theme','font','bodyFont','readingEnabled','size','line','width','density','layout','expand','aliases','petEnabled','petKind','petMotion','petSize','petX','petY','sortMode','pins'];if(!v||Array.isArray(v)||Object.keys(v).some(k=>!fields.includes(k))||JSON.stringify(v).length>131072)fail('显示设置无效');const old=own(account).prefs;const ids=new Set([...states.values()].filter(s=>s.account===account).flatMap(s=>s.ids||[]));if(Object.entries(v.aliases||{}).some(([k,n])=>!/^:\d{10,30}$/.test(k)||typeof n!=='string'||n.length>60||!ids.has(k.slice(1))&&!Object.hasOwn(old.aliases||{},k)))fail('只允许修改当前账号的话题别名');return v;}
 const routes={
  'rlfe:message-settings-request':{prefix:'feishu-web-settings',pattern:/^fwset_[\w-]{43}$/,ops:{read:['GET','replies'],save:['POST','replies'],runtime:['GET','runtime'],model:['POST','runtime'],disconnect:['DELETE','connection']}},
@@ -43,13 +47,13 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   if(req.headers.authorization!=='Bearer '+token){reply(403,{error:'Invalid helper capability'});return;}
   const account=req.headers['x-native-account'],id=req.headers['x-native-client'];
-  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:8,pages:[...states.values()]});return;}
+  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:9,pages:[...states.values()]});return;}
   if(u.pathname==='/verify'&&req.method==='POST'){for(const s of streams.values())s.res.write(JSON.stringify({type:'verify'})+'\n');reply(200,{requested:true});return;}
   if(!clientOK(id)||!accountOK(account))fail('请先确认当前本地飞书账号');
-  if(u.pathname==='/events'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'application/x-ndjson'});res.flushHeaders();streams.get(id)?.res.end();streams.set(id,{res,account});res.write(JSON.stringify({type:'settings',value:own(account).prefs})+'\n');res.on('close',()=>{if(streams.get(id)?.res===res){streams.delete(id);states.delete(id);subscriptions.get(id)?.abort();record();}});return;}
+  if(u.pathname==='/events'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'application/x-ndjson'});res.flushHeaders();streams.get(id)?.res.end();streams.set(id,{res,account});res.write(JSON.stringify({type:'settings',value:own(account).prefs})+'\n');res.write(JSON.stringify({type:'topics',value:nativeProjection(account)})+'\n');res.on('close',()=>{if(streams.get(id)?.res===res){streams.delete(id);states.delete(id);subscriptions.get(id)?.abort();record();}});return;}
   const b=req.method==='POST'?JSON.parse(await readBody(req,180000)):{};let result;
-  if(u.pathname==='/initial')result={settings:own(account).prefs,topics:{sourceConnected:false,entries:[]}};
-  else if(u.pathname==='/state'){if(!['list','chat'].includes(b.kind)||!Array.isArray(b.ids)||b.ids.length>250)fail('Invalid state');states.set(id,{...b,id,account});record();result={ok:true};}
+  if(u.pathname==='/initial')result={settings:own(account).prefs,topics:nativeProjection(account)};
+  else if(u.pathname==='/state'){if(!['list','chat'].includes(b.kind)||!Array.isArray(b.ids)||b.ids.length>250)fail('Invalid state');states.set(id,{...b,id,account});record();publishTopics();result={ok:true};}
   else if(u.pathname==='/save'){own(account).prefs=safePrefs(b.value,account);persist();emit(account,'settings',b.value,id);result={ok:true};}
   else if(u.pathname==='/preview'){const v={...b.value};delete v.previewing;safePrefs(v,account);emit(account,'settings',v,id);result={ok:true};}
   else if(u.pathname==='/storage/get'){if(typeof b.key!=='string'||!b.key.startsWith('feishuWebExplore.'))fail('Invalid key');result={[b.key]:own(account).storage[b.key]??null};}
@@ -59,6 +63,13 @@ const server=http.createServer(async(req,res)=>{
   else if(u.pathname==='/topics/stop'){const old=subscriptions.get(id);if(old?.portId===b.portId)old.abort();result={ok:true};}
   else if(u.pathname==='/connect'){if(!['settings','workspace','topics'].includes(b.kind)||!/^[a-f0-9]{32}$/.test(b.state||'')||typeof b.popup!=='string')fail('连接请求无效');const key=randomBytes(24).toString('base64url');for(const[k,p]of pairings)if(p.until<Date.now())pairings.delete(k);pairings.set(key,{kind:b.kind,state:b.state,popup:b.popup,account,until:Date.now()+600000});await openURL(origin+'/pair/start?key='+key);result={opened:true};}
   else if(u.pathname==='/external'){const url=new URL(b.url);if(url.protocol!=='https:'||url.username||url.password||!['index.jiujianian.dev','zhangyu.jiujianian.dev','qcnatfwzm13g.feishu.cn'].includes(url.hostname))fail('链接不受支持');await openURL(url.href);result={opened:true};}
+  else if(u.pathname==='/refresh-source'){await source.refresh();publishTopics();result={ok:true};}
+  else if(u.pathname==='/navigate'){
+   if(!/^\d{10,30}$/.test(b.id||'')||!nativeProjection(account).boards.some(board=>board.topics.some(t=>t.webThreadId===b.id)))fail('话题未核实');
+   const page=[...states.values()].find(s=>s.account===account&&s.kind==='list'),stream=page&&streams.get(page.id);if(!stream)fail('原生列表未连接');
+   const requestId=randomBytes(16).toString('hex');result=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{navigations.delete(requestId);reject(Error('原生话题打开超时'));},14000);navigations.set(requestId,{account,client:page.id,finish:error=>{clearTimeout(timer);navigations.delete(requestId);error?reject(Error(error)):resolve({ok:true});}});stream.res.write(JSON.stringify({type:'navigate',value:{id:b.id,requestId}})+'\n');});
+  }
+  else if(u.pathname==='/navigation-result'){const p=navigations.get(b.requestId);if(!p||p.account!==account||p.client!==id)fail('导航回执无效');p.finish(b.error?String(b.error).slice(0,200):null);result={ok:true};}
   else if(u.pathname==='/open-settings'){emit(account,'open-settings',true,id);result={ok:true};}
   else if(u.pathname==='/verification'){fs.writeFileSync(path.join(root,'native-v8-verification.json'),JSON.stringify(b,null,2),{mode:0o600});result={ok:true};}
   else{reply(404,{error:'Unknown native operation'});return;}reply(200,result);
@@ -66,4 +77,5 @@ const server=http.createServer(async(req,res)=>{
 });
 async function readBody(req,limit){const chunks=[];let n=0;for await(const b of req){n+=b.length;if(n>limit)fail('请求过大');chunks.push(b);}return Buffer.concat(chunks).toString();}
 server.listen(19342,'127.0.0.1',()=>{record();console.log('Native 1.2 helper ready');});
-process.on('SIGTERM',()=>{for(const c of subscriptions.values())c.abort();for(const s of streams.values())s.res.end();server.close();process.exit(0);});
+const heartbeat=setInterval(()=>{for(const s of streams.values())s.res.write(JSON.stringify({type:'heartbeat'})+'\n');},15000);heartbeat.unref();
+process.on('SIGTERM',()=>{clearInterval(heartbeat);source.close();for(const c of subscriptions.values())c.abort();for(const s of streams.values())s.res.end();server.close();process.exit(0);});
