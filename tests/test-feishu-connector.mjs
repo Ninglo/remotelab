@@ -1615,6 +1615,20 @@ try {
     sourceRouteId: 'default',
     target: { chatType: 'p2p', chatId: 'chat_for_scope', conversationKind: 'main', messageId: 'msg_for_scope' },
   }, 'each connector request snapshots its own reply destination');
+  const announcementRuntime = {
+    authCookie: 'session_token=test-cookie',
+    config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionTool: 'codex', systemPrompt: '', storageDir: join(tempHome, 'announcements') },
+    appClient: { docx: { v1: {
+      chatAnnouncement: { get: async () => ({ data: { announcement_type: 'docx', revision_id: 3 } }) },
+      chatAnnouncementBlock: { list: async () => ({ data: { items: [{ block_id: 'b', block_type: 2, text: { elements: [{ text_run: { content: 'Use the project checklist.' } }] } }] } }) },
+    } } },
+  };
+  await submitRemoteLabRequest(announcementRuntime, {
+    chatType: 'group', chatMode: 'topic', chatId: 'announcement-group', threadId: 'announcement-topic',
+    messageId: 'announcement-input', messageText: 'Start the task', sender: { openId: 'ou_scope_test' },
+  });
+  assert.equal(submittedPayload.sourceContext.groupAnnouncement.revision, '3');
+  assert.equal(submittedPayload.sourceContext.groupAnnouncement.messages[0].text, 'Use the project checklist.');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }
