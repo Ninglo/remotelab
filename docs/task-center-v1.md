@@ -325,3 +325,10 @@ This distinction is visible in the interface copy. `paused` or `cancelled` is ne
 - Fixed/new Session contract: `lib/scheduled-session.mjs`
 - Authenticated routes: `chat/router-control-routes.mjs`
 - UI: `static/chat/task-center.js`, `static/chat/task-center.css`, `templates/chat.html`
+
+## Routine monitoring reads
+
+The monitoring observer uses a separate current-health projection from the same
+Schedule, Trigger and Run/Request records. It does not build this page’s complete
+execution history, package lineage or ownership enrichment on every check. The
+Task Center still retains those details and full history. See [Operations overview](monitoring.md#routine-task-health-reads) for collection scope and failure semantics.
