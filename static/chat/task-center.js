@@ -839,6 +839,31 @@
     main.appendChild(detail); card.appendChild(main); return card;
   }
 
+  function renderFlowPlan(plan) {
+    const view = createNode("section", "task-flow-plan");
+    view.append(createNode("h3", "", plan.title), createNode("p", "task-flow-plan-status", plan.status), createNode("p", "task-flow-plan-summary", plan.summary));
+    for (const stage of plan.stages || []) {
+      if (stage.connector) {
+        const connector = createNode("p", "task-flow-plan-connector");
+        const arrow = createNode("span", "", "↓"); arrow.setAttribute("aria-hidden", "true");
+        connector.append(arrow, createNode("span", "", stage.connector)); view.appendChild(connector);
+      }
+      const nodes = createNode("div", "task-flow-plan-stage");
+      nodes.dataset.columns = String(stage.nodes.length);
+      if (stage.kind) nodes.classList.add("task-flow-plan-" + stage.kind);
+      for (const node of stage.nodes) {
+        const card = createNode("article", "task-flow-plan-node");
+        if (node.label) card.appendChild(createNode("p", "task-flow-label", node.label));
+        card.appendChild(createNode("h4", "", node.title));
+        for (const line of node.lines || []) card.appendChild(createNode("p", "", line));
+        nodes.appendChild(card);
+      }
+      view.appendChild(nodes);
+    }
+    if (plan.footer) view.appendChild(createNode("p", "task-flow-plan-footer", plan.footer));
+    return view;
+  }
+
   function renderFlows() {
     if (!flowsPanel) return;
     flowsPanel.replaceChildren();
@@ -855,7 +880,7 @@
     nav.setAttribute("role", "group");
     nav.setAttribute("aria-label", flowTranslate("tasks.flows.title", "Automation flows"));
     for (const group of groups) {
-      const button = createNode("button", "task-center-secondary", flowTranslate(`tasks.flows.${group.id}`, group.id));
+      const button = createNode("button", "task-center-secondary", group.title || flowTranslate(`tasks.flows.${group.id}`, group.id));
       button.type = "button";
       button.setAttribute("aria-pressed", String(selectedFlow === group.id));
       button.addEventListener("click", () => { selectedFlow = group.id; renderFlows(); flowsPanel.querySelector('button[aria-pressed="true"]')?.focus(); });
@@ -866,20 +891,29 @@
     flowsPanel.append(title, nav);
     const group = groups.find(item => item.id === selectedFlow);
     const diagram = createNode("div", "task-flow-diagram");
-    diagram.setAttribute("aria-label", flowTranslate(`tasks.flows.${group.id}`, group.id));
+    diagram.setAttribute("aria-label", group.title || flowTranslate(`tasks.flows.${group.id}`, group.id));
+    let current = diagram;
+    if (group.plan) {
+      diagram.appendChild(renderFlowPlan(group.plan));
+      current = createNode("details", "task-flow-current");
+      const key = `current:${group.id}`; current.open = openFlowNotes.has(key);
+      current.appendChild(createNode("summary", "", flowTranslate("tasks.flows.current", "Current tasks and execution records")));
+      current.addEventListener("toggle", () => { if (!current.isConnected) return; if (current.open) openFlowNotes.add(key); else openFlowNotes.delete(key); });
+      diagram.appendChild(current);
+    }
     const source = createNode("div", "task-flow-read");
     source.appendChild(createNode("span", "task-flow-label", flowTranslate("tasks.flows.inputs", "Inputs and reuse")));
     if (group.readAt) source.appendChild(createNode("strong", "task-flow-read-time", group.readAt));
     source.appendChild(createNode("p", "", group.read));
-    diagram.appendChild(source);
+    current.appendChild(source);
     if (group.note) {
       const scope = createNode("aside", "task-flow-scope");
       scope.append(createNode("strong", "", flowTranslate("tasks.flows.scope", "Current scope and planned changes")), createNode("p", "", group.note));
-      diagram.appendChild(scope);
+      current.appendChild(scope);
     }
-    diagram.appendChild(createNode("p", "task-flow-reading-guide", flowTranslate("tasks.flows.readingGuide", "Read each task from start to delivery. Rows are separate tasks, not a sequence.")));
+    current.appendChild(createNode("p", "task-flow-reading-guide", flowTranslate("tasks.flows.readingGuide", "Read each task from start to delivery. Rows are separate tasks, not a sequence.")));
     const branches = createNode("div", "task-flow-branches");
-    diagram.appendChild(branches); flowsPanel.appendChild(diagram);
+    current.appendChild(branches); flowsPanel.appendChild(diagram);
     for (const row of group.rows || []) {
       const route = createNode("article", "task-flow-row");
       const heading = createNode("div", "task-flow-step task-flow-heading");
