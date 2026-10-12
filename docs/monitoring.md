@@ -2,6 +2,25 @@
 
 Monitor Overview (`?tab=tasks&monitor=overview`) presents Session, shared resources, and API in that order. The default view shows current summary metrics and named anomalies; details expand on demand. Resources contain only disks, account allowance, and Token consumption. Historical charts use recorded samples, never invented daily totals. Automations, settings, project tasks and their controls retain their existing separate views.
 
+## Inspection scope and cost labels
+
+The overview's “检查范围与开销” panel distinguishes the independent periodic
+observer, on-demand Session/usage queries and incident-driven alerts/recovery.
+It explains local script work, model Tokens and recorded Feishu API calls
+separately. Background Tokens include other background operations and are not a
+monitoring-only bill; CPU/memory/local-read costs have no continuous aggregate yet.
+The panel does not extrapolate an old benchmark into current costs.
+
+Observer registration comes from the existing `resource-alerts` entry in
+`automation-background.json`. Cadence is verified from its timer in the configured
+service observations (same systemctl call, no extra polling). Only a verified
+minute-only calendar receives “每分钟”; other/unknown schedules remain unverified.
+A missing registration or unavailable timer never appears as an enabled minute
+observer. Last completed observation comes from the alert ledger, separately from
+page query generation time; a minute observer with a record older than three
+periods gets a stale-record note. Merely viewing the panel starts no monitor,
+model job, external API probe or new timer. Existing refresh/cache behavior stays.
+
 ## Capacity and seven-day charts
 
 Disk rings show the observed percentage of capacity used, alongside the existing disk table. Account quota meters retain each independent allowance window; unknown quotas have no filled meter. Neither graphic is task completion or a combined account allowance.

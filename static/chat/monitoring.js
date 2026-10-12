@@ -162,7 +162,51 @@
       description: '前台运行最近回传值的均值；不是注入字节数', samples: day => `${day.contextSamples} / ${day.foregroundRuns} 次前台运行有回传` });
   }
 
+  function renderScope() {
+    const root = document.getElementById("monitoringScope");
+    if (!root) return;
+    const wasOpen = root.querySelector("details")?.open || false;
+    root.replaceChildren(node("h2", "检查范围与开销"));
+    if (!value) { root.appendChild(node("p", "检查配置尚未取得，不能确认后台巡检是否运行。", "monitoring-note")); return; }
+    const observation = value.observation || {};
+    const cadence = observation.cadenceSeconds === 60 ? "每分钟" : "频率待核实";
+    const live = observation.configured && observation.status === "healthy";
+    const check = !observation.configured ? "尚未确认后台巡检配置"
+      : live ? `后台巡检：${cadence}` : "后台巡检未确认正常运行";
+    root.appendChild(node("p", `${check} · 最近完成 ${time(observation.lastObservedAt)}。页面统计在打开或刷新时查询，切回页面时按需更新。`, "monitoring-note"));
+    if (live && observation.cadenceSeconds && Number.isFinite(Date.parse(observation.lastObservedAt))
+      && Date.now() - Date.parse(observation.lastObservedAt) > observation.cadenceSeconds * 3000) {
+      root.appendChild(node("p", "最近巡检记录已超过三个检查周期，请核查后台是否正常完成。", "monitoring-note"));
+    }
+    const details = node("details"); details.open = wasOpen;
+    details.appendChild(node("summary", "查看检查内容、频率和消耗怎么算"));
+    const checks = [
+      [`服务（${value.services?.length ?? "—"} 项）、磁盘（${value.disks?.length ?? "—"} 项）、自动化任务`, live ? `${cadence}巡检，也可页面查询` : "页面可查询；后台状态待核实", "本机服务状态、磁盘和任务记录；普通检查不调用模型"],
+      ["账号额度", "巡检或页面查询时读取已有观测", "额度采集器提供数据；各账号时间不同，以最近观测为准"],
+      ["飞书 API", "巡检或页面查询时汇总日志", "读取已记录调用与失败，不为检查额外调用飞书；不等于企业账单"],
+      ["Session 与 Token 用量", "打开、刷新或切回页面时按需查询", "执行记录及用量账本；页面展示不启动模型"],
+      ["异常提醒与补救", "发现符合条件的新故障时触发", observation.recoveryEnabled ? "提醒可能调用飞书，自动补救可能调用模型；有去重和重试限制" : "提醒可能调用飞书；当前未开启自动补救"],
+    ];
+    const checksList = node("div", "", "monitoring-scope-checks");
+    for (const [title, frequency, source] of checks) {
+      const item = node("section");
+      item.append(node("h3", title), node("p", frequency), node("p", source, "monitoring-note"));
+      checksList.appendChild(item);
+    }
+    details.appendChild(checksList);
+    if (value.services?.length) {
+      const scope = node("details"); scope.appendChild(node("summary", "查看纳入巡检的服务"));
+      table(scope, ["服务", "当前状态"], value.services.map(service => [service.label, status(service.status)]));
+      details.appendChild(scope);
+    }
+    details.appendChild(node("p", "Token 总量累计所选期间内有记录的模型输入与输出，包含前台和后台；输入可能重复使用历史上下文，不等于新增注入量。后台 Token 也不全是监管消耗。", "monitoring-note"));
+    details.appendChild(node("p", "本机巡检的 CPU、内存和磁盘读取尚无持续开销统计，不能从 Token 数推算；页面也不把一次测试结果当作实时用量。", "monitoring-note"));
+    details.appendChild(node("p", `页面数据生成于 ${time(value.generatedAt)}。最近巡检完成时间来自后台记录，二者分别显示；旧时间不代表刚刚检查过。`, "monitoring-note"));
+    root.appendChild(details);
+  }
+
   function render() {
+    renderScope();
     renderSessionTrends();
     content.replaceChildren();
     if (apiSummary) {
@@ -276,10 +320,10 @@
     if (!value.usage) usage.appendChild(node("p", t("noUsage"), "monitoring-note"));
     else {
       const totals = value.usage.totals;
-      summaryMetrics(usage, [["期间总用量", number(totals.totalTokens), "Token"],
+      summaryMetrics(usage, [["期间总用量", number(totals.totalTokens), "Token · 含前台与后台"],
         ["后台用量", number(totals.backgroundTokens), Number.isFinite(totals.backgroundShare) ? `占总量 ${percent(totals.backgroundShare * 100)}` : "占比未知"],
         ["输入缓存占比", percent(Number.isFinite(totals.cachedInputShare) ? totals.cachedInputShare * 100 : NaN), "已记录输入中的缓存份额"]]);
-      usage.appendChild(node("p", `${time(value.usage.window.start)} — ${time(value.usage.window.end)}`, "monitoring-note"));
+      usage.appendChild(node("p", `${time(value.usage.window.start)} — ${time(value.usage.window.end)} · 累计模型输入与输出，不是当前上下文大小，也不是仅监管的消耗。`, "monitoring-note"));
       if (value.usage.dailyTrend) trendChart(usage, value.usage.dailyTrend, {
         key: 'totalTokens', title: '近 7 天 Token 用量', unit: 'Token',
         description: 'UTC 自然日，今天未结束；含前后台，按运行结束／记账日期归集', samples: day => `${day.runCount} 次运行记录`,

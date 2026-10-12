@@ -782,3 +782,8 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-view-tabs button:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
 #taskViewTimelinePanel[hidden], #taskViewFlowsPanel[hidden], #taskViewTasksPanel[hidden] { display: none; }
 #taskViewFlowsPanel .task-center-flows { margin-top: 0; padding-top: 0; border-top: 0; }
+
+.monitoring-scope-checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; margin: 16px 0; }
+.monitoring-scope-checks > section { min-width: 0; padding: 12px; border: 1px solid var(--border-color, #ddd); border-radius: 8px; }
+.monitoring-scope-checks h3 { margin: 0 0 8px; font-size: 14px; }
+.monitoring-scope-checks p { margin: 6px 0; overflow-wrap: anywhere; }

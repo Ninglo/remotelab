@@ -221,3 +221,28 @@ test('seven-day trends use all deduplicated records, keep summary window and dis
     assert.equal((await queryUsageLedger({ ...options, includeDailyTrend: true, sessionId: 's1' })).dailyTrend.days[2].sessionCount, 1);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('observer cadence comes from its registered live timer and completion time stays separate from page time', async () => {
+  let registered = true, calendar = '*-*-* *:*:00', state = 'active';
+  const item = { label: 'Observer', unit: 'observer.timer', scope: 'system' };
+  const reader = () => createMonitoringReader({ now: () => now,
+    read: async () => JSON.stringify({ services: [item], alertDelivery: {}, recovery: { enabled: true } }),
+    getRecord: async file => file.endsWith('automation-background.json') ? { mechanisms: registered
+      ? [{ id: 'resource-alerts', source: { kind: 'systemd', unit: item.unit } }] : [] }
+      : file.endsWith('monitoring-alerts.json') ? { observedAt: '2026-10-03T05:59:00Z' } : null,
+    getTasks: async () => [], getAccounts: async () => null, getUsage: async () => null,
+    getFs: async () => ({ blocks: 100, bsize: 1024 ** 3, bfree: 80, bavail: 80, files: 0, ffree: 0 }), getStat: async () => ({ dev: 1 }),
+    getService: entry => readService(entry, async () => ({ stdout: `LoadState=loaded\nActiveState=${state}\nResult=success\nTimersCalendar={ OnCalendar=${calendar} ; next_elapse=Sat 2026-10-03 06:01:00 UTC }\nLastTriggerUSec=Sat 2026-10-03 06:00:00 UTC\n` })),
+  });
+  let value = await reader()();
+  assert.equal(value.observation.cadenceSeconds, 60);
+  assert.equal(value.observation.status, 'healthy');
+  assert.notEqual(value.observation.lastObservedAt, value.generatedAt);
+  calendar = '*-*-* 04:00:00';
+  value = await reader()(); assert.equal(value.observation.cadenceSeconds, null);
+  state = 'inactive'; value = await reader()(); assert.notEqual(value.observation.status, 'healthy');
+  registered = false; value = await reader()();
+  assert.equal(value.observation.source, 'unverified');
+  assert.equal(value.observation.cadenceSeconds, null);
+  assert.equal(value.observation.status, 'unknown');
+});
