@@ -28,6 +28,7 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
   const readAccepted = deps.accepted || ((run, request) => readNativeInputReceipt(runDir(run), request));
   const groups = [
     ['conversationContext', source.chatId, 100],
+    ['groupAnnouncement', source.chatId, 1],
     ['linkedProjectContext', source.linkedProjectContext?.sourceChatId, 20],
   ];
   const entries = groups.flatMap(([name, chat, limit]) => (source[name]?.messages || []).slice(0, limit)
@@ -86,7 +87,11 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
       const generatedHere = identity && chat === source.chatId && entry.edited === false
         && (entry.senderType || entry.authorRef?.senderType) === 'app' && own.has(entry.messageId);
       const packetKey = id && JSON.stringify([id, hash]);
-      if (repeated || generatedHere || packetKey && selected.has(packetKey)) { receipt.stats.removed++; return false; }
+      if (repeated || generatedHere || packetKey && selected.has(packetKey)) {
+        // Carry proven announcement knowledge through later accepted inputs.
+        if (name === 'groupAnnouncement' && repeated) receipt.entries.push({ key: id, hash });
+        receipt.stats.removed++; return false;
+      }
       if (id) { receipt.entries.push({ key: id, hash }); selected.add(packetKey); }
       receipt.stats.retained++;
       return true;

@@ -109,6 +109,16 @@ Notes:
 - `backfill` creates a fresh reply session and drafts a catch-up reply for recent silent text messages; add `--dry-run` to inspect the target and prompt without sending
 - if `backfill` fails with `Bot/User can NOT be out of the chat`, the bot is no longer in that chat, so the draft exists but Feishu will refuse delivery until the bot is added back
 
+### Group announcement context
+
+New group topics/threads automatically read their own group's announcement using
+Bot scope `im:chat.announcement:read`. Text and links are captured per topic;
+subsequent replies reuse that snapshot and omit it from the model input after
+confirmed Harness receipt. New topics read later edits. Empty, unreadable,
+truncated and non-text content are marked explicitly. No announcement is edited.
+See [topic announcement context](connector-turn-context.md#feishu-topic-announcements-2026-10-12)
+for limits, legacy support, retries and existing-topic rollout behavior.
+
 ### Harness-side Feishu CLI access
 
 RemoteLab does not expose document or Wiki reads as connector tools. The four
