@@ -485,3 +485,27 @@ test('separate key 2 double-stop never starts from idle; key 1 never stops an ac
   assert.equal(tap(25, 3000), undefined); assert.equal(tap(25, 3700), undefined);
   assert.equal(tap(25, 4000), 'stop');
 });
+
+test('retention waits for observation window and preserves pending, local and unverified audio', async (t) => {
+  const { pruneUploadedRecordings } = await import('../lib/recording/retention.mjs');
+  const root = await temporary(t), day = 86400000, now = Date.parse('2026-10-15T12:00:00Z');
+  const policy = config({ retention: { days: 3, startedAt: new Date(now - 3 * day).toISOString() } });
+  assert.throws(() => config({ retention: { days: 3 } }), /startedAt/);
+  assert.equal(config().retention.days, 0);
+  const records = [];
+  for (let i = 0; i < 5; i++) {
+    const record = { id: 'rec_' + String(i).padStart(32, '0'), status: i === 1 ? 'pending' : 'submitted',
+      submissionMode: i === 2 ? 'local' : 'automatic', sessionId: 'retention_session', runId: 'run_accepted',
+      endedAt: new Date(now - 4 * day).toISOString(), submittedAt: new Date(now - 3 * day).toISOString(),
+      segments: [{ filename: '00000.wav', assetId: 'asset_' + i, ready: true }] };
+    await saveRecord(root, record); await writeFile(join(recordDir(root, record.id), '00000.wav'), Buffer.alloc(100)); records.push(record);
+  }
+  const verifyAsset = async (record, segment) => ({ id: segment.assetId, sessionId: record.sessionId, status: record.id === records[3].id ? 'pending' : 'ready', sizeBytes: record.id === records[4].id ? 99 : 100 });
+  assert.deepEqual((await pruneUploadedRecordings(root, policy, { now: now - 1, verifyAsset })).removed, []);
+  const result = await pruneUploadedRecordings(root, policy, { now, verifyAsset });
+  assert.deepEqual(result.removed, [records[0].id]); assert.equal(result.errors.length, 2);
+  await assert.rejects(stat(join(recordDir(root, records[0].id), '00000.wav')), { code: 'ENOENT' });
+  assert.ok((await loadRecord(root, records[0].id)).localAudioRemovedAt);
+  for (const record of records.slice(1)) assert.equal((await stat(join(recordDir(root, record.id), '00000.wav'))).size, 100);
+  assert.deepEqual((await pruneUploadedRecordings(root, policy, { now, verifyAsset })).removed, []);
+});
