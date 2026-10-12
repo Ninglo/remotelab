@@ -24,6 +24,8 @@ Read these first when you need the current truth:
 
 ## Documentation delivery
 
+[飞书 Web 话题状态同步](feishu-web-topics.md)说明普通插件的只读账号连接、真实运行状态推送、可见版本号和 Mac 后台更新；[消息设置](feishu-web-settings.md)继续维护本人回复选择与对话模型。
+
 [说明交付流程与候选标准操作](documentation-delivery.md)包含可复用的五步流程、适用条件、失败处理，以及RemoteLab的提交检查、原文生成及实例事件发布；网站“使用与维护”读取原文生成页。[副屏使用说明](../display/USER_GUIDE.md)面向日常用户，部署与接口仍沿原维护文档。
 
 ## Keep These In Sync
