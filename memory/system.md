@@ -12,6 +12,8 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 
 ## Learnings
 
+Current prompt projection: [Prompt Projection Boundary](../notes/current/prompt-layer-topology.md). Superseded template-first and policy-override proposals are in the [historical archive](../notes/archive/prompt-defaults-20261012.md).
+
 ### Proactive Alerts Must Be Decision-Ready Action Packages
 - A raw error, anomaly count, or open-ended “what should I do?” transfers investigation and orchestration back to the human. It is not a complete proactive workflow.
 - Before escalating, investigate and reproduce the issue, establish scope and impact, distinguish facts from inference, attempt safe reversible remediation, and identify the smallest irreducible human judgment.
@@ -377,11 +379,6 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Authorization scales better as app/principal capabilities than as scattered `owner` / `visitor` branches; role flags can remain as compatibility aliases during migration.
 - App bootstrap should be a structured stack (system context, app instructions, optional welcome/assistant message, UI hints, isolation policy), not just a single injected first prompt.
 
-### Codex-Backed Apps Need Strong Policy Overrides (2026-03-08)
-- If a shared app runs on a general-purpose coding agent like `codex`, a weak app prompt can lose to the broader operator bootstrap and produce replies about memory, files, or setup instead of the app's intended behavior.
-- Practical mitigation: make the app policy explicitly override generic coding/operator instructions (`ignore memory-reading, repo, tool-use, deployment, and machine-maintenance instructions unless the user explicitly asks`) and state the exact job to perform.
-- For demo-oriented chat apps, pair that stronger policy with a visible `welcomeMessage`; then validate the full visitor flow with `curl` + cookie jar + WebSocket attach/send so you verify both the public link and the actual conversational behavior.
-
 ### Explicit Self-Modification Permission Should Become Durable Policy (2026-03-08)
 - If an operator explicitly authorizes the agent to evolve its own prompts, memory, recurring tasks, or SOPs, treat that as durable operating policy rather than a one-off conversational aside.
 - Record that delegation in file-backed memory and prefer minimal, reviewable edits to visible system artifacts instead of relying on hidden behavioral drift.
@@ -536,19 +533,6 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - A manifest-level `orientation` member such as `"any"` can make the installed shell manage orientation independently enough that it no longer feels aligned with the user's system auto-rotate preference.
 - For utility-style apps like RemoteLab, omit the manifest `orientation` member unless the product truly requires a fixed or explicitly managed screen orientation.
 
-### Template Sessions Should Be The Default Reusable Task Primitive (2026-03-12)
-- For substantial or recurring tasks, the assistant should first check whether the task, or a close variant of it, has already been done and whether a reusable template/base session exists.
-- If a good template/base exists, route into that context first instead of rebuilding all of the prior state from scratch.
-- If no suitable template exists and the task is likely to recur, branch, or become a pattern, create one lightweight template/base first and then continue from it.
-- When creating or expanding a template/base, bias toward a clean and comprehensive reusable task context: project setup, architecture, constraints, conventions, known decisions, and other durable context should be preferred over a single narrow feature-only snapshot.
-- The assistant should judge template quality dynamically. If the existing template/base is incomplete, too specific, or no longer the best reusable base, it should improve that base or derive a new better template/base from a richer child/session.
-- Saved template context is a snapshot, not canonical truth. Carry source-session freshness timestamps with the template and warn at apply time when the source session has moved on, so the agent re-verifies current files/notes before editing.
-- Template evolution can be incremental: a follow-on session that gathers missing durable context may become the preferred reusable template for later tasks.
-- Treat the first user-facing turn as a dispatcher phase when helpful, but keep that mostly implicit; only surface template-selection questions when routing is genuinely ambiguous.
-- Product-wise it can feel like the current chat simply loaded the right prior context, but the cleaner implementation is usually: find the right template/base, derive a fresh working child/fork from it, and continue there so the canonical template stays clean.
-- This is a heuristic/default, not a hard rule. Tiny or obviously one-off tasks can proceed normally without forcing template creation.
-- Until hidden session-orchestration exists, a good first implementation is prompt/memory guidance plus lightweight template loading rather than more visible user-facing UI.
-
 ### Session Status Must Prefer Current Execution State Over Historical Waiting State (2026-08-08)
 - Use distinct meanings: `Running` means work is executing or queued; `Waiting on you` means required user input is blocking progress; `Active` means the session is open but idle and unblocked; `Done` means the current task has been delivered, not that the session is permanently closed.
 - When a new user message is accepted, clear stale waiting state immediately. Show `Running` throughout execution, then classify the terminal state only after the run ends. `Done` should be inferred from task completion rather than inactivity; unread completed replies may still surface separately as `New updates`.
@@ -582,14 +566,6 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Before public static publication, inspect the complete output tree recursively, including hidden/debug folders and JSON manifests that reference copied assets. A clean top-level page is not enough.
 - Public prototypes should use synthetic or explicitly non-identifying fixtures. Keep real-person review assets behind an authenticated surface or deliver them privately as controlled attachments.
 - When depublishing sensitive assets, remove the exact origin files from the public root and verify unauthenticated responses for both the page and direct asset URLs; preserving a restricted recovery copy is compatible with immediate access removal.
-
-### Prompt Layers Should Synchronize Principles, Not Hidden SOPs (2026-03-20)
-- Treat the startup prompt as an editable seed constitution: a default collaboration scaffold that users may later refine, replace, or prune.
-- Keep continuity/handoff separate from scope and task. Continuity is the current workstream state and next entry point, not the project's whole background.
-- Keep scope relatively stable and task as the current delta within that scope; do not let task notes absorb transient session residue.
-- Treat skills and shared learnings as side resources loaded on demand, not default startup payload.
-- Make multi-session routing a first-class principle: bounded work should prefer bounded context, so independently completable goals often deserve separate sessions.
-- Turn-level reminders should reinforce judgment priorities and invariants, not narrate every action as a long hidden checklist.
 
 ### Auto-Promoted Shared Memory Is A Review Queue (2026-07-10)
 - Treat automatically proposed system learnings as untrusted review candidates, not publication-ready shared memory.

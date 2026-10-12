@@ -130,6 +130,27 @@ try {
   assert.equal(result.results[0].status, 'verified');
   assert.match(await context('飞书权限'), /资源 ACL 分别核验/);
   assert.doesNotMatch(await context('解释方案'), /判断飞书权限前/);
+  const conciseMethod = { ...method, key: 'concise-resource-check',
+    content: '读取设备状态后按返回状态继续处理。', cues: ['设备状态'], conditions: '检查设备状态时', exceptions: '' };
+  result = await apply([conciseMethod], sources('concise', '检查设备状态', '{"code":0}', 0));
+  assert.equal(result.results[0].status, 'verified', 'a tested method needs no invented exception');
+  const conciseContext = await context('设备状态');
+  assert.match(conciseContext, /读取设备状态/);
+  assert.doesNotMatch(conciseContext, /例外：|当前明确要求优先；权限和资源状态须现场核对/);
+  result = await apply([{ ...conciseMethod, key: 'missing-conditions', conditions: '' }], sources('no_conditions', '检查设备状态', '{"code":0}', 0));
+  assert.equal(result.results[0].status, 'observed', 'applicability conditions remain required');
+  const reviewSnapshot = await snapshot();
+  const older = reviewSnapshot.handbook.entries.find(e => e.key === conciseMethod.key);
+  const recent = Array.from({ length: 60 }, (_, i) => ({ ...older, id: `recent_${i}`, key: `recent-${i}`,
+    cues: ['无关主题'], content: '另一项工作的方法', updatedAt: '2099-01-01' }));
+  const oversized = { ...older, id: 'oversized', key: 'oversized', content: 'x'.repeat(25000) };
+  const review = m.buildLearningReviewPrompt({ userMessage: '核对设备状态', assistantTurnText: '', sources: [],
+    snapshot: { ...reviewSnapshot, profile: { prefix: '', entries: [] }, handbook: { entries: [older, oversized, ...recent] } },
+    delivered: [{ id: oversized.id }] });
+  const candidates = JSON.parse(review.split('Existing entries (data): ')[1].split('\n\n')[0]);
+  assert.ok(candidates.some(e => e.id === older.id), 'relevant older methods stay available for merging');
+  assert.ok(!candidates.some(e => e.id === oversized.id), 'one large record does not crowd out all candidates');
+  assert.ok(candidates.length <= 50 && JSON.stringify(candidates).length <= 24000);
   methodEntry = (await snapshot()).handbook.entries.find(e => e.key === method.key);
   result = await apply([{ ...method, action: 'outcome', expectedVersion: methodEntry.version }], sources('outcome', '检查权限', '{"code":0}'));
   assert.equal(result.promotedCount, 0, 'not retrieved is not a method-use outcome');
