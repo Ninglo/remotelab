@@ -149,4 +149,4 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 
 - [All-scope project memory rollout](project-memory-rollout.md) — incremental pointers, existing daily-review rules, frozen baselines, live confirmation and separate disable controls.
 
-The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for the source, destination and notification contract.
+The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for aligned start/process/write/notify stages, explicit input reuse, visible scope notes and collapsible Session mechanics.

@@ -588,15 +588,16 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-flow-read { padding: 16px 20px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; color: var(--text-secondary); position: relative; }
 .task-flow-read-time { display: block; margin: 7px 0; font-size: 16px; font-weight: 600; color: var(--text); }
 .task-flow-read p { margin: 6px 0 0; font-size: 14px; line-height: 1.7; }
-.task-flow-branches { margin-left: 16px; padding-left: 24px; border-left: 1px solid var(--border); }
-.task-flow-row { position: relative; border-bottom: 1px solid var(--border); padding: 24px 0; }
-.task-flow-row::before { content: ''; position: absolute; top: 35px; left: -25px; width: 17px; border-top: 1px solid var(--border); }
+.task-flow-diagram { container-type: inline-size; }
+.task-flow-branches { display: grid; gap: 20px; }
+.task-flow-row { min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+
 .task-flow-heading { display: flex; gap: 8px; flex-direction: column; }
 .task-flow-heading h4 { margin: 0; font-size: 16px; font-weight: 600; }
 .task-flow-time { color: var(--text-secondary); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.task-flow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 16px; }
+.task-flow-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
 .task-flow-step { min-width: 0; position: relative; padding: 12px; border-radius: 8px; background: var(--bg-secondary); }
-.task-flow-step:not(:last-child)::after { content: '→'; position: absolute; right: -22px; top: 35px; color: var(--text-muted); }
+.task-flow-step:not(:last-child)::after { content: '→'; position: absolute; right: -19px; top: 32px; color: var(--text-muted); }
 .task-flow-label { font-size: 12px; font-weight: 550; color: var(--text-muted); }
 .task-flow-step p { margin: 8px 0 0; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
 .task-flow-link { display: inline-flex; align-items: center; min-height: 32px; color: var(--accent); margin: 8px 10px 0 0; font-size: 13px; }
@@ -610,8 +611,6 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 @media (max-width: 720px) {
   .task-flow-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .task-flow-read { padding: 16px; }
-  .task-flow-branches { margin-left: 7px; padding-left: 16px; }
-  .task-flow-row::before { left: -17px; width: 10px; }
   .task-flow-steps { grid-template-columns: 1fr; gap: 24px; }
   .task-flow-step { padding: 14px 16px; }
   .task-flow-step:not(:last-child)::after { content: '↓'; left: 16px; right: auto; top: auto; bottom: -22px; font-size: 14px; }
@@ -791,3 +790,15 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
 .task-entry-actions .task-center-action { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; margin: 0; }
 .task-flow-bottom > .task-entry-actions, .task-flow-bottom > .task-run-transition, .task-flow-bottom > .task-run-policy { flex-basis: 100%; }
+
+/* Business steps stay visible; runtime mechanics are secondary to the flow. */
+.task-flow-reading-guide { color: var(--text-secondary); font-size: 13px; line-height: 1.7; margin: 16px 0; }
+.task-flow-scope { border-left: 3px solid var(--accent); margin: 12px 0; padding: 8px 14px; font-size: 13px; line-height: 1.7; }
+.task-flow-scope p { margin: 4px 0 0; color: var(--text-secondary); }
+.task-flow-bottom > .task-flow-note { flex-basis: 100%; margin: 0; padding-left: 10px; border-left: 2px solid var(--border); }
+.task-flow-runtime { flex-basis: 100%; min-width: 0; font-size: 13px; color: var(--text-secondary); }
+.task-flow-runtime summary { cursor: pointer; min-height: 36px; align-content: center; }
+@container (max-width: 680px) {
+  .task-flow-steps { grid-template-columns: 1fr; gap: 22px; }
+  .task-flow-step:not(:last-child)::after { content: '↓'; left: 16px; right: auto; top: auto; bottom: -21px; }
+}

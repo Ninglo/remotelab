@@ -868,24 +868,31 @@
     const diagram = createNode("div", "task-flow-diagram");
     diagram.setAttribute("aria-label", flowTranslate(`tasks.flows.${group.id}`, group.id));
     const source = createNode("div", "task-flow-read");
-    source.appendChild(createNode("span", "task-flow-label", flowTranslate("tasks.flows.read", "01 · Read source")));
+    source.appendChild(createNode("span", "task-flow-label", flowTranslate("tasks.flows.inputs", "Inputs and reuse")));
     if (group.readAt) source.appendChild(createNode("strong", "task-flow-read-time", group.readAt));
     source.appendChild(createNode("p", "", group.read));
     diagram.appendChild(source);
+    if (group.note) {
+      const scope = createNode("aside", "task-flow-scope");
+      scope.append(createNode("strong", "", flowTranslate("tasks.flows.scope", "Current scope and planned changes")), createNode("p", "", group.note));
+      diagram.appendChild(scope);
+    }
+    diagram.appendChild(createNode("p", "task-flow-reading-guide", flowTranslate("tasks.flows.readingGuide", "Read each task from start to delivery. Rows are separate tasks, not a sequence.")));
     const branches = createNode("div", "task-flow-branches");
     diagram.appendChild(branches); flowsPanel.appendChild(diagram);
     for (const row of group.rows || []) {
       const route = createNode("article", "task-flow-row");
-      const heading = createNode("div", "task-flow-heading");
+      const heading = createNode("div", "task-flow-step task-flow-heading");
+      heading.appendChild(createNode("span", "task-flow-label", flowTranslate("tasks.flows.start", "01 · Start")));
       heading.appendChild(createNode("h4", "", row.title));
       const linked = row.taskIds.map(id => tasks.find(task => task.id === id)).filter(Boolean);
       const background = (row.backgroundIds || []).map(id => backgroundMechanisms.find(item => item.id === id)).filter(Boolean);
       const times = [...new Set(linked.map(task => `${taskScheduleText(task, flowTranslate)} · ${overview.businessStatus(task) ? flowTranslate(`tasks.business.${overview.businessStatus(task)}`, flowState(task)) : flowState(task)}`))];
       times.push(...background.map(item => `${item.trigger} · ${flowTranslate(`tasks.background.${item.state}`, item.state)}`));
       heading.appendChild(createNode("span", "task-flow-time", times.join(" / ") || flowTranslate("tasks.flows.missing", "Task not found")));
-      route.appendChild(heading);
       if (row.needsReview) route.appendChild(createNode("p", "task-flow-review", flowTranslate("tasks.flows.review", "Task definition changed or is missing; the explanation below needs review.")));
       const steps = createNode("div", "task-flow-steps");
+      steps.appendChild(heading);
       for (const key of ["process", "write", "send"]) {
         const step = createNode("div", "task-flow-step");
         step.append(createNode("span", "task-flow-label", flowTranslate(`tasks.flows.${key}`, key)), createNode("p", "", row[key]));
@@ -905,16 +912,13 @@
       route.appendChild(steps);
       const bottom = createNode("div", "task-flow-bottom");
       if (row.note) {
-        const note = createNode("details", "task-flow-note");
-        const noteKey = `${group.id}:${row.title}`; note.open = openFlowNotes.has(noteKey);
-        note.append(createNode("summary", "", flowTranslate("tasks.flows.boundary", "Current scope / planned changes")), createNode("p", "", row.note));
-        note.addEventListener("toggle", () => { if (!note.isConnected) return; if (note.open) openFlowNotes.add(noteKey); else openFlowNotes.delete(noteKey); });
+        const note = createNode("p", "task-flow-note", row.note);
         bottom.appendChild(note);
       }
       const selected = linked.filter(task => task.sessionCollection === "automations");
       for (const task of selected) {
         if (selected.length > 1) bottom.appendChild(createNode("strong", "", taskTitle(task)));
-        appendExecutionEntries(bottom, task);
+        appendExecutionEntries(bottom, task, true);
       }
       if (!selected.length || linked.some(task => task.sessionCollection !== "automations")) {
         const locate = createNode("button", "task-center-action", flowTranslate("tasks.flows.locate", "Related tasks"));
@@ -933,7 +937,6 @@
       }
       route.appendChild(bottom); branches.appendChild(route);
     }
-    if (group.note) flowsPanel.appendChild(createNode("p", "task-history-note", group.note));
   }
 
   function locateTimelineTask(task) {
@@ -943,7 +946,7 @@
     closedPurposeSections.clear(); renderTasks(); selectView("tasks", { focus: true }); list.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function appendExecutionEntries(parent, task) {
+  function appendExecutionEntries(parent, task, collapseContext = false) {
     const actions = createNode("div", "task-entry-actions");
     const history = createNode("button", "task-center-action", flowTranslate("tasks.session.viewHistory", "View execution history"));
     history.type = "button"; history.dataset.automationEntry = "history";
@@ -954,6 +957,13 @@
     if (execution) run.href = `/?session=${encodeURIComponent(execution.sessionId)}&tab=sessions`;
     else { run.type = "button"; run.disabled = true; }
     actions.appendChild(run); parent.appendChild(actions);
+    if (collapseContext) {
+      const context = createNode("details", "task-flow-runtime");
+      const contextKey = `runtime:${task.id}`; context.open = openFlowNotes.has(contextKey);
+      context.appendChild(createNode("summary", "", flowTranslate("tasks.flows.runtime", "How runs continue across Sessions")));
+      context.addEventListener("toggle", () => { if (!context.isConnected) return; if (context.open) openFlowNotes.add(contextKey); else openFlowNotes.delete(contextKey); });
+      parent.appendChild(context); parent = context;
+    }
     const active = execution && ["running", "starting", "queued"].includes(execution.state);
     const timezone = task.target?.timezone || task.schedule?.timezone || "Asia/Shanghai";
     const at = Date.parse(execution?.scheduledAt || execution?.attemptedAt || "");
