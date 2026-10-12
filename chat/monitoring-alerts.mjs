@@ -80,7 +80,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     // stage changes. These update its existing message, never rearm a send.
     const version = hash(JSON.stringify({ stage, severity: item.severity, repair: repair ? {
       status: repair.status, summary: ['running', 'pending', 'admitting', 'waiting'].includes(repair.status) ? null : repair.summary,
-      plan: repair.plan, runId: repair.runId,
+      plan: repair.plan, humanAction: repair.humanAction, runId: repair.runId,
     } : null, action: item.action || null, continuity: item.continuity ? {
       status: item.continuity.status, backupCount: item.continuity.backupCount, autoSwitch: item.continuity.autoSwitch,
       currentId: item.continuity.current?.id, lastSwitch: item.continuity.lastSwitch,

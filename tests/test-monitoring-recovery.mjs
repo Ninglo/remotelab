@@ -307,3 +307,18 @@ test('a reopened diagnosis cannot present old completed actions as the result of
   assert.equal(projectRecovery(f.getState())[0].summary, '');
   assert.equal(f.incident().previousBlocks[0].summary, 'Verified real output');
 });
+
+
+test('receipt distinguishes missing information from approval without admitting another execution', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const receipt = f.receipts.get(f.incident().attempts[0].receiptFile);
+  receipt.plan = { risk: 'high', summary: 'Expand', target: '/data', impact: 'cost', rollback: 'cannot shrink', verification: 'df' };
+  receipt.humanAction = { type: 'input', summary: 'Provide quote and backup confirmation' };
+  await processMonitoringRecovery(f.options);
+  assert.deepEqual(projectRecovery(f.getState())[0].humanAction, receipt.humanAction);
+  receipt.humanAction = { type: 'approval', summary: 'Approve expansion after reviewing the quote' };
+  await processMonitoringRecovery(f.options);
+  assert.equal(projectRecovery(f.getState())[0].humanAction.type, 'approval');
+  assert.equal(f.getAdmissions(), 1);
+  assert.equal(f.incident().status, 'awaiting_confirmation');
+});

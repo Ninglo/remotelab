@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { recoveryHumanAction } from '../lib/monitoring-actions.mjs';
 import { buildFeishuPostContent } from '../connectors/feishu/index.mjs';
 
 const text = (value, limit = 1200) => String(value || '').replace(/[\r\n]+/g, ' ').slice(0, limit)
@@ -21,11 +22,34 @@ const link = (sessionId, base) => {
   catch { return ''; }
 };
 
-export function renderMonitoringAlert(events, config, { color = false } = {}) {
+export function monitoringNextStep(item, config) {
+  const recovery = repairFor(item, config);
+  const sessionUrl = link(recovery?.sessionId, config.overviewUrl);
+  const ordinary = { type: 'notice', label: '查看处理进展', url: sessionUrl || config.overviewUrl };
+  if (item.recovered) return { ...ordinary, summary: '已恢复，无需操作。' };
+  if (['running', 'waiting', 'admitting', 'pending', 'verifying'].includes(recovery?.status)) {
+    const progress = recovery.status === 'running' ? '我在处理'
+      : recovery.status === 'verifying' ? '我在核验结果' : '已安排处理，等待执行结果';
+    return { ...ordinary, summary: `${progress}，无需你操作。` };
+  }
+  const human = recoveryHumanAction(recovery?.humanAction);
+  if (human?.type === 'input') return { type: 'input', label: '进入会话补充信息', url: sessionUrl,
+    summary: `需要你补充：${brief(human.summary, 80)}` };
+  if (recovery?.plan?.requiresConfirmation) return { type: 'approval', label: '查看方案并回复批准', url: sessionUrl,
+    summary: `需要你批准：${brief(human?.summary || recovery.plan.summary, 55)}；确认前不执行。` };
+  if (item.kind === 'accountContinuity' && item.action?.requiresConfirmation) return {
+    type: 'input', label: '查看账号与设置', url: config.overviewUrl,
+    summary: item.continuity?.status === 'switch_disabled' ? '需要你决定是否开启自动切号，请在账号设置中选择。'
+      : '需要你选择：登录另一个已获授权账号，或等待额度重置。',
+  };
+  return { ...ordinary, summary: recovery?.status === 'blocked'
+    ? '处理受阻，尚未形成需要你执行的具体动作。' : '我这边继续核查，暂不需要你操作。' };
+}
+
+export function renderMonitoringAlert(events, config, { color = false, links = true } = {}) {
   const emphasize = value => color ? `<font color="red">${value}</font>` : `**${value}**`;
   const sections = events.map(item => {
     const recovery = repairFor(item, config);
-    const plan = recovery?.plan;
     const account = item.continuity;
     const problem = item.kind === 'disk' && Number.isFinite(item.availableBytes) && Number.isFinite(item.usedPercent)
       ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) && item.inodeUsedPercent >= 85 ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
@@ -41,27 +65,28 @@ export function renderMonitoringAlert(events, config, { color = false } = {}) {
       : recovery?.status === 'waiting' ? '原会话已有任务执行，正在等待结果。'
       : recovery?.status === 'blocked' ? '本轮补救未通过验收，详细原因见处理记录。'
       : '已记录风险；尚无本轮已执行动作的回执。';
-    const decision = resolved ? '无需处理。'
-      : plan?.requiresConfirmation ? emphasize('需要确认后续方案；确认前不执行。')
-      : item.kind === 'accountContinuity' && item.action?.requiresConfirmation ? brief(item.action.summary, 60)
-      : inFlight ? '暂不需要你操作，结果在原消息更新。'
-      : '尚无可供确认的完整方案，继续在处理记录中核对。';
-    const sessionUrl = link(recovery?.sessionId, config.overviewUrl);
+    const next = monitoringNextStep(item, config);
+    const decision = next.type === 'notice' ? next.summary : emphasize(next.summary);
     return `**${text(item.subject, 120)}${resolved ? ' · 已恢复' : ''}**\n`
       + `当前风险：${resolved ? '已解除' : item.severity === 'critical' ? emphasize(problem) : problem}\n`
       + `处理：${progress}\n下一步：${decision}`
-      + (sessionUrl ? `\n[查看处理会话${plan?.requiresConfirmation ? '／确认方案' : ''}](${sessionUrl})` : '')
+      + (links && next.url ? `\n[${next.label}](${next.url})` : '')
       + (!color && item.observedAt ? `\n更新：${text(item.observedAt, 40)}` : '');
   });
-  return sections.join('\n\n---\n\n') + (config.overviewUrl ? `\n\n[监管总览](${config.overviewUrl})` : '');
+  return sections.join('\n\n---\n\n') + (links && config.overviewUrl ? `\n\n[监管总览](${config.overviewUrl})` : '');
 }
 
 export function renderMonitoringAlertCard(events, config) {
   return { config: { wide_screen_mode: true, update_multi: true },
     header: { title: { tag: 'plain_text', content: '监管：风险与处理进展' },
       template: events.some(e => !e.recovered && e.severity === 'critical') ? 'red' : 'blue' },
-    elements: [{ tag: 'div', text: { tag: 'lark_md', content: renderMonitoringAlert(events, config, { color: true }) } },
-      { tag: 'note', elements: [{ tag: 'plain_text', content: `最近观测：${events.map(e => e.observedAt).filter(Boolean).sort().at(-1) || '见监管总览'}` }] }] };
+    elements: [...events.flatMap(item => {
+      const next = monitoringNextStep(item, config);
+      return [{ tag: 'div', text: { tag: 'lark_md', content: renderMonitoringAlert([item], config, { color: true, links: false }) } },
+        ...(next.url ? [{ tag: 'action', actions: [{ tag: 'button', type: next.type === 'notice' ? 'default' : 'primary',
+          text: { tag: 'plain_text', content: next.label }, url: next.url }] }] : [])];
+    }), { tag: 'note', elements: [{ tag: 'plain_text', content: `最近观测：${events.map(e => e.observedAt).filter(Boolean).sort().at(-1) || '见监管总览'}` }] }] };
+
 }
 
 export async function monitoringIm(config, method, path, body, params, execute = promisify(execFile)) {

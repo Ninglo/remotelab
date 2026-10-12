@@ -281,8 +281,8 @@ test('card shows real results and red decisions, hides prior-attempt results whi
     recoveryIncidents: [{ kind: 'disk', id: '/data', status: 'awaiting_confirmation', sessionId: 'original', summary: 'Cleared 44 MiB; risk remains <at id=all>all</at>',
       plan: { requiresConfirmation: true, summary: 'Expand after approval', target: 'disk1', impact: 'cost', rollback: 'cannot shrink', verification: 'df' } }] };
   const card = renderMonitoringAlertCard(events, config), content = card.elements[0].text.content;
-  assert.match(content, /Cleared 44 MiB/); assert.match(content, /<font color="red">需要确认/);
-  assert.match(content, /session=original/); assert.doesNotMatch(content, /<at|低风险处理自行完成/);
+  assert.match(content, /Cleared 44 MiB/); assert.match(content, /<font color="red">需要你批准/);
+  assert.match(JSON.stringify(card), /session=original/); assert.doesNotMatch(content, /<at|低风险处理自行完成/);
   config.recoveryIncidents[0].status = 'running'; delete config.recoveryIncidents[0].plan;
   assert.doesNotMatch(renderMonitoringAlert(events, config), /Cleared 44 MiB/);
 });
@@ -342,7 +342,7 @@ test('inode-only critical pressure remains visible and an actual account switch 
 
 test('a verbose recovery report stays behind the Session link rather than filling the card', () => {
   const summary = '已清理两份重复副本，释放约0.73 GiB，但评测仍持续写入。' + '完整处理记录。'.repeat(100);
-  const plan = { requiresConfirmation: true, summary: '完整扩容方案'.repeat(80),
+  const plan = { requiresConfirmation: true, summary: '扩容数据盘。' + '完整扩容方案'.repeat(80),
     target: 'private-disk-uuid', impact: '详细影响', rollback: '详细恢复办法', verification: '详细验收步骤' };
   const events = [{ ...disk, id: '/data', availableBytes: 2 * 1024 ** 3, usedPercent: 99.8, inodeUsedPercent: 82,
     recovery: { status: 'awaiting_confirmation', summary, plan, sessionId: 'disk-recovery' } }];
@@ -351,9 +351,36 @@ test('a verbose recovery report stays behind the Session link rather than fillin
   assert.match(content, /0.73 GiB/);
   assert.match(content, /评测仍持续写入/);
   assert.match(content, /确认前不执行/);
-  assert.match(content, /session=disk-recovery/);
+  assert.match(JSON.stringify(card), /session=disk-recovery/);
   assert.doesNotMatch(content, /完整处理记录|private-disk-uuid|详细验收|完整扩容方案|inode/);
   assert.ok(content.length < 400, 'one incident fits in a short card');
   assert.equal(events[0].recovery.summary, summary, 'the original evidence remains intact');
   assert.equal(events[0].recovery.plan, plan);
+});
+
+
+test('cards distinguish execution, approval and information, and assistance changes edit the same message', async () => {
+  const recovery = { kind: 'disk', id: '/data', sessionId: 'original', status: 'running',
+    humanAction: { type: 'input', summary: '旧问题' } };
+  const config = { overviewUrl: 'https://example.test/', recoveryIncidents: [recovery] };
+  const events = [{ ...disk, id: '/data' }];
+  const card = () => renderMonitoringAlertCard(events, config);
+  assert.match(card().elements[0].text.content, /我在处理，无需你操作/);
+  assert.doesNotMatch(card().elements[0].text.content, /旧问题/);
+  recovery.status = 'awaiting_confirmation';
+  recovery.plan = { requiresConfirmation: true, summary: '数据盘扩到1536 GiB' };
+  recovery.humanAction = { type: 'input', summary: '请提供报价及备份确认' };
+  assert.match(card().elements[0].text.content, /需要你补充：请提供报价及备份确认/);
+  assert.equal(card().elements[1].actions[0].text.content, '进入会话补充信息');
+  assert.match(card().elements[1].actions[0].url, /session=original/);
+  assert.equal(card().elements[1].actions[0].value, undefined, 'navigation does not grant approval');
+  const f = fixture(), value = snapshot(events);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  recovery.humanAction = { type: 'approval', summary: '数据盘扩到1536 GiB' };
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
+  assert.match(card().elements[0].text.content, /需要你批准：数据盘扩到1536 GiB/);
+  assert.equal(card().elements[1].actions[0].text.content, '查看方案并回复批准');
+  recovery.status = 'blocked'; delete recovery.plan; delete recovery.humanAction;
+  assert.match(card().elements[0].text.content, /尚未形成需要你执行的具体动作/);
 });
