@@ -45,6 +45,10 @@ func emit(_ value: [String: Any]) {
     }
 }
 
+final class RecordingClipView: NSClipView {
+    override var isFlipped: Bool { true }
+}
+
 final class WaveformView: NSView {
     // Display-only floor: leave the captured PCM and uploaded original untouched.
     static let noiseFloorDb = -52.0
@@ -208,7 +212,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         stack.addArrangedSubview(footer)
         header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
         footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
-        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = true
+        let scroll = NSScrollView(); scroll.contentView = RecordingClipView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = true
         scroll.backgroundColor = .windowBackgroundColor
         scroll.documentView = stack
         let sidebar = NSStackView(); sidebar.orientation = .vertical; sidebar.alignment = .leading; sidebar.spacing = 8
@@ -217,7 +221,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         historyCount = text("录音记录", size: 18); historyCount.font = .boldSystemFont(ofSize: 18)
         historySummary = text("正在读取", size: 12, color: .secondaryLabelColor)
         sidebar.addArrangedSubview(historyCount); sidebar.addArrangedSubview(historySummary)
-        let historyScroll = NSScrollView(); historyScroll.hasVerticalScroller = true; historyScroll.drawsBackground = false
+        let historyScroll = NSScrollView(); historyScroll.contentView = RecordingClipView(); historyScroll.hasVerticalScroller = true; historyScroll.drawsBackground = false
         historyStack = NSStackView(); historyStack.orientation = .vertical; historyStack.alignment = .leading; historyStack.spacing = 10
         historyScroll.documentView = historyStack; sidebar.addArrangedSubview(historyScroll)
         historyStack.translatesAutoresizingMaskIntoConstraints = false
