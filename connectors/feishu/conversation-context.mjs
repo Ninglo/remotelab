@@ -144,7 +144,7 @@ async function listMessages(runtime, {
       page_size: complete ? PAGE_SIZE : Math.min(PAGE_SIZE, maxMessages - items.length),
       with_sender_name: true,
       ...(startTimeMs ? { start_time: String(Math.floor(startTimeMs / 1000)) } : {}),
-      ...(endTimeMs ? { end_time: String(Math.floor(endTimeMs / 1000)) } : {}),
+      ...(endTimeMs ? { end_time: String(Math.floor(endTimeMs / 1000) + (complete ? 1 : 0)) } : {}),
       ...(pageToken ? { page_token: pageToken } : {}),
     };
     const response = await withTimeout(

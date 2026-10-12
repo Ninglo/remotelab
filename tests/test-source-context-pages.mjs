@@ -34,6 +34,7 @@ try {
  const context=await loadFeishuConversationContext(runtime,{chatId:'group',createTime:String(2000000000000),messageId:'now'}, {complete:true,includeMetadata:true});
  assert.equal(context.messages.length,151,'complete mode crosses message-count, day and activity-gap limits');
  assert.equal(context.messages[75].text,long);assert.equal(context.messages[75].parentId,'original');
+ assert.equal(pages[0].end_time,'2000000001','fetch the full current second; millisecond filtering removes later messages');
  assert.equal(pages.length,4);assert.equal(pages[0].start_time,undefined);assert.equal(context.coverage.fetchedAllPages,true);
  await assert.rejects(loadFeishuConversationContext({}, {chatId:'group'}, {complete:true}),/unavailable/);
  const broken={appClient:{im:{v1:{message:{list:async()=>({code:0,data:{items:raw.slice(0,50),has_more:true,page_token:'same'}})}}}}};
