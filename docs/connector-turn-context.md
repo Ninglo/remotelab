@@ -51,3 +51,24 @@ native threads or erase historical records. Character-count replay measures the
 payload change, not an independently measured latency or quality improvement.
 
 Verification covers first/resumed prompts, default/explicit forks, clean connector text, attachment failures, queue isolation, duplicate requests, and SIGKILL recovery with a missing Context event. All fixtures use isolated instances and local fake transports.
+
+## Display/checklist text consolidation (2026-10-12)
+
+The first consolidation only shortens the default surface text and the conditional
+workboard instructions. Startup/capability navigation, source-specific Feishu
+rules, personal reply settings and the personal strict-start switch are unchanged.
+The legacy October 7 group display template remains separate and unchanged.
+
+Display owns opening/progress/reply/final visibility and the human disclosure
+choice. The optional workboard block owns when to create a checklist, its commands,
+acceptance evidence and status changes; it refers back to display for delivery.
+Both slots retain their existing activation conditions. This removes repeated
+explanations without introducing an extra guide lookup or changing tool contracts.
+
+Measured UTF-16 text lengths (excluding slot headings/wrappers): default display
+3,858 → 1,705; checklist 2,327 → 1,873; together 6,185 → 3,578 (−42.2%). The combined
+saving applies only when both blocks are supplied. The personal strict-start block
+is not part of a universal baseline. These are text lengths, not token counts,
+latency measurements or task-success evidence. Existing prompt, publication,
+personal-isolation, workboard state/patch/opt-in and surface-parsing regressions
+cover the deterministic contracts; model adherence still needs real task evidence.
