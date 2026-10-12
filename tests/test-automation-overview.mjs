@@ -4,7 +4,7 @@ import vm from 'node:vm';
 
 const context = vm.createContext({ Intl, Date });
 vm.runInContext(await readFile(new URL('../static/chat/automation-overview.js', import.meta.url), 'utf8'), context);
-const { category, purpose, days, purposes, businessStatus } = context.RemoteLabAutomationOverview;
+const { category, purpose, days, purposes, businessStatus, displayPurpose, displayPurposes } = context.RemoteLabAutomationOverview;
 const once = { kind: 'one_time', state: 'completed' };
 assert.equal(category(once), 'one_time', 'completed one-time work remains discoverable as one-time');
 assert.equal(category({ ...once, state: 'failed' }), 'one_time', 'a failed attempt does not change its type');
@@ -25,6 +25,11 @@ assert.equal(purpose({ title: '磁盘检查', purpose: 'projects' }), 'projects'
 assert.equal(purposes.length, 7, 'six purposes and an honest unclassified fallback');
 assert.equal(purpose({ title: '普通任务', prompt: 'Review reports and check daily monitoring' }), 'other',
   'unrelated keywords in long instructions must not invent a purpose');
+
+assert.deepEqual(Array.from(displayPurposes), ['operations', 'memory', 'tracking', 'knowledge', 'other']);
+for (const [stored, displayed] of [['projects','tracking'], ['execution','tracking'], ['improvement','memory'], ['research','knowledge']]) {
+  const task = {purpose:stored}; assert.equal(displayPurpose(task),displayed); assert.equal(task.purpose,stored);
+}
 
 const now = Date.parse('2026-10-10T10:00:00Z');
 const held = { kind: 'recurring', state: 'active', check: { at: '2026-10-10T09:59:00Z', reason: 'retry_limit_reached' } };

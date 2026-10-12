@@ -1,3 +1,4 @@
+import { listAutomationFlows } from './automation-flows.mjs';
 import { observeAutomationChange, observeIntervention, runtimeUsageChanged } from './usage-controls.mjs';
 import { settingActor, observeSettingRows, settingRows, personSettingValues } from './usage-settings.mjs';
 import { listAutomationBackground } from './automation-background.mjs';
@@ -621,7 +622,8 @@ export async function handleControlRoutes({
   if (pathname === '/api/automation-tasks' && req.method === 'GET') {
     try {
       const [tasks, backgroundMechanisms] = await Promise.all([listAutomationTasks(), listAutomationBackground()]);
-      writeJson(res, 200, { tasks, backgroundMechanisms });
+      const automationFlows = await listAutomationFlows(tasks);
+      writeJson(res, 200, { tasks, backgroundMechanisms, automationFlows });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to load automation tasks' });
     }

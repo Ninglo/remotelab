@@ -1715,3 +1715,8 @@ normal-mode samples reached uploaded originals and accepted analysis. The
 operator requested three days of local retention during an initial three-day
 observation, then one day only after stability is verified. Never prune a
 failed upload or a local-only capture, and recheck remote audio before deletion.
+
+
+## 2026-10-12: Automation explanation belongs in the existing Monitor
+
+A separate interactive proposal made an already understood flow harder to use. The requested iteration is in Monitor → Automations: a compact shared-reading and processing/write/delivery view, with the original task list and controls retained underneath. Keep actual configured times distinct from proposed changes. More tabs, repeated task snapshots and a second explanation site do not solve this navigation need.
