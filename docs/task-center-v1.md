@@ -410,7 +410,8 @@ The history page retains a separate **Task home** link for instructions and
 changes; that home is not labeled as an actual execution.
 
 A short transition line explains trigger → execution record → run Session →
-recorded result. Reuse comes from the projected target: calendar-day tasks reuse
+recorded result. Latest-run timestamps use the same task timezone as the schedule,
+even when the browser language or timezone differs. Reuse comes from the projected target: calendar-day tasks reuse
 one Session within the configured timezone's day and create another on the next
 day; fixed targets keep the configured Session. Other tasks execute independently
 of their source discussion, with actual Session associations recorded per run

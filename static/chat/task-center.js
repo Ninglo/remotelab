@@ -955,12 +955,17 @@
     else { run.type = "button"; run.disabled = true; }
     actions.appendChild(run); parent.appendChild(actions);
     const active = execution && ["running", "starting", "queued"].includes(execution.state);
+    const timezone = task.target?.timezone || task.schedule?.timezone || "Asia/Shanghai";
+    const at = Date.parse(execution?.scheduledAt || execution?.attemptedAt || "");
+    const time = Number.isFinite(at) ? new Intl.DateTimeFormat(automationFlows.language || undefined, {
+      timeZone: timezone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(new Date(at)) + " · " + timezone : flowTranslate("tasks.meta.notRecorded", "Not recorded");
     parent.appendChild(createNode("p", "task-history-note", execution
-      ? flowTranslate(active ? "tasks.session.currentRun" : "tasks.session.latestRun", "", {time: formatDateTime(execution.scheduledAt || execution.attemptedAt)})
+      ? flowTranslate(active ? "tasks.session.currentRun" : "tasks.session.latestRun", "", {time})
       : flowTranslate("tasks.session.noRun", "No execution Session has been created yet.")));
     parent.appendChild(createNode("p", "task-history-note task-run-transition", flowTranslate("tasks.session.transition", "Trigger → execution record → run Session → result saved in history")));
     const policy = task.target?.mode === "calendar_day_session" ? "dayReuse" : task.target?.mode === "fixed_session" ? "fixedReuse" : "separateRuns";
-    parent.appendChild(createNode("p", "task-history-note task-run-policy", flowTranslate("tasks.session." + policy, "", {timezone: task.target?.timezone || task.schedule?.timezone || "Asia/Shanghai"})));
+    parent.appendChild(createNode("p", "task-history-note task-run-policy", flowTranslate("tasks.session." + policy, "", {timezone})));
   }
 
   function renderTimeline() {
