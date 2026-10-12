@@ -35,7 +35,7 @@ Verified message-transport recovery persists through quiet periods and log
 rotation; a newer quota rejection requires fresh success evidence.
 
 [飞书 Web 话题状态同步](feishu-web-topics.md)说明普通插件的只读账号连接、真实运行状态推送、可见版本号和 Mac 后台更新；[消息设置](feishu-web-settings.md)继续维护本人回复选择与对话模型。
-[Mac 原生飞书增强试验](../scripts/feishu-native/README.md)复用已核 Web 1.2 与 Mac 联调组件，恢复同账号群看板和 RemoteLab 状态来源，说明个人连接、断线恢复、本机验证及回退；尚不代表完整日用版或外层导航像素一致。
+[Mac 原生飞书增强试验](../scripts/feishu-native/README.md)复用已核 Web 1.2 与 Mac 联调组件，恢复同账号群看板和 RemoteLab 状态来源，说明个人连接、断线恢复、本机验证及回退；另有 [M 系列 Mac、飞书 8.1.17 独立试装流程](../scripts/feishu-native/INSTALL.zh-CN.md)，明确新机器尚需连接状态来源。尚不代表完整日用版或外层导航像素一致。
 
 
 [说明交付流程与候选标准操作](documentation-delivery.md)包含可复用的五步流程、适用条件、失败处理，以及RemoteLab的提交检查、原文生成及实例事件发布；网站“使用与维护”读取原文生成页。[副屏使用说明](../display/USER_GUIDE.md)面向日常用户，部署与接口仍沿原维护文档。

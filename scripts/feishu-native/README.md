@@ -9,8 +9,43 @@ matches the requester; otherwise leave the login step pending.”
 
 This adapter supports the existing macOS Feishu **8.0.3** trial prepared with
 bundle identifier `dev.remotelab.feishu-native-trial` and isolated `RlfeTrial`
-profile. It is not an installer for an arbitrary official Feishu application.
+profile. The separate [8.1.17 Apple Silicon preview installation flow](INSTALL.zh-CN.md)
+clones an exact verified official build into a new isolated trial. It is not an
+installer for arbitrary Feishu versions; a different archive digest is refused.
 It does not enable DevTools or alter the machine's debugging policy.
+
+`install-preview.py` validates the official version, archive hash, signature and
+dependencies before creating files. It creates its own profile, injects the
+reviewed runtime with `archive_patch.py`, rebuilds signatures, checks original
+source hashes, and installs the Desktop launcher. It refuses an existing trial.
+`package-preview.py BUILD FONT_LICENSE OUTPUT` packages only code/assets with a
+checksum manifest; no official App, user profile, local capability or connection
+record is distributed. Node 20+ is discovered locally and stored for future
+launches, so another machine does not need the Mini's fixed executable path.
+
+The standalone package deliberately does not create the Mini's already-authorized
+read-only source on another machine. It initially displays “未同步”; group boards,
+Session state, usage and message artifacts require a separately verified source.
+Personal workspace/settings retain the real login/grant flow, pending the user's
+own acceptance. Installed/signature-verified does not mean all 8.1.17 logged-in
+components or meeting media have been verified.
+
+For an already prepared Mac, run `install-launcher.py` with `launch.py` and
+`activate-trial.swift` beside it. It adds **飞书增强版.app** to the user's
+Applications folder and a Desktop shortcut. Both open the same isolated trial;
+repeated clicks activate its existing window without restarting it or losing
+drafts. The original launcher is backed up locally. This needs the existing
+Python/Node tools and Swift compiler; it is not a self-contained installer for
+another Mac. The application and installed enhancement revision come from
+the local deployment record, independently of the Web component's 1.2 label.
+
+On the existing Mac Live setup, Session and group **data** already update live.
+Enhancement **code** remains
+embedded in the trial archive: updates currently use `update.py`, a verified
+backup and a graceful trial restart. Neither the new shortcut nor the existing
+data stream provides automatic code hot updates. A future code updater would
+need a verified version manifest, atomic installation and rollback; in-process
+reload additionally needs complete component cleanup and draft preservation.
 
 Required inputs: the verified Web 1.2.0 extension directory, access to the
 existing trial, and the reviewed Mac Web Live extension directory. A personal
@@ -66,6 +101,7 @@ is not added by this adapter.
 
 Validation:
 
+- `python3 tests/test-feishu-native-installer.py` (archive entry integrity and duplicate injection refusal)
 - `node --test tests/test-feishu-web-settings.mjs tests/test-feishu-web-topics.mjs tests/test-feishu-personal-workspace.mjs`
 - `node tests/test-feishu-native-live-source.mjs` (scope, account changes, live transitions, stale snapshots and recovery)
 - `node tests/test-feishu-native-bridge.mjs` (uses local port 19342 temporarily)
@@ -86,7 +122,9 @@ Current capability audit:
 | Four navigation entries and latest report | Original components and source quick links | Native rail remains inside the message-list renderer |
 | Personal Index/thinking and reply/model settings | Original components + personal grant broker | Real content/read/write still needs the requester's login |
 | Sorting, reading, pet and preference export/import | Original components retained | Native selector/model prerequisites still apply; no blanket daily-use claim |
-| Voice, meeting media, global shortcuts, installer/upgrades | Not added by this adaptation | Separate work/real-device acceptance needed |
+| Desktop launcher | Stable shortcut to existing trial, activates running window | Existing Mac only; no general installer or code hot update |
+| First install on another Apple Silicon Mac | Exact official 8.1.17 build, isolated clone/profile, checksummed preview package | Group/Session data source and logged-in functional acceptance remain separate |
+| Voice, meeting media, global shortcuts, distribution upgrades | Not added by this adaptation | Separate work/real-device acceptance needed |
 
 A screenshot cannot be inferred from DOM verification. The helper's real
 `native-asset-status.json` includes rendered Session labels, native header IDs,
