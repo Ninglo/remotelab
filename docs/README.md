@@ -24,6 +24,16 @@ Read these first when you need the current truth:
 
 ## Documentation delivery
 
+[Monitoring and recovery](monitoring.md) separates normal account consumption
+from local backup readiness and failed switching, including a positive-balance
+fallback after confirmed exhaustion. Disk warnings enter bounded
+low-risk recovery; medium/high-risk plans include scope, impact, rollback and
+verification and wait for human confirmation. The same guide defines verified
+message-transport recovery without treating unrelated API restrictions as a
+total notification outage.
+Health projection and alert dispatch retain verified message-transport recovery
+through quiet periods and log rotation; a newer quota rejection requires fresh success evidence.
+
 [飞书 Web 话题状态同步](feishu-web-topics.md)说明普通插件的只读账号连接、真实运行状态推送、可见版本号和 Mac 后台更新；[消息设置](feishu-web-settings.md)继续维护本人回复选择与对话模型。
 [Mac 原生飞书增强试验](../scripts/feishu-native/README.md)复用已核 Web 1.2 与 Mac 联调组件，恢复同账号群看板和 RemoteLab 状态来源，说明个人连接、断线恢复、本机验证及回退；另有 [M 系列 Mac、飞书 8.1.17 一条命令试装](../scripts/feishu-native/INSTALL.zh-CN.md)，从官方来源校验下载私有运行环境、安装并打开，无需手动安装开发工具，重复执行保留数据；新机器仍需连接状态来源，代码热更新尚未提供。尚不代表完整日用版或外层导航像素一致。
 

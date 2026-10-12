@@ -5,6 +5,7 @@ import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { isStoppedAutomation } from '../lib/monitoring-status.mjs';
 import { requests } from './requests.mjs';
+import { diskRiskStage, recoveryPlan } from '../lib/monitoring-actions.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 24);
 const terminal = state => ['completed', 'failed', 'cancelled'].includes(state);
@@ -12,7 +13,8 @@ const trim = value => typeof value === 'string' ? value.trim() : '';
 const stamp = value => Date.parse(value || '') || 0;
 export const RECOVERY_FILE = join(CONFIG_DIR, 'monitoring-recovery.json');
 export const recoveryLabels = { pending: '待补救', waiting: '已有工作进行中', admitting: '正在启动补救',
-  running: '补救中', verifying: '待核验', resolved: '已验证恢复', blocked: '补救受阻', cancelled: '已停止补救' };
+  running: '补救中', verifying: '待核验', resolved: '已验证恢复', blocked: '补救受阻',
+  awaiting_confirmation: '方案待确认', cancelled: '已停止补救' };
 
 export function projectRecovery(state) {
   return Object.values(state?.incidents || {}).map(item => ({ key: item.key, kind: item.kind, id: item.id,
@@ -20,6 +22,7 @@ export function projectRecovery(state) {
     sessionId: item.sessionId || null, originRunId: item.originRunId || null,
     attempts: item.attempts?.length || 0, runId: item.attempts?.at(-1)?.runId || item.externalRunId || null,
     reason: trim(item.reason).slice(0, 240), summary: trim(item.summary).slice(0, 240),
+    plan: recoveryPlan(item.plan), riskStage: item.riskStage || 0,
     updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
 }
 
@@ -34,13 +37,16 @@ function promptFor(item, attempt, task, config) {
     + `已观测问题：${item.error || item.reason || '见本轮监管快照'}。本次是第${item.attempts.length}次，最多${config.maxAttempts || 2}次；执行方不可再建恢复任务、日程或自我重试循环。\n`
     + (attempt.mode === 'verify' ? '已有一次后续执行结束。本次先只读核对该执行及真实产物；不能把整份任务从头再执行，不能重发已有成功消息。\n' : '')
     + `先核对现实：原任务是否已有人恢复、停止、被替代或已完成；查已保存材料和实际错误，保留已通过的检查。没有新的修正或证据，不重复失败动作。\n`
+    + `先判断是否影响业务，再按拟执行动作的影响与恢复成本分级。账号正常消耗或耗尽不是待修故障；关注已有授权账号的备用准备、提前切换及切换失败，不要求人解决正常消耗。\n`
+    + `低风险、已有授权且可验证恢复的动作自行完成，不额外索要确认；包括只读定位、符合现行流程的安全缓存处理及已核验重复副本处理。中高风险动作先形成具体方案并等待人在原会话确认，不能先执行；例如删除唯一数据、打断业务、整目录迁移、购买扩容、借用新账号或扩大权限。事故很严重不代表处置动作可免确认。\n`
+    + `需要确认时先完成所有可独立进行的低风险诊断，在回执写status=awaiting_confirmation及plan，plan必须含risk=medium或high、summary（拟执行步骤）、target（具体对象）、impact（影响和收益）、rollback（恢复方式或不可恢复说明）、verification（验收办法）；面向人的消息包含该方案与待确认动作。正常状态不打扰，低风险结果留台账；不能只写“请负责人处理”。已有人执行的清理先核对结果，不重复清理。\n`
     + `模型以本轮Run记录为准，不能凭提示文字声称已换。沿原任务检查点继续，数据读取、代码/配置、执行、产物验收、对外送达分别核验。写入/发送结果不明先回读，避免重复提交、重复文档、重复消息。\n`
     + `保留原目标、数据、日程、话题、评论与历史证据。不擅自接管其他Run，不删除历史，不动其他用户的数据/服务，不扩大业务范围；execute_here=false、暂停和原任务禁发要求继续有效。权限缺口先查既有授权/备用入口；只有真正缺少授权、凭据或不可逆高风险动作才留给人，并说明最小动作。\n`
     + `服务故障先辨别正常停用、启动中与真实故障，只处理本实例已配置的服务；磁盘问题只沿已授权维护流程，不泛删目录。已有诊断/维护工作进行中就保存证据并说明依赖，不再起第二份。\n`
     + (config.workflowPaths?.[`${item.kind}:${item.id}`] ? `本对象现行工作流：${config.workflowPaths[`${item.kind}:${item.id}`]}。先完整读取。\n` : '')
     + (task ? `原任务现行提示（仅原范围；新的用户决定优先）：\n${task.prompt}\n` : '')
     + `本轮是补救或核验回报：默认不使用全员提及，不沿用原定时汇报的@所有人规则；只有用户对本次补救明确要求时才可全员提醒。此条优先于上方原任务的定时发送规则。\n`
-    + `结束前写入 ${attempt.receiptFile}，JSON必须含key=${item.key}、requestId=${attempt.requestId}、status=resolved或blocked、summary、evidence（真实文件/回执/原始来源引用数组）、checks.task（实际任务验收布尔值）、checks.delivery（verified或not_required或unknown）、requiredHumanAction（若受阻，具体最小动作或外部依赖）。运行退出码0不算任务验收；模型能回复、再次提交成功不算恢复。\n`
+    + `结束前写入 ${attempt.receiptFile}，JSON必须含key=${item.key}、requestId=${attempt.requestId}、status=resolved或blocked或awaiting_confirmation、summary、evidence（真实文件/回执/原始来源引用数组）、checks.task（实际任务验收布尔值）、checks.delivery（verified或not_required或unknown）、requiredHumanAction（若受阻，具体最小动作或外部依赖）。中高风险确认前不得执行；人在原会话确认并执行后更新同一回执，观察器会独立核验。运行退出码0不算任务验收；模型能回复、再次提交成功不算恢复。\n`
     + `对外结果只走原绑定出口，回复说明修复了什么、如何验证、仍缺什么，不制造例行进度；原任务禁止发消息时继续禁止。资源诊断的常态结果仍并入原日报。`;
 }
 
@@ -69,7 +75,7 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
   const touch = (item, status, reason = '') => Object.assign(item, { status, reason, updatedAt: at });
   const taskById = new Map((snapshot.automations.items || []).map(t => [t.id, t]));
   const failures = snapshot.attention.filter(i => i.kind === 'automation'
-    || ['disk', 'service'].includes(i.kind) && i.severity === 'critical'
+    || (i.kind === 'disk' && ['warning', 'critical'].includes(i.severity) || i.kind === 'service' && i.severity === 'critical')
       && !(config.ignoreUnits || []).includes(i.id));
   const failingServices = new Set(failures.filter(i => i.kind === 'service').map(i => i.id || i.subject));
   for (const [id, resource] of Object.entries(state.resources)) {
@@ -99,6 +105,22 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       originRunId: task?.lastExecution?.runId || null, error: task?.lastExecution?.error || '',
       sessionId: task?.lastExecution?.sessionId || config.coordinatorSessionId || null,
       attempts: [], createdAt: at, updatedAt: at };
+    const incident = state.incidents[key];
+    if (failure.kind === 'disk') {
+      const stage = diskRiskStage(failure);
+      const policy = trim(config.policyVersion);
+      // New evidence can reopen bounded low-risk diagnosis. Never execute a
+      // waiting medium/high-risk plan, nor erase the previous attempt/receipt.
+      if (incident.status === 'blocked' && !incident.plan?.requiresConfirmation
+        && incident.attempts.length < maxAttempts
+        && (stage > (incident.riskStage || 2) || policy && policy !== incident.policyVersion)) {
+        incident.previousBlocks ||= [];
+        incident.previousBlocks.push({ at: incident.updatedAt, reason: incident.reason, summary: incident.summary });
+        touch(incident, 'pending', '磁盘风险恶化或已授权维护方法更新，重新核对低风险可执行候选');
+      }
+      incident.riskStage = Math.max(incident.riskStage || 0, stage);
+      incident.policyVersion = policy;
+    }
   }
   await persist();
   let active = 0, admitted = 0;
@@ -125,8 +147,18 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       }
       const receipt = await load(attempt.receiptFile);
       const valid = receipt?.key === item.key && receipt.requestId === attempt.requestId;
+      if (valid && receipt.status === 'awaiting_confirmation') {
+        const plan = recoveryPlan(receipt.plan);
+        item.evidence = receipt.evidence || []; item.summary = receipt.summary;
+        if (!plan?.requiresConfirmation || !item.evidence.length) {
+          touch(item, 'blocked', '确认方案缺少具体对象、影响、恢复方式、验收办法或证据，不能据此执行'); continue;
+        }
+        item.plan = plan;
+        touch(item, 'awaiting_confirmation', receipt.requiredHumanAction || plan.summary); continue;
+      }
       if (valid && receipt.status === 'blocked') {
         item.evidence = receipt.evidence || []; item.summary = receipt.summary;
+        item.plan = recoveryPlan(receipt.plan);
         touch(item, 'blocked', receipt.requiredHumanAction || receipt.summary || '补救执行方已核验阻塞'); continue;
       }
       if (run.state === 'cancelled') { touch(item, 'cancelled', '恢复执行被停止；不自动重开'); continue; }

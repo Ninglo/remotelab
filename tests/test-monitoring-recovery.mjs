@@ -245,3 +245,30 @@ test('resource work waits for a busy coordinator and recovery projection exposes
   await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 0); assert.equal(f.incident().status, 'pending');
   assert.doesNotMatch(JSON.stringify(projectRecovery(f.getState())), /original daily|sourceDelivery|receiptFile|Selected model/);
 });
+
+test('warning disks admit low-risk diagnosis before critical, and evidence-based worsening reopens a bounded blocked attempt', async () => {
+  const f = fixture({ kind: 'disk' });
+  Object.assign(f.snapshot.attention[0], { severity: 'warning', usedPercent: 86, availableBytes: 100 * 1024 ** 3 });
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  assert.match(f.incident().attempts[0].body.text, /中高风险动作先形成具体方案/);
+  f.finish('blocked'); await processMonitoringRecovery(f.options);
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  Object.assign(f.snapshot.attention[0], { severity: 'critical', usedPercent: 98, availableBytes: 12 * 1024 ** 3 });
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 2);
+  assert.equal(f.incident().previousBlocks.length, 1);
+  f.finish('blocked'); await processMonitoringRecovery(f.options);
+  f.snapshot.attention[0].availableBytes = 1;
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 2, 'bounded attempts remain bounded');
+});
+
+test('a medium-risk plan remains waiting through worsening; only an updated verified receipt closes it', async () => {
+  const f = fixture({ kind: 'disk' }); await processMonitoringRecovery(f.options); f.finish('awaiting_confirmation');
+  const attempt = f.incident().attempts[0], receipt = f.receipts.get(attempt.receiptFile);
+  receipt.plan = { risk: 'medium', summary: 'Move ended data', target: '/owned/archive', impact: 'read interruption', rollback: 'old pointer', verification: 'hash' };
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'awaiting_confirmation');
+  f.snapshot.attention[0].availableBytes = 1; f.options.config.policyVersion = 'new';
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  assert.equal(projectRecovery(f.getState())[0].plan.requiresConfirmation, true);
+  receipt.status = 'resolved'; f.snapshot.attention = []; f.snapshot.disks = [{ path: '/', status: 'healthy' }];
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'resolved');
+});

@@ -191,11 +191,11 @@ Use `scripts/monitoring-snapshot.mjs --output <prefix> --base-url <instance> --d
 
 `--upload` uploads as the explicitly configured Bot and writes a Markdown image-key block plus a receipt; it does not send. Include that block in the existing daily summary. The Feishu converter embeds a standalone `![label](img_key)` as a native image in that same post. It does not fetch remote URLs or local paths, and fenced examples stay literal. Keep the full editable table in the original report. Capture or upload failures must be reported as a snapshot gap and retain the ordinary daily text, not reuse an older image as today's observation.
 
-An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches new critical disk/service incidents and important native task failures persisting for three observations. Account exhaustion and account-observation loss remain with the account observer. Normal, restored and lower-priority states go into the report.
+An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches new critical disk/service incidents and important native task failures persisting for three observations. Normal account exhaustion stays in the account table; actionable local backup/switching failures use the continuity route below. Normal, restored and lower-priority states go into the report.
 
 Keep the observer's own service and timer visible in Overview, but list them in `alertDelivery.ignoreUnits`: it cannot reliably supervise its own absence, and an explicit maintenance pause must not notify as a new outage. Their health remains inspectable from the application and daily report.
 
-To consolidate account and resource notifications, set `alertDelivery.accountAlerts` to `{ "enabled": true, "sources": ["approved-adapter-id"] }` and `alertDelivery.confirmationObservations` to `3`. The same observer then batches account-observation loss, exhausted allowances, service failures and resource incidents in one message and one durable delivery ledger. Account readings use the existing identity deduplication across sources; one unavailable adapter does not report a loss when another source has a fresh valid reading. Account incidents require at least three observations. Services use the configured confirmation count (1–10, default 1); disk emergencies remain immediate. A baseline acknowledges existing account and service incidents even before they reach the confirmation count. Unknown readings never rearm an exhausted-account incident. Turn off the account dashboard's separate notification recipient before enabling this route, retain its collection and history, and verify that the old observer/timer is stopped on the retired host. Keep routine observations in the existing report.
+To consolidate account and resource notifications, set `alertDelivery.accountAlerts` to `{ "enabled": true, "sources": ["approved-adapter-id"] }` and `alertDelivery.confirmationObservations` to `3`. The same observer then batches local account-continuity risks, service failures and resource incidents in one message and one durable delivery ledger. Account readings use the existing identity deduplication across sources; one unavailable adapter does not report a loss when another source has a fresh valid reading. Account-continuity incidents require at least three observations. Services use the configured confirmation count (1–10, default 1); disk emergencies remain immediate. A baseline acknowledges existing account and service incidents even before they reach the confirmation count. Unknown readings never rearm an exhausted-account incident. Turn off the account dashboard's separate notification recipient before enabling this route, retain its collection and history, and verify that the old observer/timer is stopped on the retired host. Keep routine observations in the existing report.
 
 During migration, `--baseline` records already-known critical incidents without repeating a group notification. Recovery rearms a recurrence; unreadable sources cannot establish recovery. The observer persists sending intent before delivery, then saves the shared verified message receipt. Interrupted or uncertain delivery becomes `needs_review` and requires readback before retrying. Preserve state across restarts. This observer does not replace task result delivery.
 
@@ -207,7 +207,7 @@ Use `scripts/monitoring-alerts.mjs --dry-run` against the target instance enviro
 
 When the operator authorizes recovery, extend the same observer instead of adding another timer. Observation, incident notification and repair have separate durable records. Reporting or baselining a problem does not resolve it. The Harness still diagnoses the error, chooses permitted work and verifies business results; this broker supplies incident identity, bounds, admission and receipt reconciliation.
 
-Service recovery inherits `alertDelivery.confirmationObservations`, so a brief restart cannot start a repair before the configured number of distinct failed snapshots. Counts survive observer restarts and reset after an explicit healthy observation. An unknown measurement cannot authorize a new service repair. Disk emergencies remain immediate, and already admitted work continues normal receipt reconciliation.
+Service recovery inherits `alertDelivery.confirmationObservations`, so a brief restart cannot start a repair before the configured number of distinct failed snapshots. Counts survive observer restarts and reset after an explicit healthy observation. An unknown measurement cannot authorize a new service repair. Disk warning investigations and emergencies remain immediate, and already admitted work continues normal receipt reconciliation.
 
 Add an explicit instance-local configuration:
 
@@ -371,5 +371,73 @@ Codex 按 Run 起止时间读取用量时，只使用该时间段内的增量。
 已确认错误的旧账保留原 JSONL。维护者先用 `node scripts/repair-codex-usage-attribution.mjs --run run_ID` 定向复核，再加 `--apply` 追加校正记录。脚本只处理明确指定、来源为旧 Codex fallback 的已取消 Run，并完整扫描原生日志确认运行时间内没有用量记录。它不按数值大小或取消状态批量删账。校正记录包含原账哈希、原因、日志哈希和时间范围，同一错误 Run 跨日期文件存在多个旧版本时逐个保存哈希并校正，确保历史时间窗口也适用。原始事件不改写；`recordUsageCorrection` 的 restore 动作可以撤回校正。
 
 读取账本时，只有当前记录的 Run、Session 和内容哈希都匹配，校正才生效。未知用量从 token、费用和均值样本中排除，不当作零消耗；有效的取消任务仍保留。之后同一 Run 出现新的有效记录时，旧校正不覆盖新证据。API 的 `quality.excludedRuns` 与紧凑 Monitor API 的 `usageQuality` 提供缺口和原因。现有界面沿用同一个统计源，60 秒缓存到期或服务重启后刷新；本次不调整页面布局。
+
+## Action risk and account continuity (2026-10-12)
+
+Classify business risk separately from the risk of the proposed action. Normal
+subscription consumption and an exhausted individual account remain visible in
+the account table but do not create an incident or ask a person to replenish it.
+The local runtime pool is the authority for usable backups: fleet observations
+must never authorize using another instance's credentials. Overview exposes
+`accountContinuity`, including the automatic-switch policy, fresh local backups
+above 10%, the current balance and the last background switch receipt.
+At 20% without a qualified local backup, request a concrete choice (wait for the
+reset or authorize/login another account). At 10% with a backup, background
+selection changes subsequent requests; a persistent failure to do so is an
+incident. Unknown current quota is an observation problem, never exhaustion.
+Three observations confirm a continuity notification. Running requests retain
+their authorization and are never automatically replayed by rotation.
+If the current account is confirmed exhausted and no backup exceeds 10%, the
+selector uses the highest fresh positive local balance. The reserve requirement
+must not strand subsequent requests on an exhausted account. Low positive
+accounts do not bounce between one another.
+
+Disk warnings now enter the existing recovery broker at the warning threshold,
+before a critical outage. A repair Harness first investigates the actual source
+and existing work, executes authorized low-risk, recoverable steps and verifies
+the result. Medium/high-risk operations wait for human confirmation in the
+original handling Session. The durable receipt uses `awaiting_confirmation`
+and a `plan` with `risk`, `summary`, `target`, `impact`, `rollback` and
+`verification`, plus actual evidence. The observer never treats that state as
+permission to execute. Human-authorized execution updates the same receipt;
+independent recovery verification still applies.
+
+A blocked disk investigation can reopen within the existing attempt limit when
+risk materially worsens or the explicitly configured `recovery.policyVersion`
+changes. The previous block and every attempt remain recorded. Warning,
+critical, below 20 GiB/97%, and below 5 GiB/99.5% (inodes 97%/99%) are distinct
+escalation stages. A worsening stage or a new concrete confirmation plan sends
+one new notification. Repeated identical observations stay silent; uncertain
+sends still require readback. A waiting confirmation never auto-reopens as a
+repair. `workflowPaths` must cover each managed filesystem, including data disks;
+root-to-data migration is not a remedy when the data disk is itself full.
+
+Alert messages include the business risk, existing low-risk handling or the
+specific plan requiring confirmation. They do not equate urgency with permission
+to delete unique data, interrupt work, buy capacity or use another account.
+Known-unsent batches whose incidents retired or were subsequently delivered are
+marked superseded, preserving history without keeping them as current failures.
+
+Feishu quota rejection remains latched across restarts and log retention. A
+later real successful call of the same app, HTTP method and sanitized affected
+business endpoint (observed within 15 minutes) is now sufficient evidence that
+that interface works again. It clears the operational latch and records the
+restoration evidence; auth/token success, another app/endpoint and an estimated
+monthly balance cannot do so. A new rejection relatches it. Explicit operator
+restoration remains supported. Incomplete logging stays visible even with this
+positive recovery evidence; it no longer prevents the proven transport from
+resuming known-unsent current notifications. This does not infer the tenant's
+remaining billing quota or automatically replay uncertain deliveries.
+
+A restriction on another API (for example calendar) must not disable an
+independently proven message transport. A successful message send/reply of the
+same app, newer than its rejection and within 15 minutes, permits the observer
+to deliver current alerts. The affected API's rejection and the unknown tenant
+balance remain recorded; its warning is not described as a proven total
+messaging outage. No extra probe or test group message is sent. The verified receipt survives quiet periods and log rotation. A newer quota
+rejection invalidates it and requires fresh positive sending evidence before
+the dependency block can be lifted again.
+The dispatch gate uses that same durable evidence and does not impose an
+independent expiry that could resurrect the old restriction.
 
 Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#stable-automation-home-explicit-opt-in). Its header reads native execution state directly and distinguishes future-trigger cancellation from active runs. Monitoring and evaluation configuration remain separate; a home is not a new supervisor.

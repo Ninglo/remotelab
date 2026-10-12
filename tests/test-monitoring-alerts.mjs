@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dispatchMonitoringAlerts } from '../chat/monitoring-alerts.mjs';
+import { dispatchMonitoringAlerts, renderMonitoringAlert } from '../chat/monitoring-alerts.mjs';
 import { renderMonitoringReport } from '../lib/monitoring-report.mjs';
 
 const disk = { kind: 'disk', subject: 'System disk', severity: 'critical', availableBytes: 3 * 1024 ** 3, usedPercent: 97 };
@@ -121,7 +121,7 @@ test('a disk leaving the critical range rearms a later critical event with a new
   const f = fixture(), keys = [];
   const options = { ...f.options, send: async (_events, _config, key) => { keys.push(key); return 'om_batch'; } };
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([disk]) });
-  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([{ ...disk, severity: 'warning' }]) });
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([{ ...disk, severity: 'warning', availableBytes: 30 * 1024 ** 3, usedPercent: 88 }]) });
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([disk]) });
   assert.equal(keys.length, 2); assert.notEqual(keys[0], keys[1]);
 });
@@ -156,7 +156,7 @@ test('daily source keeps stopped automation repairs out of the current failure t
   assert.equal(value.recovery.length, 2);
 });
 
-test('one observer batches persistent service, account-loss and exhaustion incidents, with explicit recovery', async () => {
+test('normal exhaustion and remote account observation loss do not notify; service recovery still rearms', async () => {
   const f = fixture(), config = { confirmationObservations: 3, accountAlerts: { enabled: true, sources: ['approved'] } };
   const value = snapshot([{ kind: 'service', id: 'app.service', subject: 'App', severity: 'critical' }]);
   value.accounts = [{ id: 'a', label: 'A', status: 'unknown', sources: ['approved'] },
@@ -165,7 +165,7 @@ test('one observer batches persistent service, account-loss and exhaustion incid
   const options = { ...f.options, config, snapshot: value };
   await dispatchMonitoringAlerts(options); await dispatchMonitoringAlerts(options);
   assert.equal(f.getSends(), 0);
-  assert.equal((await dispatchMonitoringAlerts(options)).sent, 3);
+  assert.equal((await dispatchMonitoringAlerts(options)).sent, 1);
   await dispatchMonitoringAlerts(options); assert.equal(f.getSends(), 1);
   const unknown = snapshot([]); unknown.accounts = [{ id: 'b', status: 'unknown', sources: ['approved'] }];
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: unknown });
@@ -175,7 +175,7 @@ test('one observer batches persistent service, account-loss and exhaustion incid
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: recovered });
   await dispatchMonitoringAlerts(options); await dispatchMonitoringAlerts(options);
   assert.equal(f.getSends(), 1);
-  assert.equal((await dispatchMonitoringAlerts(options)).sent, 3);
+  assert.equal((await dispatchMonitoringAlerts(options)).sent, 1);
 });
 
 test('account consolidation is opt-in and baselines existing failures before the threshold', async () => {
@@ -189,4 +189,35 @@ test('account consolidation is opt-in and baselines existing failures before the
   for (let i = 0; i < 4; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
   assert.equal(f.getSends(), 0);
   assert.equal(Object.values(f.getState().incidents).every(incident => incident.status === 'baseline'), true);
+});
+
+
+test('local continuity incidents require persistence; fleet exhaustion alone stays silent', async () => {
+  const f = fixture(), config = { accountAlerts: { enabled: true } };
+  const value = snapshot([{ kind: 'accountContinuity', id: 'local-codex', subject: 'Local continuity', severity: 'warning',
+    action: { risk: 'medium', requiresConfirmation: true, summary: 'No authorized backup; choose a new login or wait for reset.' } }]);
+  value.accountContinuity = { status: 'no_backup' };
+  for (let i = 0; i < 2; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  assert.equal(f.getSends(), 0);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 1);
+  const ready = snapshot([]); ready.accountContinuity = { status: 'ready' };
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: ready });
+  for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  assert.equal(f.getSends(), 2);
+});
+
+test('disk warning starts early, deterioration and a concrete confirmation plan each notify once', async () => {
+  const f = fixture(), value = snapshot([{ ...disk, id: '/data', severity: 'warning', usedPercent: 86, availableBytes: 100 * 1024 ** 3 }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 1);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 1);
+  Object.assign(value.attention[0], { severity: 'critical', usedPercent: 98, availableBytes: 12 * 1024 ** 3 });
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 2);
+  const plan = { risk: 'high', requiresConfirmation: true, summary: 'Migrate finished archive', target: 'owned/archive',
+    impact: 'brief read interruption', rollback: 'restore original pointer', verification: 'hash and original-path read' };
+  const config = { recoveryIncidents: [{ kind: 'disk', id: '/data', status: 'awaiting_confirmation', plan }] };
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 3);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value }); assert.equal(f.getSends(), 3);
+  const message = renderMonitoringAlert(value.attention, config);
+  assert.match(message, /确认前不执行/); assert.match(message, /owned\/archive/); assert.match(message, /hash and original-path read/);
 });
