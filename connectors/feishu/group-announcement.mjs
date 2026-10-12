@@ -96,14 +96,21 @@ export async function topicAnnouncementContext(runtime, summary, sessionId) {
   if (isFeishuDocumentCommentSummary(summary) || ['p2p', 'private'].includes(summary.chatType)
       || !summary.chatId || !(buildFeishuTopicId(summary) || summary.startThread
         || ['topic', 'thread'].includes(summary.conversationKind))) return null;
+  const link = runtime.config?.projectLinks?.find(entry =>
+    entry.discussionChatId === summary.chatId || entry.workChatId === summary.chatId);
+  const sourceChatId = link?.discussionChatId || summary.chatId;
+  const projectId = link?.projectId || '';
+  const sourceChatName = link?.discussionChatName || summary.chatName || '';
   const scope = [runtime.config?.sourceRouteId || 'default', summary.chatId, sessionId];
   const key = createHash('sha256').update(JSON.stringify(scope)).digest('hex');
   const pathname = runtime.config?.storageDir ? join(runtime.config.storageDir, 'announcement-snapshots', `${key}.json`) : '';
   return serial(key, async () => {
     // This is the topic's source snapshot, never evidence that a Harness read it.
     let snapshot = pathname ? await readJson(pathname) : null;
-    if (!snapshot || snapshot.version !== 1) {
-      snapshot = { version: 1, ...await loadFeishuGroupAnnouncement(runtime, summary) };
+    if (!snapshot || snapshot.version !== 2 || snapshot.sourceChatId !== sourceChatId
+        || snapshot.projectId !== projectId) {
+      snapshot = { version: 2, sourceChatId, sourceChatName, projectId,
+        ...await loadFeishuGroupAnnouncement(runtime, { ...summary, chatId: sourceChatId }) };
       // Transient/permission failures are retried on a later input, not frozen forever.
       if (pathname && snapshot.status !== 'unavailable') {
         // A disk error must not drop the human's message or the fetched context.
@@ -114,7 +121,7 @@ export async function topicAnnouncementContext(runtime, summary, sessionId) {
     const text = snapshot.status === 'available' ? snapshot.text
       : snapshot.status === 'empty' ? '本话题首次读取时，群公告为空。'
         : `群公告读取失败（${snapshot.errorCode}）；不能视为无公告。需要公告时请补读。`;
-    return { ...snapshot, text: undefined, messages: [{ messageId: `announcement:${key}`, messageRevision: snapshot.revision || snapshot.status,
+    return { ...snapshot, text: undefined, messages: [{ messageId: `announcement:v2:${key}:${sourceChatId}:${projectId}`, messageRevision: snapshot.revision || snapshot.status,
       sender: '群公告', text, time: snapshot.fetchedAt }] };
   });
 }

@@ -111,8 +111,9 @@ Notes:
 
 ### Group announcement context
 
-New group topics/threads automatically read their own group's announcement using
-Bot scope `im:chat.announcement:read`. Text and links are captured per topic;
+New group topics/threads automatically read their group's announcement using
+Bot scope `im:chat.announcement:read`. Bound discussion/work chats both use the
+discussion chat announcement as their shared project context. Text and links are captured per topic;
 subsequent replies reuse that snapshot and omit it from the model input after
 confirmed Harness receipt. New topics read later edits. Empty, unreadable,
 truncated and non-text content are marked explicitly. No announcement is edited.

@@ -171,7 +171,11 @@ Harness requirements continue to apply.
 
 ## Feishu topic announcements (2026-10-12)
 
-Group topics/threads read their own chat announcement on first processing. The
+Group topics/threads read their announcement on first processing. For configured
+`projectLinks`, both discussion and work chats use the discussion chat announcement
+as the shared project source; unbound chats use their own announcement. Version-1
+local snapshots (including empty work-chat snapshots) are invalidated on the next
+input. A binding/source change also invalidates the cached snapshot and receipt. The
 connector stores a bounded source snapshot per route/chat/Session under its
 `announcement-snapshots` directory. New topics fetch the current announcement;
 existing topics retain their captured version across connector restarts. Topics

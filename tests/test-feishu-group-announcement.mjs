@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -58,5 +59,28 @@ try {
   runtime.appClient.docx.v1.chatAnnouncementBlock.list = async () => { revision++; return { data: { items: [block('edited')] } }; };
   assert.equal((await loadFeishuGroupAnnouncement(runtime, summary)).errorCode, 'revision_changed');
   assert.equal(legacyAnnouncementText(JSON.stringify({ title: 'Title', body: { blocks: [{ paragraph: { elements: [{ textRun: { text: 'legacy' } }] } }] } })), 'Title\nlegacy');
+  const requests = [];
+  runtime.appClient.docx.v1.chatAnnouncement.get = async ({ path }) => {
+    requests.push(path.chat_id);
+    return { data: { announcement_type: 'docx', revision_id: 8 } };
+  };
+  runtime.appClient.docx.v1.chatAnnouncementBlock.list = async ({ path }) => ({ data: { items: [block(`Rules from ${path.chat_id}`)] } });
+  runtime.config.projectLinks = [{ projectId: 'p', discussionChatId: 'discussion', discussionChatName: 'Discussion', workChatId: 'group-a' }];
+  const oldKey = createHash('sha256').update(JSON.stringify(['test', 'group-a', 'legacy-topic'])).digest('hex');
+  await writeFile(join(home, 'announcement-snapshots', `${oldKey}.json`), JSON.stringify({ version: 1, status: 'empty', text: '' }));
+  const sharedWork = await topicAnnouncementContext(runtime, summary, 'legacy-topic');
+  const sharedDiscussion = await topicAnnouncementContext(runtime, { ...summary, chatId: 'discussion' }, 'discussion-topic');
+  assert.equal(sharedWork.messages[0].text, sharedDiscussion.messages[0].text);
+  assert.equal(sharedWork.sourceChatId, 'discussion');
+  assert.equal(sharedWork.status, 'available', 'old empty local snapshot is replaced');
+  assert.deepEqual([...new Set(requests)], ['discussion'], 'both chats read only canonical source');
+  assert.match(buildSourceContextPrompt({ connector: 'feishu', groupAnnouncement: sharedWork }), /项目共享群公告/);
+  runtime.config.projectLinks[0].discussionChatId = 'new-discussion';
+  const rebound = await topicAnnouncementContext(runtime, summary, 'legacy-topic');
+  assert.equal(rebound.sourceChatId, 'new-discussion');
+  assert.notEqual(rebound.messages[0].messageId, sharedWork.messages[0].messageId, 'source rebinding invalidates old receipt');
+  runtime.config.projectLinks = [];
+  const unbound = await topicAnnouncementContext(runtime, summary, 'legacy-topic');
+  assert.equal(unbound.sourceChatId, 'group-a', 'unbound chat returns to its own announcement');
   console.log('announcement: paging, versions, concurrency, scope, empty/error recovery, limits, prompt, receipt dedup and fresh-thread recovery passed');
 } finally { await rm(home, { recursive: true, force: true }); }
