@@ -31,8 +31,9 @@
       // Both supported native versions expose two direct rows: title + digest.
       // An unknown structure retains official text rather than guessing a slot.
       const titleRow=main?.children[0],detailRow=main?.children[1];
-      if(!name||!titleRow?.contains(name)||!detailRow)continue;
       let state=mounted.get(row);
+      if(!name||!titleRow?.contains(name)||!detailRow){if(state)restore(row,state);continue;}
+      if(state)for(const node of state.originals)if(!node.isConnected)state.originals.delete(node);
       if(state&&(state.name!==name||!state.headline.isConnected||state.detailRow!==detailRow)){restore(row,state);state=null;}
       if(!state){
         const headline=make('div','rlfe-feed-headline');headline.append(make('span','rlfe-feed-status'),make('span','rlfe-feed-name'));

@@ -41,7 +41,8 @@ try{
  await page.locator('#rlfe-host [data-theme="mist"]').click();assert.equal(await page.evaluate(()=>fixture.prefs.theme),'sky');
  await page.locator('#rlfe-host #close').click();assert.equal(await page.evaluate(()=>__RLFE_SETTINGS_STATUS__().current.theme),'sky');
  await page.locator('#rlfe-native-settings').click();await page.locator('#rlfe-host [data-theme="mist"]').click();await page.locator('#rlfe-host #apply').click();await page.waitForFunction(()=>fixture.prefs.theme==='mist');
- await page.locator('#rlfe-personal-nav button').first().click();assert.equal(await page.evaluate(()=>__RLFE_WORKSPACE__.status().visible),true);await page.keyboard.press('Escape');
+ await page.locator('#rlfe-personal-nav button').first().click();assert.equal(await page.evaluate(()=>__RLFE_WORKSPACE__.status().visible),true);
+ const workspace=await page.locator('#rlfe-personal-workspace').boundingBox(),scroll=await page.locator('#rlfe-personal-workspace #scroll').boundingBox();assert.equal(workspace.x,0);assert.equal(workspace.y,44);assert(scroll.y+scroll.height<=849);await page.keyboard.press('Escape');
  await page.locator('#rlfe-personal-nav button').nth(1).click();assert.equal(await page.evaluate(()=>__RLFE_WORKSPACE__.status().surface),'thinking');await page.keyboard.press('Escape');
  await page.evaluate(()=>fixture.emit('topics',{sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'核对状态',status:'running'}]}));
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-name')?.textContent==='真实工作标题');
