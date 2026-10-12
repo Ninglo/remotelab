@@ -282,8 +282,13 @@ The Overview shows three compact panels in order: Session, shared resources, and
 Each presents totals and observation/exception status first. Session totals are
 followed by up to three named exceptions with every affected metric, recent value
 and baseline, plus three group/initiator summaries. Without exceptions, up to
-three running/waiting Session names are visible. Full metric tables, provider
-endpoints, accounts and operational records start collapsed. Clicking a Session
+three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resource tables
+start expanded: accounts show status and quota bars, followed by disk and
+service/task tables. Resource exception and existing recovery records open from the status button or
+their own fold, so they do not push tables below a long incident list. Complete
+account reset-window cards remain under a fold.
+Session exception cards compare recent values with their baseline using labelled
+bars; metrics keep units and textual values, rather than relying on colour alone. Clicking a Session
 exception selects its titled detail view without putting an opaque ID in search.
 Affected table metrics are marked, with sample comparisons beside the Session name. Expansions and
 owner filters reuse fetched data and do not start another query. Manual refresh

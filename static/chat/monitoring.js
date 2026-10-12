@@ -101,7 +101,7 @@
   function summaryStatus(parent, label, severity, details) {
     const button = node("button", label, "monitoring-action"); button.type = "button";
     button.dataset.severity = severity;
-    button.addEventListener("click", () => { const fold = details?.closest("details"); if (fold) fold.open = true; });
+    button.addEventListener("click", () => { const fold = details?.closest("details"); if (fold) fold.open = true; const issues = details?.querySelector("[data-resource-issues]"); if (issues) { issues.open = true; issues.scrollIntoView({ block: "nearest" }); } });
     parent.appendChild(button);
   }
   function render() {
@@ -143,7 +143,9 @@
     const recoveries = value.recovery || [];
     const currentRecovery = item => item.currentIssue ?? (!["resolved", "cancelled"].includes(item.status)
       && !["healthy", "paused", "cancelled", "completed"].includes(item.currentResourceStatus));
-    const attention = section(t("attention"), snapshot); attention.dataset.section = "attention";
+    const issues = node("details", "", "monitoring-resource-issues"); issues.dataset.resourceIssues = "true";
+    issues.appendChild(node("summary", "查看资源异常与已有处理记录")); snapshot.appendChild(issues);
+    const attention = section(t("attention"), issues); attention.dataset.section = "attention";
     if (!value.attention.length && !recoveries.some(currentRecovery)) attention.appendChild(node("p", t("clear"), "monitoring-note"));
     else value.attention.filter(item => item.kind !== "api").slice().sort((a, b) => (b.severity === "critical") - (a.severity === "critical")).forEach(item => {
       const row = node("div", "", "monitoring-alert"); row.dataset.severity = item.severity;
@@ -179,10 +181,23 @@
         const badge = node("span", `${status(state)} ${count}`, "monitoring-account-status"); badge.dataset.status = state; summary.appendChild(badge);
       }
       accounts.appendChild(summary);
-      const grid = node("div", "", "monitoring-account-grid");
-      value.accounts.slice().sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)))
-        .forEach(account => grid.appendChild(accountCard(account)));
-      accounts.appendChild(grid);
+      const sortedAccounts = value.accounts.slice().sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
+      table(accounts, [t("account"), t("status"), "剩余额度", "最近观测"], sortedAccounts.map(account => {
+        const label = node("div", account.label);
+        if (account.active) label.appendChild(node("small", t("active"), "monitoring-owner"));
+        const badge = node("span", status(account.status), "monitoring-account-status"); badge.dataset.status = account.status;
+        const quota = node("div", "", "monitoring-quota-cell");
+        for (const window of account.windows) {
+          const row = node("div"); row.appendChild(node("span", `${quotaDuration(window)} · ${percent(window.remainingPercent)}`));
+          if (Number.isFinite(window.remainingPercent)) { const meter = node("meter"); meter.min = 0; meter.max = 100; meter.value = window.remainingPercent; meter.low = 10; meter.high = 30; meter.optimum = 100; meter.setAttribute("aria-label", `${account.label} ${quotaDuration(window)} 剩余 ${percent(window.remainingPercent)}`); row.appendChild(meter); }
+          quota.appendChild(row);
+        }
+        if (!account.windows.length) quota.appendChild(node("span", t("quotaUnknown")));
+        return [label, badge, quota, time(account.observedAt)];
+      }));
+      const quotaDetails = node("details"); quotaDetails.appendChild(node("summary", "查看各账号重置时间与完整额度"));
+      const grid = node("div", "", "monitoring-account-grid"); sortedAccounts.forEach(account => grid.appendChild(accountCard(account)));
+      quotaDetails.appendChild(grid); accounts.appendChild(quotaDetails);
       accounts.appendChild(node("p", t("quotaNote"), "monitoring-note"));
     }
     if (!value.opportunities.length) accounts.appendChild(node("p", t("noCapacity"), "monitoring-note"));

@@ -622,3 +622,53 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 #monitoringSessions .monitoring-owner-summary th:first-child,
 #monitoringSessions .monitoring-owner-summary td:first-child { width: 40%; }
 #monitoringSessions .monitoring-owner-summary button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+
+/* Monitor reading hierarchy: metrics, comparisons, then the resource tables. */
+#monitoringOverview { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; font-style: normal; }
+#monitoringOverview .monitoring-summary-panel { padding: 22px 24px; border-radius: 14px; margin: 18px 0; }
+#monitoringOverview .monitoring-summary-panel h2 { font-size: 18px; letter-spacing: .01em; }
+#monitoringOverview .monitoring-summary-metrics { gap: 12px; margin: 18px 0; }
+#monitoringOverview .monitoring-summary-metrics > div { padding: 16px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 4%, var(--bg-secondary)); border: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
+#monitoringOverview .monitoring-summary-metrics strong { font-size: clamp(21px, 2.4vw, 30px); line-height: 1.2; letter-spacing: -.025em; }
+#monitoringOverview .monitoring-summary-metrics small { line-height: 1.55; }
+#monitoringOverview .monitoring-summary-status { margin-bottom: 14px; }
+#monitoringOverview .monitoring-session-signals { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin: 14px 0 22px; }
+#monitoringOverview .monitoring-session-signals > button { align-content: start; padding: 14px 16px; border: 1px solid var(--border); border-top: 3px solid #b7791f; border-radius: 10px; color: var(--text-primary); background: var(--bg); }
+#monitoringOverview .monitoring-session-signals > button[data-severity="critical"] { border-top-color: var(--danger, #c2413c); }
+#monitoringOverview .monitoring-session-signals > button:hover { background: var(--bg-secondary); border-right-color: var(--accent); border-left-color: var(--accent); }
+.monitoring-signal-title { display: block; font-size: 13px; line-height: 1.6; color: var(--text-primary); }
+.monitoring-session-signals .monitoring-session-anomalies { gap: 14px; margin-top: 6px; }
+.monitoring-signal-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; font-size: 11px; }
+.monitoring-signal-ratio { flex-shrink: 0; border-radius: 4px; padding: 2px 5px; background: color-mix(in srgb, currentColor 8%, transparent); font-size: 12px; }
+.monitoring-comparison-row { display: grid; grid-template-columns: 28px minmax(20px, 1fr) 74px; align-items: center; gap: 7px; margin: 5px 0; font-size: 11px; font-variant-numeric: tabular-nums; }
+.monitoring-comparison-row > small { color: var(--text-muted); font-size: 10px; }
+.monitoring-comparison-row > span:last-child { text-align: right; color: var(--text-secondary); }
+.monitoring-comparison-track { height: 6px; border-radius: 4px; overflow: hidden; background: var(--bg-secondary); }
+.monitoring-comparison-track > span { display: block; height: 100%; background: currentColor; border-radius: 4px; }
+.monitoring-comparison-track[data-kind="baseline"] > span { background: var(--text-muted); opacity: .5; }
+#monitoringOverview .monitoring-table-wrap { border: 1px solid var(--border); border-radius: 9px; }
+#monitoringOverview .monitoring-table-wrap th { background: var(--bg-secondary); font-size: 11px; white-space: nowrap; }
+#monitoringOverview .monitoring-table-wrap th, #monitoringOverview .monitoring-table-wrap td { padding: 11px 12px; }
+#monitoringOverview .monitoring-table-wrap tbody > tr:last-child > td { border-bottom: 0; }
+#monitoringOverview .monitoring-table-wrap tbody > tr:hover { background: color-mix(in srgb, var(--accent) 3%, var(--bg)); }
+#monitoringOverview .monitoring-owner-summary th, #monitoringOverview .monitoring-owner-summary td { padding: 10px 8px; }
+#monitoringOverview .monitoring-owner-summary button { background: transparent; border-color: transparent; padding: 3px 0; font-weight: 550; }
+#monitoringOverview .monitoring-session-controls input, #monitoringOverview .monitoring-session-controls select { font: inherit; font-size: 12px; }
+.monitoring-quota-cell { min-width: 120px; display: grid; gap: 8px; }
+.monitoring-quota-cell meter { display: block; width: 100%; height: 7px; margin-top: 3px; accent-color: var(--accent); }
+#monitoringResourcePanel .monitoring-section { margin-top: 24px; padding-top: 18px; }
+#monitoringResourcePanel .monitoring-section h3 { margin-bottom: 10px; }
+@media(max-width: 600px) {
+  #monitoringOverview .monitoring-summary-panel { padding: 16px 12px; }
+  #monitoringOverview .monitoring-summary-metrics { gap: 6px; }
+  #monitoringOverview .monitoring-summary-metrics > div { padding: 10px 7px; }
+  #monitoringOverview .monitoring-summary-metrics strong { font-size: 19px; }
+  #monitoringOverview .monitoring-summary-metrics small { font-size: 10px; }
+  #monitoringOverview .monitoring-session-signals { grid-template-columns: 1fr; gap: 10px; }
+  #monitoringOverview .monitoring-owner-summary th, #monitoringOverview .monitoring-owner-summary td { padding: 9px 5px; font-size: 11px; }
+}
+
+.monitoring-quota-cell meter::-webkit-meter-bar { border: 0; background: var(--bg-secondary); border-radius: 4px; }
+.monitoring-quota-cell meter::-webkit-meter-optimum-value { background: #438461; }
+.monitoring-quota-cell meter::-webkit-meter-suboptimum-value { background: #b7791f; }
+.monitoring-quota-cell meter::-webkit-meter-even-less-good-value { background: var(--danger, #c2413c); }
