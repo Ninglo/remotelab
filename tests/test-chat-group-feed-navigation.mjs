@@ -155,3 +155,13 @@ vm.runInContext(['getActiveSessions', 'getArchivedSessions', 'getArchivedSession
 assert.deepEqual(Array.from(context.getActiveSessions(), item => item.id), ['automated-run','mine']);
 assert.deepEqual(Array.from(context.getArchivedSessions(), item => item.id), ['archived-auto']);
 console.log('Automation collection separates ordinary, group, archived and unselected internal Sessions.');
+
+const httpSource = readFileSync(join(root, 'static/chat/session-http.js'), 'utf8');
+Object.assign(context, {
+ getAttachedSessionRenderState: () => ({sessionId:automation.id,signature:'same'}),
+ getComparableAttachedSessionStateSignature: () => 'same', syncForkButton() {}, syncShareButton() {},
+});
+vm.runInContext(extractFunction(httpSource,'applyAttachedSessionState'),context);
+scope='__all__';
+context.applyAttachedSessionState(automation.id, automation);
+assert.equal(scope,'__automations__','direct URL hydration selects the collection without a prior attach');

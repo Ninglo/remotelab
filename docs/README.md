@@ -56,6 +56,8 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Current Core
 
+- [Automation tasks and execution Sessions](task-center-v1.md#automation-session-collection) — explicit collection membership, existing-run migration and direct execution links.
+
 - [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.
 - [Connector turn context](connector-turn-context.md) — current rule projection, recovery snapshots and concise reply guidance for simple answers and quick checks.
 

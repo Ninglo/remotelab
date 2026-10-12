@@ -1191,6 +1191,12 @@ async function organizeSessionList({ closeSidebar = false } = {}) {
 }
 
 function applyAttachedSessionState(id, session) {
+  // Direct URL restoration can hydrate state before attachSession receives the
+  // full Session record. Select the collection on that path as well.
+  if (session?.sessionCollection === "automations"
+    && typeof setPersonScope === "function" && getCurrentPersonFilter() !== "__automations__") {
+    setPersonScope("__automations__");
+  }
   const attachedSessionRenderState = getAttachedSessionRenderState();
   const nextSignature = getComparableAttachedSessionStateSignature(session || null);
   const shouldRefreshUi = attachedSessionRenderState.sessionId !== id

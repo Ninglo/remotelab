@@ -19,7 +19,8 @@ Feishu group chats. Participation is explicit: a schedule or trigger template
 sets `sessionCollection: "automations"`. New `scheduled_execution` Sessions
 inherit that marker. Unselected internal Sessions remain hidden as before;
 ordinary People lists exclude collected runs. Archived runs retain their marker.
-Opening a collected Session selects the collection automatically.
+Opening a collected Session, including a direct URL restored before the sidebar
+loads, selects the collection automatically.
 
 The automation API projection exposes the template's `sessionCollection`.
 Opted-in task cards and flow rows link to the newest retained execution Session,
