@@ -524,6 +524,11 @@ try {
   const policyOtherOptions = policyOptions('policy-other', 'b');
   const policyRoot = await rpc('accept', policySession.id, 'Hold personal-policy execution', [], policyOptions('policy-root', 'a'));
   await until(async () => (await logs()).some(event => event.runId === policyRoot.run.id && event.kind === 'turn/start'), 'personal-policy turn starts');
+  const acceptedRootPolicy = (await rpc('request', policySession.id, 'policy-root')).options.messageReplyPolicy;
+  assert.equal(acceptedRootPolicy.strictStartRule.version, 'v1');
+  assert.equal(acceptedRootPolicy.strictStartRule.origin.requestId, 'policy-root');
+  assert.equal(acceptedRootPolicy.strictStartRule.origin.sessionId, policySession.id);
+
   await rpc('message-settings', { action: 'strict-start', expectedRevision: originalPolicy.revision,
     confirm: true, enabled: false }, policyActor('a'));
   for (const [id, who] of [['policy-other', 'b'], ['policy-same', 'a']]) {
@@ -533,7 +538,7 @@ try {
   const admittedOther = await rpc('request', policySession.id, 'policy-other');
   assert.deepEqual(admittedOther.options.messageReplyPolicy, { ...otherPolicy.active, final: true }, 'another Person captures their own strict-start and display choices');
   assert.deepEqual((await rpc('request', policySession.id, 'policy-same')).options.messageReplyPolicy,
-    { ...originalPolicy.active, final: true }, 'same-Person continuation keeps the accepted work snapshot after a toggle');
+    acceptedRootPolicy, 'same-Person continuation keeps the accepted rule version/body/provenance after a toggle');
   const unknownOptions = policyOptions('policy-unknown', 'unknown');
   delete unknownOptions.viewPersonId; delete unknownOptions.initiatedByIdentityId;
   await rpc('accept', policySession.id, 'Continue without a verified Person', [], unknownOptions);

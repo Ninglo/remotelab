@@ -558,3 +558,50 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .monitoring-session-coverage, .monitoring-resource-details { margin: 18px 0; padding: 12px 0; border-top: 1px solid var(--border); }
 .monitoring-resource-details > summary { cursor: pointer; font-weight: 600; }
 @media(max-width: 600px) { .monitoring-session-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .monitoring-session-controls { gap: 6px; } }
+
+/* The overview is three compact summaries; investigation stays inside folds. */
+.monitoring-summary-panel { border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin: 14px 0; min-width: 0; }
+.monitoring-summary-panel h2 { margin: 0 0 8px; font-size: 17px; }
+.monitoring-summary-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.monitoring-summary-metrics > div { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.monitoring-summary-metrics small { color: var(--text-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.monitoring-summary-metrics strong { font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.monitoring-summary-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.monitoring-summary-panel .monitoring-action[data-severity="critical"] { color: var(--danger, #c2413c); border-color: var(--danger, #c2413c); }
+.monitoring-summary-panel .monitoring-action[data-severity="warning"] { color: #a46716; border-color: #b7791f; }
+.monitoring-fold { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.monitoring-fold > summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); padding: 5px 0; }
+.monitoring-fold[open] > summary { margin-bottom: 16px; }
+@media (max-width: 600px) {
+  .monitoring-summary-panel { padding: 14px 12px; }
+  .monitoring-summary-metrics { gap: 9px; }
+  .monitoring-summary-metrics strong { font-size: 19px; }
+}
+
+/* Compact workflow explanations inside the existing Automations view. */
+.task-center-flows { width: min(100%, 880px); margin: 0 0 28px; }
+.task-flow-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.task-flow-tabs button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.task-flow-read { padding: 12px 14px; background: var(--bg-secondary); border-left: 3px solid var(--border); color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.task-flow-row { border-bottom: 1px solid var(--border); padding: 16px 0; }
+.task-flow-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.task-flow-heading h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.task-flow-time { color: var(--text-muted); font-size: 11px; }
+.task-flow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 12px; }
+.task-flow-step { min-width: 0; position: relative; }
+.task-flow-step:not(:last-child)::after { content: '→'; position: absolute; right: -18px; top: 23px; color: var(--text-muted); }
+.task-flow-label { font-size: 11px; color: var(--text-muted); }
+.task-flow-step p { margin: 6px 0 0; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.task-flow-link { display: inline-block; color: var(--accent); margin: 6px 10px 0 0; font-size: 12px; }
+.task-flow-bottom { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; margin-top: 8px; }
+.task-flow-bottom .task-history-note { margin: 0; }
+.task-flow-bottom button { flex: 0 0 auto; }
+.task-flow-review { color: var(--danger, #a25320); font-size: 12px; margin: 8px 0 0; }
+.task-list-heading { font-size: 15px; font-weight: 600; margin: 0 0 14px; }
+@media (max-width: 720px) {
+  .task-flow-steps { grid-template-columns: 1fr; gap: 18px; }
+  .task-flow-step:not(:last-child)::after { content: '↓'; left: 0; right: auto; top: auto; bottom: -18px; font-size: 12px; }
+  .task-flow-heading { gap: 4px; }
+  .task-flow-time { display: block; width: 100%; }
+  .task-flow-bottom { align-items: flex-start; }
+}

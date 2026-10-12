@@ -52,7 +52,7 @@ assert.match(script, /maxExecutions:\s*Number/, 'finite lifetime must submit its
 assert.match(script, /mode:\s*"script"[\s\S]*runtime:[\s\S]*source:/, 'script gate configuration must be submitted explicitly');
 assert.match(script, /globalScope\.confirm/, 'terminal cancellation needs a user confirmation');
 assert.doesNotMatch(script, /\.innerHTML\s*=/, 'task content should not be rendered through innerHTML');
-assert.match(template, /id="monitoringOverviewTab"[\s\S]*id="monitoringAutomationsTab"[^>]*aria-selected="true"/, 'Monitoring preserves the default automation view');
+assert.match(template, /id="monitoringOverviewTab"[^>]*aria-selected="true"/, 'Monitor opens the summary overview by default');
 assert.match(template, /id="monitoringOverview"[^>]*hidden/, 'Overview is a switchable view, not another navigation destination');
 assert.match(monitoring, /\/api\/monitoring\/overview/, 'Overview uses the shared monitoring source');
 assert.doesNotMatch(monitoring, /\.innerHTML\s*=/, 'Monitoring data must be rendered as text');

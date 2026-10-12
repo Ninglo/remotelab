@@ -47,6 +47,10 @@
 
   let tasks = [];
   let backgroundMechanisms = [];
+  let automationFlows = { groups: [] };
+  let selectedFlow = "memory";
+  let flowTaskIds = null;
+  const flowsPanel = document.getElementById("taskCenterFlows");
   let loaded = false;
   let loading = false;
   let actionTaskId = "";
@@ -783,9 +787,69 @@
     main.appendChild(detail); card.appendChild(main); return card;
   }
 
+  function renderFlows() {
+    if (!flowsPanel) return;
+    flowsPanel.replaceChildren();
+    const groups = automationFlows.groups || [];
+    flowsPanel.hidden = !groups.length && !automationFlows.unavailable;
+    if (automationFlows.unavailable) {
+      flowsPanel.appendChild(createNode("p", "task-history-note", translate("tasks.flows.unavailable", "Flow descriptions unavailable; task list remains available.")));
+      return;
+    }
+    if (!groups.length) return;
+    if (!groups.some(group => group.id === selectedFlow)) selectedFlow = groups[0].id;
+    const nav = createNode("div", "task-flow-tabs");
+    nav.setAttribute("role", "group");
+    nav.setAttribute("aria-label", translate("tasks.flows.title", "Automation flows"));
+    for (const group of groups) {
+      const button = createNode("button", "task-center-secondary", translate(`tasks.flows.${group.id}`, group.id));
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(selectedFlow === group.id));
+      button.addEventListener("click", () => { selectedFlow = group.id; renderFlows(); flowsPanel.querySelector('button[aria-pressed="true"]')?.focus(); });
+      nav.appendChild(button);
+    }
+    flowsPanel.appendChild(nav);
+    const group = groups.find(item => item.id === selectedFlow);
+    if (group.read) flowsPanel.appendChild(createNode("p", "task-flow-read", group.read));
+    for (const row of group.rows || []) {
+      const route = createNode("article", "task-flow-row");
+      const heading = createNode("div", "task-flow-heading");
+      heading.appendChild(createNode("h4", "", row.title));
+      const linked = row.taskIds.map(id => tasks.find(task => task.id === id)).filter(Boolean);
+      const times = [...new Set(linked.map(task => `${taskScheduleText(task)} · ${overview.businessStatus(task) ? translate(`tasks.business.${overview.businessStatus(task)}`, stateLabel(task.state)) : stateLabel(task.state)}`))];
+      heading.appendChild(createNode("span", "task-flow-time", times.join(" / ") || translate("tasks.flows.missing", "Task not found")));
+      route.appendChild(heading);
+      if (row.needsReview) route.appendChild(createNode("p", "task-flow-review", translate("tasks.flows.review", "Task definition changed or is missing; the explanation below needs review.")));
+      const steps = createNode("div", "task-flow-steps");
+      for (const key of ["process", "write", "send"]) {
+        const step = createNode("div", "task-flow-step");
+        step.append(createNode("span", "task-flow-label", translate(`tasks.flows.${key}`, key)), createNode("p", "", row[key]));
+        if (key === "write") for (const item of row.links || []) {
+          // Defense in depth for read-only descriptor links; never render HTML.
+          try { if (!["https:", "http:"].includes(new URL(item.url).protocol)) continue; } catch { continue; }
+          const link = createNode("a", "task-flow-link", item.title);
+          link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer"; step.appendChild(link);
+        }
+        steps.appendChild(step);
+      }
+      route.appendChild(steps);
+      const bottom = createNode("div", "task-flow-bottom");
+      if (row.note) bottom.appendChild(createNode("span", "task-history-note", row.note));
+      const locate = createNode("button", "task-center-action", translate("tasks.flows.locate", "Related tasks"));
+      locate.type = "button"; locate.disabled = !linked.length;
+      locate.addEventListener("click", () => {
+        flowTaskIds = new Set(row.taskIds); selectedFilter = "all";
+        closedPurposeSections.clear(); renderTasks(); list.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      bottom.appendChild(locate); route.appendChild(bottom); flowsPanel.appendChild(route);
+    }
+    if (group.note) flowsPanel.appendChild(createNode("p", "task-history-note", group.note));
+  }
+
   function renderTasks() {
     if (!list) return;
     list.replaceChildren();
+    renderFlows();
     if (loading && !loaded) { list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…"))); return; }
     if (loadError && tasks.length === 0) { list.appendChild(createNode("div", "task-center-empty", loadError)); return; }
     const filter = selectedFilter;
@@ -796,13 +860,18 @@
       button.textContent = translate(value === "all" ? "tasks.filter.all" : `tasks.overview.${value}`, value) + ` (${count})`;
       button.setAttribute("aria-pressed", String(value === filter));
     }
+    if (flowTaskIds) {
+      const clear = createNode("button", "task-center-secondary", translate("tasks.flows.clear", "Show all tasks"));
+      clear.type = "button"; clear.addEventListener("click", () => { flowTaskIds = null; renderTasks(); });
+      list.appendChild(clear);
+    }
     let visibleCount = 0;
-    for (const purpose of overview.purposes) {
-      const visible = grouped.filter(task => (filter === "all" || lifecycle(task) === filter) && overview.purpose(task) === purpose);
+    for (const purpose of overview.displayPurposes) {
+      const visible = grouped.filter(task => (filter === "all" || lifecycle(task) === filter) && overview.displayPurpose(task) === purpose && (!flowTaskIds || (task.members || [task]).some(member => flowTaskIds.has(member.id))));
       if (!visible.length) continue;
       visibleCount += visible.length;
       const section = createNode("details", "task-lifecycle-section"); section.dataset.purpose = purpose;
-      const title = translate(`tasks.purpose.${purpose}`, purpose) + ` (${visible.length})`;
+      const title = translate(`tasks.flows.${purpose}`, purpose) + ` (${visible.length})`;
       section.appendChild(createNode("summary", "task-lifecycle-heading", title));
       if (!closedPurposeSections.has(purpose)) {
         section.open = true;
@@ -856,12 +925,14 @@
       });
       tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
       backgroundMechanisms = Array.isArray(payload?.backgroundMechanisms) ? payload.backgroundMechanisms : [];
+      automationFlows = payload?.automationFlows || { groups: [] };
       executionHistory.clear();
       loaded = true;
       return tasks;
     } catch (error) {
       loaded = true;
       tasks = [];
+      automationFlows = { groups: [] };
       loadError = error?.message || translate("tasks.loadFailed", "Failed to load automations.");
       return tasks;
     } finally {
@@ -977,7 +1048,7 @@
   gateModeSelect?.addEventListener("change", syncGateFields);
   targetModeSelect?.addEventListener("change", syncTargetFields);
   for (const button of filterSelect?.querySelectorAll("[data-task-filter]") || []) {
-    button.addEventListener("click", () => { selectedFilter = button.dataset.taskFilter; visibleTaskLimits.clear(); renderTasks(); });
+    button.addEventListener("click", () => { selectedFilter = button.dataset.taskFilter; flowTaskIds = null; visibleTaskLimits.clear(); renderTasks(); });
   }
   refreshButton?.addEventListener("click", () => void refreshTasks({ force: true }));
   form?.addEventListener("submit", (event) => void submitTask(event));

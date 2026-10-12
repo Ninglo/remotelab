@@ -65,5 +65,13 @@
     return [...groups].sort(([a], [b]) => b.localeCompare(a)).map(([day, records]) => ({ day, records }));
   }
 
-  scope.RemoteLabAutomationOverview = { category, purpose, purposes, businessStatus, days };
+  const displayPurposes = ["operations", "memory", "tracking", "knowledge", "other"];
+  function displayPurpose(task) {
+    const original = purpose(task);
+    if (["projects", "execution"].includes(original)) return "tracking";
+    if (original === "research") return "knowledge";
+    if (original === "improvement") return "memory";
+    return original;
+  }
+  scope.RemoteLabAutomationOverview = { category, purpose, purposes, displayPurpose, displayPurposes, businessStatus, days };
 })(typeof window === "undefined" ? globalThis : window);

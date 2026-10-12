@@ -274,13 +274,33 @@ instance API totals are shown, never apportioned to people or groups.
 
 ### Native Monitor integration (2026-10-12)
 
-Open `/?tab=tasks&monitor=overview`. The native Overview now loads shared-resource
-attention and Session supervision independently. It defaults to 24 hours. Group
-and initiator summaries sort attention/running work first; select an owner to
-scope the Session list, or filter running/waiting/attention. Expand a Session title
-for stage means, P95 and sample counts. Shared-resource details remain available
-below in a collapsed section, with their instance ownership. Feedback and task
-controls retain their separate views. No alert or recovery switch is changed.
+Monitor defaults to Overview from the normal homepage (`/?tab=tasks`);
+explicit `monitor=automations|usage|feedback` links preserve those destinations.
+The Overview shows three compact panels: Session, API, and shared resources.
+Each presents totals and observation/exception status first. All lists, provider
+endpoints, accounts and operational records start collapsed. Clicking an exception
+opens its panel; Session exceptions also select the affected list. Expansions and
+owner filters reuse fetched data and do not start another query. Manual refresh
+preserves the user's fold state.
+
+The Session summary shows the current unarchived count, period usage averaged
+over Sessions with a ledger usage record (including archived Sessions active in
+that period), and average RemoteLab context injection per measured foreground Run.
+Usage with no record is unknown, not zero; a zero-valued recorded usage is valid.
+Injection is the UTF-8 byte length of the existing manifest's `modelContext`,
+weighted by valid Run sample counts. It excludes native Harness history and tool
+output; it is not the latest model context token count, nor cumulative input.
+Only projected sizes are retained. Reading manifests shares the existing file-size,
+total-read and sample caps; missing injections and partial coverage are explicit.
+The panel labels units and denominators, with exact scope under statistics details.
+API totals always cover the observer's own 24-hour / five-minute windows and are
+labelled separately from the Session selector. No data is presented as all-clear.
+
+Expand Sessions for group/initiator summaries, runtime state, period tokens,
+phase means, latest-context means, injection means, P95 and sample counts.
+Existing cohort-based deviations now also include injection bytes (10,000-byte
+minimum increase). They remain page-only investigation clues. Shared-resource
+and API thresholds and all alert/recovery configuration are unchanged.
 
 The native view uses `/api/monitoring/sessions?days=1&compact=1`, with title, state,
 window usage and measured fields only. Group/person labels are dictionary encoded,

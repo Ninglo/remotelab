@@ -148,12 +148,19 @@ insertion are separate changes; startup context remains fresh-provider-only.
 
 ## Personal procedures and concise replies (2026-10-12)
 
-The personal work-start slot now routes the verified requester to their own
-Person profile. The shared prompt contains no work-start procedure; an enabled
-switch without a recorded procedure uses the ordinary Harness workflow. A
-mismatched identity cannot select a profile, and another participant cannot
-inherit the previous author's procedure. The accepted switch remains frozen;
-profile text is read on demand rather than copied into the rule snapshot.
+The work-start procedure is an immutable, separately versioned prompt asset.
+Admission reads it only for a verified requester with their existing personal
+switch enabled, then freezes its version, full text, SHA-256 and origin in the
+accepted Request policy. Turn assembly projects that captured rule, never a
+moving current file. Disabled, absent or mismatched settings do not load it.
+Missing or invalid rules do not disable the independent reply/display choices.
+
+Same-author active continuations and retries keep the original snapshot;
+another participant captures their own policy. Legacy accepted work without a
+rule snapshot retains its original recorded requirements and is not silently
+upgraded. Personal profiles hold choices, exceptions and references, not copies
+of the procedure. This neither rebuilds historical threads nor isolates model
+memory: previous text can remain in native history despite a current reset.
 
 Default and personal reply prompts distinguish substantial work from simple
 answers and quick checks. RemoteLab does not require extra opening/progress
