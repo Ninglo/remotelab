@@ -211,4 +211,35 @@ function harness(options = {}, onQuestion) {
     'the authoritative completed output remains intact');
   h.driver.close();
 }
+{
+  let resolveQuestion;
+  const h = harness({}, () => new Promise(resolve => { resolveQuestion = resolve; }));
+  await h.start();
+  h.notify('item/completed', { turnId: 'turn-1', item: { id: 'old-question', type: 'agentMessage', delivery: 'async',
+    phase: 'final_answer', questions: [{ title: 'Optional details?' }] } });
+  await tick();
+  h.notify('turn/completed', { turn: { id: 'turn-1', status: 'completed' } });
+  assert.equal(h.settled.length, 0, 'a question-only native turn must still wait');
+  const followup = h.driver.submit({ id: 'ordinary-answer', text: 'Use the details I gave above.' });
+  await tick(); h.reply('turn/start', { turn: { id: 'turn-2', status: 'inProgress' } }); await followup;
+  h.notify('item/completed', { turnId: 'turn-2', item: { id: 'answer', type: 'agentMessage', phase: 'final_answer', text: 'Finished.' } });
+  const racing = h.driver.submit({ id: 'accepted-before-completion', text: 'One more detail.' });
+  await tick();
+  h.notify('turn/completed', { turn: { id: 'turn-2', status: 'completed' } });
+  assert.equal(h.settled.length, 0, 'a final cannot abandon an input awaiting native acknowledgment');
+  h.reply('turn/steer', null, { code: -32600, message: 'No active turn to steer' });
+  await tick(); h.reply('turn/start', { turn: { id: 'turn-3', status: 'inProgress' } }); await racing;
+  h.notify('turn/completed', { turn: { id: 'turn-3', status: 'completed' } });
+  assert.equal(h.settled.length, 0, 'the previous turn final cannot settle a later question-only turn');
+  const last = h.driver.submit({ id: 'finish', text: 'Finish the answer.' });
+  await tick(); h.reply('turn/start', { turn: { id: 'turn-4', status: 'inProgress' } }); await last;
+  h.notify('item/completed', { turnId: 'turn-4', item: { id: 'final', type: 'agentMessage', phase: 'final_answer', text: 'Done.' } });
+  h.notify('turn/completed', { turn: { id: 'turn-4', status: 'completed' } });
+  assert.equal(h.settled.length, 1, 'completed final must supersede an unanswered old async question');
+  assert.equal(h.settled[0].finalAnswerCompleted, true);
+  h.driver.close();
+  resolveQuestion({ cancelled: true, answers: {} }); await tick();
+  assert.equal(h.settled.length, 1, 'retiring the old question cannot settle twice');
+  assert.equal(h.sent.filter(value => value.method === 'turn/start').length, 4, 'cancellation must not invent another user turn');
+}
 console.log('test-native-codex: ok');

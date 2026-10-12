@@ -58,11 +58,12 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   args.push('-c', 'approval_policy="never"');
 
   let sequence = 0, closed = null, initialization = null, threadId = '', activeTurnId = '';
-  let operationTail = Promise.resolve(), inputsInFlight = 0, lastTerminal = null, settledTerminalId = '';
+  let operationTail = Promise.resolve(), inputsInFlight = 0, asyncQuestionsPending = 0, lastTerminal = null, settledTerminalId = '';
   const pending = new Map(), completedTurns = new Set(), startedTurns = new Set(), items = new Map();
   const reasoningParts = new Map();
   const announcedThreads = new Set();
   const asyncQuestions = new Set();
+  const finalAnswerTurns = new Set();
 
   function askAsync(item) {
     if (asyncQuestions.has(item.id)) return;
@@ -70,7 +71,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     const questions = item.questions.map((q, index) => ({ id: String(index), question: q.title, header: '',
       options: q.options?.map(label => ({ label, description: '' })),
     }));
-    inputsInFlight += 1;
+    asyncQuestionsPending += 1;
     // Codex's Default-mode question tool is an async agentMessage, not a
     // server RPC. Its native contract delivers answers as a new user input.
     void Promise.resolve().then(() => onQuestion({ id: `async:${item.id}`, protocol: 'codex', questions }))
@@ -83,7 +84,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
         }),
       ].join('\n') })))
       .catch(error => { if (!closed) onError(error); })
-      .finally(() => { inputsInFlight -= 1; maybeSettle(); });
+      .finally(() => { asyncQuestionsPending -= 1; maybeSettle(); });
   }
   let usagePending = null;
   const observeUsage = result => {
@@ -128,6 +129,9 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   }
   function maybeSettle() {
     if (closed || inputsInFlight || activeTurnId || !lastTerminal || lastTerminal.turnId === settledTerminalId) return;
+    // A question-only turn still awaits its human answer. A later completed
+    // final supersedes that wait; only actual input RPCs fence its settlement.
+    if (asyncQuestionsPending && !lastTerminal.finalAnswerCompleted) return;
     settledTerminalId = lastTerminal.turnId;
     onSettled(lastTerminal);
   }
@@ -257,7 +261,9 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           if (!turn?.id || completedTurns.has(turn.id)) break;
           completedTurns.add(turn.id);
           if (activeTurnId === turn.id) activeTurnId = '';
-          const terminal = { status: turn.status, turnId: turn.id, ...(turn.error ? { error: turn.error.message || 'Codex turn failed' } : {}) };
+          const terminal = { status: turn.status, turnId: turn.id,
+            ...(finalAnswerTurns.has(turn.id) ? { finalAnswerCompleted: true } : {}),
+            ...(turn.error ? { error: turn.error.message || 'Codex turn failed' } : {}) };
           if (!activeTurnId) lastTerminal = terminal;
           onEvent(turn.status === 'failed'
             ? { type: 'turn.failed', turn_id: turn.id, error: { message: terminal.error || 'Codex turn failed' } }
@@ -270,6 +276,11 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           if (params.item?.type === 'agentMessage' && params.item.delivery === 'async' && params.item.questions?.length) {
             if (message.method === 'item/completed') askAsync(params.item);
             break;
+          }
+          if (message.method === 'item/completed' && params.item?.type === 'agentMessage'
+              && ['final', 'final_answer'].includes(params.item.phase)) {
+            const turnId = params.turnId || activeTurnId;
+            if (turnId) finalAnswerTurns.add(turnId);
           }
           const item = execItem(params.item);
           if (!item) break;

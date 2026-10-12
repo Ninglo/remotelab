@@ -71,3 +71,53 @@ try {
   await hosted;
   await fs.rm(directory, { recursive: true, force: true });
 }
+
+// An ordinary follow-up can supply the missing detail without answering the
+// old card. A completed final must then retire that card and stop the host.
+{
+  const root = await fs.mkdtemp(join(tmpdir(), 'native-question-final-'));
+  const peer = join(root, 'peer.cjs');
+  await fs.writeFile(peer, `#!/usr/bin/env node
+const lines = require('node:readline').createInterface({input:process.stdin});
+const emit = value => console.log(JSON.stringify(value));
+let turns = 0;
+lines.on('line', line => {
+  const {id, method} = JSON.parse(line);
+  if(method === 'initialize') emit({id,result:{}});
+  if(method === 'thread/start') emit({id,result:{thread:{id:'thread'}}});
+  if(method === 'turn/start') {
+    const turnId = 'turn-'+(++turns);
+    emit({id,result:{turn:{id:turnId,status:'inProgress'}}});
+    const item = turns === 1
+      ? {id:'question',type:'agentMessage',delivery:'async',phase:'final_answer',questions:[{title:'More details?'}]}
+      : {id:'final',type:'agentMessage',phase:'final_answer',text:'Completed with the ordinary follow-up.'};
+    emit({method:'item/completed',params:{threadId:'thread',turnId,item}});
+    emit({method:'turn/completed',params:{threadId:'thread',turn:{id:turnId,status:'completed'}}});
+  }
+});
+lines.on('close',()=>process.exit(0));
+`, {mode:0o755});
+  const asked = deferred();
+  const events = [];
+  let child, deadline;
+  const hosted = runNativeHost({directory:root,command:peer,runtimeFamily:'codex-json',options:{},prompt:'initial',cwd:root,
+    env:{PATH:process.env.PATH}, onProcess:async value=>{child=value;},
+    onStdout:async line=>{const event=JSON.parse(line);events.push(event);if(event.type==='remotelab.user_question'&&event.state==='pending')asked.resolve();},
+    onStderr:async()=>{},
+  });
+  try {
+    await asked.promise;
+    const receipt = await submitNativeInput(root,{id:'ordinary-follow-up',text:'Here are the details; finish.'});
+    assert.equal(receipt.accepted,true);
+    const result = await Promise.race([hosted,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error('Completed final remained held by old question')),2000);})]);
+    assert.equal(result.code,0);
+    const question=JSON.parse(await fs.readFile(join(root,'native-question.json'),'utf8'));
+    assert.equal(question.state,'cancelled','old question is retired without inventing an answer');
+    assert.equal(events.filter(event=>event.type==='turn.started').length,2,'retiring the card cannot start another model turn');
+    assert.ok(events.some(event=>event.type==='remotelab.user_question'&&event.state==='cancelled'));
+    assert.ok(events.some(event=>event.type==='item.completed'&&event.item?.phase==='final_answer'&&event.item.text.includes('ordinary follow-up')));
+    console.log('native host settlement: completed final retires an obsolete async question');
+  } finally {
+    clearTimeout(deadline);child?.kill('SIGKILL');await hosted;await fs.rm(root,{recursive:true,force:true});
+  }
+}

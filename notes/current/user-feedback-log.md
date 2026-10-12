@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-12 — Completed answers held behind an old async question
+
+- Feedback: ordinary follow-ups reached Codex and produced completed final answers, but earlier unanswered question cards retained their native hosts. The controller still saw running executions and withheld Feishu finals. The live audit found this pattern on both standard instances.
+- Change: track outstanding async questions separately from input RPC acknowledgements. A question-only turn still waits for its human answer; a completed final from the current native turn can settle despite an obsolete question. The host closes input admission before retiring the old question, without inventing an answer or starting another model turn.
+- Verification: regressions cover genuine question waits, ordinary follow-ups, completion-before-acknowledgement, a later turn without a final, one settlement, question cancellation and actual host exit. Existing native transport/publication tests retain stopped-execution delivery and replay deduplication. Deployment and recovery of previously stranded hosts require separate live evidence.
+
 ### 2026-10-11 — Completed work reported as a disappeared runner
 
 - Feedback: repeated `Detached runner disappeared before writing a result` errors replaced completed answers. The reported example retained its full final answer, exported artifact and provider completion event, then received the generic failure 54 ms later. All 17 matching local failures since October 8 retained final answers and provider completion events; this does not establish that every historical disappearance had the same cause.

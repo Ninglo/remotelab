@@ -79,7 +79,12 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     killTimer = setTimeout(() => proc?.kill('SIGKILL'), 5000);
   };
   const maybeStop = () => {
-    if (started && nativeResult && submissions === 0 && !server?.pending && !questions.pending) stop();
+    if (!started || !nativeResult || submissions !== 0 || server?.pending || closing) return;
+    if (questions.pending && !nativeResult.finalAnswerCompleted) return;
+    // Close admission before retiring superseded questions. Their cancellation
+    // must not inject an invented answer or race a newly accepted model input.
+    stop();
+    if (questions.pending) void questions.cancel().catch(error => { fatalError ||= error; });
   };
   const outputUpdates = new Map();
   const emit = event => {
