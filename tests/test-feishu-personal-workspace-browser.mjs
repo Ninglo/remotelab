@@ -37,7 +37,7 @@ try {
     const scope = location.origin + ':' + userId; localStorage.setItem('feishuWebExplore.workspaceConnection.v1:' + encodeURIComponent(scope), JSON.stringify({ token: 'fwspace_' + 'a'.repeat(43), expiresAt: Date.now() + 60000, person: { id: 'person_alice', name: 'Alice' } })); });
   await page.addScriptTag({ content: source });
   const nav = page.locator('#rlfe-personal-nav'), host = page.locator('#rlfe-personal-workspace');
-  assert.deepEqual(await nav.locator('button').allTextContents(), ['Index', 'thinking']);
+  assert.deepEqual(await nav.locator('button').allTextContents(), ['Index测试中', 'thinking测试中']);
   assert.equal(await page.locator('#rlfe-resource-nav-host').textContent(), '具身前沿 · 每日日报');
   await nav.getByText('Index', { exact: true }).click(); await host.getByText('Index 的持续对话。', { exact: true }).waitFor();
   const first = await page.evaluate(() => __RLFE_WORKSPACE__.status().sessionId);
@@ -51,7 +51,7 @@ try {
   await nav.getByText('thinking', { exact: true }).click(); await host.getByText('分析已完成', { exact: true }).waitFor();
   mode = 'running'; await host.getByText('开始分析', { exact: true }).click(); await page.waitForFunction(() => { const r = document.getElementById('rlfe-personal-workspace').shadowRoot; return !r.getElementById('analyze').disabled && r.getElementById('analysisState').textContent === '分析已完成'; }); assert.equal(postCount, 1); assert(requests.find(r => r.method === 'POST').body.requestId.length >= 16);
   await page.screenshot({ path: join(artifacts, 'desktop.png') });
-  for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); await host.locator('#title').waitFor();
+  for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); await page.waitForFunction(expected => Math.round(document.getElementById('rlfe-personal-workspace').getBoundingClientRect().width) === expected, width);
     const geometry = await host.evaluate(h => ({ width: h.getBoundingClientRect().width, scroll: h.shadowRoot.getElementById('content').scrollWidth, content: h.shadowRoot.getElementById('content').clientWidth }));
     assert.equal(Math.round(geometry.width), width); assert(geometry.scroll <= geometry.content + 1, JSON.stringify(geometry)); await page.screenshot({ path: join(artifacts, 'mobile-' + width + '.png') }); }
   await page.setViewportSize({ width: 1440, height: 1000 });
