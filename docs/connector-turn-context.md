@@ -185,8 +185,22 @@ archive/hash failures and unread receipts. A loopback Responses fixture drives
 installed Codex through manual and automatic mid-turn compaction, identity change,
 repeated compaction and missing-snapshot failure, without calling a real model or
 posting group messages. This proves delivery/recovery behavior, **not** unchanged
-model comprehension or task-success rate. Same-model task-quality evaluation and
-natural-use feedback are still required before claiming a quality improvement.
+model comprehension or task-success rate.
+
+A 2026-10-12 real-model smoke comparison used Codex 0.159.2 with
+`gpt-6-astra` at medium effort, isolated local files and the same synthetic CSV
+task. Both full repeated context and the paged/reference mode passed all four
+checks: a caveat at the end of a long message, a later quantity correction,
+an operator/rule change, and an idempotent retry after native compaction
+(8/8 checked results). The paged model actually read both source pages; the
+post-compaction rule hook ran, and the current operator's code and CSV contents
+remained correct. The fixture lowered the inline threshold to 1,000 characters
+to exercise production paging with a small input; the page reader kept its
+6,000-character limit. Local files and structured answers were checked, not
+only the model's claim of success. This is one scenario per mode, not a
+statistical non-inferiority result or evidence of faster/cheaper execution.
+Broader tasks and natural-use feedback remain necessary before claiming a
+general quality improvement.
 
 
 ## Personal procedures and concise replies (2026-10-12)
