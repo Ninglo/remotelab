@@ -54,6 +54,7 @@ def main():
                 emit({'deviceId': entry.data, 'error': str(error)})
                 chunk = b''
             if not chunk:
+                emit({'deviceId': entry.data, 'disconnected': True})
                 selector.unregister(entry.fd)
                 os.close(entry.fd)
                 carry.pop(entry.fd, None)
@@ -61,10 +62,10 @@ def main():
             data = carry[entry.fd] + chunk
             offset = 0
             while len(data) - offset >= packets.size:
-                _, _, kind, code, value = packets.unpack_from(data, offset)
+                seconds, micros, kind, code, value = packets.unpack_from(data, offset)
                 offset += packets.size
-                if kind == 1 and value == 1:  # key-down; ignore releases and auto-repeat
-                    emit({'deviceId': entry.data, 'key': code, 'pressed': True})
+                if kind == 1 and value in (0, 1):  # include release; ignore auto-repeat
+                    emit({'deviceId': entry.data, 'key': code, 'pressed': value == 1, 'timestampMs': seconds * 1000 + micros / 1000})
             carry[entry.fd] = data[offset:]
 
 

@@ -21,6 +21,11 @@ let allowed = Set(arguments.dropFirst())
 if mode != "list" && mode != "listen" { emit(["error": "Expected list or listen"]); exit(1) }
 if mode == "listen" && allowed.isEmpty { emit(["error": "listen requires explicit keypad device IDs"]); exit(1) }
 var held = Set<String>()
+var timebase = mach_timebase_info_data_t()
+mach_timebase_info(&timebase)
+func eventTime(_ value: IOHIDValue) -> Double {
+    Double(IOHIDValueGetTimeStamp(value)) * Double(timebase.numer) / Double(timebase.denom) / 1_000_000
+}
 let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(0))
 if mode == "listen" {
     // A bound keypad can expose its consumer controls as a separate HID collection.
@@ -50,15 +55,25 @@ if mode == "list" {
 IOHIDManagerRegisterInputValueCallback(manager, { _, _, _, value in
     let element = IOHIDValueGetElement(value)
     let usagePage = IOHIDElementGetUsagePage(element)
-    guard usagePage == 7 || usagePage == 12 else { return }
+    guard usagePage == 7 || usagePage == 12 || usagePage == 9 else { return }
     let device = IOHIDElementGetDevice(element)
     let id = identity(device)
     guard allowed.contains(id) else { return }
     let keyId = id + ":" + String(usagePage) + ":" + String(IOHIDElementGetUsage(element))
-    if IOHIDValueGetIntegerValue(value) == 0 { held.remove(keyId); return }
+    if IOHIDValueGetIntegerValue(value) == 0 {
+        guard held.remove(keyId) != nil else { return }
+        emit(["deviceId": id, "usagePage": usagePage, "key": IOHIDElementGetUsage(element), "pressed": false, "timestampMs": eventTime(value)])
+        return
+    }
     guard IOHIDValueGetIntegerValue(value) == 1, !held.contains(keyId) else { return }
     held.insert(keyId)
-    emit(["deviceId": id, "usagePage": usagePage, "key": IOHIDElementGetUsage(element), "pressed": true])
+    emit(["deviceId": id, "usagePage": usagePage, "key": IOHIDElementGetUsage(element), "pressed": true, "timestampMs": eventTime(value)])
+}, nil)
+IOHIDManagerRegisterDeviceRemovalCallback(manager, { _, _, _, device in
+    let id = identity(device)
+    guard allowed.contains(id) else { return }
+    held = Set(held.filter { !$0.hasPrefix(id + ":") })
+    emit(["deviceId": id, "disconnected": true])
 }, nil)
 IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
 CFRunLoopRun()
