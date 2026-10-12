@@ -120,7 +120,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       try { return await fn(); } catch (error) { gaps.push({ source, code: error.code || 'UNAVAILABLE' }); return fallback; }
     }
     const [usage, tasks, runtime, fleet, requests, disks, services, recovery, apiHealth, alertState] = await Promise.all([
-      observe('usage', () => getUsage({ days, top: Math.max(5, days + 1), includeTopRuns: false }), null),
+      observe('usage', () => getUsage({ days, top: Math.max(5, days + 1), includeTopRuns: false, includeDailyTrend: true }), null),
       observe('automations', getTasks, []), observe('accounts', getAccounts, null),
       config.fleetStateFile ? observe('fleet', async () => {
         const value = JSON.parse(await read(config.fleetStateFile, 'utf8'));
@@ -202,7 +202,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     if (deliveryIssues.length) analysis.attention.push({ kind: 'alertDelivery', severity: 'warning', id: 'monitoring-alerts', subject: '监管告警投递',
       detail: `${alertDelivery.blocked} 批因外部依赖未发送；${alertDelivery.uncertain} 批发送结果待核对。不会自动重发不确定消息。` });
     return { generatedAt, windowDays: days,
-      usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, byModel: usage.byModel?.slice(0, 5),
+      usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,
       coverage: { scope: 'instance_usage_and_connected_accounts', fleetConnected: Boolean(config.fleetStateFile), servicesConfigured: services.length,

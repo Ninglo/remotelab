@@ -98,7 +98,72 @@
     button.addEventListener("click", () => { const fold = details?.closest("details"); if (fold) fold.open = true; });
     parent.appendChild(button);
   }
+  const svgNode = (tag, attrs = {}) => {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
+    return element;
+  };
+  function capacityRing(value, label, severity) {
+    const valid = Number.isFinite(value) && value >= 0 && value <= 100;
+    const wrap = node('div', '', 'monitoring-capacity-ring');
+    wrap.dataset.severity = severity || 'healthy';
+    const svg = svgNode('svg', { viewBox: '0 0 88 88', role: 'img', 'aria-label': `${label} ${valid ? percent(value) : '未知'}` });
+    svg.appendChild(svgNode('circle', { cx: 44, cy: 44, r: 35, class: 'monitoring-ring-track' }));
+    if (valid) svg.appendChild(svgNode('circle', { cx: 44, cy: 44, r: 35, class: 'monitoring-ring-value',
+      pathLength: 100, 'stroke-dasharray': `${value} 100`, transform: 'rotate(-90 44 44)' }));
+    wrap.append(svg, node('strong', valid ? percent(value) : '—'));
+    return wrap;
+  }
+  function trendChart(parent, trend, { key, title, unit, description, samples }) {
+    const card = node('section', '', 'monitoring-line-card'); card.dataset.metric = key;
+    card.appendChild(node('h4', title));
+    const days = trend.days || [], valid = days.filter(day => Number.isFinite(day[key]));
+    const latest = days.at(-1), headline = node('div', '', 'monitoring-line-headline');
+    headline.append(node('strong', number(latest?.[key])), node('small', `今日 · ${unit} · 截至 ${time(trend.end)}`));
+    card.appendChild(headline);
+    const svg = svgNode('svg', { viewBox: '0 0 400 155', role: 'img', 'aria-label': `${title}，${unit}；${description}。无记录日期留空，逐日数据见下方展开表。` });
+    const maximum = Math.max(1, ...valid.map(day => day[key]));
+    const x = index => 38 + index * 57, y = value => 113 - value / maximum * 83;
+    for (const ratio of [0, .5, 1]) {
+      const yy = y(ratio * maximum);
+      svg.appendChild(svgNode('line', { x1: 38, y1: yy, x2: 380, y2: yy, class: 'monitoring-chart-grid' }));
+      const label = svgNode('text', { x: 32, y: yy + 4, 'text-anchor': 'end' }); label.textContent = number(ratio * maximum); svg.appendChild(label);
+    }
+    let path = '', connected = false;
+    days.forEach((day, i) => {
+      const label = svgNode('text', { x: x(i), y: 139, 'text-anchor': 'middle' }); label.textContent = day.day.slice(5); svg.appendChild(label);
+      if (!Number.isFinite(day[key])) { connected = false; return; }
+      path += `${connected ? 'L' : 'M'}${x(i)},${y(day[key])} `; connected = true;
+    });
+    svg.appendChild(svgNode('path', { d: path, class: 'monitoring-chart-line' }));
+    days.forEach((day, i) => {
+      if (!Number.isFinite(day[key])) return;
+      const dot = svgNode('circle', { cx: x(i), cy: y(day[key]), r: 4, class: 'monitoring-chart-point' });
+      const tooltip = svgNode('title'); tooltip.textContent = `${day.day}：${day[key].toLocaleString()} ${unit}；${samples(day)}`;
+      dot.appendChild(tooltip); svg.appendChild(dot);
+    });
+    card.appendChild(svg);
+    card.appendChild(node('p', `${valid.length}/7 天有样本 · ${description}`, 'monitoring-note'));
+    const details = node('details'); details.appendChild(node('summary', '查看逐日数值与样本'));
+    table(details, ['日期（UTC）', unit, '样本'], days.map(day => [day.day,
+      Number.isFinite(day[key]) ? day[key].toLocaleString() : '无样本', samples(day)]));
+    card.appendChild(details); parent.appendChild(card);
+  }
+  function renderSessionTrends() {
+    const root = document.getElementById('monitoringSessionTrends'); if (!root) return;
+    root.replaceChildren(node('h3', '近 7 天走势'));
+    const trend = value?.usage?.dailyTrend;
+    if (!trend) { root.appendChild(node('p', loading ? '正在读取历史记录…' : '历史记录未取得，不能判断为零。', 'monitoring-note')); return; }
+    root.appendChild(node('p', `${trend.start.slice(0, 10)} — ${trend.end.slice(0, 10)} · UTC 自然日，今天未结束。按运行结束／账本记账日期归集，不等同于当天实际调用分摊；未回传部分不计入。`, 'monitoring-note'));
+    const grid = node('div', '', 'monitoring-line-grid'); root.appendChild(grid);
+    trendChart(grid, trend, { key: 'sessionCount', title: '有用量记录的 Session', unit: '个',
+      description: '当日去重数，含前后台；不是历史 Session 总数', samples: day => `${day.runCount} 次运行记录` });
+    trendChart(grid, trend, { key: 'avgContextTokens', title: '平均上下文', unit: 'Token / 运行',
+      description: '前台运行最近回传值的均值；不是注入字节数', samples: day => `${day.contextSamples} / ${day.foregroundRuns} 次前台运行有回传` });
+  }
+
   function render() {
+    renderSessionTrends();
     content.replaceChildren();
     if (apiSummary) {
       apiSummary.replaceChildren(node("h2", "API")); apiDetails?.replaceChildren();
@@ -134,6 +199,14 @@
       if (["critical", "warning"].includes(disk.status)) { used.className = "monitoring-metric-signal"; used.dataset.severity = disk.status; }
       return [disk.label, badge, used, bytes(disk.availableBytes), percent(disk.inodeUsedPercent)];
     }));
+    const diskVisuals = node("div", "", "monitoring-disk-visuals");
+    for (const disk of value.disks) {
+      const card = node("div", "", "monitoring-disk-visual");
+      card.appendChild(capacityRing(disk.usedPercent, `${disk.label} 已用`, disk.status));
+      const caption = node("div"); caption.append(node("strong", disk.label), node("span", "容量已用"), node("small", `可用 ${bytes(disk.availableBytes)}`));
+      card.appendChild(caption); diskVisuals.appendChild(card);
+    }
+    disks.insertBefore(diskVisuals, disks.children[1] || null);
     value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
     const accounts = section("账户额度", snapshot); accounts.dataset.section = "accounts";
     if (!value.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
@@ -194,6 +267,10 @@
         ["后台用量", number(totals.backgroundTokens), Number.isFinite(totals.backgroundShare) ? `占总量 ${percent(totals.backgroundShare * 100)}` : "占比未知"],
         ["输入缓存占比", percent(Number.isFinite(totals.cachedInputShare) ? totals.cachedInputShare * 100 : NaN), "已记录输入中的缓存份额"]]);
       usage.appendChild(node("p", `${time(value.usage.window.start)} — ${time(value.usage.window.end)}`, "monitoring-note"));
+      if (value.usage.dailyTrend) trendChart(usage, value.usage.dailyTrend, {
+        key: 'totalTokens', title: '近 7 天 Token 用量', unit: 'Token',
+        description: 'UTC 自然日，今天未结束；含前后台，按运行结束／记账日期归集', samples: day => `${day.runCount} 次运行记录`,
+      });
       const breakdown = node("details"); breakdown.appendChild(node("summary", "查看按模型、前后台和日期的用量")); usage.appendChild(breakdown);
       table(breakdown, [t("model"), t("tokens")], (value.usage.byModel || []).map(item => [item.model || item.key || "—", number(item.totalTokens)]));
       table(breakdown, [t("operation"), t("tokens")], (value.usage.byOperationGroup || []).map(item => [

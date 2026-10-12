@@ -226,6 +226,14 @@ async function readLatestTokenUsageWindow(filePath, options = {}) {
 }
 
 export async function readLatestCodexSessionMetrics(threadId, options = {}) {
+  const bounds = ['startedAt', 'completedAt', 'finalizedAt', 'endAt'];
+  const bounded = bounds.some(key => Object.hasOwn(options, key));
+  // A Run lookup must never fall back to the lifetime total of its thread.
+  // Missing/invalid evidence is unknown usage, not zero or a cumulative bill.
+  if (bounded && (!Number.isFinite(normalizeTimestampMs(options.startedAt))
+      || bounds.some(key => options[key] != null && !Number.isFinite(normalizeTimestampMs(options[key]))))) return null;
+  const end = options.completedAt || options.finalizedAt || options.endAt;
+  if (end && normalizeTimestampMs(end) < normalizeTimestampMs(options.startedAt)) return null;
   const sessionLogPath = await findCodexSessionLog(threadId);
   if (!sessionLogPath) return null;
 
@@ -269,6 +277,8 @@ export async function readLatestCodexSessionMetrics(threadId, options = {}) {
       ...(pricingMetadata?.costSource ? { costSource: pricingMetadata.costSource } : {}),
     };
   }
+
+  if (bounded) return null;
 
   const tokenCountRecord = await readLastMatchingJsonLine(
     sessionLogPath,

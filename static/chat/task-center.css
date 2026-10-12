@@ -738,3 +738,39 @@ details.task-lifecycle-section > summary { cursor: pointer; }
   .task-timeline-task summary { padding: 12px; gap: 6px; }
   .task-timeline-background-row { grid-template-columns: 1fr; gap: 4px; }
 }
+
+/* Read-only monitoring charts: current capacity ratios and observed daily samples. */
+#monitoringSessionTrends { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.monitoring-line-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.monitoring-line-card { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-secondary); }
+.monitoring-line-card h4 { margin: 0 0 10px; font-size: 14px; }
+.monitoring-line-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.monitoring-line-headline strong { font-size: 26px; font-variant-numeric: tabular-nums; }
+.monitoring-line-headline small { color: var(--text-secondary); font-size: 11px; }
+.monitoring-line-card svg { display: block; width: 100%; max-height: 220px; margin-top: 8px; overflow: visible; }
+.monitoring-line-card svg text { fill: var(--text-secondary); font: 10px system-ui, sans-serif; }
+.monitoring-chart-grid { stroke: var(--border); stroke-dasharray: 3 4; }
+.monitoring-chart-line { fill: none; stroke: #438d99; stroke-width: 2.5; stroke-linejoin: round; }
+.monitoring-chart-point { fill: #438d99; stroke: var(--bg-secondary); stroke-width: 2; }
+.monitoring-line-card[data-metric="avgContextTokens"] .monitoring-chart-line { stroke: #9b78b5; }
+.monitoring-line-card[data-metric="avgContextTokens"] .monitoring-chart-point { fill: #9b78b5; }
+.monitoring-line-card[data-metric="totalTokens"] .monitoring-chart-line { stroke: #b78942; }
+.monitoring-line-card[data-metric="totalTokens"] .monitoring-chart-point { fill: #b78942; }
+.monitoring-line-card details { font-size: 12px; }
+.monitoring-disk-visuals { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.monitoring-disk-visual { display: flex; gap: 14px; align-items: center; padding: 12px 18px; border: 1px solid var(--border); border-radius: 14px; }
+.monitoring-disk-visual > div:last-child { display: grid; gap: 5px; font-size: 12px; }
+.monitoring-disk-visual small { color: var(--text-secondary); }
+.monitoring-capacity-ring { position: relative; width: 88px; height: 88px; flex-shrink: 0; color: #438d99; }
+.monitoring-capacity-ring svg { width: 100%; height: 100%; }
+.monitoring-capacity-ring circle { fill: none; stroke-width: 8; }
+.monitoring-ring-track { stroke: var(--border); }
+.monitoring-ring-value { stroke: currentColor; }
+.monitoring-capacity-ring strong { position: absolute; inset: 0; display: grid; place-content: center; font-size: 17px; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.monitoring-capacity-ring[data-severity="warning"] { color: #b78942; }
+.monitoring-capacity-ring[data-severity="critical"] { color: #bf5757; }
+@media (max-width: 600px) {
+  .monitoring-line-grid { grid-template-columns: minmax(0, 1fr); }
+  .monitoring-line-card { padding: 12px; }
+  .monitoring-disk-visual { width: 100%; padding: 10px; }
+}
