@@ -200,7 +200,13 @@ test('a calendar restriction does not disable a proven message transport or infe
   await rm(file);
   const quiet = await readFeishuApiHealth({ directory, config, previous: health, now: now + 3600000 });
   assert.equal(quiet.providers[0].notificationDelivery.status, 'available', 'idle time and log rotation retain the verified transport receipt');
+  state = null;
+  await dispatchMonitoringAlerts({ ...options, now: now + 3600000, snapshot: { ...snapshot, apiHealth: quiet } });
+  assert.equal(sends, 2, 'the actual dispatch gate accepts retained recovery after a quiet hour');
   await writeFile(file, JSON.stringify(row(-3599000, 99991403, { method: 'POST', endpoint: '/open-apis/im/v1/messages' })) + '\n');
   const rejected = await readFeishuApiHealth({ directory, config, previous: quiet, now: now + 3600000 });
   assert.equal(rejected.providers[0].notificationDelivery.status, 'unknown', 'a newer quota rejection invalidates the transport receipt');
+  state = null;
+  await dispatchMonitoringAlerts({ ...options, now: now + 3600000, snapshot: { ...snapshot, apiHealth: rejected } });
+  assert.equal(sends, 2, 'a newer rejection blocks delivery until recovery is verified again');
 });

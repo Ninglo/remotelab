@@ -62,7 +62,8 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   const state = await load(stateFile) || { version: 1, incidents: {}, batches: {} };
   const transportQuotaBlocked = snapshot.apiHealth?.providers?.some(provider => provider.quotaRejectedAt
     && !(provider.notificationDelivery?.status === 'available'
-      && now - Date.parse(provider.notificationDelivery.observedAt) <= 15 * 60_000
+      && provider.notificationDelivery.evidence
+      && Date.parse(provider.notificationDelivery.observedAt) > Date.parse(provider.quotaRejectedAt)
       && Date.parse(provider.notificationDelivery.observedAt) <= now + 5000)
     && (!config.feishuAppId || provider.appId === config.feishuAppId));
   for (const batch of Object.values(state.batches)) if (batch.status === 'sending') {
