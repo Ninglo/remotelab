@@ -15,7 +15,7 @@ installer for arbitrary Feishu versions; a different archive digest is refused.
 It does not enable DevTools or alter the machine's debugging policy.
 
 `bootstrap.sh` is the one-command entry: it verifies the exact source archive,
-fetches SHA-256-pinned Node and portable Python into a private user directory,
+fetches SHA-256-pinned Node and portable Python directly from upstream into a private user directory,
 and invokes `install-preview.py`. No system runtime, Homebrew, sudo or developer
 tools are required. `package-cli.py BUILD FONT_LICENSE OUTPUT PUBLIC_BASE`
 validates the two runtime archives already present in OUTPUT/runtime, builds the

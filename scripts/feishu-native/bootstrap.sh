@@ -45,8 +45,8 @@ main() {
   trap 'exit 143' TERM
   echo '正在准备增强版运行环境，无需安装开发工具。'
   local node_archive="$cache/node-v22.23.3.tar.gz" python_archive="$cache/python-3.12.15.tar.gz"
-  download runtime/node-v22.23.3-darwin-arm64.tar.gz 23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53 "$node_archive"
-  download runtime/python-3.12.15-darwin-arm64.tar.gz 233f8e15255b3e1d1fd47ea5dd5230dfed803f371138e896e54d98c60ae19f6f "$python_archive"
+  download https://nodejs.org/dist/v22.23.3/node-v22.23.3-darwin-arm64.tar.gz 23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53 "$node_archive"
+  download https://github.com/astral-sh/python-build-standalone/releases/download/20261009/cpython-3.12.15%2B20261009-aarch64-apple-darwin-install_only_stripped.tar.gz 233f8e15255b3e1d1fd47ea5dd5230dfed803f371138e896e54d98c60ae19f6f "$python_archive"
   local node_dir="$cache/node-v22.23.3" python_dir="$cache/python-3.12.15"
   extract_runtime "$node_archive" "$node_dir"
   extract_runtime "$python_archive" "$python_dir"
@@ -72,10 +72,13 @@ main() {
 
 digest() { /usr/bin/shasum -a 256 "$1" | /usr/bin/awk '{print $1}'; }
 download() {
-  local relative="$1" expected="$2" destination="$3" temporary
+  local relative="$1" expected="$2" destination="$3" temporary url
   if [ -f "$destination" ] && [ "$(digest "$destination")" = "$expected" ]; then return 0; fi
   temporary=$(/usr/bin/mktemp "$destination.next.XXXXXX")
-  /usr/bin/curl --fail --location --silent --show-error --retry 2 --connect-timeout 15 --max-time 180 "__PUBLIC_BASE__/$relative" -o "$temporary"
+  case "$relative" in https://*) url="$relative";; *) url="__PUBLIC_BASE__/$relative";; esac
+  if ! /usr/bin/curl --fail --location --progress-bar --show-error --retry 2 --connect-timeout 15 --max-time 300 "$url" -o "$temporary"; then
+    /bin/rm -f "$temporary"; echo '下载中断，请重新运行同一条命令；已校验的文件会继续复用。' >&2; return 1
+  fi
   if [ "$(digest "$temporary")" != "$expected" ]; then
     /bin/rm -f "$temporary"; echo '下载校验未通过，未安装。请重新运行同一条命令。' >&2; return 1
   fi
