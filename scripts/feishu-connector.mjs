@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
 import { topicAnnouncementContext } from '../connectors/feishu/group-announcement.mjs';
+import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
@@ -1364,38 +1365,52 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
       );
     },
   });
+  let cardContent = null;
+  if (!summary.deliveryNotice) {
+    try { cardContent = await buildFeishuTableCard(content); }
+    catch (error) { console.warn(`[feishu-connector] table card conversion fallback: ${error.message}`); }
+  }
   const replyUuid = buildFeishuApiUuid(uuid, summary);
-  if (shouldReplyToFeishuMessage(summary)) {
-    const response = await runtime.appClient.im.v1.message.reply({
+  const reply = shouldReplyToFeishuMessage(summary);
+  const send = (msgType, payload) => reply
+    ? runtime.appClient.im.v1.message.reply({
       path: {
         message_id: summary.messageId,
       },
       data: {
-        msg_type: summary.deliveryNotice ? 'text' : 'post',
-        content,
+        msg_type: msgType,
+        content: payload,
         reply_in_thread: shouldReplyInFeishuThread(summary),
         uuid: replyUuid,
       },
-    });
-    if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
-      throw feishuResponseError(response, 'Failed to send Feishu topic reply');
-    }
-    return response.data;
-  }
-
-  const response = await runtime.appClient.im.v1.message.create({
+    })
+    : runtime.appClient.im.v1.message.create({
     params: {
       receive_id_type: 'chat_id',
     },
     data: {
       receive_id: summary.chatId,
-      msg_type: summary.deliveryNotice ? 'text' : 'post',
-      content,
+      msg_type: msgType,
+      content: payload,
       uuid: replyUuid,
     },
   });
+  let response;
+  try {
+    response = await send(cardContent ? 'interactive' : summary.deliveryNotice ? 'text' : 'post', cardContent || content);
+  } catch (error) {
+    const rejection = error?.response?.data || error;
+    if (!cardContent || Number(rejection?.code) !== 230099 || rejection?.data?.message_id) throw error;
+    response = rejection;
+  }
+  // Only an explicit card-construction rejection proves no message was sent.
+  // Timeouts, rate limits and ambiguous failures retain the durable retry path.
+  if (cardContent && Number(response.code) === 230099 && !response.data?.message_id) {
+    console.warn('[feishu-connector] card rejected; delivering original rich-text post');
+    response = await send('post', content);
+  }
   if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
-    throw feishuResponseError(response, 'Failed to send Feishu reply');
+    throw feishuResponseError(response, reply ? 'Failed to send Feishu topic reply' : 'Failed to send Feishu reply');
   }
   return response.data;
 }
