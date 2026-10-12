@@ -1675,3 +1675,21 @@ The requester clarified that the comparison concerns card types in Message Reply
 - Evidence: the accepted supplement had its own correct Person/identity, but carried the active native request's different Person reply policy, including the strict-start flag. Saved personal preferences were separate; admission inherited the head request without checking the sender.
 - Change: reuse a continuation/routing-origin snapshot only for the same verified Person; another or unknown sender resolves their own admission policy. Retain immutable retries and same-Person work snapshots, without rewriting historical requests or changing anyone's preferences.
 - Boundary: earlier shared background retrieval and the later personal strict-start trial are separate mechanisms. Native integration checks real multi-sender admission, display/strict choices, toggles, retry and shared execution; deployment and natural use remain separate evidence.
+
+### 2026-10-12: Recording keypad needs protection against accidental stop
+
+An operator of the existing single-lane DJI/Free3 Mac setup requested key 1
+as start-only, a simultaneous three-key stop, and an immediate desktop popup
+plus spoken start cue. A persistent real-audio waveform is needed because a
+running recorder previously accepted silent PCM. Implement feedback from saved
+PCM and actual recorder state, retain hardware key-up events, and verify the
+physical keypad's overlap behavior rather than treating three quick clicks
+as proof of a held chord. Keep local audio and existing upload choices intact.
+
+During physical acceptance, the Free3 emitted 15–20 ms USB click macros even
+while the operator held the buttons, and serialized a three-key physical
+press. The operator accepted a different gesture and finally selected key 3
+for ending. Final interaction: key 1 starts; double-press key 3 stops; key 2
+has no recording action. The start popup, spoken cue and actual waveform were
+confirmed by the operator. Preserve a distinction between software gesture
+tests and each transport's final physical acceptance.
