@@ -1720,3 +1720,8 @@ failed upload or a local-only capture, and recheck remote audio before deletion.
 ## 2026-10-12: Automation explanation belongs in the existing Monitor
 
 A separate interactive proposal made an already understood flow harder to use. The requested iteration is in Monitor → Automations: a compact shared-reading and processing/write/delivery view, with the original task list and controls retained underneath. Keep actual configured times distinct from proposed changes. More tabs, repeated task snapshots and a second explanation site do not solve this navigation need.
+
+
+### 2026-10-12: automate flow explanations in the existing Monitor
+
+A user wanted the original Automations page to show a connected read → process → write → notify flow, with actual times and destinations, and to include system monitoring in the same four-category view. Keep the existing task list and monitoring overview, reuse their sources, and distinguish proposed task consolidation from actual schedules. The presentation now joins shared source blocks to branches, exposes scope notes on demand, supports existing background mechanism references, and uses the workbench theme and readable mobile controls. This change does not authorize runtime policy, schedule or delivery changes.

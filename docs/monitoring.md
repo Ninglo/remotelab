@@ -329,3 +329,5 @@ on-demand observation, not new background scanning or model analysis.
 The former independent monitoring page is now a small entry linking to this native
 view, so there is one maintained monitoring interface. Existing saved links remain
 usable; the change does not publish instance data to the unauthenticated entry.
+
+The Automations tab also explains system monitoring as a source → processing → write → notification flow. It references the existing background mechanism states and opens this overview for live readings; it does not add a collector or a notification channel. See [Automation flows](task-center-v1.md#compact-flow-explanations).
