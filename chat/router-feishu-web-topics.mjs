@@ -39,7 +39,10 @@ export async function handleFeishuWebTopics({ req, res, pathname, authSession, w
       if (!body || Object.keys(body).some(k => !['webThreadId', 'resultAt'].includes(k)) || topicIds(body.webThreadId).length !== 1) throw Error('已读请求无效。');
       writeJson(res, 200, await source.review(body.webThreadId, body.resultAt)); return true;
     }
-    const project = data => ({ ...data, readSyncEnabled: actor.topicReadAck });
+    // Empty summaries let native v14 restore Feishu's latest-message preview.
+    // Group-board and Web summaries retain their existing presentation.
+    const native = (req.headers['x-feishu-origin'] || origin) === 'http://127.0.0.1:19342';
+    const project = data => ({ ...data, ...(native ? { entries: (data.entries || []).map(e => ({ ...e, summary: '' })) } : {}), readSyncEnabled: actor.topicReadAck });
     if (!['snapshot', 'stream'].some(name => pathname === prefix + name) || req.method !== 'GET') { writeJson(res, 404, { error: 'Unknown topic operation' }); return true; }
     const ids = topicIds(url.searchParams.get('ids')), groups = topicIds(url.searchParams.get('groups'));
     if (pathname.endsWith('/snapshot')) { writeJson(res, 200, project(await source.snapshot(ids, '', null, groups, actor.topicDetails))); return true; }
