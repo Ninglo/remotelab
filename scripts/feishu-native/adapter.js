@@ -29,36 +29,44 @@
   // in the separate chat renderer; the list renderer owns the settings panel.
   style.textContent=nativeMain?'#rlfe-pet-host{display:none!important}':'#rlfe-host,#rlfe-sort-host,#rlfe-resource-nav-host,#rlfe-personal-nav,#rlfe-personal-workspace{display:none!important}';
   document.head.append(style);
-  // Native navigation lives outside this renderer. Keep enhancement actions in
-  // one horizontal toolbar, without taking width from the native message list.
-  let layoutObserver,toolbar,layout,root;
+  // The outer app rail is a different native view. Mount inside Feishu's
+  // existing message-group column, outside its virtualized group rows.
+  let layoutObserver,toolbar,layout,root,resizeObserver,fallback;
   if(nativeMain){
-    toolbar=document.createElement('aside');toolbar.id='rlfe-native-toolbar';toolbar.className='appNavbar';
-    toolbar.setAttribute('aria-label','增强功能');
-    toolbar.innerHTML='<div class="appNavbar-navbarMenu"></div><button id="rlfe-native-settings" type="button">设置</button>';
-    toolbar.lastElementChild.onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();
-    document.body.append(toolbar);
+    toolbar=document.createElement('section');toolbar.id='rlfe-native-sidebar';toolbar.className='appNavbar';
+    toolbar.setAttribute('aria-label','测试中的功能');
+    toolbar.innerHTML='<header>测试中的功能</header><button id="rlfe-native-settings" type="button">增强设置</button><div class="appNavbar-navbarMenu"></div>';
+    toolbar.querySelector('button').onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();
+    fallback=document.createElement('button');fallback.id='rlfe-native-settings-fallback';fallback.type='button';fallback.textContent='增强设置';
+    fallback.title='展开消息分组侧栏可查看测试中的功能';fallback.onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();document.body.append(fallback);
     layout=document.createElement('style');layout.id='rlfe-native-layout-style';
     layout.textContent=`
-      #rlfe-native-toolbar{position:fixed;inset:0 0 auto;height:44px;z-index:1000;background:var(--rlfe-nav,var(--bg-body,#f5f6f7));border-bottom:1px solid var(--rlfe-border,#dee0e3);padding:4px;box-sizing:border-box;display:flex;align-items:center;gap:4px}
-      #rlfe-native-toolbar .appNavbar-navbarMenu{display:flex;align-items:center;flex:1;min-width:0;gap:2px;overflow:hidden!important;max-height:none!important}
-      #rlfe-native-toolbar nav{flex:1;min-width:0;margin:0}
-      #rlfe-native-settings{flex:none;height:32px;padding:0 8px;border:0;border-radius:5px;color:var(--rlfe-text,#1f2329);background:transparent;font:12px system-ui;cursor:pointer}
-      #rlfe-native-settings:hover{background:var(--rlfe-hover,#e8e9eb)}
-      [data-rlfe-native-root]{position:fixed!important;inset:44px 0 0!important;width:100%!important;height:calc(100% - 44px)!important;max-height:calc(100% - 44px)!important;min-height:0!important;margin:0!important}
-      #rlfe-host{--rlfe-panel-left:8px;--rlfe-launch-top:4px;--rlfe-launch-bottom:auto}
-      #rlfe-personal-workspace{left:0!important;top:44px!important;z-index:2147482900!important}
-    `;
-    document.head.append(layout);
-    const navCss=`:host{display:block!important;flex:1!important;min-width:0!important;margin:0!important}div,#entries{display:flex!important;gap:2px!important}button,a,:host([data-compact=true]) button,:host([data-compact=true]) a{display:flex!important;flex:1!important;flex-direction:row!important;align-items:center!important;justify-content:center!important;gap:3px!important;min-width:0!important;height:32px!important;padding:0 3px!important;font:12px/1 system-ui,sans-serif!important}svg,small.trial{display:none!important}span{overflow:hidden!important;text-overflow:ellipsis!important}`;
+      [data-rlfe-native-groups]{display:flex!important;flex-direction:column!important;min-height:0!important}
+      [data-rlfe-native-groups]>:not(#rlfe-native-sidebar){flex:1 1 auto!important;min-height:0!important;overflow:auto}
+      #rlfe-native-sidebar{position:relative!important;inset:auto!important;display:block!important;flex:0 0 auto!important;width:100%!important;height:auto!important;max-height:48%;min-height:0!important;overflow:auto!important;box-sizing:border-box;padding:8px 6px;border-top:1px solid var(--rlfe-border,#dee0e3);background:var(--rlfe-nav,var(--bg-body,#f5f6f7));color:var(--rlfe-text,#1f2329)}
+      #rlfe-native-sidebar header{font:11px/1.5 system-ui;color:var(--text-caption,#646a73);padding:0 4px 5px;overflow-wrap:anywhere}
+      #rlfe-native-sidebar .appNavbar-navbarMenu{display:block!important;width:100%!important;height:auto!important;max-height:none!important;overflow:visible!important}
+      #rlfe-native-sidebar nav{display:block!important;width:100%!important;margin:0!important}
+      #rlfe-native-settings{display:block!important;width:100%;height:32px;padding:0 6px;text-align:left;border:0;border-radius:5px;color:inherit;background:transparent;font:12px system-ui;cursor:pointer}
+      #rlfe-native-settings:hover,#rlfe-native-settings-fallback:hover{background:var(--rlfe-hover,#e8e9eb)}
+      #rlfe-native-settings-fallback{position:fixed;left:8px;bottom:8px;z-index:2147482900;padding:7px 10px;border:1px solid var(--rlfe-border,#dee0e3);border-radius:6px;background:var(--rlfe-nav,#f5f6f7);color:var(--rlfe-text,#1f2329);font:12px system-ui;cursor:pointer}
+      #rlfe-native-settings-fallback[hidden]{display:none!important}
+      #rlfe-host{--rlfe-panel-left:8px}
+      #rlfe-personal-workspace{top:0!important;z-index:2147482900!important}
+    `;document.head.append(layout);
+    const navCss=`:host{display:block!important;width:100%!important;margin:0!important}div,#entries{display:grid!important;gap:2px!important}button,a,:host([data-compact=true]) button,:host([data-compact=true]) a{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:4px!important;min-width:0!important;width:100%!important;height:32px!important;padding:0 6px!important;font:12px/1 system-ui,sans-serif!important}svg,small.trial{display:none!important}span{overflow:hidden!important;text-overflow:ellipsis!important}`;
+    function position(){const bounds=root?.getBoundingClientRect();fallback.hidden=!!(bounds&&bounds.width>=48&&bounds.height>80&&getComputedStyle(root).visibility!=='hidden');}
     function mountLayout(){
-      const feed=document.querySelector('.feed-main-list');let next=feed;
-      while(next?.parentElement&&next.parentElement!==document.body)next=next.parentElement;
-      if(next&&next!==document.body&&next!==root){root?.removeAttribute('data-rlfe-native-root');root=next;root.setAttribute('data-rlfe-native-root','');}
+      const next=document.querySelector('.a11y_feed_filter_list,.feed-left-menu-list');
+      if(next!==root){root?.removeAttribute('data-rlfe-native-groups');resizeObserver?.disconnect();root=next;
+        if(root){root.setAttribute('data-rlfe-native-groups','');resizeObserver=new ResizeObserver(position);resizeObserver.observe(root);}}
+      if(root&&toolbar.parentElement!==root)root.append(toolbar);
+      if(!root&&toolbar.isConnected)toolbar.remove();
       for(const id of ['rlfe-resource-nav-host','rlfe-personal-nav','rlfe-host']){
         const shadow=document.getElementById(id)?.shadowRoot;
-        if(shadow&&!shadow.getElementById('rlfe-native-horizontal')){const css=document.createElement('style');css.id='rlfe-native-horizontal';css.textContent=id==='rlfe-host'?'#launcher{display:none!important}':navCss;shadow.append(css);}
+        if(shadow&&!shadow.getElementById('rlfe-native-sidebar-style')){const css=document.createElement('style');css.id='rlfe-native-sidebar-style';css.textContent=id==='rlfe-host'?'#launcher{display:none!important}':navCss;shadow.append(css);}
       }
+      position();
     }
     layoutObserver=new MutationObserver(mountLayout);layoutObserver.observe(document.body,{childList:true,subtree:true});mountLayout();
   }
@@ -103,7 +111,7 @@
   observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-feed-id']});
   const onSettings=e=>{globalThis.__RLFE_SHARED_PROJECT__?.(projection);if(nativeMain)globalThis.__RLFE_SHARED_PREVIEW__?.(JSON.stringify(e.detail));};
   window.addEventListener('rlfe:settings',onSettings);
-  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:11,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
-  globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();layoutObserver?.disconnect();toolbar?.remove();layout?.remove();root?.removeAttribute('data-rlfe-native-root');window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
+  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:12,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
+  globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();layoutObserver?.disconnect();resizeObserver?.disconnect();toolbar?.remove();fallback?.remove();layout?.remove();root?.removeAttribute('data-rlfe-native-groups');window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
   visible();
 })();

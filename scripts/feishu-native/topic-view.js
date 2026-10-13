@@ -42,7 +42,7 @@
       const {headline}=state,stale=data.sourceConnected===false||!!entry.sourceStale;
       attr(headline,'data-session-id',String(entry.sessionId||''));attr(headline,'data-stale',String(stale));
       const label=headline.lastElementChild;const title=String(entry.name||name.textContent||'');text(label,title);attr(label,'title',title);
-      const badge=headline.firstElementChild,value=stale?'未同步':['running','waiting','review'].includes(entry.status)?entry.status:'';
+      const badge=headline.firstElementChild,value=stale?'未同步':String(entry.label||entry.status||(entry.sessionId?'状态未知':''));
       text(badge,value);attr(badge,'data-state',stale?'stale':String(entry.status||''));if(badge.hidden!==!value)badge.hidden=!value;
       attr(badge,'title',stale?'同步中断，当前状态未知':'RemoteLab 当前会话状态');
       const summary=String(entry.summary||'').replace(/\s+/g,' ').trim();
@@ -60,7 +60,7 @@
     }
   }
   const observer=new MutationObserver(records=>{
-    if(records.every(r=>(r.target.nodeType===3?r.target.parentElement:r.target).closest?.('.rlfe-feed-headline,.rlfe-feed-preview,#rlfe-native-toolbar,#rlfe-host')))return;
+    if(records.every(r=>(r.target.nodeType===3?r.target.parentElement:r.target).closest?.('.rlfe-feed-headline,.rlfe-feed-preview,#rlfe-native-sidebar,#rlfe-host')))return;
     // Restore recycled rows in this microtask, before paint; decorate on RAF.
     for(const [row,state]of mounted)if(!row.isConnected||row.dataset.feedId!==state.id)restore(row,state);
     if(!scheduled){scheduled=true;requestAnimationFrame(()=>{scheduled=false;render();});}
