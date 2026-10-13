@@ -45,7 +45,12 @@ export function createFeishuTopicSource(deps = {}) {
   async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true) {
     const config = await bindings(), wanted = new Set(ids), visibleGroups = new Set(groupIds);
     const metadata = await sessions();
-    for (const s of metadata) if (eligible(s) && wanted.has(config.bindings[s.conversation.target.rootId || s.conversation.target.messageId])) {
+    const parents = new Map();
+    for (const s of metadata) if (eligible(s)) {
+      const id = config.bindings[s.conversation.target.rootId || s.conversation.target.messageId];
+      if (wanted.has(id)) parents.set(id, parents.has(id) ? null : s);
+    }
+    for (const s of parents.values()) if (s) {
       const group = config.groups?.[s.conversation.target.chatId]; if (group) visibleGroups.add(String(group));
     }
     const pairs = (config.pairs || []).filter(p => [p.workChatId, p.discussionChatId].some(id => visibleGroups.has(String(config.groups?.[id]))));

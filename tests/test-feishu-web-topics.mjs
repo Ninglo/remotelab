@@ -94,6 +94,7 @@ test('group boards reuse paired-group source and exclude private, unrelated and 
   assert.equal(data.boards[0].topics.find(t => t.sessionId === b.id).state, 'done');
   assert.equal(reads.includes(privateChat.id), false); assert.equal(JSON.stringify(data).includes(b.privateSecret), false);
   assert.equal((await api.snapshot([], '', null, ['unknown-group'])).boards.length, 0);
+  records.push({...a,id:'d'.repeat(32)}); assert.equal((await api.snapshot(['native-a'], '', null, [])).boards.length,0,'ambiguous topic does not select a parent group'); records.pop();
   const pushed = []; let wake; const next = () => new Promise(resolve => { wake = resolve; });
   const first = next(); const off = await api.subscribe([], data => { pushed.push(data); wake?.(); }, error => { throw error; }, ['native-work']); await first;
   a.activity.run.state = 'idle'; const changed = next(); broadcastAll({ type: 'session_invalidated', sessionId: a.id }); await changed;
