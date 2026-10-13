@@ -152,3 +152,5 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for aligned start/process/write/notify stages, explicit input reuse, visible scope notes and collapsible Session mechanics. [Delivery details and controls](task-center-v1.md#delivery-details-and-controls) show recipients directly beneath task titles and before flow diagrams, with sending conditions, message format, content and controls available on expansion.
 
 Mac 原生飞书增强的独立安装、本人连接、消息分组侧栏入口和保留数据升级见 [试装入口](../scripts/feishu-native/INSTALL.zh-CN.md)；r12 保留原生标题与摘要两行，将四入口和设置置于消息分组侧栏的“测试中的功能”区；可见话题变化不再先清空状态，空闲状态也有标签；本人 Mac 的实际显示须单独验收。启动器修复版 2 随同一命令更新，避免代理和端口等待导致误判，确认本机服务就绪后再开窗口。群状态、用量与消息成果的数据边界见 [话题同步](feishu-web-topics.md)。
+
+Automation display labels and condition/result ordering are documented in [Task Center](task-center-v1.md#delivery-details-and-controls). Reviewed conditions include idle wake and gate rules; scheduled checks are distinct from actual execution.

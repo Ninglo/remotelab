@@ -9,7 +9,7 @@ let result=await listAutomationFlows([task],{load});
 assert.equal(result.groups[0].rows[0].needsReview,false);
 assert.equal(result.groups[0].rows[0].links.length,1);
 assert.equal(result.groups[0].rows[0].links[0].title,'Safe');
-for(const patch of [{prompt:'Changed instructions'},{schedule:{...task.schedule,cron:'0 5 * * *'}},{target:{mode:'fixed_session'}},{resultDelivery:{mode:'source_conversation'}}]){
+for(const patch of [{prompt:'Changed instructions'},{schedule:{...task.schedule,cron:'0 5 * * *'}},{target:{mode:'fixed_session'}},{resultDelivery:{mode:'source_conversation'}},{gate:{mode:'script',snapshotSha256:'changed'}},{wakeOn:['foreground_idle']},{automationPolicy:{minIdleSeconds:300}}]){
  result=await listAutomationFlows([{...task,...patch}],{load});assert.equal(result.groups[0].rows[0].needsReview,true);
 }
 result=await listAutomationFlows([{...task,nextRunAt:'2030-01-01',state:'paused',summary:{totalRuns:10}}],{load});assert.equal(result.groups[0].rows[0].needsReview,false,'runtime churn does not invalidate the definition');
@@ -58,3 +58,6 @@ const delivery=(await listAutomationFlows([task],{load})).groups[0].rows[0].deli
 assert.equal(delivery.recipient,'Named group');
 assert.equal(delivery.execute,undefined);
 assert.equal(JSON.stringify(task),before);
+
+config.groups[0].rows[0].trigger='Only when new material is ready';
+assert.equal((await listAutomationFlows([task],{load})).groups[0].rows[0].trigger,config.groups[0].rows[0].trigger);
