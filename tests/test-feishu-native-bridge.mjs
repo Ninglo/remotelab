@@ -18,5 +18,6 @@ try{
  assert.equal((await req('/external',{url:'file:///etc/passwd'})).status,400);
  assert.equal((await req('/pair/finish?key=unknown',{})).status,400);
  assert.equal((await req('/save',{value:{aliases:{':999999999999':'unseen'}}})).status,400);
+ assert.equal((await req('/topics/review',{webThreadId:'1000000000000000003',resultAt:'2026-10-13T00:00:00Z'})).status,400);
  console.log('Native helper rejects spoofed origins/accounts, arbitrary proxying and invalid callbacks; per-account storage is isolated');
 }finally{clearTimeout(deadline);const done=once(child,'exit');child.kill('SIGTERM');await done;await rm(root,{recursive:true,force:true});}

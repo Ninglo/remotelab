@@ -87,11 +87,14 @@ test('group boards reuse paired-group source and exclude private, unrelated and 
     bindings: async () => ({ bindings: { 'root-a': 'native-a', 'root-b': 'native-b' }, groups: { work: 'native-work', discussion: 'native-discussion' },
       pairs: [{ id: 'pair', name: 'Shared', workChatId: 'work', discussionChatId: 'discussion', workChatName: 'Work', discussionChatName: 'Discussion' }] }) });
   const data = await api.snapshot(['native-a'], '', null, ['native-work']);
+  assert.equal((await api.snapshot(['native-a'], '', null, [])).boards.length, 1, 'verified topic supplies its parent group even without native header group ID');
+  assert.equal((await api.snapshot(['unknown-topic'], '', null, [])).boards.length, 0);
   assert.equal(data.entries.length, 1); assert.equal(data.boards.length, 1); assert.equal(data.boards[0].topics.length, 2);
   assert.equal(data.boards[0].topics.find(t => t.sessionId === a.id).state, 'running');
   assert.equal(data.boards[0].topics.find(t => t.sessionId === b.id).state, 'done');
   assert.equal(reads.includes(privateChat.id), false); assert.equal(JSON.stringify(data).includes(b.privateSecret), false);
   assert.equal((await api.snapshot([], '', null, ['unknown-group'])).boards.length, 0);
+  records.push({...a,id:'d'.repeat(32)}); assert.equal((await api.snapshot(['native-a'], '', null, [])).boards.length,0,'ambiguous topic does not select a parent group'); records.pop();
   const pushed = []; let wake; const next = () => new Promise(resolve => { wake = resolve; });
   const first = next(); const off = await api.subscribe([], data => { pushed.push(data); wake?.(); }, error => { throw error; }, ['native-work']); await first;
   a.activity.run.state = 'idle'; const changed = next(); broadcastAll({ type: 'session_invalidated', sessionId: a.id }); await changed;
@@ -107,4 +110,29 @@ test('topic details require explicit new confirmation; old and activated grants 
   const api=createFeishuTopicSource({sessions:async()=>[],bindings:async()=>({bindings:{}}),details:async entries=>{enriched++;return {entries,quota:{status:'ready'}};}});
   assert.equal((await api.snapshot([], '', null, [], false)).quota,undefined);assert.equal(enriched,0);
   assert.equal((await api.snapshot([], '', null, [], true)).quota.status,'ready');assert.equal(enriched,1);
+});
+
+test('read acknowledgement requires new consent and exact verified mapping', async () => {
+ const input={origin:'http://127.0.0.1:19342',nativeAccount:'1000000000000000001',confirm:true};
+ let grant=await auth.connectFeishuWebSettings(input,actor,'topics'),calls=[];
+ async function request(body,account=input.nativeAccount){let output;const req=Readable.from([JSON.stringify(body)]);req.url='/api/feishu-web-topics/review';req.method='POST';req.headers={authorization:'Bearer '+grant.token,'x-feishu-origin':input.origin,'x-feishu-account':account};await handleFeishuWebTopics({req,res:{setHeader(){}},pathname:req.url,writeJson:(_,status,body)=>output={status,body},source:{review:async(...args)=>{calls.push(args);return {reviewed:true}}}});return output;}
+ assert.equal((await request({webThreadId:'native-a',resultAt:'2026-10-13T00:00:00Z'})).status,403);assert.equal(calls.length,0);
+ grant=await auth.connectFeishuWebSettings({...input,topicReadAck:true},actor,'topics');
+ assert.equal((await request({webThreadId:'native-a',resultAt:'2026-10-13T00:00:00Z'})).status,200);
+ assert.equal((await request({webThreadId:'native-a',resultAt:'2026-10-13T00:00:00Z'},'1000000000000000002')).status,401);
+ const s=session('c'.repeat(32),'root-c','idle');s.lastAssistantMessageAt='2026-10-13T00:00:00Z';
+ const api=createFeishuTopicSource({sessions:async()=>[s],session:async()=>s,bindings:async()=>({bindings:{'root-c':'native-c'}}),acknowledge:async(...a)=>a});
+ assert.deepEqual(await api.review('native-c',s.lastAssistantMessageAt),[s.id,s.lastAssistantMessageAt]);
+ await assert.rejects(api.review('unknown',s.lastAssistantMessageAt));await assert.rejects(api.review('native-c','2026-10-14T00:00:00Z'));
+});
+test('late read acknowledgements never erase a later result or rewind review',async()=>{
+ const {createSession,acknowledgeSessionResult}=await import('../chat/session-manager.mjs');
+ const {mutateSessionMeta,loadSessionsMeta}=await import('../chat/session-meta-store.mjs');
+ const s=await createSession(scratch,'codex','read race');
+ await mutateSessionMeta(s.id,m=>{m.lastAssistantMessageAt=Date.parse('2026-10-13T00:02:00Z');return true;});
+ await acknowledgeSessionResult(s.id,'2026-10-13T00:01:00Z');
+ let m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(topicProjection(m,'native').resultAt,'2026-10-13T00:02:00.000Z');assert.equal(topicProjection(m,'native').status,'review');
+ await acknowledgeSessionResult(s.id,'2026-10-13T00:02:00Z');await acknowledgeSessionResult(s.id,'2026-10-13T00:01:00Z');
+ m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(m.lastReviewedAt,'2026-10-13T00:02:00.000Z');assert.notEqual(topicProjection(m,'native').status,'review');
+ await assert.rejects(acknowledgeSessionResult(s.id,'2026-10-13T00:03:00Z'));
 });

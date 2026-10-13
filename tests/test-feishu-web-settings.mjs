@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 import test, { after } from 'node:test';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -111,4 +112,35 @@ test('native loopback grants stay bound to the exact helper origin, account and 
   await assert.rejects(api.authorizeFeishuWebSettings(grant.token,nativeOrigin,'1000000000000000002'));
   await assert.rejects(api.authorizeFeishuWebSettings(grant.token,nativeOrigin,nativeAccount,'workspace'));
   await assert.rejects(api.connectFeishuWebSettings({origin:nativeOrigin,nativeAccount,confirm:false},actor('alice')));
+});
+
+test('native confirmation atomically connects all scoped capabilities without changing preferences',async()=>{
+ const input={origin:'http://127.0.0.1:19342',nativeAccount:'1000000000000000077',confirm:true};
+ for(const bad of [{...input,confirm:false},{...input,origin:'https://fixture.feishu.cn'},{...input,unexpected:true}])await assert.rejects(api.connectFeishuNative(bad,actor('alice')));
+ await assert.rejects(api.connectFeishuNative(input,{...actor('alice'),authKind:'service'}));
+ const result=await api.connectFeishuNative(input,actor('alice'));
+ assert.deepEqual(Object.keys(result.grants),['settings','workspace','topics']);
+ for(const [kind,g]of Object.entries(result.grants)){
+  const a=await api.authorizeFeishuWebSettings(g.token,input.origin,input.nativeAccount,kind);assert.equal(a.personId,'person_alice');assert.equal(a.topicReadAck,kind==='topics');
+  await assert.rejects(api.authorizeFeishuWebSettings(g.token,input.origin,'1000000000000000078',kind));
+ }
+ const disk=await readFile(join(home,'.config/remotelab/feishu-web-settings-connections.json'),'utf8');for(const g of Object.values(result.grants))assert(!disk.includes(g.token));
+ const {createRequire}=await import('node:module');const connection=createRequire(import.meta.url)('../scripts/feishu-native/native-connection.cjs');
+ const p={state:'a'.repeat(32),account:input.nativeAccount};
+ const callback={...result,type:'remotelab:feishu-native-connected',state:p.state};const values=connection.validateBundle(callback,p);
+ assert(connection.reusable(values,p.account));assert.equal(connection.reusable(values,'1000000000000000099'),null);
+ for(const bad of [{...callback,state:'wrong'},{...callback,grants:{...result.grants,topics:{...result.grants.topics,topicReadAck:false}}},{...callback,grants:{...result.grants,workspace:{...result.grants.workspace,person:{id:'person_bob'}}}}])assert.throws(()=>connection.validateBundle(bad,p));
+ values[connection.key('topics',p.account)].expiresAt=0;assert.equal(connection.reusable(values,p.account),null);
+});
+
+test('native connection page uses one same-tab round trip and fixed local callback',async()=>{
+ const base='http://127.0.0.1:19342',state='b'.repeat(32),returnKey='c'.repeat(32);
+ const url='/page/feishu-web-settings/connect?bundle=native&origin='+encodeURIComponent(base)+'&account=1000000000000000079&state='+state+'&returnKey='+returnKey;
+ let html='',status;
+ await handleFeishuWebSettings({req:{url,method:'GET',headers:{}},res:{setHeader(){},end(v){html=v;}},pathname:url.split('?')[0],authSession:{...actor('alice'),personName:'Alice'},nonce:'test',writeJson:(_,s)=>status=s});
+ assert(html.includes('确认并连接全部功能'));assert(html.includes('location.replace('));assert(!html.includes('window.open('));assert(!html.includes('window.opener'));assert(html.includes("'/pair/return?key='"));
+ const path='/api/feishu-web-settings/native-grant',body=JSON.stringify({origin:base,nativeAccount:'1000000000000000079',confirm:true});let result;
+ const request=async headers=>{const req=Object.assign(Readable.from([body]),{url:path,method:'POST',headers});await handleFeishuWebSettings({req,res:{setHeader(){}},pathname:path,authSession:actor('alice'),writeJson:(_,s,v)=>{status=s;result=v;}});};
+ await request({origin:'https://evil.test',host:'fixture.test'});assert.equal(status,403);
+ await request({origin:'https://fixture.test',host:'fixture.test'});assert.equal(status,201,JSON.stringify(result));assert.equal(Object.keys(result.grants).length,3);
 });

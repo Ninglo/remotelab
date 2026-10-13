@@ -1,6 +1,6 @@
 import { readBody, escapeHtml } from '../lib/utils.mjs';
 import { observeIntervention } from './usage-controls.mjs';
-import { connectFeishuWebSettings, authorizeFeishuWebSettings, disconnectFeishuWebSettings,
+import { connectFeishuNative, connectFeishuWebSettings, authorizeFeishuWebSettings, disconnectFeishuWebSettings,
   loadFeishuWebReplies, saveFeishuWebReplies, readFeishuWebRuntime, saveFeishuWebRuntime, feishuOrigin } from './feishu-web-settings.mjs';
 
 const prefix = '/api/feishu-web-settings/';
@@ -19,17 +19,25 @@ export async function handleFeishuWebSettings({ req, res, pathname, parsedUrl, a
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('Referrer-Policy', 'no-referrer');
+      if (url.searchParams.get('bundle') === 'native') {
+        const key = url.searchParams.get('returnKey');
+        if (origin !== 'http://127.0.0.1:19342' || !/^[A-Za-z0-9_-]{32}$/.test(key || '')) throw Error('请从飞书增强版重新连接。');
+        res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>连接飞书增强版</title><style>body{font:16px/1.7 system-ui;max-width:480px;margin:40px auto;padding:0 20px}button{font:inherit;padding:10px 18px}</style><h2>连接飞书增强版</h2><p>当前登录：<strong>${escapeHtml(authSession.personName || '')}</strong></p><p>一次连接个人 Index／thinking、消息设置、群看板和 Session 状态。在飞书读过结果后，也会将对应 RemoteLab 结果标记为已读。</p><p>请核对姓名是你；不会代你发送聊天消息或执行任务。</p><button id="connect">确认并连接全部功能</button><p id="status"></p><script nonce="${nonce}">
+const origin=${JSON.stringify(origin)},nativeAccount=${JSON.stringify(nativeAccount)},state=${JSON.stringify(state)},key=${JSON.stringify(key)};
+document.getElementById('connect').onclick=async()=>{const b=document.getElementById('connect');b.disabled=true;try{const r=await fetch('/api/feishu-web-settings/native-grant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origin,nativeAccount,confirm:true})}),d=await r.json();if(!r.ok)throw Error(d.error);location.replace(origin+'/pair/return?key='+key+'#'+encodeURIComponent(JSON.stringify({type:'remotelab:feishu-native-connected',state,...d})));}catch(e){document.getElementById('status').textContent=e.message;b.disabled=false;}};</script></html>`);
+        return true;
+      }
       res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>连接消息设置</title><style>body{font:16px/1.7 system-ui;margin:32px;max-width:440px;color:#1f2329}button{padding:10px 18px;background:#245bdb;color:white;border:0;border-radius:6px;cursor:pointer}p{margin:16px 0}small{color:#646a73}</style><h2>连接我的消息设置</h2><p>当前登录：<strong>${escapeHtml(authSession.personName || '')}</strong></p><p>连接后，可直接在飞书设置你的回复展示、开工严格检查、实验分流和当前对话模型。</p><small>请确认上面的姓名是你。个人设置适用于你后续发起的新工作；对话模型作用于当前对话的后续消息。</small><p><button id="connect">连接这个账号</button></p><p id="status" role="status"></p><script nonce="${nonce}">
 const origin=${JSON.stringify(origin)},nativeAccount=${JSON.stringify(nativeAccount)},state=${JSON.stringify(state)};
 document.getElementById('connect').onclick=async()=>{const button=document.getElementById('connect'),status=document.getElementById('status');button.disabled=true;try{if(!window.opener)throw Error('连接窗口已失去来源，请从飞书重新打开。');const response=await fetch('/api/feishu-web-settings/grant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({origin,nativeAccount,confirm:true})});const result=await response.json();if(!response.ok)throw Error(result.error);window.opener.postMessage({type:'remotelab:feishu-settings-connected',state,...result},origin);status.textContent='已连接，返回飞书即可设置。';window.close();}catch(error){status.textContent=error.message;button.disabled=false;}};
 </script></html>`);
       return true;
     }
-    if (pathname === prefix + 'grant') {
+    if (pathname === prefix + 'grant' || pathname === prefix + 'native-grant') {
       if (!authSession) return false;
       if (req.method !== 'POST') { writeJson(res, 405, { error: 'Method not allowed' }); return true; }
       if (!req.headers.origin || new URL(req.headers.origin).host !== req.headers.host) throw Object.assign(new Error('请从账号连接页操作。'), { status: 403 });
-      writeJson(res, 201, await connectFeishuWebSettings(JSON.parse(await readBody(req, 32768)), authSession));
+      writeJson(res, 201, await (pathname.endsWith('/native-grant') ? connectFeishuNative : connectFeishuWebSettings)(JSON.parse(await readBody(req, 32768)), authSession));
       return true;
     }
     if (!['replies', 'runtime', 'connection'].some(name => pathname === prefix + name)) { writeJson(res, 404, { error: 'Unknown settings operation' }); return true; }

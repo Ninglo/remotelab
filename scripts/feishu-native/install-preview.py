@@ -46,7 +46,7 @@ def install_runtime(root,app,node):
  subprocess.run([node,'--check',str(root/'native-asset-runtime.js')],check=True)
  archive=app/'Contents/Frameworks/Lark Framework.framework/Versions/147.0.7727.149/Resources/webcontent/messenger.asar'
  original=archive.read_bytes();packed,report=patch_archive(original,runtime.encode());archive.write_bytes(packed)
- for name in ['native_asset_bridge.cjs','live-source.cjs','topic-source.cjs']:shutil.copy2(build/name,root/name)
+ for name in ['native_asset_bridge.cjs','live-source.cjs','topic-source.cjs','native-connection.cjs']:shutil.copy2(build/name,root/name)
  shutil.copy2(package/'observe_native_app.py',root/'observe_native_app.py')
  (root/'node-path').write_text(node)
  (root/'web-display-choice.json').write_text('{}')
