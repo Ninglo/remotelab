@@ -1,4 +1,4 @@
-# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 12)
+# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 13)
 
 Ask the maintaining agent: “Update the existing isolated Feishu Native Trial
 with the verified Web 1.2.0 component bundle and the existing Mac Web Live capabilities. Restore the same-account read-only status source, including group boards and usage; never replace it with a fresh personal-login requirement. Keep the official App and profile
@@ -157,3 +157,5 @@ Standalone server setup: the existing feishu-web-topics.json binding/group confi
 Launcher repair 2 uses proxy-free, redirect-free authenticated loopback checks. It removes the bind-only port probe (TIME_WAIT is not a listener), waits for the exact new helper PID before launching the App, and recovers only a same-user, exact-command helper from this installation. A live App with a healthy helper is focused; a disconnected App can reconnect without losing its input. Repeating the installer refreshes the launcher even when the r11 runtime hash is unchanged.
 
 Revision 12 mounts the experimental actions and an explicit settings button in `.a11y_feed_filter_list` (8.1.17 message groups), with the legacy `.feed-left-menu-list` fallback. It does not alter the separate outer native rail or shift the message root. A settings-only fallback remains reachable when groups are folded. Topic subscriptions retain up to 200 recently visible IDs/groups, keep one active and one pending connection, and replace the active stream only after a verified snapshot. Account/grant changes and authorization failures clear retained data; real outages show unsynced. All returned Session status labels, including idle, remain visible.
+
+Revision 13 keeps the settings/version footer below four individually marked experimental entries, with the shared UI font token across shadow roots. Topic grants may explicitly opt into `topicReadAck`; old grants remain read-only. The native renderer waits for a trusted topic open, committed zero-unread preview, message timestamp at least as new as the observed result, and matching active chat before acknowledging exactly `resultAt`. Server-side acknowledgements only advance the existing RemoteLab review timestamp; concurrent newer results remain unread. Mapping is verified independently and unknown rows are never guessed from titles.

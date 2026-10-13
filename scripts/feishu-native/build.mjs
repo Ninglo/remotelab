@@ -19,13 +19,15 @@ content=content.replaceAll('event.source !== popup', 'event.data?.nativePopup !=
 // personal topic grant. Do not start a competing renderer-owned stream.
 content=content.replace('if (!chrome?.runtime?.getManifest || globalThis.__RLFE_LIVE__) return;','if (!chrome?.runtime?.getManifest) return;');
 content=content.replaceAll('Mac 后台自动检查更新；有未保存内容时延后应用','本地增强 1.2 · 更新由本机安装器管理').replaceAll('以后自动连接和更新，无需再到设置里启用。','连接按当前本地飞书账号保存。');
+// Native labels use the same explicit suffix for all four experimental entries.
+content=content.replaceAll('<small class="trial">测试中</small>', '<small class="trial">（测试）</small>').replaceAll("badge.textContent = '测试中'", "badge.textContent = '（测试）'");
 // Replace the browser feed renderer at a checked boundary. Native title/digest
 // slots differ from Web and must not share its hash-selector substitutions.
 const topicStart=content.indexOf('(() => {\n  globalThis.__RLFE_TOPICS_CLEANUP__?.();');
 const topicEnd=content.indexOf('\n})();',topicStart)+7;
 if(topicStart<0||topicEnd<topicStart)throw Error('Unrecognized Web topic renderer');
 content=content.slice(0,topicStart)+await fs.readFile(path.join(here,'topic-view.js'),'utf8')+content.slice(topicEnd);
-// Personal panels fill their native renderer below the enhancement toolbar.
+// Personal panels fill their native renderer.
 for(const height of [68,76])content=content.replaceAll('height:calc(100dvh - '+height+'px)', 'height:calc(100% - '+height+'px)');
 // The Web Live controller loads these two additional components outside content.js.
 const live=process.argv[4];if(!live)throw Error('Expected reviewed Mac Web Live extension directory');
@@ -52,5 +54,5 @@ let loader=await fs.readFile(path.join(here,'loader.js'),'utf8');loader=loader.r
 await fs.writeFile(path.join(output,'runtime-template.js'),loader);await fs.copyFile(path.join(here,'bridge.cjs'),path.join(output,'native_asset_bridge.cjs'));
 await fs.copyFile(path.join(here,'live-source.cjs'),path.join(output,'live-source.cjs'));
 await fs.copyFile(path.join(here,'topic-source.cjs'),path.join(output,'topic-source.cjs'));
-await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:12,liveComponentHashes:Object.fromEntries(Object.entries(extras).map(([name,value])=>[name,hash(value)])),webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),buildHash:hash(loader+await fs.readFile(path.join(here,'bridge.cjs'),'utf8')+await fs.readFile(path.join(here,'topic-source.cjs'),'utf8')+await fs.readFile(path.join(here,'live-source.cjs'),'utf8')),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
+await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:13,liveComponentHashes:Object.fromEntries(Object.entries(extras).map(([name,value])=>[name,hash(value)])),webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),buildHash:hash(loader+await fs.readFile(path.join(here,'bridge.cjs'),'utf8')+await fs.readFile(path.join(here,'topic-source.cjs'),'utf8')+await fs.readFile(path.join(here,'live-source.cjs'),'utf8')),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
 console.log(JSON.stringify({webVersion:manifest.version,sourceContentSha256:hash(original),bytes:loader.length}));

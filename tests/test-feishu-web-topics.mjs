@@ -108,3 +108,28 @@ test('topic details require explicit new confirmation; old and activated grants 
   assert.equal((await api.snapshot([], '', null, [], false)).quota,undefined);assert.equal(enriched,0);
   assert.equal((await api.snapshot([], '', null, [], true)).quota.status,'ready');assert.equal(enriched,1);
 });
+
+test('read acknowledgement requires new consent and exact verified mapping', async () => {
+ const input={origin:'http://127.0.0.1:19342',nativeAccount:'1000000000000000001',confirm:true};
+ let grant=await auth.connectFeishuWebSettings(input,actor,'topics'),calls=[];
+ async function request(body,account=input.nativeAccount){let output;const req=Readable.from([JSON.stringify(body)]);req.url='/api/feishu-web-topics/review';req.method='POST';req.headers={authorization:'Bearer '+grant.token,'x-feishu-origin':input.origin,'x-feishu-account':account};await handleFeishuWebTopics({req,res:{setHeader(){}},pathname:req.url,writeJson:(_,status,body)=>output={status,body},source:{review:async(...args)=>{calls.push(args);return {reviewed:true}}}});return output;}
+ assert.equal((await request({webThreadId:'native-a',resultAt:'2026-10-13T00:00:00Z'})).status,403);assert.equal(calls.length,0);
+ grant=await auth.connectFeishuWebSettings({...input,topicReadAck:true},actor,'topics');
+ assert.equal((await request({webThreadId:'native-a',resultAt:'2026-10-13T00:00:00Z'})).status,200);
+ assert.equal((await request({webThreadId:'native-a',resultAt:'2026-10-13T00:00:00Z'},'1000000000000000002')).status,401);
+ const s=session('c'.repeat(32),'root-c','idle');s.lastAssistantMessageAt='2026-10-13T00:00:00Z';
+ const api=createFeishuTopicSource({sessions:async()=>[s],session:async()=>s,bindings:async()=>({bindings:{'root-c':'native-c'}}),acknowledge:async(...a)=>a});
+ assert.deepEqual(await api.review('native-c',s.lastAssistantMessageAt),[s.id,s.lastAssistantMessageAt]);
+ await assert.rejects(api.review('unknown',s.lastAssistantMessageAt));await assert.rejects(api.review('native-c','2026-10-14T00:00:00Z'));
+});
+test('late read acknowledgements never erase a later result or rewind review',async()=>{
+ const {createSession,acknowledgeSessionResult}=await import('../chat/session-manager.mjs');
+ const {mutateSessionMeta,loadSessionsMeta}=await import('../chat/session-meta-store.mjs');
+ const s=await createSession(scratch,'codex','read race');
+ await mutateSessionMeta(s.id,m=>{m.lastAssistantMessageAt='2026-10-13T00:02:00Z';return true;});
+ await acknowledgeSessionResult(s.id,'2026-10-13T00:01:00Z');
+ let m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(topicProjection(m,'native').status,'review');
+ await acknowledgeSessionResult(s.id,'2026-10-13T00:02:00Z');await acknowledgeSessionResult(s.id,'2026-10-13T00:01:00Z');
+ m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(m.lastReviewedAt,'2026-10-13T00:02:00.000Z');assert.notEqual(topicProjection(m,'native').status,'review');
+ await assert.rejects(acknowledgeSessionResult(s.id,'2026-10-13T00:03:00Z'));
+});

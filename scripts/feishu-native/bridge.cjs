@@ -26,7 +26,7 @@ function nativeProjection(account){
  return {...(legacy?source.projection(account,ids):personalSource.projection(account)),transport:legacy?'existing-mac-live':'personal-grant',nativeContext:pages.find(s=>s.kind==='chat')?.nativeContext||null};
 }
 function publishTopics(){for(const account of new Set([...streams.values()].map(s=>s.account)))emit(account,'topics',nativeProjection(account));}
-function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:12,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
+function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:13,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
 function safePrefs(v,account){const fields=['enabled','usageEnabled','theme','font','bodyFont','readingEnabled','size','line','width','density','layout','expand','aliases','petEnabled','petKind','petMotion','petSize','petX','petY','sortMode','pins'];if(!v||Array.isArray(v)||Object.keys(v).some(k=>!fields.includes(k))||JSON.stringify(v).length>131072)fail('显示设置无效');const old=own(account).prefs;const ids=new Set([...states.values()].filter(s=>s.account===account).flatMap(s=>s.ids||[]));if(Object.entries(v.aliases||{}).some(([k,n])=>!/^:\d{10,30}$/.test(k)||typeof n!=='string'||n.length>60||!ids.has(k.slice(1))&&!Object.hasOwn(old.aliases||{},k)))fail('只允许修改当前账号的话题别名');return v;}
 const routes={
  'rlfe:message-settings-request':{prefix:'feishu-web-settings',pattern:/^fwset_[\w-]{43}$/,ops:{read:['GET','replies'],save:['POST','replies'],runtime:['GET','runtime'],model:['POST','runtime'],disconnect:['DELETE','connection']}},
@@ -56,7 +56,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   if(req.headers.authorization!=='Bearer '+token){reply(403,{error:'Invalid helper capability'});return;}
   const account=req.headers['x-native-account'],id=req.headers['x-native-client'];
-  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:12,pages:[...states.values()]});return;}
+  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:13,pages:[...states.values()]});return;}
   if(u.pathname==='/verify'&&req.method==='POST'){for(const s of streams.values())s.res.write(JSON.stringify({type:'verify'})+'\n');reply(200,{requested:true});return;}
   if(!clientOK(id)||!accountOK(account))fail('请先确认当前本地飞书账号');
   if(u.pathname==='/events'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'application/x-ndjson'});res.flushHeaders();streams.get(id)?.res.end();streams.set(id,{res,account});res.write(JSON.stringify({type:'settings',value:own(account).prefs})+'\n');res.write(JSON.stringify({type:'topics',value:nativeProjection(account)})+'\n');res.on('close',()=>{if(streams.get(id)?.res===res){streams.delete(id);states.delete(id);subscriptions.get(id)?.abort();if(![...streams.values()].some(s=>s.account===account))personalSource.remove(account);record();}});return;}
@@ -68,6 +68,14 @@ const server=http.createServer(async(req,res)=>{
   else if(u.pathname==='/storage/get'){if(typeof b.key!=='string'||!b.key.startsWith('feishuWebExplore.'))fail('Invalid key');result={[b.key]:own(account).storage[b.key]??null};}
   else if(u.pathname==='/storage/set'){const changes={};for(const[k,v]of Object.entries(b.values||{})){if(!k.startsWith('feishuWebExplore.')||k.length>400)fail('Invalid key');changes[k]={oldValue:own(account).storage[k],newValue:v};own(account).storage[k]=v;}persist();emit(account,'storage',changes);result={ok:true};}
   else if(u.pathname==='/request')result=await broker(b,account);
+  else if(u.pathname==='/topics/review'){
+   const data=nativeProjection(account),entry=data.entries.find(e=>e.webThreadId===b.webThreadId);
+   if(data.sourceConnected!==true||data.nativeContext?.threadId!==b.webThreadId||!entry?.sessionId||!Number.isFinite(Date.parse(b.resultAt))||Date.parse(b.resultAt)>Date.parse(entry.resultAt||''))fail('当前话题或已读结果未核实');
+   const grant=own(account).storage[topicKey(account)];
+   if(!grant||grant.expiresAt<=Date.now()||grant.nativeAccount!==account||grant.origin!==origin)fail('请连接本人的状态同步');
+   const r=await fetch(remote+'/api/feishu-web-topics/review',{method:'POST',redirect:'error',signal:AbortSignal.timeout(15000),headers:{Authorization:'Bearer '+grant.token,'X-Feishu-Origin':origin,'X-Feishu-Account':account,'Content-Type':'application/json'},body:JSON.stringify({webThreadId:b.webThreadId,resultAt:b.resultAt})});
+   const response=await r.json();if(!r.ok)fail(response.error||'已读同步失败');result=response;
+  }
   else if(u.pathname==='/topics/start'){void topicStream(b,account,id);result={ok:true};}
   else if(u.pathname==='/topics/stop'){const old=subscriptions.get(id);if(old?.portId===b.portId)old.abort();result={ok:true};}
   else if(u.pathname==='/connect'){if(!['settings','workspace','topics'].includes(b.kind)||!/^[a-f0-9]{32}$/.test(b.state||'')||typeof b.popup!=='string')fail('连接请求无效');const key=randomBytes(24).toString('base64url');for(const[k,p]of pairings)if(p.until<Date.now())pairings.delete(k);pairings.set(key,{kind:b.kind,state:b.state,popup:b.popup,account,until:Date.now()+600000});await openURL(origin+'/pair/start?key='+key);result={opened:true};}

@@ -4,7 +4,7 @@ import { watch } from 'node:fs';
 import vm from 'node:vm';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { loadSessionsMeta } from './session-meta-store.mjs';
-import { getSession } from './session-manager.mjs';
+import { getSession, acknowledgeSessionResult } from './session-manager.mjs';
 import { onSessionInvalidation } from './ws-clients.mjs';
 import { loadAuthDocument } from '../lib/auth-config.mjs';
 import { buildGroupBoards, personNames } from './feishu-web-group-boards.mjs';
@@ -21,7 +21,7 @@ const eligible = s => s?.conversation?.connector === 'feishu' && s.conversation.
 export function topicProjection(s, webThreadId) {
   const row = model.getSessionRowStatusInfo(s), status = row?.key === 'unread' ? 'review' : row?.key || 'idle';
   return { sessionId: s.id, webThreadId, chatId: s.conversation?.target?.chatId, rootId: s.conversation?.target?.rootId || s.conversation?.target?.messageId, ...topicTextView(s, { state: status }),
-    status, label: row?.label || '', archived: !!s.archived, sourceUpdatedAt: s.updatedAt || '',
+    resultAt: s.lastAssistantMessageAt || '', status, label: row?.label || '', archived: !!s.archived, sourceUpdatedAt: s.updatedAt || '',
     sessionUrl: '/?session=' + s.id + '&tab=sessions' };
 }
 export function topicIds(value) {
@@ -86,6 +86,12 @@ export function createFeishuTopicSource(deps = {}) {
     refresh('');
     return () => { alive = false; clearInterval(detailsTimer); off(); watcher?.close(); };
   }
-  return { snapshot, subscribe };
+  async function review(webThreadId, resultAt) {
+    const data = await snapshot([webThreadId], '', null, [], false);
+    const entry = data.entries.find(e => e.webThreadId === webThreadId);
+    if (!entry || !resultAt || !Number.isFinite(Date.parse(resultAt)) || Date.parse(resultAt) > Date.parse(entry.resultAt || '')) throw Object.assign(Error('已读结果与话题不匹配。'), { status: 409 });
+    return (deps.acknowledge || acknowledgeSessionResult)(entry.sessionId, resultAt);
+  }
+  return { snapshot, subscribe, review };
 }
 export const feishuTopicSource = createFeishuTopicSource();

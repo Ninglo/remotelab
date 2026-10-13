@@ -33,8 +33,11 @@ try{
   await page.setViewportSize({width,height:849});
   const app=await page.locator('#app').boundingBox();assert.equal(app.x,0);assert.equal(app.y,0);assert.equal(app.width,width);assert.equal(app.y+app.height,849);
   const buttons=await page.locator('#rlfe-personal-nav button,#rlfe-resource-nav-host a,#rlfe-native-settings').all();
-  assert.equal(buttons.length,5);const sidebar=await page.locator('.a11y_feed_filter_list').boundingBox();for(const button of buttons){const b=await button.boundingBox();assert(b&&b.x>=sidebar.x&&b.x+b.width<=sidebar.x+sidebar.width&&b.y>=0&&b.y+b.height<=849,JSON.stringify(b));}assert.equal(await page.locator('#rlfe-native-sidebar header').textContent(),'测试中的功能');assert.equal(await page.locator('#rlfe-native-settings-fallback').isVisible(),false);
+  assert.equal(buttons.length,5);const sidebar=await page.locator('.a11y_feed_filter_list').boundingBox();for(const button of buttons){const b=await button.boundingBox();assert(b&&b.x>=sidebar.x&&b.x+b.width<=sidebar.x+sidebar.width&&b.y>=0&&b.y+b.height<=849,JSON.stringify(b));}assert.equal(await page.locator('#rlfe-native-settings').textContent(),'设置v13');const footer=await page.locator('#rlfe-native-settings').boundingBox();for(const item of buttons.slice(0,4)){const r=await item.boundingBox();assert(r.y+r.height<=footer.y);}assert.equal(await page.locator('#rlfe-native-settings-fallback').isVisible(),false);
  }
+ const trials=page.locator('#rlfe-personal-nav small.trial,#rlfe-resource-nav-host small.trial');assert.equal(await trials.count(),4);for(const badge of await trials.all()){assert.equal(await badge.textContent(),'（测试）');assert(await badge.isVisible());}
+ assert.deepEqual(await page.evaluate(()=>{document.documentElement.style.setProperty('--rlfe-ui-font','serif');return [document.querySelector('#rlfe-native-settings'),...document.querySelector('#rlfe-personal-nav').shadowRoot.querySelectorAll('button'),...document.querySelector('#rlfe-resource-nav-host').shadowRoot.querySelectorAll('a')].map(e=>getComputedStyle(e).fontFamily);}),Array(5).fill('serif, sans-serif'));
+ await page.evaluate(()=>document.documentElement.style.removeProperty('--rlfe-ui-font'));
  await page.setViewportSize({width:448,height:849});
  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
  const panel=await page.locator('#rlfe-host #panel').boundingBox();assert(panel.x>=0&&panel.x+panel.width<=448&&panel.y+panel.height<=849,JSON.stringify(panel));
@@ -59,6 +62,19 @@ try{
  await page.evaluate(()=>fixture.emit('topics',{sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'核对状态',status:'idle',label:'空闲'}]}));
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-status')?.textContent==='空闲');
  assert.equal(await page.locator('.rlfe-feed-status').isVisible(),true);
+ // Native read receipts require a real click, confirmed latest native message,
+ // committed zero-unread preview and the same opened chat. They preserve result time.
+ await page.evaluate(()=>{fixture.review={sourceConnected:true,readSyncEnabled:true,nativeContext:{threadId:'1000000000000000011'},entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',status:'review',resultAt:'2026-10-13T00:00:00Z'}]};const row=document.querySelector('[data-feed-id]');row.__reactFiber$fixture={memoizedProps:{value:{id:row.dataset.feedId,unreadCount:1,displayTime:1791849601}}};fixture.emit('topics',fixture.review);});
+ await page.waitForFunction(()=>document.querySelector('.rlfe-feed-status').textContent==='review');
+ await page.locator('.rlfe-feed-name').click();assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),0);
+ await page.evaluate(()=>{document.querySelector('[data-feed-id]').__reactFiber$fixture.memoizedProps.value.unreadCount=0;fixture.emit('topics',fixture.review);});
+ await page.waitForFunction(()=>fixture.calls.some(c=>c.path==='/topics/review'));
+ assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review')[0].body.resultAt),'2026-10-13T00:00:00Z');
+ await page.evaluate(()=>{fixture.review.entries[0].resultAt='2026-10-13T00:01:00Z';fixture.emit('topics',fixture.review);});
+ await page.locator('.rlfe-feed-name').click();
+ assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'an old native message cannot acknowledge a new result');
+ await page.evaluate(()=>{fixture.review.readSyncEnabled=false;document.querySelector('[data-feed-id]').__reactFiber$fixture.memoizedProps.value.displayTime=1791849700;fixture.emit('topics',fixture.review);});
+ await page.locator('.rlfe-feed-name').click();assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'old read-only grants stay read-only');
  // Virtualized rows must shed the old Session immediately when reused.
  await page.evaluate(()=>document.querySelector('[data-feed-id]').dataset.feedId='1000000000000000099');
  await page.waitForFunction(()=>!document.querySelector('.rlfe-feed-headline'));

@@ -35,26 +35,27 @@
   if(nativeMain){
     toolbar=document.createElement('section');toolbar.id='rlfe-native-sidebar';toolbar.className='appNavbar';
     toolbar.setAttribute('aria-label','测试中的功能');
-    toolbar.innerHTML='<header>测试中的功能</header><button id="rlfe-native-settings" type="button">增强设置</button><div class="appNavbar-navbarMenu"></div>';
+    toolbar.innerHTML='<div class="appNavbar-navbarMenu"></div><footer><button id="rlfe-native-settings" type="button"><span>设置</span><span class="version">v13</span></button></footer>';
     toolbar.querySelector('button').onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();
-    fallback=document.createElement('button');fallback.id='rlfe-native-settings-fallback';fallback.type='button';fallback.textContent='增强设置';
+    fallback=document.createElement('button');fallback.id='rlfe-native-settings-fallback';fallback.type='button';fallback.textContent='设置 · v13';
     fallback.title='展开消息分组侧栏可查看测试中的功能';fallback.onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();document.body.append(fallback);
     layout=document.createElement('style');layout.id='rlfe-native-layout-style';
     layout.textContent=`
       [data-rlfe-native-groups]{display:flex!important;flex-direction:column!important;min-height:0!important}
       [data-rlfe-native-groups]>:not(#rlfe-native-sidebar){flex:1 1 auto!important;min-height:0!important;overflow:auto}
-      #rlfe-native-sidebar{position:relative!important;inset:auto!important;display:block!important;flex:0 0 auto!important;width:100%!important;height:auto!important;max-height:48%;min-height:0!important;overflow:auto!important;box-sizing:border-box;padding:8px 6px;border-top:1px solid var(--rlfe-border,#dee0e3);background:var(--rlfe-nav,var(--bg-body,#f5f6f7));color:var(--rlfe-text,#1f2329)}
-      #rlfe-native-sidebar header{font:11px/1.5 system-ui;color:var(--text-caption,#646a73);padding:0 4px 5px;overflow-wrap:anywhere}
-      #rlfe-native-sidebar .appNavbar-navbarMenu{display:block!important;width:100%!important;height:auto!important;max-height:none!important;overflow:visible!important}
+      #rlfe-native-sidebar{position:relative!important;inset:auto!important;display:flex!important;flex-direction:column!important;flex:0 1 auto!important;width:100%!important;height:auto!important;max-height:48%;min-height:40px!important;overflow:hidden!important;box-sizing:border-box;padding:8px 6px;border-top:1px solid var(--rlfe-border,#dee0e3);background:var(--rlfe-nav,var(--bg-body,#f5f6f7));color:var(--rlfe-text,#1f2329)}
+      #rlfe-native-sidebar footer{flex:none;border-top:1px solid var(--rlfe-border,#dee0e3);margin-top:6px;padding-top:4px}
+      #rlfe-native-sidebar .version{color:var(--text-caption,#646a73);font:inherit}
+      #rlfe-native-sidebar .appNavbar-navbarMenu{display:block!important;width:100%!important;height:auto!important;max-height:none!important;min-height:0!important;overflow:auto!important;flex:1 1 auto!important}
       #rlfe-native-sidebar nav{display:block!important;width:100%!important;margin:0!important}
-      #rlfe-native-settings{display:block!important;width:100%;height:32px;padding:0 6px;text-align:left;border:0;border-radius:5px;color:inherit;background:transparent;font:12px system-ui;cursor:pointer}
+      #rlfe-native-settings{display:flex!important;align-items:center;justify-content:space-between;gap:4px;width:100%;height:32px;padding:0 6px;text-align:left;border:0;border-radius:5px;color:inherit;background:transparent;font:12px/1.5 var(--rlfe-ui-font,system-ui),sans-serif;cursor:pointer}
       #rlfe-native-settings:hover,#rlfe-native-settings-fallback:hover{background:var(--rlfe-hover,#e8e9eb)}
-      #rlfe-native-settings-fallback{position:fixed;left:8px;bottom:8px;z-index:2147482900;padding:7px 10px;border:1px solid var(--rlfe-border,#dee0e3);border-radius:6px;background:var(--rlfe-nav,#f5f6f7);color:var(--rlfe-text,#1f2329);font:12px system-ui;cursor:pointer}
+      #rlfe-native-settings-fallback{position:fixed;left:8px;bottom:8px;z-index:2147482900;padding:7px 10px;border:1px solid var(--rlfe-border,#dee0e3);border-radius:6px;background:var(--rlfe-nav,#f5f6f7);color:var(--rlfe-text,#1f2329);font:12px/1.5 var(--rlfe-ui-font,system-ui),sans-serif;cursor:pointer}
       #rlfe-native-settings-fallback[hidden]{display:none!important}
       #rlfe-host{--rlfe-panel-left:8px}
       #rlfe-personal-workspace{top:0!important;z-index:2147482900!important}
     `;document.head.append(layout);
-    const navCss=`:host{display:block!important;width:100%!important;margin:0!important}div,#entries{display:grid!important;gap:2px!important}button,a,:host([data-compact=true]) button,:host([data-compact=true]) a{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:4px!important;min-width:0!important;width:100%!important;height:32px!important;padding:0 6px!important;font:12px/1 system-ui,sans-serif!important}svg,small.trial{display:none!important}span{overflow:hidden!important;text-overflow:ellipsis!important}`;
+    const navCss=`:host{display:block!important;width:100%!important;margin:0!important}div,#entries{display:grid!important;gap:2px!important}button,a,:host([data-compact=true]) button,:host([data-compact=true]) a{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:4px!important;min-width:0!important;width:100%!important;height:32px!important;padding:0 6px!important;font:12px/1.5 var(--rlfe-ui-font,system-ui),sans-serif!important;overflow:hidden!important}svg{display:none!important}small.trial{display:inline!important;flex:none!important;font:inherit!important;color:var(--text-caption,#646a73)!important}span{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important}`;
     function position(){const bounds=root?.getBoundingClientRect();fallback.hidden=!!(bounds&&bounds.width>=48&&bounds.height>80&&getComputedStyle(root).visibility!=='hidden');}
     function mountLayout(){
       const next=document.querySelector('.a11y_feed_filter_list,.feed-left-menu-list');
@@ -111,7 +112,7 @@
   observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-feed-id']});
   const onSettings=e=>{globalThis.__RLFE_SHARED_PROJECT__?.(projection);if(nativeMain)globalThis.__RLFE_SHARED_PREVIEW__?.(JSON.stringify(e.detail));};
   window.addEventListener('rlfe:settings',onSettings);
-  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:12,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
+  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:13,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
   globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();layoutObserver?.disconnect();resizeObserver?.disconnect();toolbar?.remove();fallback?.remove();layout?.remove();root?.removeAttribute('data-rlfe-native-groups');window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
   visible();
 })();
