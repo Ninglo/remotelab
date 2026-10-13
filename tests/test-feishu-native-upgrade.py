@@ -1,6 +1,8 @@
 """Exercise upgrade failure boundaries without touching a real App or profile."""
+import sys
 import hashlib,importlib.util,json,pathlib,plistlib,struct,tempfile,unittest.mock as mock,shutil,subprocess
 source=pathlib.Path(__file__).resolve().parents[1]/'scripts/feishu-native/upgrade-preview.py'
+sys.path.insert(0,str(source.parent))
 spec=importlib.util.spec_from_file_location('upgrade',source);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 body=b'old-runtimeKEEP'
 header={'files':{'remotelab-native-v7.js':{'size':11,'offset':'0'},'untouched':{'size':4,'offset':'11'}}}
@@ -25,6 +27,7 @@ with tempfile.TemporaryDirectory() as temp:
  for name in ['native_asset_bridge.cjs','live-source.cjs','topic-source.cjs']:
   (build/name).write_text('new');(root/name).write_text('old')
  (package/'observe_native_app.py').write_text('new')
+ shutil.copy2(source.parent/'RemoteLabEnhanced.icns', package/'RemoteLabEnhanced.icns')
  baseline={p.name:p.read_bytes() for p in root.iterdir() if p.is_file()}
  copy=shutil.copy2
  def fake_run(args,**kwargs):

@@ -84,6 +84,22 @@ def await_ready(bridge, cap):
             delay = min(delay*2, 2)
 
 
+def await_app(binary, timeout=10):
+    deadline = time.monotonic()+timeout
+    delay = .25
+    while True:
+        rows = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True).splitlines()
+        for line in rows:
+            row = line.strip().split(None, 1)
+            if len(row) == 2 and row[1] == str(binary):
+                return int(row[0])
+        remaining = deadline-time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError('系统未启动飞书增强版；账号与草稿已保留。')
+        time.sleep(min(delay, remaining))
+        delay = min(delay*2, 2)
+
+
 def main():
     home = pathlib.Path(os.environ.get('RLFE_INSTALL_HOME', str(pathlib.Path.home())))
     root = home/'Library/Application Support/RemoteLab/Feishu Native Trial'
@@ -132,9 +148,12 @@ def main():
                 app_pid = pids[0]
                 subprocess.run(['/usr/bin/open', '-a', str(app)], check=True)
             else:
-                proc = subprocess.Popen([str(binary), '--user-data-dir='+str(home/'Library/Application Support/RlfeTrial')],
-                    stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
-                app_pid = proc.pid
+                # Launch the bundle through macOS so device-permission requests
+                # are attributed to the App, not a directly spawned script child.
+                subprocess.run(['/usr/bin/open', '-a', str(app), '--args',
+                                '--user-data-dir='+str(home/'Library/Application Support/RlfeTrial')],
+                               check=True, stdout=log, stderr=log)
+                app_pid = await_app(binary)
         (root/'started.json').write_text(json.dumps({'pid': app_pid, 'app': str(app),
             'profile': str(home/'Library/Application Support/RlfeTrial'), 'revision': revision, 'bridgePid': bridge.pid}))
         with (root/'native-app-observer.log').open('ab') as log:

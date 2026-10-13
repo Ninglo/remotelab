@@ -9,6 +9,7 @@ import signal
 import struct
 import subprocess
 import time
+from app_identity import apply_identity
 
 
 def replace_runtime(original, runtime):
@@ -50,6 +51,7 @@ def upgrade(root, package, home, node):
     runtime = template.replace('__CAPABILITY__', json.dumps(cap)).encode()
     packed = replace_runtime(original, runtime)
     (staged/archive).write_bytes(packed)
+    apply_identity(staged, package)
     for target in [staged/'Contents/Frameworks/Lark Framework.framework', staged]:
         subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', '--preserve-metadata=entitlements', str(target)], check=True, capture_output=True)
     subprocess.run(['/usr/bin/codesign', '--verify', '--strict', '--deep', str(staged)], check=True, capture_output=True)

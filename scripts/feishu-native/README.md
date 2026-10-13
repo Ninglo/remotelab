@@ -1,4 +1,4 @@
-# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 15)
+# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 16)
 
 Ask the maintaining agent: “Update the existing isolated Feishu Native Trial
 with the verified Web 1.2.0 component bundle and the existing Mac Web Live capabilities. Restore the same-account read-only status source, including group boards and usage; never replace it with a fresh personal-login requirement. Keep the official App and profile
@@ -48,9 +48,9 @@ have been verified.
 
 `install-launcher.py` adds 飞书增强版.app to the user's Applications directory,
 using the installed private Python. It no longer compiles Swift or writes a new
-Desktop shortcut. Existing shortcuts remain valid. Cold starts invoke the exact
-isolated binary once with its profile argument; reopening an already running
-exact-path process uses LaunchServices without restarting it. The original
+Desktop shortcut. Existing shortcuts remain valid. Cold starts and reopening use LaunchServices with the exact isolated App path.
+The profile argument remains explicit, and the observer attaches only to the
+matching executable path after launch. Direct script-child App execution is not used. The original
 launcher is backed up locally. The bridge and process observer inherit the
 explicit test root for isolated verification.
 
@@ -59,6 +59,15 @@ Enhancement **code** remains embedded in the trial archive. Standalone users qui
 data stream provides automatic code hot updates. A future code updater would
 need a verified version manifest, atomic installation and rollback; in-process
 reload additionally needs complete component cleanup and draft preservation.
+
+Revision 16 distinguishes the isolated App from official Feishu with a purple
+speech-bubble/plus icon and the name 飞书增强版 in both main and localized bundle
+metadata. Existing installations receive the same metadata update in the signed
+staging copy; the stable bundle identifier and profile are retained. The launcher
+uses the same icon. Only these two bundles are re-registered with LaunchServices.
+Microphone permission still requires the user to allow the isolated App; this
+change does not reset or reuse official Feishu permissions. Actual microphone
+permission and Fn voice-input behavior require verification on the user’s Mac.
 
 Revision 15 uses the maintained personal workspace component from
 `static/feishu-personal-workspace.js`, recorded by its own hash. Index is a

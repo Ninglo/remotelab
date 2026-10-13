@@ -49,5 +49,12 @@ if icon_name and icon.is_file():
 (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(metadata))
 subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(app)], check=True)
 subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(app)], check=True)
+# Refresh only these two bundles, without clearing the system-wide registry.
+register = pathlib.Path('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister')
+if register.is_file():
+    for target in [trial, app]:
+        result = subprocess.run([str(register), '-f', str(target)], capture_output=True)
+        if result.returncode:
+            print('应用已安装，但系统名称和图标缓存尚未刷新：'+str(target))
 print(json.dumps({'launcher': str(app),
                   'revision': deployment['revision'], 'launcherVersion': 2}, ensure_ascii=False))

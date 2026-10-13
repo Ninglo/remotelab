@@ -1,6 +1,7 @@
 """First install only: clone a supported official App, never reuse its profile."""
 import hashlib,json,mmap,os,pathlib,plistlib,shutil,subprocess,time,platform,sys,socket,argparse
 from archive_patch import patch_archive
+from app_identity import apply_identity
 package=pathlib.Path(__file__).resolve().parent
 parser=argparse.ArgumentParser()
 parser.add_argument('--check',action='store_true')
@@ -92,6 +93,7 @@ info_path=dst/'Contents/Info.plist'
 info=plistlib.loads(info_path.read_bytes());info['CFBundleIdentifier']='dev.remotelab.feishu-native-trial';info['CFBundleName']='Feishu Native Trial';info['CFBundleDisplayName']='飞书原生增强试验'
 for k in ('CFBundleURLTypes','CFBundleDocumentTypes'):info.pop(k,None)
 info_path.write_bytes(plistlib.dumps(info))
+apply_identity(dst, package)
 patched=[]
 for p in dst.rglob('*'):
  if p.is_symlink() or not p.is_file() or not p.stat().st_size:continue
