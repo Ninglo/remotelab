@@ -14,11 +14,11 @@ const mask = 8315202684517816156n, seconds = '1791875913';
 const sample = i => { const nativeId = String((BigInt(seconds) << 32n) + BigInt(i)); return { nativeId, threadId: 'omt_' + (BigInt(nativeId) ^ mask).toString(16).padStart(16, '0'), rootId: 'om_root' + i, chatId: 'oc_group' + i % 3, createdSeconds: seconds, position: String(i) }; };
 const profile = { encoding: 'thread-xor64-v1', route: 'bot-2', tenantKey: 'tenant', appId: 'cli_test', mask: String(mask), samples: Array.from({ length: 16 }, (_, i) => sample(i + 1)) };
 const config = () => ({ bindings: {}, nativeNamespaces: { version: 1, profiles: [structuredClone(profile)] } });
-async function fixture(i, patch = {}) {
+async function fixture(i, patch = {}, sourcePatch = {}) {
   const v = sample(i), target = { chatId: v.chatId, tenantKey: 'tenant', chatType: 'group', threadId: v.threadId, rootId: v.rootId };
   const s = { id: 's' + i, conversation: { connector: 'feishu', sourceRouteId: 'bot-2', target }, activity: { run: { state: 'running' } } };
   const summary = { messageId: v.rootId, appId: 'cli_test', chatId: v.chatId, tenantKey: 'tenant', chatType: 'group', threadId: v.threadId, createTime: seconds + '898', ...patch };
-  const sourceContext = { connector: 'feishu', sourceRouteId: 'bot-2', messageId: v.rootId, chatId: v.chatId, tenantKey: 'tenant', threadId: v.threadId, createTime: seconds + '898' };
+  const sourceContext = { connector: 'feishu', sourceRouteId: 'bot-2', messageId: v.rootId, chatId: v.chatId, tenantKey: 'tenant', threadId: v.threadId, createTime: seconds + '898', ...sourcePatch };
   const dir = join(home, 'feishu-connectors/bot-2/state/inbox/archive'); await mkdir(dir, { recursive: true });
   await writeFile(join(dir, createHash('sha256').update(v.rootId).digest('hex').slice(0, 24) + '.json'), JSON.stringify({ id: v.rootId, summary, submission: { payload: { sourceContext } } }));
   return { v, s };
@@ -40,6 +40,14 @@ test('wrong app/tenant, non-root, timestamp mismatch, private and missing envelo
   }
   const { v, s } = await fixture(64); s.conversation.target.chatType = 'p2p'; assert.deepEqual(await nativeTopicBindings([s], [v.nativeId], config(), home), {});
   s.conversation.target.chatType = 'group'; s.conversation.target.rootId = 'om_missing'; assert.deepEqual(await nativeTopicBindings([s], [v.nativeId], config(), home), {});
+});
+test('first post can follow thread allocation by one second, but not precede it or arrive later', async () => {
+  for (const delay of [-1, 0, 1, 2, 60]) {
+    const createTime = String((Number(seconds) + delay) * 1000);
+    const { v, s } = await fixture(100 + delay, { createTime }, { createTime });
+    const found = await nativeTopicBindings([s], [v.nativeId], config(), home);
+    assert.deepEqual(found, delay === 0 || delay === 1 ? { [v.rootId]: v.nativeId } : {});
+  }
 });
 test('namespace enrollments must have independently distinct consistent samples', () => {
   assert.equal(namespaceProfiles(config().nativeNamespaces).length, 1);
