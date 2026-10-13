@@ -118,6 +118,18 @@
   function render() {
     contextExpanded = root.querySelector('[data-testid="session-context-guide"]')?.open ?? contextExpanded;
     root.replaceChildren(); root.append(el('h2', 'Session 监管'));
+    if (data?.contextExperiment) {
+      const experiment = data.contextExperiment, note = el('div', '', 'monitoring-alert');
+      note.dataset.testid = 'context-experiment'; note.dataset.severity = 'neutral';
+      const states = { running: '正在打点实验', paused: '已暂停新会话分流', stopped: '已停止实验注入', unavailable: '实验状态暂不可用' };
+      note.append(el('strong', `上下文注入对照 · ${states[experiment.state] || states.unavailable}`));
+      if (experiment.state !== 'unavailable') {
+        note.append(el('p', experiment.mode === 'aa' ? 'A/A 校验：两组均按需读取。' : 'A 组：自动注入背景；B 组：按需读取。', 'monitoring-note'));
+        note.append(el('p', `范围：${experiment.people.join('、')}自 ${new Date(experiment.since).toLocaleString()} 起新开的会话；自动化另行接入。50/50 随机分流，同一会话固定分组；独立留样 ${Math.round(experiment.sampleRate * 100)}%，观察 ${experiment.observationHours} 小时。`, 'monitoring-note'));
+        note.append(el('p', `夜间评阅${experiment.reviewEnabled ? '已启用' : '已暂停'}。此处标记实验配置，不代表每个会话已入组、注入已被采用或机制优劣已有结论。`, 'monitoring-note'));
+      } else note.append(el('p', '暂时无法读取实验配置，不能据此判断实验已停止。', 'monitoring-note'));
+      root.append(note);
+    }
     const context = el('details', '', 'monitoring-fold'); context.open = contextExpanded; context.dataset.testid = 'session-context-guide';
     context.append(el('summary', '上下文如何注入'));
     context.append(el('p', '通用规则，实际内容随入口和配置变化；这里不逐条读取 Session。', 'monitoring-note'));

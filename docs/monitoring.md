@@ -634,3 +634,5 @@ Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#
 累计 Session token 总数由 chat/session-token-totals.mjs 共享 60 秒缓存；监控 HTTP 入口和飞书已关联话题读取同一账本结果，累计用量与当前上下文占用仍分别显示。
 
 Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-context.md#规则与压缩记录)，区分原生接收、压缩完成和恢复内容生成／失败。该记录不能证明模型理解或遵守规则，也不覆盖原生系统指令、AGENTS.md 和 Skill。
+
+Session 监管顶部显示当前[上下文注入对照实验](feature-experiments.md)的动态标记：自动注入背景与按需读取两组、限定参与者的新会话范围、50/50 固定分组、独立留样比例、观察窗及夜间评阅开关。暂停新入组、停止实验注入、配置读取失败分别显示；无实验配置不显示。状态沿用 Session 统计最多 60 秒缓存，刷新后以采样时间为准。这是配置状态，不证明实际入组、模型采纳或效果优劣；A/A 模式明确显示两组均按需读取。

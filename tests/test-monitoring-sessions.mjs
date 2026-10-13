@@ -58,5 +58,23 @@ try {
  assert(!('groupName' in compact.sessions[0]));assert(!JSON.stringify(compact).includes('private'));
  const unknown=await compactSessionMonitoring(a,async()=>{throw Error('missing')});assert.equal(unknown.sessions[0].activity.run.state,'unknown');
  const noSamples=await compactSessionMonitoring(c,async()=>({run:{state:'idle'}}));assert(!noSamples.sessions[0].metrics.prepareMs);
+ // The annotation follows durable switches without exposing experiment evidence or raw prompts.
+ assert.equal(a.contextExperiment,null);
+ const experimentDir=join(root,'feature-experiments','trial');
+ await mkdir(experimentDir,{recursive:true});
+ const spec={schema:1,id:'trial',kind:'context-background-v1',mode:'ab',personIds:['p1'],since:'2026-10-13T00:00:00Z',sampleRate:.25,observationHours:24,maxNightlyCases:10,rubricVersion:'context-background-v1',privatePrompt:'private'};
+ await writeFile(join(experimentDir,'spec.json'),JSON.stringify(spec));
+ const switchFile=join(root,'feature-experiments','active.json');
+ for(const [flags,state] of [[{},'running'],[{enrollmentEnabled:false},'paused'],[{enabled:false,reviewEnabled:false},'stopped']]) {
+   await writeFile(switchFile,JSON.stringify({id:'trial',...flags})); clock+=61000;
+   const view=await compactSessionMonitoring(await reader(),async()=>({run:{state:'idle'}}));
+   assert.equal(view.contextExperiment.state,state); assert.deepEqual(view.contextExperiment.people,['A']);
+   assert.equal(view.contextExperiment.reviewEnabled,flags.reviewEnabled!==false);
+   assert.equal(view.contextExperiment.sampleRate,.25); assert(!JSON.stringify(view).includes('private'));
+ }
+ await writeFile(join(experimentDir,'spec.json'),JSON.stringify({...spec,mode:'aa'})); clock+=61000;
+ assert.equal((await reader()).contextExperiment.mode,'aa');
+ await writeFile(switchFile,'broken'); clock+=61000;
+ assert.deepEqual((await reader()).contextExperiment,{state:'unavailable'});
  console.log('monitoring sessions: ownership, phase pairing, missing data, cohorts, sample bounds, read cache and privacy passed');
 }finally{await rm(root,{recursive:true,force:true});}

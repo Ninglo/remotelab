@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { CONFIG_DIR, CHAT_RUNS_DIR, CHAT_SESSIONS_FILE } from '../lib/config.mjs';
 import { listPeopleForClient } from '../lib/auth.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
+import { currentExperiment } from './feature-experiment-store.mjs';
 import { diagnosisMeasurements } from '../lib/session-diagnosis.mjs';
 
 const safeId = value => typeof value === 'string' && /^[a-zA-Z0-9_:-]{1,160}$/.test(value);
@@ -113,6 +114,18 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
   async function collect(days) {
     const started=now(), coverage={bytesRead:0,cacheHits:0,limitedFiles:0,readErrors:0,missingRuns:0,missingRequests:0,missingInjections:0};
     const [usage, people, raw] = await Promise.all([getUsage({days,top:10000}),getPeople(),readFile(sessionsFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '[]';throw e;})]);
+    let contextExperiment = null;
+    try {
+      const experiment = await currentExperiment(join(configDir, 'feature-experiments'));
+      if (experiment) {
+        const { active, spec } = experiment;
+        contextExperiment = { id: spec.id, mode: spec.mode,
+          state: active.enabled === false ? 'stopped' : active.enrollmentEnabled === false ? 'paused' : 'running',
+          reviewEnabled: active.reviewEnabled !== false, since: spec.since,
+          people: spec.personIds.map(id => { const p = people.find(person => person.id === id); return label(p?.name || p?.handle) || '指定参与者'; }),
+          sampleRate: spec.sampleRate, observationHours: spec.observationHours };
+      }
+    } catch { contextExperiment = { state: 'unavailable' }; }
     const metadata=JSON.parse(raw), list=Array.isArray(metadata)?metadata:metadata.sessions||[];
     const rows=new Map(list.filter(s=>!s.archived).map(s=>[s.id,{sessionId:s.id,name:label(s.name),model:label(s.model),activeRunId:s.activeRunId,...sessionOwnership(s,people)}]));
     for(const bucket of usage.bySession||[]) { const s=list.find(s=>s.id===bucket.sessionId); if(!rows.has(bucket.sessionId))rows.set(bucket.sessionId,{sessionId:bucket.sessionId,name:label(s?.name||bucket.sessionName),model:label(s?.model),activeRunId:s?.activeRunId,...sessionOwnership(s||{},people),archived:s?.archived===true}); }
@@ -134,7 +147,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       if(!grouped.has(l.sessionId))grouped.set(l.sessionId,[]);grouped.get(l.sessionId).push(sample);
     }));
     for(const row of rows.values()) {const samples=grouped.get(row.sessionId)||[];row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
-    return {generatedAt:new Date(now()).toISOString(),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
+    return {generatedAt:new Date(now()).toISOString(),contextExperiment,window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
       coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.length,truncated:usage.runCount>ledger.length||coverage.limitedFiles>0,
         collectionMs:now()-started,cacheSeconds:60,apiAttribution:'unavailable'},
       semantics:{timing:'已落账 Run 的 Request/Run 时间戳；受理到准备包含排队，执行包含等待，阶段有各自样本数',
@@ -178,6 +191,7 @@ export async function compactSessionMonitoring(value, getActivity) {
     })));
   }
   return { generatedAt: value.generatedAt, stateObservedAt: new Date().toISOString(), window: value.window,
+    contextExperiment: value.contextExperiment ?? null,
     coverage: value.coverage, totals: value.usage.totals, usageQuality: value.usage.quality, summary: { ...summarizeSessionOverview(sessions), currentSessions: value.currentSessionCount ?? summarizeSessionOverview(sessions).currentSessions },
     groups: Object.fromEntries(value.sessions.map(s => [s.groupId, s.groupName])),
     people: Object.fromEntries(value.sessions.map(s => [s.personId, s.personName])), sessions };
