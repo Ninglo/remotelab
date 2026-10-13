@@ -748,6 +748,7 @@
           "sources": [
             "docs/feishu-web-topics.md",
             "chat/feishu-web-topics.mjs",
+            "chat/feishu-native-topic-ids.mjs",
             "chat/feishu-web-group-boards.mjs",
             "chat/feishu-web-topic-text.mjs",
             "chat/router-feishu-web-topics.mjs",
