@@ -837,7 +837,9 @@
           "sources": [
             "docs/monitoring.md",
             "scripts/monitoring-alerts.mjs",
-            "scripts/monitoring-report.mjs"
+            "scripts/monitoring-report.mjs",
+            "scripts/project-inspection-plan.mjs",
+            "scripts/check-todo-coverage.mjs"
           ],
           "commands": []
         },

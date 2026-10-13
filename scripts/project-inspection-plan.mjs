@@ -36,14 +36,20 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
     const todoState = target ? await load(target.stateFile, {}) : {};
     const reviewEnd = Date.parse(checkpoint.collection_completed_at_utc || checkpoint.lastSuccessfulScanEnd || '');
     const todoEnd = Date.parse(todoState.lastSuccessfulScanEnd || '');
-    const needsTodo = Boolean(target && (!Number.isFinite(todoEnd) || todoEnd < endMs));
+    const retries = todoState.pendingRetries || [];
+    if (!Array.isArray(retries)) throw new Error(`Invalid pendingRetries for ${target?.key || group.chatId}`);
+    const needsTodo = Boolean(target && (!Number.isFinite(todoEnd) || todoEnd < endMs || retries.length));
     // Missing baselines require a complete initial read, rather than silently dropping backlog.
     const ends = [reviewEnd, ...(needsTodo ? [todoEnd] : [])];
     const startMs = ends.every(Number.isFinite) ? Math.min(...ends) - 48 * 3600_000 : null;
-    const threads = new Set([...threadIds(checkpoint.threads), ...(needsTodo ? threadIds(todoState.knownThreads) : [])]);
+    const threads = new Set([...threadIds(checkpoint.threads), ...(needsTodo ? threadIds(todoState.knownThreads) : []),
+      ...retries.map(r => r.threadId || r.thread_id).filter(Boolean)]);
+    const requiredMessageIds = [...new Set(retries.flatMap(r => [r.sourceMessageId, r.messageId,
+      ...(Array.isArray(r.sourceMessageIds) ? r.sourceMessageIds : [])]).filter(Boolean))];
     sources.push({ chatId: group.chatId, sourceRouteId: group.sourceRouteId, projectIds: group.projectIds,
       windowStart: startMs === null ? null : new Date(startMs).toISOString(), windowEnd: new Date(endMs).toISOString(),
-      reviewCheckpoint, knownThreads: [...threads], todoTarget: needsTodo ? target.key : null,
+      reviewCheckpoint, knownThreads: [...threads], requiredMessageIds, pendingRetryCount: retries.length,
+      todoTarget: needsTodo ? target.key : null,
       todoStateFile: needsTodo ? target.stateFile : null });
   }
   return { schemaVersion: 1, scheduledAt: new Date(endMs).toISOString(),
