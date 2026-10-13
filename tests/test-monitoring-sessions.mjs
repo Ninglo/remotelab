@@ -1,3 +1,4 @@
+import './test-response-timing.mjs';
 import './isolate-test-environment.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -31,6 +32,15 @@ assert.equal(runMeasurement(ledger,run,{...request,preparedAt:'2025-01-01'}).met
 assert.equal(runMeasurement(ledger,{...run,sessionId:'wrong'},request).metrics.runMs,null);
 assert.equal(runMeasurement(ledger,run,{...request,deliveries:[{state:'pending'}]}).metrics.deliveryMs,null);
 assert.equal(projectRequest({options:{},text:'private',deliveries:[]}).text,undefined);
+const responseRequest=projectRequest({...request,requestId:'q',options:{sourceContext:{connector:'feishu'}},deliveries:[
+ {connector:'feishu',kind:'content',surfaceKind:'opening',state:'delivered',deliveredAt:'2026-01-01T00:00:08Z',text:'private body'},
+ {connector:'feishu',kind:'content',surfaceKind:'reply',state:'delivered',deliveredAt:'2026-01-01T00:00:13Z'},
+]});
+const responseSample=runMeasurement(ledger,run,responseRequest);
+assert.equal(responseSample.metrics.firstContentMs,8000);assert.equal(responseSample.metrics.firstReplyMs,13000);
+assert.equal(responseSample.responseEligible,true);assert(!JSON.stringify(responseRequest).includes('private'));
+assert.equal(runMeasurement(ledger,run,{...responseRequest,nativeDispatchRunId:'old'}).metrics.firstReplyMs,null);
+
 assert.equal(summarizeMeasurements([sample,{metrics:{}}]).prepareMs.count,1);
 const samples=Array.from({length:13},(_,i)=>({at:i*1000,model:'m',tool:'t',metrics:{contextTokens:i>=10?50000:10000}}));
 assert.equal(measurementSignals(samples)[0].severity,'critical');assert.equal(measurementSignals(samples)[0].baselineCount,10);

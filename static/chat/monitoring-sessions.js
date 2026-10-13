@@ -5,7 +5,7 @@
   const el = (tag, text = '', cls = '') => { const n = document.createElement(tag); n.textContent = text; if (cls) n.className = cls; return n; };
   const fmt = v => Number.isFinite(v) ? new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(v) : '—';
   const duration = v => !Number.isFinite(v) ? '—' : v < 60000 ? `${(v / 1000).toFixed(1)} 秒` : `${(v / 60000).toFixed(1)} 分钟`;
-  const names = { prepareMs: '受理→准备（含排队）', launchMs: '准备→启动', runMs: '执行（含等待）', deliveryMs: '结果→送达', requestMs: '受理→结果', inputTokens: '每 Run 累计输入', contextTokens: '每 Run 最新上下文', injectionBytes: 'RemoteLab 注入量' };
+  const names = { firstContentMs: '首次正文送达（飞书）', firstReplyMs: '首次答复／提问送达（飞书）', prepareMs: '受理→准备（含排队）', launchMs: '准备→启动', runMs: '执行（含等待）', deliveryMs: '结果→送达', requestMs: '受理→结果', inputTokens: '每 Run 累计输入', contextTokens: '每 Run 最新上下文', injectionBytes: 'RemoteLab 注入量' };
   const size = v => Number.isFinite(v) ? `${(v / 1024).toFixed(1)} KiB` : '—';
   const val = (k, v) => k.endsWith('Ms') ? duration(v) : k === 'injectionBytes' ? size(v) : fmt(v);
   let data = null, error = '', pending = null, serial = 0, days = 1, loadedAt = 0;
@@ -115,7 +115,9 @@
     } catch (e) { queryViews.set(key, { error: e.name === 'AbortError' ? '超过 15 秒' : e.message }); }
     finally { clearTimeout(timer); if (days === requestedDays) queryPanel(session, host); }
   }
+  let responseExpanded = false;
   function render() {
+    responseExpanded = root.querySelector('[data-testid="response-timing-days"]')?.open ?? responseExpanded;
     contextExpanded = root.querySelector('[data-testid="session-context-guide"]')?.open ?? contextExpanded;
     root.replaceChildren(); root.append(el('h2', 'Session 监管'));
     if (data?.contextExperiment) {
@@ -167,6 +169,23 @@
     statusBar.append(el('span', partial ? '部分数据缺失 · 不能据此判断全部正常' : '仅比较样本充足的指标', 'monitoring-note'));
     root.append(statusBar);
     if (data.diagnostics?.checkedAt) root.append(el('small', `巡检最近检查：${new Date(data.diagnostics.checkedAt).toLocaleString()} · 结果见各会话的折叠说明`, 'monitoring-note'));
+
+    if (data.responseTiming) {
+      const r = data.responseTiming, panel = el('section', '', 'monitoring-response-timing'); panel.dataset.testid = 'response-timing';
+      panel.append(el('h3', '飞书响应速度 · 当前统计范围'));
+      panel.append(table(['从受理到送达', '中位数', 'P95', '有回执／可统计'], [
+        ['首次正文（含开场、进展）', duration(r.firstContent.median), duration(r.firstContent.p95), `${r.firstContent.count} / ${r.eligible}`],
+        ['首次答复／提问（不含开场、进展）', duration(r.firstReply.median), duration(r.firstReply.p95), `${r.firstReply.count} / ${r.eligible}`],
+      ]));
+      panel.append(el('p', `按 UTC 自然日：${r.start.slice(0,10)} 至 ${r.end.slice(0,10)}（今日未结束）。起点为 RemoteLab 受理，终点为飞书成功回执；不含进入 RemoteLab 之前的等待，也不证明已读或回复有用。仅已落账运行的首条人工请求，追加消息及未结束任务未纳入。排除自动受理通知，缺少回执不算零秒。`, 'monitoring-note'));
+      const daily = el('details'); daily.dataset.testid = 'response-timing-days'; daily.open = responseExpanded; daily.addEventListener('toggle', () => { if (daily.isConnected) responseExpanded = daily.open; }); daily.append(el('summary', '查看逐日响应速度与样本'));
+      daily.append(table(['日期（UTC）', '首正文中位数／P95', '首答复中位数／P95', '正文／答复／可统计'], r.days.map(d => [
+        d.day, `${duration(d.firstContent.median)} / ${duration(d.firstContent.p95)}`, `${duration(d.firstReply.median)} / ${duration(d.firstReply.p95)}`,
+        `${d.firstContent.count} / ${d.firstReply.count} / ${d.eligible}`,
+      ])));
+      daily.append(el('p', '按请求受理日归集，仅覆盖当前窗口已落账运行的首条人工飞书请求；运行中追加消息、尚未落账的慢任务、Web 和其他渠道不在此统计内。历史缺失不补猜。任务种类和模型不同，趋势不能直接归因于优化。此汇总不随下方群或发起人筛选变化。', 'monitoring-note'));
+      panel.append(daily); root.append(panel);
+    }
     const body = el('div'); root.append(body);
     if (flagged.length) {
       const box = el('div', '', 'monitoring-session-signals'); box.dataset.testid = 'session-anomaly-preview';
@@ -211,7 +230,7 @@
       details.addEventListener('toggle', () => { if (details.isConnected) rowOpen.set(s.sessionId, details.open); });
       const link = el('a', '打开 Session'); link.href = `/?tab=sessions&session=${encodeURIComponent(s.sessionId)}`; details.append(link);
       const queries = el('div', '', 'monitoring-context-queries'); queries.dataset.testid = 'context-query-records'; queryPanel(s, queries); details.append(queries);
-      details.append(table(['阶段／指标', '均值', 'P95', '样本'], Object.entries(s.metrics).map(([k, v]) => [metricName(k), metricValue(s, k, v.mean), val(k, v.p95), v.count])));
+      details.append(table(['阶段／指标', '均值', '中位数', 'P95', '样本'], Object.entries(s.metrics).map(([k, v]) => [metricName(k), metricValue(s, k, v.mean), val(k, v.median), val(k, v.p95), v.count])));
       for (const x of s.signals) details.append(el('p', `${metricName(x.metric)}：最近 ${x.recentCount} 个 / 此前 ${x.baselineCount} 个样本 · ${x.model}`, 'monitoring-note'));
       const group = `群：${data.groups[s.groupId] || '未知'}`, person = `发起人：${data.people[s.personId] || '未知'}`;
       cell.append(details, el('small', mode === 'person' ? `${person} · ${group}` : `${group} · ${person}`, 'monitoring-owner'));

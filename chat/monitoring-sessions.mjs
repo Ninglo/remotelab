@@ -1,3 +1,4 @@
+import { projectResponseTiming, timingStats, summarizeResponseTiming } from './response-timing.mjs';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -32,6 +33,7 @@ export function sessionOwnership(session, people) {
 export function projectRequest(r) {
   if (!r) return null;
   return { sessionId: r.sessionId, runId: r.runId, nativeDispatchRunId: r.nativeDispatchRunId,
+    responseTiming: projectResponseTiming(r),
     acceptedAt: r.acceptedAt, preparedAt: r.preparedAt, settledAt: r.settledAt,
     excluded: Boolean(r.options?.internalOperation || r.options?.deliveryOnly || r.options?.recordUserMessage === false),
     deliveries: (r.deliveries || []).filter(d => d.kind === 'content' && time(d.createdAt) >= time(r.settledAt))
@@ -56,7 +58,10 @@ export function runMeasurement(ledger, run, request, injection = null) {
   return { runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
     state: validRun ? run.state : 'unknown',
     background: ledger.backgroundOperation === true || request?.excluded === true,
-    metrics: { prepareMs: validRequest ? span(request.acceptedAt, request.preparedAt) : null,
+    responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: time(request?.acceptedAt),
+    metrics: { firstContentMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstContentAt) : null,
+      firstReplyMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstReplyAt) : null,
+      prepareMs: validRequest ? span(request.acceptedAt, request.preparedAt) : null,
       launchMs: validRequest ? span(request.preparedAt, run.startedAt) : null,
       runMs: validRun ? span(run.startedAt, run.completedAt) : null,
       deliveryMs: deliveryEnd !== null ? span(request.settledAt, deliveryEnd) : null,
@@ -66,12 +71,10 @@ export function runMeasurement(ledger, run, request, injection = null) {
       injectionBytes: validRun && injection?.id === ledger.runId && injection.sessionId === ledger.sessionId
         && finite(injection.injectionBytes) ? injection.injectionBytes : null } };
 }
-const metricNames = ['prepareMs', 'launchMs', 'runMs', 'deliveryMs', 'requestMs', 'contextTokens', 'inputTokens', 'injectionBytes'];
+const metricNames = ['firstContentMs', 'firstReplyMs', 'prepareMs', 'launchMs', 'runMs', 'deliveryMs', 'requestMs', 'contextTokens', 'inputTokens', 'injectionBytes'];
 export function summarizeMeasurements(samples) {
   return Object.fromEntries(metricNames.map(name => {
-    const values = samples.map(s => s.metrics[name]).filter(finite).sort((a, b) => a - b);
-    return [name, { count: values.length, mean: values.length ? values.reduce((a,b) => a+b,0) / values.length : null,
-      p95: values.length ? values[Math.max(0,Math.ceil(values.length * .95)-1)] : null }];
+    return [name, timingStats(samples.map(s => s.metrics[name]))];
   }));
 }
 // Compare consecutive, disjoint observed Run samples within the same Session/model/tool.
@@ -82,7 +85,7 @@ export function measurementSignals(samples) {
   const signals = [];
   for (const cohort of cohorts.values()) {
     cohort.sort((a,b) => b.at-a.at);
-    for (const name of ['prepareMs','launchMs','runMs','contextTokens','inputTokens','injectionBytes']) {
+    for (const name of ['firstContentMs','firstReplyMs','prepareMs','launchMs','runMs','contextTokens','inputTokens','injectionBytes']) {
       const recent = cohort.slice(0, 3).filter(s => finite(s.metrics[name]));
       const baseline = cohort.slice(3, 23).filter(s => finite(s.metrics[name]));
       if (recent.length < 3 || baseline.length < 10) continue;
@@ -147,7 +150,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       if(!grouped.has(l.sessionId))grouped.set(l.sessionId,[]);grouped.get(l.sessionId).push(sample);
     }));
     for(const row of rows.values()) {const samples=grouped.get(row.sessionId)||[];row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
-    return {generatedAt:new Date(now()).toISOString(),contextExperiment,window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
+    return {generatedAt:new Date(now()).toISOString(),contextExperiment,responseTiming:summarizeResponseTiming([...grouped.values()].flat(),days,now()),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
       coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.length,truncated:usage.runCount>ledger.length||coverage.limitedFiles>0,
         collectionMs:now()-started,cacheSeconds:60,apiAttribution:'unavailable'},
       semantics:{timing:'已落账 Run 的 Request/Run 时间戳；受理到准备包含排队，执行包含等待，阶段有各自样本数',
@@ -191,7 +194,7 @@ export async function compactSessionMonitoring(value, getActivity) {
     })));
   }
   return { generatedAt: value.generatedAt, stateObservedAt: new Date().toISOString(), window: value.window,
-    contextExperiment: value.contextExperiment ?? null,
+    contextExperiment: value.contextExperiment ?? null, responseTiming: value.responseTiming,
     coverage: value.coverage, totals: value.usage.totals, usageQuality: value.usage.quality, summary: { ...summarizeSessionOverview(sessions), currentSessions: value.currentSessionCount ?? summarizeSessionOverview(sessions).currentSessions },
     groups: Object.fromEntries(value.sessions.map(s => [s.groupId, s.groupName])),
     people: Object.fromEntries(value.sessions.map(s => [s.personId, s.personName])), sessions };
