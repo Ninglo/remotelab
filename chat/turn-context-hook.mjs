@@ -4,6 +4,7 @@ import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
 import { buildSourceContextPrompt } from './source-context-prompt.mjs';
 import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
+import { experimentBackground } from './feature-experiment-context.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -20,10 +21,10 @@ function buildFeishuLogPromptBlock(sourceContext) {
   ].join('\n');
 }
 
-export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, pilotInputReplyContract = false, messageRoutingPolicy } = {}) {
+export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', experimentInput = {}, pilotInputReplyContract = false, messageRoutingPolicy } = {}) {
   // Ordinary turns carry accepted source/state and small identity/project
   // pointers. The Harness chooses explicit work/memory reads for its task;
-  // keyword matches are never a reason to inject background bodies here.
+  // only an explicitly enrolled experiment may restore automatic background.
   const sections = await Promise.allSettled([
     buildProjectMemoryPromptBlock(session, sourceContext),
     buildGroupRoutingContext(session, sourceContext, { inputReplyContract: pilotInputReplyContract, messageRoutingPolicy }),
@@ -37,6 +38,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
     project,
+    await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),
     groupRouting,
     // Classifier summaries are derived UI state, not fresh execution evidence.
     // Keep them queryable on the session; do not replay stale blockers every turn.

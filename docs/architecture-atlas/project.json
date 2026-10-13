@@ -1009,6 +1009,12 @@
       "description": "10月11—12日默认注入清理、消息与规则去重、完整性恢复、量化结果及剩余问题"
     },
     {
+      "source": "docs/feature-experiments.md",
+      "route": "manual-feature-experiments.html",
+      "title": "随机对照与夜间评阅",
+      "description": "个人新会话分流、抽样、证据评分、资源约束和分析边界"
+    },
+    {
       "source": "display/USER_GUIDE.md",
       "route": "manual-display.html",
       "title": "副屏使用说明",

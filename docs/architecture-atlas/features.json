@@ -182,6 +182,26 @@
             "input-trial",
             "message-replies"
           ]
+        },
+        {
+          "id": "feature-experiments",
+          "name": "个人新会话随机对照与夜间评阅",
+          "purpose": "保留随机样本，比较自动背景与按需读取的实际表现。",
+          "entry": "显式实例实验配置及原生Schedule；普通用户继续新开会话。",
+          "condition": "默认关闭，只覆盖确认的单个Person新会话；自动化不入组，模型评分需校准，不自动决定上线。",
+          "example": "会话固定随机进入A/B，夜间先按初始需求打标签，再凭执行证据评分。",
+          "sources": [
+            "docs/feature-experiments.md",
+            "chat/feature-experiment-store.mjs",
+            "chat/feature-experiment-context.mjs",
+            "automation/feature-experiments/review.mjs",
+            "automation/feature-experiments/runner.mjs",
+            "automation/feature-experiments/rubric-v1.md"
+          ],
+          "authorReview": "pending",
+          "author": null,
+          "maintainer": null,
+          "commands": []
         }
       ]
     },
