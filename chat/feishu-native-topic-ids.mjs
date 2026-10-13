@@ -56,7 +56,11 @@ export async function nativeTopicBindings(sessions, wantedIds, config, configDir
     const m = record?.summary, c = record?.submission?.payload?.sourceContext;
     if (record?.id !== root || m?.messageId !== root || m.rootId || m.parentId || m.chatType !== 'group' || m.chatId !== t.chatId || m.tenantKey !== p.tenantKey || m.appId !== p.appId || m.threadId !== t.threadId || !/^\d{13}$/.test(String(m.createTime || ''))) return;
     if (c?.connector !== 'feishu' || c.sourceRouteId !== p.route || c.messageId !== root || c.chatId !== t.chatId || c.tenantKey !== p.tenantKey || c.threadId !== t.threadId || String(c.createTime) !== String(m.createTime)) return;
-    if (String(BigInt(id) >> 32n) !== String(Math.floor(Number(m.createTime) / 1000))) return;
+    // Feishu can allocate the thread in the second before its first post.
+    // Independently bound first posts confirm offsets 0 and +1 only; never
+    // accept a message before its thread or widen this into fuzzy matching.
+    const firstPostDelay = Math.floor(Number(m.createTime) / 1000) - Number(BigInt(id) >> 32n);
+    if (firstPostDelay !== 0 && firstPostDelay !== 1) return;
     matches.push(j);
   }));
   const owners = new Map();
