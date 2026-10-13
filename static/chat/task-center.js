@@ -339,6 +339,21 @@
     return [connector, task.deliveryRecipient || target.chatName || target.name || target.label || target.email || (target.chatId ? tr("tasks.delivery.unnamed", "Chat name unavailable") + ` · …${target.chatId.slice(-8)}` : destination), target.threadId ? tr("tasks.notification.thread", "Topic") : ""].filter(Boolean).join(" · ");
   }
 
+  function deliverySummary(task, tr = flowTranslate) {
+    const row = (automationFlows.groups || []).flatMap(group => group.rows || []).find(row => row.taskIds.includes(task.id));
+    const target = task.resultDelivery?.target || {};
+    let destination = row?.delivery?.recipient;
+    if (!destination && task.resultDelivery?.mode === "conversation") {
+      const name = task.deliveryRecipient || target.chatName || target.name || target.label;
+      destination = name ? tr(target.chatType === "p2p" ? "tasks.delivery.directTo" : "tasks.delivery.sendTo", "", { name })
+        : notificationText(task, { compact: true, tr });
+      if (target.threadId) destination += " · " + tr("tasks.delivery.sameTopic");
+    }
+    destination ||= tr("tasks.delivery.workflowDestination");
+    return task.deliveryControl?.supported && !task.deliveryControl.enabled
+      ? tr("tasks.delivery.stoppedDestination", "", { destination }) : destination;
+  }
+
   function appendDeliveryDetails(parent, task, row = null, { control = true } = {}) {
     const tr = flowTranslate;
     const delivery = row?.delivery;
@@ -707,6 +722,7 @@
     const heading = createNode("div", "task-card-heading");
     heading.append(createNode("h4", "task-card-title", taskTitle(task)), createNode("span", "task-state-pill", stateLabel(task.state)));
     main.appendChild(heading);
+    main.appendChild(createNode("p", "task-delivery-destination", deliverySummary(task)));
     if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
     const meta = createNode("div", "task-card-meta");
     const creator = creatorName(task.createdByIdentityId);
@@ -810,6 +826,7 @@
     heading.appendChild(createNode("span", "task-state-pill", business
       ? translate(`tasks.business.${business}`, business) : stateLabel(task.state)));
     main.appendChild(heading);
+    main.appendChild(createNode("p", "task-delivery-destination", deliverySummary(task)));
     if (business) addMetaRow(main, translate("tasks.business.reason", "Current condition"),
       translate(`tasks.condition.${(task.check?.reason || '').replaceAll(' ', '_')}`, ""));
     const brief = (task.prompt || "").split(/\n/).map(line => line.trim()).find(line => line && !/^#|^</.test(line));
@@ -823,7 +840,7 @@
     const sourceId = task.package?.sourceSessionId || task.sourceSessionId;
     addMetaRow(context, translate("tasks.session.sourceDiscussion", "Original discussion (reference)"), task.package?.sourceSessionName || sessionName(sourceId),
       sourceId ? { link: `/?session=${encodeURIComponent(sourceId)}&tab=sessions` } : {});
-    addMetaRow(context, translate("tasks.overview.delivery", "Results go to"), [...new Set(members.map(member => notificationText(member, { compact: true })))].join(" · "));
+
     if (task.kind === "recurring" && task.lifetime?.mode === "bounded") addMetaRow(context, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
     if (!members.some(item => item.homeSessionId) && members.some(item => item.sessionCollection === "automations")) {
       const execution = overview.latestExecutionSession(task);
@@ -943,22 +960,28 @@
     diagram.setAttribute("aria-label", group.title || flowTranslate(`tasks.flows.${group.id}`, group.id));
     let current = diagram;
     if (group.plan) {
-      diagram.appendChild(renderFlowPlan(group.plan));
       const deliveries = createNode("section", "task-flow-deliveries");
       deliveries.appendChild(createNode("h4", "", flowTranslate("tasks.delivery.title", "Delivery details and controls")));
       for (const row of group.rows || []) {
         const detail = createNode("details", "task-flow-delivery");
         const key = `delivery:${group.id}:${row.title}`; detail.open = openFlowNotes.has(key);
-        detail.appendChild(createNode("summary", "", row.title + (row.delivery?.recipient ? " · " + row.delivery.recipient : "")));
+        detail.appendChild(createNode("summary", "", flowTranslate("tasks.delivery.details", "When, what and sending controls")));
         const linked = row.taskIds.map(id => tasks.find(task => task.id === id)).filter(Boolean);
         if (row.needsReview) detail.appendChild(createNode("p", "task-flow-review", flowTranslate("tasks.flows.review")));
         const controllable = linked.filter(task => task.deliveryControl?.supported);
         if (!controllable.length) appendDeliveryDetails(detail, null, row);
         for (const task of controllable) appendDeliveryDetails(detail, task, row);
         detail.addEventListener("toggle", () => { if (!detail.isConnected) return; if (detail.open) openFlowNotes.add(key); else openFlowNotes.delete(key); });
-        deliveries.appendChild(detail);
+        const deliveryItem = createNode("div", "task-flow-delivery-item");
+        deliveryItem.appendChild(createNode("h5", "", row.title));
+        deliveryItem.appendChild(createNode("p", "task-delivery-destination", controllable.length
+          ? [...new Set(controllable.map(task => deliverySummary(task)))].join(" / ")
+          : row.delivery?.recipient || row.send));
+        deliveryItem.appendChild(detail);
+        deliveries.appendChild(deliveryItem);
       }
       diagram.appendChild(deliveries);
+      diagram.appendChild(renderFlowPlan(group.plan));
       current = createNode("details", "task-flow-current");
       const key = `current:${group.id}`; current.open = openFlowNotes.has(key);
       current.appendChild(createNode("summary", "", flowTranslate("tasks.flows.current", "Current tasks and execution records")));
@@ -1105,7 +1128,7 @@
       details.dataset.taskId = task.id; details.open = openTimelineRows.has(key);
       const summary = createNode("summary");
       const main = createNode("span", "task-timeline-main");
-      main.append(createNode("strong", "", taskTitle(task)), createNode("small", "", task.gate?.mode === "script" ? tr("gate") : tr("direct")));
+      main.append(createNode("strong", "", taskTitle(task)), createNode("span", "task-delivery-destination", deliverySummary(task)), createNode("small", "", task.gate?.mode === "script" ? tr("gate") : tr("direct")));
       summary.append(main, createNode("span", "task-timeline-status", flowState(task))); details.appendChild(summary);
       const body = createNode("div", "task-timeline-detail");
       body.appendChild(createNode("p", "", tr("next", { time: stamp(task.nextRunAt) })));

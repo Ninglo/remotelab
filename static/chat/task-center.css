@@ -852,3 +852,9 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-flow-delivery { border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-wrap: anywhere; }
 .task-flow-delivery summary { cursor: pointer; font-weight: 600; }
 .task-flow-delivery[open] > .task-delivery-details { margin-top: 12px; }
+
+.task-delivery-destination { display: block; margin: 6px 0; color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.65; overflow-wrap: anywhere; }
+.task-flow-delivery-item { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.task-flow-delivery-item > .task-flow-delivery { border: 0; border-radius: 0; padding: 0; }
+
+.task-flow-delivery-item h5 { margin: 0; font-size: 13px; color: var(--text-muted); font-weight: 500; }
