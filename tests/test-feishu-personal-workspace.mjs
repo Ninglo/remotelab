@@ -8,7 +8,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-personal-workspace-')); setIsolatedTestHome(home);
 after(() => rm(home, { recursive: true, force: true }));
 const { updateAuthDocument, loadAuthDocument } = await import('../lib/auth-config.mjs');
-const { createPersonalWorkspace } = await import('../chat/feishu-personal-workspace.mjs');
+const { createPersonalWorkspace, projectMemorySection } = await import('../chat/feishu-personal-workspace.mjs');
 const { handleFeishuPersonalWorkspace } = await import('../chat/router-feishu-personal-workspace.mjs');
 const connections = await import('../chat/feishu-web-settings.mjs');
 await updateAuthDocument(d => { d.people = ['alice', 'bob'].map(name => ({ id: 'person_' + name, name, credentials: [], preferences: {}, identities: [{ id: 'identity_' + name, kind: 'web', realm: 'remotelab', subjectId: name }] })); d.primaryPersonId = 'person_alice'; });
@@ -78,4 +78,33 @@ test('workspace connection is separate from settings, exact-account bound, revoc
   assert.equal((await route('/api/feishu-web-workspace/files', 'GET', headers)).status, 404);
   await connections.disconnectFeishuWebSettings(connected); await assert.rejects(connections.authorizeFeishuWebSettings(personal.token, input.origin, input.nativeAccount, 'workspace'), /失效/);
   assert.equal((await connections.authorizeFeishuWebSettings(settings.token, input.origin, input.nativeAccount)).personId, 'person_alice');
+});
+
+test('memory comes from explicit own project anchors, with latest own work, without requiring a daily report', async () => {
+  const f = fixture();
+  f.deps.sources = async () => ({ config: { projects: [{ id: 'remotelab' }, { id: 'paused', status: 'paused' }] },
+    index: '| remotelab | RemoteLab | 项目 | parent | [记忆](projects.md#remotelab-目标) |\n| paused | 暂停项目 | 项目 | parent | [记忆](projects.md#missing) |',
+    ledger: '## 父项目\n不能代替子项目。\n### RemoteLab 目标\n先完成私聊。\n#### 已定取舍\n保留原对话。\n### 其他人的项目\n不应泄漏的正文。',
+    memoryUpdatedAt: '2026-10-13T00:00:00Z', errors: { report: '暂无日报' } });
+  const work = f.sessions.find(s => s.id === group).workAwareness.works[0];
+  Object.assign(work, { id: 'own-work', goal: '改进个人入口', status: 'active', updatedAt: '2026-10-13T00:00:00Z', results: [{ result: '原私聊已复用' }] });
+  const api = createPersonalWorkspace(f.deps), data = await api.context(actor('alice'));
+  assert.equal(data.report, undefined); assert.equal(data.errors.report, '暂无日报');
+  assert.match(data.projects[0].memory.excerpt, /保留原对话/); assert.equal(data.projects[0].works[0].result, '原私聊已复用');
+  assert.equal(data.projects[1].memory, null); assert.match(data.projects[1].memoryError, /记忆章节/);
+  assert(!JSON.stringify(data).includes('不应泄漏')); assert(!JSON.stringify(data).includes('不能代替子项目'));
+  await api.send(actor('alice'), 'thinking', { requestId: 'request_memory_000001', text: '' });
+  assert.match(f.submitted[0].text, /保留原对话/); assert.match(f.submitted[0].text, /原私聊已复用/);
+});
+test('memory section anchors retain nested content and respect duplicate headings', () => {
+  const source = '## 项目\n第一段\n### 决定\n子段\n## 项目\n第二段';
+  assert.equal(projectMemorySection(source, '项目').text, '第一段\n### 决定\n子段');
+  assert.equal(projectMemorySection(source, '项目-1').text, '第二段');
+  assert.equal(projectMemorySection(source, '不存在'), null);
+});
+test('Index sends only the user message and does not fetch project context', async () => {
+  const f = fixture(); f.deps.sources = async () => { throw Error('Index must not read projects'); };
+  const api = createPersonalWorkspace(f.deps);
+  await api.send(actor('alice'), 'index', { requestId: 'request_plain_chat_001', text: '聊聊今天' });
+  assert.equal(f.submitted[0].id, a); assert.equal(f.submitted[0].text, '聊聊今天');
 });
