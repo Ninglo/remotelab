@@ -858,3 +858,5 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-flow-delivery-item > .task-flow-delivery { border: 0; border-radius: 0; padding: 0; }
 
 .task-flow-delivery-item h5 { margin: 0; font-size: 13px; color: var(--text-muted); font-weight: 500; }
+
+.task-trigger-description { display: block; margin: 6px 0; color: var(--text-secondary); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }

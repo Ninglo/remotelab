@@ -9,6 +9,7 @@ export function automationDefinitionHash(task) {
     prompt: task.prompt, schedule: { type: task.schedule?.type, cron: task.schedule?.cron,
       timezone: task.schedule?.timezone, everySeconds: task.schedule?.everySeconds },
     target: task.target, resultDelivery: task.resultDelivery,
+    gate: task.gate, wakeOn: task.wakeOn, automationPolicy: task.automationPolicy,
   })).digest('hex');
 }
 export function automationBackgroundHash(item) {
@@ -43,7 +44,7 @@ export async function listAutomationFlows(tasks, { path = join(CONFIG_DIR, 'auto
     rows: (Array.isArray(group.rows) ? group.rows : []).filter(row => row && typeof row === 'object').slice(0, 20).map(row => {
       const ids = [...new Set((Array.isArray(row.taskIds) ? row.taskIds : []).filter(id => typeof id === 'string'))];
       const backgroundIds = [...new Set((Array.isArray(row.backgroundIds) ? row.backgroundIds : []).filter(id => typeof id === 'string'))];
-      return { title: text(row.title), taskIds: ids, backgroundIds, process: text(row.process), write: text(row.write), writeDetails: text(row.writeDetails), send: text(row.send), delivery: row.delivery && typeof row.delivery === 'object' ? Object.fromEntries(['recipient', 'condition', 'format', 'content', 'control'].map(key => [key, text(row.delivery[key])])) : null, note: text(row.note),
+      return { title: text(row.title), taskIds: ids, backgroundIds, trigger: text(row.trigger), process: text(row.process), write: text(row.write), writeDetails: text(row.writeDetails), send: text(row.send), delivery: row.delivery && typeof row.delivery === 'object' ? Object.fromEntries(['recipient', 'condition', 'format', 'content', 'control'].map(key => [key, text(row.delivery[key])])) : null, note: text(row.note),
         needsReview: (!ids.length && !backgroundIds.length) || backgroundIds.some(id => !backgroundById.has(id) || row.definitions?.[id] !== automationBackgroundHash(backgroundById.get(id))) || ids.some(id => !byId.has(id) || row.definitions?.[id] !== automationDefinitionHash(byId.get(id))),
         links: (Array.isArray(row.links) ? row.links : []).filter(l => l && typeof l === 'object').slice(0, 4).map(l => ({ title: text(l.title), url: safeUrl(l.url) })).filter(l => l.url && l.title),
       };

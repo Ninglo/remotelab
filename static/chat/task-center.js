@@ -339,6 +339,20 @@
     return [connector, task.deliveryRecipient || target.chatName || target.name || target.label || target.email || (target.chatId ? tr("tasks.delivery.unnamed", "Chat name unavailable") + ` · …${target.chatId.slice(-8)}` : destination), target.threadId ? tr("tasks.notification.thread", "Topic") : ""].filter(Boolean).join(" · ");
   }
 
+  function triggerSummary(task, tr = flowTranslate) {
+    const row = (automationFlows.groups || []).flatMap(group => group.rows || []).find(row => row.taskIds.includes(task.id));
+    const cadence = taskScheduleText(task, tr);
+    const condition = row?.trigger || tr(task.gate?.mode === "script" ? "tasks.trigger.check" : "tasks.trigger.start");
+    return `${cadence} · ${condition}`;
+  }
+
+  function appendAutomationSummary(parent, task) {
+    parent.append(
+      createNode("p", "task-trigger-description", flowTranslate("tasks.trigger.label") + " · " + triggerSummary(task)),
+      createNode("p", "task-delivery-destination", flowTranslate("tasks.delivery.result") + " · " + deliverySummary(task)),
+    );
+  }
+
   function deliverySummary(task, tr = flowTranslate) {
     const row = (automationFlows.groups || []).flatMap(group => group.rows || []).find(row => row.taskIds.includes(task.id));
     const target = task.resultDelivery?.target || {};
@@ -722,7 +736,7 @@
     const heading = createNode("div", "task-card-heading");
     heading.append(createNode("h4", "task-card-title", taskTitle(task)), createNode("span", "task-state-pill", stateLabel(task.state)));
     main.appendChild(heading);
-    main.appendChild(createNode("p", "task-delivery-destination", deliverySummary(task)));
+    appendAutomationSummary(main, task);
     if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
     const meta = createNode("div", "task-card-meta");
     const creator = creatorName(task.createdByIdentityId);
@@ -826,7 +840,7 @@
     heading.appendChild(createNode("span", "task-state-pill", business
       ? translate(`tasks.business.${business}`, business) : stateLabel(task.state)));
     main.appendChild(heading);
-    main.appendChild(createNode("p", "task-delivery-destination", deliverySummary(task)));
+    appendAutomationSummary(main, task);
     if (business) addMetaRow(main, translate("tasks.business.reason", "Current condition"),
       translate(`tasks.condition.${(task.check?.reason || '').replaceAll(' ', '_')}`, ""));
     const brief = (task.prompt || "").split(/\n/).map(line => line.trim()).find(line => line && !/^#|^</.test(line));
@@ -974,9 +988,12 @@
         detail.addEventListener("toggle", () => { if (!detail.isConnected) return; if (detail.open) openFlowNotes.add(key); else openFlowNotes.delete(key); });
         const deliveryItem = createNode("div", "task-flow-delivery-item");
         deliveryItem.appendChild(createNode("h5", "", row.title));
-        deliveryItem.appendChild(createNode("p", "task-delivery-destination", controllable.length
+        deliveryItem.appendChild(createNode("p", "task-trigger-description", flowTranslate("tasks.trigger.label") + " · " + (linked.length
+          ? [...new Set(linked.map(task => triggerSummary(task)))].join(" / ")
+          : row.trigger || row.process)));
+        deliveryItem.appendChild(createNode("p", "task-delivery-destination", flowTranslate("tasks.delivery.result") + " · " + (controllable.length
           ? [...new Set(controllable.map(task => deliverySummary(task)))].join(" / ")
-          : row.delivery?.recipient || row.send));
+          : row.delivery?.recipient || row.send)));
         deliveryItem.appendChild(detail);
         deliveries.appendChild(deliveryItem);
       }
@@ -1011,6 +1028,7 @@
       const times = [...new Set(linked.map(task => `${taskScheduleText(task, flowTranslate)} · ${overview.businessStatus(task) ? flowTranslate(`tasks.business.${overview.businessStatus(task)}`, flowState(task)) : flowState(task)}`))];
       times.push(...background.map(item => `${item.trigger} · ${flowTranslate(`tasks.background.${item.state}`, item.state)}`));
       heading.appendChild(createNode("span", "task-flow-time", times.join(" / ") || flowTranslate("tasks.flows.missing", "Task not found")));
+      if (row.trigger) heading.appendChild(createNode("p", "task-trigger-description", row.trigger));
       if (row.needsReview) route.appendChild(createNode("p", "task-flow-review", flowTranslate("tasks.flows.review", "Task definition changed or is missing; the explanation below needs review.")));
       const steps = createNode("div", "task-flow-steps");
       steps.appendChild(heading);
@@ -1128,7 +1146,8 @@
       details.dataset.taskId = task.id; details.open = openTimelineRows.has(key);
       const summary = createNode("summary");
       const main = createNode("span", "task-timeline-main");
-      main.append(createNode("strong", "", taskTitle(task)), createNode("span", "task-delivery-destination", deliverySummary(task)), createNode("small", "", task.gate?.mode === "script" ? tr("gate") : tr("direct")));
+      main.appendChild(createNode("strong", "", taskTitle(task)));
+      appendAutomationSummary(main, task);
       summary.append(main, createNode("span", "task-timeline-status", flowState(task))); details.appendChild(summary);
       const body = createNode("div", "task-timeline-detail");
       body.appendChild(createNode("p", "", tr("next", { time: stamp(task.nextRunAt) })));
