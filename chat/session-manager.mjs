@@ -3049,8 +3049,8 @@ export async function acknowledgeSessionResult(id, resultAt) {
   const observed = Date.parse(resultAt);
   if (!Number.isFinite(observed)) throw Error('Invalid result timestamp');
   const result = await mutateSessionMeta(id, session => {
-    if (!(observed <= Date.parse(session.lastAssistantMessageAt || ''))) throw Error('Result not observed');
-    if (observed <= (Date.parse(session.lastReviewedAt || '') || 0)) return false;
+    if (!(observed <= new Date(session.lastAssistantMessageAt || '').getTime())) throw Error('Result not observed');
+    if (observed <= (new Date(session.lastReviewedAt || '').getTime() || 0)) return false;
     session.lastReviewedAt = new Date(observed).toISOString();
     return true;
   });

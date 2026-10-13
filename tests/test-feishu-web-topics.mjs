@@ -126,9 +126,9 @@ test('late read acknowledgements never erase a later result or rewind review',as
  const {createSession,acknowledgeSessionResult}=await import('../chat/session-manager.mjs');
  const {mutateSessionMeta,loadSessionsMeta}=await import('../chat/session-meta-store.mjs');
  const s=await createSession(scratch,'codex','read race');
- await mutateSessionMeta(s.id,m=>{m.lastAssistantMessageAt='2026-10-13T00:02:00Z';return true;});
+ await mutateSessionMeta(s.id,m=>{m.lastAssistantMessageAt=Date.parse('2026-10-13T00:02:00Z');return true;});
  await acknowledgeSessionResult(s.id,'2026-10-13T00:01:00Z');
- let m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(topicProjection(m,'native').status,'review');
+ let m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(topicProjection(m,'native').resultAt,'2026-10-13T00:02:00.000Z');assert.equal(topicProjection(m,'native').status,'review');
  await acknowledgeSessionResult(s.id,'2026-10-13T00:02:00Z');await acknowledgeSessionResult(s.id,'2026-10-13T00:01:00Z');
  m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(m.lastReviewedAt,'2026-10-13T00:02:00.000Z');assert.notEqual(topicProjection(m,'native').status,'review');
  await assert.rejects(acknowledgeSessionResult(s.id,'2026-10-13T00:03:00Z'));

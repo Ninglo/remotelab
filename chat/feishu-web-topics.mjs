@@ -19,9 +19,10 @@ const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
 const eligible = s => s?.conversation?.connector === 'feishu' && s.conversation.sourceRouteId === 'bot-2'
   && s.conversation.target?.chatType === 'group' && (s.conversation.target.threadId || s.conversation.target.replyInThread || s.conversation.target.conversationKind === 'thread');
 export function topicProjection(s, webThreadId) {
+  const resultTime = new Date(s.lastAssistantMessageAt || '').getTime();
   const row = model.getSessionRowStatusInfo(s), status = row?.key === 'unread' ? 'review' : row?.key || 'idle';
   return { sessionId: s.id, webThreadId, chatId: s.conversation?.target?.chatId, rootId: s.conversation?.target?.rootId || s.conversation?.target?.messageId, ...topicTextView(s, { state: status }),
-    resultAt: s.lastAssistantMessageAt || '', status, label: row?.label || '', archived: !!s.archived, sourceUpdatedAt: s.updatedAt || '',
+    resultAt: Number.isFinite(resultTime) ? new Date(resultTime).toISOString() : '', status, label: row?.label || '', archived: !!s.archived, sourceUpdatedAt: s.updatedAt || '',
     sessionUrl: '/?session=' + s.id + '&tab=sessions' };
 }
 export function topicIds(value) {
