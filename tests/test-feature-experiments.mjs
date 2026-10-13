@@ -93,6 +93,10 @@ try {
   assert.equal(aaAssignment.assignedStrategy, 'on-demand', 'AA changes no intervention');
   const previousRun = process.env.REMOTELAB_RUN_ID, previousSession = process.env.REMOTELAB_SESSION_ID;
   process.env.REMOTELAB_RUN_ID = 'run_judge'; process.env.REMOTELAB_SESSION_ID = 'judge_session';
+  await writeFile(join(exp.directory, 'state.json'), JSON.stringify({ version: 1, attempts: [], active: { runId: 'run_judge', sessionId: 'judge_session', batch } }));
+  const retryLabels = await runReview(root, 'labels-input', null, { worker: { config: {}, api: async () => ({ run: { sessionId: 'judge_session', state: 'running' } }) } });
+  assert.equal(retryLabels.labelsFrozen, true);
+  assert.deepEqual(retryLabels.frozenLabels, labels, 'a resumed reviewer reuses frozen labels');
   const hookWorker = { config: {}, api: async route => route.startsWith('/api/runs/')
     ? { run: { id: 'run_judge', sessionId: 'judge_session', state: 'completed' } }
     : { totals: { totalTokens: 123 } } };

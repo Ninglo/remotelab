@@ -102,7 +102,11 @@ export async function runReview(root, command, file, dependencies = {}) {
   }
   const active = await owned(), batchId = active.batch.id;
   if (!safeId(batchId)) throw new Error('Invalid batch identity');
-  if (command === 'labels-input') return { batchId, ...await readRecord(join(dir, 'batches', batchId, 'labels-input.json')) };
+  if (command === 'labels-input') {
+    const frozenLabels = await readRecord(join(dir, 'batches', batchId, 'labels.json'));
+    return { batchId, labelsFrozen: Boolean(frozenLabels), frozenLabels,
+      ...await readRecord(join(dir, 'batches', batchId, 'labels-input.json')) };
+  }
   if (command === 'labels') return saveLabels(experiment, batchId, JSON.parse(await readFile(file, 'utf8')));
   if (command === 'scores-input') return scorePacket(experiment, batchId);
   if (command === 'submit') return saveDraft(experiment, batchId, JSON.parse(await readFile(file, 'utf8')), runId);
