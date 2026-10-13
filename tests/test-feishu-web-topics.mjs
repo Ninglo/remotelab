@@ -42,6 +42,31 @@ test('source pushes changed real state and releases its listener when the browse
   assert.notEqual(delivered.at(-1).entries[0].status, 'running'); off();
   const count = delivered.length; broadcastAll({ type: 'session_invalidated', sessionId: s.id }); await new Promise(resolve => setImmediate(resolve)); assert.equal(delivered.length, count);
 });
+test('slow details never delay state changes or replay an old running label', { timeout: 3000 }, async () => {
+  const s = session('a'.repeat(32), 'root'), delivered = []; let wake, release;
+  const next = () => new Promise(resolve => { wake = resolve; });
+  const slow = new Promise(resolve => { release = resolve; });
+  const api = createFeishuTopicSource({ sessions: async () => [s], session: async () => s, bindings: async () => ({ bindings: { root: 'native' } }),
+    details: async entries => { await slow; return { entries: entries.map(e => ({ ...e, usage: { cumulative: { totalTokens: 10 } } })), quota: { status: 'ready' } }; } });
+  const first = next(), off = await api.subscribe(['native'], d => { delivered.push(d); wake?.(); }, e => { throw e; }); await first;
+  assert.equal(delivered.at(-1).entries[0].status, 'running');
+  s.activity.run.state = 'idle'; s.lastAssistantMessageAt = '2026-10-13T00:00:00Z';
+  const changed = next(); broadcastAll({ type: 'session_invalidated', sessionId: s.id }); await changed;
+  assert.equal(delivered.at(-1).entries[0].status, 'review');
+  const enriched = next(); release(); await enriched;
+  assert.equal(delivered.at(-1).entries[0].status, 'review');
+  assert.equal(delivered.at(-1).entries[0].usage.cumulative.totalTokens, 10); off();
+});
+test('late details cannot resurrect a failed or closed state subscription', { timeout: 3000 }, async () => {
+  const s = session('a'.repeat(32), 'root'), delivered = []; let firstResolve, failResolve, release, unavailable = false;
+  const first = new Promise(r => { firstResolve = r; }), failed = new Promise(r => { failResolve = r; }), slow = new Promise(r => { release = r; });
+  const api = createFeishuTopicSource({ sessions: async () => [s], session: async () => s,
+    bindings: async () => { if (unavailable) throw Error('offline'); return { bindings: { root: 'native' } }; }, details: async entries => { await slow; return { entries }; } });
+  const off = await api.subscribe(['native'], d => { delivered.push(d); firstResolve(); }, failResolve); await first;
+  await new Promise(r => setImmediate(r)); unavailable = true;
+  broadcastAll({ type: 'session_invalidated', sessionId: s.id }); await failed;
+  const count = delivered.length; release(); await new Promise(r => setImmediate(r)); assert.equal(delivered.length, count); off();
+});
 test('topics use a new exact-account read-only capability and cannot borrow settings or workspace tokens', async () => {
   const input = { origin: 'https://fixture.feishu.cn', nativeAccount: '1000000000000000001', confirm: true };
   const linked = await auth.connectFeishuWebSettings(input, actor, 'topics');
@@ -58,6 +83,20 @@ test('topics use a new exact-account read-only capability and cannot borrow sett
   assert.equal((await request(linked.token, 'arbitrary')).status, 404);
   await auth.disconnectFeishuWebSettings(await auth.authorizeFeishuWebSettings(linked.token, input.origin, input.nativeAccount, 'topics'));
   assert.equal((await request(linked.token)).status, 401);
+});
+test('native lists preserve official previews; Web and group-board summaries remain available', async () => {
+  for (const origin of ['http://127.0.0.1:19342', 'https://fixture.feishu.cn']) {
+    const nativeAccount = '1000000000000000001';
+    const grant = await auth.connectFeishuWebSettings({ origin, nativeAccount, confirm: true }, actor, 'topics');
+    const data = { entries: [{ webThreadId: 'native', name: 'Title', summary: 'Generated summary', status: 'running' }], boards: [{ summary: 'Board summary' }] };
+    const req = Readable.from([]); req.url = '/api/feishu-web-topics/snapshot?ids=native'; req.method = 'GET';
+    req.headers = { authorization: 'Bearer ' + grant.token, 'x-feishu-origin': origin, 'x-feishu-account': nativeAccount };
+    let result;
+    await handleFeishuWebTopics({ req, res: { setHeader() {} }, pathname: req.url.split('?')[0], source: { snapshot: async () => data }, writeJson: (_, status, body) => { result = { status, body }; } });
+    assert.equal(result.status, 200); assert.equal(result.body.entries[0].name, 'Title'); assert.equal(result.body.entries[0].status, 'running');
+    assert.equal(result.body.entries[0].summary, origin.startsWith('http:') ? '' : 'Generated summary');
+    assert.equal(result.body.boards[0].summary, 'Board summary'); assert.equal(data.entries[0].summary, 'Generated summary');
+  }
 });
 test('existing verified workspace connection activates a distinct read-only token without another login', async () => {
   const input = { origin: 'https://fixture.feishu.cn', nativeAccount: '1000000000000000001', confirm: true };

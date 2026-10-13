@@ -80,12 +80,34 @@ export function createFeishuTopicSource(deps = {}) {
     Object.defineProperty(data, sourceRecords, { value: cache }); return data;
   }
   async function subscribe(ids, emit, fail, groupIds = [], includeDetails = true) {
-    let alive = true, busy = false, pending = false, nextId = '', last = null;
+    let alive = true, busy = false, pending = false, nextId = '', last = null, healthy = false;
+    let enrichment = null, enriching = false, detailsPending = false;
+    const publish = () => {
+      if (!alive || !last || !healthy) return;
+      if (!enrichment) { emit(last); return; }
+      const usage = new Map((enrichment.entries || []).map(e => [e.sessionId, e]));
+      const visible = new Set(last.entries.map(e => e.sessionId));
+      emit({ ...last, quota: enrichment.quota, detailsError: enrichment.detailsError,
+        webArtifacts: (enrichment.webArtifacts || []).filter(a => visible.has(a.sessionId)),
+        entries: last.entries.map(e => { const old = usage.get(e.sessionId); return old?.webThreadId === e.webThreadId && old.usage ? { ...e, usage: old.usage } : e; }) });
+    };
+    // Execution state must not wait for history, token totals or quota I/O.
+    // Late detail responses enrich the newest state; never replay their status.
+    const enrich = () => {
+      if (!alive || !last || !includeDetails) return;
+      if (enriching) { detailsPending = true; return; }
+      enriching = true; const entries = last.entries;
+      void bindings().then(config => details(entries, config)).then(value => {
+        enrichment = value; if (!busy) publish();
+      }).catch(() => { enrichment = { detailsError: '附加信息暂时无法读取' }; if (!busy) publish(); }).finally(() => {
+        enriching = false; if (detailsPending && alive) { detailsPending = false; enrich(); }
+      });
+    };
     const refresh = id => {
       if (!alive) return;
       if (busy) { pending = true; nextId = ''; return; }
       busy = true;
-      void snapshot(ids, id, last, groupIds, includeDetails).then(data => { if (alive) { last = data; emit(data); } }).catch(error => { if (alive) fail(error); }).finally(() => {
+      void snapshot(ids, id, last, groupIds, false).then(data => { if (alive) { last = data; healthy = true; publish(); enrich(); } }).catch(error => { if (alive) { healthy = false; fail(error); } }).finally(() => {
         busy = false; if (pending && alive) { pending = false; refresh(nextId); }
       });
     };

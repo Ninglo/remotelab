@@ -58,6 +58,15 @@ try{
  assert.equal(await page.locator('.native-digest').isVisible(),false);
  // Unchanged stream projections do not churn the DOM and flicker the grid.
  assert.equal(await page.evaluate(async()=>{let n=0;const o=new MutationObserver(rs=>n+=rs.length);o.observe(document.querySelector('.feed-main-list'),{subtree:true,childList:true,attributes:true,characterData:true});for(let i=0;i<20;i++)__RLFE_SET_TOPICS__({sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'核对状态',status:'running'}]});await new Promise(r=>requestAnimationFrame(r));o.disconnect();return n;}),0);
+ // Current server projections remove the enhancement summary even on v14.
+ // Restore the existing latest-message node and let Feishu keep updating it.
+ await page.evaluate(()=>fixture.emit('topics',{sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'',status:'running'}]}));
+ assert.equal(await page.locator('.rlfe-feed-preview').count(),0);
+ assert.equal(await page.locator('.native-digest').isVisible(),true);
+ await page.evaluate(()=>{document.querySelector('.native-digest').textContent='飞书新到的消息';});
+ assert.equal(await page.locator('.native-digest').textContent(),'飞书新到的消息');
+ assert.equal(await page.locator('.rlfe-feed-name').textContent(),'真实工作标题');
+ assert.equal(await page.locator('.rlfe-feed-status').textContent(),'running');
  // Idle is a real RemoteLab state, not a reason to make the status disappear.
  await page.evaluate(()=>fixture.emit('topics',{sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'核对状态',status:'idle',label:'空闲'}]}));
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-status')?.textContent==='空闲');
