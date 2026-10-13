@@ -1,3 +1,4 @@
+import { setAutomationDelivery } from './automation-delivery.mjs';
 import { readSessionDiagnostics } from './session-diagnostics.mjs';
 import { ensureAutomationHome, readAutomationHomeView, recordAutomationHomeChange } from './automation-home.mjs';
 import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
@@ -670,6 +671,19 @@ export async function handleControlRoutes({
       if (!history) writeJson(res, 404, { error: 'Automation task not found' });
       else writeJson(res, 200, history);
     } catch (error) { writeJson(res, 400, { error: error.message }); }
+    return true;
+  }
+
+  const deliverySettingMatch = /^\/api\/automation-tasks\/((?:trg|sch)_[a-f0-9]{24})\/delivery$/.exec(pathname);
+  if (deliverySettingMatch && req.method === 'PATCH') {
+    try {
+      const task = await getAutomationTask(deliverySettingMatch[1]);
+      if (!task) { writeJson(res, 404, { error: 'Automation task not found' }); return true; }
+      const input = JSON.parse(await readBody(req, 4096));
+      await setAutomationDelivery(task, input, authSession);
+      writeJson(res, 200, { task: await getAutomationTask(task.id) });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: task.id });
+    } catch (error) { writeJson(res, error.status || 400, { error: error.message }); }
     return true;
   }
 

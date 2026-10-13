@@ -841,3 +841,14 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .monitoring-session-diagnosis p { margin: 6px 0; overflow-wrap: anywhere; }
 #monitoringOverview .monitoring-session-signals > button[data-severity="neutral"] { border-top-color: var(--border); padding: 10px 12px; }
 #monitoringSessions .monitoring-account-status { white-space: nowrap; }
+
+.task-delivery-details { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.task-delivery-details p { margin: 0; }
+.task-delivery-details button { justify-self: start; }
+.task-delivery-state { font-weight: 600; }
+
+.task-flow-deliveries { display: grid; gap: 10px; }
+.task-flow-deliveries h4 { margin: 0; }
+.task-flow-delivery { border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-wrap: anywhere; }
+.task-flow-delivery summary { cursor: pointer; font-weight: 600; }
+.task-flow-delivery[open] > .task-delivery-details { margin-top: 12px; }

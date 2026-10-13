@@ -381,6 +381,20 @@ async function main() {
     assert.equal(gated.json.task.resultDelivery.mode, 'conversation');
     assert.equal(gated.json.task.resultDelivery.sourceRouteId, 'task-center-test');
     assert.equal(gated.json.task.alerts.mode, 'remotelab');
+    const deliveryUrl = `/api/automation-tasks/${gated.json.task.id}/delivery`;
+    const disabledDelivery = await request(port, 'PATCH', deliveryUrl, { enabled: false, expectedRevision: 0 });
+    assert.equal(disabledDelivery.status, 200, disabledDelivery.text);
+    assert.equal(disabledDelivery.json.task.deliveryControl.enabled, false);
+    assert.deepEqual(disabledDelivery.json.task.resultDelivery, gated.json.task.resultDelivery, 'turning off preserves target');
+    assert.equal(disabledDelivery.json.task.state, gated.json.task.state, 'sending is separate from execution');
+    assert.equal((await request(port, 'PATCH', deliveryUrl, { enabled: true, expectedRevision: 0 })).status, 409);
+    assert.equal((await request(port, 'PATCH', deliveryUrl, { enabled: 'false', expectedRevision: 1 })).status, 400);
+    assert.equal((await request(port, 'PATCH', deliveryUrl, { enabled: true, expectedRevision: 1 }, '')).status, 401);
+    const restoredDelivery = await request(port, 'PATCH', deliveryUrl, { enabled: true, expectedRevision: 1 });
+    assert.equal(restoredDelivery.status, 200, restoredDelivery.text);
+    assert.equal(restoredDelivery.json.task.deliveryControl.enabled, true);
+    const rereadDelivery = await request(port, 'GET', `/api/automation-tasks/${gated.json.task.id}`);
+    assert.equal(rereadDelivery.json.task.deliveryControl.revision, 2);
     const cancelledGated = await request(port, 'POST', `/api/automation-tasks/${gated.json.task.id}/cancel`);
     assert.equal(cancelledGated.status, 200, cancelledGated.text);
 

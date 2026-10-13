@@ -52,3 +52,9 @@ assert.equal(JSON.stringify(task),before);
 config.groups[0].plan={stages:'invalid'};
 assert.equal((await listAutomationFlows([task],{load})).groups[0].plan,null,'invalid optional plan leaves task rows available');
 console.log('Plan projection preserves explicit pending status, inert text and original task state.');
+
+config.groups[0].rows[0].delivery={recipient:'Named group',condition:'After publication',format:'Rich text',content:'Changes and links',control:'Workflow owned',execute:'never'};
+const delivery=(await listAutomationFlows([task],{load})).groups[0].rows[0].delivery;
+assert.equal(delivery.recipient,'Named group');
+assert.equal(delivery.execute,undefined);
+assert.equal(JSON.stringify(task),before);

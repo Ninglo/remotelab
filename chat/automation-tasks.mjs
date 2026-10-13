@@ -1,3 +1,4 @@
+import { enrichAutomationDelivery } from './automation-delivery.mjs';
 import { readAutomationHome } from './automation-home-store.mjs';
 import {
   cancelScheduleTriggers,
@@ -399,7 +400,7 @@ export async function listAutomationTasks() {
   ]);
   const packages = await automationPackages(schedules, triggers);
   for (const task of tasks) attachPackage(task, packages, schedules);
-  return tasks.sort(taskSort);
+  return enrichAutomationDelivery(tasks.sort(taskSort));
 }
 
 // Monitoring consumes current health, not the task browser's full history,
@@ -502,14 +503,14 @@ export async function getAutomationTask(taskId) {
     const schedule = await getRecurringSchedule(id);
     if (!schedule) return null;
     const packages = await automationPackages(await listRecurringSchedules(), []);
-    return { ...await projectRecurringTask(schedule, await listTriggers({ scheduleId: id })), package: packages.get(id) };
+    return (await enrichAutomationDelivery([{ ...await projectRecurringTask(schedule, await listTriggers({ scheduleId: id })), package: packages.get(id) }]))[0];
   }
   if (id.startsWith('trg_')) {
     const trigger = await getTrigger(id);
     if (!trigger) return null;
     const schedules = await listRecurringSchedules();
     const packages = await automationPackages(schedules, await listTriggers());
-    return attachPackage(await projectOneTimeTask(trigger), packages, schedules);
+    return (await enrichAutomationDelivery([attachPackage(await projectOneTimeTask(trigger), packages, schedules)]))[0];
   }
   return null;
 }

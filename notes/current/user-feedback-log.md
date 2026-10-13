@@ -1735,3 +1735,8 @@ A user wanted the original Automations page to show a connected read → process
 - 2026-10-12: Automation UI feedback: align the content column with Monitor navigation, keep instance explanation labels in the same language as their prose, move paths into expandable detail, and show a complete schedule-oriented overview. Preserve original task records and distinguish configured times from actual completed work.
 
 - 2026-10-12: Automation overview, flow explanations and detailed tasks are peer views. Use one row of view tabs instead of stacking three long sections; preserve task filters and direct links when switching.
+
+
+### 2026-10-13 — Explain automated delivery before offering controls
+
+Automation readers need the actual group name, the condition for sending, the message format and its main content, and a direct way to turn sending on or off. Task execution, platform result relay and workflow-owned sends are different controls. Show those boundaries beside the switch and preserve the original recipient when it is disabled, so “off” does not imply that every independent script has stopped sending.

@@ -446,6 +446,27 @@ async function main() {
     assert.equal(completeDelivery.status, 200);
     assert.equal(completeDelivery.json.delivery.state, 'delivered');
 
+    const silent = await request(port, 'POST', '/api/triggers', {
+      sessionId: sourceSession.id, title: 'Relay disabled',
+      scheduledAt: new Date(Date.now() + 60000).toISOString(), text: 'Keep my result in the Session.',
+      tool: 'fake-codex', deliverTo: 'session_source',
+    });
+    assert.equal(silent.status, 201);
+    const silentId = silent.json.trigger.id;
+    const mute = await request(port, 'PATCH', `/api/automation-tasks/${silentId}/delivery`, {enabled:false,expectedRevision:0});
+    assert.equal(mute.status,200,mute.text);
+    assert.equal((await request(port,'PATCH',`/api/triggers/${silentId}`,{scheduledAt:new Date(Date.now()+50).toISOString()})).status,200);
+    const silentRun = await waitFor(async () => {
+      const res = await request(port,'GET',`/api/triggers/${silentId}`);
+      return res.json?.trigger?.runId ? res.json.trigger : false;
+    },'muted automation still starts');
+    assert.equal((await waitForRunTerminal(port,silentRun.runId)).state,'completed');
+    await waitFor(async () => (await getEvents(port,silentRun.executionSessionId)).some(event=>event.type==='message' && event.role==='assistant' && event.content.includes('trigger run finished')), 'muted result remains in execution history');
+    const silentOutbox = await request(port,'GET','/api/source-deliveries');
+    assert.equal(silentOutbox.json.deliveries.some(entry=>entry.triggerId===silentId),false,'disabled relay produces no outbound message');
+    assert.equal((await request(port,'PATCH',`/api/automation-tasks/${silentId}/delivery`,{enabled:true,expectedRevision:1})).status,200);
+    assert.equal((await request(port,'GET','/api/source-deliveries')).json.deliveries.some(entry=>entry.triggerId===silentId),false,'restoring relay never replays accepted runs');
+
     for (const testCase of [
       { marker: 'FAIL_TRIGGER', expectedState: 'failed', expectedText: /定时任务执行失败/ },
     ]) {

@@ -323,19 +323,66 @@
   function notificationText(task, { compact = false, tr = translate } = {}) {
     const notification = task?.resultDelivery || task?.notification || {};
     if (notification.mode !== "conversation") {
-      return tr("tasks.notification.remotelab", "RemoteLab only");
+      const row = (automationFlows.groups || []).flatMap(group => group.rows || []).find(row => row.taskIds.includes(task.id));
+      return row?.delivery?.recipient || tr("tasks.delivery.workflowDestination", "Saved in the execution Session; see instructions for other delivery.");
     }
     const connector = notification.connector || tr("tasks.notification.external", "External source");
     const target = notification.target || {};
-    const destination = target.chatName || target.name || target.label || target.chatId || target.openId || target.email || "";
+    const destination = task.deliveryRecipient || target.chatName || target.name || target.label || target.chatId || target.openId || target.email || "";
     if (compact) {
       const provider = tr(`tasks.notification.${connector}`, connector);
-      const named = target.chatName || target.name || target.label || target.email;
+      const named = task.deliveryRecipient || target.chatName || target.name || target.label || target.email;
       const address = named || (target.chatId ? tr("tasks.notification.chat", "Chat")
         + ` · …${target.chatId.slice(-8)}` : destination);
       return [provider, address, target.threadId ? tr("tasks.notification.thread", "Topic") : ""].filter(Boolean).join(" · ");
     }
-    return [connector, destination, target.threadId, notification.sourceRouteId].filter(Boolean).join(" · ");
+    return [connector, task.deliveryRecipient || target.chatName || target.name || target.label || target.email || (target.chatId ? tr("tasks.delivery.unnamed", "Chat name unavailable") + ` · …${target.chatId.slice(-8)}` : destination), target.threadId ? tr("tasks.notification.thread", "Topic") : ""].filter(Boolean).join(" · ");
+  }
+
+  function appendDeliveryDetails(parent, task, row = null, { control = true } = {}) {
+    const tr = flowTranslate;
+    const delivery = row?.delivery;
+    const section = createNode("div", "task-delivery-details");
+    if (delivery) {
+      for (const key of ["recipient", "condition", "format", "content"]) {
+        const value = delivery[key];
+        if (value) section.appendChild(createNode("p", "", tr(`tasks.delivery.${key}`, key) + " · " + value));
+      }
+      if (delivery.control) section.appendChild(createNode("p", "task-history-note", delivery.control));
+    } else if (task) {
+      const native = task.resultDelivery?.mode === "conversation";
+      section.appendChild(createNode("p", "", tr("tasks.delivery.recipient") + " · " + notificationText(task, { compact: true, tr })));
+      section.appendChild(createNode("p", "", tr("tasks.delivery.condition") + " · " + tr(native ? "tasks.delivery.nativeCondition" : "tasks.delivery.workflowCondition")));
+      section.appendChild(createNode("p", "", tr("tasks.delivery.format") + " · " + tr(native ? "tasks.delivery.nativeFormat" : "tasks.delivery.unknownFormat")));
+      section.appendChild(createNode("p", "", tr("tasks.delivery.content") + " · " + tr(native ? "tasks.delivery.nativeContent" : "tasks.delivery.unknownContent")));
+    }
+    if (control && task?.deliveryControl?.supported) {
+      const setting = task.deliveryControl;
+      section.appendChild(createNode("p", "task-delivery-state", tr(setting.enabled ? "tasks.delivery.on" : "tasks.delivery.off")));
+      const button = createNode("button", "task-center-secondary", tr(setting.enabled ? "tasks.delivery.disable" : "tasks.delivery.enable"));
+      button.type = "button";
+      button.disabled = Boolean(actionTaskId);
+      button.setAttribute("aria-label", taskTitle(task) + " · " + button.textContent);
+      button.addEventListener("click", () => changeDelivery(task));
+      section.append(button, createNode("p", "task-history-note", tr("tasks.delivery.scope")));
+    }
+    parent.appendChild(section);
+  }
+
+  async function changeDelivery(task) {
+    if (actionTaskId) return;
+    actionTaskId = task.id;
+    renderTasks();
+    try {
+      const payload = await fetchJsonOrRedirect(`/api/automation-tasks/${encodeURIComponent(task.id)}/delivery`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !task.deliveryControl.enabled, expectedRevision: task.deliveryControl.revision }), revalidate: false,
+      });
+      tasks = tasks.map(entry => entry.id === task.id ? { ...payload.task, package: entry.package } : entry);
+      if (typeof showSystemToast === "function") showSystemToast(flowTranslate("tasks.delivery.saved"));
+    } catch (error) {
+      if (typeof showSystemToast === "function") showSystemToast(error.message, "error");
+    } finally { actionTaskId = ""; renderTasks(); }
   }
 
   function lifetimeText(task) {
@@ -687,6 +734,8 @@
         ? translate("tasks.runtime.follow", "Auto for each new Session") + " · " + translate("tasks.runtime.help", "Each new Session starts from Auto. Reused Sessions keep their own runtime.")
         : translate("tasks.runtime.fixed", "Fixed") + " · " + [runtime?.tool, runtime?.model, runtime?.effort].filter(Boolean).join(" · "));
     addMetaRow(meta, translate("tasks.meta.delivery", "Delivery"), notificationText(task));
+    const deliveryRow = (automationFlows.groups || []).flatMap(group => group.rows || []).find(row => row.taskIds.includes(task.id));
+    appendDeliveryDetails(meta, task, deliveryRow);
     if (task.kind === "recurring") {
       addMetaRow(meta, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
       addMetaRow(meta, translate("tasks.meta.admission", "Admission"), gateText(task));
@@ -895,6 +944,21 @@
     let current = diagram;
     if (group.plan) {
       diagram.appendChild(renderFlowPlan(group.plan));
+      const deliveries = createNode("section", "task-flow-deliveries");
+      deliveries.appendChild(createNode("h4", "", flowTranslate("tasks.delivery.title", "Delivery details and controls")));
+      for (const row of group.rows || []) {
+        const detail = createNode("details", "task-flow-delivery");
+        const key = `delivery:${group.id}:${row.title}`; detail.open = openFlowNotes.has(key);
+        detail.appendChild(createNode("summary", "", row.title + (row.delivery?.recipient ? " · " + row.delivery.recipient : "")));
+        const linked = row.taskIds.map(id => tasks.find(task => task.id === id)).filter(Boolean);
+        if (row.needsReview) detail.appendChild(createNode("p", "task-flow-review", flowTranslate("tasks.flows.review")));
+        const controllable = linked.filter(task => task.deliveryControl?.supported);
+        if (!controllable.length) appendDeliveryDetails(detail, null, row);
+        for (const task of controllable) appendDeliveryDetails(detail, task, row);
+        detail.addEventListener("toggle", () => { if (!detail.isConnected) return; if (detail.open) openFlowNotes.add(key); else openFlowNotes.delete(key); });
+        deliveries.appendChild(detail);
+      }
+      diagram.appendChild(deliveries);
       current = createNode("details", "task-flow-current");
       const key = `current:${group.id}`; current.open = openFlowNotes.has(key);
       current.appendChild(createNode("summary", "", flowTranslate("tasks.flows.current", "Current tasks and execution records")));
@@ -930,6 +994,14 @@
       for (const key of ["process", "write", "send"]) {
         const step = createNode("div", "task-flow-step");
         step.append(createNode("span", "task-flow-label", flowTranslate(`tasks.flows.${key}`, key)), createNode("p", "", row[key]));
+        if (key === "send" && !group.plan) {
+          if (row.delivery) step.lastChild.remove();
+          if (!linked.some(item => item.deliveryControl?.supported)) appendDeliveryDetails(step, null, row);
+          for (const task of linked.filter(item => item.deliveryControl?.supported)) {
+            if (linked.length > 1) step.appendChild(createNode("strong", "", taskTitle(task)));
+            appendDeliveryDetails(step, task, row, { control: true });
+          }
+        }
         if (key === "write") for (const item of row.links || []) {
           // Defense in depth for read-only descriptor links; never render HTML.
           try { if (!["https:", "http:"].includes(new URL(item.url).protocol)) continue; } catch { continue; }
@@ -1043,6 +1115,7 @@
       } else {
         body.append(createNode("p", "", tr("unknownOutput")), createNode("p", "", tr("sendLabel") + " · " + notificationText(task, { compact: true, tr: flowTranslate })));
       }
+      appendDeliveryDetails(body, task, rows[0]);
       if (task.sessionCollection === "automations") appendExecutionEntries(body, task);
       else {
         const button = createNode("button", "task-center-action", tr("showTasks")); button.type = "button";

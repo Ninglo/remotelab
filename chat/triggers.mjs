@@ -1,3 +1,4 @@
+import { automationDeliveryOptions } from './automation-delivery.mjs';
 import { prepareAutomationHomeRun } from './automation-home.mjs';
 import { normalizeAutomationPolicy } from '../lib/automation-execution-policy.mjs';
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
@@ -739,6 +740,7 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
     }
 
     const accepted = await requests.byRequest(session.id, current.requestId);
+    const deliveryOptions = accepted ? {} : await automationDeliveryOptions(current);
     const homeContext = accepted ? '' : await prepareAutomationHomeRun(current, session);
     // Admission is already durable. An upgrade must not reconstruct different
     // options for that identity or execute it again after a lost acknowledgement.
@@ -758,7 +760,7 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
       automationPolicy: current.automationPolicy || undefined,
       scheduleId: current.scheduleId || undefined,
       occurrenceId: current.occurrenceId || undefined,
-      ...(current.sessionTemplate?.reuse === 'fixed_session'
+      ...(deliveryOptions.suppressSourceDelivery ? deliveryOptions : current.sessionTemplate?.reuse === 'fixed_session'
         ? current.sessionTemplate?.conversation
           ? { sourceDelivery: current.sessionTemplate.conversation }
           : { suppressSourceDelivery: true }
