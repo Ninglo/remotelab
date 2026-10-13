@@ -1,4 +1,4 @@
-# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 13)
+# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 15)
 
 Ask the maintaining agent: “Update the existing isolated Feishu Native Trial
 with the verified Web 1.2.0 component bundle and the existing Mac Web Live capabilities. Restore the same-account read-only status source, including group boards and usage; never replace it with a fresh personal-login requirement. Keep the official App and profile
@@ -59,6 +59,13 @@ Enhancement **code** remains embedded in the trial archive. Standalone users qui
 data stream provides automatic code hot updates. A future code updater would
 need a verified version manifest, atomic installation and rollback; in-process
 reload additionally needs complete component cleanup and draft preservation.
+
+Revision 15 uses the maintained personal workspace component from
+`static/feishu-personal-workspace.js`, recorded by its own hash. Index is a
+plain persistent private chat with a bottom composer. thinking reads explicit
+project-memory sections and recent personal work before suggesting next steps;
+daily reports and todos remain supporting sources. Missing memory is shown, not
+replaced with parent-project prose. See [personal workspace](../../docs/feishu-personal-workspace.md).
 
 Required inputs: the verified Web 1.2.0 extension directory, access to the
 existing trial, and the reviewed Mac Web Live extension directory. A personal

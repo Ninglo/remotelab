@@ -12,7 +12,7 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1000
 const requests = [], failures = [], a = 'a'.repeat(32), t = 'b'.repeat(32);
 const fixture = { person: { id: 'person_alice', name: 'Alice' }, errors: {}, observedAt: '2026-10-10T05:00:00Z', report: { date: '2026-10-10', url: 'https://fixture.feishu.cn/docx/report' },
   todos: [{ id: 'todo_1111111111111111', title: '先核对当前工作', note: '输入内容中的 <script>window.bad=true</script> 只显示为文字。', status: 'todo', dueAt: '2026-10-11T02:00:00Z', progress: { current: 1, target: 3, unit: '项' }, url: 'todo:todo_1111111111111111' }],
-  projects: [{ id: 'remotelab', name: 'RemoteLab', status: 'active', date: '2026-10-10', sourceTitle: '已有项目进展', excerpt: '**已完成代码**，真实体验仍待反馈。', url: 'https://fixture.feishu.cn/docx/report', association: { reason: '本人提出的已登记工作', sessionId: a } }] };
+  projects: [{ id: 'remotelab', name: 'RemoteLab', status: 'active', date: '2026-10-10', memory: { title: '项目目标与决定', excerpt: '先跑顺个人协作，保留已有对话。', updatedAt: '2026-10-13T00:00:00Z' }, works: [{ goal: '本人的相关工作', status: 'active', result: '私聊已接通', url: '/?session=' + a }], sourceTitle: '已有项目进展', excerpt: '**已完成代码**，真实体验仍待反馈。', url: 'https://fixture.feishu.cn/docx/report', association: { reason: '本人提出的已登记工作', sessionId: a } }] };
 let mode = 'complete', stateReads = 0, delayed, releaseDelay, postCount = 0;
 page.on('pageerror', error => failures.push(error.message));
 await page.route('https://fixture.feishu.cn/next/messenger/', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><style>body{margin:0;font:14px system-ui}.appNavbar{position:fixed;width:180px;height:100vh;background:#f5f6f7}.appNavbar-navbarMenu{height:800px;padding:10px}#native{margin-left:180px}</style><aside class="appNavbar"><div class="appNavbar-navbarMenu"><button>原有导航</button><nav id="rlfe-resource-nav-host">具身前沿 · 每日日报</nav></div></aside><main id="native">原生飞书对话不改动</main>' }));
@@ -43,8 +43,14 @@ try {
   const first = await page.evaluate(() => __RLFE_WORKSPACE__.status().sessionId);
   await host.getByText('返回飞书', { exact: true }).click(); await nav.getByText('Index', { exact: true }).click(); await host.getByText('Index 的持续对话。', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => __RLFE_WORKSPACE__.status().sessionId), first); assert.equal(postCount, 0);
+  assert.equal(requests.filter(r => r.operation === 'context').length, 0, 'Index does not load project context');
+  await host.locator('#indexDraft').fill('保留私聊草稿');
   await nav.getByText('thinking', { exact: true }).click(); await host.getByText('分析已完成', { exact: true }).waitFor();
-  assert.equal(await host.locator('#nextBlock h2').textContent(), '接着推进'); assert.equal(await nav.getByText('接着推进', { exact: true }).count(), 0);
+  assert.equal(await host.locator('#nextBlock h2').textContent(), '下一步'); assert.equal(await nav.getByText('接着推进', { exact: true }).count(), 0);
+  await host.getByText('先跑顺个人协作，保留已有对话。', { exact: true }).waitFor();
+  await host.getByText('私聊已接通', { exact: true }).waitFor();
+  await nav.getByText('Index', { exact: true }).click(); assert.equal(await host.locator('#indexDraft').inputValue(), '保留私聊草稿');
+  await nav.getByText('thinking', { exact: true }).click(); await host.getByText('分析已完成', { exact: true }).waitFor();
   assert((await host.locator('#analysis').textContent()).includes('优先核验')); assert((await host.locator('#next').textContent()).includes('反馈实测结果'));
   assert.equal(await page.evaluate(() => globalThis.bad), undefined);
   await host.getByText('与 Index 讨论', { exact: true }).click(); await host.locator('#indexDraft').waitFor(); assert((await host.locator('#indexDraft').inputValue()).includes('反馈实测结果')); assert.equal(postCount, 0, 'handoff is a draft until explicitly sent');

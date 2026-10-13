@@ -3,7 +3,14 @@ const here=path.dirname(fileURLToPath(import.meta.url)),[web,output]=process.arg
 await fs.mkdir(output,{recursive:true});const read=n=>fs.readFile(path.join(web,n),'utf8');
 const manifest=JSON.parse(await read('manifest.json'));if(manifest.version!=='1.2.0')throw Error('Expected reviewed Web 1.2.0');
 const original=await read('content.js'),hash=s=>createHash('sha256').update(s).digest('hex');
-let content=original;const start=content.indexOf('(() => {\n  globalThis.__RLFE_PREFS_CLEANUP__?.();');const end=content.indexOf("(() => {\n  const base = 'https://zhangyu.jiujianian.dev', key = 'feishuWebExplore.messageConnection.v1';",start);if(start<0||end<0)throw Error('Unrecognized Web bundle');
+let content=original;
+// Use the maintained personal surfaces, leaving the reviewed Web snapshot intact.
+const personalStart=content.indexOf('(() => {\n  globalThis.__RLFE_WORKSPACE__?.cleanup();');
+const personalEnd=content.indexOf('\n})();',personalStart)+7;
+if(personalStart<0||personalEnd<personalStart)throw Error('Unrecognized Web personal workspace');
+const personal=await fs.readFile(path.join(here,'../../static/feishu-personal-workspace.js'),'utf8');
+content=content.slice(0,personalStart)+personal+content.slice(personalEnd);
+const start=content.indexOf('(() => {\n  globalThis.__RLFE_PREFS_CLEANUP__?.();');const end=content.indexOf("(() => {\n  const base = 'https://zhangyu.jiujianian.dev', key = 'feishuWebExplore.messageConnection.v1';",start);if(start<0||end<0)throw Error('Unrecognized Web bundle');
 const pref=await read('preferences.js'),validation=pref.slice(pref.indexOf('  function portable('),pref.indexOf('  function notify('));
 let adapter=(await fs.readFile(path.join(here,'adapter.js'),'utf8')).replace('__PORTABLE_VALIDATION__',validation);
 content=content.slice(0,start)+adapter+'\n'+content.slice(end);
@@ -60,5 +67,5 @@ await fs.writeFile(path.join(output,'runtime-template.js'),loader);await fs.copy
 await fs.copyFile(path.join(here,'live-source.cjs'),path.join(output,'live-source.cjs'));
 await fs.copyFile(path.join(here,'topic-source.cjs'),path.join(output,'topic-source.cjs'));
 await fs.copyFile(path.join(here,'native-connection.cjs'),path.join(output,'native-connection.cjs'));
-await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:14,liveComponentHashes:Object.fromEntries(Object.entries(extras).map(([name,value])=>[name,hash(value)])),webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),buildHash:hash(loader+await fs.readFile(path.join(here,'bridge.cjs'),'utf8')+await fs.readFile(path.join(here,'topic-source.cjs'),'utf8')+await fs.readFile(path.join(here,'live-source.cjs'),'utf8')+await fs.readFile(path.join(here,'native-connection.cjs'),'utf8')),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
+await fs.writeFile(path.join(output,'source-manifest.json'),JSON.stringify({revision:15,personalComponentSha256:hash(personal),liveComponentHashes:Object.fromEntries(Object.entries(extras).map(([name,value])=>[name,hash(value)])),webVersion:manifest.version,sourceContentSha256:hash(original),runtimeSha256:hash(loader),buildHash:hash(loader+await fs.readFile(path.join(here,'bridge.cjs'),'utf8')+await fs.readFile(path.join(here,'topic-source.cjs'),'utf8')+await fs.readFile(path.join(here,'live-source.cjs'),'utf8')+await fs.readFile(path.join(here,'native-connection.cjs'),'utf8')),adaptations:['native account API','fixed loopback broker','native list selectors','shared Web navigation mounted inside messenger renderer'],nativeOuterNavCovered:false},null,2));
 console.log(JSON.stringify({webVersion:manifest.version,sourceContentSha256:hash(original),bytes:loader.length}));
