@@ -22,8 +22,8 @@
   const attr=(e,key,value)=>{if(e.getAttribute(key)!==value)e.setAttribute(key,value);};
   function hide(state,node){if(!state.originals.has(node)){state.originals.add(node);node.setAttribute('data-rlfe-original','');}}
   function restore(row,state){for(const e of state.originals)e.removeAttribute('data-rlfe-original');state.headline.remove();state.preview?.remove();mounted.delete(row);}
-  let readIntent=null;
-  // Only a trusted open followed by Feishu's committed zero-unread preview
+  const readAttempts=new Set();
+  // Only the opened chat with Feishu's committed zero-unread preview
   // qualifies. An unknown native structure, background row or older message
   // must never acknowledge a RemoteLab result.
   function nativePreview(row) {
@@ -38,22 +38,24 @@
     return null;
   }
   function acknowledgeRead() {
-    const intent=readIntent;if(!intent||intent.busy)return;
-    if(Date.now()>intent.until){readIntent=null;return;}
-    if(!data.sourceConnected||!data.readSyncEnabled||document.visibilityState!=='visible'||data.nativeContext?.threadId!==intent.webThreadId)return;
-    const row=[...document.querySelectorAll('.feed-main-list [data-feed-id]')].find(r=>r.dataset.feedId===intent.webThreadId),p=row&&nativePreview(row);
+    if(!alive||!data.sourceConnected||!data.readSyncEnabled||document.visibilityState!=='visible')return;
+    const entry=entries.get(data.nativeContext?.threadId);
+    if(!entry||entry.status!=='review'||!entry.resultAt||entry.sourceStale)return;
+    const key=entry.sessionId+':'+entry.resultAt;if(readAttempts.has(key))return;
+    const row=[...document.querySelectorAll('.feed-main-list [data-feed-id]')].find(r=>r.dataset.feedId===entry.webThreadId),p=row&&nativePreview(row);
     const nativeTime=Number(p?.displayTime)*1000;
-    if(!p||!Number.isFinite(nativeTime)||nativeTime<=0||nativeTime<Date.parse(intent.resultAt))return;
-    intent.busy=true;
-    Promise.resolve(globalThis.__RLFE_ACK_REVIEW__?.({webThreadId:intent.webThreadId,resultAt:intent.resultAt})).catch(error=>{
+    if(!p||!Number.isFinite(nativeTime)||nativeTime<=0||nativeTime<Date.parse(entry.resultAt)||typeof globalThis.__RLFE_ACK_REVIEW__!=='function')return;
+    readAttempts.add(key);if(readAttempts.size>128)readAttempts.delete(readAttempts.values().next().value);
+    // Capture the observed timestamp before making the asynchronous request.
+    Promise.resolve(globalThis.__RLFE_ACK_REVIEW__({webThreadId:entry.webThreadId,resultAt:entry.resultAt})).catch(error=>{
       const badge=row.querySelector('.rlfe-feed-status');if(badge)badge.title='已读同步失败：'+error.message+'；重新打开话题可重试';
-    }).finally(()=>{if(readIntent===intent)readIntent=null;});
+    });
   }
   const onRead=e=>{
-    if(!e.isTrusted||e.button!==0)return;
+    if(!e.isTrusted)return;
     const row=e.target.closest?.('.feed-main-list [data-feed-id]'),entry=row&&entries.get(row.dataset.feedId);
-    if(!entry||entry.status!=='review'||!entry.resultAt||!data.sourceConnected||entry.sourceStale)return;
-    readIntent={webThreadId:entry.webThreadId,resultAt:entry.resultAt,until:Date.now()+30000};queueMicrotask(acknowledgeRead);
+    if(entry)readAttempts.delete(entry.sessionId+':'+entry.resultAt);
+    queueMicrotask(acknowledgeRead);
   };
   document.addEventListener('click',onRead,true);
   function render(){
@@ -101,5 +103,5 @@
     if(!scheduled){scheduled=true;requestAnimationFrame(()=>{scheduled=false;render();acknowledgeRead();});}
   });observer.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['data-feed-id','class','aria-selected']});
   globalThis.__RLFE_SET_TOPICS__=projection=>{data=projection;entries.clear();for(const e of data.entries||[])if(e.webThreadId)entries.set(e.webThreadId,e);render();acknowledgeRead();globalThis.__RLFE_SET_USAGE__?.(projection);window.dispatchEvent(new CustomEvent('rlfe:topics',{detail:projection}));};
-  globalThis.__RLFE_TOPICS_CLEANUP__=()=>{alive=false;readIntent=null;storeOff?.();document.removeEventListener('click',onRead,true);observer.disconnect();for(const [row,state]of mounted)restore(row,state);style.remove();delete globalThis.__RLFE_SET_TOPICS__;delete globalThis.__RLFE_TOPICS_CLEANUP__;};
+  globalThis.__RLFE_TOPICS_CLEANUP__=()=>{alive=false;readAttempts.clear();storeOff?.();document.removeEventListener('click',onRead,true);observer.disconnect();for(const [row,state]of mounted)restore(row,state);style.remove();delete globalThis.__RLFE_SET_TOPICS__;delete globalThis.__RLFE_TOPICS_CLEANUP__;};
 })();

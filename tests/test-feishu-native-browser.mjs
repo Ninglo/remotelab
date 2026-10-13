@@ -62,7 +62,7 @@ try{
  await page.evaluate(()=>fixture.emit('topics',{sourceConnected:true,entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',summary:'核对状态',status:'idle',label:'空闲'}]}));
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-status')?.textContent==='空闲');
  assert.equal(await page.locator('.rlfe-feed-status').isVisible(),true);
- // Native read receipts require a real click, confirmed latest native message,
+ // Native read receipts require an opened topic, confirmed latest native message,
  // committed zero-unread preview and the same opened chat. They preserve result time.
  await page.evaluate(()=>{fixture.review={sourceConnected:true,readSyncEnabled:true,nativeContext:{threadId:'1000000000000000011'},entries:[{webThreadId:'1000000000000000011',sessionId:'a'.repeat(32),name:'真实工作标题',status:'review',resultAt:'2026-10-13T00:00:00Z'}]};const row=document.querySelector('[data-feed-id]');row.__reactFiber$fixture={memoizedProps:{value:{id:row.dataset.feedId,unreadCount:1,displayTime:1791849601}}};fixture.emit('topics',fixture.review);});
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-status').textContent==='review');
@@ -75,6 +75,8 @@ try{
  assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'an old native message cannot acknowledge a new result');
  await page.evaluate(()=>{document.querySelector('[data-feed-id]').__reactFiber$fixture.memoizedProps.value.displayTime=undefined;fixture.emit('topics',fixture.review);});
  await page.locator('.rlfe-feed-name').click();assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'unknown native time cannot acknowledge a result');
+ await page.evaluate(()=>{fixture.review.nativeContext.threadId='1000000000000000099';document.querySelector('[data-feed-id]').__reactFiber$fixture.memoizedProps.value.displayTime=1791849700;fixture.emit('topics',fixture.review);});
+ assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'background topic cannot acknowledge');
  await page.evaluate(()=>{fixture.review.readSyncEnabled=false;document.querySelector('[data-feed-id]').__reactFiber$fixture.memoizedProps.value.displayTime=1791849700;fixture.emit('topics',fixture.review);});
  await page.locator('.rlfe-feed-name').click();assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'old read-only grants stay read-only');
  // Virtualized rows must shed the old Session immediately when reused.

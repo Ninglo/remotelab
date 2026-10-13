@@ -77,6 +77,6 @@ M 系列、飞书 8.1.17 的原生增强 r10 使用同一只读本人连接；�
 
 ## Mac 原生 r13 已读同步
 
-原生增强在本人连接页明确确认 `topicReadAck` 后，可调用 `POST /api/feishu-web-topics/review`，提交已核话题编号 `webThreadId` 和实际看到的结果时间 `resultAt`。旧令牌及 workspace 自动换取的令牌不包含此能力，需本人重新连接。原生端先核对打开动作、当前话题、原生 `unreadCount=0` 及最新消息时间，未知结构不猜测。服务器重新验证话题对应，在元数据锁内只推进 `lastReviewedAt`，不标记晚于该回执的新结果；沿现有失效通知同步各端。该字段沿用 RemoteLab 的共享审阅语义，不新建个人审阅账本。网页插件原有的本地隐藏逻辑不变。
+原生增强在本人连接页明确确认 `topicReadAck` 后，可调用 `POST /api/feishu-web-topics/review`，提交已核话题编号 `webThreadId` 和实际看到的结果时间 `resultAt`。旧令牌及 workspace 自动换取的令牌不包含此能力，需本人重新连接。原生端先核对当前打开的话题、原生 `unreadCount=0` 及最新消息时间，未知结构不猜测。服务器重新验证话题对应，在元数据锁内只推进 `lastReviewedAt`，不标记晚于该回执的新结果；沿现有失效通知同步各端。该字段沿用 RemoteLab 的共享审阅语义，不新建个人审阅账本。网页插件原有的本地隐藏逻辑不变。
 
 r13 消息分组侧栏的四个功能分别标注“（测试）”，底部固定“设置 + 实际版本”；设置、入口及状态标签共用界面字体。详见 [原生安装和验证范围](../scripts/feishu-native/INSTALL.zh-CN.md)。
