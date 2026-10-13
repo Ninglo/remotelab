@@ -11,7 +11,7 @@ build, font_license, output = map(pathlib.Path, sys.argv[1:])
 folder = output / 'Feishu-Native-M2-8.1.17-preview9'
 folder.mkdir(parents=True, exist_ok=False)
 for name in ['install-preview.py','archive_patch.py','launch.py','install-launcher.py',
-             'observe_native_app.py','upgrade-preview.py','INSTALL.zh-CN.md']:
+             'observe_native_app.py','upgrade-preview.py','app_identity.py','RemoteLabEnhanced.icns','INSTALL.zh-CN.md']:
     shutil.copy2(source/name, folder/name)
 (folder/'v8-build').mkdir()
 for name in ['runtime-template.js','native_asset_bridge.cjs','live-source.cjs','topic-source.cjs','native-connection.cjs','source-manifest.json']:

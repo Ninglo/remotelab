@@ -56,6 +56,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
+      - name: Verify isolated Feishu display identity and icon on macOS
+        run: python3 tests/test-feishu-native-identity.py
       - name: Compile device-specific keypad adapter (no device access)
         run: swiftc scripts/recording-input-macos.swift -o "$RUNNER_TEMP/remotelab-recording-input"
       - name: Verify recording indicator states (no device access)

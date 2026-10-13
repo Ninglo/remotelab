@@ -36,6 +36,7 @@ with tempfile.TemporaryDirectory(prefix='feishu-launch-') as tmp:
              mock.patch.object(launcher, 'own_helper', return_value=case=='orphan'), \
              mock.patch.object(launcher, 'stop_helper') as stop, \
              mock.patch.object(launcher, 'await_ready', return_value=None if case=='foreign-port' else {'pid':234}), \
+             mock.patch.object(launcher, 'await_app', return_value=345), \
              mock.patch('subprocess.run') as run, \
              mock.patch('subprocess.Popen') as popen:
             popen.side_effect = [bridge, mock.Mock(pid=345), mock.Mock(pid=456)]
@@ -51,12 +52,24 @@ with tempfile.TemporaryDirectory(prefix='feishu-launch-') as tmp:
                 assert popen.call_count == 1  # no App or observer after bind failure
                 stop.assert_not_called()
             else:
-                assert popen.call_count == (2 if running else 3)
+                assert popen.call_count == 2
+                assert all(c.args[0][0] != str(binary) for c in popen.call_args_list)
+                if not running:
+                    assert any(c.args[0] == ['/usr/bin/open', '-a', str(app), '--args', '--user-data-dir='+str(home/'Library/Application Support/RlfeTrial')] for c in run.call_args_list)
                 assert popen.call_args_list[0].kwargs['env']['RLFE_TRIAL_ROOT'] == str(root)
                 assert json.loads((root/'started.json').read_text())['bridgePid'] == 234
                 if case == 'orphan': stop.assert_called_once_with(222, root, '/private/runtime/node')
                 else: stop.assert_not_called()
             assert (root/'draft').read_text() == 'keep my draft'
+
+    with mock.patch('subprocess.check_output', side_effect=['10 /Applications/Lark.app/Contents/MacOS/Feishu\n', f'345 {binary}\n']), mock.patch('time.sleep'):
+        assert launcher.await_app(binary) == 345
+    with mock.patch('subprocess.check_output', return_value='10 /Applications/Lark.app/Contents/MacOS/Feishu\n'):
+        try:
+            launcher.await_app(binary, timeout=0)
+            raise AssertionError('An unrelated official App was accepted')
+        except RuntimeError:
+            pass
 
     expected = f'{os.getuid()} /private/runtime/node {root}/native_asset_bridge.cjs\n'
     for command, accepted in [(expected, True), (expected+' other\n', False),
