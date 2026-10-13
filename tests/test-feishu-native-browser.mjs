@@ -73,6 +73,8 @@ try{
  await page.evaluate(()=>{fixture.review.entries[0].resultAt='2026-10-13T00:01:00Z';fixture.emit('topics',fixture.review);});
  await page.locator('.rlfe-feed-name').click();
  assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'an old native message cannot acknowledge a new result');
+ await page.evaluate(()=>{document.querySelector('[data-feed-id]').__reactFiber$fixture.memoizedProps.value.displayTime=undefined;fixture.emit('topics',fixture.review);});
+ await page.locator('.rlfe-feed-name').click();assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'unknown native time cannot acknowledge a result');
  await page.evaluate(()=>{fixture.review.readSyncEnabled=false;document.querySelector('[data-feed-id]').__reactFiber$fixture.memoizedProps.value.displayTime=1791849700;fixture.emit('topics',fixture.review);});
  await page.locator('.rlfe-feed-name').click();assert.equal(await page.evaluate(()=>fixture.calls.filter(c=>c.path==='/topics/review').length),1,'old read-only grants stay read-only');
  // Virtualized rows must shed the old Session immediately when reused.

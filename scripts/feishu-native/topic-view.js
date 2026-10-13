@@ -42,7 +42,8 @@
     if(Date.now()>intent.until){readIntent=null;return;}
     if(!data.sourceConnected||!data.readSyncEnabled||document.visibilityState!=='visible'||data.nativeContext?.threadId!==intent.webThreadId)return;
     const row=[...document.querySelectorAll('.feed-main-list [data-feed-id]')].find(r=>r.dataset.feedId===intent.webThreadId),p=row&&nativePreview(row);
-    if(!p||Number(p.displayTime)*1000<Date.parse(intent.resultAt))return;
+    const nativeTime=Number(p?.displayTime)*1000;
+    if(!p||!Number.isFinite(nativeTime)||nativeTime<=0||nativeTime<Date.parse(intent.resultAt))return;
     intent.busy=true;
     Promise.resolve(globalThis.__RLFE_ACK_REVIEW__?.({webThreadId:intent.webThreadId,resultAt:intent.resultAt})).catch(error=>{
       const badge=row.querySelector('.rlfe-feed-status');if(badge)badge.title='已读同步失败：'+error.message+'；重新打开话题可重试';
