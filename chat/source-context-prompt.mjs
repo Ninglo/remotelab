@@ -85,6 +85,17 @@ function buildFeishuSourceContextPrompt(sourceContext) {
     if (mentionedNames.length > 0) lines.push(`当前消息提及：${mentionedNames.join('、')}（未提及此 Bot）`);
   }
 
+  const reaction = sourceContext.feishuReactionReceipt;
+  if (sourceContext.feishuParticipation === 'ambient' && reaction) {
+    const emoji = readableText(reaction.emojiType, 50);
+    const status = reaction.status === 'applied' && emoji
+      ? `本 Bot 已有表情：${emoji}（${reaction.stage === 2 ? '主 Session' : '快速反馈'}）`
+      : reaction.status === 'not-recorded' ? '尚无本 Bot 的成功表情回执'
+        : '本 Bot 的表情回执暂不可读';
+    lines.push('', `当前消息的表情回执快照：${status}。`,
+      `读取时间：${readableText(reaction.checkedAt, 100)}。快照之后表情可能变化；表情不表示已开工、移交或完成。`);
+  }
+
   const announcement = sourceContext.groupAnnouncement;
   if (announcement?.messages?.length) {
     lines.push('', announcement.projectId ? '项目共享群公告（讨论群与干活群共用）：' : '本群公告（本话题首次读取的版本）：',

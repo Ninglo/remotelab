@@ -76,3 +76,16 @@ assert.doesNotMatch(boundComment, /secret-|already rendered/);
 console.log('source context projection: readable Feishu context, provider fields, bounded data, markup and delivery secret separation passed');
 
 assert.match(buildSourceContextPrompt({ connector: 'feishu', conversationContext: { messages: [], truncated: true } }), /不能视为已经读过/);
+
+
+const reactionContext = { connector: 'feishu', feishuParticipation: 'ambient',
+  feishuReactionReceipt: { status: 'applied', emojiType: 'Get', stage: 1,
+    checkedAt: '2026-10-13T12:00:00Z', reactionId: 'private-receipt' } };
+assert.match(buildSourceContextPrompt(reactionContext), /已有表情：Get（快速反馈）/);
+assert.doesNotMatch(buildSourceContextPrompt(reactionContext), /private-receipt/);
+assert.match(buildSourceContextPrompt({ ...reactionContext,
+  feishuReactionReceipt: { status: 'not-recorded' } }), /尚无本 Bot 的成功表情回执/);
+assert.match(buildSourceContextPrompt({ ...reactionContext,
+  feishuReactionReceipt: { status: 'unavailable' } }), /表情回执暂不可读/);
+assert.doesNotMatch(buildSourceContextPrompt({ ...reactionContext,
+  feishuParticipation: undefined }), /表情回执快照/);

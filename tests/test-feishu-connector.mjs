@@ -1801,6 +1801,34 @@ try {
   assert.equal(planningCreatedPayload.conversation.target.conversationKind, 'main');
   assert.equal(planningSubmittedPayload.sourceDelivery.target.replyInThread, undefined);
   assert.equal(planningSubmittedPayload.sourceContext.feishuParticipation, 'ambient');
+  assert.equal(planningSubmittedPayload.sourceContext.feishuReactionReceipt, undefined);
+  const { createFeishuOutcomeReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
+  const reactionStore = createFeishuOutcomeReactionStore(join(tempHome, 'main-reactions'));
+  await reactionStore.apply('main-received', 'Get', async () => ({ reactionId: 'quick-receipt' }));
+  const jevRuntime = {
+    authCookie: 'session_token=test-cookie',
+    config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionTool: 'codex',
+      storageDir: join(tempHome, 'main-reactions'),
+      groups: { main: { participationMode: 'ambient', groupFeed: true, quickReactions: true, jevReactions: true } } },
+    outcomeReactionStore: reactionStore,
+  };
+  for (const [messageId, expected] of [['main-received', 'applied'], ['still-pending', 'not-recorded'],
+    ['broken-receipt', 'unavailable']]) {
+    if (expected === 'unavailable') jevRuntime.outcomeReactionStore = {
+      snapshot: async () => { throw new Error('fixture receipt unreadable'); },
+    };
+    const accepted = await submitRemoteLabRequest(jevRuntime, {
+      chatType: 'group', chatId: 'main', messageId, messageText: '请核对安装方法并分享。',
+      sender: { openId: 'person' },
+    });
+    assert.equal(accepted.sessionId, 'sess_feishu_planning_1');
+    assert.equal(planningSubmittedPayload.sourceContext.feishuReactionReceipt.status, expected);
+    assert.equal(planningSubmittedPayload.sourceContext.feishuOutcomeRequired, undefined,
+      'Jev mode must not enable the old forced-emoji fallback');
+    assert.equal(planningSubmittedPayload.sourceDelivery.target.replyInThread, undefined,
+      'receipt facts must not choose placement for the main Harness');
+    if (expected === 'applied') assert.equal(planningSubmittedPayload.sourceContext.feishuReactionReceipt.emojiType, 'Get');
+  }
 } finally {
   await new Promise((resolve) => planningServer.close(resolve));
 }

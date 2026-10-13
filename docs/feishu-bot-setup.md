@@ -553,13 +553,32 @@ participation controls keep their existing paths. Supply the TypeSafe key throug
 containing `TYPESAFE_API_KEY=...`). No OpenAI API credential or Codex login is used
 for this fast call. The timeout is 1,600 ms; failures do not call a slower model.
 
-The main Session receives the message in parallel and owns substantive replies.
-It may optionally prefix its final answer with
-`<private><feishu-reaction emoji="THANKS"/></private>` to supplement or correct
-the quick reaction using fuller context. This explicit choice has precedence over
-late quick feedback. The connector replaces only its own recorded reaction after
-the new reaction succeeds; retries preserve the existing receipt. No directive
-means no additional reaction, even if Jev failed. Status or factual reactions
+The main Session receives the message in parallel and owns the complete response,
+including participation, reply placement, continuation of existing work and the
+final reaction choice. It chooses inline versus Thread before the first visible
+opening; research, installation guidance and multi-step work normally belong in
+a Thread. A Thread reply does not itself launch another worker. Existing replies,
+accepted handoffs and ongoing work must be reused, not answered or started twice.
+Disabling automatic work-Session routing does not disable choosing a Thread reply.
+
+During input preparation the connector reads its local durable outcome receipt
+once and supplies a bounded snapshot to the main Session. Applied, not-recorded
+and unavailable are distinct; not-recorded does not prove Jev chose silence, and
+the snapshot can become stale. This read never waits for Jev or delays admission
+on a feedback failure. The main Session retains a suitable existing reaction or
+chooses its own when feedback is missing or unsuitable. For a directed request
+it answers or work it undertakes, its instructions require a fitting final
+reaction; discussion needing no reaction can deliberately omit one. This is a
+Harness responsibility, not another classifier or an output-blocking gate.
+
+Prefix the final answer with
+`<private><feishu-reaction emoji="THANKS"/></private>` to express that choice.
+Confirming the same emoji reuses the Bot receipt without another provider create;
+a changed choice replaces only its own recorded outcome after the new reaction
+succeeds. The main choice takes precedence over late quick feedback, including
+when it keeps the same emoji. Retries preserve the receipt. There is no automatic
+emoji fallback for an omitted directive, no extra acknowledgement paragraph, and
+no second task start on Jev completion or failure. Status or factual reactions
 require evidence, and a reaction alone cannot replace a result after doing work.
 Missing credentials produce no reaction and never fall back to TypeSafe.
 The deadline remains 1,600 ms; verify real latency and Chinese examples before

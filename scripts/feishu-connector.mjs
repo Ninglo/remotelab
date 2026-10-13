@@ -1192,6 +1192,13 @@ async function submitRemoteLabRequest(runtime, summary, {
     payload.text = `[群参与状态：${participationStatus.mode}。状态由连接器执行并同步卡片；本条没有执行状态切换，不要宣称已切换。自然文字“先旁听”“暂停接收消息”“恢复参与”可切换。]\n` + payload.text;
     payload.sourceContext.feishuParticipationMode = participationStatus.mode;
   }
+  if (groupSettings.jevReactions) {
+    const outcomes = runtime.outcomeReactionStore ||= createFeishuOutcomeReactionStore(runtime.config.storageDir);
+    // Preparation may overlap Jev. A local receipt read must not await its job
+    // or retry admission when feedback is unavailable.
+    payload.sourceContext.feishuReactionReceipt = await outcomes.snapshot(effectiveSummary.messageId)
+      .catch(() => ({ status: 'unavailable', checkedAt: new Date().toISOString() }));
+  }
   payload.sourceContext = await freezeLargeSourceContext(session.id, payload.sourceContext);
   const handoff = { sessionId: session.id, payload, receipt: {
     externalTriggerId, attachmentCount: attachmentResolution.attachments.length,

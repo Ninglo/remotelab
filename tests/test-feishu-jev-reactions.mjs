@@ -22,7 +22,7 @@ try {
     sender: { senderType: 'user', openId: 'person' }, mentions: [],
     messageId: 'praise', messageText: '你这次做得真棒' };
   assert.equal(resolveFeishuGroupSettings(config, base).jevReactions, true);
-  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /optionally start your final answer/);
+  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /main Session owns the complete handling/);
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /precedence over a late quick reaction/);
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /Decide whether a useful text reply or task is needed/);
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /stay silent when no text contribution is needed/);

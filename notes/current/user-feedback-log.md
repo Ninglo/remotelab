@@ -1742,3 +1742,19 @@ A user wanted the original Automations page to show a connected read → process
 Automation readers need the actual group name, the condition for sending, the message format and its main content, and a direct way to turn sending on or off. Task execution, platform result relay and workflow-owned sends are different controls. Show those boundaries beside the switch and preserve the original recipient when it is disabled, so “off” does not imply that every independent script has stopped sending.
 
 The first delivery explanation still hid destinations behind disclosures and used system vocabulary. The correction puts concrete destinations under each task title in the default view and before long flow diagrams. Button labels say whether task results will be sent; technical routing terms stay out of those labels.
+
+### 2026-10-13 — Fast reactions need one accountable main Session
+
+A group request received a substantive answer on the main timeline without a
+Thread or a reaction. The fast model had insufficient support for a social emoji,
+and the main model emitted neither a Thread choice before its opening nor a final
+reaction. The user clarified the division: Jev only provides optional fast social
+feedback; the main Session always owns the complete handling, including reaction,
+reply location and continuation of existing work. Feedback failure must not start
+another task, and successful feedback must not cause a second acknowledgement.
+The connector now supplies a local outcome-receipt snapshot without waiting for
+Jev. The main model's instructions require a fitting reaction for directed
+requests it answers or work it undertakes, retain a fitting quick reaction through
+the existing idempotent receipt, and choose placement before opening. Transport
+regressions cover deduplication and late quick feedback; natural model choices
+still require observation in actual subsequent conversations.

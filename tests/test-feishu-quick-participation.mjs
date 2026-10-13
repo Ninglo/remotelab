@@ -22,11 +22,18 @@ try {
     assert.equal(parseFeishuReactionDirective(`<private><feishu-reaction emoji="${id}"/></private>`).emojiType, id);
   }
   let outcomeStore = createFeishuOutcomeReactionStore(home);
+  assert.equal((await outcomeStore.snapshot('missing')).status, 'not-recorded');
   const outcomeCreates = [], outcomeRemoves = [];
   const createOutcome = id => async () => { outcomeCreates.push(id); return { reactionId: id }; };
   await outcomeStore.apply('owned-message', 'OnIt', createOutcome('bot-working'));
   await outcomeStore.apply('owned-message', 'Get', createOutcome('bot-received'), { stage: 2 });
   outcomeStore = createFeishuOutcomeReactionStore(home);
+  const recoveredOutcome = await outcomeStore.snapshot('owned-message');
+  assert.equal(recoveredOutcome.status, 'applied');
+  assert.equal(recoveredOutcome.emojiType, 'Get');
+  assert.equal(recoveredOutcome.stage, 2);
+  assert(!('reactionId' in recoveredOutcome), 'the prompt snapshot exposes no provider receipt ID');
+
   await assert.rejects(outcomeStore.clean('owned-message', async () => { throw new Error('delete offline'); }), /offline/);
   await outcomeStore.clean('owned-message', async (messageId, id) => outcomeRemoves.push([messageId, id]));
   assert.deepEqual(outcomeRemoves, [['owned-message', 'bot-working']], 'delete only the recorded Bot outcome after replacement succeeds');
@@ -271,6 +278,15 @@ try {
   const lateQuick = await outcomeStore.apply('main-correction', 'WOW', createOutcome('must-not-revert-main'));
   assert.equal(lateQuick.superseded, true);
   assert(!outcomeCreates.includes('must-not-revert-main'));
+  // Keeping Jev's fitting reaction still establishes main-Session ownership,
+  // with no second create and no rollback from late quick feedback.
+  await outcomeStore.apply('main-keeps', 'THANKS', createOutcome('quick-thanks'));
+  await outcomeStore.apply('main-keeps', 'THANKS', createOutcome('duplicate-thanks'), { stage: 2 });
+  assert.equal((await outcomeStore.snapshot('main-keeps')).stage, 2);
+  const lateAfterKeep = await outcomeStore.apply('main-keeps', 'WOW', createOutcome('late-after-keep'));
+  assert.equal(lateAfterKeep.superseded, true);
+  assert(!outcomeCreates.includes('duplicate-thanks'));
+  assert(!outcomeCreates.includes('late-after-keep'));
   // Main Session can also supply the only reaction when the quick call failed.
   await outcomeStore.apply('main-fallback', mainReaction.emojiType, createOutcome('main-only'),
     { stage: mainReaction.reactionStage });

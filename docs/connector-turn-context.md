@@ -20,6 +20,16 @@ current user message can still proceed. Retries use the frozen source, not a new
 history fetch. Provider permissions, retention, deleted messages and unavailable
 attachments still constrain what can actually be retrieved.
 
+For Jev-enabled ambient group inputs, preparation also reads this Bot's local
+outcome-reaction receipt once. The main Harness sees a bounded snapshot of the
+applied emoji and whether it came from quick feedback or the main Session, or an
+explicit not-recorded/unavailable state. No provider reaction IDs are projected.
+The snapshot is receipt evidence at that time, can become stale, and never proves
+task acceptance, handoff or completion. Reading it does not wait for Jev; feedback
+failure cannot retry or block task admission. The main Session still owns reply
+placement, reaction choice and reuse of ongoing work. See [the role division and
+deduplication rules](feishu-bot-setup.md).
+
 An initial Feishu group input may have a message ID but no thread ID: the platform thread can be created only when the connector replies. Preserve that absence. Subsequent inputs carry their observed thread ID and use the existing binding mechanism.
 
 Source/runtime and Session instructions are turn-scoped, so a connector configuration change applies to an already established provider thread on its next turn. The larger RemoteLab startup context and continuation package remain fresh-provider-only. This reuses the existing Context UI and privacy rules: guest instances do not persist manager Context, and tools explicitly configured with `promptMode: bare-user` retain their prompt contract. Already prepared Runs and Inbox handoffs replay exactly as saved; historical message text is not rewritten. New inputs use the new format after the controller and their connector process load the change.

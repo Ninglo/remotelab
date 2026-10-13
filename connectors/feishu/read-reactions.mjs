@@ -54,6 +54,15 @@ export function createFeishuOutcomeReactionStore(root) {
     try { return await task; } finally { if (queues.get(key) === task) queues.delete(key); }
   };
   return {
+    // Read only the durable Bot receipt; never wait for the optional Jev job.
+    async snapshot(messageId) {
+      const receipt = messageId ? await records.get(keyFor(messageId)) : null;
+      return {
+        status: receipt?.reactionId ? 'applied' : 'not-recorded',
+        ...(receipt?.reactionId ? { emojiType: receipt.emojiType, stage: receipt.stage || 1 } : {}),
+        checkedAt: new Date().toISOString(),
+      };
+    },
     apply(messageId, emojiType, create, { stage = 1 } = {}) {
       return serial(messageId, async key => {
         const previous = await records.get(key);
