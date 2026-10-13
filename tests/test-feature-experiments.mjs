@@ -60,6 +60,10 @@ try {
   assert.equal(late.coverage.ongoing, true, 'later completion cannot certify earlier success');
   const missing = await collectCase(assignment, spec, { ...evidence, body: async () => { throw Error('lost'); } });
   assert.equal(missing.coverage.partial, true);
+  const large = await collectCase({ ...assignment, baseline: { ...assignment.baseline, query: 'x'.repeat(200000) } }, spec, evidence);
+  assert.equal(large.coverage.initialRequestOmitted, true);
+  assert.equal(large.coverage.partial, true);
+  assert.ok(JSON.stringify(large).length < 65000, 'even the first case has a bounded review packet');
   const batch = await prepareBatch(exp, Date.parse('2026-10-11T01:00:00Z'), evidence);
   assert.equal(batch.caseCount, 1);
   await publishRecord(join(exp.directory, 'batch-index', batch.id + '.json'), { id: batch.id });

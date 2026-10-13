@@ -10,6 +10,8 @@ const retainedTypes = new Set(['message', 'tool_use', 'tool_result', 'source_del
 export async function collectCase(assignment, spec, dependencies = {}) {
   const head = await (dependencies.head || getHistoryHeadSeq)(assignment.sessionId);
   const maxEvents = 1500, maxChars = 60000;
+  const initialRequestOmitted = assignment.baseline.query.length > 12000;
+  const initialRequest = initialRequestOmitted ? '[Initial request exceeds review budget; content omitted, do not infer task requirements.]' : assignment.baseline.query;
   const stored = await (dependencies.history || loadHistory)(assignment.sessionId, { fromSeq: 1, toSeq: Math.min(head, maxEvents), includeBodies: false });
   const end = timeMs(assignment.assignedAt) + spec.observationHours * 3600000;
   const window = stored.filter(e => Number.isFinite(timeMs(e.timestamp)) && timeMs(e.timestamp) <= end);
@@ -21,7 +23,7 @@ export async function collectCase(assignment, spec, dependencies = {}) {
     if (status) runs.push(status);
   }
   const events = [];
-  let chars = 0, omitted = 0, partial = head > maxEvents, unavailableBodies = 0;
+  let chars = 0, omitted = 0, partial = head > maxEvents || initialRequestOmitted, unavailableBodies = 0;
   for (const e of window) {
     if (!retainedTypes.has(e.type)) continue;
     let body = e.content || e.output || e.toolInput || '';
@@ -46,8 +48,8 @@ export async function collectCase(assignment, spec, dependencies = {}) {
     startMs: timeMs(assignment.assignedAt), endMs: end, top: 100 });
   const finishedInWindow = r => terminal.has(r.state) && Number.isFinite(timeMs(r.completedAt)) && timeMs(r.completedAt) <= end;
   return { caseId: fingerprint([spec.id, assignment.sessionId]).slice(0, 24),
-    initialRequest: assignment.baseline.query, events,
-    coverage: { partial, omitted, unavailableBodies, historyHead: head, scanned: stored.length,
+    initialRequest, events,
+    coverage: { partial, omitted, initialRequestOmitted, initialRequestChars: assignment.baseline.query.length, unavailableBodies, historyHead: head, scanned: stored.length,
       observationEnd: new Date(end).toISOString(), ongoing: runs.some(r => !finishedInWindow(r)),
       missingRunStates: runIds.length - runs.length,
       outcomeBoundary: 'Observed conversation/tool/receipt evidence only; artifact correctness requires actual readback evidence.' },
@@ -88,8 +90,10 @@ export async function prepareBatch(experiment, now = Date.now(), dependencies = 
       assignedStrategy: a.assignedStrategy, metrics: entry.metrics });
     delete entry.metrics;
     cases.push(entry);
-    labels.push({ caseId: entry.caseId, initialRequest: a.baseline.query,
-      attachmentCount: a.baseline.attachmentCount, initialSource: a.baseline.sourceContext,
+    labels.push({ caseId: entry.caseId, initialRequest: entry.initialRequest,
+      initialRequestOmitted: entry.coverage.initialRequestOmitted, initialRequestChars: a.baseline.query.length,
+      attachmentCount: a.baseline.attachmentCount, connector: a.baseline.connector,
+      conversationKind: a.baseline.sourceContext?.conversationKind || null,
       instruction: 'Use only this frozen initial input. No outcome, duration or retries are baseline labels.' });
   }
   await publishRecord(join(directory, 'mapping.json'), mapping);
