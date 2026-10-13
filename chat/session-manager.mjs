@@ -1504,6 +1504,10 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     pilotInputReplyContract: hasPilotInputReplyContract({ options }),
     messageRoutingPolicy: options.messageRoutingPolicy,
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
+    query: options.memoryQuery || '',
+    experimentInput: { baselineSourceContext: options.sourceContext, attachmentCount: options.preSavedAttachments?.length || 0,
+      automated: Boolean(options.internalOperation || options.automationTitle || options.scheduleId || options.triggerId
+        || options.workReference || options.recordUserMessage === false) },
     }),
   ));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',

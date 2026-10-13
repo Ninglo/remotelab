@@ -102,6 +102,25 @@ assert.match(ordinary, /Project memory pointers/);
 assert.match(ordinary, /"projectIds":\["example"\]/);
 assert.doesNotMatch(ordinary, /UNRELATED_|Work awareness|Necessary background|Deferred person context|Scoped collaboration memory|service-access/);
 assert.ok(ordinary.length < 2000, `pointer-only fixture grew to ${ordinary.length} characters`);
+// An explicitly enrolled real identity gets the reconstructed old policy;
+// the second arm and a different current author remain pointer-only.
+const { publishRecord, currentExperiment, assignSession } = await import('../chat/feature-experiment-store.mjs');
+const experimentRoot = path.join(CONFIG_DIR, 'feature-experiments');
+await publishRecord(path.join(experimentRoot, 'active.json'), { id: 'fixture', enabled: true });
+await publishRecord(path.join(experimentRoot, 'fixture', 'spec.json'), { schema: 1, id: 'fixture',
+  kind: 'context-background-v1', mode: 'ab', personIds: ['person_current'], since: '2026-01-01',
+  sampleRate: .25, observationHours: 24, maxNightlyCases: 5, rubricVersion: 'context-background-v1' });
+const experiment = await currentExperiment(experimentRoot);
+const original = { ...contextOptions, query: '文档评论回复', requestId: 'input_original' };
+const ownerSession = { id: 'fixture_old', created: '2026-10-13', initiatedByIdentityId: 'identity_current' };
+await assignSession(experiment, ownerSession, original, { verified: true, draw: () => .1 });
+const injected = await buildTurnContextHook(ownerSession, original);
+assert.match(injected, /UNRELATED_WORK_RESULT|UNRELATED_SKILL_BODY|UNRELATED_COMPANY_BODY/);
+const demandSession = { ...ownerSession, id: 'fixture_new' };
+await assignSession(experiment, demandSession, original, { verified: true, draw: () => .9 });
+assert.doesNotMatch(await buildTurnContextHook(demandSession, original), /UNRELATED_/);
+assert.doesNotMatch(await buildTurnContextHook(ownerSession, { ...original, personId: 'person_other', requestId: 'other' }), /UNRELATED_/);
+
 // Bad background data must not become new prompt diagnostics on ordinary work.
 await fs.writeFile(path.join(MEMORY_DIR, 'learning-policy.json'), '{broken');
 await fs.writeFile(path.join(MEMORY_DIR, 'reference', 'people', 'person_current.md'), '<!-- remotelab-learning:start -->broken');
