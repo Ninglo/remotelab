@@ -64,8 +64,9 @@ test('installed Codex restores current scoped RemoteLab rules before inference a
  const nextSettled=()=>new Promise(resolve=>{settledResolve=resolve;});
  const send=message=>child.stdin.write(JSON.stringify(message)+'\n');
  const request=(method,params)=>new Promise((resolve,reject)=>{const id=++rpcId;pending.set(id,{resolve,reject});send({id,method,params});});
+ const observed=[];
  const driver=createCodexDriver({send,options:{model:'gpt-5.4',disableApps:true,ruleRecoverySessionId:'fixture-session'},cwd:home,
-  onEvent:event=>{},onSettled:result=>{settledResolve?.(result);settledResolve=null;},onError:error=>{stderr.push(error.message);}});
+  onEvent:event=>observed.push(event),onSettled:result=>{settledResolve?.(result);settledResolve=null;},onError:error=>{stderr.push(error.message);}});
  child=spawn(binary,driver.args,{cwd:home,env});child.stderr.on('data',x=>stderr.push(String(x)));
  createInterface({input:child.stdout}).on('line',line=>{let msg;try{msg=JSON.parse(line)}catch{return;}
   const own=pending.get(msg.id);if(own){pending.delete(msg.id);msg.error?own.reject(new Error(JSON.stringify(msg.error))):own.resolve(msg.result);return;}
@@ -99,6 +100,13 @@ test('installed Codex restores current scoped RemoteLab rules before inference a
   assert.equal(stopped.status,'failed','recovery failure must not look like successful task completion');
   assert.match(stopped.error,/RemoteLab rule recovery failed/);
   assert.equal(bodies.length,beforeFailure,'unreadable rules stop continuation before another inference');
+  const { usageEvents } = await import('../chat/usage-events.mjs');
+  const ledger = await usageEvents.query({ contextOnly: true, sessionId: 'fixture-session' });
+  const events = ledger.events.filter(x => x.event === 'context_rule');
+  assert(events.some(x => x.state === 'prepared' && x.fingerprint === b.receipt.fingerprint));
+  assert(events.some(x => x.state === 'failed' && x.errorCode === 'ENOENT'));
+  assert(observed.filter(x => x.type === 'remotelab.context_compacted').length >= 3, 'native compactions have explicit evidence');
+  assert(!JSON.stringify(events).includes('BOB_CURRENT'), 'telemetry must not copy rule bodies');
   console.log('verified installed native compaction recovery across '+bodies.length+' loopback inference requests');
  } catch(error) { console.error(error.message.slice(0,700), stderr.slice(-3));throw error; } finally {driver.close();const closed=child.exitCode===null&&child.signalCode===null?once(child,'close'):Promise.resolve();child.kill('SIGKILL');await closed;server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(home,{recursive:true,force:true});}
 });

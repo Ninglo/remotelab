@@ -1,7 +1,8 @@
 import { createReadStream } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
-import { createHash } from 'node:crypto';
+import { observeContextRule } from './context-rule-monitoring.mjs';
+import { randomUUID, createHash } from 'node:crypto';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_DIR } from '../lib/config.mjs';
@@ -48,11 +49,18 @@ export async function recoverCodexRules({ transcript_path: transcript }, session
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const scope = { sessionId: process.argv[2], runId: process.env.REMOTELAB_RUN_ID };
+  const attemptId = randomUUID();
+  const record = detail => observeContextRule(scope, { kind: 'recovery', attemptId, timestamp: Date.now(), ...detail });
+  await record({ state: 'started' });
   try {
     let input = ''; for await (const chunk of process.stdin) input += chunk;
     const context = await recoverCodexRules(JSON.parse(input), process.argv[2]);
+    await record({ state: context ? 'prepared' : 'skipped', sizeBytes: Buffer.byteLength(context || ''),
+      fingerprint: context?.match(/Recovery snapshot: [^\n]*\/([a-f0-9]{64})\.json\./)?.[1] });
     process.stdout.write(JSON.stringify(context ? { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } } : {}));
   } catch (error) {
+    await record({ state: 'failed', errorCode: typeof error.code === 'string' ? error.code : 'recovery_error' });
     // Native SessionStart runs before the next inference, including mid-turn
     // compaction. An unreadable snapshot stops continuation instead of guessing.
     process.stdout.write(JSON.stringify({ continue: false, stopReason: 'RemoteLab rule recovery failed: ' + error.message }));

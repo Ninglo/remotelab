@@ -632,3 +632,5 @@ Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#
 任务没有外部 `resultDelivery` 只说明平台不自动转发其 final，不能断言其固定脚本不投递。核对原任务和脚本配置后，可在实例 `automationReportLocations[taskId]` 保存 `label`、`evidence`、`verifiedAt`，用于展示流程内投递位置；这不是新路由，不替代脚本配置。未核验则明确显示“流程内投递待核实”。明确禁止公共群转发的个人或静默任务列入 `alertDelivery.ignoreAutomationIds`，即使失败或需要人工帮助，也不由统一告警出口外发；原补救及原流程的回报不受影响。不得仅凭缺少绑定就覆盖私聊、禁发或仅本地的决定。
 
 累计 Session token 总数由 chat/session-token-totals.mjs 共享 60 秒缓存；监控 HTTP 入口和飞书已关联话题读取同一账本结果，累计用量与当前上下文占用仍分别显示。
+
+Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-context.md#规则与压缩记录)，区分原生接收、压缩完成和恢复内容生成／失败。该记录不能证明模型理解或遵守规则，也不覆盖原生系统指令、AGENTS.md 和 Skill。

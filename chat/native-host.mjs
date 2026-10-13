@@ -1,3 +1,4 @@
+import { observeAcceptedRules, observeContextRule } from './context-rule-monitoring.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { createNativeInputServer, recordInitialNativeInputReceipt } from './native-input-transport.mjs';
@@ -44,6 +45,8 @@ function createLfLineReader(stream, onLine) {
 // The detached sidecar owns the bidirectional native process. The controller
 // can disappear without closing stdin or losing the Harness's active tools.
 export async function runNativeHost({ directory, command, runtimeFamily, options, prompt, cwd, env, onStdout, onStderr, onProcess, onControl, isCancelled = async () => false, startPreflight = null, onPreflightResult = async () => {}, questionOptions = {} }) {
+  const ruleScope = { sessionId: env?.REMOTELAB_SESSION_ID, runId: env?.REMOTELAB_RUN_ID };
+  const observeReceipt = (input, receipt) => observeAcceptedRules(input, receipt, ruleScope);
   const createDriver = factories[runtimeFamily];
   if (!createDriver) throw new Error(`Unsupported native Harness ${runtimeFamily}`);
   const preflight = startPreflight?.prompt
@@ -89,6 +92,8 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   };
   const outputUpdates = new Map();
   const emit = event => {
+    if (event.type === 'remotelab.context_compacted') queueWrite(() => observeContextRule(ruleScope, {
+      kind: 'compaction', state: 'compacted', timestamp: Date.now(), objectId: event.itemId }));
     if (event.type === 'item.updated' && event.native_stream && event.item?.type === 'command_execution') {
       // While disk writes are busy, one pending preview per command is enough.
       // Lifecycle events below form ordering barriers, so a completion cannot
@@ -162,7 +167,10 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
         nativeResult = null;
         const receipt = await driver.submit({ id: options.requestId, text: prompt });
         acceptingExternalInputs = receipt?.accepted === true;
-        queueWrite(() => recordInitialNativeInputReceipt(directory, { id: options.requestId, text: prompt }, receipt));
+        queueWrite(async () => {
+          await recordInitialNativeInputReceipt(directory, { id: options.requestId, text: prompt }, receipt);
+          await observeReceipt({ id: options.requestId, text: prompt }, receipt);
+        });
       }).catch((error) => {
         fatalError ||= error instanceof Error ? error : new Error(String(error?.message || error));
         nativeResult = { status: 'failed', error: fatalError.message };
@@ -213,6 +221,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
           if (answer) return answer;
           const previousQuestions = input.supersedeQuestions && !input.referenceOnly ? await questions.snapshot() : [];
           const receipt = await driver.submit(input);
+          await observeReceipt(input, receipt);
           if (receipt?.accepted === true && previousQuestions.length) await questions.supersede(previousQuestions, input.id);
           // A definite rejection must not erase an already settled turn. A
           // successful input needs another completion unless its driver emitted
@@ -229,7 +238,10 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     started = true;
     if (!preflight) initial.then((receipt) => {
       acceptingExternalInputs = receipt?.accepted === true;
-      queueWrite(() => recordInitialNativeInputReceipt(directory, { id: options.requestId, text: prompt }, receipt));
+      queueWrite(async () => {
+        await recordInitialNativeInputReceipt(directory, { id: options.requestId, text: prompt }, receipt);
+        await observeReceipt({ id: options.requestId, text: prompt }, receipt);
+      });
     }).catch(() => {});
     initial.catch(error => { fatalError ||= error; stop(); });
     const exit = await closed;

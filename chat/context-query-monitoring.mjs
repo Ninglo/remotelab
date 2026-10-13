@@ -1,3 +1,4 @@
+import { summarizeContextRules } from './context-rule-monitoring.mjs';
 import { randomUUID } from 'node:crypto';
 import { usageEvents, usageKey } from './usage-events.mjs';
 
@@ -31,7 +32,7 @@ export const observeContextQuery = createContextQueryObserver();
 export function summarizeContextQueries(value, limit = 100) {
   const attempts = new Map();
   for (const event of value.events || []) {
-    if (!event.attemptId) continue;
+    if (event.event !== 'context_query' || !event.attemptId) continue;
     const previous = attempts.get(event.attemptId);
     if (!previous || event.state !== 'started') attempts.set(event.attemptId, event);
   }
@@ -39,7 +40,7 @@ export function summarizeContextQueries(value, limit = 100) {
   const count = state => rows.filter(row => row.state === state).length;
   const repeats = new Map();
   for (const row of rows) if (row.queryHash) repeats.set(`${row.kind}:${row.queryHash}`, (repeats.get(`${row.kind}:${row.queryHash}`) || 0) + 1);
-  return { ...value, events: undefined,
+  return { ...value, events: undefined, rules: summarizeContextRules(value, limit),
     summary: { attempts: rows.length, succeeded: count('succeeded'), partial: count('partial'), failed: count('failed'),
       unfinished: count('started'), repeated: rows.filter(row => repeats.get(`${row.kind}:${row.queryHash}`) > 1).length },
     records: rows.slice(0, limit), hasMore: rows.length > limit,
