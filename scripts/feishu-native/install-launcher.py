@@ -50,4 +50,4 @@ if icon_name and icon.is_file():
 subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(app)], check=True)
 subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(app)], check=True)
 print(json.dumps({'launcher': str(app),
-                  'revision': deployment['revision']}, ensure_ascii=False))
+                  'revision': deployment['revision'], 'launcherVersion': 2}, ensure_ascii=False))

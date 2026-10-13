@@ -151,4 +151,4 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 
 The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for aligned start/process/write/notify stages, explicit input reuse, visible scope notes and collapsible Session mechanics.
 
-Mac 原生飞书增强的独立安装、本人连接、消息区顶部横排入口和保留数据升级见 [试装入口](../scripts/feishu-native/INSTALL.zh-CN.md)；r11 按原生标题与摘要两行渲染，并处理虚拟列表复用；本人 Mac 的实际显示须单独验收。群状态、用量与消息成果的数据边界见 [话题同步](feishu-web-topics.md)。
+Mac 原生飞书增强的独立安装、本人连接、消息区顶部横排入口和保留数据升级见 [试装入口](../scripts/feishu-native/INSTALL.zh-CN.md)；r11 按原生标题与摘要两行渲染，并处理虚拟列表复用；本人 Mac 的实际显示须单独验收。启动器修复版 2 随同一命令更新，避免代理和端口等待导致误判，确认本机服务就绪后再开窗口。群状态、用量与消息成果的数据边界见 [话题同步](feishu-web-topics.md)。
