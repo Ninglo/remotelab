@@ -3047,6 +3047,22 @@ export async function updateSessionWorkflowPriority(id, workflowPriority) {
   return updateSessionWorkflowClassification(id, { workflowPriority });
 }
 
+// A connector acknowledges only the result actually observed, never a later
+// result that arrived while its read receipt was in flight.
+export async function acknowledgeSessionResult(id, resultAt) {
+  const observed = Date.parse(resultAt);
+  if (!Number.isFinite(observed)) throw Error('Invalid result timestamp');
+  const result = await mutateSessionMeta(id, session => {
+    if (!(observed <= new Date(session.lastAssistantMessageAt || '').getTime())) throw Error('Result not observed');
+    if (observed <= (new Date(session.lastReviewedAt || '').getTime() || 0)) return false;
+    session.lastReviewedAt = new Date(observed).toISOString();
+    return true;
+  });
+  if (!result.meta) throw Error('Session not found');
+  if (result.changed) broadcastSessionInvalidation(id);
+  return { reviewed: true, resultAt: new Date(observed).toISOString() };
+}
+
 export async function updateSessionLastReviewedAt(id, lastReviewedAt) {
   const nextLastReviewedAt = normalizeSessionReviewedAt(lastReviewedAt || '');
   const result = await mutateSessionMeta(id, (session) => {

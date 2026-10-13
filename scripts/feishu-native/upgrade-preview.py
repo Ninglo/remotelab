@@ -53,7 +53,7 @@ def upgrade(root, package, home, node):
     for target in [staged/'Contents/Frameworks/Lark Framework.framework', staged]:
         subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', '--preserve-metadata=entitlements', str(target)], check=True, capture_output=True)
     subprocess.run(['/usr/bin/codesign', '--verify', '--strict', '--deep', str(staged)], check=True, capture_output=True)
-    names = ['native_asset_bridge.cjs', 'live-source.cjs', 'topic-source.cjs', 'observe_native_app.py',
+    names = ['native_asset_bridge.cjs', 'live-source.cjs', 'topic-source.cjs','native-connection.cjs', 'observe_native_app.py',
              'native-asset-runtime.js', 'native-v8-deployment.json', 'install-receipt.json', 'node-path']
     present = {name for name in names if (root/name).is_file()}
     for name in present:
@@ -79,7 +79,7 @@ def upgrade(root, package, home, node):
     app.rename(old_app)
     try:
         staged.rename(app)
-        for name in ['native_asset_bridge.cjs', 'live-source.cjs', 'topic-source.cjs']:
+        for name in ['native_asset_bridge.cjs', 'live-source.cjs', 'topic-source.cjs','native-connection.cjs']:
             shutil.copy2(package/'v8-build'/name, root/name)
         shutil.copy2(package/'observe_native_app.py', root/'observe_native_app.py')
         (root/'native-asset-runtime.js').write_bytes(runtime)

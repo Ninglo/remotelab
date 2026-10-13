@@ -4,7 +4,7 @@ import { watch } from 'node:fs';
 import vm from 'node:vm';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { loadSessionsMeta } from './session-meta-store.mjs';
-import { getSession } from './session-manager.mjs';
+import { getSession, acknowledgeSessionResult } from './session-manager.mjs';
 import { onSessionInvalidation } from './ws-clients.mjs';
 import { loadAuthDocument } from '../lib/auth-config.mjs';
 import { buildGroupBoards, personNames } from './feishu-web-group-boards.mjs';
@@ -19,9 +19,10 @@ const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
 const eligible = s => s?.conversation?.connector === 'feishu' && s.conversation.sourceRouteId === 'bot-2'
   && s.conversation.target?.chatType === 'group' && (s.conversation.target.threadId || s.conversation.target.replyInThread || s.conversation.target.conversationKind === 'thread');
 export function topicProjection(s, webThreadId) {
+  const resultTime = new Date(s.lastAssistantMessageAt || '').getTime();
   const row = model.getSessionRowStatusInfo(s), status = row?.key === 'unread' ? 'review' : row?.key || 'idle';
   return { sessionId: s.id, webThreadId, chatId: s.conversation?.target?.chatId, rootId: s.conversation?.target?.rootId || s.conversation?.target?.messageId, ...topicTextView(s, { state: status }),
-    status, label: row?.label || '', archived: !!s.archived, sourceUpdatedAt: s.updatedAt || '',
+    resultAt: Number.isFinite(resultTime) ? new Date(resultTime).toISOString() : '', status, label: row?.label || '', archived: !!s.archived, sourceUpdatedAt: s.updatedAt || '',
     sessionUrl: '/?session=' + s.id + '&tab=sessions' };
 }
 export function topicIds(value) {
@@ -43,11 +44,20 @@ export function createFeishuTopicSource(deps = {}) {
   const details=deps.details||topicDetails;
   async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true) {
     const config = await bindings(), wanted = new Set(ids), visibleGroups = new Set(groupIds);
+    const metadata = await sessions();
+    const parents = new Map();
+    for (const s of metadata) if (eligible(s)) {
+      const id = config.bindings[s.conversation.target.rootId || s.conversation.target.messageId];
+      if (wanted.has(id)) parents.set(id, parents.has(id) ? null : s);
+    }
+    for (const s of parents.values()) if (s) {
+      const group = config.groups?.[s.conversation.target.chatId]; if (group) visibleGroups.add(String(group));
+    }
     const pairs = (config.pairs || []).filter(p => [p.workChatId, p.discussionChatId].some(id => visibleGroups.has(String(config.groups?.[id]))));
     const boardChats = new Set(pairs.flatMap(p => [p.workChatId, p.discussionChatId]));
     const relevant = s => eligible(s) && (wanted.has(config.bindings[s.conversation.target.rootId || s.conversation.target.messageId]) || boardChats.has(s.conversation.target.chatId));
     const cache = changedId && previous ? new Map(previous[sourceRecords] || []) : new Map();
-    const records = changedId && previous ? [{ id: changedId }] : (await sessions()).filter(relevant);
+    const records = changedId && previous ? [{ id: changedId }] : metadata.filter(relevant);
     for (let i = 0; i < records.length; i += 4) await Promise.all(records.slice(i, i + 4).map(async record => {
       const s = await session(record.id); if (relevant(s)) cache.set(s.id, s); else cache.delete(record.id);
     }));
@@ -86,6 +96,12 @@ export function createFeishuTopicSource(deps = {}) {
     refresh('');
     return () => { alive = false; clearInterval(detailsTimer); off(); watcher?.close(); };
   }
-  return { snapshot, subscribe };
+  async function review(webThreadId, resultAt) {
+    const data = await snapshot([webThreadId], '', null, [], false);
+    const entry = data.entries.find(e => e.webThreadId === webThreadId);
+    if (!entry || !resultAt || !Number.isFinite(Date.parse(resultAt)) || Date.parse(resultAt) > Date.parse(entry.resultAt || '')) throw Object.assign(Error('已读结果与话题不匹配。'), { status: 409 });
+    return (deps.acknowledge || acknowledgeSessionResult)(entry.sessionId, resultAt);
+  }
+  return { snapshot, subscribe, review };
 }
 export const feishuTopicSource = createFeishuTopicSource();

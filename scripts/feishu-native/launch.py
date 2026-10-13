@@ -1,40 +1,147 @@
-"""Launch only the independent test copy and its private display bridge."""
-import pathlib,json,subprocess,urllib.request,fcntl,socket,sys,os
-# Serialize double clicks without changing or stopping an existing App.
-lock=None
-trial_home=pathlib.Path(os.environ.get('RLFE_INSTALL_HOME',str(pathlib.Path.home())))
-r=trial_home/'Library/Application Support/RemoteLab/Feishu Native Trial'
-app=r/'Feishu Native Trial.app';binary=app/'Contents/MacOS/Feishu'
-lock=(r/'launcher.lock').open('a')
-fcntl.flock(lock,fcntl.LOCK_EX)
-def focus(pid):
- # Only activate an already running exact-path App. A cold start uses one
- # direct launch; a second LaunchServices launch during startup drops flags.
- subprocess.run(['/usr/bin/open','-a',str(app)],check=True)
-deployment=json.loads((r/'native-v8-deployment.json').read_text())
-revision=deployment['revision']
-rows=subprocess.check_output(['/bin/ps','-axo','pid=,comm='],text=True).splitlines()
-pids=[int(x.strip().split(None,1)[0]) for x in rows if x.strip().split(None,1)[1]==str(binary)]
-cap=(r/'native-asset-capability').read_text().strip()
-def status():
- req=urllib.request.Request('http://127.0.0.1:19342/status',headers={'Authorization':'Bearer '+cap})
- return json.load(urllib.request.urlopen(req,timeout=2))
-try:connected=status()
-except Exception:connected=None
-if pids:
- focus(pids[0])
- if connected:print('已打开飞书增强版，第 '+str(connected.get('revision',revision))+' 版。')
- else:print('试验窗口仍在运行，但显示服务没有连接。为保留当前输入，本次未重启；退出试验副本后再打开此入口。')
- raise SystemExit(0)
-if connected:raise SystemExit('上次显示服务尚未退出；未启动第二份服务。')
-with socket.socket() as probe:
- try:probe.bind(('127.0.0.1',19342))
- except OSError:raise SystemExit('19342 端口被其他程序占用；未启动第二份服务。')
-with (r/'native-asset-bridge.log').open('ab') as log:
- bridge=subprocess.Popen([(r/'node-path').read_text().strip() if (r/'node-path').exists() else '/usr/local/bin/node',str(r/'native_asset_bridge.cjs')],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True,env={**os.environ,'RLFE_TRIAL_ROOT':str(r)})
-with (r/'startup.log').open('ab') as log:
- proc=subprocess.Popen([str(binary),'--user-data-dir='+str(trial_home/'Library/Application Support/RlfeTrial')],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
-(r/'started.json').write_text(json.dumps({'pid':proc.pid,'app':str(app),'profile':str(trial_home/'Library/Application Support/RlfeTrial'),'revision':revision,'bridgePid':bridge.pid}))
-with (r/'native-app-observer.log').open('ab') as log:
- subprocess.Popen([sys.executable,str(r/'observe_native_app.py'),str(proc.pid),str(bridge.pid)],stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
-print('已启动飞书增强版，第 '+str(revision)+' 版。')
+"""Launch the independent App only after its own loopback helper is ready."""
+import fcntl
+import json
+import os
+import pathlib
+import select
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+# Never send the private helper capability through a system/environment proxy.
+local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+
+
+STATUS_URL = 'http://127.0.0.1:19342/status'
+
+
+def status(cap):
+    req = urllib.request.Request(STATUS_URL,
+                                 headers={'Authorization': 'Bearer '+cap})
+    try:
+        with local_http.open(req, timeout=0.5) as response:
+            data = json.load(response)
+        if isinstance(data, dict) and type(data.get('pid')) is int and data['pid'] > 1:
+            return data
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def own_helper(pid, root, node):
+    if type(pid) is not int or pid <= 1:
+        return False
+    result = subprocess.run(['/bin/ps', '-ww', '-p', str(pid), '-o', 'uid=,command='],
+                            capture_output=True, text=True)
+    row = result.stdout.strip().split(None, 1)
+    return (len(row) == 2 and row[0] == str(os.getuid()) and
+            row[1] == node+' '+str(root/'native_asset_bridge.cjs'))
+
+
+def stop_helper(pid, root, node):
+    """Only terminate a verified helper of this installation, never a port owner."""
+    queue = select.kqueue()
+    try:
+        queue.control([select.kevent(pid, filter=select.KQ_FILTER_PROC,
+                      flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                      fflags=select.KQ_NOTE_EXIT)], 0, 0)
+        if not own_helper(pid, root, node):
+            raise SystemExit('旧服务身份已变化，未停止任何程序。请重新打开增强版。')
+        os.kill(pid, signal.SIGTERM)
+        if not queue.control([], 1, 5):
+            raise SystemExit('旧增强服务未退出，已保留当前数据。请把这条提示发回。')
+    except ProcessLookupError:
+        pass
+    finally:
+        queue.close()
+
+
+def await_ready(bridge, cap):
+    # Bounded startup observation: stop on process exit or authenticated readiness.
+    deadline = time.monotonic()+8
+    delay = 0.25
+    while True:
+        if bridge.poll() is not None:
+            return None
+        connected = status(cap)
+        if connected and connected['pid'] == bridge.pid:
+            return connected
+        remaining = deadline-time.monotonic()
+        if remaining <= 0:
+            return None
+        try:
+            bridge.wait(timeout=min(delay, remaining))
+            return None
+        except subprocess.TimeoutExpired:
+            delay = min(delay*2, 2)
+
+
+def main():
+    home = pathlib.Path(os.environ.get('RLFE_INSTALL_HOME', str(pathlib.Path.home())))
+    root = home/'Library/Application Support/RemoteLab/Feishu Native Trial'
+    app = root/'Feishu Native Trial.app'
+    binary = app/'Contents/MacOS/Feishu'
+    with (root/'launcher.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        revision = json.loads((root/'native-v8-deployment.json').read_text())['revision']
+        node = (root/'node-path').read_text().strip() if (root/'node-path').exists() else '/usr/local/bin/node'
+        rows = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True).splitlines()
+        pids = [int(row[0]) for line in rows if len(row := line.strip().split(None, 1)) == 2 and row[1] == str(binary)]
+        cap = (root/'native-asset-capability').read_text().strip()
+        connected = status(cap)
+        if pids and connected:
+            subprocess.run(['/usr/bin/open', '-a', str(app)], check=True)
+            print('已打开飞书增强版，第 '+str(connected.get('revision', revision))+' 版。')
+            return
+        # An old observer may still own a lingering helper. Start a fresh helper
+        # for a cold App, rather than inheriting that observer's lifetime.
+        candidates = [connected.get('pid')] if connected else []
+        for name, field in [('native-asset-status.json', 'pid'), ('started.json', 'bridgePid')]:
+            try:
+                candidates.append(json.loads((root/name).read_text()).get(field))
+            except (OSError, ValueError):
+                pass
+        for pid in set(candidates):
+            if own_helper(pid, root, node):
+                stop_helper(pid, root, node)
+        # Do not probe with bind(): on macOS TIME_WAIT can reject the probe even
+        # when no listener exists. Let Node bind with its normal SO_REUSEADDR.
+        with (root/'native-asset-bridge.log').open('ab') as log:
+            bridge = subprocess.Popen([node, str(root/'native_asset_bridge.cjs')],
+                stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True,
+                env={**os.environ, 'RLFE_TRIAL_ROOT': str(root)})
+        if not await_ready(bridge, cap):
+            if bridge.poll() is None:
+                bridge.terminate()
+                try:
+                    bridge.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
+            raise SystemExit('本机增强服务未就绪，未启动新飞书窗口。账号和草稿已保留。\n'
+                             '请反馈此提示；服务日志：'+str(root/'native-asset-bridge.log'))
+        with (root/'startup.log').open('ab') as log:
+            if pids:
+                app_pid = pids[0]
+                subprocess.run(['/usr/bin/open', '-a', str(app)], check=True)
+            else:
+                proc = subprocess.Popen([str(binary), '--user-data-dir='+str(home/'Library/Application Support/RlfeTrial')],
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+                app_pid = proc.pid
+        (root/'started.json').write_text(json.dumps({'pid': app_pid, 'app': str(app),
+            'profile': str(home/'Library/Application Support/RlfeTrial'), 'revision': revision, 'bridgePid': bridge.pid}))
+        with (root/'native-app-observer.log').open('ab') as log:
+            subprocess.Popen([sys.executable, str(root/'observe_native_app.py'), str(app_pid), str(bridge.pid)],
+                stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+        print('本机服务已连接，已'+('恢复' if pids else '启动')+'飞书增强版，第 '+str(revision)+' 版。')
+
+
+if __name__ == '__main__':
+    main()

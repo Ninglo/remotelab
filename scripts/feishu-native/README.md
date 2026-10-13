@@ -1,4 +1,4 @@
-# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 10)
+# Feishu Native Trial / Web 1.2 + Mac Live parity (revision 13)
 
 Ask the maintaining agent: “Update the existing isolated Feishu Native Trial
 with the verified Web 1.2.0 component bundle and the existing Mac Web Live capabilities. Restore the same-account read-only status source, including group boards and usage; never replace it with a fresh personal-login requirement. Keep the official App and profile
@@ -105,8 +105,7 @@ activating the ordinary extension grant-only stream. Its navigation/settings
 checks did not establish live state parity. Revision 9 keeps the Live guard and
 restores the original source instead of requiring a new status login.
 
-The same four navigation components use their existing compact layout in a 64 px rail **inside the message-list renderer**, validated at 448/768/1280 px viewport widths. The outer official native navigation remains intact; this is not
-pixel-identical placement. Index/thinking run in that renderer. Native-window
+The same four navigation actions and an explicit Settings button occupy a labelled experimental section inside the existing message-group sidebar. The message root is not shifted; the official outer navigation remains intact. A settings-only fallback remains accessible when the group sidebar is folded. Widths 280/320/448/768/1280 px are checked. `topic-view.js` targets the native title and digest rows separately: the native title uses a three-column grid, so injecting the summary next to the title truncates both the name and status. A recycled row restores native text before paint; unchanged projections do not rewrite its DOM. Unknown structures retain the native text. Browser component acceptance does not establish actual personal Mac visual acceptance. Index/thinking run in that renderer. Native-window
 layout, meetings, notifications, global shortcuts and distribution updates are
 separate from Web component verification. Voice input was not in Web 1.2.0 and
 is not added by this adapter.
@@ -135,7 +134,7 @@ Current capability audit:
 | Group board | Original paired-group data + native header adapter | Actual Claude Tag board mounted; group totals are existing source records |
 | Usage/context/quota | Original Live component restored | Exact native Session identity; retain the user's display switch |
 | Message-contained HTML artifacts | Original Live component included | Only verified delivery anchors; absence of a real artifact is not a display pass |
-| Four navigation entries and latest report | Original components and source quick links | Native rail remains inside the message-list renderer |
+| Four navigation entries and latest report | Original components and source quick links | Experimental section inside the existing message-group sidebar |
 | Personal Index/thinking and reply/model settings | Original components + personal grant broker | Real content/read/write still needs the requester's login |
 | Sorting, reading, pet and preference export/import | Original components retained | Native selector/model prerequisites still apply; no blanket daily-use claim |
 | Desktop launcher | Stable shortcut to existing trial, activates running window | Private-runtime launcher; no code hot update |
@@ -154,3 +153,11 @@ signature, and launch with the original trial launcher. Preserve
 The updater uses graceful App exit and snapshots the isolated profile on the Mac when a restored editor draft is present. It never clears or sends drafts. Profile snapshots contain private login data and must stay in the private local trial directory.
 
 Standalone server setup: the existing feishu-web-topics.json binding/group configuration may include an absolute artifactsFile path to the existing schema-1 HTML registry. The adapter reuses that registry, checks source hashes and exact Session/chat/root identity, and exports only verified visible-topic artifacts. Usage comes from the shared ledger and usage events (metadata only, bounded initial backscan); quota exports percentages/timestamps only. State updates retain normal invalidations; telemetry refreshes at the existing 60-second cadence. Tests: tests/test-feishu-web-topic-details.mjs.
+
+Launcher repair 2 uses proxy-free, redirect-free authenticated loopback checks. It removes the bind-only port probe (TIME_WAIT is not a listener), waits for the exact new helper PID before launching the App, and recovers only a same-user, exact-command helper from this installation. A live App with a healthy helper is focused; a disconnected App can reconnect without losing its input. Repeating the installer refreshes the launcher even when the r11 runtime hash is unchanged.
+
+Revision 12 mounts the experimental actions and an explicit settings button in `.a11y_feed_filter_list` (8.1.17 message groups), with the legacy `.feed-left-menu-list` fallback. It does not alter the separate outer native rail or shift the message root. A settings-only fallback remains reachable when groups are folded. Topic subscriptions retain up to 200 recently visible IDs/groups, keep one active and one pending connection, and replace the active stream only after a verified snapshot. Account/grant changes and authorization failures clear retained data; real outages show unsynced. All returned Session status labels, including idle, remain visible.
+
+Revision 13 keeps the settings/version footer below four individually marked experimental entries, with the shared UI font token across shadow roots. Topic grants may explicitly opt into `topicReadAck`; old grants remain read-only. The native renderer waits for the currently opened topic, committed zero-unread preview, message timestamp at least as new as the observed result, and matching active chat before acknowledging exactly `resultAt`. Server-side acknowledgements only advance the existing RemoteLab review timestamp; concurrent newer results remain unread. Mapping is verified independently and unknown rows are never guessed from titles.
+
+Revision 14 replaces native per-feature popups with a single same-tab confirmation and fixed loopback fragment callback. All three existing, account-scoped grants are issued in one durable transaction; the helper validates every grant and common Person before storing any. Valid complete bundles are reused; rejected/expired grants require confirmation. Grants are never included in server request URLs. Pending native connection attempts reuse the current confirmation. Verified topic mappings also supply their parent group to board selection when native header group IDs are absent; unknown/private/unmapped topics do not widen projection. User-machine board visibility remains separate from fixture acceptance.
