@@ -70,6 +70,11 @@ try{
  await page.evaluate(()=>fixture.emit('topics',{sourceConnected:false,entries:[{webThreadId:'1000000000000000011',name:'真实工作标题',summary:'核对状态',status:'running'}]}));
  await page.waitForFunction(()=>document.querySelector('.rlfe-feed-status')?.textContent==='未同步');assert.equal(await page.locator('.rlfe-feed-status').textContent(),'未同步');assert.equal(await page.locator('[contenteditable=true]').textContent(),'尚未发送的草稿');
 
+ await page.evaluate(()=>{const groups=document.querySelector('.a11y_feed_filter_list');groups.style.width='0px';groups.style.overflow='hidden';});
+ await page.waitForFunction(()=>!document.getElementById('rlfe-native-settings-fallback').hidden);
+ await page.locator('#rlfe-native-settings-fallback').click();assert.equal(await page.evaluate(()=>__RLFE_SETTINGS_STATUS__().open),true);await page.locator('#rlfe-host #close').click();
+ await page.evaluate(()=>{const groups=document.querySelector('.a11y_feed_filter_list');groups.style.width='';groups.style.overflow='';});
+ await page.waitForFunction(()=>document.getElementById('rlfe-native-settings-fallback').hidden);
  await page.evaluate(()=>{fixture.groups=document.querySelector('.a11y_feed_filter_list');fixture.groups.remove();});
  await page.waitForFunction(()=>!document.getElementById('rlfe-native-settings-fallback').hidden);
  await page.locator('#rlfe-native-settings-fallback').click();assert.equal(await page.evaluate(()=>__RLFE_SETTINGS_STATUS__().open),true);
