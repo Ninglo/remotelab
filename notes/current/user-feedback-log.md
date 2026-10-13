@@ -1740,3 +1740,5 @@ A user wanted the original Automations page to show a connected read → process
 ### 2026-10-13 — Explain automated delivery before offering controls
 
 Automation readers need the actual group name, the condition for sending, the message format and its main content, and a direct way to turn sending on or off. Task execution, platform result relay and workflow-owned sends are different controls. Show those boundaries beside the switch and preserve the original recipient when it is disabled, so “off” does not imply that every independent script has stopped sending.
+
+The first delivery explanation still hid destinations behind disclosures and used system vocabulary. The correction puts concrete destinations under each task title in the default view and before long flow diagrams. Button labels say whether task results will be sent; technical routing terms stay out of those labels.
