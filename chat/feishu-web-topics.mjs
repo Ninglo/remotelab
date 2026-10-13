@@ -10,6 +10,7 @@ import { loadAuthDocument } from '../lib/auth-config.mjs';
 import { buildGroupBoards, personNames } from './feishu-web-group-boards.mjs';
 import { topicTextView } from './feishu-web-topic-text.mjs';
 import { topicDetails } from './feishu-web-topic-details.mjs';
+import { nativeTopicBindings } from './feishu-native-topic-ids.mjs';
 
 const context = vm.createContext({});
 vm.runInContext(await readFile(new URL('../static/chat/session-state-model.js', import.meta.url), 'utf8'), context);
@@ -36,7 +37,8 @@ async function bindingsConfig() {
   if ((await stat(value.bindingsFile)).size > 1024 * 1024) throw Error('话题对应记录过大。');
   const read = async file => { if (typeof file !== 'string' || !file.startsWith('/') || (await stat(file)).size > 1024 * 1024) throw Error('群对应记录无法读取。'); return JSON.parse(await readFile(file, 'utf8')); };
   const groups = value.groupsFile ? await read(value.groupsFile) : {}, boards = value.boardPairsFile ? await read(value.boardPairsFile) : { pairs: [] };
-  return { artifactsFile: value.artifactsFile, file: value.bindingsFile, watchFiles: [value.bindingsFile, value.groupsFile, value.boardPairsFile, value.artifactsFile].filter(Boolean), bindings: JSON.parse(await readFile(value.bindingsFile, 'utf8')), groups,
+  const nativeNamespaces = value.nativeNamespacesFile ? await read(value.nativeNamespacesFile) : null;
+  return { nativeNamespaces, artifactsFile: value.artifactsFile, file: value.bindingsFile, watchFiles: [value.bindingsFile, value.groupsFile, value.boardPairsFile, value.artifactsFile, value.nativeNamespacesFile].filter(Boolean), bindings: JSON.parse(await readFile(value.bindingsFile, 'utf8')), groups,
     pairs: (boards.pairs || []).filter(p => groups[p.workChatId] && groups[p.discussionChatId]) };
 }
 export function createFeishuTopicSource(deps = {}) {
@@ -45,6 +47,7 @@ export function createFeishuTopicSource(deps = {}) {
   async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true) {
     const config = await bindings(), wanted = new Set(ids), visibleGroups = new Set(groupIds);
     const metadata = await sessions();
+    config.bindings = await nativeTopicBindings(metadata, ids, config, deps.configDir || CONFIG_DIR);
     const parents = new Map();
     for (const s of metadata) if (eligible(s)) {
       const id = config.bindings[s.conversation.target.rootId || s.conversation.target.messageId];
@@ -87,7 +90,7 @@ export function createFeishuTopicSource(deps = {}) {
       });
     };
     const off = onSessionInvalidation(hint => {
-      if (hint.type === 'session_invalidated' && (!last || last[sourceRecords]?.has(hint.sessionId))) refresh(hint.sessionId);
+      if (hint.type === 'session_invalidated') refresh(last?.[sourceRecords]?.has(hint.sessionId) ? hint.sessionId : '');
       else if (hint.type === 'sessions_invalidated') refresh('');
     });
     let watcher;
