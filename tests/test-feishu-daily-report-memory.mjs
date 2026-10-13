@@ -76,9 +76,8 @@ try {
   const verdict = await classifyFeishuQuickParticipation(question, { key: 'fixture', projectMemory: memory,
     fetchImpl: async (_url, req) => {
       const sent = JSON.parse(req.body);
-      assert.equal(sent.state, undefined);
-      assert.equal(sent.input, question);
-      assert.deepEqual(sent.questions.map(item => item.name), ['reaction']);
+      assert.deepEqual(sent.state, { discussion: question });
+      assert.deepEqual(Object.keys(sent.questions), ['reaction']);
       return { ok: true, json: async () => ({ answers: { binaryAnswer: { choice: 'yes', probabilities: { yes: .99 } } } }) };
     } });
   assert.equal(verdict.emojiType, null);

@@ -536,7 +536,7 @@ group Session. The main Harness receives it without waiting for the fast reactio
 persistence or the reaction provider. It decides whether to reply, where the
 reply belongs and whether authorized work needs a separate Session.
 
-OpenAI Decisions (`gpt-6-luna`, `POST /v1/decisions`) receives a bounded recent Session window (at most 20 messages and 5,000
+TypeSafe Jev (`jev-1.13.0`, `POST /v1/systemone`) receives a bounded recent Session window (at most 20 messages and 5,000
 characters) and a single social-reaction question. It cannot classify
 participation, invitations, mode changes, work placement or handoff. It cannot
 answer factual questions with Yes/No or claim work is underway or complete.
@@ -546,13 +546,21 @@ No project report is loaded into this call; `dailyReportMemory` is retained as
 compatible configuration but no longer feeds the reaction model. See the
 [retired report input](feishu-daily-report-memory.md).
 
-The existing `jevReactions` name is retained as the per-group opt-in; it now
-selects OpenAI Decisions, not TypeSafe. No group is opted in by this provider
-change. Groups without this flag, legacy `quickReactions`, topic replies, and
-explicit participation controls keep their existing paths. Supply an OpenAI
-API key through the connector service's `OPENAI_API_KEY`, or `OPENAI_KEY_FILE`
-(default: `<config-dir>/openai.env`, containing `OPENAI_API_KEY=...`). This
-requires API credentials; a Codex ChatGPT login is not read or repurposed.
+`jevReactions` enables this Jev fast path only in explicitly selected groups.
+Groups without this flag, legacy `quickReactions`, topic replies, and explicit
+participation controls keep their existing paths. Supply the TypeSafe key through
+`TYPESAFE_API_KEY`, or `TYPESAFE_KEY_FILE` (default: `<config-dir>/typesafe.env`,
+containing `TYPESAFE_API_KEY=...`). No OpenAI API credential or Codex login is used
+for this fast call. The timeout is 1,600 ms; failures do not call a slower model.
+
+The main Session receives the message in parallel and owns substantive replies.
+It may optionally prefix its final answer with
+`<private><feishu-reaction emoji="THANKS"/></private>` to supplement or correct
+the quick reaction using fuller context. This explicit choice has precedence over
+late quick feedback. The connector replaces only its own recorded reaction after
+the new reaction succeeds; retries preserve the existing receipt. No directive
+means no additional reaction, even if Jev failed. Status or factual reactions
+require evidence, and a reaction alone cannot replace a result after doing work.
 Missing credentials produce no reaction and never fall back to TypeSafe.
 The deadline remains 1,600 ms; verify real latency and Chinese examples before
 claiming the provider is usable on an instance. The request has one named

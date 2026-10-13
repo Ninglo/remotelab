@@ -261,6 +261,21 @@ try {
   const plan = { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'pilot', messageId: 'om_source' } };
   assert.deepEqual(buildReplyDeliveries(plan, textPayload).map(part => part.kind), ['reaction', 'content']);
   assert.deepEqual(buildReplyDeliveries(plan, reactionPayload).map(part => part.kind), ['reaction']);
+  const mainReaction = buildReplyDeliveries(plan, reactionPayload)[0];
+  assert.equal(mainReaction.reactionStage, 2);
+  await outcomeStore.apply('main-correction', 'WOW', createOutcome('quick-wow'));
+  await outcomeStore.apply('main-correction', mainReaction.emojiType, createOutcome('main-thanks'),
+    { stage: mainReaction.reactionStage });
+  await outcomeStore.clean('main-correction', async (messageId, id) => outcomeRemoves.push([messageId, id]));
+  assert(outcomeRemoves.some(([messageId, id]) => messageId === 'main-correction' && id === 'quick-wow'));
+  const lateQuick = await outcomeStore.apply('main-correction', 'WOW', createOutcome('must-not-revert-main'));
+  assert.equal(lateQuick.superseded, true);
+  assert(!outcomeCreates.includes('must-not-revert-main'));
+  // Main Session can also supply the only reaction when the quick call failed.
+  await outcomeStore.apply('main-fallback', mainReaction.emojiType, createOutcome('main-only'),
+    { stage: mainReaction.reactionStage });
+  assert.deepEqual(buildReplyDeliveries(plan, { text: '' }), [], 'silence must not invent a fallback emoji');
+
   assert.deepEqual(buildReplyDeliveries(plan, { text: '' }, { requireFeishuOutcome: true })
     .map(part => [part.kind, part.emojiType]), [['reaction', 'EatingFood']],
   'an empty model result still leaves one final reaction');

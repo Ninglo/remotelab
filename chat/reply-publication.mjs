@@ -229,7 +229,10 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
         : parseProgressMessage(reactionDirective.text).text)
       : noTextDecision ? '' : buildPayloadText(displayEvents),
   };
-  if (reactionDirective?.emojiType) payload.reaction = reactionDirective.emojiType;
+  if (reactionDirective?.emojiType) {
+    payload.reaction = reactionDirective.emojiType;
+    payload.reactionStage = 2; // Main Session judgment supersedes asynchronous quick feedback.
+  }
   if (reactionDirective?.invalid) payload.invalidReactionDirective = true;
 
   if (includeSessionEntry && (payload.text || payload.attachments.length)

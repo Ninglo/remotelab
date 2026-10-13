@@ -34,8 +34,9 @@ const QUICK_REACTION_SESSION_PROMPT = [
 ].join('\n');
 
 const JEV_REACTION_SESSION_PROMPT = [
+  `Available optional reactions: ${FEISHU_REACTION_CATALOG_TEXT}.`,
   'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, without treating a social reaction as a factual answer or task acceptance.',
-  'OpenAI Decisions only selects an optional social reaction asynchronously. Its speed, failure or reaction choice cannot control your input, reply, work placement or participation mode. Its Get reaction only acknowledges receipt; it does not accept work or prove handoff. A successful routing handoff produces its own Get receipt on each original message. The connector handles reactions; do not emit a feishu-reaction directive or choose another reaction. If you start work, give a visible result or an honest handoff.',
+  'Jev only selects an optional social reaction asynchronously. Its speed, failure or reaction choice cannot control your input, reply, work placement or participation mode. Its Get reaction only acknowledges receipt; it does not accept work or prove handoff. A successful routing handoff produces its own Get receipt on each original message. You may supplement or correct that quick reaction when the full context supports it: optionally start your final answer with exactly `<private><feishu-reaction emoji="EMOJI"/></private>`. The connector applies your choice to the current source message with precedence over a late quick reaction. Omit the directive when no reaction adds value; there is no mandatory fallback emoji. Do not call a CLI for this. Status, completion and Yes/No reactions require actual evidence. If you start work, give a visible result or an honest handoff.',
 ].join('\n');
 
 const GROUP_TIMELINE_SESSION_PROMPT = [
