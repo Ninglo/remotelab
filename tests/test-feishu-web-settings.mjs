@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 import test, { after } from 'node:test';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -130,4 +131,16 @@ test('native confirmation atomically connects all scoped capabilities without ch
  assert(connection.reusable(values,p.account));assert.equal(connection.reusable(values,'1000000000000000099'),null);
  for(const bad of [{...callback,state:'wrong'},{...callback,grants:{...result.grants,topics:{...result.grants.topics,topicReadAck:false}}},{...callback,grants:{...result.grants,workspace:{...result.grants.workspace,person:{id:'person_bob'}}}}])assert.throws(()=>connection.validateBundle(bad,p));
  values[connection.key('topics',p.account)].expiresAt=0;assert.equal(connection.reusable(values,p.account),null);
+});
+
+test('native connection page uses one same-tab round trip and fixed local callback',async()=>{
+ const base='http://127.0.0.1:19342',state='b'.repeat(32),returnKey='c'.repeat(32);
+ const url='/page/feishu-web-settings/connect?bundle=native&origin='+encodeURIComponent(base)+'&account=1000000000000000079&state='+state+'&returnKey='+returnKey;
+ let html='',status;
+ await handleFeishuWebSettings({req:{url,method:'GET',headers:{}},res:{setHeader(){},end(v){html=v;}},pathname:url.split('?')[0],authSession:{...actor('alice'),personName:'Alice'},nonce:'test',writeJson:(_,s)=>status=s});
+ assert(html.includes('确认并连接全部功能'));assert(html.includes('location.replace('));assert(!html.includes('window.open('));assert(!html.includes('window.opener'));assert(html.includes("'/pair/return?key='"));
+ const path='/api/feishu-web-settings/native-grant',body=JSON.stringify({origin:base,nativeAccount:'1000000000000000079',confirm:true});let result;
+ const request=async headers=>{const req=Object.assign(Readable.from([body]),{url:path,method:'POST',headers});await handleFeishuWebSettings({req,res:{setHeader(){}},pathname:path,authSession:actor('alice'),writeJson:(_,s,v)=>{status=s;result=v;}});};
+ await request({origin:'https://evil.test',host:'fixture.test'});assert.equal(status,403);
+ await request({origin:'https://fixture.test',host:'fixture.test'});assert.equal(status,201,JSON.stringify(result));assert.equal(Object.keys(result.grants).length,3);
 });
