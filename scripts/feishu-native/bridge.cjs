@@ -27,7 +27,7 @@ function nativeProjection(account){
  return {...(legacy?source.projection(account,ids):personalSource.projection(account)),transport:legacy?'existing-mac-live':'personal-grant',nativeContext:pages.find(s=>s.kind==='chat')?.nativeContext||null};
 }
 function publishTopics(){for(const account of new Set([...streams.values()].map(s=>s.account)))emit(account,'topics',nativeProjection(account));}
-function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:14,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
+function record(){fs.writeFileSync(path.join(root,'native-asset-status.json'),JSON.stringify({pid:process.pid,revision:15,webVersion:'1.2.0',pages:[...states.values()],nativeOuterNavCovered:false},null,2),{mode:0o600});}
 function safePrefs(v,account){const fields=['enabled','usageEnabled','theme','font','bodyFont','readingEnabled','size','line','width','density','layout','expand','aliases','petEnabled','petKind','petMotion','petSize','petX','petY','sortMode','pins'];if(!v||Array.isArray(v)||Object.keys(v).some(k=>!fields.includes(k))||JSON.stringify(v).length>131072)fail('显示设置无效');const old=own(account).prefs;const ids=new Set([...states.values()].filter(s=>s.account===account).flatMap(s=>s.ids||[]));if(Object.entries(v.aliases||{}).some(([k,n])=>!/^:\d{10,30}$/.test(k)||typeof n!=='string'||n.length>60||!ids.has(k.slice(1))&&!Object.hasOwn(old.aliases||{},k)))fail('只允许修改当前账号的话题别名');return v;}
 const routes={
  'rlfe:message-settings-request':{prefix:'feishu-web-settings',pattern:/^fwset_[\w-]{43}$/,ops:{read:['GET','replies'],save:['POST','replies'],runtime:['GET','runtime'],model:['POST','runtime'],disconnect:['DELETE','connection']}},
@@ -66,7 +66,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
   if(req.headers.authorization!=='Bearer '+token){reply(403,{error:'Invalid helper capability'});return;}
   const account=req.headers['x-native-account'],id=req.headers['x-native-client'];
-  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:14,pages:[...states.values()]});return;}
+  if(u.pathname==='/status'&&req.method==='GET'){reply(200,{pid:process.pid,revision:15,pages:[...states.values()]});return;}
   if(u.pathname==='/verify'&&req.method==='POST'){for(const s of streams.values())s.res.write(JSON.stringify({type:'verify'})+'\n');reply(200,{requested:true});return;}
   if(!clientOK(id)||!accountOK(account))fail('请先确认当前本地飞书账号');
   if(u.pathname==='/events'&&req.method==='GET'){res.writeHead(200,{'Content-Type':'application/x-ndjson'});res.flushHeaders();streams.get(id)?.res.end();streams.set(id,{res,account});res.write(JSON.stringify({type:'settings',value:own(account).prefs})+'\n');res.write(JSON.stringify({type:'topics',value:nativeProjection(account)})+'\n');res.on('close',()=>{if(streams.get(id)?.res===res){streams.delete(id);states.delete(id);subscriptions.get(id)?.abort();if(![...streams.values()].some(s=>s.account===account))personalSource.remove(account);record();}});return;}
