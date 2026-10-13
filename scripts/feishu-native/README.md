@@ -105,7 +105,7 @@ activating the ordinary extension grant-only stream. Its navigation/settings
 checks did not establish live state parity. Revision 9 keeps the Live guard and
 restores the original source instead of requiring a new status login.
 
-The same four navigation actions share a 44 px horizontal toolbar at the top of the message-list renderer, alongside Settings. They reserve height, not list width; the official outer navigation remains intact. Widths 280/320/448/768/1280 px are checked. `topic-view.js` targets the native title and digest rows separately: the native title uses a three-column grid, so injecting the summary next to the title truncates both the name and status. A recycled row restores native text before paint; unchanged projections do not rewrite its DOM. Unknown structures retain the native text. Browser component acceptance does not establish actual personal Mac visual acceptance. Index/thinking run in that renderer. Native-window
+The same four navigation actions and an explicit Settings button occupy a labelled experimental section inside the existing message-group sidebar. The message root is not shifted; the official outer navigation remains intact. A settings-only fallback remains accessible when the group sidebar is folded. Widths 280/320/448/768/1280 px are checked. `topic-view.js` targets the native title and digest rows separately: the native title uses a three-column grid, so injecting the summary next to the title truncates both the name and status. A recycled row restores native text before paint; unchanged projections do not rewrite its DOM. Unknown structures retain the native text. Browser component acceptance does not establish actual personal Mac visual acceptance. Index/thinking run in that renderer. Native-window
 layout, meetings, notifications, global shortcuts and distribution updates are
 separate from Web component verification. Voice input was not in Web 1.2.0 and
 is not added by this adapter.
@@ -134,7 +134,7 @@ Current capability audit:
 | Group board | Original paired-group data + native header adapter | Actual Claude Tag board mounted; group totals are existing source records |
 | Usage/context/quota | Original Live component restored | Exact native Session identity; retain the user's display switch |
 | Message-contained HTML artifacts | Original Live component included | Only verified delivery anchors; absence of a real artifact is not a display pass |
-| Four navigation entries and latest report | Original components and source quick links | Horizontal toolbar inside the message-list renderer |
+| Four navigation entries and latest report | Original components and source quick links | Experimental section inside the existing message-group sidebar |
 | Personal Index/thinking and reply/model settings | Original components + personal grant broker | Real content/read/write still needs the requester's login |
 | Sorting, reading, pet and preference export/import | Original components retained | Native selector/model prerequisites still apply; no blanket daily-use claim |
 | Desktop launcher | Stable shortcut to existing trial, activates running window | Private-runtime launcher; no code hot update |
