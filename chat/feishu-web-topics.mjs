@@ -44,11 +44,15 @@ export function createFeishuTopicSource(deps = {}) {
   const details=deps.details||topicDetails;
   async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true) {
     const config = await bindings(), wanted = new Set(ids), visibleGroups = new Set(groupIds);
+    const metadata = await sessions();
+    for (const s of metadata) if (eligible(s) && wanted.has(config.bindings[s.conversation.target.rootId || s.conversation.target.messageId])) {
+      const group = config.groups?.[s.conversation.target.chatId]; if (group) visibleGroups.add(String(group));
+    }
     const pairs = (config.pairs || []).filter(p => [p.workChatId, p.discussionChatId].some(id => visibleGroups.has(String(config.groups?.[id]))));
     const boardChats = new Set(pairs.flatMap(p => [p.workChatId, p.discussionChatId]));
     const relevant = s => eligible(s) && (wanted.has(config.bindings[s.conversation.target.rootId || s.conversation.target.messageId]) || boardChats.has(s.conversation.target.chatId));
     const cache = changedId && previous ? new Map(previous[sourceRecords] || []) : new Map();
-    const records = changedId && previous ? [{ id: changedId }] : (await sessions()).filter(relevant);
+    const records = changedId && previous ? [{ id: changedId }] : metadata.filter(relevant);
     for (let i = 0; i < records.length; i += 4) await Promise.all(records.slice(i, i + 4).map(async record => {
       const s = await session(record.id); if (relevant(s)) cache.set(s.id, s); else cache.delete(record.id);
     }));

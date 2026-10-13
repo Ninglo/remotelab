@@ -35,9 +35,9 @@
   if(nativeMain){
     toolbar=document.createElement('section');toolbar.id='rlfe-native-sidebar';toolbar.className='appNavbar';
     toolbar.setAttribute('aria-label','测试中的功能');
-    toolbar.innerHTML='<div class="appNavbar-navbarMenu"></div><footer><button id="rlfe-native-settings" type="button"><span>设置</span><span class="version">v13</span></button></footer>';
+    toolbar.innerHTML='<div class="appNavbar-navbarMenu"></div><footer><button id="rlfe-native-settings" type="button"><span>设置</span><span class="version">v14</span></button></footer>';
     toolbar.querySelector('button').onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();
-    fallback=document.createElement('button');fallback.id='rlfe-native-settings-fallback';fallback.type='button';fallback.textContent='设置 · v13';
+    fallback=document.createElement('button');fallback.id='rlfe-native-settings-fallback';fallback.type='button';fallback.textContent='设置 · v14';
     fallback.title='展开消息分组侧栏可查看测试中的功能';fallback.onclick=()=>globalThis.__RLFE_OPEN_SETTINGS__?.();document.body.append(fallback);
     layout=document.createElement('style');layout.id='rlfe-native-layout-style';
     layout.textContent=`
@@ -112,7 +112,7 @@
   observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['data-feed-id']});
   const onSettings=e=>{globalThis.__RLFE_SHARED_PROJECT__?.(projection);if(nativeMain)globalThis.__RLFE_SHARED_PREVIEW__?.(JSON.stringify(e.detail));};
   window.addEventListener('rlfe:settings',onSettings);
-  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:13,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
+  globalThis.__RLFE_SHARED_STATUS__=()=>({revision:14,main:nativeMain,settings:globalThis.__RLFE_SETTINGS_STATUS__?.(),pet:globalThis.__RLFE_PET_STATUS__?.(),reading:globalThis.__RLFE_READING_STATUS__?.(),sort:globalThis.__RLFE_SORT_STATUS__?.(),sync:{sourceConnected:!!projection.sourceConnected,matchedRows:document.querySelectorAll('.rlfe-feed-headline').length},resourceNav:globalThis.__RLFE_RESOURCE_NAV_STATUS__?.(),nativeOuterNavCovered:false});
   globalThis.__RLFE_SHARED_CLEANUP__=()=>{observer.disconnect();layoutObserver?.disconnect();resizeObserver?.disconnect();toolbar?.remove();fallback?.remove();layout?.remove();root?.removeAttribute('data-rlfe-native-groups');window.removeEventListener('rlfe:settings',onSettings);style.remove();for(const [el,value] of added)value===null?el.removeAttribute('data-thread-id'):el.setAttribute('data-thread-id',value);for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('增强已关闭。'));}globalThis.__RLFE_TOPICS_CLEANUP__?.();globalThis.__RLFE_CLEANUP__?.();for(const key of ['__RLFE_SHARED_STATUS__','__RLFE_SHARED_PROJECT__','__RLFE_SHARED_RECEIVE__','__RLFE_SHARED_ACK__','__RLFE_SHARED_CLEANUP__','__RLFE_NATIVE_WEB_TOPIC_ROWS__','__RLFE_NATIVE_WEB_TOPIC_NAME__','__RLFE_NATIVE_CHAT_THREAD__','__RLFE_NATIVE_ACTIVE_SESSION__','__RLFE_NATIVE_CONTEXT__'])delete globalThis[key];};
   visible();
 })();

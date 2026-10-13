@@ -56,6 +56,22 @@ export async function connectFeishuWebSettings(input, actor, capability = 'setti
   });
   return { token, expiresAt, topicReadAck, person: { id: verified.personId, name: verified.personName }, origin, nativeAccount };
 }
+// One explicit native confirmation issues the three existing scoped grants atomically.
+export async function connectFeishuNative(input, actor) {
+  if (!input || Object.keys(input).some(k => !['origin', 'nativeAccount', 'confirm'].includes(k)) || input.confirm !== true || input.origin !== 'http://127.0.0.1:19342') fail('请确认连接本人的飞书增强功能。');
+  const verified = await personActor(actor), origin = feishuOrigin(input.origin), nativeAccount = account(input.nativeAccount);
+  const expiresAt = Math.min(Date.now() + 30 * 86400000, actor.connectionExpiresAt || Infinity);
+  const grants = Object.fromEntries([['settings','fwset'],['workspace','fwspace'],['topics','fwtops']].map(([capability,prefix]) => [capability, {
+    token: prefix + '_' + randomBytes(32).toString('base64url'), expiresAt, origin, nativeAccount,
+    topicReadAck: capability === 'topics', person: { id: verified.personId, name: verified.personName },
+  }]));
+  await mutateConnections(data => {
+    data.connections = data.connections.filter(e => !(e.personId === verified.personId && e.origin === origin && e.nativeAccount === nativeAccount));
+    for (const [capability, grant] of Object.entries(grants)) data.connections.push({ ...verified, origin, nativeAccount, capability, topicDetails: capability === 'topics', topicReadAck: capability === 'topics', tokenHash: hash(grant.token), expiresAt });
+    if (data.connections.filter(e => e.personId === verified.personId).length > 20) fail('个人连接过多，请先断开旧连接。');
+  });
+  return { grants, origin, nativeAccount };
+}
 export async function authorizeFeishuWebSettings(token, origin, nativeAccount, capability = 'settings') {
   const pattern = capability === 'topics' ? /^fwtops_[a-zA-Z0-9_-]{43}$/ : capability === 'workspace' ? /^fwspace_[a-zA-Z0-9_-]{43}$/ : /^fwset_[a-zA-Z0-9_-]{43}$/;
   if (typeof token !== 'string' || !pattern.test(token)) fail('请先连接本人的账号。', 401);

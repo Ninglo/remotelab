@@ -14,7 +14,7 @@ for name in ['install-preview.py','archive_patch.py','launch.py','install-launch
              'observe_native_app.py','upgrade-preview.py','INSTALL.zh-CN.md']:
     shutil.copy2(source/name, folder/name)
 (folder/'v8-build').mkdir()
-for name in ['runtime-template.js','native_asset_bridge.cjs','live-source.cjs','topic-source.cjs','source-manifest.json']:
+for name in ['runtime-template.js','native_asset_bridge.cjs','live-source.cjs','topic-source.cjs','native-connection.cjs','source-manifest.json']:
     shutil.copy2(build/name, folder/'v8-build'/name)
 # A standalone release carries no developer-specific dependency path. A future
 # explicitly paired source must provide its own ws dependency; no binding ships.

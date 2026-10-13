@@ -87,6 +87,8 @@ test('group boards reuse paired-group source and exclude private, unrelated and 
     bindings: async () => ({ bindings: { 'root-a': 'native-a', 'root-b': 'native-b' }, groups: { work: 'native-work', discussion: 'native-discussion' },
       pairs: [{ id: 'pair', name: 'Shared', workChatId: 'work', discussionChatId: 'discussion', workChatName: 'Work', discussionChatName: 'Discussion' }] }) });
   const data = await api.snapshot(['native-a'], '', null, ['native-work']);
+  assert.equal((await api.snapshot(['native-a'], '', null, [])).boards.length, 1, 'verified topic supplies its parent group even without native header group ID');
+  assert.equal((await api.snapshot(['unknown-topic'], '', null, [])).boards.length, 0);
   assert.equal(data.entries.length, 1); assert.equal(data.boards.length, 1); assert.equal(data.boards[0].topics.length, 2);
   assert.equal(data.boards[0].topics.find(t => t.sessionId === a.id).state, 'running');
   assert.equal(data.boards[0].topics.find(t => t.sessionId === b.id).state, 'done');
