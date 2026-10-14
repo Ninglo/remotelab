@@ -39,7 +39,7 @@ turns on another saved subscription; balancing alone does not enable failover.
 - With automatic switching enabled, an exhausted, cooling, removed, signed-out
   or changed-identity binding selects another eligible saved subscription. The
   replacement binding is durable. Unknown quota alone never moves a healthy
-  Session, and positive balances below 10% remain usable when necessary.
+  Session. Fresh remaining quota at or below 10% may migrate before the next turn when no execution owns that Session and a fresh backup has more than 10%. Positive low balances remain usable if no such backup exists.
 - If a provider stops with confirmed subscription exhaustion or HTTP 429, the
   same Run automatically acquires a different eligible subscription and resumes
   its saved native thread with a continuation instruction. The model, reasoning

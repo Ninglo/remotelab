@@ -824,6 +824,8 @@
             "chat/response-timing.mjs",
             "chat/session-diagnostics.mjs",
             "lib/session-diagnosis.mjs",
+            "lib/metric-diagnosis.mjs",
+            "chat/monitoring-trust.mjs",
             "scripts/session-diagnose.mjs",
             "chat/codex-session-metrics.mjs",
             "chat/usage-ledger.mjs",

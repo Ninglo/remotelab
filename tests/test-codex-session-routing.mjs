@@ -100,6 +100,16 @@ try {
   const excluded = (await pool.read()).accounts.map(account => account.id);
   await assert.rejects(pool.acquireForRun({ sessionId: 'new-0', excludedAccountIds: excluded }), /暂无可用/);
   assert.equal((await readSessionAccount(pool.root, 'new-0')).accountId, recovered.id, 'failed selection preserves binding');
+  await Promise.all(slots.map(slot=>slot.lease.release()));slots.length=0;
+  await pool.mutate(data=>{for(const a of data.accounts){a.usage=usage(90);delete a.cooldownUntil;delete a.blockedUntil;}});
+  const reserve=await acquire('reserve-session');await reserve.lease.release();
+  await pool.mutate(data=>{data.accounts.find(a=>a.id===reserve.id).usage=usage(8);});
+  const heldReserve=await pool.registerRun(await pool.account(reserve.id),await pool.read(),{isCancelled:()=>false,runId:'held',sessionId:'reserve-session'});
+  const pinned=await acquire('reserve-session');assert.equal(pinned.id,reserve.id);await pinned.lease.release();await heldReserve.lease.release();
+  await assert.rejects(pool.acquireForRun({sessionId:'reserve-session',isCancelled:()=>true}),{code:'PROVIDER_RUNTIME_QUEUE_CANCELLED'});
+  assert.equal((await readSessionAccount(pool.root,'reserve-session')).accountId,reserve.id);
+  const proactive=await acquire('reserve-session');assert.notEqual(proactive.id,reserve.id);await proactive.lease.release();
+  assert.equal((await pool.read()).switchEvents.at(-1).reason,'reserve');
   console.log('Codex Session routing: balanced reservations, duplicate identities, sticky turns, legacy migration, restart, disable, cooldown, exhaustion and cancellation passed');
 } finally {
   await Promise.all(slots.map(slot => slot.lease.release()));

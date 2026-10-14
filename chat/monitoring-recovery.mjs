@@ -25,7 +25,7 @@ export function projectRecovery(state) {
     reason: trim(item.reason).slice(0, 240), summary: ['pending', 'admitting', 'running', 'waiting'].includes(item.status) ? '' : trim(item.summary).slice(0, 1200),
     error: trim(item.error).slice(0, 240),
     plan: recoveryPlan(item.plan), humanAction: recoveryHumanAction(item.humanAction), riskStage: item.riskStage || 0,
-    updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
+    createdAt: item.createdAt, updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
 }
 
 function healthy(snapshot, item) {

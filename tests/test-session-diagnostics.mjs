@@ -71,5 +71,17 @@ try {
  await deliverSessionDiagnosis({...item,delivery:receipt},notification,null,async(c,m,p,b)=>{calls.push(m);return m==='GET'?{items:[{message_id:'om_one',chat_id:'oc_private',sender:{id:'cli_app'},msg_type:'interactive'}]}:{};});
  assert.deepEqual(calls,['GET','PATCH']);
  await assert.rejects(()=>deliverSessionDiagnosis({...item,delivery:receipt},notification,null,async()=>({items:[{message_id:'om_one',chat_id:'oc_wrong',sender:{id:'cli_app'},msg_type:'interactive'}]})),/ORIGINAL_PRIVATE_MESSAGE_UNAVAILABLE/);
+ const metricNow=now;
+ const metricRows=Array.from({length:90},(_,i)=>({runId:'mb'+i,sessionId:'ms'+i%6,responseAt:metricNow-(2+i%10)*86400000,state:'completed',model:'m',tool:'codex',metrics:{injectionChars:10000}}));
+ metricRows.push(...Array.from({length:12},(_,i)=>({runId:'mn'+i,sessionId:'ms'+i%6,responseAt:metricNow-i*1000,state:'completed',model:'m',tool:'codex',metrics:{injectionChars:16000}})));
+ const metricFile=join(root,'metrics.json');let metricSends=0;
+ const metricArgs={...args,stateFile:metricFile,config:{enabled:true,metricPolicy:{enabled:true},notification},readSessions:async()=>({sessions:[],coverage:{}}),readMetrics:async()=>({samples:metricRows,coverage:{truncated:false}}),deliver:async item=>{metricSends++;assert(item.trigger&&item.action&&item.verification);return {messageId:'om_metric',chatId:'oc_dm',recipientKey:item.delivery.recipientKey};}};
+ await processSessionDiagnostics({...metricArgs,dryRun:true});assert.equal(await readRecord(metricFile),null);
+ await processSessionDiagnostics({...metricArgs,readMetrics:async()=>({samples:metricRows,coverage:{truncated:true}})});assert.equal(metricSends,0,'partial high-cost samples cannot stand for the population');
+ await processSessionDiagnostics({...metricArgs,now:now+6*60000});assert.equal(metricSends,1);
+ await processSessionDiagnostics({...metricArgs,now:now+12*60000});assert.equal(metricSends,1);
+ const good=Array.from({length:12},(_,i)=>({...metricRows.at(-1),runId:'mg'+i,sessionId:'ms'+i%6,responseAt:now+13*60000+i,metrics:{injectionChars:10500}}));
+ await processSessionDiagnostics({...metricArgs,now:now+18*60000,readMetrics:async()=>({samples:good,coverage:{truncated:false}})});assert.equal(metricSends,2);
+ assert.equal(Object.values((await readRecord(metricFile)).incidents)[0].status,'resolved');
  console.log('session diagnostics: fresh independent samples, thresholds, shared stages, privacy, bounded admission, recovery evidence, dry-run, uncertain receipts and private-only send/edit passed');
 } finally {await rm(root,{recursive:true,force:true});}

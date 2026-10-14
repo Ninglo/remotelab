@@ -25,14 +25,16 @@ opening the page never starts it. No new timer or model call is created.
 `node scripts/session-diagnose.mjs --dry-run` previews candidates without state
 writes, sends or recovery admission.
 
-Initial admission compares the same Session/model/Harness: three newest distinct
+The original stage detector compares the same Session/model/Harness: three newest distinct
 foreground Runs against 10–20 prior samples from the last seven days. Preparation
 (including queue time) or launch must reach both 15 seconds and three times the
 baseline median in all three Runs within 30 minutes. Three Sessions with a latest
 qualifying sample within ten minutes also trigger a shared stage investigation.
 Missing timestamps, background work, archived Sessions and duplicate Run IDs do
-not qualify. Execution duration, context and cumulative input remain display-only
-clues until measurements can separate normal work and waiting from failure.
+not qualify. Without the optional metric-review extension below, execution duration, context
+and cumulative input remain display-only clues. With it enabled, context and
+end-to-end response/delivery changes trigger evidence-qualified human review,
+not automatic claims of failure.
 
 The fixed diagnostic records stage, sample evidence, simultaneous service/disk/
 account risks and links to existing recovery records. It distinguishes correlation
@@ -74,7 +76,7 @@ alert route remains paused. Cards contain stage/count and diagnostic conclusions
 not conversation titles or message contents. Each incident gets one private card;
 changed conclusions and recovery edit it after verifying the original Bot and
 chat. A recipient/profile change never redirects an old card. One notification
-operation is allowed per observation. Write intent is durable before external
+operation is allowed per observation by default; the optional extension allows three. Write intent is durable before external
 I/O; uncertain sends or edits require receipt inspection, not automatic replay.
 The authenticated page shows delivery uncertainty in the affected row. The first
 version reports completed fixed analysis and waits for new evidence; it never
@@ -619,6 +621,58 @@ Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-
 会话概览使用 token、上下文注入、首次响应、交付用时等术语，明确注入量单位为字符。
 概览标记为无需浏览器自动翻译，避免将 token 或执行术语翻译成“代币”“跑步”。
 本次仅调整展示与说明，不修改指标计算、账号切换策略或任何实验配置。
+
+### Private metric review and verified action receipts
+
+To activate this extension, ask the instance agent to verify the existing private
+recipient and enable `sessionDiagnostics.metricPolicy.enabled` and
+`sessionDiagnostics.reportActions`. Both default off; general group delivery and
+its risk-only setting remain independent. The existing five-minute diagnosis
+cycle performs the analysis and sends or updates private cards. No new schedule
+or independent classifier is needed.
+
+The alert card preserves the trigger, analysis, action actually taken, verification,
+and remaining human decision. Successful automatic default-account switches,
+per-Session quota migrations and evidenced recovery results remain reportable.
+The account check also reads recent Sessions' actual bindings; a healthy default
+cannot hide an exhausted old binding. A switch record proves selection, while a
+subsequent successful run supplies separate execution evidence. No old task is
+replayed merely to verify an alert.
+
+Metric review covers injected context characters, Feishu first delivered response
+(from provider message timestamp), and final delivery (from Request acceptance to
+all final message receipts). These are completed foreground Requests; missing,
+failed, unfinished and native follow-up records are not silently made zero.
+Injected characters measure the RemoteLab manifest, not the Harness's full input
+or billed tokens. The reader keeps bounded numeric projections, not prompt copies,
+and exposes missing/limited/truncated source coverage. Incomplete bounded scans
+suppress population alarms until a complete scan is available.
+
+Two comparisons remain distinct:
+
+- Matched model, effort, Harness, surface, first/follow-up and recorded experiment
+  cohort: last 24 hours versus the preceding three populated business dates,
+  looking back at most 14 days. A 30% rise also needs an absolute increase
+  (1,000 characters, five seconds first response, or 30 seconds final delivery),
+  at least 10 current runs across three Sessions, 20 historical runs across five
+  Sessions, and a rise in at least 60% of Session medians. Sessions have equal
+  weight. Three runs across two Sessions and a rise of 50% can trigger a clearly
+  labelled small-sample review; high historical variability is also labelled.
+- The overall per-request mean is still reviewed when it rises across four
+  populated business dates by at least 30%, with at least 10 runs and five
+  Sessions on every date and a corroborating rise in Session medians. This
+  catches changed experiment/task composition without claiming same-task
+  regression. Current-day incompleteness and experimental share are shown.
+
+An idle date is skipped, not treated as a zero baseline. Increased daily request
+volume alone cannot trigger these per-request comparisons. Experiment exposure
+is read from the original record; unmarked does not mean nonexperimental.
+The first analysis compares injection sources or timing phases and reports clues,
+not a causal verdict. It does not delete context or repeat business work. Review
+cards update in place with a 30-minute analysis cooldown; at most three deliveries
+occur per cycle. Recovery requires at least 10 genuinely newer runs across three
+Sessions within 15% of the original baseline. Silence is never recovery. Uncertain
+message delivery remains pending readback rather than creating duplicate cards.
 
 ### Test 紧凑布局演示（2026-10-14）
 
