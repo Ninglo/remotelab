@@ -13,7 +13,7 @@ import {
 } from './session-result-files.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
-import { normalizeConversation } from '../lib/conversation-target.mjs';
+import { normalizeConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { shouldPublishSessionProgress, usesOctober7GroupMessaging } from '../lib/session-progress-policy.mjs';
 import { withSessionProgressPolicy } from './session-progress-policy.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
@@ -39,7 +39,8 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
 }
 
 // A native execution retains its root identity, but each accepted ordinary
-// input is a new opening boundary with its own frozen policy and destination.
+// input retains its frozen policy and destination; a continuation in the same
+// conversation does not announce another start.
 // Question answers and reference-only inputs do not start another reply.
 export async function publishLiveRunReplies(record, fullHistory, { store, run, ...options } = {}) {
   const rootEvents = collectReplyPublicationHistory(fullHistory, run);
@@ -89,10 +90,12 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (event.type === 'message' && event.role === 'user') input = inputRecords.get(event.requestId) || record;
     scopes.set(event, input);
   }
-  const suppressOpening = (surface, current, owner, messageReplyPolicy) => {
+  const suppressOpening = (surface, current, owner, messageReplyPolicy, replyPlan) => {
     if (plan.connector !== 'feishu' || surface.surfaceKind !== 'opening') return false;
+    if (current?.suppressedOpeningMessageIds?.includes(assistantSurfaceMessageId(surface))) return true;
     const alreadyPublished = current?.deliveries?.some(item => item.surfaceKind === 'opening'
-      && (item.publicationRequestId || record.requestId) === owner.requestId);
+      && ((item.publicationRequestId || record.requestId) === owner.requestId
+        || sameConversation(item, replyPlan)));
     if (messageReplyPolicy) return !messageReplyPolicy.opening || alreadyPublished;
     if (usesOctober7GroupMessaging(progressPolicy)) return alreadyPublished;
     return !firstUserTurn || current?.deliveries?.some(item => item.surfaceKind === 'opening'
@@ -115,12 +118,24 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (!messageId) continue;
     let stored = await store.get(record.key);
     if (stored?.options?.suppressSourceDelivery || stored?.routingHandoff) return;
-    if (owner === record) stored = await rememberAmbientFeishuReplyPlan(stored || record, plan, [event], store);
-    const replyRecord = current => owner === record ? current : owner;
+    // Placement belongs to this execution. A steered input retains its own
+    // source policy, but must see the root's durable placement and receipts.
+    const replyRecord = current => owner === record ? current : { ...owner, key: record.key,
+      deliveries: current.deliveries, replyPlacement: current.replyPlacement };
+    await rememberAmbientFeishuReplyPlan(replyRecord(stored || record), ownerPlan, [event], store);
+    stored = await store.get(record.key) || stored;
     const replyPlan = resolveAmbientFeishuReplyPlan(replyRecord(stored || record), ownerPlan, [event]);
-    if (isFeishuMainlineReply(replyPlan) && messageReplyPolicy?.version !== 3
-        && ['opening', 'progress'].includes(surface.surfaceKind)) continue;
-    if (suppressOpening(surface, stored || record, owner, messageReplyPolicy)) continue;
+    const hiddenMainline = isFeishuMainlineReply(replyPlan) && messageReplyPolicy?.version !== 3
+      && ['opening', 'progress'].includes(surface.surfaceKind);
+    if (hiddenMainline || suppressOpening(surface, stored || record, owner, messageReplyPolicy, replyPlan)) {
+      // Hidden openers are consumed, not deferred. A later thread directive
+      // must not resurrect them on the next observer pass.
+      if (surface.surfaceKind === 'opening' && !stored?.suppressedOpeningMessageIds?.includes(messageId)) {
+        await store.mutate(record.key, current => ({ ...current, suppressedOpeningMessageIds:
+          [...new Set([...(current.suppressedOpeningMessageIds || []), messageId])] }));
+      }
+      continue;
+    }
     // A rollout can fence progress previously suppressed by card grouping.
     // This is not a delivery receipt; old card text must not be announced again.
     if ((surface.surfaceKind === 'progress' || surface.surfaceKind === 'opening'
@@ -171,7 +186,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (!parts.length) continue;
     const admit = () => store.mutate(record.key, current => {
       if (!current || current.result || current.options?.suppressSourceDelivery || current.routingHandoff
-          || suppressOpening(surface, current, owner, messageReplyPolicy)
+          || suppressOpening(surface, current, owner, messageReplyPolicy, resolveAmbientFeishuReplyPlan(replyRecord(current), ownerPlan, [event]))
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;
       const parts = buildParts(current);

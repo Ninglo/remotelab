@@ -220,6 +220,8 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
           const answer = await questions.answer({ id: input.id, text: input.answerText || input.text, questionId: input.questionId });
           if (answer) return answer;
           const previousQuestions = input.supersedeQuestions && !input.referenceOnly ? await questions.snapshot() : [];
+          if (input.continuationOnly && nativeResult) throw Object.assign(
+            new Error('Original execution ended; continuation cannot start another turn'), { code: 'NATIVE_REJECTED' });
           const receipt = await driver.submit(input);
           await observeReceipt(input, receipt);
           if (receipt?.accepted === true && previousQuestions.length) await questions.supersede(previousQuestions, input.id);

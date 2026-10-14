@@ -1,3 +1,4 @@
+import { findActiveFeishuThreadExecution } from '../../chat/feishu-thread-continuation.mjs';
 import * as manager from '../../chat/session-manager.mjs';
 import * as delivery from '../../chat/source-deliveries.mjs';
 import * as work from '../../chat/work-awareness.mjs';
@@ -26,6 +27,7 @@ process.on('message', async ({ id, action, args }) => {
       : action === 'reply-input' ? await routing.replyGroupInput(await requests.byRequest(args[0], args[1]), args[2])
       : action === 'message-settings' ? await changePersonMessageReplies(...args)
       : action === 'request' ? await requests.byRequest(...args)
+      : action === 'thread-execution' ? await findActiveFeishuThreadExecution(...args)
       : action === 'claim' ? await delivery.claimSourceDelivery(...args)
       : action === 'complete' ? await delivery.completeSourceDelivery(...args)
       : action === 'stop' ? await manager.drainRequestRuntime() : null;

@@ -503,7 +503,7 @@ export async function handleSessionMainRoutes({
           }) || outcome.session),
         });
       } catch (error) {
-        const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY', 'QUESTION_EXPIRED'].includes(error?.code) ? 409 : 400;
+        const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY', 'QUESTION_EXPIRED', 'THREAD_CONTINUATION_EXPIRED'].includes(error?.code) ? 409 : 400;
         writeJson(res, statusCode, { error: error.message || 'Failed to submit message', ...(error.code ? { code: error.code } : {}) });
       }
       return true;

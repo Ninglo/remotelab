@@ -68,5 +68,18 @@ try {
   await dispatcher.forward(captured, head); await dispatcher.idle();
   assert.match((await store.get(expired.key)).result.error, /问题已结束/);
   assert.ok(!received.includes('expired-question'), 'a captured late answer cannot become an unrelated model turn after native host settlement');
+  for (const anchored of [false, true]) {
+    const record = await accepted(anchored ? 'thread-race' : 'cancelled-addition');
+    const scoped = await store.mutate(record.key, current => ({ ...current,
+      options: anchored ? { sourceContext: { feishuContinuationRunId: head.runId } } : {},
+      nativeDispatchRunId: head.runId, nativeInput: { id: record.requestId, text: 'only a correction' },
+    }));
+    state = anchored ? 'completed' : 'cancelled';
+    await dispatcher.forward(scoped); await dispatcher.idle();
+    const after = await store.get(record.key);
+    assert.equal(after.result.state, 'failed');
+    assert.equal(after.nativeDispatchRunId, head.runId, 'expired/cancelled additions must never clear into a fresh run');
+    assert.ok(!received.includes(record.requestId));
+  }
   console.log('native dispatch: overlapping input, durable run linkage, shared result, uncertain receipt without replay passed');
 } finally { unblock(); await dispatcher.idle(); await server.close(); await rm(root, { force: true, recursive: true }); }

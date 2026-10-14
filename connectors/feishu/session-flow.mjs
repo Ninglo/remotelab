@@ -89,7 +89,8 @@ export async function findFeishuThreadSessionBinding(runtime, summary) {
   if (request) {
     const result = await request('/api/session-conversations/resolve', { method: 'POST', body: { conversation } });
     if (!result.response.ok) throw new Error(result.json?.error || 'Unable to resolve Session conversation');
-    if (result.json.sessionId) return { sessionId: result.json.sessionId, direction: 'binding', chatId, conversationId: threadId };
+    if (result.json.sessionId) return { sessionId: result.json.sessionId, direction: 'binding', chatId, conversationId: threadId,
+      ...(result.json.continuationRunId ? { continuationRunId: result.json.continuationRunId } : {}) };
   }
   if (!pathname) return null;
   const binding = await findConnectorMessageIndexRecord(pathname, {

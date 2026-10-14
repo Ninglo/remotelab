@@ -227,3 +227,37 @@ test('direct replies retain native input acknowledgement and stop-recovery bound
   assert.equal((await s.parts()).length, 1);
   assert.equal((await s.parts())[0].publicationRequestId, next.requestId);
 });
+
+test('same-topic supplements do not restart the opening; explicit answers still publish', async () => {
+  const s = await scenario('same-topic', { policy: { version: 3, opening: true, progress: 'messages' } });
+  const next = await s.steer('next', {}, { deliveryPlan: { ...plan('root'), target: { ...plan('root').target, messageId: 'next' } } });
+  const events = [user(1, s.root), message(2, s.root, '开始处理。'), user(3, next),
+    message(4, s.root, '又开始处理。'), message(5, s.root, '<reply>补充问题的回答。</reply>'),
+    message(6, s.root, '<progress>实际有用的进展。</progress>')];
+  await s.publish(events); await s.publish(events);
+  assert.deepEqual((await s.parts()).map(part => part.surfaceKind), ['opening', 'reply', 'progress']);
+  assert.equal((await s.parts())[1].target.messageId, 'next');
+});
+
+test('steered ambient thread placement survives replay without resurrecting a hidden opener', async () => {
+  const s = await scenario('ambient-steer', { baseline: false });
+  const main = id => ({ connector: 'feishu', sourceRouteId: 'bot', target: {
+    chatId: 'chat', chatType: 'group', conversationKind: 'main', messageId: id,
+  } });
+  const ambient = { sourceContext: { feishuParticipation: 'ambient' } };
+  Object.assign(s.root, await s.store.mutate(s.root.key, current => ({ ...current, deliveryPlan: main('root'), options: ambient })));
+  const events = [user(1, s.root), message(2, s.root, '早先被隐藏的开场。')];
+  await s.publish(events);
+  const next = await s.steer('next', ambient, { deliveryPlan: main('next') });
+  events.push(user(3, next), message(4, s.root, '<private>feishu-reply:thread</private>在话题里接着处理。'),
+    message(5, s.root, '<reply>补充的答复。</reply>'));
+  await s.publish(events); await s.publish(events);
+  const parts = await s.parts();
+  assert.deepEqual(parts.map(part => part.surfaceKind), ['opening', 'reply']);
+  assert.ok(parts.every(part => part.target.rootId === 'next'), JSON.stringify(parts));
+  assert.ok(parts.every(part => !part.text.includes('早先被隐藏')));
+  assert.equal((await s.store.get(s.root.key)).replyPlacement.target.rootId, 'next');
+  events.push(message(6, s.root, '完成。', { phase: 'final_answer' }));
+  await s.publish(events, false);
+  assert.equal((await s.parts()).at(-1).target.rootId, 'next');
+});

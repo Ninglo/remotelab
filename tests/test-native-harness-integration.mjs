@@ -76,6 +76,68 @@ async function awaitAnswer(sessionId, requestId) {
 }
 try {
   await boot();
+  const ambientPlan = { connector: 'feishu', sourceRouteId: 'default', target: {
+    chatId: 'ambient-bridge', conversationKind: 'main', messageId: 'ambient-root',
+  } };
+  const ambientSession = await rpc('create', { conversation: ambientPlan });
+  const ambientRun = await rpc('accept', ambientSession.id, 'PUBLISH_OPENING THREAD_OPENING', [], {
+    ...options('ambient-root'), sourceDelivery: ambientPlan,
+    sourceContext: { connector: 'feishu', feishuParticipation: 'ambient' },
+  });
+  let threadOpening;
+  await until(async () => { threadOpening = await rpc('claim', { connector: 'feishu' }); return threadOpening; }, 'ambient thread opening');
+  assert.equal(threadOpening.delivery.target.sourceKind, 'ambient_thread_open');
+  await rpc('complete', threadOpening.delivery.id, threadOpening.leaseId, {
+    externalId: 'thread-reply', messageId: 'thread-reply', threadId: 'provider-thread',
+  });
+  const threadPlan = { ...ambientPlan, target: { chatId: 'ambient-bridge', conversationKind: 'thread',
+    threadId: 'provider-thread', rootId: 'ambient-root', messageId: 'stop-message', replyInThread: true } };
+  const bridge = await rpc('thread-execution', threadPlan);
+  assert.deepEqual(bridge, { sessionId: ambientSession.id, continuationRunId: ambientRun.run.id });
+  const stopOptions = { ...options('ambient-stop'), feishuConnectorAuthenticated: true, sourceDelivery: threadPlan,
+    sourceContext: { connector: 'feishu', feishuContinuationRunId: bridge.continuationRunId } };
+  await rpc('accept', bridge.sessionId, 'Stop this work; do not start again for this supplement.', [], stopOptions);
+  await until(async () => (await rpc('request', bridge.sessionId, 'ambient-stop'))?.nativeReceipt?.accepted, 'topic stop steered into original Harness');
+  assert.equal((await rpc('request', bridge.sessionId, 'ambient-stop')).nativeDispatchRunId, ambientRun.run.id);
+  await rpc('cancel', bridge.sessionId, { expectedRunId: bridge.continuationRunId });
+  await until(async () => (await rpc('request', bridge.sessionId, 'ambient-root'))?.result, 'original execution cancelled');
+  assert.equal((await rpc('request', bridge.sessionId, 'ambient-root')).result.state, 'cancelled');
+  assert.equal(await rpc('thread-execution', threadPlan), null);
+  await assert.rejects(rpc('accept', bridge.sessionId, 'A further correction is not permission to restart.', [], {
+    ...stopOptions, requestId: 'after-stop',
+  }), error => error.code === 'THREAD_CONTINUATION_EXPIRED');
+  assert.equal(await rpc('request', bridge.sessionId, 'after-stop'), null);
+  // Drain the actual cancellation publication before other scenarios.
+  let stoppedDelivery;
+  while ((stoppedDelivery = await rpc('claim', { connector: 'feishu' }))) {
+    await rpc('complete', stoppedDelivery.delivery.id, stoppedDelivery.leaseId, { externalId: 'stopped-thread-result' });
+  }
+  await evidence('PASS ambient thread: real receipt resolves original execution, topic stop steers there, exact-run cancel, stale additions cannot restart');
+  const racePlan = { ...ambientPlan, target: { ...ambientPlan.target, chatId: 'thread-completion-race' } };
+  const threadRaceSession = await rpc('create', { conversation: racePlan });
+  const threadRaceRun = await rpc('accept', threadRaceSession.id, 'PUBLISH_OPENING THREAD_OPENING', [], {
+    ...options('race-root'), sourceDelivery: racePlan, sourceContext: { connector: 'feishu', feishuParticipation: 'ambient' },
+  });
+  let raceOpening;
+  await until(async () => { raceOpening = await rpc('claim', { connector: 'feishu' }); return raceOpening; }, 'race thread opening');
+  await rpc('complete', raceOpening.delivery.id, raceOpening.leaseId, {
+    externalId: 'race-reply', messageId: 'race-reply', threadId: 'race-thread',
+  });
+  const raceThread = { ...threadPlan, target: { ...threadPlan.target, chatId: 'thread-completion-race', threadId: 'race-thread' } };
+  await rpc('accept', threadRaceSession.id, 'RACE_NATIVE_COMPLETION', [], {
+    ...options('thread-race-input'), feishuConnectorAuthenticated: true, sourceDelivery: raceThread,
+    sourceContext: { connector: 'feishu', feishuContinuationRunId: threadRaceRun.run.id },
+  });
+  await until(async () => (await rpc('request', threadRaceSession.id, 'thread-race-input'))?.result, 'run-bound completion race settles');
+  assert.equal((await rpc('request', threadRaceSession.id, 'thread-race-input')).result.state, 'failed');
+  assert.equal((await logs()).filter(event => event.kind === 'turn/start' && event.text.includes('RACE_NATIVE_COMPLETION')).length, 0,
+    'Codex may not start a fallback turn for an exact-execution continuation');
+  await until(async () => (await rpc('request', threadRaceSession.id, 'race-root'))?.result, 'race root settled');
+  let raceDelivery;
+  while ((raceDelivery = await rpc('claim', { connector: 'feishu' }))) {
+    await rpc('complete', raceDelivery.delivery.id, raceDelivery.leaseId, { externalId: 'race-result' });
+  }
+  await evidence('PASS thread completion race: native rejection cannot turn/start the bound addition');
   const replyPlan = messageId => ({ connector: 'feishu', sourceRouteId: 'default', target: {
     chatId: 'steering-chat', chatType: 'group', conversationKind: 'thread', threadId: 'steering-thread',
     rootId: 'steering-root', messageId, replyInThread: true,
@@ -97,14 +159,8 @@ try {
     && event.content?.includes('Supplement accepted;')), 'steered first reply reaches Web before acknowledgement');
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'no unacknowledged input may take the reply destination');
   await writeFile(join(root, `${openingRun.run.id}.ack`), 'release acknowledgement');
-  let steeredClaim;
-  await until(async () => { steeredClaim = await rpc('claim', { connector: 'feishu' }); return steeredClaim; }, 'acknowledgement publishes the existing first reply without another model event');
-  assert.equal(steeredClaim.delivery.surfaceKind, 'opening');
-  assert.match(steeredClaim.delivery.text, /Supplement accepted;/);
-  assert.equal(steeredClaim.delivery.target.messageId, 'opening-steer');
-  assert.equal(steeredClaim.delivery.target.threadId, 'steering-thread');
-  assert.equal(steeredClaim.delivery.publicationRequestId, 'opening-steer');
-  await rpc('complete', steeredClaim.delivery.id, steeredClaim.leaseId, { externalId: 'steered-opening' });
+  await until(async () => (await rpc('request', replySession.id, 'opening-steer'))?.nativeReceipt?.accepted, 'steered input acknowledged');
+  assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'same-topic steering does not publish another opening');
   assert.equal((await rpc('accept', replySession.id, 'HOLD_OPENING_ACK', [], replyOptions('opening-steer'))).duplicate, true);
   // This case checks publication recovery across an ordinary restart. Drain
   // observers before stopping the controller so unfinished lock creation is
@@ -121,7 +177,7 @@ try {
   assert.equal(replyFinal.delivery.target.messageId, 'steering-root');
   await rpc('complete', replyFinal.delivery.id, replyFinal.leaseId, { externalId: 'final-opening-test' });
   assert.equal(await rpc('claim', { connector: 'feishu' }), null, 'a shared stopped Run publishes its result once');
-  await evidence('PASS steering opening: Web-before-ack event order, per-input Feishu target, duplicate submission, controller recovery, thread/root aliases and one terminal result');
+  await evidence('PASS steering opening: Web-before-ack, same-topic duplicate opener suppressed, controller recovery and one terminal result');
   // Explicit per-request reply destinations also share a result without a
   // Session binding. Another topic must still get its own single copy.
   const multiSession = await rpc('create');

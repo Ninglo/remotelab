@@ -78,6 +78,8 @@ function buildFeishuSourceContextPrompt(sourceContext) {
   if (chatName) lines.push(`群聊：${chatName}`);
   if (senderName) lines.push(`当前发言人：${senderName}`);
   if (createTime) lines.push(`发送时间：${createTime}`);
+  if (sourceContext.feishuContinuationRunId) lines.push(
+    '当前话题是本次执行已发回复所在的位置；这条消息已接回同一个执行。结合前文理解补充、纠正和停止，不因换到话题就重新开工。停止后的讨论不等于恢复执行；是否恢复按人的明确意思判断。');
   if (sourceContext.feishuParticipation === 'ambient' && Array.isArray(sourceContext.mentions)
       && sourceContext.mentions.length > 0 && sourceContext.feishuExplicitMention !== true) {
     const mentionedNames = sourceContext.mentions.slice(0, 5)

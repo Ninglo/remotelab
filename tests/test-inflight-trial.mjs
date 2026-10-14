@@ -88,6 +88,24 @@ try {
   assert.equal((await tools('reply', packet, auth)).duplicate, true, 'retry may read existing receipt after cancellation');
   await tools('stop', { ...base, expectedRunId: root.runId }, auth);
   assert.equal(cancelCalls, 1, 'stop must not fall through to a newer run');
+  const mainPlan = { ...plan, target: { ...plan.target, conversationKind: 'main' } };
+  delete mainPlan.target.threadId; delete mainPlan.target.replyInThread;
+  const mainRoot = await accept('main-root', { ...aliceOptions, sourceDelivery: mainPlan });
+  const stop = await accept('thread-stop', { ...aliceOptions,
+    sourceContext: { ...aliceOptions.sourceContext, feishuContinuationRunId: mainRoot.runId } });
+  await store.mutate(stop.key, current => ({ ...current, nativeDispatchRunId: mainRoot.runId, nativeReceipt: { accepted: true } }));
+  let threadStops = 0;
+  const threadTools = createInflightTrialTools({ ...deps, cancel: async (id, opt) => {
+    assert.equal(id, mainRoot.sessionId); assert.equal(opt.expectedRunId, mainRoot.runId); threadStops++;
+  } });
+  const threadStop = { runId: mainRoot.runId, sourceRequestId: stop.requestId, expectedRunId: mainRoot.runId };
+  await assert.rejects(threadTools('stop', threadStop, auth), /仅限/, 'a claimed continuation alone is insufficient');
+  await store.mutate(mainRoot.key, current => ({ ...current, deliveries: [{ ...plan, kind: 'content', state: 'delivered',
+    target: { ...plan.target, sourceKind: 'ambient_thread_open' } }] }));
+  await threadTools('stop', threadStop, auth);
+  assert.equal(threadStops, 1, 'the same opted-in author can stop from the delivered reply Thread');
+  await store.mutate(stop.key, current => ({ ...current, deliveryPlan: { ...plan, sourceRouteId: 'other-bot' } }));
+  await assert.rejects(threadTools('stop', threadStop, auth), /仅限/);
   await changeInflightTrial({ enabled: false, confirm: true, expectedRevision: 1 }, actor);
   await assert.rejects(tools('reply', packet, auth), /已关闭/);
   assert.equal(await captureInflightTrial(opts()), null);

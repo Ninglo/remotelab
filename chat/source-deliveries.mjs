@@ -291,7 +291,8 @@ export async function completeSourceDelivery(id, leaseId, input = {}) {
     if (entry.state === 'delivered' && entry.receiptLeaseId === leaseId) return entry;
     if (!['sending', 'unknown'].includes(entry.state) || !leaseId || entry.leaseId !== leaseId) throw new Error('Source delivery lease mismatch');
     return { ...entry, state: 'delivered', externalId: trimString(input.externalId), receiptLeaseId: leaseId,
-      deliveredAt: nowIso(input.now), leaseId: '', lastError: '' };
+      deliveredAt: nowIso(input.now), deliveredThreadId: trimString(input.threadId),
+      deliveredMessageId: trimString(input.messageId), leaseId: '', lastError: '' };
     }, { priorReceipt });
   });
 }

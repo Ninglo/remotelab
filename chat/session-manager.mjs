@@ -1,3 +1,4 @@
+import { findActiveFeishuThreadExecution, threadContinuationExpired } from './feishu-thread-continuation.mjs';
 import { captureInflightTrial, inflightTrialPrompt } from './inflight-trial.mjs';
 import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { projectFeishuContext, feishuResumeIdentity } from './feishu-context-dedup.mjs';
@@ -3513,6 +3514,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  if (!priorRequest && options.sourceContext?.feishuContinuationRunId) {
+    const continuation = await findActiveFeishuThreadExecution(options.sourceDelivery);
+    if (!options.feishuConnectorAuthenticated || continuation?.sessionId !== sessionId
+        || continuation?.continuationRunId !== options.sourceContext.feishuContinuationRunId) throw threadContinuationExpired();
+  }
   options = { ...options };
   const inputTrial = priorRequest ? priorRequest.options.inflightTrial : await captureInflightTrial(options);
   if (inputTrial) options.inflightTrial = inputTrial; else delete options.inflightTrial;
@@ -3702,8 +3708,13 @@ async function launchAutomationRun(runId, options = {}) {
 }
 
 async function prepareRequestRun(record) {
-  if (record.options?.routingRethink && !record.preparedAt && !record.result) {
-    try { await validateGroupRethink(record); }
+  if ((record.options?.routingRethink || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
+    try {
+      // A run-bound addition can only be steered. If it becomes the queue head
+      // after cancellation/completion, never reinterpret it as new work.
+      if (record.options?.sourceContext?.feishuContinuationRunId) throw threadContinuationExpired();
+      await validateGroupRethink(record);
+    }
     catch (error) {
       const result = { exitCode: 1, error: error.message, completedAt: nowIso() };
       const target = await findSessionMeta(record.sessionId);
@@ -3715,6 +3726,7 @@ async function prepareRequestRun(record) {
           tool, runtimeFamily: (await getToolDefinitionAsync(tool))?.runtimeFamily,
           options: { ...record.options, ...record.runtimeSelection }, folder: target?.folder },
       });
+      await ensureRequestInput(record, {});
       await writeRunResult(record.runId, result);
       await updateRun(record.runId, current => ({ ...current, state: 'failed', failureReason: error.message, result }));
       return;
@@ -3919,6 +3931,7 @@ async function prepareRequestRun(record) {
       options: {
         images: savedImages,
         workReferenceProtocolVersion: 1,
+        feishuThreadContinuationVersion: 1,
         thinking: options.thinking === true,
         model: options.model || undefined,
         effort: options.effort || undefined,

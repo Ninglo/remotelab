@@ -1,3 +1,4 @@
+import { hasDeliveredFeishuThread } from './feishu-thread-continuation.mjs';
 import { createHash } from 'node:crypto';
 import { readBody } from '../lib/utils.mjs';
 import { canonicalJson, serialQueue } from '../lib/durable-records.mjs';
@@ -23,7 +24,9 @@ export function createInflightTrialTools({ store = requests, history = sessionId
     const source = root && await store.byRequest(root.sessionId, input.sourceRequestId);
     const belongs = record => record && (record.key === root.key || record.nativeDispatchRunId === root.runId && record.nativeReceipt?.accepted)
       && inflightTrialEnabled(record.options) && record.options.viewPersonId === root.options.viewPersonId
-      && sameConversation(planFor(record), planFor(root));
+      && (sameConversation(planFor(record), planFor(root))
+        || record.options.sourceContext?.feishuContinuationRunId === root.runId
+          && hasDeliveredFeishuThread(root, planFor(record)));
     if (!root || !inflightTrialEnabled(root.options) || !belongs(source)
         || authSession?.authKind !== 'service' && authSession?.personId !== source.options.viewPersonId) fail('试用仅限本人发起的任务和已接受的本人输入。');
     const actor = { personId: source.options.viewPersonId, identityId: source.options.initiatedByIdentityId };

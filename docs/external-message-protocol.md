@@ -322,16 +322,29 @@ workboard outcomes, not these message labels. Email retains its single
 final-message behavior.
 
 When the effective Feishu group baseline or confirmed reply policy enables
-opening text, each accepted ordinary steering input can publish its first useful
-Harness reply once, even inside an already running native Run. Publication uses
-that input's frozen reply destination and records its Request ID alongside the
-shared execution's delivery identity. Native question answers and reference-only
-inputs do not create another opening boundary. If Harness output arrives before
-the input acknowledgement, acknowledgement revisits the retained output without
-starting another model turn. Progress still follows the existing message/card
-choice; terminal publication remains once per stopped execution. Inputs already
-dispatched before this publication contract was installed retain their historical
-receipts and are not replayed as new openings.
+opening text, a native execution publishes one opening per conversation, rather
+than restarting the opening for every steered addition in that conversation.
+Explicit `<reply>` answers and meaningful `<progress>` updates still publish
+under each input's frozen policy and destination. Native question answers and
+reference-only inputs do not create another opening boundary. If output arrives
+before input acknowledgement, acknowledgement revisits the retained output
+without starting another model turn. Suppressed openings are consumed, so a
+later thread choice cannot resurrect them. Ambient thread placement and its
+receipts belong to the shared execution, including when a steered input selects
+that placement. Terminal publication remains once per stopped execution.
+
+For an ambient mainline reply placed in a new Feishu Thread, the successful
+outbox receipt retains the provider Thread ID. Conversation resolution can use
+that receipt to return the exact still-active native execution, without changing
+Session bindings. The connector submits `sourceContext.feishuContinuationRunId`
+and keeps the existing Session prompt. Admission revalidates the delivered
+Thread and execution; native dispatch refuses a different Run. A bound addition
+that loses the completion race cannot become a new Run. Unacknowledged native
+inputs also cannot restart an explicitly cancelled execution. An already bound
+independent Thread, another chat/Bot, a completed execution, and unrelated later
+mainline work retain their normal routing. The Harness interprets discussion,
+stop scope and natural permission to resume; no classifier or timed batching
+stage is added.
 
 Example:
 

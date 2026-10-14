@@ -67,12 +67,19 @@
           "name": "真实机器上的对话与执行",
           "purpose": "处理文件、调查问题、修改项目、运行程序，并在原会话继续补充要求。",
           "entry": "会话 → 新建会话 → 发送消息。",
-          "condition": "需要可用的执行工具及相应机器权限。浏览器关闭不等于任务停止；执行结果仍需验收。",
+          "condition": "需要可用的执行工具及相应机器权限。浏览器关闭不等于任务停止；执行结果仍需验收。 群主线回复进入新话题时，原生执行未结束的追加消息接回原执行；停止后不把已绑定的追加消息当作新开工。原执行结束后按正常话题接续，实际群聊体验另行验收。",
           "example": "把这份表里的重复项清掉，保留原件，给我可下载的新表。",
           "sources": [
             "chat/session-manager.mjs",
             "chat/runner-sidecar.mjs",
-            "docs/native-harness-input.md"
+            "docs/native-harness-input.md",
+            "docs/external-message-protocol.md",
+            "chat/feishu-thread-continuation.mjs",
+            "chat/native-final-publication.mjs",
+            "chat/source-deliveries.mjs",
+            "connectors/feishu/session-flow.mjs",
+            "lib/connector-turn-flow.mjs",
+            "chat/router-session-main-routes.mjs"
           ],
           "commands": []
         },

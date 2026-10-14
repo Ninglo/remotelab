@@ -1,3 +1,4 @@
+import { threadContinuationExpired } from './feishu-thread-continuation.mjs';
 import { submitNativeInput, readNativeInputReceipt } from './native-input-transport.mjs';
 import { nativeQuestionReplyText } from './native-user-questions.mjs';
 import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
@@ -12,6 +13,8 @@ export function canForwardNativeRequest(record, head) {
       || record.options?.freshThread || head.cancelRequestedAt
       || record.options?.internalOperation || record.options?.routingRethink
       || head.options?.routingRethink) return false;
+  if (record.options?.sourceContext?.feishuContinuationRunId
+      && record.options.sourceContext.feishuContinuationRunId !== head.runId) return false;
   if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding
       || head.options?.sourceContext?.documentBinding || head.options?.internalOperation)) return false;
   if (!record.options?.nativeQuestionId
@@ -34,7 +37,9 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
     await store.settle(record.key, { state: 'failed', payload: null, error });
     await store.mutate(record.key, current => ({ ...current, releasedAt: now(), postCompletionPending: false }));
   });
-  const clear = record => store.mutate(record.key, current => ({ ...current, nativeDispatchRunId: null, nativeInput: null, nativeReceipt: null, nativeContextDelivery: null, nativeRuleContextDelivery: null }));
+  const clear = record => record.options?.sourceContext?.feishuContinuationRunId
+    ? reject(record, threadContinuationExpired().message)
+    : store.mutate(record.key, current => ({ ...current, nativeDispatchRunId: null, nativeInput: null, nativeReceipt: null, nativeContextDelivery: null, nativeRuleContextDelivery: null }));
   const send = async record => {
     const rootId = record.nativeDispatchRunId;
     const run = await getRun(rootId);
@@ -45,8 +50,9 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
       return;
     }
     const expiredQuestion = () => reject(record, '这道问题已结束，这条回答未应用；请说明要修改哪项选择。');
-    if (run?.cancelRequested && !receipt) {
-      if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record);
+    if ((run?.cancelRequested || run?.state === 'cancelled') && !receipt) {
+      if (record.nativeInput?.questionId) await expiredQuestion();
+      else await reject(record, '原执行已停止，这条尚未送入的追加消息已保留，不会自动重新开工。');
       return;
     }
     if (terminal(run)) {
@@ -80,6 +86,7 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         const context = typeof prepared === 'string' ? '' : prepared.context || '';
         record = await store.mutate(record.key, current => ({ ...current,
           nativeDispatchRunId: head.runId, liveReplyPublicationVersion: 1, nativeInput: { id: record.requestId, text,
+            ...(record.options?.sourceContext?.feishuContinuationRunId ? { continuationOnly: true } : {}),
             ...(record.options?.workReference ? { referenceOnly: true } : {}),
             ...(!record.options?.nativeQuestionId && !record.options?.workReference
               && !record.options?.routingSource && record.options?.recordUserMessage !== false

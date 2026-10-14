@@ -32,6 +32,32 @@ visible in the Session queue, and can be removed until execution or native
 handoff starts. Admission and dispatch share the request compatibility checks;
 native capability alone does not mean a follow-up can join the active request.
 
+## Continuing an execution from its Feishu reply Thread
+
+When an ambient mainline execution places its reply in a new Thread, the
+successful delivery receipt connects subsequent Thread input to that exact
+active native Run. Existing independent Thread bindings still win. The temporary
+connection expires when that execution stops and cannot follow a later mainline
+Run. The connector keeps the main Session prompt and the input's own Thread
+reply address; source context explains that this is a continuation, not a fresh
+assignment.
+
+Only new Runs advertising `feishuThreadContinuationVersion: 1` in their saved
+options participate; a server restart cannot upgrade an old detached host.
+Admission validates `sourceContext.feishuContinuationRunId` against the actual
+Thread receipt. A pre-admission completion re-resolves normal Thread routing.
+After admission, `continuationOnly` prevents a stale addition from launching a
+new Run or Codex `turn/start` after a no-active-turn rejection. It instead retains
+the input with an explicit failure. Already dispatched but unacknowledged input
+to a cancelled Run likewise never clears into a new execution. Ordinary fresh
+inputs and normal completion-race fallback retain their existing contract.
+
+Opening publication is once per conversation within the execution. Supplementary
+answers still use `<reply>` and useful progress uses the existing progress
+policy. Hidden openers do not reappear when later input selects a Thread.
+The Harness remains responsible for understanding stop scope and explicit
+natural permission to resume; the transport does not classify message meaning.
+
 ## Rule recovery after native compaction
 
 Codex standard native inputs install a process-local `SessionStart` / `compact`
@@ -56,7 +82,8 @@ Feishu trial; the setting can be managed through either authenticated surface.
 
 New Feishu inputs capture the sender's setting. Tool use requires BOTH the
 current input and the root task to have opted in for the same Person, in the
-same conversation, and the saved personal switch to remain on. Other people do
+same conversation (including a receipt-proven Thread continuation of that exact
+Run), and the saved personal switch to remain on. Other people do
 not inherit it from a shared Session. Turning it off disables new tool use
 immediately; already queued deliveries retain their existing outbox lifecycle.
 A shared Session still has shared model history, so this is a capability scope,

@@ -163,6 +163,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     return { accepted: true, id: id || null, threadId, turnId, mode: 'start' };
   }
   async function submitInput(input) {
+    if (input.continuationOnly && !activeTurnId) throw Object.assign(new Error('Original execution ended; continuation cannot start a native turn'), { code: 'NATIVE_REJECTED' });
     if (input.referenceOnly && !activeTurnId) throw Object.assign(new Error('Reference cannot start a native turn'), { code: 'NATIVE_REJECTED' });
     if (!activeTurnId) return startTurn(input);
     const expectedTurnId = activeTurnId;
@@ -178,6 +179,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       // Never retry a timeout, disconnect, or generic internal error.
       if (error.code === -32600 && /no active turn/i.test(error.message)) {
         if (activeTurnId === expectedTurnId) activeTurnId = '';
+        if (input.continuationOnly) throw Object.assign(new Error('Original execution ended; continuation cannot restart a native turn'), { code: 'NATIVE_REJECTED' });
         if (input.referenceOnly) throw Object.assign(new Error('Reference cannot restart an ended native turn'), { code: 'NATIVE_REJECTED' });
         return startTurn(input);
       }

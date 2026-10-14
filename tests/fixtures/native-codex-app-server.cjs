@@ -52,7 +52,7 @@ lines.on('line', line => {
     emit({ id, result: { turn: { id: activeTurn, status: 'inProgress' } } });
     notify('turn/started', { turn: { id: activeTurn, status: 'inProgress' } });
     if (text.includes('PUBLISH_OPENING')) notify('item/completed', { turnId: activeTurn, item: {
-      id: `opening-${params.clientUserMessageId}`, type: 'agentMessage', phase: 'commentary', text: 'Opening for the original request.',
+      id: `opening-${params.clientUserMessageId}`, type: 'agentMessage', phase: 'commentary', text: (text.includes('THREAD_OPENING') ? '<private>feishu-reply:thread</private>' : '') + 'Opening for the original request.',
     } });
     if (text.includes('ASK_NATIVE_QUESTION')) emit({ id: 'question-request', method: 'item/tool/requestUserInput', params: {
       threadId: 'native-thread', turnId: activeTurn, itemId: 'question-tool', isBlocking: true,

@@ -1003,13 +1003,21 @@ async function submitRemoteLabRequest(runtime, summary, {
     }
   }
   if (prepared) {
-    const submission = await submitConnectorMessage(requester, prepared.sessionId, {
+    let submission;
+    try {
+      submission = await submitConnectorMessage(requester, prepared.sessionId, {
       ...prepared.payload,
       // A pre-upgrade prepared worker submission owns its original topology.
       // Its user event has not been observed in the mainline Session.
       ...(skipUserMessage && (!observedSessionId || prepared.sessionId === observedSessionId)
         ? { recordUserMessage: false } : {}),
-    });
+      });
+    } catch (error) {
+      if (error.code !== 'THREAD_CONTINUATION_EXPIRED') throw error;
+      // Nothing was admitted. Resolve the now-independent topic normally and
+      // replace the saved preparation, preserving the same inbound identity.
+      return submitRemoteLabRequest(runtime, summary, { saveSubmission, skipUserMessage });
+    }
     return { ...prepared.receipt, sessionId: prepared.sessionId, runId: submission.runId,
       requestId: submission.requestId, responseId: submission.responseId,
       duplicate: submission.duplicate, queued: submission.queued };
@@ -1078,7 +1086,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     session = result.json.session;
     const configuredSystemPrompt = sessionPayload.systemPrompt.trim();
     const currentSystemPrompt = typeof session.systemPrompt === 'string' ? session.systemPrompt.trim() : '';
-    if (!isQuickSession(session) && configuredSystemPrompt !== currentSystemPrompt) {
+    if (!threadBinding.continuationRunId && !isQuickSession(session) && configuredSystemPrompt !== currentSystemPrompt) {
       const updated = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`, {
         method: 'PATCH',
         body: { systemPrompt: configuredSystemPrompt },
@@ -1093,7 +1101,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   }
   // Group prompt edits apply to an existing mainline as well as bound topics.
   // Never mutate an already accepted Run's prompt snapshot.
-  if (runtime.groupConfiguration && !isQuickSession(session)
+  if (runtime.groupConfiguration && !threadBinding?.continuationRunId && !isQuickSession(session)
       && (session.systemPrompt || '').trim() !== sessionPayload.systemPrompt.trim()) {
     const updated = await requester(`/api/sessions/${encodeURIComponent(session.id)}`, {
       method: 'PATCH', body: { systemPrompt: sessionPayload.systemPrompt },
@@ -1181,6 +1189,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     runtimeSelectionScope: 'auto',
     sourceContext: {
       ...buildMessageSourceContext(messageSummary),
+      ...(threadBinding?.continuationRunId ? { feishuContinuationRunId: threadBinding.continuationRunId } : {}),
       ...(groupSettings.quickReactions && !groupSettings.jevReactions
         ? { feishuOutcomeRequired: true } : {}),
       ...(messageSummary.logContinuation ? { feishuLog: {
@@ -1224,7 +1233,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   } };
   await recordFeishuBotHandoffScope(runtime, effectiveSummary, { sessionId: session.id });
   await saveSubmission(handoff);
-  return submitRemoteLabRequest(runtime, summary, { prepared: handoff, skipUserMessage });
+  return submitRemoteLabRequest(runtime, summary, { prepared: handoff, saveSubmission, skipUserMessage });
 }
 
 async function enqueueJevOutcomeReaction(runtime, summary, sessionId, emojiType) {

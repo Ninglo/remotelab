@@ -72,6 +72,7 @@ const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-reply-routing-'))
 const sessions = [];
 const submitted = [];
 let nextSession = 1;
+let continuation = null, expireContinuation = false;
 const server = http.createServer(async (req, res) => {
   let raw = '';
   for await (const chunk of req) raw += chunk;
@@ -82,7 +83,7 @@ const server = http.createServer(async (req, res) => {
   };
   if (req.method === 'POST' && req.url === '/api/session-conversations/resolve') {
     const found = sessions.find(session => sameConversation(session.conversation, body.conversation));
-    return json(200, { sessionId: found?.id || null });
+    return json(200, found ? { sessionId: found.id } : continuation || { sessionId: null });
   }
   if (req.method === 'POST' && req.url === '/api/sessions') {
     const found = sessions.find(session => sameConversation(session.conversation, body.conversation));
@@ -93,6 +94,10 @@ const server = http.createServer(async (req, res) => {
   }
   const messageMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/messages$/);
   if (req.method === 'POST' && messageMatch) {
+    if (expireContinuation && body.sourceContext?.feishuContinuationRunId) {
+      continuation = null; expireContinuation = false;
+      return json(409, { error: 'execution ended', code: 'THREAD_CONTINUATION_EXPIRED' });
+    }
     submitted.push({ sessionId: messageMatch[1], body });
     return json(202, { response: { id: body.requestId }, run: { id: `run-${submitted.length}` }, duplicate: false, queued: false });
   }
@@ -133,6 +138,32 @@ try {
   assert.equal(submitted.at(-1).body.sourceDelivery.target.messageId, 'main-2');
   assert.equal(submitted.at(-1).body.sourceDelivery.target.conversationKind, 'main');
   assert.equal(submitted.at(-1).body.sourceDelivery.target.replyInThread, undefined);
+
+  runtime.requestRemoteLab = async (path, opts = {}) => {
+    const response = await fetch(runtime.config.chatBaseUrl + path, {
+      method: opts.method || 'GET', headers: { 'Content-Type': 'application/json' },
+      ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
+    });
+    return { response, json: await response.json() };
+  };
+  continuation = { sessionId: firstMain.sessionId, continuationRunId: 'original-run' };
+  const originalPrompt = sessions.find(item => item.id === firstMain.sessionId).systemPrompt;
+  const bridgedSummary = { ...base, messageId: 'thread-supplement', rootId: 'main-1', threadId: 'live-thread', messageText: 'stop the original work' };
+  const bridged = await submitRemoteLabRequest(runtime, bridgedSummary);
+  assert.equal(bridged.sessionId, firstMain.sessionId);
+  assert.equal(submitted.at(-1).body.sourceContext.feishuContinuationRunId, 'original-run');
+  assert.equal(submitted.at(-1).body.sourceDelivery.target.threadId, 'live-thread');
+  assert.equal(sessions.find(item => item.id === firstMain.sessionId).systemPrompt, originalPrompt,
+    'a live reply surface must not replace the main Session instructions');
+  expireContinuation = true;
+  let saved;
+  const stale = await submitRemoteLabRequest(runtime, { ...bridgedSummary, messageId: 'late-thread-supplement' }, {
+    saveSubmission: async value => { saved = value; },
+  });
+  assert.notEqual(stale.sessionId, firstMain.sessionId, 'a pre-admission completion resolves the independent topic normally');
+  assert.equal(saved.sessionId, stale.sessionId, 'durable preparation follows the re-resolved destination');
+  assert.equal(saved.payload.sourceContext.feishuContinuationRunId, undefined);
+  delete runtime.requestRemoteLab;
 
   runtime.config.replyPolicy = normalizeFeishuReplyPolicy({ group: 'thread', private: 'inline' });
   const firstThread = await submitRemoteLabRequest(runtime, { ...base, messageId: 'thread-root-1', messageText: 'new thread' });

@@ -650,8 +650,21 @@ publication. This reply-location choice remains available when personal
 create a work Session. Ordinary observation turns have no processing reaction or
 Session-created notice; a standalone @ mention asks the Session to reconsider
 the recent unanswered discussion. The first Thread answer comes from the main
-Session; later Thread inputs use the normal independent Thread Session and
-receive the Thread history as context. Other chats keep their existing policy.
+Session. While that exact native execution is still active, its successful
+Thread delivery receipt connects Thread follow-ups to the same execution via
+native steer, including corrections and stop instructions. This temporary link
+does not replace the main Session's conversation or instructions. After the
+execution stops, subsequent inputs use the normal independent Thread Session
+with the Thread history; an unrelated later mainline execution cannot inherit
+the old Thread. Existing independent Thread bindings take precedence. Other
+chats keep their existing policy.
+
+A continuation admitted for an exact execution cannot start new work if that
+execution ends before native acceptance. It receives an explicit failure receipt
+and remains in history. If the execution ends before admission, the connector
+re-resolves the normal Thread destination without duplicating the input. Stop
+intent and permission to resume remain Harness judgments in conversation; the
+transport adds no keyword classifier or artificial batching delay.
 
 For groups using `participationControls: true`, the pinned status card shows
 active, listening or paused reception, the main Session link, its saved model and

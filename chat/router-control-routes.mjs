@@ -1,3 +1,4 @@
+import { findActiveFeishuThreadExecution } from './feishu-thread-continuation.mjs';
 import { setAutomationDelivery } from './automation-delivery.mjs';
 import { readSessionDiagnostics } from './session-diagnostics.mjs';
 import { ensureAutomationHome, readAutomationHomeView, recordAutomationHomeChange } from './automation-home.mjs';
@@ -750,7 +751,10 @@ export async function handleControlRoutes({
     try {
       const payload = JSON.parse(await readBody(req, 32768));
       const session = await findSessionConversation(payload.conversation);
-      writeJson(res, 200, { sessionId: session?.id || null, conversation: session?.conversation || null });
+      const continuation = session ? null : await findActiveFeishuThreadExecution(payload.conversation);
+      writeJson(res, 200, { sessionId: session?.id || continuation?.sessionId || null,
+        ...(continuation ? { continuationRunId: continuation.continuationRunId } : {}),
+        conversation: session?.conversation || null });
     } catch (error) { writeJson(res, 400, { error: error.message }); }
     return true;
   }
