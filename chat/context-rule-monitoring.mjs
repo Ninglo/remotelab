@@ -19,7 +19,8 @@ export async function observeAcceptedRules({ text, id }, receipt, scope, store =
   const sessionHash = createHash('sha256').update(JSON.stringify(scope.sessionId)).digest('hex').slice(0, 24);
   if (dirname(file) !== join(configDir, 'rule-context', sessionHash) || !/^[a-f0-9]{64}\.json$/.test(basename(file))) return;
   await observeContextRule({ ...scope, requestId: id }, { state: 'accepted',
-    kind: match[1].includes('It is unchanged from the previous accepted input;') ? 'reference' : 'full',
+    kind: match[1].includes('It is unchanged from the previous accepted input;') ? 'reference'
+      : match[1].includes('Only these slots changed:') ? 'delta' : 'full',
     fingerprint: basename(file, '.json'), timestamp: Date.now(),
     eventId: createHash('sha256').update(JSON.stringify([scope.sessionId, scope.runId, id, 'accepted-rules'])).digest('hex'),
   }, store);

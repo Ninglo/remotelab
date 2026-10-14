@@ -48,6 +48,10 @@ try {
   assert.equal(merged.rules.summary.failed, 1); assert.equal(merged.rules.summary.unfinished, 1);
   assert.equal(merged.rules.summary.compacted, 1); assert(merged.rules.collectionStartedAt);
   assert.equal(merged.rules.records.find(x => x.state === 'accepted').kind, 'reference');
+  await observeAcceptedRules({ id: 'delta_input', text: ruleInput.text.replace('It is unchanged from the previous accepted input;',
+    'Only these slots changed: project_memory.') }, { accepted: true }, scope, store, directory);
+  assert.equal(summarizeContextQueries(await store.query({ contextOnly: true, sessionId: scope.sessionId }))
+    .rules.records.find(x => x.requestId === 'delta_input').kind, 'delta');
   assert(!JSON.stringify(merged).includes('private rules'));
   await observeContextRule(scope, { state: 'started' }, { record: async () => { throw Error('disk'); } });
   const fixture = join(directory, 'reverse-test');

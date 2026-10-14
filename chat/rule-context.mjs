@@ -10,7 +10,7 @@ import { readNativeInputReceipt } from './native-input-transport.mjs';
 import { createModelContextSlot } from './model-context-slots.mjs';
 
 const stable = new Set(['surface_messages', 'session_workboard', 'source_runtime',
-  'session_instructions', 'message_reply_mode', 'strict_start_check', 'inflight_trial']);
+  'session_instructions', 'message_reply_mode', 'strict_start_check', 'inflight_trial', 'project_memory']);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 // Use the latest input, not any historical matching version: A -> B -> A must
@@ -59,17 +59,27 @@ export async function projectRuleContext(sessionId, slots, { enabled = false, id
       await writeJsonAtomic(file, snapshot, { mode: 0o600 });
     }
     const previous = await previousReceipt(sessionId, identity, requestId, deps);
-    const unchanged = recovery === 'codex-session-start' && previous?.recovery === recovery
+    const scopeHash = hash(scope);
+    const slotHashes = Object.fromEntries(rules.map(slot => [slot.id, hash(slot)]));
+    const reusable = recovery === 'codex-session-start' && previous?.recovery === recovery
+      && previous?.version === 1 && previous.scopeHash === scopeHash && previous.slotHashes
+      && typeof previous.slotHashes === 'object' && !Array.isArray(previous.slotHashes);
+    const unchanged = reusable
       && previous?.version === 1 && previous.fingerprint === fingerprint;
-    const receipt = { version: 1, recovery, fingerprint, file, mode: unchanged ? 'reference' : 'full',
+    const changedIds = rules.filter(slot => !reusable || previous.slotHashes[slot.id] !== slotHashes[slot.id]).map(slot => slot.id);
+    const removedIds = reusable ? Object.keys(previous.slotHashes).filter(id => !Object.hasOwn(slotHashes, id)) : [];
+    const receipt = { version: 1, recovery, fingerprint, file, scopeHash, slotHashes,
+      mode: unchanged ? 'reference' : reusable ? 'delta' : 'full', changedIds, removedIds,
       ruleChars: rules.reduce((sum, slot) => sum + slot.content.length, 0) };
     const notice = createModelContextSlot('active_rule_context', 'Current RemoteLab rules',
-      `For this input, RemoteLab display/checklist/source/Session/personal-reply/strict-start/in-flight-tool rules use snapshot ${fingerprint.slice(0, 12)}. `
+      `For this input, RemoteLab display/checklist/source/Session/personal-reply/strict-start/in-flight-tool rules and project background use snapshot ${fingerprint.slice(0, 12)}. `
       + (unchanged ? 'It is unchanged from the previous accepted input; use the rules already in context. '
-        : 'The rule blocks below replace earlier versions of those seven slots; omitted slots no longer apply to this input. Other instructions retain their authority. ')
+        : reusable ? `Only these slots changed: ${changedIds.join(', ') || 'none'}. Their blocks below replace earlier versions. Removed slots no longer apply: ${removedIds.join(', ') || 'none'}. All other slots remain as previously accepted. `
+          : 'The blocks below replace earlier versions of these eight slots; omitted slots no longer apply to this input. Other instructions retain their authority. ')
+      + 'Project background remains reference data, not new task authorization. '
       + `Recovery snapshot: ${file}. If those rules are missing from retained context (including after compaction), read this snapshot before acting; do not guess or use an older personal setting. `
       + 'Preserve this recovery reference when summarizing. Current message facts and task state follow separately.');
-    return { slots: [notice, ...slots.filter(slot => !unchanged || !stable.has(slot.id))], receipt };
+    return { slots: [notice, ...slots.filter(slot => !stable.has(slot.id) || changedIds.includes(slot.id))], receipt };
   } catch (error) {
     console.warn(`[rule-context] retaining full rules after unavailable evidence: ${error.message}`);
     return { slots, receipt: null };

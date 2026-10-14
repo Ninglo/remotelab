@@ -1463,7 +1463,8 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 async function buildManagerTurnContextSlots(session, options = {}) {
   const slots = [];
   slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
-    await readPromptAsset(!options.messageReplyPolicy && usesOctober7GroupMessaging(session)
+    await readPromptAsset(options.messageReplyPolicy?.scope === 'person'
+      ? 'system/surface-messages-configured.md' : !options.messageReplyPolicy && usesOctober7GroupMessaging(session)
       ? 'system/surface-messages-feishu-group-20261007.md' : 'system/surface-messages.md')));
   const optedIn = options.workboardEnabled === true || session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
@@ -1496,10 +1497,8 @@ async function buildManagerTurnContextSlots(session, options = {}) {
       session.systemPrompt,
     ));
   }
-  slots.push(createModelContextSlot(
-    'turn_context',
-    'Per-turn context',
-    await buildTurnContextHook(session, {
+  const turnContext = await buildTurnContextHook(session, {
+    separateProjectContext: true,
     sourceContext: normalizeSourceContext(options.modelSourceContext ?? options.sourceContext, Infinity), requestId: options.requestId,
     pilotInputReplyContract: hasPilotInputReplyContract({ options }),
     messageRoutingPolicy: options.messageRoutingPolicy,
@@ -1508,8 +1507,9 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     experimentInput: { baselineSourceContext: options.sourceContext, attachmentCount: options.preSavedAttachments?.length || 0,
       automated: Boolean(options.internalOperation || options.automationTitle || options.scheduleId || options.triggerId
         || options.workReference || options.recordUserMessage === false) },
-    }),
-  ));
+    });
+  slots.push(createModelContextSlot('project_memory', 'Current project background', turnContext.project));
+  slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
   const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;

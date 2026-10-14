@@ -21,7 +21,7 @@ function buildFeishuLogPromptBlock(sourceContext) {
   ].join('\n');
 }
 
-export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', experimentInput = {}, pilotInputReplyContract = false, messageRoutingPolicy } = {}) {
+export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', experimentInput = {}, pilotInputReplyContract = false, messageRoutingPolicy, separateProjectContext = false } = {}) {
   // Ordinary turns carry accepted source/state and small identity/project
   // pointers. The Harness chooses explicit work/memory reads for its task;
   // only an explicitly enrolled experiment may restore automatic background.
@@ -31,16 +31,23 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
   ]);
   const [project, groupRouting] = sections.map((result, index) => result.status === 'fulfilled'
     ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['project', 'group-routing'][index], reason: result.reason.message }));
-  return [
+  const sectionsBeforeProject = [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
-    project,
+  ];
+  const sectionsAfterProject = [
     await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),
     groupRouting,
     // Classifier summaries are derived UI state, not fresh execution evidence.
     // Keep them queryable on the session; do not replay stale blockers every turn.
-  ].map((section) => String(section || '').trim()).filter(Boolean).join('\n\n');
+  ];
+  const render = parts => parts.map(section => String(section || '').trim()).filter(Boolean).join('\n\n');
+  // Keep the public text-only reader compatible. The input assembler can put
+  // the complete project block in the existing acknowledged/recoverable slots.
+  return separateProjectContext
+    ? { project, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
+    : render([...sectionsBeforeProject, project, ...sectionsAfterProject]);
 }

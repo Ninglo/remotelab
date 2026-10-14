@@ -81,6 +81,24 @@ test('installed Codex restores current scoped RemoteLab rules before inference a
   assert.match(last,/MUST_KEEP_FINAL_CAVEAT_791/,stderr.join('\n'));
   assert.ok(last.includes('RemoteLab context restored after native compaction'), 'missing hook body; '+stderr.join('\n'));
   assert.equal(bodies.length,3,'the recovery hook itself adds no model call');
+  const delta = await projectRuleContext('fixture-session', [
+    {id:'strict_start_check', title:'Personal', content:'MUST_KEEP_FINAL_CAVEAT_791'},
+    {id:'project_memory', title:'Project background', content:'PROJECT_BRIEF_COMPLETE_TAIL_914'},
+  ], {enabled:true,recovery:'codex-session-start',requestId:'project-update',personId:'alice',
+    identity:{field:'codexThreadId',id:first.threadId}}, {
+    head:async()=>1, history:async()=>[{type:'message',role:'user',requestId:'one'}],
+    request:async()=>({requestId:'one',runId:'fixture-run'}),
+    run:async()=>({id:'fixture-run',sessionId:'fixture-session',codexThreadId:first.threadId}),
+    accepted:async()=>({state:'accepted'}), manifest:async()=>({ruleContextDelivery:projection.receipt}),
+  });
+  assert.equal(delta.receipt.mode,'delta');
+  assert.doesNotMatch(renderModelContextSlots(delta.slots),/MUST_KEEP_FINAL_CAVEAT_791/);
+  settled=nextSettled(); await driver.submit({id:'project-update',text:'<private>\n'+renderModelContextSlots(delta.slots)+'\n</private>\nCurrent user message: Ready.'});await settled;
+  settled=nextSettled(); await request('thread/compact/start',{threadId:first.threadId});await settled;
+  settled=nextSettled(); await driver.submit({id:'project-restore',text:'Continue after project update and compaction.'});await settled;
+  const afterDelta=JSON.stringify(bodies.at(-1).input);
+  assert.match(afterDelta,/MUST_KEEP_FINAL_CAVEAT_791/);
+  assert.match(afterDelta,/PROJECT_BRIEF_COMPLETE_TAIL_914/);
   const b = await projectRuleContext('fixture-session', [{id:'surface_messages', title:'Display',content:'BOB_CURRENT_NO_ALICE_802'}], {enabled:true,recovery:'codex-session-start',requestId:'b',personId:'bob'});
   settled=nextSettled(); await driver.submit({id:'b',text:'<private>\n'+renderModelContextSlots(b.slots)+'\n</private>\nCurrent user message: Ready.'}); await settled;
   settled=nextSettled(); await request('thread/compact/start',{threadId:first.threadId});await settled;

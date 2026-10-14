@@ -63,7 +63,7 @@ export function normalizeUsageEvent(input, { personId = '', verifiedPersonHash =
   }
   if (input.event === 'context_rule') {
     if (!['accepted', 'started', 'prepared', 'failed', 'skipped', 'compacted'].includes(input.state)
-        || !['full', 'reference', 'recovery', 'compaction'].includes(input.kind)) return null;
+        || !['full', 'reference', 'delta', 'recovery', 'compaction'].includes(input.kind)) return null;
     if (/^[a-f0-9]{64}$/.test(input.fingerprint || '')) event.fingerprint = input.fingerprint;
     if (token(input.errorCode)) event.errorCode = token(input.errorCode);
   }

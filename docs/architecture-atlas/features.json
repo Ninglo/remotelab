@@ -35,6 +35,7 @@
             "chat/source-context-pages.mjs",
             "chat/feishu-context-dedup.mjs",
             "chat/rule-context.mjs",
+            "chat/turn-context-hook.mjs",
             "chat/source-context-prompt.mjs",
             "connectors/feishu/conversation-context.mjs",
             "connectors/feishu/index.mjs",
