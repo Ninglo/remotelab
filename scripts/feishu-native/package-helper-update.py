@@ -67,7 +67,6 @@ fi
 ACTUAL=$(/usr/bin/shasum -a 256 "$TMP/helper-update.py" | /usr/bin/awk '{print $1}')
 [[ "$ACTUAL" == '__SHA__' ]] || { echo '更新组件校验失败，未安装。' >&2; exit 1; }
 "$PYTHON" "$TMP/helper-update.py" --install
-echo '自动更新已接入。首次检查已启动，此后每15分钟检查兼容同步补丁；无需退出飞书。'
 '''.replace('__BASE__', base).replace('__SHA__', digest)
 (a.output/'enable.sh').write_text(script)
 command = f'curl -fSs --proto "=https" --connect-timeout 10 --max-time 60 {base}/enable.sh -o /tmp/feishu-enable-updates.sh && /bin/bash /tmp/feishu-enable-updates.sh'

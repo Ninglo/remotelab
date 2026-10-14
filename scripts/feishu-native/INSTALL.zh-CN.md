@@ -67,6 +67,6 @@ ROOT="$HOME/Library/Application Support/RemoteLab/Feishu Native Trial"
 "$(cat "$ROOT/python-path")" "$ROOT/helper-update.py" --status
 ```
 
-`enrolled` 只证明自动检查已注册；`helper-update-check.json` 中的 `current` 或 `updated` 才证明本次补丁已匹配或应用。`deferred` 表示当前页面未连通，稍后重试；`rolled-back`/`held` 表示已回退并暂停失败补丁，须维护者处理。检查结果与备份留在本机，反馈状态即可，不要上传账号文件或整个目录。停用使用同一 Python 执行 `helper-update.py --disable`，保留当前增强版。
+接入命令会等待最多50秒并一起返回 `enrollment` 和 `firstCheck`。`enrolled` 只证明自动检查已注册；`firstCheck` 或 `helper-update-check.json` 中的 `current` 或 `updated` 才证明本次补丁已匹配或应用。`pending` 表示首次结果仍未返回。`deferred` 表示当前页面未连通，稍后重试；`rolled-back`/`held` 表示已回退并暂停失败补丁，须维护者处理。检查结果与备份留在本机，反馈状态即可，不要上传账号文件或整个目录。停用使用同一 Python 执行 `helper-update.py --disable`，保留当前增强版。
 
 发布者使用 `package-helper-update.py --spec <发布规格.json> --key <私有签名密钥> --output <发布目录>` 构建文件哈希对象、签名清单和首次接入脚本。规格包含递增 `serial`、已验证的 `bridgeHashes` 和各文件允许的旧哈希 `files`；私钥独立保存在实例私有配置中，绝不打包或提交。运行隔离的 `tests/test-feishu-helper-update.py` 和对应模块测试，验证真实设备后覆盖同一静态发布入口；保留旧哈希对象供正在下载的设备使用。扩大兼容范围必须先验证，不能放宽旧文件校验来覆盖未知修改。

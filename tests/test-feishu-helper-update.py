@@ -156,6 +156,13 @@ class UpdateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 u.fetch('https://other.invalid/patch')
 
+    def test_enrollment_does_not_reuse_previous_check(self):
+        u.save(self.root/'helper-update-check.json', {'checkedAt': 10, 'state': 'current'})
+        with patch.object(u.time, 'monotonic', side_effect=[0, 51]):
+            self.assertEqual(u.first_check(self.root, 11)['state'], 'pending')
+        u.save(self.root/'helper-update-check.json', {'checkedAt': 12, 'state': 'rolled-back'})
+        self.assertEqual(u.first_check(self.root, 11)['state'], 'rolled-back')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -278,6 +278,19 @@ def install_agent(root):
     return {'state': 'enrolled', 'intervalSeconds': 900, 'agent': LABEL}
 
 
+def first_check(root, since):
+    deadline, delay = time.monotonic()+50, .25
+    while True:
+        result = read_json(root/'helper-update-check.json', {})
+        if result.get('checkedAt', 0) >= since:
+            return result
+        remaining = deadline-time.monotonic()
+        if remaining <= 0:
+            return {'state': 'pending', 'reason': '自动检查已注册，首次结果尚未返回'}
+        time.sleep(min(delay, remaining))
+        delay = min(delay*2, 2)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--install', action='store_true')
@@ -305,7 +318,9 @@ def main():
         with (root/'launcher.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             atomic(root/'helper-update.py', pathlib.Path(__file__).read_bytes())
-        print(json.dumps(install_agent(root), ensure_ascii=False))
+        since = time.time()
+        enrollment = install_agent(root)
+        print(json.dumps({'enrollment': enrollment, 'firstCheck': first_check(root, since)}, ensure_ascii=False))
         return
     with (root/'helper-update.lock').open('a') as lock:
         try:
