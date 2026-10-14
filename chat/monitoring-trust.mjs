@@ -53,7 +53,8 @@ export function trustCandidates({runtime,bindings=[]},snapshot={},samples=[],now
   for(const s of samples) {
    if(s.background || !(s.responseAt<=now) || !(sampleTime(s)<=now))continue;
    const prior=latest.get(s.sessionId);
-   if(!prior || sampleTime(s)>sampleTime(prior) || sampleTime(s)===sampleTime(prior) && s.state==='completed')latest.set(s.sessionId,s);
+   if(!prior || s.responseAt>prior.responseAt || s.responseAt===prior.responseAt
+    && (sampleTime(s)>sampleTime(prior) || sampleTime(s)===sampleTime(prior) && s.state==='completed'))latest.set(s.sessionId,s);
   }
   const demand=atRisk.filter(b=>{const s=latest.get(b.sessionId);return s && s.accountId===b.accountId && now-s.responseAt<=30*60000 && ['running','queued','failed'].includes(s.state);});
   const reason=!demand.length?'no_current_demand':!runtime.autoSwitch?'switch_disabled':available?'automatic_continuation':unknownBackup?'backup_unknown':'no_available_backup';

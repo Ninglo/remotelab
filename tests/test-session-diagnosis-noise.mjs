@@ -58,6 +58,9 @@ try {
  const retried=trustCandidates({runtime:runtime(start),bindings:[{sessionId:'one',accountId:'a'}]}, {},
   [{...row('one',start-1000),at:start-1000},{...row('one',start-1000),runId:'retry',at:start,state:'completed'}],start,{riskOnly:true});
  assert.equal(privateDiagnosisDecision(retried[0]).eligible,false,'a successful retry supersedes the failed run of the same request');
+ const newerFailure=trustCandidates({runtime:runtime(start),bindings:[{sessionId:'one',accountId:'a'}]}, {},
+  [{...row('one',start-2000),at:start,state:'completed'},row('one',start-1000)],start,{riskOnly:true});
+ assert.equal(privateDiagnosisDecision(newerFailure[0]).eligible,true,'late completion of an older request does not hide a newer failure');
  const unknown=runtime(start);unknown.accounts.push({...account('b',90,start),usage:null});
  assert.equal(privateDiagnosisDecision(trustCandidates({runtime:unknown,bindings:[{sessionId:'one',accountId:'a'}]}, {},[row('one',start)],start,{riskOnly:true})[0]).reason,'backup_unknown');
  const switched={...runtime(start),activeId:'b',accounts:[account('a',0,start),account('b',90,start)],switchEvents:[0,1,2].map(i=>({from:'a',to:'b',at:new Date(start-i*1000).toISOString()}))};
