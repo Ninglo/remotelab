@@ -16,18 +16,37 @@ export function buildGroupConfigurationCard(record, view) {
   const selection = view.selection || {};
   const url = record.sessionId && view.sessionAvailable ? buildSessionNavigationHref(record.sessionId, { requireAbsolute: true }) : '';
   const prompt = view.systemPrompt || '';
-  const elements = [md(`**本群主讨论 · ${labels[record.mode]}**\n${{
+  const responseLabel = view.participationControls === false ? (view.responseMode === 'mention_only' ? '点名回应' : '话题内逐条回应') : labels[record.mode];
+  const elements = [md(`**Agent 回应状态 · ${responseLabel}**\n${view.participationControls === false ? '沿用本群原有回应设置；群主会话与独立话题分别保存。' : {
     active: '持续接收消息，自主判断何时参与。',
     listening: '持续接收消息；@我可单次邀请。', paused: '后续普通消息不进入会话。',
-  }[record.mode]}`), row(Object.keys(labels).map(mode => ({ tag: 'button',
+  }[record.mode]}`), ...(view.participationControls === false ? [] : [row(Object.keys(labels).map(mode => ({ tag: 'button',
     type: mode === record.mode ? 'primary' : 'default', text: plain(labels[mode]),
     behaviors: [{ type: 'callback', value: { namespace: 'participation', key: record.key, mode, epoch: record.epoch || 0 } }],
-  }))),
-  md(`**主讨论模型**：${selection.model || '默认'}\n**思考强度**：${selection.effort || '不适用'}\n**执行工具**：${selection.tool || '默认'}`),
+  }))) ]),
+  md(`**主 Session 模型**：${selection.model || '默认'}\n**思考强度**：${selection.effort || '不适用'}\n**执行工具**：${selection.tool || '默认'}`),
   ...(view.runningSelection ? [md(`当前正在执行：${view.runningSelection.model || '默认'} · ${view.runningSelection.effort || '不适用'}；修改用于后续输入。`)] : []),
   ...(url ? [md(`[查看主讨论记录](${url})（可选；配置操作均可在飞书完成）`)]
     : [md(view.sessionAvailable ? '主讨论已绑定；外部记录链接尚未配置。' : '首次收到群消息后显示主讨论记录链接。')]),
   button('刷新当前配置', 'refresh')];
+  if (view.project) {
+    const p = view.project;
+    elements.push(md(p.error ? `**项目资料暂不可读**：${p.error}`
+      : `**项目**：${p.name || p.id}${p.status === 'paused' ? '（项目已暂停）' : ''}\n`
+        + (p.briefUrl ? `[项目说明 · 共识、经验与目录](${p.briefUrl})` : '项目说明尚未发布')
+        + (p.briefUpdated ? `\n更新时间：${p.briefUpdated}` : '')));
+    if (p.skills?.length) elements.push(md('**项目常用技能**\n' + p.skills.map(x => `• **${x.name}**：${x.description}`).join('\n')));
+    if (p.groups?.length > 1) elements.push(md(p.groups.map(g => `[${g.chatName || '同项目群'}](https://applink.feishu.cn/client/chat/open?openChatId=${encodeURIComponent(g.chatId)})`).join(' · ')));
+    const topics = view.topics || [], page = view.boardPage || 0, pages = Math.max(1, Math.ceil(topics.length / 10));
+    const safe = x => String(x).replace(/[\[\]<>`]/g, '').replace(/\s+/g, ' ').slice(0, 80);
+    elements.push(md(`**本群话题看板** · ${topics.length} 个未归档话题 · 第 ${page + 1}/${pages} 页\n`
+      + (view.boardConnected ? '随会话状态更新；“未在运行”不代表工作完成。' : '**实时连接暂不可用，以下为最近读取状态。**')
+      + '\n' + (topics.slice(page * 10, page * 10 + 10).map(t => `• ${t.state} · [${safe(t.title)}](${t.url})`).join('\n') || '暂无已关联话题。')));
+    if (pages > 1) elements.push(row([
+      ...(page ? [button('上一页', 'board-page', { page: page - 1 })] : []),
+      ...(page + 1 < pages ? [button('下一页', 'board-page', { page: page + 1 })] : []),
+    ]));
+  }
   if (view.catalog?.models?.length && view.sessionAvailable) elements.push({ tag: 'form', name: 'group_model', elements: [
     fold('修改主讨论模型', [{ tag: 'select_static', name: 'model', width: 'fill',
       placeholder: plain('选择模型'), ...(view.catalog.models.slice(0, 100).some(model => model.id === selection.model)
@@ -61,5 +80,5 @@ export function buildGroupConfigurationCard(record, view) {
   elements.push(md('也可说“先旁听”“暂停接收消息”“恢复参与”。模型修改只作用于主讨论；独立话题保留各自配置。'));
   return { schema: '2.0', config: { update_multi: true, enable_forward: false },
     header: { template: record.mode === 'active' ? 'green' : record.mode === 'listening' ? 'blue' : 'grey',
-      title: plain(`Bot 配置 · ${labels[record.mode]}`) }, body: { elements } };
+      title: plain(`Agent · ${responseLabel}`) }, body: { elements } };
 }

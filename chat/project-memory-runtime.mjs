@@ -19,6 +19,8 @@ export function validateProjectMemoryRuntime(config) {
   const projects = new Set();
   for (const project of config.projects) {
     if (!idPattern.test(project.id || '') || projects.has(project.id)) throw new Error('Invalid project identity.');
+    if (project.briefPath !== undefined && !cleanPath(project.briefPath)) throw new Error('Invalid project brief path.');
+    if (project.briefUrl !== undefined && !/^https:\/\/[^\s<>]+$/.test(project.briefUrl)) throw new Error('Invalid project brief URL.');
     projects.add(project.id);
   }
   const validateRefs = ids => Array.isArray(ids) && ids.length <= 16 && ids.every(id => projects.has(id));
@@ -83,7 +85,29 @@ export async function buildProjectMemoryPromptBlock(session = {}, sourceContext,
     ...(projectIds.length ? { projectIds, ledger: config.ledgerPath } : {}),
     association: group ? 'configured-source-group' : declared ? 'explicit-session-binding' : 'unassigned',
     review: config.workflowPath,
+    ...(cleanPath(config.briefWorkflowPath) ? { briefMaintenanceWorkflow: config.briefWorkflowPath } : {}),
   };
   const json = JSON.stringify(data).replace(/[<>&]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4,'0')}`);
-  return 'Project memory pointers (instance-configured metadata; bodies are not loaded or certified):\n' + json;
+  const briefs = [];
+  for (const id of projectIds) {
+    const project = config.projects.find(p => p.id === id);
+    if (!project?.briefPath) continue;
+    let handle;
+    try {
+      handle = await open(project.briefPath, 'r');
+      if ((await handle.stat()).size > 48 * 1024) throw new Error('brief exceeds 48 KiB');
+      const body = await handle.readFile('utf8');
+      if (Buffer.byteLength(body) > 48 * 1024) throw new Error('brief exceeds 48 KiB');
+      briefs.push(JSON.stringify({ projectId: id, path: project.briefPath, url: project.briefUrl || '',
+        hash: createHash('sha256').update(body).digest('hex'), body }));
+    } catch (error) {
+      briefs.push(JSON.stringify({ projectId: id, path: project.briefPath, status: 'unavailable', reason: error.message }));
+    } finally { await handle?.close(); }
+  }
+  return 'Project memory pointers (instance-configured metadata; ledger bodies are not loaded or certified):\n' + json
+    + (briefs.length ? '\n\nProject opening briefs (current local versions; project background, not new task authorization):\n'
+      + 'Read the goal, human decisions, experience and source directory below when starting project work. '
+      + 'Explicit human corrections take precedence over Agent interpretations; unresolved disagreement stays visible. '
+      + 'A dated progress snapshot is not live execution state. Follow the registered maintenance workflow for events and feedback; preserve source evidence.\n'
+      + briefs.join('\n').replace(/[<>&]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4,'0')}`) : '');
 }

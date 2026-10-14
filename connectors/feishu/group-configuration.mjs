@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { groupProject, projectTopicRows } from './project-group-cards.mjs';
+import { effectiveFeishuGroup } from './group-settings.mjs';
 import { join } from 'node:path';
 import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
 import { completeRuntimeProfile, reasoningForRuntimeProfile } from '../../lib/runtime-profile.mjs';
@@ -34,7 +37,9 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     const chatId = record.source.chatId;
     const saved = await reload(chatId);
     let session = null;
-    if (record.sessionId) {
+    const disconnected = runtime.projectCardsConnected === false && runtime.projectCardSessions;
+    if (disconnected) session = runtime.projectCardSessions.get(record.sessionId) || null;
+    else if (record.sessionId) {
       const result = await request(`/api/sessions/${encodeURIComponent(record.sessionId)}`);
       if (result.response?.status !== 404) {
         if (!result.response?.ok) throw new Error(result.json?.error || '主讨论暂时无法读取，请稍后刷新。');
@@ -42,10 +47,27 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
       }
     }
     const selected = session?.feishuRuntimeSelection || session || await resolveDefault();
-    const catalog = await json(`/api/models?tool=${encodeURIComponent(selected.tool || 'codex')}`);
+    const tool = selected.tool || 'codex';
+    runtime.projectCardCatalogs ||= new Map();
+    const catalog = disconnected ? (runtime.projectCardCatalogs.get(tool) || { models: [] })
+      : await json(`/api/models?tool=${encodeURIComponent(tool)}`);
+    if (!disconnected) runtime.projectCardCatalogs.set(tool, catalog);
     const selection = completeRuntimeProfile(selected, catalog);
     const systemPrompt = runtime.config.groups?.[chatId]?.systemPrompt || '';
-    return { selection, catalog, reasoning: reasoningForRuntimeProfile(catalog, selection.model), systemPrompt,
+    const group = effectiveFeishuGroup(runtime.config, chatId);
+    let project = null;
+    try {
+      project = await groupProject(runtime, chatId);
+      if (project?.briefPath) {
+        const body = await readFile(project.briefPath, 'utf8');
+        project.briefUpdated = body.match(/^更新时间[：:]\s*(.+)$/m)?.[1] || '';
+      }
+    } catch { project = { error: '登记的项目说明暂时无法读取，请核对原来源。' }; }
+    const topics = projectTopicRows(runtime.projectCardSessions || new Map(), chatId, runtime.config.sourceRouteId);
+    const boardPage = Math.min(runtime.groupBoardPages?.get(chatId) || 0, Math.max(0, Math.ceil(topics.length / 10) - 1));
+    return { project, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
+      participationControls: group.participationMode === 'ambient' && group.participationControls === true,
+      responseMode: group.responseMode, selection, catalog, reasoning: reasoningForRuntimeProfile(catalog, selection.model), systemPrompt,
       sessionAvailable: Boolean(session), effectiveSystemPrompt: session?.systemPrompt || '',
       revision: hash([record.epoch, record.sessionId || '', selection, systemPrompt, saved?.version || 0]),
       ...(session?.activeRunId ? { runningSelection: { tool: session.tool, model: session.model, effort: session.effort } } : {}),
@@ -66,14 +88,18 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
         || record.source.chatId !== chatId || record.cardMessageId !== messageId || !await authorize(summary)) {
       return { toast: { type: 'error', content: '配置卡片已失效或无权操作。' } };
     }
-    if (!['refresh', 'model', 'effort', 'prompt'].includes(value.action)) return { toast: { type: 'error', content: '未知配置操作。' } };
+    if (!['refresh', 'board-page', 'model', 'effort', 'prompt'].includes(value.action)) return { toast: { type: 'error', content: '未知配置操作。' } };
     // Callback returns promptly; each group has one serial mutation queue.
     void exclusive(chatId, async () => {
       const latestRecord = await participation().state(summary);
       const current = await view(latestRecord);
-      if (value.action !== 'refresh' && value.revision !== current.revision) {
+      if (!['refresh', 'board-page'].includes(value.action) && value.revision !== current.revision) {
         await participation().publish(latestRecord);
         throw new Error('配置已被其他操作修改；已刷新卡片，请重新编辑。');
+      }
+      if (value.action === 'board-page') {
+        if (!Number.isInteger(value.page) || value.page < 0 || value.page > 1000) throw new Error('无效页码');
+        runtime.groupBoardPages ||= new Map(); runtime.groupBoardPages.set(chatId, value.page);
       }
       const fields = event.action?.form_value || {};
       if (value.action === 'model' || value.action === 'effort') {

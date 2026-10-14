@@ -183,3 +183,47 @@ work topic is created until a human clicks the card.
 Before offering a card and again at confirmation, the Connector verifies that
 the configured work chat is an active topic chat. A stale link to a normal
 group fails closed instead of offering a handoff to that group.
+
+## Project group Agent cards and opening briefs
+
+Ask the Agent: “For the groups already bound to projects in this instance, reuse
+one main Session per group, pin its Agent card, show its topic states and project
+skills, and maintain a shared project opening brief in Markdown and Feishu.”
+The existing `MEMORY_DIR/project-runtime.json` group associations select the
+scope. Register each group’s verified `chatName` and `tenantKey`; a project may
+register `name`, `briefPath`, `briefUrl` and `skills` (`name`, `description`,
+`skill`). `briefWorkflowPath` points to the instance’s existing event/review
+maintenance workflow. These are instance pointers, not repository business data.
+
+Enable `projectCards: true` on the intended Connector. On connection it resolves
+each registered group’s existing main conversation, creates an idempotent Session
+only when absent, and publishes the existing participation card. It sends no
+synthetic human input and never starts work merely to create a Session. Explicit
+response modes, paused projects, independent topic Sessions and model choices
+remain intact. Card opt-outs remain effective until explicitly withdrawn by the
+operator. Unbound groups are not inferred from titles.
+
+The card shows the actual main Session runtime, response policy, project brief,
+brief update time, concise skills, paired group links and a paginated board of
+that group’s unarchived topic Sessions. Native Session invalidations refresh the
+same card without a polling AI task. Runtime completion is not task completion:
+idle topics say “not running”; completion requires the existing workflow state.
+Disconnection is shown on the card, and reconnect reloads the current source.
+The board is a read-only projection, not a second work ledger or autonomous
+supervisor. Existing callbacks validate the card, actor and source before edits.
+
+The normal prompt builder reads only registered projects’ opening briefs on each
+accepted input, including resumed topics, with a hash and source pointer. Each
+brief is bounded at 48 KiB; missing or oversized files are marked unavailable
+rather than silently replaced with cached text. The detailed ledger remains a
+pointer. Briefs are project background, not new task authorization; human
+corrections take precedence over Agent interpretations without turning unresolved
+conflicts into consensus. Document comments need an explicit project Session
+binding because they do not carry a chat ID.
+
+For maintenance, reuse the existing document-comment binding and the existing
+04:00 project review workflow. Update local Markdown and the same Feishu document
+in place; preserve manual edits, comments and anchors. Do not create a second
+schedule or overwrite whole reviewed documents. API readback, native event tests,
+actual client clicks, human comment response and the next naturally scheduled
+review are separate acceptance evidence.

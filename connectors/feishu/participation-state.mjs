@@ -60,6 +60,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   authorize = async () => false } = {}) {
   const records = createRecordStore(join(runtime.config.storageDir, 'participation-state'));
   const queues = new Map();
+  const publishQueues = new Map();
   const sourceFor = summary => ({ sourceRouteId: runtime.config.sourceRouteId || 'default',
     tenantKey: summary.tenantKey || summary.accountId || summary.sender?.tenantKey || '',
     chatId: summary.chatId, topicId: buildFeishuTopicId(summary),
@@ -96,6 +97,11 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     return record;
   }
   async function publish(record) {
+    if (!publishQueues.has(record.key)) publishQueues.set(record.key, serialQueue());
+    return publishQueues.get(record.key)(() => publishCurrent(record));
+  }
+  async function publishCurrent(record) {
+    record = { ...record, ...await records.get(record.key) };
     // Withdrawing a status card does not change participation or intake. Keep
     // the durable opt-out when restoring or changing modes so it cannot resend.
     if (record.cardSuppressed === true
@@ -247,5 +253,5 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     }
   }
   return { state, remember, change, assess, intake, action, restore, publish, record: key => records.get(key),
-    idle: async () => { await Promise.all([...queues.values()].map(queue => queue.idle())); await records.idle(); } };
+    idle: async () => { await Promise.all([...queues.values(), ...publishQueues.values()].map(queue => queue.idle())); await records.idle(); } };
 }

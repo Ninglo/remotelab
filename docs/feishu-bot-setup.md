@@ -674,6 +674,16 @@ edit form. Set that exact group's
 and text controls. This also suppresses publication on restart and mode changes;
 withdraw the existing message and its top notice separately when requested.
 
+The opt-in `projectCards: true` setting extends this same card to groups explicitly
+registered in the instance project runtime, including work and mention-only
+groups. Their response policy remains unchanged, and participation buttons appear
+only where that control is already enabled. Each group reuses its main Session;
+the card adds the shared project document, concise skills and a paginated topic
+board. Native Session invalidations and registered-source file notifications
+refresh the card; per-card publication is serialized to avoid duplicate creates.
+See [project group cards and opening briefs](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)
+for scope, registration, feedback and acceptance boundaries.
+
 Participation controls apply independently to the main timeline and each existing
 Thread. `/mute` selects listening: messages are recorded without a model turn unless
 that message @ mentions the Bot or uses a task command. Jev does not interpret

@@ -7,6 +7,7 @@ import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
 import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
+import { startProjectGroupCards } from '../connectors/feishu/project-group-cards.mjs';
 import { handleFeishuProgressPolicyAction } from '../connectors/feishu/progress-policy-actions.mjs';
 import { createFeishuCardReadSampler, handleFeishuCardReadEvent } from '../connectors/feishu/card-engagement.mjs';
 
@@ -393,6 +394,7 @@ async function loadConfig(pathname) {
     groups: normalizeFeishuGroups(parsed?.groups),
     defaultGroupParticipation: parsed.defaultGroupParticipation || 'active',
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
+    projectCards: parsed.projectCards === true,
     projectSurfacesPath: trimString(parsed?.projectSurfacesPath)
       ? resolve(configDir, parsed.projectSurfacesPath) : '',
     replyPolicy: normalizeFeishuReplyPolicy(parsed?.replyPolicy),
@@ -1760,9 +1762,20 @@ function groupConfigurationController(runtime, helpers = {}) {
 }
 
 async function onboardFeishuGroup(runtime, summary, helpers = {}) {
-  summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
-  if (!participationEnabled(runtime, summary)) return { ignored: true, reason: 'explicit_group_policy' };
+  if (!helpers.projectCard) summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
+  if (!helpers.projectCard && !participationEnabled(runtime, summary)) return { ignored: true, reason: 'explicit_group_policy' };
   const requester = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
+  if (helpers.projectCard) {
+    const existing = await requester('/api/session-conversations/resolve', { method: 'POST', body: {
+      conversation: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
+        target: buildFeishuSessionConversationTarget(summary) } } });
+    if (!existing.response.ok) throw new Error(existing.json?.error || 'Cannot resolve group main Session');
+    if (existing.json?.sessionId) {
+      const controller = participationController(runtime, helpers);
+      await controller.publish(await controller.remember(summary, existing.json.sessionId));
+      return { onboarded: true, sessionId: existing.json.sessionId };
+    }
+  }
   const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
   const groupFeed = groupSettings.groupFeed === true;
   const groupFeedRollback = groupSettings.groupFeed === false;
@@ -2210,11 +2223,17 @@ async function main() {
       request: (path, options) => requestRemoteLab(runtime, path, options),
       ensureAuthCookie: () => ensureAuthCookie(runtime) },
   });
+  runtime.projectCards = await startProjectGroupCards(runtime, {
+    request: (path, options) => requestRemoteLab(runtime, path, options),
+    ensureAuthCookie: () => ensureAuthCookie(runtime),
+    onboard: (summary, options) => onboardFeishuGroup(runtime, summary, options),
+    participation: () => participationController(runtime),
+  });
   let cardsStopped = null;
   const closeConnection = (reason) => {
     if (closed) return;
     closed = true;
-    cardsStopped = runtime.workboards.stop();
+    cardsStopped = Promise.all([runtime.workboards.stop(), runtime.projectCards?.stop()]);
     stopSourceDeliveryPoller(runtime);
     runtime.projectSurface?.stop();
     void documentEvents.stop();

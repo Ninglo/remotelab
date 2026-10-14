@@ -112,6 +112,14 @@ try {
   await runtime.participation.change(joined, 'paused', { controlId: 'keep-pause' });
   await onboardFeishuGroup(runtime, joined, onboardOptions);
   assert.equal((await runtime.participation.state(joined)).mode, 'paused', 'rejoining must preserve an explicit pause');
+  let resolvedOnly = 0;
+  await onboardFeishuGroup(runtime, { ...source, chatId: 'work' }, { projectCard: true,
+    requestRemoteLab: async (path) => {
+      assert.equal(path, '/api/session-conversations/resolve'); resolvedOnly++;
+      return { response: { ok: true }, json: { sessionId: session.id } };
+    } });
+  assert.equal(resolvedOnly, 1, 'project card reuses an existing main Session without creating or starting work');
+  assert.equal(config.groups.work.responseMode, 'all', 'project card does not change work-group response policy');
   const count = onboardRequests.length;
   await onboardFeishuGroup(runtime, { ...joined, chatId: 'private' }, onboardOptions);
   assert.equal(onboardRequests.length, count, 'rejoining does not erase an explicit mention-only group policy');
