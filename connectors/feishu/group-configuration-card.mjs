@@ -6,7 +6,38 @@ const labels = { active: '主动参与', listening: '旁听', paused: '暂停接
 const fold = (title, elements) => ({ tag: 'collapsible_panel', expanded: false,
   header: { title: plain(title) }, elements });
 
+// Per-card preview selection keeps other groups on their current presentation.
+function compactGroupCard(record, view) {
+  const states = { active: '主动参与', listening: '旁听', paused: '暂停' };
+  const mode = record.mode || 'active';
+  const selection = view.selection || {};
+  const elements = [md({ active: '持续接收群消息，按讨论需要参与。',
+    listening: '持续接收群消息；@我可邀请回应。', paused: '暂停接收后续普通群消息。' }[mode])];
+  if (view.participationControls !== false) elements.push({ tag: 'column_set', columns: Object.keys(states).map(state => ({
+    tag: 'column', width: 'weighted', weight: 1, elements: [{ tag: 'button',
+      type: state === mode ? 'primary' : 'default', text: plain(states[state]),
+      behaviors: [{ type: 'callback', value: { namespace: 'participation', key: record.key,
+        mode: state, epoch: record.epoch || 0 } }],
+    }],
+  })) });
+  const url = record.sessionId && view.sessionAvailable
+    ? buildSessionNavigationHref(record.sessionId, { requireAbsolute: true }) : '';
+  elements.push(md(`**主 Session**：${selection.model || '待确认'}${selection.effort ? ` · ${selection.effort}` : ''}`
+    + (url ? `\n[打开主会话](${url})` : '')));
+  const project = view.project;
+  if (project?.briefUrl) elements.push({ tag: 'hr' }, md(`[**项目说明 · 共识、经验与目录**](${project.briefUrl})`
+    + (project.briefUpdated ? `\n更新时间：${project.briefUpdated}` : '')));
+  if (project?.skills?.length) elements.push(md('**常用技能**\n'
+    + project.skills.slice(0, 3).map(skill => `• **${skill.name}**：${skill.description}`).join('\n')));
+  if (view.error) elements.push(md(view.error));
+  if (record.stopPending) elements.push(md('正在停止当前任务。'));
+  return { schema: '2.0', config: { update_multi: true, enable_forward: false },
+    header: { template: mode === 'active' ? 'green' : mode === 'listening' ? 'blue' : 'grey',
+      title: plain(`Agent · ${states[mode]}`) }, body: { elements } };
+}
+
 export function buildGroupConfigurationCard(record, view) {
+  if (record.cardLayout === 'compact') return compactGroupCard(record, view);
   const identity = { namespace: 'group-configuration', key: record.key, revision: view.revision };
   const button = (label, action, extra = {}) => ({ tag: 'button', type: 'default', text: plain(label),
     behaviors: [{ type: 'callback', value: { ...identity, action, ...extra } }] });

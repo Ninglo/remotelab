@@ -159,4 +159,4 @@ Mac 原生飞书增强的独立安装、本人连接、消息分组侧栏入口�
 
 Automation display labels and condition/result ordering are documented in [Task Center](task-center-v1.md#delivery-details-and-controls). Reviewed conditions include idle wake and gate rules; scheduled checks are distinct from actual execution.
 
-已绑定项目群可启用[群 Agent 卡片与开工说明](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)：复用各群主 Session，置顶显示回应状态、模型、项目文档、技能和实时话题看板；项目说明沿固定 Markdown、飞书评论和原04:00复盘维护。
+已绑定项目群可启用[群 Agent 卡片与开工说明](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)：复用各群主 Session，置顶显示回应状态、模型、项目文档、技能和实时话题看板；项目说明沿固定 Markdown、飞书评论和原04:00复盘维护。 单张卡片可选择精简展示，仅保留参与切换、模型与会话链接、项目说明和技能；按已审阅的群单独启用。

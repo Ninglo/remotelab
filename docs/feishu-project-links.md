@@ -203,6 +203,13 @@ response modes, paused projects, independent topic Sessions and model choices
 remain intact. Card opt-outs remain effective until explicitly withdrawn by the
 operator. Unbound groups are not inferred from titles.
 
+A single existing card can opt into a compact presentation using its durable
+participation record's `cardLayout: "compact"`. It retains the three participation
+callbacks, main Session model/link, project brief/time and up to three skill
+summaries. It omits the topic list, runtime editors, prompt editors and refresh
+button. Select and verify only the explicitly reviewed group; this setting does
+not authorize rollout to other groups or lift their publication suppression.
+
 The card shows the actual main Session runtime, response policy, project brief,
 brief update time, concise skills, paired group links and a paginated board of
 that group’s unarchived topic Sessions. Native Session invalidations refresh the
