@@ -130,6 +130,18 @@ The service directly selects each receiver, does not change the system default m
 
 Disk usage, free space, duration and upload bandwidth are bounded. The service refuses additional data when the cache is full; it never deletes original audio automatically. Keep local originals until a deliberate archive/removal policy is agreed. A pending submission persists across outages/restarts; six failed attempts become `blocked`, with a reason and explicit `retry --recording ID`. Session IDs, finalized assets and a stable request ID are saved before subsequent steps, preventing duplicate AI turns after a lost response. Remote storage uploads never receive the instance auth cookie.
 
+### Short accidental recordings
+
+Set `minUploadSeconds: 10` to keep recordings of **10 seconds or less** local.
+The default `0` disables this filter. Duration is the total saved audio across
+all segments, not elapsed button time or detected speech duration. A short
+recording stays `held` with `holdReason: "short-recording"`; no upload, Feishu
+publication, analysis Session or analysis request is created. Original WAVs
+remain available locally. The threshold is saved when each recording starts
+and also applies to crash recovery. Changing the setting later does not release
+held recordings or retroactively change old submissions; ordinary retry does
+not upload held recordings.
+
 ### Upload failure keeps the original local
 
 > 固化录音上传失败时的本地暂存：录音先写到采集机，结束后再上传。网络、飞书接口或投递失败时保留原始 WAV、分段顺序和来源记录；有限重试仍失败就暂停该条提交，录音继续可用。需要桌面入口时，将已核实的 `records` 目录链接到桌面，并明确它是原音入口，不移动或重复复制正在写入的文件。恢复上传时复用原录音记录、已上传附件和原投递标识；回执不明确时先核对，避免重复发群。

@@ -617,3 +617,52 @@ test('an old segmented publication remains immutable even after the new encoder 
   await assert.rejects(submitRecording(root, record, { config: config({ ffmpeg: '/missing-ffmpeg' }), client }), /outbox before retrying/);
   assert.equal(record.publicationAudio, undefined);
 });
+
+
+test('short-recording filter uses inclusive saved duration across segments and never queues held audio', async (t) => {
+  assert.throws(() => config({ minUploadSeconds: -1 }), /minUploadSeconds/);
+  assert.throws(() => config({ minUploadSeconds: 1.5 }), /minUploadSeconds/);
+  assert.equal(config().minUploadSeconds, 0);
+  const root = await temporary(t), factory = captureFactory();
+  const cfg = config({ minUploadSeconds: 10, limits: { minFreeBytes: 0, segmentSeconds: 5 } });
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  const queued = []; manager.on('pending', id => queued.push(id));
+  const results = [];
+  for (const frames of [159999, 160000, 160001]) {
+    await manager.start('a');
+    await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(123, 456, frames));
+    const record = (await manager.stop('a')).recording; results.push(record);
+    assert.equal(record.durationSeconds, frames / 16000);
+    assert.equal((await samples(root, record)).length, frames);
+    assert.equal(record.status, frames <= 160000 ? 'held' : 'pending');
+    assert.equal(record.holdReason, frames <= 160000 ? 'short-recording' : undefined);
+  }
+  assert.deepEqual(queued, [results[2].id]);
+  const submitted = [];
+  const queue = new RecordingUploadQueue({ root, config: config(), submit: async (_root, record) => {
+    submitted.push(record.id); record.status = 'submitted'; await saveRecord(root, record);
+  } });
+  await queue.run(); await queue.close();
+  assert.deepEqual(submitted, [results[2].id]);
+  assert.equal(recordingSummary(results[0]).holdReason, 'short-recording');
+  await assert.rejects(submitRecording(root, results[0], { config: cfg, client: {
+    request() { assert.fail('Short audio must not create any remote request'); }
+  } }), /Only saved/);
+});
+
+test('short-recording threshold survives interrupted WAV recovery and later configuration changes', async (t) => {
+  const root = await temporary(t);
+  for (const [index, frames] of [160000, 160001].entries()) {
+    const record = { id: 'rec_' + String(index + 1).padStart(32, '0'), status: 'recording',
+      submissionMode: 'automatic', minUploadSeconds: 10, segments: [{ filename: '00000.wav' }] };
+    await saveRecord(root, record);
+    const writer = new WavWriter(join(recordDir(root, record.id), '00000.wav'));
+    await writer.start(); await writer.append(Buffer.alloc(frames * 2, 1)); await writer.file.close();
+    await recoverRecordings(root);
+    const recovered = await loadRecord(root, record.id);
+    assert.equal(recovered.status, index === 0 ? 'held' : 'pending');
+    assert.equal(recovered.durationSeconds, frames / 16000);
+    assert.equal(recovered.interrupted, true);
+  }
+});
