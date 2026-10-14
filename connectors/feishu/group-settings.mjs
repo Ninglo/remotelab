@@ -50,6 +50,14 @@ const GROUP_TIMELINE_SESSION_PROMPT = [
   'A short answer, including a bounded lookup, can be given directly in the group. Reply placement and execution Session are separate choices. If current input disables automatic work routing, keep execution here unless the human explicitly requests another Session; you can still select a thread reply before the first visible output. Do not treat human-to-human discussion as a task.',
 ].join('\n');
 
+// Explicit per-chat policies survive the default for newly added groups.
+export function effectiveFeishuGroup(config = {}, chatId = '') {
+  const group = config.groups?.[chatId] || {};
+  if (config.defaultGroupParticipation !== 'active' || group.participationControls === false
+      || (group.responseMode && group.participationMode !== 'ambient')) return group;
+  return { participationMode: 'ambient', participationControls: true, groupFeed: true, ...group };
+}
+
 // Per-chat overrides select intake policy and the mainline participation pilot.
 export function normalizeFeishuGroups(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('groups must be a chat-ID to settings object');
@@ -82,7 +90,7 @@ export function normalizeFeishuGroups(value = {}) {
 }
 
 export function resolveFeishuGroupSettings(config = {}, summary = {}) {
-  const group = config.groups?.[summary.chatId] || {};
+  const group = effectiveFeishuGroup(config, summary.chatId);
   const privateChat = ['p2p', 'private'].includes(String(summary.chatType || '').trim().toLowerCase());
   const topic = !privateChat && (isFeishuTopicChat(summary)
     || Boolean(buildFeishuTopicId(summary))
@@ -90,11 +98,10 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
       && (summary.startThread !== true || group.jevReactions === true)));
   const groupMainline = !privateChat && !topic
     && [summary.chatType, summary.chatMode].some(value => String(value || '').toLowerCase() === 'group');
-  const ambient = !privateChat && !topic && group.participationMode === 'ambient';
+  const ambient = groupMainline && group.participationMode === 'ambient';
   const quickReactions = group.quickReactions === true && !privateChat && !topic;
   return {
-    // Ordinary groups must opt in individually. Connector-wide defaults cannot
-    // enable proactive participation in an unconfigured business group.
+    // Explicit mention-only and existing group policies take precedence.
     responseMode: group.participationMode === 'ambient' ? 'all' : group.responseMode
       ?? 'mention_only',
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]

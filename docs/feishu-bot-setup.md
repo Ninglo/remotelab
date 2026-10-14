@@ -22,7 +22,7 @@ When you stop, tell me exactly what I need to click or send, and how you'll veri
 By the end of this flow you should have:
 
 - one self-built Feishu app bot
-- one subscribed inbound event: `im.message.receive_v1`
+- subscribed inbound events: `im.message.receive_v1` and `im.chat.member.bot.added_v1`
 - one local `feishu-connector` using persistent connection
 - one working private-chat validation path
 - RemoteLab sessions created or reused behind the bot
@@ -52,7 +52,7 @@ If the app does not exist yet, the AI should tell the human in one pass which co
 1. Create a self-built Feishu app.
 2. Enable the app's bot capability.
 3. Open the minimum IM read and send permissions needed for private chat, plus `im:resource` (获取与上传图片或文件资源).
-4. Subscribe only `im.message.receive_v1` under Tenant Token-Based Subscription.
+4. Subscribe `im.message.receive_v1` and `im.chat.member.bot.added_v1` under Tenant Token-Based Subscription; use `card.action.trigger` for the group configuration controls.
 5. Choose persistent connection / long connection as the inbound mode.
 6. Add the first tester to app availability scope and publish or apply the current version.
 7. Send the AI this handoff payload:
@@ -248,28 +248,27 @@ Notes:
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
-`accessPolicy` decides who may use the Bot. Ordinary groups require an explicit
-mention of this Bot or a task/control command by default. To enable proactive
-participation, configure that exact chat with `participationMode: "ambient"`
-or `responseMode: "all"` in `groups`. Connector-wide `responsePolicy.group`
-values remain accepted for config compatibility, but even `all` cannot opt in
-unconfigured ordinary groups. `mention_only` never implicitly enables ambient
-participation. Uninvited ordinary text, attachments, inline quotes and
-merge-forwards are filtered before reactions, attachment handling or model
-submission; existing group Sessions cannot widen this scope. In explicitly
-enabled groups the Session decides when a useful contribution is needed. New
-groups, including native topic groups, default to passive reception. Creating
-or joining a group does not opt it in. An uninvited topic requires an explicit
-Bot mention or task/control command. Once the Bot has an accepted conversation
-binding, human follow-ups in that same topic need no further mention; other
-topics, groups, tenants and Bots do not inherit that invitation.
+`accessPolicy` decides who may use the Bot. Newly added groups default to active
+participation (`defaultGroupParticipation: "active"`): the main Session receives
+discussion and decides when a useful contribution is needed. The Bot-added event
+automatically creates/reuses that group's main Session and publishes a pinned
+configuration card. The first admitted message is a fallback when that event is
+unavailable. Existing explicit `responseMode`, participation mode, mute, pause and
+card suppression settings are preserved. Set `defaultGroupParticipation` to
+`"mention_only"` for a connector whose new groups should require invitations, or
+set an individual group's `responseMode: "mention_only"`. Connector-wide legacy
+`responsePolicy.group` remains accepted for compatibility; the new setting controls
+the default. Self and peer-Bot guards apply in every mode. Explicitly passive
+groups filter uninvited messages before attachment handling or model submission.
+An accepted topic binding permits later human follow-ups in that same topic;
+other groups, tenants and Bots never inherit it.
 
 Work and learning topic groups that are intended as assistant task entry points
 must explicitly set `groups[chatId].responseMode: "all"`; do not infer their role
 from `chat_mode=topic` or their name. A sharing topic group can retain
 `responseMode: "mention_only"`. Review the actual group purpose and prior
 participation decisions when repairing a missing entry-point configuration;
-new groups remain passive. This intake setting does not remove explicit mute
+new groups otherwise use the active default. This intake setting does not remove explicit mute
 or the self/peer-Bot guards.
 
 Each invited Thread creates or continues its own Session, scoped by Bot, tenant, chat
@@ -655,7 +654,20 @@ Session; later Thread inputs use the normal independent Thread Session and
 receive the Thread history as context. Other chats keep their existing policy.
 
 For groups using `participationControls: true`, the pinned status card shows
-active, listening or paused reception. Set that exact group's
+active, listening or paused reception, the main Session link, its saved model and
+effort, and native model/effort/prompt editing forms. Group prompts are stored
+durably in `group-configuration`, with version, actor and the last 20 revisions.
+They apply to subsequent inputs and new topics in that group; already accepted
+Runs retain their snapshots. Model and effort controls use the existing runtime
+command validation and Session persistence, and only change the main Session.
+The card also exposes the main Session's current saved instructions; group
+announcement context remains the native announcement. The optional Session link
+is not needed to manage configuration. Stale edits refresh the card instead of
+overwriting a newer selection. Errors appear on the same card. Use the refresh
+button after external Web edits; admitted messages and local runtime commands
+also update the original card. Forms contain at most 16 prompt inputs of 1,000
+characters each; longer existing prompts are shown in full without a truncating
+edit form. Set that exact group's
 `participationStatusCard: false` to hide the card while keeping participation
 and text controls. This also suppresses publication on restart and mode changes;
 withdraw the existing message and its top notice separately when requested.
@@ -692,12 +704,11 @@ suppression cancels the matching unsent lease; it does not report a provider sen
 `inline`. `replyPolicy.chats[chatId]` and `groups[chatId].replyMode` override the
 default with `inline` or `thread`. `groups[chatId]` also supports
 `responseMode` (`all`/`mention_only`), optional `systemPrompt`, and the
-exact-chat `participationMode: "ambient"` pilot setting. New groups and
-uninvited topics default to `mention_only`. Only an exact-chat ambient opt-in
-or `responseMode: "all"` admits unsolicited messages; connector-wide
-`responsePolicy.group` cannot opt in another group. A successfully bound topic
-continues without another mention. The prompt is appended to global instructions when
-creating a Session; existing Sessions keep their instruction snapshot.
+exact-chat `participationMode: "ambient"` setting. New groups and their topics use
+`defaultGroupParticipation` (active by default); explicit per-group policies take
+precedence. A successfully bound topic continues without another mention. The
+group prompt is appended to global instructions and applied to existing Sessions
+on their next input, while already accepted Runs retain their instruction snapshots.
 
 Precedence is: topic-group or existing-Thread topology → explicit `/inline` or
 `/thread` → exact chat-ID override → chat-type default. `/thread` starts a blank

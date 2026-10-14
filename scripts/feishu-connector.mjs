@@ -6,6 +6,7 @@ import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
+import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
 import { handleFeishuProgressPolicyAction } from '../connectors/feishu/progress-policy-actions.mjs';
 import { createFeishuCardReadSampler, handleFeishuCardReadEvent } from '../connectors/feishu/card-engagement.mjs';
 
@@ -366,6 +367,9 @@ async function loadConfig(pathname) {
   const appSecret = trimString(parsed?.appSecret);
   if (!appId) throw new Error(`Missing appId in ${pathname}`);
   if (!appSecret) throw new Error(`Missing appSecret in ${pathname}`);
+  if (parsed.defaultGroupParticipation !== undefined && !['active', 'mention_only'].includes(parsed.defaultGroupParticipation)) {
+    throw new Error('defaultGroupParticipation must be active or mention_only');
+  }
   for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
     if (Object.hasOwn(parsed, legacyKey)) {
       throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy, responsePolicy and replyPolicy`);
@@ -387,6 +391,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
+    defaultGroupParticipation: parsed.defaultGroupParticipation || 'active',
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     projectSurfacesPath: trimString(parsed?.projectSurfacesPath)
       ? resolve(configDir, parsed.projectSurfacesPath) : '',
@@ -1012,6 +1017,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     ...await enrichSummaryWithSenderProfile(runtime, summaryWithChatMetadata),
     sourceRouteId: runtime.config.sourceRouteId,
   });
+  await runtime.groupConfiguration?.reload(effectiveSummary.chatId);
   const groupSettings = resolveFeishuGroupSettings(runtime.config, effectiveSummary);
   const ambient = groupSettings.participationMode === 'ambient'
     && effectiveSummary.conversationKind === 'main'
@@ -1082,6 +1088,16 @@ async function submitRemoteLabRequest(runtime, summary, {
     }
   } else {
     session = await createConnectorSession(requester, sessionPayload);
+  }
+  // Group prompt edits apply to an existing mainline as well as bound topics.
+  // Never mutate an already accepted Run's prompt snapshot.
+  if (runtime.groupConfiguration && !isQuickSession(session)
+      && (session.systemPrompt || '').trim() !== sessionPayload.systemPrompt.trim()) {
+    const updated = await requester(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      method: 'PATCH', body: { systemPrompt: sessionPayload.systemPrompt },
+    });
+    if (!updated.response?.ok || !updated.json?.session?.id) throw new Error(updated.json?.error || 'Unable to apply group prompt');
+    session = updated.json.session;
   }
   if (isQuickCommand && !isQuickSession(session)) {
     throw Object.assign(new Error('Quick profile conflicts with the Session already bound to this conversation'), {
@@ -1688,6 +1704,7 @@ function participationController(runtime, helpers = {}) {
   if (runtime.participation) return runtime.participation;
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   runtime.participation = createParticipationController(runtime, {
+    ...(runtime.groupConfiguration ? { getConfiguration: record => runtime.groupConfiguration.view(record) } : {}),
     authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
     resolveSession: async summary => {
       const binding = await findFeishuThreadSessionBinding(runtime, summary);
@@ -1729,6 +1746,47 @@ function participationController(runtime, helpers = {}) {
     },
   });
   return runtime.participation;
+}
+
+function groupConfigurationController(runtime, helpers = {}) {
+  if (runtime.groupConfiguration) return runtime.groupConfiguration;
+  runtime.groupConfiguration = createGroupConfigurationController(runtime, {
+    request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
+    resolveDefault: () => resolveFeishuRuntimeSelection(runtime),
+    participation: () => participationController(runtime, helpers),
+    authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
+  });
+  return runtime.groupConfiguration;
+}
+
+async function onboardFeishuGroup(runtime, summary, helpers = {}) {
+  summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
+  if (!participationEnabled(runtime, summary)) return { ignored: true, reason: 'explicit_group_policy' };
+  const requester = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
+  const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
+  const groupFeed = groupSettings.groupFeed === true;
+  const groupFeedRollback = groupSettings.groupFeed === false;
+  const baseId = buildFeishuSessionExternalTriggerId(summary, runtime.config.sourceRouteId || 'default');
+  const folder = groupFeed ? join(homedir(), '.remotelab', 'workspace', 'group-feed',
+    runtime.config.sourceRouteId || 'default', summary.chatId) : runtime.config.sessionFolder;
+  if (groupFeed) await mkdir(folder, { recursive: true, mode: 0o700 });
+  const selection = await (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime);
+  const session = await createConnectorSession(requester, {
+    folder, tool: selection.tool, model: selection.model || '', effort: selection.effort || '',
+    thinking: selection.thinking === true, name: buildSessionName(summary), sourceId: FEISHU_CONNECTOR_ID,
+    sourceName: FEISHU_CONNECTOR_NAME, group: FEISHU_CONNECTOR_NAME,
+    systemPrompt: groupSettings.systemPrompt,
+    conversation: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
+      target: buildFeishuSessionConversationTarget({ ...summary, conversationKind: 'main' }) },
+    externalTriggerId: groupFeed ? baseId.replace('feishu:main:', 'feishu:group-feed:')
+      : groupFeedRollback ? baseId.replace('feishu:main:', 'feishu:legacy-return:') : baseId,
+    ...(groupFeed ? { groupFeed: true, replaceConversation: true }
+      : groupFeedRollback ? { replaceConversation: true } : {}),
+  });
+  const controller = participationController(runtime, helpers);
+  const record = await controller.remember(summary, session.id);
+  await controller.publish(record);
+  return { onboarded: true, sessionId: session.id };
 }
 
 async function handleFeishuReactionMute(runtime, summary, helpers = {}) {
@@ -1894,6 +1952,11 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
       prepared: helpers.preparedRuntimeCommand,
       savePlan: helpers.saveRuntimeCommand,
     });
+    if (runtime.groupConfiguration && !buildFeishuTopicId(summary) && participationEnabled(runtime, summary)) {
+      const controller = participationController(runtime, helpers);
+      try { await controller.publish(await controller.state(summary)); }
+      catch (error) { console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`); }
+    }
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
   }
   if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要正文，例如：/thread 帮我调查这个问题。');
@@ -1939,6 +2002,12 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     return receipt;
   }
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
+  if (runtime.groupConfiguration && !buildFeishuTopicId(summary) && participationEnabled(runtime, summary)) {
+    const controller = participationController(runtime, helpers);
+    const record = await controller.remember(summary, receipt.sessionId);
+    try { await controller.publish(record); }
+    catch (error) { console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`); }
+  }
   if (runtime.storagePaths?.messageIndexPath) {
     await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
     await recordFeishuThreadSessionBinding(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
@@ -1959,6 +2028,7 @@ function initializeInbox(runtime) {
     process: async (entry, update) => {
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
       if (!allowed) return { blocked: true };
+      if (entry.summary.sourceKind === 'bot_added') return onboardFeishuGroup(runtime, entry.summary);
       if (['reaction_mute', 'reaction_feedback'].includes(entry.summary.sourceKind)) {
         return handleFeishuReactionFeedback(runtime, entry.summary);
       }
@@ -1991,6 +2061,8 @@ export {
   buildFeishuPostContent,
   compileFeishuReplyText,
   createRuntimeContext,
+  groupConfigurationController,
+  onboardFeishuGroup,
   downloadFeishuMessageResource,
   ensureAuthCookie,
   enrichSummaryWithSenderProfile,
@@ -2064,7 +2136,8 @@ async function main() {
   runtime.botIdentity = await withTimeout(
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
   );
-  if (Object.values(config.groups || {}).some(group => group.participationControls)) {
+  await groupConfigurationController(runtime).restore();
+  if (config.defaultGroupParticipation === 'active' || Object.values(config.groups || {}).some(group => group.participationControls)) {
     await participationController(runtime).restore();
   }
   const discussionHandoff = createDiscussionHandoffPilot(runtime, {
@@ -2219,6 +2292,19 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     ...meetingObserver.handlers,
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
+    'im.chat.member.bot.added_v1': async raw => {
+      const event = raw.event || raw;
+      const eventId = raw.header?.event_id || event.event_id;
+      const chatId = event.chat_id;
+      if (!chatId || !eventId) return {};
+      const tenantKey = raw.header?.tenant_key || event.tenant_key || event.operator_tenant_key || '';
+      await inbox.accept(`bot-added:${eventId}`, { raw, sourceLabel: 'im.chat.member.bot.added_v1', summary: {
+        sourceKind: 'bot_added', eventId, messageId: `bot-added:${eventId}`, chatId,
+        chatType: 'group', chatMode: 'group', conversationKind: 'main', tenantKey,
+        sender: { senderType: 'user', openId: event.operator_id?.open_id || '', tenantKey },
+      } });
+      return {};
+    },
     'im.message.message_read_v1': async raw => {
       await displayChanged('im.message.message_read_v1', raw);
       return handleFeishuCardReadEvent(runtime, raw);
@@ -2237,6 +2323,8 @@ async function main() {
         authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
       });
       if (progressFeedback) return progressFeedback;
+      const configurationFeedback = await runtime.groupConfiguration?.action(raw);
+      if (configurationFeedback) return configurationFeedback;
       const participationFeedback = await runtime.participation?.action(raw);
       if (participationFeedback) return participationFeedback;
       const projectFeedback = await runtime.projectSurface?.actionFeedback(raw);

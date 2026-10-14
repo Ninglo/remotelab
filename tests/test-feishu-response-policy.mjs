@@ -137,7 +137,7 @@ try {
   const topicDefaults = resolveFeishuGroupSettings(groupConfig, {
     ...base, chatId: 'topic-chat', chatMode: 'topic', threadId: 'topic-1',
   });
-  assert.equal(topicDefaults.responseMode, 'mention_only');
+  assert.equal(topicDefaults.responseMode, 'all', 'new groups use active participation by default');
   assert.match(topicDefaults.systemPrompt, /Reply to each human message in the current topic/);
   for (const topicIdentity of [{ threadId: 'report-thread' }, { topicId: 'report-topic' },
     { conversationKind: 'thread' }, { chatMode: 'topic', rootId: 'native-root' }]) {
@@ -230,8 +230,7 @@ try {
     chatMode: 'topic', messageId: 'other-topic-reply', rootId: 'other-topic-root',
   }, []);
 
-  // Work/learning groups opt in by exact chat ID. Native-topic metadata must
-  // not broaden that opt-in into sharing groups or newly joined groups.
+  // Explicit work/sharing policies survive the default for newly joined groups.
   await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', groups: {
     'work-topic': { responseMode: 'all' },
     'sharing-topic': { responseMode: 'mention_only' },
@@ -245,7 +244,7 @@ try {
     }) } } } },
   };
   for (const [chatId, expected] of [
-    ['work-topic', ['reaction', 'submit']], ['sharing-topic', []], ['new-native-topic', []],
+    ['work-topic', ['reaction', 'submit']], ['sharing-topic', []], ['new-native-topic', ['reaction', 'submit']],
   ]) {
     effects = [];
     await handleMessage(topicRuntime, { ...base, chatId, chatMode: '', threadId: `${chatId}-first`,

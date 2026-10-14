@@ -4,13 +4,16 @@ import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
 import { buildFeishuTopicId } from './index.mjs';
 import { getFeishuConversationSettings, setFeishuConversationMuted } from './conversation-settings.mjs';
 import { recordFeishuOutboundMessageSession } from './session-flow.mjs';
+import { effectiveFeishuGroup } from './group-settings.mjs';
+import { buildGroupConfigurationCard } from './group-configuration-card.mjs';
 
 const MODES = new Set(['active', 'listening', 'paused']);
 const LABELS = { active: '主动参与', listening: '旁听', paused: '暂停接收' };
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 
 export function participationEnabled(runtime, summary) {
-  const group = runtime.config.groups?.[summary?.chatId];
+  if (!summary?.chatId || ['p2p', 'private'].includes(summary.chatType)) return false;
+  const group = effectiveFeishuGroup(runtime.config, summary.chatId);
   return group?.participationMode === 'ambient' && group.participationControls === true;
 }
 
@@ -31,7 +34,8 @@ export function parseParticipationText(text) {
   return null;
 }
 
-export function buildParticipationCard(record) {
+export function buildParticipationCard(record, configuration = null) {
+  if (configuration && !record.source.topicId) return buildGroupConfigurationCard(record, configuration);
   const scope = record.source.topicId ? '这个话题' : '本群主讨论';
   const detail = { active: '持续接收消息，自主判断是否参与。',
     listening: '持续接收消息；@我或使用任务命令可单次邀请。', paused: '后续普通消息不进入 Session；说“恢复接收消息”唤醒。' }[record.mode];
@@ -52,7 +56,7 @@ export function buildParticipationCard(record) {
   ] };
 }
 
-export function createParticipationController(runtime, { resolveSession, cancelSession, cleanup,
+export function createParticipationController(runtime, { resolveSession, cancelSession, cleanup, getConfiguration,
   authorize = async () => false } = {}) {
   const records = createRecordStore(join(runtime.config.storageDir, 'participation-state'));
   const queues = new Map();
@@ -79,21 +83,27 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   async function remember(summary, sessionId, recent = []) {
     const key = keyFor(summary);
     const prior = await state(summary);
-    return records.mutate(key, current => ({ ...prior, ...current, sessionId,
+    const record = await records.mutate(key, current => ({ ...prior, ...current, sessionId,
       // Preserve a semantic anchor across follow-ups; don't compare a new topic
       // against the mode command itself.
       topicAnchor: (current?.mode === 'listening' ? current.topicAnchor : '') || recent.slice(-5).map(x => x.text).join('\n').slice(-2500)
         || String(summary.messageText || summary.textPreview || '').slice(0, 1200),
     }));
+    if (getConfiguration && !record.source.topicId) {
+      try { return await publish(record); }
+      catch (error) { console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`); }
+    }
+    return record;
   }
   async function publish(record) {
     // Withdrawing a status card does not change participation or intake. Keep
     // the durable opt-out when restoring or changing modes so it cannot resend.
     if (record.cardSuppressed === true
-        || runtime.config.groups[record.source.chatId]?.participationStatusCard === false) return record;
-    const card = buildParticipationCard(record);
+        || effectiveFeishuGroup(runtime.config, record.source.chatId).participationStatusCard === false) return record;
+    const configuration = !record.source.topicId ? await getConfiguration?.(record) : null;
+    const card = buildParticipationCard(record, configuration);
     const digest = hash(JSON.stringify(card));
-    const group = runtime.config.groups[record.source.chatId];
+    const group = effectiveFeishuGroup(runtime.config, record.source.chatId);
     let messageId = record.cardMessageId || (!record.source.topicId ? group.participationStatusMessageId : '');
     const createdAt = record.cardCreatedAt || Date.now();
     if (messageId && digest === record.cardDigest && !record.pinPending
@@ -231,10 +241,11 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         { sessionId: record.sessionId, controlId: `restore:${record.epoch}` });
       else {
         if (record.mode !== 'active') await cleanup?.(record);
-        await publish(record);
+        try { await publish(record); }
+        catch (error) { console.warn(`[feishu-participation] card restore failed: ${error.message}`); }
       }
     }
   }
-  return { state, remember, change, assess, intake, action, restore, publish,
+  return { state, remember, change, assess, intake, action, restore, publish, record: key => records.get(key),
     idle: async () => { await Promise.all([...queues.values()].map(queue => queue.idle())); await records.idle(); } };
 }

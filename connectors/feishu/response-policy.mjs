@@ -63,8 +63,8 @@ export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary, { ex
     summary?.conversationKind].map(normalizeFeishuMode);
   if (modes.includes('p2p') || modes.includes('private')) return true;
   if (!modes.some(mode => ['group', 'topic', 'thread'].includes(mode)) && !buildFeishuTopicId(summary)) return true;
-  // New groups and uninvited topics are passive. A successful invitation binds
-  // only that conversation, so later replies continue without another mention.
+  // New groups use the configured default; explicit per-group policies and
+  // durable conversation mute/participation controls still take precedence.
   if (resolveFeishuGroupSettings(runtime.config, summary).responseMode === 'all') return true;
   return Boolean(await findFeishuThreadSessionBinding(runtime, summary));
 }
