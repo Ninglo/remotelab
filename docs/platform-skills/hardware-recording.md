@@ -70,10 +70,23 @@ The component requires Node.js 18.15 or newer (for disk-space checks) and FFmpeg
 
 This is opt-in: `publishAudio: true` requires the lane's explicit Feishu
 `conversation` and `target.chatId`. Use a group-only target for a fresh topic
-per recording. The collector uploads WAV assets, queues them through the
-existing instance Connector outbox, and waits for confirmed file delivery
-before admitting analysis. The first file receipt supplies the Session's
-topic anchor; remaining segments and the final analysis use that topic.
+per recording. The collector uploads the original WAV segments for analysis. For a new
+publication with multiple segments (or a single WAV above the Connector's
+30 MiB limit), it concatenates the saved audio in order and encodes one MP3
+listening copy with FFmpeg/libmp3lame. `publicationFfmpeg` can select a full
+encoding build separately when `ffmpeg` is a minimal device-capture build;
+it defaults to the configured `ffmpeg`. Only that complete file
+is queued through the durable Connector outbox; a small single WAV is sent
+as-is. The confirmed file receipt anchors the analysis in the same topic.
+Transcription still receives all original WAVs in order, without recompression.
+The MP3 uses 48 kbps when it fits, reducing to 40/32/24/16/8 kbps for long
+recordings to stay below 30 MiB (including the default six-hour maximum).
+Recordings too long even at 8 kbps fail explicitly and retain every original;
+there is no silent truncation or fallback to multiple messages. The temporary
+MP3 is removed after its remote asset is ready; the original retention policy
+is unchanged. An already saved publication request keeps its original payload
+on retries, including older multi-file publications; previously published or
+held recordings are not republished.
 Bot self-message filtering remains intact: an uploaded Bot file does not
 pretend to be a human inbound event. Analysis enters through the recording
 API using a stable request ID.
@@ -263,7 +276,8 @@ the panel adopts an ongoing capture silently rather than replaying its start.
 
 New uploaded originals use the capture machine's local date and start/end times,
 for example `2026-10-12_15-06-50至15-15-32.wav`. Cross-midnight recordings include
-both dates. Multiple segments keep their ordered `第01段` suffix. A verified
+both dates. Internal WAV attachments keep their ordered `第01段` suffix. The complete
+MP3 sent to Feishu uses the full recording interval without a segment suffix. A verified
 single speaker or explicitly verified main speaker adds their name; unknown or
 ambiguous speakers add nothing. The filename is saved before upload and reused
 on retries. Existing published files are not resent just to change a filename;

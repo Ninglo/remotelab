@@ -521,3 +521,99 @@ test('audio filenames use local start/end, stable segment order and only verifie
   assert.equal(recordingFileName({ ...record, segments: [{}, {}] }, 1), '2026-10-12_15-06-50至15-15-32_第02段.wav');
   assert.equal(recordingFileName({ ...record, endedAt: '2026-10-12T16:01:00Z' }), '2026-10-12_15-06-50至2026-10-13_00-01-00.wav');
 });
+
+
+test('complete publication preserves WAVs, joins in order, and keeps MP3 inside the file limit', async (t) => {
+  const { preparePublicationAudio, publicationBitrate } = await import('../lib/recording/publication.mjs');
+  const { promisify } = await import('node:util');
+  const exec = promisify((await import('node:child_process')).execFile);
+  const root = await temporary(t), record = await pendingRecord(root);
+  record.segments.push({ filename: '00001.wav' });
+  const originals = [];
+  for (const [index, segment] of record.segments.entries()) {
+    const pcm = Buffer.alloc(32000);
+    for (let i = 0; i < 16000; i++) pcm.writeInt16LE(Math.round(8000 * Math.sin(2 * Math.PI * (index ? 660 : 440) * i / 16000)), i * 2);
+    const path = join(recordDir(root, record.id), segment.filename);
+    const wav = Buffer.concat([wavHeader(pcm.length), pcm]);
+    await writeFile(path, wav); originals.push(wav);
+  }
+  const audio = await preparePublicationAudio(root, record, { config: config() });
+  assert.equal(audio.durationSeconds, 2); assert.equal(audio.bitrateKbps, 48);
+  assert.doesNotMatch(audio.displayName, /第\d+段/); assert.match(audio.displayName, /\.mp3$/);
+  const { stdout: decoded } = await exec('ffmpeg', ['-v', 'error', '-i', join(recordDir(root, record.id), audio.filename), '-f', 's16le', '-'], { encoding: 'buffer' });
+  assert.equal(decoded.length, 64000);
+  for (let index = 0; index < 2; index++) {
+    let dot = 0, actual = 0, expected = 0;
+    for (let i = 0; i < 16000; i++) {
+      const x = decoded.readInt16LE((index * 16000 + i) * 2), y = originals[index].readInt16LE(44 + i * 2);
+      dot += x * y; actual += x * x; expected += y * y;
+    }
+    assert.ok(dot / Math.sqrt(actual * expected) > 0.99, 'Decoded audio must retain segment order and all samples');
+    assert.deepEqual(await readFile(join(recordDir(root, record.id), record.segments[index].filename)), originals[index]);
+  }
+  assert.equal(publicationBitrate(6 * 3600), 8);
+  assert.throws(() => publicationBitrate(24 * 3600), /too long/);
+  await writeFile(join(recordDir(root, record.id), '00001.wav'), Buffer.from('truncated'));
+  await assert.rejects(preparePublicationAudio(root, record, { config: config() }), /Invalid finalized/);
+});
+
+test('multi-segment publication sends one MP3, analyzes all WAVs, and reuses upload and outbox after lost replies', async (t) => {
+  const root = await temporary(t), conversation = { connector: 'feishu', target: { chatId: 'oc_test' } };
+  const record = await pendingRecord(root, { sessionId: 'test_session', destination: { conversation, publishAudio: true } });
+  const second = new WavWriter(join(recordDir(root, record.id), '00001.wav'));
+  await second.start(); await second.append(Buffer.from([234, 0])); await second.finish();
+  record.segments[0].assetId = 'wav0'; record.segments.push({ filename: '00001.wav', assetId: 'wav1' }); await saveRecord(root, record);
+  let finalized = false, uploads = 0, lostFinalize = true, lostPublication = true, admission = 0;
+  const publications = [];
+  const anchored = { ...conversation, target: { ...conversation.target, messageId: 'om_audio', threadId: 'omt_audio' } };
+  const client = { baseUrl: 'http://remotelab.invalid', ensureAuthCookie: async () => '', request: async (route, options = {}) => {
+    let json;
+    if (/^\/api\/assets\/wav[01]$/.test(route)) json = { asset: { status: 'ready' } };
+    else if (route === '/api/assets/mp3') json = { asset: { status: finalized ? 'ready' : 'uploading' } };
+    else if (route === '/api/assets/upload-intents') {
+      assert.equal(options.body.mimeType, 'audio/mpeg'); assert.doesNotMatch(options.body.originalName, /第\d+段/);
+      json = { asset: { id: 'mp3' }, upload: { url: '/upload', headers: {} } };
+    } else if (route === '/api/assets/mp3/finalize') {
+      finalized = true;
+      if (lostFinalize) { lostFinalize = false; throw Error('Finalize reply lost'); }
+      json = { asset: { status: 'ready' } };
+    } else if (route === '/api/source-deliveries') {
+      publications.push(options.body);
+      assert.equal(options.body.attachments.length, 1); assert.equal(options.body.attachments[0].assetId, 'mp3');
+      if (lostPublication) { lostPublication = false; throw Error('Publication reply lost'); }
+      json = { delivery: { id: 'same_delivery', state: 'delivered' } };
+    } else if (route === '/api/sessions/test_session') json = { session: { conversation: anchored } };
+    else if (route.endsWith('/messages')) {
+      admission++; assert.deepEqual(options.body.attachments.map(a => a.assetId), ['wav0', 'wav1']);
+      json = { run: { id: 'test_run' } };
+    } else assert.fail('Unexpected route ' + route);
+    return { response: { ok: true }, json };
+  } };
+  const upload = async (_, options) => {
+    uploads++; let bytes = 0; for await (const chunk of options.body) bytes += chunk.length;
+    assert.ok(bytes > 44); return { ok: true, headers: new Headers() };
+  };
+  await assert.rejects(submitRecording(root, record, { config: config(), client, upload }), /Finalize reply lost/);
+  await assert.rejects(submitRecording(root, await loadRecord(root, record.id), { config: config(), client, upload }), /Publication reply lost/);
+  await submitRecording(root, await loadRecord(root, record.id), { config: config(), client, upload });
+  assert.equal(uploads, 1); assert.equal(admission, 1); assert.deepEqual(publications[0], publications[1]);
+  await assert.rejects(stat(join(recordDir(root, record.id), 'publication.mp3')), { code: 'ENOENT' });
+  assert.deepEqual(await samples(root, record), [123, 234]);
+});
+
+test('an old segmented publication remains immutable even after the new encoder is installed', async (t) => {
+  const root = await temporary(t), conversation = { connector: 'feishu', target: { chatId: 'oc_test' } };
+  const record = await pendingRecord(root, { sessionId: 'test_session', destination: { conversation, publishAudio: true },
+    segments: [{ filename: '00000.wav', assetId: 'wav0' }, { filename: '00001.wav', assetId: 'wav1' }] });
+  record.audioPublication = { sessionId: 'test_session', responseId: 'old_response', sourceDelivery: conversation,
+    attachments: [{ assetId: 'wav0' }, { assetId: 'wav1' }] };
+  await saveRecord(root, record);
+  const before = structuredClone(record.audioPublication);
+  const client = { request: async (route, options = {}) => {
+    if (route.startsWith('/api/assets/')) return { response: { ok: true }, json: { asset: { status: 'ready' } } };
+    assert.equal(route, '/api/source-deliveries'); assert.deepEqual(options.body, before);
+    return { response: { ok: true }, json: { delivery: { id: 'old_outbox', state: 'unknown' } } };
+  } };
+  await assert.rejects(submitRecording(root, record, { config: config({ ffmpeg: '/missing-ffmpeg' }), client }), /outbox before retrying/);
+  assert.equal(record.publicationAudio, undefined);
+});
