@@ -163,8 +163,9 @@
     card.append(summary);
     if (accountData?.coverage?.gaps?.some(gap => gap.source === 'accounts')) card.append(el('p', '部分账户额度未取得', 'agent-note'));
     const open = el('button', '查看详情', 'agent-compact-open'); open.type = 'button'; open.setAttribute('aria-haspopup', 'dialog'); header.append(open);
-    const dialog = el('dialog', '', 'agent-compact-dialog'); dialog.setAttribute('aria-labelledby', 'agent-compact-title');
-    const top = el('header', '', 'agent-compact-top'), title = el('h2', 'Agent 监控'); title.id = 'agent-compact-title';
+    const idPrefix = root.id || 'agent-compact';
+    const dialog = el('dialog', '', 'agent-compact-dialog'); dialog.setAttribute('aria-labelledby', `${idPrefix}-title`);
+    const top = el('header', '', 'agent-compact-top'), title = el('h2', 'Agent 监控'); title.id = `${idPrefix}-title`;
     const close = el('button', '关闭'); close.type = 'button'; close.autofocus = true;
     const reload = el('button', '刷新'); reload.type = 'button'; reload.addEventListener('click', () => { reload.disabled = true; refresh(); });
     top.append(title, reload, close); dialog.append(top);
@@ -180,8 +181,8 @@
     ];
     const panels = new Map(), buttons = new Map();
     for (const [key, label, metrics] of groups) {
-      const tab = el('button', label); tab.type = 'button'; tab.id = `agent-tab-${key}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `agent-panel-${key}`); tabs.append(tab); buttons.set(key, tab);
-      const panel = el('section', '', 'agent-compact-panel'); panel.id = `agent-panel-${key}`; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id); panel.tabIndex = 0; body.append(panel); panels.set(key, panel);
+      const tab = el('button', label); tab.type = 'button'; tab.id = `${idPrefix}-tab-${key}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `${idPrefix}-panel-${key}`); tabs.append(tab); buttons.set(key, tab);
+      const panel = el('section', '', 'agent-compact-panel'); panel.id = `${idPrefix}-panel-${key}`; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id); panel.tabIndex = 0; body.append(panel); panels.set(key, panel);
       const choices = el('div', '', 'agent-compact-choices'); choices.setAttribute('role', 'group'); choices.setAttribute('aria-label', `${label}趋势指标`);
       const cards = metrics.map(metric => full.querySelector(`[data-metric="${metric}"]`)).filter(Boolean);
       if (cards.length) {
