@@ -63,11 +63,11 @@ export function trustCandidates({runtime,bindings=[]},snapshot={},samples=[],now
   results.push({key,kind:'lifecycle',metric:'account',riskType:'exhausted_bindings',status:'review_required',members:atRisk.slice(0,100).map(b=>({sessionId:b.sessionId})),
    notificationReason:reason,humanAction,
    notificationEvidenceKey:diagnosisKey(demand.map(b=>[b.sessionId,b.accountId,latest.get(b.sessionId).runId,accounts.find(a=>a.id===b.accountId)?.usage?.checkedAt]).sort()),
-   fingerprint:diagnosisKey([atRisk.map(b=>b.sessionId).sort(),riskOnly?reason:null,riskOnly?demand.map(b=>b.sessionId).sort():null]),summary:`最近使用的${atRisk.length}个会话仍绑定额度耗尽账号。`,
+   fingerprint:diagnosisKey(riskOnly?[atRisk.map(b=>b.sessionId).sort(),reason,demand.map(b=>b.sessionId).sort()]:atRisk.map(b=>b.sessionId).sort()),summary:`最近使用的${atRisk.length}个会话仍绑定额度耗尽账号。`,
    trigger:'按会话实际绑定核对后发现额度耗尽，不再只检查默认账号。',
    action:'已核对本实例绑定与额度；没有重放旧请求或打断正在执行的任务。',
    verification:'部分会话可能已空闲；绑定耗尽不等于每个会话都发生执行失败。',
-   evidence:demand.length?[`最近30分钟有${demand.length}个会话存在执行需求或失败记录，且仍绑定不可用账号；不据此认定全部失败由账号引起。`]:[],nextStep:runtime.autoSwitch?'后续请求自动选择可用备用；运行中失败在当前进程结束后沿原上下文有限接续，无备用则明确提示。':'自动切换未启用，需决定是否使用本实例已登录备用账号。'});
+   evidence:riskOnly&&demand.length?[`最近30分钟有${demand.length}个会话存在执行需求或失败记录，且仍绑定不可用账号；不据此认定全部失败由账号引起。`]:[],nextStep:runtime.autoSwitch?'后续请求自动选择可用备用；运行中失败在当前进程结束后沿原上下文有限接续，无备用则明确提示。':'自动切换未启用，需决定是否使用本实例已登录备用账号。'});
  }
  if(riskOnly)for(const item of results)if(item.riskType==='exhausted_bindings') {
   item.status=item.humanAction?'review_required':'observing';
