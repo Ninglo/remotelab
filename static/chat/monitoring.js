@@ -238,23 +238,16 @@
     }
     content.replaceChildren();
     if (priority) {
-      priority.replaceChildren(node("h2", "账户与用量"));
-      if (!value) priority.appendChild(node("p", loading ? "正在读取资源观测…" : "资源查询失败，异常数量未知。点击刷新重试。", "monitoring-note"));
-      else priority.appendChild(node("p", `当前实例 · ${time(value.generatedAt)} · 账户剩余额度与所选期间 Token 总数`, "monitoring-note"));
+      priority.replaceChildren(node("h2", "账户"));
+      if (!value) priority.appendChild(node("p", loading ? "正在读取账户额度…" : "账户额度读取失败，请刷新重试。", "monitoring-note"));
+      else priority.appendChild(node("p", `当前实例 · ${time(value.generatedAt)} · 账户剩余额度`, "monitoring-note"));
     }
 
     if (!value) { content.appendChild(node("p", t(loading ? "loading" : "failed"), "monitoring-note")); return; }
     const snapshot = node("div", "", "monitoring-snapshot"); snapshot.id = "monitoringSnapshot"; content.appendChild(snapshot);
     const accounts = renderAccounts(snapshot, value);
-    const usage = section("Token 总数", snapshot); usage.dataset.section = "tokens";
-    if (!value.usage) usage.appendChild(node("p", t("noUsage"), "monitoring-note"));
-    else {
-      const totals = value.usage.totals;
-      summaryMetrics(usage, [["所选期间 Token 总数", number(totals.totalTokens), "Token · 含前台与后台"]]);
-      usage.appendChild(node("p", `${time(value.usage.window.start)} — ${time(value.usage.window.end)} · 已记录的模型输入与输出合计。`, "monitoring-note"));
-    }
     for (const gap of value.coverage?.gaps || []) {
-      const target = gap.source === "usage" ? usage : gap.source === "accounts" ? accounts : null;
+      const target = gap.source === "accounts" ? accounts : null;
       if (target) target.appendChild(node("p", `部分数据未取得（${gap.code || "来源不可用"}），不能据此判断全部正常。`, "monitoring-note"));
     }
   }

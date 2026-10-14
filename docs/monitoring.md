@@ -1,12 +1,14 @@
 # Operations overview
 
-Monitor Overview (`?tab=tasks&monitor=overview`) keeps the existing Session area and its visual style, followed only by account balances and the selected-period Token total. Experiment configuration, inspection-scope/cost, disk and API panels are not displayed. Automations, usage analysis, feedback and their controls retain their existing separate views. Removing these panels does not stop observers, experiments, alerts or recovery.
+Monitor Overview (`?tab=tasks&monitor=overview`) keeps the existing Session area and its visual style, followed only by account balances. Experiment configuration, inspection-scope/cost, disk and API panels are not displayed. Automations, usage analysis, feedback and their controls retain their existing separate views. Removing these panels does not stop observers, experiments, alerts or recovery.
 
 ## Account balances and Token total
 
 Account tables show observed remaining quota in each independent allowance window, observation time, and expandable reset details. Unknown quotas remain unknown; meters never combine separate windows. Automatic-switch policy and operational handling prose are omitted from this balance view.
 
-Token total counts recorded model input and output, including foreground and background, within the toolbar's rolling 1/7/30-day window. Its explicit start/end label differs from the Session dashboard's Beijing 05:00 business day. No separate resource trend, model breakdown or background/cache statistic is displayed here. Underlying collection and analysis projections remain available to existing consumers; displaying fewer panels does not change collection or notification behavior.
+The separate bottom Token-total section has been removed. Token statistics remain
+in the Session dashboard: daily total and average usage with seven-day trends.
+Account collection and the usage-analysis view are unchanged.
 
 Session's seven daily/weekly charts are defined in the Agent dashboard section below. They share existing reads and do not add model calls, timers, quota probes or scans. Refresh preserves disclosure choices; missing data is not interpreted as zero.
 
@@ -387,7 +389,7 @@ explicit `monitor=automations|usage|feedback` links preserve those destinations.
 Clicking Monitor while the homepage is loading keeps that workspace selected
 when the initial Session list arrives.
 The Overview shows the shared daily/weekly dashboard, followed only by account
-balances and the selected-period Token total. The old context guide, named Session
+balances. The old context guide, named Session
 anomalies, owner filters and expandable Session-detail table are no longer rendered.
 Their underlying read-only projections and diagnosis policies remain unchanged.
 No experiment, disk, API or inspection-scope panel is displayed. Account reset
@@ -575,7 +577,7 @@ Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-
 
 交付指从受理到最终正文所有部分成功送达，排除开场、进展、其它请求回执、失败和未完成运行。当前飞书最终回执有可验证来源；Web、运行中追加输入和缺少最终回执者不混入交付均值。该值衡量最终答复送达，不宣称业务任务通过验收。旧首次正文／首次答复面板已移除，现行首次回复指标见下文。
 
-“查看背景文字的来源”默认折叠，先列工作区 AGENTS.md、bootstrap.md、projects.md、skills.md、启动和条件规则的当前原文字数、加载方式与原文链接。明确区分 Harness 加载、启动投射和按需读取，不把原文字数当作实际注入量。随后取最近一个可证实首轮的实际内容块，列名称、实际注入字符数、当前规则文档／组装源码入口和原 Session。来源条目之和等于保存的完整注入字符数。动态人员和群背景并非固定文档；链接是当前规则，历史内容沿原 Session 保存。原生 AGENTS.md、Skill 与工具读取尚不在计量范围，不能推断未读取。固定来源接口 `GET /api/monitoring/context-source?id=...` 沿用实例认证，只接受源码中的白名单，不接受任意文件路径。
+“上下文注入来源”默认折叠，先列工作区 AGENTS.md、bootstrap.md、projects.md、skills.md、启动和条件规则的当前原文字数、加载方式与原文链接。明确区分 Harness 加载、启动投射和按需读取，不把原文字数当作实际注入量。随后取最近一个可证实首轮的实际内容块，列名称、实际注入字符数、当前规则文档／组装源码入口和原 Session。来源条目之和等于保存的完整注入字符数。动态人员和群背景并非固定文档；链接是当前规则，历史内容沿原 Session 保存。原生 AGENTS.md、Skill 与工具读取尚不在计量范围，不能推断未读取。固定来源接口 `GET /api/monitoring/context-source?id=...` 沿用实例认证，只接受源码中的白名单，不接受任意文件路径。
 
 页面仍复用 `/api/monitoring/sessions?days=1|7|30&compact=1&dashboard=1`。账本一次扫描同时生成所选窗口和七日数据；七日投影独立缓存 60 秒，最多 5,000 个 Run、256 MiB 冷读、单文件 2 MiB，保留最多 20,000 个文件版本的纯统计投影。原诊断读取器的 1,000 Run／64 MiB 限制不变。统计中显示截断、缺失与实际覆盖，不读取完整聊天正文或启动模型。查看原文只在点击时进行。Hub 接入应复用相同 schema 和渲染资产，仅向已认证用户提供必要的汇总与账号窗口，不复制对话正文或实例凭据。
 
@@ -591,11 +593,11 @@ Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-
 
 总耗时沿原最终正文回执口径。阶段使用同一条已完成飞书执行的 acceptedAt、startedAt、completedAt、最终正文全部 deliveredAt；四个时间齐全且有序才纳入阶段统计。阶段样本的三段相加等于其总耗时，阶段样本数可能小于原总耗时样本数。没有时间记录保留空缺，运行结束不表示工作验收完成。所有阶段按请求受理所在的北京时间 05:00 统计日归集，首次执行继续严格限定 Session 历史首次执行。
 
-总览在 Session 基础上只保留账户余额和 Token 总数；实验状态、API、磁盘和检查范围板块不展示。旧具体会话卡片、异常统计和会话列表不再渲染。Test 保留既有同步预览及同一套时长切换、账户余额展示。
+总览在会话概览下方只保留账户余额，移除单独的 token 总数板块；实验状态、API、磁盘和检查范围板块不展示。旧具体会话卡片、异常统计和会话列表不再渲染。Test 保留既有同步预览及同一套时长切换、账户余额展示。
 
 ### 首次回复与各环节用时（2026-10-14）
 
-总览与 Test 共用第七张“首次回复平均等待时间”卡，从原始飞书消息的
+总览与 Test 共用第七张“平均首次响应时间”卡，从原始飞书消息的
 `sourceContext.createTime`（毫秒）到第一条成功送达的文字回复计时，包含开场、进展、
 答复、提问和最终结果；排除表情、自动受理通知、附件及其他请求的回执。
 不限定新会话，按消息发送所在的北京时间 05:00 统计日归集。缺少发送时间、
@@ -609,4 +611,11 @@ Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-
 全部齐全且有序的同一批记录，按发送日归集，五段均值之和等于合计。
 缺少准备时间只排除该表样本，不影响独立有效的首回复或最终交付指标。
 首回复可能发生在执行过程中，是独立指标，不作为第六个环节重复加总。
-页面用“会话”“执行记录”等中文称呼，移除旧会话明细；账户和 Token 展示范围不变。
+页面用“会话”“执行记录”等中文称呼，移除旧会话明细；账户展示保留；底部单独的 token 总数板块已移除。
+
+### 监控文案与底部汇总（2026-10-14）
+
+底部移除重复的 token 总数板块；上方“今日 token 总量”“平均 token 用量”和七日趋势保留。
+会话概览使用 token、上下文注入、首次响应、交付用时等术语，明确注入量单位为字符。
+概览标记为无需浏览器自动翻译，避免将 token 或执行术语翻译成“代币”“跑步”。
+本次仅调整展示与说明，不修改指标计算、账号切换策略或任何实验配置。
