@@ -25,11 +25,11 @@ export function trustCandidates({runtime,bindings=[]},snapshot={},samples=[],now
   const id=diagnosisKey(['account-switch',event]);
   results.push({key:id,kind:'lifecycle',metric:'account',members:event.sessionId?[{sessionId:event.sessionId}]:[],fingerprint:diagnosisKey([id,bound,used,atRisk.length]),
    status:bound?'action_verified':'observing',summary:`${label(event.from)} → ${label(event.to)}；${bound?'切换记录与当前选择一致':'当前选择已变化，不能据旧记录确认仍使用此账号'}。`,
-   trigger:`${event.reason==='reserve'||event.remainingPercent>0?'低额度预警':'额度耗尽预警'}已触发，原账号剩余${event.remainingPercent ?? '未知'}%。`,
+   trigger:`${event.reason==='rate_limited'?'账号限流预警':event.reason==='account_unavailable'?'账号可用性预警':event.reason==='reserve'||event.remainingPercent>0?'低额度预警':'额度耗尽预警'}已触发；记录中的剩余额度为${event.remainingPercent ?? '未知'}%。`,
    action:`已执行${event.sessionId?'会话账号迁移':'默认账号切换'}。`,
    verification:`${used?'已观测到目标账号随后成功完成执行。':'尚无目标账号后续成功执行样本，不把切换记录当作任务成功。'} 最近使用的会话中仍有${atRisk.length}个绑定耗尽账号。`,
    evidence:[`触发时间：${event.at}`,`切换范围：${event.sessionId?'单个会话':'未绑定执行的默认账号；不代表全部会话迁移'}`],
-   nextStep:atRisk.length?'继续核查旧绑定；启用自动切换时在下一轮启动前迁移，有在途执行时等待其结束。':'无需额外操作；保留本次预警与处置回执。'});
+   nextStep:atRisk.length?'继续核查旧绑定；启用自动切换时在新一轮启动前选择可用账号；运行中失败沿原上下文有限接续。':'无需额外操作；保留本次预警与处置回执。'});
  }
  if(atRisk.length){
   const key=diagnosisKey(['exhausted-bindings']);
@@ -38,7 +38,7 @@ export function trustCandidates({runtime,bindings=[]},snapshot={},samples=[],now
    trigger:'按会话实际绑定核对后发现额度耗尽，不再只检查默认账号。',
    action:'已核对本实例绑定与额度；没有重放旧请求或打断正在执行的任务。',
    verification:'部分会话可能已空闲；绑定耗尽不等于每个会话都发生执行失败。',
-   evidence:[],nextStep:runtime.autoSwitch?'后续请求在无在途执行且有新鲜可用备用时自动迁移；无备用则明确提示。':'自动切换未启用，需决定是否使用本实例已登录备用账号。'});
+   evidence:[],nextStep:runtime.autoSwitch?'后续请求自动选择可用备用；运行中失败在当前进程结束后沿原上下文有限接续，无备用则明确提示。':'自动切换未启用，需决定是否使用本实例已登录备用账号。'});
  }
  const latestRecovery=new Map();
  for(const r of snapshot.recovery||[]) {

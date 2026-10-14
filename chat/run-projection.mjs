@@ -114,7 +114,7 @@ export function createRunProjectionService({
         const event = record.json;
         // Queue only; model events and completion never wait on the account
         // cache. The spool survives detached-runner exit/controller restart.
-        try { usageUpdates.enqueue(run.codexAccount.id, event, record.ts); }
+        try { usageUpdates.enqueue(record.codexAccountId || run.codexAccount.id, event, record.ts); }
         catch { /* A malformed quota observation must not affect the conversation. */ }
       }
       const parsedEvents = adapter.parseLine(line).map((event) => ({

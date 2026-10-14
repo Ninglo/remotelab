@@ -71,7 +71,7 @@ async function submit(sessionId, text) {
 const invocations = async () => (await readFile(join(config, 'balance-invocations.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(JSON.parse);
 try {
   await start();
-  const policy = await request('POST', '/api/codex-auth/accounts/policy', { balanceSessions: true });
+  const policy = await request('POST', '/api/codex-auth/accounts/policy', { balanceSessions: true, autoSwitch: true });
   assert.equal(policy.accountList.balanceSessions, true);
   const sessions = await Promise.all(Array.from({ length: 6 }, (_, n) => request('POST', '/api/sessions', {
     folder: home, tool: 'balance-fixture', name: 'Balanced ' + n }).then(r => r.session.id)));
@@ -98,34 +98,25 @@ try {
   }
   assert.equal((await invocations()).length, 12, 'restart neither repeats nor drops native turns');
   console.log('All six follow-ups retained their account and native thread; no duplicated turns.');
-  // Force a provider-side 429 after admission and verify terminal failure,
-  // cooldown projection, and no retry on any other account.
+  // Force a provider-side 429 after admission. The same Run must continue
+  // on another authorization and retain its native conversation.
   const accountId = firstStates[0].codexAccount.id;
   const account = accounts.find(account => account.id === accountId);
   await writeFile(join(account.home, 'fixture.json'), JSON.stringify({ id: 'limited', fail: 'exceeded retry limit, last status: 429 Too Many Requests' }));
-  const failed = await submit(sessions[0], 'One rate-limited attempt.');
-  await waitFor(async () => (await state(failed)).state === 'failed', '429 termination');
+  const recovered = await submit(sessions[0], 'One rate-limited attempt.');
+  const recoveredState = await waitFor(async () => { const run = await state(recovered);
+    if (run.state === 'failed') throw new Error(run.failureReason); return run.state === 'completed' && run;
+  }, 'automatic 429 continuation');
+  assert.notEqual(recoveredState.codexAccount.id, accountId);
+  assert.equal(recoveredState.codexThreadId, firstStates[0].codexThreadId);
+  assert.equal(recoveredState.codexFailover.attempts.length, 1);
   await waitFor(async () => (await pool.account(accountId)).cooldownUntil > Date.now(), '429 cooldown persisted');
-  assert.equal((await invocations()).length, 13);
-  const blocked = await submit(sessions[0], 'Keep my original account.');
-  const blockedState = await waitFor(async () => { const run = await state(blocked); return run.state === 'failed' && run; }, 'bound cooldown refusal');
-  assert.match(blockedState.failureReason, /不自动切换/);
-  assert.equal((await invocations()).length, 13, 'bound cooldown does not launch or replay');
+  assert.equal((await invocations()).length, 14, 'one failed attempt and one saved-thread continuation');
   const fresh = (await request('POST', '/api/sessions', { folder: home, tool: 'balance-fixture' })).session.id;
   const healthy = await submit(fresh, 'Use an available account.');
   const healthyState = await waitFor(async () => { const run = await state(healthy); return run.state === 'completed' && run; }, 'new Session bypasses cooled account');
   assert.notEqual(healthyState.codexAccount.id, accountId);
-  console.log('429 cooldown blocks further use without moving a bound Session; new Sessions use healthy accounts.');
-  await pool.policy(true, true);
-  await pool.mutate(data=>{for(const a of data.accounts){delete a.cooldownUntil;delete a.blockedUntil;a.usage={status:'ready',checkedAt:new Date().toISOString(),buckets:[{id:'codex',primary:{remainingPercent:a.id===accountId?0:90,resetsAt:new Date(Date.now()+3600000).toISOString()}}]};}});
-  const beforeMigration=(await invocations()).length;
-  const migrated=await submit(sessions[0],'Continue once after confirmed quota exhaustion.');
-  const migratedState=await waitFor(async()=>{const r=await state(migrated);if(r.state==='failed')throw Error(r.failureReason);return r.state==='completed'&&r;},'exhausted affinity migration');
-  assert.notEqual(migratedState.codexAccount.id,accountId);
-  assert.equal(migratedState.codexThreadId,firstStates[0].codexThreadId,'quota migration retains the original native conversation');
-  assert.equal((await invocations()).length,beforeMigration+1,'quota migration runs only the new request, never replays the failure');
-  assert.equal((await pool.read()).switchEvents.at(-1).sessionId,sessions[0]);
-  console.log('Exhausted bound account migrated before admission; original native thread preserved, exactly one new invocation.');
+  console.log('429 migrates the same Run and native thread; new Sessions also bypass the cooled account.');
   console.log('PASS: isolated HTTP instance, policy, parallel native execution, live restart, conversation continuity, no replay, rate-limit isolation.');
 } finally {
   await writeFile(join(config, 'release'), 'released').catch(() => {});

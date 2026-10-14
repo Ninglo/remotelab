@@ -21,16 +21,17 @@ const projection = createRunProjectionService({ createToolInvocation,
   normalizeRunEvents: (_, events) => events, clipPreview: text => text,
   readLatestCodexSessionMetrics: async () => null, buildCodexContextMetricsPayload: () => null });
 const repo = dirname(dirname(fileURLToPath(import.meta.url)));
-const seed = async (directory, id, fail, tool = false) => {
+const seed = async (directory, id, fail, tool = false, noThread = false) => {
   await writeFile(join(directory, 'auth.json'), '{"tokens":{}}');
-  await writeFile(join(directory, 'fixture.json'), JSON.stringify({ id, fail, tool }));
+  await writeFile(join(directory, 'fixture.json'), JSON.stringify({ id, fail, tool, noThread }));
 };
 try {
   const backup = await pool.add('backup'); await seed(backup.home, 'backup', null);
   await pool.refresh(backup.id, command); await pool.policy(true);
+  let sessionId = 'quota-session';
   const run = async (native = false, codexThreadId = null) => {
-    const record = await createRun({ status: { sessionId: 'quota-session', requestId: 'quota-request', tool: 'quota-fixture' },
-      manifest: { sessionId: 'quota-session', requestId: 'quota-request', tool: 'quota-fixture', folder: root,
+    const record = await createRun({ status: { sessionId, requestId: 'quota-request', tool: 'quota-fixture' },
+      manifest: { sessionId, requestId: 'quota-request', tool: 'quota-fixture', folder: root,
         inputMode: native ? 'native' : 'batch', prompt: 'Perform one synthetic action then complete.',
         options: { model: 'fixture', codexThreadId, skipSessionStartPreflight: true } } });
     const child = spawn(process.execPath, ['chat/runner-sidecar.mjs', record.id], { cwd: repo, env: process.env,
@@ -45,26 +46,51 @@ try {
   };
   const calls = async () => (await readFile(join(config, 'failover-invocations.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   for (const native of [false, true]) {
+    sessionId = 'automatic-' + native;
     await seed(home, 'initial', 'usage_limit_reached', true);
-    await pool.refresh('default', command); await pool.select('default');
-    const before = native ? 2 : 0;
-    const failed = await run(native); assert.notEqual(failed.exit, 0, failed.output);
-    assert.equal(failed.record.codexAccount.id, 'default'); assert.equal(failed.record.state, 'failed');
-    assert.equal((await calls()).length, before + 1, 'an exhausted run is never automatically restarted');
-    assert.equal((await pool.read()).activeId, backup.id, 'the failure selects the default for the next request');
-    const next = await run(native, failed.record.codexThreadId);
-    assert.equal(next.exit, 0, next.output); assert.equal(next.record.state, 'completed');
-    assert.equal(next.record.codexAccount.id, backup.id);
+    await pool.refresh('default', command); await pool.refresh(backup.id, command); await pool.select('default');
+    const before = (await calls().catch(() => [])).length;
+    const completed = await run(native);
+    assert.equal(completed.exit, 0, completed.output); assert.equal(completed.record.state, 'completed');
+    assert.equal(completed.record.codexAccount.id, backup.id);
+    assert.equal(completed.record.codexFailover.attempts.length, 1);
     const after = await calls(); assert.deepEqual(after.slice(before).map(c => c.account), ['initial', 'backup']);
-    if (native) assert.equal(after.at(-1).resumeId, failed.record.codexThreadId);
-    else assert.ok(after.at(-1).args.includes(failed.record.codexThreadId));
-    assert.equal(await readFile(join(config, 'external-effect.txt'), 'utf8'), native ? 'once\nonce\n' : 'once\n', 'subsequent conversation preserves completed actions');
+    if (native) assert.equal(after.at(-1).resumeId, completed.record.codexThreadId);
+    else assert.ok(after.at(-1).args.includes(completed.record.codexThreadId));
+    assert.equal(await readFile(join(config, 'external-effect.txt'), 'utf8'), native ? 'once\nonce\n' : 'once\n',
+      'automatic continuation preserves completed actions');
+    assert((await pool.account('default')).blockedUntil > Date.now(), 'quota failure is attributed to original account');
+    assert.equal((await pool.account(backup.id)).blockedUntil, undefined, 'successful replacement is not marked exhausted');
+    const next = await run(native, completed.record.codexThreadId);
+    assert.equal(next.exit, 0, next.output); assert.equal(next.record.codexAccount.id, backup.id);
   }
+  sessionId = 'all-exhausted';
+  await seed(backup.home, 'backup', 'usage_limit_reached');
+  await seed(home, 'initial', 'usage_limit_reached');
+  await pool.refresh('default', command); await pool.refresh(backup.id, command); await pool.select('default');
+  const beforeAll = (await calls()).length;
+  const all = await run(); assert.notEqual(all.exit, 0);
+  assert.equal((await calls()).length, beforeAll + 2, 'each exhausted account attempted once with finite termination');
+  assert.match(all.record.codexFailover.stoppedReason, /暂无可用/);
+  sessionId = 'missing-thread-after-effect';
+  await seed(home, 'initial', 'usage_limit_reached', true, true);
+  await seed(backup.home, 'backup', null);
+  await pool.refresh('default', command); await pool.refresh(backup.id, command); await pool.select('default');
+  const beforeMissing = (await calls()).length;
+  assert.notEqual((await run()).exit, 0);
+  assert.equal((await calls()).length, beforeMissing + 1, 'never replay a task with completed effects and no saved thread');
+  sessionId = 'auth-error';
   await seed(home, 'initial', '401 Unauthorized');
   await pool.refresh('default', command); await pool.select('default');
+  const beforeAuth = (await calls()).length;
   const failed = await run(); assert.notEqual(failed.exit, 0);
-  assert.equal((await calls()).length, 5, 'authentication errors are not retried on other accounts');
-  assert.equal((await pool.read()).activeId, 'default', 'authentication errors never change the default');
-  console.log('Batch and native requests keep their account, never replay after exhaustion, and resume subsequent requests on the background-selected default');
+  assert.equal((await calls()).length, beforeAuth + 1, 'authentication errors are not blindly retried');
+  sessionId = 'switch-disabled';
+  await pool.policy(false); await seed(home, 'initial', 'usage_limit_reached');
+  await pool.refresh('default', command); await pool.select('default');
+  const beforeDisabled = (await calls()).length;
+  assert.notEqual((await run()).exit, 0);
+  assert.equal((await calls()).length, beforeDisabled + 1, 'disabled policy performs no automatic continuation');
+  console.log('Batch/native automatic account migration preserves thread/actions; per-attempt quota attribution, bounded exhaustion and disabled policy passed');
 
 } finally { await rm(root, { recursive: true, force: true }); }

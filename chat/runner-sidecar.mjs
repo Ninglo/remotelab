@@ -511,6 +511,7 @@ async function main() {
   const captureRun = await getRun(runId);
   const fileChangeCapture = createCodexFileChangeCapture({ startedAt: captureRun.startedAt || captureRun.createdAt });
   let lastCodexFailure = '';
+  let codexProducedWork = false;
   let codexAccount = null;
   const recordStdoutLine = async (line) => {
     lastOutputAt = Date.now();
@@ -518,6 +519,7 @@ async function main() {
     try {
       parsed = JSON.parse(line);
     } catch {}
+    if (initialInvocation.isCodexFamily && ['item.started', 'item.completed'].includes(parsed?.type)) codexProducedWork = true;
     if (initialInvocation.isCodexFamily && parsed?.type === 'turn.failed') lastCodexFailure = parsed.error?.message || '';
     if (initialInvocation.isCodexFamily && parsed?.item?.type === 'file_change') {
       const current = await getRun(runId);
@@ -529,6 +531,7 @@ async function main() {
       stream: 'stdout',
       line,
       ...(parsed ? { json: parsed } : {}),
+      ...(codexAccount ? { codexAccountId: codexAccount.id } : {}),
     });
     const resumeUpdate = captureResume(await getRun(runId), parsed);
     if (resumeUpdate) {
@@ -961,15 +964,57 @@ async function main() {
       attempt = await runToolAttempt(freshInvocation);
       current = await getRun(runId) || current;
     }
-    if (codexAccount && attempt.code !== 0 && current.cancelRequested !== true
-      && isSubscriptionExhausted(attempt.error || lastCodexFailure || attempt.stderrText)) {
-      // The controller consumes this durable observation in the background.
-      // Quota-cache writes never delay output, completion, or failed-run delivery.
-      await recordStdoutLine(JSON.stringify({ type: 'remotelab.codex_quota_exhausted',
-        model: invocationOptions.model || '' }));
-    } else if (codexAccount && attempt.code !== 0 && current.cancelRequested !== true
-      && /\b429\b|too many requests/i.test(attempt.error || lastCodexFailure || attempt.stderrText || '')) {
-      await recordStdoutLine(JSON.stringify({ type: 'remotelab.codex_rate_limited' }));
+    // A failed provider process has stopped before another authorization is
+    // selected. Resume its durable thread, never replay the original task on a
+    // fresh thread after tools/output may have run. Each subscription is tried
+    // at most once per Run, including duplicate login aliases.
+    const exhaustedAccounts = [];
+    while (codexAccount && attempt.code !== 0 && current.cancelRequested !== true && !cancelSent) {
+      const failure = attempt.error || lastCodexFailure || attempt.stderrText;
+      const exhausted = isSubscriptionExhausted(failure);
+      const rateLimited = /\b429\b|too many requests/i.test(failure || '');
+      if (!exhausted && !rateLimited) break;
+      await recordStdoutLine(JSON.stringify({
+        type: exhausted ? 'remotelab.codex_quota_exhausted' : 'remotelab.codex_rate_limited',
+        model: invocationOptions.model || '',
+      }));
+      if (!codexAccount.autoSwitch || !manifest.sessionId) break;
+      const threadId = current.codexThreadId || manifest.options?.codexThreadId;
+      if (!threadId && codexProducedWork) break;
+      exhaustedAccounts.push(codexAccount.id);
+      const previousId = codexAccount.id;
+      await codexAccount.lease.release();
+      let next;
+      try {
+        next = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+          model: invocationOptions.model || '', resumeThreadId: threadId || '',
+          excludedAccountIds: exhaustedAccounts,
+          isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
+      } catch (error) {
+        await updateRun(runId, draft => ({ ...draft, codexFailover: {
+          ...(draft.codexFailover || {}), stoppedReason: normalizeErrorMessage(error),
+        } }));
+        break;
+      }
+      codexAccount = next;
+      spawnEnv.CODEX_HOME = next.home;
+      await updateRun(runId, draft => ({ ...draft,
+        codexAccount: { id: next.id, label: next.label, switched: true,
+          assignmentReason: 'provider_failure_failover', selectedAt: nowIso() },
+        codexFailover: { attempts: [...(draft.codexFailover?.attempts || []), {
+          from: previousId, to: next.id, reason: exhausted ? 'quota_exhausted' : 'rate_limited',
+          threadId: threadId || null, at: nowIso(),
+        }] },
+      }));
+      const continuationPrompt = threadId
+        ? `The previous attempt stopped because its account became unavailable. Continue the pending user task from this saved conversation and its latest tool results. Check any uncertain action result before retrying it; do not repeat completed actions. The original input is included below for reference in case the failed attempt never saved it; it is not a request to restart completed work.\n\n${prompt}`
+        : prompt;
+      const continuationOptions = { ...invocationOptions, codexThreadId: threadId || null };
+      const continuation = await createToolInvocation(manifest.tool, continuationPrompt, continuationOptions);
+      lastCodexFailure = '';
+      attempt = await runToolAttempt(continuation, 0, { skipSessionStartPreflight: true,
+        prompt: continuationPrompt, invocationOptions: continuationOptions });
+      current = await getRun(runId) || current;
     }
   } finally {
     await codexAccount?.lease.release();
