@@ -83,8 +83,28 @@ try {
   await primary.lease.release(); await background.lease.release();
   await assert.rejects(pool.acquireForRun({ sessionId: 'cancelled', isCancelled: () => true }), { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
   assert.equal(await readSessionAccount(pool.root, 'cancelled'), null);
-  await pool.mutate(data => { data.accounts.find(account => account.id === first.id).identityId = 'changed-login'; });
-  await assert.rejects(acquire('new-0'), /登录身份已改变/);
+  await Promise.all(slots.map(slot=>slot.lease.release())); slots.length=0;
+  await pool.policy(true, true);
+  await pool.mutate(data=>{for(const a of data.accounts){delete a.cooldownUntil;delete a.blockedUntil;a.usage=usage(90);}});
+  const before=await readSessionAccount(pool.root,'new-0');
+  await pool.mutate(data=>{data.accounts.find(a=>a.id===before.accountId).usage=usage(8);});
+  const inFlight=await pool.registerRun((await pool.read()).accounts.find(a=>a.id===before.accountId),await pool.read(),{isCancelled:()=>false,runId:'running',sessionId:'new-0'});
+  const pinned=await acquire('new-0');assert.equal(pinned.id,before.accountId,'in-flight work pins the current account');
+  await pinned.lease.release();await inFlight.lease.release();
+  await assert.rejects(pool.acquireForRun({sessionId:'new-0',isCancelled:()=>true}),{code:'PROVIDER_RUNTIME_QUEUE_CANCELLED'});
+  assert.equal((await readSessionAccount(pool.root,'new-0')).accountId,before.accountId,'cancelled migration cannot change affinity');
+  const moved=await acquire('new-0');assert.notEqual(moved.id,before.accountId);
+  assert.equal((await readSessionAccount(pool.root,'new-0')).accountId,moved.id);
+  assert.equal((await pool.read()).switchEvents.at(-1).reason,'reserve');
+  await moved.lease.release();
+  await pool.mutate(data=>{for(const a of data.accounts)a.usage={...usage(90),checkedAt:new Date(now-61000).toISOString()};data.accounts.find(a=>a.id===moved.id).usage=usage(0);});
+  await assert.rejects(acquire('new-0'),/没有可安全迁移/,'stale backup is never a safe migration target');
+  await pool.mutate(data=>{for(const a of data.accounts)if(a.id!==moved.id)a.usage=usage(90);});
+  const exhausted=await acquire('new-0');assert.notEqual(exhausted.id,moved.id);
+  assert.equal((await pool.read()).switchEvents.at(-1).reason,'confirmed_exhaustion');await exhausted.lease.release();
+  await pool.mutate(data=>{data.accounts.find(a=>a.id===exhausted.id).identityId='changed-login';});
+  await assert.rejects(acquire('new-0'),/登录身份已改变/,'automatic quota recovery cannot hide changed login identity');
+
   console.log('Codex Session routing: balanced reservations, duplicate identities, sticky turns, legacy migration, restart, disable, cooldown, exhaustion and cancellation passed');
 } finally {
   await Promise.all(slots.map(slot => slot.lease.release()));

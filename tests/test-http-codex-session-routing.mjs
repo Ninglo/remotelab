@@ -116,6 +116,16 @@ try {
   const healthyState = await waitFor(async () => { const run = await state(healthy); return run.state === 'completed' && run; }, 'new Session bypasses cooled account');
   assert.notEqual(healthyState.codexAccount.id, accountId);
   console.log('429 cooldown blocks further use without moving a bound Session; new Sessions use healthy accounts.');
+  await pool.policy(true, true);
+  await pool.mutate(data=>{for(const a of data.accounts){delete a.cooldownUntil;delete a.blockedUntil;a.usage={status:'ready',checkedAt:new Date().toISOString(),buckets:[{id:'codex',primary:{remainingPercent:a.id===accountId?0:90,resetsAt:new Date(Date.now()+3600000).toISOString()}}]};}});
+  const beforeMigration=(await invocations()).length;
+  const migrated=await submit(sessions[0],'Continue once after confirmed quota exhaustion.');
+  const migratedState=await waitFor(async()=>{const r=await state(migrated);if(r.state==='failed')throw Error(r.failureReason);return r.state==='completed'&&r;},'exhausted affinity migration');
+  assert.notEqual(migratedState.codexAccount.id,accountId);
+  assert.equal(migratedState.codexThreadId,firstStates[0].codexThreadId,'quota migration retains the original native conversation');
+  assert.equal((await invocations()).length,beforeMigration+1,'quota migration runs only the new request, never replays the failure');
+  assert.equal((await pool.read()).switchEvents.at(-1).sessionId,sessions[0]);
+  console.log('Exhausted bound account migrated before admission; original native thread preserved, exactly one new invocation.');
   console.log('PASS: isolated HTTP instance, policy, parallel native execution, live restart, conversation continuity, no replay, rate-limit isolation.');
 } finally {
   await writeFile(join(config, 'release'), 'released').catch(() => {});

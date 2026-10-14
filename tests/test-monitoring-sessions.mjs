@@ -2,7 +2,7 @@ import './test-monitoring-dashboard.mjs';
 import './test-response-timing.mjs';
 import './isolate-test-environment.mjs';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -87,5 +87,12 @@ try {
  assert.equal((await reader()).contextExperiment.mode,'aa');
  await writeFile(switchFile,'broken'); clock+=61000;
  assert.deepEqual((await reader()).contextExperiment,{state:'unavailable'});
+ const projectionFile=join(root,'projections.json');
+ const options={configDir:root,runsDir:join(root,'runs'),sessionsFile:join(root,'sessions.json'),includeSamples:true,projectionFile,getPeople:async()=>[],getUsage:async ({days})=>{assert.equal(days,14);return {runCount:1,topRuns:[ledger],bySession:[]};}};
+ const populated=await createSessionMonitoringReader(options)({days:14});assert.equal(populated.samples.length,1);
+ const cache=await readFile(projectionFile,'utf8');assert(!cache.includes('private'));assert.equal(JSON.parse(cache).version,2);
+ const restarted=await createSessionMonitoringReader(options)({days:14});assert.equal(restarted.coverage.bytesRead,0);assert.equal(restarted.samples[0].metrics.injectionChars,3);
+ await writeFile(join(root,'runs','r1','manifest.json'),JSON.stringify({id:'r1',sessionId:'s1',modelContext:'changed'}));
+ const corrected=await createSessionMonitoringReader(options)({days:14});assert.equal(corrected.samples[0].metrics.injectionChars,7,'source edits invalidate durable projections');
  console.log('monitoring sessions: ownership, phase pairing, missing data, cohorts, sample bounds, read cache and privacy passed');
 }finally{await rm(root,{recursive:true,force:true});}

@@ -1,6 +1,7 @@
 import { businessStart, BUSINESS_OFFSET, DAY, injectionSources, buildAgentDashboard, readContextDocuments } from './monitoring-dashboard.mjs';
 import { projectResponseTiming, timingStats, summarizeResponseTiming } from './response-timing.mjs';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, readdir } from 'node:fs/promises';
+import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { CONFIG_DIR, CHAT_RUNS_DIR, CHAT_SESSIONS_FILE } from '../lib/config.mjs';
@@ -40,7 +41,7 @@ function messageSentAt(request) {
 export function projectRequest(r) {
   if (!r) return null;
   return { requestId: r.requestId, sessionId: r.sessionId, runId: r.runId, nativeDispatchRunId: r.nativeDispatchRunId,
-    responseTiming: projectResponseTiming(r),
+    responseTiming: projectResponseTiming(r), surface: r.options?.sourceContext?.connector || r.options?.usageSurface || 'unknown',
     sentAt: messageSentAt(r), acceptedAt: r.acceptedAt, preparedAt: r.preparedAt, settledAt: r.settledAt,
     excluded: Boolean(r.options?.internalOperation || r.options?.deliveryOnly || r.options?.recordUserMessage === false),
     deliveries: (r.deliveries || []).filter(d => d.kind === 'content' && time(d.createdAt) >= time(r.settledAt))
@@ -49,7 +50,7 @@ export function projectRequest(r) {
 export function projectRun(r) {
   if (!r) return null;
   return { id: r.id, sessionId: r.sessionId, requestId: r.requestId, state: r.state,
-    startedAt: r.startedAt, completedAt: r.completedAt, contextTokens: r.contextInputTokens };
+    startedAt: r.startedAt, completedAt: r.completedAt, contextTokens: r.contextInputTokens, accountId:r.codexAccount?.id };
 }
 export function projectInjection(manifest) {
   // Retain only a size, never a second copy of prompts or user text.
@@ -83,8 +84,8 @@ export function runMeasurement(ledger, run, request, injection = null) {
     total: span(request.sentAt, finalEnd),
   } : null;
   const journeyStages = journey && Object.values(journey).every(finite) ? journey : null;
-  return { sessionId: ledger.sessionId, sources: validRun ? injection?.sources || [] : [], runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
-    state: validRun ? run.state : 'unknown',
+  return { sessionId: ledger.sessionId, sources: validRun ? injection?.sources || [] : [], runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown', effort: ledger.effort || 'unknown', surface: request?.surface || 'unknown',
+    accountId:validRun?run.accountId:null, state: validRun ? run.state : 'unknown',
     background: ledger.backgroundOperation === true || request?.excluded === true,
     responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: validRequest ? time(request?.acceptedAt) : NaN, sentAt: validRequest ? time(request.sentAt) : NaN,
     metrics: { finalDeliveryMs, deliveryStages, journeyStages,
@@ -132,8 +133,13 @@ export function measurementSignals(samples) {
 }
 
 export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CHAT_RUNS_DIR, sessionsFile=CHAT_SESSIONS_FILE,
-  getUsage=queryUsageLedger, getPeople=listPeopleForClient, now=Date.now, maxRuns=1000, maxReadBytes=64*1024*1024, includeInjection=true }={}) {
-  const windows=new Map(), files=new Map();
+  getUsage=queryUsageLedger, getPeople=listPeopleForClient, now=Date.now, maxRuns=1000, maxReadBytes=64*1024*1024, includeInjection=true, includeSamples=false, projectionFile=null }={}) {
+  const windows=new Map(), files=new Map(); let loaded=false;
+  async function loadProjections() {
+    if (loaded) return; loaded=true;
+    const saved=projectionFile ? await readRecord(projectionFile) : null;
+    if(saved?.version === 2) for(const [path,value] of Object.entries(saved.files || {})) files.set(path,value);
+  }
   async function projected(file, project, coverage, limit=2*1024*1024) {
     try {
       const s=await stat(file), version=`${s.ino}:${s.mtimeMs}:${s.size}`, cached=files.get(file);
@@ -146,6 +152,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     } catch(e) { if(e.code!=='ENOENT')coverage.readErrors++; return null; }
   }
   async function collect(days, dashboard) {
+    await loadProjections();
     const started=now(), coverage={bytesRead:0,cacheHits:0,limitedFiles:0,readErrors:0,missingRuns:0,missingRequests:0,missingInjections:0};
     const [usage, people, raw] = await Promise.all([getUsage({days,top:10000,...(dashboard ? { startMs: businessStart(started)-(days-1)*DAY, endMs: started, includeDailyTrend:true, dailyBoundaryOffsetMs:BUSINESS_OFFSET, dailyTimezoneOffsetMs:8*3600000, dailyTimezone:'Asia/Shanghai', includeTrendRuns:true, trendRunLimit:maxRuns } : {})}),getPeople(),readFile(sessionsFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '[]';throw e;})]);
     let contextExperiment = null;
@@ -160,6 +167,10 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
           sampleRate: spec.sampleRate, observationHours: spec.observationHours };
       }
     } catch { contextExperiment = { state: 'unavailable' }; }
+    let experiments=[];
+    if(includeSamples) {
+      try { experiments=(await readdir(join(configDir,'feature-experiments'),{withFileTypes:true})).filter(e=>e.isDirectory() && /^[\w.-]+$/.test(e.name)).map(e=>e.name).slice(0,20); } catch(e) { if(e.code!=='ENOENT')coverage.readErrors++; }
+    }
     const metadata=JSON.parse(raw), list=Array.isArray(metadata)?metadata:metadata.sessions||[];
     const rows=new Map(list.filter(s=>!s.archived).map(s=>[s.id,{sessionId:s.id,name:label(s.name),model:label(s.model),activeRunId:s.activeRunId,...sessionOwnership(s,people)}]));
     for(const bucket of usage.bySession||[]) { const s=list.find(s=>s.id===bucket.sessionId); if(!rows.has(bucket.sessionId))rows.set(bucket.sessionId,{sessionId:bucket.sessionId,name:label(s?.name||bucket.sessionName),model:label(s?.model),activeRunId:s?.activeRunId,...sessionOwnership(s||{},people),archived:s?.archived===true}); }
@@ -189,15 +200,24 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       if(!request)coverage.missingRequests++;
       const injection=includeInjection ? await projected(join(runsDir,l.runId,'manifest.json'),projectInjection,coverage) : null;
       const sample=runMeasurement(l,run,request,injection);
-      if(dashboard && !sample.background) { const first = await firstRun(l.sessionId); sample.firstSessionRun = first ? first === l.runId : null; }
+      if((dashboard || includeSamples) && !sample.background) { const first = await firstRun(l.sessionId); sample.firstSessionRun = first ? first === l.runId : null; }
+      if(includeSamples && typeof request?.requestId==='string' && !sample.background) {
+        sample.experiment='unmarked';
+        for(const id of experiments) {
+          const hash=createHash('sha256').update(JSON.stringify(request.requestId)).digest('hex');
+          const exposure=await projected(join(configDir,'feature-experiments',id,'exposures',l.sessionId,hash+'.json'),e=>({requestId:e.requestId,strategy:e.appliedStrategy,disabled:e.disabled,state:e.state}),coverage);
+          if(exposure?.requestId===request.requestId) { sample.experiment=id+':'+(exposure.disabled?'disabled':exposure.strategy || 'unknown'); break; }
+        }
+      }
       if(includeInjection && !sample.background && !finite(sample.metrics.injectionBytes))coverage.missingInjections++;
       if(!grouped.has(l.sessionId))grouped.set(l.sessionId,[]);grouped.get(l.sessionId).push(sample);
     }));
     for(const row of rows.values()) {const samples=(grouped.get(row.sessionId)||[]).filter(s => !dashboard || s.at >= time(usage.window?.start));row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
     const allSamples=[...grouped.values()].flat();
     const agentDashboard=dashboard ? buildAgentDashboard(usage,allSamples,started,coverage) : null;
+    if(projectionFile) await writeDurableJson(projectionFile,{version:2,files:Object.fromEntries(files)});
     if (agentDashboard) agentDashboard.documents = await readContextDocuments();
-    return {generatedAt:new Date(now()).toISOString(),agentDashboard,contextExperiment,responseTiming:summarizeResponseTiming([...grouped.values()].flat(),days,now()),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[],trendRuns:undefined},sessions:[...rows.values()],
+    return {generatedAt:new Date(now()).toISOString(),...(includeSamples?{samples:allSamples}:{}),agentDashboard,contextExperiment,responseTiming:summarizeResponseTiming([...grouped.values()].flat(),days,now()),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[],trendRuns:undefined},sessions:[...rows.values()],
       coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length,truncated:usage.runCount>ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length||coverage.limitedFiles>0,
         collectionMs:now()-started,cacheSeconds:60,apiAttribution:'unavailable'},
       semantics:{timing:'已落账 Run 的 Request/Run 时间戳；受理到准备包含排队，执行包含等待，阶段有各自样本数',
@@ -205,7 +225,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
         signals:'同 Session/模型/Harness，最近3个前台Run对此前最多20个（至少10个）；2倍黄色、3倍红色，另需最小增量；仅页面提示'} };
   }
   return async ({days=1,dashboard=false}={})=>{
-    days=[1,7,30].includes(Number(days))?Number(days):1;
+    days=(includeSamples?[1,7,14,30]:[1,7,30]).includes(Number(days))?Number(days):1;
     const cacheKey=String(days)+':'+dashboard;
     const c=windows.get(cacheKey);if(c&&(c.pending||now()-c.at<60000))return c.pending||c.value;
     const entry={at:now()};entry.pending=collect(days,dashboard).then(value=>{entry.value=value;entry.pending=null;entry.at=now();return value;}).catch(e=>{windows.delete(cacheKey);throw e;});windows.set(cacheKey,entry);return entry.pending;

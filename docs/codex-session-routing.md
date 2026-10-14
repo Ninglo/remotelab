@@ -34,13 +34,12 @@ omitting `autoSwitch` preserves the independent reserve-switch setting.
   account from retained run status. Subsequent turns keep that account and the
   existing native thread. Session-associated naming/state and detached helper
   calls use the same binding, so background work cannot concentrate on the old
-  default while every user turn is pushed elsewhere. Changing the default, adding accounts, reaching the
-  reserve threshold or disabling balancing does not move bound Sessions.
+  default while every user turn is pushed elsewhere. Changing the default, adding accounts or disabling balancing does not itself move bound Sessions.
   Forked Sessions are separate allocations; no running turn is transferred.
-- A bound account that is logged out, exhausted, cooling, removed or known to
+- A bound account that is logged out, cooling, removed or known to
   have changed identity produces an explicit failure without launching on
   another account. Restore its authorization/quota and retry in that Session.
-  There is no automatic task replay or cross-account failover.
+  There is no automatic task replay. With `autoSwitch` enabled, confirmed exhaustion or fresh quota at or below 10% allows a bound Session to migrate **before its next turn**, if it has no live execution and an independently logged-in backup has fresh quota above 10%. Unknown/stale quota, cooldown or changed identity never authorize migration. Cancellation before registration preserves the old binding; the original native thread remains unchanged. If no safe backup exists, admission fails explicitly.
 - A terminal provider error containing HTTP 429 or “too many requests” records
   a 60-second local cooldown from the observed error time. It is distinct from
   subscription exhaustion, and fresh quota samples do not clear it. The generic
@@ -52,7 +51,7 @@ omitting `autoSwitch` preserves the independent reserve-switch setting.
   cannot guarantee removal of provider-wide or shared-network rate limits.
 
 The existing reserve switch still selects the default for unbound execution.
-Its default-account history is not evidence that a bound Session has moved.
+Its default-account history is not evidence that a bound Session has moved. A bounded `switchEvents` journal distinguishes default selection from per-Session migrations and records the observed quota and reason for private diagnostic receipts.
 `GET /api/runs/:runId` reports the actual `codexAccount` and assignment reason.
 Bindings are private durable records under `codex-accounts/session-bindings/`;
 credentials are not copied into them. Model, reasoning, tools and transcript
