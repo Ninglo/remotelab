@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { dirname, join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
-import { diagnosisKey, diagnosisStages, sessionDiagnosisCandidates, diagnoseSessionCandidate, diagnosisRecovered } from '../lib/session-diagnosis.mjs';
+import { diagnosisKey, diagnosisStages, sessionDiagnosisCandidates, diagnoseSessionCandidate, diagnosisRecovered, privateDiagnosisDecision, privateDiagnosisNotification } from '../lib/session-diagnosis.mjs';
 import { acquireProviderRuntimeLease } from './provider-runtime-queue.mjs';
 import { createSessionMonitoringReader } from './monitoring-sessions.mjs';
 import { metricComparisons, metricCandidate, metricRecovered, metricCoverage, metricLabels, populationTrendCandidates } from '../lib/metric-diagnosis.mjs';
@@ -24,6 +24,14 @@ export function validDiagnosisRecipient(c) {
 }
 export function sessionDiagnosisCard(item, config) {
   const resolved = item.status === 'resolved';
+  if(config.noisePolicy?.mode==='risk_only' && item.riskType==='exhausted_bindings') {
+    const automatic=item.notificationReason==='automatic_continuation';
+    const risk=resolved?'原事件涉及的账号绑定已逐一核对为可用。':automatic?'已有可用备用，后续请求可以自动接续。':
+      item.notificationReason==='switch_disabled'?'有执行需求的会话仍绑定不可用账号，自动切换尚未开启。':'有执行需求的会话仍绑定不可用账号，尚无已核实可用的备用。';
+    const next=resolved?'无需操作；账号可用不代表原业务已经完成。':automatic?'无需操作；继续核对后续执行结果。':item.humanAction?.summary || item.nextStep;
+    return {config:{wide_screen_mode:true,update_multi:true},header:{title:{tag:'plain_text',content:`账号连续性 · ${resolved?'已恢复':automatic?'可自动接续':'需要处理'}`},template:resolved||automatic?'green':'orange'},
+      elements:[{tag:'div',text:{tag:'plain_text',content:[risk,'已核对：当前绑定、已有额度读数与执行记录；未重放任务。',`下一步：${next}`].join('\n')}}]};
+  }
   const name=metricLabels[item.metric] || diagnosisStages[item.metric] || (item.metric==='account'?'账号连续性':'预警处置');
   const content = `${item.test ? '链路测试，使用模拟样本，不代表真实故障。\n' : ''}${name}：${item.members.length} 个会话\n`
     + [item.trigger && `触发：${item.trigger}`,item.summary,item.action && `行动：${item.action}`,
@@ -65,7 +73,7 @@ export async function readSessionDiagnostics(file = SESSION_DIAGNOSIS_FILE) {
     incidents:Object.values(state?.incidents || {}).map(i => ({id:i.id,metric:i.metric,status:i.status,summary:i.summary,
       nextStep:i.nextStep,trigger:i.trigger,action:i.action,verification:i.verification,evidence:i.evidence,suspects:i.suspects,limitations:i.limitations,relatedRecovery:i.relatedRecovery,
       sessionIds:i.members.map(m => m.sessionId),checkedAt:i.diagnosedAt,updatedAt:i.updatedAt,
-      deliveryStatus:i.delivery?.status || 'disabled',test:i.test === true}))};
+      deliveryStatus:i.delivery?.status || 'disabled',notificationReason:i.notification?.reason,test:i.test === true}))};
 }
 
 export async function processSessionDiagnostics({config = {},snapshot = {},dryRun = false,baseline = false,
@@ -75,6 +83,8 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
   if(!dryRun && !lease) return {enabled:true,skipped:'busy'};
   try {
     const state = await readRecord(stateFile) || {incidents:{}};
+    const riskOnly=config.notification?.noisePolicy?.mode==='risk_only';
+    const baselineIds=new Set(riskOnly && state.privateNotificationPolicy!==1?Object.keys(state.incidents):[]);
     // Reuse the minute observer; detailed sample scans run at most every five minutes.
     if(!dryRun && now-Date.parse(state.checkedAt || '') < 5*60000) return {enabled:true,skipped:'interval'};
     const data = await readSessions({days:7});
@@ -86,11 +96,21 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     const tracked=Object.values(state.incidents).filter(i=>i.riskType==='exhausted_bindings'&&i.status!=='resolved').flatMap(i=>i.members.map(m=>m.sessionId));
     const accounts=config.reportActions === true ? await readAccounts(metrics.samples || [],undefined,now,tracked) : null;
     if(accounts) {
-      const actions=trustCandidates(accounts,snapshot,metrics.samples || [],now);
+      const actions=trustCandidates(accounts,snapshot,metrics.samples || [],now,{riskOnly});
       extras.unshift(...actions.filter(c=>c.metric==='account'));
       extras.push(...actions.filter(c=>c.metric!=='account'));
     }
-    if(dryRun) return {enabled:true,dryRun:true,candidates:candidates.map(c => ({...c,...diagnoseSessionCandidate(c,snapshot)})),coverage:data.coverage,metrics:metricCoverage(comparisons,metrics.coverage),extraCandidates:extras};
+    if(riskOnly)for(const item of extras)if(item.kind==='metric') {
+      item.status='observing';
+      item.nextStep='先核对任务构成、增长来源及真实执行影响；当前只保留诊断线索，无需你操作。';
+    }
+    if(riskOnly && !complete)for(const item of extras)if(item.riskType==='exhausted_bindings') {
+      item.notificationReason='collection_incomplete';item.humanAction=null;item.status='observing';
+      item.nextStep='当前采集有缺口，不能据此判断没有执行需求；先补齐证据，不要求你处理旧绑定。';
+      item.fingerprint=diagnosisKey([item.fingerprint,'collection_incomplete']);
+    }
+    if(dryRun) return {enabled:true,dryRun:true,candidates:candidates.map(c => ({...c,...diagnoseSessionCandidate(c,snapshot)})),coverage:data.coverage,metrics:metricCoverage(comparisons,metrics.coverage),extraCandidates:extras,
+      ...(riskOnly?{notificationPreview:extras.map(item=>({key:item.key,...privateDiagnosisDecision(item),requiresDistinctObservations:3})),note:'仅展示候选资格；实际通知还受持续证据、历史基线、既有回执和暂停开关限制。'}:{})};
     state.checkedAt = new Date(now).toISOString(); state.coverage = data.coverage;
     state.metricCoverage=metricCoverage(comparisons,metrics.coverage);
     let diagnosed=0, sent=0;
@@ -118,6 +138,10 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     }
     for(const candidate of extras) {
       let item=Object.values(state.incidents).find(i=>i.key===candidate.key && i.status!=='resolved');
+      if(item && riskOnly && candidate.kind==='metric')Object.assign(item,{status:candidate.status,nextStep:candidate.nextStep});
+      // Fresh evidence must advance even when the human-readable conclusion is
+      // unchanged. Repeated reads of one quota sample never confirm an alert.
+      if(item && riskOnly && candidate.riskType==='exhausted_bindings')item.notificationEvidenceKey=candidate.notificationEvidenceKey;
       if(item?.fingerprint===candidate.fingerprint)continue;
       if(item && candidate.kind==='metric' && now-Date.parse(item.diagnosedAt)<cooldown)continue;
       if(!item) {
@@ -144,15 +168,24 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       if(item.status !== 'resolved' && diagnosisRecovered(item,data.sessions,now)) Object.assign(item,{
         status:'resolved',summary:'后续连续三次执行已成功，耗时回到门槛以下。',nextStep:'无需操作；没有把自然恢复记为补救成功。',updatedAt:state.checkedAt});
     }
+    if(riskOnly) {
+      const freshKeys=new Set(complete?extras.map(i=>i.key):[]);
+      for(const item of Object.values(state.incidents))item.notification=privateDiagnosisNotification(item,{fresh:freshKeys.has(item.key),baseline:baselineIds.has(item.id)||!validDiagnosisRecipient(config.notification)});
+      state.privateNotificationPolicy=1;
+    }
     await writeDurableJson(stateFile,state);
     for(const item of Object.values(state.incidents)) {
       if(!validDiagnosisRecipient(config.notification) || sent >= (config.metricPolicy?.enabled || config.reportActions ? 3 : 1)) break;
+      if(riskOnly && !item.notification?.ready)continue;
       const version=diagnosisKey(sessionDiagnosisCard(item,config.notification));
       if(item.delivery?.version === version || ['sending','uncertain'].includes(item.delivery?.status)) continue;
       // Save intent before I/O. Uncertain sends/edits require readback, never a second card.
       item.delivery={...item.delivery,status:'sending',recipientKey:item.delivery?.recipientKey || recipientKey(config.notification)};
       await writeDurableJson(stateFile,state);
-      try { item.delivery={...await deliver(item,config.notification),version,status:'delivered'}; }
+      try {
+        item.delivery={...await deliver(item,config.notification),version,status:'delivered'};
+        if(riskOnly)item.notification={...item.notification,sentSemantic:item.notification.semantic,ready:false};
+      }
       catch { item.delivery.status='uncertain'; }
       sent++;
       await writeDurableJson(stateFile,state);

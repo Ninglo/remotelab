@@ -82,6 +82,47 @@ The authenticated page shows delivery uncertainty in the affected row. The first
 version reports completed fixed analysis and waits for new evidence; it never
 claims a model is working or displays a nonfunctional approval button.
 
+### Private trial with fewer interruptions
+
+Set `sessionDiagnostics.notification.noisePolicy.mode` to `risk_only` to separate
+local diagnosis from private delivery. This is an opt-in policy; it does not
+enable diagnosis or notification. Both existing `enabled` switches retain their
+meaning, and publishing code never resumes a paused trial.
+
+Normal account switches share one local observation with bounded source
+references. Statistical changes remain local investigation clues, without asking
+the recipient to explain normal task variation. Resource-repair results retain
+their original resource notification route rather than generating private copies.
+The account ledger and old private-message receipts remain intact.
+
+An account-continuity incident qualifies only when a recent (30-minute) running,
+queued or failed request still references the unavailable bound account and
+automatic switching is disabled or no available backup is known. Unknown backup
+quota is a collection gap, not proof of exhaustion. Three distinct fresh
+observations of the same actionable condition are required. Re-reading one quota
+snapshot, incomplete collection, idle bindings and routine switches do not
+satisfy this gate. A failed request is not attributed to account exhaustion merely
+because both were observed.
+
+One continuity incident retains its message ID. A changed decision, an available
+fallback, or independently verified recovery can update that message; counts and
+sample fluctuations do not. An available fallback is described as readiness for
+subsequent execution, not as completed business work. Disappearance from recent
+traffic is not recovery. Uncertain delivery remains blocked for receipt review.
+The private card has three short lines: the risk, what was actually checked, and
+the specific next action. It omits changing counts and retains detailed evidence
+in the existing diagnostic ledger. It does not present a navigation link as an
+approval button.
+
+On first adoption, existing incidents become the known baseline without changing
+their receipts. During notification mute, observations also become the baseline.
+Resuming does not drain old messages into a backlog; a new actionable condition
+or a verified recovery followed by recurrence must qualify again. This policy
+adds no timer, model worker, account switch or automatic business retry.
+`scripts/session-diagnose.mjs --dry-run` includes candidate notification reasons;
+it performs no sends or writes. Qualification in that preview is distinct from
+actual delivery, which also checks the baseline, confirmations and mute state.
+
 ## Routine task health reads
 
 The overview and independent minute observer use `readAutomationHealth`, not the
