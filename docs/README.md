@@ -104,7 +104,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - [Service management access](platform-skills/service-access.md) — read-only instance service/sudo/local SSH checks before declaring a restart permission blocker
 
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
-- `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector; includes asynchronous Jev social reactions and optional main-Session corrections, with final reactions taking precedence over late quick feedback.
+- `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector; includes asynchronous Jev social reactions with separate appropriateness and emoji confidence, diagnostic receipts, and optional main-Session corrections, with final reactions taking precedence over late quick feedback.
 - [Feishu API observability](feishu-api-observability.md) — local request ledger, usage aggregation, privacy and bounded document recovery
 - [Person-scoped workboard baseline](../notes/current/feishu-workboard-pilot.md) — accepted checklist/result behavior, opt-in scope, durable operation and isolated regression entry
 - `github-auto-triage.md` — model-first GitHub intake and auto-reply rollout contract

@@ -152,8 +152,12 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       && firstUserTurn
       && !stored?.deliveries?.some(item => item.kind === 'session_entry' || item.sessionEntryIncluded);
     const entry = includeEntry ? buildSessionEntry(session, { runtimeSelection: publicationRun }) : null;
+    // Display projection removes private blocks. Read control directives from
+    // the original final (or its latest revision), never from display text.
+    const directiveEvent = surface.messageUpdateSeq
+      ? events.find(item => item.seq === surface.messageUpdateSeq) || event : event;
     const payload = final ? buildReplyPublicationPayload([prepared], publicationRun,
-      { session, fullHistory, includeSessionEntry: Boolean(entry) }) : {
+      { session, fullHistory, includeSessionEntry: Boolean(entry), finalDirectiveContent: directiveEvent.content }) : {
       text: appendSessionEntryFooter(prepared.content, entry), attachments: getAssistantReplyAttachments(prepared),
     };
     const buildParts = current => buildReplyDeliveries(resolveAmbientFeishuReplyPlan(replyRecord(current), ownerPlan, [event]), payload, {

@@ -14,6 +14,7 @@ const MAX_RECENT_MESSAGES = 20;
 const MAX_RECENT_AGE_MS = 4 * 60 * 60 * 1000;
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
+const boundedProbability = value => Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
 const keyFor = (sessionId, sourceMessageId) => createHash('sha256')
   .update(JSON.stringify([sessionId, sourceMessageId])).digest('hex').slice(0, 24);
 
@@ -114,6 +115,16 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
         ...(reactionOnly ? { purpose: 'reaction' } : { participation, workMode: workMode || null }),
         emojiType: emojiType || null,
         ...(proposed.groupRoutingPilot === true ? { groupRoutingPilot: true } : {}),
+        ...(reactionOnly && proposed?.diagnostics ? { diagnostics: {
+          choice: trim(proposed.diagnostics.choice).slice(0, 64),
+          choiceProbability: boundedProbability(proposed.diagnostics.choiceProbability),
+          reactionNeeded: ['yes', 'no'].includes(proposed.diagnostics.reactionNeeded)
+            ? proposed.diagnostics.reactionNeeded : '',
+          reactProbability: boundedProbability(proposed.diagnostics.reactProbability),
+          model: trim(proposed.diagnostics.model).slice(0, 100),
+          latencyMs: Number.isFinite(proposed.diagnostics.latencyMs) && proposed.diagnostics.latencyMs >= 0
+            ? Math.round(proposed.diagnostics.latencyMs) : null,
+        } } : {}),
         reason: trim(proposed?.reason),
         decidedAt: new Date().toISOString(),
         ...(Array.isArray(proposed.contextSources) ? { contextSources: proposed.contextSources

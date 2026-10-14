@@ -1244,7 +1244,8 @@ function startJevReaction(runtime, summary, observationReceipt, helpers, control
       const saved = await (helpers.recordJevDecision || ((id, sourceMessageId, value) =>
         requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(id)}/observations/decision`, {
           method: 'POST', body: { sourceMessageId, ...value },
-        })))(sessionId, summary.messageId, { purpose: 'reaction', emojiType, reason: verdict?.reason || '' });
+        })))(sessionId, summary.messageId, { purpose: 'reaction', emojiType, reason: verdict?.reason || '',
+          ...(verdict?.diagnostics ? { diagnostics: verdict.diagnostics } : {}) });
       if (saved?.response && !saved.response.ok) throw new Error(saved.json?.error || 'Unable to record reaction');
       decision = saved?.json?.decision || saved?.decision;
       if (!decision) throw new Error('Reaction was not durably recorded');

@@ -77,7 +77,7 @@ try {
     fetchImpl: async (_url, req) => {
       const sent = JSON.parse(req.body);
       assert.deepEqual(sent.state, { discussion: question });
-      assert.deepEqual(Object.keys(sent.questions), ['reaction']);
+      assert.deepEqual(Object.keys(sent.questions), ['reaction', 'reaction_needed']);
       return { ok: true, json: async () => ({ answers: { binaryAnswer: { choice: 'yes', probabilities: { yes: .99 } } } }) };
     } });
   assert.equal(verdict.emojiType, null);

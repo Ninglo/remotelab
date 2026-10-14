@@ -49,7 +49,8 @@ try {
 
   for (const [choice, probability, expected] of [
     ['WOW', .96, 'WOW'], ['Get', .94, 'Get'], ['THANKS', .94, 'THANKS'],
-    ['none', .99, null], ['Yes', .99, null], ['DONE', .99, null], ['WOW', .5, null], ['WOW', 2, null],
+    ['none', .99, null], ['Yes', .99, null], ['DONE', .99, null],
+    ['THANKS', .47, 'THANKS'], ['WOW', .25, 'WOW'], ['WOW', .19, null], ['WOW', 2, null],
   ]) {
     const verdict = await classifyFeishuQuickParticipation('NEWEST MESSAGE TO CLASSIFY: thanks', {
       key: 'fixture', projectMemory: { secret: 'must not be sent' }, participationState: { mode: 'active' },
@@ -59,12 +60,14 @@ try {
         assert.equal(body.model, 'jev-1.13.0');
         assert.equal(body.state.discussion, 'NEWEST MESSAGE TO CLASSIFY: thanks');
         assert.deepEqual(Object.keys(body).sort(), ['model', 'questions', 'state']);
-        assert.deepEqual(Object.keys(body.questions), ['reaction']);
+        assert.deepEqual(Object.keys(body.questions), ['reaction', 'reaction_needed']);
         assert.equal(body.questions.reaction.type, 'choice');
+        assert.deepEqual(Object.keys(body.questions.reaction_needed.criteria), ['yes', 'no']);
         assert(!Object.hasOwn(body.questions.reaction.criteria, 'Yes'));
         assert(Object.hasOwn(body.questions.reaction.criteria, 'none'));
         return { ok: true, json: async () => ({ answers: {
           reaction: { choice, probabilities: { [choice]: probability } },
+          reaction_needed: { choice: 'yes', probabilities: { yes: .95, no: .05 } },
           participation: { choice: 'silent' }, workMode: { choice: 'complex' },
         } }) };
       },
@@ -72,6 +75,27 @@ try {
     assert.equal(verdict.emojiType, expected);
     for (const field of ['decision', 'workMode', 'controlMode', 'invited', 'handoffDecision']) assert.equal(field in verdict, false);
   }
+  for (const [needed, yes, reason] of [
+    ['no', .01, 'no_reaction'], ['yes', .79, 'low_support'], ['yes', .8, ''],
+    ['yes', '0.99', 'invalid_response'], ['yes', 2, 'invalid_response'], ['other', .99, 'invalid_response'],
+  ]) {
+    const verdict = await classifyFeishuQuickParticipation('test', { key: 'fixture',
+      fetchImpl: async () => ({ ok: true, json: async () => ({ model: 'jev-fixture', answers: {
+        reaction: { choice: 'THANKS', probabilities: { THANKS: .47 } },
+        reaction_needed: { choice: needed, probabilities: { yes } },
+      } }) }) });
+    assert.equal(verdict.reason, reason);
+    assert.equal(verdict.emojiType, reason ? null : 'THANKS');
+    assert.equal(verdict.diagnostics.choiceProbability, .47);
+  }
+  // Strong exact-emoji scores cannot bypass the independent appropriateness gate.
+  const inappropriate = await classifyFeishuQuickParticipation('human logistics', { key: 'fixture',
+    fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+      reaction: { choice: 'Get', probabilities: { Get: .99 } },
+      reaction_needed: { choice: 'no', probabilities: { yes: .01 } },
+    } }) }) });
+  assert.equal(inappropriate.emojiType, null);
+  assert.equal(inappropriate.reason, 'no_reaction');
   assert.equal((await classifyFeishuQuickParticipation('test', { key: 'fixture',
     fetchImpl: async () => ({ ok: false, status: 402 }) })).reason, 'http_402');
 
@@ -120,6 +144,16 @@ try {
   assert.equal(stored.participation, undefined);
   assert.equal(stored.workMode, undefined);
   assert.equal((await recordSessionObservationDecision('social', 'source', { purpose: 'reaction', emojiType: 'WOW' })).emojiType, 'THANKS');
+  await observeSessionMessage('social', { sourceMessageId: 'audited', text: 'thanks' });
+  const audited = await recordSessionObservationDecision('social', 'audited', {
+    purpose: 'reaction', emojiType: 'THANKS', diagnostics: {
+      choice: 'THANKS', choiceProbability: .47, reactionNeeded: 'yes', reactProbability: .99,
+      model: 'jev-1.13.0', latencyMs: 245.2, rawPrompt: 'must not persist',
+    },
+  });
+  assert.deepEqual(audited.diagnostics, { choice: 'THANKS', choiceProbability: .47,
+    reactionNeeded: 'yes', reactProbability: .99, model: 'jev-1.13.0', latencyMs: 245 });
+
   await observeSessionMessage('social', { sourceMessageId: 'invalid', text: 'done?' });
   await assert.rejects(recordSessionObservationDecision('social', 'invalid', { purpose: 'reaction', emojiType: 'Yes' }), /Invalid social/);
   await assert.rejects(recordSessionObservationDecision('social', 'invalid', { purpose: 'reaction', emojiType: 'Get', participation: 'reply' }), /Invalid social/);

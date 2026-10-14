@@ -125,6 +125,41 @@ try {
   assert.equal(openingRecord.deliveries[1].text, '【最终答复】\n\n核查结果。');
   assert.ok(openingRecord.deliveries.every(item => item.target.threadId === 'original-thread'));
 
+  // Exercise the live surface projection, which strips private text before
+  // terminal payload construction. Control decisions must survive separately.
+  for (const [label, content, expected] of [
+    ['with-text', '<private><feishu-reaction emoji="GLANCE"/></private>\n已核查。', 'GLANCE'],
+    ['reaction-only', '<private><feishu-reaction emoji="THANKS"/></private>', 'THANKS'],
+  ]) {
+    let record = { key: `reaction-${label}`, runId: 'reaction-run', options: {}, deliveries: [] };
+    const events = [{ type: 'message', role: 'assistant', phase: 'final_answer',
+      seq: 1, providerMessageId: label, content }];
+    const options = { running: false, session: openingOptions.session,
+      prepareFinal: async event => ({ ...event, content: event.content.replace('已核查。', '发布后的结果。') }),
+      plan: { connector: 'feishu', target: { chatId: 'reaction-chat', messageId: 'reaction-source', chatType: 'group', conversationKind: 'main' } },
+      store: { get: async () => record, mutate: async (_key, fn) => { record = fn(record); } } };
+    await publishNativeFinalReplies(record, events, options);
+    await publishNativeFinalReplies(record, events, options);
+    const reactions = record.deliveries.filter(item => item.kind === 'reaction');
+    assert.equal(reactions.length, 1, `${label}: final reaction survives projection and replay`);
+    assert.equal(reactions[0].emojiType, expected);
+    if (label === 'with-text') assert.equal(record.deliveries.find(item => item.kind === 'content').text, '发布后的结果。');
+    assert.equal(reactions[0].reactionStage, 2);
+    assert.equal(reactions[0].target.messageId, 'reaction-source');
+    assert.ok(record.deliveries.every(item => !/private|feishu-reaction/.test(item.text || '')));
+    assert.equal(record.deliveries.filter(item => item.kind === 'content').length, label === 'with-text' ? 1 : 0);
+    // A provider may revise the same final. Use the latest directive, never
+    // the anchor's old reaction; removing a directive must remove it too.
+    for (const [replacement, emoji] of [
+      ['<private><feishu-reaction emoji="OK"/></private>\n更新结果。', 'OK'],
+      ['更新结果。', undefined],
+    ]) {
+      record = { ...record, deliveries: [], streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
+      await publishNativeFinalReplies(record, [...events, { ...events[0], seq: 2, content: replacement }], options);
+      assert.equal(record.deliveries.find(item => item.kind === 'reaction')?.emojiType, emoji);
+    }
+  }
+
   let shortRecord = { ...openingRecord, key: 'short-reply', deliveries: [],
     streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
   const shortPlan = { connector: 'feishu', target: { chatId: 'short-chat',

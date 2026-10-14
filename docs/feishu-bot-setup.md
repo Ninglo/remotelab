@@ -537,7 +537,13 @@ persistence or the reaction provider. It decides whether to reply, where the
 reply belongs and whether authorized work needs a separate Session.
 
 TypeSafe Jev (`jev-1.13.0`, `POST /v1/systemone`) receives a bounded recent Session window (at most 20 messages and 5,000
-characters) and a single social-reaction question. It cannot classify
+characters) and two social-reaction questions in one API call: whether a reaction
+is appropriate, and which emoji fits. The yes/no reaction probability must reach
+0.8; the chosen social emoji must reach 0.2. This keeps uncertain participation
+silent without requiring one of many similar emoji to monopolize 80% of the
+probability. An explicit no-reaction decision, low support, malformed response
+and provider failure are recorded separately. The observation record retains
+the selected choice, both probabilities, model and latency for diagnosis. It cannot classify
 participation, invitations, mode changes, work placement or handoff. It cannot
 answer factual questions with Yes/No or claim work is underway or complete.
 Its optional Get only acknowledges receipt. Weak support, missing credentials,
@@ -545,6 +551,12 @@ timeout and provider failure produce no reaction, never a fallback work signal.
 No project report is loaded into this call; `dailyReportMemory` is retained as
 compatible configuration but no longer feeds the reaction model. See the
 [retired report input](feishu-daily-report-memory.md).
+
+Main-Session final reaction directives are extracted from the original final
+message, including its latest provider revision, before private blocks are
+removed from the display projection. This applies to both reaction-only and
+text-plus-reaction answers; replay retains one stage-2 delivery and never
+prints the private directive.
 
 `jevReactions` enables this Jev fast path only in explicitly selected groups.
 Groups without this flag, legacy `quickReactions`, topic replies, and explicit

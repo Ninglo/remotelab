@@ -83,6 +83,11 @@ export async function classifyFeishuQuickParticipation(context, {
           instructions: 'Choose one fitting social reaction to the NEWEST message, or none. Older messages only clarify its recipient and tone. Do not answer factual questions, decide whether to reply, choose a work Session, infer permission, or change participation mode. Get only acknowledges receipt; it does not accept a task or prove handoff or completion. Praise, thanks, humor, criticism and empathy can use different reactions. Never laugh at bad news or misfortune. Neutral human-to-human updates and ambiguous tone need none.',
           criteria: { ...FEISHU_SOCIAL_REACTION_CRITERIA, Get: 'Received the message; no task acceptance or completion claim.',
             none: 'No fitting social reaction is needed or sufficiently supported.' },
+      }, reaction_needed: {
+        type: 'choice',
+        instructions: 'Decide only whether a brief social reaction from this assistant is appropriate for the NEWEST message. Judge whether to react separately from which exact emoji to use: several similar emoji can fit without reducing confidence that a reaction is appropriate. Acknowledging direct feedback, thanks, praise, humor, or distress is appropriate. Do not answer factual questions, accept work, control participation, or decide whether a text reply is needed. Neutral human-to-human logistics, unclear recipient or tone, and factual status questions needing substantive answers should usually have no social reaction.',
+        criteria: { yes: 'A social reaction from the assistant adds a fitting acknowledgement or emotional response to the newest message.',
+          no: 'No fitting social reaction is called for; remain without a social emoji.' },
       } } }),
       signal: controller.signal,
     });
@@ -91,11 +96,28 @@ export async function classifyFeishuQuickParticipation(context, {
     const answer = result?.answers?.reaction;
     const choice = answer?.choice;
     const probability = answer?.probabilities?.[choice];
-    const valid = choice === 'none' || Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, choice || '');
-    const supported = valid && Number.isFinite(probability) && probability >= 0.8 && probability <= 1;
-    return { emojiType: supported && choice !== 'none' ? choice : null,
-      ...(!supported ? { reason: 'low_support' } : {}),
-      model: result.model || '', latencyMs: Math.round(performance.now() - started) };
+    const needed = result?.answers?.reaction_needed;
+    const reactProbability = needed?.probabilities?.yes;
+    const validProbability = value => Number.isFinite(value) && value >= 0 && value <= 1;
+    const valid = (choice === 'none' || Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, choice || ''))
+      && validProbability(probability) && ['yes', 'no'].includes(needed?.choice)
+      && validProbability(reactProbability);
+    // Confidence in reacting is distinct from choosing one of many synonyms.
+    // Keep a strong yes/no gate, then require a supported concrete social emoji.
+    const supported = valid && needed.choice === 'yes' && reactProbability >= 0.8
+      && choice !== 'none' && probability >= 0.2;
+    const reason = !valid ? 'invalid_response'
+      : choice === 'none' || needed.choice === 'no' ? 'no_reaction'
+      : supported ? '' : 'low_support';
+    const latencyMs = Math.round(performance.now() - started);
+    return { emojiType: supported ? choice : null, reason,
+      model: result.model || '', latencyMs,
+      diagnostics: { choice: typeof choice === 'string' ? choice : '',
+        choiceProbability: validProbability(probability) ? probability : null,
+        reactionNeeded: ['yes', 'no'].includes(needed?.choice) ? needed.choice : '',
+        reactProbability: validProbability(reactProbability) ? reactProbability : null,
+        model: result.model || '', latencyMs } };
+
   } catch (error) {
     return { emojiType: null, reason: error?.name === 'AbortError' ? 'timeout' : 'request_error',
       latencyMs: Math.round(performance.now() - started) };

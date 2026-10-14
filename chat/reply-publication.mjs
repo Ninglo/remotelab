@@ -198,6 +198,7 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
   session = null,
   fullHistory = history,
   includeSessionEntry = true,
+  finalDirectiveContent = null,
 } = {}) {
   const candidates = history.filter(event => isReplyMessage(event) && event.source !== 'result_file_assets');
   const explicitFinals = candidates.filter(isFinalAssistantMessage);
@@ -212,8 +213,12 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
     .filter((event) => event?.role === 'assistant')
     .filter((event) => event.type === 'message' || event.type === 'attachment_delivery');
   const lastAssistantMessage = [...replyHistory].reverse().find(isReplyMessage);
-  const reactionDirective = session?.sourceId === 'feishu'
-    ? parseFeishuReactionDirective(lastAssistantMessage?.content) : null;
+  const parsedReaction = session?.sourceId === 'feishu'
+    ? parseFeishuReactionDirective(finalDirectiveContent ?? lastAssistantMessage?.content) : null;
+  // Live publication supplies a display projection with prepared asset URLs.
+  // Borrow only the control decision, not unprocessed raw answer text.
+  const reactionDirective = parsedReaction && finalDirectiveContent !== null
+    ? { ...parsedReaction, text: lastAssistantMessage?.content || '' } : parsedReaction;
   const noTextDecision = reactionDirective
     ? !stripHiddenBlocks(reactionDirective.text)
     : isFeishuNoTextDecision(lastAssistantMessage?.content);
