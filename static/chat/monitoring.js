@@ -200,6 +200,8 @@
     overview: { dashboard: document.getElementById("monitoringSessions"), accounts: node("div"), button: refresh, state: {}, loadedAt: 0 },
     test: { dashboard: document.getElementById("monitoringTestDashboard"), accounts: document.getElementById("monitoringTestAccounts"), button: document.getElementById("monitoringTestRefresh"), state: {}, loadedAt: 0 },
   };
+  compactViews.overview.accounts.id = "monitoringSnapshot";
+  compactViews.overview.accounts.className = "monitoring-snapshot";
   period.closest("label").hidden = true;
   const periodNote = node("p", "今日概览 · 北京时间 05:00 起 · 详情查看近七日趋势", "monitoring-note");
   period.closest(".monitoring-toolbar").prepend(periodNote);
