@@ -255,6 +255,9 @@
             "chat/router-codex-auth-routes.mjs",
             "lib/codex-accounts.mjs",
             "lib/codex-session-routing.mjs",
+            "chat/provider-runtime-queue.mjs",
+            "chat/session-state-classifier.mjs",
+            "chat/session-detached-assistant.mjs",
             "docs/codex-session-routing.md",
             "chat/router-claude-auth-routes.mjs",
             "chat/router-pi-auth-routes.mjs"

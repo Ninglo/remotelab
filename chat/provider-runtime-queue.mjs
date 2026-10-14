@@ -76,6 +76,7 @@ async function lockIsStale(lockDir, ownerPath, {
 export async function acquireProviderRuntimeLease({
   queueKey,
   runId,
+  sessionId = '',
   rootDir = join(tmpdir(), `remotelab-provider-runtime-queue-${process.getuid?.() ?? 'user'}`),
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   ownerWriteGraceMs = DEFAULT_OWNER_WRITE_GRACE_MS,
@@ -95,6 +96,7 @@ export async function acquireProviderRuntimeLease({
     leaseId,
     queueKey: trimString(queueKey),
     runId: trimString(runId),
+    sessionId: trimString(sessionId),
     sidecarPid: process.pid,
     toolProcessId: null,
     acquiredAt: '',
