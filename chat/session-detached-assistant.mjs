@@ -63,7 +63,7 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
     runtimeFamily: invocation.runtimeFamily,
   });
   const account = invocation.runtimeFamily === 'codex-json'
-    ? await codexAccounts.acquireForRun() : null;
+    ? await codexAccounts.acquireForRun({ sessionId: sessionMeta.id || '', model: options.model ?? model }) : null;
   if (account) {
     env.CODEX_HOME = account.home;
     if (account.id !== 'default') invocation.args.unshift('-c', 'cli_auth_credentials_store="file"');

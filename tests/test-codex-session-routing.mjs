@@ -54,6 +54,19 @@ try {
   await assert.rejects(acquire('all-exhausted'), /暂无可用/);
   await assert.rejects(acquire('new-0'), /额度已耗尽.*不自动切换/);
   await pool.mutate(data => { for (const account of data.accounts) account.usage = usage(100); });
+  // Healthy accounts refresh at different times in real installations. A stale
+  // sample must not make an idle account lose to an already busy fresh one.
+  await Promise.all(slots.map(slot => slot.lease.release())); slots.length = 0;
+  await pool.mutate(data => {
+    for (const account of data.accounts) {
+      delete account.cooldownUntil;
+      if (account.id !== b.id) account.usage = { ...usage(100), checkedAt: new Date(now - 61_000).toISOString() };
+    }
+  });
+  const held = await acquire('legacy'); assert.equal(held.id, b.id);
+  const idle = await acquire('stale-but-idle'); assert.notEqual(idle.id, b.id,
+    'quota freshness never outweighs lower execution load');
+  await held.lease.release(); await idle.lease.release();
   await assert.rejects(pool.acquireForRun({ sessionId: 'cancelled', isCancelled: () => true }), { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
   assert.equal(await readSessionAccount(pool.root, 'cancelled'), null);
   await pool.mutate(data => { data.accounts.find(account => account.id === first.id).identityId = 'changed-login'; });

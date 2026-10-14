@@ -13,14 +13,15 @@ omitting `autoSwitch` preserves the independent reserve-switch setting.
 
 ## Behavior
 
-- The first execution of a new Session chooses the eligible account with the
+- The first model execution for a new Session (including its input-label helper) chooses the eligible account with the
   fewest live or starting runs. Ties go to the least recently assigned account.
   Allocation is equal-weight; plan names do not imply concurrency ratios.
 - The account pool, credentials and load counts are local to this instance.
   Duplicate known subscription identities count as one account and share
   cooldown/exhaustion eligibility; another login is not additional capacity. Logged-out,
-  confirmed exhausted or cooling accounts do not receive new Sessions. Fresh
-  available quota is preferred over unknown quota; unknown is not exhaustion.
+  confirmed exhausted or cooling accounts do not receive new Sessions. Quota
+  freshness only breaks equal-load, equal-assignment ties; otherwise repeatedly
+  refreshed busy accounts would attract all work. Unknown is not exhaustion.
   Selection reads cached observations without a foreground provider request.
 - Selection, durable Session binding and startup registration use one metadata
   lock. A crash releases the short allocation lock and stale liveness records;
@@ -28,7 +29,9 @@ omitting `autoSwitch` preserves the independent reserve-switch setting.
   concurrent: the metadata lock never surrounds inference.
 - Enabling the setting preserves existing Sessions' most recently observed
   account from retained run status. Subsequent turns keep that account and the
-  existing native thread. Changing the default, adding accounts, reaching the
+  existing native thread. Session-associated naming/state and detached helper
+  calls use the same binding, so background work cannot concentrate on the old
+  default while every user turn is pushed elsewhere. Changing the default, adding accounts, reaching the
   reserve threshold or disabling balancing does not move bound Sessions.
   Forked Sessions are separate allocations; no running turn is transferred.
 - A bound account that is logged out, exhausted, cooling, removed or known to
