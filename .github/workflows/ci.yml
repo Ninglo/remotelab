@@ -35,6 +35,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install recording audio test dependency
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Verify recording audio and retry behavior
+        run: npm run test:recording
+
       - name: Verify package boundary
         run: node tests/test-package-publish-boundary.mjs
 
