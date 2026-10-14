@@ -113,17 +113,20 @@ try {
     await rpc('complete', stoppedDelivery.delivery.id, stoppedDelivery.leaseId, { externalId: 'stopped-thread-result' });
   }
   await evidence('PASS ambient thread: real receipt resolves original execution, topic stop steers there, exact-run cancel, stale additions cannot restart');
-  const racePlan = { ...ambientPlan, target: { ...ambientPlan.target, chatId: 'thread-completion-race' } };
+  // Isolate outboxes: cancellation publication from the previous scenario can arrive late.
+  const racePlan = { ...ambientPlan, sourceRouteId: 'race-bot', target: { ...ambientPlan.target, chatId: 'thread-completion-race' } };
   const threadRaceSession = await rpc('create', { conversation: racePlan });
   const threadRaceRun = await rpc('accept', threadRaceSession.id, 'PUBLISH_OPENING THREAD_OPENING', [], {
     ...options('race-root'), sourceDelivery: racePlan, sourceContext: { connector: 'feishu', feishuParticipation: 'ambient' },
   });
   let raceOpening;
-  await until(async () => { raceOpening = await rpc('claim', { connector: 'feishu' }); return raceOpening; }, 'race thread opening');
+  await until(async () => { raceOpening = await rpc('claim', { connector: 'feishu', sourceRouteId: 'race-bot' }); return raceOpening; }, 'race thread opening');
+  assert.equal(raceOpening.delivery.sessionId, threadRaceSession.id);
+  assert.equal(raceOpening.delivery.target.sourceKind, 'ambient_thread_open');
   await rpc('complete', raceOpening.delivery.id, raceOpening.leaseId, {
     externalId: 'race-reply', messageId: 'race-reply', threadId: 'race-thread',
   });
-  const raceThread = { ...threadPlan, target: { ...threadPlan.target, chatId: 'thread-completion-race', threadId: 'race-thread' } };
+  const raceThread = { ...threadPlan, sourceRouteId: 'race-bot', target: { ...threadPlan.target, chatId: 'thread-completion-race', threadId: 'race-thread' } };
   await rpc('accept', threadRaceSession.id, 'RACE_NATIVE_COMPLETION', [], {
     ...options('thread-race-input'), feishuConnectorAuthenticated: true, sourceDelivery: raceThread,
     sourceContext: { connector: 'feishu', feishuContinuationRunId: threadRaceRun.run.id },
@@ -134,7 +137,7 @@ try {
     'Codex may not start a fallback turn for an exact-execution continuation');
   await until(async () => (await rpc('request', threadRaceSession.id, 'race-root'))?.result, 'race root settled');
   let raceDelivery;
-  while ((raceDelivery = await rpc('claim', { connector: 'feishu' }))) {
+  while ((raceDelivery = await rpc('claim', { connector: 'feishu', sourceRouteId: 'race-bot' }))) {
     await rpc('complete', raceDelivery.delivery.id, raceDelivery.leaseId, { externalId: 'race-result' });
   }
   await evidence('PASS thread completion race: native rejection cannot turn/start the bound addition');
