@@ -19,13 +19,37 @@ assert.equal(source.reduce((n,s)=>n+s.chars,0), [...manifest.modelContext].lengt
 assert(!JSON.stringify(source).includes('中文'));
 const ledger={runId:'r',sessionId:'s',ts:new Date(at).toISOString()};
 const run={id:'r',sessionId:'s',state:'completed',startedAt:new Date(at+100).toISOString(),completedAt:new Date(at+1000).toISOString()};
-const raw={requestId:'q',runId:'r',sessionId:'s',acceptedAt:new Date(at).toISOString(),settledAt:new Date(at+1000).toISOString(),options:{sourceContext:{connector:'feishu'}},deliveries:[
+const raw={requestId:'q',runId:'r',sessionId:'s',acceptedAt:new Date(at).toISOString(),settledAt:new Date(at+1000).toISOString(),preparedAt:new Date(at+50).toISOString(),options:{sourceContext:{connector:'feishu',createTime:String(at)}},deliveries:[
   {kind:'content',connector:'feishu',surfaceKind:'opening',state:'delivered',createdAt:at+10,deliveredAt:at+20},
   {kind:'content',connector:'feishu',surfaceKind:'final',state:'delivered',createdAt:at+1000,deliveredAt:at+2000},
   {kind:'content',connector:'feishu',surfaceKind:'final',state:'delivered',createdAt:at+1000,deliveredAt:at+3000},
 ]};
 const sample=runMeasurement(ledger,run,projectRequest(raw),projectInjection(manifest));
 assert.equal(sample.metrics.finalDeliveryMs,3000);
+assert.equal(sample.metrics.firstResponseMs,20,'opening is the first visible reply, not final delivery');
+assert.deepEqual(sample.metrics.journeyStages,{receive:0,prepare:50,launch:50,run:900,send:2000,total:3000});
+for (const createTime of [undefined, 'invalid', String(at/1000), String(at+1)]) {
+  const measured=runMeasurement(ledger,run,projectRequest({...raw,options:{sourceContext:{connector:'feishu',createTime}}}));
+  assert.equal(measured.metrics.firstResponseMs,null,'missing or invalid sent time must not fall back to accepted time');
+  assert.equal(measured.metrics.journeyStages,null);
+}
+for (const preparedAt of [undefined,new Date(at-1).toISOString(),new Date(at+101).toISOString()]) {
+  const measured=runMeasurement(ledger,run,projectRequest({...raw,preparedAt}));
+  assert.equal(measured.metrics.journeyStages,null);
+  assert.equal(measured.metrics.firstResponseMs,20);
+}
+for (const change of [{nativeDispatchRunId:'r'},{options:{sourceContext:{connector:'web',createTime:String(at)}}},
+  {deliveries:raw.deliveries.map(d=>({...d,state:'pending'}))},
+  {deliveries:raw.deliveries.map(d=>({...d,publicationRequestId:'foreign'}))}]) {
+  assert.equal(runMeasurement(ledger,run,projectRequest({...raw,...change})).metrics.firstResponseMs,null);
+}
+const beforeBoundary=runMeasurement(ledger,run,projectRequest({...raw,options:{sourceContext:{connector:'feishu',createTime:String(at-500)}}}));
+const crossed=buildAgentDashboard({dailyTrend:{days:[]}},[beforeBoundary],at+4000,{});
+assert.equal(crossed.today.firstResponse.count,0);
+assert.equal(crossed.days.at(-2).meanFirstResponseMs,520);
+assert.equal(crossed.days.at(-2).journeyStages.total.mean,3500);
+assert.equal(crossed.today.meanDeliveryMs,3000,'existing delivery remains grouped by accepted date');
+
 assert.deepEqual(sample.metrics.deliveryStages,{total:3000,wait:100,run:900,send:2000});
 for (const changed of [{startedAt:null},{completedAt:null},{startedAt:new Date(at-1).toISOString()},{completedAt:new Date(at+4000).toISOString()}]) {
   const measured=runMeasurement(ledger,{...run,...changed},projectRequest(raw));
@@ -38,6 +62,9 @@ assert.equal(runMeasurement(ledger,{...run,state:'cancelled'},projectRequest(raw
 assert.equal(runMeasurement(ledger,run,projectRequest({...raw,deliveries:raw.deliveries.map(d=>({...d,publicationRequestId:'foreign'}))})).metrics.finalDeliveryMs,null);
 const dashboard=buildAgentDashboard({dailyTrend:{days:[]}},[{...sample,firstSessionRun:true}],at+4000,{});
 assert.equal(dashboard.today.firstDeliveryMs,3000);
+assert.equal(dashboard.today.meanFirstResponseMs,20);
+assert.equal(['receive','prepare','launch','run','send'].reduce((sum,k)=>sum+dashboard.today.journeyStages[k].mean,0),dashboard.today.journeyStages.total.mean);
+assert.equal(buildAgentDashboard({dailyTrend:{days:[]}},[{...sample,background:true}],at+4000,{}).today.firstResponse.count,0);
 assert.equal(dashboard.today.deliveryStages.run.mean,900);
 assert.equal(dashboard.today.firstDeliveryStages.wait.count,1);
 const mixed=buildAgentDashboard({dailyTrend:{days:[]}},[

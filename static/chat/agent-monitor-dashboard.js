@@ -13,7 +13,7 @@
   function chart(d, key, title, unit, sample, explanation, state) {
     const card = el('section', '', 'agent-metric'); card.dataset.metric = key;
     const value = d.today[key], format = unit === '耗时' ? duration : number;
-    card.append(el('h4', title), el('strong', format(value), 'agent-value'), el('p', `${unit === '耗时' ? '越短越快' : unit} · 今日 ${sample(d.today)} 个样本`, 'agent-note'));
+    card.append(el('h4', title), el('strong', format(value), 'agent-value'), el('p', `${unit === '耗时' ? '越短越快' : unit} · 今日统计 ${sample(d.today)} 次`, 'agent-note'));
     card.append(el('p', explanation, 'agent-note'));
     const svg = svgNode('svg', { viewBox: '0 0 400 155', role: 'img', 'aria-label': `${title}，近七日；精确值见下方表格` });
     const max = Math.max(1, ...d.days.map(v => Number.isFinite(v[key]) ? v[key] : 0));
@@ -32,25 +32,25 @@
     d.days.forEach((row, i) => {
       if (!Number.isFinite(row[key])) return;
       const dot = svgNode('circle', { cx: x(i), cy: y(row[key]), r: 4, class: 'agent-dot', tabindex: 0 });
-      const text = `${row.day}：${format(row[key])}，${sample(row)} 个样本`; dot.setAttribute('aria-label', text);
+      const text = `${row.day}：${format(row[key])}，统计 ${sample(row)} 次`; dot.setAttribute('aria-label', text);
       const tooltip = svgNode('title'); tooltip.textContent = text; dot.append(tooltip); svg.append(dot);
     }); card.append(svg);
-    const fold = disclosure('逐日数值与样本', key, state);
-    fold.append(table(['统计日', unit, '样本'], d.days.map(row => [row.day, Number.isFinite(row[key]) ? (unit === '耗时' ? duration(row[key]) : row[key].toLocaleString('zh-CN', { maximumFractionDigits: 2 })) : '无样本', sample(row)])));
+    const fold = disclosure('查看每天的数据', key, state);
+    fold.append(table(['日期', unit, '统计次数'], d.days.map(row => [row.day, Number.isFinite(row[key]) ? (unit === '耗时' ? duration(row[key]) : row[key].toLocaleString('zh-CN', { maximumFractionDigits: 2 })) : '暂无数据', sample(row)])));
     card.append(fold); return card;
   }
   function durationChart(d, key, title, first, state) {
     const choices = [
-      ['total', '收到 → 最终送达', '从收到请求到最终正文全部送达。'],
-      ['wait', '收到 → 开始运行', '收到请求后，等待准备和启动运行的时间。'],
-      ['run', '运行阶段', '从开始运行到运行结束，含模型思考与工具执行。'],
-      ['send', '运行结束 → 最终送达', '运行结束后，到最终正文全部送达的时间。'],
+      ['total', '收到 → 最终送达', '从系统收到消息，到最终结果全部送达。'],
+      ['wait', '收到 → 开始运行', '系统收到消息后，排队、准备并启动执行的时间。'],
+      ['run', '运行阶段', '从开始执行到执行结束，包括思考和工具操作。'],
+      ['send', '运行结束 → 最终送达', '执行结束后，把最终结果送达的时间。'],
     ];
     const stateKey = `${key}Stage`, stage = choices.some(c => c[0] === state[stateKey]) ? state[stateKey] : 'total';
     const stats = row => stage === 'total' ? row[first ? 'firstDelivery' : 'delivery']
       : row[first ? 'firstDeliveryStages' : 'deliveryStages']?.[stage];
     const project = row => ({ ...row, [key]: stats(row)?.mean ?? null });
-    const explanation = choices.find(c => c[0] === stage)[2] + (stage === 'total' ? '按有效飞书执行记录取平均。' : '仅统计阶段时间齐全的飞书执行记录。');
+    const explanation = choices.find(c => c[0] === stage)[2] + (stage === 'total' ? '显示今日平均用时。' : '只统计时间记录完整的消息。');
     const card = chart({ ...d, today: project(d.today), days: d.days.map(project) }, key, title, '耗时', row => stats(row)?.count ?? 0, explanation, state);
     const label = el('label', '查看阶段 ', 'agent-stage-control'), select = el('select');
     select.setAttribute('aria-label', `${title}：阶段`);
@@ -70,42 +70,59 @@
     heading.append(el('p', `${d.today.day} 05:00 — 次日 05:00 · 北京时间 · 今日尚未结束 · 下方为近七日趋势`, 'agent-note'));
     root.append(heading);
     const counts = el('div', '', 'agent-counts');
-    for (const [name, value, note] of [['当前运行 Session', d.currentRunning, d.unknownStates ? `${d.unknownStates} 个状态未取得` : '当前状态快照'], ['今日累计 Session', d.todayActiveSessions ?? d.today.sessions, '今日有运行记录，按 Session 去重']]) {
+    for (const [name, value, note] of [['正在执行的会话', d.currentRunning, d.unknownStates ? `${d.unknownStates} 个会话状态暂未取得` : '此刻正在处理任务'], ['今日活跃会话', d.todayActiveSessions ?? d.today.sessions, '今天处理过任务的会话，同一会话只计一次']]) {
       const item = el('div'); item.append(el('small', name), el('strong', number(value)), el('small', note)); counts.append(item);
     } root.append(counts);
     const grid = el('div', '', 'agent-metrics');
     for (const args of [
-      ['meanTokens', '今日每次执行平均用量', 'Token / 次执行', r => r.usageRuns, '今日总 Token ÷ 有用量记录的执行次数，含前台与后台。'],
-      ['totalTokens', '今日累计用量', 'Token', r => r.usageRuns, '今日已记录的输入与输出 Token 合计，含前台与后台。'],
-      ['meanInjectionChars', '今日每次执行平均注入', '字符 / 次执行', r => r.injection.count, '前台对话中，有注入记录的各次执行取平均。'],
-      ['firstInjectionChars', '新 Session 首次执行平均注入', '字符 / 首次执行', r => r.firstInjection.count, '只取新 Session 的第一次执行，再对有效记录取平均。'],
+      ['meanTokens', '每次执行的平均 Token 用量', 'Token / 次执行', r => r.usageRuns, '今日 Token 总数除以记录到用量的执行次数，包含对话和后台任务。'],
+      ['totalTokens', '今日 Token 总数', 'Token', r => r.usageRuns, '今天记录到的模型输入与输出总量，包含对话和后台任务。'],
+      ['meanInjectionChars', '每次执行的平均背景字数', '字符 / 次执行', r => r.injection.count, '每次处理对话时，RemoteLab 提供给模型的背景文字平均有多少字。'],
+      ['firstInjectionChars', '新会话首轮的平均背景字数', '字符 / 首次执行', r => r.firstInjection.count, '只统计新会话第一次执行时提供的背景文字。'],
     ]) grid.append(chart(d, ...args, state));
-    grid.append(durationChart(d, 'meanDeliveryMs', '今日每次执行平均交付耗时', false, state),
-      durationChart(d, 'firstDeliveryMs', '新 Session 首次执行平均交付耗时', true, state));
+    const response = chart(d, 'meanFirstResponseMs', '首次回复平均等待时间', '耗时', r => r.firstResponse?.count ?? 0, '从你发出消息，到第一条文字回复送达，包括开场或进展；不含表情和自动受理通知。', state);
+    response.classList.add('agent-first-response'); grid.append(response);
+    grid.append(durationChart(d, 'meanDeliveryMs', '平均交付用时', false, state),
+      durationChart(d, 'firstDeliveryMs', '新会话首轮的平均交付用时', true, state));
     root.append(grid);
-    const sources = disclosure('常规对话注入来源 · 名称、字符数与原文入口', 'sources', state);
+    const journey = el('section', '', 'agent-journey'); journey.dataset.testid = 'journey-timing';
+    journey.append(el('h3', '今日各环节用时'));
+    const stages = d.today.journeyStages || {};
+    journey.append(el('p', `按 ${stages.total?.count ?? 0} 条时间记录完整的飞书消息统计。五个环节的平均用时相加，等于合计。`, 'agent-note'));
+    journey.append(table(['环节', '计时范围', '平均用时', '统计次数'], [
+      ['receive', '消息接收', '发出消息 → 系统收到'],
+      ['prepare', '排队与准备', '系统收到 → 准备完成'],
+      ['launch', '启动执行', '准备完成 → 开始执行'],
+      ['run', '执行过程', '开始执行 → 执行结束'],
+      ['send', '结果发送', '执行结束 → 最终结果送达'],
+      ['total', '合计', '发出消息 → 最终结果送达'],
+    ].map(([key, name, range]) => [name, range, duration(stages[key]?.mean), stages[key]?.count ?? 0])));
+    journey.append(el('p', '首次回复是你第一次收到文字反馈的时间，可能发生在执行过程中，不计入上面的环节加总。', 'agent-note'));
+    root.append(journey);
+    const sources = disclosure('查看背景文字的来源', 'sources', state);
     if (d.documents?.length) {
-      sources.append(el('h4', '常规文档与加载方式'));
-      sources.append(table(['文档名称', '当前原文字数', '何时使用'], d.documents.map(row => {
+      sources.append(el('h4', '常用文档'));
+      sources.append(table(['文档名称', '文档字数', '使用时机'], d.documents.map(row => {
         const a = el('a', row.name); a.href = `${sourceBase}/api/monitoring/context-source?id=${encodeURIComponent(row.id)}`; a.target = '_blank'; a.rel = 'noopener';
         return [row.chars === null ? row.name : a, row.chars === null ? '未取得' : row.chars.toLocaleString(), row.when];
       })));
-      sources.append(el('p', '以上是当前原文的字符数，不表示每轮都把整份文档注入。下面按真实首轮快照显示实际注入量。', 'agent-note'));
+      sources.append(el('p', '文档字数不等于每次实际提供给模型的字数。下面是一条真实会话首轮的记录。', 'agent-note'));
     }
     if (d.sources) {
-      sources.append(el('p', `最近一个可核对的首轮样本 · ${new Date(d.sources.observedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · 共 ${d.sources.chars.toLocaleString()} 字符`, 'agent-note'));
-      sources.append(table(['文档／内容来源', '实际注入字符', '查看来源'], d.sources.entries.map(row => {
+      sources.append(el('p', `最近一条有完整记录的新会话首轮 · ${new Date(d.sources.observedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · 共 ${d.sources.chars.toLocaleString()} 字符`, 'agent-note'));
+      sources.append(table(['文档／内容来源', '实际提供字数', '查看来源'], d.sources.entries.map(row => {
         const a = el('a', row.sourcePath?.endsWith('.md') ? '查看规则文档' : '查看组装来源'); a.href = `${sourceBase}/api/monitoring/context-source?id=${encodeURIComponent(row.id)}`; a.target = '_blank'; a.rel = 'noopener';
         return [row.name, row.chars.toLocaleString(), row.sourcePath ? a : '来源见 Session'];
       })));
-      const a = el('a', '打开该首轮所在 Session'); a.href = `${sessionBase}/?tab=sessions&session=${encodeURIComponent(d.sources.sessionId)}`; sources.append(a);
-    } else sources.append(el('p', '尚未取得可确认的首轮注入样本。'));
+      const a = el('a', '打开这条记录所在的会话'); a.href = `${sessionBase}/?tab=sessions&session=${encodeURIComponent(d.sources.sessionId)}`; sources.append(a);
+    } else sources.append(el('p', '暂无可核对的新会话首轮记录。'));
     sources.append(el('p', '展示该样本实际注入的内容块，含标题与分隔符；链接指向当前规则文档或组装代码。人员、群背景随入口变化，不是一份全体会话固定照抄的清单。Harness 原生规则、AGENTS.md、Skill 与后续工具读取不在此计量内。', 'agent-note')); root.append(sources);
     const coverage = d.coverage || {};
-    root.append(el('p', `已读取 ${coverage.sampledRuns ?? 0} / ${coverage.eligibleRuns ?? 0} 次执行记录${coverage.truncated ? ' · 部分覆盖' : ''}；缺失运行 ${coverage.missingRuns || 0}、请求 ${coverage.missingRequests || 0}、注入 ${coverage.missingInjections || 0}。无样本保留空缺。更新于 ${new Date(d.generatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}。`, 'agent-note'));
-    const scope = disclosure('统计口径与覆盖范围', 'scope', state);
+    root.append(el('p', `更新于 ${new Date(d.generatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}${coverage.truncated ? ' · 当前只统计了部分执行记录' : ''}。缺少数据时显示“—”。`, 'agent-note'));
+    const scope = disclosure('这些数字怎么算', 'scope', state);
+    scope.append(el('p', `已读取 ${coverage.sampledRuns ?? 0} 条执行记录，共有 ${coverage.eligibleRuns ?? 0} 条可供统计。未取得的记录：执行信息 ${coverage.missingRuns || 0} 条、消息信息 ${coverage.missingRequests || 0} 条、背景文字 ${coverage.missingInjections || 0} 条。`, 'agent-note'));
     Object.values(d.semantics || {}).forEach(text => scope.append(el('p', text, 'agent-note')));
-    scope.append(el('p', `首轮归属暂无法确认：今日 ${d.today.unknownFirstRuns} 个样本；各指标只除以各自有效样本数。用量含前后台，注入与交付只统计前台运行；图表不能单独证明任务质量变化。`, 'agent-note')); root.append(scope);
+    scope.append(el('p', `今天有 ${d.today.unknownFirstRuns} 条记录无法确认是不是会话首轮，未计入首轮指标。每项平均值只使用该项有数据的记录。Token 包含后台任务，背景字数和耗时只统计对话。`, 'agent-note')); root.append(scope);
   }
   g.RemoteLabAgentDashboard = { render };
 })(window);

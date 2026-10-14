@@ -83,6 +83,10 @@ export function buildAgentDashboard(usage, samples, now, coverage) {
     const at = start + i * DAY;
     const rows = foreground.filter(s => s.responseAt >= at && s.responseAt < at + DAY);
     const first = rows.filter(s => s.firstSessionRun === true);
+    const sentRows = foreground.filter(s => s.responseEligible && s.sentAt >= at && s.sentAt < at + DAY);
+    const firstResponse = timingStats(sentRows.map(s => s.metrics.firstResponseMs));
+    const journeyStages = Object.fromEntries(['receive', 'prepare', 'launch', 'run', 'send', 'total'].map(stage =>
+      [stage, timingStats(sentRows.map(s => s.metrics.journeyStages?.[stage]))]));
     const ledger = usage.dailyTrend?.days?.find(d => d.day === businessDate(at));
     const injection = timingStats(rows.map(s => s.metrics.injectionChars));
     const firstInjection = timingStats(first.map(s => s.metrics.injectionChars));
@@ -96,6 +100,7 @@ export function buildAgentDashboard(usage, samples, now, coverage) {
       meanInjectionChars: injection.mean, firstInjectionChars: firstInjection.mean,
       meanDeliveryMs: delivery.mean, firstDeliveryMs: firstDelivery.mean,
       injection, firstInjection, delivery, firstDelivery,
+      meanFirstResponseMs: firstResponse.mean, firstResponse, journeyStages,
       deliveryStages: stageStats(rows), firstDeliveryStages: stageStats(first),
       measuredRuns: rows.length, firstRuns: first.length,
       unknownFirstRuns: rows.filter(s => s.firstSessionRun == null).length };
@@ -113,6 +118,8 @@ export function buildAgentDashboard(usage, samples, now, coverage) {
     semantics: { usage: '含前后台，按运行结束／账本记账日归集；均值分母为有用量记录的执行次数。跨日运行不拆分，未回传部分不计入。',
       injection: '按人工请求受理日归集，统计 RemoteLab modelContext 的 Unicode 字符数（含标题与分隔符）；不含 Harness 自身规则、原生历史和工具输出。',
       first: 'Session 历史中第一条用户消息对应的首次执行；窗口内最早记录不代替首轮。无法确认时不计入首轮均值。',
+      firstResponse: '首次回复从飞书消息发送时间起算，到第一条文字回复成功送达，包含开场、进展、答复、提问和最终结果，不含表情或自动受理通知。按消息发送日统计，不限定新会话。仅使用已有执行记录，缺少发送时间或送达回执时不计入；送达回执不代表人已阅读。',
+      journey: '各环节用时表按消息发送日统计，只采用发送、受理、准备完成、开始执行、执行结束和最终送达时间全部齐全且有序的同一批记录。五段之和等于表中合计；与收到消息起算的交付耗时可能使用不同样本。',
       stages: '阶段为收到请求→开始运行、开始运行→运行结束、运行结束→最终正文全部送达。阶段只采用时间齐全且顺序有效的同一批记录，样本可能少于总耗时；运行结束不等于工作完成。',
       delivery: '人工飞书请求受理至最终正文全部成功送达；排除开场／进展，运行中追加输入、Web 和未取得最终回执者未纳入。完成运行不等于任务验收。' } };
 }

@@ -31,11 +31,17 @@ export function sessionOwnership(session, people) {
     basis: 'Session 群绑定与发起人身份；不是每一轮参与者或资源所有者' };
 }
 
+function messageSentAt(request) {
+  const source = request.options?.sourceContext;
+  if (source?.connector !== 'feishu' || !/^\d{13}$/.test(String(source.createTime ?? ''))) return null;
+  const sent = Number(source.createTime), accepted = time(request.acceptedAt);
+  return sent > 0 && Number.isFinite(accepted) && sent <= accepted ? sent : null;
+}
 export function projectRequest(r) {
   if (!r) return null;
   return { requestId: r.requestId, sessionId: r.sessionId, runId: r.runId, nativeDispatchRunId: r.nativeDispatchRunId,
     responseTiming: projectResponseTiming(r),
-    acceptedAt: r.acceptedAt, preparedAt: r.preparedAt, settledAt: r.settledAt,
+    sentAt: messageSentAt(r), acceptedAt: r.acceptedAt, preparedAt: r.preparedAt, settledAt: r.settledAt,
     excluded: Boolean(r.options?.internalOperation || r.options?.deliveryOnly || r.options?.recordUserMessage === false),
     deliveries: (r.deliveries || []).filter(d => d.kind === 'content' && time(d.createdAt) >= time(r.settledAt))
       .map(d => ({ state: d.state, deliveredAt: d.deliveredAt, connector: d.connector, surfaceKind: d.surfaceKind, publicationRequestId: d.publicationRequestId })) };
@@ -69,11 +75,20 @@ export function runMeasurement(ledger, run, request, injection = null) {
   // Every phase uses the same complete, ordered cohort. Missing timestamps are
   // unknown, not zero; retain the independently valid end-to-end observation.
   const deliveryStages = stages && Object.values(stages).every(finite) ? stages : null;
+  const journey = deliveryStages && request.sentAt !== null && request.sentAt !== undefined ? {
+    receive: span(request.sentAt, request.acceptedAt),
+    prepare: span(request.acceptedAt, request.preparedAt),
+    launch: span(request.preparedAt, run.startedAt),
+    run: deliveryStages.run, send: deliveryStages.send,
+    total: span(request.sentAt, finalEnd),
+  } : null;
+  const journeyStages = journey && Object.values(journey).every(finite) ? journey : null;
   return { sessionId: ledger.sessionId, sources: validRun ? injection?.sources || [] : [], runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
     state: validRun ? run.state : 'unknown',
     background: ledger.backgroundOperation === true || request?.excluded === true,
-    responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: validRequest ? time(request?.acceptedAt) : NaN,
-    metrics: { finalDeliveryMs, deliveryStages,
+    responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: validRequest ? time(request?.acceptedAt) : NaN, sentAt: validRequest ? time(request.sentAt) : NaN,
+    metrics: { finalDeliveryMs, deliveryStages, journeyStages,
+      firstResponseMs: validRequest && request.responseTiming ? span(request.sentAt, request.responseTiming.firstContentAt) : null,
       injectionChars: validRun && injection?.id === ledger.runId && injection.sessionId === ledger.sessionId && finite(injection.injectionChars) ? injection.injectionChars : null,
       firstContentMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstContentAt) : null,
       firstReplyMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstReplyAt) : null,

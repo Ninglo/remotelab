@@ -8,7 +8,7 @@ Account tables show observed remaining quota in each independent allowance windo
 
 Token total counts recorded model input and output, including foreground and background, within the toolbar's rolling 1/7/30-day window. Its explicit start/end label differs from the Session dashboard's Beijing 05:00 business day. No separate resource trend, model breakdown or background/cache statistic is displayed here. Underlying collection and analysis projections remain available to existing consumers; displaying fewer panels does not change collection or notification behavior.
 
-Session's six daily/weekly charts are defined in the Agent dashboard section below. They share existing reads and do not add model calls, timers, quota probes or scans. Refresh preserves disclosure choices; missing data is not interpreted as zero.
+Session's seven daily/weekly charts are defined in the Agent dashboard section below. They share existing reads and do not add model calls, timers, quota probes or scans. Refresh preserves disclosure choices; missing data is not interpreted as zero.
 
 ## Session changes and automatic diagnosis
 
@@ -386,64 +386,18 @@ Monitor defaults to Overview from the normal homepage (`/?tab=tasks`);
 explicit `monitor=automations|usage|feedback` links preserve those destinations.
 Clicking Monitor while the homepage is loading keeps that workspace selected
 when the initial Session list arrives.
-The Session heading includes a closed-by-default “上下文如何注入” explanation of
-the [general context rules](connector-turn-context.md#monitoring-explanation-2026-10-12).
-It preserves the reader's open/closed choice during refresh and makes no extra
-requests or model calls. It does not claim to audit each Session's full prompt.
+The Overview shows the shared daily/weekly dashboard, followed only by account
+balances and the selected-period Token total. The old context guide, named Session
+anomalies, owner filters and expandable Session-detail table are no longer rendered.
+Their underlying read-only projections and diagnosis policies remain unchanged.
+No experiment, disk, API or inspection-scope panel is displayed. Account reset
+information and dashboard calculation/source details stay collapsed until opened.
 
-The Overview preserves Session summaries, named metric changes and expandable
-Session details. Only account balances and a selected-period Token total follow
-Session; there are no disk, API, inspection-scope or experiment panels. Account
-reset details stay collapsed until requested. Automation handling guidance remains
-with the separate automation list. Existing observer policies and recovery records
-are unchanged by this display reduction.
-Collection gaps remain beside the affected account/Token section.
-Session exception cards compare recent values with their baseline using labelled
-bars; metrics keep units and textual values, rather than relying on colour alone. Clicking a Session
-exception selects its titled detail view without putting an opaque ID in search.
-Affected table metrics are marked, with sample comparisons beside the Session name. Expansions and
-owner filters reuse fetched data and do not start another query. Manual refresh
-preserves the user's fold state.
-
-The Session summary shows the current unarchived count, period usage averaged
-over Sessions with a ledger usage record (including archived Sessions active in
-that period), and average RemoteLab context injection per measured foreground Run.
-Usage with no record is unknown, not zero; a zero-valued recorded usage is valid.
-Injection is the UTF-8 byte length of the existing manifest's `modelContext`,
-weighted by valid Run sample counts. It excludes native Harness history and tool
-output; it is not the latest model context token count, nor cumulative input.
-Only projected sizes are retained. Reading manifests shares the existing file-size,
-total-read and sample caps; missing injections and partial coverage are explicit.
-The panel labels units and denominators, with exact scope under statistics details.
-API totals always cover the observer's own 24-hour / five-minute windows and are
-labelled separately from the Session selector. No data is presented as all-clear.
-
-Switch group/initiator mode to change the visible ownership summaries and Session
-owner labels; switching clears the previous owner, Session and search selection.
-Expand Sessions for runtime state, period tokens,
-phase means, latest-context means, injection means, P95 and sample counts.
-Inside a Session, “查看按需背景查询记录” fetches explicit work/memory/people lookups
-only when clicked. It shows starts, successful/partial returns, failures, unmatched
-starts, elapsed time, result bytes and exact-query repeat counts for the selected
-window. This reuses the usage-event ledger; no model analysis or chat transcript
-scan runs when opening the panel. Query bodies are not copied into monitoring.
-Collection start, partial scan and unavailable records remain explicit; zero
-observed lookups cannot establish missed reading or task quality. See the
-[lookup coverage and endpoint](connector-turn-context.md#按需查询记录).
-Existing cohort-based deviations now also include injection bytes (10,000-byte
-minimum increase). They remain page-only investigation clues. Shared-resource
-and API thresholds and all alert/recovery configuration are unchanged.
-
-The native view uses `/api/monitoring/sessions?days=1&compact=1`, with title, state,
-window usage and measured fields only. Group/person labels are dictionary encoded,
-zero-sample metric objects are omitted, and the page no longer requests the full
-Session/sidebar projection. State reads use the runtime's accepted queue and the
-persisted current Run/question without reconciliation. Statistics retain the
-60-second cache; state has its own observation time. The UI renders only the first
-50 matching Sessions and three owner groups, with explicit expansion. Queries
-coalesce in the browser, and each panel has a 15-second deadline and its own error
-state. A failed request never produces a zero-anomaly summary. This is bounded
-on-demand observation, not new background scanning or model analysis.
+The native view reuses `/api/monitoring/sessions?days=1|7|30&compact=1&dashboard=1`.
+Queries coalesce in the browser with a 15-second deadline. A failed refresh retains
+the previous data with an error; authentication failure clears it. Refresh preserves
+chart phase selections and disclosure states. No new timer, model call or collector
+is introduced. Missing observations remain unknown rather than zero.
 
 The former independent monitoring page is now a small entry linking to this native
 view, so there is one maintained monitoring interface. Existing saved links remain
@@ -600,11 +554,11 @@ Opted-in automation tasks now link to a [stable home Session](task-center-v1.md#
 
 Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-context.md#规则与压缩记录)，区分原生接收、压缩完成和恢复内容生成／失败。该记录不能证明模型理解或遵守规则，也不覆盖原生系统指令、AGENTS.md 和 Skill。
 
-Session 监管顶部显示当前[上下文注入对照实验](feature-experiments.md)的动态标记：自动注入背景与按需读取两组、限定参与者的新会话范围、50/50 固定分组、独立留样比例、观察窗及夜间评阅开关。暂停新入组、停止实验注入、配置读取失败分别显示；无实验配置不显示。状态沿用 Session 统计最多 60 秒缓存，刷新后以采样时间为准。这是配置状态，不证明实际入组、模型采纳或效果优劣；A/A 模式明确显示两组均按需读取。
+历史 Session 详情曾显示[上下文注入对照实验](feature-experiments.md)的动态标记；现行总览不再渲染该区块，底层投影仍保留：自动注入背景与按需读取两组、限定参与者的新会话范围、50/50 固定分组、独立留样比例、观察窗及夜间评阅开关。暂停新入组、停止实验注入、配置读取失败分别显示；无实验配置不显示。状态沿用 Session 统计最多 60 秒缓存，刷新后以采样时间为准。这是配置状态，不证明实际入组、模型采纳或效果优劣；A/A 模式明确显示两组均按需读取。
 
 ## 响应速度（2026-10-13）
 
-Session 监管增加“飞书响应速度”，从 RemoteLab 接受请求计时，到飞书正文投递成功的回执为止。首次正文包含模型开场和进展；首次答复／提问只计 reply、question、final，不把开场、进展和自动受理通知作为答复。两项分别展示中位数、P95、已取得回执／可统计样本数和逐日表；单个 Session 的阶段明细也显示均值、中位数、P95。原有执行耗时仍单独展示，不能当作首回复速度。
+历史 Session 详情的“飞书响应速度”（现行页面由下述首次回复指标替代），从 RemoteLab 接受请求计时，到飞书正文投递成功的回执为止。首次正文包含模型开场和进展；首次答复／提问只计 reply、question、final，不把开场、进展和自动受理通知作为答复。两项分别展示中位数、P95、已取得回执／可统计样本数和逐日表；单个 Session 的阶段明细也显示均值、中位数、P95。原有执行耗时仍单独展示，不能当作首回复速度。
 
 复用现有 Request 投递回执，不增加模型调用或扫描聊天正文。只保留时间和统计数，排除附件、表情、Session 入口、受理通知及其他请求的投递。未知、失败、待投递和时间倒置不算成功样本；零毫秒的有效回执仍有效。旧回执没有 surfaceKind 时，仅把请求结算后创建的正文作为旧版最终回复。没有可归属回执的历史保持未知，不补造首回复时间。
 
@@ -613,28 +567,46 @@ Session 监管增加“飞书响应速度”，从 RemoteLab 接受请求计时�
 
 ## Agent 今日与七日概览（2026-10-14）
 
-入口为「监控器 → 总览 → Session 监管」。概览沿用监控器的字体、主题色、10px 内层圆角与12px卡片间距，保留单一章节标题；图表、表格和原文链接随现有明暗主题切换，不另外混入参考网站的彩色顶边、直角面板或英文装饰标题。
+入口为「监控器 → 总览 → 会话概览」。概览沿用监控器的字体、主题色、10px 内层圆角与12px卡片间距，保留单一章节标题；图表、表格和原文链接随现有明暗主题切换，不另外混入参考网站的彩色顶边、直角面板或英文装饰标题。
 
-原地替换 Session 总览的旧汇总卡与 UTC 七日上下文图。今日和六个趋势指标统一以北京时间 05:00 至次日 05:00 分日，今日未结束；下方按群／发起人查看和账号额度窗口保持原入口。用量、注入、交付各两张卡展示今日值和七日折线，展开可查精确值与样本数；空缺不连线、不补零。运行数来自当前状态，今日累计数为当日落账 Session 与当前运行 Session 的去重并集；有状态读取失败时显示未知数量。
+原地替换 Session 总览的旧汇总卡与 UTC 七日上下文图。今日和七个趋势指标统一以北京时间 05:00 至次日 05:00 分日，今日未结束；下方保留账号额度窗口，旧按群／发起人明细已移除。用量、注入、交付各两张卡展示今日值和七日折线，展开可查精确值与样本数；空缺不连线、不补零。运行数来自当前状态，今日累计数为当日落账 Session 与当前运行 Session 的去重并集；有状态读取失败时显示未知数量。
 
 用量均值是含前后台的已记录 Token 总数除以执行次数，按运行结束／落账日归集，跨日运行不拆分。注入与交付按人工请求受理日归集，统计各自有效的前台执行样本。注入使用 Unicode 字符数，含保存的 modelContext 标题和分隔符，不把 UTF-8 字节、Token、工具输出、Harness 原生历史混算。首轮严格取历史首条用户消息对应的 Run；最多读取开头 32 个事件的窄投影，不能证实时记为未知，不以统计窗口最早记录代替。
 
-交付指从受理到最终正文所有部分成功送达，排除开场、进展、其它请求回执、失败和未完成运行。当前飞书最终回执有可验证来源；Web、运行中追加输入和缺少最终回执者不混入交付均值。该值衡量最终答复送达，不宣称业务任务通过验收。原首次正文／首次答复统计折叠保留，仍标明自己的 UTC 窗口。
+交付指从受理到最终正文所有部分成功送达，排除开场、进展、其它请求回执、失败和未完成运行。当前飞书最终回执有可验证来源；Web、运行中追加输入和缺少最终回执者不混入交付均值。该值衡量最终答复送达，不宣称业务任务通过验收。旧首次正文／首次答复面板已移除，现行首次回复指标见下文。
 
-“常规对话注入来源”默认折叠，先列工作区 AGENTS.md、bootstrap.md、projects.md、skills.md、启动和条件规则的当前原文字数、加载方式与原文链接。明确区分 Harness 加载、启动投射和按需读取，不把原文字数当作实际注入量。随后取最近一个可证实首轮的实际内容块，列名称、实际注入字符数、当前规则文档／组装源码入口和原 Session。来源条目之和等于保存的完整注入字符数。动态人员和群背景并非固定文档；链接是当前规则，历史内容沿原 Session 保存。原生 AGENTS.md、Skill 与工具读取尚不在计量范围，不能推断未读取。固定来源接口 `GET /api/monitoring/context-source?id=...` 沿用实例认证，只接受源码中的白名单，不接受任意文件路径。
+“查看背景文字的来源”默认折叠，先列工作区 AGENTS.md、bootstrap.md、projects.md、skills.md、启动和条件规则的当前原文字数、加载方式与原文链接。明确区分 Harness 加载、启动投射和按需读取，不把原文字数当作实际注入量。随后取最近一个可证实首轮的实际内容块，列名称、实际注入字符数、当前规则文档／组装源码入口和原 Session。来源条目之和等于保存的完整注入字符数。动态人员和群背景并非固定文档；链接是当前规则，历史内容沿原 Session 保存。原生 AGENTS.md、Skill 与工具读取尚不在计量范围，不能推断未读取。固定来源接口 `GET /api/monitoring/context-source?id=...` 沿用实例认证，只接受源码中的白名单，不接受任意文件路径。
 
 页面仍复用 `/api/monitoring/sessions?days=1|7|30&compact=1&dashboard=1`。账本一次扫描同时生成所选窗口和七日数据；七日投影独立缓存 60 秒，最多 5,000 个 Run、256 MiB 冷读、单文件 2 MiB，保留最多 20,000 个文件版本的纯统计投影。原诊断读取器的 1,000 Run／64 MiB 限制不变。统计中显示截断、缺失与实际覆盖，不读取完整聊天正文或启动模型。查看原文只在点击时进行。Hub 接入应复用相同 schema 和渲染资产，仅向已认证用户提供必要的汇总与账号窗口，不复制对话正文或实例凭据。
 
 ### Test 同步预览
 
-监控器新增独立 `Test` 标签（`?tab=tasks&monitor=test`），集中展示未来计划同步到 Muka Hub 的范围：Session 数量、六项今日指标与七日趋势、可折叠注入来源、账号额度及重置时间。复用现有指标和账号渲染，不包含磁盘、服务、API、自动化和旧 Session 明细。这里只展示当前 RemoteLab 数据，不修改或部署 Muka Hub。
+监控器新增独立 `Test` 标签（`?tab=tasks&monitor=test`），集中展示未来计划同步到 Muka Hub 的范围：会话数量、七项今日指标与七日趋势、可折叠注入来源、账号额度及重置时间。复用现有指标和账号渲染，不包含磁盘、服务、API、自动化和旧 Session 明细。这里只展示当前 RemoteLab 数据，不修改或部署 Muka Hub。
 
 平均值标题直接注明“每次执行”或“新 Session 首次执行”，每张卡解释分母；首次执行指标仍是所有有效新 Session 首次执行记录的平均。用量含前后台，注入只统计前台，交付耗时当前只统计有最终正文回执的飞书前台执行。Test 独立刷新两项数据，单项读取失败保留另一项结果；刷新保留展开选择。
 
 ### 时长阶段切换与展示范围（2026-10-14）
 
-保留现有布局与六张指标卡，两张交付耗时卡各自增加阶段选择：收到→最终送达（默认）、收到→开始运行、运行阶段、运行结束→最终送达。选择只更新本卡的今日均值、七日趋势和逐日表；刷新保留阶段与展开状态，不新增图表或请求。
+保留现有布局和原六张指标卡，两张交付耗时卡各自增加阶段选择：收到→最终送达（默认）、收到→开始运行、运行阶段、运行结束→最终送达。选择只更新本卡的今日均值、七日趋势和逐日表；刷新保留阶段与展开状态，不新增图表或请求。
 
 总耗时沿原最终正文回执口径。阶段使用同一条已完成飞书执行的 acceptedAt、startedAt、completedAt、最终正文全部 deliveredAt；四个时间齐全且有序才纳入阶段统计。阶段样本的三段相加等于其总耗时，阶段样本数可能小于原总耗时样本数。没有时间记录保留空缺，运行结束不表示工作验收完成。所有阶段按请求受理所在的北京时间 05:00 统计日归集，首次执行继续严格限定 Session 历史首次执行。
 
-总览在 Session 基础上只保留账户余额和 Token 总数；实验状态、API、磁盘和检查范围板块不展示。Session 名称仍来自真实会话，不把某个会话的业务名称作为额外监管功能。Test 保留既有同步预览及同一套时长切换、账户余额展示。
+总览在 Session 基础上只保留账户余额和 Token 总数；实验状态、API、磁盘和检查范围板块不展示。旧具体会话卡片、异常统计和会话列表不再渲染。Test 保留既有同步预览及同一套时长切换、账户余额展示。
+
+### 首次回复与各环节用时（2026-10-14）
+
+总览与 Test 共用第七张“首次回复平均等待时间”卡，从原始飞书消息的
+`sourceContext.createTime`（毫秒）到第一条成功送达的文字回复计时，包含开场、进展、
+答复、提问和最终结果；排除表情、自动受理通知、附件及其他请求的回执。
+不限定新会话，按消息发送所在的北京时间 05:00 统计日归集。缺少发送时间、
+发送时间晚于受理或缺少送达回执时不计入，不能用受理时间冒充发送时间。
+覆盖仍限于现有账本关联的可归属执行；执行中的追加输入不制造独立样本。
+送达回执表示平台接受投递，不代表人的客户端已显示或人已阅读。
+
+图表下方直接显示“今日各环节用时”，列出消息接收、排队与准备、启动执行、
+执行过程、结果发送以及合计，分别给出计时范围、平均用时和统计次数。
+只使用 sentAt、acceptedAt、preparedAt、startedAt、completedAt 和最终送达时间
+全部齐全且有序的同一批记录，按发送日归集，五段均值之和等于合计。
+缺少准备时间只排除该表样本，不影响独立有效的首回复或最终交付指标。
+首回复可能发生在执行过程中，是独立指标，不作为第六个环节重复加总。
+页面用“会话”“执行记录”等中文称呼，移除旧会话明细；账户和 Token 展示范围不变。

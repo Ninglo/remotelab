@@ -49,3 +49,10 @@
 
 .agent-stage-control { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0; font-size: 12px; color: var(--text-secondary); }
 .agent-stage-control select { max-width: 100%; min-width: 0; font: inherit; color: var(--text); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 5px; }
+
+.agent-first-response { grid-column: 1 / -1; }
+.agent-journey { margin: 20px 0; }
+.agent-journey h3 { font-size: 14px; font-weight: 600; }
+.agent-journey td:first-child { white-space: nowrap; }
+
+.agent-first-response svg { max-height: 200px; }
