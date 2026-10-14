@@ -31,7 +31,7 @@ const runtime={activeId:'b',autoSwitch:true,accounts:[{id:'a',label:'A',usage:us
 let trust=trustCandidates({runtime,bindings:[{sessionId:'old',accountId:'a'}]}, {},[],now);
 assert.equal(trust.length,2,'successful default switch never hides bound exhausted chats');assert(trust[0].verification.includes('尚无'));assert.equal(trust[1].status,'review_required');
 trust=trustCandidates({runtime,bindings:[]},{},[{state:'completed',accountId:'b',responseAt:now}],now);assert(trust[0].verification.includes('成功完成'));
-assert.equal(trustCandidates({runtime:null},{recovery:[{key:'x',kind:'disk',status:'resolved',summary:'修复',updatedAt:new Date(now).toISOString(),evidence:['receipt']} ]},[],now)[0].status,'action_verified','successful recovery remains reportable');
+assert.equal(trustCandidates({runtime:null},{recovery:[{key:'x',kind:'disk',attempts:1,status:'resolved',summary:'修复',updatedAt:new Date(now).toISOString(),evidence:['receipt']} ]},[],now)[0].status,'action_verified','successful recovery remains reportable');
 console.log('metric diagnosis: cohort isolation, experiment separation, sample support, holidays, volume, robust outliers, explicit recovery and action disclosure passed');
 
 const trend=Array.from({length:4},(_,d)=>Array.from({length:12},(_,i)=>({...row(2000+d*20+i,now-(3-d)*DAY-i*1000,10000+d*2000),firstSessionRun:true}))).flat();
@@ -41,3 +41,5 @@ assert(!populationTrendCandidates(trend.filter(s=>s.runId!=='r2000').map(s=>({..
 assert(!populationTrendCandidates(trend.map(s=>({...s,metrics:row(0,now,10000).metrics})),now).length,'volume or idle dates do not inflate per-request cost');
 assert(metricRecovered(trendItems[0],healthy.map(s=>({...s,firstSessionRun:true})),now+120000));
 assert(!metricRecovered(trendItems[0],healthy,now+120000));
+
+assert.equal(trustCandidates({runtime:null},{recovery:[{key:'natural',kind:'service',status:'resolved',attempts:0,updatedAt:new Date(now).toISOString(),evidence:['observed']}]},[],now).length,0,'natural recovery is not reported as an executed repair');

@@ -39,12 +39,19 @@ export function trustCandidates({runtime,bindings=[]},snapshot={},samples=[],now
    verification:'部分会话可能已空闲；绑定耗尽不等于每个会话都发生执行失败。',
    evidence:[],nextStep:runtime.autoSwitch?'后续请求在无在途执行且有新鲜可用备用时自动迁移；无备用则明确提示。':'自动切换未启用，需决定是否使用本实例已登录备用账号。'});
  }
- for(const r of snapshot.recovery||[]){
+ const latestRecovery=new Map();
+ for(const r of snapshot.recovery||[]) {
+  const resource=r.kind+':'+(r.id||r.key),previous=latestRecovery.get(resource);
+  if(!previous || String(r.createdAt||r.updatedAt)>String(previous.createdAt||previous.updatedAt))latestRecovery.set(resource,r);
+ }
+ for(const r of latestRecovery.values()){
   if(!r.evidence?.length||!['resolved','blocked','awaiting_confirmation'].includes(r.status)||Date.parse(r.updatedAt)<now-DAY)continue;
   const key=diagnosisKey(['recovery-result',r.key||r.id,r.originRunId||r.sessionId]);
+  const observedOnly=r.status==='resolved' && !(Array.isArray(r.attempts)?r.attempts.length:r.attempts);
+  if(observedOnly)continue; // Passive health recovery is not an executed repair receipt.
   results.push({key,kind:'lifecycle',metric:'recovery',members:r.sessionId?[{sessionId:r.sessionId}]:[],
    fingerprint:diagnosisKey([r.status,r.summary,r.evidence]),status:r.status==='resolved'?'action_verified':'review_required',
-   summary:r.summary||r.reason,trigger:`${r.subject||r.kind}预警已触发。`,action:r.status==='resolved'?'自动处理已完成，保留以下实际回执。':'已完成当前可做的排查，仍有未解决条件。',
+   summary:r.summary||r.reason,trigger:`${r.subject||r.kind}预警已触发。`,action:r.status==='resolved'?'补救记录已验收，实际执行内容见摘要及回执。':'已完成当前可做的排查，仍有未解决条件。',
    verification:r.status==='resolved'?'补救台账已有验收证据；具体业务范围以回执为准。':'尚未验证恢复。',
    evidence:r.evidence.slice(0,3),nextStep:r.humanAction?.summary||r.reason||'无需操作；保留处理结果。'});
  }

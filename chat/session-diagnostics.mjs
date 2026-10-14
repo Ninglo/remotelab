@@ -85,7 +85,11 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     const extras=complete ? [...populationTrendCandidates(metrics.samples || [],now),...comparisons.filter(c=>c.alarm).map(c=>metricCandidate(c,now))] : [];
     const tracked=Object.values(state.incidents).filter(i=>i.riskType==='exhausted_bindings'&&i.status!=='resolved').flatMap(i=>i.members.map(m=>m.sessionId));
     const accounts=config.reportActions === true ? await readAccounts(metrics.samples || [],undefined,now,tracked) : null;
-    if(accounts) extras.push(...trustCandidates(accounts,snapshot,metrics.samples || [],now));
+    if(accounts) {
+      const actions=trustCandidates(accounts,snapshot,metrics.samples || [],now);
+      extras.unshift(...actions.filter(c=>c.metric==='account'));
+      extras.push(...actions.filter(c=>c.metric!=='account'));
+    }
     if(dryRun) return {enabled:true,dryRun:true,candidates:candidates.map(c => ({...c,...diagnoseSessionCandidate(c,snapshot)})),coverage:data.coverage,metrics:metricCoverage(comparisons,metrics.coverage),extraCandidates:extras};
     state.checkedAt = new Date(now).toISOString(); state.coverage = data.coverage;
     state.metricCoverage=metricCoverage(comparisons,metrics.coverage);
