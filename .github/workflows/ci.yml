@@ -47,6 +47,9 @@ jobs:
       - name: Verify social publishing without real accounts
         run: node scripts/run-with-clean-instance-env.mjs node --test tests/test-social-publish.mjs
 
+      - name: Verify signed Feishu helper updates and rollback
+        run: node scripts/run-with-clean-instance-env.mjs python3 tests/test-feishu-helper-update.py
+
       - name: Run smoke tests
         run: npm test
 
