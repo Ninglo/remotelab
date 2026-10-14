@@ -177,3 +177,20 @@ Revision 12 mounts the experimental actions and an explicit settings button in `
 Revision 13 keeps the settings/version footer below four individually marked experimental entries, with the shared UI font token across shadow roots. Topic grants may explicitly opt into `topicReadAck`; old grants remain read-only. The native renderer waits for the currently opened topic, committed zero-unread preview, message timestamp at least as new as the observed result, and matching active chat before acknowledging exactly `resultAt`. Server-side acknowledgements only advance the existing RemoteLab review timestamp; concurrent newer results remain unread. Mapping is verified independently and unknown rows are never guessed from titles.
 
 Revision 14 replaces native per-feature popups with a single same-tab confirmation and fixed loopback fragment callback. All three existing, account-scoped grants are issued in one durable transaction; the helper validates every grant and common Person before storing any. Valid complete bundles are reused; rejected/expired grants require confirmation. Grants are never included in server request URLs. Pending native connection attempts reuse the current confirmation. Verified topic mappings also supply their parent group to board selection when native header group IDs are absent; unknown/private/unmapped topics do not widen projection. User-machine board visibility remains separate from fixture acceptance.
+
+### Status propagation bandwidth
+
+The topic source refreshes changed Session IDs, preserves all IDs in a burst,
+checks membership for new/deleted topics and binding changes, and avoids
+transport/delivery-detail scans when reading status. Tool-only timestamp changes
+do not retransmit a full board. Optional usage/quota enrichment is coalesced to
+at most once per five seconds; execution and read state changes remain immediate.
+The one-minute reconciliation and SSE heartbeat remain independent safeguards.
+
+Compatible helper updates opt into `delta=1`: the first SSE frame is a full
+snapshot and subsequent frames carry only changed JSON paths with a per-stream
+sequence. The helper reconstructs the complete projection for the unchanged
+native renderer. Missing/out-of-order patches force a fresh connection and full
+snapshot; old helpers continue receiving full snapshots. Each device still
+needs actual latency verification; a healthy connection or a successful update
+receipt alone is not proof of faster visible state.

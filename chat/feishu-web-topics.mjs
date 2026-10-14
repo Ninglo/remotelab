@@ -42,7 +42,7 @@ async function bindingsConfig() {
     pairs: (boards.pairs || []).filter(p => groups[p.workChatId] && groups[p.discussionChatId]) };
 }
 export function createFeishuTopicSource(deps = {}) {
-  const sessions = deps.sessions || loadSessionsMeta, session = deps.session || getSession, bindings = deps.bindings || bindingsConfig;
+  const sessions = deps.sessions || loadSessionsMeta, session = deps.session || (id => getSession(id, { includeTransportSurfaces: false })), bindings = deps.bindings || bindingsConfig;
   const details=deps.details||topicDetails;
   async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true) {
     const config = await bindings(), wanted = new Set(ids), visibleGroups = new Set(groupIds);
@@ -59,8 +59,14 @@ export function createFeishuTopicSource(deps = {}) {
     const pairs = (config.pairs || []).filter(p => [p.workChatId, p.discussionChatId].some(id => visibleGroups.has(String(config.groups?.[id]))));
     const boardChats = new Set(pairs.flatMap(p => [p.workChatId, p.discussionChatId]));
     const relevant = s => eligible(s) && (wanted.has(config.bindings[s.conversation.target.rootId || s.conversation.target.messageId]) || boardChats.has(s.conversation.target.chatId));
-    const cache = changedId && previous ? new Map(previous[sourceRecords] || []) : new Map();
-    const records = changedId && previous ? [{ id: changedId }] : metadata.filter(relevant);
+    const incremental = changedId && previous;
+    const cache = incremental ? new Map(previous[sourceRecords] || []) : new Map();
+    const relevantRecords = metadata.filter(relevant), relevantIds = new Set(relevantRecords.map(s => s.id));
+    // Recheck membership on every hint: new topics, deleted topics and changed
+    // bindings must still appear/disappear without rereading unrelated records.
+    for (const id of cache.keys()) if (!relevantIds.has(id)) cache.delete(id);
+    const changed = new Set(Array.isArray(changedId) ? changedId : [changedId]);
+    const records = relevantRecords.filter(s => !incremental || changed.has(s.id) || !cache.has(s.id));
     for (let i = 0; i < records.length; i += 4) await Promise.all(records.slice(i, i + 4).map(async record => {
       const s = await session(record.id); if (relevant(s)) cache.set(s.id, s); else cache.delete(record.id);
     }));
@@ -80,14 +86,23 @@ export function createFeishuTopicSource(deps = {}) {
     Object.defineProperty(data, sourceRecords, { value: cache }); return data;
   }
   async function subscribe(ids, emit, fail, groupIds = [], includeDetails = true) {
-    let alive = true, busy = false, pending = false, nextId = '', last = null, healthy = false;
-    let enrichment = null, enriching = false, detailsPending = false;
+    let alive = true, busy = false, pending = false, fullPending = false, last = null, healthy = false;
+    const changedIds = new Set();
+    let enrichment = null, enriching = false, detailsPending = false, detailsTimer, detailsAt = 0, lastDigest = '';
+    const deliver = data => {
+      // Activity timestamps change with every tool event. They are not a new
+      // visible state; retransmitting entire group boards queues stale frames
+      // on slower links. Heartbeats independently preserve the live lease.
+      const digest = JSON.stringify(data, (key, value) => ['syncedAt', 'sourceUpdatedAt'].includes(key) ? undefined : value);
+      if (digest === lastDigest) return;
+      lastDigest = digest; emit(data);
+    };
     const publish = () => {
       if (!alive || !last || !healthy) return;
-      if (!enrichment) { emit(last); return; }
+      if (!enrichment) { deliver(last); return; }
       const usage = new Map((enrichment.entries || []).map(e => [e.sessionId, e]));
       const visible = new Set(last.entries.map(e => e.sessionId));
-      emit({ ...last, quota: enrichment.quota, detailsError: enrichment.detailsError,
+      deliver({ ...last, quota: enrichment.quota, detailsError: enrichment.detailsError,
         webArtifacts: (enrichment.webArtifacts || []).filter(a => visible.has(a.sessionId)),
         entries: last.entries.map(e => { const old = usage.get(e.sessionId); return old?.webThreadId === e.webThreadId && old.usage ? { ...e, usage: old.usage } : e; }) });
     };
@@ -96,6 +111,12 @@ export function createFeishuTopicSource(deps = {}) {
     const enrich = () => {
       if (!alive || !last || !includeDetails) return;
       if (enriching) { detailsPending = true; return; }
+      const delay = detailsAt + 5000 - Date.now();
+      if (delay > 0) {
+        if (!detailsTimer) { detailsTimer = setTimeout(() => { detailsTimer = null; enrich(); }, delay); detailsTimer.unref?.(); }
+        return;
+      }
+      detailsAt = Date.now();
       enriching = true; const entries = last.entries;
       void bindings().then(config => details(entries, config)).then(value => {
         enrichment = value; if (!busy) publish();
@@ -105,21 +126,29 @@ export function createFeishuTopicSource(deps = {}) {
     };
     const refresh = id => {
       if (!alive) return;
-      if (busy) { pending = true; nextId = ''; return; }
+      if (busy) {
+        pending = true;
+        if (!id) fullPending = true;
+        else for (const value of Array.isArray(id) ? id : [id]) changedIds.add(value);
+        return;
+      }
       busy = true;
-      void snapshot(ids, id, last, groupIds, false).then(data => { if (alive) { last = data; healthy = true; publish(); enrich(); } }).catch(error => { if (alive) { healthy = false; fail(error); } }).finally(() => {
-        busy = false; if (pending && alive) { pending = false; refresh(nextId); }
+      void snapshot(ids, id, last, groupIds, false).then(data => { if (alive) { last = data; healthy = true; publish(); enrich(); } }).catch(error => { if (alive) { healthy = false; lastDigest = ''; fail(error); } }).finally(() => {
+        busy = false; if (pending && alive) {
+          const next = fullPending ? '' : [...changedIds];
+          pending = false; fullPending = false; changedIds.clear(); refresh(next);
+        }
       });
     };
     const off = onSessionInvalidation(hint => {
-      if (hint.type === 'session_invalidated') refresh(last?.[sourceRecords]?.has(hint.sessionId) ? hint.sessionId : '');
+      if (hint.type === 'session_invalidated') refresh(hint.sessionId || '');
       else if (hint.type === 'sessions_invalidated') refresh('');
     });
     let watcher;
     if (!deps.bindings) { const config = await bindings(); watcher = watch(dirname(config.file), (_, name) => { if ((config.watchFiles || [config.file]).some(file => String(name) === file.split('/').at(-1))) refresh(''); }); watcher.on('error', fail); }
-    const detailsTimer=setInterval(()=>refresh(''),60000);detailsTimer.unref?.();
+    const refreshTimer=setInterval(()=>refresh(''),60000);refreshTimer.unref?.();
     refresh('');
-    return () => { alive = false; clearInterval(detailsTimer); off(); watcher?.close(); };
+    return () => { alive = false; clearInterval(refreshTimer); clearTimeout(detailsTimer); off(); watcher?.close(); };
   }
   async function review(webThreadId, resultAt) {
     const data = await snapshot([webThreadId], '', null, [], false);

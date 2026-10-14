@@ -175,3 +175,57 @@ test('late read acknowledgements never erase a later result or rewind review',as
  m=(await loadSessionsMeta()).find(x=>x.id===s.id);assert.equal(m.lastReviewedAt,'2026-10-13T00:02:00.000Z');assert.notEqual(topicProjection(m,'native').status,'review');
  await assert.rejects(acknowledgeSessionResult(s.id,'2026-10-13T00:03:00Z'));
 });
+
+test('unrelated and burst hints do not put changed state behind cold board reads', { timeout: 2000 }, async () => {
+  const a = session('a'.repeat(32), 'root-a'), b = session('b'.repeat(32), 'root-b'), cold = session('c'.repeat(32), 'root-c');
+  const records = [a, b, cold], reads = [], delivered = [];
+  let coldBlocked = false, releaseCold, ready, finished;
+  const blocked = new Promise(r => { releaseCold = r; });
+  const first = new Promise(r => { ready = r; }), changed = new Promise(r => { finished = r; });
+  const api = createFeishuTopicSource({ sessions: async () => records,
+    bindings: async () => ({ bindings: { 'root-a': 'a', 'root-b': 'b', 'root-c': 'c' } }),
+    session: async id => { reads.push(id); if (coldBlocked && id === cold.id) await blocked; return records.find(s => s.id === id); } });
+  const off = await api.subscribe(['a', 'b', 'c'], d => {
+    delivered.push(d); ready();
+    if (d.entries.filter(e => e.status === 'review').length === 2) finished();
+  }, e => { throw e; }, [], false);
+  try {
+    await first; reads.length = 0; coldBlocked = true;
+    broadcastAll({ type: 'session_invalidated', sessionId: 'unrelated' });
+    for (const s of [a, b]) {
+      s.activity.run.state = 'idle'; s.lastAssistantMessageAt = '2026-10-14T00:00:00Z';
+      broadcastAll({ type: 'session_invalidated', sessionId: s.id });
+    }
+    await changed;
+    assert.equal(reads.includes(cold.id), false);
+    assert.deepEqual(new Set(reads), new Set([a.id, b.id]));
+    const count = delivered.length;
+    for (let i = 0; i < 20; i++) {
+      a.updatedAt = new Date(100000 + i).toISOString();
+      broadcastAll({ type: 'session_invalidated', sessionId: a.id });
+    }
+    // Drain the async fixture reads; no timers or network are involved.
+    for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r));
+    assert.equal(delivered.length, count, 'tool-only timestamps must not queue identical full frames');
+    a.activity.run.state = 'running';
+    // A direct snapshot also confirms state precedence remains canonical.
+    const live = await api.snapshot(['a', 'b', 'c'], a.id, delivered.at(-1), [], false);
+    assert.equal(live.entries.find(e => e.sessionId === a.id).status, 'running');
+  } finally { off(); releaseCold(); }
+});
+
+test('incremental refresh discovers new members and removes revoked or ambiguous mappings', async () => {
+  const a = session('a'.repeat(32), 'root-a'), records = [a];
+  const config = { bindings: { 'root-a': 'native', 'root-b': 'new' } };
+  const api = createFeishuTopicSource({ sessions: async () => records, session: async id => records.find(s => s.id === id), bindings: async () => config });
+  let prior = await api.snapshot(['native', 'new'], '', null, [], false);
+  const b = session('b'.repeat(32), 'root-b'); records.push(b);
+  prior = await api.snapshot(['native', 'new'], b.id, prior, [], false);
+  assert.equal(prior.entries.length, 2);
+  records.push(session('c'.repeat(32), 'root-a'));
+  prior = await api.snapshot(['native', 'new'], 'c'.repeat(32), prior, [], false);
+  assert.deepEqual(prior.entries.map(e => e.webThreadId), ['new']);
+  delete config.bindings['root-b'];
+  prior = await api.snapshot(['native', 'new'], a.id, prior, [], false);
+  assert.equal(prior.entries.length, 0);
+});

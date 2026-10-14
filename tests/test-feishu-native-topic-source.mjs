@@ -81,3 +81,24 @@ try{
   console.log('Initial snapshot timeout and continuous fallback passed');
  } finally {clearTimeout(timer);snapshotSource.close();}
 }
+
+// Exercise the actual server encoder against the shipped helper decoder.
+{
+ const {createTopicStreamEncoder}=await import('../chat/feishu-topic-stream.mjs');
+ const {applyTopicFrame}=createRequire(import.meta.url)('../scripts/feishu-native/topic-source.cjs');
+ const encode=createTopicStreamEncoder();
+ const original={schema:3,sourceConnected:true,syncedAt:'2026-10-14T00:00:00Z',entries:Array.from({length:20},(_,i)=>({sessionId:'s'+i,webThreadId:String(i),status:'running',name:'真实话题'+i})),boards:[{id:'shared',topics:Array.from({length:220},(_,i)=>({sessionId:'s'+i,state:'running',name:'保留的群话题'+i,sourceUpdatedAt:'old'}))}]};
+ let current=applyTopicFrame(null,encode(original));
+ const changed=structuredClone(original);changed.entries[0].status='review';changed.boards[0].topics[0].state='review';changed.syncedAt='2026-10-14T00:00:01Z';
+ const patch=encode(changed);assert.equal(patch.type,'topic-patch');
+ assert.ok(JSON.stringify(patch).length<JSON.stringify(changed).length/20,'one status must not resend the complete board');
+ current=applyTopicFrame(current,patch);assert.equal(current.entries[0].status,'review');assert.equal(current.boards[0].topics[219].name,original.boards[0].topics[219].name);
+ assert.equal(original.entries[0].status,'running','decoder must not mutate the prior snapshot');
+ const timestampOnly=structuredClone(changed);timestampOnly.boards[0].topics[1].sourceUpdatedAt='new';assert.equal(encode(timestampOnly),null);
+ const removed=structuredClone(changed);removed.entries.pop();removed.boards=[];current=applyTopicFrame(current,encode(removed));assert.equal(current.entries.length,19);assert.deepEqual(current.boards,[]);
+ const old=current;assert.throws(()=>applyTopicFrame(current,patch),/不连续/);
+ assert.throws(()=>applyTopicFrame(current,{type:'topic-patch',base:current.streamSequence,streamSequence:current.streamSequence+1,changes:[[['__proto__','polluted'],true]]}),/路径无效/);
+ assert.equal({}.polluted,undefined);assert.equal(current,old);
+ const fresh=createTopicStreamEncoder();assert.equal(applyTopicFrame(null,fresh(removed)).streamSequence,1,'each reconnect gets its own full baseline');
+ console.log('Server/helper delta roundtrip, bounded wire size, deletion, sequence recovery and path validation passed');
+}

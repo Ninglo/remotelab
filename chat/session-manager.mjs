@@ -1237,6 +1237,7 @@ async function enrichSessionMeta(meta, _options = {}) {
       nativeQuestion,
     }),
   };
+  if (_options.includeTransportSurfaces === false) return session;
   const connectors = await buildSessionConnectorSurface(session);
   const localBridge = await getSessionLocalBridgeSurface(session);
   return {
@@ -2176,6 +2177,7 @@ export async function getSession(id, options = {}) {
   if (!meta) return null;
   if (options.forList === true && !shouldExposeSession(meta)) return null;
   const session = await enrichSessionMetaForClient(await reconcileTerminalActiveSessionMeta(meta), options);
+  if (options.includeTransportSurfaces === false) return session;
   const deliveryIssues = await listSourceDeliveryIssues({ sessionId: id });
   return { ...session, deliveryIssues, deliveryIssueCount: deliveryIssues.length };
 }
