@@ -302,6 +302,10 @@ Official protocol references:
 ## Codex account allocation
 
 Optional [Session account allocation](codex-session-routing.md) distributes new
-Sessions across the instance’s logged-in accounts. Bound Sessions retain their
-account across turns and restarts, including when the default changes. A limited
-account fails explicitly; running work is never transferred or automatically replayed.
+Sessions across the instance’s logged-in accounts. Healthy Sessions retain account
+affinity across turns and restarts. With automatic switching enabled, unavailable
+bindings migrate; quota/rate-limit failures resume the saved native thread on another
+eligible account after the failed provider process stops. Each subscription is tried
+once per Run. Model and reasoning settings stay unchanged, and completed tool
+results remain in the saved thread. No fresh-thread replay occurs after work has
+been produced. Pool exhaustion ends the attempt with an explicit failure.

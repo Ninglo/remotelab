@@ -44,7 +44,7 @@ if (process.argv.includes('app-server')) {
 } else {
   const args = process.argv.slice(2);
   fs.appendFileSync(log, JSON.stringify({ account: fixture.id, args }) + '\n');
-  emit({ type: 'thread.started', thread_id: '00000000-0000-4000-8000-000000000001' });
+  if (!fixture.noThread) emit({ type: 'thread.started', thread_id: '00000000-0000-4000-8000-000000000001' });
   if (fixture.fail) {
     if (fixture.tool) {
       fs.appendFileSync(path.join(process.env.REMOTELAB_CONFIG_DIR, 'external-effect.txt'), 'once\n');
