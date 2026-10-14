@@ -76,10 +76,10 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   async function state(summary) {
     const key = keyFor(summary);
     const existing = await records.get(key);
-    if (existing) return existing;
+    if (existing?.source) return existing;
     const muted = (await getFeishuConversationSettings(runtime, summary)).muted;
     return { key, source: sourceFor(summary), mode: muted ? 'paused' : 'active', epoch: 0,
-      invitedMessages: [], processedControls: [] };
+      invitedMessages: [], processedControls: [], ...existing, source: sourceFor(summary) };
   }
   async function remember(summary, sessionId, recent = []) {
     const key = keyFor(summary);
@@ -128,7 +128,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       if (result?.code || !result?.data?.message_id) throw new Error(result?.msg || 'Agent status card creation failed');
       messageId = result.data.message_id;
       // Commit the successful send before pinning; retry cannot duplicate it.
-      record = await records.mutate(record.key, current => ({ ...current,
+      record = await records.mutate(record.key, current => ({ ...record, ...current,
         cardMessageId: messageId, cardCreatedAt: Date.now(), pinPending: !record.source.topicId }));
       // A retried idempotent create may return the card from an earlier
       // uncertain send. Bring that exact message to the current durable state.
@@ -147,8 +147,8 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         ...(record.source.topicId ? { threadId: record.source.topicId, rootId: record.source.topicId } : {}),
       }, record.sessionId, messageId);
     }
-    return records.mutate(record.key, current => ({ ...current, cardMessageId: messageId,
-      cardCreatedAt: current.cardCreatedAt || createdAt, cardDigest: digest, pinPending: false }));
+    return records.mutate(record.key, current => ({ ...record, ...current, cardMessageId: messageId,
+      cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, pinPending: false }));
   }
   async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId } = {}) {
     const key = keyFor(summary);

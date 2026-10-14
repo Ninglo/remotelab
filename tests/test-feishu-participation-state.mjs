@@ -125,6 +125,16 @@ try {
   await runtime.participation.publish({ ...await runtime.participation.state(base), mode: 'paused', cardSuppressed: true });
   assert.equal(calls.cards.length, cardCallsBeforeHide, 'durable suppression also protects a withdrawn card');
 
+  // A live board can publish before onboarding remembers a newly registered group.
+  runtime.appClient.im.v1.message.create = async () => ({code:0,data:{message_id:'om_new'}});
+  runtime.appClient.im.v1.chatTopNotice = {putTopNotice:async()=>({code:0})};
+  const fresh = {...base,chatId:'fresh'};
+  await runtime.participation.publish(await runtime.participation.state(fresh));
+  const persisted = await runtime.participation.state(fresh);
+  assert.equal(persisted.source.chatId,'fresh');
+  assert.equal(persisted.mode,'active');
+  await runtime.participation.remember(fresh,'new-main');
+  assert.equal((await runtime.participation.state(fresh)).sessionId,'new-main');
   await Promise.all([...(runtime.jevReactionJobs?.values() || [])]);
   console.log('Feishu participation: observation, pause/resume, invitations, topic hints, scope and persistence passed');
 } finally { await rm(home, { recursive: true, force: true }); }
