@@ -24,6 +24,8 @@ Read these first when you need the current truth:
 
 ## Documentation delivery
 
+The [Agent dashboard](monitoring.md#agent-今日与七日概览2026-10-14) shows 05:00 Beijing business-day usage, context injection, first-Session-run and final-delivery trends, with authenticated source links and explicit sample coverage.
+
 [Monitoring and recovery](monitoring.md) separates normal account consumption
 from local backup readiness and failed switching, including a positive-balance
 fallback after confirmed exhaustion. Disk warnings enter bounded

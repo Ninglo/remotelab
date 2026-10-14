@@ -1,3 +1,4 @@
+import { businessStart, BUSINESS_OFFSET, DAY, injectionSources, buildAgentDashboard } from './monitoring-dashboard.mjs';
 import { projectResponseTiming, timingStats, summarizeResponseTiming } from './response-timing.mjs';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -32,12 +33,12 @@ export function sessionOwnership(session, people) {
 
 export function projectRequest(r) {
   if (!r) return null;
-  return { sessionId: r.sessionId, runId: r.runId, nativeDispatchRunId: r.nativeDispatchRunId,
+  return { requestId: r.requestId, sessionId: r.sessionId, runId: r.runId, nativeDispatchRunId: r.nativeDispatchRunId,
     responseTiming: projectResponseTiming(r),
     acceptedAt: r.acceptedAt, preparedAt: r.preparedAt, settledAt: r.settledAt,
     excluded: Boolean(r.options?.internalOperation || r.options?.deliveryOnly || r.options?.recordUserMessage === false),
     deliveries: (r.deliveries || []).filter(d => d.kind === 'content' && time(d.createdAt) >= time(r.settledAt))
-      .map(d => ({ state: d.state, deliveredAt: d.deliveredAt })) };
+      .map(d => ({ state: d.state, deliveredAt: d.deliveredAt, connector: d.connector, surfaceKind: d.surfaceKind, publicationRequestId: d.publicationRequestId })) };
 }
 export function projectRun(r) {
   if (!r) return null;
@@ -48,18 +49,23 @@ export function projectInjection(manifest) {
   // Retain only a size, never a second copy of prompts or user text.
   const text = manifest?.modelContext;
   return { id: manifest?.id, sessionId: manifest?.sessionId,
-    injectionBytes: typeof text === 'string' ? Buffer.byteLength(text, 'utf8') : null };
+    injectionBytes: typeof text === 'string' ? Buffer.byteLength(text, 'utf8') : null,
+    injectionChars: typeof text === 'string' ? [...text].length : null, sources: injectionSources(manifest) };
 }
 export function runMeasurement(ledger, run, request, injection = null) {
   const validRun = run?.id === ledger.runId && run.sessionId === ledger.sessionId;
   const validRequest = validRun && request?.runId === ledger.runId && request.sessionId === ledger.sessionId && !request.excluded && !request.nativeDispatchRunId;
   const ds = validRequest ? request.deliveries || [] : [];
   const deliveryEnd = ds.length && ds.every(d => d.state === 'delivered' && Number.isFinite(time(d.deliveredAt))) ? Math.max(...ds.map(d => time(d.deliveredAt))) : null;
-  return { runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
+  const finals = validRequest && request.responseTiming ? ds.filter(d => d.connector === 'feishu' && (!d.surfaceKind || d.surfaceKind === 'final') && (!d.publicationRequestId || d.publicationRequestId === request.requestId)) : [];
+  const finalEnd = finals.length && finals.every(d => d.state === 'delivered' && Number.isFinite(time(d.deliveredAt))) ? Math.max(...finals.map(d => time(d.deliveredAt))) : null;
+  return { sessionId: ledger.sessionId, sources: validRun ? injection?.sources || [] : [], runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
     state: validRun ? run.state : 'unknown',
     background: ledger.backgroundOperation === true || request?.excluded === true,
-    responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: time(request?.acceptedAt),
-    metrics: { firstContentMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstContentAt) : null,
+    responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: validRequest ? time(request?.acceptedAt) : NaN,
+    metrics: { finalDeliveryMs: validRequest && run.state === 'completed' && finalEnd !== null ? span(request.acceptedAt, finalEnd) : null,
+      injectionChars: validRun && injection?.id === ledger.runId && injection.sessionId === ledger.sessionId && finite(injection.injectionChars) ? injection.injectionChars : null,
+      firstContentMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstContentAt) : null,
       firstReplyMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstReplyAt) : null,
       prepareMs: validRequest ? span(request.acceptedAt, request.preparedAt) : null,
       launchMs: validRequest ? span(request.preparedAt, run.startedAt) : null,
@@ -110,13 +116,13 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       if(s.size>limit || coverage.bytesRead+s.size>maxReadBytes) { coverage.limitedFiles++; return null; }
       coverage.bytesRead+=s.size;
       const value=project(JSON.parse(await readFile(file,'utf8')));
-      files.set(file,{version,value}); if(files.size>4096)files.delete(files.keys().next().value);
+      files.set(file,{version,value}); if(files.size>20000)files.delete(files.keys().next().value);
       return value;
     } catch(e) { if(e.code!=='ENOENT')coverage.readErrors++; return null; }
   }
-  async function collect(days) {
+  async function collect(days, dashboard) {
     const started=now(), coverage={bytesRead:0,cacheHits:0,limitedFiles:0,readErrors:0,missingRuns:0,missingRequests:0,missingInjections:0};
-    const [usage, people, raw] = await Promise.all([getUsage({days,top:10000}),getPeople(),readFile(sessionsFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '[]';throw e;})]);
+    const [usage, people, raw] = await Promise.all([getUsage({days,top:10000,...(dashboard ? { startMs: businessStart(started)-(days-1)*DAY, endMs: started, includeDailyTrend:true, dailyBoundaryOffsetMs:BUSINESS_OFFSET, dailyTimezoneOffsetMs:8*3600000, dailyTimezone:'Asia/Shanghai', includeTrendRuns:true, trendRunLimit:maxRuns } : {})}),getPeople(),readFile(sessionsFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '[]';throw e;})]);
     let contextExperiment = null;
     try {
       const experiment = await currentExperiment(join(configDir, 'feature-experiments'));
@@ -132,7 +138,19 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     const metadata=JSON.parse(raw), list=Array.isArray(metadata)?metadata:metadata.sessions||[];
     const rows=new Map(list.filter(s=>!s.archived).map(s=>[s.id,{sessionId:s.id,name:label(s.name),model:label(s.model),activeRunId:s.activeRunId,...sessionOwnership(s,people)}]));
     for(const bucket of usage.bySession||[]) { const s=list.find(s=>s.id===bucket.sessionId); if(!rows.has(bucket.sessionId))rows.set(bucket.sessionId,{sessionId:bucket.sessionId,name:label(s?.name||bucket.sessionName),model:label(s?.model),activeRunId:s?.activeRunId,...sessionOwnership(s||{},people),archived:s?.archived===true}); }
-    const ledger=(usage.topRuns||[]).slice().sort((a,b)=>time(b.ts)-time(a.ts)).slice(0,maxRuns), grouped=new Map();
+    const firstRuns = new Map();
+    async function firstRun(sessionId) {
+      if (!firstRuns.has(sessionId)) firstRuns.set(sessionId, (async () => {
+        for(let seq=1;seq<=32;seq++) {
+          const event = await projected(join(configDir,'chat-history',sessionId,'events',String(seq).padStart(9,'0')+'.json'), e => ({type:e.type,role:e.role,runId:e.runId,requestId:e.requestId}),coverage);
+          if(!event) return null;
+          if(event.type==='message' && event.role==='user') return event.runId || null;
+        }
+        return null;
+      })());
+      return firstRuns.get(sessionId);
+    }
+    const ledger=(dashboard ? usage.trendRuns || usage.topRuns || [] : usage.topRuns||[]).slice().sort((a,b)=>time(b.ts)-time(a.ts)).slice(0,maxRuns), grouped=new Map();
     for(let i=0;i<ledger.length;i+=8) await Promise.all(ledger.slice(i,i+8).map(async l=>{
       if(!safeId(l.runId)||!safeId(l.sessionId))return;
       const run=await projected(join(runsDir,l.runId,'status.json'),projectRun,coverage);
@@ -146,24 +164,31 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       if(!request)coverage.missingRequests++;
       const injection=includeInjection ? await projected(join(runsDir,l.runId,'manifest.json'),projectInjection,coverage) : null;
       const sample=runMeasurement(l,run,request,injection);
+      if(dashboard && !sample.background) { const first = await firstRun(l.sessionId); sample.firstSessionRun = first ? first === l.runId : null; }
       if(includeInjection && !sample.background && !finite(sample.metrics.injectionBytes))coverage.missingInjections++;
       if(!grouped.has(l.sessionId))grouped.set(l.sessionId,[]);grouped.get(l.sessionId).push(sample);
     }));
-    for(const row of rows.values()) {const samples=grouped.get(row.sessionId)||[];row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
-    return {generatedAt:new Date(now()).toISOString(),contextExperiment,responseTiming:summarizeResponseTiming([...grouped.values()].flat(),days,now()),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[]},sessions:[...rows.values()],
-      coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.length,truncated:usage.runCount>ledger.length||coverage.limitedFiles>0,
+    for(const row of rows.values()) {const samples=(grouped.get(row.sessionId)||[]).filter(s => !dashboard || s.at >= time(usage.window?.start));row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
+    const allSamples=[...grouped.values()].flat();
+    const agentDashboard=dashboard ? buildAgentDashboard(usage,allSamples,started,coverage) : null;
+    return {generatedAt:new Date(now()).toISOString(),agentDashboard,contextExperiment,responseTiming:summarizeResponseTiming([...grouped.values()].flat(),days,now()),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[],trendRuns:undefined},sessions:[...rows.values()],
+      coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length,truncated:usage.runCount>ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length||coverage.limitedFiles>0,
         collectionMs:now()-started,cacheSeconds:60,apiAttribution:'unavailable'},
       semantics:{timing:'已落账 Run 的 Request/Run 时间戳；受理到准备包含排队，执行包含等待，阶段有各自样本数',
         context:'前台 Run 最近回传上下文的均值；不是模型每次调用均值，也不是累计输入',
         signals:'同 Session/模型/Harness，最近3个前台Run对此前最多20个（至少10个）；2倍黄色、3倍红色，另需最小增量；仅页面提示'} };
   }
-  return async ({days=1}={})=>{
+  return async ({days=1,dashboard=false}={})=>{
     days=[1,7,30].includes(Number(days))?Number(days):1;
-    const c=windows.get(days);if(c&&(c.pending||now()-c.at<60000))return c.pending||c.value;
-    const entry={at:now()};entry.pending=collect(days).then(value=>{entry.value=value;entry.pending=null;entry.at=now();return value;}).catch(e=>{windows.delete(days);throw e;});windows.set(days,entry);return entry.pending;
+    const cacheKey=String(days)+':'+dashboard;
+    const c=windows.get(cacheKey);if(c&&(c.pending||now()-c.at<60000))return c.pending||c.value;
+    const entry={at:now()};entry.pending=collect(days,dashboard).then(value=>{entry.value=value;entry.pending=null;entry.at=now();return value;}).catch(e=>{windows.delete(cacheKey);throw e;});windows.set(cacheKey,entry);return entry.pending;
   };
 }
 export const readSessionMonitoring=createSessionMonitoringReader();
+// The seven-day dashboard has a separate bounded cache; keep diagnostic sampling
+// and the legacy selected-window reader's budgets unchanged.
+export const readDashboardSessions=createSessionMonitoringReader({maxRuns:5000,maxReadBytes:256*1024*1024});
 
 export function summarizeSessionOverview(sessions) {
   const measured = sessions.filter(s => finite(s.totalTokens));
@@ -194,6 +219,7 @@ export async function compactSessionMonitoring(value, getActivity) {
     })));
   }
   return { generatedAt: value.generatedAt, stateObservedAt: new Date().toISOString(), window: value.window,
+    agentDashboard: value.agentDashboard ? { ...value.agentDashboard, currentRunning: sessions.filter(s => s.activity?.run?.state === 'running').length, unknownStates: sessions.filter(s => s.activity?.run?.state === 'unknown').length, todayActiveSessions: new Set([...(value.usage.dailyTrend?.days?.at(-1)?.sessionIds || []), ...sessions.filter(s=>s.activity?.run?.state==='running').map(s=>s.sessionId)]).size } : null,
     contextExperiment: value.contextExperiment ?? null, responseTiming: value.responseTiming,
     coverage: value.coverage, totals: value.usage.totals, usageQuality: value.usage.quality, summary: { ...summarizeSessionOverview(sessions), currentSessions: value.currentSessionCount ?? summarizeSessionOverview(sessions).currentSessions },
     groups: Object.fromEntries(value.sessions.map(s => [s.groupId, s.groupName])),

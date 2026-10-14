@@ -1,3 +1,4 @@
+import './test-monitoring-dashboard.mjs';
 import './test-response-timing.mjs';
 import './isolate-test-environment.mjs';
 import assert from 'node:assert/strict';

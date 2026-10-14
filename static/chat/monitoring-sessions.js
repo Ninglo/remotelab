@@ -11,6 +11,7 @@
   let data = null, error = '', pending = null, serial = 0, days = 1, loadedAt = 0;
   let mode = 'group', scope = '', filter = 'all', search = '', limit = 50, allGroups = false, expanded = false, selectedSession = '';
   let contextExpanded = false;
+  const dashboardState = {};
   const rowOpen = new Map(), diagnosisOpen = new Map();
   const diagnosisFor = s => (data?.diagnostics?.incidents || []).filter(i => !i.test && i.sessionIds.includes(s.sessionId)).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
   const diagnosisLabel = i => i.status === 'resolved' ? '已恢复' : '已排查 · 待复核';
@@ -117,9 +118,11 @@
   }
   let responseExpanded = false;
   function render() {
+    root.querySelectorAll('[data-agent-fold]').forEach(fold => { dashboardState[fold.dataset.agentFold] = fold.open; });
     responseExpanded = root.querySelector('[data-testid="response-timing-days"]')?.open ?? responseExpanded;
     contextExpanded = root.querySelector('[data-testid="session-context-guide"]')?.open ?? contextExpanded;
     root.replaceChildren(); root.append(el('h2', 'Session 监管'));
+    if (data?.agentDashboard) { const dashboard = el('div'); root.append(dashboard); g.RemoteLabAgentDashboard?.render(dashboard, data.agentDashboard, { state: dashboardState }); }
     if (data?.contextExperiment) {
       const experiment = data.contextExperiment, note = el('div', '', 'monitoring-alert');
       note.dataset.testid = 'context-experiment'; note.dataset.severity = 'neutral';
@@ -158,7 +161,7 @@
       ['平均 Session 用量', fmt(overview.meanUsageTokens), `Token / Session · 期间有用量记录的 ${overview.usageSessions ?? '—'} 个`],
       ['平均上下文注入', size(overview.meanInjectionBytes), `每次运行 · ${overview.injectionCount ?? '—'} 个注入样本`],
     ]) { const card = el('div'); card.append(el('small', label), el('strong', count), el('small', hint)); stats.append(card); }
-    root.append(stats);
+    if (!data.agentDashboard) root.append(stats);
     const statusBar = el('div', '', 'monitoring-summary-status');
     const statusText = flagged.length ? `${flagged.length} 个 Session 指标变化` : '已测样本未发现突增';
     const badge = button(statusText, () => { expanded = true; filter = flagged.length ? 'attention' : 'all'; scope = ''; search = ''; selectedSession = ''; render(); });
@@ -171,7 +174,7 @@
     if (data.diagnostics?.checkedAt) root.append(el('small', `巡检最近检查：${new Date(data.diagnostics.checkedAt).toLocaleString()} · 结果见各会话的折叠说明`, 'monitoring-note'));
 
     if (data.responseTiming) {
-      const r = data.responseTiming, panel = el('section', '', 'monitoring-response-timing'); panel.dataset.testid = 'response-timing';
+      const r = data.responseTiming, panel = el('details', '', 'monitoring-response-timing'); panel.append(el('summary', '查看首次响应速度（与最终交付分别统计）')); panel.dataset.testid = 'response-timing';
       panel.append(el('h3', '飞书响应速度 · 当前统计范围'));
       panel.append(table(['从受理到送达', '中位数', 'P95', '有回执／可统计'], [
         ['首次正文（含开场、进展）', duration(r.firstContent.median), duration(r.firstContent.p95), `${r.firstContent.count} / ${r.eligible}`],
@@ -256,7 +259,7 @@
     const timeout = setTimeout(() => controller.abort(), 15000);
     task.promise = (async () => {
       try {
-        const r = await fetch(`/api/monitoring/sessions?days=${days}&compact=1`, { credentials: 'same-origin', signal: controller.signal });
+        const r = await fetch(`/api/monitoring/sessions?days=${days}&compact=1&dashboard=1`, { credentials: 'same-origin', signal: controller.signal });
         if (r.status === 401 || r.status === 403) { data = null; throw Error('登录已失效，请重新登录'); }
         if (!r.ok) throw Error(`HTTP ${r.status}`);
         const value = await r.json(); if (!Array.isArray(value.sessions) || !value.groups) throw Error('返回格式不正确');

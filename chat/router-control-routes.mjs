@@ -103,7 +103,8 @@ import {
 import { queryUsageLedger } from './usage-ledger.mjs';
 import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
-import { readSessionMonitoring, compactSessionMonitoring } from './monitoring-sessions.mjs';
+import { readSessionMonitoring, readDashboardSessions, compactSessionMonitoring } from './monitoring-sessions.mjs';
+import { sourceFiles as monitoringContextSources } from './monitoring-dashboard.mjs';
 import { updateSessionProgressPolicy, updateProgressCardDisclosure } from './session-progress-policy.mjs';
 import {
   buildClientInstanceSettings,
@@ -1175,9 +1176,23 @@ export async function handleControlRoutes({
     return true;
   }
 
+  if (pathname === '/api/monitoring/context-source' && req.method === 'GET') {
+    const source = monitoringContextSources[parsedUrl?.query?.id];
+    if (!source || !Object.hasOwn(monitoringContextSources, parsedUrl?.query?.id)) {
+      writeJson(res, 404, { error: 'Unknown context source' }); return true;
+    }
+    try {
+      const body = await readFile(new URL('../' + source[1], import.meta.url), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+      res.end(body);
+    } catch { writeJson(res, 404, { error: 'Context source unavailable' }); }
+    return true;
+  }
+
   if (pathname === '/api/monitoring/sessions' && req.method === 'GET') {
     try {
-      const data = await readSessionMonitoring({ days: parsedUrl?.query?.days });
+      const dashboard = parsedUrl?.query?.dashboard === '1';
+      const data = await (dashboard ? readDashboardSessions : readSessionMonitoring)({ days: parsedUrl?.query?.days, dashboard });
       const view = parsedUrl?.query?.compact === '1' ? await compactSessionMonitoring(data, getSessionMonitoringActivity) : { ...data };
       try { view.diagnostics = await readSessionDiagnostics(); }
       catch { view.diagnostics = { unavailable: true, incidents: [] }; }

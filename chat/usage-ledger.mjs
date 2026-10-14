@@ -799,7 +799,8 @@ export async function queryUsageLedger(options = {}) {
   };
 
   // Optional overview trend shares this scan, independently of the selected summary window.
-  const trendStartMs = Math.floor(endMs / DAY_MS) * DAY_MS - 6 * DAY_MS;
+  const dayOffset = Number.isFinite(options.dailyBoundaryOffsetMs) ? options.dailyBoundaryOffsetMs : 0;
+  const trendStartMs = Math.floor((endMs - dayOffset) / DAY_MS) * DAY_MS + dayOffset - 6 * DAY_MS;
   const scanStartMs = options.includeDailyTrend ? Math.min(startMs, trendStartMs) : startMs;
   const files = await listLedgerFiles(scanStartMs, endMs, ledgerDir);
   const deduped = new Map();
@@ -853,9 +854,9 @@ export async function queryUsageLedger(options = {}) {
 
   const records = scannedRecords.filter(record => record.timestampMs >= startMs);
   const daily = options.includeDailyTrend ? Array.from({ length: 7 }, (_, i) => ({
-    day: new Date(trendStartMs + i * DAY_MS).toISOString().slice(0, 10),
+    day: new Date(trendStartMs + i * DAY_MS + (options.dailyTimezoneOffsetMs || 0)).toISOString().slice(0, 10),
     sessions: new Set(), runCount: 0, foregroundRuns: 0, contextSamples: 0,
-    contextSum: 0, totalTokens: 0,
+    contextSum: 0, totalTokens: 0, foregroundTokens: 0, backgroundTokens: 0,
   })) : null;
   const totals = createTotals();
   const byIdentity = new Map();
@@ -878,6 +879,7 @@ export async function queryUsageLedger(options = {}) {
       const day = daily[Math.floor((record.timestampMs - trendStartMs) / DAY_MS)];
       day.runCount += 1;
       day.totalTokens += record.totalTokens || 0;
+      day[record.backgroundOperation ? 'backgroundTokens' : 'foregroundTokens'] += record.totalTokens || 0;
       if (record.sessionId) day.sessions.add(record.sessionId);
       if (!record.backgroundOperation) {
         day.foregroundRuns += 1;
@@ -1002,16 +1004,21 @@ export async function queryUsageLedger(options = {}) {
     byOperationCategory: sortBuckets(byOperationCategory, top),
     byDay: sortBuckets(byDay, top),
     ...(daily ? { dailyTrend: {
-      start: new Date(trendStartMs).toISOString(), end: new Date(endMs).toISOString(), timezone: 'UTC',
+      start: new Date(trendStartMs).toISOString(), end: new Date(endMs).toISOString(), timezone: options.dailyTimezone || 'UTC',
       attribution: 'run_finalized_completed_or_recorded_timestamp',
       days: daily.map(day => ({ day: day.day, runCount: day.runCount,
         sessionCount: day.runCount ? day.sessions.size : null,
+        ...(options.includeTrendRuns ? { sessionIds: [...day.sessions] } : {}),
         totalTokens: day.runCount ? day.totalTokens : null,
+        foregroundTokens: day.foregroundTokens, backgroundTokens: day.backgroundTokens,
         foregroundRuns: day.foregroundRuns, contextSamples: day.contextSamples,
         avgContextTokens: day.contextSamples ? roundAverage(day.contextSum / day.contextSamples) : null,
       })),
     } } : {}),
     bySession: sortBuckets(bySession, top),
+    ...(options.includeTrendRuns ? { trendRunCount: scannedRecords.filter(r => r.timestampMs >= trendStartMs).length,
+      trendRuns: scannedRecords.filter(r => r.timestampMs >= trendStartMs).sort((a,b) => b.timestampMs-a.timestampMs)
+        .slice(0, Math.min(options.trendRunLimit || 1000, 10000)).map(summarizeTopRun) } : {}),
     topRuns: options.includeTopRuns === false ? [] : records.slice(0, top).map(summarizeTopRun),
   };
 }
