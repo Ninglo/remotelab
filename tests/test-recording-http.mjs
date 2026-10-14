@@ -129,10 +129,11 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
   const published = { ...record, id: 'rec_' + 'c'.repeat(32), label: '测试自动发群', status: 'pending',
     destination: { publishAudio: true, conversation: { connector: 'feishu', sourceRouteId: 'recording-publish-test',
       target: { chatId: 'publication-test-chat', chatType: 'group', chatMode: 'topic' } } },
-    segments: [{ filename: '00000.wav' }] };
+    segments: [{ filename: '00000.wav' }, { filename: '00001.wav' }] };
   for (const field of ['sessionId', 'requestId', 'runId', 'submittedAt']) delete published[field];
   await saveRecord(spool, published);
   const third = new WavWriter(join(recordDir(spool, published.id), '00000.wav')); await third.start(); await third.append(Buffer.from([42, 0])); await third.finish();
+  const fourth = new WavWriter(join(recordDir(spool, published.id), '00001.wav')); await fourth.start(); await fourth.append(Buffer.from([84, 0])); await fourth.finish();
   let lostPublication = true, sentFiles = 0;
   const captureClient = createRemoteLabHttpClient({ baseUrl: client.baseUrl, authToken: 'c'.repeat(64) });
   const publisher = { ...captureClient, request: async (path, options) => {
@@ -143,7 +144,9 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
         connector: 'feishu', sourceRouteId: 'recording-publish-test',
       } })).json.claim;
       assert.equal(claimed.delivery.kind, 'attachment'); assert.equal(claimed.delivery.sessionId, published.sessionId);
-      assert.match(claimed.delivery.attachment.originalName, /^测试自动发群-.*\.wav$/);
+      assert.match(claimed.delivery.attachment.originalName, /^测试自动发群-.*\.mp3$/);
+      assert.doesNotMatch(claimed.delivery.attachment.originalName, /第\d+段/);
+      assert.equal(claimed.delivery.attachment.mimeType, 'audio/mpeg');
       sentFiles++;
       await client.request(`/api/source-deliveries/${claimed.delivery.id}/complete`, { method: 'POST', body: {
         leaseId: claimed.leaseId, externalId: 'om_original_file', messageId: 'om_original_file', threadId: 'omt_original_file',
@@ -155,6 +158,7 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
   await assert.rejects(submitRecording(spool, published, { config, client: publisher }), /Outbox reply lost/);
   const resumed = await loadRecord(spool, published.id);
   await submitRecording(spool, resumed, { config, client: publisher });
+  assert.equal(resumed.segments.length, 2); assert.ok(resumed.segments.every(s => s.ready));
   assert.equal(sentFiles, 1); assert.equal(resumed.audioConversation.target.messageId, 'om_original_file');
   const publishedRun = await terminalRun(client, ws, resumed.runId); assert.equal(publishedRun.state, 'completed', output);
   const groupResult = (await client.request('/api/source-deliveries?connector=feishu&sourceRouteId=recording-publish-test')).json.deliveries.find(part => part.runId === resumed.runId && part.kind === 'content');
