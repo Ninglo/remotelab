@@ -17,7 +17,8 @@ omitting `autoSwitch` preserves the independent reserve-switch setting.
   fewest live or starting runs. Ties go to the least recently assigned account.
   Allocation is equal-weight; plan names do not imply concurrency ratios.
 - The account pool, credentials and load counts are local to this instance.
-  Duplicate known subscription identities count as one account. Logged-out,
+  Duplicate known subscription identities count as one account and share
+  cooldown/exhaustion eligibility; another login is not additional capacity. Logged-out,
   confirmed exhausted or cooling accounts do not receive new Sessions. Fresh
   available quota is preferred over unknown quota; unknown is not exhaustion.
   Selection reads cached observations without a foreground provider request.

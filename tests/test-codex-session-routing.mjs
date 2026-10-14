@@ -42,6 +42,9 @@ try {
   await assert.rejects(acquire('new-0'), /限流冷却.*不自动切换/);
   const other = await acquire('after-429'); assert.notEqual(other.id, first.id);
   await other.lease.release();
+  await pool.markRateLimited(a.id);
+  assert.equal((await pool.account(alias.id)).cooldownUntil, (await pool.account(a.id)).cooldownUntil,
+    'a duplicate login cannot bypass its subscription cooldown');
   now += 61_000;
   assert.equal((await acquire('new-0')).id, first.id, 'cooldown recovery keeps the same account');
   await pool.policy(undefined, false);
