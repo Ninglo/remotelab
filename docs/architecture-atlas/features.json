@@ -797,6 +797,8 @@
           "sources": [
             "docs/monitoring.md",
             "static/chat/monitoring.js",
+            "static/chat/agent-monitor-dashboard.js",
+            "static/chat/agent-monitor-dashboard.css",
             "chat/monitoring.mjs",
             "chat/monitoring-recovery.mjs",
             "chat/monitoring-alerts.mjs",
