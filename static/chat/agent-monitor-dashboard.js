@@ -200,7 +200,13 @@
       }
       if (key === 'response' && d) panel.append(full.querySelector('.agent-journey'));
       if (key === 'context' && d) panel.append(full.querySelector('[data-agent-fold="sources"]'));
-      if (key === 'accounts') panel.append(accounts);
+      if (key === 'accounts') {
+        accounts.querySelectorAll('.monitoring-table-wrap tbody tr').forEach(row => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length === 4) cells[0].append(el('small', `更新于 ${cells[3].textContent}`, 'agent-account-observed-mobile'));
+        });
+        panel.append(accounts);
+      }
     }
     const scope = full.querySelector('[data-agent-fold="scope"]'); if (scope) body.append(scope);
     function selectTab(key, focus = false) {
