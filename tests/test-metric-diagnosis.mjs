@@ -36,7 +36,7 @@ console.log('metric diagnosis: cohort isolation, experiment separation, sample s
 
 const trend=Array.from({length:4},(_,d)=>Array.from({length:12},(_,i)=>({...row(2000+d*20+i,now-(3-d)*DAY-i*1000,10000+d*2000),firstSessionRun:true}))).flat();
 const trendItems=populationTrendCandidates(trend,now);assert.equal(trendItems.length,3);
-assert.equal(trendItems[0].comparisonType,'population');
+assert.equal(trendItems[0].comparisonType,'population');assert(trendItems[0].evidence.some(x=>x.includes('背景平均增加')));
 assert(!populationTrendCandidates(trend.filter(s=>s.runId!=='r2000').map(s=>({...s,sessionId:'one'})),now).length);
 assert(!populationTrendCandidates(trend.map(s=>({...s,metrics:row(0,now,10000).metrics})),now).length,'volume or idle dates do not inflate per-request cost');
 assert(metricRecovered(trendItems[0],healthy.map(s=>({...s,firstSessionRun:true})),now+120000));

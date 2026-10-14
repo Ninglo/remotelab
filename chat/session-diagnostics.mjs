@@ -27,7 +27,7 @@ export function sessionDiagnosisCard(item, config) {
   const name=metricLabels[item.metric] || diagnosisStages[item.metric] || (item.metric==='account'?'账号连续性':'预警处置');
   const content = `${item.test ? '链路测试，使用模拟样本，不代表真实故障。\n' : ''}${name}：${item.members.length} 个会话\n`
     + [item.trigger && `触发：${item.trigger}`,item.summary,item.action && `行动：${item.action}`,
-      item.verification && `验证：${item.verification}`,...(item.evidence||[]).slice(0,4),item.limitations,item.nextStep].filter(Boolean).join('\n');
+      item.verification && `验证：${item.verification}`,...(item.evidence||[]).slice(0,6),item.limitations,item.nextStep].filter(Boolean).join('\n');
   let url;
   try { const u = new URL(config.overviewUrl); if (u.protocol === 'https:' || u.protocol === 'http:') url=u.href; } catch {}
   return { config:{wide_screen_mode:true,update_multi:true}, header:{title:{tag:'plain_text',content:`会话巡检${item.test?'测试':''} · ${resolved?'已恢复':item.status==='action_verified'?'已执行，已核对':item.status==='review_required'?'需要复核':'已排查，待复核'}`},template:resolved?'green':'blue'},
