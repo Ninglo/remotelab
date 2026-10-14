@@ -55,6 +55,9 @@ try {
  assert.equal(sent.length,2,'repeated or stale quota samples cannot confirm risk');
  const local=trustCandidates({runtime:runtime(start),bindings:[{sessionId:'idle',accountId:'a'}]}, {},[],start,{riskOnly:true});
  assert.equal(privateDiagnosisDecision(local[0]).eligible,false,'idle bindings are not human tasks');
+ const retried=trustCandidates({runtime:runtime(start),bindings:[{sessionId:'one',accountId:'a'}]}, {},
+  [{...row('one',start-1000),at:start-1000},{...row('one',start-1000),runId:'retry',at:start,state:'completed'}],start,{riskOnly:true});
+ assert.equal(privateDiagnosisDecision(retried[0]).eligible,false,'a successful retry supersedes the failed run of the same request');
  const unknown=runtime(start);unknown.accounts.push({...account('b',90,start),usage:null});
  assert.equal(privateDiagnosisDecision(trustCandidates({runtime:unknown,bindings:[{sessionId:'one',accountId:'a'}]}, {},[row('one',start)],start,{riskOnly:true})[0]).reason,'backup_unknown');
  const switched={...runtime(start),activeId:'b',accounts:[account('a',0,start),account('b',90,start)],switchEvents:[0,1,2].map(i=>({from:'a',to:'b',at:new Date(start-i*1000).toISOString()}))};

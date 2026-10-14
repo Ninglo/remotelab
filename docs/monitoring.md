@@ -103,6 +103,8 @@ observations of the same actionable condition are required. Re-reading one quota
 snapshot, incomplete collection, idle bindings and routine switches do not
 satisfy this gate. A failed request is not attributed to account exhaustion merely
 because both were observed.
+A later successful foreground retry supersedes an earlier failure even when both
+share the same original request timestamp; background helpers do not replace it.
 
 One continuity incident retains its message ID. A changed decision, an available
 fallback, or independently verified recovery can update that message; counts and

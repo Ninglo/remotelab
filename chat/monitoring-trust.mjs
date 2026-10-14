@@ -49,7 +49,12 @@ export function trustCandidates({runtime,bindings=[]},snapshot={},samples=[],now
  if(atRisk.length){
   const key=diagnosisKey(['exhausted-bindings']);
   const latest=new Map();
-  for(const s of samples)if(s.responseAt<=now && (!latest.has(s.sessionId)||s.responseAt>latest.get(s.sessionId).responseAt))latest.set(s.sessionId,s);
+  const sampleTime=s=>Number.isFinite(s.at)?Math.max(s.responseAt,s.at):s.responseAt;
+  for(const s of samples) {
+   if(s.background || !(s.responseAt<=now) || !(sampleTime(s)<=now))continue;
+   const prior=latest.get(s.sessionId);
+   if(!prior || sampleTime(s)>sampleTime(prior) || sampleTime(s)===sampleTime(prior) && s.state==='completed')latest.set(s.sessionId,s);
+  }
   const demand=atRisk.filter(b=>{const s=latest.get(b.sessionId);return s && s.accountId===b.accountId && now-s.responseAt<=30*60000 && ['running','queued','failed'].includes(s.state);});
   const reason=!demand.length?'no_current_demand':!runtime.autoSwitch?'switch_disabled':available?'automatic_continuation':unknownBackup?'backup_unknown':'no_available_backup';
   const humanAction=reason==='switch_disabled'?{type:'approval',summary:'确认是否为后续请求开启已有账号的自动切换。'}:
