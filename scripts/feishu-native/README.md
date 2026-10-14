@@ -194,3 +194,11 @@ native renderer. Missing/out-of-order patches force a fresh connection and full
 snapshot; old helpers continue receiving full snapshots. Each device still
 needs actual latency verification; a healthy connection or a successful update
 receipt alone is not proof of faster visible state.
+
+On macOS the topic helper reads the existing enabled HTTPS proxy with `scutil`.
+When one is configured, its SSE connection uses the system `curl` CONNECT/TLS
+transport with unbuffered, compressed streaming; authorization headers are sent
+through the child process's stdin, never arguments or temporary credential files.
+Cancellation closes the child and stream. Without an explicit HTTPS proxy it
+uses the existing direct fetch path. Proxy errors are reported and retried; they
+do not silently bypass an enabled proxy. No system network setting is changed.

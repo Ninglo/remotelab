@@ -102,3 +102,27 @@ try{
  const fresh=createTopicStreamEncoder();assert.equal(applyTopicFrame(null,fresh(removed)).streamSequence,1,'each reconnect gets its own full baseline');
  console.log('Server/helper delta roundtrip, bounded wire size, deletion, sequence recovery and path validation passed');
 }
+
+{
+ const {EventEmitter}=await import('node:events');
+ const {PassThrough,Writable}=await import('node:stream');
+ const {proxyFetch}=createRequire(import.meta.url)('../scripts/feishu-native/topic-source.cjs');
+ let args,config='',child;
+ const launch=(file,argv)=>{
+  args=[file,...argv];child=new EventEmitter();child.exitCode=null;child.stdout=new PassThrough();child.stderr=new PassThrough();
+  child.kill=()=>{if(child.exitCode===null){child.exitCode=143;queueMicrotask(()=>child.emit('close',143));}};
+  child.stdin=new Writable({write(b,enc,done){config+=b;done();},final(done){done();queueMicrotask(()=>{
+   child.stdout.write('HTTP/1.1 200 OK\r\nContent-Type: text/event-');
+   child.stdout.write('stream\r\n\r\ndata: {"ok":true}\n\n');
+  });}});return child;
+ };
+ const controller=new AbortController();
+ const r=await proxyFetch('https://fixture.test/events',{signal:controller.signal,headers:{Authorization:'Bearer secret-in-stdin'}},'http://127.0.0.1:7892',launch);
+ assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'text/event-stream');
+ assert.equal(args.join(' ').includes('secret-in-stdin'),false);assert.match(config,/secret-in-stdin/);
+ assert.ok(args.includes('--suppress-connect-headers'));assert.ok(args.includes('--compressed'));
+ const reader=r.body.getReader(),first=await reader.read();assert.equal(new TextDecoder().decode(first.value),'data: {"ok":true}\n\n');
+ const waiting=reader.read();controller.abort();await assert.rejects(waiting);assert.notEqual(child.exitCode,null);
+ let launched=false;await assert.rejects(proxyFetch('https://fixture.test/events',{signal:controller.signal,headers:{}},'http://127.0.0.1:7892',()=>{launched=true;}),/aborted/);assert.equal(launched,false);
+ console.log('System proxy stream: split headers, unbuffered body, private credential pipe and cancellation passed');
+}

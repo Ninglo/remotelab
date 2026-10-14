@@ -1,5 +1,52 @@
 // One account-scoped source for both native renderers. Keep the live subscription
 // until its replacement has delivered a snapshot; viewport churn is not an outage.
+const {execFile,spawn}=require('node:child_process');
+const {PassThrough,Readable}=require('node:stream');
+function systemProxy(){return new Promise(resolve=>{
+ execFile('/usr/sbin/scutil',['--proxy'],{timeout:3000,maxBuffer:131072},(error,text)=>{
+  if(error){resolve('');return;}
+  const fields=Object.fromEntries([...text.matchAll(/^\s*(HTTPS\w+)\s*:\s*(\S+)\s*$/gm)].map(m=>[m[1],m[2]]));
+  const host=fields.HTTPSProxy,port=Number(fields.HTTPSPort);
+  resolve(fields.HTTPSEnable==='1'&&/^[a-zA-Z0-9.:[\]-]+$/.test(host||'')&&Number.isInteger(port)&&port>0&&port<65536?'http://'+(host.includes(':')&&!host.startsWith('[')?'['+host+']':host)+':'+port:'');
+ });
+});}
+// The bundled Node version does not automatically use macOS proxy settings.
+// curl provides the OS-supported CONNECT/TLS stream without adding a runtime
+// dependency. Credentials go through stdin, never process arguments or files.
+function proxyFetch(url,{signal,headers},proxy,launch=spawn){return new Promise((resolve,reject)=>{
+ if(signal?.aborted){reject(new DOMException('aborted','AbortError'));return;}
+ const quote=value=>{if(/[\r\n\0]/.test(value))throw Error('状态连接参数无效');return '"'+value.replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';};
+ const config=['url = '+quote(url),'proxy = '+quote(proxy),...Object.entries(headers).map(([k,v])=>'header = '+quote(k+': '+v))].join('\n')+'\n';
+ const child=launch('/usr/bin/curl',['--silent','--show-error','--no-buffer','--compressed','--include','--suppress-connect-headers','--proto','=https','--connect-timeout','10','--config','-'],{stdio:['pipe','pipe','pipe']});
+ const body=new PassThrough();let pending=Buffer.alloc(0),ready=false;
+ const fail=error=>{if(!ready)reject(error);body.destroy(error);child.kill();};
+ body.on('error',()=>{});
+ const abort=()=>fail(new DOMException('aborted','AbortError'));
+ signal?.addEventListener('abort',abort,{once:true});
+ child.on('error',fail);child.stdin.on('error',fail);
+ child.stderr.resume();
+ child.on('close',code=>{signal?.removeEventListener('abort',abort);if(code&&!signal?.aborted)fail(Error('代理状态连接失败'));else if(!ready&&!signal?.aborted)fail(Error('代理未返回状态响应'));});
+ body.on('close',()=>{if(child.exitCode===null)child.kill();});
+ const readHeaders=chunk=>{
+  pending=Buffer.concat([pending,chunk]);const end=pending.indexOf('\r\n\r\n');
+  if(end<0){if(pending.length>65536)fail(Error('状态响应头过大'));return;}
+  if(end>65536){fail(Error('状态响应头过大'));return;}
+  const head=pending.subarray(0,end).toString(),match=/^HTTP\/\S+\s+(\d{3})/.exec(head);
+  if(!match){fail(Error('状态响应头无效'));return;}
+  const status=Number(match[1]);
+  if(status>=100&&status<200){pending=pending.subarray(end+4);if(pending.length)readHeaders(Buffer.alloc(0));return;}
+  child.stdout.off('data',readHeaders);ready=true;
+  const responseHeaders=new Headers();for(const line of head.split('\r\n').slice(1)){const i=line.indexOf(':');if(i>0)responseHeaders.append(line.slice(0,i),line.slice(i+1).trim());}
+  if(pending.length>end+4)body.write(pending.subarray(end+4));pending=null;
+  child.stdout.pipe(body);
+  try{resolve(new Response([204,205,304].includes(status)?null:Readable.toWeb(body),{status,headers:responseHeaders}));}catch(error){fail(error);}
+ };
+ child.stdout.on('data',readHeaders);child.stdin.end(config);
+});}
+async function nativeTopicFetch(url,options){
+ const proxy=process.platform==='darwin'?await systemProxy():'';
+ return proxy?proxyFetch(url,options,proxy):fetch(url,options);
+}
 function applyTopicFrame(previous,frame){
  if(frame.type!=='topic-patch')return frame;
  if(!previous||frame.base!==previous.streamSequence||frame.streamSequence!==frame.base+1||!Array.isArray(frame.changes)||frame.changes.length>1000)throw Error('状态增量不连续，正在重新同步');
@@ -18,7 +65,7 @@ function applyTopicFrame(previous,frame){
  if(!next||typeof next!=='object')throw Error('状态增量结果无效');
  return {...next,syncedAt:frame.syncedAt,streamSequence:frame.streamSequence};
 }
-function createTopicSource({remote,origin,onChange,fetchImpl=fetch,heartbeatMs=45000,snapshotMs=15000,retryMs=250}){
+function createTopicSource({remote,origin,onChange,fetchImpl=nativeTopicFetch,heartbeatMs=45000,snapshotMs=15000,retryMs=250}){
  const accounts=new Map();
  const empty=error=>({entries:[],boards:[],sourceConnected:false,error,transport:'personal-grant'});
  function stop(s){if(!s)return;s.stopped=true;clearTimeout(s.timer);clearTimeout(s.heartbeat);s.controller?.abort();stop(s.fallback);s.fallback=null;}
@@ -81,4 +128,4 @@ function createTopicSource({remote,origin,onChange,fetchImpl=fetch,heartbeatMs=4
  }
  return {update,projection:account=>view(accounts.get(account)),remove(account){stop(accounts.get(account));accounts.delete(account);},close(){for(const s of accounts.values())stop(s);accounts.clear();}};
 }
-module.exports={createTopicSource,applyTopicFrame};
+module.exports={createTopicSource,applyTopicFrame,nativeTopicFetch,proxyFetch};
