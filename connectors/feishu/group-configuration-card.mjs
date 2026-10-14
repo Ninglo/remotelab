@@ -11,7 +11,8 @@ function compactGroupCard(record, view) {
   const states = { active: '主动参与', listening: '旁听', paused: '暂停' };
   const mode = record.mode || 'active';
   const selection = view.selection || {};
-  const elements = [md({ active: '持续接收群消息，按讨论需要参与。',
+  const workGroup = view.project?.group?.chatMode === 'topic';
+  const elements = [md({ active: workGroup ? '本群逐条回应，具体工作在各自话题中继续。' : '持续接收群消息，按讨论需要参与。',
     listening: '持续接收群消息；@我可邀请回应。', paused: '暂停接收后续普通群消息。' }[mode])];
   if (view.participationControls !== false) elements.push({ tag: 'column_set', columns: Object.keys(states).map(state => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [{ tag: 'button',
@@ -22,10 +23,10 @@ function compactGroupCard(record, view) {
   })) });
   const url = record.sessionId && view.sessionAvailable
     ? buildSessionNavigationHref(record.sessionId, { requireAbsolute: true }) : '';
-  elements.push(md(`**主 Session**：${selection.model || '待确认'}${selection.effort ? ` · ${selection.effort}` : ''}`
+  elements.push(md(`**主 Session**：${selection.model === 'auto' ? '自动选择' : selection.model || '待确认'}${selection.effort ? ` · ${selection.effort}` : ''}`
     + (url ? `\n[打开主会话](${url})` : '')));
   const project = view.project;
-  if (project?.briefUrl) elements.push({ tag: 'hr' }, md(`[**项目说明 · 共识、经验与目录**](${project.briefUrl})`
+  if (project?.briefUrl) elements.push({ tag: 'hr' }, md(`[**${project.name || project.id}｜项目共同认知·群内对话默认注入**](${project.briefUrl})`
     + (project.briefUpdated ? `\n更新时间：${project.briefUpdated}` : '')));
   if (project?.skills?.length) elements.push(md('**常用技能**\n'
     + project.skills.slice(0, 3).map(skill => `• **${skill.name}**：${skill.description}`).join('\n')));
