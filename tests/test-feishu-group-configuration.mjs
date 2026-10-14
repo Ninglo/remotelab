@@ -6,6 +6,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const home = await mkdtemp(join(tmpdir(), 'feishu-group-configuration-'));
 setIsolatedTestHome(home);
+process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://remotelab.test';
 try {
   const { createParticipationController, participationEnabled } = await import('../connectors/feishu/participation-state.mjs');
   const { createGroupConfigurationController } = await import('../connectors/feishu/group-configuration.mjs');

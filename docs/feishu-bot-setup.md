@@ -662,7 +662,9 @@ Runs retain their snapshots. Model and effort controls use the existing runtime
 command validation and Session persistence, and only change the main Session.
 The card also exposes the main Session's current saved instructions; group
 announcement context remains the native announcement. The optional Session link
-is not needed to manage configuration. Stale edits refresh the card instead of
+is not needed to manage configuration. Without an absolute public base URL, the
+card marks the external link as unconfigured while its controls remain usable.
+Stale edits refresh the card instead of
 overwriting a newer selection. Errors appear on the same card. Use the refresh
 button after external Web edits; admitted messages and local runtime commands
 also update the original card. Forms contain at most 16 prompt inputs of 1,000

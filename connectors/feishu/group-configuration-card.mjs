@@ -25,7 +25,8 @@ export function buildGroupConfigurationCard(record, view) {
   }))),
   md(`**主讨论模型**：${selection.model || '默认'}\n**思考强度**：${selection.effort || '不适用'}\n**执行工具**：${selection.tool || '默认'}`),
   ...(view.runningSelection ? [md(`当前正在执行：${view.runningSelection.model || '默认'} · ${view.runningSelection.effort || '不适用'}；修改用于后续输入。`)] : []),
-  ...(url ? [md(`[查看主讨论记录](${url})（可选；配置操作均可在飞书完成）`)] : [md('首次收到群消息后显示主讨论记录链接。')]),
+  ...(url ? [md(`[查看主讨论记录](${url})（可选；配置操作均可在飞书完成）`)]
+    : [md(view.sessionAvailable ? '主讨论已绑定；外部记录链接尚未配置。' : '首次收到群消息后显示主讨论记录链接。')]),
   button('刷新当前配置', 'refresh')];
   if (view.catalog?.models?.length && view.sessionAvailable) elements.push({ tag: 'form', name: 'group_model', elements: [
     fold('修改主讨论模型', [{ tag: 'select_static', name: 'model', width: 'fill',
