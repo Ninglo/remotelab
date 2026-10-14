@@ -994,6 +994,8 @@ async function main() {
         await updateRun(runId, draft => ({ ...draft, codexFailover: {
           ...(draft.codexFailover || {}), stoppedReason: normalizeErrorMessage(error),
         } }));
+        current = await getRun(runId) || current;
+        attempt = { ...attempt, error };
         break;
       }
       codexAccount = next;

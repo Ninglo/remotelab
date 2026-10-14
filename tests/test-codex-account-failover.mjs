@@ -72,6 +72,7 @@ try {
   const all = await run(); assert.notEqual(all.exit, 0);
   assert.equal((await calls()).length, beforeAll + 2, 'each exhausted account attempted once with finite termination');
   assert.match(all.record.codexFailover.stoppedReason, /暂无可用/);
+  assert.match(all.record.failureReason, /暂无可用/, 'terminal failure reports pool exhaustion to the user');
   sessionId = 'missing-thread-after-effect';
   await seed(home, 'initial', 'usage_limit_reached', true, true);
   await seed(backup.home, 'backup', null);

@@ -50,7 +50,8 @@ turns on another saved subscription; balancing alone does not enable failover.
   unavailable. Generic authentication/network errors do not trigger retries.
 - Each account identity is attempted at most once per Run, including aliases.
   If the pool is unavailable, the Run ends with the failure and a recorded
-  failover stop reason. With automatic switching disabled, unavailable bound
+  failover stop reason. The user-facing failure identifies unavailable pool capacity,
+  and cancellation during account selection remains cancellation. With automatic switching disabled, unavailable bound
   Sessions fail explicitly until their authorization recovers or switching is enabled.
 - A terminal provider error containing HTTP 429 or “too many requests” records
   a 60-second local cooldown from the observed error time. It is distinct from
