@@ -135,19 +135,34 @@
     root.previousElementSibling?.remove();
     const full = el('div'); render(full, d, { state });
     const card = el('article', '', 'agent-compact-card'); card.dataset.testid = 'agent-summary';
-    const header = el('header'); header.append(el('h2', 'Agent 监控'), el('span', '今日 · 05:00 起', 'agent-note')); card.append(header);
+    const intro = el('div', '', 'agent-compact-intro');
+    intro.append(el('span', 'MONITOR', 'agent-compact-kicker'), el('h2', 'Agent'), el('p', '查看会话与用量，了解响应速度和账户额度。', 'agent-note'));
+    const header = el('header'); header.append(el('h3', '运行概览'), el('span', '今日 · 05:00 起', 'agent-note')); card.append(header);
     const list = accountData?.accounts || [];
     const available = list.filter(a => a.status === 'available').length;
     const exhausted = list.filter(a => a.status === 'exhausted').length;
     const unknown = list.length - available - exhausted;
     const quota = !accountData || !list.length ? '额度未取得' : `${available} 个可用` + (exhausted ? ` · ${exhausted} 个耗尽` : '') + (unknown ? ` · ${unknown} 个待核` : '');
     const summary = el('div', '', 'agent-compact-stats');
-    for (const [title, value] of [['运行中会话', number(d?.currentRunning)], ['今日 token', number(d?.today.totalTokens)], ['首次响应', duration(d?.today.meanFirstResponseMs)], ['账户额度', quota]]) {
-      const item = el('div'); item.append(el('small', title), el('strong', value)); summary.append(item);
+    for (const [title, value, hint] of [
+      ['运行中会话', number(d?.currentRunning), `今日活跃 ${number(d?.todayActiveSessions ?? d?.today.sessions)} 个`],
+      ['今日 token', number(d?.today.totalTokens), `平均每次 ${number(d?.today.meanTokens)} token`],
+      ['平均首次响应', duration(d?.today.meanFirstResponseMs), `平均交付 ${duration(d?.today.meanDeliveryMs)}`],
+      ['账户额度', quota, '查看各账户剩余额度与重置时间'],
+    ]) {
+      const item = el('div'), metric = el('strong', value);
+      if (title === '账户额度' && accountData && list.length) {
+        metric.textContent = ''; metric.classList.add('agent-compact-quota'); metric.setAttribute('aria-label', quota);
+        for (const [count, label, status] of [[available, '可用', available ? 'available' : 'unknown'], [exhausted, '耗尽', 'exhausted'], [unknown, '待核', 'unknown']]) {
+          if (!count && label !== '可用') continue;
+          const badge = el('span', `${count} ${label}`, 'agent-compact-quota-badge'); badge.dataset.status = status; metric.append(badge);
+        }
+      }
+      item.append(el('small', title), metric, el('small', hint)); summary.append(item);
     }
     card.append(summary);
     if (accountData?.coverage?.gaps?.some(gap => gap.source === 'accounts')) card.append(el('p', '部分账户额度未取得', 'agent-note'));
-    const open = el('button', '查看详情', 'agent-compact-open'); open.type = 'button'; open.setAttribute('aria-haspopup', 'dialog'); card.append(open);
+    const open = el('button', '查看详情', 'agent-compact-open'); open.type = 'button'; open.setAttribute('aria-haspopup', 'dialog'); header.append(open);
     const dialog = el('dialog', '', 'agent-compact-dialog'); dialog.setAttribute('aria-labelledby', 'agent-compact-title');
     const top = el('header', '', 'agent-compact-top'), title = el('h2', 'Agent 监控'); title.id = 'agent-compact-title';
     const close = el('button', '关闭'); close.type = 'button'; close.autofocus = true;
@@ -204,7 +219,7 @@
     open.addEventListener('click', () => dialog.showModal()); close.addEventListener('click', () => dialog.close());
     dialog.addEventListener('close', () => open.focus());
     dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close(); } });
-    root.append(card, dialog);
+    root.append(intro, card, dialog);
     if (wasOpen) { dialog.showModal(); if (focused) close.focus(); }
   }
   g.RemoteLabAgentDashboard = { render, renderCompact };
