@@ -5,10 +5,11 @@
   const automations = document.getElementById("monitoringAutomations");
   const content = document.getElementById("monitoringContent");
   if (!overview || !automations || !content) return;
-  const views = ["overview", "usage", "automations", "feedback"];
+  const test = document.getElementById("monitoringTest");
+  const views = ["overview", "usage", "automations", "feedback", ...(test ? ["test"] : [])];
   const feedback = document.getElementById("monitoringFeedback");
   const usage = document.getElementById("monitoringUsage");
-  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab"), document.getElementById("monitoringFeedbackTab")];
+  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab"), document.getElementById("monitoringFeedbackTab"), ...(test ? [document.getElementById("monitoringTestTab")] : [])];
   const period = document.getElementById("monitoringPeriod");
   const refresh = document.getElementById("monitoringRefresh");
   const create = document.getElementById("taskCenterCreateToggle");
@@ -281,6 +282,83 @@
     root.appendChild(details);
   }
 
+  function renderAccounts(parent, data, { includeHandling = true } = {}) {
+    const accounts = section("账户额度", parent); accounts.dataset.section = "accounts";
+    if (includeHandling) handlingGuide(accounts, "accountContinuity");
+    const continuity = data.accountContinuity;
+    if (continuity) accounts.appendChild(node("p", `本实例自动切换${continuity.autoSwitch ? "已开启" : "未开启"}；已登录且额度高于10%的备用 ${continuity.backupCount} 个。20%进入备用准备区，10%切换后续请求；在途任务保留原账号。其他机器账号不算本实例备用。`, "monitoring-note"));
+    if (continuity?.lastSwitch) {
+      const change = continuity.lastSwitch;
+      accounts.appendChild(node("p", `最近自动切换：${time(change.at)} · ${({ reserve: "提前保留余额", confirmed_exhaustion: "原账号已耗尽", remaining_balance_fallback: "使用仍有余额的本地账号兜底" })[change.reason] || "后台切换已记录"}。`, "monitoring-note"));
+    }
+    for (const item of (data.attention || []).filter(a => a.kind === "accountContinuity")) {
+      const line = node("p", alertDetail(item), "monitoring-alert"); line.dataset.severity = item.severity; accounts.appendChild(line);
+    }
+    if (!data.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
+    else {
+      const summary = node("div", "", "monitoring-account-summary");
+      for (const state of ["available", "exhausted", "unknown"]) {
+        const count = data.accounts.filter(account => state === "unknown" ? !["available", "exhausted"].includes(account.status) : account.status === state).length;
+        const badge = node("span", `${status(state)} ${count}`, "monitoring-account-status"); badge.dataset.status = state; summary.appendChild(badge);
+      }
+      accounts.appendChild(summary);
+      const sortedAccounts = data.accounts.slice().sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
+      table(accounts, [t("account"), t("status"), "剩余额度", "最近观测"], sortedAccounts.map(account => {
+        const label = node("div", account.label);
+        if (account.active) label.appendChild(node("small", t("active"), "monitoring-owner"));
+        const badge = node("span", status(account.status), "monitoring-account-status"); badge.dataset.status = account.status;
+        const quota = node("div", "", "monitoring-quota-cell");
+        for (const window of account.windows) {
+          const row = node("div"); row.appendChild(node("span", `${quotaDuration(window)} · ${percent(window.remainingPercent)}`));
+          if (Number.isFinite(window.remainingPercent)) { const meter = node("meter"); meter.min = 0; meter.max = 100; meter.value = window.remainingPercent; meter.low = 10; meter.high = 30; meter.optimum = 100; meter.setAttribute("aria-label", `${account.label} ${quotaDuration(window)} 剩余 ${percent(window.remainingPercent)}`); row.appendChild(meter); }
+          quota.appendChild(row);
+        }
+        if (!account.windows.length) quota.appendChild(node("span", t("quotaUnknown")));
+        return [label, badge, quota, time(account.observedAt)];
+      }));
+      const quotaDetails = node("details"); quotaDetails.appendChild(node("summary", "查看各账号重置时间与完整额度"));
+      const grid = node("div", "", "monitoring-account-grid"); sortedAccounts.forEach(account => grid.appendChild(accountCard(account)));
+      quotaDetails.appendChild(grid); accounts.appendChild(quotaDetails);
+      accounts.appendChild(node("p", t("quotaNote"), "monitoring-note"));
+    }
+    return accounts;
+  }
+
+  const testState = {};
+  let testLoading = false, testLoadedAt = 0;
+  async function loadTest({ force = false } = {}) {
+    if (!test || testLoading || (!force && Date.now() - testLoadedAt < 15000)) return;
+    testLoading = true;
+    const button = document.getElementById("monitoringTestRefresh");
+    button.disabled = true;
+    const dashboard = document.getElementById("monitoringTestDashboard");
+    const accounts = document.getElementById("monitoringTestAccounts");
+    for (const fold of dashboard.querySelectorAll("[data-agent-fold]")) testState[fold.dataset.agentFold] = fold.open;
+    const accountsOpen = accounts.querySelector("details")?.open === true;
+    const read = async path => {
+      const response = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw Error(`HTTP ${response.status}`);
+      return response.json();
+    };
+    const results = await Promise.allSettled([
+      read("/api/monitoring/sessions?days=7&compact=1&dashboard=1"),
+      read("/api/monitoring/overview?days=7"),
+    ]);
+    try {
+      const [sessionsResult, accountsResult] = results;
+      if (sessionsResult.status === "fulfilled") globalScope.RemoteLabAgentDashboard.render(dashboard, sessionsResult.value.agentDashboard, { state: testState });
+      else dashboard.replaceChildren(node("p", "运行指标读取失败，请刷新重试。", "monitoring-note"));
+      accounts.replaceChildren();
+      if (accountsResult.status === "fulfilled") {
+        const data = accountsResult.value;
+        const section = renderAccounts(accounts, data, { includeHandling: false });
+        const fold = section.querySelector("details"); if (fold) fold.open = accountsOpen;
+        for (const gap of data.coverage?.gaps || []) if (gap.source === "accounts") section.appendChild(node("p", "部分账号额度未取得，不能据此判断全部正常。", "monitoring-note"));
+      } else accounts.appendChild(node("p", "账号额度读取失败，请刷新重试。", "monitoring-note"));
+      if (results.every(result => result.status === "fulfilled")) testLoadedAt = Date.now();
+    } finally { testLoading = false; button.disabled = false; }
+  }
+
   function render() {
     renderScope();
     renderSessionTrends();
@@ -343,44 +421,7 @@
       if (repair.sessionId) { const link = node("a", "查看原处理会话"); link.href = `/?session=${encodeURIComponent(repair.sessionId)}`; details.appendChild(link); }
       disks.appendChild(details);
     }
-    const accounts = section("账户额度", snapshot); accounts.dataset.section = "accounts";
-    handlingGuide(accounts, "accountContinuity");
-    const continuity = value.accountContinuity;
-    if (continuity) accounts.appendChild(node("p", `本实例自动切换${continuity.autoSwitch ? "已开启" : "未开启"}；已登录且额度高于10%的备用 ${continuity.backupCount} 个。20%进入备用准备区，10%切换后续请求；在途任务保留原账号。其他机器账号不算本实例备用。`, "monitoring-note"));
-    if (continuity?.lastSwitch) {
-      const change = continuity.lastSwitch;
-      accounts.appendChild(node("p", `最近自动切换：${time(change.at)} · ${({ reserve: "提前保留余额", confirmed_exhaustion: "原账号已耗尽", remaining_balance_fallback: "使用仍有余额的本地账号兜底" })[change.reason] || "后台切换已记录"}。`, "monitoring-note"));
-    }
-    for (const item of (value.attention || []).filter(a => a.kind === "accountContinuity")) {
-      const line = node("p", alertDetail(item), "monitoring-alert"); line.dataset.severity = item.severity; accounts.appendChild(line);
-    }
-    if (!value.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
-    else {
-      const summary = node("div", "", "monitoring-account-summary");
-      for (const state of ["available", "exhausted", "unknown"]) {
-        const count = value.accounts.filter(account => state === "unknown" ? !["available", "exhausted"].includes(account.status) : account.status === state).length;
-        const badge = node("span", `${status(state)} ${count}`, "monitoring-account-status"); badge.dataset.status = state; summary.appendChild(badge);
-      }
-      accounts.appendChild(summary);
-      const sortedAccounts = value.accounts.slice().sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
-      table(accounts, [t("account"), t("status"), "剩余额度", "最近观测"], sortedAccounts.map(account => {
-        const label = node("div", account.label);
-        if (account.active) label.appendChild(node("small", t("active"), "monitoring-owner"));
-        const badge = node("span", status(account.status), "monitoring-account-status"); badge.dataset.status = account.status;
-        const quota = node("div", "", "monitoring-quota-cell");
-        for (const window of account.windows) {
-          const row = node("div"); row.appendChild(node("span", `${quotaDuration(window)} · ${percent(window.remainingPercent)}`));
-          if (Number.isFinite(window.remainingPercent)) { const meter = node("meter"); meter.min = 0; meter.max = 100; meter.value = window.remainingPercent; meter.low = 10; meter.high = 30; meter.optimum = 100; meter.setAttribute("aria-label", `${account.label} ${quotaDuration(window)} 剩余 ${percent(window.remainingPercent)}`); row.appendChild(meter); }
-          quota.appendChild(row);
-        }
-        if (!account.windows.length) quota.appendChild(node("span", t("quotaUnknown")));
-        return [label, badge, quota, time(account.observedAt)];
-      }));
-      const quotaDetails = node("details"); quotaDetails.appendChild(node("summary", "查看各账号重置时间与完整额度"));
-      const grid = node("div", "", "monitoring-account-grid"); sortedAccounts.forEach(account => grid.appendChild(accountCard(account)));
-      quotaDetails.appendChild(grid); accounts.appendChild(quotaDetails);
-      accounts.appendChild(node("p", t("quotaNote"), "monitoring-note"));
-    }
+    const accounts = renderAccounts(snapshot, value);
     if (value.apiHealth) {
       const api = section("飞书 API", apiDetails || content);
       for (const item of (value.attention || []).filter(a => a.kind === "api")) { const line = node("p", `${item.subject}：${alertDetail(item)}`, "monitoring-alert"); line.dataset.severity = item.severity; api.prepend(line); }
@@ -455,6 +496,7 @@
   }
   function select(next, { sync = true } = {}) {
     view = next; overview.hidden = view !== "overview"; automations.hidden = view !== "automations";
+    if (test) test.hidden = view !== "test";
     if (usage) usage.hidden = view !== "usage";
     if (feedback) feedback.hidden = view !== "feedback";
     create.hidden = view !== "automations";
@@ -466,6 +508,7 @@
       url.searchParams.set("monitor", view);
       globalScope.history.replaceState(null, "", url);
       if (view === "overview") void load();
+      else if (view === "test") void loadTest();
       else if (view === "usage") void globalScope.RemoteLabUsageAnalysis?.load();
       else if (view === "feedback") void globalScope.RemoteLabProjectFeedback?.load();
       else void globalScope.RemoteLabTaskCenter?.onTabShown();
@@ -479,13 +522,16 @@
       select(views[target]); tabs[target].focus();
     });
   });
+  document.getElementById("monitoringTestRefresh")?.addEventListener("click", () => void loadTest({ force: true }));
   period.addEventListener("change", () => { value = null; void load(); });
   refresh.addEventListener("click", () => void load({ force: true }));
   globalScope.addEventListener("remotelab:localechange", () => { if (value) render(); });
   document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && view === "test" && document.body.dataset.appView === "tasks") void loadTest();
     if (!document.hidden && view === "overview" && document.body.dataset.appView === "tasks") void load({ silent: true });
   });
-  globalScope.RemoteLabMonitoring = { loadHandling: () => load({ silent: Boolean(value) }), isOverview: () => view !== "automations", onTabShown: () => view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
+  globalScope.RemoteLabMonitoring = { loadHandling: () => load({ silent: Boolean(value) }), isOverview: () => view !== "automations", onTabShown: () => view === "test" ? loadTest() : view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
   select(view, { sync: false });
+  if (view === "test" && document.body.dataset.appView === "tasks") void loadTest();
   if (view === "overview" && document.body.dataset.appView === "tasks") void load();
 })(window);

@@ -10,10 +10,11 @@
     head.forEach(v => { const th = el('th', v); th.scope = 'col'; h.append(th); }); const th = el('thead'); th.append(h); t.append(th);
     const body = el('tbody'); rows.forEach(row => { const tr = el('tr'); row.forEach(v => { const td = el('td'); td.append(v?.nodeType ? v : document.createTextNode(String(v ?? '—'))); tr.append(td); }); body.append(tr); }); t.append(body); wrap.append(t); return wrap;
   };
-  function chart(d, key, title, unit, sample, state) {
+  function chart(d, key, title, unit, sample, explanation, state) {
     const card = el('section', '', 'agent-metric'); card.dataset.metric = key;
     const value = d.today[key], format = unit === '耗时' ? duration : number;
     card.append(el('h4', title), el('strong', format(value), 'agent-value'), el('p', `${unit === '耗时' ? '越短越快' : unit} · 今日 ${sample(d.today)} 个样本`, 'agent-note'));
+    card.append(el('p', explanation, 'agent-note'));
     const svg = svgNode('svg', { viewBox: '0 0 400 155', role: 'img', 'aria-label': `${title}，近七日；精确值见下方表格` });
     const max = Math.max(1, ...d.days.map(v => Number.isFinite(v[key]) ? v[key] : 0));
     const x = i => 50 + i * 55, y = v => 112 - v / max * 82;
@@ -41,20 +42,21 @@
   function render(root, d, { state = {}, sourceBase = '', sessionBase = '' } = {}) {
     root.replaceChildren(); root.classList.add('agent-dashboard'); root.dataset.testid = 'agent-dashboard';
     if (!d) { root.append(el('p', '统计暂不可用，请稍后刷新。')); return; }
-    const heading = el('div', '', 'agent-heading'); heading.append(el('h3', 'Agent 运行概览'), el('span', 'TODAY / 7 DAYS'));
-    root.append(heading, el('p', `${d.today.day} 05:00 — 次日 05:00 · 北京时间 · 今日尚未结束`, 'agent-note'));
+    const heading = el('div', '', 'agent-heading');
+    heading.append(el('p', `${d.today.day} 05:00 — 次日 05:00 · 北京时间 · 今日尚未结束 · 下方为近七日趋势`, 'agent-note'));
+    root.append(heading);
     const counts = el('div', '', 'agent-counts');
     for (const [name, value, note] of [['当前运行 Session', d.currentRunning, d.unknownStates ? `${d.unknownStates} 个状态未取得` : '当前状态快照'], ['今日累计 Session', d.todayActiveSessions ?? d.today.sessions, '今日有运行记录，按 Session 去重']]) {
       const item = el('div'); item.append(el('small', name), el('strong', number(value)), el('small', note)); counts.append(item);
     } root.append(counts);
     const grid = el('div', '', 'agent-metrics');
     for (const args of [
-      ['meanTokens', '今日平均用量', 'Token / 次执行', r => r.usageRuns],
-      ['totalTokens', '今日总用量', 'Token', r => r.usageRuns],
-      ['meanInjectionChars', '今日平均上下文注入', '字符 / 次执行', r => r.injection.count],
-      ['firstInjectionChars', '首轮上下文注入', '字符 / 新 Session 首轮', r => r.firstInjection.count],
-      ['meanDeliveryMs', '今日平均交付耗时', '耗时', r => r.delivery.count],
-      ['firstDeliveryMs', '首轮交付耗时', '耗时', r => r.firstDelivery.count],
+      ['meanTokens', '今日每次执行平均用量', 'Token / 次执行', r => r.usageRuns, '今日总 Token ÷ 有用量记录的执行次数，含前台与后台。'],
+      ['totalTokens', '今日累计用量', 'Token', r => r.usageRuns, '今日已记录的输入与输出 Token 合计，含前台与后台。'],
+      ['meanInjectionChars', '今日每次执行平均注入', '字符 / 次执行', r => r.injection.count, '前台对话中，有注入记录的各次执行取平均。'],
+      ['firstInjectionChars', '新 Session 首次执行平均注入', '字符 / 首次执行', r => r.firstInjection.count, '只取新 Session 的第一次执行，再对有效记录取平均。'],
+      ['meanDeliveryMs', '今日每次执行平均交付耗时', '耗时', r => r.delivery.count, '飞书前台执行：从接收请求到最终正文送达，按有效记录取平均。'],
+      ['firstDeliveryMs', '新 Session 首次执行平均交付耗时', '耗时', r => r.firstDelivery.count, '只取新 Session 第一次执行的飞书最终正文送达耗时，再取平均。'],
     ]) grid.append(chart(d, ...args, state)); root.append(grid);
     const sources = disclosure('常规对话注入来源 · 名称、字符数与原文入口', 'sources', state);
     if (d.documents?.length) {

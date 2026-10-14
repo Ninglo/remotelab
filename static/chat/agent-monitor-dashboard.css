@@ -1,30 +1,48 @@
-.agent-dashboard { --agent-blue: #1878dd; color: var(--text-primary, #171918); font-size: 13px; }
+/* Keep Agent metrics within the existing Monitor theme and panel hierarchy. */
+#monitoringOverview #monitoringSessions { border-top: 0; padding-top: 0; }
+.agent-dashboard { --agent-chart: var(--accent); color: var(--text); font: inherit; font-size: 13px; }
 .agent-dashboard * { box-sizing: border-box; }
-.agent-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border, #d9ddd9); padding-bottom: 12px; }
-.agent-heading h3 { margin: 0; font-size: 20px; }
-.agent-heading span { font: 10px monospace; color: var(--text-muted, #626763); letter-spacing: .1em; }
-.agent-note { color: var(--text-muted, #626763); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
-.agent-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border, #d9ddd9); margin: 18px 0; }
-.agent-counts > div { padding: 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.agent-counts > div + div { border-left: 1px solid var(--border, #d9ddd9); }
-.agent-counts strong { font-size: 36px; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.agent-counts small { color: var(--text-muted, #626763); line-height: 1.5; }
-.agent-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
-.agent-metric { min-width: 0; border: 1px solid var(--border, #d9ddd9); border-top: 3px solid var(--agent-blue); padding: 16px; background: var(--bg-secondary, #fff); }
-.agent-metric:nth-child(3), .agent-metric:nth-child(4) { --agent-blue: #32734d; }
-.agent-metric:nth-child(5), .agent-metric:nth-child(6) { --agent-blue: #8759b8; }
-.agent-metric h4 { font-size: 13px; margin: 0 0 12px; font-weight: 600; }
-.agent-value { display: block; font-size: clamp(24px, 2.5vw, 34px); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.agent-heading { margin: 8px 0 16px; }
+.agent-note { color: var(--text-muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.agent-heading .agent-note { margin: 0; }
+.agent-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.agent-counts > div { padding: 16px; display: flex; flex-direction: column; gap: 7px; min-width: 0; border-radius: 10px; background: color-mix(in srgb, var(--accent) 4%, var(--bg-secondary)); border: 1px solid color-mix(in srgb, var(--border) 65%, transparent); }
+.agent-counts strong, .agent-value { font-size: clamp(21px, 2.4vw, 30px); font-weight: 600; line-height: 1.2; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.agent-counts small { color: var(--text-muted); font-size: 11px; line-height: 1.55; }
+.agent-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.agent-metric { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--bg); }
+.agent-metric h4 { font-size: 13px; margin: 0 0 10px; font-weight: 600; line-height: 1.6; }
+.agent-value { display: block; }
 .agent-metric svg { width: 100%; display: block; overflow: visible; }
-.agent-metric svg text { font-size: 10px; fill: var(--text-muted, #626763); }
-.agent-gridline { stroke: var(--border, #d9ddd9); stroke-dasharray: 3 4; }
-.agent-line { stroke: var(--agent-blue); stroke-width: 2; fill: none; }
-.agent-dot { fill: var(--agent-blue); stroke: var(--bg-secondary, #fff); stroke-width: 2; }
-.agent-dashboard details { border-top: 1px solid var(--border, #d9ddd9); padding: 12px 0; }
-.agent-dashboard summary { cursor: pointer; font-size: 12px; line-height: 1.6; }
-.agent-dashboard a { color: var(--accent, #1878dd); text-decoration: underline; text-underline-offset: 3px; }
-.agent-dashboard :focus-visible { outline: 2px solid #1878dd; outline-offset: 3px; }
-.agent-table { max-width: 100%; overflow-x: auto; }
-.agent-table table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 10px; }
-.agent-table th, .agent-table td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--border, #d9ddd9); overflow-wrap: anywhere; }
-@media (max-width: 600px) { .agent-metrics { grid-template-columns: minmax(0, 1fr); } .agent-counts > div { padding: 14px 10px; } .agent-counts strong { font-size: 28px; } .agent-metric { padding: 14px 10px; } }
+.agent-metric svg text { font-size: 10px; fill: var(--text-secondary); }
+.agent-gridline { stroke: var(--border); stroke-dasharray: 3 4; }
+.agent-line { stroke: var(--agent-chart); stroke-width: 2; fill: none; }
+.agent-dot { fill: var(--agent-chart); stroke: var(--bg); stroke-width: 2; }
+.agent-dashboard details { border-top: 1px solid var(--border); padding: 12px 0; }
+.agent-dashboard summary { cursor: pointer; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
+.agent-dashboard a { color: var(--accent); text-decoration: none; }
+.agent-dashboard a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.agent-dashboard :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.agent-table { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin-top: 10px; }
+.agent-table table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.agent-table th, .agent-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.agent-table th { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; }
+.agent-table tr:last-child td { border-bottom: 0; }
+#monitoringSessions .agent-table td:first-child { min-width: 0; max-width: none; }
+@media (max-width: 600px) {
+  .agent-metrics { grid-template-columns: minmax(0, 1fr); }
+  .agent-counts { gap: 6px; }
+  .agent-counts > div { padding: 12px 10px; }
+  .agent-counts strong { font-size: 24px; }
+  .agent-metric { padding: 14px 12px; }
+}
+
+/* The Test preview shares the monitor's existing theme and panel sizing. */
+#monitoringTest { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; font-style: normal; }
+#monitoringTest[hidden] { display: none; }
+#monitoringTest .monitoring-summary-panel { padding: 22px 24px; border-radius: 14px; margin: 18px 0; }
+#monitoringTest .monitoring-summary-panel h2 { font-size: 18px; letter-spacing: .01em; }
+#monitoringTest .monitoring-table-wrap { border: 1px solid var(--border); border-radius: 9px; }
+#monitoringTest .monitoring-table-wrap th { background: var(--bg-secondary); }
+#monitoringTest .monitoring-toolbar p { flex: 1; margin: 0; }
+@media (max-width: 600px) { #monitoringTest .monitoring-summary-panel { padding: 16px 12px; } }

@@ -117,6 +117,7 @@
           <button type="button" role="tab" id="monitoringUsageTab" aria-controls="monitoringUsage" aria-selected="false" tabindex="-1" data-i18n="monitoring.usageAnalysis">Usage analysis</button>
           <button type="button" role="tab" id="monitoringAutomationsTab" aria-controls="monitoringAutomations" aria-selected="false" tabindex="-1" data-i18n="monitoring.automations">Automations</button>
           <button type="button" role="tab" id="monitoringFeedbackTab" aria-controls="monitoringFeedback" aria-selected="false" tabindex="-1" data-i18n="feedback.title">Feedback and improvement</button>
+          <button type="button" role="tab" id="monitoringTestTab" aria-controls="monitoringTest" aria-selected="false" tabindex="-1">Test</button>
         </nav>
         <section id="monitoringOverview" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringOverviewTab" hidden>
           <div class="monitoring-toolbar">
@@ -130,6 +131,14 @@
           </div>
           <section id="monitoringResourcePanel" class="monitoring-summary-panel"><div id="monitoringResourceAttention" aria-live="polite"></div><div id="monitoringContent" aria-live="polite"></div></section>
           <section id="monitoringApiPanel" class="monitoring-summary-panel"><div id="monitoringApiSummary" aria-live="polite"></div><details class="monitoring-fold"><summary>查看 API 明细 · 接口 / 组件 / 时段</summary><div id="monitoringApiDetails"></div></details></section>
+        </section>
+        <section id="monitoringTest" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringTestTab" hidden>
+          <div class="monitoring-toolbar">
+            <p class="monitoring-note">未来同步到 Muka Hub 的内容预览 · 当前展示 RemoteLab 数据</p>
+            <button class="task-center-icon-btn" id="monitoringTestRefresh" type="button" data-icon="refresh" title="刷新 Test" aria-label="刷新 Test"></button>
+          </div>
+          <section class="monitoring-summary-panel"><h2>运行与用量</h2><div id="monitoringTestDashboard" aria-live="polite"><p class="monitoring-note">正在读取运行指标…</p></div></section>
+          <section class="monitoring-summary-panel"><div id="monitoringTestAccounts" aria-live="polite"><p class="monitoring-note">正在读取账号额度…</p></div></section>
         </section>
         <section id="monitoringUsage" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringUsageTab" hidden>
           <div class="monitoring-toolbar">
