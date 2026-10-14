@@ -1,6 +1,7 @@
 import { readBody, escapeHtml } from '../lib/utils.mjs';
 import { authorizeFeishuWebSettings, connectFeishuWebSettings, disconnectFeishuWebSettings, feishuOrigin } from './feishu-web-settings.mjs';
 import { feishuTopicSource, topicIds } from './feishu-web-topics.mjs';
+import { createTopicStreamEncoder } from './feishu-topic-stream.mjs';
 
 const prefix = '/api/feishu-web-topics/';
 export async function handleFeishuWebTopics({ req, res, pathname, authSession, writeJson, nonce, source = feishuTopicSource }) {
@@ -49,7 +50,8 @@ export async function handleFeishuWebTopics({ req, res, pathname, authSession, w
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no' }); res.flushHeaders?.();
     let off, closed = false;
     const stop = () => { if (closed) return; closed = true; clearInterval(heartbeat); off?.(); res.end(); };
-    const send = data => { if (!closed) res.write('data: ' + JSON.stringify(project(data)) + '\n\n'); };
+    const encode = url.searchParams.get('delta') === '1' ? createTopicStreamEncoder() : data => data;
+    const send = data => { if (!closed) { const frame = encode(project(data)); if (frame) res.write('data: ' + JSON.stringify(frame) + '\n\n'); } };
     const heartbeat = setInterval(() => { void authorize().then(() => { if (!closed) res.write(': heartbeat\n\n'); }).catch(() => stop()); }, 15000); heartbeat.unref?.();
     res.on('close', stop);
     off = await source.subscribe(ids, send, error => { send({ sourceConnected: false, error: error.message }); stop(); }, groups, actor.topicDetails);
