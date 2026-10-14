@@ -55,7 +55,7 @@ context.fetchJsonOrRedirect = async url => url.includes('rate-limits')
 await run('refreshCodexAuthStatus()');
 assert.match(node('settingsCodexAuthUsage').textContent, /temporarily unavailable/, 'different account revisions cannot be combined');
 assert.doesNotMatch(node('settingsCodexAuthUsage').textContent, /75%/);
-context.accountList = { activeId: 'a', autoSwitch: true, accounts: [
+context.accountList = { activeId: 'a', autoSwitch: true, balanceSessions: true, accounts: [
   { id: 'a', label: '<script>alert(1)</script>', active: true, account, availability: 'available', usage: quota },
   { id: 'b', label: '备用', account, availability: 'unknown' },
   { id: 'c', label: '待登录', account: null, availability: 'unknown' },
@@ -66,6 +66,7 @@ assert.equal(rows.length, 3);
 assert.ok(rows[0].children[0].textContent.includes('<script>'), 'saved labels remain literal text');
 assert.equal(rows[0].children[2].disabled, true);
 assert.equal(node('settingsCodexAutoSwitch').checked, true);
+assert.equal(node('settingsCodexBalanceSessions').checked, true);
 context.selected = null;
 run('switchCodexAccount = async id => { selected = id; }; startCodexDeviceLogin = async id => { selected = id; }');
 rows[1].children[2].click(); assert.equal(context.selected, 'b');

@@ -298,3 +298,10 @@ Official protocol references:
 - [Claude native questions](https://code.claude.com/docs/en/agent-sdk/user-input)
 - [Claude streaming input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)
 - [Antigravity headless mode](https://antigravity.google/docs/cli/headless/)
+
+## Codex account allocation
+
+Optional [Session account allocation](codex-session-routing.md) distributes new
+Sessions across the instance’s logged-in accounts. Bound Sessions retain their
+account across turns and restarts, including when the default changes. A limited
+account fails explicitly; running work is never transferred or automatically replayed.

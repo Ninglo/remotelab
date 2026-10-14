@@ -110,7 +110,7 @@ export function createRunProjectionService({
         lastRecordTimestamp = stableTimestamp;
       }
       if (runtimeInvocation.isCodexFamily && run.codexAccount?.id
-        && ['remotelab.codex_usage', 'remotelab.codex_quota_exhausted'].includes(record.json?.type)) {
+        && ['remotelab.codex_usage', 'remotelab.codex_quota_exhausted', 'remotelab.codex_rate_limited'].includes(record.json?.type)) {
         const event = record.json;
         // Queue only; model events and completion never wait on the account
         // cache. The spool survives detached-runner exit/controller restart.

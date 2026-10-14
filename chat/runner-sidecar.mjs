@@ -801,10 +801,13 @@ async function main() {
     await acquireProviderLease();
 
     if (initialInvocation.isCodexFamily) {
-      codexAccount = await codexAccounts.acquireForRun({ runId, isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
+      codexAccount = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+        resumeThreadId: manifest.options?.codexThreadId || '',
+        model: invocationOptions.model || '', isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
       spawnEnv.CODEX_HOME = codexAccount.home;
       await updateRun(runId, draft => ({ ...draft, codexAccount: { id: codexAccount.id,
-        label: codexAccount.label, switched: codexAccount.switched, selectedAt: nowIso() } }));
+        label: codexAccount.label, switched: codexAccount.switched,
+        assignmentReason: codexAccount.assignmentReason || 'selected_default', selectedAt: nowIso() } }));
     }
 
     if (initialInvocation.isCodexFamily) await fileChangeCapture.prepare(manifest.options?.codexThreadId);
@@ -964,6 +967,9 @@ async function main() {
       // Quota-cache writes never delay output, completion, or failed-run delivery.
       await recordStdoutLine(JSON.stringify({ type: 'remotelab.codex_quota_exhausted',
         model: invocationOptions.model || '' }));
+    } else if (codexAccount && attempt.code !== 0 && current.cancelRequested !== true
+      && /\b429\b|too many requests/i.test(attempt.error || lastCodexFailure || attempt.stderrText || '')) {
+      await recordStdoutLine(JSON.stringify({ type: 'remotelab.codex_rate_limited' }));
     }
   } finally {
     await codexAccount?.lease.release();

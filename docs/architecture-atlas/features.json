@@ -246,7 +246,7 @@
         },
         {
           "id": "accounts",
-          "name": "执行账号授权、切换与额度观察",
+          "name": "执行账号授权、Session 分配与额度观察",
           "purpose": "查看登录与账号状态，在已经授权的账号之间管理后续执行。",
           "entry": "执行工具的账号管理入口；监控器的账号信息。",
           "condition": "首次登录仍可能需要持有人完成授权。运行中的账号和后续默认账号要分别核对；额度采样过期时不能当作当前余额。",
@@ -254,6 +254,8 @@
           "sources": [
             "chat/router-codex-auth-routes.mjs",
             "lib/codex-accounts.mjs",
+            "lib/codex-session-routing.mjs",
+            "docs/codex-session-routing.md",
             "chat/router-claude-auth-routes.mjs",
             "chat/router-pi-auth-routes.mjs"
           ],

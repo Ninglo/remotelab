@@ -23,7 +23,7 @@ export async function handleCodexAuthRoutes({
   if (pathname === '/api/codex-auth/accounts/policy' && req.method === 'POST') {
     try {
       const body = JSON.parse(await readBody(req, 4096) || '{}');
-      writeJson(res, 200, { accountList: await authManager.setAccountPolicy(body.autoSwitch) });
+      writeJson(res, 200, { accountList: await authManager.setAccountPolicy(body.autoSwitch, body.balanceSessions) });
     } catch { writeJson(res, 400, { error: 'Invalid Codex account policy' }); }
     return true;
   }

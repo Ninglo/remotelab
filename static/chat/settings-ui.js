@@ -586,7 +586,8 @@ function getCodexAuthCopy() {
     copied: "已复制",
     switchAccount: "添加账号",
     switching: "正在切换…",
-    autoSwitch: "额度剩余不超过 10% 时，为后续请求切换账号",
+    autoSwitch: "额度剩余不超过 10% 时调整默认账号（不改变已绑定 Session）",
+    balanceSessions: "新 Session 按负载分配账号，后续对话固定账号",
     select: "切换", current: "当前", signIn: "登录", reauthorize: "重新登录", unknownQuota: "额度待查询",
     logoutFailed: "Codex 退出失败",
     switchTimedOut: "切换请求超时，正在重新读取登录状态…",
@@ -619,7 +620,8 @@ function getCodexAuthCopy() {
     copied: "Copied",
     switchAccount: "Add account",
     switching: "Switching…",
-    autoSwitch: "Switch subsequent requests when subscription quota reaches 10%",
+    autoSwitch: "Change the default at 10% quota (keep bound Sessions on their account)",
+    balanceSessions: "Balance new Sessions across accounts; keep subsequent turns on the same account",
     select: "Switch", current: "Current", signIn: "Sign in", unknownQuota: "Usage not checked",
     logoutFailed: "Codex logout failed",
     switchTimedOut: "Account switch timed out. Reloading login status…",
@@ -657,6 +659,9 @@ function ensureCodexAuthSection() {
     <label class="settings-app-empty" id="settingsCodexAutoSwitchLabel" hidden>
       <input id="settingsCodexAutoSwitch" type="checkbox"><span id="settingsCodexAutoSwitchText"></span>
     </label>
+    <label class="settings-app-empty" id="settingsCodexBalanceSessionsLabel" hidden>
+      <input id="settingsCodexBalanceSessions" type="checkbox"><span id="settingsCodexBalanceSessionsText"></span>
+    </label>
     <div class="settings-app-actions">
       <button class="settings-app-btn" id="settingsCodexAuthCheckBtn" type="button"></button>
       <button class="settings-app-btn" id="settingsCodexAuthLoginBtn" type="button"></button>
@@ -683,17 +688,19 @@ function ensureCodexAuthSection() {
   document.getElementById("settingsCodexAuthSwitchBtn")?.addEventListener("click", () => {
     void switchCodexAccount();
   });
-  document.getElementById("settingsCodexAutoSwitch")?.addEventListener("change", async (event) => {
-    const checkbox = event.currentTarget; checkbox.disabled = true;
-    try {
-      const data = await fetchJsonOrRedirect("/api/codex-auth/accounts/policy", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ autoSwitch: checkbox.checked }), revalidate: false,
-      });
-      codexAuthState.accountList = data.accountList; renderCodexSavedAccounts();
-    } catch (error) { checkbox.checked = !checkbox.checked; if (typeof showToast === "function") showToast(error.message); }
-    finally { checkbox.disabled = false; }
-  });
+  for (const [id, field] of [["settingsCodexAutoSwitch", "autoSwitch"], ["settingsCodexBalanceSessions", "balanceSessions"]]) {
+    document.getElementById(id)?.addEventListener("change", async (event) => {
+      const checkbox = event.currentTarget; checkbox.disabled = true;
+      try {
+        const data = await fetchJsonOrRedirect("/api/codex-auth/accounts/policy", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [field]: checkbox.checked }), revalidate: false,
+        });
+        codexAuthState.accountList = data.accountList; renderCodexSavedAccounts();
+      } catch (error) { checkbox.checked = !checkbox.checked; if (typeof showToast === "function") showToast(error.message); }
+      finally { checkbox.disabled = false; }
+    });
+  }
   document.getElementById("settingsCodexAuthCopyBtn")?.addEventListener("click", async (event) => {
     const code = String(codexAuthState?.userCode || "");
     if (!code) return;
@@ -805,10 +812,14 @@ function formatCodexUsage(usage, copy) {
 function renderCodexSavedAccounts() {
   const list = document.getElementById("settingsCodexAccountList");
   const label = document.getElementById("settingsCodexAutoSwitchLabel");
+  const balanceLabel = document.getElementById("settingsCodexBalanceSessionsLabel");
   const data = codexAuthState?.accountList;
-  if (!list || !data) { if (list) list.hidden = true; if (label) label.hidden = true; return; }
+  if (!list || !data) { if (list) list.hidden = true; if (label) label.hidden = true; if (balanceLabel) balanceLabel.hidden = true; return; }
   const copy = getCodexAuthCopy();
   list.hidden = false; label.hidden = false;
+  if (balanceLabel) balanceLabel.hidden = false;
+  document.getElementById("settingsCodexBalanceSessions").checked = data.balanceSessions === true;
+  document.getElementById("settingsCodexBalanceSessionsText").textContent = copy.balanceSessions;
   document.getElementById("settingsCodexAutoSwitch").checked = data.autoSwitch === true;
   document.getElementById("settingsCodexAutoSwitchText").textContent = copy.autoSwitch;
   list.replaceChildren();
