@@ -1,6 +1,6 @@
 // One account-scoped source for both native renderers. Keep the live subscription
 // until its replacement has delivered a snapshot; viewport churn is not an outage.
-function createTopicSource({remote,origin,onChange,fetchImpl=fetch,heartbeatMs=45000,retryMs=250}){
+function createTopicSource({remote,origin,onChange,fetchImpl=fetch,heartbeatMs=45000,snapshotMs=15000,retryMs=250}){
  const accounts=new Map();
  const empty=error=>({entries:[],boards:[],sourceConnected:false,error,transport:'personal-grant'});
  function stop(s){if(!s)return;s.stopped=true;clearTimeout(s.timer);clearTimeout(s.heartbeat);s.controller?.abort();stop(s.fallback);s.fallback=null;}
@@ -28,6 +28,11 @@ function createTopicSource({remote,origin,onChange,fetchImpl=fetch,heartbeatMs=4
   async function run(){
    if(s.stopped)return;
    const controller=new AbortController();s.controller=controller;
+   // Headers or keepalives alone do not establish a usable subscription. Keep
+   // the previous live view until a real snapshot arrives, but retry a stalled
+   // replacement instead of letting heartbeats keep it pending indefinitely.
+   let snapshotPending=true;
+   const snapshotTimer=setTimeout(()=>controller.abort(),snapshotMs);snapshotTimer.unref?.();
    const contact=()=>{clearTimeout(s.heartbeat);s.heartbeat=setTimeout(()=>controller.abort(),heartbeatMs);s.heartbeat.unref?.();};contact();
    let terminal=false;
    try{
@@ -39,18 +44,19 @@ function createTopicSource({remote,origin,onChange,fetchImpl=fetch,heartbeatMs=4
      if(s.stopped)return;contact();buffer+=decoder.decode(value,{stream:true});if(buffer.length>4194304)throw Error('状态数据过大');let end;
      while((end=buffer.indexOf('\n\n'))>=0){const block=buffer.slice(0,end);buffer=buffer.slice(end+2);const line=block.split('\n').find(l=>l.startsWith('data: '));if(!line)continue;
       const data=JSON.parse(line.slice(6));if(data.sourceConnected===false||!Array.isArray(data.entries)||!Array.isArray(data.boards))throw Error(data.error||'状态来源不可用');
+      snapshotPending=false;clearTimeout(snapshotTimer);
       s.data={...data,transport:'personal-grant'};s.ready=true;s.backoff=retryMs;
       stop(s.fallback);s.fallback=null;onChange();
      }
     }
     throw Error('状态连接已断开，正在恢复');
    }catch(e){if(!s.stopped){
-    const error=e.name==='AbortError'?'状态心跳中断，正在恢复':e.message;
+    const error=e.name==='AbortError'?(snapshotPending?'状态快照等待超时，正在恢复':'状态心跳中断，正在恢复'):e.message;
     // Authorization failure must clear even the old subscription immediately.
     if(terminal){stop(s.fallback);s.fallback=null;s.data=empty(error);}
     else s.data={...s.data,sourceConnected:false,error};
     onChange();
-   }}finally{clearTimeout(s.heartbeat);controller.abort();}
+   }}finally{clearTimeout(snapshotTimer);clearTimeout(s.heartbeat);controller.abort();}
    if(!s.stopped&&!terminal){s.timer=setTimeout(run,s.backoff);s.timer.unref?.();s.backoff=Math.min(5000,s.backoff*2);}
   }
  }

@@ -52,3 +52,32 @@ try{
  source.remove(account);
  console.log('Standalone topic source: viewport churn, continuous live handoff, pending cancellation, disconnect, revocation and account isolation passed');
 }finally{source.close();}
+
+// A connection sending only keepalives must not strand a new subscription.
+// Its old, still-live scope stays visible while the replacement retries.
+{
+ let requests=0, oldStream, replacementAborted=false, resolveRetry;
+ const retried=new Promise(resolve=>resolveRetry=resolve);
+ const timer=setTimeout(()=>resolveRetry(false),2000);
+ const snapshotSource=createTopicSource({origin,remote:'https://fixture.test',heartbeatMs:1000,snapshotMs:30,retryMs:5,onChange:()=>{},fetchImpl:async(url,{signal})=>{
+  requests++;
+  if(requests===3)resolveRetry(true);
+  let c;
+  const body=new ReadableStream({start(controller){c=controller;signal.addEventListener('abort',()=>{if(requests===2)replacementAborted=true;try{controller.error(new DOMException('aborted','AbortError'));}catch{}});}});
+  if(requests===1){oldStream=c;c.enqueue(new TextEncoder().encode('data: '+JSON.stringify(data('running'))+'\n\n'));}
+  else c.enqueue(new TextEncoder().encode(': heartbeat\n\n'));
+  return new Response(body);
+ }});
+ try {
+  snapshotSource.update(account,grant,['11'],[]);
+  await new Promise(resolve=>setImmediate(resolve));
+  snapshotSource.update(account,grant,['12'],[]);
+  assert.equal(await retried,true,'initial snapshot timeout must retry despite heartbeat');
+  assert.equal(replacementAborted,true);
+  assert.equal(snapshotSource.projection(account).entries[0].status,'running');
+  oldStream.enqueue(new TextEncoder().encode('data: '+JSON.stringify(data('review'))+'\n\n'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(snapshotSource.projection(account).entries[0].status,'review','fallback remains live during retry');
+  console.log('Initial snapshot timeout and continuous fallback passed');
+ } finally {clearTimeout(timer);snapshotSource.close();}
+}
