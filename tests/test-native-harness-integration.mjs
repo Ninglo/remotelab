@@ -76,7 +76,7 @@ async function awaitAnswer(sessionId, requestId) {
 }
 try {
   await boot();
-  const ambientPlan = { connector: 'feishu', sourceRouteId: 'default', target: {
+  const ambientPlan = { connector: 'feishu', sourceRouteId: 'ambient-bot', target: {
     chatId: 'ambient-bridge', conversationKind: 'main', messageId: 'ambient-root',
   } };
   const ambientSession = await rpc('create', { conversation: ambientPlan });
@@ -85,7 +85,7 @@ try {
     sourceContext: { connector: 'feishu', feishuParticipation: 'ambient' },
   });
   let threadOpening;
-  await until(async () => { threadOpening = await rpc('claim', { connector: 'feishu' }); return threadOpening; }, 'ambient thread opening');
+  await until(async () => { threadOpening = await rpc('claim', { connector: 'feishu', sourceRouteId: 'ambient-bot' }); return threadOpening; }, 'ambient thread opening');
   assert.equal(threadOpening.delivery.target.sourceKind, 'ambient_thread_open');
   await rpc('complete', threadOpening.delivery.id, threadOpening.leaseId, {
     externalId: 'thread-reply', messageId: 'thread-reply', threadId: 'provider-thread',
@@ -109,7 +109,7 @@ try {
   assert.equal(await rpc('request', bridge.sessionId, 'after-stop'), null);
   // Drain the actual cancellation publication before other scenarios.
   let stoppedDelivery;
-  while ((stoppedDelivery = await rpc('claim', { connector: 'feishu' }))) {
+  while ((stoppedDelivery = await rpc('claim', { connector: 'feishu', sourceRouteId: 'ambient-bot' }))) {
     await rpc('complete', stoppedDelivery.delivery.id, stoppedDelivery.leaseId, { externalId: 'stopped-thread-result' });
   }
   await evidence('PASS ambient thread: real receipt resolves original execution, topic stop steers there, exact-run cancel, stale additions cannot restart');
