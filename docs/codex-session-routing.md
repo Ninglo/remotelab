@@ -14,7 +14,7 @@ omitting `autoSwitch` preserves the independent reserve-switch setting.
 ## Behavior
 
 - The first model execution for a new Session (including its input-label helper) chooses the eligible account with the
-  fewest live or starting runs. Ties go to the least recently assigned account.
+  fewest executing or starting Sessions. Ties go to the least recently assigned account.
   Allocation is equal-weight; plan names do not imply concurrency ratios.
 - The account pool, credentials and load counts are local to this instance.
   Duplicate known subscription identities count as one account and share
@@ -25,7 +25,10 @@ omitting `autoSwitch` preserves the independent reserve-switch setting.
   Selection reads cached observations without a foreground provider request.
 - Selection, durable Session binding and startup registration use one metadata
   lock. A crash releases the short allocation lock and stale liveness records;
-  completed and cancelled runs release their registration. Execution stays
+  completed and cancelled runs release their registration. A Session’s helper
+  and primary run count once together. A finished input helper keeps a startup
+  reservation until the primary starts; abandoned reservations expire after
+  60 seconds, so the short preparation gap cannot attract more assignments. Execution stays
   concurrent: the metadata lock never surrounds inference.
 - Enabling the setting preserves existing Sessions' most recently observed
   account from retained run status. Subsequent turns keep that account and the

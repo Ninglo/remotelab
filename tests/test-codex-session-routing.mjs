@@ -67,6 +67,20 @@ try {
   const idle = await acquire('stale-but-idle'); assert.notEqual(idle.id, b.id,
     'quota freshness never outweighs lower execution load');
   await held.lease.release(); await idle.lease.release();
+  await pool.mutate(data => {
+    data.pendingSessions = {};
+    for (const account of data.accounts) { account.lastAssignedSequence = 0; account.usage = usage(100); }
+  });
+  const background = await acquire('legacy');
+  const prepared = [];
+  for (let n = 0; n < 3; n++) {
+    const helper = await acquire('prepared-' + n); prepared.push(helper.id); await helper.lease.release();
+  }
+  assert.equal(new Set(prepared).size, 3, 'completed helpers retain startup reservations instead of repeatedly selecting a briefly idle account');
+  const primary = await pool.acquireForRun({ sessionId: 'prepared-0', runId: 'primary' }); slots.push(primary);
+  assert.equal(primary.id, prepared[0]);
+  assert.equal((await pool.read()).pendingSessions['prepared-0'], undefined, 'main runner replaces the startup reservation');
+  await primary.lease.release(); await background.lease.release();
   await assert.rejects(pool.acquireForRun({ sessionId: 'cancelled', isCancelled: () => true }), { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
   assert.equal(await readSessionAccount(pool.root, 'cancelled'), null);
   await pool.mutate(data => { data.accounts.find(account => account.id === first.id).identityId = 'changed-login'; });
