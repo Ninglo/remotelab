@@ -155,3 +155,20 @@
 .agent-compact button:hover { background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
 :root[data-theme="dark"] .agent-compact-quota-badge[data-status="available"] { color: #9ac5aa; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]):not([data-theme="amber"]) .agent-compact-quota-badge[data-status="available"] { color: #9ac5aa; } }
+.agent-account-observed-mobile { display: none; }
+@media (max-width: 600px) {
+  .agent-compact-dialog [data-section="accounts"] .monitoring-table-wrap table { table-layout: fixed; width: 100%; min-width: 0; }
+  .agent-compact-dialog [data-section="accounts"] .monitoring-table-wrap :is(th, td) { padding: 10px 6px; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+  .agent-compact-dialog [data-section="accounts"] .monitoring-table-wrap :is(th, td):first-child { width: 34%; }
+  .agent-compact-dialog [data-section="accounts"] .monitoring-table-wrap :is(th, td):nth-child(2) { width: 22%; }
+  .agent-compact-dialog [data-section="accounts"] .monitoring-table-wrap :is(th, td):nth-child(3) { width: 44%; }
+  .agent-compact-dialog [data-section="accounts"] .monitoring-table-wrap :is(th, td):nth-child(4) { display: none; }
+  .agent-compact-dialog .monitoring-quota-cell { min-width: 0; }
+  .agent-account-observed-mobile { display: block; color: var(--text-muted); font-size: 10px; line-height: 1.6; margin-top: 5px; }
+}
+:root[data-theme="dark"] .agent-compact { --agent-ok: #9ac5aa; --agent-bad: #f0a29b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]):not([data-theme="amber"]) .agent-compact { --agent-ok: #9ac5aa; --agent-bad: #f0a29b; } }
+.agent-compact :is(.monitoring-account-status, .agent-compact-quota-badge)[data-status="available"],
+.agent-compact .monitoring-account[data-status="available"] .monitoring-account-status { color: var(--agent-ok, #32734d); }
+.agent-compact :is(.monitoring-account-status, .agent-compact-quota-badge)[data-status="exhausted"],
+.agent-compact .monitoring-account[data-status="exhausted"] .monitoring-account-status { color: var(--agent-bad, #b43d35); }
