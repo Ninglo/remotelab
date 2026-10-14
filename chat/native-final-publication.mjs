@@ -130,7 +130,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     if (hiddenMainline || suppressOpening(surface, stored || record, owner, messageReplyPolicy, replyPlan)) {
       // Hidden openers are consumed, not deferred. A later thread directive
       // must not resurrect them on the next observer pass.
-      if (surface.surfaceKind === 'opening' && !stored?.suppressedOpeningMessageIds?.includes(messageId)) {
+      if (surface.surfaceKind === 'opening' && !stored?.streamedSurfaceMessageIds?.includes(messageId)
+          && !stored?.suppressedOpeningMessageIds?.includes(messageId)) {
         await store.mutate(record.key, current => ({ ...current, suppressedOpeningMessageIds:
           [...new Set([...(current.suppressedOpeningMessageIds || []), messageId])] }));
       }
