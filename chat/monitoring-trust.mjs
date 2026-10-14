@@ -16,7 +16,8 @@ export async function readTrustAccounts(samples,configDir=CONFIG_DIR,now=Date.no
 export function trustCandidates({runtime,bindings=[]},snapshot={},samples=[],now=Date.now()) {
  const results=[],accounts=runtime?.accounts||[],label=id=>accounts.find(a=>a.id===id)?.label || '已登录账号';
  const atRisk=bindings.filter(b=>{const a=accounts.find(a=>a.id===b.accountId);return a&&(a.blockedUntil>now||subscriptionAvailability(a.usage,'',now)==='exhausted');});
- const events=runtime?.switchEvents?.length?runtime.switchEvents:runtime?.lastSwitch?[{...runtime.lastSwitch,kind:'default'}]:[];
+ const seenEvents=new Set();
+ const events=[...(runtime?.lastSwitch?[{...runtime.lastSwitch,kind:'default'}]:[]),...(runtime?.switchEvents||[])].filter(e=>{const id=diagnosisKey([e.from,e.to,e.at,e.sessionId||'']);if(seenEvents.has(id))return false;seenEvents.add(id);return true;});
  for(const event of events.filter(e=>Date.parse(e.at)>=now-DAY && Date.parse(e.at)<=now)) {
   const target=accounts.find(a=>a.id===event.to);
   const bound=event.sessionId?bindings.find(b=>b.sessionId===event.sessionId)?.accountId===event.to:runtime.activeId===event.to;
