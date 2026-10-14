@@ -218,8 +218,6 @@
     ]);
     try {
       const [sessionsResult, accountsResult] = results;
-      if (sessionsResult.status === "fulfilled") globalScope.RemoteLabAgentDashboard.render(dashboard, sessionsResult.value.agentDashboard, { state: testState });
-      else dashboard.replaceChildren(node("p", "运行指标读取失败，请刷新重试。", "monitoring-note"));
       accounts.replaceChildren();
       if (accountsResult.status === "fulfilled") {
         const data = accountsResult.value;
@@ -227,6 +225,10 @@
         const fold = section.querySelector("details"); if (fold) fold.open = accountsOpen;
         for (const gap of data.coverage?.gaps || []) if (gap.source === "accounts") section.appendChild(node("p", "部分账号额度未取得，不能据此判断全部正常。", "monitoring-note"));
       } else accounts.appendChild(node("p", "账号额度读取失败，请刷新重试。", "monitoring-note"));
+      globalScope.RemoteLabAgentDashboard.renderCompact(dashboard,
+        sessionsResult.status === "fulfilled" ? sessionsResult.value.agentDashboard : null,
+        { state: testState, accounts, accountData: accountsResult.status === "fulfilled" ? accountsResult.value : null,
+          refresh: () => loadTest({ force: true }) });
       if (results.every(result => result.status === "fulfilled")) testLoadedAt = Date.now();
     } finally { testLoading = false; button.disabled = false; }
   }

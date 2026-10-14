@@ -56,3 +56,47 @@
 .agent-journey td:first-child { white-space: nowrap; }
 
 .agent-first-response svg { max-height: 200px; }
+
+/* Test-only compact embedding preview; Overview retains its full dashboard. */
+#monitoringTest .agent-compact-host { max-width: 420px; padding: 0; background: transparent; border: 0; box-shadow: none; }
+.agent-compact-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg); padding: 20px; }
+.agent-compact-card header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#monitoringTest .agent-compact-card h2 { margin: 0; font-size: 16px; }
+.agent-compact-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 16px; margin: 22px 0; }
+.agent-compact-stats > div, .agent-compact-choices button { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.agent-compact-stats small, .agent-compact-choices small { color: var(--text-muted); font-size: 12px; }
+.agent-compact-stats strong { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.agent-compact-stats > div:last-child strong { font-size: 14px; line-height: 1.5; }
+.agent-compact button { font: inherit; cursor: pointer; color: var(--text); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; min-height: 38px; }
+.agent-compact .agent-compact-open { width: 100%; color: var(--accent); background: transparent; }
+.agent-compact-dialog { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(780px, 100vw); height: 100dvh; max-width: 100vw; max-height: 100dvh; padding: 0; border: 0; border-left: 1px solid var(--border); color: var(--text); background: var(--bg); box-shadow: -10px 0 40px #0002; overflow: auto; }
+.agent-compact-dialog::backdrop { background: #0006; }
+.agent-compact-top { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 16px 24px; background: var(--bg); border-bottom: 1px solid var(--border); z-index: 1; }
+#monitoringTest .agent-compact-top h2 { flex: 1; margin: 0; font-size: 18px; }
+.agent-compact-body { padding: 0 24px 24px; }
+.agent-compact-body .agent-counts { gap: 16px; }
+.agent-compact-body .agent-counts > div { border: 0; background: transparent; padding: 0; }
+.agent-compact-body .agent-counts strong { font-size: 20px; }
+.agent-compact-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 20px 0 16px; }
+.agent-compact-tabs button { flex: 1; padding: 10px 4px; border: 0; border-radius: 6px 6px 0 0; background: transparent; font-size: 12px; }
+.agent-compact-tabs button[aria-selected="true"] { color: var(--accent); background: var(--bg-secondary); box-shadow: inset 0 -2px var(--accent); }
+.agent-compact-choices { display: flex; gap: 8px; margin-bottom: 14px; }
+.agent-compact-choices button { flex: 1; text-align: left; background: transparent; padding: 10px; }
+.agent-compact-choices button[aria-pressed="true"] { border-color: var(--accent); background: var(--bg-secondary); }
+.agent-compact-choices strong { font-size: 17px; }
+.agent-compact-panel[hidden], .agent-compact [data-metric][hidden] { display: none !important; }
+.agent-compact-panel .agent-metric { border: 0; border-radius: 0; padding: 0; background: transparent; }
+.agent-compact-panel .agent-metric > .agent-value { display: none; }
+.agent-compact-panel .agent-metric svg { max-height: 240px; }
+.agent-compact-panel .agent-journey { margin-top: 24px; }
+.agent-compact-panel .monitoring-section { border: 0; }
+@media (max-width: 600px) {
+  .agent-compact-dialog { width: 100vw; border-left: 0; }
+  .agent-compact-top { padding: 12px; }
+  .agent-compact-body { padding: 0 12px 16px; }
+  .agent-compact-choices { gap: 5px; }
+  .agent-compact-choices button { padding: 8px 6px; }
+  .agent-compact-choices small { font-size: 11px; }
+  .agent-compact-card { padding: 16px; }
+}
+.agent-compact-panel .agent-metric:has(.agent-stage-control) > .agent-value { display: block; font-size: 20px; margin: 10px 0; }

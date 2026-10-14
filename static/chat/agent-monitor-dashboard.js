@@ -124,5 +124,88 @@
     Object.values(d.semantics || {}).forEach(text => scope.append(el('p', text, 'agent-note')));
     scope.append(el('p', `今天有 ${d.today.unknownFirstRuns} 条记录无法确认是不是会话首轮，未计入首轮指标。每项平均值只使用该项有数据的记录。token 用量包含后台任务，上下文注入量和耗时只统计对话。`, 'agent-note')); root.append(scope);
   }
-  g.RemoteLabAgentDashboard = { render };
+  function renderCompact(root, d, { state = {}, accounts, accountData, refresh } = {}) {
+    const wasOpen = root.querySelector('dialog')?.open === true;
+    const focused = root.querySelector('dialog')?.contains(document.activeElement);
+    const originalAccountPanel = accounts.closest('.monitoring-summary-panel');
+    if (originalAccountPanel && !originalAccountPanel.contains(root)) accounts.remove();
+    if (originalAccountPanel && !originalAccountPanel.contains(root)) originalAccountPanel.remove();
+    root.replaceChildren(); root.className = 'agent-dashboard agent-compact'; root.setAttribute('translate', 'no');
+    root.parentElement.classList.add('agent-compact-host');
+    root.previousElementSibling?.remove();
+    const full = el('div'); render(full, d, { state });
+    const card = el('article', '', 'agent-compact-card'); card.dataset.testid = 'agent-summary';
+    const header = el('header'); header.append(el('h2', 'Agent 监控'), el('span', '今日 · 05:00 起', 'agent-note')); card.append(header);
+    const list = accountData?.accounts || [];
+    const available = list.filter(a => a.status === 'available').length;
+    const exhausted = list.filter(a => a.status === 'exhausted').length;
+    const unknown = list.length - available - exhausted;
+    const quota = !accountData || !list.length ? '额度未取得' : `${available} 个可用` + (exhausted ? ` · ${exhausted} 个耗尽` : '') + (unknown ? ` · ${unknown} 个待核` : '');
+    const summary = el('div', '', 'agent-compact-stats');
+    for (const [title, value] of [['运行中会话', number(d?.currentRunning)], ['今日 token', number(d?.today.totalTokens)], ['首次响应', duration(d?.today.meanFirstResponseMs)], ['账户额度', quota]]) {
+      const item = el('div'); item.append(el('small', title), el('strong', value)); summary.append(item);
+    }
+    card.append(summary);
+    if (accountData?.coverage?.gaps?.some(gap => gap.source === 'accounts')) card.append(el('p', '部分账户额度未取得', 'agent-note'));
+    const open = el('button', '查看详情', 'agent-compact-open'); open.type = 'button'; open.setAttribute('aria-haspopup', 'dialog'); card.append(open);
+    const dialog = el('dialog', '', 'agent-compact-dialog'); dialog.setAttribute('aria-labelledby', 'agent-compact-title');
+    const top = el('header', '', 'agent-compact-top'), title = el('h2', 'Agent 监控'); title.id = 'agent-compact-title';
+    const close = el('button', '关闭'); close.type = 'button'; close.autofocus = true;
+    const reload = el('button', '刷新'); reload.type = 'button'; reload.addEventListener('click', () => { reload.disabled = true; refresh(); });
+    top.append(title, reload, close); dialog.append(top);
+    const body = el('div', '', 'agent-compact-body'); dialog.append(body);
+    if (d) body.append(full.querySelector('.agent-heading'), full.querySelector('.agent-counts'));
+    else body.append(el('p', '运行指标暂未取得，可刷新重试；账户额度单独显示。', 'agent-note'));
+    const tabs = el('div', '', 'agent-compact-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '监控详情'); body.append(tabs);
+    const groups = [
+      ['usage', '用量', ['totalTokens', 'meanTokens']],
+      ['response', '响应与交付', ['meanFirstResponseMs', 'meanDeliveryMs', 'firstDeliveryMs']],
+      ['context', '上下文注入', ['meanInjectionChars', 'firstInjectionChars']],
+      ['accounts', '账户', []],
+    ];
+    const panels = new Map(), buttons = new Map();
+    for (const [key, label, metrics] of groups) {
+      const tab = el('button', label); tab.type = 'button'; tab.id = `agent-tab-${key}`; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `agent-panel-${key}`); tabs.append(tab); buttons.set(key, tab);
+      const panel = el('section', '', 'agent-compact-panel'); panel.id = `agent-panel-${key}`; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id); panel.tabIndex = 0; body.append(panel); panels.set(key, panel);
+      const choices = el('div', '', 'agent-compact-choices'); choices.setAttribute('role', 'group'); choices.setAttribute('aria-label', `${label}趋势指标`);
+      const cards = metrics.map(metric => full.querySelector(`[data-metric="${metric}"]`)).filter(Boolean);
+      if (cards.length) {
+        panel.append(choices);
+        for (const metricCard of cards) {
+          const metric = metricCard.dataset.metric, pick = el('button'); pick.type = 'button'; pick.dataset.pick = metric;
+          pick.append(el('small', metricCard.querySelector('h4').textContent), el('strong', metricCard.querySelector('.agent-value').textContent));
+          pick.addEventListener('click', () => selectMetric(metric)); choices.append(pick); panel.append(metricCard);
+        }
+        function selectMetric(metric) {
+          state[`compactMetric-${key}`] = metric;
+          panel.querySelectorAll('[data-metric]').forEach(item => { item.hidden = item.dataset.metric !== metric; });
+          choices.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.pick === metric)));
+        }
+        selectMetric(metrics.includes(state[`compactMetric-${key}`]) ? state[`compactMetric-${key}`] : metrics[0]);
+      }
+      if (key === 'response' && d) panel.append(full.querySelector('.agent-journey'));
+      if (key === 'context' && d) panel.append(full.querySelector('[data-agent-fold="sources"]'));
+      if (key === 'accounts') panel.append(accounts);
+    }
+    const scope = full.querySelector('[data-agent-fold="scope"]'); if (scope) body.append(scope);
+    function selectTab(key, focus = false) {
+      state.compactTab = key;
+      panels.forEach((panel, id) => { panel.hidden = id !== key; });
+      buttons.forEach((button, id) => { button.setAttribute('aria-selected', String(id === key)); button.tabIndex = id === key ? 0 : -1; });
+      if (focus) buttons.get(key).focus();
+    }
+    buttons.forEach((button, key) => button.addEventListener('click', () => selectTab(key)));
+    tabs.addEventListener('keydown', event => {
+      const keys = [...buttons.keys()], i = keys.indexOf(state.compactTab);
+      const next = event.key === 'ArrowRight' ? (i + 1) % keys.length : event.key === 'ArrowLeft' ? (i + keys.length - 1) % keys.length : event.key === 'Home' ? 0 : event.key === 'End' ? keys.length - 1 : -1;
+      if (next >= 0) { event.preventDefault(); selectTab(keys[next], true); }
+    });
+    selectTab(panels.has(state.compactTab) ? state.compactTab : 'usage');
+    open.addEventListener('click', () => dialog.showModal()); close.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => open.focus());
+    dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close(); } });
+    root.append(card, dialog);
+    if (wasOpen) { dialog.showModal(); if (focused) close.focus(); }
+  }
+  g.RemoteLabAgentDashboard = { render, renderCompact };
 })(window);
