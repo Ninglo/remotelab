@@ -39,6 +39,30 @@
     fold.append(table(['统计日', unit, '样本'], d.days.map(row => [row.day, Number.isFinite(row[key]) ? (unit === '耗时' ? duration(row[key]) : row[key].toLocaleString('zh-CN', { maximumFractionDigits: 2 })) : '无样本', sample(row)])));
     card.append(fold); return card;
   }
+  function durationChart(d, key, title, first, state) {
+    const choices = [
+      ['total', '收到 → 最终送达', '从收到请求到最终正文全部送达。'],
+      ['wait', '收到 → 开始运行', '收到请求后，等待准备和启动运行的时间。'],
+      ['run', '运行阶段', '从开始运行到运行结束，含模型思考与工具执行。'],
+      ['send', '运行结束 → 最终送达', '运行结束后，到最终正文全部送达的时间。'],
+    ];
+    const stateKey = `${key}Stage`, stage = choices.some(c => c[0] === state[stateKey]) ? state[stateKey] : 'total';
+    const stats = row => stage === 'total' ? row[first ? 'firstDelivery' : 'delivery']
+      : row[first ? 'firstDeliveryStages' : 'deliveryStages']?.[stage];
+    const project = row => ({ ...row, [key]: stats(row)?.mean ?? null });
+    const explanation = choices.find(c => c[0] === stage)[2] + (stage === 'total' ? '按有效飞书执行记录取平均。' : '仅统计阶段时间齐全的飞书执行记录。');
+    const card = chart({ ...d, today: project(d.today), days: d.days.map(project) }, key, title, '耗时', row => stats(row)?.count ?? 0, explanation, state);
+    const label = el('label', '查看阶段 ', 'agent-stage-control'), select = el('select');
+    select.setAttribute('aria-label', `${title}：阶段`);
+    for (const [value, text] of choices) { const option = el('option', text); option.value = value; select.append(option); }
+    select.value = stage; label.append(select); card.insertBefore(label, card.children[1]);
+    select.addEventListener('change', () => {
+      state[stateKey] = select.value;
+      state[key] = card.querySelector('details').open;
+      const next = durationChart(d, key, title, first, state); card.replaceWith(next); next.querySelector('select').focus();
+    });
+    return card;
+  }
   function render(root, d, { state = {}, sourceBase = '', sessionBase = '' } = {}) {
     root.replaceChildren(); root.classList.add('agent-dashboard'); root.dataset.testid = 'agent-dashboard';
     if (!d) { root.append(el('p', '统计暂不可用，请稍后刷新。')); return; }
@@ -55,9 +79,10 @@
       ['totalTokens', '今日累计用量', 'Token', r => r.usageRuns, '今日已记录的输入与输出 Token 合计，含前台与后台。'],
       ['meanInjectionChars', '今日每次执行平均注入', '字符 / 次执行', r => r.injection.count, '前台对话中，有注入记录的各次执行取平均。'],
       ['firstInjectionChars', '新 Session 首次执行平均注入', '字符 / 首次执行', r => r.firstInjection.count, '只取新 Session 的第一次执行，再对有效记录取平均。'],
-      ['meanDeliveryMs', '今日每次执行平均交付耗时', '耗时', r => r.delivery.count, '飞书前台执行：从接收请求到最终正文送达，按有效记录取平均。'],
-      ['firstDeliveryMs', '新 Session 首次执行平均交付耗时', '耗时', r => r.firstDelivery.count, '只取新 Session 第一次执行的飞书最终正文送达耗时，再取平均。'],
-    ]) grid.append(chart(d, ...args, state)); root.append(grid);
+    ]) grid.append(chart(d, ...args, state));
+    grid.append(durationChart(d, 'meanDeliveryMs', '今日每次执行平均交付耗时', false, state),
+      durationChart(d, 'firstDeliveryMs', '新 Session 首次执行平均交付耗时', true, state));
+    root.append(grid);
     const sources = disclosure('常规对话注入来源 · 名称、字符数与原文入口', 'sources', state);
     if (d.documents?.length) {
       sources.append(el('h4', '常规文档与加载方式'));

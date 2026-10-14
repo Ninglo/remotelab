@@ -18,7 +18,7 @@ const source = injectionSources(manifest);
 assert.equal(source.reduce((n,s)=>n+s.chars,0), [...manifest.modelContext].length);
 assert(!JSON.stringify(source).includes('中文'));
 const ledger={runId:'r',sessionId:'s',ts:new Date(at).toISOString()};
-const run={id:'r',sessionId:'s',state:'completed'};
+const run={id:'r',sessionId:'s',state:'completed',startedAt:new Date(at+100).toISOString(),completedAt:new Date(at+1000).toISOString()};
 const raw={requestId:'q',runId:'r',sessionId:'s',acceptedAt:new Date(at).toISOString(),settledAt:new Date(at+1000).toISOString(),options:{sourceContext:{connector:'feishu'}},deliveries:[
   {kind:'content',connector:'feishu',surfaceKind:'opening',state:'delivered',createdAt:at+10,deliveredAt:at+20},
   {kind:'content',connector:'feishu',surfaceKind:'final',state:'delivered',createdAt:at+1000,deliveredAt:at+2000},
@@ -26,12 +26,32 @@ const raw={requestId:'q',runId:'r',sessionId:'s',acceptedAt:new Date(at).toISOSt
 ]};
 const sample=runMeasurement(ledger,run,projectRequest(raw),projectInjection(manifest));
 assert.equal(sample.metrics.finalDeliveryMs,3000);
+assert.deepEqual(sample.metrics.deliveryStages,{total:3000,wait:100,run:900,send:2000});
+for (const changed of [{startedAt:null},{completedAt:null},{startedAt:new Date(at-1).toISOString()},{completedAt:new Date(at+4000).toISOString()}]) {
+  const measured=runMeasurement(ledger,{...run,...changed},projectRequest(raw));
+  assert.equal(measured.metrics.deliveryStages,null);
+  assert.equal(measured.metrics.finalDeliveryMs,3000,'independent end-to-end timing remains valid');
+}
 assert.equal(sample.metrics.injectionChars,[...manifest.modelContext].length);
 assert.equal(runMeasurement(ledger,run,projectRequest({...raw,deliveries:raw.deliveries.map((d,i)=>i===2?{...d,state:'pending'}:d)})).metrics.finalDeliveryMs,null);
 assert.equal(runMeasurement(ledger,{...run,state:'cancelled'},projectRequest(raw)).metrics.finalDeliveryMs,null);
 assert.equal(runMeasurement(ledger,run,projectRequest({...raw,deliveries:raw.deliveries.map(d=>({...d,publicationRequestId:'foreign'}))})).metrics.finalDeliveryMs,null);
 const dashboard=buildAgentDashboard({dailyTrend:{days:[]}},[{...sample,firstSessionRun:true}],at+4000,{});
 assert.equal(dashboard.today.firstDeliveryMs,3000);
+assert.equal(dashboard.today.deliveryStages.run.mean,900);
+assert.equal(dashboard.today.firstDeliveryStages.wait.count,1);
+const mixed=buildAgentDashboard({dailyTrend:{days:[]}},[
+  {...sample,firstSessionRun:true},
+  {...sample,firstSessionRun:false,metrics:{...sample.metrics,finalDeliveryMs:6000,deliveryStages:{total:6000,wait:1000,run:2000,send:3000}}},
+  {...sample,firstSessionRun:false,metrics:{...sample.metrics,deliveryStages:null}},
+  {...sample,background:true,metrics:{...sample.metrics,deliveryStages:{total:100,wait:10,run:30,send:60}}},
+],at+4000,{}).today;
+assert.equal(mixed.delivery.count,3);
+assert.equal(mixed.deliveryStages.run.count,2);
+assert.equal(mixed.deliveryStages.total.mean,4500);
+assert.equal(['wait','run','send'].reduce((sum,k)=>sum+mixed.deliveryStages[k].mean,0),mixed.deliveryStages.total.mean);
+assert.equal(mixed.firstDeliveryStages.total.mean,3000);
+assert.equal(dashboard.days[0].deliveryStages.run.mean,null);
 assert.equal(dashboard.days[0].meanInjectionChars,null);
 assert.equal(dashboard.today.totalTokens,null);
 

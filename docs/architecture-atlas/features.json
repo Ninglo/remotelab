@@ -808,6 +808,7 @@
             "static/chat/compose.js",
             "chat/router-control-routes.mjs",
             "chat/monitoring-sessions.mjs",
+            "chat/monitoring-dashboard.mjs",
             "chat/response-timing.mjs",
             "chat/session-diagnostics.mjs",
             "lib/session-diagnosis.mjs",

@@ -1,35 +1,14 @@
 # Operations overview
 
-Monitor Overview (`?tab=tasks&monitor=overview`) presents Session, shared resources, and API in that order. The default view shows current summary metrics and named anomalies; details expand on demand. Resources contain only disks, account allowance, and Token consumption. Historical charts use recorded samples, never invented daily totals. Automations, settings, project tasks and their controls retain their existing separate views.
+Monitor Overview (`?tab=tasks&monitor=overview`) keeps the existing Session area and its visual style, followed only by account balances and the selected-period Token total. Experiment configuration, inspection-scope/cost, disk and API panels are not displayed. Automations, usage analysis, feedback and their controls retain their existing separate views. Removing these panels does not stop observers, experiments, alerts or recovery.
 
-## Inspection scope and cost labels
+## Account balances and Token total
 
-The overview's “检查范围与开销” panel distinguishes the independent periodic
-observer, on-demand Session/usage queries and incident-driven alerts/recovery.
-It explains local script work, model Tokens and recorded Feishu API calls
-separately. Background Tokens include other background operations and are not a
-monitoring-only bill; CPU/memory/local-read costs have no continuous aggregate yet.
-The panel does not extrapolate an old benchmark into current costs.
+Account tables show observed remaining quota in each independent allowance window, observation time, and expandable reset details. Unknown quotas remain unknown; meters never combine separate windows. Automatic-switch policy and operational handling prose are omitted from this balance view.
 
-Observer registration comes from the existing `resource-alerts` entry in
-`automation-background.json`. Cadence is verified from its timer in the configured
-service observations (same systemctl call, no extra polling). Only a verified
-minute-only calendar receives “每分钟”; other/unknown schedules remain unverified.
-A missing registration or unavailable timer never appears as an enabled minute
-observer. Last completed observation comes from the alert ledger, separately from
-page query generation time; a minute observer with a record older than three
-periods gets a stale-record note. Merely viewing the panel starts no monitor,
-model job, external API probe or new timer. Existing refresh/cache behavior stays.
+Token total counts recorded model input and output, including foreground and background, within the toolbar's rolling 1/7/30-day window. Its explicit start/end label differs from the Session dashboard's Beijing 05:00 business day. No separate resource trend, model breakdown or background/cache statistic is displayed here. Underlying collection and analysis projections remain available to existing consumers; displaying fewer panels does not change collection or notification behavior.
 
-## Capacity and seven-day charts
-
-Disk rings show the observed percentage of capacity used, alongside the existing disk table. Account quota meters retain each independent allowance window; unknown quotas have no filled meter. Neither graphic is task completion or a combined account allowance.
-
-Session has two always-visible seven-day lines: distinct Sessions with usage records (including background work), and average reported context Tokens per foreground Run. Token consumption has its own seven-day line in Resources, including foreground/background usage. These fixed charts cover seven UTC calendar dates including today, independently of the selected 1/7/30-day rolling summary window; today is partial. Context means use the latest recorded value per Run, not per-call input or prompt-injection bytes. Each chart exposes exact daily values and sample counts in a table. Missing days/contexts remain gaps, while a recorded zero remains zero.
-
-The ledger deduplicates by Run and attributes each retained snapshot to its ledger timestamp (Run finalized/completed time, or recording time when unavailable). These are observed records, not a historical Session inventory, live usage completeness guarantee, or allocation of a multi-day Run's individual calls. Late records can revise a day. Session counts deduplicate within each day, not across days. Context coverage shows reporting foreground Runs over all recorded foreground Runs; tokens and Sessions show recorded Run counts.
-
-`queryUsageLedger({ includeDailyTrend: true })` extends the existing file scan only as far as the first of those seven dates, aggregates `dailyTrend` from all matching records before top-N truncation, and keeps the selected-window totals and ranked lists unchanged. Overview returns this projection with its existing 15-second coalesced cache. Charts share the existing request, need no extra Run/manifest reads, model calls, quota RPCs, timers, notification or remediation actions. Frontend SVGs and meters add no chart library. Collection gaps remain explicitly visible.
+Session's six daily/weekly charts are defined in the Agent dashboard section below. They share existing reads and do not add model calls, timers, quota probes or scans. Refresh preserves disclosure choices; missing data is not interpreted as zero.
 
 ## Session changes and automatic diagnosis
 
@@ -412,29 +391,13 @@ the [general context rules](connector-turn-context.md#monitoring-explanation-202
 It preserves the reader's open/closed choice during refresh and makes no extra
 requests or model calls. It does not claim to audit each Session's full prompt.
 
-The Overview shows three compact panels in order: Session, shared resources, and API.
-Each presents totals and observation/exception status first. Session totals are
-followed by up to three named metric changes with a compact diagnosis status,
-plus three group/initiator summaries. Ratios, recent values, baseline and diagnosis
-evidence are disclosed beside the corresponding Session rather than repeated in
-the default row. Without exceptions, up to
-three running/waiting Session names are visible. Full Session metric tables and API endpoints start collapsed. Resources start directly with disk capacity, account quotas and period Token usage.
-Each metric has a closed-by-default “何时提醒、怎么处理” disclosure beside its data.
-The text states when a notification is sent, what the system does, when human help
-is needed, and where results are reported. API guidance sits with the API summary;
-service guidance sits with the service table; automation guidance and delivery
-locations sit with the automation list. Collection guidance sits with check scope.
-There is no separate policy card grid or global destination table. Open/closed
-choices survive data refreshes. Each disclosure retains that kind's recovery
-records, concrete plans and links. Threshold copy follows the active notification
-policy, and a configured execution Session does not claim that a repair has run.
-Disk and account tables stay visible;
-account reset details and Token breakdowns open on demand. There is no additional
-resource overview counter, service/task table, notification
-pipeline status or capacity advice in this panel. Disk and account state appear
-in their rows; source gaps appear beside the affected section. Runtime collectors,
-alert/recovery configuration and records are unchanged. Existing automation and
-operational tools remain separate from this resource display.
+The Overview preserves Session summaries, named metric changes and expandable
+Session details. Only account balances and a selected-period Token total follow
+Session; there are no disk, API, inspection-scope or experiment panels. Account
+reset details stay collapsed until requested. Automation handling guidance remains
+with the separate automation list. Existing observer policies and recovery records
+are unchanged by this display reduction.
+Collection gaps remain beside the affected account/Token section.
 Session exception cards compare recent values with their baseline using labelled
 bars; metrics keep units and textual values, rather than relying on colour alone. Clicking a Session
 exception selects its titled detail view without putting an opaque ID in search.
@@ -667,3 +630,11 @@ Session 监管增加“飞书响应速度”，从 RemoteLab 接受请求计时�
 监控器新增独立 `Test` 标签（`?tab=tasks&monitor=test`），集中展示未来计划同步到 Muka Hub 的范围：Session 数量、六项今日指标与七日趋势、可折叠注入来源、账号额度及重置时间。复用现有指标和账号渲染，不包含磁盘、服务、API、自动化和旧 Session 明细。这里只展示当前 RemoteLab 数据，不修改或部署 Muka Hub。
 
 平均值标题直接注明“每次执行”或“新 Session 首次执行”，每张卡解释分母；首次执行指标仍是所有有效新 Session 首次执行记录的平均。用量含前后台，注入只统计前台，交付耗时当前只统计有最终正文回执的飞书前台执行。Test 独立刷新两项数据，单项读取失败保留另一项结果；刷新保留展开选择。
+
+### 时长阶段切换与展示范围（2026-10-14）
+
+保留现有布局与六张指标卡，两张交付耗时卡各自增加阶段选择：收到→最终送达（默认）、收到→开始运行、运行阶段、运行结束→最终送达。选择只更新本卡的今日均值、七日趋势和逐日表；刷新保留阶段与展开状态，不新增图表或请求。
+
+总耗时沿原最终正文回执口径。阶段使用同一条已完成飞书执行的 acceptedAt、startedAt、completedAt、最终正文全部 deliveredAt；四个时间齐全且有序才纳入阶段统计。阶段样本的三段相加等于其总耗时，阶段样本数可能小于原总耗时样本数。没有时间记录保留空缺，运行结束不表示工作验收完成。所有阶段按请求受理所在的北京时间 05:00 统计日归集，首次执行继续严格限定 Session 历史首次执行。
+
+总览在 Session 基础上只保留账户余额和 Token 总数；实验状态、API、磁盘和检查范围板块不展示。Session 名称仍来自真实会话，不把某个会话的业务名称作为额外监管功能。Test 保留既有同步预览及同一套时长切换、账户余额展示。

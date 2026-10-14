@@ -59,11 +59,21 @@ export function runMeasurement(ledger, run, request, injection = null) {
   const deliveryEnd = ds.length && ds.every(d => d.state === 'delivered' && Number.isFinite(time(d.deliveredAt))) ? Math.max(...ds.map(d => time(d.deliveredAt))) : null;
   const finals = validRequest && request.responseTiming ? ds.filter(d => d.connector === 'feishu' && (!d.surfaceKind || d.surfaceKind === 'final') && (!d.publicationRequestId || d.publicationRequestId === request.requestId)) : [];
   const finalEnd = finals.length && finals.every(d => d.state === 'delivered' && Number.isFinite(time(d.deliveredAt))) ? Math.max(...finals.map(d => time(d.deliveredAt))) : null;
+  const finalDeliveryMs = validRequest && run.state === 'completed' && finalEnd !== null ? span(request.acceptedAt, finalEnd) : null;
+  const stages = finalDeliveryMs !== null ? {
+    total: finalDeliveryMs,
+    wait: span(request.acceptedAt, run.startedAt),
+    run: span(run.startedAt, run.completedAt),
+    send: span(run.completedAt, finalEnd),
+  } : null;
+  // Every phase uses the same complete, ordered cohort. Missing timestamps are
+  // unknown, not zero; retain the independently valid end-to-end observation.
+  const deliveryStages = stages && Object.values(stages).every(finite) ? stages : null;
   return { sessionId: ledger.sessionId, sources: validRun ? injection?.sources || [] : [], runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown',
     state: validRun ? run.state : 'unknown',
     background: ledger.backgroundOperation === true || request?.excluded === true,
     responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: validRequest ? time(request?.acceptedAt) : NaN,
-    metrics: { finalDeliveryMs: validRequest && run.state === 'completed' && finalEnd !== null ? span(request.acceptedAt, finalEnd) : null,
+    metrics: { finalDeliveryMs, deliveryStages,
       injectionChars: validRun && injection?.id === ledger.runId && injection.sessionId === ledger.sessionId && finite(injection.injectionChars) ? injection.injectionChars : null,
       firstContentMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstContentAt) : null,
       firstReplyMs: validRequest ? span(request.acceptedAt, request.responseTiming?.firstReplyAt) : null,

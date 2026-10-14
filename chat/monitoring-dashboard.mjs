@@ -73,6 +73,9 @@ export function injectionSources(manifest) {
   });
 }
 
+const stageStats = rows => Object.fromEntries(['total', 'wait', 'run', 'send'].map(stage =>
+  [stage, timingStats(rows.map(s => s.metrics.deliveryStages?.[stage]))]));
+
 export function buildAgentDashboard(usage, samples, now, coverage) {
   const start = businessStart(now) - 6 * DAY;
   const foreground = samples.filter(s => !s.background);
@@ -93,6 +96,7 @@ export function buildAgentDashboard(usage, samples, now, coverage) {
       meanInjectionChars: injection.mean, firstInjectionChars: firstInjection.mean,
       meanDeliveryMs: delivery.mean, firstDeliveryMs: firstDelivery.mean,
       injection, firstInjection, delivery, firstDelivery,
+      deliveryStages: stageStats(rows), firstDeliveryStages: stageStats(first),
       measuredRuns: rows.length, firstRuns: first.length,
       unknownFirstRuns: rows.filter(s => s.firstSessionRun == null).length };
   });
@@ -109,5 +113,6 @@ export function buildAgentDashboard(usage, samples, now, coverage) {
     semantics: { usage: '含前后台，按运行结束／账本记账日归集；均值分母为有用量记录的执行次数。跨日运行不拆分，未回传部分不计入。',
       injection: '按人工请求受理日归集，统计 RemoteLab modelContext 的 Unicode 字符数（含标题与分隔符）；不含 Harness 自身规则、原生历史和工具输出。',
       first: 'Session 历史中第一条用户消息对应的首次执行；窗口内最早记录不代替首轮。无法确认时不计入首轮均值。',
+      stages: '阶段为收到请求→开始运行、开始运行→运行结束、运行结束→最终正文全部送达。阶段只采用时间齐全且顺序有效的同一批记录，样本可能少于总耗时；运行结束不等于工作完成。',
       delivery: '人工飞书请求受理至最终正文全部成功送达；排除开场／进展，运行中追加输入、Web 和未取得最终回执者未纳入。完成运行不等于任务验收。' } };
 }

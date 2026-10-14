@@ -25,7 +25,6 @@
   };
   const number = value => Number.isFinite(value) ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value) : "—";
   const percent = value => Number.isFinite(value) ? `${value.toFixed(1).replace(/\.0$/, "")}%` : "—";
-  const bytes = value => Number.isFinite(value) ? `${(value / 1024 ** 3).toFixed(2)} GiB` : "—";
   const time = value => Number.isFinite(Date.parse(value || "")) ? new Date(value).toLocaleString() : "—";
   const status = value => {
     const key = value === "active" ? "enabled" : value === "failed" ? "failedState" : value === "started" ? "running" : value || "unknown";
@@ -157,8 +156,6 @@
     card.appendChild(node("p", t("accountObserved", { time: time(account.observedAt) }), "monitoring-account-observed"));
     return card;
   }
-  const apiSummary = document.getElementById("monitoringApiSummary");
-  const apiDetails = document.getElementById("monitoringApiDetails");
   function summaryMetrics(parent, entries) {
     const grid = node("div", "", "monitoring-summary-metrics");
     for (const [label, metric, hint] of entries) {
@@ -167,133 +164,8 @@
     }
     parent.appendChild(grid);
   }
-  function summaryStatus(parent, label, severity, details) {
-    const button = node("button", label, "monitoring-action"); button.type = "button";
-    button.dataset.severity = severity;
-    button.addEventListener("click", () => { const fold = details?.closest("details"); if (fold) fold.open = true; });
-    parent.appendChild(button);
-  }
-  const svgNode = (tag, attrs = {}) => {
-    const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
-    for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
-    return element;
-  };
-  function capacityRing(value, label, severity) {
-    const valid = Number.isFinite(value) && value >= 0 && value <= 100;
-    const wrap = node('div', '', 'monitoring-capacity-ring');
-    wrap.dataset.severity = severity || 'healthy';
-    const svg = svgNode('svg', { viewBox: '0 0 88 88', role: 'img', 'aria-label': `${label} ${valid ? percent(value) : '未知'}` });
-    svg.appendChild(svgNode('circle', { cx: 44, cy: 44, r: 35, class: 'monitoring-ring-track' }));
-    if (valid) svg.appendChild(svgNode('circle', { cx: 44, cy: 44, r: 35, class: 'monitoring-ring-value',
-      pathLength: 100, 'stroke-dasharray': `${value} 100`, transform: 'rotate(-90 44 44)' }));
-    wrap.append(svg, node('strong', valid ? percent(value) : '—'));
-    return wrap;
-  }
-  function trendChart(parent, trend, { key, title, unit, description, samples }) {
-    const card = node('section', '', 'monitoring-line-card'); card.dataset.metric = key;
-    card.appendChild(node('h4', title));
-    const days = trend.days || [], valid = days.filter(day => Number.isFinite(day[key]));
-    const latest = days.at(-1), headline = node('div', '', 'monitoring-line-headline');
-    headline.append(node('strong', number(latest?.[key])), node('small', `今日 · ${unit} · 截至 ${time(trend.end)}`));
-    card.appendChild(headline);
-    const svg = svgNode('svg', { viewBox: '0 0 400 155', role: 'img', 'aria-label': `${title}，${unit}；${description}。无记录日期留空，逐日数据见下方展开表。` });
-    const maximum = Math.max(1, ...valid.map(day => day[key]));
-    const x = index => 38 + index * 57, y = value => 113 - value / maximum * 83;
-    for (const ratio of [0, .5, 1]) {
-      const yy = y(ratio * maximum);
-      svg.appendChild(svgNode('line', { x1: 38, y1: yy, x2: 380, y2: yy, class: 'monitoring-chart-grid' }));
-      const label = svgNode('text', { x: 32, y: yy + 4, 'text-anchor': 'end' }); label.textContent = number(ratio * maximum); svg.appendChild(label);
-    }
-    let path = '', connected = false;
-    days.forEach((day, i) => {
-      const label = svgNode('text', { x: x(i), y: 139, 'text-anchor': 'middle' }); label.textContent = day.day.slice(5); svg.appendChild(label);
-      if (!Number.isFinite(day[key])) { connected = false; return; }
-      path += `${connected ? 'L' : 'M'}${x(i)},${y(day[key])} `; connected = true;
-    });
-    svg.appendChild(svgNode('path', { d: path, class: 'monitoring-chart-line' }));
-    days.forEach((day, i) => {
-      if (!Number.isFinite(day[key])) return;
-      const dot = svgNode('circle', { cx: x(i), cy: y(day[key]), r: 4, class: 'monitoring-chart-point' });
-      const tooltip = svgNode('title'); tooltip.textContent = `${day.day}：${day[key].toLocaleString()} ${unit}；${samples(day)}`;
-      dot.appendChild(tooltip); svg.appendChild(dot);
-    });
-    card.appendChild(svg);
-    card.appendChild(node('p', `${valid.length}/7 天有样本 · ${description}`, 'monitoring-note'));
-    const details = node('details'); details.appendChild(node('summary', '查看逐日数值与样本'));
-    table(details, ['日期（UTC）', unit, '样本'], days.map(day => [day.day,
-      Number.isFinite(day[key]) ? day[key].toLocaleString() : '无样本', samples(day)]));
-    card.appendChild(details); parent.appendChild(card);
-  }
-  function renderSessionTrends() {
-    const root = document.getElementById('monitoringSessionTrends'); if (!root) return;
-    root.replaceChildren(node('h3', '近 7 天走势'));
-    const trend = value?.usage?.dailyTrend;
-    if (!trend) { root.appendChild(node('p', loading ? '正在读取历史记录…' : '历史记录未取得，不能判断为零。', 'monitoring-note')); return; }
-    root.appendChild(node('p', `${trend.start.slice(0, 10)} — ${trend.end.slice(0, 10)} · UTC 自然日，今天未结束。按运行结束／账本记账日期归集，不等同于当天实际调用分摊；未回传部分不计入。`, 'monitoring-note'));
-    const grid = node('div', '', 'monitoring-line-grid'); root.appendChild(grid);
-    trendChart(grid, trend, { key: 'sessionCount', title: '有用量记录的 Session', unit: '个',
-      description: '当日去重数，含前后台；不是历史 Session 总数', samples: day => `${day.runCount} 次运行记录` });
-    trendChart(grid, trend, { key: 'avgContextTokens', title: '平均上下文', unit: 'Token / 运行',
-      description: '前台运行最近回传值的均值；不是注入字节数', samples: day => `${day.contextSamples} / ${day.foregroundRuns} 次前台运行有回传` });
-  }
-
-  function renderScope() {
-    const root = document.getElementById("monitoringScope");
-    if (!root) return;
-    const wasOpen = root.querySelector(":scope > details:not([data-handling])")?.open || false;
-    root.replaceChildren(node("h2", "检查范围与开销"));
-    if (!value) { root.appendChild(node("p", "检查配置尚未取得，不能确认后台巡检是否运行。", "monitoring-note")); return; }
-    handlingGuide(root, "coverage");
-    const observation = value.observation || {};
-    const cadence = observation.cadenceSeconds === 60 ? "每分钟" : "频率待核实";
-    const live = observation.configured && observation.status === "healthy";
-    const check = !observation.configured ? "尚未确认后台巡检配置"
-      : live ? `后台巡检：${cadence}` : "后台巡检未确认正常运行";
-    root.appendChild(node("p", `${check} · 最近完成 ${time(observation.lastObservedAt)}。页面统计在打开或刷新时查询，切回页面时按需更新。`, "monitoring-note"));
-    if (live && observation.cadenceSeconds && Number.isFinite(Date.parse(observation.lastObservedAt))
-      && Date.now() - Date.parse(observation.lastObservedAt) > observation.cadenceSeconds * 3000) {
-      root.appendChild(node("p", "最近巡检记录已超过三个检查周期，请核查后台是否正常完成。", "monitoring-note"));
-    }
-    const details = node("details"); details.open = wasOpen;
-    details.appendChild(node("summary", "查看检查内容、频率和消耗怎么算"));
-    const checks = [
-      [`服务（${value.services?.length ?? "—"} 项）、磁盘（${value.disks?.length ?? "—"} 项）、自动化任务`, live ? `${cadence}巡检，也可页面查询` : "页面可查询；后台状态待核实", "本机服务状态、磁盘和任务记录；普通检查不调用模型"],
-      ["账号额度", "巡检或页面查询时读取已有观测", "额度采集器提供数据；各账号时间不同，以最近观测为准"],
-      ["飞书 API", "巡检或页面查询时汇总日志", "读取已记录调用与失败，不为检查额外调用飞书；不等于企业账单"],
-      ["Session 与 Token 用量", "打开、刷新或切回页面时按需查询", "执行记录及用量账本；页面展示不启动模型"],
-      ["异常提醒与补救", "发现符合条件的新故障时触发", observation.recoveryEnabled ? "提醒可能调用飞书，自动补救可能调用模型；有去重和重试限制" : "提醒可能调用飞书；当前未开启自动补救"],
-    ];
-    const checksList = node("div", "", "monitoring-scope-checks");
-    for (const [title, frequency, source] of checks) {
-      const item = node("section");
-      item.append(node("h3", title), node("p", frequency), node("p", source, "monitoring-note"));
-      checksList.appendChild(item);
-    }
-    details.appendChild(checksList);
-    if (value.services?.length) {
-      const scope = node("details"); scope.appendChild(node("summary", "查看纳入巡检的服务"));
-      table(scope, ["服务", "当前状态"], value.services.map(service => [service.label, status(service.status)]));
-      handlingGuide(scope, "service");
-      details.appendChild(scope);
-    }
-    details.appendChild(node("p", "Token 总量累计所选期间内有记录的模型输入与输出，包含前台和后台；输入可能重复使用历史上下文，不等于新增注入量。后台 Token 也不全是监管消耗。", "monitoring-note"));
-    details.appendChild(node("p", "本机巡检的 CPU、内存和磁盘读取尚无持续开销统计，不能从 Token 数推算；页面也不把一次测试结果当作实时用量。", "monitoring-note"));
-    details.appendChild(node("p", `页面数据生成于 ${time(value.generatedAt)}。最近巡检完成时间来自后台记录，二者分别显示；旧时间不代表刚刚检查过。`, "monitoring-note"));
-    root.appendChild(details);
-  }
-
-  function renderAccounts(parent, data, { includeHandling = true } = {}) {
-    const accounts = section("账户额度", parent); accounts.dataset.section = "accounts";
-    if (includeHandling) handlingGuide(accounts, "accountContinuity");
-    const continuity = data.accountContinuity;
-    if (continuity) accounts.appendChild(node("p", `本实例自动切换${continuity.autoSwitch ? "已开启" : "未开启"}；已登录且额度高于10%的备用 ${continuity.backupCount} 个。20%进入备用准备区，10%切换后续请求；在途任务保留原账号。其他机器账号不算本实例备用。`, "monitoring-note"));
-    if (continuity?.lastSwitch) {
-      const change = continuity.lastSwitch;
-      accounts.appendChild(node("p", `最近自动切换：${time(change.at)} · ${({ reserve: "提前保留余额", confirmed_exhaustion: "原账号已耗尽", remaining_balance_fallback: "使用仍有余额的本地账号兜底" })[change.reason] || "后台切换已记录"}。`, "monitoring-note"));
-    }
-    for (const item of (data.attention || []).filter(a => a.kind === "accountContinuity")) {
-      const line = node("p", alertDetail(item), "monitoring-alert"); line.dataset.severity = item.severity; accounts.appendChild(line);
-    }
+  function renderAccounts(parent, data) {
+    const accounts = section("账户余额", parent); accounts.dataset.section = "accounts";
     if (!data.accounts.length) accounts.appendChild(node("p", t("noAccounts"), "monitoring-note"));
     else {
       const summary = node("div", "", "monitoring-account-summary");
@@ -351,7 +223,7 @@
       accounts.replaceChildren();
       if (accountsResult.status === "fulfilled") {
         const data = accountsResult.value;
-        const section = renderAccounts(accounts, data, { includeHandling: false });
+        const section = renderAccounts(accounts, data);
         const fold = section.querySelector("details"); if (fold) fold.open = accountsOpen;
         for (const gap of data.coverage?.gaps || []) if (gap.source === "accounts") section.appendChild(node("p", "部分账号额度未取得，不能据此判断全部正常。", "monitoring-note"));
       } else accounts.appendChild(node("p", "账号额度读取失败，请刷新重试。", "monitoring-note"));
@@ -360,120 +232,29 @@
   }
 
   function render() {
-    renderScope();
-    renderSessionTrends();
     automations.querySelector('[data-handling="automation"]')?.remove();
     if (value) {
       const guide = node("div"); handlingGuide(guide, "automation"); automations.prepend(guide.firstChild);
     }
     content.replaceChildren();
-    if (apiSummary) {
-      apiSummary.replaceChildren(node("h2", "API")); apiDetails?.replaceChildren();
-      if (!value) apiSummary.appendChild(node("p", loading ? "正在读取 API 观测…" : "API 数据未取得，状态未知。", "monitoring-note"));
-      else {
-        const health = value.apiHealth, providers = health?.providers || [];
-        const calls = providers.reduce((sum, p) => sum + p.calls24h, 0), failed = providers.reduce((sum,p) => sum+p.failed24h,0);
-        const alerts = (value.attention || []).filter(a => a.kind === "api");
-        summaryMetrics(apiSummary, [["24 小时调用", health ? number(calls) : "—", "本实例已记录的飞书 API"],
-          ["24 小时失败率", calls ? percent(failed / calls * 100) : "—", health ? `${number(failed)} 次失败` : "尚未取得"],
-          ["近 5 分钟调用", health ? number(providers.reduce((sum,p) => sum+p.calls5m,0)) : "—", "不发起额外探测"]]);
-        handlingGuide(apiSummary, "api");
-        const unknown = !health || !health.coverage?.complete || !providers.length || providers.some(p => p.status === "unknown");
-        summaryStatus(apiSummary, alerts.length ? `${alerts.length} 项 API 异常 · 查看原因` : unknown ? "API 观测不足 · 查看范围" : "已记录 API 未发现异常",
-          alerts.some(a => a.severity === "critical") ? "critical" : alerts.length ? "warning" : "neutral", apiDetails);
-        apiSummary.appendChild(node("p", `实例级 · ${time(health?.observedAt)} · 仅覆盖已记录调用`, "monitoring-note"));
-      }
-    }
     if (priority) {
-      priority.replaceChildren(node("h2", "基础资源"));
+      priority.replaceChildren(node("h2", "账户与用量"));
       if (!value) priority.appendChild(node("p", loading ? "正在读取资源观测…" : "资源查询失败，异常数量未知。点击刷新重试。", "monitoring-note"));
-      else priority.appendChild(node("p", `当前实例 · ${time(value.generatedAt)} · 磁盘与账户共享，Token 按所选期间统计`, "monitoring-note"));
+      else priority.appendChild(node("p", `当前实例 · ${time(value.generatedAt)} · 账户剩余额度与所选期间 Token 总数`, "monitoring-note"));
     }
 
     if (!value) { content.appendChild(node("p", t(loading ? "loading" : "failed"), "monitoring-note")); return; }
     const snapshot = node("div", "", "monitoring-snapshot"); snapshot.id = "monitoringSnapshot"; content.appendChild(snapshot);
-    snapshot.appendChild(node("h2", t("snapshotTitle"), "monitoring-snapshot-heading"));
-    const disks = section("磁盘容量", snapshot); disks.dataset.section = "disks";
-    handlingGuide(disks, "disk");
-    if (!value.disks.length) disks.appendChild(node("p", "尚未取得磁盘数据，状态未知。", "monitoring-note"));
-    else table(disks, ["磁盘", "状态", "已用", "可用空间", "inode 已用"], value.disks.map(disk => {
-      const badge = node("span", status(disk.status), "monitoring-account-status");
-      badge.dataset.status = disk.status === "healthy" ? "available" : disk.status === "critical" ? "exhausted" : disk.status;
-      const used = node("span", percent(disk.usedPercent));
-      if (["critical", "warning"].includes(disk.status)) { used.className = "monitoring-metric-signal"; used.dataset.severity = disk.status; }
-      return [disk.label, badge, used, bytes(disk.availableBytes), percent(disk.inodeUsedPercent)];
-    }));
-    const diskVisuals = node("div", "", "monitoring-disk-visuals");
-    for (const disk of value.disks) {
-      const card = node("div", "", "monitoring-disk-visual");
-      card.appendChild(capacityRing(disk.usedPercent, `${disk.label} 已用`, disk.status));
-      const caption = node("div"); caption.append(node("strong", disk.label), node("span", "容量已用"), node("small", `可用 ${bytes(disk.availableBytes)}`));
-      card.appendChild(caption); diskVisuals.appendChild(card);
-    }
-    disks.insertBefore(diskVisuals, disks.children[1] || null);
-    value.disks.filter(disk => disk.sharedFilesystem).forEach(disk => disks.appendChild(node("p", t("shared", { name: disk.sharedFilesystem }), "monitoring-note")));
-    for (const repair of (value.recovery || []).filter(r => r.kind === "disk" && r.currentIssue)) {
-      const details = node("details"); details.appendChild(node("summary", `${repair.subject}处置：${repair.label}`));
-      details.appendChild(node("p", repair.reason || repair.summary || "正在核对安全处置方案", "monitoring-note"));
-      if (repair.error && repair.status === "blocked") details.appendChild(node("p", `执行错误：${repair.error}`, "monitoring-note"));
-      if (repair.plan) table(details, ["方案", "内容"], [["执行条件", repair.plan.requiresConfirmation ? "经人确认后执行" : "低风险自行处理"],
-        ["步骤", repair.plan.summary], ["对象", repair.plan.target], ["影响", repair.plan.impact], ["恢复方式", repair.plan.rollback], ["验收", repair.plan.verification]]);
-      if (repair.sessionId) { const link = node("a", "查看原处理会话"); link.href = `/?session=${encodeURIComponent(repair.sessionId)}`; details.appendChild(link); }
-      disks.appendChild(details);
-    }
     const accounts = renderAccounts(snapshot, value);
-    if (value.apiHealth) {
-      const api = section("飞书 API", apiDetails || content);
-      for (const item of (value.attention || []).filter(a => a.kind === "api")) { const line = node("p", `${item.subject}：${alertDetail(item)}`, "monitoring-alert"); line.dataset.severity = item.severity; api.prepend(line); }
-      table(api, ["对象", "状态与处理", "24h窗口调用／失败", "5分钟调用", "最近调用"], value.apiHealth.providers.map(item =>
-        [item.label, item.detail, `${item.calls24h}／${item.failed24h}`, item.calls5m, time(item.lastObservedAt)]));
-      api.appendChild(node("p", value.apiHealth.coverage.detail, "monitoring-note"));
-      const endpoints = value.apiHealth.providers.flatMap(item => item.endpoints.map(endpoint =>
-        [item.label, endpoint.endpoint, endpoint.calls, endpoint.failed]));
-      if (endpoints.length) table(api, ["对象", "调用最多的接口", "已观察调用", "失败"], endpoints);
-      const componentName = component => ({ connector: "聊天与评论", workboard: "进展卡片", display: "副屏飞书提醒" }[component] || component);
-      const components = value.apiHealth.providers.flatMap(item => (item.components || []).map(component =>
-        [item.label, componentName(component.component), component.calls, component.failed]));
-      if (components.length) table(api, ["对象", "调用组件", "24h窗口调用", "失败"], components);
-      const hours = value.apiHealth.providers.flatMap(item => (item.hours || []).map(hour => [item.label, time(hour.at), hour.calls, hour.failed]));
-      if (hours.length) table(api, ["对象", "记录小时（部分小时不作完整日均）", "调用", "失败"], hours);
-      const repeats = value.apiHealth.providers.flatMap(item => (item.duplicateReads || []).map(read =>
-        [item.label, componentName(read.component), read.endpoint, read.calls]));
-      if (repeats.length) table(api, ["对象", "组件", "5分钟内反复返回相同数据的读取", "次数"], repeats);
-      api.appendChild(node("p", "相同读取比较仅覆盖升级后的成功请求，同一进程内使用临时密钥摘要；未记录的历史和进程间重复保留未知。", "monitoring-note"));
-      value.apiHealth.providers.forEach(item => api.appendChild(node("p", `${item.label}：日志初次观测 ${time(item.firstObservedAt)}`, "monitoring-note")));
-      api.appendChild(node("p", value.apiHealth.tenantQuota ? `企业额度已用 ${percent(value.apiHealth.tenantQuota.usedPercent)}`
-        : `${value.apiHealth.tenantQuotaLimit ? `已确认月度上限 ${number(value.apiHealth.tenantQuotaLimit)} 次；` : ""}企业真实剩余额度未知，需管理员后台读数；本地调用数不代表计费用量。`, "monitoring-note"));
-    }
-    const usage = section("Token 消耗", snapshot); usage.dataset.section = "tokens";
-    handlingGuide(usage, "usage");
+    const usage = section("Token 总数", snapshot); usage.dataset.section = "tokens";
     if (!value.usage) usage.appendChild(node("p", t("noUsage"), "monitoring-note"));
     else {
       const totals = value.usage.totals;
-      summaryMetrics(usage, [["期间总用量", number(totals.totalTokens), "Token · 含前台与后台"],
-        ["后台用量", number(totals.backgroundTokens), Number.isFinite(totals.backgroundShare) ? `占总量 ${percent(totals.backgroundShare * 100)}` : "占比未知"],
-        ["输入缓存占比", percent(Number.isFinite(totals.cachedInputShare) ? totals.cachedInputShare * 100 : NaN), "已记录输入中的缓存份额"]]);
-      usage.appendChild(node("p", `${time(value.usage.window.start)} — ${time(value.usage.window.end)} · 累计模型输入与输出，不是当前上下文大小，也不是仅监管的消耗。`, "monitoring-note"));
-      if (value.usage.dailyTrend) trendChart(usage, value.usage.dailyTrend, {
-        key: 'totalTokens', title: '近 7 天 Token 用量', unit: 'Token',
-        description: 'UTC 自然日，今天未结束；含前后台，按运行结束／记账日期归集', samples: day => `${day.runCount} 次运行记录`,
-      });
-      const breakdown = node("details"); breakdown.appendChild(node("summary", "查看按模型、前后台和日期的用量")); usage.appendChild(breakdown);
-      table(breakdown, [t("model"), t("tokens")], (value.usage.byModel || []).map(item => [item.model || item.key || "—", number(item.totalTokens)]));
-      table(breakdown, [t("operation"), t("tokens")], (value.usage.byOperationGroup || []).map(item => [
-        (item.operationGroup || item.key) === "background" ? t("background") : (item.operationGroup || item.key) === "foreground" ? t("foreground") : item.label || item.operationGroup || item.key || "—", number(item.totalTokens)]));
-      const trend = node("div", "", "monitoring-trend"), days = (value.usage.byDay || []).slice().sort((a, b) => String(a.day || a.key).localeCompare(String(b.day || b.key)));
-      const maximum = Math.max(1, ...days.map(day => day.totalTokens));
-      trend.setAttribute("aria-label", t("trend"));
-      days.forEach(day => {
-        const row = node("div"); row.appendChild(node("span", day.day || day.key));
-        const meter = node("meter"); meter.min = 0; meter.max = maximum; meter.value = day.totalTokens;
-        meter.setAttribute("aria-label", `${day.day || day.key}: ${number(day.totalTokens)} Token`);
-        row.appendChild(meter); row.appendChild(node("span", number(day.totalTokens))); trend.appendChild(row);
-      }); breakdown.appendChild(trend);
+      summaryMetrics(usage, [["所选期间 Token 总数", number(totals.totalTokens), "Token · 含前台与后台"]]);
+      usage.appendChild(node("p", `${time(value.usage.window.start)} — ${time(value.usage.window.end)} · 已记录的模型输入与输出合计。`, "monitoring-note"));
     }
     for (const gap of value.coverage?.gaps || []) {
-      const target = gap.source === "usage" ? usage : gap.source === "accounts" ? accounts : gap.source === "fleet" ? disks : null;
+      const target = gap.source === "usage" ? usage : gap.source === "accounts" ? accounts : null;
       if (target) target.appendChild(node("p", `部分数据未取得（${gap.code || "来源不可用"}），不能据此判断全部正常。`, "monitoring-note"));
     }
   }
