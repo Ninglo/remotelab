@@ -15,8 +15,7 @@
   const create = document.getElementById("taskCenterCreateToggle");
   const requested = new URL(globalScope.location.href).searchParams.get("monitor");
   let view = views.includes(requested) ? requested : "overview";
-  let value = null, serial = 0, loading = false, loadedAt = 0, loadedDays = 0;
-  const priority = document.getElementById("monitoringResourceAttention");
+  let value = null;
   const t = (key, vars) => globalScope.remotelabT?.(`monitoring.${key}`, vars) || key;
   const node = (tag, text = "", className = "") => {
     const item = document.createElement(tag); item.textContent = text;
@@ -196,16 +195,23 @@
     return accounts;
   }
 
-  const testState = {};
-  let testLoading = false, testLoadedAt = 0;
-  async function loadTest({ force = false } = {}) {
-    if (!test || testLoading || (!force && Date.now() - testLoadedAt < 15000)) return;
-    testLoading = true;
-    const button = document.getElementById("monitoringTestRefresh");
+  // Both entry points use the same data and renderer, with independent disclosure state.
+  const compactViews = {
+    overview: { dashboard: document.getElementById("monitoringSessions"), accounts: node("div"), button: refresh, state: {}, loadedAt: 0 },
+    test: { dashboard: document.getElementById("monitoringTestDashboard"), accounts: document.getElementById("monitoringTestAccounts"), button: document.getElementById("monitoringTestRefresh"), state: {}, loadedAt: 0 },
+  };
+  period.closest("label").hidden = true;
+  const periodNote = node("p", "今日概览 · 北京时间 05:00 起 · 详情查看近七日趋势", "monitoring-note");
+  period.closest(".monitoring-toolbar").prepend(periodNote);
+  document.getElementById("monitoringResourcePanel").hidden = true;
+  async function loadCompact(key, { force = false } = {}) {
+    const current = compactViews[key];
+    if (!current.dashboard || current.loading || (!force && Date.now() - current.loadedAt < 15000)) return;
+    current.loading = true;
+    const { button, dashboard, accounts, state } = current;
     button.disabled = true;
-    const dashboard = document.getElementById("monitoringTestDashboard");
-    const accounts = document.getElementById("monitoringTestAccounts");
-    for (const fold of dashboard.querySelectorAll("[data-agent-fold]")) testState[fold.dataset.agentFold] = fold.open;
+    if (!dashboard.childElementCount) dashboard.appendChild(node("p", "正在读取监控数据…", "monitoring-note"));
+    for (const fold of dashboard.querySelectorAll("[data-agent-fold]")) state[fold.dataset.agentFold] = fold.open;
     const accountsOpen = accounts.querySelector("details")?.open === true;
     const read = async path => {
       const response = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(15000) });
@@ -227,10 +233,11 @@
       } else accounts.appendChild(node("p", "账号额度读取失败，请刷新重试。", "monitoring-note"));
       globalScope.RemoteLabAgentDashboard.renderCompact(dashboard,
         sessionsResult.status === "fulfilled" ? sessionsResult.value.agentDashboard : null,
-        { state: testState, accounts, accountData: accountsResult.status === "fulfilled" ? accountsResult.value : null,
-          refresh: () => loadTest({ force: true }) });
-      if (results.every(result => result.status === "fulfilled")) testLoadedAt = Date.now();
-    } finally { testLoading = false; button.disabled = false; }
+        { state, accounts, accountData: accountsResult.status === "fulfilled" ? accountsResult.value : null,
+          refresh: () => loadCompact(key, { force: true }) });
+      if (accountsResult.status === "fulfilled") { value = accountsResult.value; render(); }
+      if (results.every(result => result.status === "fulfilled")) current.loadedAt = Date.now();
+    } finally { current.loading = false; button.disabled = false; }
   }
 
   function render() {
@@ -238,38 +245,9 @@
     if (value) {
       const guide = node("div"); handlingGuide(guide, "automation"); automations.prepend(guide.firstChild);
     }
-    content.replaceChildren();
-    if (priority) {
-      priority.replaceChildren(node("h2", "账户"));
-      if (!value) priority.appendChild(node("p", loading ? "正在读取账户额度…" : "账户额度读取失败，请刷新重试。", "monitoring-note"));
-      else priority.appendChild(node("p", `当前实例 · ${time(value.generatedAt)} · 账户剩余额度`, "monitoring-note"));
-    }
-
-    if (!value) { content.appendChild(node("p", t(loading ? "loading" : "failed"), "monitoring-note")); return; }
-    const snapshot = node("div", "", "monitoring-snapshot"); snapshot.id = "monitoringSnapshot"; content.appendChild(snapshot);
-    const accounts = renderAccounts(snapshot, value);
-    for (const gap of value.coverage?.gaps || []) {
-      const target = gap.source === "accounts" ? accounts : null;
-      if (target) target.appendChild(node("p", `部分数据未取得（${gap.code || "来源不可用"}），不能据此判断全部正常。`, "monitoring-note"));
-    }
   }
-
-  async function load({ silent = false, force = false } = {}) {
-    const days = Number(period.value) || 1;
-    void globalScope.RemoteLabSessionMonitoring?.load(days, force);
-    if (loading && days === loadedDays) return;
-    if (!force && value && days === loadedDays && Date.now() - loadedAt < 15000) return;
-    const request = ++serial; loading = true; loadedDays = days; refresh.disabled = true;
-    if (!silent && !value) render();
-    try {
-      const response = await fetch(`/api/monitoring/overview?days=${days}`, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
-      if (!response.ok) throw Error(`HTTP ${response.status}`);
-      const next = await response.json();
-      if (request === serial) { value = next; loadedAt = Date.now(); render(); }
-    } catch {
-      if (request === serial) { value = null; loading = false; render(); }
-    } finally { if (request === serial) { loading = false; refresh.disabled = false; } }
-  }
+  const load = options => loadCompact("overview", options);
+  const loadTest = options => loadCompact("test", options);
   function select(next, { sync = true } = {}) {
     view = next; overview.hidden = view !== "overview"; automations.hidden = view !== "automations";
     if (test) test.hidden = view !== "test";
@@ -299,9 +277,8 @@
     });
   });
   document.getElementById("monitoringTestRefresh")?.addEventListener("click", () => void loadTest({ force: true }));
-  period.addEventListener("change", () => { value = null; void load(); });
   refresh.addEventListener("click", () => void load({ force: true }));
-  globalScope.addEventListener("remotelab:localechange", () => { if (value) render(); });
+  globalScope.addEventListener("remotelab:localechange", () => { if (view === "overview" || view === "test") void loadCompact(view, { force: true }); else if (value) render(); });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && view === "test" && document.body.dataset.appView === "tasks") void loadTest();
     if (!document.hidden && view === "overview" && document.body.dataset.appView === "tasks") void load({ silent: true });
