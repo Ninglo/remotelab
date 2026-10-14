@@ -1,4 +1,4 @@
-import { businessStart, BUSINESS_OFFSET, DAY, injectionSources, buildAgentDashboard } from './monitoring-dashboard.mjs';
+import { businessStart, BUSINESS_OFFSET, DAY, injectionSources, buildAgentDashboard, readContextDocuments } from './monitoring-dashboard.mjs';
 import { projectResponseTiming, timingStats, summarizeResponseTiming } from './response-timing.mjs';
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -171,6 +171,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     for(const row of rows.values()) {const samples=(grouped.get(row.sessionId)||[]).filter(s => !dashboard || s.at >= time(usage.window?.start));row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
     const allSamples=[...grouped.values()].flat();
     const agentDashboard=dashboard ? buildAgentDashboard(usage,allSamples,started,coverage) : null;
+    if (agentDashboard) agentDashboard.documents = await readContextDocuments();
     return {generatedAt:new Date(now()).toISOString(),agentDashboard,contextExperiment,responseTiming:summarizeResponseTiming([...grouped.values()].flat(),days,now()),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[],trendRuns:undefined},sessions:[...rows.values()],
       coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length,truncated:usage.runCount>ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length||coverage.limitedFiles>0,
         collectionMs:now()-started,cacheSeconds:60,apiAttribution:'unavailable'},

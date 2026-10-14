@@ -1,4 +1,8 @@
 import { timingStats } from './response-timing.mjs';
+import { readFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { MEMORY_DIR } from '../lib/config.mjs';
 
 export const DAY = 86400000;
 // 05:00 Asia/Shanghai = 21:00 UTC on the previous calendar date.
@@ -19,6 +23,32 @@ export const sourceFiles = {
   inflight_trial: ['执行中补充输入规则', 'chat/session-manager.mjs'],
   inflight_trial_input: ['本条输入定位', 'chat/system-prompt.mjs'],
 };
+
+const documents = [
+  { id: 'workspace_agents', name: 'AGENTS.md · 工作区约定', path: join(homedir(), 'AGENTS.md'), when: 'Harness 按工作目录加载；不计入下方 RemoteLab 注入量' },
+  { id: 'bootstrap', name: 'bootstrap.md · 实例与资料入口', path: join(MEMORY_DIR, 'bootstrap.md'), when: '入口指针随启动提供，正文按需读取' },
+  { id: 'project_index', name: 'projects.md · 项目目录', path: join(MEMORY_DIR, 'projects.md'), when: '项目背景入口；正文按任务需要读取' },
+  { id: 'skill_index', name: 'skills.md · 专用方法目录', path: join(MEMORY_DIR, 'skills.md'), when: '检索候选／按需读取，不等于所有 Skill 正文自动注入' },
+  { id: 'remotelab_startup', name: 'startup-context.md · RemoteLab 启动说明', when: '新的原生会话启动时投射；实际版本可能含动态部分' },
+  { id: 'surface_messages', name: 'surface-messages.md · 展示默认规则', when: '默认规则；个人已确认设置可替代' },
+  { id: 'strict_start_check', name: 'work-start/v1.md · 开工检查', when: '仅在当前发起人的实验开关开启时投射' },
+];
+export async function readContextSource(id) {
+  const document = documents.find(d => d.id === id);
+  const source = Object.hasOwn(sourceFiles, id) ? sourceFiles[id] : null;
+  const file = document?.path || (source ? new URL('../' + source[1], import.meta.url) : null);
+  if (!file) return null;
+  try {
+    if ((await stat(file)).size > 1024 * 1024) return null;
+    return await readFile(file, 'utf8');
+  } catch { return null; }
+}
+export async function readContextDocuments() {
+  return Promise.all(documents.map(async ({ id, name, when }) => {
+    const text = await readContextSource(id);
+    return { id, name, when, chars: text === null ? null : chars(text) };
+  }));
+}
 
 // Section boundaries are the recorded slot headings, not arbitrary Markdown
 // headings inside a document. Retain sizes only, never private prompt bodies.

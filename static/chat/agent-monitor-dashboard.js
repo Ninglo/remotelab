@@ -57,6 +57,14 @@
       ['firstDeliveryMs', '首轮交付耗时', '耗时', r => r.firstDelivery.count],
     ]) grid.append(chart(d, ...args, state)); root.append(grid);
     const sources = disclosure('常规对话注入来源 · 名称、字符数与原文入口', 'sources', state);
+    if (d.documents?.length) {
+      sources.append(el('h4', '常规文档与加载方式'));
+      sources.append(table(['文档名称', '当前原文字数', '何时使用'], d.documents.map(row => {
+        const a = el('a', row.name); a.href = `${sourceBase}/api/monitoring/context-source?id=${encodeURIComponent(row.id)}`; a.target = '_blank'; a.rel = 'noopener';
+        return [row.chars === null ? row.name : a, row.chars === null ? '未取得' : row.chars.toLocaleString(), row.when];
+      })));
+      sources.append(el('p', '以上是当前原文的字符数，不表示每轮都把整份文档注入。下面按真实首轮快照显示实际注入量。', 'agent-note'));
+    }
     if (d.sources) {
       sources.append(el('p', `最近一个可核对的首轮样本 · ${new Date(d.sources.observedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })} · 共 ${d.sources.chars.toLocaleString()} 字符`, 'agent-note'));
       sources.append(table(['文档／内容来源', '实际注入字符', '查看来源'], d.sources.entries.map(row => {

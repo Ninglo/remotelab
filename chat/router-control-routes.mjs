@@ -104,7 +104,7 @@ import { queryUsageLedger } from './usage-ledger.mjs';
 import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
 import { readSessionMonitoring, readDashboardSessions, compactSessionMonitoring } from './monitoring-sessions.mjs';
-import { sourceFiles as monitoringContextSources } from './monitoring-dashboard.mjs';
+import { readContextSource } from './monitoring-dashboard.mjs';
 import { updateSessionProgressPolicy, updateProgressCardDisclosure } from './session-progress-policy.mjs';
 import {
   buildClientInstanceSettings,
@@ -1177,12 +1177,11 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/monitoring/context-source' && req.method === 'GET') {
-    const source = monitoringContextSources[parsedUrl?.query?.id];
-    if (!source || !Object.hasOwn(monitoringContextSources, parsedUrl?.query?.id)) {
+    const body = await readContextSource(parsedUrl?.query?.id);
+    if (body === null) {
       writeJson(res, 404, { error: 'Unknown context source' }); return true;
     }
     try {
-      const body = await readFile(new URL('../' + source[1], import.meta.url), 'utf8');
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
       res.end(body);
     } catch { writeJson(res, 404, { error: 'Context source unavailable' }); }
