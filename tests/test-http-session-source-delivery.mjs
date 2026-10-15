@@ -151,6 +151,27 @@ try {
   assert.equal(observed.body.recent.at(-1).text, observation.text);
   assert.equal((await connectorRequest('POST', observePath, observation)).status, 200,
     'connector retries keep a single Session message');
+  const { publishLocalFileAssetFromPath } = await import('../chat/file-assets.mjs');
+  const imagePath = join(home, 'observed.png');
+  await writeFile(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'));
+  const imageAsset = await publishLocalFileAssetFromPath({ sessionId: groupFeedId,
+    localPath: imagePath, originalName: 'observed.png', mimeType: 'image/png', createdBy: 'fixture' });
+  const imageObservation = { ...observation, sourceMessageId: 'observed-image', requestId: 'feishu:observed-image',
+    text: 'Image attachment', attachments: [{ assetId: imageAsset.id }],
+    sourceContext: { ...observedSource, messageId: 'observed-image', messageType: 'image' } };
+  assert.equal((await connectorRequest('POST', observePath, imageObservation)).status, 201);
+  assert.equal((await connectorRequest('POST', observePath, imageObservation)).status, 200);
+  const imageEvents = (await request('GET', `/api/sessions/${groupFeedId}/events?filter=all`)).body.events
+    .filter(event => event.sourceMessageId === 'observed-image');
+  assert.equal(imageEvents.length, 1, 'retrying a listening image must not duplicate the message');
+  assert.equal(imageEvents[0].attachments[0].assetId, imageAsset.id);
+  assert.equal(imageEvents[0].images[0].mimeType, 'image/png', 'listening history must render an image');
+  assert.equal((await request('GET', `/api/sessions/${groupFeedId}`)).body.session.activity.run.state, 'idle',
+    'saving a listening image must not start the Harness');
+  assert.equal((await connectorRequest('POST', observePath, { ...imageObservation,
+    attachments: [{ assetId: 'fasset_missing' }] })).status, 400, 'observations validate asset references');
+  assert.equal((await connectorRequest('POST', observePath, { ...imageObservation,
+    attachments: [{ localPath: '/etc/passwd' }] })).status, 400, 'observations cannot import arbitrary paths');
   const decisionPath = `${observePath}/decision`;
   assert.equal((await connectorRequest('POST', decisionPath, {
     sourceMessageId: 'observed-one', participation: 'silent', emojiType: 'WOW',

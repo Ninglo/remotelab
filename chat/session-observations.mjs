@@ -6,6 +6,7 @@ import { createRecordStore } from '../lib/durable-records.mjs';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { appendEvent, getHistoryHeadSeq, readEventsAfter } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
+import { buildMessageAttachmentRefs } from './session-attachments.mjs';
 
 const store = createRecordStore(join(CONFIG_DIR, 'session-observations'));
 const serialize = createKeyedTaskQueue();
@@ -73,7 +74,7 @@ export async function observeSessionMessage(sessionId, input = {}) {
       const prior = after.find(event => event.type === 'message' && event.role === 'user'
         && event.sourceMessageId === sourceMessageId);
       if (prior) duplicate = true;
-      eventSeq = prior?.seq || (await appendEvent(sessionId, messageEvent('user', text, [], {
+      eventSeq = prior?.seq || (await appendEvent(sessionId, messageEvent('user', text, buildMessageAttachmentRefs(input.attachments), {
         requestId: trim(input.requestId),
         sourceMessageId,
         source: 'feishu_observation',

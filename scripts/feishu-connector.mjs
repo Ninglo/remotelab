@@ -994,6 +994,7 @@ async function resolveFeishuRuntimeSelection(runtime) {
 async function submitRemoteLabRequest(runtime, summary, {
   prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
   observedRecent = null, legacyGroupWorkThread = false, observedSessionId = null,
+  observedAttachments = null,
 } = {}) {
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   if (!observeOnly && participationEnabled(runtime, summary)) {
@@ -1116,13 +1117,23 @@ async function submitRemoteLabRequest(runtime, summary, {
       code: QUICK_PROFILE_CONFLICT,
     });
   }
+  // Participation changes execution, never the resource ingestion contract.
+  const attachmentsPromise = observedSessionId === session.id && observedAttachments
+    ? Promise.resolve(observedAttachments)
+    : resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id });
   if (observeOnly) {
-    const sourceContext = buildMessageSourceContext(effectiveSummary);
+    const attachmentResolution = await attachmentsPromise;
+    const observedSummary = { ...effectiveSummary,
+      ...(attachmentResolution.failures.length > 0
+        ? { attachmentDownloadFailures: attachmentResolution.failures } : {}),
+    };
+    const sourceContext = buildMessageSourceContext(observedSummary);
     const observed = await requester(`/api/sessions/${encodeURIComponent(session.id)}/observations`, {
       method: 'POST', body: {
         sourceMessageId: effectiveSummary.messageId,
         requestId: buildRequestId(effectiveSummary),
-        text: buildAttributedFeishuMessage(effectiveSummary),
+        text: buildAttributedFeishuMessage(observedSummary),
+        attachments: attachmentResolution.attachments,
         sourceContext,
       },
     });
@@ -1132,12 +1143,12 @@ async function submitRemoteLabRequest(runtime, summary, {
         retryable: !(status >= 400 && status < 500 && ![408, 429].includes(status)),
       });
     }
-    return { sessionId: session.id, externalTriggerId, observation: observed.json };
+    return { sessionId: session.id, externalTriggerId, observation: observed.json, attachmentResolution };
   }
   const participationStatus = participationEnabled(runtime, effectiveSummary)
     ? await participationController(runtime).state(effectiveSummary) : null;
   const [attachmentResolution, conversationContext, linkedProjectContext, groupAnnouncement] = await Promise.all([
-    resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
+    attachmentsPromise,
     // Admission time is not a Harness receipt. Fetch the authorized source;
     // preparation removes only context proven present in the resumed thread.
     loadFeishuConversationContext(runtime, effectiveSummary, {
@@ -1319,7 +1330,8 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
     startJevReaction(runtime, summary, observationReceipt, helpers, controller);
   }
   const workReceipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(
-    runtime, summary, { skipUserMessage: true, observedSessionId: sessionId });
+    runtime, summary, { skipUserMessage: true, observedSessionId: sessionId,
+      observedAttachments: observationReceipt.attachmentResolution });
   if (workReceipt?.ignored) return { sessionId, externalTriggerId, observedOnly: true };
   return { sessionId, externalTriggerId,
     ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId,

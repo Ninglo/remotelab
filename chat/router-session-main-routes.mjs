@@ -419,8 +419,10 @@ export async function handleSessionMainRoutes({
           return true;
         }
         const initiator = await resolveSessionInitiator(authSession, 'feishu', payload.sourceContext);
+        const attachments = await resolveRequestedSessionAttachments(authSession,
+          Array.isArray(payload.attachments) ? payload.attachments.filter(Boolean) : [], { sessionId });
         const observed = await observeSessionMessage(sessionId, {
-          ...payload, initiatedByIdentityId: initiator.identityId,
+          ...payload, attachments, initiatedByIdentityId: initiator.identityId,
         });
         writeJson(res, observed.duplicate ? 200 : 201, observed);
       } catch (error) {

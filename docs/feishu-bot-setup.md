@@ -726,7 +726,13 @@ for scope, registration, feedback and acceptance boundaries.
 
 Participation controls apply independently to the main timeline and each existing
 Thread. `/mute` selects listening: messages are recorded without a model turn unless
-that message @ mentions the Bot or uses a task command. Jev does not interpret
+that message @ mentions the Bot or uses a task command.
+Listening still downloads image/file resources into the normal Session asset
+store and records attachment references on the observed message, so the Web
+history displays the original images and files. Download failures remain explicit
+in the message's ingestion metadata; a text placeholder is not proof of a saved
+attachment. Recording an attachment does not start a Harness turn.
+Jev does not interpret
 natural-language invitations, mode changes or topic changes. `/unmute` restores active participation for
 new messages; queued content from before restoration is not replayed as new work.
 Pausing or entering listening cancels that conversation's ongoing work and removes

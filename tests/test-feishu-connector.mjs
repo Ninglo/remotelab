@@ -1669,6 +1669,7 @@ try {
 }
 
 let planningSubmittedPayload = null;
+let planningObservedPayload = null;
 let planningCreatedPayload = null;
 const planningServer = http.createServer(async (req, res) => {
   let body = '';
@@ -1694,6 +1695,12 @@ const planningServer = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && req.url === '/api/sessions/sess_feishu_planning_1/observations') {
+    planningObservedPayload = JSON.parse(body || '{}');
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ eventSeq: 12, duplicate: false, recent: [] }));
+    return;
+  }
   if (req.method === 'POST' && req.url === '/api/sessions/sess_feishu_planning_1/messages') {
     planningSubmittedPayload = JSON.parse(body || '{}');
     res.writeHead(202, { 'Content-Type': 'application/json' });
@@ -1781,6 +1788,35 @@ try {
   assert.equal(reply.runId, null);
   assert.equal(reply.queued, false);
   assert.equal(reply.replyText, undefined);
+
+  const observedRuntime = {
+    authCookie: 'session_token=test-cookie',
+    config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionFolder: repoRoot, sessionTool: 'codex' },
+    publishRemoteLabAsset: async ({ body }) => {
+      for await (const chunk of body) assert.ok(chunk.length);
+      return { id: 'fasset_observed_image', mimeType: 'image/jpeg', originalName: 'observed.jpg' };
+    },
+    appClient: { im: { v1: { messageResource: { get: async () => ({
+      headers: { 'content-type': 'image/jpeg' }, getReadableStream: () => Readable.from([jpegBuffer]),
+    }) } } } },
+  };
+  const observedImage = { chatType: 'group', chatId: 'observed-group', messageId: 'observed-image',
+    messageType: 'image', contentSummary: 'Image attachment', imageKeys: ['img_observed'], sender: { openId: 'person' } };
+  const previousSubmission = planningSubmittedPayload;
+  const observedReceipt = await submitRemoteLabRequest(observedRuntime, observedImage, { observeOnly: true });
+  assert.equal(planningObservedPayload.attachments[0].assetId, 'fasset_observed_image');
+  assert.equal(planningSubmittedPayload, previousSubmission, 'listening uploads the image without submitting a model turn');
+  observedRuntime.appClient.im.v1.messageResource.get = async () => { throw new Error('fixture resource unavailable'); };
+  await submitRemoteLabRequest(observedRuntime, observedImage, {
+    skipUserMessage: true, observedSessionId: observedReceipt.sessionId,
+    observedAttachments: observedReceipt.attachmentResolution,
+  });
+  assert.equal(planningSubmittedPayload.attachments[0].assetId, 'fasset_observed_image',
+    'execution reuses the observed attachment without downloading a second copy');
+  await submitRemoteLabRequest(observedRuntime, observedImage, { observeOnly: true });
+  assert.deepEqual(planningObservedPayload.attachments, []);
+  assert.equal(planningObservedPayload.sourceContext.ingestion.status, 'partial',
+    'listening download failures must not masquerade as a complete image');
 
   const sotaRuntime = { tool: 'codex', model: 'configured-frontier', effort: 'xhigh', thinking: false, runtimeTier: 'sota' };
   await submitRemoteLabRequest({

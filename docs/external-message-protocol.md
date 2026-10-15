@@ -410,6 +410,14 @@ This means connectors should treat `requestId` as the idempotency key for one up
 
 ---
 
+Feishu `POST /api/sessions/:id/observations` accepts the same `attachments`
+asset references as the executing message endpoint. It resolves them through
+the shared attachment validator and stores the normal message attachment fields.
+Participation mode controls execution, not message representation: recording an
+image while listening does not start a Run, and subsequent execution reuses the
+already ingested resources. Download failures are retained in source ingestion
+metadata. Source-conversation validation and retry deduplication still apply.
+
 ## 7. Durable delivery and optional progress observation
 
 ### Source-delivery contract

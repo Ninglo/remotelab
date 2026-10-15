@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-15 — Keep received message formats independent of participation mode
+
+- Feedback: group history showed only “Image attachment” for pictures received while listening. Changing participation mode should not change the format of stored messages or create a separate media path.
+- Change: ingest resources before choosing observation or execution; reuse the same assets, attachment validation and message normalization. Observation history retains real image/file references without starting a model turn.
+- Verification: connector and HTTP scenarios cover image preservation, reuse on execution, retry deduplication, invalid references and visible download failures. Existing historical placeholders need a bounded source-backed repair; deployment and real image readback are separate checks.
+
 ### 2026-10-15 — Retire the duplicate personal Todo store
 
 - Feedback: human Todos should use Feishu tasks rather than a second RemoteLab list.
