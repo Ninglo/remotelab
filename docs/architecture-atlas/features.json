@@ -558,6 +558,7 @@
         },
         {
           "id": "feishu-meeting-ingest",
+          "sourceRevision": "657666797df0f00887f7818f0ebd6b7d9803b8bb",
           "name": "会后原文自动进入指定群",
           "purpose": "将已发现且有权读取的会后原始文字交给指定群的现有分析流程。",
           "entry": "实例 Connector 的 meeting-ingest-policy.json；状态与恢复使用 feishu-meeting-ingest 脚本。",

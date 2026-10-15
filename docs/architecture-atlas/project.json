@@ -991,6 +991,12 @@
   },
   "documentation": [
     {
+      "source": "docs/feishu-meeting-observer.md",
+      "route": "manual-feishu-meeting.html",
+      "title": "飞书会后材料自动入群",
+      "description": "会议发现、授权原文读取、增量投递、去重和失败恢复的适用边界"
+    },
+    {
       "source": "README.zh.md",
       "route": "manual-remotelab.html",
       "title": "RemoteLab 入门",
