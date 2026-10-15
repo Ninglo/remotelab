@@ -555,6 +555,23 @@
             "knowledge/qianyan.mjs"
           ],
           "commands": []
+        },
+        {
+          "id": "feishu-meeting-ingest",
+          "name": "会后原文自动进入指定群",
+          "purpose": "将已发现且有权读取的会后原始文字交给指定群的现有分析流程。",
+          "entry": "实例 Connector 的 meeting-ingest-policy.json；状态与恢复使用 feishu-meeting-ingest 脚本。",
+          "condition": "默认停用。需已有会议发现、明确目标群与增量起点；会议发现不等于私有妙记可读，分析接纳不等于回复已送达。不会自动入会或改变材料分享权限。",
+          "example": "会议结束后取回可读逐字稿，向授权录音群投递原链接，随后在同一话题提供独立总结和待人工确认的拟行动。",
+          "sources": [
+            "docs/feishu-meeting-observer.md",
+            "connectors/feishu/meeting-observer.mjs",
+            "connectors/feishu/meeting-ingest.mjs",
+            "connectors/feishu/meeting-materials.mjs",
+            "scripts/feishu-meeting-ingest.mjs",
+            "scripts/feishu-connector.mjs"
+          ],
+          "commands": []
         }
       ]
     },

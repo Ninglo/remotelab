@@ -185,6 +185,9 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
       if (type === END) state.endedAt ||= str(meeting.end_time) || new Date(now()).toISOString();
       await save(state);
     });
+    // Discovery is independent of the opt-in attendance pilot. The consumer
+    // persists its own admission before this event is acknowledged.
+    if (type === END && options.onEnded) await options.onEnded(await readState(id));
     launch(id);
     return {};
   }
@@ -193,7 +196,12 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
     if (!p) return false;
     await mkdir(root, { recursive: true, mode: 0o700 });
     for (const file of await readdir(root)) {
-      if (/^\d{10,30}\.json$/.test(file)) launch(file.slice(0, -5));
+      if (/^\d{10,30}\.json$/.test(file)) {
+        const id = file.slice(0, -5);
+        const state = await readState(id);
+        if (state?.endedAt && options.onEnded) await options.onEnded(state);
+        launch(id);
+      }
     }
     console.log('[feishu-meeting] enterprise discovery enabled; automatic attendance requires an explicit target');
     return true;

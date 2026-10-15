@@ -119,6 +119,7 @@ import {
 } from '../connectors/feishu/reply-routing.mjs';
 import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { createFeishuMeetingObserver } from '../connectors/feishu/meeting-observer.mjs';
+import { createFeishuMeetingIngest } from '../connectors/feishu/meeting-ingest.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   normalizeFeishuResponsePolicy,
@@ -2251,6 +2252,17 @@ async function main() {
   runtime.quickParticipation = quickParticipation;
   await restoreFeishuBotHandoffScopes(runtime);
   const inbox = initializeInbox(runtime);
+  const meetingIngest = createFeishuMeetingIngest(runtime, {
+    submit: async (summary, options) => {
+      const receipt = await submitRemoteLabRequest(runtime, summary, options);
+      if (receipt.sessionId) {
+        await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
+        await recordFeishuThreadSessionBinding(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
+      }
+      return receipt;
+    },
+  });
+  const meetingObserver = createFeishuMeetingObserver(runtime, { onEnded: meetingIngest.accept });
   const wsClient = new Lark.WSClient({
     appId: config.appId,
     appSecret: config.appSecret,
@@ -2282,12 +2294,16 @@ async function main() {
     runtime.projectSurface?.stop();
     void documentEvents.stop();
     inbox.stop();
+    meetingObserver.stop();
+    meetingIngest.stop();
     console.log(`[feishu-connector] closing connection (${reason})`);
     wsClient.close();
   };
   const shutdownAndExit = async (reason, code = 0) => {
     closeConnection(reason);
     await inbox.idle();
+    await meetingObserver.idle();
+    await meetingIngest.idle();
     await runtime.sourceDeliveryPollPromise;
     await documentEvents.stop();
     await cardsStopped;
@@ -2351,7 +2367,6 @@ async function main() {
     });
     return {};
   };
-  const meetingObserver = createFeishuMeetingObserver(runtime);
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     ...meetingObserver.handlers,
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
@@ -2407,6 +2422,7 @@ async function main() {
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
   inbox.start();
+  await meetingIngest.start();
   await wsClient.start({ eventDispatcher });
   void meetingObserver.restore().catch(error =>
     console.warn(`[feishu-meeting] restore failed: ${error.message}`));

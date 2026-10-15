@@ -44,6 +44,9 @@ jobs:
       - name: Verify package boundary
         run: node tests/test-package-publish-boundary.mjs
 
+      - name: Verify post-meeting ingestion and recovery
+        run: npm run test:meeting-ingest
+
       - name: Verify social publishing without real accounts
         run: node scripts/run-with-clean-instance-env.mjs node --test tests/test-social-publish.mjs
 
