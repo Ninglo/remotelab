@@ -65,3 +65,5 @@
 当前导航复用 Web 组件并挂载在原生消息列表内部，最外层官方导航保留。源码构建
 固定记录 Web 发布版本及 SHA-256，安装检查试验资源基线、保留原包备份、重新签名
 并验证；新版本适配需要重新验证，不能直接套用浏览器扩展的自动更新器。
+
+The same personal routing preference is also available from eligible Feishu group configuration cards. “为我开启试用 / 为我关闭试用 / 查看我的状态” resolve the signed callback operator to their own Person; they do not change group participation, other members, or already accepted inputs. Callback audit entries retain event/chat/message provenance, and repeated callback events cannot undo a later personal choice. See [the scoped trial contract](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards).

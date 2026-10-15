@@ -1,3 +1,5 @@
+import { routingPilotCardScope } from '../../lib/group-routing-pilot.mjs';
+import { personalRoutingCardAction } from './personal-routing-card.mjs';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { groupProject, projectTopicRows } from './project-group-cards.mjs';
@@ -65,7 +67,7 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     } catch { project = { error: '登记的项目说明暂时无法读取，请核对原来源。' }; }
     const topics = projectTopicRows(runtime.projectCardSessions || new Map(), chatId, runtime.config.sourceRouteId);
     const boardPage = Math.min(runtime.groupBoardPages?.get(chatId) || 0, Math.max(0, Math.ceil(topics.length / 10) - 1));
-    return { project, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
+    return { routingTrial: await routingPilotCardScope({ connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId, target: record.source }), project, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
       participationControls: group.participationMode === 'ambient' && group.participationControls === true,
       responseMode: group.responseMode, selection, catalog, reasoning: reasoningForRuntimeProfile(catalog, selection.model), systemPrompt,
       sessionAvailable: Boolean(session), effectiveSystemPrompt: session?.systemPrompt || '',
@@ -87,6 +89,9 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     if (!record || record.source.topicId || !actor || actor === runtime.botIdentity?.openId
         || record.source.chatId !== chatId || record.cardMessageId !== messageId || !await authorize(summary)) {
       return { toast: { type: 'error', content: '配置卡片已失效或无权操作。' } };
+    }
+    if (['routing-on', 'routing-off', 'routing-status'].includes(value.action)) {
+      return personalRoutingCardAction(runtime, record, actor, value.action, summary.eventId);
     }
     if (!['refresh', 'board-page', 'model', 'effort', 'prompt'].includes(value.action)) return { toast: { type: 'error', content: '未知配置操作。' } };
     // Callback returns promptly; each group has one serial mutation queue.

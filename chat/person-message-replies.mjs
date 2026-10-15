@@ -48,6 +48,7 @@ export async function changePersonMessageReplies(input, actor) {
   const mutation = await updateAuthDocument(document => {
     const person = requireActor(document, actor);
     const current = settingsFor(person);
+    if (actor.authKind === 'feishu-card' && actor.eventId && person.preferences?.messageReplies?.audit?.some(entry => entry.eventId === actor.eventId && entry.identityId === actor.identityId)) return current;
     if (input.expectedRevision !== current.revision) fail('你的设置已更新，请重新载入后再保存。', 409);
     const value = input.action === 'routing' ? { ...current.choices, routing: input.enabled ? 'experimental' : 'none' }
       : input.action === 'strict-start' ? { ...current.choices, strictStartCheck: input.enabled }
@@ -62,6 +63,7 @@ export async function changePersonMessageReplies(input, actor) {
     person.preferences = { ...person.preferences, messageReplies: { version: 1, revision, active,
       audit: [...(previous?.audit || []), { action: input.action, revision, time: now,
         identityId: actor.identityId, choices: value,
+        ...(actor.authKind === 'feishu-card' ? { eventId: actor.eventId, chatId: actor.chatId, messageId: actor.messageId, surface: 'feishu' } : {}),
         ...(actor.authKind === 'accepted-run' ? { runId: actor.runId, requestId: actor.requestId, sessionId: actor.sessionId } : {}) }].slice(-32) } };
     person.updatedAt = now;
     return settingsFor(person);
@@ -69,7 +71,7 @@ export async function changePersonMessageReplies(input, actor) {
     replySettingValues(findPerson(after, actor.personId).preferences.messageReplies.active, 3),
     { scope: 'person', scopeId: actor.personId, subjectPersonId: actor.personId,
       before: replySettingValues(findPerson(before, actor.personId)?.preferences.messageReplies?.active, 3) }),
-    { personId: actor.personId, surface: actor.authKind === 'accepted-run' ? 'agent' : 'web', operation: 'change' }) });
+    { personId: actor.personId, surface: actor.authKind === 'accepted-run' ? 'agent' : actor.authKind === 'feishu-card' ? 'feishu' : 'web', operation: 'change' }) });
   return mutation.result;
 }
 

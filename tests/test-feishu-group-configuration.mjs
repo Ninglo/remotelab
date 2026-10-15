@@ -60,8 +60,9 @@ try {
   assert.match(JSON.stringify(lastCard()), /alpha/);
   assert.match(JSON.stringify(lastCard()), /查看主讨论记录/);
   assert.ok(lastCard().body.elements.some(x => x.tag === 'form'));
+  let actionCount = 0;
   const action = async (operation, fields, revision = null, extra = {}) => {
-    const result = await controller.action({ header: { event_id: `action-${cards.length}` }, event: {
+    const result = await controller.action({ header: { event_id: extra.eventId || `action-${++actionCount}` }, event: {
       context: { open_chat_id: source.chatId, open_message_id: record.cardMessageId },
       operator: { open_id: extra.actor || 'human' }, action: { value: {
         namespace: 'group-configuration', key: record.key, revision: revision || (await controller.view(record)).revision,
@@ -70,6 +71,47 @@ try {
     await controller.idle();
     return result;
   };
+  const { GROUP_ROUTING_PILOT_FILE, routingPilotScope } = await import('../lib/group-routing-pilot.mjs');
+  const { updateAuthDocument } = await import('../lib/auth-config.mjs');
+  const { loadPersonMessageReplies } = await import('../chat/person-message-replies.mjs');
+  const { captureMessageRoutingOptions } = await import('../chat/message-routing-policy.mjs');
+  await updateAuthDocument(doc => {
+    doc.people = ['human', 'other'].map(name => ({ id: `person_${name}`, name, credentials: [],
+      identities: [{ id: `identity_${name}`, kind: 'feishu', realm: config.sourceRouteId, subjectId: name }] }));
+    doc.primaryPersonId = 'person_human';
+  });
+  const pilot = { version: 2, enabled: true, personalOptIn: true, trialId: 'test', scopeLabel: '六个测试群',
+    groups: [{ sourceRouteId: config.sourceRouteId, tenantKey: source.tenantKey, chatId: source.chatId, folder: home }] };
+  await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify(pilot));
+  const conversation = { connector: 'feishu', sourceRouteId: config.sourceRouteId, target: source };
+  const actor = name => ({ personId: `person_${name}`, identityId: `identity_${name}` });
+  const admission = name => captureMessageRoutingOptions({ conversation }, {
+    viewPersonId: `person_${name}`, initiatedByIdentityId: `identity_${name}`, feishuConnectorAuthenticated: true,
+    sourceContext: { ...source, connector: 'feishu', sourceRouteId: config.sourceRouteId, messageId: 'input', sender: { openId: name, senderType: 'user' } },
+    sourceDelivery: conversation,
+  });
+  assert.equal((await admission('human')).messageRoutingPolicy.mechanism, 'none');
+  assert.equal((await action('routing-on', {}, null, { eventId: 'enable-once' })).toast.type, 'success');
+  assert.equal((await admission('human')).messageRoutingPolicy.trialId, 'test');
+  assert.equal((await admission('other')).messageRoutingPolicy.mechanism, 'none');
+  assert.equal((await loadPersonMessageReplies(actor('other'))).revision, 0);
+  const rev = (await loadPersonMessageReplies(actor('human'))).revision;
+  await action('routing-on');
+  assert.equal((await loadPersonMessageReplies(actor('human'))).revision, rev, 'repeated enable is idempotent');
+  assert.match((await action('routing-status')).toast.content, /已开启/);
+  assert.equal((await action('routing-on', {}, null, { actor: 'outsider' })).toast.type, 'error');
+  await action('routing-off');
+  assert.equal((await admission('human')).messageRoutingPolicy.mechanism, 'none');
+  await action('routing-on', {}, null, { eventId: 'enable-once' });
+  assert.equal((await admission('human')).messageRoutingPolicy.mechanism, 'none', 'late callback replay does not undo subsequent disable');
+  const trialCard = JSON.stringify((await import('../connectors/feishu/group-configuration-card.mjs')).buildGroupConfigurationCard(
+    { ...record, cardLayout: 'compact' }, await controller.view(record)));
+  assert.match(trialCard, /为我开启试用/);
+  assert.match(trialCard, /不自动新建飞书话题/);
+  assert.equal(await routingPilotScope({ ...conversation, target: { ...source, chatId: 'outside' } }, undefined, 'person_human'), null);
+  await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({ ...pilot, personalOptIn: false, personIds: ['person_other'] }));
+  assert.equal(await routingPilotScope(conversation, undefined, 'person_human'), null, 'old allowlist remains closed');
+  assert.equal((await action('routing-on')).toast.type, 'error', 'withdrawn pilot rejects stale buttons');
   const stale = (await controller.view(record)).revision;
   await action('model', { model: 'beta' });
   assert.equal(session.feishuRuntimeSelection.model, 'beta');
