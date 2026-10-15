@@ -7,7 +7,7 @@ import { loadSessionsMeta } from './session-meta-store.mjs';
 import { getSession, acknowledgeSessionResult } from './session-manager.mjs';
 import { onSessionInvalidation } from './ws-clients.mjs';
 import { loadAuthDocument } from '../lib/auth-config.mjs';
-import { buildGroupBoards, personNames } from './feishu-web-group-boards.mjs';
+import { buildGroupBoards, personNames, boardGroups, verifiedBoards } from './feishu-web-group-boards.mjs';
 import { topicTextView } from './feishu-web-topic-text.mjs';
 import { topicDetails } from './feishu-web-topic-details.mjs';
 import { nativeTopicBindings } from './feishu-native-topic-ids.mjs';
@@ -39,7 +39,7 @@ async function bindingsConfig() {
   const groups = value.groupsFile ? await read(value.groupsFile) : {}, boards = value.boardPairsFile ? await read(value.boardPairsFile) : { pairs: [] };
   const nativeNamespaces = value.nativeNamespacesFile ? await read(value.nativeNamespacesFile) : null;
   return { nativeNamespaces, artifactsFile: value.artifactsFile, file: value.bindingsFile, watchFiles: [value.bindingsFile, value.groupsFile, value.boardPairsFile, value.artifactsFile, value.nativeNamespacesFile].filter(Boolean), bindings: JSON.parse(await readFile(value.bindingsFile, 'utf8')), groups,
-    pairs: (boards.pairs || []).filter(p => groups[p.workChatId] && groups[p.discussionChatId]) };
+    pairs: boards.pairs || [] };
 }
 export function createFeishuTopicSource(deps = {}) {
   const sessions = deps.sessions || loadSessionsMeta, session = deps.session || (id => getSession(id, { includeTransportSurfaces: false })), bindings = deps.bindings || bindingsConfig;
@@ -56,8 +56,8 @@ export function createFeishuTopicSource(deps = {}) {
     for (const s of parents.values()) if (s) {
       const group = config.groups?.[s.conversation.target.chatId]; if (group) visibleGroups.add(String(group));
     }
-    const pairs = (config.pairs || []).filter(p => [p.workChatId, p.discussionChatId].some(id => visibleGroups.has(String(config.groups?.[id]))));
-    const boardChats = new Set(pairs.flatMap(p => [p.workChatId, p.discussionChatId]));
+    const pairs = verifiedBoards(config.pairs || [],config.groups || {}).filter(p => boardGroups(p).some(g => visibleGroups.has(String(config.groups?.[g.chatId]))));
+    const boardChats = new Set(pairs.flatMap(p => boardGroups(p).map(g=>g.chatId)));
     const relevant = s => eligible(s) && (wanted.has(config.bindings[s.conversation.target.rootId || s.conversation.target.messageId]) || boardChats.has(s.conversation.target.chatId));
     const incremental = changedId && previous;
     const cache = incremental ? new Map(previous[sourceRecords] || []) : new Map();

@@ -27,6 +27,14 @@ Discovery reuses the existing schedule, not a new periodic consumer. Registering
 projects these same fields into existing directory table rows. It retains block IDs, original elements and comment anchors,
 checks revisions before writing, verifies unchanged text and reports missing rows rather than inventing project ownership.
 Without `--apply` it only prepares the changes. Unchanged configuration produces no document writes.
+For the compact seven-column directory, pass `--boards <board-config> --native-groups <verified-native-index>`
+to also maintain the existing board, project-brief and new-topic-injection columns and compact summary.
+Columns are located by their headers, not by the last column. The notes keep their short reading-level
+prefix; the synchronizer never re-adds a per-row hierarchy paragraph. Existing four-column directories
+remain supported without coverage arguments. Unmapped native groups are pending, not delivered boards;
+local readable briefs and runtime switches describe configuration, not a fresh client or real-topic test.
+Use the existing daily schedule. It should separately inspect current participation/topic exceptions and
+the actual board transport; document maintenance does not enable groups, resume paused work, or publish cards.
 
 ## Native project entry
 

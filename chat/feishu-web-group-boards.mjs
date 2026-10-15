@@ -22,10 +22,27 @@ export function boardTopic(s,{view,webThreadId,names=new Map()}={}){
   personLabel:initiator?'发起人':'发起人待核',archived:!!s.archived,
   sourceStale:!!s.boardSourceStale,sourceUpdatedAt:s.updatedAt||'',sessionUrl:'https://index.jiujianian.dev/?session='+s.id+'&tab=sessions'};
 }
+export function boardGroups(board){
+ const entries=Array.isArray(board.groups)?board.groups:[
+  {chatId:board.workChatId,name:board.workChatName,role:'work'},
+  {chatId:board.discussionChatId,name:board.discussionChatName,role:'discussion'}];
+ const seen=new Set();
+ return entries.filter(g=>typeof g?.chatId==='string'&&g.chatId&&!seen.has(g.chatId)&&seen.add(g.chatId))
+  .map(g=>({chatId:g.chatId,name:g.name||g.chatId,role:g.role||'group'}));
+}
+export function verifiedBoards(boards,groups){
+ return boards.flatMap(board=>{
+  const all=boardGroups(board),verified=all.filter(g=>groups[g.chatId]);
+  // Legacy pairs keep their all-or-nothing scope. Explicit group lists can
+  // become available incrementally, but never expose an unverified group.
+  if(!verified.length||(!Array.isArray(board.groups)&&verified.length!==all.length))return [];
+  return [{...board,groups:verified}];
+ });
+}
 export function buildGroupBoards(sessions,{pairs=[],groups={},names=new Map(),bindings={},viewFor}={}){
  return pairs.map(pair=>{
-  const chats=[pair.workChatId,pair.discussionChatId];
+  const members=boardGroups(pair),chats=members.map(g=>g.chatId);
   const topics=[...sessions.values()].filter(s=>chats.includes(s.conversation?.target?.chatId)).map(s=>boardTopic(s,{view:viewFor(s),names,webThreadId:bindings[s.conversation?.target?.rootId||s.conversation?.target?.messageId]}));
-  return {id:pair.id,name:pair.name,groups:[{chatId:pair.workChatId,name:pair.workChatName,role:'work',webChatId:groups[pair.workChatId]||null},{chatId:pair.discussionChatId,name:pair.discussionChatName,role:'discussion',webChatId:groups[pair.discussionChatId]||null}],topics};
+  return {id:pair.id,name:pair.name,groups:members.map(g=>({...g,webChatId:groups[g.chatId]||null})),topics};
  });
 }

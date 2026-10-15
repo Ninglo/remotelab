@@ -139,6 +139,26 @@ test('group boards reuse paired-group source and exclude private, unrelated and 
   a.activity.run.state = 'idle'; const changed = next(); broadcastAll({ type: 'session_invalidated', sessionId: a.id }); await changed;
   assert.notEqual(pushed.at(-1).boards[0].topics.find(t => t.sessionId === a.id).state, 'running'); off();
 });
+test('explicit project boards support one or three groups and never include unmapped group topics', async () => {
+  const records=['one','two','three','unverified','other'].map((chatId,i)=>{
+    const s=session(String(i+1).repeat(32),'root-'+chatId);s.conversation.target.chatId=chatId;return s;
+  });
+  const config={bindings:{},groups:{one:'native-one',two:'native-two',three:'native-three'},pairs:[
+    {id:'single',name:'Single',groups:[{chatId:'one',name:'Only group'}]},
+    {id:'project',name:'Project',groups:['two','three','unverified'].map(chatId=>({chatId,name:chatId}))}
+  ]};
+  const reads=[];
+  const source=createFeishuTopicSource({bindings:async()=>config,sessions:async()=>records,session:async id=>{reads.push(id);return records.find(s=>s.id===id);}});
+  const single=await source.snapshot([], '',null,['native-one'],false);
+  assert.equal(single.boards.length,1);assert.equal(single.boards[0].topics.length,1);
+  const project=await source.snapshot([], '',null,['native-two'],false);
+  assert.deepEqual(project.boards[0].groups.map(g=>g.chatId),['two','three']);
+  assert.equal(project.boards[0].topics.length,2);assert.ok(!reads.includes(records[3].id));
+  config.groups.unverified='native-four';
+  assert.equal((await source.snapshot([], '',null,['native-four'],false)).boards[0].topics.length,3);
+  delete config.groups.two;
+  assert.equal((await source.snapshot([], '',null,['native-two'],false)).boards.length,0);
+});
 test('topic details require explicit new confirmation; old and activated grants keep their scope', async () => {
   const input={origin:'http://127.0.0.1:19342',nativeAccount:'1000000000000000001',confirm:true};
   const old=await auth.connectFeishuWebSettings(input,actor,'topics');
