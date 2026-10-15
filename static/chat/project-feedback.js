@@ -3,7 +3,7 @@
   const root = document.getElementById("monitoringFeedback");
   if (!root) return;
   const activityText = {
-    projectsHeading: ['项目进展', 'Projects'], projectIntro: ['先选项目，再看子项目的当前判断、待推进事项、案例和反馈。', 'Choose a project to review its subprojects, next steps, cases and feedback.'],
+    refresh: ['刷新', 'Refresh'], projectsHeading: ['项目进展', 'Projects'], projectIntro: ['先选项目，再看子项目的当前判断、待推进事项、案例和反馈。', 'Choose a project to review its subprojects, next steps, cases and feedback.'],
     findProject: ['搜索子项目', 'Find a subproject'], overview: ['进展与下一步', 'Progress and next steps'], enterProject: ['查看进展', 'Open project'], usageOnDemand: ['查看使用统计', 'Load usage statistics'], noMatches: ['没有匹配的子项目', 'No matching subprojects'],
     caseUnknown: ['案例待整理', 'Cases not reviewed'], rawFeedback: ['原始反馈', 'Source feedback'],
     relatedItems: ['关联案例／反馈', 'Related cases / feedback'], actualChanges: ['实际修改与处理结果', 'Changes and outcomes'],
@@ -56,7 +56,8 @@
   let chosenGroup = new URL(globalScope.location.href).searchParams.get("projectGroup") || "", searchText = "";
   const countedLink = (label, id, section) => button(label, () => void select(id, { section }));
   const projectName = name => { const n = node('span', name); n.translate = false; return n; };
-  root.append(node("h2", t("projectsHeading")), node("p", t("projectIntro"), "monitoring-note"));
+  const heading = node("h2", t("projectsHeading")), intro = node("p", t("projectIntro"), "monitoring-note");
+  heading.dataset.feedbackLabel = "projectsHeading"; intro.dataset.feedbackLabel = "projectIntro"; root.append(heading, intro);
   const toolbar = node("div", "", "monitoring-toolbar");
   const refresh = button(t("refresh"), () => void load()); toolbar.appendChild(refresh);
   const note = node("p", "", "monitoring-note"); note.setAttribute("role", "status");

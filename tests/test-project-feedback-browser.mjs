@@ -134,6 +134,7 @@ try {
   await page.locator(".feedback-composer > summary").click();
   assert.equal(await page.locator("#feedbackSubmit").innerText(), "保存反馈");
   assert.equal(await page.locator("#monitoringFeedbackTab").innerText(), "项目进展");
+  assert.equal(await page.locator("#monitoringFeedback > h2").innerText(), "项目进展");
   await page.getByRole("button", { name: "返回子项目列表" }).click();
   await page.locator('.feedback-project-picker').getByRole('button', { name: 'Devices', exact: true }).click();
   await page.screenshot({ path: join(output, "mobile-zh.png"), fullPage: true });
