@@ -161,6 +161,6 @@ Mac 原生飞书增强的独立安装、本人连接、消息分组侧栏入口�
 
 Automation display labels and condition/result ordering are documented in [Task Center](task-center-v1.md#delivery-details-and-controls). Reviewed conditions include idle wake and gate rules; scheduled checks are distinct from actual execution.
 
-已绑定项目群可启用[群 Agent 卡片与开工说明](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)：复用各群主 Session，置顶显示回应状态、模型、项目文档、技能和实时话题看板；项目说明沿固定 Markdown、飞书评论和原04:00复盘维护。 单张卡片可选择精简展示，仅保留参与切换、模型与会话链接、项目共同认知和技能；干活群标明逐条回应，文档入口标明群内对话默认注入。按已审阅的群启用，获准批量更新时沿原卡片静默覆盖。
+已绑定项目群可启用[群 Agent 卡片与开工说明](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)：复用各群主 Session。现有和后续群配置卡统一精简展示，仅保留实际参与状态与可用切换、模型与会话链接、已绑定的项目共同认知和技能，以及已授权的个人试用入口；干活群按实际配置标明逐条回应，不展示 prompt 编辑器和实时话题看板。样式同步沿原卡片静默更新，添加功能按钮不自动授权补建卡片。项目说明仍沿固定 Markdown、飞书评论及原维护流程更新。
 
 Personal routing trial buttons on Feishu group cards reuse the per-Person reply setting; group eligibility alone does not opt members in. See [work arrangement and card scope](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards) and [personal settings](feishu-web-settings.md).

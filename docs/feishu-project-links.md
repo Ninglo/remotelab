@@ -187,7 +187,7 @@ group fails closed instead of offering a handoff to that group.
 ## Project group Agent cards and opening briefs
 
 Ask the Agent: “For the groups already bound to projects in this instance, reuse
-one main Session per group, pin its Agent card, show its topic states and project
+one main Session per group, pin its compact Agent card, show its main Session and project
 skills, and maintain a shared project opening brief in Markdown and Feishu.”
 The existing `MEMORY_DIR/project-runtime.json` group associations select the
 scope. Register each group’s verified `chatName` and `tenantKey`; a project may
@@ -203,23 +203,22 @@ response modes, paused projects, independent topic Sessions and model choices
 remain intact. Card opt-outs remain effective until explicitly withdrawn by the
 operator. Unbound groups are not inferred from titles.
 
-A single existing card can opt into a compact presentation using its durable
-participation record's `cardLayout: "compact"`. It retains the three participation
-callbacks, main Session model/link, project brief/time and up to three skill
-summaries. The brief link uses “项目名称｜项目共同认知·群内对话默认注入”.
-Work groups explicitly say that each message gets a response; an unresolved
-`auto` model is displayed as automatic selection, never a guessed model. It omits the topic list, runtime editors, prompt editors and refresh
-button. Select and verify only the explicitly reviewed group; this setting does
-not authorize rollout to other groups or lift their publication suppression.
+Existing and new group configuration cards use the same compact presentation;
+legacy `cardLayout` flags no longer select a full editor. The card retains the
+available participation callbacks, actual main Session model/link, project
+brief/time, up to three skills and authorized personal trial controls. The brief
+link uses “项目名称｜项目共同认知·群内对话默认注入”. Work groups show their actual
+per-message response policy even without a project binding. An unresolved `auto`
+model is displayed as automatic selection, never a guessed model. Topic boards,
+runtime/prompt editors and the refresh button are omitted from the group card;
+existing configuration backends remain compatible.
 
-The card shows the actual main Session runtime, response policy, project brief,
-brief update time, concise skills, paired group links and a paginated board of
-that group’s unarchived topic Sessions. Native Session invalidations refresh the
-same card without a polling AI task. Runtime completion is not task completion:
-idle topics say “not running”; completion requires the existing workflow state.
-Disconnection is shown on the card, and reconnect reloads the current source.
-The board is a read-only projection, not a second work ledger or autonomous
-supervisor. Existing callbacks validate the card, actor and source before edits.
+An authorized style migration patches existing message IDs without creating
+cards or changing participation. Adding controls to a card does not by itself
+authorize creating one when no binding exists: check the original group card and
+creation scope first. Publication suppression remains effective. Native Session
+invalidations refresh the same card without a polling AI task.
+Existing callbacks validate the card, actor and source before changes.
 
 The normal prompt builder reads only registered projects’ opening briefs on each
 accepted input, including resumed topics, with a hash and source pointer. Each

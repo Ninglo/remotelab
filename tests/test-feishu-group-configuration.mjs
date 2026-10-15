@@ -58,8 +58,8 @@ try {
   const lastCard = () => cards.at(-1);
   assert.equal(lastCard().schema, '2.0');
   assert.match(JSON.stringify(lastCard()), /alpha/);
-  assert.match(JSON.stringify(lastCard()), /查看主讨论记录/);
-  assert.ok(lastCard().body.elements.some(x => x.tag === 'form'));
+  assert.match(JSON.stringify(lastCard()), /打开主会话/);
+  assert.ok(!lastCard().body.elements.some(x => x.tag === 'form'), 'new groups get compact cards without a layout flag');
   let actionCount = 0;
   const action = async (operation, fields, revision = null, extra = {}) => {
     const result = await controller.action({ header: { event_id: extra.eventId || `action-${++actionCount}` }, event: {
@@ -104,6 +104,19 @@ try {
   assert.equal((await admission('human')).messageRoutingPolicy.mechanism, 'none');
   await action('routing-on', {}, null, { eventId: 'enable-once' });
   assert.equal((await admission('human')).messageRoutingPolicy.mechanism, 'none', 'late callback replay does not undo subsequent disable');
+  const { buildGroupConfigurationCard } = await import('../connectors/feishu/group-configuration-card.mjs');
+  for (const cardLayout of [undefined, 'compact', 'full']) {
+    const migrated = buildGroupConfigurationCard({ ...record, cardLayout }, await controller.view(record));
+    assert.doesNotMatch(JSON.stringify(migrated), /刷新当前配置|修改主讨论模型|编辑本群 prompt/);
+  }
+  const workCard = buildGroupConfigurationCard(record, { ...await controller.view(record), project: null,
+    participationControls: false, responseMode: 'all' });
+  assert.match(JSON.stringify(workCard), /本群逐条回应/);
+  assert.equal(workCard.header.title.content, 'Agent · 话题内逐条回应');
+  const originalMessageId = record.cardMessageId;
+  await runtime.participation.remember(source, session.id);
+  assert.equal((await runtime.participation.state(source)).cardMessageId, originalMessageId,
+    'refreshing an existing group keeps its card message');
   const trialCard = JSON.stringify((await import('../connectors/feishu/group-configuration-card.mjs')).buildGroupConfigurationCard(
     { ...record, cardLayout: 'compact' }, await controller.view(record)));
   assert.match(trialCard, /为我开启试用/);
@@ -124,7 +137,8 @@ try {
   assert.equal((await action('model', { model: 'alpha' }, null, { actor: 'outsider' })).toast.type, 'error');
   await action('prompt', { prompt_0: '本群讨论机器人实验；结论需要有证据。' });
   assert.match(resolveFeishuGroupSettings(config, source).systemPrompt, /本群讨论机器人实验/);
-  assert.match(JSON.stringify(lastCard()), /本群讨论机器人实验/);
+  assert.match((await controller.view(record)).systemPrompt, /本群讨论机器人实验/);
+  assert.doesNotMatch(JSON.stringify(lastCard()), /本群讨论机器人实验/, 'saved prompts stay out of compact cards');
   assert.equal((await controller.view(record)).promptVersion, 1);
   controller = createGroupConfigurationController(runtime, options);
   config.groups.group.systemPrompt = 'wrong';
