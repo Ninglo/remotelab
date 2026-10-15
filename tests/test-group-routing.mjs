@@ -136,6 +136,11 @@ try {
   await replyGroupInput(legacyReply, { text: '旧版结果。' });
   await replyGroupInput(legacyReply, { text: '旧版结果。' });
   assert.equal((await requests.get(legacyReply.key)).deliveries.length, 1, 'pre-upgrade reservation resumes and retries without duplication');
+  const noticeOnly = await input('notice-only', '待补充的问题', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  await requests.mutate(noticeOnly.key, current => ({ ...current, deliveries: [{ ...origin,
+    kind: 'content', surfaceKind: 'placement_error', text: '请在会话中回答。' }] }));
+  await replyGroupInput(noticeOnly, { text: '已根据回答完成。' });
+  assert.equal((await requests.get(noticeOnly.key)).deliveries.length, 2, 'a delivery failure notice is not an answer');
   // An opening is not a final answer. Related supplements can be accounted
   // for together after work started, and must keep the chosen Thread.
   const opened = await input('opened', '查看表格', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });

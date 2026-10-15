@@ -69,6 +69,8 @@ and never replays the blocked opening after a correction. If no choice arrives
 before completion, only a delivery-failure notice is sent, while the generated
 answer remains available in Session history. This does not add a semantic
 reviewer or another model. See [group reply placement](feishu-bot-setup.md).
+For an unplaced pending question, one failure notice links to the original Web
+question controls; it neither answers that question nor selects inline placement.
 
 ## Rule recovery after native compaction
 

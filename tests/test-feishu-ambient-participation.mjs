@@ -115,6 +115,23 @@ try {
     assert.ok(current.deliveries.every(item => !item.text.includes('feishu-reply:')));
   }
   const { notifyMissingFeishuReplyPlacement } = await import('../chat/feishu-reply-placement-feedback.mjs');
+  {
+    let current = structuredClone(strictRecord);
+    const store = { get: async () => current, mutate: async (_key, update) => (current = update(current)) };
+    const question = { seq: 1, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary',
+      content: '请确认范围', messageKind: 'user_question', nativeQuestion: { question: '请确认范围', options: [] },
+      questionId: 'q-missing', questionState: 'pending' };
+    await publishLiveAssistantReplies(current, [question], { store, plan });
+    await publishLiveAssistantReplies(current, [question], { store, plan });
+    assert.equal(current.deliveries.length, 1, 'one notice instead of a silently hidden question');
+    assert.equal(current.deliveries[0].surfaceKind, 'placement_error');
+    assert.equal(current.deliveries[0].nativeQuestion, undefined, 'failure notice cannot answer the original question');
+    assert.match(current.deliveries[0].text, /原问题已保留/);
+    const choice = { ...question, seq: 2, content: '<private>feishu-reply:thread</private>请确认范围' };
+    await publishLiveAssistantReplies(current, [choice], { store, plan });
+    assert.equal(current.replyPlacement.target.conversationKind, 'thread', 'failure notice cannot choose inline placement');
+    assert.equal(current.deliveries.at(-1).nativeQuestion.id, 'q-missing');
+  }
   for (const state of ['completed', 'cancelled']) {
     const current = { ...strictRecord, replyPlacementMissing: { seq: 1 } };
     await notifyMissingFeishuReplyPlacement(current, { store: { get: async () => current },

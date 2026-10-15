@@ -32,6 +32,7 @@ export function resolveAmbientFeishuReplyPlan(record, plan, history = []) {
   const prior = record.deliveries?.find(delivery => delivery.connector === 'feishu'
     && delivery.sourceRouteId === conversation.sourceRouteId
     && delivery.target?.chatId === target.chatId
+    && delivery.surfaceKind !== 'placement_error'
     && ['content', 'attachment'].includes(delivery.kind));
   if (prior) return normalizeConversation({ ...conversation, target: {
     ...target, ...prior.target, messageId: prior.target.messageId || target.messageId,

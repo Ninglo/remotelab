@@ -586,7 +586,9 @@ protocol error, with continuation-only/reference-only protection: it cannot
 restart a settled Run or answer a pending human question. No second model judges
 content or chooses the location. If the execution ends without a choice, the
 answer remains in Session history and the source receives a delivery-failure
-notice. Old accepted inputs keep their original contract; new-protocol inputs
+notice. New-protocol inputs with a pending question receive one failure notice and a Session entry so the
+human can use the original Web question controls. That notice does not select
+inline placement. Old accepted inputs keep their original contract; new inputs
 cannot join an incompatible old mainline execution. A suppressed unplaced
 opening is not replayed after the choice is corrected.
 

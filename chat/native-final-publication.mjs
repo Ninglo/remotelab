@@ -134,6 +134,20 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
         ...(surface.surfaceKind === 'opening' ? { suppressedOpeningMessageIds:
           [...new Set([...(current.suppressedOpeningMessageIds || []), messageId])] } : {}),
       }));
+      // A pending human question cannot consume protocol feedback. Keep its
+      // Web controls intact and report the delivery failure once at the source.
+      if (surface.surfaceKind === 'question' && event.questionState === 'pending') {
+        const entry = buildSessionEntry(session || { id: record.sessionId, sourceId: 'feishu' },
+          { runtimeSelection: publicationRun });
+        await store.mutate(record.key, current => {
+          if (current.result || current.options?.suppressSourceDelivery || current.routingHandoff
+              || current.replyPlacementQuestionNoticeIds?.includes(messageId)) return current;
+          return { ...current, replyPlacementQuestionNoticeIds: [...(current.replyPlacementQuestionNoticeIds || []), messageId],
+            deliveries: appendDeliveries(current, buildReplyDeliveries(ownerPlan, {
+              text: appendSessionEntryFooter('有一个待你回复的问题，但尚未明确选择群内发送位置。原问题已保留，请在会话中查看和回答。', entry),
+            }, { running: false }).map(part => ({ ...part, surfaceKind: 'placement_error' }))) };
+        });
+      }
       continue;
     }
     const hiddenMainline = isFeishuMainlineReply(replyPlan) && messageReplyPolicy?.version !== 3

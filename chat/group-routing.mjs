@@ -19,7 +19,7 @@ const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, 
 const stamp = session => session?.workAwareness?.intents?.at(-1)?.id || '';
 const queues = new Map();
 const hasAnswerDelivery = input => input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind)
-  && !['opening', 'progress'].includes(d.surfaceKind));
+  && !['opening', 'progress', 'placement_error'].includes(d.surfaceKind));
 async function serial(id, fn) {
   const prior = queues.get(id) || Promise.resolve();
   const current = prior.catch(() => {}).then(fn); queues.set(id, current);
