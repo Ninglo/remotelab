@@ -63,7 +63,9 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
     let config;
     try { config = JSON.parse(await readFile(GROUP_ROUTING_PILOT_FILE, 'utf8')); }
     catch (e) { if (e.code === 'ENOENT') return []; throw e; }
-    return config.version === 2 && config.enabled && config.personalOptIn && config.publicRoster
+    // Keep refreshing registered cards when the pilot is switched off, so
+    // previously published names are removed from non-project groups too.
+    return config.version === 2
       ? (config.groups || []).filter(g => g.sourceRouteId === runtime.config.sourceRouteId) : [];
   }
   async function refresh(chatId) {
