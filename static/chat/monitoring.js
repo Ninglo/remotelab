@@ -251,21 +251,24 @@
   }
   const load = options => loadCompact("overview", options);
   const loadTest = options => loadCompact("test", options);
-  let reviewOffset = 0, reviewSeverity = '', reviewState = '', reviewLoading = false;
+  let reviewOffset = 0, reviewSeverity = '', reviewState = '', reviewLoading = false, reviewReload = false;
   const reviewFolds = new Map();
   const reviewLabels = { none: '未发现具体风险', low: '低', medium: '中', high: '高', critical: '严重',
     reviewed: '已审', pending: '待审', failed: '失败', running: '批审中', incomplete: '尚未审完',
     completed: '当前快照已审完', not_started: '尚未开始', interrupted: '批审中断', disabled: '未启用' };
   async function loadSecurity() {
     const content = document.getElementById('promptReviewContent');
-    if (!content || reviewLoading) return;
+    if (!content) return;
+    if (reviewLoading) { reviewReload = true; return; }
     reviewLoading = true;
     for (const d of content.querySelectorAll('[data-review-fold]')) reviewFolds.set(d.dataset.reviewFold, d.open);
     try {
       const query = new URLSearchParams({ offset: reviewOffset, severity: reviewSeverity, state: reviewState });
       const response = await fetch(`/api/monitoring/prompt-review?${query}`, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw Error(`HTTP ${response.status}`);
-      const data = await response.json(); content.replaceChildren();
+      const data = await response.json();
+      if (query.toString() !== new URLSearchParams({ offset: reviewOffset, severity: reviewSeverity, state: reviewState }).toString()) { reviewReload = true; return; }
+      content.replaceChildren();
       const summary = section('Prompt 安全审阅', content), c = data.coverage || {}, u = data.usage || {};
       summary.append(node('p', `${reviewLabels[data.state] || data.state}${data.workerRunning ? ' · 工作进程运行中' : ''} · ${data.model} · ${data.ruleVersion}`));
       summary.append(node('p', '模型提出的风险线索，需结合原会话核对授权与实际后果。审阅不会执行整改。', 'monitoring-note'));
@@ -313,7 +316,7 @@
       }
       paging.append(node('span', `${data.total} 段 · 第 ${Math.floor(reviewOffset / 50) + 1} 页`)); results.append(paging);
     } catch { content.replaceChildren(node('p', '审阅状态读取失败，请刷新重试；不能据此判断安全。', 'monitoring-note')); }
-    finally { reviewLoading = false; }
+    finally { reviewLoading = false; if (reviewReload) { reviewReload = false; void loadSecurity(); } }
   }
   function select(next, { sync = true } = {}) {
     view = next; overview.hidden = view !== "overview"; automations.hidden = view !== "automations";
