@@ -6,10 +6,11 @@
   const content = document.getElementById("monitoringContent");
   if (!overview || !automations || !content) return;
   const test = document.getElementById("monitoringTest");
-  const views = ["overview", "usage", "automations", "feedback", ...(test ? ["test"] : [])];
+  const security = document.getElementById("monitoringSecurity");
+  const views = ["overview", "usage", "automations", "feedback", ...(security ? ["security"] : []), ...(test ? ["test"] : [])];
   const feedback = document.getElementById("monitoringFeedback");
   const usage = document.getElementById("monitoringUsage");
-  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab"), document.getElementById("monitoringFeedbackTab"), ...(test ? [document.getElementById("monitoringTestTab")] : [])];
+  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab"), document.getElementById("monitoringFeedbackTab"), ...(security ? [document.getElementById("monitoringSecurityTab")] : []), ...(test ? [document.getElementById("monitoringTestTab")] : [])];
   const period = document.getElementById("monitoringPeriod");
   const refresh = document.getElementById("monitoringRefresh");
   const create = document.getElementById("taskCenterCreateToggle");
@@ -250,9 +251,73 @@
   }
   const load = options => loadCompact("overview", options);
   const loadTest = options => loadCompact("test", options);
+  let reviewOffset = 0, reviewSeverity = '', reviewState = '', reviewLoading = false;
+  const reviewFolds = new Map();
+  const reviewLabels = { none: '未发现具体风险', low: '低', medium: '中', high: '高', critical: '严重',
+    reviewed: '已审', pending: '待审', failed: '失败', running: '批审中', incomplete: '尚未审完',
+    completed: '当前快照已审完', not_started: '尚未开始', interrupted: '批审中断', disabled: '未启用' };
+  async function loadSecurity() {
+    const content = document.getElementById('promptReviewContent');
+    if (!content || reviewLoading) return;
+    reviewLoading = true;
+    for (const d of content.querySelectorAll('[data-review-fold]')) reviewFolds.set(d.dataset.reviewFold, d.open);
+    try {
+      const query = new URLSearchParams({ offset: reviewOffset, severity: reviewSeverity, state: reviewState });
+      const response = await fetch(`/api/monitoring/prompt-review?${query}`, { credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw Error(`HTTP ${response.status}`);
+      const data = await response.json(); content.replaceChildren();
+      const summary = section('Prompt 安全审阅', content), c = data.coverage || {}, u = data.usage || {};
+      summary.append(node('p', `${reviewLabels[data.state] || data.state}${data.workerRunning ? ' · 工作进程运行中' : ''} · ${data.model} · ${data.ruleVersion}`));
+      summary.append(node('p', `原文来源 ${c.sources || 0} 条：完整审完 ${c.fullyReviewed || 0}，部分或待审 ${c.partialOrPending || 0}，无法读取 ${c.unreadable || 0}。`, 'monitoring-note'));
+      summary.append(node('p', `去重内容段 ${c.uniqueSegments || 0}：已审 ${c.reviewed || 0}，待审 ${c.pending || 0}，失败 ${c.failed || 0}；复用 ${c.deduplicatedOccurrences || 0} 次。`, 'monitoring-note'));
+      summary.append(node('p', `内容段风险：严重 ${data.risks?.critical || 0} · 高 ${data.risks?.high || 0} · 中 ${data.risks?.medium || 0} · 低 ${data.risks?.low || 0}。同一内容段只计一次。`, 'monitoring-note'));
+      summary.append(node('p', `实测输入 ${u.inputTokens ?? '—'} token（缓存 ${u.cachedInputTokens ?? '—'}），输出 ${u.outputTokens ?? '—'}；${u.measuredCalls || 0}/${u.calls || 0} 次调用有用量回执；调用累计 ${(Number(u.elapsedMs || 0) / 60000).toFixed(1)} 分钟。`, 'monitoring-note'));
+      summary.append(node('p', `仓库费率估算 $${Number(u.estimatedCostUsd || 0).toFixed(4)}（${u.estimatedCalls || 0} 次可估算）；实际账单金额不可得，缺用量调用不按零成本计算。`, 'monitoring-note'));
+      summary.append(node('p', `扫描 ${time(data.scannedAt)} · 更新 ${time(data.updatedAt)} · 增量任务 ${data.config?.scheduleId || '尚未登记'}。页面读取不会调用模型。`, 'monitoring-note'));
+      document.getElementById('promptReviewRun').disabled = !data.config?.enabled || data.workerRunning;
+      const scope = node('details'); scope.dataset.reviewFold = 'scope'; scope.open = reviewFolds.get('scope') === true;
+      scope.append(node('summary', '覆盖来源、缺口与审阅边界'));
+      (data.notes || []).forEach(note => scope.append(node('p', note, 'monitoring-note')));
+      (c.bySource || []).forEach(s => scope.append(node('p', `${s.kind}：${s.sources} 条`, 'monitoring-note')));
+      if (c.gaps?.length) scope.append(node('pre', c.gaps.map(g => `${g.kind} ${g.runId || ''} ${g.reason}`).join('\n')));
+      summary.append(scope);
+      const results = section('风险条目与待处理内容', content), controls = node('div', '', 'monitoring-toolbar');
+      for (const [label, values, selected, change] of [
+        ['风险级别', ['', 'critical', 'high', 'medium', 'low', 'none'], reviewSeverity, value => { reviewSeverity = value; }],
+        ['审阅状态', ['', 'reviewed', 'failed', 'pending'], reviewState, value => { reviewState = value; }],
+      ]) {
+        const l = node('label', `${label} `), select = node('select'); select.setAttribute('aria-label', label);
+        for (const value of values) { const option = node('option', value ? reviewLabels[value] : '全部'); option.value = value; select.append(option); }
+        select.value = selected; select.addEventListener('change', () => { change(select.value); reviewOffset = 0; void loadSecurity(); });
+        l.append(select); controls.append(l);
+      }
+      results.append(controls);
+      for (const row of data.rows || []) {
+        const d = node('details', '', 'monitoring-summary-panel'); d.dataset.reviewFold = row.id; d.open = reviewFolds.get(row.id) === true;
+        d.append(node('summary', `${reviewLabels[row.state]} · ${row.state === 'reviewed' ? reviewLabels[row.severity] : row.error || '等待批审'} · ${row.source.kind} · 复用 ${row.occurrences} 次`));
+        const original = node('a', '查看脱敏原文与指纹'); original.href = `/api/monitoring/prompt-review/source?id=${encodeURIComponent(row.source.id)}`; original.target = '_blank'; original.rel = 'noopener'; d.append(original);
+        if (row.source.sessionId) { const a = node('a', ' · 打开原会话'); a.href = `/?session=${encodeURIComponent(row.source.sessionId)}`; d.append(a); }
+        d.append(node('p', `${row.source.runId || '后台调用'} · ${row.source.field || row.source.delivery || ''} · 段起始行 ${row.source.startLine} · 尝试 ${row.attempts} 次 · ${time(row.reviewedAt)}`, 'monitoring-note'));
+        for (const f of row.findings) {
+          d.append(node('p', `${reviewLabels[f.severity]} · ${f.category} · 原文行 ${row.source.startLine + f.startLine - 1}–${row.source.startLine + f.endLine - 1}：${f.reason}`), node('blockquote', f.evidence), node('p', `建议：${f.recommendation}`));
+        }
+        if (row.state === 'failed') d.append(node('p', '未计为通过；按批次自动退避重试，累计三次失败后保留错误，需排查后重置该条结果。', 'monitoring-note'));
+        results.append(d);
+      }
+      if (!data.rows?.length) results.append(node('p', '当前筛选没有记录。'));
+      const paging = node('div', '', 'monitoring-toolbar');
+      for (const [label, offset, disabled] of [['上一页', Math.max(0, reviewOffset - 50), reviewOffset === 0], ['下一页', reviewOffset + 50, reviewOffset + 50 >= data.total]]) {
+        const button = node('button', label, 'task-center-action'); button.type = 'button'; button.disabled = disabled;
+        button.addEventListener('click', () => { reviewOffset = offset; void loadSecurity(); }); paging.append(button);
+      }
+      paging.append(node('span', `${data.total} 段 · 第 ${Math.floor(reviewOffset / 50) + 1} 页`)); results.append(paging);
+    } catch { content.replaceChildren(node('p', '审阅状态读取失败，请刷新重试；不能据此判断安全。', 'monitoring-note')); }
+    finally { reviewLoading = false; }
+  }
   function select(next, { sync = true } = {}) {
     view = next; overview.hidden = view !== "overview"; automations.hidden = view !== "automations";
     if (test) test.hidden = view !== "test";
+    if (security) security.hidden = view !== "security";
     if (usage) usage.hidden = view !== "usage";
     if (feedback) feedback.hidden = view !== "feedback";
     create.hidden = view !== "automations";
@@ -264,6 +329,7 @@
       url.searchParams.set("monitor", view);
       globalScope.history.replaceState(null, "", url);
       if (view === "overview") void load();
+      else if (view === "security") void loadSecurity();
       else if (view === "test") void loadTest();
       else if (view === "usage") void globalScope.RemoteLabUsageAnalysis?.load();
       else if (view === "feedback") void globalScope.RemoteLabProjectFeedback?.load();
@@ -279,14 +345,25 @@
     });
   });
   document.getElementById("monitoringTestRefresh")?.addEventListener("click", () => void loadTest({ force: true }));
+  document.getElementById('promptReviewRefresh')?.addEventListener('click', () => void loadSecurity());
+  document.getElementById('promptReviewRun')?.addEventListener('click', async event => {
+    event.currentTarget.disabled = true;
+    try {
+      const response = await fetch('/api/monitoring/prompt-review/run', { method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw Error('launch failed');
+      await loadSecurity();
+    } catch { document.getElementById('promptReviewContent').append(node('p', '补审启动未确认，请先刷新核对进程状态。')); }
+  });
   refresh.addEventListener("click", () => void load({ force: true }));
   globalScope.addEventListener("remotelab:localechange", () => { if (view === "overview" || view === "test") void loadCompact(view, { force: true }); else if (value) render(); });
   document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && view === 'security' && document.body.dataset.appView === 'tasks') void loadSecurity();
     if (!document.hidden && view === "test" && document.body.dataset.appView === "tasks") void loadTest();
     if (!document.hidden && view === "overview" && document.body.dataset.appView === "tasks") void load({ silent: true });
   });
-  globalScope.RemoteLabMonitoring = { loadHandling: () => load({ silent: Boolean(value) }), isOverview: () => view !== "automations", onTabShown: () => view === "test" ? loadTest() : view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
+  globalScope.RemoteLabMonitoring = { loadHandling: () => load({ silent: Boolean(value) }), isOverview: () => view !== "automations", onTabShown: () => view === 'security' ? loadSecurity() : view === "test" ? loadTest() : view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
   select(view, { sync: false });
+  if (view === 'security' && document.body.dataset.appView === 'tasks') void loadSecurity();
   if (view === "test" && document.body.dataset.appView === "tasks") void loadTest();
   if (view === "overview" && document.body.dataset.appView === "tasks") void load();
 })(window);

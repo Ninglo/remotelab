@@ -831,9 +831,9 @@
         {
           "id": "monitor",
           "name": "监控器的总览与自动化列表",
-          "purpose": "依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；磁盘圆盘、账户进度与近 7 天 Session／上下文／Token 曲线展示真实样本，缺失留空；完整明细按需展开。",
-          "entry": "从首页顶部或侧栏进入监控器，默认总览；加载期间的点击不会被会话恢复覆盖。",
-          "condition": "需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。页面统计按需读取并缓存，不触发操作；可单独启用会话准备／启动异常巡检，复用现有观察器、私信原卡更新，具体条件见监管说明。账号、磁盘、服务与 API 属于实例共享资源。",
+          "purpose": "依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；磁盘圆盘、账户进度与近 7 天 Session／上下文／Token 曲线展示真实样本，缺失留空；完整明细按需展开。 对本实例可取回的历史及增量提交文本做Luna风险审阅，展示覆盖缺口、失败、脱敏证据及实际调用消耗。",
+          "entry": "从首页顶部或侧栏进入监控器，默认总览；加载期间的点击不会被会话恢复覆盖。 Prompt安全入口：监控器 → Prompt 安全（?tab=tasks&monitor=security）。",
+          "condition": "需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。页面统计按需读取并缓存，不触发操作；可单独启用会话准备／启动异常巡检，复用现有观察器、私信原卡更新，具体条件见监管说明。账号、磁盘、服务与 API 属于实例共享资源。 Prompt审阅需显式启用、已登录Codex账号与Pi；不覆盖未留存的Harness内部请求，不自动修改提示或整改。",
           "example": "查看本实例的紧急问题和覆盖缺口，给我最新观测时间。",
           "sources": [
             "docs/monitoring.md",
@@ -876,7 +876,13 @@
             "chat/usage-events.mjs",
             "chat/router-work-awareness.mjs",
             "lib/memory-learning-command.mjs",
-            "docs/connector-turn-context.md"
+            "docs/connector-turn-context.md",
+            "chat/prompt-review.mjs",
+            "chat/prompt-review-policy.mjs",
+            "chat/prompt-review-model.mjs",
+            "scripts/prompt-review.mjs",
+            "chat/session-state-classifier.mjs",
+            "chat/session-detached-assistant.mjs"
           ],
           "commands": [
             "usage-summary"

@@ -107,6 +107,7 @@ import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
 import { readSessionMonitoring, readDashboardSessions, compactSessionMonitoring } from './monitoring-sessions.mjs';
 import { readContextSource } from './monitoring-dashboard.mjs';
+import { readPromptReview, readPromptReviewSource, launchPromptReview } from './prompt-review.mjs';
 import { updateSessionProgressPolicy, updateProgressCardDisclosure } from './session-progress-policy.mjs';
 import {
   buildClientInstanceSettings,
@@ -1182,6 +1183,24 @@ export async function handleControlRoutes({
     return true;
   }
 
+  if (pathname === '/api/monitoring/prompt-review' && req.method === 'GET') {
+    try { writeJson(res, 200, await readPromptReview(parsedUrl.query || {})); }
+    catch { writeJson(res, 503, { error: 'Prompt review state unavailable' }); }
+    return true;
+  }
+  if (pathname === '/api/monitoring/prompt-review/source' && req.method === 'GET') {
+    try {
+      const source = await readPromptReviewSource(parsedUrl.query?.id);
+      writeJson(res, source ? 200 : 404, source || { error: 'Unknown reviewed source' });
+    } catch { writeJson(res, 410, { error: 'Reviewed source is no longer retrievable' }); }
+    return true;
+  }
+  if (pathname === '/api/monitoring/prompt-review/run' && req.method === 'POST') {
+    if (req.headers['sec-fetch-site'] === 'cross-site') { writeJson(res, 403, { error: 'Same-site request required' }); return true; }
+    try { writeJson(res, 202, await launchPromptReview()); }
+    catch { writeJson(res, 503, { error: 'Prompt review launch failed' }); }
+    return true;
+  }
   if (pathname === '/api/monitoring/context-source' && req.method === 'GET') {
     const body = await readContextSource(parsedUrl?.query?.id);
     if (body === null) {

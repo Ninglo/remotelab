@@ -5,6 +5,7 @@ import { createToolInvocation, resolveCommand, resolveCwd } from './process-runn
 import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
 import { codexAccounts } from '../lib/codex-accounts.mjs';
 import { appendUsageLedgerRecord, buildDetachedUsageLedgerRecord } from './usage-ledger.mjs';
+import { captureBackgroundPrompt } from './prompt-review.mjs';
 
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
@@ -28,6 +29,7 @@ function appendDetachedPromptUsage(sessionMeta, usageEvent, usageTracking = {}, 
 }
 
 export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = {}) {
+  await captureBackgroundPrompt(sessionMeta, prompt, options.usageTracking?.operation).catch(() => console.error('[prompt-review] Background prompt capture failed'));
   const {
     folder,
     tool,

@@ -117,6 +117,7 @@
           <button type="button" role="tab" id="monitoringUsageTab" aria-controls="monitoringUsage" aria-selected="false" tabindex="-1" data-i18n="monitoring.usageAnalysis">Usage analysis</button>
           <button type="button" role="tab" id="monitoringAutomationsTab" aria-controls="monitoringAutomations" aria-selected="false" tabindex="-1" data-i18n="monitoring.automations">Automations</button>
           <button type="button" role="tab" id="monitoringFeedbackTab" aria-controls="monitoringFeedback" aria-selected="false" tabindex="-1" data-i18n="feedback.title">Feedback and improvement</button>
+          <button type="button" role="tab" id="monitoringSecurityTab" aria-controls="monitoringSecurity" aria-selected="false" tabindex="-1">Prompt 安全</button>
           <button type="button" role="tab" id="monitoringTestTab" aria-controls="monitoringTest" aria-selected="false" tabindex="-1">Test</button>
         </nav>
         <section id="monitoringOverview" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringOverviewTab" hidden>
@@ -129,6 +130,14 @@
 
           </div>
           <section id="monitoringResourcePanel" class="monitoring-summary-panel"><div id="monitoringResourceAttention" aria-live="polite"></div><div id="monitoringContent" aria-live="polite"></div></section>
+        </section>
+        <section id="monitoringSecurity" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringSecurityTab" hidden>
+          <div class="monitoring-toolbar">
+            <p class="monitoring-note">历史与增量 Prompt 风险审阅 · 只给建议</p>
+            <button class="task-center-action" id="promptReviewRun" type="button">补审待处理内容</button>
+            <button class="task-center-action" id="promptReviewRefresh" type="button">刷新进度</button>
+          </div>
+          <div id="promptReviewContent" aria-live="polite"><p class="monitoring-note">正在读取审阅记录…</p></div>
         </section>
         <section id="monitoringTest" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringTestTab" hidden>
           <div class="monitoring-toolbar">

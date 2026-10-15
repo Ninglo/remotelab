@@ -1,6 +1,49 @@
 # Operations overview
 
-Monitor Overview (`?tab=tasks&monitor=overview`) keeps the existing Session area and its visual style, followed only by account balances. Experiment configuration, inspection-scope/cost, disk and API panels are not displayed. Automations, usage analysis, feedback and their controls retain their existing separate views. Removing these panels does not stop observers, experiments, alerts or recovery.
+Monitor Overview (`?tab=tasks&monitor=overview`) keeps the existing Session area and its visual style, followed only by account balances. Experiment configuration, inspection-scope/cost, disk and API panels are not displayed. Automations, usage analysis, feedback and their controls retain their existing separate views. **Prompt 安全** (`?tab=tasks&monitor=security`) provides the separate authenticated prompt-risk review view described below. Removing overview panels does not stop observers, experiments, alerts or recovery.
+
+## Prompt 安全审阅
+
+可交给实例 Agent 的启用请求：
+
+> 请为当前实例启用监控器里的 Prompt 安全审阅。核对实际源码、配置目录、已登录 Codex 账号和已安装 Pi，先跑隔离测试及一小批真实 Luna 审阅，读取实际用量和失败。对所有可取回历史做首轮批审，按指纹去重，再用当前原生 Schedule 的脚本条件定期调用 `scripts/prompt-review.mjs --launch` 补审。条件返回 false，不另起会话 Agent、不发送消息。记录任务 ID 到配置并验证自然执行、认证入口、脱敏来源、服务版本和覆盖缺口。只报告风险与建议，不修改被审文本或执行整改。
+
+一次交接需要目标实例和是否允许使用其现有模型账号；如没有已登录账号或 Pi 安装，必须先补齐该依赖。不要把“低成本”理解成零计费。入口为 **监控器 → Prompt 安全**；筛选风险级别、审阅状态和分页，打开条目看证据、建议、脱敏原文及原会话。刷新页面只读持久化结果；“补审待处理内容”在已启用实例启动有界后台批处理。用户不需要手工复制运行命令。
+
+### 来源和覆盖口径
+
+- 扫描本实例全部 `chat-runs/run_*/manifest.json` 的 `prompt`，及尚未包含在该文本中的 `modelContext`。这是实际运行准备保存的提交文本，不能单凭保存记录证明 provider 已接受。
+- 读取 `native-inputs` 的提交指纹原文，区分 accepted 和 uncertain；明确拒绝的输入不算已提交来源。这补齐原生会话后续输入，避免只看 Run 首次 manifest。
+- 启用后捕获普通后台分类和记忆辅助调用的准备文本到私有 `CONFIG_DIR/prompt-captures/`。捕获失败保留缺口并写通用日志；历史未保存的后台文本无法补造。
+- 以标题和最多 12,000 字符分段，保留每个字符和原文起始行。精确 SHA-256 指纹复用相同内容段的审阅；只有一个来源的每个段都审完，才计入“完整审完”。规则原文哈希、规则版本及模型共同隔离结果命名空间，改规则后重新审。
+- 缺失、超出单源 4 MiB 读取上限、JSON 错误、漏返回、证据行无效、模型失败都保留为缺口或失败；没有结果不计通过。失败按 15/30 分钟退避，最多三次，之后保留供排查。原文变化后旧证据入口拒绝展示，等待新指纹补审。
+
+**这不是完整 provider 请求审计。** Harness 自行加载的 AGENTS/Skill、工具返回、内置系统指令、附件二进制、压缩后上下文和未留存的历史后台提示目前无法全量取回，其数量未知。分段覆盖表示所有可取回内容都经过审阅，跨段组合、真实授权和实际执行后果仍须结合原会话核查。“未发现具体风险”只描述本段结果，不提供安全保证。
+
+### 模型、费用与运行
+
+固定审阅指令在 `chat/prompt-review-policy.mjs`，检查提示注入、越权与权限扩大、秘密外传、破坏性动作及第三方影响。审阅文本始终作为不可信 JSON 数据；通过现有 Codex 账号池及 Pi `openai-codex/gpt-6-luna` / low 路由调用，明确禁用所有工具、扩展、Skill、上下文文件、模板和会话保存，在私有临时目录运行，不执行整改。没有该安装或可用凭据时显示失败，不升级昂贵模型或切换其他账号身份来掩盖缺口。现有 Codex 登录需保持有效。
+
+响应必须逐段给出结构化结果；风险条目有严重度、类别、证据行、原因和建议。证据由服务器从原文行提取；常见凭据、鉴权头、长 token 和敏感查询参数脱敏，模型自由文本也经过脱敏。认证接口不接受任意文件路径，不把原文或模型错误原样放进日志。原会话仍沿既有共享实例认证访问。
+
+私有配置 `CONFIG_DIR/prompt-review.json` 默认不存在即关闭：
+
+```json
+{
+  "enabled": true,
+  "concurrency": 2,
+  "maxBatches": 30,
+  "batchChars": 180000,
+  "batchItems": 40,
+  "scheduleId": "the-existing-native-schedule-id"
+}
+```
+
+并发限制 1–4，每批最多 300,000 字符/100 段，每次工作进程最多 1,000 批。`scripts/prompt-review.mjs` 执行一轮；`--launch` 脱离 HTTP 请求启动有限工作进程，原生 Schedule 的脚本条件可调用它后返回 false；`--status` 读状态。Schedule 需要显式携带本实例配置目录与 provider home，不能继承其他实例的存储。不要另建调度器、公开页面或消息推送。工作锁阻止同实例并发批审，进程退出后的下轮从持久结果恢复。
+
+结果、调用回执、进度在私有 `CONFIG_DIR/prompt-review/<规则指纹>/`；旧版本保留。每次调用记录实际模型、规则版本/哈希、provider response ID、实测输入/缓存/输出 token 与耗时，失败回执亦保留。既有 usage ledger 使用 `prompt_security_review` 操作归因。费用使用仓库 `model-pricing.mjs` 估算，页面同时显示有用量回执的调用数、可估算调用数和未知账单金额，不能把缺回执算作零消耗。
+
+接口沿用实例认证和全员共享权限：`GET /api/monitoring/prompt-review`（风险/状态筛选与分页）、`GET /api/monitoring/prompt-review/source?id=...`（指纹校验的脱敏原文）、`POST /api/monitoring/prompt-review/run`（同站启动已启用审阅）。验收用 `npm run test:prompt-review`；部署后仍需读真实首轮与增量任务回执。关闭配置可阻止下一次启动；已有进程会完成本轮有限批次。
 
 ## Account balances and Token total
 

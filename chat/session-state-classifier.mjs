@@ -18,6 +18,7 @@ import {
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
+import { captureBackgroundPrompt } from './prompt-review.mjs';
 
 const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi', 'antigravity']);
 // Cost boundary: title/group/space and state synchronization are routine metadata
@@ -137,6 +138,7 @@ function appendSummarizerUsage(sessionMeta, usageEvent, usageTracking = {}, stat
 }
 
 async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
+  await captureBackgroundPrompt(sessionMeta, prompt, usageTracking?.operation).catch(() => console.error('[prompt-review] Background prompt capture failed'));
   const {
     id: sessionId,
     folder,
