@@ -5,6 +5,7 @@ import { projectFeishuContext, feishuResumeIdentity } from './feishu-context-ded
 import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
+import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
 import { strictStartCheckPrompt } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
@@ -2065,7 +2066,7 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
 
 
 function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
-  if (manifest?.internalOperation || isInternalSession(session) || session?.groupFeed === true) {
+  if (manifest?.internalOperation || isInternalSession(session)) {
     return false;
   }
   void (async () => {
@@ -2076,6 +2077,9 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
       const request = await loadTurnSourceRequest(sessionId, userMessage, {
         getRequest: (id, requestId) => requests.get(requestKey(id, requestId)),
       });
+      // Group feeds remain excluded unless this exact human sender opted into
+      // conversational personal memory. Never learn for the feed owner or bots.
+      if (session?.groupFeed === true && !await mayReviewGroupPersonalMemory(request?.options)) return;
       const result = await maybeRunMemoryWriteback({
         sessionId,
         session,
