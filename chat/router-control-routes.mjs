@@ -9,6 +9,7 @@ import { settingActor, observeSettingRows, settingRows, personSettingValues } fr
 import { listAutomationBackground } from './automation-background.mjs';
 import { handleInflightTrialRoutes } from './router-inflight-trial.mjs';
 import { handleMessageReplySettings } from './router-message-reply-settings.mjs';
+import { handlePersonalMemorySettings } from './router-personal-memory-settings.mjs';
 import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { findSessionConversation, requireConversation, updateSessionConversation } from './session-conversations.mjs';
@@ -344,6 +345,7 @@ export async function handleControlRoutes({
 }) {
   if (await handleInflightTrialRoutes({ req, res, pathname, authSession, writeJson })) return true;
   if (await handleMessageReplySettings({ req, res, pathname, parsedUrl, authSession, writeJson })) return true;
+  if (await handlePersonalMemorySettings({ req, res, pathname, parsedUrl, authSession, writeJson })) return true;
   if (pathname === '/api/automation/resources' && req.method === 'GET') {
     writeJson(res, 200, { resources: await getAutomationResourceSnapshot() });
     return true;

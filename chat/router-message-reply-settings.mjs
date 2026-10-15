@@ -5,7 +5,7 @@ import { requests } from './requests.mjs';
 
 // Conversation-driven changes use the accepted human Request, not the CLI's
 // owner/service credential or a Person supplied by the caller.
-async function currentRunActor(runId, authSession, write) {
+export async function currentRunActor(runId, authSession, write) {
   const record = typeof runId === 'string' && /^run_[a-zA-Z0-9_-]+$/.test(runId) ? await requests.byRunId(runId) : null;
   const options = record?.options;
   if (!record || !options?.viewPersonId || !options.initiatedByIdentityId

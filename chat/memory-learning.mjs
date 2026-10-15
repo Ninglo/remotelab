@@ -7,6 +7,7 @@ import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { extractTaggedBlock, parseJsonObjectText } from './session-text-parsing.mjs';
 import { resolveLearningProject } from './project-memory-runtime.mjs';
 import { formatMemoryWritebackTargetsForPrompt } from './memory-writeback-targets.mjs';
+import { personalMemoryPreference } from './personal-memory-settings.mjs';
 
 const START = '<!-- remotelab-learning:start -->';
 const END = '<!-- remotelab-learning:end -->';
@@ -76,6 +77,7 @@ function entryBody(entry) {
     entry.exceptions ? `  例外：${entry.exceptions.replace(/。+$/, '')}。` : '',
     `  更新：${entry.updatedAt}。`,
     entry.supersedesManual ? `  替代人工原文：${entry.supersedesManual}。` : '',
+    entry.reviewProposal ? `  对话核验：${entry.reviewProposal.status}；${entry.reviewProposal.question}` : '',
     `  独立 Session：${new Set(entry.evidence.map(e => e.sessionId)).size}；证据：${entry.evidence.slice(-4).map(e => `${e.sessionId}/${e.runId}#${e.seq}`).join(', ')}。`,
     entry.counterexamples?.length ? `  反例：${entry.counterexamples.slice(-2).map(e => `${e.sessionId}#${e.seq}: ${e.quote}`).join('; ')}` : '',
   ].filter(Boolean).join('\n');
@@ -186,12 +188,14 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
   const person = verifiedLearningPerson({ personId, identityId, authDocument });
   if (!policy.enabled || !person || !policy.personIds.includes(person)) return { promotedCount: 0, promotedFiles: [], rejected: ['learning not enabled for verified Person'] };
   const paths = learningPaths(memoryDir, person);
+  const personal = personalMemoryPreference({ personId, identityId, authDocument });
   const results = [], rejected = [];
   for (const update of (Array.isArray(updates) ? updates : []).slice(0, 12)) {
     try {
       const kind = update.kind;
       if (!['preference', 'habit', 'method'].includes(kind)) throw new Error('Unsupported kind');
       if (kind === 'method' ? !policy.handbook : !policy.profiles) throw new Error('Target disabled');
+      if (kind !== 'method' && !personal.enabled && !(update.action === 'withdraw' && update.explicit === true)) throw new Error('Personal memory is paused');
       if (kind === 'method' && !['instance', 'project'].includes(update.scope)) throw new Error('A method requires explicit valid scope');
       if (!/^[a-z0-9][a-z0-9_-]{1,79}$/.test(update.key || '')) throw new Error('Invalid semantic key');
       const scope = kind === 'method' && update.scope === 'project' ? 'project' : 'instance';
@@ -201,7 +205,7 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
       const evidence = validatedEvidence(update, sources || []).map(e => ({ ...e, personId: person, identityId }));
       if (!evidence.length) throw new Error('No matching original evidence');
       const action = update.action || 'upsert';
-      if (!['upsert', 'revise', 'withdraw', 'restore', 'counterexample', 'outcome'].includes(action)) throw new Error('Unsupported action');
+      if (!['upsert', 'revise', 'withdraw', 'restore', 'counterexample', 'outcome', 'propose'].includes(action)) throw new Error('Unsupported action');
       if (kind !== 'method' && !evidence.some(e => e.type === 'user')) throw new Error('Personal entry needs original user evidence');
       if (kind !== 'method' && !evidence.some(e => e.type === 'user'
         && !/^(?:好[的吧]?|可以|收到|是[的啊]?|嗯|ok|yes)[。.!！\s]*$/i.test(e.quote))) {
@@ -231,9 +235,22 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
         const before = JSON.stringify(entry);
         const old = { version: entry.version, content: entry.content, status: entry.status, updatedAt: entry.updatedAt,
           kind: entry.kind, cues: entry.cues, conditions: entry.conditions, exceptions: entry.exceptions,
-          scope: entry.scope, project: entry.project, supersedesManual: entry.supersedesManual };
+          scope: entry.scope, project: entry.project, supersedesManual: entry.supersedesManual,
+          reviewProposal: entry.reviewProposal ? { ...entry.reviewProposal } : undefined };
         if (manualQuote) entry.supersedesManual = manualQuote;
-        if (action === 'withdraw') {
+        if (action === 'propose') {
+          if (kind === 'method' || !personal.conversational || !['observed', 'inferred'].includes(entry.status)) {
+            throw new Error('Only an unconfirmed personal candidate in conversational mode can be proposed');
+          }
+          if (entry.reviewProposal?.status === 'pending') throw new Error('This personal candidate already has a pending question');
+          if (typeof update.question !== 'string' || !update.question.trim() || update.question.length > 500) {
+            throw new Error('A short exact memory question is required');
+          }
+          entry.reviewProposal = { status: 'pending', question: update.question.trim(), content: entry.content,
+            conditions: entry.conditions, exceptions: entry.exceptions, entryVersion: entry.version + 1,
+            sessionId: evidence.find(e => e.type === 'user').sessionId,
+            runId: evidence.find(e => e.type === 'user').runId, proposedAt: now };
+        } else if (action === 'withdraw') {
           entry.content ||= text(update.content) || manualQuote;
           entry.conditions ||= text(update.conditions, 500);
           entry.exceptions ||= text(update.exceptions, 500);
@@ -253,6 +270,10 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
           // a revision, not a silent merge that erases its prior meaning.
           if (current && action === 'upsert' && content !== current.content) throw new Error('Changed content requires revise');
           if (current && action === 'upsert' && kind !== current.kind) throw new Error('Changed kind requires revise');
+          if (current?.reviewProposal?.status === 'pending' && action === 'revise' && update.explicit !== true
+              && (content !== current.content || text(update.conditions, 500) !== current.conditions || text(update.exceptions, 500) !== current.exceptions)) {
+            throw new Error('A pending personal proposal needs the owner\'s explicit correction before changing its meaning');
+          }
           if (current && ['revise', 'restore'].includes(action) && (content !== old.content || kind !== old.kind
             || action === 'revise' && (text(update.conditions, 500) !== old.conditions || text(update.exceptions, 500) !== old.exceptions))) {
             // Earlier support is evidence for the earlier claim. Keep it in
@@ -280,6 +301,9 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
           if (current && action === 'upsert' && old.status === 'confirmed') entry.status = 'confirmed';
           if (current && action === 'upsert' && old.status === 'verified') entry.status = 'verified';
           if (entry.counterexamples.some(e => !e.resolvedInVersion) && action === 'upsert') entry.status = 'observed';
+        }
+        if (entry.reviewProposal?.status === 'pending' && ['confirmed', 'withdrawn'].includes(entry.status)) {
+          entry.reviewProposal = { ...entry.reviewProposal, status: entry.status, resolvedAt: now };
         }
         // Idempotent repeated turn processing must not inflate counts/versions.
         if (JSON.stringify(entry) === before) return { changed: false, path, id, version: entry.version };
@@ -326,18 +350,19 @@ export async function buildLearningContext({ personId, identityId, authDocument,
   try {
     if (typeof project !== 'string') project = await resolveLearningProject(session, sourceContext);
     const snapshot = await inspectLearning({ personId, identityId, authDocument, memoryDir });
+    const includeProfiles = policy.profiles && personalMemoryPreference({ personId, identityId, authDocument }).enabled;
     const blocks = [], budget = Math.min(6000, Math.max(0, maxChars));
     // Hand-maintained profile text is still authoritative. Keep it whole and
     // bounded; a large legacy document stays behind the original file pointer.
-    if (policy.profiles && snapshot.profile.prefix.trim().length <= 1800 && snapshot.profile.prefix.trim()
+    if (includeProfiles && snapshot.profile.prefix.trim().length <= 1800 && snapshot.profile.prefix.trim()
       && snapshot.profile.prefix.trim().length + CONTEXT_HEADER.length + 20 <= budget) {
       blocks.push(`本人档案（人工维护）：\n${snapshot.profile.prefix.trim()}`);
     }
-    const candidates = [...(policy.profiles ? snapshot.profile.entries : []), ...(policy.handbook ? snapshot.handbook.entries : [])];
+    const candidates = [...(includeProfiles ? snapshot.profile.entries : []), ...(policy.handbook ? snapshot.handbook.entries : [])];
     const selected = candidates.filter(e => ['confirmed', 'inferred', 'verified', 'withdrawn'].includes(e.status)
       && (e.status === 'withdrawn' && (e.scope !== 'project' || e.project === project) || matches(e, query, project)))
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-    let skipped = policy.profiles && snapshot.profile.prefix.trim() && !blocks.length ? 1 : 0;
+    let skipped = includeProfiles && snapshot.profile.prefix.trim() && !blocks.length ? 1 : 0;
     for (const entry of selected.slice(0, 12)) {
       const body = entryBody(entry);
       if (blocks.join('\n\n').length + body.length + CONTEXT_HEADER.length + 2 > budget) { skipped++; continue; }
@@ -373,6 +398,7 @@ export function buildLearningReviewPrompt({ userMessage, assistantTurnText, sour
     .map(e => ({ id: e.id, key: e.key, kind: e.kind, scope: e.scope, content: e.content,
       cues: e.cues, conditions: e.conditions, exceptions: e.exceptions, status: e.status, version: e.version,
       supersedesManual: e.supersedesManual,
+      reviewProposal: e.reviewProposal,
       independentSessions: new Set(e.evidence.map(s => s.sessionId)).size, counterexamples: e.counterexamples.slice(-2) }));
   const selected = [];
   let usedChars = 2;
@@ -395,6 +421,7 @@ export function buildLearningReviewPrompt({ userMessage, assistantTurnText, sour
     'Merge into the matching existing semantic key and preserve its exact content for upsert; use revise when changing meaning. Include expectedVersion for every existing entry. Preserve exceptions. Inferred/unaccepted habit observations may be refined autonomously from original evidence, but revising an accepted personal preference or withdrawing a personal record requires explicit owner correction. Evidence for a changed claim starts anew; old support remains with its prior version. A correction to an older hand-maintained personal statement can use supersedesManual with its exact original quote; a first withdrawal may create a tombstone for that manual statement. Keep the manual source intact. A contradictory observation uses counterexample and suspends its default. A withdrawn key must never be recreated under an alias or automatically restored; restore requires an explicit current user restoration request, and a method additionally requires fresh successful execution. Semantic similarity requires judgment, not only string equality.',
     'For outcomes, refer only to an entry actually delivered this turn. Include specific tool/user evidence and explain whether the method helped, failed or was corrected; retrieval alone is not success. A permission failure that is already covered by a method\'s conditions/exceptions is not a counterexample to that method; do not suspend a correct checking procedure merely because the current resource truly lacks access. Suspend/revise when the procedure itself gives a wrong result or has an uncovered exception. Do not summarize project progress into a personal preference, infer personality or sensitive traits, or duplicate project facts.',
     'Each evidence item must cite seq and a short exact original quote from the supplied user/tool sources. The code validates source ownership, quote, result and version. Use up to 8 updates. If no durable signal exists, return updates:[].',
+    'A reviewProposal with status pending records a proposed conversational question, not delivery or consent. Do not repeat it, autonomously rewrite its meaning, or confirm it without the current owner\'s clear answer about that exact meaning and scope. The hidden reviewer never creates proposals or sends questions. If personal learning is paused, produce no personal habit/preference updates; method and permitted project candidate review may continue.',
     'Keep the existing important-event candidate collection too. For durable project decisions or environment facts that do not belong in a profile or method, optionally include shouldWrite:true and learnings:[{category:"decision|environment|workflow|solution",content:"concise candidate",layer:"user|system",targetId:"listed target"}] in the SAME returned JSON. Candidates remain unaccepted and obey the existing allowlist. Do not duplicate profile/method updates there, put personal preferences in universal system memory, invent targets, or turn task progress into a permanent rule.',
     `Existing candidate targets: ${formatMemoryWritebackTargetsForPrompt(candidateTargets) || '[none]'}`,
     'Return only <hide>{"updates":[{"key":"stable-semantic-key","kind":"preference|habit|method","scope":"instance|project","action":"upsert|revise|withdraw|restore|counterexample|outcome","expectedVersion":1,"content":"concise claim or steps","cues":["task keyword"],"conditions":"when applicable","exceptions":"when not applicable","explicit":false,"tested":false,"reason":"why updated or outcome","evidence":[{"seq":1,"quote":"exact original quote"}]}]}</hide>. Keys use lowercase ASCII letters, numbers, underscores and hyphens. New entries omit expectedVersion. Optional supersedesManual is an exact old personal statement being explicitly replaced. Use the user\'s language.',
@@ -417,9 +444,12 @@ export async function reviewMemoryLearning({ sessionId, session, run, userMessag
   const sources = learningTurnEvidence({ sessionId, runId: run?.id, userMessage, sourceEventSeq, turnEvents });
   if (!sources.length || !userMessage) return { attempted: false, promotedCount: 0, promotedFiles: [] };
   const snapshot = await inspectLearning({ personId, identityId, authDocument, memoryDir });
+  const personal = personalMemoryPreference({ personId, identityId, authDocument });
+  if (!personal.enabled) snapshot.profile = { ...snapshot.profile, entries: [], prefix: '' };
   const project = await resolveLearningProject(session, sourceContext);
   const delivered = learningDeliveryReceipts(turnEvents, run.id);
-  const raw = await runPrompt(buildLearningReviewPrompt({ userMessage, assistantTurnText, sources, snapshot, project, delivered, candidateTargets }));
+  const raw = await runPrompt(buildLearningReviewPrompt({ userMessage, assistantTurnText, sources, snapshot, project, delivered, candidateTargets })
+    + (personal.enabled ? '' : '\nPersonal learning is paused for this owner. No personal habit/preference updates.'));
   const parsed = parseJsonObjectText(extractTaggedBlock(String(raw || ''), 'hide') || raw);
   const result = await applyLearningUpdates({ updates: parsed?.updates, sources, personId, identityId,
     authDocument, project, memoryDir, policy, delivered });

@@ -4,6 +4,7 @@ import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
 import { buildSourceContextPrompt } from './source-context-prompt.mjs';
 import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
+import { buildPersonalMemoryConversationContext } from './personal-memory-conversation.mjs';
 import { experimentBackground } from './feature-experiment-context.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
@@ -37,6 +38,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
+    !experimentInput.automated ? await buildPersonalMemoryConversationContext({ personId, identityId, sourceContext }) : '',
   ];
   const sectionsAfterProject = [
     await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),

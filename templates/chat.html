@@ -314,6 +314,7 @@
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
             <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">消息</a>
             <a class="settings-toc-link" href="#settings-people" data-settings-target="settings-people" data-i18n="settings.group.people">People</a>
+            <a class="settings-toc-link" href="#settings-personal-memory" data-settings-target="settings-personal-memory" data-personal-memory-title>个人记忆</a>
             <a class="settings-toc-link" href="#settings-connections" data-settings-target="settings-connections" data-i18n="settings.group.connections">Connections</a>
             <a class="settings-toc-link" href="#settings-device" data-settings-target="settings-device" data-i18n="settings.group.device">This device</a>
           </nav>
@@ -451,6 +452,19 @@
                 </div>
                 <p class="settings-section-note" data-i18n="settings.replies.applies">保存后对你发起的新工作生效；进行中的工作继续沿用开始时的设置。</p>
                 <p class="settings-section-note" id="replySettingsStatus" role="status" aria-live="polite"></p>
+              </div>
+            </section>
+
+            <section class="settings-group" id="settings-personal-memory" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-personal-memory-title>个人记忆</h3>
+                <p id="personalMemoryNote">从与你的协作中发现有用的习惯，在自然对话中补充一句询问是否记住。只影响本人在网页和飞书的消息，不另发私聊核验。</p>
+              </header>
+              <div class="settings-group-body">
+                <div class="settings-app-actions">
+                  <button class="settings-app-btn" id="personalMemoryToggle" type="button" aria-pressed="false" disabled>启用个人记忆</button>
+                </div>
+                <p class="settings-section-note" id="personalMemoryStatus" role="status" aria-live="polite">正在读取……</p>
               </div>
             </section>
 
@@ -857,6 +871,7 @@
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/auto-routing-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script type="module" src="chat/message-reply-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script type="module" src="chat/personal-memory-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/display-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/automation-overview.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/task-center.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
