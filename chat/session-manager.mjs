@@ -10,6 +10,7 @@ import { strictStartCheckPrompt } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
 import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink, pilotInputResult, recoverPilotReplies } from './group-routing.mjs';
+import { completeExecutionPlan, recoverExecutionPlans, forwardExecutionQuestions, validateExecutionPlanRequest } from './work-execution-plans.mjs';
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
 import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
 import { requireConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
@@ -762,6 +763,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     historyChanged = true;
     if (normalizedEvents.some(event => event.type === 'message' && event.role === 'assistant')) {
       const record = await requests.byRunId(run.id);
+      await forwardExecutionQuestions(record, normalizedEvents);
       const plan = normalizeSourceDeliveryPlan(record?.deliveryPlan || record?.options?.sourceDelivery);
       if (plan && !record.options?.suppressSourceDelivery && !record.options?.internalOperation) {
         const history = await loadHistory(sessionId, { includeBodies: true, deferFileDiffs: true });
@@ -1839,6 +1841,7 @@ async function settleNativeRequest(record, run) {
     outcomeRequired ? buildReplyDeliveries(ownPlan, { text: '' }, { requireFeishuOutcome: true }) : []);
   await recordWorkOutcome(record.sessionId, { ...record, result: root.result }, run);
   await completeGroupSync({ ...record, result: root.result }, run);
+  await completeExecutionPlan({ ...record, result: root.result }, run);
   await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
   await requestRuntime.refresh(record.key);
   await requests.archiveFinished(record.key);
@@ -2053,6 +2056,7 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
   if (record) {
     await recordWorkOutcome(sessionId, record, finalizedRun);
     await completeGroupSync(record, finalizedRun);
+    await completeExecutionPlan(record, finalizedRun);
     await requests.mutate(record.key, current => ({ ...current, postCompletionPending: false }));
     await requestRuntime.refresh(record.key);
     await requests.archiveFinished(record.key);
@@ -2135,6 +2139,7 @@ async function syncDetachedRun(sessionId, runId) {
 export async function startDetachedRunObservers() {
   await ensureRequestSchema(CONFIG_DIR);
   await requestRuntime.recover();
+  await recoverExecutionPlans();
   await recoverAutomationHooks({ getRun, getManifest: getRunManifest, observe: observeDetachedRun, updateRun });
   deliveryIssueObserver.start();
 }
@@ -3708,12 +3713,14 @@ async function launchAutomationRun(runId, options = {}) {
 }
 
 async function prepareRequestRun(record) {
-  if ((record.options?.routingRethink || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
+  if ((record.options?.routingRethink || record.options?.workPlanChild || record.options?.workPlanReview
+      || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
       // A run-bound addition can only be steered. If it becomes the queue head
       // after cancellation/completion, never reinterpret it as new work.
       if (record.options?.sourceContext?.feishuContinuationRunId) throw threadContinuationExpired();
       await validateGroupRethink(record);
+      await validateExecutionPlanRequest(record);
     }
     catch (error) {
       const result = { exitCode: 1, error: error.message, completedAt: nowIso() };

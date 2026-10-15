@@ -122,5 +122,39 @@ try {
   await changePersonMessageReplies({ action: 'reset', expectedRevision: setting.revision, confirm: true }, actor);
   await manager.submitHttpMessage(main.id, '选择实验分流', [], { ...authenticated, requestId: 'routing-on' });
   assert.equal((await requests.byRunId(enabled.run.id)).options.messageRoutingPolicy.mechanism, 'experimental', 'retry keeps the original selection');
+  // The v2 plan uses the real request admission, detached worker, completion
+  // hooks and parent review queue. Neither a provider nor Feishu is contacted.
+  await writeFile(join(dir, 'group-routing-pilot.json'), JSON.stringify({ version: 2, enabled: true,
+    trialId: 'fixture-v2', personIds: ['person_a'], crossGroupSync: true,
+    groups: [{ sourceRouteId: 'bot', chatId: 'pilot', tenantKey: 'tenant', folder: home }] }));
+  const { handleExecutionPlan } = await import('../chat/work-execution-plans.mjs');
+  const sourceOptions = { ...authenticated, sourceContext: { ...authenticated.sourceContext, createTime: String(Date.now()) },
+    messageRoutingPolicy: { version: 1, mechanism: 'experimental', trialVersion: 2, trialId: 'fixture-v2' } };
+  const sourceInput = (await requests.accept({ sessionId: main.id, requestId: 'plan-source', text: '提出分工',
+    options: sourceOptions, runtimeSelection: runtime, deliveryPlan: origin })).record;
+  const proposed = await handleExecutionPlan(sourceInput, { action: 'propose', goal: '核对原讨论并汇总',
+    context: '只使用已提供的测试资料，禁止外部操作', reason: '两个独立检查', branches: [
+      { id: 'one', name: '检查一', task: '核查第一份材料', writeScope: '只读', dependsOn: [] },
+      { id: 'two', name: '检查二', task: '核查第二份材料', writeScope: '只读', dependsOn: [] },
+    ] });
+  const approvalInput = (await requests.accept({ sessionId: main.id, requestId: 'plan-human-approval', text: '两个都开始',
+    options: sourceOptions, runtimeSelection: runtime, deliveryPlan: origin })).record;
+  await handleExecutionPlan(approvalInput, { action: 'approve', planId: proposed.plan.id, expectedVersion: 1,
+    selected: ['one', 'two'], approval: '本人确认两个分支' });
+  const finishedPlan = await until(async () => {
+    const p = (await findSessionMeta(main.id)).workAwareness.executionPlans[0];
+    return p.state === 'reviewed' && p;
+  });
+  assert(finishedPlan.branches.every(b => b.state === 'completed'));
+  const parentResult = await requests.byRequest(main.id, finishedPlan.reviewRequestId);
+  assert.equal(parentResult.result.state, 'completed');
+  assert(parentResult.deliveries.length > 0);
+  assert(parentResult.deliveries.every(d => d.target.chatId === 'pilot' && d.target.messageId === 'input-root'));
+  for (const b of finishedPlan.branches) {
+    const child = await findSessionMeta(b.sessionId);
+    assert.equal(child.sourceId, 'chat'); assert.equal(child.conversation, undefined);
+    const r = await requests.byRequest(b.sessionId, b.requestId);
+    assert.equal(r.deliveries.length, 0, 'children do not publish duplicate results into groups');
+  }
   console.log('GROUP_ROUTING_RUNTIME_VERIFIED: actual admission, isolated worker, human approval dispatch, target completion hook and durable source outbox. No live model or Feishu send.');
 } finally { await manager.killAll(); await rm(home, { recursive: true, force: true }); }

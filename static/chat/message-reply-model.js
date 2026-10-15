@@ -34,8 +34,8 @@ export function buildReplyPreview(draft, locale = 'zh') {
   const steps = [];
   steps.push({ kind: 'routing', title: en ? 'Message routing' : '消息分流',
     text: value.routing === 'experimental'
-      ? en ? 'Experimental routing: in enabled trial groups, new matters open work threads and supplements continue the existing work. Status questions can be answered in the group.'
-        : '实验分流：在已启用试点的群中，新事项进入工作话题，补充接续原工作，催问可在群中先答复。'
+      ? en ? 'Experimental routing: in your enabled trial groups, choose where and how to proceed. Continue existing work; confirm cross-topic information and parallel plans before dispatch. Results return to the source conversation.'
+        : '实验分流：在本人已启用的试点群中判断在哪里做、怎样推进；补充接续原工作，跨话题信息与并行分工经确认后交接，结果回到原对话。'
       : en ? 'No routing (default): handle work and reply in the current conversation.'
         : '不分流（默认）：在当前会话中处理并回复。' });
   if (value.strictStartCheck) steps.push({ kind: 'start_check', title: en ? 'Strict work-start check' : '开工严格检查',

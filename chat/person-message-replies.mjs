@@ -40,16 +40,17 @@ export async function loadPersonMessageReplies(actor) {
 
 export async function changePersonMessageReplies(input, actor) {
   if (!input || Object.keys(input).some(key => !['action', 'expectedRevision', 'confirm', 'choices', 'enabled'].includes(key))
-      || !['apply', 'reset', 'strict-start'].includes(input.action)) fail('未知的个人回复设置操作。');
+      || !['apply', 'reset', 'strict-start', 'routing'].includes(input.action)) fail('未知的个人回复设置操作。');
   if (input.confirm !== true) fail('请明确保存并应用你的回复设置。');
-  if (input.action === 'strict-start' && (typeof input.enabled !== 'boolean' || input.choices !== undefined)) fail('请明确开启或关闭开工严格检查。');
-  if (input.action !== 'strict-start' && input.enabled !== undefined) fail('未知的个人回复设置操作。');
+  if (['strict-start', 'routing'].includes(input.action) && (typeof input.enabled !== 'boolean' || input.choices !== undefined)) fail('请明确开启或关闭个人设置。');
+  if (!['strict-start', 'routing'].includes(input.action) && input.enabled !== undefined) fail('未知的个人回复设置操作。');
   if (input.action === 'apply') choices(input.choices);
   const mutation = await updateAuthDocument(document => {
     const person = requireActor(document, actor);
     const current = settingsFor(person);
     if (input.expectedRevision !== current.revision) fail('你的设置已更新，请重新载入后再保存。', 409);
-    const value = input.action === 'strict-start' ? { ...current.choices, strictStartCheck: input.enabled }
+    const value = input.action === 'routing' ? { ...current.choices, routing: input.enabled ? 'experimental' : 'none' }
+      : input.action === 'strict-start' ? { ...current.choices, strictStartCheck: input.enabled }
       : input.action === 'apply' ? choices({ ...input.choices,
         routing: input.choices.routing ?? current.choices.routing,
         strictStartCheck: input.choices.strictStartCheck ?? current.choices.strictStartCheck }) : null;

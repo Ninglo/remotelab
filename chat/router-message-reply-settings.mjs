@@ -30,11 +30,11 @@ export async function handleMessageReplySettings({ req, res, pathname, parsedUrl
       }
       const actor = await currentRunActor(input.runId || parsedUrl?.query?.runId, authSession, req.method === 'POST');
       const setting = input.setting || parsedUrl?.query?.setting || 'strict-start';
-      if (!['strict-start', 'input-trial'].includes(setting)) throw new Error('Unknown personal trial');
+      if (!['strict-start', 'input-trial', 'routing'].includes(setting)) throw new Error('Unknown personal trial');
       const settings = setting === 'input-trial'
         ? (req.method === 'GET' ? await loadInflightTrial(actor) : await changeInflightTrial(input, actor))
         : req.method === 'GET' ? await loadPersonMessageReplies(actor)
-        : await changePersonMessageReplies({ action: 'strict-start', enabled: input.enabled,
+        : await changePersonMessageReplies({ action: setting, enabled: input.enabled,
           expectedRevision: input.expectedRevision, confirm: input.confirm }, actor);
       writeJson(res, 200, { settings });
       return true;

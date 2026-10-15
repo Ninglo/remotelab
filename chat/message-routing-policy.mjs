@@ -31,9 +31,15 @@ export async function captureMessageRoutingOptions(session, supplied, preserved)
   }
   options.messageRoutingPolicy = { version: 1, mechanism: personal?.routing === 'experimental' ? 'experimental' : 'none',
     ...(personal ? { personId: personal.personId, policyId: personal.policyId } : {}) };
+  const scope = humanGroup ? await routingPilotScope(session.conversation, undefined, personal?.personId) : null;
+  if (scope?.version === 2 && options.messageRoutingPolicy.mechanism === 'experimental'
+      && isPilotInputSinceActivation(scope, source.createTime || source.eventTs)) {
+    options.messageRoutingPolicy.trialId = scope.trialId;
+    options.messageRoutingPolicy.trialVersion = 2;
+  }
   if (options.messageRoutingPolicy.mechanism === 'experimental'
       && session.conversation?.target?.conversationKind === 'main'
-      && isPilotInputSinceActivation(await routingPilotScope(session.conversation), source.createTime || source.eventTs)) {
+      && isPilotInputSinceActivation(scope, source.createTime || source.eventTs)) {
     options.routingPilotMainline = true;
     options.routingPilotMainlineProtocol = 2;
   }

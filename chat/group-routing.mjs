@@ -1,7 +1,7 @@
 // The Harness chooses semantic relationships. This module validates and stores
 // their transport, admission and return contracts; it never calls a classifier.
 import { createHash } from 'node:crypto';
-import { routingPilotScope, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
+import { routingPilotScope, routingSyncTargetAllowed, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { loadSessionsMeta, findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
 import { appendEvent } from './history.mjs';
@@ -9,6 +9,7 @@ import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { allowsMessageRouting } from './message-routing-policy.mjs';
+import { executionTrialPrompt } from './work-execution-prompt.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 20);
 const fail = message => { throw new Error(message); };
@@ -44,7 +45,7 @@ async function sourceFor(record, { explicitSyncDecision = false } = {}) {
   if (record.result || record.releasedAt) fail('Only an active accepted input can route work');
   if (!explicitSyncDecision && !allowsMessageRouting(record.options)) fail('Message routing is disabled for this accepted input');
   const session = await findSessionMeta(record.sessionId);
-  const scope = await routingPilotScope(session?.conversation);
+  const scope = await routingPilotScope(session?.conversation, undefined, record.options?.viewPersonId);
   if (!isPilotInputSinceActivation(scope, record.acceptedAt)
       || !isPilotInputSinceActivation(scope, record.options?.sourceContext?.createTime || record.options?.sourceContext?.eventTs)
       || !verifiedWorkActor(record.options?.viewPersonId, record.options?.initiatedByIdentityId)
@@ -53,6 +54,8 @@ async function sourceFor(record, { explicitSyncDecision = false } = {}) {
       || ['app', 'bot'].includes(record.options?.sourceContext?.sender?.senderType)) fail('Routing requires a human Feishu input in the enabled pilot group');
   const origin = record.deliveryPlan || record.options?.sourceDelivery;
   if (!sameGroup(session.conversation, origin)) fail('Input destination is outside the pilot group');
+  if (scope.version === 2 && !explicitSyncDecision && (record.options?.messageRoutingPolicy?.trialVersion !== 2
+      || record.options.messageRoutingPolicy.trialId !== scope.trialId)) fail('This accepted input predates the personal trial');
   return { session, scope, origin };
 }
 
@@ -159,7 +162,8 @@ export async function routeGroupWork(record, body, deps) {
     if (!task || !reason) fail('Explain the task and its relationship to this input');
     let target = body.targetSessionId ? await findSessionMeta(body.targetSessionId) : null;
     if (mode !== 'new' && (!target || target.archived || target.groupFeed || target.id === session.id
-        || !sameGroup(origin, target.conversation))) fail('Select an available work topic in this same pilot group');
+        || !(mode === 'sync' ? await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)
+          : sameGroup(origin, target.conversation)))) fail('Select an available work topic in this same pilot group or confirmed sync scope');
     if (mode === 'sync') {
       const proposalId = 'sync_' + hash(JSON.stringify([session.id, record.requestId, target.id, task, reason]));
       const old = state(session).proposals.find(p => p.id === proposalId);
@@ -167,7 +171,7 @@ export async function routeGroupWork(record, body, deps) {
       if (state(session).proposals.length >= 64) fail('Pilot proposal limit reached');
       const proposal = { id: proposalId, state: 'draft', sourceSessionId: session.id, sourceRequestId: record.requestId,
         sourceName: session.name, sourceStamp: stamp(session), targetSessionId: target.id, targetName: target.name, targetStamp: stamp(target),
-        task, reason, createdAt: new Date().toISOString() };
+        task, reason, personId: record.options.viewPersonId, createdAt: new Date().toISOString() };
       await save(session.id, data => data.proposals.push(proposal));
       await appendEvent(session.id, { type: 'work_event', action: 'routing-sync-draft', proposal });
       return { proposal, confirmation: '确认同步 ' + proposalId,
@@ -294,6 +298,7 @@ export async function acceptGroupSync(record, deps) {
     const { session, origin } = await sourceFor(record, { explicitSyncDecision: true });
     const proposal = state(session).proposals.find(p => p.id === decision[2]);
     if (!proposal) fail('Sync proposal is not in this conversation');
+    if (proposal.personId && proposal.personId !== record.options.viewPersonId) fail('Only the proposal requester can confirm this personal trial');
     if (proposal.confirmationRequestId === record.requestId && proposal.state !== 'draft') {
       if (proposal.state === 'approved') return dispatchGroupSync(proposal, await findSessionMeta(proposal.targetSessionId), record, deps);
       return '同步已经登记：' + proposal.state;
@@ -305,7 +310,7 @@ export async function acceptGroupSync(record, deps) {
       return '已拒绝本条同步。';
     }
     const target = await findSessionMeta(proposal.targetSessionId);
-    if (!target || target.archived || target.groupFeed || !sameGroup(origin, target.conversation)
+    if (!target || target.archived || target.groupFeed || !await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)
         || stamp(target) !== proposal.targetStamp || stamp(session) !== proposal.sourceStamp) fail('Discussion changed; review a fresh sync proposal');
     const packet = { ...proposal, confirmationRequestId: record.requestId, state: 'approved', returnPlan: origin, targetPlan: workDeliveryPlan(target.conversation, origin),
       actor: verifiedWorkActor(record.options.viewPersonId, record.options.initiatedByIdentityId) };
@@ -363,10 +368,15 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
     '本条消息不自动转交其他工作 Session；在当前绑定的 Session 处理，不使用 work route 或主线 work reply，不沿用历史中的实验分流指令。此限制不决定是否回复或回复位置：群主线仍可由主模型在首个可见回复前用 feishu-reply:thread 选择话题回复；已有话题内继续原话题。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
   ].join('\n');
   }
-  const scope = await routingPilotScope(session?.conversation);
+  const scope = await routingPilotScope(session?.conversation, undefined, messageRoutingPolicy?.personId);
   if (!scope || sourceContext?.connector !== 'feishu' || ['app', 'bot'].includes(sourceContext.sender?.senderType)
       || !isPilotInputSinceActivation(scope, sourceContext.createTime || sourceContext.eventTs)) return '';
   const current = await findSessionMeta(session.id) || session;
+  if (scope.version === 2) {
+    if (messageRoutingPolicy?.trialVersion !== 2 || messageRoutingPolicy.trialId !== scope.trialId) return '';
+    return executionTrialPrompt({ trialId: scope.trialId, decisions: current.workAwareness?.inputDecisions,
+      plans: current.workAwareness?.executionPlans });
+  }
   const sessions = await loadSessionsMeta();
   const peers = sessions.filter(s => !s.archived && !s.groupFeed && s.id !== session.id
     && sameGroup(s.conversation, session.conversation)).slice(-12).map(s => ({ sessionId: s.id, name: s.name, goal: s.workSummary?.goal }));

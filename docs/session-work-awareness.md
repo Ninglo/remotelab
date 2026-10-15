@@ -107,7 +107,41 @@ remotelab work update --file update.json --json
 
 隔离测试覆盖同时开工与双向检索、草稿／送达／采用边界、版本冲突、结果回收、多人引用的姓名与适用范围、普通问法与公司背景、更正／损坏／缺失／超预算、UI 仅填人类草稿、原生输入去重与问题保护。原生测试使用可控模拟 Harness，可以证明传输和状态保护，不能代替真实模型在全部语言情境下都遵守规则。正式效果还要观察实际回答、漏检、误报、读取延迟和上下文开销；不通过向真实群发测试消息来验收。
 
-## 单群分流试点
+## 群分流试点与个人执行安排
+
+个人 v2 试用由当前 Harness 结合原讨论，判断输入是在提问、讨论、形成决定、明确交办、补充还是停止，再选择在哪里做、如何推进。平台不增加前置语义分类模型。简单答复不等待全局检索；快慢和并行由依赖决定。讨论已有明确执行决定时，携带目标、结论、约束、来源和验收要求直接开工；讨论充分、引用建议和沉默都不能单独授权执行。
+
+实例只配置获准的人与群，个人还须选择 `routing=experimental`；两层条件均满足才启用。旧请求保留原快照，不重放。
+
+```json
+{"version":2,"enabled":true,"trialId":"personal-execution-v2","personIds":["person_example"],"crossGroupSync":true,"groups":[{"sourceRouteId":"bot-route","tenantKey":"tenant","chatId":"chat","folder":"/absolute/workspace","activatedAt":"2026-10-15T00:00:00.000Z"}]}
+```
+
+`remotelab message-replies routing status|on|off --json` 按当前接受的人类请求核对本人，保留其他回复设置。群范围不从个人开关推断。新建和明确接续仍限同群；`sync` 可以经人确认在同一 v2 试用登记的群之间传递参考、复核并回传，不跨 Bot／租户。其他人不能代为确认本人的草稿；确认时说明目标展示和来源回传范围。同步复核不自动允许修改目标原任务。
+
+### 分工、人的选择与主话题回收
+
+`work plan --file <JSON> --json` 复用原 Session 的 `workAwareness.executionPlans`，不另建项目主账。写包的 sourceRequestId 必须指向本次执行实际接受的人类输入。`work context` 返回计划、分支、运行/排队/等待状态及 pendingQuestion。
+
+| action | 数据与行为 |
+| --- | --- |
+| record | understanding、intent、where、approach、reason，记录有实质影响的归属和执行取舍；闲聊不用逐条记录 |
+| propose | goal、context、reason、branches；每条含 id/name/task/writeScope/dependsOn，1–4条并按依赖排序，不允许环。context保留原结论、来源、限制、验收要求。只建草稿，不创建Session |
+| approve | planId、expectedVersion、selected、approval。先展示完整方案，用原生提问工具让人选择；必须对应草稿之后同一人的新输入。代码核作者、后续输入、版本和依赖；Harness负责核对人确实同意这个具体提案，不能靠沉默、无关输入或自己的话批准 |
+| start | 与propose相同，另含authorization，仅用于已有明确开工指令的一项独立任务；不重复询问已给授权，也不能绕过多分支确认 |
+| amend／stop | planId、expectedVersion、selected、text；只向选定分支传达本次人的补充或停止。完成后的新修改另提后续任务。取消请求发出不等于停止完成 |
+| answer | planId、branchId、questionId、text；先核当前待答问题，转交人的原答案，不能替人做授权决定 |
+| resume | planId；恢复同一计划未完成的提交，不能恢复已取消计划 |
+
+并行方案要说明各分支的任务、依赖、修改范围及主话题汇总责任。同文件写入应串行或隔离工作区。人可以选全部、部分、串行或不拆；串行先改成带依赖的新方案。选定分支创建可打开的独立 Web Session，保持主话题作为沟通和结果入口，不复制完整聊天或继承其他群地址。创建Session和提交请求使用稳定标识，重试不重复开工。
+
+独立根分支并行，依赖方等前置返回可用结果再开始；失败、取消和空结果阻断对应依赖，其他分支继续。结束后主话题排队一次核验汇总，仅核对已有成果、证据、冲突和缺口，再通过原回复地址交付；模型执行结束不等于业务验收。整个计划停止后不再唤起主话题。停止会取消该分支已接受的执行请求，不碰无关运行；外部训练或设备作业仍须用业务工具核对，不能从Agent停止推断外部作业停止。
+
+分支问题经持久出站队列回到主话题，注明分支；主话题读取pendingQuestion后转交对应答案。结果与等待状态来自请求和原生运行记录；启动恢复复用原计划与回执，不另建轮询任务。
+
+验证入口：`tests/test-work-execution-plans.mjs` 覆盖个人/群范围、跨群确认、草稿、部分选择、依赖、失败、空结果、补充、提问、停止和恢复；`tests/test-group-routing-runtime.mjs` 通过真实受理与隔离假执行器验证子任务完成、主话题核验和原地址出站。隔离回归不证明真实模型理解所有语言情境；真人试用继续看漏接、误开工、耗时、重复解释和人工跟进负担，不以转接次数代替效果。
+
+### 原 v1 单群试点兼容
 
 `<CONFIG_DIR>/group-routing-pilot.json` 是实例本地开关，不随代码默认开启：
 
