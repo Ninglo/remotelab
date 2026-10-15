@@ -3,12 +3,15 @@ import { open } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { MEMORY_DIR } from '../lib/config.mjs';
+import { loadSessionsMeta } from './session-meta-store.mjs';
+import { projectDirectoryScope } from './project-work-scope.mjs';
 
 export const PROJECT_MEMORY_RUNTIME_FILE = join(MEMORY_DIR, 'project-runtime.json');
 const idPattern = /^[a-z0-9_-]{1,80}$/;
 const cleanPath = value => typeof value === 'string' && isAbsolute(value) && !/[\r\n<>]/.test(value);
 
 export function validateProjectMemoryRuntime(config) {
+  if (config?.directoryEnabled !== undefined && typeof config.directoryEnabled !== 'boolean') throw new Error('Invalid project directory setting.');
   if (config?.schemaVersion !== 1 || typeof config.enabled !== 'boolean'
       || typeof config.contextEnabled !== 'boolean' || typeof config.reviewEnabled !== 'boolean'
       || !idPattern.test(config.releaseId || '') || !cleanPath(config.indexPath)
@@ -77,13 +80,17 @@ export async function buildProjectMemoryPromptBlock(session = {}, sourceContext,
   const { config, hash } = loaded;
   if (!config.enabled || !config.contextEnabled) return '';
   // Current input wins. Never match titles, Person views or previous chat metadata.
-  const { group, declared, projectIds } = associatedProjects(config, session, sourceContext);
+  const { group, declared, projectIds: directIds } = associatedProjects(config, session, sourceContext);
+  const inherited = config.directoryEnabled === true && !directIds.length && session.delegatedFromSessionId
+    ? projectDirectoryScope(config, session, sourceContext, await loadSessionsMeta()) : null;
+  const projectIds = directIds.length ? directIds : inherited?.projectIds || [];
   if (!projectIds.length) return ''; // Ordinary/unassigned turns retain the existing pointers.
   const data = {
     release: config.releaseId, configHash: hash.slice(0,16),
     scope: 'all-registered-projects', index: config.indexPath,
     ...(projectIds.length ? { projectIds, ledger: config.ledgerPath } : {}),
-    association: group ? 'configured-source-group' : declared ? 'explicit-session-binding' : 'unassigned',
+    association: group ? 'configured-source-group' : declared ? 'explicit-session-binding'
+      : inherited?.projectIds.length ? 'recorded-delegation-parent' : 'unassigned',
     review: config.workflowPath,
     ...(cleanPath(config.briefWorkflowPath) ? { briefMaintenanceWorkflow: config.briefWorkflowPath } : {}),
   };

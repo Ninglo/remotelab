@@ -19,6 +19,7 @@ export const sourceFiles = {
   session_instructions: ['Session 约定', 'chat/session-manager.mjs'],
   turn_context: ['本轮背景：人员、项目与群消息', 'docs/connector-turn-context.md'],
   project_memory: ['项目说明与原件入口', 'chat/project-memory-runtime.mjs'],
+  project_work_directory: ['隐藏项目工作目录', 'chat/project-work-directory.mjs'],
   message_reply_mode: ['个人回复设置', 'chat/session-manager.mjs'],
   strict_start_check: ['开工检查 v1', 'chat/prompt-assets/experiments/work-start/v1.md'],
   inflight_trial: ['执行中补充输入规则', 'chat/session-manager.mjs'],

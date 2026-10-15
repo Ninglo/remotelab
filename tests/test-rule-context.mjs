@@ -79,6 +79,21 @@ try {
   const recovered = await recoverCodexRules({ transcript_path: transcript }, 'session', CONFIG_DIR);
   assert.match(recovered, /DISPLAY_RULE/); assert.match(recovered, /PERSON_A_STRICT/);
   assert.match(recovered, /PROJECT_BRIEF_V2_TAIL_CONSTRAINT/); assert.doesNotMatch(recovered, /PROJECT_BRIEF_V1/);
+  const directorySlot = { id: 'project_work_directory', title: 'Hidden project work directory', content: 'DIRECTORY_V1', delivery: 'turn' };
+  const withDirectory = [...rules, directorySlot];
+  const directoryFirst = await project(withDirectory);
+  const directoryAck = { manifest: async () => ({ ruleContextDelivery: directoryFirst.receipt }) };
+  assert.equal((await project(withDirectory, {}, directoryAck)).receipt.mode, 'reference');
+  const directoryNext = await project([...rules, { ...directorySlot, content: 'DIRECTORY_V2_NEW_CHILD' }], {}, directoryAck);
+  assert.deepEqual(directoryNext.receipt.changedIds, ['project_work_directory']);
+  assert.doesNotMatch(renderModelContextSlots(directoryNext.slots), /PROJECT_BRIEF_V1/);
+  assert.match(renderModelContextSlots(directoryNext.slots), /DIRECTORY_V2_NEW_CHILD/);
+  await writeFile(transcript, JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: renderModelContextSlots(directoryNext.slots) }] } }) + '\n');
+  const directoryRecovered = await recoverCodexRules({ transcript_path: transcript }, 'session', CONFIG_DIR);
+  assert.match(directoryRecovered, /DIRECTORY_V2_NEW_CHILD/); assert.match(directoryRecovered, /PROJECT_BRIEF_V1/);
+  const directoryOff = await project(rules, {}, directoryAck);
+  assert.deepEqual(directoryOff.receipt.removedIds, ['project_work_directory']);
   const legacy = { ...first.receipt }; delete legacy.scopeHash; delete legacy.slotHashes;
   assert.equal((await project(rules, {}, { manifest: async () => ({ ruleContextDelivery: legacy }) })).receipt.mode, 'full');
   const supplement = { request: async () => ({ requestId: 'previous', nativeDispatchRunId: 'run',

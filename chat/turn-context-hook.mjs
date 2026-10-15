@@ -3,6 +3,7 @@ import { buildLocalBridgePromptBlock } from './local-bridge-prompt.mjs';
 import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
 import { buildSourceContextPrompt } from './source-context-prompt.mjs';
 import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
+import { buildProjectWorkDirectoryPrompt } from './project-work-directory.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
 import { buildPersonalMemoryConversationContext } from './personal-memory-conversation.mjs';
 import { experimentBackground } from './feature-experiment-context.mjs';
@@ -29,9 +30,10 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
   const sections = await Promise.allSettled([
     buildProjectMemoryPromptBlock(session, sourceContext),
     buildGroupRoutingContext(session, sourceContext, { inputReplyContract: pilotInputReplyContract, messageRoutingPolicy }),
+    buildProjectWorkDirectoryPrompt(session, sourceContext),
   ]);
-  const [project, groupRouting] = sections.map((result, index) => result.status === 'fulfilled'
-    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['project', 'group-routing'][index], reason: result.reason.message }));
+  const [project, groupRouting, directory] = sections.map((result, index) => result.status === 'fulfilled'
+    ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['project', 'group-routing', 'project-directory'][index], reason: result.reason.message }));
   const sectionsBeforeProject = [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
@@ -50,6 +52,6 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
   // Keep the public text-only reader compatible. The input assembler can put
   // the complete project block in the existing acknowledged/recoverable slots.
   return separateProjectContext
-    ? { project, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
-    : render([...sectionsBeforeProject, project, ...sectionsAfterProject]);
+    ? { project, directory, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
+    : render([...sectionsBeforeProject, project, directory, ...sectionsAfterProject]);
 }

@@ -9,6 +9,7 @@ import { verifiedWorkActor, queryRelatedWork, queryWorkCandidates, reviewRelated
 import { broadcastAll } from './ws-clients.mjs';
 import { handleExecutionPlan, readExecutionPlans } from './work-execution-plans.mjs';
 import { retrieveNecessaryContext } from './necessary-background.mjs';
+import { readProjectWorkDirectory } from './project-work-directory.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
   if (pathname === '/api/monitoring/context-queries' && req.method === 'GET') {
@@ -18,7 +19,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     catch { writeJson(res, 503, { error: 'Context query records unavailable' }); }
     return true;
   }
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan|directory))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -28,6 +29,10 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     if (!session) throw Object.assign(new Error('A current Session is required'), { statusCode: 404 });
     const observation = { sessionId, runId: record?.runId, requestId: record?.requestId, actorKind: record ? 'agent' : authSession?.authKind === 'service' ? 'system' : 'human' };
     const query = body.query || parsedUrl.searchParams.get('query') || record?.text || '';
+    if (pathname.endsWith('/directory') && req.method === 'GET') {
+      writeJson(res, 200, await readProjectWorkDirectory(session, record?.options?.sourceContext));
+      return true;
+    }
     if (pathname.endsWith('/people') && ['GET', 'POST'].includes(req.method)) {
       const context = await observeContextQuery({ ...observation, kind: 'people', query }, () => buildRelatedPersonContext({ query, sourceContext: record?.options?.sourceContext,
         personId: record?.options?.viewPersonId || authSession?.personId,

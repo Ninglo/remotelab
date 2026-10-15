@@ -1514,6 +1514,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
         || options.workReference || options.recordUserMessage === false) },
     });
   slots.push(createModelContextSlot('project_memory', 'Current project background', turnContext.project));
+  slots.push(createModelContextSlot('project_work_directory', 'Hidden project work directory', turnContext.directory));
   slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
