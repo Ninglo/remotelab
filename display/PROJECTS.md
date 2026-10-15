@@ -27,7 +27,7 @@ application to the user.”
 
 The studio source is instance-local. `studio-projects-integration.patch` records
 its precise v21 editor/renderer integration, including the isolated stream tests.
-Check that patch against the current source, reconcile any drift, then apply it.
+Check that patch against the current source, reconcile any drift, then apply it with `git apply --unidiff-zero` (the patch uses zero-context hunks).
 Copy `studio-projects.js` and `.css` from this directory into `concept-v21` and
 publish the existing detailed editor slug. The renderer allowlist and work-mode
 validation must include these assets and `projects`. Forward projects through

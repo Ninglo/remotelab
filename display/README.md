@@ -14,6 +14,13 @@ match. v0 supports macOS and the Thermalright `0416:5408` display only. Updates,
 cross-version compatibility, and automatic migration are intentionally out of
 scope; reinstalling from the target Server is the recovery path.
 
+## Optional project module
+
+The v21 detailed editor can display the current Person’s active Sessions grouped
+by their existing projects. It reuses titles and status, adds no model calls, and
+keeps old modes and applied layouts unchanged until the user selects and applies
+the module. See [project module integration and validation](PROJECTS.md).
+
 ## Server
 
 ```bash
