@@ -106,7 +106,7 @@ export async function handleExecutionPlan(record, body, deps) {
       if (body.action === 'start') await advancePlan(source.id, id, deps);
       return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), boundary: body.action === 'start'
         ? 'The explicitly requested single task was submitted; check actual state before reporting completion.'
-        : 'Draft only. Show the full proposal and ask the human which branches to start. No Session has been created.' };
+        : 'Draft only; no Session created. Offer the proposal asynchronously and continue already authorized work in the source Session without waiting. Before a later approval, reconcile source progress so completed or active work is not duplicated.' };
     }
     let plan = plans(source).find(p => p.id === body.planId);
     if (!plan || plan.actor.personId !== actor.personId) fail('Select this requester’s plan in this source conversation');

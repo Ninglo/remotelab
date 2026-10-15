@@ -89,6 +89,23 @@ try {
   await acceptGroupSync(await input('sync-human', sync.confirmation), api);
   assert.equal(submits, 1, 'cross-group reference waits for its real human confirmation');
 
+  // An optional proposal must not own the original task's completion. Work
+  // can finish locally while the draft is unanswered; recovery starts nothing.
+  const local = await input('local-default', '整理已有资料；可以建议并行，但不要等确认才开工');
+  const optional = (await act(local, { action: 'propose', goal: '整理资料', context: '原话题已授权整理',
+    reason: '可选并行', branches: [branch('local_a'), branch('local_b')] }, api)).plan;
+  const submissionsBeforeLocal = submits;
+  await requests.settle(local.key, { state: 'completed', payload: { text: '已在原话题整理完成' } }, []);
+  await finish(await requests.get(local.key), { id: local.runId }, api);
+  await recoverExecutionPlans(api);
+  assert.equal((await requests.get(local.key)).result.state, 'completed');
+  assert.equal((await state(optional.id)).state, 'draft');
+  assert.equal(submits, submissionsBeforeLocal); assert.equal(creations, 0);
+  await act(await input('obsolete-optional', '原任务完成，不再拆分'), { action: 'stop', planId: optional.id,
+    expectedVersion: optional.version, selected: ['local_a', 'local_b'], text: '原话题已完成，撤销过期草稿' }, api);
+  await assert.rejects(approve(optional), /Proposal changed/);
+  assert.equal(creations, 0, 'late approval cannot revive an explicitly withdrawn draft');
+
   const { r, plan } = await propose('parallel', [branch('a'), branch('b'), branch('c', ['a', 'b'])]);
   assert.equal(creations, 0, 'proposal creates no Session');
   await assert.rejects(act(r, { action: 'approve', planId: plan.id, expectedVersion: 1, selected: ['a'], approval: 'self approval' }, api), /subsequent/);
