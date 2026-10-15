@@ -61,6 +61,19 @@ own expiration rules.
 The conservative USB framing in `agent.py` is derived from the MIT-licensed
 `thermalright-display-bridge` project in this workspace.
 
+### macOS network proxies
+
+The agent's persistent JPEG and animation downloads use the HTTPS proxy found
+by Python's `urllib.request.getproxies()` (environment or macOS system settings),
+including proxy bypass rules. An HTTP CONNECT tunnel keeps the device bearer
+token inside the target server's verified TLS connection. Loopback HTTP remains
+direct. SOCKS-only and HTTPS-to-proxy transports are not supported by this path;
+use the proxy application's local HTTP endpoint when required.
+
+Existing paired Macs need the updated `agent.py` and a restart of their existing
+LaunchAgent. Updating the server's installer alone does not update an installed
+Mac agent; preserve `state.json`, pairing and screen layout during the update.
+
 ## Personal Feishu reminders: event-triggered synchronization
 
 Frame playback and dashboard reads only project cached data. Cache expiry,

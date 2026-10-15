@@ -104,11 +104,29 @@ class JpegFrameConnection:
             self.connection.close()
             self.connection = None
 
+    def open_connection(self):
+        if self.parsed.scheme == "http":
+            # Plain HTTP is restricted to loopback by __init__.
+            return http.client.HTTPConnection(self.parsed.netloc, timeout=15)
+        proxies = urllib.request.getproxies()
+        proxy_url = proxies.get("https")
+        if proxy_url and not urllib.request.proxy_bypass(self.parsed.hostname):
+            proxy = urllib.parse.urlsplit(proxy_url if "://" in proxy_url else f"http://{proxy_url}")
+            if proxy.scheme != "http" or not proxy.hostname:
+                raise RuntimeError("Display HTTPS downloads require an HTTP CONNECT proxy")
+            headers = {}
+            if proxy.username is not None:
+                credentials = f"{urllib.parse.unquote(proxy.username)}:{urllib.parse.unquote(proxy.password or '')}"
+                headers["Proxy-Authorization"] = "Basic " + base64.b64encode(credentials.encode()).decode()
+            connection = http.client.HTTPSConnection(proxy.hostname, proxy.port or 80, timeout=15)
+            connection.set_tunnel(self.parsed.hostname, self.parsed.port or 443, headers=headers)
+            return connection
+        return http.client.HTTPSConnection(self.parsed.netloc, timeout=15)
+
     def read(self) -> tuple[dict, bytes]:
         try:
             if self.connection is None:
-                connection_type = http.client.HTTPSConnection if self.parsed.scheme == "https" else http.client.HTTPConnection
-                self.connection = connection_type(self.parsed.netloc, timeout=15)
+                self.connection = self.open_connection()
             self.connection.request("GET", self.path, headers={
                 "Authorization": f"Bearer {self.token}",
                 "Accept": "image/jpeg",
@@ -135,8 +153,7 @@ class JpegFrameConnection:
             raise ValueError("invalid display bundle id")
         try:
             if self.connection is None:
-                connection_type = http.client.HTTPSConnection if self.parsed.scheme == "https" else http.client.HTTPConnection
-                self.connection = connection_type(self.parsed.netloc, timeout=15)
+                self.connection = self.open_connection()
             accept = "application/vnd.remotelab.display-frames+json;v=2"
             if bundle_id:
                 accept += f";id={bundle_id}"

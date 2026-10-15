@@ -3,7 +3,7 @@ import importlib.util
 import json
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -58,6 +58,63 @@ class FrameHandler(BaseHTTPRequestHandler):
 
 
 class DisplayAgentFastPathTest(unittest.TestCase):
+    def test_jpeg_and_animation_use_system_https_proxy_and_reuse_tunnel(self):
+        jpeg_response = Mock(status=200)
+        jpeg_response.getheaders.return_value = [("Content-Type", "image/jpeg")]
+        jpeg_response.read.return_value = b"\xff\xd8proxied-frame"
+        bundle_response = Mock(status=200)
+        bundle_response.getheaders.return_value = [("Content-Type", "application/vnd.remotelab.display-frames+json")]
+        bundle_response.read.return_value = json.dumps({
+            "version": 2, "frameId": "0123456789ab", "bundleId": "fedcba987654",
+            "intervalMs": 100, "frames": [base64.b64encode(b"\xff\xd8frame").decode()],
+        }).encode()
+        with patch.object(agent.urllib.request, "getproxies", return_value={"https": "http://127.0.0.1:7892"}), \
+                patch.object(agent.urllib.request, "proxy_bypass", return_value=False), \
+                patch.object(agent.http.client, "HTTPSConnection") as connect:
+            transport = connect.return_value
+            transport.getresponse.side_effect = [jpeg_response, bundle_response]
+            client = agent.JpegFrameConnection("https://example.com/display/v1/devices/display-0123456789abcdef/frame.png", "private-token")
+            self.assertEqual(client.read()[1], b"\xff\xd8proxied-frame")
+            self.assertEqual(client.read_bundle()[2]["frames"], (b"\xff\xd8frame",))
+            connect.assert_called_once_with("127.0.0.1", 7892, timeout=15)
+            transport.set_tunnel.assert_called_once_with("example.com", 443, headers={})
+            for call in transport.request.call_args_list:
+                self.assertEqual(call.kwargs["headers"]["Authorization"], "Bearer private-token")
+                self.assertNotIn("Proxy-Authorization", call.kwargs["headers"])
+            client.close()
+
+    def test_proxy_bypass_keeps_https_direct(self):
+        with patch.object(agent.urllib.request, "getproxies", return_value={"https": "http://127.0.0.1:7892"}), \
+                patch.object(agent.urllib.request, "proxy_bypass", return_value=True), \
+                patch.object(agent.http.client, "HTTPSConnection") as connect:
+            agent.JpegFrameConnection("https://example.com/frame.png", "token").open_connection()
+            connect.assert_called_once_with("example.com", timeout=15)
+            connect.return_value.set_tunnel.assert_not_called()
+
+    def test_no_https_proxy_keeps_existing_direct_transport(self):
+        with patch.object(agent.urllib.request, "getproxies", return_value={}), \
+                patch.object(agent.http.client, "HTTPSConnection") as connect:
+            agent.JpegFrameConnection("https://example.com/frame.png", "token").open_connection()
+            connect.assert_called_once_with("example.com", timeout=15)
+            connect.return_value.set_tunnel.assert_not_called()
+
+    def test_proxy_credentials_only_enter_connect_tunnel(self):
+        with patch.object(agent.urllib.request, "getproxies", return_value={"https": "http://user:p%40ss@127.0.0.1:7892"}), \
+                patch.object(agent.urllib.request, "proxy_bypass", return_value=False), \
+                patch.object(agent.http.client, "HTTPSConnection") as connect:
+            agent.JpegFrameConnection("https://example.com:8443/frame.png", "private-token").open_connection()
+            headers = connect.return_value.set_tunnel.call_args.kwargs["headers"]
+            self.assertEqual(headers, {"Proxy-Authorization": "Basic " + base64.b64encode(b"user:p@ss").decode()})
+            self.assertNotIn("private-token", str(connect.mock_calls))
+
+    def test_unsupported_proxy_does_not_silently_connect_directly(self):
+        with patch.object(agent.urllib.request, "getproxies", return_value={"https": "socks5://127.0.0.1:7892"}), \
+                patch.object(agent.urllib.request, "proxy_bypass", return_value=False), \
+                patch.object(agent.http.client, "HTTPSConnection") as connect:
+            with self.assertRaisesRegex(RuntimeError, "HTTP CONNECT proxy"):
+                agent.JpegFrameConnection("https://example.com/frame.png", "token").open_connection()
+            connect.assert_not_called()
+
     def test_persistent_jpeg_connection_and_worker_interval(self):
         server = HTTPServer(("127.0.0.1", 0), FrameHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
