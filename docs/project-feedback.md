@@ -1,6 +1,6 @@
-# Subproject feedback in Monitor
+# Project progress and feedback in Monitor
 
-Monitor → Feedback and improvement shows feedback by the object being evaluated.
+Monitor → Projects combines the current reviewed understanding, next steps, cases and feedback under each project. A parent picker shows one group of compact subproject cards at a time; search narrows that group. Subproject detail switches between progress/next steps, cases, feedback and original records rather than stacking every section into a long report. Review dates remain visible; recorded judgments are not live execution status.
 Click a parent or subproject feedback count, or its case count, to inspect original wording, author, evaluated passage, source,
 previous analysis and suggested change. Submit a usefulness signal, a specific
 comment, an optional example and a material link. A record can also be referenced
@@ -35,7 +35,7 @@ remain unassigned. A subproject absent from the sample says “not covered”; i
 all-channel and unresolved counts are unknown. Context and paused records can be
 read separately and do not contribute to active feedback counts.
 
-`GET /api/project-feedback` returns subproject summaries. Pass `subproject=<id>`
+`GET /api/project-feedback` returns subproject summaries. The project UI sends `usage=defer` on initial and detail reads so opening a project never waits for a 30-day usage scan. Usage evidence remains available through an explicit “Load usage statistics” expansion. Without usage, missing sampling is unknown and cannot establish inactivity. Evidence bodies are rendered only when opened. Pass `subproject=<id>`
 for that subproject's records or one of the three non-assigned buckets.
 `subproject=group:<id>` returns the parent's child projects and only their assigned
 feedback; it excludes unassigned, contextual, and paused-history buckets. All reads

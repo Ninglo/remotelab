@@ -3,6 +3,8 @@
   const root = document.getElementById("monitoringFeedback");
   if (!root) return;
   const activityText = {
+    projectsHeading: ['项目进展', 'Projects'], projectIntro: ['先选项目，再看子项目的当前判断、待推进事项、案例和反馈。', 'Choose a project to review its subprojects, next steps, cases and feedback.'],
+    findProject: ['搜索子项目', 'Find a subproject'], overview: ['进展与下一步', 'Progress and next steps'], enterProject: ['查看进展', 'Open project'], usageOnDemand: ['查看使用统计', 'Load usage statistics'], noMatches: ['没有匹配的子项目', 'No matching subprojects'],
     caseUnknown: ['案例待整理', 'Cases not reviewed'], rawFeedback: ['原始反馈', 'Source feedback'],
     relatedItems: ['关联案例／反馈', 'Related cases / feedback'], actualChanges: ['实际修改与处理结果', 'Changes and outcomes'],
     changeUnknown: ['尚无可核实的修改记录。', 'No verified change recorded.'], nextStep: ['下一步建议', 'Suggested next step'],
@@ -50,9 +52,11 @@
   let summary = null, detail = null, selected = new URL(globalScope.location.href).searchParams.get("feedback") || "";
   let serial = 0, detailSerial = 0, key = null, keyContent = "", related = "";
   let selectedSection = new URL(globalScope.location.href).searchParams.get('feedbackView') || 'overview';
-  const groupOpen = new Map(), actionRequests = new Map();
+  const actionRequests = new Map();
+  let chosenGroup = new URL(globalScope.location.href).searchParams.get("projectGroup") || "", searchText = "";
   const countedLink = (label, id, section) => button(label, () => void select(id, { section }));
   const projectName = name => { const n = node('span', name); n.translate = false; return n; };
+  root.append(node("h2", t("projectsHeading")), node("p", t("projectIntro"), "monitoring-note"));
   const toolbar = node("div", "", "monitoring-toolbar");
   const refresh = button(t("refresh"), () => void load()); toolbar.appendChild(refresh);
   const note = node("p", "", "monitoring-note"); note.setAttribute("role", "status");
@@ -113,62 +117,53 @@
   function renderSummary() {
     list.replaceChildren();
     if (!summary) return;
-    note.textContent = !summary.configured ? t("notConfigured") : t("scope", { count: summary.counts.raw_records, time: time(summary.review_at) });
+    note.textContent = !summary.configured ? t("notConfigured") : "";
     if (summary.gaps.length) list.appendChild(node("p", t("gaps", { count: summary.gaps.length }), "monitoring-note"));
     project.replaceChildren(); const unknown = node("option", t("unassigned")); unknown.value = ""; project.appendChild(unknown);
-    list.appendChild(node('p', t('groupNote'), 'monitoring-note'));
     for (const p of summary.projects) {
       const o = node("option", p.name); o.value = p.id; project.appendChild(o);
     }
-    for (const g of summary.groups || []) {
-      const group = node('details', '', 'feedback-group'); group.dataset.feedbackGroup = g.id;
-      group.open = groupOpen.get(g.id) ?? g.attention_rank <= 40;
-      group.addEventListener('toggle', () => groupOpen.set(g.id, group.open));
-      const groupTitle = node('summary'); groupTitle.append(projectName(g.name), node('span', ` · ${t('groupCount')} ${g.subproject_count} · `));
-      const own = summary.projects.filter(p => p.group_id === g.id);
-      const sourceCount = countedLink(`${t('rawFeedback')} ${g.feedback_count}`, 'group:' + g.id, 'records');
-      sourceCount.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }); groupTitle.appendChild(sourceCount);
-      const withTopics = own.filter(p => p.review?.feedback_count > 0), topics = withTopics.reduce((n, p) => n + p.review.feedback_count, 0);
-      if (topics) {
-        const topicLink = countedLink(`${t('reviewTopics')} ${topics}`, withTopics.length === 1 ? withTopics[0].id : 'group:' + g.id, 'feedback');
-        topicLink.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }); groupTitle.append(' · ', topicLink);
-      }
-      const withCases = own.filter(p => p.review?.case_count > 0), cases = withCases.reduce((n, p) => n + p.review.case_count, 0);
-      if (cases) {
-        const caseLink = countedLink(`${t('reviewCases')} ${cases}`, withCases.length === 1 ? withCases[0].id : 'group:' + g.id, 'cases');
-        caseLink.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }); groupTitle.append(' · ', caseLink);
-      }
+    if (!summary.groups.some(g => g.id === chosenGroup)) chosenGroup = summary.groups[0]?.id || '';
+    const picker = node('nav', '', 'feedback-project-picker'); picker.setAttribute('aria-label', t('projectsHeading'));
+    for (const g of summary.groups) {
+      const tab = button(g.name, () => {
+        chosenGroup = g.id; searchText = ''; selected = ''; detail = null; ++detailSerial;
+        const url = new URL(globalScope.location.href); url.searchParams.set('projectGroup', chosenGroup); url.searchParams.delete('feedback'); url.searchParams.delete('feedbackView'); globalScope.history.replaceState(null, '', url);
+        renderSummary(); renderDetail();
+      });
+      tab.translate = false; tab.setAttribute('aria-pressed', String(g.id === chosenGroup)); picker.appendChild(tab);
+    }
+    list.appendChild(picker);
+    const search = node('input'); search.type = 'search'; search.placeholder = t('findProject'); search.setAttribute('aria-label', t('findProject')); search.value = searchText; search.className = 'feedback-search';
+    list.appendChild(search);
+    for (const g of summary.groups.filter(g => g.id === chosenGroup)) {
+      const group = node('section', '', 'feedback-group'); group.dataset.feedbackGroup = g.id;
+      const groupTitle = node('header'); groupTitle.append(node('h3', g.name), node('span', `${g.subproject_count} ${t('groupCount')}`)); groupTitle.firstChild.translate = false;
+      groupTitle.appendChild(countedLink(`${t('rawFeedback')} ${g.feedback_count}`, 'group:' + g.id, 'records'));
       group.appendChild(groupTitle);
-      const table = node('table', '', 'feedback-table'), head = node('thead'), tr = node('tr');
-      const columns = ['project', 'count', 'reviewCases', 'direction', 'details'];
-      columns.forEach(k => { const th = node('th', t(k)); th.scope = 'col'; tr.appendChild(th); });
-      head.appendChild(tr); table.appendChild(head); const body = node('tbody');
+      const grid = node('div', '', 'feedback-project-grid');
       for (const p of summary.projects.filter(p => p.group_id === g.id)) {
-      const row = node("tr"); row.dataset.subproject = p.id;
-      const name = node("td"); const nameButton = button(p.name, () => void select(p.id)); nameButton.translate = false; name.appendChild(nameButton);
-      name.appendChild(node('small', t(p.attention.state === 'paused' ? 'attentionPaused' : p.attention.state))); row.appendChild(name);
-      const count = node('td');
-      if (p.coverage === 'not_represented') count.appendChild(node('span', t('notCovered')));
-      else count.appendChild(countedLink(`${t('rawFeedback')} ${p.feedback_count}`, p.id, 'records'));
-      count.appendChild(node('small', `${t('recent')}：${p.recent_feedback_count}`));
-      count.appendChild(node('small', `${t('pending')}：${p.pending_analysis_count}`));
-      if (p.review) count.appendChild(countedLink(`${t('reviewTopics')} ${p.review.feedback_count}`, p.id, 'feedback'));
-      row.appendChild(count);
-      const caseCell = node('td');
-      caseCell.appendChild(p.review ? countedLink(`${t('reviewCases')} ${p.review.case_count}`, p.id, 'cases') : node('span', t('caseUnknown')));
-      row.appendChild(caseCell);
-      const observations = node('details'); observations.append(node('summary', t('samplingScope')), startContent(p), usageContent(p)); name.appendChild(observations);
-      row.appendChild(node("td", p.review?.summary || p.directions[0] || t("noDirection")));
-      const actions = node("td"); actions.appendChild(button(t("give"), () => give(p.id))); row.appendChild(actions); body.appendChild(row);
+        const card = node('article', '', 'feedback-project-card'); card.dataset.subproject = p.id;
+        const name = button(p.name, () => void select(p.id)); name.translate = false; name.classList.add('feedback-project-name'); card.appendChild(name);
+        const state = p.phase === 'paused' ? t('attentionPaused') : p.review ? `${t('reviewAsOf')} ${time(p.review.as_of)}` : t(p.attention.state);
+        card.append(node('small', state), node('p', p.review?.summary || p.directions[0] || t('noDirection')));
+        const links = node('div', '', 'feedback-extras');
+        links.appendChild(button(t('enterProject'), () => void select(p.id)));
+        links.appendChild(p.review ? countedLink(`${t('reviewCases')} ${p.review.case_count}`, p.id, 'cases') : node('span', t('caseUnknown')));
+        links.appendChild(countedLink(`${t('rawFeedback')} ${p.feedback_count}`, p.id, 'records'));
+        if (p.review) links.appendChild(countedLink(`${t('reviewTopics')} ${p.review.feedback_count}`, p.id, 'feedback'));
+        card.appendChild(links); grid.appendChild(card);
       }
-      for (const row of body.children) [...row.children].forEach((td, index) => { td.dataset.label = t(columns[index]); });
-      table.appendChild(body); const wrap = node('div', '', 'monitoring-table-wrap'); wrap.appendChild(table); group.appendChild(wrap); list.appendChild(group);
+      const empty = node('p', t('noMatches')); empty.hidden = true;
+      const filter = () => { searchText = search.value; let count = 0; for (const card of grid.children) { card.hidden = !card.textContent.toLowerCase().includes(searchText.toLowerCase()); if (!card.hidden) count++; } empty.hidden = count > 0; };
+      search.addEventListener('input', filter); filter();
+      group.append(grid, empty); list.appendChild(group);
     }
     const extras = node("div", "", "feedback-extras");
     for (const [id, label] of [["unassigned_feedback", "unassigned"], ["related_context", "context"], ["paused_history", "paused"]]) {
       extras.appendChild(button(`${t(label)} · ${summary.counts[id]}`, () => void select(id)));
     }
-    list.appendChild(extras); submit.disabled = !summary.configured;
+    const coverage = node("details", "", "feedback-observations"); coverage.append(node("summary", t("reviewScope")), node("p", t("scope", { count: summary.counts.raw_records, time: time(summary.review_at) })), node("p", t("groupNote")), extras); list.appendChild(coverage); submit.disabled = !summary.configured;
     if (summary.projects.some(p => p.id === selected)) project.value = selected;
   }
   function sourceLink(url, label, parent) {
@@ -213,20 +208,25 @@
     if (!['overview', 'cases', 'feedback', 'records', 'history'].includes(section)) return;
     selectedSection = section;
     const url = new URL(globalScope.location.href); url.searchParams.set('feedbackView', section); globalScope.history.replaceState(null, '', url);
+    detailRoot.querySelectorAll('[data-review-section]').forEach(n => { n.hidden = n.dataset.reviewSection !== section; });
+    detailRoot.querySelectorAll('.feedback-review > nav button').forEach(n => n.setAttribute('aria-pressed', String(n.dataset.section === section)));
     const target = detailRoot.querySelector(`[data-review-section="${section}"]`) || (section === 'records' && detailRoot.querySelector('.feedback-raw-records'));
     if (target) { target.open = true; target.scrollIntoView({ block: 'start' }); }
   }
   function renderReview(review) {
     const box = node('section', '', 'feedback-review');
     const navigation = node('nav', '', 'feedback-extras');
-    for (const [section, label] of [['cases', 'reviewCases'], ['feedback', 'reviewTopics']]) {
-      navigation.appendChild(button(`${t(label)} ${review[section].length}`, () => focusSection(section)));
+    for (const [section, label] of [['overview', 'overview'], ['cases', 'reviewCases'], ['feedback', 'reviewTopics'], ['records', 'rawFeedback'], ['history', 'reviewHistory']]) {
+      const count = section === 'overview' ? '' : ' ' + (section === 'records' ? detail.records.length : review[section].length);
+      const tab = button(t(label) + count, () => focusSection(section)); tab.dataset.section = section; navigation.appendChild(tab);
     }
-    navigation.appendChild(button(`${t('rawFeedback')} ${detail.records.length}`, () => focusSection('records'))); box.appendChild(navigation);
-    box.append(node('p', review.summary), node('small', `${t('reviewAsOf')} ${time(review.as_of)}`));
+    box.appendChild(navigation);
+    const overview = node('section'); overview.dataset.reviewSection = 'overview'; box.appendChild(overview);
+    overview.append(node('p', review.summary), node('small', `${t('reviewAsOf')} ${time(review.as_of)}`));
     const renderItem = (item, parent, label = item.title) => {
       const card = node('details', '', 'feedback-record'); card.dataset.reviewItem = item.id;
       card.appendChild(node('summary', `${label}${item.state ? ' · ' + item.state : ''}`));
+      const populate = () => { if (!card.open || card.dataset.loaded) return; card.dataset.loaded = 'true';
       if (item.body) card.appendChild(node('p', item.body));
       if (item.changes) card.append(node('strong', t('actualChanges')), node('p', item.changes));
       if (item.next) card.append(node('strong', t('nextStep')), node('p', item.next));
@@ -251,17 +251,18 @@
       card.appendChild(button(t('reviewComment'), () => give(selected, {
         target_title: `${item.id} ${item.title}`, target_url: item.sources[0]?.url || '',
       })));
+      }; card.addEventListener('toggle', populate);
       parent.appendChild(card);
     };
-    box.appendChild(node('h4', t('reviewFocus')));
+    overview.appendChild(node('h4', t('reviewFocus')));
     for (const item of review.attention) {
       const row = node('div', '', 'feedback-record-field');
       row.append(node('strong', item.title), node('p', item.next || item.body));
-      renderItem(item, row, t('reviewEvidence')); if (item.action) row.appendChild(renderAction(item)); box.appendChild(row);
+      renderItem(item, row, t('reviewEvidence')); if (item.action) row.appendChild(renderAction(item)); overview.appendChild(row);
     }
     if (review.knowledge.summary) {
-      box.append(node('h4', t('reviewKnowledge')), node('p', review.knowledge.summary));
-      sourceLink(review.knowledge.url, t('reviewFull'), box);
+      const knowledge = node('details'); knowledge.append(node('summary', t('reviewKnowledge')), node('p', review.knowledge.summary));
+      sourceLink(review.knowledge.url, t('reviewFull'), knowledge); overview.appendChild(knowledge);
     }
     for (const [key, label] of [['feedback', 'reviewTopics'], ['cases', 'reviewCases'], ['history', 'reviewHistory']]) {
       const rows = review[key]; if (!rows.length) continue;
@@ -271,14 +272,14 @@
       for (const item of rows) renderItem(item, section);
       box.appendChild(section);
     }
-    const scope = node('details'); scope.append(node('summary', t('reviewScope')), node('p', review.scope)); box.appendChild(scope);
+    const scope = node('details'); scope.append(node('summary', t('reviewScope')), node('p', review.scope)); overview.appendChild(scope);
     return box;
   }
   function renderDetail() {
     detailRoot.replaceChildren(); detailRoot.hidden = !selected; list.hidden = Boolean(selected);
     if (!selected) return;
     detailRoot.appendChild(button(t("back"), () => {
-      selected = ""; detail = null; ++detailSerial; renderDetail();
+      selected = ""; detail = null; ++detailSerial; renderSummary(); renderDetail();
       const url = new URL(globalScope.location.href); url.searchParams.delete("feedback"); url.searchParams.delete("feedbackView"); globalScope.history.replaceState(null, "", url);
     }));
     if (!detail) { detailRoot.appendChild(node("p", t("loading"), "monitoring-note")); return; }
@@ -296,12 +297,21 @@
         detailRoot.appendChild(child);
       }
     }
+    if (detail.project) {
+      const stats = node('details', '', 'feedback-observations'); stats.appendChild(node('summary', t('usageOnDemand')));
+      stats.addEventListener('toggle', async () => {
+        if (!stats.open || stats.dataset.loaded) return; stats.dataset.loaded = 'true'; const content = node('div', t('loading')); stats.appendChild(content);
+        try { const data = await fetchJsonOrRedirect(`/api/project-feedback?subproject=${encodeURIComponent(detail.project.id)}`, { revalidate: false }); content.replaceChildren(startContent(data.project), usageContent(data.project)); }
+        catch (error) { content.textContent = error.message || t('failed'); delete stats.dataset.loaded; }
+      });
+      detailRoot.appendChild(stats);
+    }
     if (detail.project?.review) {
       detailRoot.appendChild(renderReview(detail.project.review));
       detailRoot.appendChild(button(t("giveProject"), () => give(selected)));
     } else if (detail.project) {
       const facts = node('div', '', 'feedback-activity');
-      facts.append(node('p', t(detail.project.attention.state === 'paused' ? 'attentionPaused' : detail.project.attention.state)), startContent(detail.project), usageContent(detail.project));
+      facts.append(node('p', t(detail.project.attention.state === 'paused' ? 'attentionPaused' : detail.project.attention.state)));
       detailRoot.appendChild(facts);
       detailRoot.appendChild(button(t("giveProject"), () => give(selected)));
       detailRoot.appendChild(node("p", t("directionNote"), "monitoring-note"));
@@ -312,7 +322,7 @@
     if (detail.gaps.length) detailRoot.appendChild(node("p", t("gaps", { count: detail.gaps.length }), "monitoring-note"));
     let recordRoot = detailRoot;
     if (detail.project?.review) {
-      recordRoot = node('details', '', 'feedback-raw-records');
+      recordRoot = node('details', '', 'feedback-raw-records'); recordRoot.dataset.reviewSection = 'records';
       recordRoot.open = selectedSection === 'records' || detail.records.some(r => r.review_state === 'collected');
       recordRoot.appendChild(node('summary', t('records', { count: detail.records.length })));
       detailRoot.appendChild(recordRoot);
@@ -321,6 +331,7 @@
       const card = node("details", "", "feedback-record"); card.dataset.feedbackId = r.id;
       const title = node("summary", `${r.author} · ${time(r.created_at)} · ${(r.comment || r.target_title || r.emoji || t(r.usefulness === "useful" ? "useful" : r.usefulness === "not_useful" ? "notUseful" : "noText")).slice(0, 120)}`);
       card.appendChild(title);
+      card.addEventListener('toggle', () => { if (!card.open || card.dataset.loaded) return; card.dataset.loaded = 'true';
       const row = (label, value) => { if (!value) return; const p = node("div", "", "feedback-record-field"); p.append(node("strong", t(label)), node("p", String(value))); card.appendChild(p); };
       row("comment", r.comment); row("signal", r.emoji || (r.usefulness && t(r.usefulness === "useful" ? "useful" : "notUseful")));
       row("target", r.target_title); row("quote", r.target_quote); row("example", r.example);
@@ -333,15 +344,17 @@
       if (r.source_session_id) sourceLink(`/?tab=sessions&session=${encodeURIComponent(r.source_session_id)}`, t("conversation"), links);
       card.appendChild(links);
       if (r.bucket !== "paused_history") card.appendChild(button(t("supplement"), () => give(r.subproject_id, r)));
+      });
       recordRoot.appendChild(card);
     }
+    if (detail.project?.review) focusSection(selectedSection);
   }
   async function select(id, { sync = true, section = "overview" } = {}) {
     selectedSection = section; selected = id; detail = null; const request = ++detailSerial; renderDetail();
     if (sync) { const url = new URL(globalScope.location.href); url.searchParams.set("feedback", id); url.searchParams.set("feedbackView", section); globalScope.history.replaceState(null, "", url); }
     try {
-      const next = await fetchJsonOrRedirect(`/api/project-feedback?subproject=${encodeURIComponent(id)}`, { revalidate: false });
-      if (request === detailSerial) { detail = next; renderDetail(); if (section !== "overview") focusSection(section); }
+      const next = await fetchJsonOrRedirect(`/api/project-feedback?usage=defer&subproject=${encodeURIComponent(id)}`, { revalidate: false });
+      if (request === detailSerial) { detail = next; chosenGroup = detail.project?.group_id || detail.group?.id || chosenGroup; renderDetail(); detailRoot.scrollIntoView({ block: "start" }); }
     } catch (error) {
       if (request === detailSerial) { detailRoot.appendChild(node("p", error.message || t("failed"), "monitoring-note")); detailRoot.hidden = false; }
     }
@@ -350,7 +363,7 @@
     const request = ++serial; refresh.disabled = true;
     if (!summary) note.textContent = t("loading");
     try {
-      const next = await fetchJsonOrRedirect("/api/project-feedback", { revalidate: false });
+      const next = await fetchJsonOrRedirect("/api/project-feedback?usage=defer", { revalidate: false });
       if (request === serial) {
         const chosen = project.value; summary = next; renderSummary();
         if ([...project.options].some(o => o.value === chosen)) project.value = chosen;

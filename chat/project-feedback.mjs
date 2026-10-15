@@ -150,7 +150,7 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     return { configured: Boolean(review), projects, records: list, gaps, writeDir,
       review_at: review?.created_at || null, generated_at: now(), themes: [...themes.values()], activityMetadata, qianyanActivity };
   }
-  async function read(subproject) {
+  async function read(subproject, { includeUsage = true } = {}) {
     const data = await snapshot();
     const extras = ['unassigned_feedback', 'related_context', 'paused_history'];
     const summaries = data.projects.map(p => {
@@ -159,7 +159,7 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
         latest_at: own[0]?.created_at || null, coverage: own.length ? 'sample' : 'not_represented', current_unresolved_count: null };
     });
     let usage = null;
-    if (data.activityMetadata?.projects) {
+    if (includeUsage && data.activityMetadata?.projects) {
       try { usage = await usageSnapshot(); }
       catch { data.gaps.push({ source: 'usage', code: 'unavailable' }); }
     }

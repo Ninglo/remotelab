@@ -41,6 +41,15 @@ try {
   const vote = { id: 'vote', author: { name: 'Reviewer B', id: 'person_b' }, target: { title: 'Paper', revision: 'v1' }, usefulness: 'useful', created_at: '2026-10-10T12:01:00Z' };
   await json(qianyanFile, { stage_feedback: [vote], selection_feedback: [vote], analysis_feedback: [], feedback_reviews: [{ feedback_id: 'vote', status: 'reviewed', reason: 'Preserve the signal; no policy change.' }] });
   await json(configFile, { legacyFile, reviewFile, qianyanFile, writeDir });
+  const metadataFile = join(root, 'metadata.json');
+  await json(metadataFile, { projects: { reports: { usage_features: ['feedback'] } } });
+  await json(configFile, { legacyFile, reviewFile, qianyanFile, writeDir, metadataFile });
+  let queried = 0;
+  const deferredStore = createProjectFeedbackStore({ configFile, queryUsage: async () => { queried++; return null; } });
+  await deferredStore.read(undefined, { includeUsage: false });
+  await deferredStore.read('reports', { includeUsage: false });
+  assert.equal(queried, 0, 'opening projects and cases must not scan usage history');
+  await deferredStore.read('reports'); assert.equal(queried, 1, 'explicit usage remains available');
   const originals = await Promise.all([legacyFile, reviewFile, qianyanFile].map(p => readFile(p, 'utf8')));
   const store = createProjectFeedbackStore({ configFile });
   const overview = await store.read();

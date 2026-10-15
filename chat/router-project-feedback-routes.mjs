@@ -21,7 +21,7 @@ export function createProjectFeedbackHandler({ store = createProjectFeedbackStor
     try {
       if (req.method === 'GET') {
         const params = new URL(req.url, 'http://localhost').searchParams;
-        send(200, await store.read(params.has('subproject') ? params.get('subproject') : undefined));
+        send(200, await store.read(params.has('subproject') ? params.get('subproject') : undefined, { includeUsage: params.get('usage') !== 'defer' }));
       } else {
         if (!sameOrigin(req)) { send(403, { error: '请从本站提交反馈。' }); return true; }
         if (!/^application\/json(?:;|$)/i.test(String(req.headers['content-type'] || ''))) { send(415, { error: '需要 JSON 请求。' }); return true; }
