@@ -444,7 +444,7 @@
         {
           "id": "feishu-chat",
           "name": "飞书群、话题与会话控制",
-          "purpose": "从已接入的飞书对话发起工作，在原话题接收回答、问题、附件和任务进度。",
+          "purpose": "从已接入的飞书对话发起工作，在原话题接收回答、问题、附件和任务进度；超长聊天回复以完整 Markdown 文件交付。",
           "entry": "已接入的飞书 Bot；按该群规则发消息；/status、/model 等命令。",
           "condition": "群接入、参与规则、来源权限和命令范围按 Bot 配置核对。不能把一个群的行为推广到所有群。",
           "example": "在当前话题继续刚才的工作，把结果也回到这里。",
@@ -456,6 +456,8 @@
             "chat/ambient-feishu-reply.mjs",
             "chat/group-routing.mjs",
             "chat/session-observations.mjs",
+            "connectors/feishu/index.mjs",
+            "connectors/feishu/reply-attachments.mjs",
             "connectors/feishu/group-settings.mjs",
             "connectors/feishu/participation-state.mjs",
             "connectors/feishu/quick-participation.mjs",

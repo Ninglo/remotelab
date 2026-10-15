@@ -787,6 +787,17 @@ admission tests alone do not prove platform event delivery.
 
 ### Markdown rendering
 
+Chat replies longer than 5,000 characters after hidden-content and emoji cleanup
+are sent as one `完整答复.md` file in the original chat or thread, preserving the
+complete visible Markdown instead of appending `[truncated]`. Replies whose
+serialized message content exceeds the conservative 28KB budget also use a file.
+The file replaces the text message under the same durable delivery ID, UUID and
+receipt; no extra summary message is sent. Upload failures use the existing safe
+retry path, while ambiguous message sends remain fenced against automatic resend.
+Restart recovery replays a saved receipt without uploading or sending again.
+Short replies retain the rendering below. Delivery notices and document comments
+keep their existing behavior. Already-delivered historical messages are not resent.
+
 The model can emit ordinary Markdown. Replies with supported top-level GFM
 tables automatically become one JSON 2.0 card: Markdown prose and native table
 components retain their original order. The card fills the available width;

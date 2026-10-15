@@ -870,8 +870,12 @@ export function stripOutboundEmojiArtifacts(text) {
   return normalizeWhitespaceOutsideCodeFences(stripped);
 }
 
+export function cleanFeishuReplyText(text) {
+  return stripOutboundEmojiArtifacts(stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n'))).trim();
+}
+
 export function normalizeReplyText(text) {
-  const normalized = stripOutboundEmojiArtifacts(stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n'))).trim();
+  const normalized = cleanFeishuReplyText(text);
   if (!normalized) return '';
   if (normalized.length <= MAX_FEISHU_TEXT_LENGTH) return normalized;
   return `${normalized.slice(0, MAX_FEISHU_TEXT_LENGTH - 16).trimEnd()}\n\n[truncated]`;

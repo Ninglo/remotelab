@@ -61,6 +61,8 @@ import {
   buildSessionDescription,
   buildSessionSourceContext,
   compileFeishuReplyText,
+  cleanFeishuReplyText,
+  MAX_FEISHU_TEXT_LENGTH,
   isFeishuDocumentCommentSummary,
   isFeishuTopicChat,
   normalizeFeishuMode,
@@ -1392,6 +1394,18 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
   if (isFeishuDocumentCommentSummary(summary)) {
     return sendFeishuCommentReply(runtime, summary, text);
   }
+  // Decide before the legacy post normalizer can clip the source. Keep this
+  // one durable delivery and one visible send: upload is preparation, and the
+  // existing receipt/lease/error path still owns retries and restart recovery.
+  const fullText = summary.deliveryNotice ? text : cleanFeishuReplyText(text);
+  const sendFullReplyFile = () => sendFeishuAttachment(runtime, summary, {
+    originalName: '完整答复.md',
+    mimeType: 'text/markdown; charset=utf-8',
+    buffer: Buffer.from(fullText, 'utf8'),
+  }, uuid);
+  if (!summary.deliveryNotice && fullText.length > MAX_FEISHU_TEXT_LENGTH) {
+    return sendFullReplyFile();
+  }
   const content = summary.deliveryNotice ? JSON.stringify({ text }) : await buildFeishuPostContent(text, mentions, {
     resolveFormulaImage: (formula) => resolveFeishuFormulaImage(runtime, formula),
     onFormulaError: (error, formula) => {
@@ -1404,6 +1418,12 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
   if (!summary.deliveryNotice) {
     try { cardContent = await buildFeishuTableCard(content); }
     catch (error) { console.warn(`[feishu-connector] table card conversion fallback: ${error.message}`); }
+  }
+  // Markup/JSON expansion can exceed the payload budget even for short text.
+  // Check both candidates so an explicit card rejection can safely use post.
+  if (!summary.deliveryNotice && [content, cardContent].filter(Boolean).some(payload =>
+    Buffer.byteLength(JSON.stringify({ msg_type: 'interactive', content: payload }), 'utf8') > 28_000)) {
+    return sendFullReplyFile();
   }
   const replyUuid = buildFeishuApiUuid(uuid, summary);
   const reply = shouldReplyToFeishuMessage(summary);
