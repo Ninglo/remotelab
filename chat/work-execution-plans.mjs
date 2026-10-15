@@ -88,7 +88,10 @@ export async function handleExecutionPlan(record, body, deps) {
       const goal = clean(body.goal, 600), context = clean(body.context, 6000), reason = clean(body.reason, 1000);
       const branches = validateBranches(body.branches);
       if (!goal || !reason || !context) fail('A proposal needs goal, reason and bounded source context/constraints');
-      if (body.action === 'start' && (branches.length !== 1 || !clean(body.authorization, 1000))) fail('Direct start needs one explicitly requested task and its authorization basis');
+      if (body.action === 'start' && (!clean(body.authorization, 1000)
+          || branches.length > 1 && body.executionMode !== 'parallel-sessions')) {
+        fail('Direct start needs explicit authorization; multiple tasks also need executionMode parallel-sessions for the human’s requested Session split');
+      }
       if ((source.delegationDepth || 0) >= 2) fail('A delegated child cannot recursively create execution plans');
       const id = 'plan_' + hash(JSON.stringify([source.id, record.requestId, body.action, goal, context, reason, branches]));
       const old = plans(source).find(p => p.id === id);
@@ -98,14 +101,15 @@ export async function handleExecutionPlan(record, body, deps) {
         sourceSessionId: source.id, sourceRequestId: record.requestId, createdAt: new Date().toISOString(),
         runtimeSelection: record.runtimeSelection, folder: source.folder,
         returnPlan: record.deliveryPlan || record.options.sourceDelivery, controls: [] };
-      if (body.action === 'start') Object.assign(plan, { state: 'approved', selected: [branches[0].id],
+      if (body.action === 'start') Object.assign(plan, { state: 'approved', selected: branches.map(b => b.id),
+        executionMode: branches.length > 1 ? 'parallel-sessions' : 'single-session',
         approvalRequestId: record.requestId, approvalText: clean(record.options.recordedUserText || record.text, 3000),
         approval: clean(body.authorization, 1000) });
       await save(source.id, data => data.executionPlans.push(plan));
       await appendEvent(source.id, { type: 'work_event', action: body.action === 'start' ? 'execution-plan-started' : 'execution-plan-proposed', plan });
       if (body.action === 'start') await advancePlan(source.id, id, deps);
       return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), boundary: body.action === 'start'
-        ? 'The explicitly requested single task was submitted; check actual state before reporting completion.'
+        ? 'The explicitly requested work was submitted to independent Sessions; report their actual links and check results before claiming completion.'
         : 'Draft only; no Session created. Offer the proposal asynchronously and continue already authorized work in the source Session without waiting. Before a later approval, reconcile source progress so completed or active work is not duplicated.' };
     }
     let plan = plans(source).find(p => p.id === body.planId);

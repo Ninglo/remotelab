@@ -156,5 +156,25 @@ try {
     const r = await requests.byRequest(b.sessionId, b.requestId);
     assert.equal(r.deliveries.length, 0, 'children do not publish duplicate results into groups');
   }
+  const explicitInput = (await requests.accept({ sessionId: main.id, requestId: 'explicit-three-sessions',
+    text: '号池、资源、理想分流三项分别开子Session并行核对', options: sourceOptions,
+    runtimeSelection: runtime, deliveryPlan: origin })).record;
+  const direct = await handleExecutionPlan(explicitInput, { action: 'start', goal: '三项独立复核',
+    context: '仅使用测试材料，不访问真实业务', reason: '本人明确指定三条并行分工',
+    executionMode: 'parallel-sessions', authorization: '当前原话明确要求三个具体子Session并行',
+    branches: ['pool', 'resources', 'oracle'].map(id => ({ id, name: id, task: '只读检查测试材料 ' + id,
+      writeScope: '只读测试材料', dependsOn: [] })) });
+  const three = await until(async () => {
+    const p = (await findSessionMeta(main.id)).workAwareness.executionPlans.find(p => p.id === direct.plan.id);
+    return p.state === 'reviewed' && p;
+  });
+  assert.equal(new Set(three.branches.map(b => b.sessionId)).size, 3);
+  for (const b of three.branches) {
+    assert.equal(b.state, 'completed'); assert(b.sessionUrl);
+    const child = await findSessionMeta(b.sessionId);
+    assert.equal(child.delegatedFromSessionId, main.id); assert.equal(child.sourceId, 'chat');
+    assert.equal((await requests.byRequest(b.sessionId, b.requestId)).deliveries.length, 0);
+  }
+  assert((await requests.byRequest(main.id, three.reviewRequestId)).deliveries.every(d => d.target.messageId === 'input-root'));
   console.log('GROUP_ROUTING_RUNTIME_VERIFIED: actual admission, isolated worker, human approval dispatch, target completion hook and durable source outbox. No live model or Feishu send.');
 } finally { await manager.killAll(); await rm(home, { recursive: true, force: true }); }

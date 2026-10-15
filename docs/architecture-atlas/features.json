@@ -48,7 +48,7 @@
           "id": "work-awareness",
           "name": "开工背景、相关工作与参考建议",
           "purpose": "开工和继续工作时读取必要背景，发现可能重复的工作，并从已完成的成果中寻找可复用方法。",
-          "entry": "会话中的相关工作与参考建议；Agent 使用 work context、start、update、suggest 和 people。",
+          "entry": "会话中的相关工作与参考建议；Agent 使用 work context、start、update、suggest 和 people；个人试用使用 work plan 安排独立子 Session。",
           "condition": "项目、消息作者与被提及者分别核对；关联不限制任何一方继续。已有 Session 的参考先经人核验送达，采用另由接收方确认；新 Session 分流先核验具体任务和目的地。公司资料按需读原位置，来源故障与预算跳过有说明。",
           "example": "核对当前任务的项目和涉及人物，看看有没有人在做同一对象、已有成果或可用方法，再给出有来源的协作建议。",
           "sources": [
@@ -446,7 +446,7 @@
           "name": "飞书群、话题与会话控制",
           "purpose": "从已接入的飞书对话发起工作，在原话题接收回答、问题、附件和任务进度；超长聊天回复以完整 Markdown 文件交付。",
           "entry": "已接入的飞书 Bot；按该群规则发消息；/status、/model 等命令。",
-          "condition": "群接入、参与规则、来源权限和命令范围按 Bot 配置核对。不能把一个群的行为推广到所有群。",
+          "condition": "群接入、参与规则、来源权限和命令范围按 Bot 配置核对。个人执行试用只在登记的人与群生效：明确要求多项并行时创建独立子 Session；Agent 额外建议拆分则异步征询，原任务继续。混入其他话题的内容先辨归属。不能把试用行为推广到所有群。",
           "example": "在当前话题继续刚才的工作，把结果也回到这里。",
           "sources": [
             "docs/platform-skills/feishu-cli.md",
@@ -457,6 +457,7 @@
             "chat/group-routing.mjs",
             "chat/work-execution-plans.mjs",
             "chat/work-execution-prompt.mjs",
+            "lib/work-awareness-command.mjs",
             "lib/group-routing-pilot.mjs",
             "chat/session-observations.mjs",
             "connectors/feishu/index.mjs",

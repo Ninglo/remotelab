@@ -170,7 +170,16 @@ try {
   const direct = await act(directInput, directBody, api);
   assert.equal(direct.plan.state, 'running');
   const n = creations; await act(directInput, directBody, api); assert.equal(creations, n);
-  await assert.rejects(act(await input('bypass'), { ...directBody, branches: [branch('a'), branch('b')] }, api), /one explicitly/);
+  await assert.rejects(act(await input('bypass'), { ...directBody, branches: [branch('a'), branch('b')] }, api), /executionMode parallel-sessions/);
+  const explicit = await act(await input('explicit-parallel', '这三项分别开子Session并行处理'), {
+    ...directBody, executionMode: 'parallel-sessions', authorization: '本人明确要求三个具体分工开子Session并行',
+    branches: [branch('pool'), branch('resources'), branch('oracle')],
+  }, api);
+  assert.equal(explicit.plan.state, 'running');
+  assert.equal(explicit.plan.branches.length, 3);
+  assert.equal(new Set(explicit.plan.branches.map(b => b.sessionId)).size, 3);
+  assert(explicit.plan.branches.every(b => b.state === 'running' && b.sessionUrl));
+  assert.deepEqual(explicit.plan.selected, ['pool', 'resources', 'oracle']);
   await assert.rejects(act(await input('off', '开工', { messageRoutingPolicy: { version: 1, mechanism: 'none' } }), directBody, api), /disabled/);
   await assert.rejects(act(await input('another-person', '开工', { viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' }), directBody, api), /outside/);
   await assert.rejects(propose('cycle', [branch('a', ['b']), branch('b', ['a'])]), /no cycles/);
