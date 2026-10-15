@@ -161,3 +161,17 @@ App Secrets or tokens.
 Existing progress-card buttons also produce usage observations without saving personal defaults. Read signals, per-user click counts, collection coverage and the authenticated analysis endpoint are documented in [Feishu card engagement](../feishu-card-engagement.md). A read receipt is a signal, not proof that someone read the content carefully.
 
 In Feishu conversations with progress cards enabled, ordinary progress updates the original card. Latest and previous progress share one 工作过程 panel that the reader can expand or collapse directly, as in Web. The executing Harness chooses the initial expansion from the task: use `assistant-message --progress-mode expanded|collapsed --compact --json`, optionally with the initial checklist. Start expanded when showing the work path is useful, collapsed for a routine result. Required decisions, exceptional risks, questions and final results retain separate notifications; they are not expansion criteria. No personal habit or extra model call is involved. `/progress expanded|collapsed` is an optional explicit override for this Run. Older messages/card/default commands remain accepted as expansion aliases. Without a progress card, useful progress still sends messages.
+
+
+### Bot-created document comment routing
+
+Create Bot docx documents through the instance `lark-cli` launcher so their creation
+receipt records the current Session. On older running Harnesses or shells that
+replace PATH, invoke `node "$REMOTELAB_PROJECT_ROOT/scripts/lark-cli.mjs"` with the
+same CLI arguments. Keep normal JSON output. Unless the user explicitly specifies
+another target, inherit `REMOTELAB_SESSION_ID`; an explicit alternative uses
+`REMOTELAB_DOCUMENT_SESSION_ID=<session-id>` and an explicitly unbound document uses
+`REMOTELAB_DOCUMENT_SESSION_ID=none`. Do not add a scheduled scanner or an extra
+manual comment reply. The existing connector handles received comments and sends
+the final answer to the original comment. See [document comment routing](../feishu-document-bindings.md)
+for supported receipts, direct SDK registration, explicit bindings and failures.

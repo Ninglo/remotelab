@@ -7,6 +7,7 @@ import { join, dirname } from 'node:path';
 import { sameConversation, refineConversation } from '../../lib/conversation-target.mjs';
 import { submitConnectorMessage } from '../../lib/connector-turn-flow.mjs';
 import { renderFeishuCommentContent, addFeishuCommentProcessingReaction } from './comment-flow.mjs';
+import { ensureCreatedDocumentBinding } from './created-document-bindings.mjs';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const bindingKey = token => hash(token).slice(0, 32);
@@ -172,6 +173,7 @@ export function commentCandidates(binding, comments, state, botIdentity, authorN
       const sourceContext = {
         connector: 'feishu', sourceRouteId: binding.sourceRouteId,
         conversationKind: 'document_comment', documentBinding: true,
+        ...(binding.createdDocument ? { documentCreationBinding: true } : {}),
         fileToken: binding.fileToken, fileType: binding.fileType,
         commentId: comment.comment_id, replyId: reply.reply_id,
         sender: { openId: reply.user_id }, messageId: key, messageRevision: revision,
@@ -208,8 +210,9 @@ export async function reconcileDocumentBinding(runtime, binding) {
     if (!result.response.ok) throw Object.assign(new Error(`Bound Session read failed (${result.response.status})`), {
       httpStatus: result.response.status,
     });
-    if (!current || !(sameConversation(current, refineConversation(binding.conversation, current))
-      || JSON.stringify(binding.conversation) === JSON.stringify(current))) {
+    if (!(binding.createdDocument && !current && !binding.conversation)
+      && (!current || !(sameConversation(current, refineConversation(binding.conversation, current))
+      || JSON.stringify(binding.conversation) === JSON.stringify(current)))) {
       throw Object.assign(new Error('Bound Session missing or conversation changed; rebind explicitly'), { retryable: false });
     }
     // Persist the exact submission before admission. Lost acknowledgements replay
@@ -230,8 +233,15 @@ export async function reconcileDocumentBinding(runtime, binding) {
     };
     await drain();
     const comments = await readDocumentComments(runtime, binding);
+    if (!binding.since && !state.since) {
+      const first = comments.find(comment => comment.comment_id === binding.firstCommentId);
+      const reply = binding.firstReplyId ? first?.replies?.find(item => item.reply_id === binding.firstReplyId) : first?.replies?.[0];
+      const timestamp = Number(reply?.update_time || reply?.create_time) * 1000;
+      if (!Number.isFinite(timestamp) || timestamp <= 0) throw new Error('Initial document comment timestamp unavailable');
+      state.since = new Date(timestamp).toISOString();
+    }
     const authorNames = await resolveCommentAuthorNames(runtime, comments, runtime.botIdentity);
-    state.pending = commentCandidates(binding, comments, state, runtime.botIdentity, authorNames);
+    state.pending = commentCandidates({ ...binding, since: state.since || binding.since }, comments, state, runtime.botIdentity, authorNames);
     await writeBindingJson(statePath, state);
     await drain();
     state.lastSuccessAt = new Date().toISOString();
@@ -258,9 +268,14 @@ export async function startDocumentBindingEvents(runtime) {
     conversationKey: entry => entry.fileToken,
     process: async entry => {
       if (!entry.id.startsWith('comment:')) return { ignored: 'automatic_scan_disabled' };
-      const binding = (await listDocumentBindings(runtime.config.storageDir))
-        .find(item => item.fileToken === entry.fileToken && item.sourceRouteId === runtime.config.sourceRouteId);
-      if (!binding) return { ignored: 'unbound' };
+      const binding = entry.summary
+        ? await ensureCreatedDocumentBinding(runtime, entry.summary)
+        : (await listDocumentBindings(runtime.config.storageDir))
+          .find(item => item.fileToken === entry.fileToken && item.sourceRouteId === runtime.config.sourceRouteId);
+      if (!binding?.enabled) {
+        if (!binding && entry.summary?.mentionedBot) return runtime.handleDocumentMention?.(entry.summary);
+        return { ignored: 'not_owned_or_disabled' };
+      }
       await reconcileDocumentBinding(runtime, binding);
       return { reconciled: true };
     },
@@ -278,10 +293,21 @@ export async function startDocumentBindingEvents(runtime) {
   inbox.start();
   return {
     async accept(summary) {
-      const binding = (await listDocumentBindings(runtime.config.storageDir))
-        .find(item => item.fileToken === summary.fileToken && item.sourceRouteId === runtime.config.sourceRouteId);
-      if (!binding) return false;
-      await enqueue(binding.fileToken, `comment:${summary.eventId || summary.messageId}`);
+      const ownIds = new Set(Object.values(runtime.botIdentity || {}).filter(Boolean));
+      if (Object.values(summary.sender || {}).some(id => ownIds.has(id))) return true;
+      const binding = await readBindingJson(join(directory, `${bindingKey(summary.fileToken)}.binding.json`));
+      if (binding) {
+        // Never fall through to mention intake when explicitly disabled or
+        // bound to another Bot; that would create a second competing Session.
+        if (binding.enabled && binding.sourceRouteId === runtime.config.sourceRouteId) {
+          if (binding.createdDocument) await inbox.accept(`comment:${summary.eventId || summary.messageId}`,
+            { fileToken: summary.fileToken, summary });
+          else await enqueue(binding.fileToken, `comment:${summary.eventId || summary.messageId}`);
+        }
+        return true;
+      }
+      if (summary.fileType !== 'docx' || !summary.commentId || !runtime.config.appId) return false;
+      await inbox.accept(`comment:${summary.eventId || summary.messageId}`, { fileToken: summary.fileToken, summary });
       return true;
     },
     async idle() { await inbox.tick(); await inbox.idle(); },

@@ -1,4 +1,43 @@
-# Bind document comments to an existing conversation
+# Feishu document comment replies
+
+
+Bot-owned docx documents receive automatic comment replies. Newly created documents default to the Session that creates them. The instance's
+`lark-cli` launcher records the creating Bot application, document token and
+`REMOTELAB_SESSION_ID` from successful Bot creation responses. This durable
+creation record is the default routing binding; the connector materializes its
+comment cursor on the first received comment. A document with no creating Session
+gets one document Session on its first comment, then reuses it across comment
+threads and restarts. Answers return to the original comment, including when the
+creator Session is a Web Session or uses a different Bot for chat.
+
+Explicit existing bindings, disabled bindings and explicit creation targets win.
+For an explicitly requested alternate target, set `REMOTELAB_DOCUMENT_SESSION_ID`
+for the creation command; `none` leaves it without a target until the first comment.
+A missing recorded target is a repairable failure, not permission to silently
+start another Session. No startup scans or scheduled AI jobs are added.
+
+Harness processes receive `scripts/bin` first on PATH; Bash also inherits a launcher
+function so login profiles cannot bypass registration by resetting PATH. For an older running Harness
+or a shell that replaces PATH, use `node "$REMOTELAB_PROJECT_ROOT/scripts/lark-cli.mjs"`
+in place of `lark-cli` when creating documents. Supported creation receipts are
+`docs +create`, docx copy, Wiki docx node creation, and the raw docx/Wiki create
+APIs. Keep the normal JSON result (including `identity`, `ok` and the new token).
+The launcher preserves CLI output and exit status. If registration fails after
+creation, it reports the failure on stderr; repair the existing document's route
+instead of creating a second document. SDK/direct-HTTP publishers should call
+`recordCreatedDocument` in `lib/feishu-document-creation.mjs` after successful Bot
+creation, using the actual application and creating Session.
+
+For automatic intake, the connector checks the document's current owner against
+its own Bot identity on each received comment event. Read/edit access alone does
+not qualify. Bot-owned historical documents need no creation record: their first
+comment creates a document Session and starts its cursor at that comment, without
+replaying old history. Changing ownership away from the Bot stops automatic
+intake. Existing explicit bindings and the separate @-mention entry keep their
+prior behavior. Ownership/read failures are retained in the durable event inbox;
+they do not create a replacement Session or claim a reply was delivered.
+
+## Explicit review-topic binding
 
 Ask your Agent: “Bind this Feishu document to this review topic. Receive new comments and replies in its existing Session, reply in the original document comment, and maintain the document within our existing authorization.” Supply the document URL, target Session, and connector identity together. Binding authorizes intake from that document's commenters, not additional business actions.
 

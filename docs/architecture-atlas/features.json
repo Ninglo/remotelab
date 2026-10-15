@@ -484,13 +484,19 @@
           "id": "project-links",
           "name": "飞书项目入口、讨论上下文与文档评论",
           "purpose": "读取已登记的项目资料和自动化，带入绑定讨论上下文，或从原文档评论继续工作。",
-          "entry": "已配置群的 /project；已绑定项目对话或文档评论。",
-          "condition": "这是明确登记和绑定的范围。网页目录、项目主账和授权资料不会因出现一个链接就全部自动读入。",
+          "entry": "已配置群的 /project；已绑定项目对话；Bot 自有文档的评论。",
+          "condition": "项目资料沿登记范围读取。Bot 自有文档默认沿创建会话回复；没有绑定时，首条评论创建文档会话并复用。评论事件触发读取，不启动全库扫描。明确绑定和停用设置优先。",
           "example": "查看这个已登记项目的资料和任务，并在原文档评论回复。",
           "sources": [
             "docs/feishu-project-links.md",
             "docs/feishu-document-bindings.md",
-            "docs/connector-turn-context.md"
+            "docs/connector-turn-context.md",
+            "connectors/feishu/document-bindings.mjs",
+            "connectors/feishu/created-document-bindings.mjs",
+            "lib/feishu-document-creation.mjs",
+            "lib/user-shell-env.mjs",
+            "scripts/lark-cli.mjs",
+            "chat/session-conversations.mjs"
           ],
           "commands": []
         },

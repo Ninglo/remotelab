@@ -53,11 +53,13 @@ export function resolveSessionDeliveryPlan(session, options) {
   const context = options.sourceContext;
   if (context?.documentBinding === true && context.documentReplyMode === 'comment') {
     // A document shares the Session's context, not its chat reply address.
-    // Only the exact admitted comment on the same Bot may override that address.
+    // Match the exact admitted comment and its Bot. Automatic document bindings
+    // can originate in a Web Session or a chat served by another Bot.
     if (context.connector !== 'feishu' || context.conversationKind !== 'document_comment'
-        || !bound || bound.connector !== 'feishu' || !explicit || explicit.connector !== 'feishu'
-        || explicit.sourceRouteId !== bound.sourceRouteId
-        || context.sourceRouteId !== bound.sourceRouteId
+        || !explicit || explicit.connector !== 'feishu'
+        || context.sourceRouteId !== explicit.sourceRouteId
+        || (!context.documentCreationBinding && (!bound || bound.connector !== 'feishu'
+          || explicit.sourceRouteId !== bound.sourceRouteId))
         || !context.fileToken || !context.fileType || !context.commentId
         || explicit.target.chatId || explicit.target.conversationKind !== 'document_comment'
         || explicit.target.fileToken !== context.fileToken

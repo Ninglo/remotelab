@@ -74,6 +74,12 @@ try {
   process.env.IS_SANDBOX = '';
   const envDefault = buildToolProcessEnv();
   assert.equal(envDefault.IS_SANDBOX, '1', 'tool env should default IS_SANDBOX to 1');
+  assert.equal(envDefault.PATH.split(':')[0], join(projectRoot, 'scripts', 'bin'));
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const login = await promisify(execFile)('/bin/bash', ['-lc', 'type lark-cli'], { env: envDefault });
+  assert.match(login.stdout, /lark-cli is a function/,
+    'login shells retain the document-registration launcher after rebuilding PATH');
 
   process.env.IS_SANDBOX = '0';
   const envExplicit = buildToolProcessEnv();

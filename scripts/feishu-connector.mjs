@@ -2226,6 +2226,8 @@ async function main() {
   });
 
   let closed = false;
+  runtime.resolveDocumentRuntime = () => resolveFeishuRuntimeSelection(runtime);
+  runtime.handleDocumentMention = summary => handleMessage(runtime, summary, 'drive.notice.comment_add_v1');
   const documentEvents = await startDocumentBindingEvents(runtime);
   runtime.workboards = await startFeishuWorkboards(runtime, { configDir: CONFIG_DIR, configPath: options.configPath,
     remote: { baseUrl: config.chatBaseUrl,

@@ -1758,3 +1758,19 @@ requests it answers or work it undertakes, retain a fitting quick reaction throu
 the existing idempotent receipt, and choose placement before opening. Transport
 regressions cover deduplication and late quick feedback; natural model choices
 still require observation in actual subsequent conversations.
+
+
+## 2026-10-15 — Bot-created documents keep their creating Session
+
+- Request: default document comments to the Session that created the Bot document;
+  if no Session is bound, create one on the first comment and reuse it. Replies
+  must return to the original comment. The user clarified that current Bot
+  ownership is sufficient, including historical documents; do not trace original
+  authorship.
+- Implementation: persist creation provenance at the CLI boundary; reuse the
+  existing document event inbox, admission deduplication and source-delivery
+  outbox. Explicit and disabled bindings take precedence. Current ownership
+  gates automatic intake; creation receipts only recover the creating Session.
+- Validation: isolated tests cover creator Web Sessions, unbound documents,
+  repeated comments, restart, Bot isolation and lost creation acknowledgements.
+  Real human comment delivery remains a separate deployment acceptance check.
