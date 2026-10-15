@@ -44,15 +44,16 @@ try {
   wss=new WebSocketServer({port:0});await once(wss,'listening');
   let signalResolve;
   const signal=()=>new Promise((resolve,reject)=>{signalResolve=resolve;setTimeout(()=>reject(Error('No card update within deadline')),5000).unref();});
-  const seen=[];
+  const seen=[], published=[];let overviewResolve;
+  const overviewUpdated=new Promise(resolve=>{overviewResolve=resolve;});
   const runtime={config:{projectCards:true,sourceRouteId:'bot',chatBaseUrl:`http://127.0.0.1:${wss.address().port}`,groups:{chat:{responseMode:'mention_only'}}}};
   const record={key:'k',source:{chatId:'chat'},sessionId:'main'};
   const connected=once(wss,'connection');const initial=signal();
   let authAvailable=true;
   worker=await startProjectGroupCards(runtime,{
     request:async path=>({response:{ok:true},json:path==='/api/sessions'?{sessions:[topic,other]}:{session:topic}}),
-    ensureAuthCookie:async()=>{if(!authAvailable)throw Error('offline test');return 'test';},onboard:async(_s,opts)=>{assert.equal(opts.projectCard,true);},
-    participation:()=>({state:async()=>record,publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));signalResolve?.();}}),
+    ensureAuthCookie:async()=>{if(!authAvailable)throw Error('offline test');return 'test';},onboard:async(_s,opts)=>{assert.equal(opts.projectCard,true);assert.notEqual(_s.chatId,'overview');},
+    participation:()=>({state:async summary=>({...record,source:{chatId:summary.chatId}}),publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);published.push(_record.source.chatId);if(_record.source.chatId==='overview')overviewResolve();seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));signalResolve?.();}}),
   });
   const [socket]=await connected;await initial;
   assert.equal(seen.at(-1)[0].state,'进行中');
@@ -61,6 +62,11 @@ try {
   assert.equal(seen.at(-1)[0].state,'已完成');
   await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({version:2,enabled:true,personalOptIn:true,publicRoster:true,groups:[{sourceRouteId:'bot',chatId:'chat',tenantKey:'tenant'}]}));
   const rosterChanged=signal();await writeFile(AUTH_FILE, JSON.stringify({changed:true}));await rosterChanged;
+  config.readingPolicy={autoDiscover:true,defaultLevel:'overview',sourceRouteId:'bot',tenantKey:'tenant'};
+  config.groups.push({sourceRouteId:'bot',chatId:'overview',projectIds:[],readingLevel:'overview',tenantKey:'tenant'});
+  await writeFile(PROJECT_MEMORY_RUNTIME_FILE,JSON.stringify(config));
+  await Promise.race([overviewUpdated,new Promise((_,reject)=>setTimeout(()=>reject(Error('Reading-only card did not refresh')),5000).unref())]);
+  assert.ok(published.includes('overview'));
   const disconnected=signal();authAvailable=false;socket.close();await disconnected;
   assert.equal(runtime.projectCardsConnected,false);
   console.log('Project group cards: scoped live invalidations, disconnect, completion distinction, unchanged response policy, and fresh bounded brief injection passed');

@@ -72,8 +72,10 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
     const project = await groupProject(runtime, chatId);
     if (stopped) return;
     const pilot = (await routingGroups()).find(g => g.chatId === chatId);
-    if (!project && !pilot) return;
-    const summary = summaryFor(project?.group || pilot);
+    const { config } = await loadProjectMemoryRuntime();
+    const readingGroup = config.readingPolicy && config.groups.find(g => g.chatId === chatId && g.sourceRouteId === runtime.config.sourceRouteId);
+    if (!project && !pilot && !readingGroup) return;
+    const summary = summaryFor(project?.group || pilot || readingGroup);
     if (!summary.tenantKey) throw Error(`Missing verified tenant for ${chatId}`);
     const record = await participation().state(summary);
     await participation().publish(record, { existingOnly: true });
@@ -107,7 +109,7 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
     if (stopped) return;
     for (const group of await routingGroups()) enqueue(group.chatId);
     const { config } = await loadProjectMemoryRuntime();
-    for (const group of config.groups.filter(g => g.sourceRouteId === runtime.config.sourceRouteId && g.projectIds.length === 1)) {
+    for (const group of config.groups.filter(g => g.sourceRouteId === runtime.config.sourceRouteId && (config.readingPolicy || g.projectIds.length === 1))) {
       const project = config.projects.find(p => p.id === group.projectIds[0]);
       if (project?.briefPath) observe(project.briefPath);
       enqueue(group.chatId);

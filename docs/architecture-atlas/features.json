@@ -743,7 +743,8 @@
             "connectors/feishu/group-configuration.mjs",
             "connectors/feishu/group-configuration-card.mjs",
             "scripts/project-reading-sync.mjs",
-            "scripts/project-reading-directory.py"
+            "scripts/project-reading-directory.py",
+            "connectors/feishu/project-group-cards.mjs"
           ],
           "commands": [
             "memory"
