@@ -24,6 +24,10 @@ export function canForwardNativeRequest(record, head) {
   // accepted behavior; only two new-protocol pilot inputs may share execution.
   if (!record.options?.nativeQuestionId && (record.options?.routingPilotMainline || head.options?.routingPilotMainline)
       && !(hasPilotInputReplyContract(record) && hasPilotInputReplyContract(head))) return false;
+  if (!record.options?.nativeQuestionId && !record.options?.sourceContext?.feishuContinuationRunId
+      && record.options?.sourceContext?.connector === 'feishu' && head.options?.sourceContext?.connector === 'feishu'
+      && (record.options.sourceContext.feishuReplyPlacementVersion || 0)
+        !== (head.options.sourceContext.feishuReplyPlacementVersion || 0)) return false;
   const a = record.runtimeSelection || {};
   const b = head.runtimeSelection || {};
   return ['tool', 'model', 'effort', 'thinking'].every(key => (a[key] || '') === (b[key] || ''));

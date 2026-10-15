@@ -8,14 +8,18 @@ import { appendEvent } from './history.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { allowsMessageRouting } from './message-routing-policy.mjs';
 import { executionTrialPrompt } from './work-execution-prompt.mjs';
+import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 20);
 const fail = message => { throw new Error(message); };
 const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const stamp = session => session?.workAwareness?.intents?.at(-1)?.id || '';
 const queues = new Map();
+const hasAnswerDelivery = input => input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind)
+  && !['opening', 'progress'].includes(d.surfaceKind));
 async function serial(id, fn) {
   const prior = queues.get(id) || Promise.resolve();
   const current = prior.catch(() => {}).then(fn); queues.set(id, current);
@@ -66,9 +70,10 @@ async function commitInputReply(input, reply) {
       return current;
     }
     if (current.result || current.routingHandoff || current.streamedFinalReplyIds?.length
-        || current.deliveries?.some(d => ['content', 'attachment'].includes(d.kind))) fail('Input is no longer available for a local reply');
+        || hasAnswerDelivery(current)) fail('Input is no longer available for a local reply');
     const plans = input.requestId === reply.ownerRequestId
-      ? buildReplyDeliveries(input.deliveryPlan || input.options.sourceDelivery, reply.payload, { running: false }) : [];
+      ? buildReplyDeliveries(reply.deliveryPlan || input.deliveryPlan || input.options.sourceDelivery,
+        { ...reply.payload, text: stripHiddenBlocks(reply.payload.text) }, { running: false }) : [];
     return { ...current, options: { ...current.options, suppressSourceDelivery: true },
       mainlineReply: { contract: reply, queuedAt: new Date().toISOString() },
       deliveries: appendDeliveries(current, plans) };
@@ -107,7 +112,19 @@ export async function replyGroupInput(record, body) {
         || !ids.includes(record.requestId)) fail('Select 1–8 distinct input IDs including the current input');
     const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
     const payload = { text, attachments: [] };
-    const reply = { requestIds: ids, ownerRequestId: ids[0], payload, ...(noTextReason ? { noTextReason } : {}) };
+    const root = await requests.byRunId(record.nativeDispatchRunId || record.runId);
+    if (!root || root.result) fail('Active pilot execution is required');
+    if (body.replyMode !== undefined && !['inline', 'thread'].includes(body.replyMode)) fail('replyMode must be inline or thread');
+    const ownerPlan = inputs[0]?.deliveryPlan || inputs[0]?.options?.sourceDelivery;
+    const deliveryPlan = resolveAmbientFeishuReplyPlan(root, ownerPlan,
+      [{ type: 'message', role: 'assistant', content: body.replyMode
+        ? `<private>feishu-reply:${body.replyMode}</private>${text}` : text }]);
+    if (text && !deliveryPlan) fail('Choose replyMode inline or thread before sending a reply; related inputs may share requestIds');
+    // A pre-upgrade reservation keeps its exact retry contract and destination.
+    const reserved = root.mainlineReplyPlans?.find(item => item.requestIds.some(id => ids.includes(id)));
+    const legacyReservation = reserved && !Object.hasOwn(reserved, 'deliveryPlan') && body.replyMode === undefined;
+    const reply = { requestIds: ids, ownerRequestId: ids[0], payload,
+      ...(deliveryPlan && !legacyReservation ? { deliveryPlan } : {}), ...(noTextReason ? { noTextReason } : {}) };
     for (const input of inputs) {
       if (!input || !hasPilotInputReplyContract(input)
           || (input.nativeDispatchRunId || input.runId) !== (record.nativeDispatchRunId || record.runId)) {
@@ -117,19 +134,20 @@ export async function replyGroupInput(record, body) {
       if (!sameGroup(origin, source.origin) || input.routingHandoff
           || (input.mainlineReply && JSON.stringify(input.mainlineReply.contract) !== JSON.stringify(reply))
           || (!input.mainlineReply && (input.streamedFinalReplyIds?.length
-            || input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind))))) {
+            || hasAnswerDelivery(input)))) {
         fail('Input already has a different reply or handoff');
       }
     }
-    const root = await requests.byRunId(record.nativeDispatchRunId || record.runId);
-    if (!root || root.result) fail('Active pilot execution is required');
     await requests.mutate(root.key, current => {
       if (current.result) fail('Active pilot execution is required');
       const prior = (current.mainlineReplyPlans || []).filter(p => p.requestIds.some(id => ids.includes(id)));
       if (prior.length && (prior.length !== 1 || JSON.stringify(prior[0]) !== JSON.stringify(reply))) {
         fail('Input already has a different reserved reply');
       }
-      return prior.length ? current : { ...current, mainlineReplyPlans: [...(current.mainlineReplyPlans || []), reply] };
+      return prior.length ? current : { ...current,
+        ...(text && deliveryPlan && (body.replyMode || requiresFeishuReplyPlacement(root))
+          ? { replyPlacement: current.replyPlacement || deliveryPlan } : {}),
+        mainlineReplyPlans: [...(current.mainlineReplyPlans || []), reply] };
     });
     const receipts = [];
     for (const input of inputs) {

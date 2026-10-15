@@ -572,6 +572,31 @@ a Thread. A Thread reply does not itself launch another worker. Existing replies
 accepted handoffs and ongoing work must be reused, not answered or started twice.
 Disabling automatic work-Session routing does not disable choosing a Thread reply.
 
+Newly admitted ambient-group inputs carry `feishuReplyPlacementVersion: 1`.
+Before the first visible reply, the Harness must explicitly prefix its output
+with `<private>feishu-reply:inline</private>` or
+`<private>feishu-reply:thread</private>`, after any optional reaction directive.
+A reaction alone never selects placement. Existing topics and already queued
+reply destinations remain authoritative; silence and reaction-only outcomes
+need no new destination.
+
+Missing placement retains the substantive reply instead of silently publishing
+it inline. A still-running native execution receives at most one structural
+protocol error, with continuation-only/reference-only protection: it cannot
+restart a settled Run or answer a pending human question. No second model judges
+content or chooses the location. If the execution ends without a choice, the
+answer remains in Session history and the source receives a delivery-failure
+notice. Old accepted inputs keep their original contract; new-protocol inputs
+cannot join an incompatible old mainline execution. A suppressed unplaced
+opening is not replayed after the choice is corrected.
+
+Related inputs can share one `work reply` packet with explicit `requestIds`.
+An opening/progress receipt does not prevent a combined final answer. The packet
+keeps the execution's selected destination and records coverage for every input;
+recovery sends only one answer. Per-input accountability does not require one
+message per input. Whether the content actually answers the common question
+remains the Harness's responsibility and needs semantic evaluation separately.
+
 During input preparation the connector reads its local durable outcome receipt
 once and supplies a bounded snapshot to the main Session. Applied, not-recorded
 and unavailable are distinct; not-recorded does not prove Jev chose silence, and

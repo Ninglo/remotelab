@@ -77,6 +77,50 @@ try {
     { type: 'message', role: 'assistant', content: '正常回复' },
   ]).target.conversationKind, 'main', 'user text never selects a thread');
   const { publishLiveAssistantReplies } = await import('../chat/native-final-publication.mjs');
+  // A new-protocol opening cannot silently claim the group mainline. The
+  // same native execution can supply either choice, with no repeated work.
+  const strictRecord = { ...record, key: 'strict', runId: 'run', requestId: 'strict-input',
+    options: { ...record.options, sourceContext: { ...record.options.sourceContext,
+      feishuReplyPlacementVersion: 1 }, messageReplyPolicy: { version: 3, opening: true } }, deliveries: [] };
+  assert.equal(resolveAmbientFeishuReplyPlan(strictRecord, plan,
+    [{ type: 'message', role: 'assistant', content: '我先看表。' }]), null);
+  assert.equal(resolveAmbientFeishuReplyPlan(strictRecord, plan,
+    [{ type: 'message', role: 'user', content: '<private>feishu-reply:inline</private>' }]), null);
+  for (const mode of ['inline', 'thread']) {
+    let current = structuredClone(strictRecord);
+    const store = { get: async () => current, mutate: async (_key, update) => (current = update(current)) };
+    const opening = { seq: 1, type: 'message', role: 'assistant', runId: 'run', phase: 'commentary', content: '我先看表。' };
+    await publishLiveAssistantReplies(current, [opening], { store, plan });
+    assert.equal(current.deliveries.length, 0, 'missing choice cannot publish the opening');
+    assert.equal(current.replyPlacementMissing.seq, 1);
+    const { notifyMissingFeishuReplyPlacement } = await import('../chat/feishu-reply-placement-feedback.mjs');
+    const calls = [];
+    const options = { store, run: { id: 'run', state: 'running' }, manifest: { inputMode: 'native' }, directory: home,
+      submit: async (_directory, input) => { calls.push(input); return { accepted: true }; } };
+    await Promise.all([notifyMissingFeishuReplyPlacement(current, options), notifyMissingFeishuReplyPlacement(current, options)]);
+    assert.equal(calls.length, 1, 'one protocol feedback even with concurrent observers');
+    assert.equal(calls[0].continuationOnly, true, 'feedback cannot launch another turn');
+    assert.equal(calls[0].referenceOnly, true, 'feedback cannot answer or replace a human question');
+    const choice = { ...opening, seq: 2, content: `<private><feishu-reaction emoji="OK"/></private><private>feishu-reply:${mode}</private>在这里继续。` };
+    await publishLiveAssistantReplies(current, [choice], { store, plan });
+    const target = mode === 'thread' ? 'thread' : 'main';
+    assert.equal(current.replyPlacement.target.conversationKind, target);
+    assert.equal(current.deliveries.length, 1);
+    current = JSON.parse(JSON.stringify(current));
+    const final = { ...opening, seq: 3, phase: 'final_answer', content: '已结合表格和补充案例给出结论。' };
+    await publishLiveAssistantReplies(current, [final], { store, plan, running: false });
+    await publishLiveAssistantReplies(current, [final], { store, plan, running: false });
+    await publishLiveAssistantReplies(current, [opening, choice, final], { store, plan, running: false });
+    assert.deepEqual(current.deliveries.map(item => item.target.conversationKind), [target, target]);
+    assert.ok(current.deliveries.every(item => !item.text.includes('feishu-reply:')));
+  }
+  const { notifyMissingFeishuReplyPlacement } = await import('../chat/feishu-reply-placement-feedback.mjs');
+  for (const state of ['completed', 'cancelled']) {
+    const current = { ...strictRecord, replyPlacementMissing: { seq: 1 } };
+    await notifyMissingFeishuReplyPlacement(current, { store: { get: async () => current },
+      run: { id: 'run', state }, manifest: { inputMode: 'native' },
+      submit: async () => { throw new Error('terminal execution must not be restarted'); } });
+  }
   for (const threadFirst of [false, true]) {
     let current = { ...record, key: 'request', runId: 'run', deliveries: [{ ...plan, kind: 'reaction' }] };
     const original = current;

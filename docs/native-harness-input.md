@@ -58,6 +58,18 @@ policy. Hidden openers do not reappear when later input selects a Thread.
 The Harness remains responsible for understanding stop scope and explicit
 natural permission to resume; the transport does not classify message meaning.
 
+New ambient mainline inputs carrying `feishuReplyPlacementVersion: 1` require
+an explicit inline/thread choice before visible output. They cannot join an
+ordinary pre-upgrade mainline Run with a different placement contract; a
+receipt-proven Thread continuation retains its existing destination. Missing
+placement produces at most one structural error through the same native input
+channel, with `continuationOnly` and `referenceOnly`: it cannot start a settled
+turn or answer a pending human question. The publisher retains unplaced content
+and never replays the blocked opening after a correction. If no choice arrives
+before completion, only a delivery-failure notice is sent, while the generated
+answer remains available in Session history. This does not add a semantic
+reviewer or another model. See [group reply placement](feishu-bot-setup.md).
+
 ## Rule recovery after native compaction
 
 Codex standard native inputs install a process-local `SessionStart` / `compact`
@@ -110,7 +122,10 @@ claiming it was consumed. This does not promise zero repeated background text.
   history mirror is repaired on retry. This prevents duplicate enqueueing for
   the same ID, not semantically equivalent answers with different IDs. The
   Harness must not repeat the answer in a reply tag or the task's final result.
-  The source's existing publication policy still applies.
+  The source's existing publication policy still applies. Ambient-group replies
+  also obey the execution's explicit placement choice; a first tool reply can
+  include the same hidden inline/thread prefix. An omitted choice is returned as
+  a tool error, and the hidden prefix never appears in delivered text.
 - `input-trial stop --request-id <id> --expected-run <runId> --json` requests
   cancellation of that exact execution. It never falls through to the next
   active run or changes participation mode. It does not stop independently

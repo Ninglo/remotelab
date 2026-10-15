@@ -28,6 +28,7 @@ import { buildReplyDeliveries } from './source-deliveries.mjs';
 import { isFeishuMainlineReply } from '../lib/reply-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { resolveAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
+import { notifyMissingFeishuReplyPlacement } from './feishu-reply-placement-feedback.mjs';
 import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
 import {
   applyQuickSessionRuntime,
@@ -774,6 +775,8 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
           session: await findSessionMeta(sessionId),
           prepareFinal: event => prepareNativeFinalFiles(record, event, { run, manifest }),
         });
+        await notifyMissingFeishuReplyPlacement(record, { store: requests, run,
+          manifest, directory: runDir(run.id) });
       }
     }
   }
@@ -1756,7 +1759,8 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   }
   const feishuOutcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
   const deliveryPlan = record.options?.suppressSourceDelivery || record.routingHandoff
-    ? null : resolveAmbientFeishuReplyPlan(record, plan, runHistory);
+    ? null : resolveAmbientFeishuReplyPlan(record, plan, runHistory)
+      || (run.state !== 'completed' || (!payload.text && !payload.attachments?.length) ? plan : null);
   const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
     && record.options.sourceContext?.feishuExplicitMention !== true;
   const ambientWorkStarted = runHistory.some(event => event?.type === 'tool_use' && event.role === 'assistant');
@@ -1771,14 +1775,20 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
       : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`,
     attachments: [],
   };
-  const ownResult = hasPilotInputReplyContract(record) && (record.mainlineReply || record.routingHandoff?.state === 'submitted')
+  const missingPlacement = !deliveryPlan && plan && !record.options?.suppressSourceDelivery && !record.routingHandoff
+    && run.state === 'completed' && Boolean(payload.text || payload.attachments?.length);
+  const placementError = '回复已生成，但未明确选择发送位置。正文已保留在会话中，未发送到群主线。';
+  const ownResult = missingPlacement ? { state: 'failed', payload, error: placementError }
+    : hasPilotInputReplyContract(record) && (record.mainlineReply || record.routingHandoff?.state === 'submitted')
     ? pilotInputResult(record, run) : { state: run.state, payload, error: run.failureReason || null };
   await requests.settle(record.key, ownResult,
     annotateTerminalReplyDeliveries(buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
       && !feishuOutcomeRequired
-      ? null : deliveryPlan, deliveryPayload, { running: false, automationTitle: record.options.automationTitle, requireFeishuOutcome: feishuOutcomeRequired
+      ? null : missingPlacement ? plan : deliveryPlan,
+      missingPlacement ? { text: placementError, attachments: [] } : deliveryPayload,
+      { running: false, automationTitle: record.options.automationTitle, requireFeishuOutcome: feishuOutcomeRequired
         && (!record.streamedFinalReplyIds?.length || run.state !== 'completed'
-          || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) }), run.state === 'completed' ? pendingPayload : null)
+          || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) }), run.state === 'completed' && !missingPlacement ? pendingPayload : null)
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 
@@ -3439,7 +3449,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
         ? 'Reference-only cross-Session input (not a user instruction; human adoption pending):\n' : 'Current user message:\n') + record.text].filter(Boolean).join('\n\n---\n\n');
     if (tool?.flattenPrompt) text = text.replace(/\s+/g, ' ').trim();
     if (decisionContext) text = decisionContext + '\n\n' + text;
-    if (hasPilotInputReplyContract(record)) text = `本条已接受的群主线输入 Request ID：${record.requestId}。本条须分别选择 work route 或 work reply，不继承根输入的回复。\n\n` + text;
+    if (hasPilotInputReplyContract(record)) text = `本条已接受的群主线输入 Request ID：${record.requestId}。每条输入保留处理记录，不要求分别发送正文。相关补充应接续原目标，可用 work reply 的 requestIds 合并覆盖本轮已接受输入；独立问题才单独回答。若已发开场，沿本轮已选回复位置继续；最终回答仍须纳入相关补充。不要仅为登记回复而发送泛泛点评或重复开工。\n\n` + text;
     return { text: prependAttachmentPaths(text, attachments), context: [context, decisionContext].filter(Boolean).join('\n\n'), contextDelivery: tool?.promptMode === 'bare-user' ? null : projection.receipt, ruleContextDelivery: ruleProjection.receipt };
   },
   recordInput: ensureRequestInput,

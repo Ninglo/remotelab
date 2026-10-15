@@ -1760,6 +1760,23 @@ regressions cover deduplication and late quick feedback; natural model choices
 still require observation in actual subsequent conversations.
 
 
+### 2026-10-15 — Group reply choices must precede visible output
+
+- Feedback: related table and forwarded-case inputs reached one execution but
+  produced fragmented answers on the group timeline. Existing instructions
+  required placement judgment; the main model omitted it, and transport silently
+  committed the first opening to the timeline. Per-input accounting language
+  also incorrectly encouraged separate replies.
+- Change: newly admitted ambient inputs require an explicit inline/thread choice.
+  Missing placement yields one structural transport error to the still-running
+  native execution; it never starts another model or answers a human question.
+  If the execution ends without choosing, preserve its content and report the
+  delivery failure. Related input IDs can share one answer after an opening,
+  retaining the chosen destination and exact retry contract.
+- Verification: isolated regressions cover explicit choices, combined replies,
+  replay, legacy reservations and upgrade boundaries. These checks constrain
+  delivery; the Harness still owns whether its choice and answer make sense.
+
 ## 2026-10-15 — Bot-created documents keep their creating Session
 
 - Request: default document comments to the Session that created the Bot document;

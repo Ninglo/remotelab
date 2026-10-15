@@ -8,6 +8,10 @@ import { canForwardNativeRequest, createNativeRequestDispatcher } from '../chat/
 
 assert.equal(canForwardNativeRequest({ key: 'reply', options: { nativeQuestionId: 'question' } }, { key: 'head', options: { internalOperation: 'trigger_delivery' } }), true, 'explicit answers may return to a question raised during internal work');
 assert.equal(canForwardNativeRequest({ key: 'reply', options: {} }, { key: 'head', options: { internalOperation: 'trigger_delivery' } }), false);
+const oldFeishu = { key: 'old', options: { sourceContext: { connector: 'feishu', feishuParticipation: 'ambient' } } };
+const newFeishu = { key: 'new', options: { sourceContext: { ...oldFeishu.options.sourceContext, feishuReplyPlacementVersion: 1 } } };
+assert.equal(canForwardNativeRequest(newFeishu, oldFeishu), false, 'new placement protocol cannot rewrite a legacy running turn');
+assert.equal(canForwardNativeRequest({ ...newFeishu, key: 'next' }, newFeishu), true);
 
 const root = await mkdtemp(join(tmpdir(), 'native-dispatch-test-'));
 const store = createRequestStore(join(root, 'requests'));

@@ -457,6 +457,7 @@
             "docs/session-work-awareness.md",
             "docs/feishu-daily-report-memory.md",
             "chat/ambient-feishu-reply.mjs",
+            "chat/feishu-reply-placement-feedback.mjs",
             "chat/group-routing.mjs",
             "chat/work-execution-plans.mjs",
             "chat/work-execution-prompt.mjs",

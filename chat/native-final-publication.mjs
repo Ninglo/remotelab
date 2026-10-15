@@ -122,9 +122,20 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     // source policy, but must see the root's durable placement and receipts.
     const replyRecord = current => owner === record ? current : { ...owner, key: record.key,
       deliveries: current.deliveries, replyPlacement: current.replyPlacement };
-    await rememberAmbientFeishuReplyPlan(replyRecord(stored || record), ownerPlan, [event], store);
+    const placementHistory = events.filter(item => item === event || item.seq <= event.seq);
+    await rememberAmbientFeishuReplyPlan(replyRecord(stored || record), ownerPlan, placementHistory, store);
     stored = await store.get(record.key) || stored;
-    const replyPlan = resolveAmbientFeishuReplyPlan(replyRecord(stored || record), ownerPlan, [event]);
+    const replyPlan = resolveAmbientFeishuReplyPlan(replyRecord(stored || record), ownerPlan, placementHistory);
+    if (!replyPlan) {
+      if (!surface.content?.trim() && !getAssistantReplyAttachments(surface).length) continue;
+      await store.mutate(record.key, current => ({
+        ...current, replyPlacementMissing: current.replyPlacementMissing || {
+          providerMessageId: messageId, seq: event.seq, detectedAt: new Date().toISOString() },
+        ...(surface.surfaceKind === 'opening' ? { suppressedOpeningMessageIds:
+          [...new Set([...(current.suppressedOpeningMessageIds || []), messageId])] } : {}),
+      }));
+      continue;
+    }
     const hiddenMainline = isFeishuMainlineReply(replyPlan) && messageReplyPolicy?.version !== 3
       && ['opening', 'progress'].includes(surface.surfaceKind);
     if (hiddenMainline || suppressOpening(surface, stored || record, owner, messageReplyPolicy, replyPlan)) {

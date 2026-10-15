@@ -90,6 +90,18 @@ try {
   assert.equal(cancelCalls, 1, 'stop must not fall through to a newer run');
   const mainPlan = { ...plan, target: { ...plan.target, conversationKind: 'main' } };
   delete mainPlan.target.threadId; delete mainPlan.target.replyInThread;
+  const strict = await accept('strict-main', { ...aliceOptions, sourceDelivery: mainPlan,
+    sourceContext: { ...aliceOptions.sourceContext, feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } });
+  const strictPacket = { runId: strict.runId, sourceRequestId: strict.requestId,
+    replyId: 'strict-answer', requestIds: [strict.requestId], text: '补充答复。' };
+  await assert.rejects(tools('reply', strictPacket, auth), /明确选择/);
+  const chosen = { ...strictPacket, text: '<private>feishu-reply:thread</private>补充答复。' };
+  await tools('reply', chosen, auth);
+  await tools('reply', chosen, auth);
+  await tools('reply', { ...strictPacket, replyId: 'strict-followup' }, auth);
+  const strictSaved = await store.get(strict.key);
+  assert.equal(strictSaved.deliveries.length, 2);
+  assert.ok(strictSaved.deliveries.every(d => d.target.conversationKind === 'thread' && !d.text.includes('feishu-reply:')));
   const mainRoot = await accept('main-root', { ...aliceOptions, sourceDelivery: mainPlan });
   const stop = await accept('thread-stop', { ...aliceOptions,
     sourceContext: { ...aliceOptions.sourceContext, feishuContinuationRunId: mainRoot.runId } });

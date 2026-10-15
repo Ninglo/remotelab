@@ -130,6 +130,36 @@ try {
   assert.equal((await requests.get(combinedA.key)).deliveries.length, 1);
   assert.equal((await requests.get(combinedB.key)).deliveries.length, 0, 'explicit combined answer publishes once');
   assert.equal(pilotInputResult(await requests.get(combinedB.key), { id: combinedA.runId, state: 'completed' }).replyOwnerRequestId, 'combined-a');
+  const legacyReply = await input('legacy-reserved', '旧版已保留的回复', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const legacyPacket = { requestIds: ['legacy-reserved'], ownerRequestId: 'legacy-reserved', payload: { text: '旧版结果。', attachments: [] } };
+  await requests.mutate(legacyReply.key, current => ({ ...current, mainlineReplyPlans: [legacyPacket] }));
+  await replyGroupInput(legacyReply, { text: '旧版结果。' });
+  await replyGroupInput(legacyReply, { text: '旧版结果。' });
+  assert.equal((await requests.get(legacyReply.key)).deliveries.length, 1, 'pre-upgrade reservation resumes and retries without duplication');
+  // An opening is not a final answer. Related supplements can be accounted
+  // for together after work started, and must keep the chosen Thread.
+  const opened = await input('opened', '查看表格', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const supplement = await input('supplement', '补充评测案例', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  const openedPlan = { ...origin, target: { ...origin.target, conversationKind: 'thread',
+    messageId: 'opened-message', rootId: 'opened-message', replyInThread: true, sourceKind: 'ambient_thread_open' } };
+  await requests.mutate(opened.key, current => ({ ...current,
+    options: { ...current.options, sourceContext: { ...current.options.sourceContext,
+      feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } },
+    replyPlacement: openedPlan, deliveries: [{ ...openedPlan, kind: 'content', surfaceKind: 'opening', text: '开始核对。' }] }));
+  const added = await requests.mutate(supplement.key, current => ({ ...current, nativeDispatchRunId: opened.runId }));
+  const joint = { text: '这个案例对应表格中的验收依据，仍缺最终结果。', requestIds: ['opened', 'supplement'] };
+  await replyGroupInput(added, joint); await replyGroupInput(added, joint);
+  assert.equal((await requests.get(opened.key)).deliveries.length, 2);
+  assert.equal((await requests.get(opened.key)).deliveries[1].target.rootId, 'opened-message');
+  assert.equal((await requests.get(supplement.key)).deliveries.length, 0);
+  assert.equal((await requests.get(supplement.key)).mainlineReply.contract.ownerRequestId, 'opened');
+  const undecided = await input('undecided', '新讨论', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
+  await requests.mutate(undecided.key, current => ({ ...current, options: { ...current.options,
+    sourceContext: { ...current.options.sourceContext, feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } } }));
+  await assert.rejects(replyGroupInput(await requests.get(undecided.key), { text: '先回复再说。' }), /Choose replyMode/);
+  assert.equal((await requests.get(undecided.key)).deliveries.length, 0);
+  await replyGroupInput(await requests.get(undecided.key), { text: '开始讨论。', replyMode: 'thread' });
+  assert.equal((await requests.get(undecided.key)).deliveries[0].target.conversationKind, 'thread');
   // Simulate a crash after the packet reservation but before member writes.
   const recoverA = await input('recover-a', '同一件事 A', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
   const recoverB = await input('recover-b', '同一件事 B', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });

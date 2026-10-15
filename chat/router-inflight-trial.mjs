@@ -4,9 +4,11 @@ import { readBody } from '../lib/utils.mjs';
 import { canonicalJson, serialQueue } from '../lib/durable-records.mjs';
 import { normalizeConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
 import { appendEvent, loadHistory } from './history.mjs';
 import { inflightTrialEnabled, loadInflightTrial } from './inflight-trial.mjs';
+import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
 
 const fail = (message, status = 403) => { throw Object.assign(new Error(message), { status }); };
 const live = record => record && !record.result && !record.releasedAt && !record.cancelRequestedAt;
@@ -70,9 +72,6 @@ export function createInflightTrialTools({ store = requests, history = sessionId
     const previous = root.inflightTrialReplies?.find(r => r.replyId === packet.replyId);
     if (previous && previous.fingerprint !== fingerprint) fail('replyId 已用于不同内容；请保留原回执。', 409);
     const messageId = `input-trial:${createHash('sha256').update(root.runId + ':' + packet.replyId).digest('hex')}`;
-    const parts = buildReplyDeliveries(planFor(source), { text: packet.text }, {
-      running: true, surfaceKind: 'reply', messageReplyPolicy: source.options.messageReplyPolicy });
-    if (!parts.length) fail('当前来源不支持试用中的单独答复。', 409);
     const updated = await store.mutate(root.key, current => {
       const existing = current.inflightTrialReplies?.find(r => r.replyId === packet.replyId);
       if (existing) {
@@ -80,7 +79,14 @@ export function createInflightTrialTools({ store = requests, history = sessionId
         return current;
       }
       if (!live(current) || current.options?.suppressSourceDelivery || current.routingHandoff) fail('运行已结束、停止或转移；未投递答复。', 409);
+      const replyPlan = resolveAmbientFeishuReplyPlan(current, planFor(source),
+        [{ type: 'message', role: 'assistant', content: packet.text }]);
+      if (!replyPlan) fail('请先明确选择 inline 或 thread 回复位置，再发送补充答复。', 409);
+      const parts = buildReplyDeliveries(replyPlan, { text: stripHiddenBlocks(packet.text) }, {
+        running: true, surfaceKind: 'reply', messageReplyPolicy: source.options.messageReplyPolicy });
+      if (!parts.length) fail('当前来源不支持试用中的单独答复。', 409);
       return { ...current,
+        ...(requiresFeishuReplyPlacement(current) ? { replyPlacement: current.replyPlacement || replyPlan } : {}),
         inflightTrialReplies: [...(current.inflightTrialReplies || []), { ...packet, fingerprint, messageId, createdAt: new Date().toISOString() }],
         streamedSurfaceMessageIds: [...(current.streamedSurfaceMessageIds || []), messageId],
         deliveries: appendDeliveries(current, parts.map(part => ({ ...part, surfaceKind: 'reply',

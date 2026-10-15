@@ -333,6 +333,27 @@ try {
   assert(mainReplies.every(delivery => delivery.target.conversationKind === 'main'
     && delivery.target.replyInThread !== true));
   console.log('PASS: group conversation is shared for reading but only the connector can write or bind it');
+  // A completed provider reply with no placement is retained, never silently
+  // posted on the group timeline. The outbox carries only a delivery failure.
+  const strictRun = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
+    requestId: 'feishu:placement-missing', text: '处理这个新问题', tool: 'fake-codex', model: 'fake-model',
+    sourceContext: { ...observedSource, messageId: 'placement-missing',
+      feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 },
+    sourceDelivery: { ...groupFeedConversation, target: { ...groupFeedConversation.target, messageId: 'placement-missing' } },
+  });
+  assert.equal(strictRun.status, 202);
+  const strictStore = (await import('../chat/requests.mjs')).createRequestStore(join(config, 'requests'));
+  const strictResult = await waitFor(async () => {
+    await request('GET', `/api/runs/${strictRun.body.run.id}`);
+    const record = await strictStore.byRequest(groupFeedId, 'feishu:placement-missing');
+    return record?.result ? record : false;
+  }, 'missing placement terminal settlement');
+  assert.equal(strictResult.result.state, 'failed');
+  assert.equal(strictResult.result.payload.text, 'fixture reply for delivery');
+  assert.equal(strictResult.deliveries.filter(item => item.kind === 'content').length, 1);
+  assert.ok(strictResult.deliveries.every(item => !item.text?.includes('fixture reply for delivery')));
+  assert.match(strictResult.deliveries.find(item => item.kind === 'content').text, /未明确选择发送位置/);
+  console.log('PASS: missing placement retains generated content and publishes only its failure notice');
   const longClaim = request('POST', '/api/source-deliveries/claim', {
     connector: 'feishu', sourceRouteId: 'long-poll-fixture', waitMs: 5000,
   });
