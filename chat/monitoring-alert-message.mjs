@@ -1,3 +1,5 @@
+import { prepareAlertEvidenceImage } from '../lib/alert-evidence-image.mjs';
+import { alertTime, alertHistoryPanel, alertEvidenceImage, resolutionAttribution } from '../lib/alert-card-history.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { monitoringDisposition } from '../lib/monitoring-policy.mjs';
@@ -49,47 +51,58 @@ export function monitoringNextStep(item, config) {
     ? '处理受阻，尚未形成需要你执行的具体动作。' : '我这边继续核查，暂不需要你操作。' };
 }
 
-export function renderMonitoringAlert(events, config, { color = false, links = true } = {}) {
-  const emphasize = value => color ? `<font color="red">${value}</font>` : `**${value}**`;
-  const sections = events.map(item => {
-    const recovery = repairFor(item, config);
-    const account = item.continuity;
-    const problem = item.kind === 'disk' && Number.isFinite(item.availableBytes) && Number.isFinite(item.usedPercent)
-      ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) && item.inodeUsedPercent >= 85 ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
-      : account ? `当前剩余 ${account.remainingPercent ?? '未知'}%，额度高于10%的已登录备用 ${account.backupCount} 个`
-      : brief(item.detail || '详见处理记录');
-    const resolved = item.recovered === true;
-    const inFlight = ['pending', 'waiting', 'admitting', 'running'].includes(recovery?.status);
-    const hasResult = !inFlight && recovery?.summary;
-    const progress = resolved ? '最新独立观测已确认恢复。'
-      : hasResult ? brief(recovery.summary)
-      : account ? `已核对本实例账号；自动切换${account.autoSwitch ? '已开启' : '未开启'}。${account.lastSwitch ? '最近切换记录见监管总览。' : '尚无已核验的切换记录。'}`
-      : recovery?.status === 'running' ? '补救任务已启动；本轮执行结果尚未回报。'
-      : recovery?.status === 'waiting' ? '原会话已有任务执行，正在等待结果。'
-      : recovery?.status === 'blocked' ? '本轮补救未通过验收，详细原因见处理记录。'
-      : '已记录风险；尚无本轮已执行动作的回执。';
-    const next = monitoringNextStep(item, config);
-    const decision = next.type === 'notice' ? next.summary : emphasize(next.summary);
-    return `**${text(item.subject, 120)}${resolved ? ' · 已恢复' : ''}**\n`
-      + `当前风险：${resolved ? '已解除' : item.severity === 'critical' ? emphasize(problem) : problem}\n`
-      + `处理：${progress}\n下一步：${decision}`
-      + (links && next.url ? `\n[${next.label}](${next.url})` : '')
-      + (!color && item.observedAt ? `\n更新：${text(item.observedAt, 40)}` : '');
-  });
-  return sections.join('\n\n---\n\n') + (links && config.overviewUrl ? `\n\n[监管总览](${config.overviewUrl})` : '');
+export function monitoringProblem(item) {
+  return item.kind === 'disk' && Number.isFinite(item.availableBytes) && Number.isFinite(item.usedPercent)
+    ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) && item.inodeUsedPercent >= 85 ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
+    : item.continuity ? `当前剩余 ${item.continuity.remainingPercent ?? '未知'}%，额度高于10%的已登录备用 ${item.continuity.backupCount} 个`
+    : brief(item.detail || '原记录未提供具体数值，详见处理记录');
 }
-
+export function monitoringProgress(item, recovery) {
+  const inFlight = ['pending', 'waiting', 'admitting', 'running'].includes(recovery?.status);
+  if (!inFlight && recovery?.summary) return brief(recovery.summary.replace(/^同一[^。]*告警接续。/, ''));
+  if (recovery?.status === 'running') return '补救任务已启动；本轮执行结果尚未回报。';
+  if (recovery?.status === 'waiting') return '原会话已有任务执行，正在等待结果。';
+  if (item.continuity) return `已核对本实例账号；自动切换${item.continuity.autoSwitch ? '已开启' : '未开启'}，任务结果另行核验。`;
+  return '已记录风险；尚无本轮已执行动作的回执。';
+}
+export function monitoringTitle(item) {
+  const issue = { disk: '磁盘空间不足', service: '服务运行异常', automation: '自动化执行异常',
+    accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
+  return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : ' · 已解决') : ''}`;
+}
+export function renderMonitoringAlert(events, config, { color = false, links = true } = {}) {
+  return events.map(item => {
+    const recovery = repairFor(item, config), next = monitoringNextStep(item, config);
+    const resolved = item.recovered === true;
+    const status = resolved ? item.recoveryStopped ? '原任务已停止，不再预警；未认定故障已修复' : '当前问题已解决' : '预警处理中';
+    const decision = color && next.type !== 'notice' ? `<font color="red">${next.summary}</font>` : next.summary;
+    return `**${text(item.subject || monitoringTitle(item), 120)}**\n当前状态：${status}\n`
+      + `上次预警：${alertTime(item.lastAlertAt || item.triggeredAt)}（北京时间）\n`
+      + `预警原因：${text(item.triggerReason || monitoringProblem(item), 200)}\n`
+      + (resolved ? `处理方式：${item.recoveryStopped ? '任务停止，保留历史记录' : resolutionAttribution(recovery)}\n`
+        + `处理结果：${monitoringProgress(item, recovery)}${item.recoveryObservation ? `；复查：${text(item.recoveryObservation, 160)}` : ''}\n`
+        + `确认时间：${alertTime(item.recoveredAt || item.observedAt)}\n`
+        : `分析与处理：${monitoringProgress(item, recovery)}\n`)
+      + `${next.type === 'notice' ? '需要你：' : ''}${decision}`
+      + (links && next.url ? `\n[${next.label}](${next.url})` : '');
+  }).join('\n\n---\n\n');
+}
 export function renderMonitoringAlertCard(events, config) {
+  const allResolved = events.every(e => e.recovered);
+  const title = events.length === 1 ? monitoringTitle(events[0])
+    : `${allResolved ? '预警处理结果' : '运行预警'}：${events.map(e => e.subject || monitoringTitle(e)).join('、')}`;
   return { config: { wide_screen_mode: true, update_multi: true },
-    header: { title: { tag: 'plain_text', content: '监管：风险与处理进展' },
-      template: events.some(e => !e.recovered && e.severity === 'critical') ? 'red' : 'blue' },
-    elements: [...events.flatMap(item => {
-      const next = monitoringNextStep(item, config);
-      return [{ tag: 'div', text: { tag: 'lark_md', content: renderMonitoringAlert([item], config, { color: true, links: false }) } },
-        ...(next.url ? [{ tag: 'action', actions: [{ tag: 'button', type: next.type === 'notice' ? 'default' : 'primary',
-          text: { tag: 'plain_text', content: next.label }, url: next.url }] }] : [])];
-    }), { tag: 'note', elements: [{ tag: 'plain_text', content: `最近观测：${events.map(e => e.observedAt).filter(Boolean).sort().at(-1) || '见监管总览'}` }] }] };
-
+    header: { title: { tag: 'plain_text', content: title.slice(0, 120) },
+      template: allResolved ? 'green' : events.some(e => !e.recovered && e.severity === 'critical') ? 'red' : 'orange' },
+    elements: events.flatMap(item => {
+      const next = monitoringNextStep(item, config), recovery = repairFor(item, config);
+      const original = link(recovery?.sessionId || item.sessionId, config.overviewUrl);
+      return [ ...alertEvidenceImage(item),
+        { tag: 'div', text: { tag: 'lark_md', content: renderMonitoringAlert([item], config, { color: true, links: false }) } },
+        ...alertHistoryPanel(item.history || []),
+        ...(original || next.url ? [{ tag: 'action', actions: [{ tag: 'button', type: next.type === 'notice' ? 'default' : 'primary',
+          text: { tag: 'plain_text', content: original && next.type === 'notice' ? '查看原始处理对话' : next.label }, url: original || next.url }] }] : [])];
+    }) };
 }
 
 export async function monitoringIm(config, method, path, body, params, execute = promisify(execFile)) {
@@ -105,6 +118,7 @@ export async function monitoringIm(config, method, path, body, params, execute =
 }
 
 export async function sendMonitoringAlert(events, config, batchId, api = monitoringIm) {
+  for (const item of events) await prepareAlertEvidenceImage(item, config);
   const result = await api(config, 'POST', '/open-apis/im/v1/messages', {
     receive_id: config.chatId, msg_type: 'interactive', content: JSON.stringify(renderMonitoringAlertCard(events, config)), uuid: batchId,
   }, { receive_id_type: 'chat_id' });
@@ -120,6 +134,7 @@ export async function updateMonitoringAlert(events, config, messageId, api = mon
   if (!message || message.deleted) throw Object.assign(new Error('Original message unavailable'), { code: 'MESSAGE_RECALLED_OR_MISSING' });
   if (message.chat_id !== config.chatId) throw new Error('RECIPIENT_CHANGED');
   if (config.feishuAppId && message.sender?.id !== config.feishuAppId) throw new Error('SENDER_CHANGED');
+  for (const item of events) await prepareAlertEvidenceImage(item, config);
   if (message.msg_type === 'interactive') await api(config, 'PATCH', path, { content: JSON.stringify(renderMonitoringAlertCard(events, config)) });
   else if (message.msg_type === 'post') await api(config, 'PUT', path, {
     msg_type: 'post', content: await buildFeishuPostContent(renderMonitoringAlert(events, config).replace(/<\/?sub>/g, '')),

@@ -1,3 +1,4 @@
+import { appendAlertHistory } from '../lib/alert-card-history.mjs';
 import { processSessionDiagnostics } from './session-diagnostics.mjs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -11,7 +12,7 @@ import { diskRiskStage } from '../lib/monitoring-actions.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('base64url');
 const errorCode = error => error.code || 'DELIVERY_UNCERTAIN';
-import { sendMonitoringAlert, updateMonitoringAlert } from './monitoring-alert-message.mjs';
+import { sendMonitoringAlert, updateMonitoringAlert, monitoringProblem, monitoringProgress, monitoringNextStep } from './monitoring-alert-message.mjs';
 export { renderMonitoringAlert, renderMonitoringAlertCard, sendMonitoringAlert, updateMonitoringAlert } from './monitoring-alert-message.mjs';
 
 function accountAlerts(snapshot, config) {
@@ -98,7 +99,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     const stage = diskRiskStage(item);
     // The incident identity survives runtime retries, plan wording and disk
     // stage changes. These update its existing message, never rearm a send.
-    const version = hash(JSON.stringify({ stage, severity: item.severity, repair: repair ? {
+    const version = hash(JSON.stringify({ cardFormat: 4, stage, severity: item.severity, repair: repair ? {
       status: repair.status, summary: ['running', 'pending', 'admitting', 'waiting'].includes(repair.status) ? null : repair.summary,
       plan: repair.plan, humanAction: repair.humanAction, runId: repair.runId,
     } : null, signals: item.signals || null, notificationAvailable: item.notificationAvailable ?? null, action: item.action || null, continuity: item.continuity ? {
@@ -110,7 +111,34 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       || decisionVersion && incident.decisionVersion !== decisionVersion)) incident.status = 'observing';
     incident.decisionVersion = decisionVersion;
     incident.riskStage = stage;
-    incident.event = { ...item, recovery: repair, observedAt: snapshot.generatedAt || new Date(now).toISOString() };
+    const at = snapshot.generatedAt || new Date(now).toISOString();
+    const existingBatch = Object.values(state.batches).find(b => b.messageId && b.messageId === previous?.messageId);
+    if (existingBatch && !incident.historyOriginVerified) {
+      // Old ledgers retain send time but overwrite samples. Do not invent the
+      // original threshold or stamp the migration observation as the alert.
+      incident.triggeredAt = existingBatch.startedAt || null;
+      incident.triggerEvidenceAt = previous?.event?.observedAt || at;
+      incident.triggerReason = `原始触发数值未保存；历史回读数据：${monitoringProblem(previous?.event || item)}`;
+      if (incident.history?.[0]) incident.history[0] = { ...incident.history[0], label: '历史数据回读（非首次触发）' };
+      if (incident.event) { delete incident.event.evidenceImage; delete incident.event.evidenceImageAttempted; }
+    } else {
+      incident.triggeredAt ||= at;
+      incident.triggerEvidenceAt ||= at;
+      incident.triggerReason ||= monitoringProblem(item);
+    }
+    if (existingBatch && incident.historyOriginVerified && !incident.triggerEvidenceVersion) {
+      incident.triggerEvidenceAt = at;
+      incident.triggerReason = `原始触发数值未保存；历史回读数据：${monitoringProblem(item)}`;
+      if (incident.event) { delete incident.event.evidenceImage; delete incident.event.evidenceImageAttempted; }
+    }
+    incident.triggerEvidenceVersion = 1;
+    incident.historyOriginVerified = true;
+    if (!incident.history?.length) appendAlertHistory(incident, { at: incident.triggeredAt, label: '触发预警', summary: incident.triggerReason });
+    if (incident.version !== version) appendAlertHistory(incident, { at, label: '分析与处理',
+      summary: `${monitoringProgress(item, repair)}；${monitoringNextStep({ ...item, recovery: repair }, config).summary}`, status: repair?.status || 'observing', runId: repair?.runId || null });
+    incident.event = { ...item, recovery: repair, observedAt: at, triggeredAt: incident.triggeredAt,
+      lastAlertAt: incident.triggeredAt, triggerEvidenceAt: incident.triggerEvidenceAt, triggerReason: incident.triggerReason, history: structuredClone(incident.history),
+      evidenceImage: incident.event?.evidenceImage || item.evidenceImage, evidenceImageAttempted: incident.event?.evidenceImageAttempted };
     incident.version = version;
     if (incident.status === 'sent' && incident.messageId && incident.presentedVersion !== version) edits.add(incident.messageId);
     Object.assign(incident, { observations: count, active: true, subject: item.subject, kind: item.kind });
@@ -129,7 +157,20 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key)) incident.observations = 0;
   for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key) && recovered.has(key)) {
     if (incident.active && incident.status === 'sent' && incident.messageId && incident.event) {
-      incident.event = { ...incident.event, recovered: true, observedAt: snapshot.generatedAt || new Date(now).toISOString() };
+      const at = snapshot.generatedAt || new Date(now).toISOString();
+      const repair = config.recoveryIncidents?.slice().reverse().find(r => r.kind === incident.event.kind && r.id === incident.event.id
+        && (!incident.event.recovery?.originRunId || r.originRunId === incident.event.recovery.originRunId)) || incident.event.recovery;
+      const disk = snapshot.disks.find(d => (d.path || d.label) === (incident.event.id || incident.event.subject));
+      const task = snapshot.automations.items?.find(t => t.id === incident.event.id);
+      const stopped = incident.event.kind === 'automation' && ['paused', 'cancelled'].includes(task?.state);
+      const observation = disk ? monitoringProblem({ ...disk, kind: 'disk' })
+        : stopped ? '原任务已暂停或取消' : '独立观测已确认恢复';
+      if (!incident.history?.length) appendAlertHistory(incident, { at: incident.event.observedAt,
+        label: '既有预警记录', summary: monitoringProblem(incident.event) });
+      appendAlertHistory(incident, { at, label: stopped ? '任务已停止' : '复查确认恢复',
+        summary: `${observation}；${monitoringProgress(incident.event, repair)}` });
+      incident.event = { ...incident.event, recovered: true, recoveredAt: at, observedAt: at,
+        recovery: repair, recoveryStopped: stopped, recoveryObservation: observation, history: structuredClone(incident.history) };
       incident.version = hash('recovered'); edits.add(incident.messageId);
     }
     incident.active = false;
@@ -219,10 +260,10 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
     config: { ...config.recovery, ignoreUnits: config.alertDelivery.ignoreUnits,
       serviceConfirmationObservations: config.alertDelivery.confirmationObservations }, snapshot, dryRun }); }
   catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
-  const alerts = await dispatch({ config: { ...config.alertDelivery, criticalAutomationIds: config.criticalAutomationIds,
+  const alerts = await dispatch({ config: { ...config.alertDelivery, snapshot: config.snapshot, criticalAutomationIds: config.criticalAutomationIds,
     recoveryIncidents: recovery.incidents || snapshot.recovery }, snapshot, baseline, dryRun });
   let sessionDiagnostics;
-  try { sessionDiagnostics = await diagnose({ config: config.sessionDiagnostics, snapshot: { ...snapshot, recovery: recovery.incidents || snapshot.recovery }, baseline, dryRun }); }
+  try { sessionDiagnostics = await diagnose({ config: { ...config.sessionDiagnostics, notification: { ...config.sessionDiagnostics?.notification, snapshot: config.snapshot } }, snapshot: { ...snapshot, recovery: recovery.incidents || snapshot.recovery }, baseline, dryRun }); }
   catch { sessionDiagnostics = { enabled: config.sessionDiagnostics?.enabled === true, error: 'SESSION_DIAGNOSIS_UNAVAILABLE' }; }
   return { ...alerts, recovery, sessionDiagnostics };
 }

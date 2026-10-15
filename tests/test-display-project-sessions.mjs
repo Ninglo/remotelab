@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createProjectViewReader, summarizeProjectSessions } from '../display/project-sessions.mjs';
+const root = await mkdtemp(join(tmpdir(), 'display-projects-'));
+try {
+ const file = join(root, 'sessions.json');
+ const records = Array.from({length:24}, (_,i) => ({id:String(i),name:`Existing title ${i}`,initiatedByIdentityId:'self',personViews:{p:{group:i%2?'RemoteLab':'Claude Tag'},other:{group:'Other person group'}},activity:{run:{state:'running',waiting:i%3===0}}}));
+ records.push({id:'unknown',name:'No group',initiatedByIdentityId:'self',workflowState:'waiting_user'});
+ records.push({...records[0],id:'foreign',initiatedByIdentityId:'someone-else'});
+ records.push({...records[0],id:'archived',archived:true});
+ records.push({...records[0],id:'internal',internalRole:'metadata'});
+ records.push({...records[0],id:'finished',activity:{},workflowState:'done'});
+ records.push({...records[0],id:'queued',activity:{queue:{state:'queued',count:2}}});
+ await writeFile(file,JSON.stringify(records));
+ const reader=createProjectViewReader(file),views=await reader.read();
+ const options={personId:'p',identityIds:new Set(['self']),views};
+ const projects=summarizeProjectSessions(records,options);
+ const sessions=projects.flatMap(p=>p.sessions);
+ assert.equal(sessions.length,26);assert.equal(projects.length,3);
+ assert(sessions.some(s=>s.id==='queued'&&s.status==='queued'));
+ assert(projects.some(p=>p.name==='未归属项目'));
+ assert(!JSON.stringify(projects).includes('Other person group'));
+ assert(!sessions.some(s=>['foreign','archived','internal','finished'].includes(s.id)));
+ assert.equal(projects.reduce((n,p)=>n+p.waiting,0),9);
+ assert.equal(sessions.find(s=>s.id==='1').title,'Existing title 1');
+ assert.strictEqual(await reader.read(),views);
+ records[0].personViews.p.group='Changed project';await writeFile(file,JSON.stringify(records));
+ assert(summarizeProjectSessions(records,{...options,views:await reader.read()}).some(p=>p.name==='Changed project'));
+ await writeFile(file,'invalid');await assert.rejects(reader.read());
+ console.log('ok - complete project membership, per-Person grouping, active statuses, metadata refresh and failure');
+} finally {await rm(root,{recursive:true,force:true});}

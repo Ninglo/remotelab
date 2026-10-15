@@ -1,0 +1,19 @@
+#workZone.display-projects{display:flex;flex-direction:column;min-height:0;padding:22px 28px;box-shadow:none}
+.dp-heading{display:flex;align-items:center;gap:12px;flex:none;height:38px;margin-bottom:8px;white-space:nowrap;min-width:0}
+.dp-heading .zone-kicker{font-size:24px;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dp-total{margin-left:auto;font-size:18px;color:var(--screen-muted);flex:none}
+.dp-list{flex:1;min-height:0;overflow:hidden}
+.dp-project{display:grid;grid-template-columns:minmax(0,1fr) auto;width:100%;text-align:left;font:inherit;color:var(--screen-text);background:none;border:0;border-bottom:1px solid var(--screen-border);padding:12px 0;cursor:pointer;box-sizing:border-box;gap:10px 12px}
+.dp-name{font-size:calc(37px * var(--screen-scale,1));line-height:1.2;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dp-counts{display:flex;flex-wrap:wrap;gap:6px 18px;grid-column:1;font-size:calc(22px * var(--screen-scale,1));line-height:1.3;color:var(--screen-muted)}
+.dp-waiting{color:var(--screen-accent)}
+.dp-open{grid-column:2;grid-row:1 / 3;align-self:center;color:var(--screen-muted);font-size:22px}
+.dp-project:hover,.dp-project:focus-visible{background:color-mix(in srgb,var(--screen-accent) 6%,transparent)}
+.dp-footer{height:38px;flex:none;display:flex;align-items:center;justify-content:center;gap:18px;font-size:18px;color:var(--screen-muted);padding-top:6px}
+.dp-back,.dp-page{font:inherit;color:var(--screen-accent);border:1px solid var(--screen-border);background:transparent;border-radius:6px;cursor:pointer;padding:2px 10px;line-height:1.2}
+.dp-back{font-size:20px}.dp-page{font-size:26px}.dp-page:disabled{opacity:.25;cursor:default}
+.dp-session{display:flex;align-items:center;gap:18px;padding:19px 0;border-bottom:1px solid var(--screen-border);box-sizing:border-box}
+.dp-title{font-size:calc(35px * var(--screen-scale,1));line-height:1.3;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.dp-status{font-size:calc(21px * var(--screen-scale,1));line-height:1.3;padding:3px 10px;white-space:nowrap;color:var(--screen-muted)}
+.dp-empty{font-size:30px;margin:45px 0 12px}.dp-note{font-size:22px;color:var(--screen-muted)}
+.project-module-controls{margin:14px 0;padding:14px;background:#f6f8f7;border-radius:8px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px}.project-module-controls[hidden]{display:none}.project-module-controls select{max-width:100%;padding:7px}.project-module-controls p{margin:0;width:100%;color:#67746c}

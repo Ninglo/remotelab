@@ -396,7 +396,7 @@ test('the first warning delivers one complete card containing both the risk and 
   assert.equal(id, 'om_one'); assert.equal(calls.length, 1);
   const body = calls[0][3], card = JSON.parse(body.content);
   assert.equal(body.msg_type, 'interactive');
-  assert.match(card.elements[0].text.content, /当前风险/);
+  assert.match(card.elements[0].text.content, /预警原因/);
   assert.match(card.elements[0].text.content, /需要你补充：提供扩容报价/);
   assert.equal(card.elements[1].actions[0].text.content, '进入会话补充信息');
   assert.match(card.elements[1].actions[0].url, /session=original/);
@@ -471,4 +471,59 @@ test('changing a workflow to no-group also protects edits of existing mixed inci
   const healthy = snapshot([]); healthy.automations.items = [{ id: 'private', state: 'completed' }];
   await dispatchMonitoringAlerts({ ...f.options, config: { ...config, ignoreAutomationIds: ['private'] }, snapshot: healthy });
   assert.equal(f.getUpdates(), 0);
+});
+
+test('alert history freezes trigger data and keeps results, actor evidence and original Session after recovery', async () => {
+  const f = fixture(), first = snapshot([{ ...disk, id: '/data' }]);
+  const config = { overviewUrl: 'https://example.test/', recoveryIncidents: [{ kind: 'disk', id: '/data',
+    status: 'running', sessionId: 'original', runId: 'run_a' }] };
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: first });
+  const original = Object.values(f.getState().incidents)[0];
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: { ...first, generatedAt: '2026-10-03T06:01:00Z' } });
+  assert.equal(Object.values(f.getState().incidents)[0].history.length, original.history.length, 'unchanged polling is not execution history');
+  config.recoveryIncidents[0] = { ...config.recoveryIncidents[0], status: 'resolved', summary: '清理缓存释放70 GiB',
+    resolution: { method: 'collaborative', evidence: ['human-approval', 'cleanup-receipt'] } };
+  const recovered = snapshot([]); recovered.generatedAt = '2026-10-03T06:06:00Z';
+  recovered.disks = [{ path: '/data', status: 'healthy', availableBytes: 73 * 1024 ** 3, usedPercent: 70 }];
+  let event;
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: recovered,
+    update: async (events, _config, id) => { event = events[0]; return id; } });
+  assert.equal(f.getSends(), 1);
+  assert.equal(event.triggerReason, '可用 3.00 GiB，已用 97.0%');
+  assert.equal(event.triggeredAt, first.generatedAt);
+  assert.match(event.recoveryObservation, /73.00 GiB/);
+  const card = renderMonitoringAlertCard([event], { overviewUrl: config.overviewUrl });
+  assert.equal(card.header.template, 'green');
+  assert.match(JSON.stringify(card), /Agent 与人工已完成协作处理/);
+  assert.match(JSON.stringify(card), /清理缓存释放70 GiB/);
+  assert.match(JSON.stringify(card), /session=original/);
+  assert.equal(card.elements.find(e => e.tag === 'collapsible_panel').expanded, false);
+  delete event.recovery.resolution;
+  assert.doesNotMatch(JSON.stringify(renderMonitoringAlertCard([event], {})), /Agent 已自行处理|Agent 与人工已完成协作处理/);
+});
+
+test('resource cards keep frozen evidence images and use problem-specific orange/red titles', () => {
+  for (const kind of ['disk', 'service', 'automation', 'api', 'accountContinuity']) {
+    const card = renderMonitoringAlertCard([{ ...disk, kind, severity: 'warning', evidenceImage: { imageKey: 'img_verified' } }], {});
+    assert.equal(card.header.template, 'orange');
+    assert.notEqual(card.header.title.content, '监管：风险与处理进展');
+    assert.equal(card.elements[0].img_key, 'img_verified');
+  }
+  assert.equal(renderMonitoringAlertCard([disk], {}).header.template, 'red');
+});
+
+test('legacy migration separates the original send time from later recorded data', async () => {
+  const f = fixture(), first = snapshot([{ ...disk, id: '/data' }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: first });
+  const saved = f.getState(), incident = Object.values(saved.incidents)[0];
+  delete incident.historyOriginVerified; delete incident.triggerEvidenceVersion; delete incident.triggeredAt;
+  delete incident.history; delete incident.event.triggeredAt;
+  incident.event.observedAt = '2026-10-03T07:00:00Z';
+  incident.event.availableBytes = 8 * 1024 ** 3;
+  await f.options.save('', saved);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: { ...first, generatedAt: '2026-10-03T08:00:00Z' } });
+  const current = Object.values(f.getState().incidents)[0].event;
+  assert.equal(current.triggeredAt, first.generatedAt);
+  assert.equal(current.triggerEvidenceAt, '2026-10-03T07:00:00Z');
+  assert.match(current.triggerReason, /原始触发数值未保存.*8.00 GiB/);
 });

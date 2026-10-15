@@ -24,7 +24,7 @@ try {
  await run(0);await run(1);assert.equal(sent.length,0,'two confirmations cannot notify');
  await run(2);assert.equal(sent.length,1,'three distinct fresh observations notify one current problem');
  const card=sessionDiagnosisCard(sent[0],config.notification);
- assert.equal(card.elements[0].text.content.split('\n').length,3);
+ assert.match(card.elements[0].text.content,/上次预警/);
  assert(!card.elements[0].text.content.includes('个会话'),'compact cards avoid counts that do not trigger updates');
  rows.push(row('two',start+12*minute));await run(3);
  assert.equal(sent.length,1,'affected count changes do not edit the card');

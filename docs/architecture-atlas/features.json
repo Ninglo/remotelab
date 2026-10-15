@@ -827,6 +827,8 @@
             "chat/monitoring-recovery.mjs",
             "chat/monitoring-alerts.mjs",
             "chat/monitoring-alert-message.mjs",
+            "lib/alert-card-history.mjs",
+            "lib/alert-evidence-image.mjs",
             "lib/monitoring-actions.mjs",
             "chat/usage-ledger.mjs",
             "static/chat/compose.js",

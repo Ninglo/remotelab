@@ -24,7 +24,7 @@ export function projectRecovery(state) {
     attempts: item.attempts?.length || 0, runId: item.attempts?.at(-1)?.runId || item.externalRunId || null,
     reason: trim(item.reason).slice(0, 240), summary: ['pending', 'admitting', 'running', 'waiting'].includes(item.status) ? '' : trim(item.summary).slice(0, 1200),
     error: trim(item.error).slice(0, 240),
-    plan: recoveryPlan(item.plan), humanAction: recoveryHumanAction(item.humanAction), riskStage: item.riskStage || 0,
+    resolution: item.resolution || null, plan: recoveryPlan(item.plan), humanAction: recoveryHumanAction(item.humanAction), riskStage: item.riskStage || 0,
     createdAt: item.createdAt, updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
 }
 
@@ -52,6 +52,7 @@ function promptFor(item, attempt, task, config) {
     + (config.workflowPaths?.[`${item.kind}:${item.id}`] ? `本对象现行工作流：${config.workflowPaths[`${item.kind}:${item.id}`]}。先完整读取。\n` : '')
     + (task ? `原任务现行提示（仅原范围；新的用户决定优先）：\n${task.prompt}\n` : '')
     + `本轮是补救或核验回报：默认不使用全员提及，不沿用原定时汇报的@所有人规则；只有用户对本次补救明确要求时才可全员提醒。此条优先于上方原任务的定时发送规则。\n`
+    + `已确认解决时补充resolution={method:"agent"或"collaborative"或"spontaneous",evidence:["对应动作或人工参与的原始证据"]}，分别表示Agent自行处理、人机协作处理、指标自行恢复。只有真实参与或自然恢复证据才标注；缺证据留空，不根据曾经请求人工帮助推断协作完成。\n`
     + `结束前写入 ${attempt.receiptFile}，JSON必须含key=${item.key}、requestId=${attempt.requestId}、status=resolved或blocked或awaiting_confirmation、summary、evidence（真实文件/回执/原始来源引用数组）、checks.task（实际任务验收布尔值）、checks.delivery（verified或not_required或unknown）、requiredHumanAction（若受阻，具体最小动作或外部依赖）。中高风险确认前不得执行；人在原会话确认并执行后更新同一回执，观察器会独立核验。运行退出码0不算任务验收；模型能回复、再次提交成功不算恢复。\n`
     + `对外结果只走原绑定出口，回复说明修复了什么、如何验证、仍缺什么，不制造例行进度；原任务禁止发消息时继续禁止。资源诊断的常态结果仍并入原日报。`;
 }
@@ -201,7 +202,12 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       } else if (!['verified', 'not_required'].includes(receipt.checks.delivery)) {
         touch(item, 'blocked', '原任务送达验收未知'); continue;
       }
-      item.evidence = receipt.evidence; item.summary = receipt.summary; touch(item, 'resolved');
+      item.evidence = receipt.evidence; item.summary = receipt.summary;
+      const resolution = receipt.resolution;
+      item.resolution = ['agent', 'collaborative', 'spontaneous'].includes(resolution?.method)
+        && Array.isArray(resolution.evidence) && resolution.evidence.some(e => typeof e === 'string' && e.trim())
+        ? { method: resolution.method, evidence: resolution.evidence.filter(e => typeof e === 'string' && e.trim()).slice(0, 5) } : null;
+      touch(item, 'resolved');
     } catch (error) { item.reason = `补救状态读取失败：${error.code || 'UNAVAILABLE'}`; errors.push(item.reason); }
   }
   await persist();

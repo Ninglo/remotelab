@@ -10,6 +10,7 @@ import { Resvg } from '@resvg/resvg-js';
 
 import { findPerson, loadAuthDocument } from '../lib/auth-config.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
+import { createProjectViewReader, summarizeProjectSessions } from './project-sessions.mjs';
 import { createSessionSummaryReader } from '../lib/session-summary-reader.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { emptySignalStore, makeStatusSnapshot, replaceSource, selectOfficialScene, validateSourcePacket } from './status-state.mjs';
@@ -352,9 +353,14 @@ async function getPersonIdentityIds(personId) {
   return (await personIdentityInfo(personId)).ids;
 }
 
+const projectViews = createProjectViewReader(join(configDir, 'chat-sessions.json'));
+
 async function collectSnapshot(personId) {
   const { ids: identityIds, feishuLinked } = await personIdentityInfo(personId);
   const sessions = await sessionSummaries.read();
+  let projects = null;
+  try { projects = summarizeProjectSessions(sessions, { personId, identityIds, views: await projectViews.read() }); }
+  catch (error) { console.error('[display] project grouping unavailable:', error.message); }
   const now = Date.now();
   const cutoff = now - 24 * 60 * 60 * 1000;
   let running = 0;
@@ -400,7 +406,7 @@ async function collectSnapshot(personId) {
     if (latestAt >= cutoff) deliveryIssues += Number(session.deliveryIssueCount || 0);
   }
   pendingResults.sort((a, b) => b.assistantAt - a.assistantAt);
-  return { running, waiting, queued, pendingReview, pendingResults: pendingResults.slice(0, 3).map(({ name, context }) => ({ name, context })), deliveryIssues, active,
+  return { running, waiting, queued, projects, pendingReview, pendingResults: pendingResults.slice(0, 3).map(({ name, context }) => ({ name, context })), deliveryIssues, active,
     feishu: summarizeFeishuSessions(sessions, identityIds, feishuLinked, now),
     observedAt: new Date().toISOString() };
 }
