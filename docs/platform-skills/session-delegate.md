@@ -27,6 +27,8 @@ its native task interpretation and decides whether delegation is useful.
    invoking Run's saved connector destination, as well as Web history. Do not
    repeat that notice in a separate reply; continue with coordination or results.
    Web-only and internal delegation do not send to an old connector binding.
+   `noticeDelivery` reports the queued receipt or its failure. If enqueue failed,
+   give the returned task and link in the normal reply; do not create another child.
    `state: accepted` means submitted, not that work is already running or done.
    The user opens the link to inspect progress, provide follow-ups and read results.
 5. The child completes its task in its own session. Do not promise an automatic

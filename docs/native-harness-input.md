@@ -236,6 +236,13 @@ incomplete rather than inheriting the root answer. See
 destinations, so the same conversation gets one final reply while distinct
 destinations still receive their result.
 
+Visible child delegation publishes its creation notice using the invoking Run's
+saved reply destination, independently of the eventual Harness final answer.
+The delegation API and CLI return `noticeDelivery` beside the child Session and
+Run receipt; a notice enqueue failure must not be mistaken for a failed child
+creation or retried as a new delegation. See the
+[visible delegation workflow](platform-skills/session-delegate.md).
+
 Each sidecar journals native input as `dispatching`, then `accepted` or a
 definite `rejected` result. Retrying a requestId reads the receipt or joins the
 original pending acknowledgement. A lost acknowledgement is never converted

@@ -4251,6 +4251,7 @@ export async function delegateSession(sessionId, payload = {}) {
     sessionId: child.id, parentSessionId: source.id, runId: outcome.run?.id,
     actorKind: 'agent', surface: 'agent', operation: 'delegate' });
 
+  let noticeDelivery = null;
   if (!runInternally) {
     await appendEvent(source.id, buildDelegationContextOperation(task, child));
     const notice = buildDelegationNoticeMessage(task, child, sourceText);
@@ -4262,8 +4263,17 @@ export async function delegateSession(sessionId, payload = {}) {
     const invoking = payload.sourceRunId ? await requests.byRunId(payload.sourceRunId) : null;
     const destination = invoking?.sessionId === source.id
       ? invoking.deliveryPlan || invoking.options?.sourceDelivery : null;
-    if (destination) await enqueueSourceDelivery({ sessionId: source.id,
-      responseId: `session-delegate:${child.id}`, sourceDelivery: destination, text: notice });
+    if (destination) {
+      try {
+        const delivery = await enqueueSourceDelivery({ sessionId: source.id,
+          responseId: `session-delegate:${child.id}`, sourceDelivery: destination, text: notice });
+        noticeDelivery = { id: delivery.id, state: delivery.state };
+      } catch (error) {
+        // The child already exists. Preserve its receipt so callers cannot
+        // mistake a notice failure for permission to create another child.
+        noticeDelivery = { state: 'failed', error: error.message };
+      }
+    }
     broadcastSessionInvalidation(source.id);
   }
 
@@ -4271,6 +4281,7 @@ export async function delegateSession(sessionId, payload = {}) {
     session: await getSession(child.id, { viewPersonId }) || outcome.session || child,
     run: outcome.run || null,
     sessionUrl: buildSessionNavigationHref(child.id),
+    noticeDelivery,
   };
 }
 
