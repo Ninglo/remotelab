@@ -47,6 +47,22 @@ export function validateProjectMemoryRuntime(config) {
     if (routes.has(key)) throw new Error('Duplicate group association.');
     routes.add(key);
   }
+  if (config.directoryGroups !== undefined) {
+    if (!Array.isArray(config.directoryGroups) || config.directoryGroups.length > 128) throw new Error('Invalid directory groups.');
+    const ids = new Set(), members = new Set();
+    for (const group of config.directoryGroups) {
+      if (!idPattern.test(group.id || '') || ids.has(group.id) || typeof group.name !== 'string'
+          || !group.name.trim() || group.name.length > 100 || !group.sourceRouteId
+          || !Array.isArray(group.chatIds) || !group.chatIds.length || group.chatIds.length > 32) throw new Error('Invalid directory group.');
+      ids.add(group.id);
+      for (const chatId of group.chatIds) {
+        const key = `${group.sourceRouteId}:${chatId}`;
+        if (members.has(key) || !config.groups.some(g => g.sourceRouteId === group.sourceRouteId
+            && g.chatId === chatId && g.readingLevel !== 'excluded')) throw new Error('Invalid directory group member.');
+        members.add(key);
+      }
+    }
+  }
   const sessions = new Set();
   for (const binding of config.sessionBindings) {
     if (typeof binding.sessionId !== 'string' || !binding.sessionId || sessions.has(binding.sessionId) || !validateRefs(binding.projectIds)) throw new Error('Invalid declared Session association.');

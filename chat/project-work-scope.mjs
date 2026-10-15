@@ -17,3 +17,20 @@ export function projectDirectoryScope(config, session, sourceContext, sessions =
   }
   return { projectIds: [] };
 }
+
+// Explicit directory-only groups do not assert project ownership or share briefs.
+export function groupDirectoryScope(config, session, sourceContext, sessions = [], byId = new Map(sessions.map(s => [s.id, s]))) {
+  const seen = new Set();
+  let current = session, input = sourceContext;
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    const origin = input?.connector === 'feishu' ? input : current.conversation;
+    const chatId = origin?.chatId || origin?.target?.chatId;
+    if (chatId) return (config.directoryGroups || []).find(g => g.sourceRouteId === origin?.sourceRouteId
+      && g.chatIds.includes(chatId)) || null;
+    if (input?.connector === 'feishu' || config.sessionBindings.some(b => b.sessionId === current.id)) return null;
+    current = byId.get(current.delegatedFromSessionId);
+    input = null;
+  }
+  return null;
+}

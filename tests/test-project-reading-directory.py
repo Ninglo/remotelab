@@ -35,6 +35,11 @@ print(json.dumps({'ok':True,'data':data}))
  spec=importlib.util.spec_from_file_location('directory',ROOT/'scripts/project-reading-directory.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
  missing_switch={k:v for k,v in config.items() if k!='directoryEnabled'}
  assert module.coverage(missing_switch,{'pairs':[]},{})[0]['a'][2]=='仅认知','missing directory switch must not imply enabled'
+ unbound={**config,'groups':[{**config['groups'][0],'projectIds':[]}],
+  'directoryGroups':[{'id':'topics','sourceRouteId':'bot-2','chatIds':['a']}]}
+ assert module.coverage(unbound,{'pairs':[]},{})[0]['a'][2]=='仅目录'
+ wrong_route={**unbound,'directoryGroups':[{'id':'topics','sourceRouteId':'other','chatIds':['a']}]}
+ assert module.coverage(wrong_route,{'pairs':[]},{})[0]['a'][2]=='无'
  for name,value in [('runtime',config),('boards',{'pairs':[{'id':'p','groups':[{'chatId':'a'}]}]}),('native',{'a':'native-a'})]: (p/(name+'.json')).write_text(json.dumps(value))
  env={**os.environ,'PATH':str(p)+os.pathsep+os.environ['PATH'],'FAKE_STATE':str(state),'FAKE_HEADERS':json.dumps(headers)}
  command=['python',str(ROOT/'scripts/project-reading-directory.py'),'--runtime',str(p/'runtime.json'),'--boards',str(p/'boards.json'),'--native-groups',str(p/'native.json'),'--doc','fixture','--profile','bot-2','--output',str(p/'out'),'--apply']

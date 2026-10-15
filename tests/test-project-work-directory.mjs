@@ -75,6 +75,29 @@ try {
   assert.equal(updatedOld.goal, 'Original task still open');
   assert(!prompt(oldWithProgress, { sessionId: 'old' }).includes('</private>'), 'record text cannot close the hidden context wrapper');
 
+  // Directory-only registration must not fabricate project membership or inherit briefs.
+  const looseConfig = { ...config, groups: [...config.groups,
+    { sourceRouteId: 'bot', chatId: 'loose-a', projectIds: [] },
+    { sourceRouteId: 'bot', chatId: 'loose-b', projectIds: [] }],
+    directoryGroups: [{ id: 'loose', name: 'Directory only', sourceRouteId: 'bot', chatIds: ['loose-a', 'loose-b'] }] };
+  const looseSessions = [...sessions, session('loose-root', 'loose-a'), session('loose-peer', 'loose-b'),
+    session('loose-child', null, { delegatedFromSessionId: 'loose-root' }),
+    session('foreign-route', null, { conversation: { ...convo('loose-a'), sourceRouteId: 'other' } })];
+  const looseOptions = { ...options, config: looseConfig, sessions: looseSessions };
+  const fresh = session('fresh', 'loose-a');
+  const looseDirectory = await read(fresh, null, looseOptions);
+  assert.deepEqual(looseDirectory.projects, []);
+  assert.deepEqual(new Set(looseDirectory.entries.map(e => e.sessionId)), new Set(['loose-root', 'loose-peer', 'loose-child']));
+  assert(looseDirectory.entries.every(e => e.projectIds.length === 0));
+  assert.match(prompt(looseDirectory, { sessionId: fresh.id }), /不代表已确认项目归属/);
+  assert((await read(looseSessions.find(s => s.id === 'loose-child'), null, looseOptions)).enabled);
+  assert.equal((await read(fresh, { connector: 'feishu', sourceRouteId: 'other', chatId: 'loose-a' }, looseOptions)).enabled, false);
+  assert.equal((await read(fresh, null, { ...looseOptions, config: { ...looseConfig, directoryEnabled: false } })).enabled, false);
+  const { validateProjectMemoryRuntime, buildProjectMemoryPromptBlock } = await import('../chat/project-memory-runtime.mjs');
+  validateProjectMemoryRuntime(looseConfig);
+  assert.throws(() => validateProjectMemoryRuntime({ ...looseConfig, directoryGroups: [...looseConfig.directoryGroups, { ...looseConfig.directoryGroups[0], id: 'duplicate' }] }), /Invalid directory group member/);
+  assert.throws(() => validateProjectMemoryRuntime({ ...looseConfig, directoryGroups: [{ ...looseConfig.directoryGroups[0], chatIds: ['not-registered'] }] }), /Invalid directory group member/);
+
   // Exercise the actual fresh/resumed prompt assembler and parent inheritance.
   await writeFile(join(MEMORY_DIR, 'project-runtime.json'), JSON.stringify(config));
   await writeFile(config.projects[0].briefPath, 'CURRENT_PROJECT_BRIEF_CONTENT');
@@ -86,6 +109,14 @@ try {
   assert.match(built, /Hidden project work directory/);
   assert.match(built, /Investigate retry/);
   assert.doesNotMatch(built, /"sessionId":"unrelated"/);
+  await writeFile(join(MEMORY_DIR, 'project-runtime.json'), JSON.stringify(looseConfig));
+  await writeFile(join(CONFIG_DIR, 'chat-sessions.json'), JSON.stringify([...looseSessions, fresh]));
+  const freshBuilt = await buildPrompt(fresh.id, fresh, 'check', '', 'codex', { userMessageCount: 0 }, { skipSessionContinuation: true, workboardEnabled: false });
+  assert.match(freshBuilt, /loose-peer/);
+  assert.doesNotMatch(freshBuilt, /CURRENT_PROJECT_BRIEF_CONTENT/);
+  assert.doesNotMatch(freshBuilt, /"sessionId":"unrelated"/);
+  await writeFile(join(MEMORY_DIR, 'project-runtime.json'), JSON.stringify(config));
+  await writeFile(join(CONFIG_DIR, 'chat-sessions.json'), JSON.stringify(sessions));
   const { handleWorkAwarenessRoutes } = await import('../chat/router-work-awareness.mjs');
   let response;
   await handleWorkAwarenessRoutes({ req: { method: 'GET' }, res: {}, pathname: '/api/work-awareness/directory',

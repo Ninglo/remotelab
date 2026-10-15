@@ -272,3 +272,5 @@ in place; preserve manual edits, comments and anchors. Do not create a second
 schedule or overwrite whole reviewed documents. API readback, native event tests,
 actual client clicks, human comment response and the next naturally scheduled
 review are separate acceptance evidence.
+
+实例目录维护按 `project-runtime.json` 的项目绑定及显式 `directoryGroups` 计算话题目录注入覆盖。目录分组只补未绑定项目群的检索线索，不创建项目认知。汇总分别呈现目录注入和认知正文；实时看板列中的“待群关联”仍仅指增强显示映射，不能当成注入缺失。

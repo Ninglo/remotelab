@@ -20,7 +20,8 @@ def coverage(config, boards, native_groups):
  for g in config['groups']:
   ids=g.get('projectIds',[]);cid=g['chatId'];brief=any(p in briefs for p in ids)
   enabled=config.get('enabled',False) and config.get('contextEnabled',False)
-  directory=bool(ids) and enabled and config.get('directoryEnabled') is True
+  scoped=any(d.get('sourceRouteId')==g.get('sourceRouteId') and cid in d.get('chatIds',[]) for d in config.get('directoryGroups',[]))
+  directory=(bool(ids) or scoped) and enabled and config.get('directoryEnabled') is True
   injected=brief and enabled
   result[cid]=['已配置' if cid in ready else '待群关联' if cid in configured else '未配置',
    '有' if brief else '缺正文' if ids else '未绑定',
@@ -125,7 +126,7 @@ def main():
   if summary_marker is not None:
    scoped=set(groups);configured&=scoped;ready&=scoped
    brief_count=sum(values[cid][1]=='有' for cid in scoped);directory_count=sum('目录' in values[cid][2] for cid in scoped)
-   set_text(summary_marker.get('id'),f'汇总：看板已登记{len(configured)}群，其中{len(ready)}群已核原生关联、{len(configured-ready)}群待关联；项目认知覆盖{brief_count}群，工作目录注入{directory_count}群。每天04:00核对，有变化原位更新。')
+   set_text(summary_marker.get('id'),f'汇总：工作目录注入{directory_count}群，项目认知正文覆盖{brief_count}群；实时看板列仅记录增强显示关联，待群关联不代表目录未注入。每天04:00核对，有变化原位更新。')
  if marker is not None:
   bid=marker.get('id');old=elements(byid[bid]);text=''.join(e.get('text_run',{}).get('content','') for e in old)
   if text!=summary:
