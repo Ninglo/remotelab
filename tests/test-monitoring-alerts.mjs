@@ -514,7 +514,7 @@ test('resource cards keep frozen evidence images and use problem-specific orange
 
 test('legacy migration separates the original send time from later recorded data', async () => {
   const f = fixture(), first = snapshot([{ ...disk, id: '/data' }]);
-  await dispatchMonitoringAlerts({ ...f.options, snapshot: first });
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: first, now: Date.parse(first.generatedAt) });
   const saved = f.getState(), incident = Object.values(saved.incidents)[0];
   delete incident.historyOriginVerified; delete incident.triggerEvidenceVersion; delete incident.triggeredAt;
   delete incident.history; delete incident.event.triggeredAt;
@@ -523,7 +523,7 @@ test('legacy migration separates the original send time from later recorded data
   await f.options.save('', saved);
   await dispatchMonitoringAlerts({ ...f.options, snapshot: { ...first, generatedAt: '2026-10-03T08:00:00Z' } });
   const current = Object.values(f.getState().incidents)[0].event;
-  assert.equal(current.triggeredAt, first.generatedAt);
+  assert.equal(Date.parse(current.triggeredAt), Date.parse(first.generatedAt));
   assert.equal(current.triggerEvidenceAt, '2026-10-03T07:00:00Z');
   assert.match(current.triggerReason, /原始触发数值未保存.*8.00 GiB/);
 });
