@@ -128,7 +128,8 @@ in the link. Other sections stay collapsed until the reader opens them. `scope` 
 window and limits. Each item carries `id`, `title`, `state`, `body`, `next`, and
 `sources: [{label, url, quote}]`; links use the normal safe-URL policy. `changes`
 is the verified modification/outcome narrative and `related_ids` links cases
-and feedback themes in the same review. A missing original-feedback
+and feedback themes in the same review. Cross-links show their titles rather
+than internal record identifiers. A missing original-feedback
 `classification.change_summary` is shown as unverified, never inferred from a
 reviewed state or an improvement suggestion.
 

@@ -23,8 +23,8 @@ await json(reviewFile, { created_at: '2026-10-10T12:00:00Z', subprojects: [
   { subproject_id: 'reports', name: 'Reports', suggested_directions: ['Show today’s decision.'], review: {
     summary: 'Follow up the original work.', as_of: '2026-10-15T04:00:00+08:00', scope: 'Approved sample only.',
     attention: [{ id: 'a1', title: 'Verify delivery', next: 'Check the original task.', action: { session_id: 'a'.repeat(32), session_name: 'Original task', text: 'Please verify and continue the original scoped task; do not restart paused work.' }, sources: [{ label: 'source', url: 'https://example.test/task' }] }],
-    feedback: [{ id: 'f1', title: 'Feedback topic', changes: 'The original change is verified.', body: '<img src=x onerror=alert(1)>', sources: [] }],
-    cases: [{ id: 'c1', title: 'Case without feedback', state: 'Unknown', body: 'Silence does not prove quality.', sources: [] }],
+    feedback: [{ id: 'F01', title: 'Feedback topic', related_ids: ['C01'], changes: 'The original change is verified.', body: '<img src=x onerror=alert(1)>', sources: [] }],
+    cases: [{ id: 'C01', title: 'Case without feedback', related_ids: ['F01'], state: 'Unknown', body: 'Silence does not prove quality.', sources: [] }],
     knowledge: { summary: 'Reuse established methods.', url: 'https://example.test/knowledge' }
   } },
   { subproject_id: 'recording', name: 'Recording', suggested_directions: [] }],
@@ -68,19 +68,25 @@ try {
   await page.getByRole('heading', { name: 'Collaboration', exact: true }).waitFor();
   assert.equal(await page.locator('[data-feedback-id]').count(), 1);
   await page.getByRole('button', { name: 'Work cases 1', exact: true }).click();
-  await page.locator('[data-review-item="c1"]').waitFor({ state: 'visible' });
+  await page.locator('[data-review-item="C01"]').waitFor({ state: 'visible' });
   assert.equal(new URL(page.url()).searchParams.get('feedbackView'), 'cases');
   await page.getByRole('button', { name: 'Back to subprojects', exact: true }).click();
   await page.getByRole('button', { name: 'Reports', exact: true }).click();
   await page.locator('.feedback-review').waitFor();
   assert(await page.getByText('Verify delivery', { exact: true }).isVisible());
-  assert.equal(await page.locator('[data-review-item="c1"]').isVisible(), false, 'cases collapsed by default');
+  assert.equal(await page.locator('[data-review-item="C01"]').isVisible(), false, 'cases collapsed by default');
   await page.locator('[data-review-section="cases"] > summary').click();
-  await page.locator('[data-review-item="c1"] > summary').click();
+  await page.locator('[data-review-item="C01"] > summary').click();
   assert(await page.getByText('Silence does not prove quality.', { exact: true }).isVisible());
+  const relatedFeedback = page.locator('[data-review-item="C01"] [data-related-review-id="F01"]');
+  assert.equal(await relatedFeedback.innerText(), 'Feedback topic');
+  await relatedFeedback.click();
+  assert(await page.locator('[data-review-item="F01"]').evaluate(n => n.open));
+  await page.locator('[data-review-item="F01"] > summary').click();
+  await page.locator('[data-review-section="feedback"] > summary').click();
   await page.locator('[data-review-section="cases"] > summary').click();
   await page.locator('[data-review-section="feedback"] > summary').click();
-  await page.locator('[data-review-item="f1"] > summary').click();
+  await page.locator('[data-review-item="F01"] > summary').click();
   assert.equal(await page.locator('.feedback-review img').count(), 0);
   assert(await page.getByText('The original change is verified.', { exact: true }).isVisible());
   await page.locator('[data-review-section="feedback"] > summary').click();

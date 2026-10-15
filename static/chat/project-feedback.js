@@ -232,11 +232,15 @@
       if (item.next) card.append(node('strong', t('nextStep')), node('p', item.next));
       if (item.related_ids?.length) {
         const links = node('div', '', 'feedback-extras'); links.appendChild(node('span', t('relatedItems')));
-        for (const id of item.related_ids) links.appendChild(button(id, () => {
-          focusSection(id.startsWith('C') ? 'cases' : 'feedback');
+        for (const id of item.related_ids) {
+          const related = [...review.cases, ...review.feedback].find(r => r.id === id);
+          const link = button(related?.title || id, () => {
+          focusSection(review.cases.some(r => r.id === id) ? 'cases' : 'feedback');
           const target = [...box.querySelectorAll('[data-review-item]')].find(n => n.dataset.reviewItem === id);
           if (target) { target.open = true; target.scrollIntoView({ block: 'start' }); }
-        }));
+        });
+          link.dataset.relatedReviewId = id; links.appendChild(link);
+        }
         card.appendChild(links);
       }
       for (const source of item.sources) {
