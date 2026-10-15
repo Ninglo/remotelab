@@ -1,5 +1,5 @@
 """Exercise real sync entry against a fake provider, including a reordered table."""
-import json,os,pathlib,subprocess,tempfile
+import importlib.util,json,os,pathlib,subprocess,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory() as temp:
  p=pathlib.Path(temp);state=p/'state.json'
@@ -31,7 +31,10 @@ print(json.dumps({'ok':True,'data':data}))
 '''
  (p/'lark-cli').write_text(fake);(p/'lark-cli').chmod(0o700)
  brief=p/'brief.md';brief.write_text('Real brief')
- config={'enabled':True,'contextEnabled':True,'projects':[{'id':'p','name':'P','briefPath':str(brief),'briefUrl':'https://example.com/doc'}],'groups':[{'chatId':'a','chatName':'A','sourceRouteId':'bot-2','projectIds':['p'],'readingLevel':'focused'}]}
+ config={'enabled':True,'contextEnabled':True,'directoryEnabled':True,'projects':[{'id':'p','name':'P','briefPath':str(brief),'briefUrl':'https://example.com/doc'}],'groups':[{'chatId':'a','chatName':'A','sourceRouteId':'bot-2','projectIds':['p'],'readingLevel':'focused'}]}
+ spec=importlib.util.spec_from_file_location('directory',ROOT/'scripts/project-reading-directory.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ missing_switch={k:v for k,v in config.items() if k!='directoryEnabled'}
+ assert module.coverage(missing_switch,{'pairs':[]},{})[0]['a'][2]=='仅认知','missing directory switch must not imply enabled'
  for name,value in [('runtime',config),('boards',{'pairs':[{'id':'p','groups':[{'chatId':'a'}]}]}),('native',{'a':'native-a'})]: (p/(name+'.json')).write_text(json.dumps(value))
  env={**os.environ,'PATH':str(p)+os.pathsep+os.environ['PATH'],'FAKE_STATE':str(state),'FAKE_HEADERS':json.dumps(headers)}
  command=['python',str(ROOT/'scripts/project-reading-directory.py'),'--runtime',str(p/'runtime.json'),'--boards',str(p/'boards.json'),'--native-groups',str(p/'native.json'),'--doc','fixture','--profile','bot-2','--output',str(p/'out'),'--apply']

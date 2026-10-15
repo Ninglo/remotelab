@@ -20,7 +20,7 @@ def coverage(config, boards, native_groups):
  for g in config['groups']:
   ids=g.get('projectIds',[]);cid=g['chatId'];brief=any(p in briefs for p in ids)
   enabled=config.get('enabled',False) and config.get('contextEnabled',False)
-  directory=bool(ids) and enabled and config.get('directoryEnabled',True)
+  directory=bool(ids) and enabled and config.get('directoryEnabled') is True
   injected=brief and enabled
   result[cid]=['已配置' if cid in ready else '待群关联' if cid in configured else '未配置',
    '有' if brief else '缺正文' if ids else '未绑定',

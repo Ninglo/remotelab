@@ -33,6 +33,7 @@ Columns are located by their headers, not by the last column. The notes keep the
 prefix; the synchronizer never re-adds a per-row hierarchy paragraph. Existing four-column directories
 remain supported without coverage arguments. Unmapped native groups are pending, not delivered boards;
 local readable briefs and runtime switches describe configuration, not a fresh client or real-topic test.
+Directory injection requires `directoryEnabled: true` in addition to enabled project context; an absent switch is off.
 Use the existing daily schedule. It should separately inspect current participation/topic exceptions and
 the actual board transport; document maintenance does not enable groups, resume paused work, or publish cards.
 
