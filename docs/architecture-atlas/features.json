@@ -721,9 +721,9 @@
         {
           "id": "memory",
           "name": "项目、个人与公司资料接续",
-          "purpose": "让新工作沿入口查已有项目认识、个人偏好和背景资料，必要时维护原来源。已启用的实例还能从普通互动归纳人员习惯，从执行证据维护行动手册。",
+          "purpose": "让新工作沿入口查已有项目认识、个人偏好和背景资料，必要时维护原来源。已启用的实例还能从普通互动归纳人员习惯，从执行证据维护行动手册。 项目可有父子层级，上层可不绑定群；已有群卡展示项目归属与读取层级。",
           "entry": "同一说明项目的记忆章；已配置的启动和项目指针；直接告诉 Agent 应保留什么。检查和修订入口为 memory，操作说明见 docs/memory-learning.md。 对话试点开关：网页设置 → 个人记忆。",
-          "condition": "路径指针不等于正文已读取。个人偏好、共同规则、项目事实和候选记录有不同维护位置与生效范围。新学习默认关闭，按实例明确列出的 Person 试用；推断、本人偏好、已验证方法和撤销分别标记，实际效果继续核对。 个人对话试点覆盖本人网页及飞书输入，群主线仅对已启用的真实发言人复用记忆评审。",
+          "condition": "路径指针不等于正文已读取。个人偏好、共同规则、项目事实和候选记录有不同维护位置与生效范围。新学习默认关闭，按实例明确列出的 Person 试用；推断、本人偏好、已验证方法和撤销分别标记，实际效果继续核对。 个人对话试点覆盖本人网页及飞书输入，群主线仅对已启用的真实发言人复用记忆评审。 经实例明确启用后，新发现适用群先一般了解，重点观测才作为分析来源；暂停与排除保留。",
           "example": "接着这个项目做，先核对现有主账和最新决定。",
           "sources": [
             "docs/memory-architecture/README.md",
@@ -737,7 +737,13 @@
             "static/chat/personal-memory-settings.js",
             "lib/memory-learning-command.mjs",
             "chat/turn-context-hook.mjs",
-            "chat/session-manager.mjs"
+            "chat/session-manager.mjs",
+            "docs/feishu-project-links.md",
+            "lib/project-reading.mjs",
+            "connectors/feishu/group-configuration.mjs",
+            "connectors/feishu/group-configuration-card.mjs",
+            "scripts/project-reading-sync.mjs",
+            "scripts/project-reading-directory.py"
           ],
           "commands": [
             "memory"
@@ -897,14 +903,16 @@
           "name": "独立告警、日报来源与获授权的失败恢复",
           "purpose": "在明确配置后观察重要问题，保留告警和恢复记录，并把日常情况归入既有日报。",
           "entry": "由维护 Agent 配置现有监控 observer 与日报流程。",
-          "condition": "页面可打开不代表告警或自动恢复已启用。恢复需额外授权与配置；发送成功也不等于故障已修复。",
+          "condition": "页面可打开不代表告警或自动恢复已启用。恢复需额外授权与配置；发送成功也不等于故障已修复。 群发现与分层采集复用原巡检轮次，一般了解限量读取、不进入项目分析或Todo；日报披露实际覆盖，配置不等于已完成读取。",
           "example": "检查现有监控是否启用告警与恢复，说明范围和真实记录。",
           "sources": [
             "docs/monitoring.md",
             "scripts/monitoring-alerts.mjs",
             "scripts/monitoring-report.mjs",
             "scripts/project-inspection-plan.mjs",
-            "scripts/check-todo-coverage.mjs"
+            "scripts/check-todo-coverage.mjs",
+            "docs/feishu-project-links.md",
+            "scripts/project-overview-collect.mjs"
           ],
           "commands": []
         },

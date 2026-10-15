@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { MEMORY_DIR } from '../lib/config.mjs';
 import { loadSessionsMeta } from './session-meta-store.mjs';
 import { projectDirectoryScope } from './project-work-scope.mjs';
+import { READING_LEVELS } from '../lib/project-reading.mjs';
 
 export const PROJECT_MEMORY_RUNTIME_FILE = join(MEMORY_DIR, 'project-runtime.json');
 const idPattern = /^[a-z0-9_-]{1,80}$/;
@@ -27,8 +28,20 @@ export function validateProjectMemoryRuntime(config) {
     projects.add(project.id);
   }
   const validateRefs = ids => Array.isArray(ids) && ids.length <= 16 && ids.every(id => projects.has(id));
+  for (const project of config.projects) {
+    const seen = new Set([project.id]); let parent = project.parentId;
+    while (parent) {
+      if (!projects.has(parent) || seen.has(parent)) throw new Error('Invalid project parent hierarchy.');
+      seen.add(parent); parent = config.projects.find(p => p.id === parent).parentId;
+    }
+  }
+  if (config.readingPolicy && (config.readingPolicy.defaultLevel !== 'overview'
+      || !config.readingPolicy.sourceRouteId || !config.readingPolicy.tenantKey)) throw new Error('Invalid reading policy.');
+  if (config.readingPolicy?.excludeNamePrefixes !== undefined && (!Array.isArray(config.readingPolicy.excludeNamePrefixes)
+      || config.readingPolicy.excludeNamePrefixes.some(p => typeof p !== 'string' || !p))) throw new Error('Invalid reading exclusions.');
   const routes = new Set();
   for (const group of config.groups) {
+    if (group.readingLevel !== undefined && !READING_LEVELS.includes(group.readingLevel)) throw new Error('Invalid group reading level.');
     if (typeof group.chatId !== 'string' || !group.chatId || !group.sourceRouteId || !validateRefs(group.projectIds)) throw new Error('Invalid group association.');
     const key = group.sourceRouteId + ':' + group.chatId;
     if (routes.has(key)) throw new Error('Duplicate group association.');

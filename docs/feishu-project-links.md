@@ -1,5 +1,33 @@
 # Feishu project-linked context pilot
 
+## Group reading levels and parent projects
+
+`project-runtime.json` is the common source for group cards and the existing inspection planner.
+Optional `projects[].parentId` expresses the existing project-index hierarchy (validated for missing parents and cycles).
+It does not require a group on the parent project. A new group never implies a new project or a fabricated parent.
+`groups[].readingLevel` is `focused`, `overview`, `paused`, or `excluded`; legacy registered groups retain focused behavior.
+Paused project status takes precedence. Cards show the same project trail and level without changing response controls.
+
+With an explicitly enabled `readingPolicy` (`autoDiscover`, `sourceRouteId`, `tenantKey`, `defaultLevel: overview`),
+run `scripts/project-reading-sync.mjs --runtime <file> --profile <bot> --route <route> --tenant <tenant> --output <inventory>`
+before the original scheduled inspection. Complete membership pagination precedes any atomic registry update.
+New same-tenant groups default to overview; external/unknown-tenant/dissolved groups are excluded. Existing exclusions and
+pauses survive discovery. Missing groups are not silently deleted; failures remain visible. A stale `.reading-lock` after
+a killed process must be investigated before retrying; it is never treated as a successful inventory.
+Optional `readingPolicy.excludeNamePrefixes` excludes explicitly named private/retired uses on discovery.
+
+The inspection plan retains `sources` for focused analysis and Todo only. `overviewSources` is separate, collected with
+`scripts/project-overview-collect.mjs --plan <plan> --profile <bot> --output <overview-dir>`: one page of up to 50 new roots
+per group over 24 hours, no thread/resource/reaction expansion. Its manifest is explicitly `analysisEligible: false`.
+Overflow is `sampled`, errors are `failed`; neither means a full history was read. Do not advance focused cursors or feed
+overview content to project conclusions, report analysis, or Todo decisions. Reports show per-group methods and actual
+coverage from both receipts, with paused/excluded reasons; new or failed coverage belongs in a short summary.
+Discovery reuses the existing schedule, not a new periodic consumer. Registering a level is not proof of the next natural run.
+`scripts/project-reading-directory.py --runtime <file> --doc <original-token> --profile <bot> --route <route> --output <evidence> --apply`
+projects these same fields into existing directory table rows. It retains block IDs, original elements and comment anchors,
+checks revisions before writing, verifies unchanged text and reports missing rows rather than inventing project ownership.
+Without `--apply` it only prepares the changes. Unchanged configuration produces no document writes.
+
 ## Native project entry
 
 Operator prompt: “Enable `/project` for this existing project link. Register the

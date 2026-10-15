@@ -45,6 +45,7 @@ export function buildGroupConfigurationCard(record, view) {
   elements.push(md(`**主 Session**：${selection.model === 'auto' ? '自动选择' : selection.model || '待确认'}${selection.effort ? ` · ${selection.effort}` : ''}`
     + (url ? `\n[打开主会话](${url})` : '')));
   const project = view.project;
+  if (view.reading) elements.push(md(`**项目归属**：${view.reading.projectPath}\n**读取层级**：${view.reading.label}\n${view.reading.method}`));
   if (project?.briefUrl) elements.push({ tag: 'hr' }, md(`[**${project.name || project.id}｜项目共同认知·群内对话默认注入**](${project.briefUrl})`
     + (project.briefUpdated ? `\n更新时间：${project.briefUpdated}` : '')));
   if (project?.skills?.length) elements.push(md('**常用技能**\n'

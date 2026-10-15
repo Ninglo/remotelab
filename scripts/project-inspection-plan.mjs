@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readingLevel, groupReadingView } from '../lib/project-reading.mjs';
 
 async function readJson(path, fallback) {
   try { return JSON.parse(await readFile(path, 'utf8')); }
@@ -24,7 +25,15 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
   const morning = clock.hour === '04';
   if (!['04', '18'].includes(clock.hour)) throw new Error('Use the original 04:00 or 18:00 scheduled time');
   const paused = new Set((runtime.projects || []).filter(x => x.status === 'paused').map(x => x.id));
-  const groups = runtime.groups.filter(g => !(g.projectIds?.length && g.projectIds.every(id => paused.has(id))));
+  const groups = runtime.groups.filter(g => readingLevel(runtime, g) === 'focused');
+  const overviewSources = runtime.groups.filter(g => readingLevel(runtime, g) === 'overview').map(g => ({
+    chatId: g.chatId, sourceRouteId: g.sourceRouteId, chatName: g.chatName, projectIds: g.projectIds,
+    readingLevel: 'overview', analysisEligible: false, method: 'bounded_new_root_messages_only',
+    windowStart: new Date(endMs - 24 * 3600_000).toISOString(), windowEnd: new Date(endMs).toISOString(),
+    pageSize: 50, maxPages: 1, expandThreads: false, readAttachments: false,
+  }));
+  const coverage = runtime.groups.map(g => ({ chatId: g.chatId, chatName: g.chatName,
+    ...groupReadingView(runtime, g.chatId, g.sourceRouteId) }));
   const allowed = new Set(groups.map(g => g.chatId));
   const targets = (registry.targets || []).filter(t => t.enabled && allowed.has(t.chatId)
     && !(t.projectId && paused.has(t.projectId)));
@@ -56,7 +65,7 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
     localDate: `${clock.year}-${clock.month}-${clock.day}`, phase: morning ? 'morning' : 'afternoon',
     sourceCollection: 'once_per_chat', tasklistGuid: registry.tasklistGuid,
     tasklistRead: morning ? 'once_for_all_enabled_targets_then_recheck_each_write_under_original_lock' : 'reuse_latest_completed_inspection',
-    sources, todoTargets: morning ? targets.filter(t => sources.some(s => s.todoTarget === t.key)) : [],
+    sources, overviewSources, coverage, todoTargets: morning ? targets.filter(t => sources.some(s => s.todoTarget === t.key)) : [],
     rules: ['Do not advance cursors on failed or incomplete reads', 'A cached bundle is evidence only; it does not authorize business execution',
       'Complete Todo assessment before publishing; keep source-specific failures and original delivery routes'] };
 }

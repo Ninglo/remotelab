@@ -2,6 +2,8 @@ import { personalRoutingCardAction, personalRoutingCardView } from './personal-r
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { groupProject, projectTopicRows } from './project-group-cards.mjs';
+import { loadProjectMemoryRuntime } from '../../chat/project-memory-runtime.mjs';
+import { groupReadingView } from '../../lib/project-reading.mjs';
 import { effectiveFeishuGroup } from './group-settings.mjs';
 import { join } from 'node:path';
 import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
@@ -56,8 +58,10 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     const selection = completeRuntimeProfile(selected, catalog);
     const systemPrompt = runtime.config.groups?.[chatId]?.systemPrompt || '';
     const group = effectiveFeishuGroup(runtime.config, chatId);
-    let project = null;
+    let project = null, reading = null;
     try {
+      const { config } = await loadProjectMemoryRuntime();
+      if (config?.readingPolicy) reading = groupReadingView(config, chatId, runtime.config.sourceRouteId);
       project = await groupProject(runtime, chatId);
       if (project?.briefPath) {
         const body = await readFile(project.briefPath, 'utf8');
@@ -66,7 +70,7 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     } catch { project = { error: '登记的项目说明暂时无法读取，请核对原来源。' }; }
     const topics = projectTopicRows(runtime.projectCardSessions || new Map(), chatId, runtime.config.sourceRouteId);
     const boardPage = Math.min(runtime.groupBoardPages?.get(chatId) || 0, Math.max(0, Math.ceil(topics.length / 10) - 1));
-    return { routingTrial: await personalRoutingCardView({ connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId, target: record.source }), project, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
+    return { routingTrial: await personalRoutingCardView({ connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId, target: record.source }), project, reading, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
       participationControls: group.participationMode === 'ambient' && group.participationControls === true,
       responseMode: group.responseMode, selection, catalog, reasoning: reasoningForRuntimeProfile(catalog, selection.model), systemPrompt,
       sessionAvailable: Boolean(session), effectiveSystemPrompt: session?.systemPrompt || '',
