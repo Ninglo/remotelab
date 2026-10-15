@@ -894,6 +894,22 @@ async function handle(req, res) {
         // Give the paired agent a small playable loop first. On its next poll,
         // replace that loop with the complete one while USB playback continues.
         const starterId = previewBundleId(preview.frameId, version, intervalMs, 'starter');
+        const starterDelivery = animationDelivery.get(device.id)?.recent
+          .filter(item => item.sourceFrameId === preview.frameId && item.format === 'jpeg-bundle-starter').at(-1);
+        if (version === 2 && bundleRequest[2] === starterId && starterDelivery
+          && Date.now() - starterDelivery.at > 4_000) {
+          // A slow download must not queue a four-times-larger loop ahead of
+          // the next clock/status update. Keep playing the small cached loop;
+          // a changed source frame still gets a fresh starter on the next poll.
+          if (!starterDelivery.compact) {
+            starterDelivery.compact = true;
+            console.log(JSON.stringify({ event: 'display_bundle_compact', deviceId: device.id,
+              frameId: preview.frameId, starterRoundTripMs: Date.now() - starterDelivery.at }));
+          }
+          res.writeHead(304, { 'Cache-Control': 'no-store, max-age=0', ...headers });
+          res.end();
+          return;
+        }
         const stage = version === 2 && bundleRequest[2] !== starterId ? 'starter' : 'full';
         const bundle = preparedBundleFor(device.personId, preview, version, stage);
         trackAnimationDelivery(device, bundle.body, performance.now() - renderStarted, stage === 'starter' ? 'jpeg-bundle-starter' : 'jpeg-bundle', bundle.frameCount, preview.frameId);

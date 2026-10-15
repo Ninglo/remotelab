@@ -211,6 +211,13 @@ Device download receipts include both static and animated applied frames, scoped
 to the current source frame ID. A static download is not evidence of a USB
 write or a claim that the physical screen's appearance has been inspected.
 
+Animation protocol v2 first sends a small playable loop. When the device takes
+more than four seconds to request its full loop, the sidecar keeps that device
+on the cached small loop rather than sending a larger animation ahead of new
+clock and task state. A changed source frame still sends a new small loop;
+fast links retain the full animation. This choice is per device and frame,
+requires no re-pairing, and does not increase provider or model calls.
+
 ## Waiting in the detailed studio
 
 Display metrics use the same Session status projection as the chat sidebar:

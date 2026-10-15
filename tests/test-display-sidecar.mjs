@@ -350,6 +350,28 @@ try {
   assert.equal(playback?.bundleFrameId, bundle.frameId);
   assert.equal(playback?.targetIntervalMs, 100);
   assert.equal(playback?.actualIntervalMs, 106);
+  // Model a device whose starter download/next poll takes over four seconds.
+  // It must keep its playable loop instead of blocking fresh status on a much
+  // larger full bundle, while a subsequent source change must still arrive.
+  const slowStarterResponse = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, {
+    headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: bundleAccept.replace('v=1', 'v=2') },
+  });
+  const slowStarter = await slowStarterResponse.json();
+  await new Promise(resolve => setTimeout(resolve, 4_100));
+  const keptSmall = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, {
+    headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: `${bundleAccept.replace('v=1', 'v=2')};id=${slowStarter.bundleId}` },
+  });
+  assert.equal(keptSmall.status, 304, 'slow links keep their small animation instead of downloading the full bundle');
+  const changedPreview = await fetch(previewUrl, { method: 'PUT', headers: publicHeaders,
+    body: JSON.stringify({ pngBase64: png.toString('base64'), animations: animation.map(layer => ({ ...layer, fit: 'fill' })) }),
+  });
+  const changedReceipt = await changedPreview.json();
+  assert.notEqual(changedReceipt.frameId, slowStarter.frameId);
+  const freshAfterSlow = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, {
+    headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: `${bundleAccept.replace('v=1', 'v=2')};id=${slowStarter.bundleId}` },
+  });
+  assert.equal(freshAfterSlow.status, 200, 'compact playback cannot pin the old clock or task state');
+  assert.equal((await freshAfterSlow.json()).frameId, changedReceipt.frameId);
   const stillOtherPreview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/preview-frame`, { headers: publicHeaders });
   assert.equal((await stillOtherPreview.json()).configured, false, 'GIF preview remains scoped to its Person');
   const invalidGif = await fetch(contentUrl, { method: 'PUT', headers: publicHeaders, body: JSON.stringify({ sentence: 'still here', gifBase64: 'not-a-gif' }) });
