@@ -4253,9 +4253,17 @@ export async function delegateSession(sessionId, payload = {}) {
 
   if (!runInternally) {
     await appendEvent(source.id, buildDelegationContextOperation(task, child));
-    await appendEvent(source.id, messageEvent('assistant', buildDelegationNoticeMessage(task, child, sourceText), undefined, {
+    const notice = buildDelegationNoticeMessage(task, child, sourceText);
+    await appendEvent(source.id, messageEvent('assistant', notice, undefined, {
       messageKind: 'session_delegate_notice',
     }));
+    // Use the invoking request's destination, never an old Session binding.
+    // Web-only calls and internal children must not broadcast into Feishu.
+    const invoking = payload.sourceRunId ? await requests.byRunId(payload.sourceRunId) : null;
+    const destination = invoking?.sessionId === source.id
+      ? invoking.deliveryPlan || invoking.options?.sourceDelivery : null;
+    if (destination) await enqueueSourceDelivery({ sessionId: source.id,
+      responseId: `session-delegate:${child.id}`, sourceDelivery: destination, text: notice });
     broadcastSessionInvalidation(source.id);
   }
 

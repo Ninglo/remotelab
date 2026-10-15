@@ -17,7 +17,7 @@ export function executionTrialPrompt({ trialId, decisions = [], plans = [] }) {
     '入口：node "$REMOTELAB_PROJECT_ROOT/cli.js" work plan --file <JSON绝对路径> --json。每个包 sourceRequestId 必须指向本次执行实际接受的相关人类输入；原生追加不能冒用根输入。详细字段见 work --help。',
     'propose: {action:"propose",goal,context,reason,branches:[{id,name,task,writeScope,dependsOn:[]}]}。context 保留原决定与可查来源。分支按依赖排序；修改同一文件的分支应串行或分开工作区，不能只在文字里宣称互不影响。草稿完整展示后才能询问。',
     'approve: {action:"approve",planId,expectedVersion,selected:["分支id"],approval:"本次真实人类回复怎样确定选项"}。只在读取后续人类明确选择后调用；其他话题、他人的回复、系统通知、模糊讨论和没有回答都不能批准。迟到的确认先核原任务最新进度：仅移交仍适用且未执行的分支，当前正在做的部分先完成或明确交接，不能两处重复执行。原草稿已过期时用stop撤销草稿，按剩余工作重提具体方案；原任务已经完成时说明无需再拆。默认不分流直接在原话题推进，不需要新建串行方案；只有人明确选择分支Session串行时才提带依赖的新方案。平台核对作者、后续输入与版本，Harness负责核对具体同意与实际进度。',
-    'start: 与 propose 同字段，另含 authorization（这条已接受人类指令的授权依据），一项明确交办可直接启动；多项需要 executionMode:"parallel-sessions"，authorization说明人已明确要求哪些具体任务并行。不得将Agent自拟拆分、转发引用或讨论愿望当作这种授权。不把讨论成熟等同执行授权。新 Session 是可打开的 Web 工作记录，成果仍回本话题；告知实际返回的入口。',
+    'start: 与 propose 同字段，另含 authorization（这条已接受人类指令的授权依据），一项明确交办可直接启动；多项需要 executionMode:"parallel-sessions"，authorization说明人已明确要求哪些具体任务并行。不得将Agent自拟拆分、转发引用或讨论愿望当作这种授权。不把讨论成熟等同执行授权。新 Session 是可打开的 Web 工作记录，成果仍回本话题。成功受理后平台会在原话题发送分工概括和实际入口；核对返回计划的admissionNotices投递记录，不重复发送同一创建通知，投递失败时说明缺口。',
     '分支结果、失败和等待问题自动记录，问题会送回主话题。work context 可读 executionPlans、运行/排队/等待状态及 pendingQuestion。依赖满足后推进下一分支，失败则不启动依赖方。选定分支结束后，原话题排队一次核验汇总；启动与模型结束都不等于业务完成。',
     '主话题收到补充或停止时先读最新计划，按实际影响使用 amend/stop：{action,planId,expectedVersion,selected:[...],text:"人的具体补充或停止要求"}。不得改动未选分支。stop会请求取消对应执行；需核对终态，不能把请求已发当成停止完成。已完成分支的修改另提明确后续工作，保留原成果。',
     '回答分支问题使用 answer：{action:"answer",planId,branchId,questionId,text:"人的原答案"}，必须先核当前待答问题和人的对应答案；不能替人选答案。已有背景即可解决的普通技术问题由主话题提供补充，人的授权决定不能代答。',

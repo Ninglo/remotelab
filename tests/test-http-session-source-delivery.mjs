@@ -402,6 +402,24 @@ try {
   }, 'request-scoped group-root reply');
   assert.deepEqual(currentRootReply.target, currentRootDelivery.target,
     'the durable request snapshot must retain the selected mode instead of the old Session topic');
+  const delegated = await request('POST', `/api/sessions/${boundId}/delegate`, {
+    sourceRunId: continuedFromCurrentRoot.body.run.id, name: '投递恢复调查', task: '只读检查消息恢复和去重',
+  });
+  assert.equal(delegated.status, 201);
+  const launchNotices = (await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot'))
+    .body.deliveries.filter(d => d.responseId === `session-delegate:${delegated.body.session.id}`);
+  assert.equal(launchNotices.length, 1, 'manual fallback forwards its visible receipt without a model reply');
+  assert.deepEqual(launchNotices[0].target, currentRootDelivery.target, 'use the accepted input destination, not the old bound topic');
+  assert.match(launchNotices[0].text, /只读检查消息恢复和去重/);
+  assert(launchNotices[0].text.includes(delegated.body.sessionUrl));
+  for (const extra of [{ internal: true, sourceRunId: continuedFromCurrentRoot.body.run.id },
+    { sourceRunId: browser.body.run.id }]) {
+    const hidden = await request('POST', `/api/sessions/${boundId}/delegate`, { task: 'Only local work', ...extra });
+    assert.equal(hidden.status, 201);
+    const messages = (await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot')).body.deliveries;
+    assert(!messages.some(d => d.responseId === `session-delegate:${hidden.body.session.id}`),
+      'internal and Web-origin delegation must not publish to the Session Feishu binding');
+  }
   const documentTarget = { connector: 'feishu', sourceRouteId: 'bound-bot', target: {
     conversationKind: 'document_comment', fileToken: 'bound-doc', fileType: 'docx', commentId: 'bound-comment', replyId: 'human-reply',
   } };
