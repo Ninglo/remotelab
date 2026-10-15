@@ -6,6 +6,8 @@ with tempfile.TemporaryDirectory() as temp:
  headers=['群与入口','用途','实时看板','项目认知','新话题注入','机器人状态','补充说明']
  values=['A','讨论','未配置','未绑定','无','主动参与','重点观测；人的说明保留']
  blocks=[{'block_id':'s','text':{'elements':[{'text_run':{'content':'群读取配置（统一数据）：旧'}}]}}]
+ for bid,txt in [('summary','汇总：实时看板旧状态'),('legend','“实时看板”为增强客户端看板')]:blocks.append({'block_id':bid,'text':{'elements':[{'text_run':{'content':txt}}]}})
+ for i,v in enumerate(headers):blocks.append({'block_id':'h'+str(i),'text':{'elements':[{'text_run':{'content':v,'text_element_style':{'bold':True}}}]}})
  for i,v in enumerate(values):blocks.append({'block_id':str(i),'text':{'elements':[{'text_run':{'content':v,'text_element_style':{'comment_ids':['comment']} if i==2 else {}}}]}})
  state.write_text(json.dumps({'revision':1,'blocks':blocks,'writes':0}))
  fake='''#!/usr/bin/env python3
@@ -19,7 +21,7 @@ if '+fetch' in args:
   content=txt(i)
   if i==0:content='<a href="https://applink.feishu.cn/client/chat/open?openChatId=a">A</a>'
   cells.append('<td><p id="'+str(i)+'">'+content+'</p></td>')
- content='<p id="s">'+txt('s')+'</p><table><tr>'+''.join('<th>'+v+'</th>' for v in h)+'</tr><tr>'+''.join(cells)+'</tr></table>'
+ content='<p id="s">'+txt('s')+'</p><p id="summary">'+txt('summary')+'</p><p id="legend">'+txt('legend')+'</p><table><tr>'+''.join('<th><p id="h'+str(i)+'">'+txt('h'+str(i))+'</p></th>' for i in range(7))+'</tr><tr>'+''.join(cells)+'</tr></table>'
  data={'document':{'content':content,'revision_id':s['revision']}}
 elif 'PATCH' in args:
  body=json.loads(args[args.index('--data')+1]);params=json.loads(args[args.index('--params')+1]);assert params['document_revision_id']==s['revision']
@@ -37,16 +39,21 @@ print(json.dumps({'ok':True,'data':data}))
  assert module.coverage(missing_switch,{'pairs':[]},{})[0]['a'][2]=='仅认知','missing directory switch must not imply enabled'
  unbound={**config,'groups':[{**config['groups'][0],'projectIds':[]}],
   'directoryGroups':[{'id':'topics','sourceRouteId':'bot-2','chatIds':['a']}]}
- assert module.coverage(unbound,{'pairs':[]},{})[0]['a'][2]=='仅目录'
+ assert module.coverage(unbound,{'pairs':[]},{})[0]['a']==['已接入','未绑定','仅目录']
  wrong_route={**unbound,'directoryGroups':[{'id':'topics','sourceRouteId':'other','chatIds':['a']}]}
- assert module.coverage(wrong_route,{'pairs':[]},{})[0]['a'][2]=='无'
+ assert module.coverage(wrong_route,{'pairs':[]},{})[0]['a']==['未接入','未绑定','无']
  for name,value in [('runtime',config),('boards',{'pairs':[{'id':'p','groups':[{'chatId':'a'}]}]}),('native',{'a':'native-a'})]: (p/(name+'.json')).write_text(json.dumps(value))
  env={**os.environ,'PATH':str(p)+os.pathsep+os.environ['PATH'],'FAKE_STATE':str(state),'FAKE_HEADERS':json.dumps(headers)}
- command=['python',str(ROOT/'scripts/project-reading-directory.py'),'--runtime',str(p/'runtime.json'),'--boards',str(p/'boards.json'),'--native-groups',str(p/'native.json'),'--doc','fixture','--profile','bot-2','--output',str(p/'out'),'--apply']
+ command=['python',str(ROOT/'scripts/project-reading-directory.py'),'--runtime',str(p/'runtime.json'),'--coverage','--doc','fixture','--profile','bot-2','--output',str(p/'out'),'--apply']
  subprocess.run(command,env=env,check=True,capture_output=True)
  first=json.loads(state.read_text());assert first['writes']==1
  byid={b['block_id']:b for b in first['blocks']};text=lambda i:''.join(e['text_run']['content'] for e in byid[str(i)]['text']['elements'])
- assert text(2)=='已配置' and text(3)=='有' and text(4)=='认知＋目录'
+ assert text('summary').startswith('汇总：工作目录注入1群，项目认知正文覆盖1群')
+ assert text('legend').startswith('“话题目录”为')
+ assert '待群关联' not in text('summary')
+ assert text('h2')=='话题目录'
+ assert byid['h2']['text']['elements'][0]['text_run']['text_element_style']['bold'] is True
+ assert text(2)=='已接入' and text(3)=='有' and text(4)=='认知＋目录'
  assert text(6)==values[6] and text(5)==values[5]
  assert byid['2']['text']['elements'][0]['text_run']['text_element_style']['comment_ids']==['comment']
  subprocess.run(command,env=env,check=True,capture_output=True)

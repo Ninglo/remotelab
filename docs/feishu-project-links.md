@@ -273,4 +273,4 @@ schedule or overwrite whole reviewed documents. API readback, native event tests
 actual client clicks, human comment response and the next naturally scheduled
 review are separate acceptance evidence.
 
-实例目录维护按 `project-runtime.json` 的项目绑定及显式 `directoryGroups` 计算话题目录注入覆盖。目录分组只补未绑定项目群的检索线索，不创建项目认知。汇总分别呈现目录注入和认知正文；实时看板列中的“待群关联”仍仅指增强显示映射，不能当成注入缺失。
+实例目录维护按 `project-runtime.json` 的项目绑定及显式 `directoryGroups` 计算话题目录注入覆盖。目录分组只补未绑定项目群的检索线索，不创建项目认知。汇总分别呈现目录注入和认知正文。维护脚本以 `--coverage` 独立更新“话题目录／项目认知／新话题注入”，将旧“实时看板”表头原位迁移为“话题目录”，保留块ID、样式及评论；不再把增强客户端映射状态混入注入验收。目录“已接入”指通道启用，空目录和群内尚未接入的人工讨论仍须明确披露。

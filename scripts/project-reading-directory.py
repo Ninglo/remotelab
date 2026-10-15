@@ -23,13 +23,13 @@ def coverage(config, boards, native_groups):
   scoped=any(d.get('sourceRouteId')==g.get('sourceRouteId') and cid in d.get('chatIds',[]) for d in config.get('directoryGroups',[]))
   directory=(bool(ids) or scoped) and enabled and config.get('directoryEnabled') is True
   injected=brief and enabled
-  result[cid]=['已配置' if cid in ready else '待群关联' if cid in configured else '未配置',
+  result[cid]=['已接入' if directory else '不纳入' if g.get('readingLevel')=='excluded' else '未接入',
    '有' if brief else '缺正文' if ids else '未绑定',
    '认知＋目录' if injected and directory else '仅认知' if injected else '仅目录' if directory else '无']
  return result,configured,ready,briefs
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--runtime',required=True);p.add_argument('--doc',required=True);p.add_argument('--profile',required=True);p.add_argument('--route',default='bot-2');p.add_argument('--output',required=True);p.add_argument('--apply',action='store_true');p.add_argument('--boards');p.add_argument('--native-groups');a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--runtime',required=True);p.add_argument('--doc',required=True);p.add_argument('--profile',required=True);p.add_argument('--route',default='bot-2');p.add_argument('--output',required=True);p.add_argument('--apply',action='store_true');p.add_argument('--coverage',action='store_true',help='Update directory injection coverage without client mappings');p.add_argument('--boards');p.add_argument('--native-groups');a=p.parse_args()
  assert bool(a.boards)==bool(a.native_groups),'boards and native-groups must be supplied together'
  out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
  def cli(args):
@@ -50,7 +50,7 @@ def main():
    token=d.get('page_token');assert token and token not in seen,'incomplete block pagination';seen.add(token)
   return result
  config=json.load(open(a.runtime));groups={g['chatId']:g for g in config['groups'] if g['sourceRouteId']==a.route};projects={p['id']:p for p in config['projects']}
- covered=coverage(config,json.load(open(a.boards)),json.load(open(a.native_groups))) if a.boards else None
+ covered=coverage(config,json.load(open(a.boards)) if a.boards else {},json.load(open(a.native_groups)) if a.native_groups else {}) if a.coverage or a.boards else None
  def trail(i):
   names=[];seen=set()
   while i and i not in seen:
@@ -73,12 +73,18 @@ def main():
   # or non-text element; carry comment anchors across status changes.
   assert all('text_run' in e and not e['text_run'].get('text_element_style',{}).get('link') for e in old),'linked status needs review: '+bid
   comments=[c for e in old for c in e.get('text_run',{}).get('text_element_style',{}).get('comment_ids',[])]
-  update(bid,[{'text_run':{'content':text,'text_element_style':{'comment_ids':comments} if comments else {}}}])
+  style=dict(old[0]['text_run'].get('text_element_style',{})) if old else {}
+  if comments:style['comment_ids']=comments
+  update(bid,[{'text_run':{'content':text,'text_element_style':style}}])
  headers={}
  for table in tree.iter('table'):
   title=next(table.iter('tr'),None)
   if title is not None:
    names=[''.join(c.itertext()).strip() for c in title]
+   if covered and '实时看板' in names:
+    index=names.index('实时看板');ps=list(title[index].iter('p'))
+    assert len(ps)==1 and ps[0].get('id'),'ambiguous legacy coverage header'
+    set_text(ps[0].get('id'),'话题目录');names[index]='话题目录'
    for tr in table.iter('tr'):headers[id(tr)]={name:i for i,name in enumerate(names)}
  for tr in tree.iter('tr'):
   cells=tr.findall('td')
@@ -89,7 +95,7 @@ def main():
   g=groups[ids[0]];cols=headers.get(id(tr),{});note_index=cols.get('补充说明')
   assert note_index is not None,'missing notes column'
   if covered:
-   for label,value in zip(['实时看板','项目认知','新话题注入'],covered[0][g['chatId']]):
+   for label,value in zip(['话题目录','项目认知','新话题注入'],covered[0][g['chatId']]):
     assert label in cols,'missing coverage column: '+label
     ps=list(cells[cols[label]].iter('p'));assert len(ps)==1 and ps[0].get('id'),'ambiguous status cell'
     set_text(ps[0].get('id'),value)
@@ -99,7 +105,7 @@ def main():
   # Only our appended element is replaceable; original styles, links and comment_ids remain intact.
   from copy import deepcopy
   whole=''.join(e.get('text_run',{}).get('content','') for e in old)
-  if '实时看板' in cols:
+  if '实时看板' in cols or '话题目录' in cols:
    # The compact table owns a short reading-level prefix, not a repeated
    # hierarchy paragraph. Never append to the last (injection) column.
    old_label=next((v for v in labels.values() if whole.startswith(v)),None)
@@ -122,11 +128,15 @@ def main():
  marker=next((p for p in tree.iter('p') if ''.join(p.itertext()).startswith(prefix)),None)
  if covered:
   values,configured,ready,briefs=covered
-  summary_marker=next((p for p in tree.iter('p') if ''.join(p.itertext()).startswith('汇总：') and '看板' in ''.join(p.itertext())),None)
+  summary_marker=next((p for p in tree.iter('p') if ''.join(p.itertext()).startswith('汇总：') and any(term in ''.join(p.itertext()) for term in ('看板','目录注入'))),None)
   if summary_marker is not None:
    scoped=set(groups);configured&=scoped;ready&=scoped
    brief_count=sum(values[cid][1]=='有' for cid in scoped);directory_count=sum('目录' in values[cid][2] for cid in scoped)
-   set_text(summary_marker.get('id'),f'汇总：工作目录注入{directory_count}群，项目认知正文覆盖{brief_count}群；实时看板列仅记录增强显示关联，待群关联不代表目录未注入。每天04:00核对，有变化原位更新。')
+   set_text(summary_marker.get('id'),f'汇总：工作目录注入{directory_count}群，项目认知正文覆盖{brief_count}群；按服务端实际接入范围维护，无需客户端群映射。每天04:00核对，有变化原位更新。')
+ if covered:
+  legend=next((p for p in tree.iter('p') if ''.join(p.itertext()).startswith(('“实时看板”为','“话题目录”为'))),None)
+  if legend is not None:
+   set_text(legend.get('id'),'“话题目录”为模型可读取并注入的服务端话题记录；“已接入”表示注入通道已启用，不保证已有记录，也不代表覆盖群内全部人工讨论。“项目认知”为已登记正文，“新话题注入”为两者的实际组合。普通成员展示另议。')
  if marker is not None:
   bid=marker.get('id');old=elements(byid[bid]);text=''.join(e.get('text_run',{}).get('content','') for e in old)
   if text!=summary:
@@ -135,7 +145,9 @@ def main():
  missing=[g['chatName'] for cid,g in groups.items() if cid not in matched and g.get('readingReason')!='已解散群']
  (out/'requests.json').write_text(json.dumps({'requests':updates},ensure_ascii=False,indent=2))
  receipt={'updates':len(updates),'matchedGroups':len(matched),'missingDirectoryRows':missing,'applied':False}
- if covered:receipt['boardCoverage']={'configured':len(covered[1]&set(groups)),'nativeLinked':len(covered[2]&set(groups)),'pending':[groups[c]['chatName'] for c in covered[1]-covered[2] if c in groups]}
+ if covered:
+  receipt['directoryCoverage']={'enabled':sum(covered[0][c][0]=='已接入' for c in groups),'briefs':sum(covered[0][c][1]=='有' for c in groups)}
+  if a.boards:receipt['nativeDisplayEvidence']={'configured':len(covered[1]&set(groups)),'nativeLinked':len(covered[2]&set(groups)),'pending':[groups[c]['chatName'] for c in covered[1]-covered[2] if c in groups]}
  if a.apply:
   latest=fetch();assert latest['revision_id']==doc['revision_id'],'document changed while preparing'
   if updates:
