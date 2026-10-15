@@ -267,3 +267,7 @@ server (0.45 seconds for personal content, 8 seconds for the status screen).
 The screen is sampled animation rather than full GIF frame-rate playback.
 The original GIF and sentence are stored in the private instance config file
 `display-personal-content.json` with mode `0600`; no GIF is sent to the USB agent.
+
+## 个人待办已退役
+
+副屏不再保存或展示自建个人待办；待办统一使用[飞书任务](../docs/platform-skills/feishu-tasks.md)。旧 `/v1/people/:id/todos` 接口返回 410，状态响应不再包含 `reminderSources.todo`。已有清单文件保留归档，设备配对、画面和其他提醒来源继续沿用原接口。

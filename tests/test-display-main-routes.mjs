@@ -173,6 +173,13 @@ const mainPort = await listen(main);
 const base = `http://127.0.0.1:${mainPort}`;
 
 try {
+  const before = calls.length;
+  for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
+    const retired = await requestJson(`${base}/api/display/todos`, { method, headers: { 'X-Test-Person': 'person-a' } });
+    assert.equal(retired.response.status, 410);
+    assert.equal(retired.payload.code, 'personal_todo_retired');
+  }
+  assert.equal(calls.length, before, 'retired Todo calls never reach the sidecar');
   const installer = await requestJson(`${base}/display/install.sh`);
   assert.equal(installer.response.status, 200);
   assert.equal(installer.text, '#!/bin/sh\n');
@@ -282,20 +289,6 @@ try {
   });
   assert.equal(refreshed.response.status, 200);
   assert.equal(refreshed.payload.personId, 'person-a', 'explicit sync stays bound to the signed-in Person');
-
-  const deniedTodo = await requestJson(`${base}/api/display/todos`, {
-    method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{"title":"筛选候选人"}',
-  });
-  assert.equal(deniedTodo.response.status, 403);
-  const createdTodo = await requestJson(`${base}/api/display/todos`, {
-    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{"title":"筛选候选人"}',
-  });
-  assert.equal(createdTodo.response.status, 201);
-  assert.equal(createdTodo.payload.personId, 'person-a');
-  const changedTodo = await requestJson(`${base}/api/display/todos/todo_aaaaaaaaaaaaaaaa`, {
-    method: 'PATCH', headers: { Origin: base, 'X-Test-Person': 'person-b', 'Content-Type': 'application/json' }, body: '{"status":"done"}',
-  });
-  assert.equal(changedTodo.payload.personId, 'person-b', 'the URL never chooses another Person');
 
   const deniedStudio = await requestJson(`${base}/api/display/studio-preview`, {
     method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{}',

@@ -22,7 +22,7 @@ function fixture() {
       { actor: actor('bob'), projects: [{ projectId: 'bob-project', status: 'confirmed' }] } ] } }];
   const records = new Map(), history = new Map(), submitted = []; let created = 0;
   const deps = { sessions: async () => sessions, auth: () => loadAuthDocument({ persistMigration: false }),
-    todos: async personId => [{ id: 'todo_personal', title: personId, status: 'todo', sourceSessionId: a }],
+    todos: async () => { throw Error('Retired Todo source must never be read'); },
     sources: async () => ({ config: { projects: ['remotelab', 'paused', 'bob-project', 'candidate'].map(id => ({ id, status: id === 'paused' ? 'paused' : 'active' })) }, date: '2026-10-10', url: 'https://fixture.feishu.cn/docx/report',
       index: '| remotelab | RemoteLab | 项目 | — | link |\n| paused | 暂停项目 | 项目 | — | link |\n| bob-project | Bob Project | 项目 | — | link |\n| candidate | Candidate | 项目 | — | link |', daily: '## RemoteLab\n已有成果仍待实测。\n## 暂停项目\n保持暂停。\n## Bob Project\nBob private source.' }),
     create: async (folder, tool, name, extra) => { created++; const s = { id: c, folder, tool, name, ...extra }; sessions.push(s); return s; },
@@ -33,9 +33,9 @@ function fixture() {
     submit: async (id, text, images, options) => { submitted.push({ id, text, options }); const record = { requestId: options.requestId, acceptedAt: '2026-10-10T05:00:00Z' }; records.set(id + ':' + record.requestId, record); history.set(id, [...(history.get(id) || []), { type: 'message', role: 'user', content: options.recordedUserText || text, requestId: record.requestId }]); return record; } };
   return { api: createPersonalWorkspace(deps), deps, sessions, records, history, submitted, created: () => created };
 }
-test('personal views preserve p2p identity, reuse Index and filter confirmed participation and todos', async () => {
+test('personal views preserve p2p identity, reuse Index and filter confirmed participation without retired todos', async () => {
   const f = fixture(), data = await f.api.context(actor('alice'));
-  assert.equal(data.todos[0].title, 'person_alice'); assert.deepEqual(data.projects.map(p => p.id), ['remotelab', 'paused']); assert.equal(data.projects[1].status, 'paused');
+  assert.equal(Object.hasOwn(data, 'todos'), false); assert.deepEqual(data.projects.map(p => p.id), ['remotelab', 'paused']); assert.equal(data.projects[1].status, 'paused');
   assert(!JSON.stringify(data).includes('Bob private source'));
   assert.equal((await f.api.view(actor('alice'), 'index')).session.id, a); assert.equal((await f.api.view(actor('alice'), 'index')).session.id, a); assert.equal(f.created(), 0);
   assert.equal((await f.api.view(actor('bob'), 'index')).session.id, b);
@@ -55,10 +55,10 @@ test('explicit analysis uses a normal persistent Session, carries source dates, 
   await f.api.send(actor('alice'), 'thinking', { requestId: 'request_analyze_000003', text: '只有两小时' }); assert.equal(f.created(), 1);
 });
 test('source failures remain distinguishable from an empty list; unavailable data cannot start a fake analysis', async () => {
-  const f = fixture(); f.deps.todos = async () => { throw Error('todo unavailable'); }; f.deps.sources = async () => { throw Error('report unavailable'); };
+  const f = fixture(); f.deps.sources = async () => { throw Error('report unavailable'); };
   const api = createPersonalWorkspace(f.deps), data = await api.context(actor('alice'));
-  assert.equal(data.errors.todos, 'todo unavailable'); assert.equal(data.errors.projects, 'report unavailable');
-  await assert.rejects(api.send(actor('alice'), 'thinking', { requestId: 'request_no_sources_001', text: '' }), /都不可读/); assert.equal(f.submitted.length, 0);
+  assert.equal(data.errors.projects, 'report unavailable');
+  await assert.rejects(api.send(actor('alice'), 'thinking', { requestId: 'request_no_sources_001', text: '' }), /项目来源当前不可读/); assert.equal(f.submitted.length, 0);
   await assert.rejects(api.send(actor('alice'), 'index', { requestId: 'request_injection_001', text: 'hello', personId: 'person_bob' }), /请输入/);
 });
 test('workspace connection is separate from settings, exact-account bound, revocable and incapable of settings APIs', async () => {

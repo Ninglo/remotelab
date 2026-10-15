@@ -57,7 +57,6 @@ Usage:
   remotelab recording                Enable device-bound hardware recording and submit saved audio
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
-  remotelab todo                    Manage personal To do items and numeric progress
   remotelab memory                  Inspect and maintain scoped people profiles and the Agent handbook
   remotelab work                    Register work, find related results and prepare reference suggestions
   remotelab trigger                  Manage durable session triggers
@@ -157,8 +156,8 @@ switch (command) {
     break;
 
   case 'todo': {
-    const { runTodoCommand } = await import(scriptPath('lib/todo-command.mjs'));
-    process.exitCode = await runObservedCommand(command, args, io => runTodoCommand(args, io.stdout, io.stderr));
+    console.error('RemoteLab personal To do has been removed. Use Feishu tasks through lark-cli task; see docs/platform-skills/feishu-tasks.md.');
+    process.exitCode = 1;
     break;
   }
 

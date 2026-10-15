@@ -36,7 +36,7 @@ ${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-sp
 - Feishu resources and discussion threads: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-cli.md\`; follow its pointer to the matching \`lark-cli\` skill.
 - Feishu application permission requests: \`$REMOTELAB_PROJECT_ROOT/skills/feishu-auth-request/SKILL.md\` (includes the dedicated Bot scope approval page).
 - Calendar and reminders: \`remotelab agenda --help\`.
-- Personal To do items with optional deadlines, status, and numeric progress: \`remotelab todo --help\`. A conversation can create or update them for its current Person.
+- Human To do items belong in Feishu tasks: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-tasks.md\`. Use the existing lark-cli task workflow and verify the assignee, deadline and task link; do not keep a separate RemoteLab personal list.
 - Scoped people profiles and Agent handbook: \`remotelab memory --help\`; workflow \`$REMOTELAB_PROJECT_ROOT/docs/memory-learning.md\`. Activation is instance-configured. Inspect or retrieve relevant methods during work; updates use the current Run's verified identity and original evidence.
 - Related work and background, when needed: \`remotelab work context --query <goal> --json\`, \`remotelab memory context --query <topic> --json\`; guide \`$REMOTELAB_PROJECT_ROOT/docs/session-work-awareness.md\`. Ordinary turns do not automatically search or inject their results.
 - User Gmail and Agent Mailbox: \`remotelab gmail status --json\`, \`remotelab gmail --help\`, \`remotelab mail --help\`.

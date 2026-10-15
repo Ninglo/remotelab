@@ -336,7 +336,7 @@
     },
     {
       "id": "automation",
-      "title": "自动化、日历和个人待办",
+      "title": "自动化、日历和飞书任务",
       "intro": "定时执行、日历事件和人的待办各有自己的用途。告诉 Agent 何时做什么、结果回哪里，它再选择相应入口。",
       "authorReview": "pending",
       "author": null,
@@ -422,17 +422,15 @@
         },
         {
           "id": "todos",
-          "name": "个人待办、截止时间与数字进度",
-          "purpose": "记录人的待办及当前数值、目标和单位。",
-          "entry": "在当前身份的会话中要求创建或更新待办；由 Agent 使用 todo。",
-          "condition": "需要对应 Person 和待办服务。数值达到目标不会自动把状态改成完成；待办不是自动执行计划。",
-          "example": "记一项本周读五篇论文的待办，现在完成两篇。",
+          "name": "飞书任务",
+          "purpose": "人的待办统一保存在飞书任务中。",
+          "entry": "在会话中说明要记录的待办，由 Agent 使用现有飞书任务能力。",
+          "condition": "需要对应飞书身份及资源权限；RemoteLab 自建个人待办已移除，旧记录保留为归档。任务登记不等于执行完成。",
+          "example": "帮我在飞书创建本周论文阅读任务，并把来源对话放入描述。",
           "sources": [
-            "lib/todo-command.mjs"
+            "docs/platform-skills/feishu-tasks.md"
           ],
-          "commands": [
-            "todo"
-          ]
+          "commands": []
         }
       ]
     },

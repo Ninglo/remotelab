@@ -168,3 +168,5 @@ Automation display labels and condition/result ordering are documented in [Task 
 Personal routing trial buttons on Feishu group cards reuse the per-Person reply setting; group eligibility alone does not opt members in. See [work arrangement and card scope](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards) and [personal settings](feishu-web-settings.md).
 
 The information-routing group card can show an explicitly enabled public pilot roster. Personal preference changes refresh the original cards silently; details remain collapsed. See [the trial contract](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards).
+
+- [Feishu tasks](platform-skills/feishu-tasks.md) — human Todos use the existing Feishu task workflow; the former local personal list is retired.

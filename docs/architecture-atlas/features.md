@@ -6,7 +6,7 @@
 
 本版对照主仓库的界面、主 CLI 分派和相关专题资料。命令下的每个子操作、仓库外脚本、其他实例配置和作者归属尚未全面核对。 2026-10-06增补人员学习与行动手册入口；其余功能沿用原盘点和待作者确认边界，不扩展为全部业务已验收。 2026-10-06增补 Session 开工登记、双向相关检索、人员与公司必要背景读取和人工核验参考建议。隔离状态与原生协议测试不能代替真实模型的全部行为验收。 2026-10-10补充飞书 Web 设置接入，新增条目的维护线索单独标注源码版本；其他功能仍沿用原基线。
 
-本轮源码基线：c914b197be3e84c19cb558786d9cc78c71b06c28。8 组、50 项候选功能；38 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
+本轮源码基线：c914b197be3e84c19cb558786d9cc78c71b06c28。8 组、50 项候选功能；37 个主 CLI 命令已有对应条目，0/8 组收到作者确认。
 
 ## 发起工作、接着做和找回历史
 
@@ -232,7 +232,7 @@ Agent 命令入口：`remotelab workboard`。
 
 Agent 命令入口：`remotelab api`、`remotelab session-preflight`。
 
-## 自动化、日历和个人待办
+## 自动化、日历和飞书任务
 
 定时执行、日历事件和人的待办各有自己的用途。告诉 Agent 何时做什么、结果回哪里，它再选择相应入口。
 
@@ -302,19 +302,17 @@ Agent 命令入口：`remotelab schedule`。
 
 Agent 命令入口：`remotelab agenda`。
 
-### 个人待办、截止时间与数字进度
+### 飞书任务
 
-记录人的待办及当前数值、目标和单位。
+人的待办统一保存在飞书任务中。
 
-入口：在当前身份的会话中要求创建或更新待办；由 Agent 使用 todo。
+入口：在会话中说明要记录的待办，由 Agent 使用现有飞书任务能力。
 
-使用条件：需要对应 Person 和待办服务。数值达到目标不会自动把状态改成完成；待办不是自动执行计划。
+使用条件：需要对应飞书身份及资源权限；RemoteLab 自建个人待办已移除，旧记录保留为归档。任务登记不等于执行完成。
 
-可以这样说：“记一项本周读五篇论文的待办，现在完成两篇。”
+可以这样说：“帮我在飞书创建本周论文阅读任务，并把来源对话放入描述。”
 
-维护线索：[lib/todo-command.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/todo-command.mjs)。
-
-Agent 命令入口：`remotelab todo`。
+维护线索：[docs/platform-skills/feishu-tasks.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/platform-skills/feishu-tasks.md)。
 
 ## 飞书、邮件、外部接入和研究资料
 
@@ -330,7 +328,7 @@ Agent 命令入口：`remotelab todo`。
 
 可以这样说：“在当前话题继续刚才的工作，把结果也回到这里。”
 
-维护线索：[docs/platform-skills/feishu-cli.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/platform-skills/feishu-cli.md)、[docs/feishu-bot-setup.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/feishu-bot-setup.md)、[docs/session-work-awareness.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/session-work-awareness.md)、[docs/feishu-daily-report-memory.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/feishu-daily-report-memory.md)、[chat/ambient-feishu-reply.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/ambient-feishu-reply.mjs)、[chat/group-routing.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/group-routing.mjs)、[chat/work-execution-plans.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/work-execution-plans.mjs)、[chat/work-execution-prompt.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/work-execution-prompt.mjs)、[lib/work-awareness-command.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/work-awareness-command.mjs)、[lib/group-routing-pilot.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/group-routing-pilot.mjs)、[chat/session-observations.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-observations.mjs)、[connectors/feishu/index.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/index.mjs)、[connectors/feishu/reply-attachments.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/reply-attachments.mjs)、[connectors/feishu/group-settings.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/group-settings.mjs)、[connectors/feishu/participation-state.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/participation-state.mjs)、[connectors/feishu/quick-participation.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/quick-participation.mjs)、[connectors/feishu/read-reactions.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/read-reactions.mjs)、[connectors/feishu/table-card.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/table-card.mjs)、[scripts/feishu-connector.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/scripts/feishu-connector.mjs)。
+维护线索：[docs/platform-skills/feishu-cli.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/platform-skills/feishu-cli.md)、[docs/feishu-bot-setup.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/feishu-bot-setup.md)、[docs/session-work-awareness.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/session-work-awareness.md)、[docs/feishu-daily-report-memory.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/feishu-daily-report-memory.md)、[chat/ambient-feishu-reply.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/ambient-feishu-reply.mjs)、[chat/feishu-reply-placement-feedback.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/feishu-reply-placement-feedback.mjs)、[chat/group-routing.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/group-routing.mjs)、[chat/work-execution-plans.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/work-execution-plans.mjs)、[chat/work-execution-prompt.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/work-execution-prompt.mjs)、[lib/work-awareness-command.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/work-awareness-command.mjs)、[lib/group-routing-pilot.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/group-routing-pilot.mjs)、[chat/session-observations.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-observations.mjs)、[connectors/feishu/index.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/index.mjs)、[connectors/feishu/reply-attachments.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/reply-attachments.mjs)、[connectors/feishu/group-settings.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/group-settings.mjs)、[connectors/feishu/participation-state.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/participation-state.mjs)、[connectors/feishu/quick-participation.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/quick-participation.mjs)、[connectors/feishu/read-reactions.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/read-reactions.mjs)、[connectors/feishu/table-card.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/connectors/feishu/table-card.mjs)、[scripts/feishu-connector.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/scripts/feishu-connector.mjs)。
 
 ### 飞书文档和办公操作
 
@@ -748,7 +746,6 @@ Fleet Observer：它是监控数据源和独立管理入口；RemoteLab 监控�
 | recording | 硬件讨论录音 |
 | local-bridge | 会话绑定的本地助手 |
 | agenda | 日历事件和订阅提醒 |
-| todo | 个人待办、截止时间与数字进度 |
 | memory | 项目、个人与公司资料接续 |
 | work | 开工背景、相关工作与参考建议 |
 | trigger | 一次性自动工作 |

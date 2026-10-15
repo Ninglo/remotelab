@@ -64,15 +64,11 @@ try {
     status: 'ready', accountRevision: 'fixture', checkedAt: new Date().toISOString(),
     buckets: [{ id: 'codex', primary: { remainingPercent: 67, windowDurationMins: 10080 } }],
   } } }));
-  await page.route('**/api/display/todos', route => route.fulfill({ json: { items: [
-    { id: 'todo_fixture', title: 'A task with enough text to check wrapping on a small screen', status: 'in_progress' },
-  ] } }));
   const visit = () => page.goto(`${base}/?session=${session.id}&tab=sessions`);
   const pet = page.locator('.amber-pet-image');
   const toggle = page.locator('.amber-pet-toggle');
   const menu = page.locator('#amberPetMenu');
-  const quota = page.locator('button.pet-quota-pilot-button:not(.amber-todos-toggle)');
-  const todos = page.locator('.amber-todos-toggle');
+  const quota = page.locator('button.pet-quota-pilot-button');
   const documents = page.locator('.amber-quick-link');
   const drag = async (locator, dx, dy) => {
     const box = await locator.boundingBox();
@@ -91,7 +87,7 @@ try {
   await pet.waitFor({ state: 'visible' });
   assert.equal(await menu.isVisible(), false);
   assert.equal(await quota.isVisible(), false);
-  assert.equal(await todos.isVisible(), false);
+  assert.equal(await page.locator('.amber-todos-toggle').count(), 0);
   assert.equal(await documents.isVisible(), false);
   assert.equal(await page.locator('.amber-pet').count(), 1);
   await pet.click();
@@ -120,9 +116,7 @@ try {
   await page.locator('.pet-quota-pilot-details').waitFor({ state: 'visible' });
   await page.waitForFunction(() => document.querySelector('.pet-quota-pilot-button').textContent.includes('67%'));
   assert.match(await quota.textContent(), /67%/);
-  await todos.click();
-  await page.locator('.amber-todos-panel').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('.pet-quota-pilot-details').isVisible(), false);
+  assert.equal(await page.locator('.amber-todos-toggle').count(), 0);
   await checkContained(menu);
   await page.screenshot({ path: join(output, 'desktop-expanded.png') });
   await page.keyboard.press('Escape');
@@ -148,7 +142,7 @@ try {
   await drag(pet, 5000, 5000);
   await checkContained(page.locator('.amber-pet'));
   await toggle.click();
-  await todos.click();
+  await quota.click();
   await checkContained(menu);
   await page.screenshot({ path: join(output, 'desktop-bottom-edge.png') });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -156,7 +150,7 @@ try {
   await checkContained(page.locator('.amber-pet'));
   await toggle.tap();
   await page.locator('.amber-pet-tool').nth(1).tap();
-  await todos.tap();
+  await quota.tap();
   await checkContained(menu);
   await page.screenshot({ path: join(output, 'mobile-expanded.png') });
   await page.keyboard.press('Escape');
@@ -174,7 +168,7 @@ try {
   await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 1, y: 843 }] });
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await toggle.tap();
-  await todos.tap();
+  await quota.tap();
   await checkContained(menu);
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await page.screenshot({ path: join(output, 'mobile-bottom-edge.png') });
@@ -197,7 +191,7 @@ try {
   assert.deepEqual(errors, []);
   await writeFile(join(output, 'verification.json'), JSON.stringify({ passed: true, checks: [
     'collapsed by default', 'drag and resize', 'desktop persistence', 'mobile touch', 'keyboard',
-    'quota, todo and personal document controls', 'exclusive detail panels', 'workspace edges', 'theme switching', 'no browser errors',
+    'quota and personal document controls; retired Todo absent', 'exclusive detail panels', 'workspace edges', 'theme switching', 'no browser errors',
   ] }, null, 2));
   console.log('Amber pet browser: desktop/mobile interaction, persistence, controls, boundaries and theme switching passed');
 } finally {

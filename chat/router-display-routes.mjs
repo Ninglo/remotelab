@@ -197,16 +197,7 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
     }
     const todoPath = /^\/api\/display\/todos(?:\/(todo_[a-f0-9]{16}))?$/.exec(pathname);
     if (todoPath && ['GET', 'POST', 'PATCH', 'DELETE'].includes(req.method)) {
-      if (req.method !== 'GET') {
-        const forwarded = forwardedOriginHeaders(req);
-        if (trimString(req.headers.origin) !== `${forwarded['X-Forwarded-Proto']}://${forwarded['X-Forwarded-Host']}`) {
-          writeJson(res, 403, { error: 'To do 请求来源不符。' });
-          return true;
-        }
-      }
-      const target = `/v1/people/${encodeURIComponent(personId)}/todos${todoPath[1] ? `/${todoPath[1]}` : ''}`;
-      const body = ['POST', 'PATCH'].includes(req.method) ? await readBody(req, 8 * 1024) : undefined;
-      await proxy(req, res, target, { authenticated: true, body });
+      writeJson(res, 410, { error: 'RemoteLab 个人待办已移除，请使用飞书任务。', code: 'personal_todo_retired' });
       return true;
     }
     if (pathname === '/api/display/feishu/status' && req.method === 'GET') {

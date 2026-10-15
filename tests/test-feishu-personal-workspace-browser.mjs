@@ -11,7 +11,6 @@ const browser = await chromium.launch({ executablePath, headless: true, args: ['
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }), page = await context.newPage();
 const requests = [], failures = [], a = 'a'.repeat(32), t = 'b'.repeat(32);
 const fixture = { person: { id: 'person_alice', name: 'Alice' }, errors: {}, observedAt: '2026-10-10T05:00:00Z', report: { date: '2026-10-10', url: 'https://fixture.feishu.cn/docx/report' },
-  todos: [{ id: 'todo_1111111111111111', title: '先核对当前工作', note: '输入内容中的 <script>window.bad=true</script> 只显示为文字。', status: 'todo', dueAt: '2026-10-11T02:00:00Z', progress: { current: 1, target: 3, unit: '项' }, url: 'todo:todo_1111111111111111' }],
   projects: [{ id: 'remotelab', name: 'RemoteLab', status: 'active', date: '2026-10-10', memory: { title: '项目目标与决定', excerpt: '先跑顺个人协作，保留已有对话。', updatedAt: '2026-10-13T00:00:00Z' }, works: [{ goal: '本人的相关工作', status: 'active', result: '私聊已接通', url: '/?session=' + a }], sourceTitle: '已有项目进展', excerpt: '**已完成代码**，真实体验仍待反馈。', url: 'https://fixture.feishu.cn/docx/report', association: { reason: '本人提出的已登记工作', sessionId: a } }] };
 let mode = 'complete', stateReads = 0, delayed, releaseDelay, postCount = 0;
 page.on('pageerror', error => failures.push(error.message));
@@ -25,7 +24,7 @@ await page.route('https://index.jiujianian.dev/api/feishu-web-workspace/**', asy
   else if (operation === 'context') data = fixture;
   else {
     if (mode === 'delay' && operation === 'thinking') { delayed?.(); await new Promise(r => { releaseDelay = r; }); }
-    const final = '## 当前重点\n- 优先核验 [这条待办](todo:todo_1111111111111111)，因为它解锁当前工作。\n- 依据：[原日报](https://fixture.feishu.cn/docx/report)。\n## 接着推进\n1. 检查已有成果。\n2. 反馈实测结果。';
+    const final = '## 当前重点\n- 优先核验 [原日报](https://fixture.feishu.cn/docx/report)，因为它解锁当前工作。\n- 依据：[原日报](https://fixture.feishu.cn/docx/report)。\n## 接着推进\n1. 检查已有成果。\n2. 反馈实测结果。';
     data = { session: { id: operation === 'index' ? a : t, name: operation }, cursor: 2, messages: operation === 'index' ? [{ role: 'user', content: '我们继续讨论目标。' }, { role: 'assistant', content: 'Index 的持续对话。' }] : [],
       latest: { content: final }, activity: operation === 'thinking' ? { state: mode === 'failed' ? 'failed' : (mode === 'running' && stateReads++ === 0 ? 'running' : 'completed'), final, error: mode === 'failed' ? 'fixture execution failed' : '' } : null };
   }
@@ -66,7 +65,7 @@ try {
   mode = 'delay'; const begun = new Promise(r => { delayed = r; }); await host.getByText('刷新', { exact: true }).click(); await begun;
   await page.evaluate(() => { userId = '1000000000000000002'; window.dispatchEvent(new CustomEvent('rlfe:preferences')); }); releaseDelay();
   await host.getByText('账号已切换，请连接当前本人的账号。', { exact: true }).waitFor();
-  assert.equal(await host.locator('#analysis').textContent(), ''); assert.equal(await host.locator('#todos').textContent(), ''); assert.equal(await host.locator('#indexDraft').inputValue(), '');
+  assert.equal(await host.locator('#analysis').textContent(), ''); assert.equal(await host.locator('#indexDraft').inputValue(), '');
   assert.equal(await host.getByText('连接我的账号', { exact: true }).isVisible(), true);
   await page.keyboard.press('Escape'); assert.equal(await host.isVisible(), false); assert.equal(failures.length, 0, failures.join('\n'));
   const report = { passed: true, checks: ['exactly two new entries', 'existing navigation preserved', 'Index reused', 'analysis and next actions together', 'source links', 'no automatic sends', 'request IDs', 'failure surfaced', 'stale account response discarded', 'desktop/390/320 layout', 'Escape return', 'safe content rendering'], backend: 'hermetic fixture, no live model or Feishu writes', requests: requests.length };

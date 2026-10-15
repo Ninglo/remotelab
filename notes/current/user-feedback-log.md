@@ -1,5 +1,13 @@
 # Shared User Feedback Log
 
+### 2026-10-15 — Retire the duplicate personal Todo store
+
+- Feedback: human Todos should use Feishu tasks rather than a second RemoteLab list.
+- Change: remove Amber's Todo panel, local CLI writes, display storage and personal-workspace ingestion. Authenticated legacy HTTP calls return 410 with a Feishu task pointer. The existing task Skill remains the task workflow.
+- Retention: preserve historical records; compare open items with existing Feishu tasks before creating missing counterparts, keeping owners, deadlines and source links. Runtime execution checklists and automation definitions keep their existing roles.
+- Verification: isolated CLI and HTTP checks prove old entry points cannot mutate records; display and workspace regressions cover the remaining surfaces. Commit, CI, active service loading and record migration require separate receipts.
+
+
 ### 2026-10-12 — Ordinary replies continue past unanswered choice cards
 
 - Feedback: a person replied in ordinary conversation instead of clicking a choice card, yet the Session kept showing waiting. The requested behavior covers Web and Feishu.

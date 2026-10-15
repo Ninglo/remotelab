@@ -239,18 +239,13 @@ try {
   const previewUrl = `http://127.0.0.1:${displayPort}/v1/people/${personA}/preview-frame`;
   const todoUrl = `http://127.0.0.1:${displayPort}/v1/people/${personA}/todos`;
   assert.equal((await fetch(todoUrl)).status, 401, 'To do data requires admin authentication');
-  const createdTodo = await fetch(todoUrl, { method: 'POST', headers: publicHeaders,
-    body: JSON.stringify({ title: '筛选候选人', dueAt: null, progress: { current: 37, target: 100, unit: '位' } }) });
-  assert.equal(createdTodo.status, 201);
-  const task = (await createdTodo.json()).item;
-  assert.equal(task.progress.current, 37);
-  const anotherPersonTodos = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/todos`, { headers: publicHeaders });
-  assert.deepEqual((await anotherPersonTodos.json()).items, [], 'To do items are scoped to a Person');
-  const advancedTodo = await fetch(`${todoUrl}/${task.id}`, { method: 'PATCH', headers: publicHeaders,
-    body: JSON.stringify({ progress: { current: 100 }, status: 'in_progress' }) });
-  assert.equal((await advancedTodo.json()).item.status, 'in_progress');
+  for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
+    const response = await fetch(todoUrl, { method, headers: publicHeaders });
+    assert.equal(response.status, 410, 'retired To do is never read or written');
+    assert.equal((await response.json()).code, 'personal_todo_retired');
+  }
   const todoStatus = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/status`, { headers: publicHeaders });
-  assert.equal((await todoStatus.json()).reminderSources.todo.items[0].progress.current, 100);
+  assert.equal(Object.hasOwn((await todoStatus.json()).reminderSources, 'todo'), false);
   const previewPayload = { pngBase64: png.toString('base64') };
   const deniedPreview = await fetch(previewUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewPayload) });
   assert.equal(deniedPreview.status, 401, 'only the local administrator can publish a frame');
