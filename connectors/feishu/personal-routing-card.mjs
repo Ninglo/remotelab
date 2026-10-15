@@ -27,3 +27,17 @@ export async function personalRoutingCardAction(runtime, record, openId, action,
     return { toast: { type: 'error', content: error.message } };
   }
 }
+
+// Only explicitly configured pilot cards expose the opt-in roster. This is the
+// pilot-wide list, not a claim that each listed Person belongs to this chat.
+export async function personalRoutingCardView(conversation) {
+  const scope = await routingPilotCardScope(conversation);
+  if (!scope?.personalOptIn || !scope.publicRoster) return scope;
+  const document = await loadAuthDocument({ persistMigration: false });
+  const names = document.people.filter(person => {
+    const active = person.preferences?.messageReplies?.active;
+    return active?.version === 3 && active.scope === 'person' && active.personId === person.id
+      && active.routing === 'experimental' && person.identities?.some(i => i.kind === 'feishu' && i.realm === conversation.sourceRouteId);
+  }).map(person => String(person.name || '未命名成员').replace(/[<>\[\]`*_\n\r]/g, '').slice(0, 64)).sort();
+  return { ...scope, enabledNames: names };
+}

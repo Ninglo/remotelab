@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { AUTH_FILE } from '../../lib/config.mjs';
+import { GROUP_ROUTING_PILOT_FILE } from '../../lib/group-routing-pilot.mjs';
 import WebSocket from 'ws';
 import { watch } from 'node:fs';
 import { dirname, basename } from 'node:path';
@@ -56,13 +59,22 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   const summaryFor = group => ({ chatId: group.chatId, chatName: group.chatName || '',
     tenantKey: group.tenantKey || [...sessions.values()].find(s => s.conversation?.target?.chatId === group.chatId)?.conversation.target.tenantKey || '',
     chatType: 'group', chatMode: 'group', conversationKind: 'main', sourceKind: 'project_card' });
+  async function routingGroups() {
+    let config;
+    try { config = JSON.parse(await readFile(GROUP_ROUTING_PILOT_FILE, 'utf8')); }
+    catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+    return config.version === 2 && config.enabled && config.personalOptIn && config.publicRoster
+      ? (config.groups || []).filter(g => g.sourceRouteId === runtime.config.sourceRouteId) : [];
+  }
   async function refresh(chatId) {
     const project = await groupProject(runtime, chatId);
-    if (!project || stopped) return;
-    const summary = summaryFor(project.group);
+    if (stopped) return;
+    const pilot = (await routingGroups()).find(g => g.chatId === chatId);
+    if (!project && !pilot) return;
+    const summary = summaryFor(project?.group || pilot);
     if (!summary.tenantKey) throw Error(`Missing verified tenant for ${chatId}`);
     const record = await participation().state(summary);
-    await participation().publish(record);
+    await participation().publish(record, { existingOnly: true });
   }
   async function drain() {
     if (draining || stopped) return;
@@ -91,6 +103,7 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   }
   async function reloadSources() {
     if (stopped) return;
+    for (const group of await routingGroups()) enqueue(group.chatId);
     const { config } = await loadProjectMemoryRuntime();
     for (const group of config.groups.filter(g => g.sourceRouteId === runtime.config.sourceRouteId && g.projectIds.length === 1)) {
       const project = config.projects.find(p => p.id === group.projectIds[0]);
@@ -145,6 +158,8 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
     retryMs = Math.min(5000, retryMs * 2);
   }
   observe(PROJECT_MEMORY_RUNTIME_FILE);
+  observe(AUTH_FILE);
+  observe(GROUP_ROUTING_PILOT_FILE);
   await connect();
   return { async stop() { stopped = true; clearTimeout(timer); clearTimeout(reconnect); socket?.close();
     for (const w of observers.values()) w.close();

@@ -7,12 +7,17 @@ function routingControls(record, view) {
   if (!view.routingTrial?.personalOptIn) return [];
   const button = (label, action) => ({ tag: 'button', type: 'default', text: plain(label),
     behaviors: [{ type: 'callback', value: { namespace: 'group-configuration', key: record.key, action } }] });
-  return [md('**个人分流与并行试用**\n' + view.routingTrial.scopeLabel
-    + '。每人自行开启；按钮仅修改点击者本人，上述试点群共用个人开关。'
-    + '\n明确要求并行会开独立子 Session 并返回链接；Agent 建议拆分先征询，未答继续原工作。跨话题交接须确认，主话题负责验收。'
-    + '\n子 Session 当前在 Web 打开，不自动新建飞书话题；关闭只影响后续新输入。'),
-  { tag: 'column_set', columns: [button('为我开启试用', 'routing-on'), button('为我关闭试用', 'routing-off'), button('查看我的状态', 'routing-status')]
-    .map(element => ({ tag: 'column', width: 'weighted', weight: 1, elements: [element] })) }];
+  const names = view.routingTrial.enabledNames;
+  return [{ tag: 'hr' }, md('**信息分流机制 · 试用**\n主动判断是否转接对话、分流对话、开启子 Session。'),
+  ...(Array.isArray(names) ? [md('**试点已开启**：' + (names.join('、') || '暂无'))] : []),
+  { tag: 'column_set', columns: [button('为我开启', 'routing-on'), button('为我关闭', 'routing-off'), button('我的状态', 'routing-status')]
+    .map(element => ({ tag: 'column', width: 'weighted', weight: 1, elements: [element] })) },
+  { tag: 'collapsible_panel', expanded: false, header: { title: plain('范围与规则') }, elements: [
+    md(view.routingTrial.scopeLabel + '。个人开关在试点群共用。'
+      + (view.routingTrial.publicRoster ? '开启后，姓名显示在这些群的已开启名单中；关闭后移除。' : '')
+      + '\n明确要求并行时开独立子 Session；建议拆分先征询，未答继续原工作。跨话题交接须确认，主话题负责汇总验收。'
+      + '\n子 Session 在 Web 打开，不自动新建飞书话题；开关只影响后续新输入。'),
+  ] }];
 }
 
 // Existing and new group cards share the compact presentation.

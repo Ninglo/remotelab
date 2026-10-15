@@ -10,6 +10,8 @@ setIsolatedTestHome(home);
 process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://example.test';
 let worker, wss;
 try {
+  const { GROUP_ROUTING_PILOT_FILE } = await import('../lib/group-routing-pilot.mjs');
+  const { AUTH_FILE } = await import('../lib/config.mjs');
   const { PROJECT_MEMORY_RUNTIME_FILE, buildProjectMemoryPromptBlock } = await import('../chat/project-memory-runtime.mjs');
   const brief = join(home, 'brief.md'); await writeFile(brief, '# Goal\nHuman correction takes priority.\n更新时间：today');
   const config = { schemaVersion: 1, enabled: true, contextEnabled: true, reviewEnabled: true, releaseId: 'v1',
@@ -50,13 +52,15 @@ try {
   worker=await startProjectGroupCards(runtime,{
     request:async path=>({response:{ok:true},json:path==='/api/sessions'?{sessions:[topic,other]}:{session:topic}}),
     ensureAuthCookie:async()=>{if(!authAvailable)throw Error('offline test');return 'test';},onboard:async(_s,opts)=>{assert.equal(opts.projectCard,true);},
-    participation:()=>({state:async()=>record,publish:async()=>{seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));signalResolve?.();}}),
+    participation:()=>({state:async()=>record,publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));signalResolve?.();}}),
   });
   const [socket]=await connected;await initial;
   assert.equal(seen.at(-1)[0].state,'进行中');
   topic={...topic,activity:{run:{state:'idle'}},workflowState:'done'};
   const changed=signal();socket.send(JSON.stringify({type:'session_invalidated',sessionId:topic.id}));await changed;
   assert.equal(seen.at(-1)[0].state,'已完成');
+  await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({version:2,enabled:true,personalOptIn:true,publicRoster:true,groups:[{sourceRouteId:'bot',chatId:'chat',tenantKey:'tenant'}]}));
+  const rosterChanged=signal();await writeFile(AUTH_FILE, JSON.stringify({changed:true}));await rosterChanged;
   const disconnected=signal();authAvailable=false;socket.close();await disconnected;
   assert.equal(runtime.projectCardsConnected,false);
   console.log('Project group cards: scoped live invalidations, disconnect, completion distinction, unchanged response policy, and fresh bounded brief injection passed');

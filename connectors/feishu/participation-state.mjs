@@ -96,11 +96,11 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     }
     return record;
   }
-  async function publish(record) {
+  async function publish(record, options = {}) {
     if (!publishQueues.has(record.key)) publishQueues.set(record.key, serialQueue());
-    return publishQueues.get(record.key)(() => publishCurrent(record));
+    return publishQueues.get(record.key)(() => publishCurrent(record, options));
   }
-  async function publishCurrent(record) {
+  async function publishCurrent(record, { existingOnly = false } = {}) {
     record = { ...record, ...await records.get(record.key) };
     // Withdrawing a status card does not change participation or intake. Keep
     // the durable opt-out when restoring or changing modes so it cannot resend.
@@ -111,10 +111,11 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const digest = hash(JSON.stringify(card));
     const group = effectiveFeishuGroup(runtime.config, record.source.chatId);
     let messageId = record.cardMessageId || (!record.source.topicId ? group.participationStatusMessageId : '');
+    if (existingOnly && !messageId) return record;
     const createdAt = record.cardCreatedAt || Date.now();
     if (messageId && digest === record.cardDigest && !record.pinPending
         && Date.now() - createdAt < 13 * 86400_000) return record;
-    if (messageId && Date.now() - createdAt < 13 * 86400_000) {
+    if (messageId && (existingOnly || Date.now() - createdAt < 13 * 86400_000)) {
       const result = await runtime.appClient.im.v1.message.patch({ path: { message_id: messageId },
         data: { content: JSON.stringify(card) } });
       if (result?.code) throw new Error(result.msg || 'Agent status card update failed');
@@ -136,7 +137,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         data: { content: JSON.stringify(card) } });
       if (updated?.code) throw new Error(updated.msg || 'Agent status card update failed');
     }
-    if (record.pinPending) {
+    if (record.pinPending && !existingOnly) {
       const result = await runtime.appClient.im.v1.chatTopNotice.putTopNotice({ path: { chat_id: record.source.chatId },
         data: { chat_top_notice: [{ action_type: '1', message_id: messageId }] } });
       if (result?.code) throw new Error(result.msg || 'Agent status card pin failed');
@@ -148,7 +149,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       }, record.sessionId, messageId);
     }
     return records.mutate(record.key, current => ({ ...record, ...current, cardMessageId: messageId,
-      cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, pinPending: false }));
+      cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, pinPending: existingOnly ? record.pinPending : false }));
   }
   async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId } = {}) {
     const key = keyFor(summary);

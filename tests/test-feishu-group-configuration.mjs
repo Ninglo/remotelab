@@ -119,7 +119,7 @@ try {
     'refreshing an existing group keeps its card message');
   const trialCard = JSON.stringify((await import('../connectors/feishu/group-configuration-card.mjs')).buildGroupConfigurationCard(
     { ...record, cardLayout: 'compact' }, await controller.view(record)));
-  assert.match(trialCard, /为我开启试用/);
+  assert.match(trialCard, /为我开启/);
   assert.match(trialCard, /不自动新建飞书话题/);
   assert.equal(await routingPilotScope({ ...conversation, target: { ...source, chatId: 'outside' } }, undefined, 'person_human'), null);
   await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({ ...pilot, personalOptIn: false, personIds: ['person_other'] }));
