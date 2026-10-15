@@ -1677,6 +1677,7 @@ export async function handleControlRoutes({
           session: createClientSessionDetail(outcome.session),
           run: outcome.run || null,
           sessionUrl: outcome.sessionUrl,
+          noticeDelivery: outcome.noticeDelivery,
         });
       } catch (error) {
         writeJson(res, 400, { error: error.message || 'Failed to delegate session' });

@@ -11,6 +11,7 @@ import { readNativeQuestion } from './native-user-questions.mjs';
 import { runDir } from './runs.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { clipCompactionSection } from './session-context-compaction.mjs';
 
 const serial = serialQueue();
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 20);
@@ -109,7 +110,7 @@ export async function handleExecutionPlan(record, body, deps) {
       await appendEvent(source.id, { type: 'work_event', action: body.action === 'start' ? 'execution-plan-started' : 'execution-plan-proposed', plan });
       if (body.action === 'start') await advancePlan(source.id, id, deps);
       return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), boundary: body.action === 'start'
-        ? 'The explicitly requested work was submitted to independent Sessions; report their actual links and check results before claiming completion.'
+        ? 'The explicitly requested work was submitted to independent Sessions. The saved admission notices queue the task summaries and actual links to the source topic; do not repeat them. Queue admission is not delivery or task completion.'
         : 'Draft only; no Session created. Offer the proposal asynchronously and continue already authorized work in the source Session without waiting. Before a later approval, reconcile source progress so completed or active work is not duplicated.' };
     }
     let plan = plans(source).find(p => p.id === body.planId);
@@ -230,6 +231,34 @@ async function applyControls(sourceId, planId, deps) {
   }
 }
 
+async function publishPlanAdmissions(sourceId, planId) {
+  let plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+  if (!plan || plan.state === 'stopping') return;
+  const admitted = plan.branches.filter(b => b.sessionId && b.runId && !b.admissionNoticeId && !b.stopRequested);
+  if (admitted.length) {
+    const id = 'plan-admission:' + hash(plan.id + ':' + admitted.map(b => b.id).join(','));
+    const text = ['已创建并提交以下独立子 Session：', '', ...admitted.map(b =>
+      `- [${b.name}](${b.sessionUrl})：${clipCompactionSection(b.task, 240).replace(/\s+/g, ' ').trim()}`),
+      '', '主话题继续负责协调、核验和汇总；你可以在这里补充要求，也可以打开对应分支继续交流。'].join('\n');
+    // Freeze the batch before enqueue: retries cannot regroup it or duplicate it.
+    await save(sourceId, data => {
+      const p = data.executionPlans.find(p => p.id === planId);
+      p.admissionNotices ||= [];
+      p.admissionNotices.push({ id, text });
+      for (const b of p.branches) if (admitted.some(a => a.id === b.id)) b.admissionNoticeId = id;
+    });
+  }
+  plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+  for (const notice of plan.admissionNotices || []) {
+    if (notice.deliveryId) continue;
+    const delivery = await enqueueSourceDelivery({ sessionId: sourceId, responseId: notice.id,
+      sourceDelivery: plan.returnPlan, text: notice.text });
+    await save(sourceId, data => {
+      data.executionPlans.find(p => p.id === planId).admissionNotices.find(n => n.id === notice.id).deliveryId = delivery.id;
+    });
+  }
+}
+
 async function advancePlan(sourceId, planId, deps) {
   let source = await findSessionMeta(sourceId), plan = plans(source).find(p => p.id === planId);
   if (!plan || !['approved', 'running', 'stopping'].includes(plan.state) || source.archived) return;
@@ -267,6 +296,7 @@ async function advancePlan(sourceId, planId, deps) {
     });
     branch.state = 'running';
   }
+  await publishPlanAdmissions(sourceId, planId);
   source = await findSessionMeta(sourceId); plan = plans(source).find(p => p.id === planId);
   if (!plan.branches.every(b => terminal(b.state))) return;
   if (plan.state === 'stopping' || plan.branches.every(b => ['cancelled', 'skipped'].includes(b.state))) {
