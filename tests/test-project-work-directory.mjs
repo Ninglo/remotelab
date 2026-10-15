@@ -56,6 +56,11 @@ try {
   const data = JSON.parse(text.split('\n').at(-1));
   assert.equal(data.entries.length, 3); assert(data.entries.some(e => e.sessionId === 'root'));
   assert(data.omittedCount > 0); assert(!text.includes('unrelated'));
+  const oldFamily = Array.from({ length: 20 }, (_, i) => ({ ...directory.entries[0], sessionId: 'old-child-' + i,
+    parentSessionId: 'root', priority: 'historical' }));
+  const crowded = JSON.parse(prompt({ ...directory, entries: [directory.entries[0], ...oldFamily, ...directory.entries.slice(1)] },
+    { sessionId: 'root', maxEntries: 8 }).split('\n').at(-1));
+  assert(crowded.entries.some(e => e.sessionId === 'peer'), 'old children must not hide other recent work');
   const removed = await read(root, null, { ...options, sessions: sessions.filter(s => s.id !== 'peer') });
   assert.notEqual(removed.version, directory.version);
   const oldWithProgress = await read(root, null, { ...options, sessions: sessions.map(s => s.id !== 'old' ? s : {

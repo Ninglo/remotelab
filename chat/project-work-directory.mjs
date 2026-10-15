@@ -109,8 +109,12 @@ export function projectDirectoryPrompt(directory, { sessionId, maxEntries = 16, 
   };
   const current = byId.get(sessionId);
   add(current); add(byId.get(current?.parentSessionId));
-  for (const e of directory.entries) if (e.parentSessionId === sessionId
-    || current?.parentSessionId && e.parentSessionId === current.parentSessionId) add(e);
+  const family = e => e.parentSessionId === sessionId
+    || current?.parentSessionId && e.parentSessionId === current.parentSessionId;
+  // Old fan-out branches must not crowd current work out of the bounded index.
+  for (const e of directory.entries) if (family(e) && e.priority !== 'historical') add(e);
+  for (const e of directory.entries) if (e.priority !== 'historical') add(e);
+  for (const e of directory.entries) if (family(e)) add(e);
   for (const e of directory.entries) add(e);
   const version = hash({ scope: directory.scopeSessionId, projects: directory.projects, selected,
     total: directory.entries.length });
