@@ -280,7 +280,7 @@ export async function readPromptReviewSource(id) {
   if (typeof text !== 'string') return { error: '原文已不可取回；先前审阅不代表当前内容。' };
   if (fingerprint(text) !== source.fingerprint) return { error: '原文已变化，等待下一轮补审。' };
   return { id, kind: source.kind, sessionId: source.sessionId, runId: source.runId, fingerprint: source.fingerprint,
-    text: redactReviewText(text), redacted: true, ruleVersion: snapshot.ruleVersion };
+    text: redactReviewText(text, text), redacted: true, ruleVersion: snapshot.ruleVersion };
 }
 
 // A native Schedule script gate calls this short admission action. The durable

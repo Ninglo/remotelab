@@ -32,9 +32,17 @@ export function segmentPrompt(text, maxChars = 12000) {
   return result;
 }
 
-export function redactReviewText(value) {
-  return String(value ?? '')
-    .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[REDACTED PRIVATE KEY]')
+export function redactReviewText(value, source = '') {
+  let text = String(value ?? '');
+  // Mask known source credential values even when the model repeats a short
+  // value without its field name. Keep them only in this call's memory.
+  for (const match of source.matchAll(/(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization|cookie)\s*["']?\s*[:=]\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s,"'<>;]+))/gi)) {
+    const secret = match[1] || match[2] || match[3];
+    if (secret.length >= 4) text = text.split(secret).join('[REDACTED]');
+  }
+  return text
+    .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,
+      match => '[REDACTED PRIVATE KEY]' + '\n'.repeat((match.match(/\n/g) || []).length))
     .replace(/\b(Bearer|Basic)\s+[^\s"'<>]+/gi, '$1 [REDACTED]')
     .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|cookie|authorization)\s*["']?\s*[:=]\s*["']?)[^\s,"'<>;]+/gi, '$1[REDACTED]')
     .replace(/([?&](?:key|token|code|secret|signature|password)=)[^\s&#"']+/gi, '$1[REDACTED]')
@@ -53,8 +61,8 @@ export function validateReviewResult(row, segment) {
     const evidence = lines.slice(f.startLine - 1, f.endLine).join('\n');
     if (!evidence.trim()) throw Error('Empty evidence');
     return { severity: f.severity, category: f.category, startLine: f.startLine, endLine: f.endLine,
-      reason: redactReviewText(f.reason).slice(0, 800), recommendation: redactReviewText(f.recommendation).slice(0, 800),
-      evidence: redactReviewText(evidence).slice(0, 320) };
+      reason: redactReviewText(f.reason, segment.text).slice(0, 800), recommendation: redactReviewText(f.recommendation, segment.text).slice(0, 800),
+      evidence: redactReviewText(evidence, segment.text).slice(0, 320) };
   });
   return { id: segment.id, state: 'reviewed', findings };
 }

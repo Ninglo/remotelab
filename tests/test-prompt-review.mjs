@@ -24,6 +24,9 @@ try {
   const validated = validateReviewResult(valid, attack);
   assert.ok(!JSON.stringify(validated).includes('short-secret'));
   assert.ok(!validated.findings[0].evidence.includes('token=abc'));
+  const naked = validateReviewResult({ ...valid, findings: [{ ...valid.findings[0], reason: '发现 short-secret 明文' }] }, attack);
+  assert.ok(!naked.findings[0].reason.includes('short-secret'), 'model prose cannot repeat a known source credential');
+  assert.equal(redactReviewText('-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----').split('\n').length, 3, 'redaction preserves original evidence line numbers');
   assert.throws(() => validateReviewResult({ ...valid, findings: [{ ...valid.findings[0], startLine: 99 }] }, attack));
   assert.ok(!redactReviewText('Bearer eyJhbGciOiJIUzI1NiJ9.verysecretpayload.secret').includes('verysecret'));
   await put(join(CONFIG_DIR, 'prompt-review.json'), config);
