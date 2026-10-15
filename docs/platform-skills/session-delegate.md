@@ -22,7 +22,13 @@ its native task interpretation and decides whether delegation is useful.
    visible and returns after admission; omit `--wait`, `--internal` and
    `--final-only` for this workflow.
 4. Only after a successful receipt containing `sessionId`, `runId` and
-   `sessionUrl`, return a short task description and the exact link to the user.
+   `sessionUrl`, ensure the user receives a short task description and the exact
+   link. Visible delegation now forwards its existing creation notice to the
+   invoking Run's saved connector destination, as well as Web history. Do not
+   repeat that notice in a separate reply; continue with coordination or results.
+   Web-only and internal delegation do not send to an old connector binding.
+   `noticeDelivery` reports the queued receipt or its failure. If enqueue failed,
+   give the returned task and link in the normal reply; do not create another child.
    `state: accepted` means submitted, not that work is already running or done.
    The user opens the link to inspect progress, provide follow-ups and read results.
 5. The child completes its task in its own session. Do not promise an automatic

@@ -33,6 +33,9 @@ try {
     validateExecutionPlanRequest, forwardExecutionQuestions } = await import('../chat/work-execution-plans.mjs');
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const { runDir } = await import('../chat/runs.mjs');
+  const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
+  const admissionDeliveries = async () => (await listSourceDeliveries({ sessionId: 'source' }))
+    .filter(d => d.responseId?.startsWith('plan-admission:'));
   const base = { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a', feishuConnectorAuthenticated: true,
     sourceContext: { connector: 'feishu', sourceRouteId: 'bot', chatId: 'discussion', chatType: 'group',
       createTime: Date.now().toString(), messageId: 'message', sender: { openId: 'a', senderType: 'user' } },
@@ -112,10 +115,24 @@ try {
   await assert.rejects(act(await input('bad-selection'), { action: 'approve', planId: plan.id, expectedVersion: 1, selected: ['c'], approval: 'select c' }, api), /dependencies/);
   await approve(plan);
   assert.equal(creations, 2, 'independent roots start together; dependent branch waits');
+  const notices = await admissionDeliveries();
+  assert.equal(notices.length, 1, 'independent roots produce one immediate division-of-work receipt');
+  assert.deepEqual(notices[0].target, conversation.target, 'receipt returns to the original topic');
+  assert.match(notices[0].text, /只分析已有证据 a/);
+  assert.match(notices[0].text, /session=child1/);
+  assert.match(notices[0].text, /session=child2/);
+  assert.doesNotMatch(notices[0].text, /session=child3/, 'blocked dependency is not announced as created');
+  // Simulate a crash after durable enqueue but before saving the receipt ID.
+  await mutateSessionMeta('source', draft => {
+    delete draft.workAwareness.executionPlans.find(p => p.id === plan.id).admissionNotices[0].deliveryId;
+    return true;
+  });
   await recoverExecutionPlans(api);
   assert.equal(creations, 2, 'recovery reuses admitted work');
+  assert.equal((await admissionDeliveries()).length, 1, 'recovery cannot duplicate the saved launch receipt');
   await complete(plan, 'a'); assert.equal(creations, 2);
   await complete(plan, 'b'); assert.equal(creations, 3);
+  assert.equal((await admissionDeliveries()).length, 2, 'dependent child gets its link only after actual admission');
   await complete(plan, 'c'); assert.equal(reviews, 1);
   await recoverExecutionPlans(api); assert.equal(reviews, 1);
   const review = await requests.byRequest('source', (await state(plan.id)).reviewRequestId);
