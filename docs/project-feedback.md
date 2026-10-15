@@ -114,3 +114,21 @@ concurrent deduplication, source joins, unknown coverage, validation and routes.
 The optional synthetic browser gate in `tests/test-project-feedback-browser.mjs`
 covers detail reading, supplements, submit/readback, reload, keyboard navigation,
 phone layout, language switching and literal HTML in feedback.
+
+## Compact review in the existing project
+
+An approved review can attach a `review` object to its existing subproject in
+`reviewFile`. The project opens with a brief `summary`, an explicit `as_of`, a
+small `attention` list, and `knowledge: {summary, url}`. `feedback`, `cases`, and
+`history` stay collapsed until the reader opens them. `scope` states the sample
+window and limits. Each item carries `id`, `title`, `state`, `body`, `next`, and
+`sources: [{label, url, quote}]`; links use the normal safe-URL policy.
+
+These are Harness-authored review projections, not extra human submissions or
+an independent task registry. Original task links remain authoritative. Cases
+without feedback remain visible with an unknown assessment; review theme/case
+counts are separate from raw feedback counts. Keep source identifiers in the
+private review materials, not in shared Git. The list API returns only the
+compact summary/counts; selecting the project loads the evidence. Existing
+raw feedback submission, classifications, schedules, and other projects remain
+unchanged. Updating this projection neither starts work nor changes its status.

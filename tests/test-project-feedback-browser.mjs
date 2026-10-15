@@ -20,7 +20,13 @@ await json(legacyFile, { records: [{ id: 'old_feedback', actor: { name: 'Fixture
   source: { quote: 'Yesterday’s progress', url: 'https://example.test/report' }, eventTime: 1791620000, state: 'reviewed',
   interpretation: { assessment: 'The report repeats old progress.' } }] });
 await json(reviewFile, { created_at: '2026-10-10T12:00:00Z', subprojects: [
-  { subproject_id: 'reports', name: 'Reports', suggested_directions: ['Show today’s decision.'] },
+  { subproject_id: 'reports', name: 'Reports', suggested_directions: ['Show today’s decision.'], review: {
+    summary: 'Follow up the original work.', as_of: '2026-10-15T04:00:00+08:00', scope: 'Approved sample only.',
+    attention: [{ id: 'a1', title: 'Verify delivery', next: 'Check the original task.', sources: [{ label: 'source', url: 'https://example.test/task' }] }],
+    feedback: [{ id: 'f1', title: 'Feedback topic', body: '<img src=x onerror=alert(1)>', sources: [] }],
+    cases: [{ id: 'c1', title: 'Case without feedback', state: 'Unknown', body: 'Silence does not prove quality.', sources: [] }],
+    knowledge: { summary: 'Reuse established methods.', url: 'https://example.test/knowledge' }
+  } },
   { subproject_id: 'recording', name: 'Recording', suggested_directions: [] }],
   themes: [{ id: 'one', subproject_id: 'reports', title: 'Current status', suggested_direction: 'Show the decision first.' }],
   classifications: [{ source_record_id: 'old_feedback', primary_subproject_id: 'reports', bucket: 'assigned_feedback', theme_id: 'one' }] });
@@ -58,9 +64,21 @@ try {
   assert(await page.evaluate(() => [...document.querySelectorAll('.feedback-group .monitoring-table-wrap')].every(n => n.scrollWidth <= n.clientWidth + 1)), 'desktop keeps the feedback action and directions in view');
   assert.match(await page.locator('[data-subproject="recording"]').innerText(), /Not covered in this sample/);
   await page.getByRole('button', { name: 'Reports', exact: true }).click();
+  await page.locator('.feedback-review').waitFor();
+  assert(await page.getByText('Verify delivery', { exact: true }).isVisible());
+  assert.equal(await page.locator('[data-review-item="c1"]').isVisible(), false, 'cases collapsed by default');
+  await page.locator('[data-review-section="cases"] > summary').click();
+  await page.locator('[data-review-item="c1"] > summary').click();
+  assert(await page.getByText('Silence does not prove quality.', { exact: true }).isVisible());
+  await page.locator('[data-review-section="cases"] > summary').click();
+  await page.locator('[data-review-section="feedback"] > summary').click();
+  await page.locator('[data-review-item="f1"] > summary').click();
+  assert.equal(await page.locator('.feedback-review img').count(), 0);
+  await page.locator('[data-review-section="feedback"] > summary').click();
+  await page.locator('.feedback-raw-records > summary').click();
   await page.locator('[data-feedback-id="old_feedback"] summary').click();
   assert.match(await page.locator('.feedback-detail').innerText(), /Yesterday’s progress/);
-  assert.match(await page.locator('.feedback-detail').innerText(), /does not prove/);
+
   assert.equal(await page.locator('.feedback-detail img').count(), 0, 'raw text must not execute HTML');
   await page.getByRole('button', { name: 'Add feedback about this record' }).click();
   await page.locator('#feedbackComment').fill('The new first paragraph is clear.');
@@ -70,7 +88,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-subproject="reports"] td:nth-child(2)').firstChild.textContent === '2');
   await page.reload(); await page.locator('[data-subproject="reports"]').waitFor({ state: "attached" });
   assert.match(await page.locator('[data-subproject="reports"] td:nth-child(2)').textContent(), /^2/);
-  await page.locator('.feedback-record').first().locator('summary').click();
+  await page.locator('[data-feedback-id]').first().locator('summary').click();
   assert.match(await page.locator('.feedback-detail').innerText(), /awaiting analysis/);
   assert.match(await page.locator('.feedback-detail').innerText(), /old_feedback/);
   await page.screenshot({ path: join(output, 'desktop.png'), fullPage: true });
@@ -79,7 +97,7 @@ try {
   await page.screenshot({ path: join(output, 'mobile.png'), fullPage: true });
   await page.locator('#monitoringFeedbackTab').focus(); await page.keyboard.press('Home');
   assert.equal(await page.locator('#monitoringOverviewTab').getAttribute('aria-selected'), 'true');
-  await page.keyboard.press('End');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
   assert.equal(await page.locator('#monitoringFeedbackTab').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('.feedback-group').count(), 2);
   assert.match(await page.locator('[data-subproject="recording"]').innerText(), /New project to observe/);

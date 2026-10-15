@@ -19,7 +19,14 @@ const legacy = { records: [
   { id: 'c', observedText: 'Paused device' }, { id: 'd', observedText: 'Ownership unknown' },
 ] };
 const review = { created_at: '2026-10-10T12:00:00Z',
-  subprojects: [{ subproject_id: 'reports', name: 'Reports', suggested_directions: ['Show the current result.'] },
+  subprojects: [{ subproject_id: 'reports', name: 'Reports', suggested_directions: ['Show the current result.'], review: {
+      summary: 'Follow up the original work.', as_of: '2026-10-15T04:00:00+08:00',
+      attention: [{ id: 'a1', title: 'Verify delivery', state: 'pending', sources: [{ label: 'unsafe', url: 'javascript:alert(1)' }] }],
+      feedback: [{ id: 'f1', title: 'Keep the source' }],
+      cases: [{ id: 'c1', title: 'No feedback', state: 'unknown', private_actor_id: 'private-case-author' }],
+      knowledge: { summary: 'Reuse established methods.', url: 'https://example.test/knowledge' },
+      private_path: '/private/evidence',
+    } },
     { subproject_id: 'recording', name: 'Recording', suggested_directions: [] }],
   themes: [{ id: 'theme', subproject_id: 'reports', title: 'Current result', suggested_direction: 'Show the result first.' }],
   classifications: [
@@ -43,6 +50,13 @@ try {
   assert.equal(overview.projects[0].themes[0].change_state, 'suggested');
   const reports = await store.read('reports');
   assert.equal(reports.records.length, 2);
+  assert.equal(overview.projects[0].review.case_count, 1);
+  assert.equal(overview.projects[0].review.cases, undefined, 'list response omits evidence payload');
+  assert.equal(reports.project.review.cases[0].state, 'unknown', 'silence remains unknown');
+  assert.equal(reports.project.review.attention[0].sources[0].url, '');
+  assert(!JSON.stringify(reports).includes('/private/evidence'));
+  assert(!JSON.stringify(reports).includes('private-case-author'));
+  assert.equal(reports.project.review.knowledge.url, 'https://example.test/knowledge');
   assert.equal(reports.records.find(r => r.id === 'vote').review_state, 'reviewed');
   assert.equal(reports.records.find(r => r.id === 'vote').analysis, 'Preserve the signal; no policy change.');
   assert.equal(reports.records.find(r => r.id === 'a').target_quote, 'Evaluated passage');

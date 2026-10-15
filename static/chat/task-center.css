@@ -860,3 +860,8 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .task-flow-delivery-item h5 { margin: 0; font-size: 13px; color: var(--text-muted); font-weight: 500; }
 
 .task-trigger-description { display: block; margin: 6px 0; color: var(--text-secondary); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+
+.feedback-review-section { margin: 14px 0; }
+.feedback-review-section > summary { cursor: pointer; line-height: 1.7; font-weight: 600; }
+.feedback-review p { line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
+.feedback-review blockquote { margin: 8px 0; padding-left: 12px; border-left: 2px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }

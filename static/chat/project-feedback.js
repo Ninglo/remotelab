@@ -3,6 +3,13 @@
   const root = document.getElementById("monitoringFeedback");
   if (!root) return;
   const activityText = {
+    reviewComment: ['补充评审', 'Add a review'],
+    reviewTopics: ['已整理反馈主题', 'Reviewed feedback themes'], reviewCases: ['真实案例', 'Work cases'],
+    reviewFocus: ['优先关注', 'Review priorities'], reviewHistory: ['其他处理结论', 'Other dispositions'],
+    reviewEvidence: ['原文与依据', 'Sources and evidence'], reviewKnowledge: ['项目认知', 'Project understanding'],
+    reviewFull: ['完整认知与依据', 'Full understanding and evidence'],
+    reviewAsOf: ['本次核对截至', 'Reviewed through'], reviewScope: ['范围与判断边界', 'Scope and limits'],
+    reviewInitial: ['以下为 Agent 初评，人的复核仍待补充；无反馈不代表好或坏。', 'Agent assessment awaiting human review; silence indicates neither success nor failure.'],
     started: ['开始日期', 'Start date'], usage: ['功能触发 · 近30天', 'Feature calls · 30 days'],
     attention: ['关注状态', 'Attention'], recent: ['近14天', '14 days'],
     groupNote: ['按大项目暂分组；子项目分别统计。最近反馈优先，30天未触发的成熟项目下沉。没有反馈不代表稳定，采集未覆盖不记作无人使用。此排序不改变巡检日程。',
@@ -117,10 +124,12 @@
       name.appendChild(node('small', t(p.attention.state === 'paused' ? 'attentionPaused' : p.attention.state))); row.appendChild(name);
       const count = node('td', p.coverage === 'not_represented' ? t('notCovered') : String(p.feedback_count));
       count.appendChild(node('small', `${t('recent')}：${p.recent_feedback_count}`));
-      count.appendChild(node('small', `${t('pending')}：${p.pending_analysis_count}`)); row.appendChild(count);
+      count.appendChild(node('small', `${t('pending')}：${p.pending_analysis_count}`));
+      if (p.review) count.appendChild(node('small', `${t('reviewTopics')} ${p.review.feedback_count} · ${t('reviewCases')} ${p.review.case_count}`));
+      row.appendChild(count);
       const start = node('td'); start.appendChild(startContent(p)); row.appendChild(start);
       const calls = node('td'); calls.appendChild(usageContent(p)); row.appendChild(calls);
-      row.appendChild(node("td", p.directions[0] || t("noDirection")));
+      row.appendChild(node("td", p.review?.summary || p.directions[0] || t("noDirection")));
       const actions = node("td"); actions.appendChild(button(t("give"), () => give(p.id))); row.appendChild(actions); body.appendChild(row);
       }
       for (const row of body.children) [...row.children].forEach((td, index) => { td.dataset.label = t(columns[index]); });
@@ -139,6 +148,45 @@
     if (!url) return;
     const a = node("a", label); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; parent.appendChild(a);
   }
+  function renderReview(review) {
+    const box = node('section', '', 'feedback-review');
+    box.append(node('p', review.summary), node('small', `${t('reviewAsOf')} ${time(review.as_of)}`));
+    const renderItem = (item, parent, label = item.title) => {
+      const card = node('details', '', 'feedback-record'); card.dataset.reviewItem = item.id;
+      card.appendChild(node('summary', `${label}${item.state ? ' · ' + item.state : ''}`));
+      if (item.body) card.appendChild(node('p', item.body));
+      if (item.next) card.appendChild(node('p', item.next));
+      for (const source of item.sources) {
+        const evidence = node('div', '', 'feedback-record-field');
+        if (source.quote) evidence.appendChild(node('blockquote', source.quote));
+        sourceLink(source.url, source.label || t('reviewEvidence'), evidence); card.appendChild(evidence);
+      }
+      card.appendChild(button(t('reviewComment'), () => give(selected, {
+        target_title: `${item.id} ${item.title}`, target_url: item.sources[0]?.url || '',
+      })));
+      parent.appendChild(card);
+    };
+    box.appendChild(node('h4', t('reviewFocus')));
+    for (const item of review.attention) {
+      const row = node('div', '', 'feedback-record-field');
+      row.append(node('strong', item.title), node('p', item.next || item.body));
+      renderItem(item, row, t('reviewEvidence')); box.appendChild(row);
+    }
+    if (review.knowledge.summary) {
+      box.append(node('h4', t('reviewKnowledge')), node('p', review.knowledge.summary));
+      sourceLink(review.knowledge.url, t('reviewFull'), box);
+    }
+    for (const [key, label] of [['feedback', 'reviewTopics'], ['cases', 'reviewCases'], ['history', 'reviewHistory']]) {
+      const rows = review[key]; if (!rows.length) continue;
+      const section = node('details', '', 'feedback-review-section'); section.dataset.reviewSection = key;
+      section.appendChild(node('summary', `${t(label)} · ${rows.length}`));
+      if (key === 'cases') section.appendChild(node('p', t('reviewInitial'), 'monitoring-note'));
+      for (const item of rows) renderItem(item, section);
+      box.appendChild(section);
+    }
+    const scope = node('details'); scope.append(node('summary', t('reviewScope')), node('p', review.scope)); box.appendChild(scope);
+    return box;
+  }
   function renderDetail() {
     detailRoot.replaceChildren(); detailRoot.hidden = !selected; list.hidden = Boolean(selected);
     if (!selected) return;
@@ -149,7 +197,10 @@
     if (!detail) { detailRoot.appendChild(node("p", t("loading"), "monitoring-note")); return; }
     const labels = { unassigned_feedback: "unassigned", related_context: "context", paused_history: "paused" };
     detailRoot.appendChild(node("h3", detail.project?.name || t(labels[selected] || "details")));
-    if (detail.project) {
+    if (detail.project?.review) {
+      detailRoot.appendChild(renderReview(detail.project.review));
+      detailRoot.appendChild(button(t("giveProject"), () => give(selected)));
+    } else if (detail.project) {
       const facts = node('div', '', 'feedback-activity');
       facts.append(node('p', t(detail.project.attention.state === 'paused' ? 'attentionPaused' : detail.project.attention.state)), startContent(detail.project), usageContent(detail.project));
       detailRoot.appendChild(facts);
@@ -160,7 +211,13 @@
       detailRoot.appendChild(directions);
     }
     if (detail.gaps.length) detailRoot.appendChild(node("p", t("gaps", { count: detail.gaps.length }), "monitoring-note"));
-    detailRoot.appendChild(node("p", t("records", { count: detail.records.length }), "monitoring-note"));
+    let recordRoot = detailRoot;
+    if (detail.project?.review) {
+      recordRoot = node('details', '', 'feedback-raw-records');
+      recordRoot.open = detail.records.some(r => r.review_state === 'collected');
+      recordRoot.appendChild(node('summary', t('records', { count: detail.records.length })));
+      detailRoot.appendChild(recordRoot);
+    } else detailRoot.appendChild(node("p", t("records", { count: detail.records.length }), "monitoring-note"));
     for (const r of detail.records) {
       const card = node("details", "", "feedback-record"); card.dataset.feedbackId = r.id;
       const title = node("summary", `${r.author} · ${time(r.created_at)} · ${(r.comment || r.target_title || r.emoji || t(r.usefulness === "useful" ? "useful" : r.usefulness === "not_useful" ? "notUseful" : "noText")).slice(0, 120)}`);
@@ -176,7 +233,7 @@
       if (r.source_session_id) sourceLink(`/?tab=sessions&session=${encodeURIComponent(r.source_session_id)}`, t("conversation"), links);
       card.appendChild(links);
       if (r.bucket !== "paused_history") card.appendChild(button(t("supplement"), () => give(r.subproject_id, r)));
-      detailRoot.appendChild(card);
+      recordRoot.appendChild(card);
     }
   }
   async function select(id, { sync = true } = {}) {

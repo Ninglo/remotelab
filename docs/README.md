@@ -70,6 +70,8 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Current Core
 
+- [Project feedback and review](project-feedback.md) — Monitor presents concise priorities and project understanding, with full feedback, cases (including those without feedback), and original evidence available on expansion. Review projections preserve original task status and human attribution.
+
 - [Stable automation homes](task-center-v1.md#stable-automation-home-explicit-opt-in) — task-only context branches (no copied source chat), distinct history/run entries, cross-run reuse explanations, clear bidirectional links, retained definitions and lifecycle history without occupying worker queues.
 - [Automation tasks and execution Sessions](task-center-v1.md#automation-session-collection) — explicit collection membership, existing-run migration and direct execution links.
 

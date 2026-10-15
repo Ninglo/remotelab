@@ -32,6 +32,24 @@ function at(value) {
   const d = typeof value === 'number' ? new Date(value * 1000) : new Date(value || NaN);
   return Number.isFinite(d.getTime()) ? d.toISOString() : null;
 }
+// Review projections are authored analysis, never synthetic human feedback or
+// a second task registry. Only public-facing fields cross the API boundary.
+function projectReview(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const value = v => typeof v === 'string' ? v : '';
+  const links = rows => (Array.isArray(rows) ? rows : []).map(r => ({
+    label: value(r.label), url: feedbackUrl(r.url), quote: value(r.quote),
+  }));
+  const items = rows => (Array.isArray(rows) ? rows : []).map(r => ({
+    id: value(r.id), title: value(r.title), state: value(r.state),
+    body: value(r.body), next: value(r.next), sources: links(r.sources),
+  }));
+  return { summary: value(raw.summary), as_of: at(raw.as_of), scope: value(raw.scope),
+    attention: items(raw.attention), feedback: items(raw.feedback), cases: items(raw.cases),
+    history: items(raw.history), knowledge: {
+      summary: value(raw.knowledge?.summary), url: feedbackUrl(raw.knowledge?.url),
+    } };
+}
 function legacyRecord(raw, classification, themes) {
   const source = raw.source || {}, theme = themes.get(classification?.theme_id);
   return {
@@ -114,7 +132,7 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     }
     for (const id of classifications.keys()) if (!records.has(id)) gaps.push({ source: 'classified_record', code: 'source_unavailable' });
     const projects = (review?.subprojects || []).map(p => ({ id: p.subproject_id, name: p.name,
-      directions: p.suggested_directions || [], classification_status: p.registry_status || 'trial',
+      directions: p.suggested_directions || [], review: projectReview(p.review), classification_status: p.registry_status || 'trial',
       themes: [...themes.values()].filter(t => t.subproject_id === p.subproject_id).map(t => ({
         id: t.id, title: t.title, direction: t.suggested_direction, change_state: 'suggested',
       })) }));
@@ -149,6 +167,12 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
         review_at: data.review_at };
     }
     const counts = Object.fromEntries(extras.map(key => [key, data.records.filter(r => r.bucket === key).length]));
+    // Keep list responses compact; evidence and cases are loaded on selection.
+    activity.projects = activity.projects.map(p => !p.review ? p : ({ ...p, review: {
+      summary: p.review.summary, as_of: p.review.as_of,
+      feedback_count: p.review.feedback.length, case_count: p.review.cases.length,
+      attention_count: p.review.attention.length,
+    } }));
     return { configured: data.configured, generated_at: data.generated_at, review_at: data.review_at, gaps: data.gaps,
       counts: { ...counts, assigned_feedback: data.records.filter(r => r.bucket === 'assigned_feedback').length, raw_records: data.records.length },
       ...activity };
