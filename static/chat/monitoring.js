@@ -268,6 +268,7 @@
       const data = await response.json(); content.replaceChildren();
       const summary = section('Prompt 安全审阅', content), c = data.coverage || {}, u = data.usage || {};
       summary.append(node('p', `${reviewLabels[data.state] || data.state}${data.workerRunning ? ' · 工作进程运行中' : ''} · ${data.model} · ${data.ruleVersion}`));
+      summary.append(node('p', '模型提出的风险线索，需结合原会话核对授权与实际后果。审阅不会执行整改。', 'monitoring-note'));
       summary.append(node('p', `原文来源 ${c.sources || 0} 条：完整审完 ${c.fullyReviewed || 0}，部分或待审 ${c.partialOrPending || 0}，无法读取 ${c.unreadable || 0}。`, 'monitoring-note'));
       summary.append(node('p', `去重内容段 ${c.uniqueSegments || 0}：已审 ${c.reviewed || 0}，待审 ${c.pending || 0}，失败 ${c.failed || 0}；复用 ${c.deduplicatedOccurrences || 0} 次。`, 'monitoring-note'));
       summary.append(node('p', `内容段风险：严重 ${data.risks?.critical || 0} · 高 ${data.risks?.high || 0} · 中 ${data.risks?.medium || 0} · 低 ${data.risks?.low || 0}。同一内容段只计一次。`, 'monitoring-note'));

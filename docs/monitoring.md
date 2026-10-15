@@ -26,6 +26,8 @@ Monitor Overview (`?tab=tasks&monitor=overview`) keeps the existing Session area
 
 响应必须逐段给出结构化结果；风险条目有严重度、类别、证据行、原因和建议。证据由服务器从原文行提取；常见凭据、鉴权头、长 token 和敏感查询参数脱敏，模型自由文本也经过脱敏。认证接口不接受任意文件路径，不把原文或模型错误原样放进日志。原会话仍沿既有共享实例认证访问。
 
+模型风险线索尚未经过人工确认，不代表已经发生执行或泄露。provider 错误附带的全零占位用量计为缺回执，不能算成已测得零消耗。
+
 私有配置 `CONFIG_DIR/prompt-review.json` 默认不存在即关闭：
 
 ```json

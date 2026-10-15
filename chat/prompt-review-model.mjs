@@ -41,7 +41,7 @@ export async function reviewPromptBatch(segments, { timeoutMs = 180000, command:
         if (event.type === 'tool_execution_start') stop(Error('Reviewer attempted a tool call'));
         const message = event.type === 'message_end' ? event.message : null;
         if (message?.role !== 'assistant') return;
-        if (message.usage) {
+        if (message.usage && ['input','cacheRead','output'].some(key => message.usage[key] > 0)) {
           usage ||= { input: 0, cacheRead: 0, output: 0 };
           for (const key of ['input','cacheRead','output']) usage[key] += message.usage[key] || 0;
         }
