@@ -44,6 +44,17 @@ export async function loadPersonalMemorySettings(actor, { memoryDir = MEMORY_DIR
   return { ...choice, personId: person.id, available: eligible, enabled: eligible && choice.enabled };
 }
 
+export async function mayReviewGroupPersonalMemory(options = {}) {
+  if (options.internalOperation || options.automationTitle || options.recordUserMessage === false
+      || options.workReference || !options.feishuConnectorAuthenticated
+      || options.sourceContext?.connector !== 'feishu' || options.sourceContext?.chatType !== 'group'
+      || ['app', 'bot'].includes(options.sourceContext?.sender?.senderType)) return false;
+  try {
+    const settings = await loadPersonalMemorySettings({ personId: options.viewPersonId, identityId: options.initiatedByIdentityId });
+    return settings.available && settings.enabled && settings.conversational;
+  } catch { return false; }
+}
+
 export async function changePersonalMemorySettings(input, actor, { memoryDir = MEMORY_DIR } = {}) {
   if (!input || Object.keys(input).some(key => !['enabled', 'expectedRevision', 'confirm'].includes(key))
       || typeof input.enabled !== 'boolean' || input.confirm !== true) fail('请明确开启或关闭个人记忆。');

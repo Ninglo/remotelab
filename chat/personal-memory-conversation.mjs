@@ -1,7 +1,10 @@
-import { loadPersonalMemorySettings } from './personal-memory-settings.mjs';
+import { loadPersonalMemorySettings, personalMemoryPreference } from './personal-memory-settings.mjs';
 
 export async function buildPersonalMemoryConversationContext({ personId, identityId, sourceContext } = {}) {
   if (['bot', 'app'].includes(sourceContext?.sender?.senderType)) return '';
+  // Admission has already loaded the authenticated directory. Ordinary users
+  // keep their pointer-only path and do not cause extra memory-policy reads.
+  if (!personalMemoryPreference({ personId, identityId }).conversational) return '';
   try {
     const settings = await loadPersonalMemorySettings({ personId, identityId });
     if (!settings.available || !settings.conversational) return '';

@@ -33,6 +33,15 @@ try {
   const saved = await change({ enabled: true, confirm: true, expectedRevision: 0 }, actor);
   assert.equal(saved.revision, 1);
   assert.deepEqual(await load(actor), saved);
+  const { mayReviewGroupPersonalMemory } = await import('../chat/personal-memory-settings.mjs');
+  const groupInput = { viewPersonId: actor.personId, initiatedByIdentityId: 'feishu_alice', feishuConnectorAuthenticated: true,
+    sourceContext: { connector: 'feishu', chatType: 'group', sender: { senderType: 'user' } } };
+  assert.equal(await mayReviewGroupPersonalMemory(groupInput), true);
+  for (const override of [{ viewPersonId: bob.personId, initiatedByIdentityId: 'feishu_bob' }, { recordUserMessage: false },
+    { internalOperation: true }, { feishuConnectorAuthenticated: false }, { sourceContext: { connector: 'feishu', chatType: 'group', sender: { senderType: 'bot' } } }]) {
+    assert.equal(await mayReviewGroupPersonalMemory({ ...groupInput, ...override }), false);
+  }
+
   await assert.rejects(change({ enabled: false, confirm: true, expectedRevision: 0 }, actor), /已更新/);
   for (const surface of ['web', 'p2p', 'group', 'thread']) {
     const context = await buildTurnContextHook({}, { ...actor,
@@ -71,6 +80,7 @@ try {
   assert.equal(pending.reviewProposal.status, 'confirmed');
   await change({ enabled: false, confirm: true, expectedRevision: saved.revision }, actor);
   assert.match(await buildTurnContextHook({}, actor), /Personal memory is paused/);
+  assert.equal(await mayReviewGroupPersonalMemory(groupInput), false);
   assert.equal((await apply([{ ...habit, key: 'new-pattern' }], '请联系熟悉的例子')).promotedCount, 0);
   assert.doesNotMatch(await m.buildLearningContext({ ...actor, memoryDir, query: '解释', authDocument: await loadAuthDocument({ persistMigration: false }) }), /解释陌生概念时先联系/);
   assert.equal((await inspect()).profile.entries[0].status, 'confirmed', 'pause retains stored records');
