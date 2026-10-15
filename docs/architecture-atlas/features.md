@@ -312,7 +312,7 @@ Agent 命令入口：`remotelab agenda`。
 
 可以这样说：“帮我在飞书创建本周论文阅读任务，并把来源对话放入描述。”
 
-维护线索：[docs/platform-skills/feishu-tasks.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/platform-skills/feishu-tasks.md)。
+维护线索：[docs/platform-skills/feishu-tasks.md](https://github.com/Ninglo/remotelab/blob/c20124a67b31eee0387d7ba2815720eaeaee24e2/docs/platform-skills/feishu-tasks.md)。
 
 ## 飞书、邮件、外部接入和研究资料
 
