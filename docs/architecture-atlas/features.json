@@ -864,6 +864,23 @@
           ]
         },
         {
+          "id": "project-feedback",
+          "name": "项目反馈、真实案例与改进接续",
+          "purpose": "按项目、子项目查看真实案例和反馈；数量可直接点开，原话、已核修改与下一步建议分别展示。无反馈案例仍保留。",
+          "entry": "监控器 → 反馈与改进；项目或子项目行的反馈数、案例数可直接打开。",
+          "condition": "需要实例登录和已配置的审阅材料。明确关联原事项的建议可展开确认内容，再由本人点击确认开工；使用原会话消息入口，重复请求去重。预览、保存反馈、建议本身不启动工作，执行进度仍以原事项为准。",
+          "example": "打开某个案例，查看相关反馈与实际修改，再确认接续一项尚未完成的建议。",
+          "sources": [
+            "docs/project-feedback.md",
+            "chat/project-feedback.mjs",
+            "chat/project-feedback-activity.mjs",
+            "chat/router-project-feedback-routes.mjs",
+            "static/chat/project-feedback.js",
+            "static/chat/task-center.css"
+          ],
+          "commands": []
+        },
+        {
           "id": "alerts",
           "name": "独立告警、日报来源与获授权的失败恢复",
           "purpose": "在明确配置后观察重要问题，保留告警和恢复记录，并把日常情况归入既有日报。",

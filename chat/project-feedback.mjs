@@ -42,7 +42,10 @@ function projectReview(raw) {
   }));
   const items = rows => (Array.isArray(rows) ? rows : []).map(r => ({
     id: value(r.id), title: value(r.title), state: value(r.state),
-    body: value(r.body), next: value(r.next), sources: links(r.sources),
+    body: value(r.body), next: value(r.next), changes: value(r.changes), sources: links(r.sources),
+    related_ids: (Array.isArray(r.related_ids) ? r.related_ids : []).filter(id => typeof id === 'string'),
+    action: /^[a-f0-9]{32}$/.test(r.action?.session_id || '') && value(r.action?.text)
+      ? { session_id: r.action.session_id, session_name: value(r.action.session_name), text: value(r.action.text) } : null,
   }));
   return { summary: value(raw.summary), as_of: at(raw.as_of), scope: value(raw.scope),
     attention: items(raw.attention), feedback: items(raw.feedback), cases: items(raw.cases),
@@ -62,6 +65,7 @@ function legacyRecord(raw, classification, themes) {
     source_url: feedbackUrl(source.url), target_url: feedbackUrl(source.originalMessageUrl),
     source_session_id: /^[a-f0-9]{32}$/.test(source.sessionId || '') ? source.sessionId : '',
     related_feedback_id: '', analysis: raw.interpretation?.assessment || '',
+    change_summary: classification?.change_summary || '',
     classification_reason: classification?.reason || '', pending_candidate: classification?.pending_candidate || '',
     theme: theme?.title || '', suggested_direction: theme?.suggested_direction || '',
     review_state: raw.state || '', change_state: 'unknown',
@@ -76,6 +80,7 @@ function websiteRecord(raw, classification, themes, review) {
     comment: raw.comment || '', usefulness: raw.usefulness || '', emoji: '', example: '',
     target_title: raw.target?.title || '', target_quote: '', source_url: '', target_url: feedbackUrl(raw.target?.url),
     source_session_id: '', related_feedback_id: '', analysis: review?.reason || classification?.analysis || '', classification_reason: classification?.reason || '',
+    change_summary: classification?.change_summary || '',
     pending_candidate: '', theme: theme?.title || '', suggested_direction: theme?.suggested_direction || '',
     target_revision: raw.target?.revision || '', review_state: review?.status || classification?.review_state || 'recorded', change_state: 'unknown',
   };
@@ -160,6 +165,14 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     }
     const activity = buildFeedbackActivity(summaries, data.records, data.activityMetadata || {}, usage, data.generated_at || now(), data.qianyanActivity);
     if (subproject !== undefined) {
+      if (subproject.startsWith('group:')) {
+        const group = activity.groups.find(g => g.id === subproject.slice(6));
+        if (!group) throw fault('NOT_FOUND', '项目不存在。');
+        const projects = activity.projects.filter(p => p.group_id === group.id);
+        const ids = new Set(projects.map(p => p.id));
+        return { configured: data.configured, project: null, group, projects, gaps: data.gaps,
+          records: data.records.filter(r => r.bucket === 'assigned_feedback' && ids.has(r.subproject_id)), review_at: data.review_at };
+      }
       const project = activity.projects.find(p => p.id === subproject);
       if (!project && !extras.includes(subproject)) throw fault('NOT_FOUND', '子项目不存在。');
       return { configured: data.configured, project: project || null, gaps: data.gaps,

@@ -1,7 +1,7 @@
 # Subproject feedback in Monitor
 
 Monitor → Feedback and improvement shows feedback by the object being evaluated.
-Open a subproject to inspect original wording, author, evaluated passage, source,
+Click a parent or subproject feedback count, or its case count, to inspect original wording, author, evaluated passage, source,
 previous analysis and suggested change. Submit a usefulness signal, a specific
 comment, an optional example and a material link. A record can also be referenced
 by a supplement. These are collected records, not unresolved incident counts.
@@ -36,7 +36,9 @@ all-channel and unresolved counts are unknown. Context and paused records can be
 read separately and do not contribute to active feedback counts.
 
 `GET /api/project-feedback` returns subproject summaries. Pass `subproject=<id>`
-for that subproject's records or one of the three non-assigned buckets. All reads
+for that subproject's records or one of the three non-assigned buckets.
+`subproject=group:<id>` returns the parent's child projects and only their assigned
+feedback; it excludes unassigned, contextual, and paused-history buckets. All reads
 require authentication to this shared instance and are served private/no-store.
 Provider identity objects, credentials and local evidence paths are not returned; stable original record IDs are retained for traceability.
 
@@ -119,10 +121,16 @@ phone layout, language switching and literal HTML in feedback.
 
 An approved review can attach a `review` object to its existing subproject in
 `reviewFile`. The project opens with a brief `summary`, an explicit `as_of`, a
-small `attention` list, and `knowledge: {summary, url}`. `feedback`, `cases`, and
-`history` stay collapsed until the reader opens them. `scope` states the sample
+small `attention` list, and `knowledge: {summary, url}`. Cases have a dedicated
+column and prominent detail-page entry. Counts open their corresponding section
+directly; `feedbackView=cases|feedback|records|history` preserves that destination
+in the link. Other sections stay collapsed until the reader opens them. `scope` states the sample
 window and limits. Each item carries `id`, `title`, `state`, `body`, `next`, and
-`sources: [{label, url, quote}]`; links use the normal safe-URL policy.
+`sources: [{label, url, quote}]`; links use the normal safe-URL policy. `changes`
+is the verified modification/outcome narrative and `related_ids` links cases
+and feedback themes in the same review. A missing original-feedback
+`classification.change_summary` is shown as unverified, never inferred from a
+reviewed state or an improvement suggestion.
 
 These are Harness-authored review projections, not extra human submissions or
 an independent task registry. Original task links remain authoritative. Cases
@@ -132,3 +140,24 @@ private review materials, not in shared Git. The list API returns only the
 compact summary/counts; selecting the project loads the evidence. Existing
 raw feedback submission, classifications, schedules, and other projects remain
 unchanged. Updating this projection neither starts work nor changes its status.
+
+## Confirm a scoped suggestion and continue the original work
+
+A review author can attach `action: {session_id, session_name, text}` to an
+attention item after checking its original execution destination. The UI shows
+an editable scope and the destination before offering **Confirm and start**.
+Only that explicit human click submits to the existing authenticated
+`POST /api/sessions/:id/messages`; opening the proposal sends nothing. Identity,
+native admission, archived/busy checks and execution stay with the normal
+Session path. There is no feedback-specific task queue or automatic schedule.
+
+The request ID is derived from the authenticated Person, project/item, target
+Session and exact confirmed text. Lost receipts, retries and page reloads reuse
+that ID; changing the text represents a new human input. A receipt means
+submission, not task completion. Follow the linked original work for progress.
+A suggestion without a checked destination has no start control. Review authors
+must retain the scope/date and instruct the receiving Harness to check current
+results, reuse completed work, and respect paused/cancelled decisions.
+
+Browser verification mocks the execution endpoint: it checks confirmation,
+target/text, retry and reload deduplication without launching a real task.

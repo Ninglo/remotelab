@@ -865,3 +865,9 @@ details.task-lifecycle-section > summary { cursor: pointer; }
 .feedback-review-section > summary { cursor: pointer; line-height: 1.7; font-weight: 600; }
 .feedback-review p { line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
 .feedback-review blockquote { margin: 8px 0; padding-left: 12px; border-left: 2px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+.feedback-table td:nth-child(2) button { display: block; margin-bottom: 8px; }
+.feedback-start { margin: 12px 0; }
+.feedback-start > summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.feedback-start textarea { width: 100%; max-width: 760px; box-sizing: border-box; margin: 12px 0; font: inherit; line-height: 1.6; }
+.feedback-start button { display: block; margin: 8px 0; }
+.feedback-review-section { scroll-margin-top: 24px; }

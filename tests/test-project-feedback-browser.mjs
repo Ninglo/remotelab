@@ -22,8 +22,8 @@ await json(legacyFile, { records: [{ id: 'old_feedback', actor: { name: 'Fixture
 await json(reviewFile, { created_at: '2026-10-10T12:00:00Z', subprojects: [
   { subproject_id: 'reports', name: 'Reports', suggested_directions: ['Show today’s decision.'], review: {
     summary: 'Follow up the original work.', as_of: '2026-10-15T04:00:00+08:00', scope: 'Approved sample only.',
-    attention: [{ id: 'a1', title: 'Verify delivery', next: 'Check the original task.', sources: [{ label: 'source', url: 'https://example.test/task' }] }],
-    feedback: [{ id: 'f1', title: 'Feedback topic', body: '<img src=x onerror=alert(1)>', sources: [] }],
+    attention: [{ id: 'a1', title: 'Verify delivery', next: 'Check the original task.', action: { session_id: 'a'.repeat(32), session_name: 'Original task', text: 'Please verify and continue the original scoped task; do not restart paused work.' }, sources: [{ label: 'source', url: 'https://example.test/task' }] }],
+    feedback: [{ id: 'f1', title: 'Feedback topic', changes: 'The original change is verified.', body: '<img src=x onerror=alert(1)>', sources: [] }],
     cases: [{ id: 'c1', title: 'Case without feedback', state: 'Unknown', body: 'Silence does not prove quality.', sources: [] }],
     knowledge: { summary: 'Reuse established methods.', url: 'https://example.test/knowledge' }
   } },
@@ -57,12 +57,20 @@ try {
   assert.equal(await page.locator('#monitoringFeedbackTab').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('.feedback-group').count(), 2);
   assert.match(await page.locator('[data-subproject="recording"]').innerText(), /New project to observe/);
+  await page.locator('[data-subproject="reports"] td:first-child > details > summary').click();
   await page.locator('[data-subproject="reports"] .feedback-usage-scope summary').click();
   assert.match(await page.locator('[data-subproject="reports"]').innerText(), /Sampling since/);
   await page.locator('[data-subproject="reports"] .feedback-usage-scope summary').click();
   assert(await page.locator('[data-subproject="reports"]').getByRole('button', { name: 'Give feedback', exact: true }).isVisible());
   assert(await page.evaluate(() => [...document.querySelectorAll('.feedback-group .monitoring-table-wrap')].every(n => n.scrollWidth <= n.clientWidth + 1)), 'desktop keeps the feedback action and directions in view');
   assert.match(await page.locator('[data-subproject="recording"]').innerText(), /Not covered in this sample/);
+  await page.locator('[data-feedback-group="collaboration"] > summary button').first().click();
+  await page.getByRole('heading', { name: 'Collaboration', exact: true }).waitFor();
+  assert.equal(await page.locator('[data-feedback-id]').count(), 1);
+  await page.getByRole('button', { name: 'Work cases 1', exact: true }).click();
+  await page.locator('[data-review-item="c1"]').waitFor({ state: 'visible' });
+  assert.equal(new URL(page.url()).searchParams.get('feedbackView'), 'cases');
+  await page.getByRole('button', { name: 'Back to subprojects', exact: true }).click();
   await page.getByRole('button', { name: 'Reports', exact: true }).click();
   await page.locator('.feedback-review').waitFor();
   assert(await page.getByText('Verify delivery', { exact: true }).isVisible());
@@ -74,7 +82,24 @@ try {
   await page.locator('[data-review-section="feedback"] > summary').click();
   await page.locator('[data-review-item="f1"] > summary').click();
   assert.equal(await page.locator('.feedback-review img').count(), 0);
+  assert(await page.getByText('The original change is verified.', { exact: true }).isVisible());
   await page.locator('[data-review-section="feedback"] > summary').click();
+  const sentActions = [];
+  await context.route('**/api/sessions/' + 'a'.repeat(32) + '/messages', async route => {
+    sentActions.push(route.request().postDataJSON());
+    if (sentActions.length === 1) await route.abort('failed');
+    else await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ duplicate: true, requestId: sentActions[0].requestId }) });
+  });
+  await page.locator('.feedback-start > summary').click();
+  assert.equal(sentActions.length, 0, 'preview is not authorization');
+  await page.getByRole('button', { name: 'Confirm and start', exact: true }).click();
+  await page.getByText(/Delivery not confirmed/).waitFor();
+  await page.getByRole('button', { name: 'Confirm and start', exact: true }).click();
+  await page.getByText(/Submitted to the original work/).waitFor();
+  assert.equal(sentActions.length, 2);
+  assert.deepEqual(sentActions[0], sentActions[1], 'uncertain retries keep request identity and text');
+  assert(sentActions[0].text.includes('do not restart paused work'));
+  assert(await page.getByRole('button', { name: 'Confirm and start', exact: true }).isDisabled());
   await page.locator('.feedback-raw-records > summary').click();
   await page.locator('[data-feedback-id="old_feedback"] summary').click();
   assert.match(await page.locator('.feedback-detail').innerText(), /Yesterday’s progress/);
@@ -85,9 +110,15 @@ try {
   await page.locator('#feedbackSignal').selectOption('useful');
   await page.locator('#feedbackSubmit').click();
   await page.waitForFunction(() => document.querySelector('#feedbackReceipt').textContent.includes('Saved at'));
-  await page.waitForFunction(() => document.querySelector('[data-subproject="reports"] td:nth-child(2)').firstChild.textContent === '2');
+  await page.waitForFunction(() => document.querySelector('[data-subproject="reports"] td:nth-child(2)').textContent.includes('Source feedback 2'));
   await page.reload(); await page.locator('[data-subproject="reports"]').waitFor({ state: "attached" });
-  assert.match(await page.locator('[data-subproject="reports"] td:nth-child(2)').textContent(), /^2/);
+  assert.match(await page.locator('[data-subproject="reports"] td:nth-child(2)').textContent(), /Source feedback 2/);
+  await page.locator('.feedback-start > summary').click();
+  await page.getByRole('button', { name: 'Confirm and start', exact: true }).click();
+  await page.getByText(/Submitted to the original work/).waitFor();
+  assert.equal(sentActions.length, 3);
+  assert.equal(sentActions[0].requestId, sentActions[2].requestId, 'same human confirmation survives page reload without a second work request');
+  await context.unroute('**/api/sessions/' + 'a'.repeat(32) + '/messages');
   await page.locator('[data-feedback-id]').first().locator('summary').click();
   assert.match(await page.locator('.feedback-detail').innerText(), /awaiting analysis/);
   assert.match(await page.locator('.feedback-detail').innerText(), /old_feedback/);
@@ -123,7 +154,7 @@ try {
   assert.equal(await page.locator("#feedbackComment").inputValue(), "Fixture: the recording indicator should be visible.");
   await page.locator("#feedbackSubmit").click();
   await page.waitForFunction(() => document.querySelector("#feedbackReceipt").textContent.includes("已保存"));
-  await page.waitForFunction(() => document.querySelector('[data-subproject="recording"] td:nth-child(2)').firstChild.textContent === "1");
+  await page.waitForFunction(() => document.querySelector('[data-subproject="recording"] td:nth-child(2)').textContent.includes("原始反馈 1"));
   await context.unroute("**/api/project-feedback");
   assert.deepEqual(errors, []);
   await writeFile(join(output, 'verification.json'), JSON.stringify({ desktop: true, mobile: true, save_readback: true, reload: true, reference_preserved: true, keyboard_tabs: true, bilingual: true, uncertain_save_retry: true, no_html_execution: true, page_errors: errors }, null, 2));

@@ -21,8 +21,8 @@ const legacy = { records: [
 const review = { created_at: '2026-10-10T12:00:00Z',
   subprojects: [{ subproject_id: 'reports', name: 'Reports', suggested_directions: ['Show the current result.'], review: {
       summary: 'Follow up the original work.', as_of: '2026-10-15T04:00:00+08:00',
-      attention: [{ id: 'a1', title: 'Verify delivery', state: 'pending', sources: [{ label: 'unsafe', url: 'javascript:alert(1)' }] }],
-      feedback: [{ id: 'f1', title: 'Keep the source' }],
+      attention: [{ id: 'a1', title: 'Verify delivery', state: 'pending', sources: [{ label: 'unsafe', url: 'javascript:alert(1)' }], action: { session_id: 'a'.repeat(32), session_name: 'Original work', text: 'Confirm the scoped work.' } }],
+      feedback: [{ id: 'f1', title: 'Keep the source', changes: 'Verified original change.', related_ids: ['c1'], action: { session_id: '../bad', text: 'must not escape' } }],
       cases: [{ id: 'c1', title: 'No feedback', state: 'unknown', private_actor_id: 'private-case-author' }],
       knowledge: { summary: 'Reuse established methods.', url: 'https://example.test/knowledge' },
       private_path: '/private/evidence',
@@ -56,6 +56,15 @@ try {
   assert.equal(reports.project.review.attention[0].sources[0].url, '');
   assert(!JSON.stringify(reports).includes('/private/evidence'));
   assert(!JSON.stringify(reports).includes('private-case-author'));
+  assert.equal(reports.project.review.attention[0].action.session_id, 'a'.repeat(32));
+  assert.equal(reports.project.review.feedback[0].action, null);
+  assert.equal(reports.project.review.feedback[0].changes, 'Verified original change.');
+  assert.deepEqual(reports.project.review.feedback[0].related_ids, ['c1']);
+  const grouped = await store.read('group:unconfirmed');
+  assert.equal(grouped.group.id, 'unconfirmed');
+  assert.equal(grouped.records.length, 2, 'parent view includes only assigned feedback');
+  assert.equal(grouped.projects.length, 2);
+  await assert.rejects(() => store.read('group:missing'), { code: 'NOT_FOUND' });
   assert.equal(reports.project.review.knowledge.url, 'https://example.test/knowledge');
   assert.equal(reports.records.find(r => r.id === 'vote').review_state, 'reviewed');
   assert.equal(reports.records.find(r => r.id === 'vote').analysis, 'Preserve the signal; no policy change.');
