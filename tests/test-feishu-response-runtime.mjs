@@ -13,7 +13,11 @@ await mkdir(join(home, 'bin'));
 const executable = join(home, 'bin/response-native');
 const response = '<private>feishu-response:{"replyMode":"thread","requestIds":["response-root","response-link"],"reaction":"Get"}</private>已读链接，并结合原问题回答。';
 const fixture = await readFile(new URL('./fixtures/native-codex-app-server.cjs', import.meta.url), 'utf8');
-await writeFile(executable, fixture.replace("finalText = 'durable native answer'", `finalText = ${JSON.stringify(response)}`));
+const followupResponse = '<private>feishu-response:{"replyMode":"inline","requestIds":["response-after"]}</private>后续输入也及时答复。';
+await writeFile(executable, fixture.replace("finalText = 'durable native answer'", `finalText = ${JSON.stringify(response)}`)
+  .replace("if (text.includes('PUBLISH_FINAL_EARLY')", `if (text.includes('ANSWER_FOLLOWUP')) finalText = ${JSON.stringify(followupResponse)};\n      if (text.includes('PUBLISH_FINAL_EARLY')`)
+  .replace('id: `answer-${activeTurn}`', 'id: `answer-${activeTurn}-${params.clientUserMessageId}`')
+  .replace('released = true; finish();', "released = true; finish('completed', false);"));
 await chmod(executable, 0o755);
 const silentExecutable = join(home, 'bin/response-silent');
 await writeFile(silentExecutable, fixture.replace("finalText = 'durable native answer'", "finalText = ''"));
@@ -67,6 +71,10 @@ try {
   const early = await until(async () => { const r = await requests.byRunId(root.run.id); return r?.mainlineReply && r; });
   assert.equal(early.result, null, 'answer must publish before the continuing execution ends');
   assert.deepEqual(early.deliveries.map(d => d.kind), ['reaction', 'content']);
+  await manager.submitHttpMessage(session.id, 'ANSWER_FOLLOWUP PUBLISH_FINAL_EARLY 新补充', [], opts('response-after'));
+  const liveFollowup = await until(async () => { const r = await requests.byRequest(session.id, 'response-after'); return r?.mainlineReply && r; });
+  assert.equal(liveFollowup.result, null, 'root reply must not disable publication for later native inputs');
+  assert.equal(liveFollowup.deliveries.filter(d => d.kind === 'content').length, 1);
   await writeFile(join(home, `${root.run.id}.release`), 'release');
   const result = await until(async () => { const r = await requests.byRunId(root.run.id); return r?.result && r; });
   const extraResult = await until(async () => { const r = await requests.byRequest(session.id, 'response-link'); return r?.result && r; });
@@ -78,7 +86,7 @@ try {
   assert.doesNotMatch(result.deliveries[1].text, /feishu-response|尚未完成/);
   assert.equal(extraResult.deliveries.length, 0);
   const history = await loadHistory(session.id, { includeBodies: true });
-  assert.equal(history.filter(e => e.type === 'work_event' && e.action === 'mainline-input-reply').length, 1);
+  assert.equal(history.filter(e => e.type === 'work_event' && e.action === 'mainline-input-reply').length, 2);
   assert(!history.some(e => e.type === 'tool_use' && /work reply/.test(JSON.stringify(e))),
     'native final owns coverage without an additional model tool call');
   // Real group regression: a code link followed by an @mention of another
