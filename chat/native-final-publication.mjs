@@ -1,3 +1,5 @@
+import { readFeishuResponseDecision } from '../lib/feishu-response-decision.mjs';
+import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
 import { assistantSurfaceMessageId, collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
@@ -104,6 +106,12 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
   for (const [event, surface] of collectAssistantSurfaceMessages(events || [], { independentOpening: Boolean(record.options?.messageReplyPolicy) })) {
     if (event.runId && event.runId !== record.runId) continue;
     const final = isFinalAssistantMessage(event);
+    const directiveEvent = surface.messageUpdateSeq
+      ? events.find(item => item.seq === surface.messageUpdateSeq) || event : event;
+    // Structured finals atomically bind their answer to accepted inputs at
+    // terminal publication. Do not publish them first through the legacy path.
+    if ((final || surface.surfaceKind === 'final') && hasPilotInputReplyContract(record)
+        && readFeishuResponseDecision(directiveEvent.content).specified) continue;
     const owner = final || surface.surfaceKind === 'question' ? record : scopes.get(event) || record;
     if (owner !== record && !owner.nativeReceipt?.accepted) continue;
     if (owner.options?.suppressSourceDelivery || owner.routingHandoff) continue;
@@ -195,8 +203,6 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const entry = includeEntry ? buildSessionEntry(session, { runtimeSelection: publicationRun }) : null;
     // Display projection removes private blocks. Read control directives from
     // the original final (or its latest revision), never from display text.
-    const directiveEvent = surface.messageUpdateSeq
-      ? events.find(item => item.seq === surface.messageUpdateSeq) || event : event;
     const payload = final ? buildReplyPublicationPayload([prepared], publicationRun,
       { session, fullHistory, includeSessionEntry: Boolean(entry), finalDirectiveContent: directiveEvent.content }) : {
       text: appendSessionEntryFooter(prepared.content, entry), attachments: getAssistantReplyAttachments(prepared),

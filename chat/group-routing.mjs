@@ -3,15 +3,14 @@
 import { createHash } from 'node:crypto';
 import { routingPilotScope, routingSyncTargetAllowed, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { loadSessionsMeta, findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
-import { requests, appendDeliveries, requestKey } from './requests.mjs';
+import { requests, requestKey } from './requests.mjs';
 import { appendEvent, getHistorySnapshot } from './history.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
-import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { allowsMessageRouting } from './message-routing-policy.mjs';
 import { executionTrialPrompt } from './work-execution-prompt.mjs';
-import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
+import { publishFeishuResponse, withFeishuResponseLock as serial } from './feishu-response.mjs';
 import { routingDiscovery } from './work-routing-discovery.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { groupSyncReturnPlan, syncResultPresentation, syncDecisionOutcome } from './group-sync-presentation.mjs';
@@ -21,14 +20,8 @@ const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 
 const fail = message => { throw new Error(message); };
 const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const stamp = session => session?.workAwareness?.intents?.at(-1)?.id || '';
-const queues = new Map();
 const hasAnswerDelivery = input => input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind)
   && !['opening', 'progress', 'placement_error'].includes(d.surfaceKind));
-async function serial(id, fn) {
-  const prior = queues.get(id) || Promise.resolve();
-  const current = prior.catch(() => {}).then(fn); queues.set(id, current);
-  try { return await current; } finally { if (queues.get(id) === current) queues.delete(id); }
-}
 const sameGroup = (a, b) => a?.connector === 'feishu' && b?.connector === 'feishu'
   && a.sourceRouteId === b.sourceRouteId && a.target?.chatId === b.target?.chatId
   && a.target?.tenantKey === b.target?.tenantKey;
@@ -67,113 +60,16 @@ async function sourceFor(record, { explicitSyncDecision = false } = {}) {
   return { session, scope, origin };
 }
 
-async function commitInputReply(input, reply) {
-  return requests.mutate(input.key, current => {
-    if (current.mainlineReply) {
-      if (JSON.stringify(current.mainlineReply.contract) !== JSON.stringify(reply)) fail('Retry must preserve the input set and reply');
-      return current;
-    }
-    if (current.result || current.routingHandoff || current.streamedFinalReplyIds?.length
-        || hasAnswerDelivery(current)) fail('Input is no longer available for a local reply');
-    const plans = input.requestId === reply.ownerRequestId
-      ? buildReplyDeliveries(reply.deliveryPlan || input.deliveryPlan || input.options.sourceDelivery,
-        { ...reply.payload, text: stripHiddenBlocks(reply.payload.text) }, { running: false }) : [];
-    return { ...current, options: { ...current.options, suppressSourceDelivery: true },
-      mainlineReply: { contract: reply, queuedAt: new Date().toISOString() },
-      deliveries: appendDeliveries(current, plans) };
-  });
-}
-
-// The validated packet is reserved on the root before any member is written.
-// Terminal recovery completes an interrupted combined reply without losing its
-// remaining input markers or publishing its owner twice.
-export async function recoverPilotReplies(root) {
-  for (const reply of root.mainlineReplyPlans || []) {
-    for (const id of reply.requestIds) {
-      const input = await requests.byRequest(root.sessionId, id);
-      if (!input || (input.nativeDispatchRunId || input.runId) !== root.runId) fail('Reserved reply input is unavailable');
-      await commitInputReply(input, reply);
-    }
-  }
-  return await requests.get(root.key) || root;
-}
-
-// A local answer is owned by the selected accepted inputs, not the root Run.
-// Persist the packet before its per-input outbox parts; replay cannot send twice.
+// Compatibility API: routing eligibility is checked here; response ownership,
+// parsing, durable reservation and publication have one shared implementation.
 export async function replyGroupInput(record, body) {
-  return serial(record.sessionId, async () => {
-    record = await requests.get(record.key) || record;
-    const { session, origin } = await sourceFor(record);
-    if (!hasPilotInputReplyContract(record) || session.conversation.target.conversationKind !== 'main') {
-      fail('Local per-input replies require the pilot mainline');
-    }
-    const text = typeof body.text === 'string' ? body.text.trim() : '';
-    const noTextReason = clean(body.noTextReason, 600);
-    if (text.length > 12000 || (!text && !noTextReason)) fail('Provide reply text (up to 12000 characters) or a reason no text is needed');
-    if (text && noTextReason) fail('Select a text reply or a no-text decision');
-    const ids = body.requestIds || [record.requestId];
-    if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length
-        || !ids.includes(record.requestId)) fail('Select 1–8 distinct input IDs including the current input');
-    const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
-    const payload = { text, attachments: [] };
-    const root = await requests.byRunId(record.nativeDispatchRunId || record.runId);
-    if (!root || root.result) fail('Active pilot execution is required');
-    if (body.replyMode !== undefined && !['inline', 'thread'].includes(body.replyMode)) fail('replyMode must be inline or thread');
-    const ownerPlan = inputs[0]?.deliveryPlan || inputs[0]?.options?.sourceDelivery;
-    const deliveryPlan = resolveAmbientFeishuReplyPlan(root, ownerPlan,
-      [{ type: 'message', role: 'assistant', content: body.replyMode
-        ? `<private>feishu-reply:${body.replyMode}</private>${text}` : text }]);
-    if (text && !deliveryPlan) fail('Choose replyMode inline or thread before sending a reply; related inputs may share requestIds');
-    // A pre-upgrade reservation keeps its exact retry contract and destination.
-    const reserved = root.mainlineReplyPlans?.find(item => item.requestIds.some(id => ids.includes(id)));
-    const legacyReservation = reserved && !Object.hasOwn(reserved, 'deliveryPlan') && body.replyMode === undefined;
-    const reply = { requestIds: ids, ownerRequestId: ids[0], payload,
-      ...(deliveryPlan && !legacyReservation ? { deliveryPlan } : {}), ...(noTextReason ? { noTextReason } : {}) };
-    for (const input of inputs) {
-      if (!input || !hasPilotInputReplyContract(input)
-          || (input.nativeDispatchRunId || input.runId) !== (record.nativeDispatchRunId || record.runId)) {
-        fail('Source input does not belong to this active pilot execution');
-      }
-      const source = await sourceFor(input);
-      if (!sameGroup(origin, source.origin) || input.routingHandoff
-          || (input.mainlineReply && JSON.stringify(input.mainlineReply.contract) !== JSON.stringify(reply))
-          || (!input.mainlineReply && (input.streamedFinalReplyIds?.length
-            || hasAnswerDelivery(input)))) {
-        fail('Input already has a different reply or handoff');
-      }
-    }
-    await requests.mutate(root.key, current => {
-      if (current.result) fail('Active pilot execution is required');
-      const prior = (current.mainlineReplyPlans || []).filter(p => p.requestIds.some(id => ids.includes(id)));
-      if (prior.length && (prior.length !== 1 || JSON.stringify(prior[0]) !== JSON.stringify(reply))) {
-        fail('Input already has a different reserved reply');
-      }
-      return prior.length ? current : { ...current,
-        ...(text && deliveryPlan && (body.replyMode || requiresFeishuReplyPlacement(root))
-          ? { replyPlacement: current.replyPlacement || deliveryPlan } : {}),
-        mainlineReplyPlans: [...(current.mainlineReplyPlans || []), reply] };
-    });
-    const receipts = [];
-    for (const input of inputs) {
-      const saved = await commitInputReply(input, reply);
-      receipts.push({ requestId: saved.requestId, deliveryIds: saved.deliveries.map(d => d.id) });
-    }
-    await appendEvent(session.id, { type: 'work_event', action: 'mainline-input-reply', requestIds: ids,
-      ownerRequestId: ids[0], receipts });
-    return { requestIds: ids, receipts, state: text ? 'queued' : 'recorded', scope: 'Input reply decision recorded; delivery and business completion are separate.' };
-  });
+  return publishFeishuResponse(record, body, { validateInput: async input => {
+    const { session } = await sourceFor(input);
+    if (session.conversation.target.conversationKind !== 'main') fail('Local per-input replies require the pilot mainline');
+  } });
 }
+export { recoverPilotReplies, pilotInputResult } from './feishu-response.mjs';
 
-export function pilotInputResult(record, run) {
-  if (record.mainlineReply) return { state: 'completed', payload: record.mainlineReply.contract.payload,
-    executionRunId: run.id, executionState: run.state, replyOwnerRequestId: record.mainlineReply.contract.ownerRequestId };
-  if (record.routingHandoff?.state === 'submitted') return { state: 'completed', payload: { text: '', attachments: [] },
-    executionRunId: run.id, executionState: run.state, routingHandoff: record.routingHandoff };
-  const text = run.state === 'cancelled' ? '本轮已取消，这条消息尚未完成分流或独立回复。'
-    : '这条消息已接收，但本轮未保存它的分流或独立回复，处理尚未完成。';
-  return { state: run.state === 'cancelled' ? 'cancelled' : 'failed', payload: { text, attachments: [] },
-    executionRunId: run.id, error: text };
-}
 export async function routeGroupWork(record, body, deps) {
   return serial(record.sessionId, async () => {
     record = await requests.get(record.key) || record;
@@ -579,7 +475,7 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
         || session.conversation?.connector !== 'feishu') return '';
     return [
     '## 本条消息不分流',
-    '本条消息不自动转交其他工作 Session；在当前绑定的 Session 处理，不使用 work route 或主线 work reply，不沿用历史中的实验分流指令。此限制不决定是否回复或回复位置：群主线仍可由主模型在首个可见回复前用 feishu-reply:thread 选择话题回复；已有话题内继续原话题。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
+    '本条消息不自动转交其他工作 Session；在当前绑定的 Session 处理，不使用 work route 或主线 work reply，不沿用历史中的实验分流指令。此限制不决定是否回复或回复位置：群主线仍可由主模型在首个可见回复前用 feishu-response 的 replyMode:thread 选择话题回复；已有话题内继续原话题。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
   ].join('\n');
   }
   const scope = await routingPilotScope(session?.conversation, undefined, messageRoutingPolicy?.personId);

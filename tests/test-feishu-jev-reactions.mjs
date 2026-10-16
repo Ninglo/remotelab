@@ -24,8 +24,8 @@ try {
   assert.equal(resolveFeishuGroupSettings(config, base).jevReactions, true);
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /main Session owns the complete handling/);
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /precedence over a late quick reaction/);
-  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /Decide whether a useful text reply or task is needed/);
-  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /stay silent when no text contribution is needed/);
+  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /Choose participation, reply location and the inputs answered together/);
+  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /For a deliberate no-text decision/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread' }).jevReactions, undefined,
     'the pilot must stay on the selected group mainline');
   const workSummary = applyFeishuReplyRouting(config, {

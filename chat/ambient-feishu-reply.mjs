@@ -1,8 +1,5 @@
 import { normalizeConversation } from '../lib/conversation-target.mjs';
-import { parseFeishuReactionDirective } from '../lib/feishu-reaction-directive.mjs';
-
-const THREAD_DIRECTIVE = '<private>feishu-reply:thread</private>';
-const INLINE_DIRECTIVE = '<private>feishu-reply:inline</private>';
+import { readFeishuResponseDecision } from '../lib/feishu-response-decision.mjs';
 
 export function requiresFeishuReplyPlacement(record) {
   return record?.options?.sourceContext?.feishuParticipation === 'ambient'
@@ -12,10 +9,8 @@ export function requiresFeishuReplyPlacement(record) {
 export function readFeishuReplyPlacement(history = []) {
   for (const event of history) {
     if (event?.type !== 'message' || event.role !== 'assistant') continue;
-    const text = String(event.content || '').trimStart();
-    const body = (parseFeishuReactionDirective(text)?.text || text).trimStart();
-    if (body.startsWith(THREAD_DIRECTIVE)) return 'thread';
-    if (body.startsWith(INLINE_DIRECTIVE)) return 'inline';
+    const decision = readFeishuResponseDecision(event.content);
+    if (!decision.error && decision.replyMode) return decision.replyMode;
   }
   return null;
 }

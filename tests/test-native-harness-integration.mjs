@@ -475,7 +475,7 @@ try {
   await until(async () => { topicClaim = await rpc('claim', { connector: 'feishu' }); return Boolean(topicClaim); }, 'independent result has its own topic');
   assert.equal(topicClaim.delivery.target.rootId, 'pilot-independent');
   await rpc('complete', topicClaim.delivery.id, topicClaim.leaseId, { externalId: 'pilot-independent-research' });
-  assert(pilotClaims.some(d => d.target.messageId === 'pilot-unhandled' && /尚未完成/.test(d.text)), 'an omitted input receives an honest notice at its own anchor');
+  assert(!pilotClaims.some(d => d.target.messageId === 'pilot-unhandled'), 'missing coverage remains failed internally without inventing a group reply');
   await evidence('PASS: pilot supplement, independent matter and another author status steer before root completion; topics remain distinct, status sends immediately at its own anchor, omitted handling stays incomplete, restart and settlement never duplicate/root-copy replies.');
 
   const raceSession = await rpc('create');

@@ -10,7 +10,7 @@ import {
   buildSessionNavigationHref,
 } from '../lib/session-navigation.mjs';
 import { buildSessionDisplayEvents } from './session-display-events.mjs';
-import { parseFeishuReactionDirective } from '../lib/feishu-reaction-directive.mjs';
+import { readFeishuResponseDecision } from '../lib/feishu-response-decision.mjs';
 import { isFinalAssistantMessage, isReplyMessage } from '../lib/assistant-message-phase.mjs';
 import { parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 
@@ -213,14 +213,16 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
     .filter((event) => event?.role === 'assistant')
     .filter((event) => event.type === 'message' || event.type === 'attachment_delivery');
   const lastAssistantMessage = [...replyHistory].reverse().find(isReplyMessage);
-  const parsedReaction = session?.sourceId === 'feishu'
-    ? parseFeishuReactionDirective(finalDirectiveContent ?? lastAssistantMessage?.content) : null;
+  const decision = session?.sourceId === 'feishu'
+    ? readFeishuResponseDecision(finalDirectiveContent ?? lastAssistantMessage?.content) : null;
+  const parsedReaction = decision && (decision.reaction || decision.invalidReaction || decision.specified)
+    ? { emojiType: decision.reaction, invalid: decision.invalidReaction, text: decision.text } : null;
   // Live publication supplies a display projection with prepared asset URLs.
   // Borrow only the control decision, not unprocessed raw answer text.
   const reactionDirective = parsedReaction && finalDirectiveContent !== null
     ? { ...parsedReaction, text: lastAssistantMessage?.content || '' } : parsedReaction;
   const noTextDecision = reactionDirective
-    ? !stripHiddenBlocks(reactionDirective.text)
+    ? !stripHiddenBlocks(reactionDirective.text) && !getAssistantReplyAttachments(lastAssistantMessage).length
     : isFeishuNoTextDecision(lastAssistantMessage?.content);
 
   const payload = {
