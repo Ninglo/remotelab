@@ -263,8 +263,10 @@ inside the card, and retains that explanation through later edits and restarts.
 First-time cards and in-place edits do not add this notice or send a separate
 announcement. Editing content does not reset the card's age.
 
-The normal prompt builder reads only registered projects’ opening briefs on each
-accepted input, including resumed topics, with a hash and source pointer. Each
+The normal prompt builder checks registered projects’ opening briefs on each
+accepted input, including resumed topics, and projects their hash and source
+pointer without the body. The Harness reads the relevant full brief before
+substantive project work; a pointer alone is not proof of reading. Each
 brief is bounded at 48 KiB; missing or oversized files are marked unavailable
 rather than silently replaced with cached text. The detailed ledger remains a
 pointer. Briefs are project background, not new task authorization; human
