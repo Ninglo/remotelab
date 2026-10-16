@@ -30,8 +30,11 @@ try {
   assert.equal(creates, 1);
   assert.match(JSON.stringify(sent), /你的 AI 同事/);
   assert.match(JSON.stringify(sent), /网页版备用入口（需另行登录）/);
-  const controls = sent.body.elements.filter(e => e.tag === 'column_set').flatMap(row => row.columns.flatMap(col => col.elements));
-  assert.equal(controls.length, 14, 'all six settings expose their options without expanding panels');
+  const settingPanels = sent.body.elements.filter(e => e.tag === 'collapsible_panel' && e.elements.some(child => child.tag === 'column_set'));
+  assert.equal(settingPanels.length, 6);
+  assert.ok(settingPanels.every(e => e.expanded === false), 'settings start collapsed');
+  const controls = settingPanels.flatMap(e => e.elements).filter(e => e.tag === 'column_set').flatMap(row => row.columns.flatMap(col => col.elements));
+  assert.equal(controls.length, 14, 'all six settings retain explicit options inside their panels');
   assert.equal(controls.filter(b => b.disabled && b.type === 'primary').length, 6, 'one current choice per setting');
   const selectedOff = controls.find(b => b.behaviors[0].value.field === 'opening' && b.behaviors[0].value.value === false);
   assert.equal(selectedOff.disabled, false);

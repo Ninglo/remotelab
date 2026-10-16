@@ -17,18 +17,18 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
   const choices = (field, current, options, revision = replies.revision) => ({ tag: 'column_set', columns: options.map(([value, label]) => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [button(label, field, value, revision, current === value)],
   })) });
-  const toggle = (title, field, enabled, description, labels = ['开启', '关闭'], revision = replies.revision) => [
-    md(`**${title}**\n${description}`), choices(field, enabled, [[true, labels[0]], [false, labels[1]]], revision),
-  ];
+  const toggle = (title, field, enabled, description, labels = ['开启', '关闭'], revision = replies.revision) => [panel(`${title} · ${enabled ? labels[0] : labels[1]}`, [
+    md(description), choices(field, enabled, [[true, labels[0]], [false, labels[1]]], revision),
+  ])];
   const c = replies.choices;
-  const elements = [md(PERSONAL_INTRO), { tag: 'hr' }, ...(notice ? [md(notice)] : []),
-    md('**个人设置**\n标有“当前”的是已选项。点击其他选项立即保存，从后续对话生效；正在进行的工作保持原设置。'),
+  const elements = [md('嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'), { tag: 'hr' }, ...(notice ? [md(notice)] : []),
+    md('**个人设置**\n点开一项查看说明和选项；修改从后续对话生效。'),
     ...toggle('开始工作时的回复', 'opening', c.opening, '接到需要动手的任务后，先简短告诉你我理解的目标和准备做什么。简单问答直接回答。', ['先说一下怎么做', '直接开始']),
     ...toggle('任务清单', 'checklist', c.checklist, '一件工作有多项成果时，用清单显示哪些已完成、哪些还在做，方便你查看和验收。这里控制工作清单的展示；个人待办仍可直接交给我创建。', ['需要时显示', '不显示']),
-    md('**进展消息**\n有关键发现、阶段结果或需要调整方向时，我会报告进展。选择在哪里查看；需要你回答的问题和最终结果都会单独发送。'),
+    panel(`进展消息 · ${progressLabels[c.progress]}`, [md('有关键发现、阶段结果或需要调整方向时，我会报告进展。选择在哪里查看；需要你回答的问题和最终结果都会单独发送。'),
     choices('progress', c.progress, Object.entries(progressLabels).slice(0, 2)),
     choices('progress', c.progress, Object.entries(progressLabels).slice(2)),
-    md('卡片会持续更新；选择“全部进展”时，历史记录默认收起，想看时再展开。'),
+    md('卡片会持续更新；选择“全部进展”时，历史记录默认收起，想看时再展开。')]),
     ...toggle('多项工作并行（试用）', 'routing', c.routing === 'experimental', '有几件事能独立推进时，我会提出分工，确认后分开做，你仍在原话题收结果。关闭后不主动提出这类分工；目前仅在已开放的试点群生效。', ['主动建议分工', '不主动建议']),
     ...(memory.available ? toggle('个人记忆', 'memory', memory.conversational && memory.enabled,
       '记住你的称呼、表达偏好和协作习惯，减少下次重复交代。新发现的习惯会先问你是否保留；你也可以随时问“你记住了什么”，或要求修改、删除。关闭不会删除已有记录。', ['开启', '关闭'], memory.revision)
@@ -36,6 +36,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     ...toggle('开工前核对（试用）', 'strictStartCheck', c.strictStartCheck,
       '接到新工作时，额外查一下项目资料、现有做法和相关任务，减少重复做或接错工作。开启后准备时间可能更长；关闭后按通常方式开始。', ['增加核对', '通常方式']),
     { tag: 'hr' }, md('**使用说明**'),
+    panel('认识 Index', [md(PERSONAL_INTRO)]),
     panel('交办工作与查看结果', [md('直接发目标、材料和要求，或把相关讨论转给我。例如：“这段讨论帮我整理成方案”“查一下这次评测为什么退步”。\n我会先利用已有资料；缺少关键背景时再问你。结果会回到交办的话题，文档、代码等成果会附上入口。')]),
     panel('中途补充、修改与停止', [md('任务进行中也可以继续发消息补充要求，不必等我做完。发现方向不对，直接指出哪部分要改。\n要停下就说“停止当前任务”。如果已经提交了外部训练或其他后台任务，我会另行核对它们是否也已停止。')]),
     panel('连接资料与授权', [md('普通聊天和这里的设置不需要额外安装。读取私有文档、操作日历或连接设备时，可能需要授权。\n你可以说“检查这项工作需要哪些权限”，我会汇总缺少的权限、用途和办理入口。管理员审批、本人账号授权、文档分享和设备权限分别办理，当前还没有一键全部开通。')]),
