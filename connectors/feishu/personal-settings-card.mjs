@@ -27,10 +27,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     md(description), choices(field, enabled, [[true, labels[0]], [false, labels[1]]], revision),
   ])];
   const c = replies.choices;
-  const elements = [md(hasGuide ? guide.intro : '嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'),
-    ...(hasGuide ? guide.sections.map(s => panel(s.title, [md(s.body)])) : []),
-    { tag: 'hr' }, ...(notice ? [md(notice)] : []),
-    md('**个人设置**\n点开一项查看说明和选项；修改从后续对话生效。'),
+  const settings = [md('修改从后续对话生效。标有“当前”的是已选项。'),
     ...toggle('开始工作时的回复', 'opening', c.opening, '接到需要动手的任务后，先简短告诉你我理解的目标和准备做什么。简单问答直接回答。', ['先说一下怎么做', '直接开始']),
     ...toggle('任务清单', 'checklist', c.checklist, '一件工作有多项成果时，用清单显示哪些已完成、哪些还在做，方便你查看和验收。这里控制工作清单的展示；个人待办仍可直接交给我创建。', ['需要时显示', '不显示']),
     panel(`进展消息 · ${progressLabels[c.progress]}`, [md('有关键发现、阶段结果或需要调整方向时，我会报告进展。选择在哪里查看；需要你回答的问题和最终结果都会单独发送。'),
@@ -43,7 +40,10 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
       : [md('**个人记忆 · 尚未开放**\n用于记住称呼、表达偏好和协作习惯。当前账号暂未开放此试用。')]),
     ...toggle('开工前核对（试用）', 'strictStartCheck', c.strictStartCheck,
       '接到新工作时，额外查一下项目资料、现有做法和相关任务，减少重复做或接错工作。开启后准备时间可能更长；关闭后按通常方式开始。', ['增加核对', '通常方式']),
-    { tag: 'hr' }, md('**使用说明**'),
+    button('刷新设置', 'refresh', null),
+  ];
+  const help = [
+    ...(hasGuide ? guide.sections.map(s => panel(s.title, [md(s.body)])) : []),
     panel('认识 Index', [md(PERSONAL_INTRO)]),
     panel('交办工作与查看结果', [md('直接发目标、材料和要求，或把相关讨论转给我。例如：“这段讨论帮我整理成方案”“查一下这次评测为什么退步”。\n我会先利用已有资料；缺少关键背景时再问你。结果会回到交办的话题，文档、代码等成果会附上入口。')]),
     panel('中途补充、修改与停止', [md('任务进行中也可以继续发消息补充要求，不必等我做完。发现方向不对，直接指出哪部分要改。\n要停下就说“停止当前任务”。如果已经提交了外部训练或其他后台任务，我会另行核对它们是否也已停止。')]),
@@ -51,8 +51,16 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     panel('增强版有什么用，怎么安装？', [md('增强版补充飞书客户端的页面显示和话题状态等体验。这里的个人设置在普通飞书就能用，不需要安装增强版。\n目前增强安装仅支持已验证的 Apple 芯片 Mac 和特定飞书版本。想试用可说“帮我检查增强版能不能安装”，先核对设备和版本，再给安装入口。个人偏好共用一份配置；已有增强版中的重复入口正在迁移。')]),
     panel('项目资料、个人记忆与可见范围', [md('项目背景帮助我理解工作；个人记忆帮助我了解怎样与你协作，两者分别维护。你的个人偏好不会成为全群规则。\n我只能使用已接入且有权限读取的资料。当前共享网页工作台的已登录成员可查看工作台会话，个人设置不提供会话隔离；交办私密材料前请确认分享范围。')]),
     md('找不到这张卡时，私聊发送“我的设置”即可重新打开。修改失败时可先刷新，再重新选择。'),
-    button('刷新设置', 'refresh', null),
     ...(webUrl ? [panel('网页版备用入口（需另行登录）', [md(`[打开网页设置](${webUrl})\n需要使用本人的网页账号登录，飞书登录不会自动通用。没有网页账号时，直接在这张卡修改，或私聊告诉我想调整哪一项。`)])] : []),
+  ];
+  // One disclosure per region: opening Settings reveals its controls directly.
+  const flatten = items => items.flatMap(item => item.tag === 'collapsible_panel'
+    ? [md(`**${item.header.title.content}**`), ...item.elements] : [item]);
+  const elements = [
+    md(hasGuide ? guide.intro : '嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'),
+    ...(notice ? [md(notice)] : []),
+    { ...panel('个人设置', flatten(settings)), element_id: 'personal_settings_region' },
+    { ...panel('使用说明', flatten(help)), element_id: 'personal_help_region' },
   ];
   return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 个人设置与使用说明') }, body: { elements } };
 }

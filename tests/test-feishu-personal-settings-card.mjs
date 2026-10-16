@@ -31,10 +31,11 @@ try {
   assert.equal(creates, 1);
   assert.match(JSON.stringify(sent), /你的 AI 同事/);
   assert.match(JSON.stringify(sent), /网页版备用入口（需另行登录）/);
-  const settingPanels = sent.body.elements.filter(e => e.tag === 'collapsible_panel' && e.elements.some(child => child.tag === 'column_set'));
-  assert.equal(settingPanels.length, 6);
-  assert.ok(settingPanels.every(e => e.expanded === false), 'settings start collapsed');
-  const controls = settingPanels.flatMap(e => e.elements).filter(e => e.tag === 'column_set').flatMap(row => row.columns.flatMap(col => col.elements));
+  const settingsRegion = sent.body.elements.find(e => e.element_id === 'personal_settings_region');
+  assert.equal(sent.body.elements.length, 3, 'first screen contains introduction and two collapsed regions');
+  assert.equal(settingsRegion.expanded, false);
+  assert.ok(!settingsRegion.elements.some(e => e.tag === 'collapsible_panel'), 'one expansion reveals controls');
+  const controls = settingsRegion.elements.filter(e => e.tag === 'column_set').flatMap(row => row.columns.flatMap(col => col.elements));
   assert.equal(controls.length, 14, 'all six settings retain explicit options inside their panels');
   assert.equal(controls.filter(b => b.disabled && b.type === 'primary').length, 6, 'one current choice per setting');
   const selectedOff = controls.find(b => b.behaviors[0].value.field === 'opening' && b.behaviors[0].value.value === false);
@@ -54,8 +55,8 @@ try {
   let feedback = await controller.action(event('opening', false, 0));
   assert.equal(feedback.toast.type, 'success'); assert.equal(feedback.card.type, 'raw');
   assert.equal(feedback.card.data.body.elements[0].content, guide.intro, 'guide survives a real settings callback');
-  assert.equal(feedback.card.data.body.elements[1].expanded, false);
-  assert.equal(feedback.card.data.body.elements.filter(e => e.tag === 'collapsible_panel' && e.elements.some(child => child.tag === 'column_set')).length, 6, 'guide retains all personal settings');
+  assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').expanded, false);
+  assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').elements.filter(e => e.tag === 'column_set').length, 7, 'guide retains every settings option row');
   assert.equal((await loadPersonMessageReplies({ personId: 'two', identityId: 'id_two', authKind: 'test' })).revision, 0, 'example guide never changes another person');
   assert.equal((await loadPersonMessageReplies(actor)).choices.opening, false);
   await changePersonMessageReplies({ action: 'apply', confirm: true, expectedRevision: 1, choices: { ...(await loadPersonMessageReplies(actor)).choices, opening: true } }, actor);
