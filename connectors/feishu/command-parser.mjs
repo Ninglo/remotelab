@@ -1,5 +1,6 @@
 const COMMANDS = Object.freeze({
   help: { args: 'none' },
+  settings: { args: 'none' },
   status: { args: 'none' },
   progress: { args: 'optional' },
   log: { args: 'query' },

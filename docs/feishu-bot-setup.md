@@ -894,3 +894,13 @@ If you need deeper implementation or rollout context after the setup is working:
 - `notes/feishu-bot-operator-checklist.md`
 - `notes/feishu-bot-setup-lessons.md`
 - `docs/external-message-protocol.md`
+
+### Optional personal settings pilot
+
+Configure `personalSettings.openIds` only for the explicitly invited testers, and
+an optional credential-free HTTPS `personalSettings.webUrl`. The existing
+`card.action.trigger` subscription handles these private cards as well. A normal
+accepted private message produces one welcome; `/settings` or “我的设置” reopens
+it without model execution. This is a private per-Person surface, not group
+participation control. See [personal settings](feishu-web-settings.md#飞书私聊个人设置卡2026-10-16小范围试用)
+for identity checks, delivery recovery and separate live acceptance.

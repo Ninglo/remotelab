@@ -171,3 +171,5 @@ Personal routing trial buttons on Feishu group cards reuse the per-Person reply 
 The information-routing group card can show an explicitly enabled public pilot roster. Personal preference changes refresh the original cards silently; details remain collapsed. See [the trial contract](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards).
 
 - [Feishu tasks](platform-skills/feishu-tasks.md) — human Todos use the existing Feishu task workflow; the former local personal list is retired.
+
+- [飞书私聊个人设置卡](feishu-web-settings.md) — 私聊内修改个人回复、记忆与分流偏好，展开协作说明；网页为备用入口。首次欢迎、本人身份校验、旧卡与重试恢复沿原连接器维护。当前只对明确名单试用，增强版重复入口在对应用户迁移验证后退出。

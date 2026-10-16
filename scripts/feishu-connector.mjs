@@ -6,6 +6,7 @@ import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
+import { createPersonalSettingsController } from '../connectors/feishu/personal-settings-card.mjs';
 import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
 import { startProjectGroupCards } from '../connectors/feishu/project-group-cards.mjs';
 import { handleFeishuProgressPolicyAction } from '../connectors/feishu/progress-policy-actions.mjs';
@@ -398,6 +399,7 @@ async function loadConfig(pathname) {
     defaultGroupParticipation: parsed.defaultGroupParticipation || 'active',
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     projectCards: parsed.projectCards === true,
+    personalSettings: { openIds: Array.isArray(parsed.personalSettings?.openIds) ? parsed.personalSettings.openIds.filter(x => typeof x === 'string' && /^ou_[a-zA-Z0-9]+$/.test(x)) : [], webUrl: trimString(parsed.personalSettings?.webUrl) },
     projectSurfacesPath: trimString(parsed?.projectSurfacesPath)
       ? resolve(configDir, parsed.projectSurfacesPath) : '',
     replyPolicy: normalizeFeishuReplyPolicy(parsed?.replyPolicy),
@@ -1689,7 +1691,7 @@ function extractLocalCommand(summary) {
   if (!['group', 'topic', 'p2p', 'private'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  const parsed = parseFeishuCommandBlock(commandText);
+  const parsed = parseFeishuCommandBlock(summary.chatType === 'p2p' && ['我的设置', '个人设置'].includes(commandText.trim()) ? '/settings' : commandText);
   if (parsed.error) return parsed;
   return parsed.commands.length > 0 ? parsed : null;
 }
@@ -1972,6 +1974,12 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   const commandNames = command?.commands?.map(entry => entry.name) || [];
   const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name));
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+  if (commandNames.includes('settings')) {
+    if (commandNames.length !== 1 || command.body) return enqueue(runtime, summary, '请单独发送 /settings 或“我的设置”。');
+    if (!runtime.personalSettings?.enabled(summary)) return enqueue(runtime, summary, '个人设置请在已开放的机器人私聊中打开。');
+    try { return await runtime.personalSettings.publish(summary); }
+    catch (error) { return enqueue(runtime, summary, error.message); }
+  }
   if (commandNames.includes('log')) {
     if (commandNames.length !== 1) return enqueue(runtime, summary, '/log 请单独使用。');
     const target = await prepareFeishuLogContinuation(command.commands[0].value, {
@@ -2056,6 +2064,10 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     await runtime.readReactionStore?.remove(summary.messageId,
       (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId));
     return receipt;
+  }
+  if (runtime.personalSettings?.enabled(summary)) {
+    try { await runtime.personalSettings.publish(summary, { automatic: true }); }
+    catch (error) { console.warn(`[feishu-personal-settings] welcome: ${error.message}`); }
   }
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
   if (runtime.groupConfiguration && !buildFeishuTopicId(summary) && participationEnabled(runtime, summary)) {
@@ -2185,6 +2197,7 @@ async function main() {
   };
   const runtime = createRuntimeContext(config, storagePaths);
   runtime.cardReadSampler = createFeishuCardReadSampler(runtime);
+  runtime.personalSettings = createPersonalSettingsController(runtime, { authorize: summary => isAllowedByPolicy(config.accessPolicy, summary) });
   if (config.projectSurfacesPath) runtime.projectSurface = createProjectSurface(runtime, {
     authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
   });
@@ -2391,6 +2404,8 @@ async function main() {
     'calendar.calendar.changed_v4': displayHint('calendar.calendar.changed_v4'),
     'calendar.calendar.event.changed_v4': displayHint('calendar.calendar.event.changed_v4'),
     'card.action.trigger': async raw => {
+      const personalFeedback = await runtime.personalSettings.action(raw);
+      if (personalFeedback) return personalFeedback;
       const questionFeedback = await handleNativeQuestionCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
         authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),

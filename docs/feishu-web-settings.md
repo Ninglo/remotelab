@@ -67,3 +67,34 @@
 并验证；新版本适配需要重新验证，不能直接套用浏览器扩展的自动更新器。
 
 The same personal routing preference is also available from eligible Feishu group configuration cards. “为我开启试用 / 为我关闭试用 / 查看我的状态” resolve the signed callback operator to their own Person; they do not change group participation, other members, or already accepted inputs. Callback audit entries retain event/chat/message provenance, and repeated callback events cannot undo a later personal choice. See [the scoped trial contract](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards).
+
+## 飞书私聊个人设置卡（2026-10-16，小范围试用）
+
+个人设置以普通飞书私聊为主入口，网页只作备用，沿用同一份 Person 配置。
+增强版最终只保留本机显示、连接和当前对话模型等自身功能，不重复放个人
+开场、交付清单、进展、分流、记忆开关。当前先验证私聊卡，既有增强版安装
+尚未移除旧入口；在卡片验证并覆盖对应使用者之前不让他们失去原设置渠道。
+
+连接器配置 `personalSettings: {openIds: ["ou_..."], webUrl: "https://instance.example"}`
+明确限定试用人。默认空名单，不触达其他人。webUrl 只接受无凭据、无查询参数
+的 HTTPS 根入口；卡片追加 `?tab=settings`，不会携带所有者或个人登录票据。
+
+已登记身份的试用人在私聊发送“我的设置”“个人设置”或 `/settings`，可直接
+打开卡片。第一次普通私聊被受理后也会发一次；持久记录阻止重启或后续聊天
+重复欢迎。卡片包含可展开的六项设置以及身份、协作、授权、安装和资料范围说明。
+个人记忆仍受原试点名单限制；对话分流开关不扩大已登记群范围。
+
+卡片回调校验签名入口后的操作者、租户、原私聊、当前消息和已绑定 Person，
+不信任载荷中的身份。每次设置沿原版本校验写入，成功后返回当前卡和保存提示；
+旧版本冲突只刷新并提示，不覆盖新选择。个人回复的原事件审计防重放；个人记忆
+使用明确目标值和版本，不做无条件反转。卡片创建先记发送中状态，无法确认的
+网络结果保留该状态，禁止盲目新发；运营核对真实消息回执后恢复原记录。
+
+主动打开时，13 天以内更新原卡；超过更新窗口才创建新卡，旧卡不再接受修改。
+暂不声称已自动置顶或安装私聊标签页；这些入口需要分别验证实际客户端效果。
+说明不会把管理员审批、个人 OAuth、资源访问权或设备权限包装成“一键全授权”。
+
+实现：`connectors/feishu/personal-settings-card.mjs`；入口与长连接回调在
+`scripts/feishu-connector.mjs`。验证使用隔离环境的
+`tests/test-feishu-personal-settings-card.mjs`，覆盖身份隔离、版本冲突、事件重放、
+记忆开关、首次欢迎去重及未知发送结果。真实私聊送达和本人点击应分别验收。
