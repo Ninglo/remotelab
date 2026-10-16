@@ -11,6 +11,7 @@ const { CONFIG_DIR } = await import('../lib/config.mjs');
 const { requests } = await import('../chat/requests.mjs');
 const { handleProtectedSourceRoutes } = await import('../chat/router-protected-sources.mjs');
 const { digest } = await import('../lib/protected-source-read.mjs');
+const { runProtectedSourceCommand } = await import('../lib/protected-source-command.mjs');
 const record = { runId: 'run_a', requestId: 'req_a', sessionId: 'session_a', options: {
   viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a' } };
 requests.byRunId = async runId => runId === 'run_a' ? record : null;
@@ -40,6 +41,13 @@ try {
   assert.equal((await call({ ...input, runId: 'unknown' })).status, 403);
   assert.equal((await call('{')).status, 400);
   assert.equal((await call(input, { authKind: 'service' })).status, 200);
+  const packetPath = join(home, 'input.json'); await writeFile(packetPath, JSON.stringify(input));
+  let output = '';
+  const io = { stdout: { write: text => { output += text; } }, env: { REMOTELAB_RUN_ID: 'run_a', REMOTELAB_SESSION_ID: 'session_a' } };
+  await runProtectedSourceCommand(['--file', packetPath, '--json'], io);
+  assert.equal(Buffer.from(JSON.parse(output).content, 'base64').toString(), 'test content');
+  await assert.rejects(runProtectedSourceCommand(['--file', packetPath], { ...io,
+    env: { REMOTELAB_RUN_ID: 'run_a', REMOTELAB_SESSION_ID: 'wrong-session' } }), /request_identity_required/);
   record.result = { state: 'completed' };
   assert.equal((await call()).status, 403);
   const logs = await Promise.all((await readdir(join(CONFIG_DIR, 'protected-source-audit'))).map(async name =>
