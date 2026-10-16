@@ -926,3 +926,7 @@ accepted private message produces one welcome; `/settings` or “我的设置”
 it without model execution. This is a private per-Person surface, not group
 participation control. See [personal settings](feishu-web-settings.md#飞书私聊个人设置卡2026-10-16小范围试用)
 for identity checks, delivery recovery and separate live acceptance.
+
+### Independent personal memory review cards
+
+The explicitly enrolled `reviewCardPersonIds` trial in `learning-policy.json` uses the same connector/outbox and `card.action.trigger` callback. New personal memories and foreground proposals can show keep/edit/discard controls in the originating conversation. These callbacks mutate only the versioned memory; they never submit user input or a native question to the original task. Enable only for the person who requested it, with personal learning enabled. See [memory learning](memory-learning.md#独立记忆卡片试点飞书) for privacy deferral, identity/version checks, retry behavior and rollout limits.

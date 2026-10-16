@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
 import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
 import { topicAnnouncementContext } from '../connectors/feishu/group-announcement.mjs';
 import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
@@ -1582,7 +1583,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     let sent;
     try {
-      sent = delivery.nativeQuestion
+      sent = delivery.memoryReview
+        ? await sendMemoryReviewCard(runtime, delivery)
+        : delivery.nativeQuestion
         ? await sendNativeQuestionCard(runtime, delivery)
         : delivery.kind === 'reaction'
         ? await outcomeReactionStore.apply(summary.messageId, delivery.emojiType,
@@ -2411,6 +2414,10 @@ async function main() {
     'card.action.trigger': async raw => {
       const personalFeedback = await runtime.personalSettings.action(raw);
       if (personalFeedback) return personalFeedback;
+      const memoryFeedback = await handleMemoryReviewCardAction(runtime, raw, {
+        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+      });
+      if (memoryFeedback) return memoryFeedback;
       const questionFeedback = await handleNativeQuestionCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
         authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
