@@ -1,5 +1,5 @@
-import { FEISHU_RESPONSE_DECISION_PROMPT } from '../../lib/feishu-response-decision.mjs';
-import { buildFeishuTopicId, isFeishuTopicChat } from './index.mjs';
+import { buildFeishuResponseDecisionPrompt } from '../../lib/feishu-response-decision.mjs';
+import { buildFeishuTopicId, isFeishuTopicGroup } from './index.mjs';
 import { normalizeDailyReportMemory } from './daily-report-memory.mjs';
 import { FEISHU_REACTION_CATALOG, normalizeFeishuReactionCandidates } from '../../lib/feishu-reaction-catalog.mjs';
 
@@ -70,21 +70,22 @@ export function normalizeFeishuGroups(value = {}) {
 export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const group = effectiveFeishuGroup(config, summary.chatId);
   const privateChat = ['p2p', 'private'].includes(String(summary.chatType || '').trim().toLowerCase());
-  const topic = !privateChat && (isFeishuTopicChat(summary)
+  const topicGroup = !privateChat && isFeishuTopicGroup(summary);
+  const topic = !privateChat && (topicGroup
     || Boolean(buildFeishuTopicId(summary))
     || (['topic', 'thread'].includes(summary.conversationKind)
       && (summary.startThread !== true || group.jevReactions === true)));
   const groupMainline = !privateChat && !topic
     && [summary.chatType, summary.chatMode].some(value => String(value || '').toLowerCase() === 'group');
   const ambient = groupMainline && group.participationMode === 'ambient';
-  const unified = (groupMainline || topic) && Boolean(group.initialParticipationMode) && group.participationControls !== false;
-  const quickReactions = (groupMainline || topic) && group.quickReactions === true && !privateChat && (!topic || unified);
+  const unified = !topicGroup && (groupMainline || topic) && Boolean(group.initialParticipationMode) && group.participationControls !== false;
+  const quickReactions = !topicGroup && (groupMainline || topic) && group.quickReactions === true && !privateChat && (!topic || unified);
   const jevReactions = group.jevReactions === true && !privateChat && (ambient || unified);
   const candidates = normalizeFeishuReactionCandidates(group.reactionCandidates ?? (privateChat ? undefined : config.groupReactionCandidates));
   return {
     reactionCandidates: candidates,
-    // Explicit mention-only and existing group policies take precedence.
-    responseMode: group.participationMode === 'ambient' ? 'all' : group.responseMode
+    // Native topic groups always receive humans; ordinary groups keep their policies.
+    responseMode: topicGroup || group.participationMode === 'ambient' ? 'all' : group.responseMode
       ?? 'mention_only',
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
@@ -98,8 +99,8 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
       !privateChat && (ambient || topic || quickReactions) ? `Optional reaction candidates: ${candidates.map(id => `${id} (${FEISHU_REACTION_CATALOG[id]})`).join(', ') || 'none'}. Omit reaction to retain it; reaction:null explicitly withdraws it.` : '',
       jevReactions ? JEV_REACTION_SESSION_PROMPT
         : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
-      (ambient || topic) && config.projectLinks?.some(link => link.discussionChatId === summary.chatId) ? WORK_KICKOFF_SESSION_PROMPT : '',
-      (groupMainline || topic) ? FEISHU_RESPONSE_DECISION_PROMPT : '',
+      !topicGroup && (ambient || topic) && config.projectLinks?.some(link => link.discussionChatId === summary.chatId) ? WORK_KICKOFF_SESSION_PROMPT : '',
+      (groupMainline || topic) ? buildFeishuResponseDecisionPrompt({ topicGroup }) : '',
       ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT
         : groupMainline && group.responseMode === 'all' ? GROUP_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),

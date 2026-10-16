@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
-import { buildFeishuTopicId } from './index.mjs';
+import { buildFeishuTopicId, isFeishuTopicGroup } from './index.mjs';
 import { getFeishuConversationSettings, setFeishuConversationMuted } from './conversation-settings.mjs';
 import { recordFeishuOutboundMessageSession } from './session-flow.mjs';
 import { effectiveFeishuGroup } from './group-settings.mjs';
@@ -14,7 +14,7 @@ const hasModeOverride = record => record?.modeOverride === true
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 
 export function participationEnabled(runtime, summary) {
-  if (!summary?.chatId || ['p2p', 'private'].includes(summary.chatType)) return false;
+  if (!summary?.chatId || isFeishuTopicGroup(summary) || ['p2p', 'private'].includes(summary.chatType)) return false;
   const group = effectiveFeishuGroup(runtime.config, summary.chatId);
   return group?.participationMode === 'ambient' && group.participationControls === true;
 }
@@ -60,14 +60,15 @@ export function buildParticipationCard(record, configuration = null) {
 }
 
 export function createParticipationController(runtime, { resolveSession, cancelSession, cleanup, getConfiguration,
-  authorize = async () => false } = {}) {
+  resolveSource = async source => source, authorize = async () => false } = {}) {
   const records = createRecordStore(join(runtime.config.storageDir, 'participation-state'));
   const queues = new Map();
   const publishQueues = new Map();
   const sourceFor = summary => ({ sourceRouteId: runtime.config.sourceRouteId || 'default',
     tenantKey: summary.tenantKey || summary.accountId || summary.sender?.tenantKey || '',
     chatId: summary.chatId, topicId: buildFeishuTopicId(summary),
-    messageId: summary.messageId || '' });
+    messageId: summary.messageId || '',
+    chatType: summary.chatType, chatMode: summary.chatMode, groupMessageType: summary.groupMessageType });
   const keyFor = summary => {
     const { sourceRouteId, tenantKey, chatId, topicId } = sourceFor(summary);
     return hash(JSON.stringify({ sourceRouteId, tenantKey, chatId, topicId }));
@@ -114,7 +115,9 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     return publishQueues.get(record.key)(() => publishCurrent(record, options));
   }
   async function publishCurrent(record, { existingOnly = false } = {}) {
-    record = { ...record, ...await state({ ...record.source, threadId: record.source.topicId }) };
+    const source = await resolveSource({ ...record.source, threadId: record.source.topicId });
+    if (isFeishuTopicGroup(source)) return record;
+    record = { ...record, ...await state(source) };
     // Withdrawing a status card does not change participation or intake. Keep
     // the durable opt-out when restoring or changing modes so it cannot resend.
     if (record.cardSuppressed === true
@@ -258,9 +261,9 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const chatId = event.context?.open_chat_id || event.context?.chat_id;
     const messageId = event.context?.open_message_id || event.context?.message_id;
     const actor = event.operator?.operator_id?.open_id || event.operator?.open_id;
-    const summary = { ...record?.source, chatId, chatType: 'group', messageId,
+    const summary = await resolveSource({ ...record?.source, chatId, chatType: 'group', messageId,
       ...(record?.source.topicId ? { threadId: record.source.topicId } : {}),
-      sender: { senderType: 'user', openId: actor }, eventId: raw.header?.event_id || event.event_id };
+      sender: { senderType: 'user', openId: actor }, eventId: raw.header?.event_id || event.event_id });
     if (!record || !actor || record.source.chatId !== chatId || record.cardMessageId !== messageId
         || !MODES.has(value.mode) || value.epoch !== (await state(summary)).epoch || !participationEnabled(runtime, summary)
         || !await authorize(summary)) return { toast: { type: 'error', content: '状态已变化或无权操作，请看最新卡片。' } };
@@ -270,12 +273,13 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   }
   async function restore() {
     for (const record of await records.active()) {
-      if (!participationEnabled(runtime, record.source)) continue;
-      if (record.stopPending) await change(record.source, record.mode,
+      const source = await resolveSource(record.source);
+      if (!participationEnabled(runtime, source)) continue;
+      if (record.stopPending) await change(source, record.mode,
         { sessionId: record.sessionId, controlId: `restore:${record.epoch}` });
       else {
         if (record.mode !== 'active') await cleanup?.(record);
-        try { await publish(record); }
+        try { await publish({ ...record, source }, { existingOnly: true }); }
         catch (error) { console.warn(`[feishu-participation] card restore failed: ${error.message}`); }
       }
     }

@@ -11,7 +11,7 @@ try {
   const { createParticipationController } = await import('../connectors/feishu/participation-state.mjs');
   const { createFeishuOutcomeReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
   const { classifyFeishuQuickParticipation } = await import('../connectors/feishu/quick-participation.mjs');
-  const { processSourceDeliveryOnce, handleMessage } = await import('../scripts/feishu-connector.mjs');
+  const { processSourceDeliveryOnce, handleMessage, onboardFeishuGroup } = await import('../scripts/feishu-connector.mjs');
   const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery, resolveSourceDelivery } = await import('../chat/source-deliveries.mjs');
   const config = { storageDir: home, sourceRouteId: 'bot', defaultGroupParticipation: 'active', groups: {
     work: { responseMode: 'all', participationStatusCard: false },
@@ -23,7 +23,7 @@ try {
   assert.equal(effectiveFeishuGroup(config, 'passive').responseMode, 'mention_only');
   assert.equal(effectiveFeishuGroup(config, 'passive').participationMode, undefined);
   assert.equal(effectiveFeishuGroup(config, 'off').participationControls, false);
-  const base = { chatId: 'work', chatType: 'group', chatMode: 'topic', tenantKey: 'tenant', threadId: 't1',
+  const base = { chatId: 'work', chatType: 'group', chatMode: 'group', tenantKey: 'tenant', threadId: 't1',
     rootId: 'r1', messageId: 'm1', messageType: 'text', mentions: [{ openId: 'colleague' }],
     sender: { senderType: 'user', openId: 'human' }, messageText: '@同事 这个问题怎么解决？' };
   const cancelled = [], observed = [], submitted = [], decisions = [];
@@ -148,5 +148,82 @@ try {
   assert.equal(selectedResult.emojiType, 'SOB');
   config.groups.work.reactionCandidates = [];
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /Optional reaction candidates: none/);
+  // Native topic groups bypass all ordinary-group participation state. Human
+  // follow-ups use the existing submission/steer path, even with old controls.
+  const native = { ...base, chatId: 'native', chatMode: 'topic', threadId: 'native-topic' };
+  const nativeConfig = { ...config, storageDir: join(home, 'native'), groups: {
+    native: { participationMode: 'paused', responseMode: 'mention_only' },
+  } };
+  const nativeRuntime = { config: nativeConfig, botIdentity: runtime.botIdentity, storagePaths: {} };
+  const nativePrompt = resolveFeishuGroupSettings(nativeConfig, native).systemPrompt;
+  assert.match(nativePrompt, /every human message is addressed to the Agent and needs a reply/);
+  assert.doesNotMatch(nativePrompt, /otherwise stay silent|Jev supplies|work kickoff/);
+  assert.equal(resolveFeishuGroupSettings(nativeConfig, native).jevReactions, undefined);
+  const { participationEnabled } = await import('../connectors/feishu/participation-state.mjs');
+  assert.equal(participationEnabled(nativeRuntime, native), false);
+  const { setFeishuConversationMuted } = await import('../connectors/feishu/conversation-settings.mjs');
+  await setFeishuConversationMuted(nativeRuntime, native, true);
+  const nativeSubmitted = [];
+  for (const [id, text] of [['first', 'hello'], ['steer', '补充一下'], ['control-text', '先旁听']]) {
+    await handleMessage(nativeRuntime, { ...native, messageId: id, messageText: text }, 'test', {
+      ...helpers,
+      observeRemoteLabMessage: async () => assert.fail('native topics do not use ambient observation'),
+      submitRemoteLabRequest: async (_r, summary) => { nativeSubmitted.push(summary); return { sessionId: 'native-session' }; },
+    });
+  }
+  assert.equal(nativeSubmitted.length, 3);
+  assert.equal(nativeRuntime.participation, undefined, 'native conversation never opens a three-mode controller');
+  assert.equal(nativeSubmitted[0].participationEpoch, undefined);
+
+  // Restart must resolve old records that lack chat metadata, skip obsolete
+  // native-topic controls, and never create a missing ordinary-group card.
+  const restoreRuntime = { config: { ...config, storageDir: join(home, 'restore'), groups: {} },
+    storagePaths: {}, appClient: { im: { v1: { message: {
+      create: async () => assert.fail('restore must not create cards'),
+      reply: async () => assert.fail('restore must not create topic cards'),
+      patch: async () => assert.fail('obsolete native topic cards must not be patched'),
+    } } } } };
+  const oldController = createParticipationController(restoreRuntime);
+  const oldRecord = await oldController.remember({ ...base, chatId: 'native-old', chatMode: '' }, 'native-old-session');
+  const restoreStore = createRecordStore(join(restoreRuntime.config.storageDir, 'participation-state'));
+  await restoreStore.mutate(oldRecord.key, current => ({ ...current, source: {
+    chatId: current.source.chatId, topicId: current.source.topicId,
+    tenantKey: current.source.tenantKey, sourceRouteId: current.source.sourceRouteId,
+  }, mode: 'paused', stopPending: true, cardMessageId: 'om_obsolete' }));
+  await oldController.remember({ ...base, chatId: 'ordinary', threadId: '', rootId: '' }, 'ordinary-session');
+  const recovery = createParticipationController(restoreRuntime, {
+    resolveSource: async source => ({ ...source, chatMode: source.chatId === 'native-old' ? 'topic' : 'group' }),
+    cancelSession: async () => assert.fail('obsolete native pause must not cancel a Session'),
+    cleanup: async () => assert.fail('obsolete native pause must not clean up current work'),
+    authorize: async () => true,
+  });
+  await recovery.restore();
+  await recovery.publish(await recovery.record(oldRecord.key));
+  const rejectedNative = await recovery.action({ event: {
+    action: { value: { namespace: 'participation', key: oldRecord.key, mode: 'active', epoch: 0 } },
+    context: { open_chat_id: 'native-old', open_message_id: 'om_obsolete' }, operator: { open_id: 'human' },
+  } });
+  assert.equal(rejectedNative.toast.type, 'error');
+  // Provider metadata also governs project onboarding and queued output, whose
+  // stored targets may incorrectly claim to be an ordinary group.
+  nativeRuntime.appClient = { im: { v1: { chat: { get: async () => ({
+    code: 0, data: { chat_mode: 'topic', name: 'native group' },
+  }) } } } };
+  const synthetic = { ...native, chatMode: 'group' };
+  assert.equal((await onboardFeishuGroup(nativeRuntime, synthetic, {
+    projectCard: true, requestRemoteLab: async () => assert.fail('native group must not create a group card Session'),
+  })).reason, 'native_topic_group');
+  let nativeDelivered = 0;
+  await processSourceDeliveryOnce(nativeRuntime, {
+    requestRemoteLab: async path => path === '/api/source-deliveries/claim'
+      ? { response: { ok: true }, json: { claim: { leaseId: 'native-lease', delivery: {
+        id: 'native-result', target: synthetic, kind: 'content', text: 'answer',
+      } } } }
+      : { response: { ok: true }, json: { delivery: { state: 'delivered' } } },
+    sendFeishuText: async () => { nativeDelivered++; return { message_id: 'native-answer', thread_id: native.threadId }; },
+  });
+  assert.equal(nativeDelivered, 1, 'old paused group settings cannot suppress native-topic output');
+
+
   console.log('Unified participation: migration boundaries, topic inheritance, explicit scope override, invitation, silence, optional Jev, candidate enforcement and durable withdrawal passed');
 } finally { await rm(home, { recursive: true, force: true }); }

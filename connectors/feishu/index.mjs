@@ -430,6 +430,12 @@ export function normalizeFeishuMode(value) {
   return trimString(value).toLowerCase().replace(/[_\s-]+/g, '_');
 }
 
+// Native chat mode is distinct from a thread reply in an ordinary group.
+export function isFeishuTopicGroup(summary) {
+  if (normalizeFeishuMode(summary?.chatMode) === 'group') return false;
+  return isFeishuTopicChat(summary);
+}
+
 export function isFeishuTopicChat(summary) {
   const chatType = normalizeFeishuMode(summary?.chatType);
   const groupMessageType = normalizeFeishuMode(summary?.groupMessageType);

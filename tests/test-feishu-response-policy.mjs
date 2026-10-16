@@ -48,12 +48,12 @@ try {
   await check('partial group metadata cannot inherit connector-wide all mode', {
     chatType: '', chatMode: '', groupMessageType: 'group',
   }, [], { group: 'all' });
-  await check('new topic groups require an explicit invitation', {
+  await check('native topic groups admit every human message', {
     chatMode: 'topic', messageId: 'topic-default-root',
-  }, []);
-  await check('thread-type groups default to passive reception', {
+  }, ['submit']);
+  await check('thread-type groups admit every human message', {
     groupMessageType: 'thread', messageId: 'thread-type-default-root',
-  }, []);
+  }, ['submit']);
   await check('an uninvited ordinary-group Thread stays passive', {
     threadId: 'ordinary-group-thread',
   }, []);
@@ -77,9 +77,9 @@ try {
   await check('self remains excluded under group override', { sender: { senderType: 'app', openId: 'bot-self' } }, []);
   runtime.config.groups = { 'group-1': { responseMode: 'mention_only' } };
   await check('explicit mention-only override blocks ordinary chatter', {}, [], { group: 'all' });
-  await check('mention-only native topics require an invitation', {
+  await check('legacy mention-only does not gate native topics', {
     chatMode: 'topic', groupMessageType: 'thread', messageId: 'topic-explicit-mention-root',
-  }, []);
+  }, ['submit']);
   await check('mention-only unjoined Threads require an invitation', {
     threadId: 'report-thread',
   }, []);
@@ -229,9 +229,9 @@ try {
   await check('native topic replies can identify the joined topic by root ID', {
     chatMode: 'topic', messageId: 'topic-reply', rootId: 'topic-root',
   }, ['submit']);
-  await check('a different native topic stays passive', {
+  await check('a different native topic also admits humans', {
     chatMode: 'topic', messageId: 'other-topic-reply', rootId: 'other-topic-root',
-  }, []);
+  }, ['submit']);
 
   // Explicit work/sharing policies survive the default for newly joined groups.
   await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', groups: {
@@ -247,7 +247,7 @@ try {
     }) } } } },
   };
   for (const [chatId, expected] of [
-    ['work-topic', ['submit']], ['sharing-topic', []], ['new-native-topic', ['submit']],
+    ['work-topic', ['submit']], ['sharing-topic', ['submit']], ['new-native-topic', ['submit']],
   ]) {
     effects = [];
     await handleMessage(topicRuntime, { ...base, chatId, chatMode: '', threadId: `${chatId}-first`,

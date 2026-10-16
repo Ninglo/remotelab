@@ -757,7 +757,15 @@ not a group name or its project role, determines conversation ownership. Cancell
 is scoped to matching Requests rather than the whole Session, preserving unrelated
 queued or running work in that Session.
 
-The shared response policy has three decisions: the main Session decides whether
+Native topic groups and ordinary groups have different participation rules.
+In a native topic group, every human message enters its topic Session and needs
+a reply through normal Harness conversation/steer. No Jev participation decision,
+three-mode status card, or legacy group mute gates these messages. Self/bot-loop
+protection remains. An ordinary group's thread is not a native topic group;
+provider chat metadata determines this distinction, including restored records
+and project-card discovery.
+
+For ordinary groups, the shared response policy has three decisions: the main Session decides whether
 its contribution is useful, combines pending questions/corrections into one answer
 when helpful, and uses a thread for complex work or continuing discussion. Jev's
 optional preliminary social feedback never gates that decision. Several matters
@@ -786,7 +794,7 @@ binding. Conflicting references, unknown messages and prose/title similarity do
 not choose a destination. Creating another execution Session or transferring work
 to another group still uses the existing authorization workflow.
 
-For groups using `participationControls: true`, the pinned status card shows
+For ordinary groups using `participationControls: true`, the pinned status card shows
 active, listening or paused reception, the main Session link, its saved model and
 effort, and native model/effort/prompt editing forms. Group prompts are stored
 durably in `group-configuration`, with version, actor and the last 20 revisions.
@@ -806,10 +814,13 @@ edit form. Set that exact group's
 `participationStatusCard: false` to hide the card while keeping participation
 and text controls. This also suppresses publication on restart and mode changes;
 withdraw the existing message and its top notice separately when requested.
+Restart refreshes only existing status cards; it never creates a missing card
+from remembered conversation state. Native topic records are excluded from
+restoration, including pending old pause operations.
 
 The opt-in `projectCards: true` setting extends this same card to groups explicitly
-registered in the instance project runtime, including work and mention-only
-groups. Their response policy remains unchanged, and participation buttons appear
+registered in the instance project runtime, including ordinary work and mention-only
+groups. Native topic groups are excluded. Their response policy remains unchanged, and participation buttons appear
 only where that control is already enabled. Each group reuses its main Session;
 the card adds the shared project document, concise skills and a paginated topic
 board. Native Session invalidations and registered-source file notifications
@@ -817,7 +828,7 @@ refresh the card; per-card publication is serialized to avoid duplicate creates.
 See [project group cards and opening briefs](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)
 for scope, registration, feedback and acceptance boundaries.
 
-Participation controls apply to the main timeline and each existing Thread;
+In ordinary groups, participation controls apply to the main timeline and each existing Thread;
 Threads inherit the group state until an explicit topic override. `/mute` selects listening: messages are recorded without a model turn unless
 that message @ mentions the Bot or uses a task command.
 Listening still downloads image/file resources into the normal Session asset
@@ -856,7 +867,7 @@ suppression cancels the matching unsent lease; it does not report a provider sen
 default with `inline` or `thread`. `groups[chatId]` also supports
 `responseMode` (`all`/`mention_only`), optional `systemPrompt`, and the
 exact-chat `participationMode: "active" | "listening" | "paused"` setting
-(`"ambient"` remains a compatibility alias). New groups and their topics use
+(`"ambient"` remains a compatibility alias). New ordinary groups and their threads use
 `defaultGroupParticipation` (active by default when no legacy global mention-only policy is explicitly configured). An existing explicit `responsePolicy.group: "mention_only"` remains mention-only unless the operator selects the new default; explicit per-group policies take
 precedence. A successfully bound topic continues without another mention. The
 group prompt is appended to global instructions and applied to existing Sessions

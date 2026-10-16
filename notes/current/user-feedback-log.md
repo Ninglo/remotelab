@@ -1851,3 +1851,16 @@ still require observation in actual subsequent conversations.
   retries and per-input completion; native steering and thread continuation test
   the existing runtime path. These checks establish delivery mechanics, not the
   quality of model participation. Natural conversation feedback remains necessary.
+
+
+## 2026-10-16 — Native topic groups are Agent conversations
+
+A restart unexpectedly created a participation card inside an active topic. The
+user clarified two surfaces: native topic groups always deliver human messages
+to their topic Agent through normal conversation/steer; ordinary groups retain
+active/listening/paused participation and their status card. The defect came
+from applying ordinary-group controls to every thread and recreating missing
+cards during restoration. Resolve provider group metadata at that boundary,
+exclude native groups from participation restoration/publication, and restore
+only existing ordinary-group cards. Keep ordinary-group thread identity separate
+from native topic-group mode. No new batching/classification layer is needed.

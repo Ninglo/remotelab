@@ -67,6 +67,7 @@ import {
   MAX_FEISHU_TEXT_LENGTH,
   isFeishuDocumentCommentSummary,
   isFeishuTopicChat,
+  isFeishuTopicGroup,
   normalizeFeishuMode,
   normalizeReplyText,
   sanitizeIdPart,
@@ -804,6 +805,19 @@ async function loadFeishuChatMetadata(runtime, chatId) {
     runtime.chatMetadataCache.set(normalizedChatId, null);
     return null;
   }
+}
+
+// Restored records and synthetic delivery/card targets may describe a reply
+// thread rather than the provider's chat type. Resolve that boundary once using
+// the shared chat metadata cache before applying group participation controls.
+async function resolveFeishuGroupSource(runtime, summary) {
+  if (['p2p', 'private'].includes(summary?.chatType)) return summary;
+  const metadata = await loadFeishuChatMetadata(runtime, summary?.chatId);
+  return metadata ? { ...summary,
+    chatType: metadata.chatType || summary.chatType || 'group',
+    chatMode: metadata.chatMode || summary.chatMode,
+    groupMessageType: metadata.groupMessageType || '',
+  } : summary;
 }
 
 async function enrichSummaryWithChatMetadata(runtime, summary) {
@@ -1557,8 +1571,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const claim = json?.claim;
   if (!claim) return null;
   const delivery = claim.delivery;
-  const summary = { ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice',
-    ...(delivery.foldedDetails ? { foldedDetails: delivery.foldedDetails } : {}) };
+  const summary = await (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, {
+    chatType: 'group', ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice',
+    ...(delivery.foldedDetails ? { foldedDetails: delivery.foldedDetails } : {}) });
   return withFeishuHandoffLock(runtime, summary, async () => {
     if (participationEnabled(runtime, summary)) {
       const controller = participationController(runtime, helpers);
@@ -1770,6 +1785,9 @@ function participationController(runtime, helpers = {}) {
   if (runtime.participation) return runtime.participation;
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   runtime.participation = createParticipationController(runtime, {
+    resolveSource: summary => (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, {
+      ...summary, chatType: summary.chatType || 'group',
+    }),
     ...(runtime.groupConfiguration ? { getConfiguration: record => runtime.groupConfiguration.view(record) } : {}),
     authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
     resolveSession: async summary => {
@@ -1827,7 +1845,8 @@ function groupConfigurationController(runtime, helpers = {}) {
 }
 
 async function onboardFeishuGroup(runtime, summary, helpers = {}) {
-  if (!helpers.projectCard) summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
+  summary = await (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, summary);
+  if (isFeishuTopicGroup(summary)) return { ignored: true, reason: 'native_topic_group' };
   if (!helpers.projectCard && !participationEnabled(runtime, summary)) return { ignored: true, reason: 'explicit_group_policy' };
   const requester = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   if (helpers.projectCard) {

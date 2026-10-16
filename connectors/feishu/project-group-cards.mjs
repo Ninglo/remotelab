@@ -58,7 +58,7 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   }
   const summaryFor = group => ({ chatId: group.chatId, chatName: group.chatName || '',
     tenantKey: group.tenantKey || [...sessions.values()].find(s => s.conversation?.target?.chatId === group.chatId)?.conversation.target.tenantKey || '',
-    chatType: 'group', chatMode: 'group', conversationKind: 'main', sourceKind: 'project_card' });
+    chatType: 'group', conversationKind: 'main', sourceKind: 'project_card' });
   async function routingGroups() {
     let config;
     try { config = JSON.parse(await readFile(GROUP_ROUTING_PILOT_FILE, 'utf8')); }

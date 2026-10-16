@@ -232,7 +232,10 @@ register `name`, `briefPath`, `briefUrl` and `skills` (`name`, `description`,
 `skill`). `briefWorkflowPath` points to the instance’s existing event/review
 maintenance workflow. These are instance pointers, not repository business data.
 
-Enable `projectCards: true` on the intended Connector. On connection it resolves
+Enable `projectCards: true` on the intended Connector. Native topic groups use
+normal Agent conversations and have no participation/configuration status card;
+provider chat metadata is checked before onboarding or refreshing a card.
+For ordinary groups, on connection it resolves
 each registered group’s existing main conversation, creates an idempotent Session
 only when absent, and publishes the existing participation card. It sends no
 synthetic human input and never starts work merely to create a Session. Explicit

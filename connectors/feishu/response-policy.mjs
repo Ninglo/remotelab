@@ -1,4 +1,4 @@
-import { buildFeishuTopicId, normalizeFeishuMode, trimString } from './index.mjs';
+import { buildFeishuTopicId, isFeishuTopicGroup, normalizeFeishuMode, trimString } from './index.mjs';
 import { getFeishuConversationSettings } from './conversation-settings.mjs';
 import { resolveFeishuGroupSettings } from './group-settings.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
@@ -57,6 +57,7 @@ export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary, { ex
   const mentioned = mentionsFeishuBot(runtime, summary);
   // Bot handoffs always need an explicit mention, even in private chats or group=all.
   if (isFeishuBotSender(summary)) return mentioned;
+  if (isFeishuTopicGroup(summary)) return true;
   if (!mentioned && !explicitCommand && (await getFeishuConversationSettings(runtime, summary)).muted) return false;
   if (mentioned || explicitCommand) return true;
   const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType,
