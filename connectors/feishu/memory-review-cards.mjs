@@ -16,28 +16,37 @@ const queue = createKeyedTaskQueue();
 const pathFor = (runtime, key) => join(runtime.config.storageDir, 'memory-review-cards', `${key}.json`);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-export function buildMemoryReviewCard(ref, entry, notice = '') {
+export function buildMemoryReviewCard(ref, entry, notice = '', editing = false) {
   const value = { namespace: 'memory-review', key: ref.key, version: entry.version };
-  const button = (label, action, submit = false) => ({ tag: 'button', text: plain(label), type: action === 'keep' ? 'primary' : 'default',
+  const button = (label, action, submit = false) => ({ tag: 'button', text: plain(label), type: action === 'keep' || submit ? 'primary' : 'default',
     ...(submit ? { name: 'save_memory', form_action_type: 'submit' } : {}),
     behaviors: [{ type: 'callback', value: { ...value, action } }] });
   const input = (name, label, default_value, max_length) => ({ tag: 'input', name, label: plain(label), default_value: default_value || '',
     input_type: 'multiline_text', max_length, placeholder: plain(label) });
   const closed = entry.status === 'withdrawn';
+  const state = notice || (closed ? '已不再使用' : entry.status === 'confirmed' ? '已记住' : '待确认');
+  const rows = buttons => ({ tag: 'column_set', columns: buttons.map(b => ({ tag: 'column', width: 'weighted', weight: 1, elements: [b] })) });
   return { schema: '2.0', config: { update_multi: true, enable_forward: false },
-    header: { template: closed ? 'grey' : 'blue', title: plain('个人记忆') }, body: { elements: [
-      md(notice || (closed ? '这条已不再使用。' : entry.status === 'confirmed' ? '已记住，可以继续调整。' : '我整理出一条候选记忆，请你看看是否准确。')),
-      md(entry.content), ...(entry.conditions ? [md(`适用时机：${entry.conditions}`)] : []),
-      ...(entry.exceptions ? [md(`例外：${entry.exceptions}`)] : []),
-      md('原任务会继续。你可以现在处理，也可以稍后再看；这里的修改用于记忆，不会打断原任务。'),
-      ...(!closed ? [
-        { tag: 'column_set', columns: [button('保留', 'keep'), button('不记这条', 'discard')].map(b => ({ tag: 'column', width: 'weighted', weight: 1, elements: [b] })) },
-        { tag: 'form', name: 'memory_edit', elements: [{ tag: 'collapsible_panel', expanded: false, header: { title: plain('修改这条记忆') }, elements: [
-          input('content', '记忆内容', entry.content, 800), input('conditions', '适用时机', entry.conditions, 500),
-          input('exceptions', '例外（可留空）', entry.exceptions, 500), button('保存修改', 'edit', true),
-        ] }] },
-      ] : []),
+    header: { template: closed ? 'grey' : 'blue', title: plain(`个人记忆 · ${state}`) }, body: { elements: editing && !closed ? [
+      // A real edit mode keeps the complete form at the card root. Collapsed
+      // cards contain no hidden inputs or nested form submission controls.
+      { tag: 'form', name: 'memory_edit', elements: [
+        input('content', '记忆内容', entry.content, 800), input('conditions', '适用时机', entry.conditions, 500),
+        input('exceptions', '例外（可留空）', entry.exceptions, 500), button('保存修改', 'edit', true),
+      ] },
+      button('取消修改', 'cancel_edit'),
+    ] : [
+      md(entry.content),
+      ...(!closed ? [rows([...(entry.status !== 'confirmed' ? [button('保留', 'keep')] : []), button('修改', 'open_edit'), button('不记这条', 'discard')])] : []),
     ] } };
+}
+
+const savedNotice = action => action === 'discard' ? '已不再使用' : action === 'keep' ? '已保留' : '已保存修改';
+const recordNotice = (record, entry) => record?.reviewedVersion === entry.version ? record.notice : '';
+
+async function patchCard(runtime, messageId, card) {
+  const response = await runtime.appClient.im.v1.message.patch({ path: { message_id: messageId }, data: { content: JSON.stringify(card) } });
+  if (response?.code !== 0) throw feishuResponseError(response, 'Memory card update failed');
 }
 
 async function current(ref, deps, sessionId) {
@@ -64,7 +73,7 @@ export function sendMemoryReviewCard(runtime, delivery, deps = {}) {
     catch (error) { if (error.code === 'MEMORY_REVIEW_PAUSED') return { skipped: true }; throw error; }
     if (entry.status === 'withdrawn' && !record?.messageId) return { skipped: true };
     const app = runtime.appClient.im.v1.message;
-    const content = JSON.stringify(buildMemoryReviewCard(ref, entry));
+    const content = JSON.stringify(buildMemoryReviewCard(ref, entry, recordNotice(record, entry)));
     if (record?.messageId) {
       const response = await app.patch({ path: { message_id: record.messageId }, data: { content } });
       if (response?.code !== 0) throw feishuResponseError(response, 'Memory card update failed');
@@ -98,7 +107,7 @@ export async function handleMemoryReviewCardAction(runtime, raw, { authorize, ..
   const toast = (type, content, card) => ({ toast: { type, content }, ...(card ? { card: { type: 'raw', data: card } } : {}) });
   if (!/^[a-f0-9]{24}$/.test(value.key || '')) return toast('error', '记忆卡片无效。');
   return queue(pathFor(runtime, value.key), async () => {
-    let record, entry, actor;
+    let record, entry, actor, mutationCommitted = false;
     try {
       const path = pathFor(runtime, value.key);
       record = await readRecord(path);
@@ -110,18 +119,31 @@ export async function handleMemoryReviewCardAction(runtime, raw, { authorize, ..
       const summary = { ...record.target, tenantKey: tenant, sender: { openId, tenantKey: tenant, senderType: 'user' } };
       if (!owner || owner.kind !== 'feishu' || owner.realm !== runtime.config.sourceRouteId || owner.subjectId !== openId
         || tenant !== record.target.tenantKey || !await authorize?.(summary)) throw Error('请由这条记忆的本人操作。');
-      if (!['keep', 'edit', 'discard'].includes(value.action)) throw Error('未知的记忆操作。');
+      if (!['keep', 'edit', 'discard', 'open_edit', 'cancel_edit'].includes(value.action)) throw Error('未知的记忆操作。');
+      const render = async (notice = recordNotice(record, entry), editing = false) => {
+        const card = buildMemoryReviewCard(record.ref, entry, notice, editing);
+        // Persist the visible state through the message API as well as the
+        // callback response, which can be lost after a successful mutation.
+        await patchCard(runtime, record.messageId, card);
+        return toast('success', notice || (editing ? '可修改完整内容' : '已收起'), card);
+      };
+      if (value.action === 'open_edit' || value.action === 'cancel_edit') {
+        if (entry.version !== value.version || entry.status === 'withdrawn') throw Error('记忆已经更新，请查看刷新后的内容再操作。');
+        return await render(recordNotice(record, entry), value.action === 'open_edit');
+      }
       const form = event.action?.form_value || {};
       const content = value.action === 'edit' ? String(form.content || '').trim() : entry.content;
       const conditions = value.action === 'edit' ? String(form.conditions || '').trim() : entry.conditions;
       const exceptions = value.action === 'edit' ? String(form.exceptions || '').trim() : entry.exceptions;
       if (!content || content.length > 800 || conditions?.length > 500 || exceptions?.length > 500) throw Error('请填写记忆内容，并保持在输入框长度限制内。');
       const signature = hash([value.version, value.action, openId, value.action === 'edit' ? form : null]);
-      if (record.applied === signature) return toast('success', '已处理', buildMemoryReviewCard(record.ref, entry));
+      if (record.applied === signature && record.reviewedVersion === entry.version) { mutationCommitted = true; return await render(savedNotice(value.action)); }
       // Recover a write that succeeded before its callback receipt was committed.
       if (record.pending?.signature === signature && entry.evidence.some(e => e.sessionId === record.sessionId && e.seq === record.pending.seq)) {
-        await writeDurableJson(path, { ...record, applied: signature, pending: null });
-        return toast('success', '已处理', buildMemoryReviewCard(record.ref, entry));
+        mutationCommitted = true;
+        record = { ...record, applied: signature, pending: null, reviewedVersion: entry.version, notice: savedNotice(value.action) };
+        await writeDurableJson(path, record);
+        return await render(record.notice);
       }
       if (entry.version !== value.version || entry.status === 'withdrawn') throw Error('记忆已经更新，请查看刷新后的内容再操作。');
       const verb = value.action === 'discard' ? '不记这条' : value.action === 'edit' ? '保存修改' : '保留';
@@ -129,7 +151,7 @@ export async function handleMemoryReviewCardAction(runtime, raw, { authorize, ..
       if (!record.pending || record.pending.signature !== signature) {
         const evidence = await (deps.appendEvent || appendEvent)(record.sessionId, { type: 'memory_review_action', content: statement,
           personId: actor.personId, identityId: actor.identityId, memoryId: entry.id, memoryVersion: entry.version,
-          cardMessageId: record.messageId, providerEventId: raw.header?.event_id || '', action: value.action });
+          cardMessageId: record.messageId, providerEventId: raw.header?.event_id || event.event_id || '', action: value.action });
         record = { ...record, pending: { signature, seq: evidence.seq, statement } };
         await writeDurableJson(path, record);
       }
@@ -139,12 +161,18 @@ export async function handleMemoryReviewCardAction(runtime, raw, { authorize, ..
           expectedVersion: value.version, content, conditions, exceptions, cues: entry.cues, reason: `本人在记忆卡片选择${verb}`,
           evidence: [{ seq, quote: record.pending.statement.slice(0, 500) }] }] });
       if (!result.promotedCount) throw Error(result.rejected?.[0]?.reason || '记忆未保存。');
-      await writeDurableJson(path, { ...record, applied: signature, pending: null });
+      mutationCommitted = true;
       ({ entry } = await current(record.ref, deps, record.sessionId));
-      return toast('success', verb === '不记这条' ? '已不再使用这条记忆' : '已保存', buildMemoryReviewCard(record.ref, entry));
+      record = { ...record, applied: signature, pending: null, reviewedVersion: entry.version, notice: savedNotice(value.action) };
+      await writeDurableJson(path, record);
+      return await render(record.notice);
     } catch (error) {
+      // Log delivery diagnostics only, never the person's memory/form text.
+      console.warn(`[memory-review] action=${value.action} key=${value.key} failed: ${error.message}`);
+      const message = mutationCommitted
+        ? '记忆已保存，卡片刷新失败；请再次点击刷新。' : error.message;
       // Never reveal the memory in a rejected foreign-owner callback.
-      return toast('error', error.message, actor && entry && error.message.startsWith('记忆已经更新') ? buildMemoryReviewCard(record.ref, entry) : undefined);
+      return toast('error', message, actor && entry && error.message.startsWith('记忆已经更新') ? buildMemoryReviewCard(record.ref, entry) : undefined);
     }
   });
 }
