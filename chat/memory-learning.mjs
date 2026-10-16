@@ -459,7 +459,9 @@ export async function reviewMemoryLearning({ sessionId, session, run, userMessag
   const project = await resolveLearningProject(session, sourceContext);
   const delivered = learningDeliveryReceipts(turnEvents, run.id);
   const raw = await runPrompt(buildLearningReviewPrompt({ userMessage, assistantTurnText, sources, snapshot, project, delivered, candidateTargets })
-    + (personal.enabled ? '' : '\nPersonal learning is paused for this owner. No personal habit/preference updates.'));
+    + (personal.enabled ? '' : '\nPersonal learning is paused for this owner. No personal habit/preference updates.')
+    + (sourceContext?.connector === 'feishu' && policy.reviewCardPersonIds?.includes(personId)
+      ? '\nThis owner enabled independent memory review cards in Feishu. A new personal entry will automatically be shown in its source conversation through the existing outbox. Do not send anything yourself. Set deferReview:true on an update if urgency or privacy makes showing it here inappropriate; keep the observation without publishing. Never expose facts from other conversations. Card answers do not block or steer the original task.' : ''));
   const parsed = parseJsonObjectText(extractTaggedBlock(String(raw || ''), 'hide') || raw);
   const result = await applyLearningUpdates({ updates: parsed?.updates, sources, personId, identityId,
     authDocument, project, memoryDir, policy, delivered });
