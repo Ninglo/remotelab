@@ -116,6 +116,18 @@ try {
   assert.equal(reads, 1, 'unknown versions cannot select arbitrary files');
   const legacy = { ...snapshot }; delete legacy.strictStartRule;
   assert.match(strictStartCheckPrompt(legacy, alice), /legacy accepted work/);
+  const oldChoices = (await loadPersonMessageReplies(alice)).choices;
+  await runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'v2', '--json'], io);
+  assert.equal(JSON.parse(output).settings.active.strictStartRuleVersion, 'v2');
+  assert.deepEqual((await loadPersonMessageReplies(alice)).choices, oldChoices, 'version selection retains all personal display choices');
+  const v2 = await resolveMessageReplyPolicy({ usageSurface: 'web', ...{ viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId } });
+  assert.equal(v2.strictStartRule.version, 'v2'); assert.match(v2.strictStartRule.content, /--focus work/);
+  assert.equal(snapshot.strictStartRule.version, 'v1', 'accepted old work is never migrated');
+  assert.equal((await loadPersonMessageReplies({ personId: 'person_bob', identityId: 'web_bob' })).revision, bobBefore.revision);
+  await assert.rejects(runMessageReplyCommand(['routing', 'on', '--rule-version', 'v2'], io), /strict-start/);
+  await assert.rejects(runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'constructor'], io), /strict-start/);
+  assert.equal((await call(path, { runId: record.runId, setting: 'strict-start', enabled: true,
+    expectedRevision: (await loadPersonMessageReplies(alice)).revision, confirm: true, ruleVersion: 'constructor' })).status, 400);
   assert.doesNotMatch(strictStartCheckPrompt(legacy, alice), /# 开工检查 v1/);
   const bob = { personId: 'person_bob', identityId: 'web_bob' };
   const bobPolicy = { ...snapshot, personId: bob.personId, policyId: 'reply_bob' };
@@ -126,7 +138,7 @@ try {
   assert.doesNotMatch(bobOn, /person_alice/);
 
   // A stale frontend that doesn't know the new field cannot accidentally turn it off.
-  const applied = await changePersonMessageReplies({ action: 'apply', expectedRevision: enabled.revision,
+  const applied = await changePersonMessageReplies({ action: 'apply', expectedRevision: (await loadPersonMessageReplies(alice)).revision,
     confirm: true, choices: display }, alice);
   assert.equal(applied.active.strictStartCheck, true);
   await assert.rejects(changePersonMessageReplies({ action: 'apply', expectedRevision: applied.revision,

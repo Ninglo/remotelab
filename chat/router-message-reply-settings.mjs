@@ -25,16 +25,18 @@ export async function handleMessageReplySettings({ req, res, pathname, parsedUrl
     if (pathname.endsWith('/current-run')) {
       if (!['GET', 'POST'].includes(req.method)) { writeJson(res, 405, { error: 'Method not allowed' }); return true; }
       const input = req.method === 'POST' ? JSON.parse(await readBody(req, 32768) || '{}') : {};
-      if (Object.keys(input).some(key => !['runId', 'setting', 'enabled', 'expectedRevision', 'confirm'].includes(key))) {
+      if (Object.keys(input).some(key => !['runId', 'setting', 'enabled', 'expectedRevision', 'confirm', 'ruleVersion'].includes(key))) {
         throw new Error('未知的个人试用设置操作。');
       }
       const actor = await currentRunActor(input.runId || parsedUrl?.query?.runId, authSession, req.method === 'POST');
       const setting = input.setting || parsedUrl?.query?.setting || 'strict-start';
       if (!['strict-start', 'input-trial', 'routing'].includes(setting)) throw new Error('Unknown personal trial');
+      if (input.ruleVersion !== undefined && setting !== 'strict-start') throw new Error('Rule version only applies to strict-start');
       const settings = setting === 'input-trial'
         ? (req.method === 'GET' ? await loadInflightTrial(actor) : await changeInflightTrial(input, actor))
         : req.method === 'GET' ? await loadPersonMessageReplies(actor)
         : await changePersonMessageReplies({ action: setting, enabled: input.enabled,
+          ...(input.ruleVersion !== undefined ? { ruleVersion: input.ruleVersion } : {}),
           expectedRevision: input.expectedRevision, confirm: input.confirm }, actor);
       writeJson(res, 200, { settings });
       return true;

@@ -5,7 +5,8 @@ import { readPromptAsset } from './prompt-asset-loader.mjs';
 // Versions are immutable assets. Existing unversioned personal settings bind
 // to v1, not a moving "latest"; accepted Requests retain the exact text/hash.
 export const LEGACY_STRICT_START_VERSION = 'v1';
-const versions = Object.freeze({ v1: 'experiments/work-start/v1.md' });
+const versions = Object.freeze({ v1: 'experiments/work-start/v1.md', v2: 'experiments/work-start/v2.md' });
+export const isStrictStartRuleVersion = version => Object.hasOwn(versions, version);
 const digest = content => createHash('sha256').update(content).digest('hex');
 const matches = (policy, context) => policy?.scope === 'person'
   && policy.personId === context.personId && Boolean(buildPersonMemoryPromptBlock(context));

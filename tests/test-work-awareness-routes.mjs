@@ -44,6 +44,21 @@ try {
   const started = await call('/api/work-awareness/start', { runId: record.runId, goal: record.text, actor: { personId: 'person_b' }, evidenceRefs: [event.seq] });
   assert.equal(started.status, 200); assert.equal(started.json.work.actor.personId, 'person_a', 'body cannot replace Request attribution');
   const work = started.json.work;
+  const focused = await call('/api/work-awareness?sessionId=a&focus=work&query=' + encodeURIComponent(record.text));
+  assert.equal(focused.status, 200, JSON.stringify(focused.json)); assert.equal(focused.json.focus, 'work');
+  assert(focused.json.current.works.some(item => item.id === work.id));
+  assert.equal(focused.json.background, undefined); assert.equal(focused.json.projectBackground, undefined);
+  assert.equal(focused.json.current.intents, undefined, 'focused work never repeats the whole current history');
+  const projectOnly = await call('/api/work-awareness?sessionId=a&focus=project&query=test');
+  assert.equal(projectOnly.status, 200); assert(projectOnly.json.projectBackground);
+  assert.equal(projectOnly.json.candidates, undefined); assert.equal(projectOnly.json.background, undefined);
+  assert.equal((await call('/api/work-awareness?sessionId=a&focus=invalid')).status, 400);
+  await runWorkAwarenessCommand(['context', '--focus', 'work', '--query', record.text, '--json'], {
+    stdout: { write() {} }, client: { async request(path) {
+      assert.equal(new URL(path, 'http://test').searchParams.get('focus'), 'work');
+      return { response: { ok: true }, json: focused.json };
+    } },
+  });
   const search = await call('/api/work-awareness?sessionId=a&query=' + encodeURIComponent(record.text) + '&includeBackground=false');
   assert.equal(search.json.related.length, 0, 'word matching is not a displayed recommendation');
   const candidate = search.json.candidates.find(item => item.sessionId === 'b');

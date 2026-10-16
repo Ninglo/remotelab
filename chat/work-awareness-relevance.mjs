@@ -7,9 +7,12 @@ const noise = new Set(['工作', '项目', '处理', '这个', '那个', '一个
   '一下', '然后', '但是', '觉得', '我觉', '确实', '相关', '问题', '内容', '需要', '已经', '其实',
   '这里', '那里', '现在', '之后', '之前', '所以', '还是', '就是', '的是', '的一', '都是', '继续', '续吧',
   '电脑', '显示', '连接', '希望', '什么', '怎么', '这台']);
+// Workflow vocabulary can be the subject of a search, but a title starting
+// with it must not become a named-topic fence for every other candidate.
+const genericHeadings = new Set(['开工', '核对', '规则', '策略', '检索', '上下', '下文']);
 
 function tokens(value) {
-  const text = clean(value, 1500).toLowerCase();
+  const text = clean(value, 4000).toLowerCase();
   const out = text.match(/[a-z0-9_./:-]{3,}/g) || [];
   for (const run of text.match(/[\u4e00-\u9fff]+/g) || []) {
     for (let i = 0; i < run.length - 1; i++) out.push(run.slice(i, i + 2));
@@ -23,14 +26,14 @@ export function workSearchEntries(sessions) {
   return sessions.filter(session => !session.internalRole).flatMap(session => {
     const works = (state(session).works || []).filter(work => work.goal && work.status !== 'cancelled');
     const summary = session.workSummary;
-    const items = works.length ? works : summary?.goal ? [{
+    const items = [...works, ...(summary?.goal ? [{
       id: 'summary_' + session.id, goal: clean(summary.goal, 240), status: 'recorded',
       source: { kind: 'session-work-summary' },
       results: [{ result: clean(summary.summary, 360), artifacts: (summary.rawMaterials || []).slice(0, 5),
         methods: (summary.reusablePatterns || []).slice(0, 5), acceptance: 'not-asserted' }],
       // A read receipt says how far someone read, not when the summary changed.
       updatedAt: session.updatedAt || '',
-    }] : [];
+    }] : [])];
     return items.map(work => ({ ...work, sessionId: session.id, sessionName: clean(session.name, 120),
       archived: session.archived === true,
       fingerprint: hash([work.id, work.version, work.goal, work.object, work.status, work.results]),
@@ -46,7 +49,9 @@ function searchScope(sessions, { sessionId, query, object }) {
 }
 
 function searchText(work) {
-  return [work.goal, work.object, ...(work.results?.at(-1)?.artifacts || []).slice(0, 5)].filter(Boolean).join(' ');
+  const latest = work.results?.at(-1);
+  return [work.goal, work.object, work.sessionName, clean(latest?.result, 800),
+    ...(latest?.artifacts || []).slice(0, 5)].filter(Boolean).join(' ');
 }
 
 export function candidateWorkFromSessions(sessions, options = {}) {
@@ -59,6 +64,7 @@ export function candidateWorkFromSessions(sessions, options = {}) {
     frequency.set(token, (frequency.get(token) || 0) + 1);
   }
   const namedTopics = [...queryTokens].filter(token => /^[\u4e00-\u9fff]{2}$/.test(token)
+    && !genericHeadings.has(token)
     && (frequency.get(token) || 0) <= Math.max(2, entries.length * 0.1)
     && entries.some(entry => entry.sessionName.startsWith(token)));
   const found = [];
@@ -73,8 +79,11 @@ export function candidateWorkFromSessions(sessions, options = {}) {
     if (!sameObject && informative.length < 2 && !specificTerm && !namedTopic) continue;
     const weight = informative.reduce((sum, token) => sum + Math.log(1 + entries.length / frequency.get(token)), 0);
     const sameProject = projectId && work.projects?.some(project => project.projectId === projectId && project.status === 'confirmed');
+    // Old discussions remain searchable references, but must not crowd out
+    // relevant current records merely because their titles repeat the query.
     found.push({ ...work, score: sameObject ? 1000 : weight / Math.sqrt(Math.max(1, queryTokens.size))
-      * (namedTopics.some(token => work.sessionName.startsWith(token)) ? 4 : 1),
+      * (namedTopics.some(token => work.sessionName.startsWith(token)) ? 4 : 1)
+      * (work.archived ? 0.4 : 1) * (sameProject ? 1.3 : 1),
       sameProject: Boolean(sameProject), matchedTerms: informative.slice(0, 8),
       relation: sameObject ? 'same-declared-object' : 'search-candidate',
       reason: sameObject ? '声明的操作对象相同：' + scope.object : '',

@@ -14,6 +14,7 @@ import { retrieveNecessaryContext } from './necessary-background.mjs';
 import { readProjectWorkDirectory } from './project-work-directory.mjs';
 import { readProjectTopicContext } from './project-topic-context.mjs';
 import { routingDiscovery } from './work-routing-discovery.mjs';
+import { workContextPointer, focusedCurrentWork } from './work-context-projection.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
   if (pathname === '/api/monitoring/context-queries' && req.method === 'GET') {
@@ -51,9 +52,26 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       return true;
     }
     if (req.method === 'GET' && pathname === '/api/work-awareness') {
+      const focus = parsedUrl.searchParams.get('focus') || 'all';
+      if (!['all', 'work', 'project'].includes(focus)) throw new Error('Unknown work context focus');
       const scope = { sessionId, query: parsedUrl.searchParams.get('query') || '', object: parsedUrl.searchParams.get('object') || '',
         projectId: parsedUrl.searchParams.get('project') || '', limit: parsedUrl.searchParams.get('limit') || 5 };
       const result = await observeContextQuery({ ...observation, kind: 'work', query }, async () => {
+        if (focus === 'project') {
+          const projectBackground = await readProjectTopicContext(session, record?.options?.sourceContext,
+            { query, projectId: scope.projectId });
+          return { sessionId, focus, projectBackground,
+            coverage: [{ kind: 'project', result: projectBackground.result }] };
+        }
+        if (focus === 'work') {
+          const [related, candidates] = await Promise.all([
+            queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope),
+          ]);
+          return { sessionId, focus, current: focusedCurrentWork(session, scope),
+            related: related.map(workContextPointer), candidates: candidates.map(workContextPointer),
+            coverage: [{ kind: 'work-index', result: 'retrieved', backgroundLoaded: false, projectBriefLoaded: false,
+              boundary: 'Work metadata only, not a transcript scan or proof of current business acceptance. Read a matched source before reuse.' }] };
+        }
         const [related, candidates, suggestions] = await Promise.all([
           queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId, { describe: true }),
         ]);

@@ -33,11 +33,40 @@ assert.deepEqual(relatedWorkFromSessions(deviceFixture, { sessionId: 'fresh', qu
 assert.equal(candidateWorkFromSessions(deviceFixture, { sessionId: 'fresh',
   query: '副屏现在连接在Mac Mini上了，但是我希望它能显示我这台电脑的内容，能做到吗' })[0].sessionId, 'display',
   'the named display topic outranks an unrelated task on the same computer');
+assert.equal(candidateWorkFromSessions(deviceFixture.map(item => item.id === 'display' ? { ...item, archived: true } : item),
+  { sessionId: 'fresh', query: '副屏 Mac Mini' })[0].sessionId, 'display',
+  'a relevant archived topic still outranks incidental overlap on the same computer');
 assert(candidateWorkFromSessions(fixture, { sessionId: 'a', query: '继续吧' }).some(hit => hit.sessionId === 'startup'),
   'generic continuation retains the existing goal');
 
 assert.equal(workSearchEntries(fixture).find(entry => entry.sessionId === 'startup').updatedAt, fixture[1].updatedAt,
   'viewing an old source cannot make its record appear newly updated');
+
+const currentFixture = [
+  { id: 'old', name: '开工前核对', archived: true, workSummary: { goal: '开工前核对 上下文注入 检索策略' } },
+  { id: 'new', name: '现行按需检索', workAwareness: { works: [{ id: 'w_new', goal: '调整现行入口',
+    status: 'completed', results: [{ result: '开工前核对 上下文注入 检索策略，复用已接受的项目工作目录。' }] }] } },
+  { id: 'mixed', workAwareness: { works: [{ id: 'old_work', goal: '调整配色', status: 'completed' }] },
+    workSummary: { goal: '现行上下文注入检索策略 project_memory' } },
+];
+const currentHits = candidateWorkFromSessions(currentFixture, { query: '开工前核对 上下文注入 检索策略' });
+assert.equal(currentHits[0].sessionId, 'new', 'current result evidence outranks an archived title-only discussion');
+assert(candidateWorkFromSessions(currentFixture, { query: 'project_memory' }).some(hit => hit.sessionId === 'mixed'),
+  'old registered work must not hide a newer cumulative summary');
+assert(currentHits.some(hit => hit.sessionId === 'old' && hit.archived), 'archived references remain discoverable');
+assert(currentHits.every(hit => hit.verification === 'unreviewed'), 'ranking never approves ownership or resuming work');
+const { workContextPointer, focusedCurrentWork } = await import('../chat/work-context-projection.mjs');
+const projected = workContextPointer({ id: 'w', fingerprint: 'version', results: [
+  { result: 'OLD_PRIVATE_DETAILS' }, { result: '新结果'.repeat(500), evidenceRefs: [12] },
+] });
+assert.equal(projected.results.length, 1); assert(projected.results[0].resultTruncated);
+assert.deepEqual(projected.results[0].evidenceRefs, [12]); assert.equal(projected.fingerprint, 'version');
+assert(!JSON.stringify(projected).includes('OLD_PRIVATE_DETAILS'));
+const own = focusedCurrentWork({ id: 'own', workAwareness: { works: [
+  { id: 'w1', goal: '上下文注入检索策略', status: 'active' },
+  { id: 'w2', goal: '打印机墨盒更换', status: 'completed' },
+] } }, { query: '上下文注入检索策略' });
+assert.deepEqual(own.works.map(work => work.id), ['w1']); assert.equal(own.omittedWorkCount, 1);
 
 const home = await mkdtemp(join(tmpdir(), 'remotelab-relevance-'));
 setIsolatedTestHome(home);

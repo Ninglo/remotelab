@@ -1,5 +1,5 @@
 import { findPerson, findIdentity, loadAuthDocument, updateAuthDocument } from '../lib/auth-config.mjs';
-import { LEGACY_STRICT_START_VERSION } from './strict-start-check.mjs';
+import { LEGACY_STRICT_START_VERSION, isStrictStartRuleVersion } from './strict-start-check.mjs';
 import { DEFAULT_REPLY_DRAFT, validateReplyDraft } from '../static/chat/message-reply-model.js';
 import { observeSettingRows, settingRows, replySettingValues } from './usage-settings.mjs';
 
@@ -39,11 +39,13 @@ export async function loadPersonMessageReplies(actor) {
 }
 
 export async function changePersonMessageReplies(input, actor) {
-  if (!input || Object.keys(input).some(key => !['action', 'expectedRevision', 'confirm', 'choices', 'enabled'].includes(key))
+  if (!input || Object.keys(input).some(key => !['action', 'expectedRevision', 'confirm', 'choices', 'enabled', 'ruleVersion'].includes(key))
       || !['apply', 'reset', 'strict-start', 'routing'].includes(input.action)) fail('未知的个人回复设置操作。');
   if (input.confirm !== true) fail('请明确保存并应用你的回复设置。');
   if (['strict-start', 'routing'].includes(input.action) && (typeof input.enabled !== 'boolean' || input.choices !== undefined)) fail('请明确开启或关闭个人设置。');
   if (!['strict-start', 'routing'].includes(input.action) && input.enabled !== undefined) fail('未知的个人回复设置操作。');
+  if (input.ruleVersion !== undefined && (input.action !== 'strict-start'
+      || !isStrictStartRuleVersion(input.ruleVersion))) fail('未知的开工检查规则版本。');
   if (input.action === 'apply') choices(input.choices);
   const mutation = await updateAuthDocument(document => {
     const person = requireActor(document, actor);
@@ -58,11 +60,13 @@ export async function changePersonMessageReplies(input, actor) {
     const revision = current.revision + 1, now = new Date().toISOString();
     const active = value ? { ...value, version: 3, scope: 'person', personId: person.id,
       policyId: `reply_${person.id}_${revision}`, activatedAt: now,
-      ...(value.strictStartCheck ? { strictStartRuleVersion: current.active?.strictStartRuleVersion || LEGACY_STRICT_START_VERSION } : {}) } : null;
+      ...(value.strictStartCheck || current.active?.strictStartRuleVersion || input.ruleVersion
+        ? { strictStartRuleVersion: input.ruleVersion || current.active?.strictStartRuleVersion || LEGACY_STRICT_START_VERSION } : {}) } : null;
     const previous = person.preferences?.messageReplies;
     person.preferences = { ...person.preferences, messageReplies: { version: 1, revision, active,
       audit: [...(previous?.audit || []), { action: input.action, revision, time: now,
         identityId: actor.identityId, choices: value,
+        ...(input.ruleVersion ? { strictStartRuleVersion: input.ruleVersion } : {}),
         ...(actor.authKind === 'feishu-card' ? { eventId: actor.eventId, chatId: actor.chatId, messageId: actor.messageId, surface: 'feishu' } : {}),
         ...(actor.authKind === 'accepted-run' ? { runId: actor.runId, requestId: actor.requestId, sessionId: actor.sessionId } : {}) }].slice(-32) } };
     person.updatedAt = now;

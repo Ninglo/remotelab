@@ -54,6 +54,13 @@
           "sources": [
             "docs/session-work-awareness.md",
             "chat/work-awareness.mjs",
+            "chat/work-awareness-relevance.mjs",
+            "chat/work-context-projection.mjs",
+            "chat/strict-start-check.mjs",
+            "chat/prompt-assets/experiments/work-start/v2.md",
+            "chat/person-message-replies.mjs",
+            "chat/router-message-reply-settings.mjs",
+            "lib/message-reply-command.mjs",
             "chat/project-work-directory.mjs",
             "chat/project-topic-context.mjs",
             "chat/router-work-awareness.mjs",
