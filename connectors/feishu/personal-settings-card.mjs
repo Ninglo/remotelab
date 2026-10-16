@@ -8,36 +8,44 @@ import { loadPersonalMemorySettings, changePersonalMemorySettings } from '../../
 const plain = content => ({ tag: 'plain_text', content });
 const md = content => ({ tag: 'markdown', content });
 const panel = (title, elements) => ({ tag: 'collapsible_panel', expanded: false, header: { title: plain(title) }, elements });
-const progressLabels = { none: '不展示过程进展', messages: '卡片＋单独文字', card_latest: '卡片内最新进展', card_all: '卡片内全部进展（默认折叠）' };
-export const PERSONAL_INTRO = '嗨，我是 Index，来和你一起把事情往前推的 AI 同事。\n你可以把要做的事、卡住的问题，或者一个还没想清楚的点子丢给我。我们一起理清目标，我来找资料、动手做、跟进结果；需要你拿主意时，我会把问题说清楚。\n我也会在协作中逐步熟悉项目和你的习惯。哪里理解偏了、做得不顺手，直接告诉我，我们边干边改。';
+const progressLabels = { none: '只看最终结果', messages: '进展单独发消息', card_latest: '卡片只留最新进展', card_all: '卡片保留全部进展' };
+export const PERSONAL_INTRO = '嗨，我是 Index，你的 AI 同事。\n查资料、写文档、改代码、跑实验，都可以来找我。把正在讨论的事转给我也行，我们一起想办法，把事情做成。\n我会结合能读到的项目资料和已有讨论接着做，也会提出自己的判断。你随时可以补充、纠正；这些反馈会帮助我更懂团队的工作。';
 
 export function buildPersonalSettingsCard(record, { replies, memory, notice = '', webUrl = '' }) {
-  const button = (label, field, value, revision = replies.revision) => ({ tag: 'button', type: 'default', text: plain(label),
+  const button = (label, field, value, revision = replies.revision, selected = false) => ({ tag: 'button', type: selected ? 'primary' : 'default', text: plain(selected ? `当前：${label}` : label), disabled: selected,
     behaviors: [{ type: 'callback', value: { namespace: 'personal-settings', key: record.key, field, value, revision } }] });
-  const toggle = (label, field, enabled, description) => panel(`${label} · ${enabled ? '已开启' : '已关闭'}`, [md(description),
-    button(enabled ? '关闭' : '开启', field, !enabled)]);
-  const c = replies.choices;
-  const elements = [md(PERSONAL_INTRO), ...(notice ? [md(notice)] : []), md('**我的设置**\n点开一项即可修改。保存后用于你接下来的对话；网页备用入口使用同一份设置。'),
-    toggle('开工时简短说一声', 'opening', c.opening, '实质工作开始时，简短说明准备怎么做。简单问答直接回答。'),
-    toggle('需要时显示交付清单', 'checklist', c.checklist, '有多项可分别验收的成果时显示清单；不是每件小事都列步骤，也不会自动创建个人待办。'),
-    panel(`进展展示 · ${progressLabels[c.progress]}`, [md('按有用的新发现更新，不定时刷屏。必要提问和最终结果始终单独送达。'),
-      ...Object.entries(progressLabels).map(([value, label]) => button(`${c.progress === value ? '当前：' : ''}${label}`, 'progress', value))]),
-    toggle('对话分流与并行试用', 'routing', c.routing === 'experimental', '在已开放的试点群中，发现适合独立推进的工作时提出分工。你确认后才创建独立会话；没有回复就继续原工作。这里的开关不扩大试点范围。'),
-    panel(`个人记忆 · ${!memory.available ? '尚未开放' : memory.conversational && memory.enabled ? '已开启' : '未开启对话试用'}`, [
-      md('开启后，在协作中整理与你有关的工作习惯和明确偏好；新的个人习惯会向你确认。你可以直接说“我有哪些已记住的偏好”“把这一条改成……”或“忘掉这一条”。关闭后停止这项试用，已有记录不会因此删除。'),
-      ...(memory.available ? [button(memory.conversational && memory.enabled ? '停用个人记忆' : '启用个人记忆', 'memory', !(memory.conversational && memory.enabled), memory.revision)] : [])]),
-    toggle('开工检查试用', 'strictStartCheck', c.strictStartCheck, '开工前额外核对事项归属、现行做法和相关工作。关闭后恢复普通开工，不影响其他设置。'),
-    md('**认识 Index**'),
-    panel('一起干活，可以从哪里开始？', [md('把目标、现有材料和你在意的要求发来就好，不必先写一份完美需求。比如：\n• “这份评测结果帮我看下，哪些问题值得先解决？”\n• “接着上次的方案做，结果还放这里。”\n• “这个重复操作太费时间，帮我想想能不能省掉。”\n\n我会结合能读取的项目资料接着做。已有成果会尽量沿原件修改，最后告诉你做成了什么、还有什么没解决。')]),
-    panel('补充、纠正、停止与找回工作', [md('在原话题直接补充要求，我会接着同一件工作处理。方向偏了就指出来；要停下可以说“停止当前任务”。外部已经提交的任务是否也停止，需要核实。\n想找之前的成果，可以说“上次那份方案在哪里”；独立分出去的工作仍由原话题汇总。')]),
-    panel('连接资料与授权：哪些需要你决定？', [md('你可以先正常聊天，不用把所有权限都开一遍。需要连接资料或设备时，我会说明能做什么、要访问什么，并尽量合并同一次所需的授权。\n飞书个人授权、管理员批准、文档访问权和本机设备权限由不同地方管理，不能用一个开关代替。这里目前没有“一键全部授权”；也不会借用别人的登录去访问你的资料。')]),
-    panel('增强版安装与本机设置', [md('普通飞书就能使用这里的个人设置。增强版主要补充本机外观、话题状态等体验，不另外维护一套个人偏好。\n当前本地增强安装支持 Apple 芯片 Mac，具体系统和飞书版本需先检查。想安装时直接私聊说“帮我检查增强版能不能安装”；本机连接和权限由你确认。')]),
-    panel('资料范围与记忆', [md('我能使用的资料取决于当前已接入的来源和权限，不代表看过整个公司。群内交办与私聊材料按实际来源处理，个人偏好不会变成全群规定。\n个人设置决定协作方式，不等于给共享工作台增加了私密空间；共享实例中已登录成员可访问工作台会话，请留意材料的分享范围。')]),
-    md('以后在私聊发送“我的设置”或 `/settings` 就能重新打开。旧卡失效时也用这个入口。'),
-    button('刷新当前设置', 'refresh', null),
-    ...(webUrl ? [md(`[网页设置（备用）](${webUrl})`)] : []),
+  const choices = (field, current, options, revision = replies.revision) => ({ tag: 'column_set', columns: options.map(([value, label]) => ({
+    tag: 'column', width: 'weighted', weight: 1, elements: [button(label, field, value, revision, current === value)],
+  })) });
+  const toggle = (title, field, enabled, description, labels = ['开启', '关闭'], revision = replies.revision) => [
+    md(`**${title}**\n${description}`), choices(field, enabled, [[true, labels[0]], [false, labels[1]]], revision),
   ];
-  return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 我们怎么一起干活') }, body: { elements } };
+  const c = replies.choices;
+  const elements = [md(PERSONAL_INTRO), { tag: 'hr' }, ...(notice ? [md(notice)] : []),
+    md('**个人设置**\n标有“当前”的是已选项。点击其他选项立即保存，从后续对话生效；正在进行的工作保持原设置。'),
+    ...toggle('开始工作时的回复', 'opening', c.opening, '接到需要动手的任务后，先简短告诉你我理解的目标和准备做什么。简单问答直接回答。', ['先说一下怎么做', '直接开始']),
+    ...toggle('任务清单', 'checklist', c.checklist, '一件工作有多项成果时，用清单显示哪些已完成、哪些还在做，方便你查看和验收。这里控制工作清单的展示；个人待办仍可直接交给我创建。', ['需要时显示', '不显示']),
+    md('**进展消息**\n有关键发现、阶段结果或需要调整方向时，我会报告进展。选择在哪里查看；需要你回答的问题和最终结果都会单独发送。'),
+    choices('progress', c.progress, Object.entries(progressLabels).slice(0, 2)),
+    choices('progress', c.progress, Object.entries(progressLabels).slice(2)),
+    md('卡片会持续更新；选择“全部进展”时，历史记录默认收起，想看时再展开。'),
+    ...toggle('多项工作并行（试用）', 'routing', c.routing === 'experimental', '有几件事能独立推进时，我会提出分工，确认后分开做，你仍在原话题收结果。关闭后不主动提出这类分工；目前仅在已开放的试点群生效。', ['主动建议分工', '不主动建议']),
+    ...(memory.available ? toggle('个人记忆', 'memory', memory.conversational && memory.enabled,
+      '记住你的称呼、表达偏好和协作习惯，减少下次重复交代。新发现的习惯会先问你是否保留；你也可以随时问“你记住了什么”，或要求修改、删除。关闭不会删除已有记录。', ['开启', '关闭'], memory.revision)
+      : [md('**个人记忆 · 尚未开放**\n用于记住称呼、表达偏好和协作习惯。当前账号暂未开放此试用。')]),
+    ...toggle('开工前核对（试用）', 'strictStartCheck', c.strictStartCheck,
+      '接到新工作时，额外查一下项目资料、现有做法和相关任务，减少重复做或接错工作。开启后准备时间可能更长；关闭后按通常方式开始。', ['增加核对', '通常方式']),
+    { tag: 'hr' }, md('**使用说明**'),
+    panel('交办工作与查看结果', [md('直接发目标、材料和要求，或把相关讨论转给我。例如：“这段讨论帮我整理成方案”“查一下这次评测为什么退步”。\n我会先利用已有资料；缺少关键背景时再问你。结果会回到交办的话题，文档、代码等成果会附上入口。')]),
+    panel('中途补充、修改与停止', [md('任务进行中也可以继续发消息补充要求，不必等我做完。发现方向不对，直接指出哪部分要改。\n要停下就说“停止当前任务”。如果已经提交了外部训练或其他后台任务，我会另行核对它们是否也已停止。')]),
+    panel('连接资料与授权', [md('普通聊天和这里的设置不需要额外安装。读取私有文档、操作日历或连接设备时，可能需要授权。\n你可以说“检查这项工作需要哪些权限”，我会汇总缺少的权限、用途和办理入口。管理员审批、本人账号授权、文档分享和设备权限分别办理，当前还没有一键全部开通。')]),
+    panel('增强版有什么用，怎么安装？', [md('增强版补充飞书客户端的页面显示和话题状态等体验。这里的个人设置在普通飞书就能用，不需要安装增强版。\n目前增强安装仅支持已验证的 Apple 芯片 Mac 和特定飞书版本。想试用可说“帮我检查增强版能不能安装”，先核对设备和版本，再给安装入口。个人偏好共用一份配置；已有增强版中的重复入口正在迁移。')]),
+    panel('项目资料、个人记忆与可见范围', [md('项目背景帮助我理解工作；个人记忆帮助我了解怎样与你协作，两者分别维护。你的个人偏好不会成为全群规则。\n我只能使用已接入且有权限读取的资料。当前共享网页工作台的已登录成员可查看工作台会话，个人设置不提供会话隔离；交办私密材料前请确认分享范围。')]),
+    md('找不到这张卡时，私聊发送“我的设置”即可重新打开。修改失败时可先刷新，再重新选择。'),
+    button('刷新设置', 'refresh', null),
+    ...(webUrl ? [panel('网页版备用入口（需另行登录）', [md(`[打开网页设置](${webUrl})\n需要使用本人的网页账号登录，飞书登录不会自动通用。没有网页账号时，直接在这张卡修改，或私聊告诉我想调整哪一项。`)])] : []),
+  ];
+  return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 个人设置与使用说明') }, body: { elements } };
 }
 
 export function createPersonalSettingsController(runtime, { authorize = async () => false, now = Date.now } = {}) {
