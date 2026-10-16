@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
-import { loadAuthDocument } from '../../lib/auth-config.mjs';
+import { loadAuthDocument, resolveOrCreateExternalIdentity } from '../../lib/auth-config.mjs';
 import { loadPersonMessageReplies, changePersonMessageReplies } from '../../chat/person-message-replies.mjs';
 import { loadPersonalMemorySettings, changePersonalMemorySettings } from '../../chat/personal-memory-settings.mjs';
 
@@ -92,9 +92,21 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     { ...panel('个人设置', [caption('选择即保存 · 仅对你生效'), ...rows,
       panel('设置详解 · 用途与生效范围', [...settingHelp, button('刷新设置', 'refresh', null)])]),
       element_id: 'personal_settings_region', expanded: true, vertical_spacing: '12px' },
-    { ...panel('使用指南 · 交办、补充与授权', help), element_id: 'personal_help_region' },
+    { ...panel('使用指南 · 交办、补充与授权', help), element_id: 'personal_help_region', expanded: record.view === 'help' },
   ];
   return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 个人设置与使用说明') }, body: { padding: '16px', vertical_spacing: '12px', elements } };
+}
+
+export function summarizePersonalChatEntered(raw) {
+  const event = raw?.event || raw;
+  const eventId = raw?.header?.event_id || event?.event_id;
+  const tenantKey = raw?.header?.tenant_key || event?.tenant_key;
+  const openId = event?.operator_id?.open_id;
+  if (!eventId || !tenantKey || !openId || !event?.chat_id) return null;
+  return { sourceKind: 'personal_chat_entered', eventId, messageId: `chat-entered:${eventId}`,
+    chatId: event.chat_id, chatType: 'p2p', chatMode: 'p2p', conversationKind: 'main', tenantKey,
+    sender: { senderType: 'user', openId, unionId: event.operator_id.union_id || '',
+      userId: event.operator_id.user_id || '', tenantKey } };
 }
 
 export function createPersonalSettingsController(runtime, { authorize = async () => false, now = Date.now } = {}) {
@@ -103,12 +115,17 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
   const serial = key => { if (!queues.has(key)) queues.set(key, serialQueue()); return queues.get(key); };
   const enabled = source => source?.chatType === 'p2p' && !!source.chatId && !!source.tenantKey && !!source.sender?.openId
     && (runtime.config.personalSettings?.openIds || []).includes(source.sender.openId);
-  async function actorFor(source) {
+  async function actorFor(source, { discover = false } = {}) {
     if (!enabled(source) || !await authorize(source)) throw Error('当前账号尚未开放此设置入口。');
     const document = await loadAuthDocument({ persistMigration: false });
     const matches = document.people.flatMap(p => (p.identities || []).filter(i => i.kind === 'feishu'
       && i.realm === runtime.config.sourceRouteId && i.subjectId === source.sender.openId)
       .map(i => ({ personId: p.id, identityId: i.id, authKind: 'feishu-card' })));
+    if (!matches.length && discover) {
+      const identity = await resolveOrCreateExternalIdentity({ kind: 'feishu', realm: runtime.config.sourceRouteId,
+        subjectId: source.sender.openId, stableSubjectId: source.sender.unionId || source.sender.userId || source.sender.openId });
+      return { personId: identity.personId, identityId: identity.identityId, authKind: 'feishu-card' };
+    }
     if (matches.length !== 1) throw Error('还没能确认你的身份，请先私聊发一条普通消息，再打开设置。');
     return matches[0];
   }
@@ -119,15 +136,17 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
     try { const url = new URL(runtime.config.personalSettings?.webUrl); if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) { url.search = '?tab=settings'; webUrl = url.href; } } catch {}
     return buildPersonalSettingsCard(record, { replies, memory, notice, webUrl });
   }
-  async function publish(source, { automatic = false, renew = false } = {}) {
+  async function publish(source, { automatic = false, renew = false, view = 'settings', requestId = '' } = {}) {
     if (!enabled(source)) return null;
-    const actor = await actorFor(source);
+    const actor = await actorFor(source, { discover: true });
     const key = createHash('sha256').update(JSON.stringify([runtime.config.sourceRouteId, source.tenantKey, source.sender.openId, source.chatId])).digest('hex').slice(0, 24);
     return serial(key)(async () => {
       let record = await store.get(key);
+      if (requestId && record?.lastPublishRequestId === requestId) return record;
       if (automatic && record) return record; // First-use welcome is not a recurring notification.
       if (!record) record = await store.mutate(key, () => ({ source, personId: actor.personId, identityId: actor.identityId, generation: 0 }));
       if (record.personId !== actor.personId || record.identityId !== actor.identityId) throw Error('个人身份关联已变化，请核对原卡归属。');
+      record = await store.mutate(key, r => ({ ...r, view: view === 'help' ? 'help' : 'settings' }));
       const fresh = !renew && record.messageId && now() - record.createdAt < 13 * 86400000;
       const rendered = await card(record, actor);
       if (fresh) {
@@ -143,7 +162,7 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
         msg_type: 'interactive', content: JSON.stringify(rendered), uuid } });
       if (result.code) { await store.mutate(key, r => ({ ...r, creating: false })); throw Error(`卡片未发送成功（${result.code}）。`); }
       if (!result.data?.message_id) throw Error('卡片发送结果缺少回执，请核对后再发送。');
-      return store.mutate(key, r => ({ ...r, creating: false, messageId: result.data.message_id, createdAt: now() }));
+      return store.mutate(key, r => ({ ...r, creating: false, messageId: result.data.message_id, createdAt: now(), lastPublishRequestId: requestId }));
     });
   }
   async function action(raw) {

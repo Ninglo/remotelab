@@ -1051,8 +1051,15 @@ If you need deeper implementation or rollout context after the setup is working:
 Configure `personalSettings.openIds` only for the explicitly invited testers, and
 an optional credential-free HTTPS `personalSettings.webUrl`. The existing
 `card.action.trigger` subscription handles these private cards as well. A normal
-accepted private message produces one welcome; `/settings` or “我的设置” reopens
-it without model execution. This is a private per-Person surface, not group
+accepted private message produces one welcome. Subscribe to
+`im.chat.access_event.bot_p2p_chat_entered_v1` to welcome an invited user on first
+entry as well; both paths share persistent deduplication. `/settings`, “我的设置”
+and “个人设置” send a fresh card at the bottom without model execution; “使用说明”
+opens its help section. Configure native floating menus with these two message
+labels (v7 ability `menu_content_type: 4`, localized names and display strategy
+`3`), preserving other app settings. Publish and read back the online version;
+configuration success alone is not client acceptance. New entrants do not opt
+into conversational personal memory. This is a private per-Person surface, not group
 participation control. See [personal settings](feishu-web-settings.md#飞书私聊个人设置卡2026-10-16小范围试用)
 for identity checks, delivery recovery and separate live acceptance.
 

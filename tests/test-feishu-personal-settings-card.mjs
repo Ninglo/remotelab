@@ -8,7 +8,7 @@ setIsolatedTestHome(home);
 try {
   const { updateAuthDocument } = await import('../lib/auth-config.mjs');
   const { MEMORY_DIR } = await import('../lib/config.mjs');
-  const { createPersonalSettingsController } = await import('../connectors/feishu/personal-settings-card.mjs');
+  const { createPersonalSettingsController, summarizePersonalChatEntered } = await import('../connectors/feishu/personal-settings-card.mjs');
   const { createRecordStore } = await import('../lib/durable-records.mjs');
   const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { loadPersonalMemorySettings } = await import('../chat/personal-memory-settings.mjs');
@@ -113,6 +113,28 @@ try {
   const memoryRevision = (await loadPersonalMemorySettings(actor)).revision;
   assert.equal((await controller.action(selectEvent('memory', 'false', memoryRevision, 'select-memory'))).toast.type, 'success');
   assert.equal((await loadPersonalMemorySettings(actor)).enabled, false);
+  const countBeforeManual = creates;
+  const memoryBeforeManual = await loadPersonalMemorySettings(actor);
+  record = await controller.publish(source, { renew: true, requestId: 'manual-help', view: 'help' });
+  assert.equal(creates, countBeforeManual + 1, 'manual entry sends at the bottom even for a fresh card');
+  assert.equal(sent.body.elements.find(e => e.element_id === 'personal_help_region').expanded, true);
+  controller = createPersonalSettingsController(runtime, opts);
+  await controller.publish(source, { renew: true, requestId: 'manual-help', view: 'help' });
+  assert.equal(creates, countBeforeManual + 1, 'redelivery of the same manual command after restart does not duplicate');
+  assert.deepEqual(await loadPersonalMemorySettings(actor), memoryBeforeManual);
+  const entered = summarizePersonalChatEntered({ header: { event_id: 'entry', tenant_key: 'tenant' },
+    event: { chat_id: 'newchat', operator_id: { open_id: 'ou_new' } } });
+  assert.equal(summarizePersonalChatEntered({ event: { chat_id: 'newchat' } }), null);
+  assert.equal(await controller.publish(entered, { automatic: true }), null, 'entry cannot bypass the rollout list');
+  runtime.config.personalSettings.openIds.push('ou_new');
+  await assert.rejects(controller.publish({ ...entered, tenantKey: 'other' }, { automatic: true }), /尚未开放/);
+  const newRecord = await controller.publish(entered, { automatic: true });
+  const newMemory = await loadPersonalMemorySettings({ personId: newRecord.personId, identityId: newRecord.identityId, authKind: 'test' });
+  assert.equal(newMemory.conversational, false, 'entering the bot does not opt in personal memory');
+  const afterEntered = creates;
+  await controller.publish({ ...entered, eventId: 'entry-again' }, { automatic: true });
+  await controller.publish(entered, { automatic: true }); // first normal message uses the same first-use path
+  assert.equal(creates, afterEntered, 're-entering and first message share the welcome deduplication');
   await controller.idle();
   console.log('Personal cards: identity isolation, saved settings, replay/stale revisions, memory eligibility, restart and delivery fences passed');
 } finally { await rm(home, { recursive: true, force: true }); }

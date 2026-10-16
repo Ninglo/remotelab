@@ -168,6 +168,17 @@ try {
       return { sessionId: 's1', runId: `run_log_${aiCalls}` };
     },
   };
+  const personalEntries = [];
+  runtime.personalSettings = { enabled: s => s.chatType === 'p2p', publish: async (s, opts) => personalEntries.push({ s, opts }) };
+  for (const text of ['我的设置', '个人设置', '/settings', '使用说明', 'My settings', 'How to use']) {
+    await handleMessage(runtime, { ...summary, chatType: 'p2p', messageId: `personal-${text}`, messageText: text }, 'test', helpers);
+    assert.equal(personalEntries.at(-1).opts.renew, true);
+    assert.equal(personalEntries.at(-1).opts.view, ['使用说明', 'How to use'].includes(text) ? 'help' : 'settings');
+    assert.equal(personalEntries.at(-1).opts.requestId, `personal-${text}`);
+  }
+  assert.equal(personalEntries.length, 6);
+  assert.equal(aiCalls, 0, 'menu and personal commands do not start AI work');
+  delete runtime.personalSettings;
   session.workboardPilot = true;
   const beforeProgressSelection = structuredClone(session.feishuRuntimeSelection);
   await handleMessage(runtime, { ...summary, messageId: 'progress-control', messageText: '/progress card' }, 'test', helpers);

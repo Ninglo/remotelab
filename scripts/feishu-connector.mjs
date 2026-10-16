@@ -7,7 +7,7 @@ import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { defaultFeishuGroupParticipation, normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { participationEnabled, participationAllowsMessage, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
-import { createPersonalSettingsController } from '../connectors/feishu/personal-settings-card.mjs';
+import { createPersonalSettingsController, summarizePersonalChatEntered } from '../connectors/feishu/personal-settings-card.mjs';
 import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
 import { startProjectGroupCards } from '../connectors/feishu/project-group-cards.mjs';
 import { handleFeishuProgressPolicyAction } from '../connectors/feishu/progress-policy-actions.mjs';
@@ -1735,7 +1735,7 @@ function extractLocalCommand(summary) {
   if (!['group', 'topic', 'p2p', 'private'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  const parsed = parseFeishuCommandBlock(summary.chatType === 'p2p' && ['我的设置', '个人设置'].includes(commandText.trim()) ? '/settings' : commandText);
+  const parsed = parseFeishuCommandBlock(summary.chatType === 'p2p' && ['我的设置', '个人设置', '使用说明', 'My settings', 'How to use'].includes(commandText.trim()) ? '/settings' : commandText);
   if (parsed.error) return parsed;
   return parsed.commands.length > 0 ? parsed : null;
 }
@@ -2040,7 +2040,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   if (commandNames.includes('settings')) {
     if (commandNames.length !== 1 || command.body) return enqueue(runtime, summary, '请单独发送 /settings 或“我的设置”。');
     if (!runtime.personalSettings?.enabled(summary)) return enqueue(runtime, summary, '个人设置请在已开放的机器人私聊中打开。');
-    try { return await runtime.personalSettings.publish(summary); }
+    try { return await runtime.personalSettings.publish(summary, { renew: true, view: ['使用说明', 'How to use'].includes(stripLeadingMentionTokens(summary.messageText || summary.textPreview || summary.rawContent).trim()) ? 'help' : 'settings', requestId: summary.messageId }); }
     catch (error) { return enqueue(runtime, summary, error.message); }
   }
   if (commandNames.includes('log')) {
@@ -2170,6 +2170,7 @@ function initializeInbox(runtime) {
       // Once admission is definitely rejected, retries only publish the same
       // durable notice. They must not execute the rejected input after a repair.
       if (entry.admissionFailure) return notifyFeishuAdmissionFailure(runtime, entry);
+      if (entry.summary.sourceKind === 'personal_chat_entered') return runtime.personalSettings.publish(entry.summary, { automatic: true });
       if (entry.summary.sourceKind === 'bot_added') return onboardFeishuGroup(runtime, entry.summary);
       if (['reaction_mute', 'reaction_feedback'].includes(entry.summary.sourceKind)) {
         return handleFeishuReactionFeedback(runtime, entry.summary);
@@ -2464,6 +2465,13 @@ async function main() {
   };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     ...meetingObserver.handlers,
+    'im.chat.access_event.bot_p2p_chat_entered_v1': async raw => {
+      const summary = summarizePersonalChatEntered(raw);
+      if (summary && runtime.personalSettings.enabled(summary)) {
+        await inbox.accept(summary.messageId, { raw, summary, sourceLabel: 'im.chat.access_event.bot_p2p_chat_entered_v1' });
+      }
+      return {};
+    },
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
     'im.chat.member.bot.added_v1': async raw => {
       const event = raw.event || raw;
