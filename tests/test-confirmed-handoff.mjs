@@ -86,6 +86,9 @@ try {
   assert.equal(discovery.catalog.length, 2); assert.deepEqual(reads, ['target']);
   assert.equal(discovery.candidates[0].transfer, 'requires-human-confirmation');
   assert.equal(discovery.candidates[0].group.chatId, 'destination');
+  const changed = await routingDiscovery(source, 'a', { query: 'settings card descriptions', sessions: [source, { ...target, workAwareness: { works: [{ id: 'old', goal: target.workSummary.goal, status: 'completed', updatedAt: '2026-01-01T00:00:00Z' }] } }], history: async () => ({ lastUserMessageAt: Date.now() }) });
+  assert.equal(changed.candidates[0].matchedWorkStatus, 'completed');
+  assert.equal(changed.candidates[0].status, 'idle', 'later input does not inherit a historical completion stamp');
   // Attachment fidelity, unknown admission retry, and receipt recovery use the
   // same durable stores without materializing a synthetic filesystem image.
   const retryOriginal = await input('retry-original');
