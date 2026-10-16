@@ -52,16 +52,17 @@ try {
   await ignored({ sender: { senderType: 'system' } });
 
   await send();
-  assert.equal(effects[1].startThread, true);
-  assert.equal(effects[1].conversationKind, 'thread');
-  assert.equal(effects[1].messageText, '@_user_1 please help');
-  assert.equal(effects[1].botHandoffMessageId, 'handoff');
-  assert.equal(effects[1].replyInThread, true);
+  assert.equal(effects.length, 1, 'bot handoff submits once without an automatic processing reaction');
+  assert.equal(effects[0].startThread, true);
+  assert.equal(effects[0].conversationKind, 'thread');
+  assert.equal(effects[0].messageText, '@_user_1 please help');
+  assert.equal(effects[0].botHandoffMessageId, 'handoff');
+  assert.equal(effects[0].replyInThread, true);
   await ignored({ messageId: 'before-reply', rootId: 'handoff', messageText: '/thread\n\nagain' });
 
   // Retry after a crash retains the original reservation. Distinct bot events do not.
   rt = runtime();
-  assert.equal(await claimFeishuBotHandoff(rt, { ...effects[1] }), true);
+  assert.equal(await claimFeishuBotHandoff(rt, { ...effects[0] }), true);
   await ignored({ messageId: 'different-bot', parentId: 'handoff', sender: { senderType: 'bot', openId: 'ou_third' } });
 
   // Delivery acknowledgement persists the server-assigned thread and reply aliases.
@@ -73,7 +74,7 @@ try {
         if (claimed) return { response: { ok: true }, json: { claim: null } };
         claimed = true;
         return { response: { ok: true }, json: { claim: { leaseId: 'lease', delivery: {
-          id: 'delivery', text: 'done', sessionId: 'session-handoff', target: effects[1],
+          id: 'delivery', text: 'done', sessionId: 'session-handoff', target: effects[0],
         } } } };
       }
       return { response: { ok: true }, json: { delivery: { status: 'sent' } } };
@@ -90,7 +91,7 @@ try {
   await ignored({ messageId: 'unmentioned-thread-bot', threadId: 'created-thread', mentions: [] });
   // Recover aliases from a receipt left behind before the previous process could acknowledge it.
   await createDeliveryReceipts(join(home, 'delivery-receipts')).record({
-    deliveryId: 'unacknowledged', leaseId: 'lease-2', target: effects[1],
+    deliveryId: 'unacknowledged', leaseId: 'lease-2', target: effects[0],
     sessionId: 'session-handoff', threadId: 'restored-thread', messageId: 'restored-outbound',
   });
   rt = runtime();
