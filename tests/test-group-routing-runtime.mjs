@@ -226,4 +226,10 @@ try {
   assert(final.deliveries.some(d => d.surfaceKind === 'final' && d.text.includes('durable native answer')),
     'a substantive model final is still delivered separately');
   console.log('GROUP_ROUTING_RUNTIME_VERIFIED: actual admission, isolated worker, human approval dispatch, target completion hook and durable source outbox. No live model or Feishu send.');
-} finally { await manager.killAll(); await rm(home, { recursive: true, force: true }); }
+} finally {
+  await manager.killAll();
+  // Metadata classification is intentionally non-blocking and can still write
+  // after the foreground run settles. Keep its isolated home until Node has
+  // drained those child processes and I/O, rather than racing recursive rm.
+  process.once('beforeExit', async () => { await rm(home, { recursive: true, force: true }); });
+}
