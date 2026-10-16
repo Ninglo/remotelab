@@ -69,6 +69,8 @@ try {
   await completeDeliveryReview(await requests.get(request.key));
   const state = await deliveryReviewContext(group, ctx);
   assert.equal(state[0].feedback[0].state, 'completed');
+  assert.equal(state[0].feedback[0].result, undefined, 'origin response is not automatically exposed to the review group');
+  assert.match((await deliveryReviewContext(await findSessionMeta('work'), null))[0].feedback[0].result, /Feedback assessed/);
   await handleDeliveryReview(feedbackA, packet, deps);
   assert.equal((await deliveryReviewContext(group, ctx))[0].feedback[0].state, 'completed', 'retry preserves completion');
   await assert.rejects(handleDeliveryReview(feedbackA, { ...packet, requestIds: ['feedback-a'] }, deps), /already been returned/);

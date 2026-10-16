@@ -190,7 +190,7 @@ export async function deliveryReviewContext(session, source) {
     matched.push({ reviewId: r.id, originSessionId: s.id, version: r.version, state: r.state,
       scope: r.scope, publication: r.text.slice(0, 1200), messageId: d?.deliveredMessageId || '', deliveryState: d?.state || 'pending',
       feedback: r.feedback.slice(-5).map(f => ({ feedbackId: f.id, requestIds: f.requestIds, state: f.state,
-        handled: f.handled, unresolved: f.unresolved, result: f.result?.slice(0, 1500) })) });
+        handled: f.handled, unresolved: f.unresolved, ...(s.id === session.id ? { result: f.result?.slice(0, 1500) } : {}) })) });
   }
   return matched;
 }
