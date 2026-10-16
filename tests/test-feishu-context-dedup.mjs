@@ -59,5 +59,14 @@ const distant = await project(raw, {
   request: async (_id,req) => req === 'prior' ? {runId:'prior-run',requestId:'prior',options:{}} : null,
 });
 assert.equal(distant.receipt.stats.removed,3,'complete replay retains delivery evidence older than 40 inputs');
+const failedPublication = source([entry('own', 'Platform could not publish the native final.', { senderType: 'app' })]);
+const failed = await project(failedPublication, {
+  run: async id => ({ id, requestId: 'prior', sessionId: 'session', codexThreadId: 'thread-one' }),
+  request: async () => ({ runId: 'prior-run', requestId: 'prior', options: {},
+    responseDecisionErrors: { 'native-output': 'Input already has a different reply or handoff' } }),
+});
+assert.equal(failed.sourceContext.conversationContext.messages.length, 1,
+  'legacy replacement error notices are not knowledge of the rejected native final');
+assert.match(buildSourceContextPrompt(failed.sourceContext), /Platform could not publish/);
 console.log('Feishu context dedup: same thread, fresh thread, scoped IDs, edited messages, unknown receipt, native supplement, linked group, immutable snapshot and fail-open passed');
 await rm(home, { recursive: true, force: true });

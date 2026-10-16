@@ -1876,3 +1876,25 @@ cards during restoration. Resolve provider group metadata at that boundary,
 exclude native groups from participation restoration/publication, and restore
 only existing ordinary-group cards. Keep ordinary-group thread identity separate
 from native topic-group mode. No new batching/classification layer is needed.
+
+## 2026-10-16 — Follow-through and reply delivery are separate failures
+
+A user reported repeated explanations without starting or finishing available
+work, then supplied a card-review conversation and identified the same behavior
+in the investigating conversation. Both ended with normal native finals. The
+checked runs retained the selected high-effort model; they did not fail through
+cancellation or a runtime limit. This establishes premature task closure, not
+a general causal claim about model quality or prompt length.
+
+The audit separately reproduced two transport defects: an in-flight reply was
+mistaken for an already-published terminal answer, and a replacement publication
+error inherited the rejected native message identity, causing history dedup to
+hide the error from the next turn. Fix terminal reply accounting and preserve
+new platform feedback. A further user report exposed missing runtime/Session
+information when a useful policy-enabled opening followed an earlier short
+answer; attach the accepted runtime to that opening as well.
+
+Regression coverage checks final publication after supplementary replies and
+questions, duplicate-final rejection, visibility of replacement errors, and
+later-turn opening metadata. These mechanical fixes do not establish that
+the Harness now consistently continues authorized work to its intended result.

@@ -1686,7 +1686,8 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const responseError = Object.keys(record.responseDecisionErrors || {}).length
     ? '答复已生成，但回复决定中的消息对应关系或字段无效。正文已保留，尚未完成投递。' : '';
   const uncoveredRoot = record.responseDecisionMessageIds?.length && !record.mainlineReply && !record.routingHandoff
-    && !record.deliveries.some(d => d.kind === 'content' && !['opening', 'progress'].includes(d.surfaceKind));
+    && !record.deliveries.some(d => d.kind === 'content'
+      && !['opening', 'progress', 'reply', 'question', 'placement_error'].includes(d.surfaceKind));
   const decisionFailure = responseError || (uncoveredRoot ? pilotInputResult(record, run).error : '');
   const deliveryPayload = decisionFailure ? { text: responseError, attachments: [] }
     : run.state === 'completed' ? pendingPayload : {
@@ -1708,7 +1709,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
       missingPlacement ? { text: placementError, attachments: [] } : deliveryPayload,
       { running: false, automationTitle: record.options.automationTitle, requireFeishuOutcome: feishuOutcomeRequired
         && (!record.streamedFinalReplyIds?.length || run.state !== 'completed'
-          || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) }), run.state === 'completed' && !missingPlacement ? pendingPayload : null)
+          || !!deliveryPayload.text || !!deliveryPayload.attachments?.length) }), run.state === 'completed' && !missingPlacement && !decisionFailure ? pendingPayload : null)
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 

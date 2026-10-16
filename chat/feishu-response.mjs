@@ -15,7 +15,7 @@ const sameGroup = (a, b) => a?.connector === 'feishu' && b?.connector === 'feish
   && a.sourceRouteId === b.sourceRouteId && a.target?.chatId === b.target?.chatId
   && a.target?.tenantKey === b.target?.tenantKey;
 const hasAnswerDelivery = input => input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind)
-  && !['opening', 'progress', 'placement_error'].includes(d.surfaceKind));
+  && !['opening', 'progress', 'reply', 'question', 'placement_error'].includes(d.surfaceKind));
 
 async function commitInputReply(input, reply, store = requests) {
   return store.mutate(input.key, current => {

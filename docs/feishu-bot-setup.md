@@ -637,7 +637,9 @@ For an immediate answer while work continues, `work reply` accepts the same
 `text`, `requestIds`, `replyMode`, `reaction` and `noTextReason` fields. It is an
 alternate entrance to the response publisher, not a second acknowledgement step.
 Never send the same answer through both the tool and a native final. An opening
-or progress receipt does not prevent a combined answer. Content, reaction and
+or progress receipt does not prevent a combined answer. In-flight `<reply>`
+messages and native questions likewise leave the final answer available; they
+do not reserve terminal input coverage as `work reply` does. Content, reaction and
 input coverage recover from the original durable reservation after interruption.
 Attachments follow the same selected location. A no-text decision records its
 reason without creating a status paragraph. Invalid fields or input ownership

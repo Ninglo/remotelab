@@ -78,6 +78,22 @@ try {
   assert.equal(history.filter(e => e.type === 'work_event' && e.action === 'mainline-input-reply').length, 1);
   assert(!history.some(e => e.type === 'tool_use' && /work reply/.test(JSON.stringify(e))),
     'native final owns coverage without an additional model tool call');
+  // A rejected structural final emits a platform notice, not a receipt for
+  // the model's unpublished text. The next native turn must see that notice.
+  const rejectedSession = await manager.createSession(home, 'response-native', 'Rejected publication fixture', {
+    sourceId: 'feishu', conversation: origin, groupFeed: true,
+  });
+  // This fixture deliberately names the previous execution's input IDs.
+  const rejectedRoot = await manager.submitHttpMessage(rejectedSession.id, '核查发布失败。', [], opts('rejected-root'));
+  await until(async () => (await requests.byRunId(rejectedRoot.run.id))?.preparedAt);
+  await writeFile(join(home, `${rejectedRoot.run.id}.release`), 'release');
+  const rejectedResult = await until(async () => {
+    const r = await requests.byRunId(rejectedRoot.run.id); return r?.result && r;
+  });
+  assert.equal(rejectedResult.result.state, 'failed');
+  const failureNotice = rejectedResult.deliveries.find(d => /回复决定中的消息/.test(d.text || ''));
+  assert.ok(failureNotice, 'structural rejection remains visible');
+  assert.equal(failureNotice.providerMessageId, undefined, 'platform notice is not native model output');
   // Real group regression: a code link followed by an @mention of another
   // human reaches the same native turn. Empty model finals must stay empty;
   // missing input bookkeeping remains internal instead of creating a reply.

@@ -66,6 +66,28 @@ try {
   assert.equal(pilotInputResult(await requests.get(link.key), { id: root.runId, state: 'completed' }).state, 'completed');
   assert.equal(saved.mainlineReply.contract.payload.reactionStage, 2);
 
+  // An in-flight answer or native question is not the terminal input reply.
+  // Reproduce a useful supplement followed by the combined final publication.
+  for (const surfaceKind of ['reply', 'question']) {
+    const ongoing = await accept(`ongoing-${surfaceKind}`);
+    const addition = await accept(`addition-${surfaceKind}`, ongoing);
+    await requests.mutate(ongoing.key, value => ({ ...value, deliveries: [{
+      id: `intermediate-${surfaceKind}`, kind: 'content', surfaceKind,
+      state: 'delivered', text: '已定位，继续处理。',
+    }] }));
+    const completed = final(`completed-${surfaceKind}`, envelope({ replyMode: 'thread',
+      requestIds: [ongoing.requestId, addition.requestId] }, '已完成并验证。'));
+    await publish(ongoing, [completed]);
+    await publish(ongoing, [completed]);
+    const current = await requests.get(ongoing.key);
+    assert.deepEqual(current.responseDecisionErrors, {});
+    assert.equal(current.deliveries.filter(d => d.surfaceKind === 'final').length, 1);
+    assert.equal(pilotInputResult(await requests.get(addition.key), { id: ongoing.runId }).state, 'completed');
+    await assert.rejects(() => publishFeishuResponse(current, {
+      text: '另一个结果', replyMode: 'thread', requestIds: [ongoing.requestId, addition.requestId],
+    }), /different reply or handoff/);
+  }
+
   // Several new matters and corrections can share one answer. The old eight-ID
   // ceiling rejected an otherwise valid response after a burst of supplements.
   const batch = await accept('batch-root');

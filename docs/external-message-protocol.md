@@ -323,7 +323,10 @@ Feishu includes the Session link and the accepted model/effort/Harness snapshot
 in the first useful Harness opening, or the final reply when no opening exists.
 This uses the Run's frozen runtime, even when Session preferences change before
 publication. Additional user messages arriving before the opening do not remove
-the entry; later replies and observer replay do not repeat it. Feishu sends no
+the entry. If a personal reply policy enables a useful opening in a later turn,
+that opening also carries its accepted runtime and Session link, including when
+the conversation began with a short inline answer. Later replies within that
+execution and observer replay do not repeat it. Feishu sends no
 separate fixed creation notice. Other connectors that support an admission
 notice retain their existing snapshot-based notice. Starting an ordinary user
 run saves its complete Harness/model/effort profile on the Session for the
@@ -337,6 +340,15 @@ from the trigger title (or Session template name) when its request is accepted;
 retries and restarts retain that name. Task completion comes from verified
 workboard outcomes, not these message labels. Email retains its single
 final-message behavior.
+
+In-flight supplementary replies and native questions do not consume the final
+reply for an accepted input. A combined final can still cover those inputs;
+terminal reply reservations continue to prevent duplicate final publication.
+If structural response validation fails, the platform's failure notice must
+not inherit the rejected model message's delivery identity. Such a notice is
+new context for the next turn, rather than already-known native output. The
+context projector also preserves legacy notices whose receipts carried that
+incorrect identity.
 
 When the effective Feishu group baseline or confirmed reply policy enables
 opening text, a native execution publishes one opening per conversation, rather

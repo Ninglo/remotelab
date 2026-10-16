@@ -147,6 +147,11 @@ messages, fresh provider threads and different Sessions retain their background.
 Linked-project messages also use source-scoped IDs and content versions. A lookup
 failure keeps the source unchanged. No additional model call is involved.
 
+A platform notice replacing a rejected final is not native output. It carries
+no provider-message identity and remains visible to the next turn. For older
+receipts that incorrectly reused the rejected message identity, the projector
+checks the originating Request's publication error before suppressing it.
+
 The derived selection and counts live in the existing Run manifest or native
 input Request, and acceptance uses the existing native-input receipt directory.
 There is no parallel read-state database. Original Request source snapshots stay

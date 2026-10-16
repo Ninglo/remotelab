@@ -37,7 +37,15 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
   const wantedIds = new Set(entries.map(item => item.entry.messageId).filter(Boolean));
   const seen = new Map(), own = new Set();
   const runs = new Map();
+  const publicationRequests = new Map();
   const run = id => { if (!runs.has(id)) runs.set(id, readRun(id)); return runs.get(id); };
+  const publicationRequest = execution => {
+    if (!execution?.requestId) return null;
+    if (!publicationRequests.has(execution.id)) {
+      publicationRequests.set(execution.id, readRequest(sessionId, execution.requestId));
+    }
+    return publicationRequests.get(execution.id);
+  };
   const sameThread = value => identity && value?.sessionId === sessionId && value[identity.field] === identity.id;
   let scanned = 0;
   if (identity && wanted.size) {
@@ -48,7 +56,10 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
     for (const event of [...events].reverse()) {
       if (event.type === 'source_delivery' && event.kind === 'content' && event.state === 'delivered'
           && event.runId && event.providerMessageId && wantedIds.has(event.externalId) && sameThread(await run(event.runId))) {
-        own.add(event.externalId);
+        const record = await publicationRequest(await run(event.runId));
+        // Old terminal fallbacks attached the rejected model message ID to a
+        // platform error notice. That notice was never native model output.
+        if (!record?.responseDecisionErrors?.[event.providerMessageId]) own.add(event.externalId);
       }
       if (event.type === 'message' && event.role === 'user' && event.requestId !== requestId
           && event.sourceContext?.connector === 'feishu') candidates.set(event.requestId, event);
