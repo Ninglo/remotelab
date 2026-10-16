@@ -5,7 +5,7 @@ import { topicAnnouncementContext } from '../connectors/feishu/group-announcemen
 import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
-import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
+import { defaultFeishuGroupParticipation, normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
 import { createPersonalSettingsController } from '../connectors/feishu/personal-settings-card.mjs';
 import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
@@ -397,7 +397,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
-    defaultGroupParticipation: parsed.defaultGroupParticipation || 'active',
+    defaultGroupParticipation: defaultFeishuGroupParticipation(parsed),
     groupReactionCandidates: normalizeFeishuReactionCandidates(parsed.groupReactionCandidates),
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     projectCards: parsed.projectCards === true,

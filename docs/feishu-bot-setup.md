@@ -839,7 +839,7 @@ default with `inline` or `thread`. `groups[chatId]` also supports
 `responseMode` (`all`/`mention_only`), optional `systemPrompt`, and the
 exact-chat `participationMode: "active" | "listening" | "paused"` setting
 (`"ambient"` remains a compatibility alias). New groups and their topics use
-`defaultGroupParticipation` (active by default); explicit per-group policies take
+`defaultGroupParticipation` (active by default when no legacy global mention-only policy is explicitly configured). An existing explicit `responsePolicy.group: "mention_only"` remains mention-only unless the operator selects the new default; explicit per-group policies take
 precedence. A successfully bound topic continues without another mention. The
 group prompt is appended to global instructions and applied to existing Sessions
 on their next input, while already accepted Runs retain their instruction snapshots.

@@ -1104,6 +1104,10 @@ await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 
 assert.deepEqual((await loadConfig(candidateConfigPath)).groupReactionCandidates, ['SOB', 'YouAreTheBest']);
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', groupReactionCandidates: ['not-valid'] }));
 await assert.rejects(loadConfig(candidateConfigPath), /Invalid reactionCandidates/);
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', responsePolicy: { group: 'mention_only' } }));
+assert.equal((await loadConfig(candidateConfigPath)).defaultGroupParticipation, 'mention_only');
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', responsePolicy: { group: 'mention_only' }, defaultGroupParticipation: 'active' }));
+assert.equal((await loadConfig(candidateConfigPath)).defaultGroupParticipation, 'active');
 assert.equal(loadedConfig.sourceRouteId, 'bot-alpha');
 const derivedRouteDir = join(tempConfigDir, 'connector-beta');
 const derivedRouteConfigPath = join(derivedRouteDir, 'config.json');

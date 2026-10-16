@@ -49,6 +49,10 @@ const WORK_KICKOFF_SESSION_PROMPT = [
   'Keep discussion and follow-ups here until the actual work topic is created. Reuse that work topic for subsequent supplements and results. This capability does not enable general automatic new-topic routing.',
 ].join('\n');
 
+export function defaultFeishuGroupParticipation(config = {}) {
+  return config.defaultGroupParticipation || (config.responsePolicy?.group === 'mention_only' ? 'mention_only' : 'active');
+}
+
 // Explicit per-chat policies survive the default for newly added groups.
 export function effectiveFeishuGroup(config = {}, chatId = '') {
   const group = config.groups?.[chatId] || {};

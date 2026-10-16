@@ -7,7 +7,7 @@ import { normalizeFeishuProjectLinks } from '../connectors/feishu/linked-project
 import { sanitizeIdPart } from '../connectors/feishu/index.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { createParticipationController, participationEnabled } from '../connectors/feishu/participation-state.mjs';
-import { normalizeFeishuGroups } from '../connectors/feishu/group-settings.mjs';
+import { defaultFeishuGroupParticipation, normalizeFeishuGroups } from '../connectors/feishu/group-settings.mjs';
 import { findSessionMeta, loadSessionsMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
 import { requests } from './requests.mjs';
@@ -58,7 +58,7 @@ async function participation(origin, configPath) {
   const raw = await readRecord(configPath);
   if (!raw) fail('Participation configuration is unavailable');
   const config = { ...raw, sourceRouteId: origin.sourceRouteId, storageDir: raw.storageDir || dirname(configPath),
-    defaultGroupParticipation: raw.defaultGroupParticipation || 'active', groups: normalizeFeishuGroups(raw.groups) };
+    defaultGroupParticipation: defaultFeishuGroupParticipation(raw), groups: normalizeFeishuGroups(raw.groups) };
   // Config path is operator-owned registration, never a tool payload path.
   if (raw.botId && sanitizeIdPart(raw.botId) !== origin.sourceRouteId) fail('Participation configuration belongs to another route');
   const runtime = { config }, summary = { ...origin.target };
