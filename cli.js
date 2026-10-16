@@ -59,6 +59,7 @@ Usage:
   remotelab agenda                  Manage the instance calendar feed
   remotelab memory                  Inspect and maintain scoped people profiles and the Agent handbook
   remotelab work                    Register work, find related results and prepare reference suggestions
+  remotelab source-read             Read an explicitly granted snapshot with durable local audit
   remotelab trigger                  Manage durable session triggers
   remotelab schedule                 Manage recurring automated tasks
   remotelab usage-summary            Summarize local Codex token usage
@@ -72,6 +73,12 @@ Usage:
 }
 
 switch (command) {
+  case 'source-read': {
+    const { runProtectedSourceCommand } = await import(scriptPath('lib/protected-source-command.mjs'));
+    try { process.exitCode = await runProtectedSourceCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'service-access': {
     const { runServiceAccessCommand } = await import(scriptPath('lib/service-access.mjs'));
     try { process.exitCode = await runServiceAccessCommand(args); }

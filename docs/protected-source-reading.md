@@ -8,7 +8,7 @@
 
 ## 覆盖范围
 
-`POST /api/protected-sources/read` 是新增的外部原文读取入口，适用于明确登记的 SSH Codex 原文快照等文件。普通 RemoteLab Session 继续遵循共享实例的现有规则；本功能不替换已有历史 API，也不扫描或自动导入他人的 `.codex` 目录。
+`remotelab source-read --file <request.json> --json` 和 `POST /api/protected-sources/read` 共用外部原文读取实现，适用于明确登记的 SSH Codex 原文快照等文件。命令在当前实例运行，无需重启服务；HTTP 入口需服务加载新代码。普通 RemoteLab Session 继续遵循共享实例的现有规则；本功能不替换已有历史 API，也不扫描或自动导入他人的 `.codex` 目录。
 
 测试阶段保留任意 shell、sudo 和既有文件访问。因而这里提供的是**经过这个入口的授权检查与本机持久留痕**，不构成全机读取监管或对 Agent 的硬权限隔离。独立日志接收端、防管理员删改、底层文件审计均未启用。不能把本机文件的哈希校验称为防篡改保证。
 
@@ -46,6 +46,8 @@ Agent 应先核原授权再登记；`approvalRef` 是人工可审阅的来源记
 
 归属取自已接受且未结束的 Request。浏览器身份必须与该 Request 的 Person 一致；服务凭据调用记为 `service_referencing_accepted_request`，而不是宣称是本人操作。现有共享服务凭据可引用其他活动 Request，这不是不可冒用的逐运行认证；在保留高权限的阶段不能据此承诺强身份隔离。请求体自报的 Person 不生效。
 
+本机命令从 `REMOTELAB_RUN_ID`、`REMOTELAB_SESSION_ID` 查询当前未结束的 Request，文件里仅需资源、用途和范围。审计额外记录 Unix UID 和 `local_process_referencing_accepted_request`。环境变量归属同样不能抵抗可任意执行 shell 的调用者冒用，不能误写为独立的人类认证。
+
 ## 留下什么记录
 
 `CONFIG_DIR/protected-source-audit/<eventId>.json` 每个事件独立保存；创建及返回回执前同步文件和目录，记录冲突不覆盖。日志目录默认 0700，事件默认 0600。无自动清理任务；管理员应规划容量和保留周期。
@@ -72,4 +74,4 @@ node scripts/run-with-clean-instance-env.mjs node tests/test-protected-source-ro
 
 停止本试用可以清空 `resources`/`grants` 或移走登记文件，保留已有日志。磁盘或日志故障修复后重试会产生新的 `readId`；不要覆盖旧的未完成记录或把旧回执当作新读取的授权。
 
-代码：`lib/protected-source-read.mjs`、`chat/router-protected-sources.mjs`。独立审计托管目前暂缓，不能据此声称已经部署了异机日志或防删除存储。
+代码：`lib/protected-source-read.mjs`、`lib/protected-source-command.mjs`、`chat/router-protected-sources.mjs`。独立审计托管目前暂缓，不能据此声称已经部署了异机日志或防删除存储。
