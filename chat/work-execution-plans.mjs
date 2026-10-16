@@ -1,7 +1,7 @@
 // The Harness interprets input and human decisions. This module stores the
 // bounded plan, validates its provenance, and transports accepted work/results.
 import { createHash } from 'node:crypto';
-import { serialQueue } from '../lib/durable-records.mjs';
+import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
 import { findSessionMeta, loadSessionsMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { requests } from './requests.mjs';
@@ -13,7 +13,7 @@ import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { clipCompactionSection } from './session-context-compaction.mjs';
 
-const serial = serialQueue();
+const serial = createKeyedTaskQueue();
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 20);
 const clean = (value, max = 6000) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const fail = message => { throw new Error(message); };
@@ -73,7 +73,8 @@ export async function readExecutionPlans(session) {
 }
 
 export async function handleExecutionPlan(record, body, deps) {
-  return serial(async () => {
+  const followUps = [];
+  const result = await serial(record.sessionId, async () => {
     record = await requests.get(record.key) || record;
     const { actor, source, scope } = await actorFor(record, { existing: ['approve', 'stop', 'amend', 'answer', 'resume'].includes(body.action) });
     if (body.action === 'record') {
@@ -96,7 +97,7 @@ export async function handleExecutionPlan(record, body, deps) {
       if ((source.delegationDepth || 0) >= 2) fail('A delegated child cannot recursively create execution plans');
       const id = 'plan_' + hash(JSON.stringify([source.id, record.requestId, body.action, goal, context, reason, branches]));
       const old = plans(source).find(p => p.id === id);
-      if (old) { await advancePlan(source.id, id, deps); return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), duplicate: true }; }
+      if (old) { followUps.push(() => advancePlan(source.id, id, deps)); return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), duplicate: true }; }
       if (plans(source).length >= 32) fail('Plan limit reached; continue an existing plan');
       const plan = { id, state: 'draft', version: 1, goal, context, reason, branches, actor, trialId: scope.trialId,
         sourceSessionId: source.id, sourceRequestId: record.requestId, createdAt: new Date().toISOString(),
@@ -108,7 +109,7 @@ export async function handleExecutionPlan(record, body, deps) {
         approval: clean(body.authorization, 1000) });
       await save(source.id, data => data.executionPlans.push(plan));
       await appendEvent(source.id, { type: 'work_event', action: body.action === 'start' ? 'execution-plan-started' : 'execution-plan-proposed', plan });
-      if (body.action === 'start') await advancePlan(source.id, id, deps);
+      if (body.action === 'start') followUps.push(() => advancePlan(source.id, id, deps));
       return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), boundary: body.action === 'start'
         ? 'The explicitly requested work was submitted to independent Sessions. The saved admission notices queue the task summaries and actual links to the source topic; do not repeat them. Queue admission is not delivery or task completion.'
         : 'Draft only; no Session created. Offer the proposal asynchronously and continue already authorized work in the source Session without waiting. Before a later approval, reconcile source progress so completed or active work is not duplicated.' };
@@ -118,7 +119,7 @@ export async function handleExecutionPlan(record, body, deps) {
     if (body.action === 'approve') {
       if (plan.approvalRequestId === record.requestId) {
         if (JSON.stringify(plan.selected) !== JSON.stringify(body.selected)) fail('Retry must preserve selected branches');
-        await advancePlan(source.id, plan.id, deps);
+        followUps.push(() => advancePlan(source.id, plan.id, deps));
         return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === plan.id), duplicate: true };
       }
       if (plan.state !== 'draft' || body.expectedVersion !== plan.version) fail('Proposal changed; review its current version');
@@ -137,7 +138,7 @@ export async function handleExecutionPlan(record, body, deps) {
       });
       await appendEvent(source.id, { type: 'work_event', action: 'execution-plan-approved', planId: plan.id,
         requestId: record.requestId, selected, actor, approval });
-      await advancePlan(source.id, plan.id, deps);
+      followUps.push(() => advancePlan(source.id, plan.id, deps));
     } else if (body.action === 'answer') {
       const b = plan.branches.find(b => b.id === body.branchId);
       if (!b || b.state !== 'running' || b.stopRequested) fail('Select a running branch with a pending question');
@@ -147,14 +148,16 @@ export async function handleExecutionPlan(record, body, deps) {
       const requestId = 'plan-answer:' + hash(record.requestId + ':' + question.id);
       const api = await manager(deps);
       const prior = await requests.byRequest(b.sessionId, requestId);
-      const receipt = await api.submitHttpMessage(b.sessionId, prior?.text || body.text, [], prior?.options || {
-        requestId, nativeQuestionId: question.id, viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId,
-        recordUserMessage: false, suppressSourceDelivery: true, ...plan.runtimeSelection,
-        workPlanChild: { sourceSessionId: source.id, planId: plan.id, branchId: b.id },
-        sourceContext: { connector: 'work-plan-answer', sourceSessionId: source.id, sourceRequestId: record.requestId },
+      followUps.push(async () => {
+        const receipt = await api.submitHttpMessage(b.sessionId, prior?.text || body.text, [], prior?.options || {
+          requestId, nativeQuestionId: question.id, viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId,
+          recordUserMessage: false, suppressSourceDelivery: true, ...plan.runtimeSelection,
+          workPlanChild: { sourceSessionId: source.id, planId: plan.id, branchId: b.id },
+          sourceContext: { connector: 'work-plan-answer', sourceSessionId: source.id, sourceRequestId: record.requestId },
+        });
+        await appendEvent(source.id, { type: 'work_event', action: 'execution-question-answered', planId: plan.id,
+          branchId: b.id, sourceRequestId: record.requestId, targetRequestId: receipt.requestId, questionId: question.id });
       });
-      await appendEvent(source.id, { type: 'work_event', action: 'execution-question-answered', planId: plan.id,
-        branchId: b.id, sourceRequestId: record.requestId, targetRequestId: receipt.requestId, questionId: question.id });
     } else if (['stop', 'amend'].includes(body.action)) {
       const selected = body.selected;
       if (!Array.isArray(selected) || !selected.length || new Set(selected).size !== selected.length
@@ -184,16 +187,26 @@ export async function handleExecutionPlan(record, body, deps) {
       }
       if (body.action === 'stop' && plan.reviewRunId) {
         const api = await manager(deps);
-        await api.cancelActiveRun(source.id, { expectedRunId: plan.reviewRunId });
+        followUps.push(() => api.cancelActiveRun(source.id, { expectedRunId: plan.reviewRunId }));
       }
-      await applyControls(source.id, plan.id, deps);
-      await advancePlan(source.id, plan.id, deps);
+      followUps.push(() => applyControls(source.id, plan.id, deps));
+      followUps.push(() => {
+        const advancing = advancePlan(source.id, plan.id, deps);
+        if (body.action !== 'stop') return advancing;
+        // Stop is durably accepted even if an earlier child creation is slow.
+        void advancing.catch(error => console.error(`[work-plan] ${plan.id}: ${error.message}`));
+      });
     } else if (body.action === 'resume') {
-      await applyControls(source.id, plan.id, deps);
-      await advancePlan(source.id, plan.id, deps);
+      followUps.push(() => applyControls(source.id, plan.id, deps));
+      followUps.push(() => advancePlan(source.id, plan.id, deps));
     } else fail('Use propose, start, approve, record, amend, answer, stop or resume');
     return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === plan.id) };
   });
+  // Admission/decisions have committed. External work cannot hold the command queue.
+  await Promise.all(followUps.map(operation => operation()));
+  if (result?.plan) return { ...result,
+    plan: plans(await findSessionMeta(result.plan.sourceSessionId)).find(p => p.id === result.plan.id) };
+  return result;
 }
 
 async function applyControls(sourceId, planId, deps) {
@@ -259,12 +272,19 @@ async function publishPlanAdmissions(sourceId, planId) {
   }
 }
 
-async function advancePlan(sourceId, planId, deps) {
+const planAdvances = createKeyedTaskQueue();
+function advancePlan(sourceId, planId, deps) {
+  return planAdvances(sourceId + ':' + planId, () => advancePlanUnlocked(sourceId, planId, deps));
+}
+
+async function advancePlanUnlocked(sourceId, planId, deps) {
   let source = await findSessionMeta(sourceId), plan = plans(source).find(p => p.id === planId);
   if (!plan || !['approved', 'running', 'stopping'].includes(plan.state) || source.archived) return;
   const api = await manager(deps);
   // Stable Session and Request keys make partial admission recoverable on restart.
-  for (const branch of plan.branches) {
+  for (const initialBranch of plan.branches) {
+    plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+    const branch = plan.branches.find(b => b.id === initialBranch.id);
     if (branch.state !== 'pending' || branch.stopRequested || plan.state === 'stopping') continue;
     const dependencies = branch.dependsOn.map(id => plan.branches.find(b => b.id === id));
     if (dependencies.some(b => terminal(b.state) && b.state !== 'completed')) {
@@ -281,6 +301,8 @@ async function advancePlan(sourceId, planId, deps) {
     const requestId = 'work-plan:' + plan.id + ':' + branch.id;
     await save(sourceId, data => { Object.assign(data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id), {
       sessionId: target.id, sessionUrl: buildSessionNavigationHref(target.id), requestId }); });
+    plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+    if (plan.state === 'stopping' || plan.state === 'cancelled' || plan.branches.find(b => b.id === branch.id).stopRequested) continue;
     const amendments = plan.controls.filter(c => c.action === 'amend' && c.selected.includes(branch.id)).map(c => c.text).join('\n');
     const text = `经人确认的独立分工。主话题：${sourceId}；方案：${plan.id}；分支：${branch.id}。\n总目标：${plan.goal}\n已确定的背景、约束和来源：\n${plan.context}\n你的任务：${branch.task}\n修改范围：${branch.writeScope}\n${amendments ? '人的后续补充：\n' + amendments : ''}\n${dependencies.length ? '前置结果（需按原证据核对）：\n' + dependencies.map(b => `${b.name} (${b.sessionId}): ${b.result}`).join('\n') : ''}\n仅执行这份分工。不要递归拆分、向其他群发消息或扩大授权。最终返回成果、证据、未解决问题，系统负责回到主话题。需要人补充时使用原生提问，主话题可查到等待状态，不能替人确认。`;
     const prior = await requests.byRequest(target.id, requestId);
@@ -292,8 +314,12 @@ async function advancePlan(sourceId, planId, deps) {
     });
     await save(sourceId, data => {
       const p = data.executionPlans.find(p => p.id === planId);
-      p.state = 'running'; Object.assign(p.branches.find(b => b.id === branch.id), { state: 'running', runId: receipt.run.id });
+      const b = p.branches.find(b => b.id === branch.id);
+      if (!b.stopRequested) { p.state = 'running'; b.state = 'running'; }
+      b.runId = receipt.run.id;
     });
+    const latest = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+    if (latest.branches.find(b => b.id === branch.id).stopRequested) await api.cancelActiveRun(target.id, { expectedRunId: receipt.run.id });
     branch.state = 'running';
   }
   await publishPlanAdmissions(sourceId, planId);
@@ -311,12 +337,21 @@ async function advancePlan(sourceId, planId, deps) {
     allowGroupFeedWrite: true, recordUserMessage: false, workPlanReview: { sourceSessionId: sourceId, planId },
     sourceContext: { connector: 'work-plan-review', sourceSessionId: sourceId }, sourceDelivery: plan.returnPlan,
   });
-  await save(sourceId, data => { Object.assign(data.executionPlans.find(p => p.id === planId), { state: 'reviewing', reviewRequestId: requestId, reviewRunId: receipt.run.id }); });
+  await save(sourceId, data => {
+    const current = data.executionPlans.find(p => p.id === planId);
+    current.reviewRequestId = requestId;
+    current.reviewRunId = receipt.run.id;
+    if (!['stopping', 'cancelled'].includes(current.state)) current.state = 'reviewing';
+  });
+  const latest = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+  if (['stopping', 'cancelled'].includes(latest.state)) {
+    await api.cancelActiveRun(sourceId, { expectedRunId: receipt.run.id });
+  }
 }
 
 export async function completeExecutionPlan(record, run, deps) {
   if (!record?.options?.workPlanChild && !record?.options?.workPlanReview) return;
-  return serial(async () => {
+  return serial((record.options.workPlanChild || record.options.workPlanReview).sourceSessionId, async () => {
     const ref = record.options.workPlanChild || record.options.workPlanReview;
     const source = await findSessionMeta(ref.sourceSessionId);
     const plan = plans(source).find(p => p.id === ref.planId);
@@ -344,8 +379,8 @@ export async function completeExecutionPlan(record, run, deps) {
     }); });
     await appendEvent(source.id, { type: 'work_event', action: 'execution-branch-result', planId: plan.id, branchId: branch.id,
       targetSessionId: record.sessionId, targetRequestId: record.requestId, runId: run?.id, state });
-    await advancePlan(source.id, plan.id, deps);
-  });
+    return { sourceId: source.id, planId: plan.id };
+  }).then(next => next && advancePlan(next.sourceId, next.planId, deps));
 }
 
 export async function validateExecutionPlanRequest(record) {
@@ -365,13 +400,14 @@ export async function recoverExecutionPlans(deps) {
   for (const source of await loadSessionsMeta()) for (const plan of plans(source)) {
     if (source.archived || !['approved', 'running', 'stopping'].includes(plan.state)) continue;
     try {
-      await serial(() => applyControls(source.id, plan.id, deps));
+      await applyControls(source.id, plan.id, deps);
       const current = plans(await findSessionMeta(source.id)).find(p => p.id === plan.id);
       for (const branch of current.branches) if (branch.sessionId && branch.requestId) {
         const record = await requests.byRequest(branch.sessionId, branch.requestId);
         if (record?.result) await completeExecutionPlan(record, { id: record.runId }, deps);
       }
-      await serial(async () => { await applyControls(source.id, plan.id, deps); await advancePlan(source.id, plan.id, deps); });
+      await applyControls(source.id, plan.id, deps);
+      await advancePlan(source.id, plan.id, deps);
     } catch (error) {
       await appendEvent(source.id, { type: 'work_event', action: 'execution-plan-recovery-failed', planId: plan.id, error: error.message });
     }

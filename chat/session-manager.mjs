@@ -1,3 +1,4 @@
+import { createRequestCompletion } from './request-completion.mjs';
 import { completeDeliveryReview, validateDeliveryReview } from './delivery-review.mjs';
 import { findActiveFeishuThreadExecution, threadContinuationExpired } from './feishu-thread-continuation.mjs';
 import { captureInflightTrial, inflightTrialPrompt } from './inflight-trial.mjs';
@@ -153,6 +154,7 @@ import {
   requestRunCancel,
   runDir,
   updateRun,
+  updateRecoveryRun,
   writeRunResult,
 } from './runs.mjs';
 import { spawnDetachedRunner } from './run-launcher.mjs';
@@ -265,7 +267,6 @@ import {
 
 const INTERNAL_SESSION_ROLE_DELEGATE = 'session_delegate';
 
-const OBSERVED_RUN_POLL_INTERVAL_MS = 250;
 const DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS = 1500;
 
 const MAX_DELEGATION_DEPTH = 3;
@@ -332,14 +333,19 @@ function normalizeSourceContext(value, maxBytes = MAX_SESSION_SOURCE_CONTEXT_BYT
 }
 
 const synthesizeDetachedRunTermination = createDetachedRunReconciler({
-  appendRunSpoolRecord,
+  appendRunSpoolRecord: async (runId, diagnostic) => {
+    if ((await getRun(runId))?.storageVersion === 2) {
+      return updateRecoveryRun(runId, { recoveryDiagnostic: diagnostic });
+    }
+    return appendRunSpoolRecord(runId, diagnostic);
+  },
   collectRunOutputPreview,
   getRun,
   getRunResult,
   graceMs: DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS,
   isTerminalRunState,
   nowIso,
-  updateRun: async (runId, updater) => updateRun(runId, updater),
+  updateRun: async (runId, updater) => updateRecoveryRun(runId, updater),
   writeRunResult,
 });
 const {
@@ -682,7 +688,8 @@ function scheduleObservedRunSync(runId, delayMs = 40) {
     current.timer = null;
     void (async () => {
       try {
-        const run = await syncDetachedRun(current.sessionId, runId);
+        await requestRuntime.tick(current.sessionId);
+        const run = await getRun(runId);
         if (!run || isTerminalRunState(run.state)) {
           stopObservedRun(runId);
         }
@@ -711,7 +718,7 @@ function observeDetachedRun(sessionId, runId) {
     const watcher = watch(runDir(runId), (_eventType, filename) => {
       if (filename) {
         const changed = String(filename);
-        if (!['spool.jsonl', 'status.json', 'result.json'].includes(changed)) {
+        if (!['spool.jsonl', 'execution.json', 'result.json', 'recovery-result.json', 'status.json'].includes(changed)) {
           return;
         }
       }
@@ -721,13 +728,7 @@ function observeDetachedRun(sessionId, runId) {
       console.error(`[runs] observer error for ${runId}: ${error.message}`);
       stopObservedRun(runId);
     });
-    const poller = setInterval(() => {
-      scheduleObservedRunSync(runId, 0);
-    }, OBSERVED_RUN_POLL_INTERVAL_MS);
-    if (typeof poller.unref === 'function') {
-      poller.unref();
-    }
-    observedRuns.set(runId, { sessionId, watcher, timer: null, poller });
+    observedRuns.set(runId, { sessionId, watcher, timer: null });
     scheduleObservedRunSync(runId, 0);
     return true;
   } catch (error) {
@@ -737,11 +738,6 @@ function observeDetachedRun(sessionId, runId) {
 }
 
 async function buildSessionTimelineEvents(sessionId, options = {}) {
-  const sessionMeta = options.sessionMeta || await findSessionMeta(sessionId);
-  const activeRunId = typeof sessionMeta?.activeRunId === 'string' ? sessionMeta.activeRunId.trim() : '';
-  if (activeRunId) {
-    await syncDetachedRun(sessionId, activeRunId);
-  }
   return loadHistory(sessionId, { includeBodies: options.includeBodies !== false, deferFileDiffs: true,
     fromSeq: options.fromSeq, toSeq: options.toSeq });
 }
@@ -813,6 +809,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     ? latestUsage.contextWindowTokens
     : null;
 
+  if (projection.processedLineCount > 0 || projection.nextOffset !== (run.normalizedByteOffset || 0)) {
   run = await updateRun(runId, (current) => ({
     ...current,
     normalizedLineCount: nextNormalizedLineCount,
@@ -829,8 +826,8 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       : {}),
     ...(fatalStatusReason && current.state !== 'cancelled'
       ? {
-          state: 'failed',
-          completedAt: current.completedAt || nowIso(),
+          // A provider error in the spool is evidence, not process termination.
+          // Keep execution active until its actual result (or confirmed loss).
           failureReason: fatalStatusReason,
           spoolFailureDetectedAt: current.spoolFailureDetectedAt || nowIso(),
           spoolFailureReason: fatalStatusReason,
@@ -838,6 +835,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       : {}),
   })) || run;
 
+  }
   if (run.claudeSessionId || run.codexThreadId || run.antigravityConversationId) {
     sessionChanged = await persistResumeIds(
       sessionId,
@@ -866,8 +864,8 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   if (!result && manifest.inputMode !== 'native' && !isTerminalRunState(run.state) && run.spoolCompletionDetectedAt) {
     const completedAt = run.spoolCompletionDetectedAt;
     const syntheticResult = { completedAt, exitCode: 0, signal: null, synthesized: true };
-    await writeRunResult(runId, syntheticResult);
-    run = await updateRun(runId, (current) => ({
+    await writeRunResult(runId, syntheticResult, { onlyIfMissing: true });
+    run = await updateRecoveryRun(runId, (current) => ({
       ...current,
       state: 'completed',
       completedAt,
@@ -1265,92 +1263,6 @@ async function enrichSessionMetaForClient(meta, options = {}) {
     session.queuedMessages = getFollowUpQueue(meta).map(serializeQueuedFollowUp);
   }
   return session;
-}
-
-async function flushDetachedRunIfNeeded(sessionId, runId) {
-  if (!sessionId || !runId) return null;
-  const run = await getRun(runId);
-  if (!run) return null;
-  if (!run.finalizedAt || !isTerminalRunState(run.state) || (await requests.byRunId(runId))?.releasedAt === null) {
-    return await syncDetachedRun(sessionId, runId) || await getRun(runId);
-  }
-  if (run.automationHookPending && !run.automationHookCompletedAt) {
-    reconcileAutomationHook(run, await getRunManifest(runId), { updateRun });
-  }
-  return run;
-}
-
-async function reconcileSessionMeta(meta) {
-  if (!meta?.activeRunId) return meta;
-  await syncDetachedRun(meta.id, meta.activeRunId);
-  return await findSessionMeta(meta.id) || meta;
-}
-
-async function clearStaleActiveRunId(sessionId, runId) {
-  const result = await mutateSessionMeta(sessionId, (session) => {
-    if (session.activeRunId !== runId) return false;
-    delete session.activeRunId;
-    session.updatedAt = nowIso();
-    return true;
-  });
-  if (result.changed) {
-    broadcastSessionInvalidation(sessionId);
-  }
-  return result.meta;
-}
-
-async function reconcileTerminalActiveSessionMeta(meta) {
-  const sessionId = typeof meta?.id === 'string' ? meta.id : '';
-  const activeRunId = typeof meta?.activeRunId === 'string' ? meta.activeRunId.trim() : '';
-  if (!sessionId || !activeRunId) return meta;
-
-  let run = await getRun(activeRunId);
-  if (!run) {
-    return await clearStaleActiveRunId(sessionId, activeRunId) || await findSessionMeta(sessionId) || meta;
-  }
-  if (!isTerminalRunState(run.state)) {
-    return meta;
-  }
-
-  run = await syncDetachedRun(sessionId, activeRunId) || await getRun(activeRunId) || run;
-  const current = await findSessionMeta(sessionId) || meta;
-  if (current.activeRunId === activeRunId && isTerminalRunState(run.state)) {
-    return await clearStaleActiveRunId(sessionId, activeRunId) || current;
-  }
-  return current;
-}
-
-async function reconcileTerminalActiveSessionsMetaList(list, options = {}) {
-  const pendingOnly = options.pendingOnly === true;
-  const includeArchived = options.includeArchived === true;
-  let changed = false;
-
-  for (const meta of list) {
-    if (!meta?.activeRunId) continue;
-    if (!includeArchived && meta.archived) continue;
-    if (pendingOnly && !isSessionAutoRenamePending(meta)) continue;
-    try {
-      const activeRunId = meta.activeRunId;
-      const reconciled = await reconcileTerminalActiveSessionMeta(meta);
-      if (activeRunId && reconciled?.activeRunId !== activeRunId) {
-        changed = true;
-      }
-    } catch (error) {
-      console.error(`[runs] Failed to reconcile terminal active run for ${meta.id?.slice(0, 8) || 'unknown'}: ${error.message}`);
-    }
-  }
-
-  return changed ? await loadSessionsMeta() : list;
-}
-
-async function reconcileSessionsMetaList(list) {
-  let changed = false;
-  for (const meta of list) {
-    if (!meta?.activeRunId) continue;
-    await syncDetachedRun(meta.id, meta.activeRunId);
-    changed = true;
-  }
-  return changed ? loadSessionsMeta() : list;
 }
 
 function broadcastSessionsInvalidation() {
@@ -1806,8 +1718,7 @@ async function settleNativeRequest(record, run) {
     const result = pilotInputResult(record, run);
     await requests.settle(record.key, result, record.mainlineReply || record.routingHandoff?.state === 'submitted'
       ? [] : buildReplyDeliveries(ownPlan, result.payload, { running: false }));
-    await recordWorkOutcome(record.sessionId, { ...record, result }, run);
-    await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
+    await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: true }));
     await requestRuntime.refresh(record.key);
     await requests.archiveFinished(record.key);
     return;
@@ -1852,10 +1763,7 @@ async function settleNativeRequest(record, run) {
   const outcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
   await requests.settle(record.key, { ...root.result, executionRunId: run.id },
     outcomeRequired ? buildReplyDeliveries(ownPlan, { text: '' }, { requireFeishuOutcome: true }) : []);
-  await recordWorkOutcome(record.sessionId, { ...record, result: root.result }, run);
-  await completeGroupSync({ ...record, result: root.result }, run);
-  await completeExecutionPlan({ ...record, result: root.result }, run);
-  await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
+  await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: true }));
   await requestRuntime.refresh(record.key);
   await requests.archiveFinished(record.key);
 }
@@ -1975,6 +1883,7 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
 
   reconcileAutomationHook(finalizedRun, manifest, { updateRun });
 
+  preparedInProcess.delete(run.id);
   const completedRequest = await requests.byRunId(run.id);
   if (completedRequest) {
     await requests.mutate(completedRequest.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso() }));
@@ -2039,8 +1948,8 @@ function scheduleDetachedRunPostFinalization(sessionId, finalizedRun, manifest, 
   if (existing) {
     return existing;
   }
-  // Keep optional AI follow-up out of syncDetachedRun's shared promise so
-  // timeline/history reads only wait for fast run reconciliation.
+  // Optional cooperation effects cannot hold the execution scheduler.
+  // Each effect persists and retries its own completion receipt.
   const promise = runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, manifest, fullNormalizedEvents)
     .catch((error) => {
       console.error(`[runs] post-finalization effects failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
@@ -2055,26 +1964,27 @@ function scheduleDetachedRunPostFinalization(sessionId, finalizedRun, manifest, 
   return promise;
 }
 
-async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, manifest, fullNormalizedEvents = []) {
-  let latestSession = await getSession(sessionId);
-  if (!latestSession) {
-    return;
-  }
+const completeRequestEffects = createRequestCompletion({ store: requests });
 
-  await maybePublishRunResultAssets(sessionId, finalizedRun, manifest, fullNormalizedEvents);
+function requestCooperationEffects(record, run) {
+  return {
+    workOutcome: () => recordWorkOutcome(record.sessionId, record, run),
+    groupSync: () => completeGroupSync(record, run),
+    deliveryReview: () => completeDeliveryReview(record),
+    executionPlan: () => completeExecutionPlan(record, run),
+  };
+}
 
-  await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
-  scheduleDetachedRunMemoryWriteback(sessionId, latestSession, finalizedRun, manifest);
+async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, manifest) {
   const record = await requests.byRunId(finalizedRun.id);
-  if (record) {
-    await recordWorkOutcome(sessionId, record, finalizedRun);
-    await completeGroupSync(record, finalizedRun);
-    await completeDeliveryReview(record);
-    await completeExecutionPlan(record, finalizedRun);
-    await requests.mutate(record.key, current => ({ ...current, postCompletionPending: false }));
-    await requestRuntime.refresh(record.key);
-    await requests.archiveFinished(record.key);
-  }
+  const session = await findSessionMeta(sessionId);
+  if (!record || !session) return;
+  await completeRequestEffects(record, {
+    ...requestCooperationEffects(record, finalizedRun),
+    sessionCompletion: () => runSessionTurnCompletionEffects(sessionId, session, finalizedRun, manifest),
+    memoryWriteback: () => scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest),
+  }, { wait: false });
+  await requestRuntime.refresh(record.key);
 }
 
 
@@ -2157,7 +2067,7 @@ async function syncDetachedRun(sessionId, runId) {
 
 export async function startDetachedRunObservers() {
   await ensureRequestSchema(CONFIG_DIR);
-  await requestRuntime.recover();
+  await requestRuntime.recover({ wait: false });
   await recoverExecutionPlans();
   await recoverAutomationHooks({ getRun, getManifest: getRunManifest, observe: observeDetachedRun, updateRun });
   deliveryIssueObserver.start();
@@ -2169,9 +2079,7 @@ export async function listSessions({
   includeQueuedMessages = false,
   viewPersonId = DEFAULT_PERSON_ID,
 } = {}) {
-  const metas = await reconcileTerminalActiveSessionsMetaList(await loadSessionsMeta(), {
-    includeArchived: true,
-  });
+  const metas = await loadSessionsMeta();
   const normalizedSourceId = normalizeSessionSourceId(sourceId);
   const filtered = metas
     .filter((meta) => shouldExposeSession(meta))
@@ -2201,7 +2109,7 @@ export async function getSession(id, options = {}) {
   const meta = metas.find((entry) => entry.id === id) || await findSessionMeta(id);
   if (!meta) return null;
   if (options.forList === true && !shouldExposeSession(meta)) return null;
-  const session = await enrichSessionMetaForClient(await reconcileTerminalActiveSessionMeta(meta), options);
+  const session = await enrichSessionMetaForClient(meta, options);
   if (options.includeTransportSurfaces === false) return session;
   const deliveryIssues = await listSourceDeliveryIssues({ sessionId: id });
   return { ...session, deliveryIssues, deliveryIssueCount: deliveryIssues.length };
@@ -2221,7 +2129,7 @@ async function sessionResourceFromMeta(meta) {
 export async function getSessionMonitoringActivity(meta) {
   const active = requestRuntime.active(meta.id)[0];
   const id = active?.runId || meta.activeRunId;
-  const run = id ? await readRecord(joinRequestPath(runDir(id), 'status.json')) : null;
+  const run = id ? await getRun(id) : null;
   const running = run ? !isTerminalRunState(run.state) : Boolean(active);
   const question = running && id ? await readNativeQuestion(runDir(active?.nativeDispatchRunId || id)) : null;
   if (id && !run && !active) return { run: { state: 'unknown' }, queue: { count: getFollowUpQueueCount(meta) } };
@@ -2308,7 +2216,12 @@ export async function getRunState(runId) {
     }
     return record ? { id: runId, sessionId: record.sessionId, requestId: record.requestId, state: record.result?.state || 'accepted' } : null;
   }
-  const effectiveRun = await flushDetachedRunIfNeeded(run.sessionId, runId) || run;
+  const request = await requests.byRunId(runId);
+  // Process exit is not yet the public outcome: output validation and durable
+  // finalization run independently. Expose that brief phase without making GET
+  // perform it or publishing a provisional success that later becomes failure.
+  const finalizing = isTerminalRunState(run.state) && !run.finalizedAt && request && !request.releasedAt;
+  const effectiveRun = finalizing ? { ...run, state: 'running', executionState: run.state, finalizing: true } : run;
   const session = await findSessionMeta(effectiveRun.sessionId);
   const connectors = await buildRunConnectorSurface(session, effectiveRun);
   const publication = await getSessionReplyPublication(effectiveRun.sessionId, effectiveRun.requestId);
@@ -3514,10 +3427,12 @@ const requestRuntime = createRequestRuntime({
   store: requests, prepare: prepareRequestRun, observe: observeDetachedRun, reconcile: syncDetachedRun,
   forward: (record, head) => nativeRequestDispatcher.forward(record, head),
   postCompletion: async record => {
-    const run = await getRun(record.runId);
-    const manifest = await getRunManifest(record.runId);
-    if (!run || !manifest) throw new Error(`Missing completed run ${record.runId}`);
-    await scheduleDetachedRunPostFinalization(record.sessionId, run, manifest);
+    const runId = record.nativeDispatchRunId || record.runId;
+    const run = await getRun(runId);
+    const manifest = await getRunManifest(runId);
+    if (!run || !manifest) throw new Error(`Missing completed run ${runId}`);
+    if (record.nativeDispatchRunId) await completeRequestEffects(record, requestCooperationEffects(record, run), { wait: false });
+    else await scheduleDetachedRunPostFinalization(record.sessionId, run, manifest);
   },
   onError: (error, sessionId) => console.error(`[requests] ${sessionId}: ${error.stack || error}`),
 });
@@ -3748,6 +3663,8 @@ async function launchAutomationRun(runId, options = {}) {
   } catch (error) { allowed = { trigger: false, reason: `Before-launch check failed: ${error.message}` }; }
   // Include cancellation arriving while the script was checking/preparing its
   // guard. A script failure or busy foreground spends no model invocation.
+  const accepted = await requests.byRunId(runId);
+  if (accepted?.cancelRequestedAt) await requestRunCancel(runId);
   const latest = await getRun(runId);
   if (!allowed.trigger || latest?.cancelRequested || latest?.state === 'cancelled') {
     const result = { completedAt: nowIso(), cancelled: true, exitCode: null };
@@ -3759,7 +3676,17 @@ async function launchAutomationRun(runId, options = {}) {
   return spawnDetachedRunner(runId);
 }
 
+const preparedInProcess = new Set();
 async function prepareRequestRun(record) {
+  if (record.preparedAt && preparedInProcess.has(record.runId)) {
+    const [run, launch] = await Promise.all([getRun(record.runId), readRecord(joinRequestPath(runDir(record.runId), 'launch.json'))]);
+    if (run && (isTerminalRunState(run.state) || launch)) return;
+  }
+  await prepareRequestRunOnce(record);
+  preparedInProcess.add(record.runId);
+}
+
+async function prepareRequestRunOnce(record) {
   if ((record.options?.reviewFeedback || record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
       || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
@@ -4101,7 +4028,7 @@ export async function cancelActiveRun(sessionId, { expectedRunId = '' } = {}) {
   }
   const runId = expectedRunId || request?.runId || session.activeRunId;
   if (!runId) return null;
-  const run = await flushDetachedRunIfNeeded(sessionId, runId) || await getRun(runId);
+  const run = await getRun(runId);
   if (!run || run.sessionId !== sessionId) return null;
   if (isTerminalRunState(run.state)) {
     return run;
@@ -4114,7 +4041,6 @@ export async function cancelActiveRun(sessionId, { expectedRunId = '' } = {}) {
 }
 
 export async function getHistory(sessionId) {
-  await reconcileSessionMeta(await findSessionMeta(sessionId));
   return loadHistory(sessionId);
 }
 
@@ -4347,4 +4273,5 @@ export async function killAll() {
   }
   await Promise.allSettled(runSyncPromises.values());
   await Promise.allSettled(runPostFinalizePromises.values());
+  await completeRequestEffects.idle();
 }

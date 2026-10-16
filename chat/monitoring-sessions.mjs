@@ -1,3 +1,4 @@
+import { readRunState } from '../lib/run-state.mjs';
 import { businessStart, BUSINESS_OFFSET, DAY, injectionSources, buildAgentDashboard, readContextDocuments } from './monitoring-dashboard.mjs';
 import { projectResponseTiming, timingStats, summarizeResponseTiming } from './response-timing.mjs';
 import { readFile, stat, readdir } from 'node:fs/promises';
@@ -189,7 +190,11 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     const ledger=(dashboard ? usage.trendRuns || usage.topRuns || [] : usage.topRuns||[]).slice().sort((a,b)=>time(b.ts)-time(a.ts)).slice(0,maxRuns), grouped=new Map();
     for(let i=0;i<ledger.length;i+=8) await Promise.all(ledger.slice(i,i+8).map(async l=>{
       if(!safeId(l.runId)||!safeId(l.sessionId))return;
-      const run=await projected(join(runsDir,l.runId,'status.json'),projectRun,coverage);
+      const run=projectRun(await readRunState(join(runsDir,l.runId), file => projected(file, r => ({
+        id:r.id, sessionId:r.sessionId, requestId:r.requestId, storageVersion:r.storageVersion,
+        state:r.state, startedAt:r.startedAt, completedAt:r.completedAt, contextInputTokens:r.contextInputTokens,
+        executionValidationFailure:r.executionValidationFailure, codexAccount:r.codexAccount ? {id:r.codexAccount.id} : undefined,
+      }), coverage)));
       let request=null;
       if(run?.requestId) {
         const k=key(l.sessionId,run.requestId);

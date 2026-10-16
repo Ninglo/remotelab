@@ -13,7 +13,6 @@ import {
 } from './session-workflow-state.mjs';
 import { normalizeSessionAgreements } from './session-agreements.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
-import { normalizeStoredSessionFolder } from './session-folder.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 import {
   DEFAULT_SESSION_SOURCE_ID,
@@ -185,14 +184,6 @@ function normalizeStoredSessionMeta(meta) {
     changed = true;
   }
 
-  if (Object.prototype.hasOwnProperty.call(normalized, 'folder')) {
-    const nextFolder = normalizeStoredSessionFolder(normalized.folder);
-    if (nextFolder.changed) {
-      normalized.folder = nextFolder.folder;
-      changed = true;
-    }
-  }
-
   if (Object.prototype.hasOwnProperty.call(normalized, 'workflowState')) {
     const nextWorkflowState = normalizeSessionWorkflowState(normalized.workflowState || '');
     if (nextWorkflowState) {
@@ -342,11 +333,8 @@ export async function loadSessionsMeta() {
   const parsed = await readJson(CHAT_SESSIONS_FILE, []);
   const normalized = normalizeStoredSessionsMeta(parsed);
   sessionsMetaCache = normalized.list;
-  if (normalized.changed) {
-    await saveSessionsMetaUnlocked(sessionsMetaCache);
-  } else {
-    sessionsMetaCacheFileVersion = fileVersion;
-  }
+  // Reads normalize the projection only. The next explicit mutation persists it.
+  sessionsMetaCacheFileVersion = fileVersion;
   return sessionsMetaCache;
 }
 

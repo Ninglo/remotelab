@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readRunState } from '../lib/run-state.mjs';
 
 import {
   access,
@@ -205,7 +206,7 @@ async function collectRunCandidates(candidates, configRoots, options) {
   for (const configRoot of configRoots) {
     const runsRoot = join(configRoot, 'chat-runs');
     for (const runPath of await listDirectories(runsRoot)) {
-      const status = await readJson(join(runPath, 'status.json'));
+      const status = await readRunState(runPath, readJson);
       if (!TERMINAL_RUN_STATES.has(String(status?.state || '').toLowerCase())) continue;
       const inspection = await inspectTree(runPath);
       const statusTime = Date.parse(status?.updatedAt || status?.completedAt || status?.finalizedAt || '');

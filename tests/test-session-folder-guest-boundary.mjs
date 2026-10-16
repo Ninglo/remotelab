@@ -39,7 +39,7 @@ try {
   assert.equal(relaxed.clamped, false, 'directories outside the guest workspace should stay accessible when the boundary is relaxed');
   assert.equal(relaxed.folder, externalDir);
 
-  const runnable = resolveRunnableSessionFolder(externalDir);
+  const runnable = await resolveRunnableSessionFolder(externalDir);
   assert.equal(runnable.repaired, false, 'guest runnable cwd should preserve explicit external folders when the boundary is relaxed');
   assert.equal(runnable.cwd, externalDir, 'guest runnable cwd should keep the requested external folder');
   assert.equal(runnable.reason, '');

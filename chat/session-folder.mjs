@@ -1,4 +1,5 @@
-import { existsSync } from 'fs';
+import { stat } from 'fs/promises';
+const isDirectory = async path => { try { return (await stat(path)).isDirectory(); } catch { return false; } };
 import { homedir } from 'os';
 import { isAbsolute, join, relative, resolve } from 'path';
 import {
@@ -55,7 +56,7 @@ export function expandSessionFolder(folder) {
   return resolve(trimmed);
 }
 
-export function resolveRunnableSessionFolder(folder) {
+export async function resolveRunnableSessionFolder(folder) {
   const requestedCwd = expandSessionFolder(folder);
   const guestBoundary = clampGuestSessionFolder(requestedCwd);
   if (guestBoundary.clamped) {
@@ -66,7 +67,7 @@ export function resolveRunnableSessionFolder(folder) {
       reason: guestBoundary.reason,
     };
   }
-  if (existsSync(requestedCwd)) {
+  if (await isDirectory(requestedCwd)) {
     return {
       cwd: requestedCwd,
       requestedCwd,
@@ -75,7 +76,7 @@ export function resolveRunnableSessionFolder(folder) {
     };
   }
 
-  if (existsSync(MANAGED_WORK_ROOT_DIR)) {
+  if (await isDirectory(MANAGED_WORK_ROOT_DIR)) {
     return {
       cwd: MANAGED_WORK_ROOT_DIR,
       requestedCwd,
@@ -85,7 +86,7 @@ export function resolveRunnableSessionFolder(folder) {
   }
 
   const fallbackHome = homedir();
-  if (existsSync(fallbackHome)) {
+  if (await isDirectory(fallbackHome)) {
     return {
       cwd: fallbackHome,
       requestedCwd,
@@ -97,14 +98,14 @@ export function resolveRunnableSessionFolder(folder) {
   throw new Error(`Session folder does not exist on this host: ${requestedCwd}`);
 }
 
-export function normalizeStoredSessionFolder(folder) {
+export async function normalizeStoredSessionFolder(folder) {
   const trimmed = trimString(folder);
   if (!trimmed) {
     return { folder: trimmed, changed: false };
   }
 
   try {
-    const resolved = resolveRunnableSessionFolder(trimmed);
+    const resolved = await resolveRunnableSessionFolder(trimmed);
     if (resolved.repaired && resolved.cwd !== trimmed) {
       return {
         folder: resolved.cwd,

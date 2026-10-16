@@ -128,6 +128,80 @@ detached runner -> raw spool/status/result -> normalized Session events
 WebSocket only announces that clients should refetch. Detached execution survives
 control-plane restarts through durable Request/Run state and reconciliation.
 
+## Execution ownership and asynchronous progress
+
+New Runs use `storageVersion: 2`. Their files have separate writers:
+
+| File | Owner and meaning |
+| --- | --- |
+| `status.json` | Controller: admission, launch metadata, cancellation intent, normalized-output checkpoint and finalization |
+| `execution.json` | Detached runner: actual process state, provider continuation, usage and terminal execution facts |
+| `result.json` | Actual result, written by the runner (or by the controller when execution was rejected before launch) |
+| `recovery.json`, `recovery-result.json` | Controller inference from confirmed process loss or a legacy adapter completion marker; a real terminal execution/result takes precedence |
+| `spool.jsonl` | Append-only execution output; a partial final line is retained for the next read rather than consumed |
+
+Writers persist only their changed fields. Reads combine the files and preserve
+controller-owned cancellation and projection checkpoints. An explicit controller
+validation failure (for example, a structured runtime exiting without output)
+remains a failed outcome even if the process exited successfully. A cancel intent
+is distinct from a cancelled execution: an already completed execution can still
+have a later cancel request recorded without changing its result.
+
+Runs created by older controllers retain their shared status-file mutation lock.
+New code recognizes them and uses the legacy protocol until they finish. There is
+no offline rewrite of old Runs and no Request-schema conversion for this change.
+Once version-2 Runs exist, rollback code must retain the version-2 reader/writer
+support; reverting to a revision that understands only `status.json` is not a
+safe rollback. Keep the compatibility layer when reverting higher-level changes.
+
+`request-runtime.mjs` owns request advancement. Admission, release and output
+notifications wake it; a single 30-second active-request recovery sweep covers
+missed notifications and crashed processes. Per-Run 250ms polling is removed.
+The sweep does not read storage when no requests remain. Connector inboxes wake
+on admission/completion and arm a timer for the earliest retry instead of scanning
+once per second. Terminal automation scripts persist their retry deadline and
+retry on that deadline or boot recovery, independently of readers.
+
+Session, history and Run queries do not perform execution reconciliation.
+The Run API keeps an exited but unfinalized Request in `running` with
+`finalizing: true` and its raw `executionState`, until output validation finishes;
+it does not expose a provisional success that could later become a failure.
+Metadata normalization is an in-memory projection and persists on an explicit
+mutation; it does not overwrite a missing configured working directory during
+reads. The runner resolves an unavailable directory asynchronously at launch.
+
+Queue removal competes with the scheduler's durable execution claim. It does not
+wait for a slow preparation; a claimed head rejects a stale removal immediately.
+A native supplement prepared after its Request was withdrawn is never dispatched.
+Cancellation is recorded before waiting for preparation and is rechecked before
+launch. Unrelated Sessions can progress independently.
+
+A Request's execution slot is released before cooperation effects. Both root and
+native supplemental Requests retain `postCompletionPending` and per-effect
+`completionEffects` receipts. Independent effects start independently; a failed
+effect retains its error/retry deadline, and successful effects are skipped on
+recovery. External effects must still be idempotent across the crash window between
+an external write and saving its receipt. Memory review remains independently
+scheduled rather than blocking the foreground result.
+
+Feishu question-card network writes are ordered only for the same card. Answer
+reservation uses a short per-card state mutation; HTTP submission occurs outside
+it and duplicate submissions share the same pending operation. Document read
+pacing governs request starts, not completion order. Delivery claims reuse one
+Session metadata snapshot per scan; the existing durable outbox, lease and
+unknown-outcome fences remain authoritative.
+
+Execution-plan commands commit their decisions before child creation and
+submission. Per-plan advancement preserves ordering without occupying the command
+queue; stop intents remain writable during a slow child creation and are checked
+again before submission and after admission.
+
+Validation includes `tests/test-core-async-boundaries.mjs`, queue removal, native
+question surfaces, execution plans, the connector recovery suite and native
+Harness integration. The scenarios cover slow-operation isolation, late
+preparation, independent completion/restart, cross-process state ownership,
+late real results, partial spool records, read-only queries and stop/create races.
+
 ## Core files
 
 ### Identity and authentication

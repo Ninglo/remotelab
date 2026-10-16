@@ -2,7 +2,7 @@ import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { FEISHU_OUTCOME_REACTIONS } from '../lib/feishu-reaction-directive.mjs';
 export { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
-import { findSessionMeta } from './session-meta-store.mjs';
+import { findSessionMeta, loadSessionsMeta } from './session-meta-store.mjs';
 import { updateSessionConversation } from './session-conversations.mjs';
 import { normalizeConversation as normalizeSourceDeliveryPlan, normalizeConversationTarget as normalizeTarget, normalizeConversationRouteId as normalizeSourceRouteId } from '../lib/conversation-target.mjs';
 export { normalizeConversation as normalizeSourceDeliveryPlan } from '../lib/conversation-target.mjs';
@@ -199,11 +199,12 @@ async function inspectAndClaimSourceDelivery(options = {}) {
     const nowMs = Date.parse(now);
     const timeout = options.leaseTimeoutMs || DELIVERY_LEASE_MS;
     const entries = await listSourceDeliveries({ connector: options.connector, sourceRouteId: options.sourceRouteId || 'default' });
+    const sessions = new Map((await loadSessionsMeta()).map(session => [session.id, session]));
     const blocked = new Set();
     let nextCheckAt = Infinity;
     for (let entry of entries) {
       if (terminal(entry.state)) continue;
-      const session = await findSessionMeta(entry.sessionId);
+      const session = sessions.get(entry.sessionId);
       // A reaction belongs to this request's inbound message, even when the
       // continuing group Session has since advanced to a newer message.
       let refined = entry.kind === 'reaction' ? null : refineConversation(entry, session?.conversation);
