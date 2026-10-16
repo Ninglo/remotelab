@@ -149,6 +149,37 @@ A话题混入疑似B内容时，先判断它是对A的补充、明确改目标�
 
 `remotelab message-replies routing status|on|off --json` 按当前接受的人类请求核对本人，保留其他回复设置。群范围不从个人开关推断。新建和明确接续仍限同群；`sync` 可以经人确认在同一 v2 试用登记的群之间传递参考、复核并回传，不跨 Bot／租户。其他人不能代为确认本人的草稿；确认时说明目标展示和来源回传范围。同步复核不自动允许修改目标原任务。
 
+### 讨论转开工确认卡
+
+可交给当前 Harness 的请求：
+
+> 当前讨论已形成具体工作。仅在主动参与模式下判断是否值得提开工卡；使用已登记的项目关系确定干活群，展示目标、已定方案与范围、来源、未决项、目标群和验收。由人在原生问题卡选择移交后才创建工作话题。其他选择继续留在原讨论。
+
+本入口不依赖个人分流试点或群名，不启用通用新话题自动分流。主模型结合讨论判断是否提议；平台不另调用分类模型。连接器配置的 `projectLinks` 已有 `projectId`、`discussionChatId`、`workChatId` 和显示名称，开工复用这份明确关系，不接受工具请求指定任意目标群。连接器配置从当前实例标准目录或 `feishu-bots.json` 已登记路径读取；缺失、重名或没有对应关系时明确报不可用，不猜目标。不需要开启旧 `handoffCards` 或个人 `group-routing-pilot`。
+
+`remotelab work kickoff --file <JSON绝对路径> --json` 使用当前 Run；追加输入带实际 `sourceRequestId`。提议包为：
+
+```json
+{
+  "action": "propose",
+  "goal": "要完成的具体目标",
+  "plan": "已定方案、执行范围和约束",
+  "sources": "可核对的原讨论与资料来源",
+  "unresolved": "尚未解决的问题；没有则写无",
+  "acceptance": "怎样判定交付可用"
+}
+```
+
+返回的 `question.title` 和 `question.options` 必须完整交给 Harness 原生提问工具（不要重写或截短预览），现有飞书原生问题卡负责显示与回调。三个选择是“移交干活群并开工”“继续讨论”“暂不开展”。工具调用只能提出草稿或恢复已批准工作，不能批准。仅原提议输入的已核本人对完整预览的后续原生回答能批准；无回复、表情、Agent 自己调用 API、其他人点击、已过期或被新版替换的卡片都不会开工。没有实质变化的同一方案不会重复提卡；继续讨论或暂不开展后再次提交同包仍返回原决定。
+
+提议、确认、待发送话题出队、执行启动分别读取现有参与状态。来源话题和目标群须为 `active`；`listening` 的单次邀请不能提开工卡。保存参与状态 epoch，期间切换后即使恢复 active 旧确认也不恢复，新方案需要重新展示。状态文件由参与控制器维护，开工模块只读，不新增第二份状态。
+
+人确认后，`workAwareness.kickoffs` 保留原预览和人类输入，现有 `executionPlans` 承接一个工作分支。先创建对应干活群的独立 Session，再经持久 outbox 发布真正的话题；收到实际消息回执、绑定目标 Session 后才提交任务。原讨论收到实际话题入口，分支成果沿原计划回到原讨论验收。话题发送失败或结果未知时保持未启动，不能退回网页执行或重新创建；先核原投递回执，用现有投递恢复操作恢复同一投递。`{ "action":"resume", "proposalId":"kickoff_…" }` 只补做已有批准的创建/受理；重启会恢复已批准但尚未创建计划的情况。已切换模式的旧方案不能借 resume 复活。
+
+维护与集成：`chat/work-kickoff.mjs` 提供提议、完整问题绑定、确认和恢复；`chat/session-manager.mjs` 在服务器读取原生待答问题后派生决定，不信任请求体的批准字段；`chat/work-execution-plans.mjs` 复用已有创建、回执启动、分支结果与主话题回收。主模型提示接入须明确调用上述入口并原样展示问题，不能把既有 `work plan start` 或 `route new` 当成本功能的确认替代。
+
+隔离验收：`tests/test-work-kickoff.mjs` 覆盖三选项、去重、其他人、旧卡、模式变化、未登记、未知/失败回执和恢复；`tests/test-work-kickoff-runtime.mjs` 用假 Harness 与假飞书提供方串起真实原生问题、卡片回调、服务器受理、实际回执绑定和子任务执行。均使用 `run-with-clean-instance-env.mjs`，不向真实群发测试消息。真实模型的提议时机和部署后的真人卡片交互仍需主话题验收。
+
 ### 分工、人的选择与主话题回收
 
 `work plan --file <JSON> --json` 复用原 Session 的 `workAwareness.executionPlans`，不另建项目主账。写包的 sourceRequestId 必须指向本次执行实际接受的人类输入。`work context` 返回计划、分支、运行/排队/等待状态及 pendingQuestion。

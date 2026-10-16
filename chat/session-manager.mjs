@@ -1,3 +1,4 @@
+import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
 import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
 import { createRequestCompletion } from './request-completion.mjs';
 import { completeDeliveryReview, validateDeliveryReview } from './delivery-review.mjs';
@@ -2073,6 +2074,7 @@ async function syncDetachedRun(sessionId, runId) {
 export async function startDetachedRunObservers() {
   await ensureRequestSchema(CONFIG_DIR);
   await requestRuntime.recover({ wait: false });
+  await recoverWorkKickoffs();
   await recoverExecutionPlans();
   await recoverAutomationHooks({ getRun, getManifest: getRunManifest, observe: observeDetachedRun, updateRun });
   deliveryIssueObserver.start();
@@ -3294,9 +3296,10 @@ export async function updateSessionRuntimePreferences(id, patch = {}, { expected
 const deliveryIssueObserver = createSourceDeliveryIssueObserver();
 async function recordWorkInputAndDeliver(session, record) {
   const routingDecision = syncDecisionText(record);
-  const decisionInput = Boolean(routingDecision) || /^(确认协作建议|拒绝协作建议)\s/.test(record.text || '');
+  const decisionInput = Boolean(record.options?.workKickoffDecision) || Boolean(routingDecision) || /^(确认协作建议|拒绝协作建议)\s/.test(record.text || '');
   let decisionContext = '';
   try {
+    if (record.options?.workKickoffDecision) return await acceptWorkKickoff(record);
     if (routingDecision) return await acceptGroupSync(record);
     const result = await recordWorkInput(session, record);
     if (decisionInput && !result.suggestion) return 'Human work decision was NOT accepted: no verified human decision or invalid command. Review current records; the original authorization remains in force.';
@@ -3350,7 +3353,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
   prepareInput: async (record, manifest) => {
     if (record.options?.nativeQuestionId) {
       let systemOutcome;
-      if (syncDecisionText(record)) {
+      if (record.options?.workKickoffDecision || syncDecisionText(record)) {
         const outcome = await recordWorkInputAndDeliver(await findSessionMeta(record.sessionId), record);
         const failed = outcome.startsWith('Human work decision was NOT accepted:');
         // The original question owns confirmation; completion owns the result.
@@ -3359,7 +3362,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
           await enqueueSourceDelivery({ sessionId: record.sessionId, responseId: 'routing-question-result:' + record.requestId,
             sourceDelivery: record.deliveryPlan || record.options.sourceDelivery, text: outcome });
         }
-        if (syncDecisionText(record)[2].startsWith('sync_')) systemOutcome = { text: failed ? '' : outcome,
+        if (record.options?.workKickoffDecision || syncDecisionText(record)?.[2].startsWith('sync_')) systemOutcome = { text: failed ? '' : outcome,
           context: `${outcome}\n这是系统处理回执，不是人的新要求。原问题卡承接确认，复核结果由系统单独回传；不要再发送仅确认受理的 final，也不要重复完整复核。新的实质结论、必答问题与失败仍须正常说明。` };
       }
       return { text: nativeQuestionReplyText(record), context: '', ...(systemOutcome ? { systemOutcome } : {}) };
@@ -3513,14 +3516,20 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
   // Resolve controls against the server's pending question, never a payload
   // supplied approval flag. Keep the native answer unchanged for the Harness.
-  if (priorRequest) options.routingDecisionText = priorRequest.options?.routingDecisionText;
+  if (priorRequest) {
+    options.routingDecisionText = priorRequest.options?.routingDecisionText;
+    options.workKickoffDecision = priorRequest.options?.workKickoffDecision;
+  }
   else {
     delete options.routingDecisionText;
+    delete options.workKickoffDecision;
     if (options.nativeQuestionId && activeRequest) {
       const question = await readNativeQuestion(runDir(activeRequest.runId));
       if (question?.state === 'pending' && question.id === options.nativeQuestionId && question.question) {
         const answer = resolveQuestionAnswer(question.question, nativeQuestionReplyText({ text, options }));
-        options.routingDecisionText = routingQuestionDecision(await findSessionMeta(sessionId), question.question, answer.values);
+        const decisionSession = await findSessionMeta(sessionId);
+        options.routingDecisionText = routingQuestionDecision(decisionSession, question.question, answer.values);
+        options.workKickoffDecision = kickoffQuestionDecision(decisionSession, question.question, answer.values);
       }
     }
   }

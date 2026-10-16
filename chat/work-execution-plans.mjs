@@ -292,6 +292,45 @@ async function applyControls(sourceId, planId, deps) {
   }
 }
 
+// Reuse the durable one-branch workflow after the native kickoff decision.
+// Callers supply only a persisted proposal ID, never an approval payload.
+export async function startConfirmedWorkKickoff(sourceId, proposalId, deps) {
+  const id = 'plan_' + hash('kickoff:' + proposalId);
+  await serial(sourceId, async () => {
+    const source = await findSessionMeta(sourceId);
+    if (plans(source).some(p => p.id === id)) return;
+    const { validateWorkKickoffPlan } = await import('./work-kickoff.mjs');
+    const p = await validateWorkKickoffPlan(sourceId, proposalId);
+    const context = `已定方案与范围：${p.plan}\n来源：${p.sources}\n未决项：${p.unresolved}\n验收：${p.acceptance}`;
+    const plan = { id, state: 'approved', version: 1, goal: p.goal, context,
+      reason: '原生问题卡中的人类开工确认', actor: p.actor, sourceSessionId: sourceId,
+      sourceRequestId: p.sourceRequestId, approvalRequestId: p.decisionRequestId,
+      approval: p.choice, selected: ['work'], executionMode: 'single-session',
+      workKickoff: { sourceSessionId: sourceId, proposalId }, createdAt: new Date().toISOString(),
+      runtimeSelection: p.runtimeSelection, folder: p.folder, returnPlan: p.origin, controls: [],
+      branchSurface: 'feishu-thread', branchOrigin: p.target,
+      branches: [{ id: 'work', name: p.goal.slice(0, 100), task: context,
+        writeScope: p.plan, dependsOn: [], state: 'pending' }] };
+    await save(sourceId, data => data.executionPlans.push(plan));
+  });
+  await advancePlan(sourceId, id, deps);
+  return plans(await findSessionMeta(sourceId)).find(p => p.id === id);
+}
+async function validateKickoff(plan) {
+  if (!plan?.workKickoff) return;
+  const { validateWorkKickoffPlan } = await import('./work-kickoff.mjs');
+  await validateWorkKickoffPlan(plan.workKickoff.sourceSessionId, plan.workKickoff.proposalId);
+}
+// Outbox claim checks the original discussion's epoch as well as the work
+// group's own participation gate. A pending opening cannot escape a mode change.
+export async function validateExecutionPlanTopic(delivery) {
+  if (!delivery?.responseId?.startsWith('plan-topic:')) return;
+  const child = await findSessionMeta(delivery.sessionId);
+  const source = child?.delegatedFromSessionId && await findSessionMeta(child.delegatedFromSessionId);
+  const plan = plans(source).find(p => p.id === delivery.responseId.split(':')[1]);
+  await validateKickoff(plan);
+}
+
 async function publishPlanAdmissions(sourceId, planId) {
   let plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
   if (!plan || plan.state === 'stopping') return;
@@ -336,6 +375,7 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
     const branch = plan.branches.find(b => b.id === initialBranch.id);
     if (branch.state !== 'pending' || branch.stopRequested || plan.state === 'stopping') continue;
+    await validateKickoff(plan);
     const dependencies = branch.dependsOn.map(id => plan.branches.find(b => b.id === id));
     if (dependencies.some(b => terminal(b.state) && b.state !== 'completed')) {
       await save(sourceId, data => { data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id).state = 'blocked'; });
@@ -354,6 +394,7 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
       sessionId: target.id, sessionUrl: buildSessionNavigationHref(target.id), requestId }); });
     plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
     if (['stopping', 'cancelled'].includes(plan.state) || plan.branches.find(b => b.id === branch.id).stopRequested) continue;
+    await validateKickoff(plan);
     if (plan.branchSurface === 'feishu-thread') {
       // The unanchored opening is durable and idempotent. Never fall back to a
       // Web-only execution when the group send is pending or uncertain.
@@ -378,6 +419,7 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     }
     plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
     if (plan.state === 'stopping' || plan.state === 'cancelled' || plan.branches.find(b => b.id === branch.id).stopRequested) continue;
+    await validateKickoff(plan);
     const amendments = plan.controls.filter(c => c.action === 'amend' && c.selected.includes(branch.id)).map(c => c.text).join('\n');
     const text = `经人确认的独立分工。主话题：${sourceId}；方案：${plan.id}；分支：${branch.id}。\n总目标：${plan.goal}\n已确定的背景、约束和来源：\n${plan.context}\n你的任务：${branch.task}\n修改范围：${branch.writeScope}\n${amendments ? '人的后续补充：\n' + amendments : ''}\n${dependencies.length ? '前置结果（需按原证据核对）：\n' + dependencies.map(b => `${b.name} (${b.sessionId}): ${b.result}`).join('\n') : ''}\n仅执行这份分工。不要递归拆分、向其他群发消息或扩大授权。最终返回成果、证据、未解决问题，系统负责回到主话题。需要人补充时使用原生提问，主话题可查到等待状态，不能替人确认。`;
     const prior = await requests.byRequest(target.id, requestId);
@@ -468,6 +510,7 @@ export async function validateExecutionPlanRequest(record) {
   const source = await findSessionMeta(ref.sourceSessionId);
   const p = plans(source).find(p => p.id === ref.planId);
   if (!p || source.archived || ['cancelled', 'stopping', 'draft'].includes(p.state)) fail('Execution plan is no longer active; do not restart cancelled work');
+  await validateKickoff(p);
   if (record.options.workPlanChild) {
     const b = p.branches.find(b => b.id === ref.branchId);
     if (!b || b.stopRequested || b.sessionId !== record.sessionId) fail('This branch was stopped or replaced');

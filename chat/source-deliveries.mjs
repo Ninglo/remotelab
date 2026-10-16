@@ -232,6 +232,14 @@ async function inspectAndClaimSourceDelivery(options = {}) {
         if (Number.isFinite(claimedAt)) nextCheckAt = Math.min(nextCheckAt, claimedAt + timeout);
         continue;
       }
+      if (entry.state === 'pending' && entry.responseId?.startsWith('plan-topic:')) {
+        const { validateExecutionPlanTopic } = await import('./work-execution-plans.mjs');
+        try { await validateExecutionPlanTopic(entry); }
+        catch (error) {
+          await mutateDelivery(entry.id, current => ({ ...current, state: 'cancelled', lastError: error.message }));
+          continue;
+        }
+      }
       const availableAt = Date.parse(entry.availableAt);
       if (entry.state !== 'pending' || (Number.isFinite(availableAt) && availableAt > nowMs)) {
         if (entry.state === 'pending' && Number.isFinite(availableAt)) nextCheckAt = Math.min(nextCheckAt, availableAt);
