@@ -49,6 +49,7 @@ export function buildParticipationCard(record, configuration = null) {
     template: record.mode === 'active' ? 'green' : record.mode === 'listening' ? 'blue' : 'grey',
     title: { tag: 'plain_text', content: `Agent 状态 · ${LABELS[record.mode]}` },
   }, elements: [
+    ...(record.cardRenewalNotice ? [{ tag: 'div', text: { tag: 'plain_text', content: record.cardRenewalNotice } }] : []),
     { tag: 'div', text: { tag: 'lark_md', content: `**${scope} · 直到明确切换**\n${detail}` } },
     ...(record.mode === 'listening' && record.topicHint
       ? [{ tag: 'div', text: { tag: 'plain_text', content: '换了话题，要我参与吗？@我即可。' } }] : []),
@@ -119,12 +120,15 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     if (record.cardSuppressed === true
         || effectiveFeishuGroup(runtime.config, record.source.chatId).participationStatusCard === false) return record;
     const configuration = !record.source.topicId ? await getConfiguration?.(record) : null;
-    const card = buildParticipationCard(record, configuration);
-    const digest = hash(JSON.stringify(card));
     const group = effectiveFeishuGroup(runtime.config, record.source.chatId);
     let messageId = record.cardMessageId || (!record.source.topicId ? group.participationStatusMessageId : '');
     if (existingOnly && !messageId) return record;
     const createdAt = record.cardCreatedAt || Date.now();
+    if (messageId && !existingOnly && Date.now() - createdAt >= 13 * 86400_000) {
+      record = { ...record, cardRenewalNotice: '旧卡片已满13天，更换新卡片' };
+    }
+    const card = buildParticipationCard(record, configuration);
+    const digest = hash(JSON.stringify(card));
     if (messageId && digest === record.cardDigest && !record.pinPending
         && Date.now() - createdAt < 13 * 86400_000) return record;
     if (messageId && (existingOnly || Date.now() - createdAt < 13 * 86400_000)) {
@@ -142,7 +146,8 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       messageId = result.data.message_id;
       // Commit the successful send before pinning; retry cannot duplicate it.
       record = await records.mutate(record.key, current => ({ ...record, ...current,
-        cardMessageId: messageId, cardCreatedAt: Date.now(), pinPending: !record.source.topicId }));
+        cardMessageId: messageId, cardCreatedAt: Date.now(), cardRenewalNotice: record.cardRenewalNotice || '',
+        pinPending: !record.source.topicId }));
       // A retried idempotent create may return the card from an earlier
       // uncertain send. Bring that exact message to the current durable state.
       const updated = await runtime.appClient.im.v1.message.patch({ path: { message_id: messageId },

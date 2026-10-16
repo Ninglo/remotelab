@@ -257,6 +257,12 @@ creation scope first. Publication suppression remains effective. Native Session
 invalidations refresh the same card without a polling AI task.
 Existing callbacks validate the card, actor and source before changes.
 
+When a card reaches 13 days from its original send time, the next normal
+publication replaces it. The replacement displays “旧卡片已满13天，更换新卡片”
+inside the card, and retains that explanation through later edits and restarts.
+First-time cards and in-place edits do not add this notice or send a separate
+announcement. Editing content does not reset the card's age.
+
 The normal prompt builder reads only registered projects’ opening briefs on each
 accepted input, including resumed topics, with a hash and source pointer. Each
 brief is bounded at 48 KiB; missing or oversized files are marked unavailable

@@ -263,6 +263,11 @@ groups filter uninvited messages before attachment handling or model submission.
 An accepted topic binding permits later human follow-ups in that same topic;
 other groups, tenants and Bots never inherit it.
 
+Participation cards are replaced on the next publication after reaching 13 days
+from their original send time. Such replacements show “旧卡片已满13天，更换新卡片”
+inside the new card; ordinary edits keep the same message and do not reset its age.
+See [group card presentation](feishu-project-links.md) for the retained controls.
+
 Work and learning topic groups that are intended as assistant task entry points
 must explicitly set `groups[chatId].responseMode: "all"`; do not infer their role
 from `chat_mode=topic` or their name. A sharing topic group can retain
