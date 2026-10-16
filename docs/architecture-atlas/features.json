@@ -787,6 +787,8 @@
             "docs/memory-learning.md",
             "chat/personal-memory-settings.mjs",
             "chat/personal-memory-conversation.mjs",
+            "chat/memory-review-cards.mjs",
+            "connectors/feishu/memory-review-cards.mjs",
             "chat/router-personal-memory-settings.mjs",
             "static/chat/personal-memory-settings.js",
             "lib/memory-learning-command.mjs",
