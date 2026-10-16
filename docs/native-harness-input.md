@@ -360,3 +360,7 @@ eligible account after the failed provider process stops. Each subscription is t
 once per Run. Model and reasoning settings stay unchanged, and completed tool
 results remain in the saved thread. No fresh-thread replay occurs after work has
 been produced. Pool exhaustion ends the attempt with an explicit failure.
+
+### 已确认的跨群转交
+
+个人分流试点的任务转交复用原生问题。来源 Harness 展示服务端生成的完整转交预览和“确认转交／暂不转交”按钮；服务端按当前待答问题核对预览与草稿后解析本人的选择，既不相信 Agent 提供的批准字段，也不把普通追加或沉默当作确认。飞书按钮回调保留作者和点击时间，重复回调复用首次接收记录。过期或已变化草稿保持未发送，并在来源说明失败。具体范围及回传见 [工作认知与分流](session-work-awareness.md)。

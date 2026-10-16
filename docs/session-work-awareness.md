@@ -195,7 +195,12 @@ Harness 用 `remotelab work route --file packet.json --json`：
 
 - `mode: new`：`task`、`reason`、可选 `name`。先校验并预留话题，再提交原作者输入；重试复用目的地。
 - `mode: continue`：还需 `targetSessionId`。原文和附件进入原工作话题，主线不再重复答复。可选 `requestIds` 只能来自同一次正在执行的群输入；已经有可见正文的输入不可静默搬走。
+- `mode: handoff`：跨群任务转交草稿，需要 `targetSessionId`、`task`、`reason` 和可选 `requestIds`。原文和附件来自来源 Session 内同一已核作者的已接受输入；允许把已经在原处答过的误发内容明确转交，但不静默搬走。返回 `preview`、`question` 及手动确认／拒绝字符串。Harness 把 `question` 原样交给原生提问工具，题目展示具体目标群／话题、原文与附件、限定任务及回传范围，按钮为“确认转交／暂不转交”，不需要复制内部编号。服务端把完整预览与不可变草稿核对后解析选择。本人点击后才发送；只识别误发、Agent 判断、沉默或其他人的回答都不能批准。目标状态或范围变化须重新核对草稿。目标收到原作者交办并在目标话题答复，系统将接收回执和处理结果回传来源；发送失败不冒充已转交。
 - `mode: sync`：还需 `targetSessionId`。`task` 是具体新信息及需要复核的问题，`reason` 解释影响。只保存草稿，先向人说明目标、内容和边界。人在来源对话输入返回的 `确认同步 sync_...` 才提交；`拒绝同步 sync_...` 拒绝。没有 Agent 批准命令。
+
+个人试点常驻一份已登记项目／群的简短目录，不读取其他群聊天。`work discover --query <具体事项>`（`GET /api/work-awareness/discover`）按已有工作摘要查询最多三个候选，只为命中项读取历史元数据，返回群归属、时间、状态、入口及转交条件。未命中不证明工作不存在，归档或已结束项默认只是历史参考；目标是否仍适合承接由 Harness 阅读必要原文判断。发现目录不会扩大试点范围。
+
+确认按钮的数字选择由服务端按当前待答问题解析，保留真实作者、选择和时间；不信任 Agent 提交的批准布尔值。原生确认和直接输入完整确认字符串使用同一校验及去重入口。`handoff` 保留不可变原文集合，重试复用同一目标 Request；已有本人确认但受理或回执失败时，用 `{mode:"handoff",proposalId}` 恢复同一包，不重新询问同一授权；该入口拒绝未批准草稿和任何内容／目的地修改。跨群投递使用目标群地址，不继承来源群参与状态。目标有其他执行时排队，不代答该执行的问题。`work context` 中 `admissionDeliveryState`、`returnDeliveryState` 分别表示接收回执和结果回传的投递状态，队列受理不等于送达或业务完成。
 
 原生追加工具沿用根 Run 的环境时，`sourceRequestId` 必须选取该执行中实际接受的输入；不能借其他 Session 或未进入当前执行的输入授权分流。
 
@@ -207,11 +212,11 @@ Harness 用 `remotelab work route --file packet.json --json`：
 
 逐条回复契约在接收时保存为 `routingPilotMainlineProtocol: 2`。升级前已经接受的输入/运行沿用原契约，新输入不会 steer 进没有此契约的旧主线运行；重试保留原快照，不重放历史消息。
 
-确认只授权该信息的有限复核和结果回传。目标复核排在当前工作之后，不插入活跃执行、不代答原问题、不自动修改原任务或执行新业务操作。排队期间目标任务改变会终止过期复核并回报来源。成功复核后，目标话题展示已确认的信息、来源及复核结论，并把结果写回来源投递队列；失败或过期只回报来源，不在目标公告采纳。`work context` 中 `routing` 提供来源、目的地、草稿及回传状态：`submitted` 表示已接受，`return-queued` 表示结果已进入发送队列，`targetDeliveryState` 与 `returnDeliveryState` 分别跟踪目标展示与来源回传，`delivered` 才证明对应送达；三者均不等于业务采纳。
+`sync` 的确认只授权该信息的有限复核和结果回传。目标复核排在当前工作之后，不插入活跃执行、不代答原问题、不自动修改原任务或执行新业务操作。排队期间目标任务改变会终止过期复核并回报来源。成功复核后，目标话题展示已确认的信息、来源及复核结论，并把结果写回来源投递队列；失败或过期只回报来源，不在目标公告采纳。`work context` 中 `routing` 提供来源、目的地、草稿及回传状态：`submitted` 表示已接受，`return-queued` 表示结果已进入发送队列，`targetDeliveryState` 与 `returnDeliveryState` 分别跟踪目标展示与来源回传，`delivered` 才证明对应送达；三者均不等于业务采纳。
 
 该试点不增加前置语义分类模型。主线接收和目标执行各有自己的必要调用；明确接续不等待后台相关工作检索，跨话题复核异步排队。实际响应速度仍需用真实输入的接收、分流、目标接受、首次回复送达时间测量，不能用本地回放耗时替代。
 
-验证入口：`tests/test-group-routing.mjs` 检查归属、范围、拒绝、重复确认、过期和恢复；`tests/test-group-routing-runtime.mjs` 使用隔离假 Harness 验证接受、执行、完成钩子和回传队列。既有飞书回复、原生追加、参与状态和任务卡测试覆盖兼容性。真实群只由获准试测的人发送测试内容。
+验证入口：`tests/test-confirmed-handoff.mjs` 验证有界发现、拒绝／过期草稿、真实原生数字确认及交接回传；`tests/test-group-routing.mjs` 检查归属、范围、拒绝、重复确认、过期和恢复；`tests/test-group-routing-runtime.mjs` 使用隔离假 Harness 验证接受、执行、完成钩子和回传队列。既有飞书回复、原生追加、参与状态和任务卡测试覆盖兼容性。真实群只由获准试测的人发送测试内容。
 
 For explicitly selected recurring work, the [automation home](task-center-v1.md#stable-automation-home-explicit-opt-in) is a stable task-context branch with source/task links and durable definition revisions. It records source lineage but does not inherit the source transcript, model context or agreements; older full-history homes can be explicitly replaced while retaining their history. Individual execution Sessions point back to that home. Reading status does not send a message to the worker or queue behind its active Run. Discussion references supplied with an adjustment are retained as reported provenance, not verified authorization.
 

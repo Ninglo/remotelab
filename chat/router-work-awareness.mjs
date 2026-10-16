@@ -11,6 +11,7 @@ import { handleExecutionPlan, readExecutionPlans } from './work-execution-plans.
 import { retrieveNecessaryContext } from './necessary-background.mjs';
 import { readProjectWorkDirectory } from './project-work-directory.mjs';
 import { readProjectTopicContext } from './project-topic-context.mjs';
+import { routingDiscovery } from './work-routing-discovery.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
   if (pathname === '/api/monitoring/context-queries' && req.method === 'GET') {
@@ -20,7 +21,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     catch { writeJson(res, 503, { error: 'Context query records unavailable' }); }
     return true;
   }
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan|directory))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan|directory|discover))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -30,6 +31,11 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     if (!session) throw Object.assign(new Error('A current Session is required'), { statusCode: 404 });
     const observation = { sessionId, runId: record?.runId, requestId: record?.requestId, actorKind: record ? 'agent' : authSession?.authKind === 'service' ? 'system' : 'human' };
     const query = body.query || parsedUrl.searchParams.get('query') || record?.text || '';
+    if (pathname.endsWith('/discover') && req.method === 'GET') {
+      writeJson(res, 200, await routingDiscovery(session, record?.options?.viewPersonId || authSession?.personId,
+        { query: parsedUrl.searchParams.get('query') || '' }));
+      return true;
+    }
     if (pathname.endsWith('/directory') && req.method === 'GET') {
       writeJson(res, 200, await readProjectWorkDirectory(session, record?.options?.sourceContext,
         { referenceProjectId: parsedUrl.searchParams.get('project') || '' }));

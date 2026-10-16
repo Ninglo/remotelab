@@ -10,7 +10,7 @@ import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
 import { strictStartCheckPrompt } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
-import { acceptGroupSync, syncDecisionText, completeGroupSync, validateGroupRethink, pilotInputResult, recoverPilotReplies } from './group-routing.mjs';
+import { acceptGroupSync, syncDecisionText, routingQuestionDecision, completeGroupSync, validateGroupRethink, pilotInputResult, recoverPilotReplies } from './group-routing.mjs';
 import { completeExecutionPlan, recoverExecutionPlans, forwardExecutionQuestions, validateExecutionPlanRequest } from './work-execution-plans.mjs';
 import { hintAutomationActivity } from '../lib/automation-events.mjs';
 import { runAutomationHook, reconcileAutomationHook, registerAutomationHook, recoverAutomationHooks } from '../lib/automation-execution-policy.mjs';
@@ -18,7 +18,7 @@ import { requireConversation, resolveSessionDeliveryPlan } from './session-conve
 import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
 import { canForwardNativeRequest, createNativeRequestDispatcher } from './native-request-dispatch.mjs';
-import { readNativeQuestion, nativeQuestionReplyText, isNativeQuestionShortcut } from './native-user-questions.mjs';
+import { readNativeQuestion, nativeQuestionReplyText, isNativeQuestionShortcut, resolveQuestionAnswer } from './native-user-questions.mjs';
 import { recordWorkInput, recordWorkOutcome, markReferenceReceipt } from './work-awareness.mjs';
 import { nativeQuestionDeadlineExpired } from '../lib/native-question-surface.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
@@ -3428,7 +3428,16 @@ const liveReplyAcknowledgedInputs = new Set();
 const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
   prepareInput: async (record, manifest) => {
-    if (record.options?.nativeQuestionId) return { text: nativeQuestionReplyText(record), context: '' };
+    if (record.options?.nativeQuestionId) {
+      if (syncDecisionText(record)) {
+        const outcome = await recordWorkInputAndDeliver(await findSessionMeta(record.sessionId), record);
+        if (outcome.startsWith('Human work decision was NOT accepted:') || !record.options.routingDecisionText?.includes('转交')) {
+          await enqueueSourceDelivery({ sessionId: record.sessionId, responseId: 'routing-question-result:' + record.requestId,
+            sourceDelivery: record.deliveryPlan || record.options.sourceDelivery, text: outcome });
+        }
+      }
+      return { text: nativeQuestionReplyText(record), context: '' };
+    }
     const attachments = await materializeFileAssetAttachments(record.images || []);
     const session = await findSessionMeta(record.sessionId);
     const decisionContext = await recordWorkInputAndDeliver(session, record);
@@ -3573,6 +3582,19 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   else if (!priorRequest && activeNative && !options.internalOperation && !options.workReference && !options.routingRethink && !options.routingSource && !syncDecisionText({ text, options }) && !savedImages.length) {
     const question = await readNativeQuestion(runDir(activeRequest.runId));
     if (isNativeQuestionShortcut(question, { text, options })) options = { ...options, nativeQuestionId: question.id };
+  }
+  // Resolve controls against the server's pending question, never a payload
+  // supplied approval flag. Keep the native answer unchanged for the Harness.
+  if (priorRequest) options.routingDecisionText = priorRequest.options?.routingDecisionText;
+  else {
+    delete options.routingDecisionText;
+    if (options.nativeQuestionId && activeRequest) {
+      const question = await readNativeQuestion(runDir(activeRequest.runId));
+      if (question?.state === 'pending' && question.id === options.nativeQuestionId && question.question) {
+        const answer = resolveQuestionAnswer(question.question, nativeQuestionReplyText({ text, options }));
+        options.routingDecisionText = routingQuestionDecision(await findSessionMeta(sessionId), question.question, answer.values);
+      }
+    }
   }
   // A question answer belongs to the awaiting Harness. It must not invoke Auto
   // routing or switch models just because the reply is a short number.
@@ -3730,7 +3752,7 @@ async function launchAutomationRun(runId, options = {}) {
 }
 
 async function prepareRequestRun(record) {
-  if ((record.options?.routingRethink || record.options?.workPlanChild || record.options?.workPlanReview
+  if ((record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
       || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
       // A run-bound addition can only be steered. If it becomes the queue head

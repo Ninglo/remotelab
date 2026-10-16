@@ -50,6 +50,8 @@ try {
   assert.equal(requests[0][1].body.text, '2');
   assert.equal(requests[0][1].body.nativeQuestionId, 'question');
   assert.equal(requests[0][1].body.sourceContext.sender.openId, 'actor');
+  assert(Number(requests[0][1].body.sourceContext.createTime) > 0, 'button decisions carry their actual acceptance time for pilot fences');
+  assert.equal(requests[0][1].body.sourceContext.messageType, 'interactive');
   assert.deepEqual(requests[0][1].body.sourceDelivery.target, delivery.target);
   await handleNativeQuestionCardAction(runtime, rawAction({ option: 2 }), actionOptions);
   const secondClick = rawAction({ option: 2 }); secondClick.header.event_id = 'action-two';

@@ -175,6 +175,7 @@ export async function handleNativeQuestionCardAction(runtime, raw, { request, au
           requestId: `feishu-question:${eventId}`, nativeQuestionId: value.questionId, text,
           sourceContext: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
             chatId, chatType: card.target.chatType, messageId, tenantKey, sender: summary.sender,
+            createTime: String(Date.now()), messageType: 'interactive',
             eventId, ...(card.thread_id ? { threadId: card.thread_id } : {}) },
           sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: card.target },
         } };

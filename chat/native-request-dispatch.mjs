@@ -13,6 +13,7 @@ export function canForwardNativeRequest(record, head) {
       || record.options?.freshThread || head.cancelRequestedAt
       || record.options?.internalOperation || record.options?.routingRethink
       || head.options?.routingRethink || record.options?.workPlanReview || head.options?.workPlanReview) return false;
+  if (!record.options?.nativeQuestionId && (record.options?.confirmedHandoff || head.options?.confirmedHandoff)) return false;
   if (record.options?.sourceContext?.feishuContinuationRunId
       && record.options.sourceContext.feishuContinuationRunId !== head.runId) return false;
   if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding

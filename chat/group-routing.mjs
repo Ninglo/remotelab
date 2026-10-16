@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { routingPilotScope, routingSyncTargetAllowed, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { loadSessionsMeta, findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
-import { appendEvent } from './history.mjs';
+import { appendEvent, getHistorySnapshot } from './history.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
@@ -12,6 +12,8 @@ import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { allowsMessageRouting } from './message-routing-policy.mjs';
 import { executionTrialPrompt } from './work-execution-prompt.mjs';
 import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
+import { routingDiscovery } from './work-routing-discovery.mjs';
+import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 20);
 const fail = message => { throw new Error(message); };
@@ -175,13 +177,21 @@ export async function routeGroupWork(record, body, deps) {
     record = await requests.get(record.key) || record;
     const { session, scope, origin } = await sourceFor(record);
     const mode = body.mode;
-    if (!['new', 'continue', 'sync'].includes(mode)) fail('Use routing mode new, continue or sync');
+    if (!['new', 'continue', 'sync', 'handoff'].includes(mode)) fail('Use routing mode new, continue, sync or handoff');
+    if (mode === 'handoff' && body.proposalId) {
+      const p = state(session).proposals.find(p => p.id === body.proposalId && p.kind === 'task-handoff');
+      if (!p || p.personId !== record.options.viewPersonId || !p.confirmationRequestId
+          || !['approved', 'submitted', 'return-queued'].includes(p.state)) fail('Only an already human-approved handoff can resume');
+      if (['task', 'reason', 'requestIds', 'targetSessionId'].some(k => body[k] !== undefined)) fail('Resume cannot change an approved packet');
+      return { outcome: await acceptConfirmedHandoff(record, ['','确认转交',p.id], session, origin, deps) };
+    }
     const task = clean(body.task, 6000), reason = clean(body.reason, 600);
     if (!task || !reason) fail('Explain the task and its relationship to this input');
     let target = body.targetSessionId ? await findSessionMeta(body.targetSessionId) : null;
     if (mode !== 'new' && (!target || target.archived || target.groupFeed || target.id === session.id
-        || !(mode === 'sync' ? await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)
+        || !(['sync', 'handoff'].includes(mode) ? await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)
           : sameGroup(origin, target.conversation)))) fail('Select an available work topic in this same pilot group or confirmed sync scope');
+    if (mode === 'handoff') return draftConfirmedHandoff(record, body, session, target, task, reason, origin);
     if (mode === 'sync') {
       const proposalId = 'sync_' + hash(JSON.stringify([session.id, record.requestId, target.id, task, reason]));
       const old = state(session).proposals.find(p => p.id === proposalId);
@@ -300,20 +310,177 @@ export async function routeGroupWork(record, body, deps) {
   });
 }
 
+// A reviewed task transfer is separate from reference-only sync. Its immutable
+// packet survives the source turn ending; only a later verified human decides.
+const targetVersion = s => hash(JSON.stringify([s?.name, s?.conversation, s?.archived, stamp(s),
+  s?.workSummary?.goal, (s?.workAwareness?.works || []).map(w => [w.id, w.version, w.status])]));
+const inputVersion = r => hash(JSON.stringify([r.text, r.images, r.options?.viewPersonId, r.options?.initiatedByIdentityId]));
+async function draftConfirmedHandoff(record, body, session, target, task, reason, origin) {
+  if (target.internalRole || target.conversation?.target?.conversationKind !== 'thread') fail('Select an existing human work topic');
+  const ids = body.requestIds || [record.requestId];
+  if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length) fail('Select 1–8 distinct original input IDs');
+  const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
+  for (const r of inputs) {
+    if (!r || r.options?.viewPersonId !== record.options.viewPersonId
+        || !verifiedWorkActor(r.options.viewPersonId, r.options.initiatedByIdentityId)
+        || r.options.sourceContext?.connector !== 'feishu' || r.options.routingSource
+        || r.options.automationTitle || r.options.internalOperation || r.options.routingRethink
+        || ['app', 'bot'].includes(r.options.sourceContext?.sender?.senderType)
+        || !sameGroup(origin, r.deliveryPlan || r.options.sourceDelivery) || r.routingHandoff) fail('Original human input is unavailable for transfer');
+  }
+  if (inputs.reduce((n, r) => n + r.text.length, 0) > 24000) fail('Select a smaller original input set (maximum 24000 characters)');
+  const originals = inputs.map(r => ({ requestId: r.requestId, version: inputVersion(r), text: r.text,
+    attachments: (r.images || []).map(i => ({ name: i.name || i.filename || i.originalName || '附件', id: i.assetId || i.id || i.path })) }));
+  const id = 'handoff_' + hash(JSON.stringify([session.id, record.requestId, target.id, targetVersion(target), task, reason, originals]));
+  const old = state(session).proposals.find(p => p.id === id);
+  if (old) return handoffPreview(old);
+  if (state(session).proposals.length >= 64) fail('Pilot proposal limit reached');
+  const { catalog } = await routingDiscovery(session, record.options.viewPersonId);
+  const group = catalog.find(g => g.route === target.conversation.sourceRouteId && g.chatId === target.conversation.target.chatId);
+  const latestWork = [...(target.workAwareness?.works || [])].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
+  const snapshot = await getHistorySnapshot(target.id, { metadataOnly: true });
+  const proposal = { id, kind: 'task-handoff', state: 'draft', sourceSessionId: session.id,
+    sourceRequestId: record.requestId, sourceName: session.name, personId: record.options.viewPersonId,
+    targetSessionId: target.id, targetName: target.name, targetGroup: group?.name || target.conversation.target.chatId,
+    targetStatus: latestWork?.status || '未确认，需结合原话题判断', targetLastInputAt: snapshot.lastUserMessageAt || null,
+    targetVersion: targetVersion(target), task, reason, originals, createdAt: new Date().toISOString() };
+  await save(session.id, data => data.proposals.push(proposal));
+  await appendEvent(session.id, { type: 'work_event', action: 'routing-handoff-draft', proposal });
+  return handoffPreview(proposal);
+}
+function handoffPreview(p) {
+  const preview = `转交单 ${p.id.slice(-8)}\n将转交到：${p.targetGroup} / ${p.targetName}\n目标：${buildSessionNavigationHref(p.targetSessionId)}\n记录状态：${p.targetStatus}\n最近输入时间：${p.targetLastInputAt ? new Date(p.targetLastInputAt).toISOString() : '未知'}（不代表仍在进行）\n请对方处理：${p.task}\n转交理由：${p.reason}\n转交的原文：\n${p.originals.map(o => o.text + (o.attachments.length ? '\n附件：' + o.attachments.map(a => a.name).join('、') : '')).join('\n\n')}\n\n确认后才发送以上内容及附件，目标将在该话题处理限定任务，处理结果回到这里。未确认或发送失败时仍由这里说明情况。`;
+  return { proposal: p, confirmation: '确认转交 ' + p.id, rejection: '拒绝转交 ' + p.id, preview,
+    question: { title: preview, options: ['确认转交', '暂不转交'] } };
+}
+// Bind a plain-language button to the exact server-produced preview. No draft
+// ID, arbitrary agent flag, or inferred "yes" can substitute for this display.
+export function routingQuestionDecision(session, question, values) {
+  if (values.length !== 1) return '';
+  const text = values[0];
+  if (!['确认转交', '暂不转交'].includes(text)) return syncDecisionText({ text }) ? text : '';
+  const candidates = state(session).proposals.filter(p => p.kind === 'task-handoff'
+    && p.state === 'draft' && handoffPreview(p).preview === question?.question);
+  if (candidates.length !== 1) return '';
+  return (text === '确认转交' ? '确认转交 ' : '拒绝转交 ') + candidates[0].id;
+}
+async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
+  const p = state(session).proposals.find(p => p.id === decision[2] && p.kind === 'task-handoff');
+  if (!p || p.personId !== record.options.viewPersonId) fail('Only the original requester can confirm this handoff draft');
+  if (p.sourceRequestId === record.requestId) fail('Handoff requires a subsequent human decision');
+  if (['submitted', 'return-queued'].includes(p.state)) {
+    await handoffAdmissionReceipt(p, deps);
+    return `已转交到 ${p.targetGroup} / ${p.targetName}，不会重复发送。`;
+  }
+  if (!['draft', 'approved'].includes(p.state)) fail('This handoff is no longer awaiting confirmation');
+  if (decision[1] === '拒绝转交') {
+    if (p.state !== 'draft') fail('Already approved; check admission before changing this transfer');
+    await save(session.id, d => Object.assign(d.proposals.find(v => v.id === p.id), { state: 'rejected', confirmationRequestId: record.requestId }));
+    return '已取消这条转交，内容仍留在原话题。';
+  }
+  const target = await findSessionMeta(p.targetSessionId);
+  if (!target || target.archived || target.groupFeed || targetVersion(target) !== p.targetVersion
+      || !await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)) fail('目标或可转交范围已变化，尚未转交；请重新核对并确认。');
+  const inputs = await Promise.all(p.originals.map(o => requests.byRequest(session.id, o.requestId)));
+  for (let i = 0; i < inputs.length; i++) {
+    const r = inputs[i];
+    if (!r || inputVersion(r) !== p.originals[i].version
+        || (r.routingHandoff && r.routingHandoff.routeId !== p.id)) fail('Original input changed or already transferred; review a fresh draft');
+  }
+  const packet = { ...p, state: 'approved', confirmationRequestId: p.confirmationRequestId || record.requestId,
+    returnPlan: p.returnPlan || origin };
+  await save(session.id, d => Object.assign(d.proposals.find(v => v.id === p.id), packet));
+  for (const r of inputs) await requests.mutate(r.key, current => {
+    if (current.routingHandoff && current.routingHandoff.routeId !== p.id) fail('Original input already belongs to another transfer');
+    return { ...current, routingHandoff: { targetSessionId: target.id, routeId: p.id, state: 'reserved' } };
+  });
+  const manager = await api(deps);
+  // Cross-group delivery must use the destination's participation scope, never
+  // copy the source group's epoch onto a different group.
+  const delivery = structuredClone(target.conversation);
+  for (const k of ['participationEpoch', 'participationScopeTopicId', 'participationScopeMessageId']) delete delivery.target[k];
+  const first = inputs[0];
+  const options = { requestId: 'routing-handoff:' + p.id,
+    viewPersonId: first.options.viewPersonId, initiatedByIdentityId: first.options.initiatedByIdentityId,
+    feishuConnectorAuthenticated: first.options.feishuConnectorAuthenticated === true,
+    sourceDelivery: delivery, preSavedAttachments: inputs.flatMap(r => r.images || []),
+    // Original provenance remains in routingSource and the immutable packet.
+    // This is a confirmed handoff, not a new Feishu message in the source group.
+    sourceContext: { connector: 'routing-handoff', sourceRouteId: delivery.sourceRouteId,
+      chatId: delivery.target.chatId, sourceSessionId: session.id, sourceRequestId: first.requestId },
+    routingSource: { sessionId: session.id, requestId: first.requestId, routeId: p.id },
+    confirmedHandoff: { sourceSessionId: session.id, proposalId: p.id },
+    tool: target.tool, model: target.model, effort: target.effort };
+  const text = `原作者已确认将误发内容转交到本话题。\n限定任务：${p.task}\n理由：${p.reason}\n来源：${session.id}；确认输入：${packet.confirmationRequestId}\n仅承接这项已确认交办；原话题其他工作不变。结果在本话题答复，系统会回传来源，请勿重复发送。\n\n${inputs.map(r => `原输入 ${r.requestId}：\n${r.text}`).join('\n\n')}`;
+  const prior = await requests.byRequest(target.id, options.requestId);
+  let receipt;
+  try { receipt = await manager.submitHttpMessage(target.id, prior?.text || text, [], prior?.options || options); }
+  catch (error) {
+    if (!await requests.byRequest(target.id, options.requestId)) {
+      for (const r of inputs) await requests.mutate(r.key, current => {
+        if (current.routingHandoff?.routeId !== p.id) return current;
+        const next = { ...current }; delete next.routingHandoff; return next;
+      });
+    }
+    throw error;
+  }
+  for (const r of inputs) await requests.mutate(r.key, current => ({ ...current,
+    routingHandoff: { ...current.routingHandoff, state: 'submitted', targetRequestId: receipt.requestId } }));
+  await save(session.id, d => {
+    const current = d.proposals.find(v => v.id === p.id);
+    Object.assign(current, { ...(current.state === 'approved' ? { state: 'submitted' } : {}),
+      targetRequestId: receipt.requestId, runId: receipt.run.id });
+  });
+  await appendEvent(session.id, { type: 'work_event', action: 'routing-handoff-submitted', proposalId: p.id, receipt });
+  await handoffAdmissionReceipt(packet, deps);
+  return '转交已受理，接收回执已排入原话题；这不表示业务已经完成。';
+}
+async function handoffAdmissionReceipt(p, deps) {
+  const receipt = await (deps?.enqueueSourceDelivery || enqueueSourceDelivery)({ sessionId: p.sourceSessionId,
+    responseId: 'routing-handoff-receipt:' + p.id, sourceDelivery: p.returnPlan,
+    text: `已按你的确认转交到 ${p.targetGroup} / ${p.targetName}，目标已接收，处理结果会回到这里。\n${buildSessionNavigationHref(p.targetSessionId)}` });
+  await save(p.sourceSessionId, d => Object.assign(d.proposals.find(v => v.id === p.id), {
+    admissionDeliveryId: receipt.id, admissionRunId: receipt.runId }));
+}
+async function completeConfirmedHandoff(record, run) {
+  const route = record.options.confirmedHandoff;
+  const source = await findSessionMeta(route.sourceSessionId);
+  const p = state(source || {}).proposals.find(p => p.id === route.proposalId);
+  if (!p || p.state === 'return-queued') return;
+  await handoffAdmissionReceipt(p);
+  const result = clean(record.result?.payload?.text, 12000);
+  const success = record.result?.state === 'completed';
+  const receipt = await enqueueSourceDelivery({ sessionId: source.id, responseId: 'routing-handoff-return:' + p.id,
+    sourceDelivery: p.returnPlan,
+    text: `【转交处理${success ? '结果' : '未完成'}】${p.targetGroup} / ${p.targetName}\n${result || record.result?.error || '未返回可用结论，请查看目标话题。'}\n${buildSessionNavigationHref(p.targetSessionId)}` });
+  await save(source.id, d => Object.assign(d.proposals.find(v => v.id === p.id), {
+    state: 'return-queued', result, resultState: record.result?.state, returnDeliveryId: receipt.id, returnRunId: receipt.runId, runId: run.id }));
+}
+
 export function syncDecisionText(record) {
-  let text = String(record.text || '').trim();
+  let text = String(record.options?.routingDecisionText || record.text || '').trim();
   if (record.options?.sourceContext?.connector === 'feishu') {
     text = text.replace(/^\[群参与状态：[^\n]*\]\n/, '').replace(/^【飞书群消息｜发言人：[^\n]*】\n/, '').trim();
   }
-  return text.match(/^(确认同步|拒绝同步)\s+(sync_[a-f0-9]{20})$/);
+  return text.match(/^(确认同步|拒绝同步)\s+(sync_[a-f0-9]{20})$/)
+    || text.match(/^(确认转交|拒绝转交)\s+(handoff_[a-f0-9]{20})$/);
 }
 export async function acceptGroupSync(record, deps) {
   const decision = syncDecisionText(record);
   if (!decision) return '';
   return serial(record.sessionId, async () => {
+    // A callback retry can arrive after its owning native turn has completed.
+    // Return only an existing outcome; terminal records cannot approve new work.
+    if ((record.result || record.releasedAt) && decision[2].startsWith('handoff_')) {
+      const saved = await findSessionMeta(record.sessionId);
+      const prior = state(saved || {}).proposals.find(p => p.id === decision[2]);
+      if (prior?.confirmationRequestId === record.requestId && prior.personId === record.options?.viewPersonId
+          && ['submitted', 'return-queued', 'rejected'].includes(prior.state)) return '转交决定已处理，不会重复执行。';
+    }
     // Confirming or rejecting an existing specific draft is an explicit action,
     // independent of whether automatic routing is now enabled for the sender.
     const { session, origin } = await sourceFor(record, { explicitSyncDecision: true });
+    if (decision[2].startsWith('handoff_')) return acceptConfirmedHandoff(record, decision, session, origin, deps);
     const proposal = state(session).proposals.find(p => p.id === decision[2]);
     if (!proposal) fail('Sync proposal is not in this conversation');
     if (proposal.personId && proposal.personId !== record.options.viewPersonId) fail('Only the proposal requester can confirm this personal trial');
@@ -355,6 +522,7 @@ async function dispatchGroupSync(packet, target, record, deps) {
   return `同步已提交，目标会在可处理时补充思考；结论会回到这里。目标：${target.name}。这不表示已经完成。`;
 }
 export async function completeGroupSync(record, run) {
+  if (record?.options?.confirmedHandoff) return completeConfirmedHandoff(record, run);
   const route = record?.options?.routingRethink;
   if (!route) return;
   const source = await findSessionMeta(route.sourceSessionId);
@@ -392,8 +560,11 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
   const current = await findSessionMeta(session.id) || session;
   if (scope.version === 2) {
     if (messageRoutingPolicy?.trialVersion !== 2 || messageRoutingPolicy.trialId !== scope.trialId) return '';
+    const { catalog } = await routingDiscovery(session, messageRoutingPolicy.personId);
     return executionTrialPrompt({ trialId: scope.trialId, decisions: current.workAwareness?.inputDecisions,
-      plans: current.workAwareness?.executionPlans });
+      plans: current.workAwareness?.executionPlans }) + '\n'
+      + '误发去向不明时用 work discover --query <具体事项> 查询最多三个已登记群的话题候选，再核必要原文；下面群目录只作发现线索，不是转发授权。跨群任务转交用 work route 的 mode:handoff，带 targetSessionId、task、reason、requestIds。把返回的 question 原样交给原生提问工具（title 是完整 preview，选项为确认转交/暂不转交），不要改写或省略预览；本人按确定后才发送，沉默、Agent决定和仅说发错了都不批准。sync 仍仅为参考复核。失败留在原话题，目标受理后才报告已转交。\n'
+      + JSON.stringify({ registeredRoutingGroups: catalog }).replace(/[<>&]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
   }
   const sessions = await loadSessionsMeta();
   const peers = sessions.filter(s => !s.archived && !s.groupFeed && s.id !== session.id
@@ -420,6 +591,10 @@ export async function readGroupRoutingState(session) {
   if (!session.groupRouting) return null;
   const value = structuredClone(session.groupRouting);
   for (const p of value.proposals) {
+    if (p.admissionRunId) {
+      const request = await requests.byRunId(p.admissionRunId);
+      p.admissionDeliveryState = request?.deliveries.find(d => d.id === p.admissionDeliveryId)?.state || 'unknown';
+    }
     if (p.returnRunId) {
       const request = await requests.byRunId(p.returnRunId);
       p.returnDeliveryState = request?.deliveries.find(d => d.id === p.returnDeliveryId)?.state || 'unknown';
@@ -432,6 +607,16 @@ export async function readGroupRoutingState(session) {
   return value;
 }
 export async function validateGroupRethink(record) {
+  if (record.options?.confirmedHandoff) {
+    const route = record.options.confirmedHandoff;
+    const source = await findSessionMeta(route.sourceSessionId);
+    const p = state(source || {}).proposals.find(p => p.id === route.proposalId);
+    const target = await findSessionMeta(record.sessionId);
+    if (!p || p.kind !== 'task-handoff' || !['approved', 'submitted'].includes(p.state)
+        || !p.confirmationRequestId || p.targetSessionId !== target?.id || target.archived
+        || !await routingSyncTargetAllowed(p.returnPlan, target.conversation, p.personId)) fail('已确认转交的范围不再有效，任务未执行。');
+    return;
+  }
   const route = record.options?.routingRethink;
   if (!route) return;
   const source = await findSessionMeta(route.sourceSessionId);
