@@ -5,13 +5,11 @@
   const automations = document.getElementById("monitoringAutomations");
   const content = document.getElementById("monitoringContent");
   if (!overview || !automations || !content) return;
-  const test = document.getElementById("monitoringTest");
   const security = document.getElementById("monitoringSecurity");
-  const views = ["overview", "usage", "automations", "feedback", ...(security ? ["security"] : []), ...(test ? ["test"] : [])];
+  const views = ["overview", "usage", "automations", "feedback", ...(security ? ["security"] : [])];
   const feedback = document.getElementById("monitoringFeedback");
   const usage = document.getElementById("monitoringUsage");
-  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab"), document.getElementById("monitoringFeedbackTab"), ...(security ? [document.getElementById("monitoringSecurityTab")] : []), ...(test ? [document.getElementById("monitoringTestTab")] : [])];
-  const period = document.getElementById("monitoringPeriod");
+  const tabs = [document.getElementById("monitoringOverviewTab"), document.getElementById("monitoringUsageTab"), document.getElementById("monitoringAutomationsTab"), document.getElementById("monitoringFeedbackTab"), ...(security ? [document.getElementById("monitoringSecurityTab")] : [])];
   const refresh = document.getElementById("monitoringRefresh");
   const create = document.getElementById("taskCenterCreateToggle");
   const requested = new URL(globalScope.location.href).searchParams.get("monitor");
@@ -129,33 +127,6 @@
     return window.minutes >= 1440 ? t("days", { count: Math.round(window.minutes / 1440) })
       : window.minutes >= 60 ? t("hours", { count: Math.round(window.minutes / 60) }) : t("minutes", { count: window.minutes });
   }
-  function accountCard(account) {
-    const card = node("article", "", "monitoring-account"); card.dataset.status = account.status;
-    const header = node("header", "", "monitoring-account-header");
-    header.appendChild(node("h4", account.label));
-    header.appendChild(node("span", status(account.status), "monitoring-account-status")); card.appendChild(header);
-    if (account.active) card.appendChild(node("span", t("active"), "monitoring-account-default"));
-    const windows = account.windows.slice().sort((a, b) => (account.status === "exhausted" ? a.remainingPercent - b.remainingPercent : 0)
-      || (b.minutes === 10080) - (a.minutes === 10080) || b.minutes - a.minutes);
-    if (!windows.length) card.appendChild(node("p", t("quotaUnknown"), "monitoring-quota-unknown"));
-    windows.forEach((window, index) => {
-      const quota = node("div", "", "monitoring-quota");
-      quota.dataset.primary = String(index === 0);
-      quota.dataset.band = account.status === "unknown" || account.status === "conflicting" ? "unknown"
-        : window.remainingPercent <= 10 ? "low" : window.remainingPercent <= 30 ? "limited" : "available";
-      const label = node("div", "", "monitoring-quota-label");
-      label.appendChild(node("span", t("windowRemaining", { window: quotaDuration(window) })));
-      label.appendChild(node("strong", percent(window.remainingPercent))); quota.appendChild(label);
-      if (Number.isFinite(window.remainingPercent)) {
-        const meter = node("meter"); meter.min = 0; meter.max = 100; meter.value = window.remainingPercent;
-        meter.setAttribute("aria-label", `${account.label} · ${quotaDuration(window)} · ${t("remaining")} ${percent(window.remainingPercent)}`);
-        quota.appendChild(meter);
-      }
-      quota.appendChild(node("p", t("windowReset", { time: time(window.resetsAt) }), "monitoring-quota-reset")); card.appendChild(quota);
-    });
-    card.appendChild(node("p", t("accountObserved", { time: time(account.observedAt) }), "monitoring-account-observed"));
-    return card;
-  }
   function summaryMetrics(parent, entries) {
     const grid = node("div", "", "monitoring-summary-metrics");
     for (const [label, metric, hint] of entries) {
@@ -177,45 +148,35 @@
       const sortedAccounts = data.accounts.slice().sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
       table(accounts, [t("account"), t("status"), "剩余额度", "最近观测"], sortedAccounts.map(account => {
         const label = node("div", account.label);
+        label.appendChild(node("small", `更新于 ${time(account.observedAt)}`, "agent-account-observed-mobile"));
         if (account.active) label.appendChild(node("small", t("active"), "monitoring-owner"));
         const badge = node("span", status(account.status), "monitoring-account-status"); badge.dataset.status = account.status;
         const quota = node("div", "", "monitoring-quota-cell");
         for (const window of account.windows) {
           const row = node("div"); row.appendChild(node("span", `${quotaDuration(window)} · ${percent(window.remainingPercent)}`));
           if (Number.isFinite(window.remainingPercent)) { const meter = node("meter"); meter.min = 0; meter.max = 100; meter.value = window.remainingPercent; meter.low = 10; meter.high = 30; meter.optimum = 100; meter.setAttribute("aria-label", `${account.label} ${quotaDuration(window)} 剩余 ${percent(window.remainingPercent)}`); row.appendChild(meter); }
+          row.appendChild(node("small", t("windowReset", { time: time(window.resetsAt) }), "monitoring-quota-reset"));
           quota.appendChild(row);
         }
         if (!account.windows.length) quota.appendChild(node("span", t("quotaUnknown")));
         return [label, badge, quota, time(account.observedAt)];
       }));
-      const quotaDetails = node("details"); quotaDetails.appendChild(node("summary", "查看各账号重置时间与完整额度"));
-      const grid = node("div", "", "monitoring-account-grid"); sortedAccounts.forEach(account => grid.appendChild(accountCard(account)));
-      quotaDetails.appendChild(grid); accounts.appendChild(quotaDetails);
       accounts.appendChild(node("p", t("quotaNote"), "monitoring-note"));
     }
     return accounts;
   }
 
-  // Both entry points use the same data and renderer, with independent disclosure state.
-  const compactViews = {
-    overview: { dashboard: document.getElementById("monitoringSessions"), accounts: node("div"), button: refresh, state: {}, loadedAt: 0 },
-    test: { dashboard: document.getElementById("monitoringTestDashboard"), accounts: document.getElementById("monitoringTestAccounts"), button: document.getElementById("monitoringTestRefresh"), state: {}, loadedAt: 0 },
-  };
-  compactViews.overview.accounts.id = "monitoringSnapshot";
-  compactViews.overview.accounts.className = "monitoring-snapshot";
-  period.closest("label").hidden = true;
-  const periodNote = node("p", "今日概览 · 北京时间 05:00 起 · 详情查看近七日趋势", "monitoring-note");
-  period.closest(".monitoring-toolbar").prepend(periodNote);
+  const current = { dashboard: document.getElementById("monitoringSessions"), accounts: node("div"), button: refresh, state: { sources: true }, loadedAt: 0 };
+  current.accounts.id = "monitoringSnapshot";
+  current.accounts.className = "monitoring-snapshot";
   document.getElementById("monitoringResourcePanel").hidden = true;
-  async function loadCompact(key, { force = false } = {}) {
-    const current = compactViews[key];
+  async function load({ force = false } = {}) {
     if (!current.dashboard || current.loading || (!force && Date.now() - current.loadedAt < 15000)) return;
     current.loading = true;
     const { button, dashboard, accounts, state } = current;
     button.disabled = true;
     if (!dashboard.childElementCount) dashboard.appendChild(node("p", "正在读取监控数据…", "monitoring-note"));
     for (const fold of dashboard.querySelectorAll("[data-agent-fold]")) state[fold.dataset.agentFold] = fold.open;
-    const accountsOpen = accounts.querySelector("details")?.open === true;
     const read = async path => {
       const response = await fetch(path, { credentials: "same-origin", signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw Error(`HTTP ${response.status}`);
@@ -231,13 +192,11 @@
       if (accountsResult.status === "fulfilled") {
         const data = accountsResult.value;
         const section = renderAccounts(accounts, data);
-        const fold = section.querySelector("details"); if (fold) fold.open = accountsOpen;
         for (const gap of data.coverage?.gaps || []) if (gap.source === "accounts") section.appendChild(node("p", "部分账号额度未取得，不能据此判断全部正常。", "monitoring-note"));
       } else accounts.appendChild(node("p", "账号额度读取失败，请刷新重试。", "monitoring-note"));
-      globalScope.RemoteLabAgentDashboard.renderCompact(dashboard,
-        sessionsResult.status === "fulfilled" ? sessionsResult.value.agentDashboard : null,
-        { state, accounts, accountData: accountsResult.status === "fulfilled" ? accountsResult.value : null,
-          refresh: () => loadCompact(key, { force: true }) });
+      globalScope.RemoteLabAgentDashboard.render(dashboard,
+        sessionsResult.status === "fulfilled" ? sessionsResult.value.agentDashboard : null, { state });
+      dashboard.append(accounts);
       if (accountsResult.status === "fulfilled") { value = accountsResult.value; render(); }
       if (results.every(result => result.status === "fulfilled")) current.loadedAt = Date.now();
     } finally { current.loading = false; button.disabled = false; }
@@ -249,8 +208,6 @@
       const guide = node("div"); handlingGuide(guide, "automation"); automations.prepend(guide.firstChild);
     }
   }
-  const load = options => loadCompact("overview", options);
-  const loadTest = options => loadCompact("test", options);
   let reviewOffset = 0, reviewSeverity = '', reviewState = '', reviewLoading = false, reviewReload = false;
   const reviewFolds = new Map();
   const reviewLabels = { none: '未发现具体风险', low: '低', medium: '中', high: '高', critical: '严重',
@@ -320,7 +277,6 @@
   }
   function select(next, { sync = true } = {}) {
     view = next; overview.hidden = view !== "overview"; automations.hidden = view !== "automations";
-    if (test) test.hidden = view !== "test";
     if (security) security.hidden = view !== "security";
     if (usage) usage.hidden = view !== "usage";
     if (feedback) feedback.hidden = view !== "feedback";
@@ -334,7 +290,6 @@
       globalScope.history.replaceState(null, "", url);
       if (view === "overview") void load();
       else if (view === "security") void loadSecurity();
-      else if (view === "test") void loadTest();
       else if (view === "usage") void globalScope.RemoteLabUsageAnalysis?.load();
       else if (view === "feedback") void globalScope.RemoteLabProjectFeedback?.load();
       else void globalScope.RemoteLabTaskCenter?.onTabShown();
@@ -348,7 +303,6 @@
       select(views[target]); tabs[target].focus();
     });
   });
-  document.getElementById("monitoringTestRefresh")?.addEventListener("click", () => void loadTest({ force: true }));
   document.getElementById('promptReviewRefresh')?.addEventListener('click', () => void loadSecurity());
   document.getElementById('promptReviewRun')?.addEventListener('click', async event => {
     event.currentTarget.disabled = true;
@@ -359,15 +313,18 @@
     } catch { document.getElementById('promptReviewContent').append(node('p', '补审启动未确认，请先刷新核对进程状态。')); }
   });
   refresh.addEventListener("click", () => void load({ force: true }));
-  globalScope.addEventListener("remotelab:localechange", () => { if (view === "overview" || view === "test") void loadCompact(view, { force: true }); else if (value) render(); });
+  globalScope.addEventListener("remotelab:localechange", () => { if (view === "overview") void load({ force: true }); else if (value) render(); });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && view === 'security' && document.body.dataset.appView === 'tasks') void loadSecurity();
-    if (!document.hidden && view === "test" && document.body.dataset.appView === "tasks") void loadTest();
     if (!document.hidden && view === "overview" && document.body.dataset.appView === "tasks") void load({ silent: true });
   });
-  globalScope.RemoteLabMonitoring = { loadHandling: () => load({ silent: Boolean(value) }), isOverview: () => view !== "automations", onTabShown: () => view === 'security' ? loadSecurity() : view === "test" ? loadTest() : view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
+  globalScope.RemoteLabMonitoring = { loadHandling: () => load({ silent: Boolean(value) }), isOverview: () => view !== "automations", onTabShown: () => view === 'security' ? loadSecurity() : view === "feedback" ? globalScope.RemoteLabProjectFeedback?.load() : view === "usage" ? globalScope.RemoteLabUsageAnalysis?.load() : load({ silent: Boolean(value) }) };
+  // Preserve old bookmarks without retaining a second dashboard or extra load.
+  if (requested === "test") {
+    const url = new URL(globalScope.location.href); url.searchParams.set("monitor", "overview");
+    globalScope.history.replaceState(null, "", url);
+  }
   select(view, { sync: false });
   if (view === 'security' && document.body.dataset.appView === 'tasks') void loadSecurity();
-  if (view === "test" && document.body.dataset.appView === "tasks") void loadTest();
   if (view === "overview" && document.body.dataset.appView === "tasks") void load();
 })(window);

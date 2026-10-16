@@ -293,5 +293,43 @@ try {
 
   await mutateSessionMeta('source', s => { s.archived = true; return true; });
   const frozen = creations; await recoverExecutionPlans(api); assert.equal(creations, frozen, 'archived parent cannot be revived by recovery');
+  await mutateSessionMeta('source', s => { s.archived = false; return true; });
+  // A slow child creation does not hold plan commands or delay a stop intent.
+  let releaseCreate, enteredCreate;
+  const createGate = new Promise(resolve => { releaseCreate = resolve; });
+  const creating = new Promise(resolve => { enteredCreate = resolve; });
+  const slowApi = { ...api, createSession: async (...args) => {
+    enteredCreate(); await createGate; return api.createSession(...args);
+  } };
+  const slowInput = await input('slow-plan-start', '开始独立工作');
+  const starting = act(slowInput, { action: 'start', goal: 'slow-plan', context: '只读上下文',
+    reason: '独立分析', authorization: '本人明确要求', branches: [branch('slow')] }, slowApi);
+  await creating;
+  const slowPlan = (await findSessionMeta('source')).workAwareness.executionPlans.find(p => p.goal === 'slow-plan');
+  await act(await input('stop-slow-plan', '停止刚才工作'), { action: 'stop', planId: slowPlan.id,
+    expectedVersion: slowPlan.version, selected: ['slow'], text: '停止，不再启动' }, api);
+  assert.equal((await state(slowPlan.id)).branches[0].stopRequested, true);
+  const beforeLateCreate = submits;
+  releaseCreate(); await starting;
+  assert.equal(submits, beforeLateCreate, 'late child creation cannot submit stopped work');
+  const reviewRace = (await propose('review-race', [branch('a'), branch('b')])).plan;
+  await approve(reviewRace);
+  await complete(reviewRace, 'a');
+  const finalBranch = (await state(reviewRace.id)).branches.find(b => b.id === 'b');
+  const finalInput = await requests.byRequest(finalBranch.sessionId, finalBranch.requestId);
+  await requests.settle(finalInput.key, { state: 'completed', payload: { text: 'done' } }, []);
+  let releaseReview, reviewEntered;
+  const reviewBarrier = new Promise(resolve => { releaseReview = resolve; });
+  const reviewStarted = new Promise(resolve => { reviewEntered = resolve; });
+  const finishing = finish(await requests.get(finalInput.key), { id: finalInput.runId }, { ...api,
+    async submitHttpMessage(...args) { reviewEntered(); await reviewBarrier; return api.submitHttpMessage(...args); } });
+  await reviewStarted;
+  await act(await input('stop-review'), { action: 'stop', planId: reviewRace.id,
+    expectedVersion: (await state(reviewRace.id)).version, selected: ['a', 'b'], text: '停止汇总' }, api);
+  releaseReview(); await finishing;
+  const stoppedReview = await state(reviewRace.id);
+  assert.notEqual(stoppedReview.state, 'reviewing', 'late review admission cannot overwrite stop');
+  assert.ok(cancelled.some(([id, run]) => id === 'source' && run === stoppedReview.reviewRunId),
+    'a review admitted concurrently with stop receives cancellation');
   console.log('EXECUTION_PLANS_VERIFIED: personal/group scope, cross-group consent, draft/partial approval, direct authorized work, dependencies, failure, amendment, question relay, cancellation, recovery and source result ownership. No real model or group send.');
 } finally { await rm(home, { recursive: true, force: true }); }

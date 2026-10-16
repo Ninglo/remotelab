@@ -42,19 +42,19 @@ try {
   const folderModule = await import(pathToFileURL(join(repoRoot, 'chat', 'session-folder.mjs')).href + cacheBust);
   const metaStoreModule = await import(pathToFileURL(join(repoRoot, 'chat', 'session-meta-store.mjs')).href + cacheBust);
 
-  const repaired = folderModule.resolveRunnableSessionFolder(missingLegacyProjectPath);
+  const repaired = await folderModule.resolveRunnableSessionFolder(missingLegacyProjectPath);
   assert.equal(repaired.repaired, true, 'missing session folder should be repaired');
   assert.equal(repaired.cwd, managedWorkRoot, 'missing folders should fall back to the managed work root');
 
-  const fallback = folderModule.normalizeStoredSessionFolder(missingLegacyUserPath);
+  const fallback = await folderModule.normalizeStoredSessionFolder(missingLegacyUserPath);
   assert.equal(fallback.changed, true, 'missing stored folder should normalize to the managed work root');
   assert.equal(fallback.folder, managedWorkRoot, 'missing stored folder should normalize to the managed work root');
 
   const loaded = await metaStoreModule.loadSessionsMeta();
-  assert.equal(loaded[0]?.folder, managedWorkRoot, 'stored session metadata should be normalized to the managed work root on load');
+  assert.equal(loaded[0]?.folder, missingLegacyProjectPath, 'reading metadata preserves the configured folder');
 
   const persisted = JSON.parse(readFileSync(sessionsPath, 'utf8'));
-  assert.equal(persisted[0]?.folder, managedWorkRoot, 'normalized session folder should be persisted back to disk');
+  assert.equal(persisted[0]?.folder, missingLegacyProjectPath, 'reading metadata does not rewrite storage');
 } finally {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;

@@ -1,3 +1,4 @@
+import { readRunState } from '../lib/run-state.mjs';
 // Targeted, dry-run by default. No provider calls and no source-ledger rewrites.
 import { createReadStream } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
@@ -28,7 +29,7 @@ for (const name of (await readdir(USAGE_LEDGER_DIR)).filter(n => /^\d{4}-\d{2}-\
 const reports = [];
 for (const id of selected) {
   const versions = [...(records.get(id)?.values() || [])], record = versions.at(-1);
-  const run = JSON.parse(await readFile(join(CHAT_RUNS_DIR, id, 'status.json'), 'utf8'));
+  const run = await readRunState(join(CHAT_RUNS_DIR, id));
   const start = Date.parse(run.startedAt), end = Date.parse(run.completedAt);
   if (!record || record.contextSource !== 'provider_last_token_count' || record.state !== 'cancelled'
       || run.state !== 'cancelled' || !Number.isFinite(start) || !Number.isFinite(end) || end < start) {

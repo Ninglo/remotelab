@@ -1,6 +1,7 @@
+import { createKeyedTaskQueue } from '../../chat/fs-utils.mjs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { readRecord, serialQueue, writeDurableJson } from '../../lib/durable-records.mjs';
+import { readRecord, writeDurableJson } from '../../lib/durable-records.mjs';
 import { shouldReplyInFeishuThread, shouldReplyToFeishuMessage, buildFeishuApiUuid } from './index.mjs';
 import { feishuResponseError } from './delivery-errors.mjs';
 import { nativeQuestionDeadlineExpired } from '../../lib/native-question-surface.mjs';
@@ -84,7 +85,14 @@ export function buildNativeQuestionCard(identity, question) {
 
 // One original message, with a durable creation fence and receipt. A state
 // update without an original card never creates a late attention message.
-export async function sendNativeQuestionCard(runtime, delivery) {
+export function sendNativeQuestionCard(runtime, delivery) {
+  runtime.nativeQuestionRenderQueue ||= createKeyedTaskQueue();
+  const identity = { sessionId: delivery.sessionId, runId: delivery.runId, questionId: delivery.nativeQuestion.id };
+  // Only successive versions of the same card need ordered network writes.
+  return runtime.nativeQuestionRenderQueue(receiptPath(runtime, identity), () => renderNativeQuestionCard(runtime, delivery));
+}
+
+async function renderNativeQuestionCard(runtime, delivery) {
   const identity = { sessionId: delivery.sessionId, runId: delivery.runId, questionId: delivery.nativeQuestion.id };
   const path = receiptPath(runtime, identity);
   const prior = await readRecord(path);
@@ -102,7 +110,7 @@ export async function sendNativeQuestionCard(runtime, delivery) {
   } else {
     if (prior?.creating) throw Object.assign(new Error('Question card creation outcome is unknown; inspect before retrying'), { definiteFailure: true });
     const target = delivery.target;
-    await writeDurableJson(path, { ...identity, target, creating: true, state: 'pending',
+    await saveCard(runtime, identity, { ...identity, target, creating: true, state: 'pending',
       deadline: question.deadline, question: question.question });
     const data = { msg_type: 'interactive', content, uuid: buildFeishuApiUuid(delivery.id, target) };
     const response = shouldReplyToFeishuMessage(target)
@@ -112,7 +120,7 @@ export async function sendNativeQuestionCard(runtime, delivery) {
       // A structured rejection proves there is no card to duplicate. Preserve
       // an unknown transport outcome's fence; only definite rejection clears it.
       if (Number.isInteger(response?.code) && response.code !== 0) {
-        await writeDurableJson(path, { ...identity, target, creating: false, state: 'pending',
+        await saveCard(runtime, identity, { ...identity, target, creating: false, state: 'pending',
           deadline: question.deadline, question: question.question, rejectionCode: response.code });
       }
       throw feishuResponseError(response, 'Failed to send native question card');
@@ -120,14 +128,14 @@ export async function sendNativeQuestionCard(runtime, delivery) {
     receipt = { ...identity, target, state: 'pending', messageId: response.data.message_id,
       message_id: response.data.message_id, thread_id: response.data.thread_id || '', creating: false,
       deadline: question.deadline, question: question.question };
-    await writeDurableJson(path, receipt);
+    await saveCard(runtime, identity, receipt);
   }
   const verified = await app.get({ path: { message_id: receipt.messageId } });
   const item = verified.data?.items?.find(message => message.message_id === receipt.messageId);
   if (verified.code !== 0 || !item || item.deleted || item.msg_type !== 'interactive'
       || (item.chat_id && item.chat_id !== receipt.target.chatId)) throw new Error('Native question card readback failed');
   receipt = { ...receipt, state: question.state, deadline: question.deadline, question: question.question, contentHash };
-  await writeDurableJson(path, receipt);
+  await saveCard(runtime, identity, receipt);
   return receipt;
 }
 
@@ -141,7 +149,7 @@ export async function handleNativeQuestionCardAction(runtime, raw, { request, au
   const messageId = trim(event.context?.open_message_id || event.context?.message_id);
   const actor = trim(event.operator?.operator_id?.open_id || event.operator?.open_id);
   if (!chatId || !messageId || !actor || !trim(value.sessionId) || !trim(value.runId) || !trim(value.questionId)) return reply('无法识别原问题，请查看原话题。');
-  return withNativeQuestionCardLock(runtime, async () => {
+  return (async () => {
     try {
       const path = receiptPath(runtime, value);
       const card = await readRecord(path);
@@ -163,44 +171,79 @@ export async function handleNativeQuestionCardAction(runtime, raw, { request, au
       // Feishu can retry a callback or assign another event ID to a second click.
       // Keep the first admission envelope durable before sending: a lost HTTP
       // acknowledgement must replay that input, even if its question has ended.
-      let submission = card.submission;
-      if (submission) {
-        if (submission.actor !== actor || submission.text !== text) {
-          return reply(submission.accepted
-            ? '问题已有回答；需要修改时请在原话题直接说明。'
-            : '上次提交尚未确认，请先重试原答案。');
+      const admitted = await withReceipt(runtime, value, async () => {
+        const card = await readRecord(path);
+        let submission = card.submission;
+        if (submission) {
+          if (submission.actor !== actor || submission.text !== text) {
+            return reply(submission.accepted
+              ? '问题已有回答；需要修改时请在原话题直接说明。'
+              : '上次提交尚未确认，请先重试原答案。');
+          }
+          if (submission.accepted) return reply('这条回答已提交，无需重复提交。', 'success');
+        } else {
+          if (card.state !== 'pending' || nativeQuestionDeadlineExpired(card.deadline)) return reply('问题已结束，未应用这次选择；需要修改时请直接说明。');
+          const eventId = trim(raw?.header?.event_id || event.event_id) || hash(JSON.stringify([messageId, actor, text]));
+          submission = { actor, text, body: {
+            requestId: `feishu-question:${eventId}`, nativeQuestionId: value.questionId, text,
+            sourceContext: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
+              chatId, chatType: card.target.chatType, messageId, tenantKey, sender: summary.sender,
+              createTime: String(Date.now()), messageType: 'interactive',
+              eventId, ...(card.thread_id ? { threadId: card.thread_id } : {}) },
+            sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: card.target },
+          } };
+          await writeDurableJson(path, { ...card, submission });
         }
-        if (submission.accepted) return reply('这条回答已提交，无需重复提交。', 'success');
-      } else {
-        if (card.state !== 'pending' || nativeQuestionDeadlineExpired(card.deadline)) return reply('问题已结束，未应用这次选择；需要修改时请直接说明。');
-        const eventId = trim(raw?.header?.event_id || event.event_id) || hash(JSON.stringify([messageId, actor, text]));
-        submission = { actor, text, body: {
-          requestId: `feishu-question:${eventId}`, nativeQuestionId: value.questionId, text,
-          sourceContext: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
-            chatId, chatType: card.target.chatType, messageId, tenantKey, sender: summary.sender,
-            createTime: String(Date.now()), messageType: 'interactive',
-            eventId, ...(card.thread_id ? { threadId: card.thread_id } : {}) },
-          sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: card.target },
-        } };
-        await writeDurableJson(path, { ...card, submission });
-      }
-      const result = await request(`/api/sessions/${encodeURIComponent(value.sessionId)}/messages`, { method: 'POST', body: submission.body });
-      if (result.response?.ok) {
-        await writeDurableJson(path, { ...card, submission: { ...submission, accepted: true } });
-      } else if (result.response?.status >= 400 && result.response.status < 500 && result.response.status !== 408) {
-        // Only an explicit client rejection clears admission. A server failure
-        // can follow successful admission, so retain its original envelope.
-        await writeDurableJson(path, { ...card, submission: null });
-      }
-      return result.response?.ok ? reply('回答已提交。', 'success') : reply(result.json?.error || '回答未获确认，请查看原问题。');
+        return { submission };
+      });
+      if (!admitted.submission) return admitted;
+      const { submission } = admitted;
+      return await withSubmission(runtime, path + ':' + submission.body.requestId, async () => {
+        const result = await request(`/api/sessions/${encodeURIComponent(value.sessionId)}/messages`, { method: 'POST', body: submission.body });
+        if (result.response?.ok) {
+          await withReceipt(runtime, value, async () => {
+            const latest = await readRecord(path);
+            if (latest.submission?.body.requestId === submission.body.requestId)
+              await writeDurableJson(path, { ...latest, submission: { ...submission, accepted: true } });
+          });
+        } else if (result.response?.status >= 400 && result.response.status < 500 && result.response.status !== 408) {
+          // Only an explicit client rejection clears admission. A server failure
+          // can follow successful admission, so retain its original envelope.
+          await withReceipt(runtime, value, async () => {
+            const latest = await readRecord(path);
+            if (latest.submission?.body.requestId === submission.body.requestId && !latest.submission.accepted)
+              await writeDurableJson(path, { ...latest, submission: null });
+          });
+        }
+        return result.response?.ok ? reply('回答已提交。', 'success') : reply(result.json?.error || '回答未获确认，请查看原问题。');
+      });
     } catch (error) {
       console.warn(`[feishu-native-question] ${error.message}`);
       return reply('回答未获确认，请查看原问题后重试。');
     }
+  })();
+}
+
+function withReceipt(runtime, identity, operation) {
+  runtime.nativeQuestionReceiptQueue ||= createKeyedTaskQueue();
+  return runtime.nativeQuestionReceiptQueue(receiptPath(runtime, identity), operation);
+}
+
+function saveCard(runtime, identity, value) {
+  return withReceipt(runtime, identity, async () => {
+    const path = receiptPath(runtime, identity);
+    const current = await readRecord(path);
+    await writeDurableJson(path, { ...current, ...value,
+      ...(current?.submission ? { submission: current.submission } : {}),
+    });
   });
 }
 
-export function withNativeQuestionCardLock(runtime, operation) {
-  runtime.nativeQuestionCardQueue ||= serialQueue();
-  return runtime.nativeQuestionCardQueue(operation);
+function withSubmission(runtime, key, operation) {
+  runtime.nativeQuestionSubmissions ||= new Map();
+  const pending = runtime.nativeQuestionSubmissions;
+  if (pending.has(key)) return pending.get(key);
+  const task = Promise.resolve().then(operation).finally(() => pending.delete(key));
+  pending.set(key, task);
+  return task;
 }

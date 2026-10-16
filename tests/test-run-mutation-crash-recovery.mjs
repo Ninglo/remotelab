@@ -11,7 +11,7 @@ setIsolatedTestHome(home);
 let writer;
 try {
   const { createRun, updateRun, getRun, runDir } = await import('../chat/runs.mjs');
-  const run = await createRun({ status: { sessionId: 'crash-session', state: 'running' },
+  const run = await createRun({ status: { storageVersion: 1, sessionId: 'crash-session', state: 'running' },
     manifest: { sessionId: 'crash-session', options: {} } });
   const fixture = join(home, 'writer.mjs');
   await writeFile(fixture, `import { updateRun } from ${JSON.stringify(new URL('../chat/runs.mjs', import.meta.url).href)};

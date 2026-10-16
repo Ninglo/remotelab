@@ -30,12 +30,14 @@ writeFileSync(sessionsPath, JSON.stringify([{
 }], null, 2));
 
 try {
-  const { loadSessionsMeta } = await import('../chat/session-meta-store.mjs');
+  const { loadSessionsMeta, mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
   const sessions = await loadSessionsMeta();
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].workSummary?.summary, 'Migrate the old task-card carrier into provider-neutral work state.');
   assert.equal(Object.prototype.hasOwnProperty.call(sessions[0], 'taskCard'), false);
 
+  assert.ok(JSON.parse(readFileSync(sessionsPath, 'utf8'))[0].taskCard, 'read normalizes without rewriting legacy storage');
+  await mutateSessionMeta(sessions[0].id, draft => { draft.name = 'Updated'; return true; });
   const persisted = JSON.parse(readFileSync(sessionsPath, 'utf8'))[0];
   assert.equal(persisted.workSummary?.mode, 'project');
   assert.equal(Object.prototype.hasOwnProperty.call(persisted, 'taskCard'), false);
