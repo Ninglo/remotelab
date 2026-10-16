@@ -305,8 +305,10 @@ async function waitForRunTerminal(port, runId) {
     const res = await request(port, 'GET', `/api/runs/${runId}`);
     if (res.status !== 200) return false;
     if (!['completed', 'failed', 'cancelled'].includes(res.json.run.state)) return false;
+    // Execution can finish before the controller archives its final reply.
+    if (!res.json.run.finalizedAt) return false;
     return res.json.run;
-  }, `run ${runId} terminal`);
+  }, `run ${runId} terminal and finalized`);
 }
 
 async function listSessions(port) {
