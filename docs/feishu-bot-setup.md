@@ -497,7 +497,7 @@ stage-1 Jev feedback cannot recreate it, including after restart. Only reaction
 IDs created by this Bot are removed. Unknown provider outcomes keep the existing
 reconciliation behavior.
 
-`groups[chatId].reactionCandidates` optionally selects supported protocol IDs.
+`groupReactionCandidates` selects the default supported reaction IDs for this Bot’s groups, including newly connected groups. `groups[chatId].reactionCandidates` can override that selection for an individual group. Private chats do not inherit the group selection.
 The same set appears in the main-model prompt, filters Jev's choices and is
 checked again before provider delivery. `[]` disables additions but permits
 withdrawal. Omission retains the existing protocol catalog; it does not install

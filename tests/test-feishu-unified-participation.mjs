@@ -39,6 +39,9 @@ try {
     addProcessingReaction: async () => assert.fail('no automatic processing reactions'),
   };
   const prompt = resolveFeishuGroupSettings(config, base).systemPrompt;
+  assert.deepEqual(resolveFeishuGroupSettings({ ...config, groupReactionCandidates: selected }, base).reactionCandidates, selected);
+  assert.deepEqual(resolveFeishuGroupSettings({ ...config, groupReactionCandidates: [] }, { ...base, chatId: 'new-group' }).reactionCandidates, []);
+  assert.deepEqual(resolveFeishuGroupSettings({ ...config, groupReactionCandidates: selected, groups: { work: { reactionCandidates: ['THANKS'] } } }, base).reactionCandidates, ['THANKS']);
   assert.doesNotMatch(prompt, /Reply to each human message|By default, the human is speaking to you/);
   assert.match(prompt, /participationReason/);
   assert.match(prompt, /human-to-human/);

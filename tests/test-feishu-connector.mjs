@@ -1099,6 +1099,11 @@ await writeFile(tempConfigPath, `${JSON.stringify({
 }, null, 2)}\n`, 'utf8');
 
 const loadedConfig = await loadConfig(tempConfigPath);
+const candidateConfigPath = join(tempConfigDir, 'candidate-config.json');
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', groupReactionCandidates: ['SOB', 'YouAreTheBest'] }));
+assert.deepEqual((await loadConfig(candidateConfigPath)).groupReactionCandidates, ['SOB', 'YouAreTheBest']);
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', groupReactionCandidates: ['not-valid'] }));
+await assert.rejects(loadConfig(candidateConfigPath), /Invalid reactionCandidates/);
 assert.equal(loadedConfig.sourceRouteId, 'bot-alpha');
 const derivedRouteDir = join(tempConfigDir, 'connector-beta');
 const derivedRouteConfigPath = join(derivedRouteDir, 'config.json');

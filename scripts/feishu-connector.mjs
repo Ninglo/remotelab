@@ -90,7 +90,7 @@ import {
   createFeishuQuickParticipationPilot,
 } from '../connectors/feishu/quick-participation.mjs';
 import { createFeishuReadReactionStore, createFeishuOutcomeReactionStore } from '../connectors/feishu/read-reactions.mjs';
-import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../lib/feishu-reaction-catalog.mjs';
+import { FEISHU_SOCIAL_REACTION_CRITERIA, normalizeFeishuReactionCandidates } from '../lib/feishu-reaction-catalog.mjs';
 import { sendNativeQuestionCard, handleNativeQuestionCardAction } from '../connectors/feishu/native-question-cards.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
 import { createProjectSurface } from '../connectors/feishu/project-surface.mjs';
@@ -398,6 +398,7 @@ async function loadConfig(pathname) {
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
     defaultGroupParticipation: parsed.defaultGroupParticipation || 'active',
+    groupReactionCandidates: normalizeFeishuReactionCandidates(parsed.groupReactionCandidates),
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     projectCards: parsed.projectCards === true,
     personalSettings: { openIds: Array.isArray(parsed.personalSettings?.openIds) ? parsed.personalSettings.openIds.filter(x => typeof x === 'string' && /^ou_[a-zA-Z0-9]+$/.test(x)) : [], webUrl: trimString(parsed.personalSettings?.webUrl) },

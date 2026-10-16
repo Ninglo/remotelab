@@ -107,7 +107,7 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const unified = (groupMainline || topic) && Boolean(group.initialParticipationMode) && group.participationControls !== false;
   const quickReactions = (groupMainline || topic) && group.quickReactions === true && !privateChat && (!topic || unified);
   const jevReactions = group.jevReactions === true && !privateChat && (ambient || unified);
-  const candidates = normalizeFeishuReactionCandidates(group.reactionCandidates);
+  const candidates = normalizeFeishuReactionCandidates(group.reactionCandidates ?? (privateChat ? undefined : config.groupReactionCandidates));
   return {
     reactionCandidates: candidates,
     // Explicit mention-only and existing group policies take precedence.
