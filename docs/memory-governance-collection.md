@@ -13,7 +13,7 @@
 - 仅手动运行，没有 Agent、模型、网络采集、定时器、开工 hook、消息发送或正式记忆写回。
 - 可信的宿主采集器只读显式文件、检查读取前后状态并计算 SHA256。plan 必须由已获授权的 Harness 提供；适配器不决定来源权限或项目语义。
 - Linux worker 位于独立 user、mount、network、PID namespace，chroot 后丢弃 capabilities 并启用 no-new-privileges。只挂载只读公共运行库、Node、只读 `/input`、可写 `/output`、16 MiB `/tmp` 及自身 PID namespace 的 `/proc`。不挂载用户 home、配置、正式记忆或凭据。
-- 运行失败或环境不支持 namespace 就拒绝执行，不降级为宿主无隔离运行。Mac 可维护 plan，但不能用此工具启动 worker。CI 若宿主拒绝 namespace，相关集成测试明确 skip，不能据此宣称隔离通过；实施机器必须实际验收。
+- 运行失败或环境不支持 namespace 就拒绝执行，不降级为宿主无隔离运行。Mac 可维护 plan，但不能用此工具启动 worker。测试宿主若拒绝 namespace，相关集成测试明确 skip，不能据此宣称隔离通过；实施机器必须实际验收。
 - 单 worker CPU 30 秒、墙钟 65 秒、2 GiB 地址空间、256 MiB Node heap、单文件 64 MiB、64 个文件描述符、nice 19；每份源文件最多40 MiB，全部显式文件累计192 MiB，投影32 MiB／20,000条／128项目／256来源。
 - 同一 workspace 一位写入者；跨 workspace 没有全局资源队列，这一阶段应一次手动运行一份工作区。nice 与限制只降低干扰，尚不能证明前台性能无退化。
 - 这些限制适用于这个 worker，不限制拥有整机权限的宿主 Harness 或其他 Agent。测试禁止正式写回不是对既有自动写回系统的改造。

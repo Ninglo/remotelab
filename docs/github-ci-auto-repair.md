@@ -1,107 +1,31 @@
-# GitHub CI Auto Repair
+# GitHub CI and auto repair retirement
 
-`scripts/github-ci-auto-repair.mjs` watches the latest GitHub Actions runs for selected branches and starts a RemoteLab repair session when the newest matching branch CI run is red.
+On 2026-10-16, the project requested removal of GitHub CI because its waiting and automatic repair loop were slowing delivery. The repository no longer ships `.github/workflows/ci.yml`, the CI repair monitor, its resident runner, installer, or npm entry points. Existing local test suites remain available.
 
-## Why this shape
+## Delivery
 
-For this machine, a **local poller** is the simplest reliable default:
+Run the checks relevant to the change locally, with isolated state for runtime tests. Check documentation impact before committing, then push the reviewed change directly to `main`. Documentation builds and instance-local publishing hooks remain available; see [documentation delivery](documentation-delivery.md). Native macOS changes need compilation and relevant tests on a macOS host.
 
-- no extra public webhook surface needs to be exposed from GitHub into the laptop
-- it reuses the existing local `gh` auth and RemoteLab service auth
-- it can enrich the repair prompt with local repo paths, workflow context, failed jobs, and log excerpts before the model starts working
+## Repository administrator action
 
-The monitor is intentionally bounded and action-oriented:
+The last verified `main` protection required the GitHub Actions `test` check. An administrator must remove that obsolete required-status-check configuration before the deletion can land and later commits can advance normally. Preserve the other branch protections. This source change does not itself modify GitHub settings.
 
-- it looks only at the **latest** matching run per branch/workflow group
-- it skips runs that are still in progress
-- it waits through a configurable settle window so quick reruns do not create session noise
-- it dedupes handled GitHub run ids in a local state file
-- it tells the repair session to reproduce, retry, repair, and checkpoint every validated low-risk fix; if the cause is genuinely external or non-reproducible, it records an explicit terminal diagnosis and recovery condition instead of silently stopping or pushing an unverified guess
-
-## Typical usage
-
-For the RemoteLab repo itself:
+With a repository administrator's GitHub login, remove only the status-check requirement:
 
 ```bash
-npm run github:ci:repair -- \
-  --repo Ninglo/remotelab \
-  --branch main \
-  --workflow CI \
-  --session-folder ~/code/remotelab
+gh api --method DELETE repos/Ninglo/remotelab/branches/main/protection/required_status_checks
+gh api repos/Ninglo/remotelab/branches/main/protection
 ```
 
-To watch both `main` and `master`:
+After landing, verify that new pushes no longer start the retired workflow. Existing run history is retained. No fabricated status or replacement no-op workflow is needed.
+
+## Existing macOS monitor installations
+
+The retired installer used `~/Library/LaunchAgents/com.remotelab.github-ci-auto-repair.plist`. On a host where this monitor was installed for RemoteLab, unload it before removing the plist:
 
 ```bash
-node scripts/github-ci-auto-repair.mjs \
-  --repo Ninglo/remotelab \
-  --branch main \
-  --branch master \
-  --workflow CI \
-  --session-folder ~/code/remotelab
+launchctl unload "$HOME/Library/LaunchAgents/com.remotelab.github-ci-auto-repair.plist"
+rm "$HOME/Library/LaunchAgents/com.remotelab.github-ci-auto-repair.plist"
 ```
 
-Useful options:
-
-- `--dry-run` prints candidates without starting sessions
-- `--settle-minutes 10` waits longer before reacting
-- `--events push,workflow_dispatch` widens the event filter when needed
-- `--model <id>` / `--effort <level>` / `--thinking` tune the spawned repair session
-- `--state-file <path>` and `--snapshot-dir <path>` relocate persistent monitor data
-
-## Resident mode on this machine
-
-This repo now ships a small helper that installs a macOS `LaunchAgent` for scheduled polling:
-
-- helper: `scripts/github-ci-auto-repair-instance.sh`
-- runner: `scripts/github-ci-auto-repair-runner.mjs`
-- config: `~/.config/remotelab/github-ci-auto-repair/config.json`
-- launch agent: `~/Library/LaunchAgents/com.remotelab.github-ci-auto-repair.plist`
-
-Install and start it:
-
-```bash
-./scripts/github-ci-auto-repair-instance.sh install
-```
-
-Useful operations:
-
-```bash
-./scripts/github-ci-auto-repair-instance.sh status
-./scripts/github-ci-auto-repair-instance.sh run-now
-./scripts/github-ci-auto-repair-instance.sh logs
-./scripts/github-ci-auto-repair-instance.sh restart
-./scripts/github-ci-auto-repair-instance.sh stop
-```
-
-Default behavior on this machine:
-
-- polls every `300` seconds
-- watches `Ninglo/remotelab`
-- watches branches `main` and `master`
-- watches workflow `CI`
-- does **not** start model work during healthy polls
-- only starts a RemoteLab repair session once the latest matching branch CI run is actually red
-
-Edit `~/.config/remotelab/github-ci-auto-repair/config.json` if you want to change the poll interval, branches, workflows, or session runtime.
-
-## Recommended operation pattern
-
-For continuous monitoring, prefer the shipped `launchd` helper on macOS instead of keeping an always-open webhook path.
-
-Recommended policy:
-
-1. Watch only the default branch CI first.
-2. Start a repair session only for the latest failed run.
-3. Let the session reproduce locally and validate before checkpointing.
-4. If the run appears flaky, infra-only, or provider-related, retry/reproduce with bounded evidence first. If no code fix is justified, finish with an explicit diagnosis, recovery condition, and visible blocked status instead of an unverified push.
-5. Treat “repair started / repair fixed / repair blocked” delivery as part of the production workflow whenever a notification channel is configured; a hidden repair session is not sufficient operational visibility.
-
-## Future extensions
-
-Natural next steps if this works well:
-
-- push a short instance notification when a repair Session starts or finishes
-- group repeated failures into a single long-lived incident session per branch/workflow
-- auto-comment on the related GitHub issue/PR when the session concludes
-- promote from polling to GitHub webhook delivery only if near-real-time response becomes worth the extra surface area
+Keep `~/.config/remotelab/github-ci-auto-repair/` snapshots and repair Session history as evidence. Source deletion does not prove a remote machine's LaunchAgent has been stopped; check only the actual registered installations in the authorized scope.

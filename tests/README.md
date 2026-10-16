@@ -3,8 +3,8 @@
 Scenario-style validation scripts now live in this directory instead of the repo root.
 
 - Run the current smoke suite with `npm test`.
-- Pull requests run the same smoke suite automatically via GitHub Actions in `.github/workflows/ci.yml`.
-- Run a specific script with `node tests/<name>.mjs`.
+- Run relevant checks locally before pushing. GitHub Actions CI and its automatic repair monitor are retired; see [the retirement and administrator cleanup note](../docs/github-ci-auto-repair.md).
+- Run a specific script with `node scripts/run-with-clean-instance-env.mjs node tests/<name>.mjs`.
 - Run the live agenda-agent smoke with `npm run test:live:agenda-agent`.
 - `tests/chat` and `tests/lib` are symlinked import roots so existing relative test imports stay stable after the move.
 

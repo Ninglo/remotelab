@@ -31,7 +31,7 @@ and automatically learned methods are not current permission evidence.
 ## Execute within the current task
 
 Confirm the exact affected services, their `WorkingDirectory`, current
-`/api/build-info`, clean source and required CI. Preserve concurrent edits
+`/api/build-info`, clean source and relevant local validation. Preserve concurrent edits
 and inactive services. A coupled update must cover each necessary connector
 as well as the core; restarting the core alone does not update separately
 managed connectors. Do not use `kill` or launch a second consumer as a

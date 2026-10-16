@@ -187,7 +187,7 @@ Returning to the panel verifies the control socket again; a failed operation dis
 
 The window watches atomic status changes locally; it has no model call or network dependency. Orange “正在启动” is shown before verified audio arrives, and red “正在录音” only after PCM is being saved. Stopping, local preservation and remote admission remain distinct. A dead child, unreadable status or status from a different daemon cannot leave a red indicator. A keypad fault is shown separately while mouse controls remain available. Red proves active capture, not intelligible speech or correct transmitter assignment. The window is initially kept above other windows; the operator can turn that off. It does not change system volume or play automatic prompts.
 
-`check` reports this app's permission state without opening devices; `permissions` explicitly requests macOS permission. `preview --root FIXTURE_DIR --snapshot PNG_PATH` renders test configuration/status files without starting a daemon, opening hardware or enabling buttons. Keep previews clearly labeled and separate from live recording state. CI compiles the host and tests the state projection without hardware access. Actual window visibility, permission retention, keypad behavior and audible microphone samples still need host-level verification.
+`check` reports this app's permission state without opening devices; `permissions` explicitly requests macOS permission. `preview --root FIXTURE_DIR --snapshot PNG_PATH` renders test configuration/status files without starting a daemon, opening hardware or enabling buttons. Keep previews clearly labeled and separate from live recording state. For changes to the native host, compile it and test the state projection locally on macOS without hardware access. Actual window visibility, permission retention, keypad behavior and audible microphone samples still need host-level verification.
 
 ## Optional Free3 single-key recording light
 
@@ -201,7 +201,7 @@ The helper reads the existing recorder's local control socket, watches recording
 
 ## Acceptance boundary
 
-Automated tests use synthetic audio, two receiver streams, real local asset uploads, RemoteLab message admission and a fake Harness. They cover independent start/stop, receiver failure isolation, segment repair, disk bounds, interrupted data, retry identity and instance-local daemon control. CI compiles the macOS helper without accessing devices. These are software evidence.
+Automated tests use synthetic audio, two receiver streams, real local asset uploads, RemoteLab message admission and a fake Harness. They cover independent start/stop, receiver failure isolation, segment repair, disk bounds, interrupted data, retry identity and instance-local daemon control. For changes to the macOS helper, compile it locally on macOS without accessing devices. These are software evidence.
 
 When physical checks are authorized, use actual receivers/keypads to record distinct short samples on all lanes; stagger starts/stops, disconnect one receiver, reconnect it, and confirm all raw files, destination bindings, transcripts and final deliveries. Also confirm normal office audio/typing and screen sleep behavior. Hardware permission grants, stable identity on reconnect, free3p event compatibility, USB stereo output and real transcription remain host-level acceptance items. Add receivers within measured USB/CPU/disk capacity; the implementation imposes no global two-channel ceiling and makes no unmeasured promise about maximum concurrent receivers.
 
