@@ -242,8 +242,10 @@ Notes:
   binary and that same config visible to harness processes
 - `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
   deferred results return through the Bot that owns the originating conversation
-- group admission does not add a mandatory reaction; private-chat processing
-  receipts keep their existing behavior
+- accepted group inputs show temporary THINKING through the durable outbox;
+  settlement clears it, independently of optional social reactions. Observed-only
+  or blocked messages do not start processing feedback. Private-chat receipts
+  keep their existing behavior
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
@@ -490,9 +492,12 @@ The `/mute` setting still takes effect even when no Session exists.
 For groups with `reactionFeedback: true`, other human reactions on this Bot's
 replies are recorded as non-publishing feedback in the existing Session. A
 reaction on someone else's message is ignored. These signals do not change
-mute state or automatically become lasting instructions. Group reactions are optional. Neither `quickReactions` nor legacy
-`feishuOutcomeRequired` adds THINKING or an EatingFood fallback. A silent decision
-may produce no provider message and no reaction.
+mute state or automatically become lasting instructions. Social reactions are optional.
+Neither `quickReactions` nor legacy `feishuOutcomeRequired` adds an EatingFood fallback.
+THINKING separately indicates an accepted input being processed: admission queues
+its start, and completion, silence, failure or cancellation queues its removal.
+Both edges use the durable outbox; restart preserves cleanup and Jev cannot clear
+an ongoing indicator. A silent decision may leave no text or social reaction.
 
 The main model uses the same hidden response decision as text publication:
 `<private>feishu-response:{"reaction":"THANKS"}</private>`. Omission retains
@@ -732,7 +737,10 @@ Session identity.
 
 Groups use `participationMode: "active" | "listening" | "paused"`;
 `ambient` remains a compatibility alias for active participation. `defaultGroupParticipation`
-accepts the same modes and legacy `mention_only`.
+accepts the same modes and legacy `mention_only`. Paused groups discard ordinary
+messages, but an explicit mention of this Bot admits that input as a one-time
+invitation. Its reply is allowed without changing the paused state or replaying
+blocked history. Listening retains its existing observation and invitation rules.
 
 | Existing setting | Upgrade behavior |
 | --- | --- |

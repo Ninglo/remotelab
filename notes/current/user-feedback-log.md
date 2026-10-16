@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-16 — Preserve pause invitations and processing feedback
+
+- Feedback: keep the paused state but allow an explicit @ to receive one reply; listening may remain code-gated. The missing Thinking indicator is processing feedback, separate from optional social reactions.
+- Change: preserve pause and its epoch while admitting the mentioned message through ingress, execution and output checks. Use accepted-input and terminal-settlement outbox events for Thinking, without letting Jev remove it or requiring the model to choose it.
+- Verification: exercise paused mentions and ordinary-message rejection, plus real durable admission/outbox/settlement with a fake provider, restart recovery, silence, failure and cancellation. Opening receipts are a separate workstream and are excluded from this change.
+
 ### 2026-10-16 — Verify the actual quoted reply and a short lookup request
 
 - Feedback: a brief ordinary-group answer should quote the source message with no opening or final-output heading; work needing lookup belongs in a topic even when requested in one sentence. A real group interaction still violated this after policy smoke tests passed.

@@ -94,7 +94,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - `setup.md` — model-first setup contract, one-round input handoff, human checkpoints, and target state
 - [Request state upgrade tool](request-state-upgrade-tool.md) — one-command state conversion, validation, journaled cutover and rollback using an instance plan
 - [Request state upgrade](request-state-upgrade.md) — required offline conversion for legacy instances, rollback and the 2026-09-07 incident; read before updating existing services
-- `external-message-protocol.md` — canonical integration contract for external channels
+- `external-message-protocol.md` — canonical integration contract for external channels, including accepted-input THINKING start/removal through the durable request outbox, separate from optional Feishu social reactions
 - [Inline flow display](inline-flow-display.md) — accepted strategy for readable prose, complete left-to-right message previews and in-page enlargement; retains branches, conditions, joins and original source
 - [Native Harness input](native-harness-input.md) — active input transport, personal in-flight tool trial, native lifecycle, recovery and validation
 - [Session start preflight](session-start-preflight.md) — optional fresh-provider knowledge probe, replacement retry, and daily outcome statistics

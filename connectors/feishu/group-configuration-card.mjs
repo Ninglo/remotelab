@@ -30,7 +30,7 @@ export function buildGroupConfigurationCard(record, view) {
     ? (view.responseMode === 'mention_only' ? '点名回应' : '按需回应（控制关闭）') : states[mode];
   const elements = [md(view.participationControls === false && view.responseMode === 'mention_only'
     ? '沿用本群的点名回应设置。' : { active: '持续接收群消息，按讨论需要参与。',
-    listening: '持续接收群消息；@我可邀请回应。', paused: '暂停接收后续普通群消息。' }[mode])];
+    listening: '持续接收群消息；@我可邀请回应。', paused: '普通群消息不进入 Session；@我可单次回应，之后仍保持暂停。' }[mode])];
   if (record.cardRenewalNotice) elements.unshift(md(record.cardRenewalNotice));
   if (view.participationControls !== false) elements.push({ tag: 'column_set', columns: Object.keys(states).map(state => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [{ tag: 'button',
