@@ -9,6 +9,7 @@ try {
   const { updateAuthDocument } = await import('../lib/auth-config.mjs');
   const { MEMORY_DIR } = await import('../lib/config.mjs');
   const { createPersonalSettingsController } = await import('../connectors/feishu/personal-settings-card.mjs');
+  const { createRecordStore } = await import('../lib/durable-records.mjs');
   const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { loadPersonalMemorySettings } = await import('../chat/personal-memory-settings.mjs');
   await updateAuthDocument(doc => {
@@ -40,6 +41,8 @@ try {
   assert.equal(selectedOff.disabled, false);
   controller = createPersonalSettingsController(runtime, opts);
   await controller.publish(source, { automatic: true }); assert.equal(creates, 1, 'restart does not spam welcome');
+  const guide = { version: 1, intro: '评测能力试用', sections: [{ title: '查询示例评测', body: '案例属于另一位同事，不改变本人身份。' }] };
+  await createRecordStore(join(home, 'personal-settings')).mutate(record.key, r => ({ ...r, capabilityGuide: guide }));
   const event = (field, value, revision, extra = {}) => ({ header: { event_id: extra.eventId || 'event1' }, event: {
     operator: { open_id: extra.openId || 'ou_one', tenant_key: extra.tenant || 'tenant' },
     context: { open_chat_id: 'chat', open_message_id: extra.messageId || record.messageId },
@@ -50,6 +53,10 @@ try {
   assert.equal((await loadPersonMessageReplies(actor)).revision, 0);
   let feedback = await controller.action(event('opening', false, 0));
   assert.equal(feedback.toast.type, 'success'); assert.equal(feedback.card.type, 'raw');
+  assert.equal(feedback.card.data.body.elements[0].content, guide.intro, 'guide survives a real settings callback');
+  assert.equal(feedback.card.data.body.elements[1].expanded, false);
+  assert.equal(feedback.card.data.body.elements.filter(e => e.tag === 'collapsible_panel' && e.elements.some(child => child.tag === 'column_set')).length, 6, 'guide retains all personal settings');
+  assert.equal((await loadPersonMessageReplies({ personId: 'two', identityId: 'id_two', authKind: 'test' })).revision, 0, 'example guide never changes another person');
   assert.equal((await loadPersonMessageReplies(actor)).choices.opening, false);
   await changePersonMessageReplies({ action: 'apply', confirm: true, expectedRevision: 1, choices: { ...(await loadPersonMessageReplies(actor)).choices, opening: true } }, actor);
   await controller.action(event('opening', false, 0));

@@ -172,4 +172,4 @@ The information-routing group card can show an explicitly enabled public pilot r
 
 - [Feishu tasks](platform-skills/feishu-tasks.md) — human Todos use the existing Feishu task workflow; the former local personal list is retired.
 
-- [飞书私聊个人设置卡](feishu-web-settings.md) — 私聊内修改个人回复、记忆与分流偏好，默认收起设置并标明当前值，展开后直接选择，展开使用说明；网页备用入口须另行本人登录。首次欢迎、本人身份校验、旧卡与重试恢复沿原连接器维护。当前只对明确名单试用，增强版重复入口在对应用户迁移验证后退出。
+- [飞书私聊个人设置卡](feishu-web-settings.md) — 私聊内修改个人回复、记忆与分流偏好，默认收起设置并标明当前值，展开后直接选择，展开使用说明；网页备用入口须另行本人登录。支持在指定卡片试阅方向能力介绍，基础设置与本人身份保持不变，介绍不触发业务操作。首次欢迎、本人身份校验、旧卡与重试恢复沿原连接器维护。当前只对明确名单试用，增强版重复入口在对应用户迁移验证后退出。

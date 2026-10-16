@@ -100,6 +100,13 @@ The same personal routing preference is also available from eligible Feishu grou
 说明不会把管理员审批、个人 OAuth、资源访问权或设备权限包装成“一键全授权”。
 
 实现：`connectors/feishu/personal-settings-card.mjs`；入口与长连接回调在
-`scripts/feishu-connector.mjs`。验证使用隔离环境的
-`tests/test-feishu-personal-settings-card.mjs`，覆盖身份隔离、版本冲突、事件重放、
+`scripts/feishu-connector.mjs`。
+
+实例可在已核对归属的单张卡记录中加入 `capabilityGuide`（`version: 1`、`intro`、
+`sections[{title, body}]`），用于定向试阅能力介绍。章节默认收起，原有六项基础设置
+及其本人身份校验保持不变；修改设置或刷新后仍保留介绍。示例任务需注明实际归属，
+链接沿用原资源权限，展示介绍不启动业务操作，也不自动推断或保存人员方向。
+这只是内容试用入口，实际交办仍通过聊天进行。
+
+验证使用隔离环境的 `tests/test-feishu-personal-settings-card.mjs`，覆盖身份隔离、版本冲突、事件重放、
 记忆开关、首次欢迎去重及未知发送结果。真实私聊送达和本人点击应分别验收。
