@@ -38,6 +38,16 @@ try {
     assert.equal(parts[0].emojiType, 'Get'); assert.equal(parts[1].text, '结果');
     assert.equal(resolveAmbientFeishuReplyPlan({ options }, plan, [final('f', text)]).target.conversationKind, 'thread');
   }
+  // A real-model smoke chose inline for a brief question inside an existing
+  // topic. Publication must preserve that topic, regardless of this label.
+  const inTopic = await accept('topic-short', null, { ...plan.target,
+    conversationKind: 'thread', threadId: 'existing-topic', rootId: 'topic-root', replyInThread: true });
+  await publish(inTopic, [final('topic-short-answer', envelope({ replyMode: 'inline' }, '8 × 9 = 72。'))]);
+  const topicDelivery = (await requests.get(inTopic.key)).deliveries.find(d => d.kind === 'content');
+  assert.equal(topicDelivery.target.conversationKind, 'thread');
+  assert.equal(topicDelivery.target.threadId, 'existing-topic');
+  assert.equal(topicDelivery.target.rootId, 'topic-root');
+
   assert(readFeishuResponseDecision(envelope({ requestIds: ['a', 'a'] })).error);
   assert(readFeishuResponseDecision(envelope({ reaction: 'unrecognized' })).error);
 

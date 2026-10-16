@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-16 — Test reply behavior, not just fixed model fixtures
+
+- Feedback: reply rules kept growing despite three simple principles; passing code checks did not establish that the Agent would actually combine additions or choose the right reply surface.
+- Change: shorten the single reply policy and remove duplicate topic/reaction guidance. Keep native topic groups on normal conversation/steer and ordinary groups on their participation modes. Add an opt-in real-model smoke using synthetic conversations with no Feishu writes.
+- Verification: inspect real model outputs for directed requests, optional-feedback failure, human chatter, combined questions/corrections and complex discussions. Check the resulting delivery destination for existing-topic follow-ups: a model's `inline` label must not move a reply out of its topic. Native steer, per-input settlement and one combined delivery remain separately covered by deterministic runtime tests. A small smoke sample is not evidence of universal behavioral reliability.
+
 ### 2026-10-16 — Notice personal collaboration feedback during real work
 
 - Feedback: the opt-in memory trial rarely proposed anything, including after a person said they had repeatedly asked the assistant to take initiative and request help only when needed. Handling the immediate task alone missed the collaboration signal.

@@ -135,21 +135,21 @@ try {
   assert.equal(mainlineSettings.responseMode, 'all');
   assert.equal(mainlineSettings.replyMode, 'thread');
   assert.match(mainlineSettings.systemPrompt, /Global instructions\n\nGroup instructions/);
-  assert.match(mainlineSettings.systemPrompt, /A concrete unanswered question or request directed to the assistant needs a reply/);
+  assert.match(mainlineSettings.systemPrompt, /answer directed questions\/requests/);
   assert.equal(resolveFeishuGroupSettings(groupConfig, { chatId: 'other' }).systemPrompt, 'Global instructions');
   const topicDefaults = resolveFeishuGroupSettings(groupConfig, {
     ...base, chatId: 'topic-chat', chatMode: 'topic', threadId: 'topic-1',
   });
   assert.equal(topicDefaults.responseMode, 'all', 'new groups use active participation by default');
-  assert.match(topicDefaults.systemPrompt, /Reply to directed requests/);
+  assert.match(topicDefaults.systemPrompt, /answer directed questions\/requests|every human message is addressed to the Agent and needs a reply/);
   for (const topicIdentity of [{ threadId: 'report-thread' }, { topicId: 'report-topic' },
     { conversationKind: 'thread' }, { chatMode: 'topic', rootId: 'native-root' }]) {
     const topicSettings = resolveFeishuGroupSettings({
       groups: { 'group-1': { responseMode: 'mention_only', participationMode: 'ambient', quickReactions: true } },
     }, { ...base, ...topicIdentity });
     assert.equal(topicSettings.responseMode, 'all');
-    assert.match(topicSettings.systemPrompt, /No repeated @ mention is required/);
-    assert.match(topicSettings.systemPrompt, /Reply to directed requests/);
+    assert.match(topicSettings.systemPrompt, /without requiring another @ mention/);
+    assert.match(topicSettings.systemPrompt, /answer directed questions\/requests|every human message is addressed to the Agent and needs a reply/);
     assert.equal(topicSettings.participationMode, undefined);
     assert.equal(topicSettings.quickReactions, undefined, 'topic replies cannot become reaction-only ambient turns');
   }
