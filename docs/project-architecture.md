@@ -152,8 +152,12 @@ merge rules have been removed. Completed historical Runs remain readable through
 the same read model: absent execution/recovery files contribute no fields. No
 historical rewrite or Request-schema conversion is required.
 
-Before deploying this retirement to an existing instance, let every pre-version-2
-runner finish and verify that its runner and tool processes have exited. An old
+Before deploying this retirement to an existing instance, verify that every
+pre-version-2 runner and its tool process have exited. Let them finish, or, when
+maintenance interruption is authorized, cancel the exact old Run through the
+control API and resume the unfinished task in the same Session after deployment.
+Retain its provider conversation and durable evidence; the resumed task must
+check existing jobs and uncertain action results before issuing new work. An old
 runner still writes `status.json`; loading the new controller while it is alive
 would violate ownership. This is a deployment prerequisite, not a runtime fallback.
 Rollback revisions must understand the split execution/recovery files; never

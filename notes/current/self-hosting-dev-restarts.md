@@ -95,8 +95,12 @@ Historical completed records need no conversion: the read model uses the stored
 base with empty execution/recovery overlays when those files are absent.
 
 Before deploying this change, inventory pre-version-2 Runs and confirm their
-runner/tool processes have exited and their requests have settled. Do not interrupt
-active tasks just to remove compatibility code, or restart onto the new controller
-while an old runner is still writing status. New version-2 Runs can survive the
-usual controller restart. Do not roll back to a status-only reader or restore an
+runner/tool processes have exited and their requests have settled. If maintenance
+interruption is authorized, cancel the exact old Run through the API, preserve its
+provider conversation and task evidence, deploy, then submit one idempotently
+identified continuation to the same Session. Verify the new Run uses the existing
+provider conversation and the split writer protocol. Tell the continuation to
+inspect existing external jobs/results before resuming, rather than replaying the
+original task. Do not restart onto the new controller while an old runner is still
+writing status. New version-2 Runs can survive the usual controller restart. Do not roll back to a status-only reader or restore an
 old data backup over newly admitted work.
