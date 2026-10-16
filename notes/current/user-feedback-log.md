@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-16 — Notice personal collaboration feedback during real work
+
+- Feedback: the opt-in memory trial rarely proposed anything, including after a person said they had repeatedly asked the assistant to take initiative and request help only when needed. Handling the immediate task alone missed the collaboration signal.
+- Change: separate ownership, proposing and confirmation. One concrete signal can become an observed candidate; the independent-session threshold only controls inference. Compare existing scope, preserve narrower confirmed preferences, and ask naturally during the current turn without waiting for a long task to finish. Project requirements remain project requirements.
+- Verification: isolated regression covers one-source observation/proposal without automatic confirmation or widening an accepted domain-specific preference. Live model recognition and question quality still require natural-use evidence; a passing storage test does not establish those outcomes.
+
 ### 2026-10-16 — Find the right background from an independent Web topic
 
 - Feedback: a new Web conversation should find the corresponding earlier topics, decisions and applicable project rules, as registered group conversations already can. A handoff or a task record alone does not deliver the feature.

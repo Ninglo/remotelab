@@ -78,6 +78,32 @@ try {
   pending = (await inspect()).profile.entries[0];
   assert.equal(pending.status, 'confirmed');
   assert.equal(pending.reviewProposal.status, 'confirmed');
+  // A natural correction can be proposed after one source session. The nearby
+  // accepted Feishu-only preference must not be widened or treated as consent.
+  const narrow = { key: 'feishu-permissions', kind: 'preference', explicit: true,
+    content: '已授权的飞书任务中，自行处理可解决的权限问题。', conditions: '飞书权限问题',
+    cues: ['权限'], evidence: [{ seq: 1, quote: '以后飞书权限能自己处理的就自己处理' }] };
+  await apply([narrow], narrow.evidence[0].quote, 'narrow');
+  const correction = '你能处理的就都处理掉，强调很多次了，需要帮助的时候叫我';
+  const initiative = { key: 'authorized-work-initiative', kind: 'habit', explicit: false,
+    content: '在已授权工作中主动完成能处理的步骤，确需本人帮助或决定时再询问。',
+    conditions: '已授权工作中的执行和求助方式；额外范围待本人确认',
+    exceptions: '不新增业务授权，不绕过必须由本人决定的事项', cues: ['主动推进'],
+    reason: '关联 feishu-permissions，但当前信号超出其飞书限定，保留原确认项。',
+    evidence: [{ seq: 1, quote: correction }] };
+  assert.equal((await apply([initiative], correction, 'natural-correction')).promotedCount, 1);
+  let candidate = (await inspect()).profile.entries.find(e => e.key === initiative.key);
+  assert.equal(candidate.status, 'observed');
+  assert.equal(new Set(candidate.evidence.map(e => e.sessionId)).size, 1);
+  assert.equal((await apply([{ key: candidate.key, kind: 'habit', action: 'propose',
+    expectedVersion: candidate.version, question: '我观察到你希望已授权工作主动推进，确需你帮助时再问，要记为长期协作习惯吗？',
+    evidence: initiative.evidence }], correction, 'natural-correction')).promotedCount, 1);
+  const afterCorrection = (await inspect()).profile.entries;
+  candidate = afterCorrection.find(e => e.key === initiative.key);
+  assert.equal(candidate.status, 'observed');
+  assert.equal(candidate.reviewProposal.status, 'pending');
+  assert.equal(afterCorrection.find(e => e.key === narrow.key).content, narrow.content);
+  assert.equal(afterCorrection.find(e => e.key === narrow.key).conditions, narrow.conditions);
   await change({ enabled: false, confirm: true, expectedRevision: saved.revision }, actor);
   assert.match(await buildTurnContextHook({}, actor), /Personal memory is paused/);
   assert.equal(await mayReviewGroupPersonalMemory(groupInput), false);
