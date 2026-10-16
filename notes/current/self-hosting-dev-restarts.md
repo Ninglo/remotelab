@@ -31,7 +31,7 @@ So the honest promise is now stronger than before, but still bounded:
 When the control plane shuts down during an active run:
 
 - the browser loses its current socket / page continuity
-- the detached runner keeps writing `execution.json`, `spool.jsonl`, and `result.json` (legacy Runs continue using `status.json`)
+- the detached runner keeps writing `execution.json`, `spool.jsonl`, and `result.json`
 - after restart, the request runtime resumes projection from durable files; HTTP reads return the resulting state
 
 ### 2. Operational sequence
@@ -86,11 +86,17 @@ Prioritize in this order:
 - Keep the temporary legacy-upgrade cleanup in `setup.sh` for now so users who have not updated yet still get old `auth-proxy` / `ttyd` artifacts removed automatically.
 - Revisit removing that cleanup after roughly 2–4 weeks, once the terminal-fallback removal has had time to propagate.
 
-## Run storage version 2 compatibility
+## Run writer protocol retirement
 
-New Runs separate controller status, runner execution facts and recovery inference;
+Runs separate controller status, runner execution facts and recovery inference;
 see [execution ownership](../../docs/project-architecture.md#execution-ownership-and-asynchronous-progress).
-Existing Runs continue on the legacy protocol, including their mutation lock.
-Do not roll back to a status-only reader after version-2 Runs have been created.
-Revert higher-level changes while retaining the compatible reader/writer layer;
-never restore an old data backup over newly admitted work.
+The old shared-status writer, mutation lock and state merge have been removed.
+Historical completed records need no conversion: the read model uses the stored
+base with empty execution/recovery overlays when those files are absent.
+
+Before deploying this change, inventory pre-version-2 Runs and confirm their
+runner/tool processes have exited and their requests have settled. Do not interrupt
+active tasks just to remove compatibility code, or restart onto the new controller
+while an old runner is still writing status. New version-2 Runs can survive the
+usual controller restart. Do not roll back to a status-only reader or restore an
+old data backup over newly admitted work.

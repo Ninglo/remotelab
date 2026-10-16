@@ -142,7 +142,6 @@ import {
   stripEventAttachmentSavedPaths,
 } from './attachment-utils.mjs';
 import {
-  appendRunSpoolRecord,
   createRun,
   getRun,
   getRunManifest,
@@ -333,12 +332,7 @@ function normalizeSourceContext(value, maxBytes = MAX_SESSION_SOURCE_CONTEXT_BYT
 }
 
 const synthesizeDetachedRunTermination = createDetachedRunReconciler({
-  appendRunSpoolRecord: async (runId, diagnostic) => {
-    if ((await getRun(runId))?.storageVersion === 2) {
-      return updateRecoveryRun(runId, { recoveryDiagnostic: diagnostic });
-    }
-    return appendRunSpoolRecord(runId, diagnostic);
-  },
+  appendRunSpoolRecord: (runId, diagnostic) => updateRecoveryRun(runId, { recoveryDiagnostic: diagnostic }),
   collectRunOutputPreview,
   getRun,
   getRunResult,

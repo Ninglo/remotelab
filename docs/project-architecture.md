@@ -130,7 +130,7 @@ control-plane restarts through durable Request/Run state and reconciliation.
 
 ## Execution ownership and asynchronous progress
 
-New Runs use `storageVersion: 2`. Their files have separate writers:
+Runs use `storageVersion: 2`. Their files have separate writers:
 
 | File | Owner and meaning |
 | --- | --- |
@@ -147,12 +147,17 @@ remains a failed outcome even if the process exited successfully. A cancel inten
 is distinct from a cancelled execution: an already completed execution can still
 have a later cancel request recorded without changing its result.
 
-Runs created by older controllers retain their shared status-file mutation lock.
-New code recognizes them and uses the legacy protocol until they finish. There is
-no offline rewrite of old Runs and no Request-schema conversion for this change.
-Once version-2 Runs exist, rollback code must retain the version-2 reader/writer
-support; reverting to a revision that understands only `status.json` is not a
-safe rollback. Keep the compatibility layer when reverting higher-level changes.
+There is one writer protocol; the old shared-status mutation lock and old state
+merge rules have been removed. Completed historical Runs remain readable through
+the same read model: absent execution/recovery files contribute no fields. No
+historical rewrite or Request-schema conversion is required.
+
+Before deploying this retirement to an existing instance, let every pre-version-2
+runner finish and verify that its runner and tool processes have exited. An old
+runner still writes `status.json`; loading the new controller while it is alive
+would violate ownership. This is a deployment prerequisite, not a runtime fallback.
+Rollback revisions must understand the split execution/recovery files; never
+restore an old data backup over newly admitted work.
 
 `request-runtime.mjs` owns request advancement. Admission, release and output
 notifications wake it; a single 30-second active-request recovery sweep covers

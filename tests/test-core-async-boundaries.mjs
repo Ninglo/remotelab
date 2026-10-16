@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile, appendFile, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, writeFile, appendFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fork } from 'node:child_process';
@@ -68,6 +68,24 @@ try {
   const first = pace(() => { started.resolve(); return blocked.promise; }); await started.promise;
   assert.equal(await pace(async () => 'independent'), 'independent', 'read pacing does not wait for preceding responses');
   blocked.resolve(); await first;
+
+  // Archived single-file records use the same reader, without a legacy writer.
+  const archivedId = 'run_archived_single_file';
+  await mkdir(runs.runDir(archivedId), { recursive: true });
+  const archived = { id: archivedId, sessionId: 'historical', state: 'completed',
+    result: { exitCode: 0 }, normalizedByteOffset: 19, finalizedAt: '2026-10-01T00:00:00.000Z' };
+  const archivedBytes = JSON.stringify(archived);
+  await writeFile(runs.runStatusPath(archivedId), archivedBytes);
+  assert.equal((await runs.getRun(archivedId)).state, 'completed');
+  assert.deepEqual((await runs.getRun(archivedId)).result, archived.result);
+  assert.equal(await readFile(runs.runStatusPath(archivedId), 'utf8'), archivedBytes,
+    'reading an archived single-file record neither migrates nor mutates it');
+  await runs.updateRun(archivedId, { normalizedByteOffset: 25 });
+  await runs.updateRecoveryRun(archivedId, { recoveryDiagnostic: { reason: 'test' } });
+  assert.equal((await runs.getRun(archivedId)).state, 'completed');
+  assert.equal((await runs.getRun(archivedId)).normalizedByteOffset, 25);
+  assert.deepEqual(JSON.parse(await readFile(join(runs.runDir(archivedId), 'recovery.json'), 'utf8')).recoveryDiagnostic, { reason: 'test' });
+  await assert.rejects(stat(join(runs.runDir(archivedId), '.mutation-lock')), { code: 'ENOENT' });
 
   const run = await runs.createRun({ status: { sessionId: 'ownership' }, manifest: {} });
   const fixture = join(root, 'writer.mjs');
