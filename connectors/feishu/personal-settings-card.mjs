@@ -12,7 +12,7 @@ const progressLabels = { none: '只看最终结果', messages: '进展单独发�
 export const PERSONAL_INTRO = '嗨，我是 Index，你的 AI 同事。\n查资料、写文档、改代码、跑实验，都可以来找我。把正在讨论的事转给我也行，我们一起想办法，把事情做成。\n我会结合能读到的项目资料和已有讨论接着做，也会提出自己的判断。你随时可以补充、纠正；这些反馈会帮助我更懂团队的工作。';
 
 export function buildPersonalSettingsCard(record, { replies, memory, notice = '', webUrl = '' }) {
-  const button = (label, field, value, revision = replies.revision, selected = false) => ({ tag: 'button', type: selected ? 'primary' : 'default', text: plain(label), disabled: selected,
+  const button = (label, field, value, revision = replies.revision, selected = false) => ({ tag: 'button', type: selected ? 'primary' : 'default', text: plain(selected ? `当前：${label}` : label), disabled: selected,
     behaviors: [{ type: 'callback', value: { namespace: 'personal-settings', key: record.key, field, value, revision } }] });
   const choices = (field, current, options, revision = replies.revision) => ({ tag: 'column_set', columns: options.map(([value, label]) => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [button(label, field, value, revision, current === value)],
@@ -22,7 +22,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
   ];
   const c = replies.choices;
   const elements = [md(PERSONAL_INTRO), { tag: 'hr' }, ...(notice ? [md(notice)] : []),
-    md('**个人设置**\n蓝色为当前选项。点击其他选项立即保存，从后续对话生效；正在进行的工作保持原设置。'),
+    md('**个人设置**\n标有“当前”的是已选项。点击其他选项立即保存，从后续对话生效；正在进行的工作保持原设置。'),
     ...toggle('开始工作时的回复', 'opening', c.opening, '接到需要动手的任务后，先简短告诉你我理解的目标和准备做什么。简单问答直接回答。', ['先说一下怎么做', '直接开始']),
     ...toggle('任务清单', 'checklist', c.checklist, '一件工作有多项成果时，用清单显示哪些已完成、哪些还在做，方便你查看和验收。这里控制工作清单的展示；个人待办仍可直接交给我创建。', ['需要时显示', '不显示']),
     md('**进展消息**\n有关键发现、阶段结果或需要调整方向时，我会报告进展。选择在哪里查看；需要你回答的问题和最终结果都会单独发送。'),
