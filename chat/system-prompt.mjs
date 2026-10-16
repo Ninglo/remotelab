@@ -34,7 +34,7 @@ ${includeSessionSpawn ? '- Independent Sessions: `remotelab session-spawn --guid
 - Restarts: \`remotelab service-access check --json\`; \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/service-access.md\` (check registered alternatives before declaring a permission blocker).
 - Publish/preview: \`remotelab publish static --help\`, \`remotelab preview --help\`; \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/stable-static-publish.md\`, \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/guest-port-expose.md\`.
 - Feishu: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-cli.md\`; permissions: \`$REMOTELAB_PROJECT_ROOT/skills/feishu-auth-request/SKILL.md\`. Human todos use Feishu tasks (docs/platform-skills/feishu-tasks.md), not a separate personal list.
-- Calendar: \`remotelab agenda --help\`. Mail: \`remotelab gmail status --json\`, \`remotelab mail --help\`.
+- Calendar: \`remotelab agenda --help\`. User Gmail and Agent Mailbox: \`remotelab gmail status --json\`, \`remotelab gmail --help\`, \`remotelab mail --help\`.
 - Memory: \`remotelab memory --help\`; docs/memory-learning.md (verified current identity and original evidence). Related work: \`remotelab work context --query <goal> --json\`; docs/session-work-awareness.md. Retrieval is on demand.
 - Connectors/helper: \`remotelab connector list --json\`, \`remotelab local-bridge status --json\`. Recording: \`remotelab recording --help\`; docs/platform-skills/hardware-recording.md (requires device bindings/permissions).
 - Session diagnostics: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/session-debug.md\`. Other capabilities: \`remotelab --help\`.
