@@ -1236,7 +1236,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     payload.text = '[当前状态：旁听。用户仅邀请你处理这一次；完成后保持旁听，不自行恢复主动参与。]\n' + payload.text;
     payload.sourceContext.feishuParticipationMode = 'listening';
   } else if (participationStatus) {
-    payload.text = `[群参与状态：${participationStatus.mode}。状态由连接器执行并同步卡片；本条没有执行状态切换，不要宣称已切换。自然文字“先旁听”“暂停接收消息”“恢复参与”可切换。]\n` + payload.text;
+    payload.text = `[群参与状态：${participationStatus.mode}。状态由连接器执行；话题内直接回复，不发布参与状态卡。本条没有执行状态切换，不要宣称已切换。自然文字“先旁听”“暂停接收消息”“恢复参与”可切换。]\n` + payload.text;
     payload.sourceContext.feishuParticipationMode = participationStatus.mode;
   }
   if (groupSettings.jevReactions) {

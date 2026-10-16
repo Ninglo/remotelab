@@ -806,7 +806,9 @@ for scope, registration, feedback and acceptance boundaries.
 
 Participation status cards are only published on the group main timeline. All
 Threads use direct replies; intake, mode changes and restart recovery never
-create or update a topic status card. Explicit topic mode commands receive a
+create or update a topic status card. The input status annotation also explicitly
+states that topics use direct replies, without claiming a card was synchronized.
+Explicit topic mode commands receive a
 deduplicated text reply after the state change completes. Old topic-card buttons
 are no longer accepted; withdrawing an already posted card remains a separate
 explicit operation.
