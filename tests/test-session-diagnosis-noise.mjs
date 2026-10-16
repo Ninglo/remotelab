@@ -119,6 +119,38 @@ try {
  await processSessionDiagnostics({...metricArgs,stateFile:migrationFile,now:start,config:{...metricArgs.config,metricPolicy:{enabled:true}}});
  await processSessionDiagnostics({...metricArgs,stateFile:migrationFile,now:start+6*minute});assert.equal(metricSent.length,before+1,'explicit metric opt-in reports a currently qualifying formerly suppressed incident');
 
+ // Several comparisons and metrics share one private card for three hours.
+ const bundleSent=[];
+ let extra=[];
+ const bundleArgs={...metricArgs,stateFile:join(root,'bundles.json'),readMetrics:async()=>({samples:[...metricRows,...extra],coverage:{}}),
+  deliver:async item=>{bundleSent.push(structuredClone(item));return {messageId:item.delivery.messageId || 'om_bundle'+bundleSent.length,chatId:'oc_private',recipientKey:item.delivery.recipientKey};}};
+ const other=(model)=>metricRows.map(r=>({...r,metrics:{...r.metrics},model,runId:model+r.runId}));
+ extra=other('second');
+ await processSessionDiagnostics({...bundleArgs,now:start});
+ assert.equal(bundleSent.length,1);assert.equal(bundleSent[0].items.length,2);
+ extra.push(...other('third'));
+ await processSessionDiagnostics({...bundleArgs,now:start+120*minute});
+ assert.equal(bundleSent.length,2);assert.equal(bundleSent[1].delivery.messageId,'om_bundle1');assert.equal(bundleSent[1].items.length,3);
+ extra.push(...other('fourth'));
+ await processSessionDiagnostics({...bundleArgs,now:start+181*minute});
+ assert.equal(bundleSent.length,3);assert(!bundleSent[2].delivery.messageId,'new incident after three hours opens a new card');
+ await processSessionDiagnostics({...bundleArgs,now:start+187*minute});assert.equal(bundleSent.length,3,'elapsed time does not repeat existing incidents');
+ for(const r of metricRows.slice(-12))r.metrics.injectionChars=26000;
+ await processSessionDiagnostics({...bundleArgs,now:start+220*minute});
+ assert.equal(bundleSent.at(-1).delivery.messageId,'om_bundle1','old incident still edits its own original card after the window');
+ const migration=await readRecord(bundleArgs.stateFile);
+ delete migration.metricNotifications;
+ for(const i of Object.values(migration.incidents))i.delivery={status:'delivered',messageId:'om_legacy',chatId:'oc_private',recipientKey:bundleSent[0].delivery.recipientKey};
+ await writeDurableJson(join(root,'legacy-bundle.json'),migration);
+ await processSessionDiagnostics({...bundleArgs,stateFile:join(root,'legacy-bundle.json'),now:start+226*minute});
+ assert.equal(bundleSent.at(-1).delivery.messageId,'om_legacy','adopt an existing receipt when upgrading');
+ let bundleAttempts=0;
+ const uncertainBundle={...bundleArgs,stateFile:join(root,'bundle-uncertain.json'),deliver:async()=>{bundleAttempts++;throw Error('lost receipt');}};
+ await processSessionDiagnostics({...uncertainBundle,now:start});
+ extra.push(...other('fifth'));
+ await processSessionDiagnostics({...uncertainBundle,now:start+6*minute});
+ assert.equal(bundleAttempts,1,'a new member cannot bypass an uncertain bundle receipt');
+
  let calls=0;
  const disabled=await processSessionDiagnostics({...args,config:{...config,enabled:false},readSessions:async()=>{calls++;}});
  assert.equal(disabled.skipped,'disabled');assert.equal(calls,0);

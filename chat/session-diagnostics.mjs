@@ -1,3 +1,5 @@
+import { metricAlertBundles, metricBundleCard } from '../lib/metric-alert-bundle.mjs';
+import { buildAgentDashboard } from './monitoring-dashboard.mjs';
 import { prepareAlertEvidenceImage } from '../lib/alert-evidence-image.mjs';
 import { alertTime, appendAlertHistory, alertHistoryPanel, alertEvidenceImage, alertSessionUrl, resolutionAttribution } from '../lib/alert-card-history.mjs';
 import { execFile } from 'node:child_process';
@@ -25,6 +27,7 @@ export function validDiagnosisRecipient(c) {
     && /^cli_[\w]+$/.test(c.feishuAppId || '') && !c.chatId;
 }
 export function sessionDiagnosisCard(item, config) {
+  if(item.kind==='metric-bundle') return metricBundleCard(item,config);
   const resolved = item.status === 'resolved';
   const name = metricLabels[item.metric] || diagnosisStages[item.metric] || (item.metric === 'account' ? '账号无法自动接续' : '预警处置');
   const automatic = item.notificationReason === 'automatic_continuation';
@@ -85,7 +88,7 @@ export async function readSessionDiagnostics(file = SESSION_DIAGNOSIS_FILE) {
     incidents:Object.values(state?.incidents || {}).map(i => ({id:i.id,metric:i.metric,status:i.status,summary:i.summary,
       nextStep:i.nextStep,trigger:i.trigger,action:i.action,verification:i.verification,evidence:i.evidence,suspects:i.suspects,limitations:i.limitations,relatedRecovery:i.relatedRecovery,
       sessionIds:i.members.map(m => m.sessionId),checkedAt:i.diagnosedAt,updatedAt:i.updatedAt,
-      deliveryStatus:i.delivery?.status || 'disabled',notificationReason:i.notification?.reason,test:i.test === true}))};
+      deliveryStatus:Object.values(state?.metricNotifications || {}).find(g=>g.memberIds?.includes(i.id))?.delivery?.status || i.delivery?.status || 'disabled',notificationReason:i.notification?.reason,test:i.test === true}))};
 }
 
 export async function processSessionDiagnostics({config = {},snapshot = {},dryRun = false,baseline = false,
@@ -192,18 +195,35 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       for(const item of Object.values(state.incidents))item.notification=privateDiagnosisNotification(item,{fresh:freshKeys.has(item.key),metricAlerts,baseline:((!metricAlerts || item.kind!=='metric') && baselineIds.has(item.id))||!validDiagnosisRecipient(config.notification)});
       state.privateNotificationPolicy=1;
     }
+    if(!riskOnly && metricAlerts) {
+      const freshKeys=new Set(complete?extras.map(i=>i.key):[]);
+      for(const item of Object.values(state.incidents).filter(i=>i.kind==='metric')) item.notification=privateDiagnosisNotification(item,{fresh:freshKeys.has(item.key),metricAlerts,baseline:!validDiagnosisRecipient(config.notification)});
+    }
     await writeDurableJson(stateFile,state);
-    for(const item of Object.values(state.incidents)) {
+    const bundles = metricAlerts && validDiagnosisRecipient(config.notification) ? metricAlertBundles(state,config.notification,now) : [];
+    const deliveries = [...bundles,...Object.values(state.incidents).filter(i=>!metricAlerts || i.kind!=='metric')];
+    for(const item of deliveries) {
       if(!validDiagnosisRecipient(config.notification) || sent >= (config.metricPolicy?.enabled || config.reportActions ? 3 : 1)) break;
-      if(riskOnly && !item.notification?.ready)continue;
+      if(riskOnly && item.kind!=='metric-bundle' && !item.notification?.ready)continue;
       const version=diagnosisKey(sessionDiagnosisCard({...item,evidenceImage:null},config.notification));
       if(item.delivery?.version === version || ['sending','uncertain'].includes(item.delivery?.status)) continue;
+      if(item.kind==='metric-bundle' && complete) {
+        const dashboard=buildAgentDashboard({},metrics.samples || [],now,metrics.coverage || {});
+        item.metricChart={generatedAt:dashboard.generatedAt,days:dashboard.days,today:dashboard.today};
+      }
       // Save intent before I/O. Uncertain sends/edits require readback, never a second card.
       item.delivery={...item.delivery,status:'sending',recipientKey:item.delivery?.recipientKey || recipientKey(config.notification)};
       await writeDurableJson(stateFile,state);
       try {
         item.delivery={...await deliver(item,config.notification),version,status:'delivered'};
-        if(riskOnly)item.notification={...item.notification,sentSemantic:item.notification.semantic,...(item.kind==='metric'?{sentRatio:item.ratio,sentLevel:item.notification.level}:{}),ready:false};
+        if(item.kind==='metric-bundle') {
+          item.migration=false;
+          for(const id of item.memberIds) {
+            const member=state.incidents[id];
+            if(member?.notification?.ready) member.notification={...member.notification,sentSemantic:member.notification.semantic,sentRatio:member.ratio,sentLevel:member.notification.level,ready:false};
+          }
+        }
+        else if(riskOnly)item.notification={...item.notification,sentSemantic:item.notification.semantic,...(item.kind==='metric'?{sentRatio:item.ratio,sentLevel:item.notification.level}:{}),ready:false};
       }
       catch { item.delivery.status='uncertain'; }
       sent++;
