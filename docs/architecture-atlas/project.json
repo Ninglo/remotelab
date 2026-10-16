@@ -114,19 +114,58 @@
       "chapter": "features",
       "reference": "features.md",
       "sections": [
-        ["scope", "盘点范围与确认情况"],
-        ["start", "先从哪个入口用"],
-        ["sessions", "会话与历史"],
-        ["execution", "执行与验收"],
-        ["automation", "自动化、日历与待办"],
-        ["connections", "连接与研究资料"],
-        ["delivery", "下载、分享与预览"],
-        ["devices", "本地助手与设备"],
-        ["people-memory", "人员、记忆与设置"],
-        ["operations", "监控与部署"],
-        ["monitor-fleet", "monitor 与 fleet"],
-        ["commands", "命令覆盖对照"],
-        ["review", "作者补漏与确认"]
+        [
+          "scope",
+          "盘点范围与确认情况"
+        ],
+        [
+          "start",
+          "先从哪个入口用"
+        ],
+        [
+          "sessions",
+          "会话与历史"
+        ],
+        [
+          "execution",
+          "执行与验收"
+        ],
+        [
+          "automation",
+          "自动化、日历与待办"
+        ],
+        [
+          "connections",
+          "连接与研究资料"
+        ],
+        [
+          "delivery",
+          "下载、分享与预览"
+        ],
+        [
+          "devices",
+          "本地助手与设备"
+        ],
+        [
+          "people-memory",
+          "人员、记忆与设置"
+        ],
+        [
+          "operations",
+          "监控与部署"
+        ],
+        [
+          "monitor-fleet",
+          "monitor 与 fleet"
+        ],
+        [
+          "commands",
+          "命令覆盖对照"
+        ],
+        [
+          "review",
+          "作者补漏与确认"
+        ]
       ]
     },
     {
@@ -1037,6 +1076,24 @@
       "route": "manual-display-maintenance.html",
       "title": "副屏维护说明",
       "description": "部署、身份、配置和接口边界"
+    },
+    {
+      "source": "docs/session-work-awareness.md",
+      "route": "manual-work-awareness.html",
+      "title": "相关工作与执行分工",
+      "description": "说明 WorkPlan 当前渠道承接、飞书话题回执和原话题汇总。"
+    },
+    {
+      "source": "docs/external-message-protocol.md",
+      "route": "manual-external-messages.html",
+      "title": "外部消息接入与投递",
+      "description": "说明连接器输入、持久投递和话题回执后的执行接续。"
+    },
+    {
+      "source": "docs/platform-skills/session-delegate.md",
+      "route": "manual-session-delegate.html",
+      "title": "独立会话委派",
+      "description": "说明网页子会话与飞书话题的适用入口和承接关系。"
     }
   ]
 }

@@ -61,14 +61,14 @@ try {
     },
     async cancelActiveRun(sessionId, options) { cancelled.push([sessionId, options.expectedRunId]); return { state: 'running', cancelRequested: true }; },
   };
-  const deliver = async () => {
+  const deliver = async (deliveryApi = api) => {
     for (let i = 0; i < 100; i++) {
       const claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot' });
       if (!claim) return;
       const { delivery: d, leaseId } = claim;
       if (d.responseId?.startsWith('plan-admission:')) deliveredNotices.set(d.id, d);
       await completeSourceDelivery(d.id, leaseId, { messageId: 'om_' + d.sessionId,
-        threadId: 'omt_' + d.sessionId }, api);
+        threadId: 'omt_' + d.sessionId }, deliveryApi);
     }
     throw new Error('Delivery fixture did not settle');
   };
@@ -312,6 +312,7 @@ try {
   const beforeLateCreate = submits;
   releaseCreate(); await starting;
   assert.equal(submits, beforeLateCreate, 'late child creation cannot submit stopped work');
+  assert.equal((await state(slowPlan.id)).branches[0].topicDeliveryId, undefined, 'late child creation cannot publish a stopped topic');
   const reviewRace = (await propose('review-race', [branch('a'), branch('b')])).plan;
   await approve(reviewRace);
   await complete(reviewRace, 'a');
@@ -331,5 +332,43 @@ try {
   assert.notEqual(stoppedReview.state, 'reviewing', 'late review admission cannot overwrite stop');
   assert.ok(cancelled.some(([id, run]) => id === 'source' && run === stoppedReview.reviewRunId),
     'a review admitted concurrently with stop receives cancellation');
+  // Execution completion can beat the HTTP admission receipt. The later
+  // receipt must not replace terminal branch/review state with running.
+  const early = (await propose('early-completion', [branch('a')])).plan;
+  await approve(early);
+  const earlyBranch = (await state(early.id)).branches[0];
+  const earlyInput = await requests.byRequest(earlyBranch.sessionId, earlyBranch.requestId);
+  await requests.settle(earlyInput.key, { state: 'completed', payload: { text: 'done' } }, []);
+  const earlyApi = { ...api, async submitHttpMessage(...args) {
+    const receipt = await api.submitHttpMessage(...args);
+    const record = await requests.byRunId(receipt.run.id);
+    assert(record.options.workPlanReview);
+    await requests.settle(record.key, { state: 'completed', payload: { text: 'review done' } }, []);
+    await finish(await requests.get(record.key), receipt.run, api);
+    return receipt;
+  } };
+  await finish(await requests.get(earlyInput.key), { id: earlyInput.runId }, earlyApi);
+  assert.equal((await state(early.id)).state, 'reviewed', 'late admission receipt must preserve a completed review');
+  const rapid = await act(await input('early-child-completion'), { ...directBody, goal: '回执之前完成分支' }, api);
+  const earlyCompletions = [];
+  const rapidApi = { ...api, async submitHttpMessage(...args) {
+    const receipt = await api.submitHttpMessage(...args);
+    const record = await requests.byRunId(receipt.run.id);
+    await requests.settle(record.key, { state: 'completed', payload: { text: 'finished before receipt' } }, []);
+    const completion = finish(await requests.get(record.key), receipt.run, rapidApi);
+    earlyCompletions.push(completion);
+    if (record.options.workPlanChild) {
+      const deadline = Date.now() + 5000;
+      while ((await state(rapid.plan.id)).branches[0].state !== 'completed') {
+        if (Date.now() > deadline) throw Error('Early branch completion did not persist');
+        await new Promise(setImmediate);
+      }
+    } else await completion;
+    return receipt;
+  } };
+  await deliver(rapidApi);
+  await Promise.all(earlyCompletions);
+  assert.equal((await state(rapid.plan.id)).branches[0].state, 'completed', 'late child admission must preserve terminal state');
+  assert.equal((await state(rapid.plan.id)).state, 'reviewed');
   console.log('EXECUTION_PLANS_VERIFIED: personal/group scope, cross-group consent, draft/partial approval, direct authorized work, dependencies, failure, amendment, question relay, cancellation, recovery and source result ownership. No real model or group send.');
 } finally { await rm(home, { recursive: true, force: true }); }
