@@ -328,6 +328,8 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     const requestId = 'work-plan:' + plan.id + ':' + branch.id;
     await save(sourceId, data => { Object.assign(data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id), {
       sessionId: target.id, sessionUrl: buildSessionNavigationHref(target.id), requestId }); });
+    plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+    if (['stopping', 'cancelled'].includes(plan.state) || plan.branches.find(b => b.id === branch.id).stopRequested) continue;
     if (plan.branchSurface === 'feishu-thread') {
       // The unanchored opening is durable and idempotent. Never fall back to a
       // Web-only execution when the group send is pending or uncertain.
@@ -336,6 +338,12 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
           sourceDelivery: plan.branchOrigin,
           text: `${branch.name}\n\n${branch.task}\n\n本话题承接这项分工，可在这里补充要求。原话题负责协调和汇总。` });
       await save(sourceId, data => { data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id).topicDeliveryId = delivery.id; });
+      plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
+      if (['stopping', 'cancelled'].includes(plan.state) || plan.branches.find(b => b.id === branch.id).stopRequested) {
+        const opening = await getSourceDelivery(delivery.id);
+        if (opening?.state === 'pending') await resolveSourceDelivery(opening.id, { state: 'cancelled', reason: 'Branch stopped during topic admission' });
+        continue;
+      }
       if (delivery.state !== 'delivered') continue;
       target = await findSessionMeta(target.id);
       if (!target.conversation?.target?.rootId) fail('Topic receipt has not bound the child Session');
@@ -359,12 +367,14 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     await save(sourceId, data => {
       const p = data.executionPlans.find(p => p.id === planId);
       const b = p.branches.find(b => b.id === branch.id);
-      if (!b.stopRequested) { p.state = 'running'; b.state = 'running'; }
+      if (!b.stopRequested && b.state === 'pending') {
+        if (p.state === 'approved') p.state = 'running';
+        b.state = 'running';
+      }
       b.runId = receipt.run.id;
     });
     const latest = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
     if (latest.branches.find(b => b.id === branch.id).stopRequested) await api.cancelActiveRun(target.id, { expectedRunId: receipt.run.id });
-    branch.state = 'running';
   }
   await publishPlanAdmissions(sourceId, planId);
   source = await findSessionMeta(sourceId); plan = plans(source).find(p => p.id === planId);
@@ -385,7 +395,7 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     const current = data.executionPlans.find(p => p.id === planId);
     current.reviewRequestId = requestId;
     current.reviewRunId = receipt.run.id;
-    if (!['stopping', 'cancelled'].includes(current.state)) current.state = 'reviewing';
+    if (['approved', 'running'].includes(current.state)) current.state = 'reviewing';
   });
   const latest = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
   if (['stopping', 'cancelled'].includes(latest.state)) {

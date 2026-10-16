@@ -51,11 +51,23 @@ try {
     bad: async () => { bad++; if (bad === 1) throw Error('integration unavailable'); }, slow: () => slow.promise };
   const completing = complete(head, effects); await independent.promise;
   assert.equal(good, 1, 'independent completion runs while another effect is still pending');
-  // Let the independent failure receipt commit while the slow effect stays blocked.
-  await new Promise(setImmediate); await store.idle();
-  clock = 20;
-  await complete(head, effects, { wait: false });
-  await new Promise(setImmediate); await store.idle();
+  // Observe the durable failure receipt before advancing the fake clock. A
+  // single event-loop turn does not guarantee filesystem I/O has completed.
+  const until = async predicate => {
+    const deadline = Date.now() + 3000;
+    let delay = 1;
+    while (!await predicate()) {
+      if (Date.now() >= deadline) throw Error('Completion effect receipt did not settle');
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay = Math.min(20, delay * 2);
+    }
+  };
+  await until(async () => (await store.get(head.key)).completionEffects?.bad?.state === 'failed');
+  clock = (await store.get(head.key)).completionEffects.bad.retryAt;
+  await until(async () => {
+    await complete(head, effects, { wait: false });
+    return bad === 2;
+  });
   assert.equal(bad, 2, 'a stalled effect cannot prevent another effect retrying');
   assert.equal((await store.get(head.key)).postCompletionPending, true);
   slow.resolve(); await completing;
