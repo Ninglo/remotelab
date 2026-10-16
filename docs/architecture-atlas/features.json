@@ -754,6 +754,7 @@
             "chat/project-memory-runtime.mjs",
             "chat/person-memory-context.mjs",
             "chat/memory-learning.mjs",
+            "chat/memory-abstraction.mjs",
             "docs/memory-learning.md",
             "chat/personal-memory-settings.mjs",
             "chat/personal-memory-conversation.mjs",

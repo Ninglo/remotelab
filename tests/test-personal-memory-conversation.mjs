@@ -21,6 +21,7 @@ try {
     profiles: true, handbook: true, context: true, personIds: ['person_alice'] }));
   const { loadPersonalMemorySettings: load, changePersonalMemorySettings: change } = await import('../chat/personal-memory-settings.mjs');
   const { buildTurnContextHook } = await import('../chat/turn-context-hook.mjs');
+  const { MEMORY_ABSTRACTION_GUIDANCE } = await import('../chat/memory-abstraction.mjs');
   const { handlePersonalMemorySettings: handle } = await import('../chat/router-personal-memory-settings.mjs');
   const m = await import('../chat/memory-learning.mjs');
   const actor = { personId: 'person_alice', identityId: 'web_alice' };
@@ -49,6 +50,8 @@ try {
       sourceContext: surface === 'web' ? undefined : { connector: 'feishu', chatType: surface === 'p2p' ? 'p2p' : 'group',
         conversationKind: surface === 'thread' ? 'thread' : 'main', sender: { senderType: 'user' } } });
     assert.match(context, /Personal memory conversation trial is enabled/, surface);
+    assert.equal(context.split(MEMORY_ABSTRACTION_GUIDANCE).length - 1, 1,
+      `${surface}: extraction guidance must reach the real turn once`);
     assert.doesNotMatch(context, /BETA_SECRET/);
   }
   assert.doesNotMatch(await buildTurnContextHook({}, bob), /Personal memory conversation trial/);

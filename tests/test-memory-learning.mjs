@@ -9,6 +9,7 @@ setIsolatedTestHome(home);
 process.env.REMOTELAB_MEMORY_DIR = join(home, 'memory');
 process.env.REMOTELAB_CONFIG_DIR = join(home, 'config');
 const m = await import('../chat/memory-learning.mjs');
+const { MEMORY_ABSTRACTION_GUIDANCE } = await import('../chat/memory-abstraction.mjs');
 const { maybeRunMemoryWriteback } = await import('../chat/session-memory-writeback.mjs');
 const memoryDir = process.env.REMOTELAB_MEMORY_DIR;
 const authDocument = { people: [
@@ -73,6 +74,8 @@ try {
     userMessage: '以后解释都用大白话解释', sourceEventSeq: 1, assistantTurnText: '收到。', turnEvents: [],
     runPrompt: async prompt => {
       promptCalls += 1;
+      assert.equal(prompt.split(MEMORY_ABSTRACTION_GUIDANCE).length - 1, 1,
+        'the existing reviewer receives the same extraction guidance once');
       assert.match(prompt, /same Session|one independent observation/);
       assert.match(prompt, /plain-language/);
       return `<hide>${JSON.stringify({ updates: [{ ...habit, kind: 'preference', action: 'revise',

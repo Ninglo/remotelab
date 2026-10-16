@@ -991,6 +991,12 @@
   },
   "documentation": [
     {
+      "source": "docs/memory-learning.md",
+      "route": "manual-memory-learning.html",
+      "title": "个人记忆提取与确认",
+      "description": "个人与项目归属、可迁移含义的正反例、观察与确认以及纠正流程"
+    },
+    {
       "source": "docs/feishu-meeting-observer.md",
       "route": "manual-feishu-meeting.html",
       "title": "飞书会后材料自动入群",
