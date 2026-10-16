@@ -371,4 +371,11 @@ try {
   assert.equal((await state(rapid.plan.id)).branches[0].state, 'completed', 'late child admission must preserve terminal state');
   assert.equal((await state(rapid.plan.id)).state, 'reviewed');
   console.log('EXECUTION_PLANS_VERIFIED: personal/group scope, cross-group consent, draft/partial approval, direct authorized work, dependencies, failure, amendment, question relay, cancellation, recovery and source result ownership. No real model or group send.');
-} finally { await rm(home, { recursive: true, force: true }); }
+} finally {
+  // Stop intentionally acknowledges before plan advancement finishes. Let Node
+  // drain those asynchronous writes before deleting their isolated storage.
+  process.once('beforeExit', () => rm(home, { recursive: true, force: true }).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  }));
+}
