@@ -1,3 +1,4 @@
+import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
 import { createRequestCompletion } from './request-completion.mjs';
 import { completeDeliveryReview, validateDeliveryReview } from './delivery-review.mjs';
 import { findActiveFeishuThreadExecution, threadContinuationExpired } from './feishu-thread-continuation.mjs';
@@ -1656,6 +1657,9 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const history = await loadHistory(sessionId, { includeBodies: true });
   const session = await findSessionMeta(sessionId);
   const runHistory = collectReplyPublicationHistory(history, run);
+  record = await publishNativeFeishuResponses(record, runHistory, run, { session, fullHistory: history,
+    prepareFinal: event => prepareNativeFinalFiles(record, event, { run, manifest }),
+  });
   const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
   const payload = buildReplyPublicationPayload(runHistory, run, {
     session, fullHistory: history,
@@ -1683,7 +1687,13 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
         session, fullHistory: history, includeSessionEntry: false,
       })
     : payload;
-  const deliveryPayload = run.state === 'completed' ? pendingPayload : {
+  const responseError = Object.keys(record.responseDecisionErrors || {}).length
+    ? '答复已生成，但回复决定中的消息对应关系或字段无效。正文已保留，尚未完成投递。' : '';
+  const uncoveredRoot = record.responseDecisionMessageIds?.length && !record.mainlineReply && !record.routingHandoff
+    && !record.deliveries.some(d => d.kind === 'content' && !['opening', 'progress'].includes(d.surfaceKind));
+  const decisionFailure = responseError || (uncoveredRoot ? pilotInputResult(record, run).payload.text : '');
+  const deliveryPayload = decisionFailure ? { text: decisionFailure, attachments: [] }
+    : run.state === 'completed' ? pendingPayload : {
     text: run.state === 'cancelled' ? '任务已取消。'
       : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`,
     attachments: [],
@@ -1691,7 +1701,8 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const missingPlacement = !deliveryPlan && plan && !record.options?.suppressSourceDelivery && !record.routingHandoff
     && run.state === 'completed' && Boolean(payload.text || payload.attachments?.length);
   const placementError = '回复已生成，但未明确选择发送位置。正文已保留在会话中，未发送到群主线。';
-  const ownResult = missingPlacement ? { state: 'failed', payload, error: placementError }
+  const ownResult = decisionFailure ? { state: 'failed', payload, error: decisionFailure }
+    : missingPlacement ? { state: 'failed', payload, error: placementError }
     : hasPilotInputReplyContract(record) && (record.mainlineReply || record.routingHandoff?.state === 'submitted')
     ? pilotInputResult(record, run) : { state: run.state, payload, error: run.failureReason || null };
   await requests.settle(record.key, ownResult,

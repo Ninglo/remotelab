@@ -502,7 +502,10 @@
             "connectors/feishu/table-card.mjs",
             "scripts/feishu-connector.mjs",
             "chat/work-routing-discovery.mjs",
-            "chat/router-work-awareness.mjs"
+            "chat/router-work-awareness.mjs",
+            "chat/feishu-response.mjs",
+            "chat/feishu-response-publication.mjs",
+            "lib/feishu-response-decision.mjs"
           ],
           "commands": []
         },

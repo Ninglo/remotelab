@@ -23,7 +23,7 @@ export function executionTrialPrompt({ trialId, decisions = [], plans = [] }) {
     '主话题收到补充或停止时先读最新计划，按实际影响使用 amend/stop：{action,planId,expectedVersion,selected:[...],text:"人的具体补充或停止要求"}。不得改动未选分支。stop会请求取消对应执行；需核对终态，不能把请求已发当成停止完成。已完成分支的修改另提明确后续工作，保留原成果。',
     '回答分支问题使用 answer：{action:"answer",planId,branchId,questionId,text:"人的原答案"}，必须先核当前待答问题和人的对应答案；不能替人选答案。已有背景即可解决的普通技术问题由主话题提供补充，人的授权决定不能代答。',
     '有实质归属或执行取舍时用 record 保存 {understanding,intent,where,approach,reason}。无需为每句闲聊制造记录或进展。真实失败保留回执，恢复同一方案用 resume，不重建重复计划。',
-    '群主线每条追加输入都要保留处理记录，不等于每条单发正文。相关补充优先用 work reply 的 requestIds 合并回答，已发开场不妨碍合并最终答复；独立问题及时单答。首次发送可传 replyMode:inline 或 thread 明确位置，已选位置沿用。已 work route 移交的不要重复正文；plan 操作不转移原输入责任。最终答复要纳入相关补充的实际结论。话题内正常回复；不要把规则和内部记录字段当作面向人的正文。',
+    '群主线的最终答复使用群回复规则中的统一 feishu-response 决定，列出本答复实际覆盖的 requestIds，正文、表情和处理记录一起提交；不要在最终答复之后再单独登记。需要立即回应的独立问题可用 work reply，同一份答复只走一个入口。已移交的输入不重复正文，plan 操作不转移原输入责任。话题内正常回复。',
     JSON.stringify({ trialId, recentDecisions: decisions.slice(-3), plans: plans.slice(-4).map(p => ({ id: p.id, version: p.version,
       state: p.state, goal: p.goal, branches: p.branches.map(b => ({ id: b.id, name: b.name, state: b.state, sessionId: b.sessionId })) })) }),
   ].join('\n');
