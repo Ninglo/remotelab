@@ -148,6 +148,7 @@
       const sortedAccounts = data.accounts.slice().sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
       table(accounts, [t("account"), t("status"), "剩余额度", "最近观测"], sortedAccounts.map(account => {
         const label = node("div", account.label);
+        label.appendChild(node("small", `更新于 ${time(account.observedAt)}`, "agent-account-observed-mobile"));
         if (account.active) label.appendChild(node("small", t("active"), "monitoring-owner"));
         const badge = node("span", status(account.status), "monitoring-account-status"); badge.dataset.status = account.status;
         const quota = node("div", "", "monitoring-quota-cell");
