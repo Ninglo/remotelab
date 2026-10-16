@@ -15,9 +15,9 @@
     const value = d.today[key], format = unit === '耗时' ? duration : number;
     card.append(el('h4', title), el('strong', format(value), 'agent-value'), el('p', `${unit === '耗时' ? '越短越快' : unit} · 样本 ${sample(d.today)} 次`, 'agent-note'));
     card.append(el('p', explanation, 'agent-note'));
-    const svg = svgNode('svg', { viewBox: '0 0 400 155', role: 'img', 'aria-label': `${title}，近七日；精确值见下方表格` });
+    const svg = svgNode('svg', { viewBox: '0 0 400 155', role: 'img', 'aria-label': `${title}，近${d.days.length}日；精确值见下方表格` });
     const max = Math.max(1, ...d.days.map(v => Number.isFinite(v[key]) ? v[key] : 0));
-    const x = i => 50 + i * 55, y = v => 112 - v / max * 82;
+    const x = i => 50 + i * 330 / Math.max(1, d.days.length - 1), y = v => 112 - v / max * 82;
     for (const ratio of [0, .5, 1]) {
       svg.append(svgNode('line', { x1: 50, x2: 380, y1: y(ratio * max), y2: y(ratio * max), class: 'agent-gridline' }));
       const label = svgNode('text', { x: 44, y: y(ratio * max) + 4, 'text-anchor': 'end' }); label.textContent = format(ratio * max); svg.append(label);

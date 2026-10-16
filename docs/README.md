@@ -28,7 +28,7 @@ Read these first when you need the current truth:
 
 The [Agent dashboard](monitoring.md#agent-今日与七日概览2026-10-14) shows 05:00 Beijing business-day usage, context injection, first-Session-run and final-delivery trends, with authenticated source links and explicit sample coverage. Its collapsed document list distinguishes current original character counts from actual injected fragments and explains startup, conditional and on-demand loading. The main overview now uses a compact summary and detail drawer; account snapshot exports open its account tab and retain the frozen source data.
 
-Metric regression private alerts merge new comparisons into one card for three hours, retain original-card updates thereafter, and reuse the dashboard’s seven-day charts. See [the monitoring notification policy](monitoring.md); delivery grouping and chart rendering live in `lib/metric-alert-bundle.mjs` and `lib/metric-alert-chart.mjs`.
+Metric regression private alerts merge new comparisons into one card for three hours, retain original-card updates thereafter, and lead with a concise anomaly summary and handling status. Repeated comparisons stay in a closed evidence panel; dashboard charts focus on the latest five days with exact last values and a link to the full history. See [the monitoring notification policy](monitoring.md); delivery grouping and chart rendering live in `lib/metric-alert-bundle.mjs` and `lib/metric-alert-chart.mjs`.
 
 [Prompt 安全审阅](monitoring.md#prompt-安全审阅) lives in Monitor → Prompt 安全: retained submission sources, full historical/incremental content review with exact deduplication, explicit gaps/failures, redacted evidence and measured Luna usage. It reports suggestions without applying remediation.
 
