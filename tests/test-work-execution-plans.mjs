@@ -312,6 +312,7 @@ try {
   const beforeLateCreate = submits;
   releaseCreate(); await starting;
   assert.equal(submits, beforeLateCreate, 'late child creation cannot submit stopped work');
+  assert.equal((await state(slowPlan.id)).branches[0].topicDeliveryId, undefined, 'late child creation cannot publish a stopped topic');
   const reviewRace = (await propose('review-race', [branch('a'), branch('b')])).plan;
   await approve(reviewRace);
   await complete(reviewRace, 'a');
