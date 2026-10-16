@@ -231,5 +231,10 @@ try {
   // Metadata classification is intentionally non-blocking and can still write
   // after the foreground run settles. Keep its isolated home until Node has
   // drained those child processes and I/O, rather than racing recursive rm.
-  process.once('beforeExit', async () => { await rm(home, { recursive: true, force: true }); });
+  // Detached runners may finish their final durable writes after this process
+  // becomes idle. Retry transient ENOTEMPTY during teardown, with a bounded
+  // 1.5-second retry budget; persistent cleanup errors still fail the test.
+  process.once('beforeExit', async () => {
+    await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
 }
