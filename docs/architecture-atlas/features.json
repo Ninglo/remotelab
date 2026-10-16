@@ -221,6 +221,20 @@
           "maintainer": null,
           "commands": [],
           "sourceRevision": "1dfd00b36892c70a0de754efdb88a1d3d1f4c127"
+        },
+        {
+          "id": "protected-source-reading",
+          "name": "外部原文受控读取与本机审计",
+          "purpose": "对明确授权的固定原文快照逐次核对范围并持久记录，日志失败时不提供内容。",
+          "entry": "POST /api/protected-sources/read；实例 protected-sources.json 登记授权。",
+          "condition": "仅覆盖此入口。保留测试阶段的 shell/sudo；独立日志托管暂缓，本机日志不防管理员删改。未登记原文默认拒绝。",
+          "example": "对合成快照验证授权成功、越权拒绝及审计写入失败时不返回内容；真实资料需另核持有人授权。",
+          "sources": [
+            "docs/protected-source-reading.md",
+            "lib/protected-source-read.mjs",
+            "chat/router-protected-sources.mjs"
+          ],
+          "commands": []
         }
       ]
     },
