@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -259,5 +260,7 @@ try {
   console.log('test-session-forking: ok');
 } finally {
   await killAll();
-  rmSync(home, { recursive: true, force: true });
+  // Metadata writes can finish after the request runtime drains. Remove the
+  // fixture once those callbacks settle, as the other runtime tests do.
+  process.once('beforeExit', async () => rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
 }
