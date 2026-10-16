@@ -367,7 +367,6 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     });
     const latest = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
     if (latest.branches.find(b => b.id === branch.id).stopRequested) await api.cancelActiveRun(target.id, { expectedRunId: receipt.run.id });
-    branch.state = 'running';
   }
   await publishPlanAdmissions(sourceId, planId);
   source = await findSessionMeta(sourceId); plan = plans(source).find(p => p.id === planId);
