@@ -4,6 +4,17 @@ Use when handing an independent task to another executor whose progress and
 result the user should be able to open in RemoteLab. The calling Harness keeps
 its native task interpretation and decides whether delegation is useful.
 
+## Channel choice
+
+This low-level `session-spawn` command creates a Web child; it does not create
+or bind a Feishu topic. Apply the current-channel rule before choosing it.
+For a Feishu request to open a separate conversation, use the existing group
+thread workflow; the enabled personal WorkPlan trial creates a child topic in
+the current group and returns its actual Feishu entry. Use Web delegation when
+the request originates on the Web or explicitly calls for a Web child. A Web
+link is not evidence that a Feishu topic was created. See
+[execution plans](../session-work-awareness.md).
+
 ## Shared workflow
 
 1. For independent delegated work, use RemoteLab `session-spawn` instead of a

@@ -162,7 +162,7 @@ async function mutateDelivery(id, update, { priorReceipt } = {}) {
     deliveries[index] = update({ ...deliveries[index] });
     let next = { ...current, deliveries };
     const entry = deliveries[index];
-    if (entry.connector === 'feishu' && entry.kind !== 'delivery_notice'
+    if (entry.connector === 'feishu' && entry.kind !== 'delivery_notice' && !entry.responseId?.startsWith('plan-topic:')
       && ['unknown', 'delivery_failed'].includes(entry.state)
       && !deliveries.some(part => part.kind === 'delivery_notice')) {
       next = { ...next, deliveries: appendDeliveries(next, [buildDeliveryNotice(entry)]) };
@@ -272,12 +272,15 @@ export async function claimSourceDeliveryWithWait(options = {}) {
   }
 }
 
-export async function completeSourceDelivery(id, leaseId, input = {}) {
+export async function completeSourceDelivery(id, leaseId, input = {}, executionPlanDeps) {
   const { key: receiptKey, index: receiptIndex } = parseId(id);
   const before = (await requests.get(receiptKey))?.deliveries[receiptIndex];
+  if (before?.responseId?.startsWith('plan-topic:') && !input.messageId) {
+    throw new Error('A branch topic receipt requires its actual messageId');
+  }
   const priorReceipt = before?.state === 'delivered' && before.receiptLeaseId === leaseId
     ? await findSourceDeliveryReceipt(before.sessionId, id, { legacyScan: true }) : null;
-  return queue(async () => {
+  const delivered = await queue(async () => {
     const { key, index } = parseId(id);
     const record = await requests.get(key);
     const entry = record?.deliveries[index];
@@ -296,10 +299,17 @@ export async function completeSourceDelivery(id, leaseId, input = {}) {
       deliveredMessageId: trimString(input.messageId), leaseId: '', lastError: '' };
     }, { priorReceipt });
   });
+  // Resume only after releasing the delivery lock; plan admission enqueues its
+  // own source notice. A failed continuation can be retried with this receipt.
+  if (delivered.responseId?.startsWith('plan-topic:')) {
+    const { resumeExecutionPlanTopic } = await import('./work-execution-plans.mjs');
+    await resumeExecutionPlanTopic(delivered, executionPlanDeps);
+  }
+  return delivered;
 }
 
 export async function failSourceDelivery(id, leaseId, error, options = {}) {
-  return queue(() => mutateDelivery(id, entry => {
+  const failed = await queue(() => mutateDelivery(id, entry => {
     // A durable failure receipt may arrive after lease expiry or after its
     // acknowledgement was committed but the HTTP response was lost.
     if (leaseId && entry.failureLeaseId === leaseId) return entry;
@@ -310,6 +320,11 @@ export async function failSourceDelivery(id, leaseId, error, options = {}) {
       leaseId: state === 'unknown' ? entry.leaseId : '', lastError: String(error?.message || error),
       availableAt: new Date(Date.parse(nowIso(options.now)) + (options.retryDelayMs ?? 5000)).toISOString() };
   }));
+  if (failed.responseId?.startsWith('plan-topic:')) {
+    const { resumeExecutionPlanTopic } = await import('./work-execution-plans.mjs');
+    await resumeExecutionPlanTopic(failed);
+  }
+  return failed;
 }
 
 export async function dismissSourceDeliveryIssue(id, { issueVersion, personId = '' } = {}) {
@@ -334,8 +349,8 @@ export async function dismissSourceDeliveryIssue(id, { issueVersion, personId = 
   });
 }
 
-export async function resolveSourceDelivery(id, resolution) {
-  return queue(async () => {
+export async function resolveSourceDelivery(id, resolution, executionPlanDeps) {
+  const resolved = await queue(async () => {
     const current = await getSourceDelivery(id);
     // Suppression happens after claim but before calling the provider. Only
     // the holder of that exact lease may cancel a sending delivery.
@@ -362,6 +377,11 @@ export async function resolveSourceDelivery(id, resolution) {
       availableAt: nowIso(), leaseId: '', resolution: resolution.reason || 'operator resolution' };
     });
   });
+  if (resolved.state === 'delivered' && resolved.responseId?.startsWith('plan-topic:')) {
+    const { resumeExecutionPlanTopic } = await import('./work-execution-plans.mjs');
+    await resumeExecutionPlanTopic(resolved, executionPlanDeps);
+  }
+  return resolved;
 }
 
 export async function cancelSourceDeliveriesForSchedule(scheduleId) {

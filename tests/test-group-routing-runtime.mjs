@@ -135,6 +135,18 @@ try {
     trialId: 'fixture-v2', personIds: ['person_a'], crossGroupSync: true,
     groups: [{ sourceRouteId: 'bot', chatId: 'pilot', tenantKey: 'tenant', folder: home }] }));
   const { handleExecutionPlan } = await import('../chat/work-execution-plans.mjs');
+  const { claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
+  const publishFixtureTopics = async () => {
+    for (let i = 0; i < 100; i++) {
+      const claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot' });
+      if (!claim) return;
+      const d = claim.delivery;
+      await completeSourceDelivery(d.id, claim.leaseId, {
+        messageId: 'om_open_' + d.sessionId, threadId: 'omt_open_' + d.sessionId });
+    }
+    throw new Error('Fixture topic outbox did not drain');
+  };
+
   const sourceOptions = { ...authenticated, sourceContext: { ...authenticated.sourceContext, createTime: String(Date.now()) },
     messageRoutingPolicy: { version: 1, mechanism: 'experimental', trialVersion: 2, trialId: 'fixture-v2' } };
   const sourceInput = (await requests.accept({ sessionId: main.id, requestId: 'plan-source', text: '提出分工',
@@ -148,6 +160,7 @@ try {
     options: sourceOptions, runtimeSelection: runtime, deliveryPlan: origin })).record;
   await handleExecutionPlan(approvalInput, { action: 'approve', planId: proposed.plan.id, expectedVersion: 1,
     selected: ['one', 'two'], approval: '本人确认两个分支' });
+  await publishFixtureTopics();
   const finishedPlan = await until(async () => {
     const p = (await findSessionMeta(main.id)).workAwareness.executionPlans[0];
     return p.state === 'reviewed' && p;
@@ -159,9 +172,11 @@ try {
   assert(parentResult.deliveries.every(d => d.target.chatId === 'pilot' && d.target.messageId === 'input-root'));
   for (const b of finishedPlan.branches) {
     const child = await findSessionMeta(b.sessionId);
-    assert.equal(child.sourceId, 'chat'); assert.equal(child.conversation, undefined);
+    assert.equal(child.sourceId, 'feishu');
+    assert.equal(child.conversation.target.rootId, 'om_open_' + child.id);
     const r = await requests.byRequest(b.sessionId, b.requestId);
-    assert.equal(r.deliveries.length, 0, 'children do not publish duplicate results into groups');
+    assert(r.deliveries.length > 0, 'branch result is available in its own Feishu topic');
+    assert(r.deliveries.every(d => d.target.rootId === child.conversation.target.rootId));
   }
   const explicitInput = (await requests.accept({ sessionId: main.id, requestId: 'explicit-three-sessions',
     text: '号池、资源、理想分流三项分别开子Session并行核对', options: sourceOptions,
@@ -171,6 +186,7 @@ try {
     executionMode: 'parallel-sessions', authorization: '当前原话明确要求三个具体子Session并行',
     branches: ['pool', 'resources', 'oracle'].map(id => ({ id, name: id, task: '只读检查测试材料 ' + id,
       writeScope: '只读测试材料', dependsOn: [] })) });
+  await publishFixtureTopics();
   const three = await until(async () => {
     const p = (await findSessionMeta(main.id)).workAwareness.executionPlans.find(p => p.id === direct.plan.id);
     return p.state === 'reviewed' && p;
@@ -179,8 +195,8 @@ try {
   for (const b of three.branches) {
     assert.equal(b.state, 'completed'); assert(b.sessionUrl);
     const child = await findSessionMeta(b.sessionId);
-    assert.equal(child.delegatedFromSessionId, main.id); assert.equal(child.sourceId, 'chat');
-    assert.equal((await requests.byRequest(b.sessionId, b.requestId)).deliveries.length, 0);
+    assert.equal(child.delegatedFromSessionId, main.id); assert.equal(child.sourceId, 'feishu');
+    assert((await requests.byRequest(b.sessionId, b.requestId)).deliveries.every(d => d.target.rootId === child.conversation.target.rootId));
   }
   assert((await requests.byRequest(main.id, three.reviewRequestId)).deliveries.every(d => d.target.messageId === 'input-root'));
   // Use the real native question/admission path. Successful confirmation
@@ -231,5 +247,5 @@ try {
   // Metadata classification is intentionally non-blocking and can still write
   // after the foreground run settles. Keep its isolated home until Node has
   // drained those child processes and I/O, rather than racing recursive rm.
-  process.once('beforeExit', async () => { await rm(home, { recursive: true, force: true }); });
+  process.once('beforeExit', async () => { await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 }

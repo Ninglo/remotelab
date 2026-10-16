@@ -130,6 +130,15 @@ then use that root. An ambiguous first send fences subsequent output in that
 Session until its receipt or operator resolution; another Session remains free
 to publish into the same group.
 
+Feishu WorkPlan branches use an unanchored new Thread in the originating group.
+The durable `plan-topic:` opening binds the child Session before its execution
+starts. A successful receipt (or an explicitly verified delivery resolution)
+continues that same branch after releasing the delivery lock. Failed or unknown
+opening sends keep execution pending and report the issue to the parent topic;
+they do not create a Web-only fallback or a second group error post. Stopping
+before publication cancels the pending opening. Existing Web branches retain
+their original bindings. See [execution plans](session-work-awareness.md).
+
 Browser input, Feishu input and scheduled input all use the same publication
 path. Internal maintenance output is excluded. Empty model output stays silent.
 The first visible publication includes the execution Session URL. A schedule

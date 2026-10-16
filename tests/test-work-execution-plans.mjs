@@ -33,9 +33,10 @@ try {
     validateExecutionPlanRequest, forwardExecutionQuestions } = await import('../chat/work-execution-plans.mjs');
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const { runDir } = await import('../chat/runs.mjs');
-  const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
-  const admissionDeliveries = async () => (await listSourceDeliveries({ sessionId: 'source' }))
-    .filter(d => d.responseId?.startsWith('plan-admission:'));
+  const { listSourceDeliveries, claimSourceDelivery, completeSourceDelivery, failSourceDelivery, resolveSourceDelivery, getSourceDelivery } = await import('../chat/source-deliveries.mjs');
+  const deliveredNotices = new Map();
+  const admissionDeliveries = async () => [...new Map([...(await listSourceDeliveries({ sessionId: 'source' })), ...deliveredNotices.values()]
+    .filter(d => d.responseId?.startsWith('plan-admission:')).map(d => [d.id, d])).values()];
   const base = { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a', feishuConnectorAuthenticated: true,
     sourceContext: { connector: 'feishu', sourceRouteId: 'bot', chatId: 'discussion', chatType: 'group',
       createTime: Date.now().toString(), messageId: 'message', sender: { openId: 'a', senderType: 'user' } },
@@ -60,6 +61,17 @@ try {
     },
     async cancelActiveRun(sessionId, options) { cancelled.push([sessionId, options.expectedRunId]); return { state: 'running', cancelRequested: true }; },
   };
+  const deliver = async () => {
+    for (let i = 0; i < 100; i++) {
+      const claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot' });
+      if (!claim) return;
+      const { delivery: d, leaseId } = claim;
+      if (d.responseId?.startsWith('plan-admission:')) deliveredNotices.set(d.id, d);
+      await completeSourceDelivery(d.id, leaseId, { messageId: 'om_' + d.sessionId,
+        threadId: 'omt_' + d.sessionId }, api);
+    }
+    throw new Error('Delivery fixture did not settle');
+  };
   const state = async id => (await findSessionMeta('source')).workAwareness.executionPlans.find(p => p.id === id);
   const branch = (id, dependsOn = []) => ({ id, name: id, task: '只分析已有证据 ' + id, writeScope: '只读', dependsOn });
   const propose = async (id, branches) => {
@@ -67,13 +79,13 @@ try {
     const { plan } = await act(r, { action: 'propose', goal: id, context: '原讨论已确定只读，不启动新业务；来源原话题。', reason: '独立分析后汇总', branches }, api);
     return { r, plan };
   };
-  const approve = async (p, selected = p.branches.map(b => b.id)) => act(await input('approve-' + p.id, '按刚才方案开这些分支'), {
-    action: 'approve', planId: p.id, expectedVersion: p.version, selected, approval: '本人明确选择上述原提案分支' }, api);
+  const approve = async (p, selected = p.branches.map(b => b.id)) => { const result = await act(await input('approve-' + p.id, '按刚才方案开这些分支'), {
+    action: 'approve', planId: p.id, expectedVersion: p.version, selected, approval: '本人明确选择上述原提案分支' }, api); await deliver(); return result; };
   const complete = async (p, id, status = 'completed', text = '核查结果与原证据') => {
     const b = (await state(p.id)).branches.find(b => b.id === id);
     const r = await requests.byRequest(b.sessionId, b.requestId);
     await requests.settle(r.key, { state: status, payload: { text }, error: status === 'failed' ? 'fixture failure' : null }, []);
-    await finish(await requests.get(r.key), { id: r.runId }, api);
+    await finish(await requests.get(r.key), { id: r.runId }, api); await deliver();
   };
 
   assert.equal(await routingPilotScope(conversation), null, 'v2 needs the exact person');
@@ -116,11 +128,11 @@ try {
   await approve(plan);
   assert.equal(creations, 2, 'independent roots start together; dependent branch waits');
   const notices = await admissionDeliveries();
-  assert.equal(notices.length, 1, 'independent roots produce one immediate division-of-work receipt');
+  assert.equal(notices.length, 2, 'each actual topic receipt makes its branch available');
   assert.deepEqual(notices[0].target, conversation.target, 'receipt returns to the original topic');
   assert.match(notices[0].text, /只分析已有证据 a/);
-  assert.match(notices[0].text, /session=child1/);
-  assert.match(notices[0].text, /session=child2/);
+  assert.match(notices[0].text, /open_thread_id=omt_child1/);
+  assert.match(notices[1].text, /open_thread_id=omt_child2/);
   assert.doesNotMatch(notices[0].text, /session=child3/, 'blocked dependency is not announced as created');
   // Simulate a crash after durable enqueue but before saving the receipt ID.
   await mutateSessionMeta('source', draft => {
@@ -129,10 +141,10 @@ try {
   });
   await recoverExecutionPlans(api);
   assert.equal(creations, 2, 'recovery reuses admitted work');
-  assert.equal((await admissionDeliveries()).length, 1, 'recovery cannot duplicate the saved launch receipt');
+  assert.equal((await admissionDeliveries()).length, 2, 'recovery cannot duplicate the saved launch receipt');
   await complete(plan, 'a'); assert.equal(creations, 2);
   await complete(plan, 'b'); assert.equal(creations, 3);
-  assert.equal((await admissionDeliveries()).length, 2, 'dependent child gets its link only after actual admission');
+  assert.equal((await admissionDeliveries()).length, 3, 'dependent child gets its link only after actual admission');
   await complete(plan, 'c'); assert.equal(reviews, 1);
   await recoverExecutionPlans(api); assert.equal(reviews, 1);
   const review = await requests.byRequest('source', (await state(plan.id)).reviewRequestId);
@@ -185,13 +197,29 @@ try {
   const directInput = await input('direct', '按讨论确认的方案，只做资料整理，开始吧');
   const directBody = { action: 'start', goal: '整理资料', context: '讨论原件和约束', reason: '已有明确开工决定', authorization: '原话明确要求开始', branches: [branch('a')] };
   const direct = await act(directInput, directBody, api);
-  assert.equal(direct.plan.state, 'running');
+  assert.equal(direct.plan.branches[0].state, 'pending');
+  const child = await findSessionMeta(direct.plan.branches[0].sessionId);
+  assert.equal(child.sourceId, 'feishu');
+  assert.equal(child.conversation.target.chatId, 'discussion');
+  assert.equal(child.conversation.target.messageId, undefined, 'parent topic anchor is not inherited');
+  assert.equal(await requests.byRequest(child.id, direct.plan.branches[0].requestId), null, 'no execution before real topic receipt');
+  await deliver();
+  const bound = await findSessionMeta(child.id);
+  assert.equal(bound.conversation.target.threadId, 'omt_' + child.id);
+  const { findSessionConversation } = await import('../chat/session-conversations.mjs');
+  assert.equal((await findSessionConversation(bound.conversation)).id, child.id, 'human follow-up resolves to this child, not a second Session');
+  const childRequest = await requests.byRequest(child.id, direct.plan.branches[0].requestId);
+  assert.equal(childRequest.options.suppressSourceDelivery, false);
+  assert.equal(childRequest.deliveryPlan.target.rootId, bound.conversation.target.rootId);
+  assert.equal((await state(direct.plan.id)).state, 'running');
   const n = creations; await act(directInput, directBody, api); assert.equal(creations, n);
   await assert.rejects(act(await input('bypass'), { ...directBody, branches: [branch('a'), branch('b')] }, api), /executionMode parallel-sessions/);
   const explicit = await act(await input('explicit-parallel', '这三项分别开子Session并行处理'), {
     ...directBody, executionMode: 'parallel-sessions', authorization: '本人明确要求三个具体分工开子Session并行',
     branches: [branch('pool'), branch('resources'), branch('oracle')],
   }, api);
+  await deliver();
+  explicit.plan = await state(explicit.plan.id);
   assert.equal(explicit.plan.state, 'running');
   assert.equal(explicit.plan.branches.length, 3);
   assert.equal(new Set(explicit.plan.branches.map(b => b.sessionId)).size, 3);
@@ -200,6 +228,69 @@ try {
   await assert.rejects(act(await input('off', '开工', { messageRoutingPolicy: { version: 1, mechanism: 'none' } }), directBody, api), /disabled/);
   await assert.rejects(act(await input('another-person', '开工', { viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' }), directBody, api), /outside/);
   await assert.rejects(propose('cycle', [branch('a', ['b']), branch('b', ['a'])]), /no cycles/);
+  await deliver();
+  const delayed = await act(await input('delayed-topic'), { ...directBody, goal: '等待真实话题回执' }, api);
+  const pending = delayed.plan.branches[0];
+  await act(await input('amend-pending-topic'), { action: 'amend', planId: delayed.plan.id,
+    expectedVersion: delayed.plan.version, selected: ['a'], text: '补充：仅使用已有原文' }, api);
+  assert.equal(await requests.byRequest(pending.sessionId, pending.requestId), null, 'an amendment cannot bypass topic admission');
+  const claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot' });
+  assert.equal(claim.delivery.id, pending.topicDeliveryId);
+  await assert.rejects(completeSourceDelivery(claim.delivery.id, claim.leaseId, {}, api), /actual messageId/);
+  await failSourceDelivery(claim.delivery.id, claim.leaseId, new Error('connection lost'));
+  assert.equal((await state(delayed.plan.id)).branches[0].state, 'pending');
+  assert.equal(await requests.byRequest(pending.sessionId, pending.requestId), null);
+  const issues = await listSourceDeliveries({ sessionId: 'source' });
+  assert(issues.some(d => d.responseId?.startsWith('plan-topic-issue:') && d.text.includes('尚未启动')));
+  await recoverExecutionPlans(api);
+  assert.equal(await requests.byRequest(pending.sessionId, pending.requestId), null, 'unknown send cannot fall back to Web');
+  // A late successful provider receipt recovers the same branch; duplicate
+  // acknowledgements do not start a second execution or create another topic.
+  const countBeforeReceipt = creations;
+  const ack = { messageId: 'om_late', threadId: 'omt_late' };
+  await completeSourceDelivery(claim.delivery.id, claim.leaseId, ack, api);
+  const submitsAfterReceipt = submits;
+  await completeSourceDelivery(claim.delivery.id, claim.leaseId, ack, api);
+  assert.match((await requests.byRequest(pending.sessionId, pending.requestId)).text, /补充：仅使用已有原文/);
+  assert.equal(submits, submitsAfterReceipt);
+  assert.equal(creations, countBeforeReceipt);
+  assert.equal((await state(delayed.plan.id)).branches[0].state, 'running');
+  await deliver();
+
+  const failed = await act(await input('failed-topic'), { ...directBody, goal: '核实后恢复投递' }, api);
+  const failedClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot' });
+  await failSourceDelivery(failedClaim.delivery.id, failedClaim.leaseId, new Error('provider rejection'), { definiteFailure: true });
+  assert.equal(await requests.byRequest(failed.plan.branches[0].sessionId, failed.plan.branches[0].requestId), null);
+  await resolveSourceDelivery(failedClaim.delivery.id, { state: 'delivered', messageId: 'om_verified', threadId: 'omt_verified' }, api);
+  assert.equal((await state(failed.plan.id)).branches[0].state, 'running');
+  await deliver();
+
+  const stopped = await act(await input('stop-before-topic'), { ...directBody, goal: '投递前停止' }, api);
+  const stoppedBranch = stopped.plan.branches[0];
+  await act(await input('stop-pending-topic', '取消尚未投递的分支'), { action: 'stop', planId: stopped.plan.id,
+    expectedVersion: stopped.plan.version, selected: ['a'], text: '取消分支' }, api);
+  assert.equal((await getSourceDelivery(stoppedBranch.topicDeliveryId)).state, 'cancelled');
+  await recoverExecutionPlans(api);
+  assert.equal(await requests.byRequest(stoppedBranch.sessionId, stoppedBranch.requestId), null);
+
+  const noThread = await act(await input('message-only-topic'), { ...directBody, goal: '只有真实消息 ID' }, api);
+  const messageClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot' });
+  await completeSourceDelivery(messageClaim.delivery.id, messageClaim.leaseId, { messageId: 'om_only' }, api);
+  const noThreadState = await state(noThread.plan.id);
+  assert.equal(noThreadState.branches[0].state, 'running');
+  assert.match(noThreadState.admissionNotices[0].text, /飞书尚未返回话题链接/);
+  assert.doesNotMatch(noThreadState.admissionNotices[0].text, /session=|open_thread_id=om_only/);
+
+  const legacy = (await propose('legacy-web-plan', [branch('a')])).plan;
+  await mutateSessionMeta('source', s => {
+    const p = s.workAwareness.executionPlans.find(p => p.id === legacy.id);
+    delete p.branchSurface; delete p.branchOrigin; return true;
+  });
+  await approve(legacy);
+  const legacyBranch = (await state(legacy.id)).branches[0];
+  assert.equal((await findSessionMeta(legacyBranch.sessionId)).sourceId, 'chat', 'historical Web plans keep their original contract');
+  assert.equal(legacyBranch.topicDeliveryId, undefined);
+
   await mutateSessionMeta('source', s => { s.archived = true; return true; });
   const frozen = creations; await recoverExecutionPlans(api); assert.equal(creations, frozen, 'archived parent cannot be revived by recovery');
   console.log('EXECUTION_PLANS_VERIFIED: personal/group scope, cross-group consent, draft/partial approval, direct authorized work, dependencies, failure, amendment, question relay, cancellation, recovery and source result ownership. No real model or group send.');

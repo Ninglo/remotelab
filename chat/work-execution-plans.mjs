@@ -9,8 +9,10 @@ import { appendEvent } from './history.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
 import { readNativeQuestion } from './native-user-questions.mjs';
 import { runDir } from './runs.mjs';
-import { enqueueSourceDelivery } from './source-deliveries.mjs';
+import { enqueueSourceDelivery, getSourceDelivery, resolveSourceDelivery } from './source-deliveries.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { groupWorkHref } from './group-sync-presentation.mjs';
+import { normalizeConversation } from '../lib/conversation-target.mjs';
 import { clipCompactionSection } from './session-context-compaction.mjs';
 
 const serial = serialQueue();
@@ -59,9 +61,27 @@ function validateBranches(branches) {
   }
   return result;
 }
+// Keep a new branch in its accepted channel without inheriting the parent's
+// thread anchor. Cross-group transfer remains a separate confirmed workflow.
+function branchOrigin(record) {
+  const origin = normalizeConversation(record.deliveryPlan || record.options.sourceDelivery);
+  if (origin?.connector !== 'feishu' || origin.target.chatType !== 'group' || !origin.target.chatId) {
+    fail('A Feishu group destination is required for this execution plan');
+  }
+  const target = { chatId: origin.target.chatId, chatType: 'group', conversationKind: 'thread' };
+  for (const key of ['tenantKey', 'chatMode']) if (origin.target[key]) target[key] = origin.target[key];
+  return { connector: 'feishu', sourceRouteId: origin.sourceRouteId, target };
+}
+
 export async function readExecutionPlans(session) {
   return Promise.all(plans(session).map(async plan => {
     const p = structuredClone(plan);
+    for (const b of p.branches) if (b.state === 'pending' && b.topicDeliveryId) {
+      const delivery = await getSourceDelivery(b.topicDeliveryId);
+      b.runtimeState = 'waiting-for-topic';
+      b.topicDeliveryState = delivery?.state || 'missing';
+      if (delivery?.lastError) b.error = delivery.lastError;
+    }
     for (const b of p.branches) if (b.sessionId && b.requestId && b.state === 'running') {
       const r = await requests.byRequest(b.sessionId, b.requestId);
       b.runtimeState = r?.result?.state || (r?.preparedAt ? 'running' : 'queued');
@@ -101,7 +121,8 @@ export async function handleExecutionPlan(record, body, deps) {
       const plan = { id, state: 'draft', version: 1, goal, context, reason, branches, actor, trialId: scope.trialId,
         sourceSessionId: source.id, sourceRequestId: record.requestId, createdAt: new Date().toISOString(),
         runtimeSelection: record.runtimeSelection, folder: source.folder,
-        returnPlan: record.deliveryPlan || record.options.sourceDelivery, controls: [] };
+        returnPlan: record.deliveryPlan || record.options.sourceDelivery, controls: [],
+        branchSurface: 'feishu-thread', branchOrigin: branchOrigin(record) };
       if (body.action === 'start') Object.assign(plan, { state: 'approved', selected: branches.map(b => b.id),
         executionMode: branches.length > 1 ? 'parallel-sessions' : 'single-session',
         approvalRequestId: record.requestId, approvalText: clean(record.options.recordedUserText || record.text, 3000),
@@ -110,7 +131,7 @@ export async function handleExecutionPlan(record, body, deps) {
       await appendEvent(source.id, { type: 'work_event', action: body.action === 'start' ? 'execution-plan-started' : 'execution-plan-proposed', plan });
       if (body.action === 'start') await advancePlan(source.id, id, deps);
       return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), boundary: body.action === 'start'
-        ? 'The explicitly requested work was submitted to independent Sessions. The saved admission notices queue the task summaries and actual links to the source topic; do not repeat them. Queue admission is not delivery or task completion.'
+        ? 'The explicitly requested branches were accepted. Feishu branches wait for the new topic delivery receipt before execution; The saved admission notices queue the task summaries and actual links to the source topic; do not repeat them. Queue admission is not delivery or task completion.'
         : 'Draft only; no Session created. Offer the proposal asynchronously and continue already authorized work in the source Session without waiting. Before a later approval, reconcile source progress so completed or active work is not duplicated.' };
     }
     let plan = plans(source).find(p => p.id === body.planId);
@@ -149,7 +170,7 @@ export async function handleExecutionPlan(record, body, deps) {
       const prior = await requests.byRequest(b.sessionId, requestId);
       const receipt = await api.submitHttpMessage(b.sessionId, prior?.text || body.text, [], prior?.options || {
         requestId, nativeQuestionId: question.id, viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId,
-        recordUserMessage: false, suppressSourceDelivery: true, ...plan.runtimeSelection,
+        recordUserMessage: false, suppressSourceDelivery: plan.branchSurface !== 'feishu-thread', ...plan.runtimeSelection,
         workPlanChild: { sourceSessionId: source.id, planId: plan.id, branchId: b.id },
         sourceContext: { connector: 'work-plan-answer', sourceSessionId: source.id, sourceRequestId: record.requestId },
       });
@@ -202,7 +223,11 @@ async function applyControls(sourceId, planId, deps) {
   for (const control of plan.controls.filter(c => c.state === 'pending')) {
     for (const id of control.selected) {
       const b = plan.branches.find(b => b.id === id);
-      if (!b.sessionId || terminal(b.state)) continue;
+      if (control.action === 'stop' && b.topicDeliveryId && !b.runId) {
+        const opening = await getSourceDelivery(b.topicDeliveryId);
+        if (opening?.state === 'pending') await resolveSourceDelivery(opening.id, { state: 'cancelled', reason: 'Branch stopped before topic publication' });
+      }
+      if (!b.sessionId || !b.runId || terminal(b.state)) continue;
       if (control.action === 'stop') {
         // A correction may be queued behind a still-running original. Cancel
         // every accepted input owned by this branch, never an unrelated run.
@@ -218,7 +243,7 @@ async function applyControls(sourceId, planId, deps) {
           requestId, ...plan.runtimeSelection, viewPersonId: control.actor.personId,
           initiatedByIdentityId: control.actor.identityId, recordUserMessage: false,
           workPlanChild: { sourceSessionId: sourceId, planId, branchId: b.id },
-          suppressSourceDelivery: true, sourceContext: { connector: 'work-plan', sourceSessionId: sourceId },
+          suppressSourceDelivery: plan.branchSurface !== 'feishu-thread', sourceContext: { connector: 'work-plan', sourceSessionId: sourceId },
         });
         await save(sourceId, data => {
           const branch = data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === id);
@@ -238,7 +263,7 @@ async function publishPlanAdmissions(sourceId, planId) {
   if (admitted.length) {
     const id = 'plan-admission:' + hash(plan.id + ':' + admitted.map(b => b.id).join(','));
     const text = ['已创建并提交以下独立子 Session：', '', ...admitted.map(b =>
-      `- [${b.name}](${b.sessionUrl})：${clipCompactionSection(b.task, 240).replace(/\s+/g, ' ').trim()}`),
+      `- ${b.topicUrl ? `[${b.name}](${b.topicUrl})` : plan.branchSurface === 'feishu-thread' ? `${b.name}（已在当前群创建话题，飞书尚未返回话题链接）` : `[${b.name}](${b.sessionUrl})`}：${clipCompactionSection(b.task, 240).replace(/\s+/g, ' ').trim()}`),
       '', '主话题继续负责协调、核验和汇总；你可以在这里补充要求，也可以打开对应分支继续交流。'].join('\n');
     // Freeze the batch before enqueue: retries cannot regroup it or duplicate it.
     await save(sourceId, data => {
@@ -272,21 +297,39 @@ async function advancePlan(sourceId, planId, deps) {
       branch.state = 'blocked'; continue;
     }
     if (dependencies.some(b => b.state !== 'completed')) continue;
-    const target = branch.sessionId ? await findSessionMeta(branch.sessionId) : await api.createSession(plan.folder,
+    let target = branch.sessionId ? await findSessionMeta(branch.sessionId) : await api.createSession(plan.folder,
       plan.runtimeSelection?.tool || source.tool, branch.name, { ...plan.runtimeSelection,
-        sourceId: 'chat', initiatedByIdentityId: plan.actor.identityId, viewPersonId: plan.actor.personId,
+        sourceId: plan.branchSurface === 'feishu-thread' ? 'feishu' : 'chat',
+        ...(plan.branchSurface === 'feishu-thread' ? { conversation: plan.branchOrigin } : {}), initiatedByIdentityId: plan.actor.identityId, viewPersonId: plan.actor.personId,
         delegatedFromSessionId: sourceId, delegationDepth: (source.delegationDepth || 0) + 1,
         externalTriggerId: 'work-plan:' + plan.id + ':' + branch.id });
     if (!target || target.archived) fail('The planned child Session is unavailable');
     const requestId = 'work-plan:' + plan.id + ':' + branch.id;
     await save(sourceId, data => { Object.assign(data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id), {
       sessionId: target.id, sessionUrl: buildSessionNavigationHref(target.id), requestId }); });
+    if (plan.branchSurface === 'feishu-thread') {
+      // The unanchored opening is durable and idempotent. Never fall back to a
+      // Web-only execution when the group send is pending or uncertain.
+      const delivery = branch.topicDeliveryId ? await getSourceDelivery(branch.topicDeliveryId)
+        : await enqueueSourceDelivery({ sessionId: target.id, responseId: `plan-topic:${plan.id}:${branch.id}`,
+          sourceDelivery: plan.branchOrigin,
+          text: `${branch.name}\n\n${branch.task}\n\n本话题承接这项分工，可在这里补充要求。原话题负责协调和汇总。` });
+      await save(sourceId, data => { data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id).topicDeliveryId = delivery.id; });
+      if (delivery.state !== 'delivered') continue;
+      target = await findSessionMeta(target.id);
+      if (!target.conversation?.target?.rootId) fail('Topic receipt has not bound the child Session');
+      const hasThread = target.conversation.target.threadId || target.conversation.target.topicId?.startsWith('omt_');
+      await save(sourceId, data => {
+        data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id).topicUrl = hasThread ? groupWorkHref(target.conversation, target.id) : '';
+      });
+    }
     const amendments = plan.controls.filter(c => c.action === 'amend' && c.selected.includes(branch.id)).map(c => c.text).join('\n');
     const text = `经人确认的独立分工。主话题：${sourceId}；方案：${plan.id}；分支：${branch.id}。\n总目标：${plan.goal}\n已确定的背景、约束和来源：\n${plan.context}\n你的任务：${branch.task}\n修改范围：${branch.writeScope}\n${amendments ? '人的后续补充：\n' + amendments : ''}\n${dependencies.length ? '前置结果（需按原证据核对）：\n' + dependencies.map(b => `${b.name} (${b.sessionId}): ${b.result}`).join('\n') : ''}\n仅执行这份分工。不要递归拆分、向其他群发消息或扩大授权。最终返回成果、证据、未解决问题，系统负责回到主话题。需要人补充时使用原生提问，主话题可查到等待状态，不能替人确认。`;
     const prior = await requests.byRequest(target.id, requestId);
     const receipt = await api.submitHttpMessage(target.id, prior?.text || text, [], prior?.options || {
       requestId, ...plan.runtimeSelection, viewPersonId: plan.actor.personId, initiatedByIdentityId: plan.actor.identityId,
-      recordUserMessage: false, suppressSourceDelivery: true,
+      recordUserMessage: false, suppressSourceDelivery: plan.branchSurface !== 'feishu-thread',
+      ...(plan.branchSurface === 'feishu-thread' ? { sourceDelivery: target.conversation } : {}),
       workPlanChild: { sourceSessionId: sourceId, planId, branchId: branch.id },
       sourceContext: { connector: 'work-plan', sourceSessionId: sourceId },
     });
@@ -393,4 +436,26 @@ export async function forwardExecutionQuestions(record, events) {
     await appendEvent(source.id, { type: 'work_event', action: 'execution-question', planId: p.id,
       branchId: b.id, targetSessionId: record.sessionId, questionId: e.questionId, question });
   }
+}
+
+export async function resumeExecutionPlanTopic(delivery, deps) {
+  if (!delivery?.responseId?.startsWith('plan-topic:') || !['delivered', 'unknown', 'delivery_failed'].includes(delivery.state)) return;
+  const child = await findSessionMeta(delivery.sessionId);
+  if (!child?.delegatedFromSessionId) return;
+  const [, planId, branchId] = delivery.responseId.split(':');
+  return serial(async () => {
+    const source = await findSessionMeta(child.delegatedFromSessionId);
+    const p = plans(source).find(p => p.id === planId);
+    const b = p?.branches.find(b => b.id === branchId);
+    if (!source || source.archived || p.branchSurface !== 'feishu-thread' || b?.sessionId !== child.id
+        || b.topicDeliveryId !== delivery.id || b.stopRequested) return;
+    if (delivery.state !== 'delivered') {
+      await enqueueSourceDelivery({ sessionId: source.id,
+        responseId: `plan-topic-issue:${p.id}:${b.id}:${delivery.state}:${delivery.attempts}`,
+        sourceDelivery: p.returnPlan,
+        text: `分支「${b.name}」的飞书话题${delivery.state === 'unknown' ? '尚无法确认是否送达' : '创建失败'}，尚未启动执行。原因：${delivery.lastError || '请核对投递状态'}。原分支已保留，核实回执后可接续。` });
+      return;
+    }
+    await advancePlan(source.id, p.id, deps);
+  });
 }
