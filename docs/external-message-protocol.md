@@ -351,17 +351,32 @@ receipts belong to the shared execution, including when a steered input selects
 that placement. Terminal publication remains once per stopped execution.
 
 For an ambient mainline reply placed in a new Feishu Thread, the successful
-outbox receipt retains the provider Thread ID. Conversation resolution can use
-that receipt to return the exact still-active native execution, without changing
-Session bindings. The connector submits `sourceContext.feishuContinuationRunId`
-and keeps the existing Session prompt. Admission revalidates the delivered
-Thread and execution; native dispatch refuses a different Run. A bound addition
-that loses the completion race cannot become a new Run. Unacknowledged native
-inputs also cannot restart an explicitly cancelled execution. An already bound
-independent Thread, another chat/Bot, a completed execution, and unrelated later
-mainline work retain their normal routing. The Harness interprets discussion,
-stop scope and natural permission to resume; no classifier or timed batching
-stage is added.
+outbox receipt indexes the provider Thread/root aliases with the originating Run.
+The index is written before Request archival and uses exact Bot, tenant and chat
+scope. Conflicting origins are not guessed. Resolution returns `threadOriginRunId`
+and, while the original native execution is accepting input, `continuationRunId`.
+The connector sends these as `sourceContext.feishuThreadOriginRunId` and
+`feishuContinuationRunId`; admission verifies the actual delivered surface against
+the original Request, including archived records, and keeps the Session prompt.
+
+The origin field permits a definitely unaccepted completion-race input to queue
+in the same Session and topic. Dispatch only steers the originating execution or
+a later execution of that same topic; it cannot merge into unrelated mainline or
+other-topic work. A declined native target is remembered to avoid repeated steer.
+Accepted and uncertain receipts never turn into fresh execution; cancellation
+still stops unaccepted additions. Legacy run-only packets retain exact-run expiry.
+Mainline references require a recorded outbound topic message and an unambiguous
+current binding; arbitrary text does not establish ownership.
+
+`sourceContext.feishuResponseProtocolVersion: 1` enables unified per-input
+response publication independently of personal routing pilots. Hidden response
+fields include optional `participationReason`, `reaction` (an allowed candidate),
+`reaction:null` (explicit Bot withdrawal), and `noTextReason`. Omission of a
+reaction leaves existing feedback; omission of text and reaction can leave no
+outbox parts. Main-model withdrawal persists stage-2 ownership so late stage-1
+Jev cannot restore it. The connector checks the current configured candidate set
+before adding a provider reaction. Neither old quick flags nor personal work
+routing preferences manufacture an emoji or choose substantive content.
 
 Example:
 

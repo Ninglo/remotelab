@@ -1387,9 +1387,9 @@ const detachedResult = await handleMessage(accessRuntime, {
   },
 });
 assert.equal(detachedSubmitStarted, true);
-assert.equal(detachedReactionStarted, true);
+assert.equal(detachedReactionStarted, false, 'group admission has no automatic receipt reaction');
 assert.equal(detachedResult.sessionId, 'sess_detached_reaction_1', 'reaction completion must not gate request admission');
-releaseDetachedReaction();
+releaseDetachedReaction?.();
 await Promise.resolve();
 let emptyThreadReply;
 await handleMessage(accessRuntime, { ...groupCommandSummary, messageId: 'empty-thread', messageText: '/thread', textPreview: '/thread' }, 'test', {

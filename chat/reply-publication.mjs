@@ -236,7 +236,7 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
         : parseProgressMessage(reactionDirective.text).text)
       : noTextDecision ? '' : buildPayloadText(displayEvents),
   };
-  if (reactionDirective?.emojiType) {
+  if (reactionDirective && reactionDirective.emojiType !== undefined) {
     payload.reaction = reactionDirective.emojiType;
     payload.reactionStage = 2; // Main Session judgment supersedes asynchronous quick feedback.
   }

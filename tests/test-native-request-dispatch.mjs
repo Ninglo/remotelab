@@ -25,7 +25,7 @@ const received = [];
 const recorded = [];
 let state = 'running';
 const server = await createNativeInputServer({ directory: join(root, head.runId), isAccepting: () => true,
-  submit: async input => { received.push(input.id); if (input.id === 'uncertain') throw Object.assign(new Error('lost native ack'), { code: 'NATIVE_UNCERTAIN' }); await blocked; return { accepted: true, id: input.id }; },
+  submit: async input => { received.push(input.id); if (input.id === 'known-ended') throw Object.assign(new Error('Original execution ended; continuation cannot start another turn'), { code: 'NATIVE_REJECTED' }); if (input.id === 'uncertain') throw Object.assign(new Error('lost native ack'), { code: 'NATIVE_UNCERTAIN' }); await blocked; return { accepted: true, id: input.id }; },
 });
 const waitFor = async predicate => { const until = Date.now() + 3000; while (!(await predicate())) { if (Date.now() > until) throw new Error('Timed out'); await new Promise(resolve => setTimeout(resolve, 5)); } };
 const dispatcher = createNativeRequestDispatcher({ store, getRun: async () => ({ id: head.runId, state }), getManifest: async () => ({ inputMode: 'native', forkBaseSeq: 42 }), runDirectory: id => join(root, id),
@@ -84,6 +84,23 @@ try {
     assert.equal(after.result.state, 'failed');
     assert.equal(after.nativeDispatchRunId, head.runId, 'expired/cancelled additions must never clear into a fresh run');
     assert.ok(!received.includes(record.requestId));
+  }
+  for (const scenario of ['complete-race', 'known-ended', 'cancelled-thread']) {
+    const record = await accepted(scenario);
+    const scoped = await store.mutate(record.key, current => ({ ...current,
+      options: { sourceContext: { feishuThreadOriginRunId: head.runId, feishuContinuationRunId: head.runId } },
+      nativeDispatchRunId: head.runId, nativeInput: { id: record.requestId, text: 'same topic supplement', continuationOnly: true },
+    }));
+    state = scenario === 'known-ended' ? 'running' : scenario === 'cancelled-thread' ? 'cancelled' : 'completed';
+    await dispatcher.forward(scoped); await dispatcher.idle();
+    const after = await store.get(record.key);
+    if (scenario === 'cancelled-thread') { assert.equal(after.result.state, 'failed'); continue; }
+    assert.equal(after.result, null, 'a definitely unaccepted supplement remains queued in the same Session');
+    assert.equal(after.nativeDispatchRunId, null);
+    assert.equal(after.sessionId, head.sessionId);
+    assert.equal(after.options.sourceContext.feishuThreadOriginRunId, head.runId);
+    assert.equal(canForwardNativeRequest(after, head), false, 'a declined native turn is never retried');
+    assert.equal(canForwardNativeRequest(after, { ...head, runId: 'unrelated' }), false, 'unrelated work cannot absorb the queued topic');
   }
   console.log('native dispatch: overlapping input, durable run linkage, shared result, uncertain receipt without replay passed');
 } finally { unblock(); await dispatcher.idle(); await server.close(); await rm(root, { force: true, recursive: true }); }

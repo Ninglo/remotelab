@@ -140,7 +140,7 @@ import {
 } from '../lib/connector-turn-flow.mjs';
 import { isQuickSession } from '../lib/quick-session-profile.mjs';
 import {
-  findFeishuThreadSessionBinding,
+  findFeishuThreadSessionBinding, resolveFeishuReferencedTopic,
   recordFeishuMessageSession,
   recordFeishuOutboundMessageSession,
   recordFeishuThreadSessionBinding,
@@ -373,8 +373,8 @@ async function loadConfig(pathname) {
   const appSecret = trimString(parsed?.appSecret);
   if (!appId) throw new Error(`Missing appId in ${pathname}`);
   if (!appSecret) throw new Error(`Missing appSecret in ${pathname}`);
-  if (parsed.defaultGroupParticipation !== undefined && !['active', 'mention_only'].includes(parsed.defaultGroupParticipation)) {
-    throw new Error('defaultGroupParticipation must be active or mention_only');
+  if (parsed.defaultGroupParticipation !== undefined && !['active', 'listening', 'paused', 'mention_only'].includes(parsed.defaultGroupParticipation)) {
+    throw new Error('defaultGroupParticipation must be active, listening or paused (legacy mention_only is supported)');
   }
   for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
     if (Object.hasOwn(parsed, legacyKey)) {
@@ -1093,7 +1093,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     session = result.json.session;
     const configuredSystemPrompt = sessionPayload.systemPrompt.trim();
     const currentSystemPrompt = typeof session.systemPrompt === 'string' ? session.systemPrompt.trim() : '';
-    if (!threadBinding.continuationRunId && !isQuickSession(session) && configuredSystemPrompt !== currentSystemPrompt) {
+    if (!threadBinding.continuationRunId && !threadBinding.threadOriginRunId && !isQuickSession(session) && configuredSystemPrompt !== currentSystemPrompt) {
       const updated = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`, {
         method: 'PATCH',
         body: { systemPrompt: configuredSystemPrompt },
@@ -1108,7 +1108,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   }
   // Group prompt edits apply to an existing mainline as well as bound topics.
   // Never mutate an already accepted Run's prompt snapshot.
-  if (runtime.groupConfiguration && !threadBinding?.continuationRunId && !isQuickSession(session)
+  if (runtime.groupConfiguration && !threadBinding?.continuationRunId && !threadBinding?.threadOriginRunId && !isQuickSession(session)
       && (session.systemPrompt || '').trim() !== sessionPayload.systemPrompt.trim()) {
     const updated = await requester(`/api/sessions/${encodeURIComponent(session.id)}`, {
       method: 'PATCH', body: { systemPrompt: sessionPayload.systemPrompt },
@@ -1206,9 +1206,10 @@ async function submitRemoteLabRequest(runtime, summary, {
     runtimeSelectionScope: 'auto',
     sourceContext: {
       ...buildMessageSourceContext(messageSummary),
+      ...(!['p2p', 'private'].includes(messageSummary.chatType) && !isFeishuBotSender(messageSummary)
+        ? { feishuResponseProtocolVersion: 1 } : {}),
+      ...(threadBinding?.threadOriginRunId ? { feishuThreadOriginRunId: threadBinding.threadOriginRunId } : {}),
       ...(threadBinding?.continuationRunId ? { feishuContinuationRunId: threadBinding.continuationRunId } : {}),
-      ...(groupSettings.quickReactions && !groupSettings.jevReactions
-        ? { feishuOutcomeRequired: true } : {}),
       ...(messageSummary.logContinuation ? { feishuLog: {
         sessionId: messageSummary.logContinuation.sessionId,
         runId: messageSummary.logContinuation.runId,
@@ -1283,7 +1284,8 @@ function startJevReaction(runtime, summary, observationReceipt, helpers, control
     let decision = observation.decision;
     if (!decision) {
       const verdict = await (helpers.classifyJevReaction || classifyFeishuQuickParticipation)(
-        buildFeishuSessionReactionContext(observation.recent, { mentioned: mentionsFeishuBot(runtime, summary) }));
+        buildFeishuSessionReactionContext(observation.recent, { mentioned: mentionsFeishuBot(runtime, summary) }),
+        { reactionCandidates: resolveFeishuGroupSettings(runtime.config, summary).reactionCandidates });
       const emojiType = Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, verdict?.emojiType || '')
         ? verdict.emojiType : null;
       const saved = await (helpers.recordJevDecision || ((id, sourceMessageId, value) =>
@@ -1297,7 +1299,8 @@ function startJevReaction(runtime, summary, observationReceipt, helpers, control
     }
     // Legacy decisions may contain work, binary-answer or control judgments.
     // None of them authorizes admission, placement or a factual emoji answer.
-    if (!Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, decision.emojiType || '')) return;
+    if (!Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, decision.emojiType || '')
+        || !resolveFeishuGroupSettings(runtime.config, summary).reactionCandidates.includes(decision.emojiType)) return;
     if (controller) {
       const latest = await controller.state(summary);
       if (Number(summary.participationEpoch) !== latest.epoch || latest.mode === 'paused'
@@ -1583,6 +1586,13 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     let sent;
     try {
+      if (delivery.kind === 'reaction' && delivery.emojiType !== null
+          && !resolveFeishuGroupSettings(runtime.config, summary).reactionCandidates.includes(delivery.emojiType)) {
+        const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
+          body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Reaction is outside the current group selection' } });
+        if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to cancel unselected reaction');
+        return resolved.json?.delivery;
+      }
       sent = delivery.memoryReview
         ? await sendMemoryReviewCard(runtime, delivery)
         : delivery.nativeQuestion
@@ -1594,7 +1604,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         : delivery.attachment
           ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
           : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
-      if (delivery.kind === 'reaction' && !sent?.reactionId) {
+      if (delivery.kind === 'reaction' && !sent?.reactionId && !sent?.withdrawn && !sent?.superseded) {
         throw new Error('Feishu reaction did not return a receipt');
       }
     } catch (error) {
@@ -1772,17 +1782,18 @@ function participationController(runtime, helpers = {}) {
       if (!result.response.ok) throw new Error(result.json?.error || 'Unable to resolve participation Session');
       return result.json?.sessionId || '';
     },
-    cancelSession: async sessionId => {
-      const snapshot = await request(`/api/sessions/${encodeURIComponent(sessionId)}`);
-      if (snapshot.response.status === 404) return;
-      if (!snapshot.response.ok) throw new Error(snapshot.json?.error || 'Unable to read participation Session');
-      for (const queued of snapshot.json?.session?.queuedMessages || []) {
-        if (!queued.requestId) continue;
-        const removed = await request(`/api/sessions/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queued.requestId)}`, { method: 'DELETE' });
-        if (!removed.response.ok && ![404, 409].includes(removed.response.status)) throw new Error('Unable to cancel queued group turn');
+    cancelSession: async (sessionId, record) => {
+      if (record) {
+        const source = record.source;
+        const result = await request(`/api/sessions/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST', body: {
+          participationConversation: { connector: 'feishu', sourceRouteId: source.sourceRouteId,
+            target: { chatId: source.chatId, tenantKey: source.tenantKey,
+              conversationKind: source.topicId ? 'thread' : 'main',
+              ...(source.topicId ? { threadId: source.topicId } : {}) } },
+        } });
+        if (!result.response.ok && result.response.status !== 404) throw new Error(result.json?.error || 'Unable to stop conversation work');
+        return;
       }
-      const result = await request(`/api/sessions/${encodeURIComponent(sessionId)}/cancel`, { method: 'POST' });
-      if (!result.response.ok && result.response.status !== 404) throw new Error(result.json?.error || 'Unable to stop current group turn');
     },
     cleanup: async record => {
       const store = runtime.readReactionStore ||= createFeishuReadReactionStore(runtime.config.storageDir);
@@ -1900,6 +1911,16 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
     const control = await controller.intake(summary, snapshot);
     if (control) return { receipt: control };
     summary = { ...summary, participationEpoch: String(snapshot?.epoch ?? intakeState.epoch) };
+  }
+  const referenced = await resolveFeishuReferencedTopic(runtime, summary);
+  if (referenced !== summary) {
+    summary = referenced;
+    if (participationEnabled(runtime, summary)) {
+      const controller = participationController(runtime, helpers);
+      const control = await controller.intake(summary);
+      if (control) return { receipt: control };
+      summary = { ...summary, participationEpoch: String((await controller.state(summary)).epoch) };
+    }
   }
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
@@ -2050,8 +2071,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     if (groupSettings.quickReactions && runtime.quickParticipation) {
       runtime.quickParticipation.handle(summary);
     }
-    if (!groupSettings.quickReactions && (groupSettings.participationMode !== 'ambient'
-      || mentionsFeishuBot(runtime, summary))) void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
+    if (['p2p', 'private'].includes(summary.chatType)) void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
       .catch(error => {
         console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
       });
@@ -2144,7 +2164,7 @@ export {
   enrichSummaryWithSenderProfile,
   ensureAllowedSendersFile,
   extractLocalCommand,
-  findFeishuThreadSessionBinding,
+  findFeishuThreadSessionBinding, resolveFeishuReferencedTopic,
   addProcessingReaction,
   createQuickParticipationReaction,
   handleFeishuReactionMute,
@@ -2214,7 +2234,7 @@ async function main() {
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
   );
   await groupConfigurationController(runtime).restore();
-  if (config.defaultGroupParticipation === 'active' || Object.values(config.groups || {}).some(group => group.participationControls)) {
+  if (['active', 'listening', 'paused'].includes(config.defaultGroupParticipation) || Object.values(config.groups || {}).some(group => group.participationControls || ['active', 'listening', 'paused'].includes(group.participationMode))) {
     await participationController(runtime).restore();
   }
   const discussionHandoff = createDiscussionHandoffPilot(runtime, {

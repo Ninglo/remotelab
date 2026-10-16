@@ -21,6 +21,9 @@ const runtime = {
 };
 const helpers = {
   addProcessingReaction: async () => { effects.push('reaction'); },
+  observeRemoteLabMessage: async () => ({ sessionId: 'routing-session', observation: { eventSeq: 1, recent: [] } }),
+  classifyJevReaction: async () => ({ emojiType: null }),
+  recordJevDecision: async (_s, _m, decision) => ({ decision }),
   submitRemoteLabRequest: async () => {
     effects.push('submit');
     return { sessionId: 'routing-session', requestId: 'routing-request', runId: 'routing-run' };
@@ -39,7 +42,7 @@ try {
   await check('@all cannot enable proactive intake', { mentions: [{ openId: 'all' }] }, []);
   await check('attachments cannot enable proactive intake', { messageType: 'file' }, []);
   await check('merge-forwards cannot enable proactive intake', { messageType: 'merge_forward' }, []);
-  await check('this Bot mention is admitted and acknowledged', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
+  await check('this Bot mention is admitted and acknowledged', { mentions: [{ openId: 'bot-self' }] }, ['submit']);
   await check('private chat always responds immediately', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit']);
   await check('connector-wide all mode cannot opt in ordinary groups', {}, [], { group: 'all' });
   await check('partial group metadata cannot inherit connector-wide all mode', {
@@ -69,7 +72,7 @@ try {
   }, []);
 
   runtime.config.groups = { 'group-1': { responseMode: 'all', systemPrompt: 'Group instructions' } };
-  await check('group override admits plain text without a file or mention', {}, ['reaction', 'submit']);
+  await check('group override admits plain text without a file or mention', {}, ['submit']);
   await check('a group opt-in does not spread to other groups', { chatId: 'group-2' }, []);
   await check('self remains excluded under group override', { sender: { senderType: 'app', openId: 'bot-self' } }, []);
   runtime.config.groups = { 'group-1': { responseMode: 'mention_only' } };
@@ -83,7 +86,7 @@ try {
   delete runtime.config.groups;
 
   runtime.config.groups = { 'group-1': { participationMode: 'ambient' } };
-  await check('ambient opt-in also allows new topics in that exact group', { threadId: 'ambient-new-thread' }, ['reaction', 'submit']);
+  await check('ambient opt-in also allows new topics in that exact group', { threadId: 'ambient-new-thread' }, ['submit']);
   await check('explicit ambient opt-in admits ordinary chatter', {}, ['submit']);
   await check('ambient opt-in does not spread through connector-wide all mode', { chatId: 'group-2' }, [], { group: 'all' });
   runtime.config.groups = { 'group-1': { quickReactions: true } };
@@ -96,7 +99,7 @@ try {
     addProcessingReaction: async () => { effects.push('reaction-failed'); throw new Error('reaction unavailable'); },
     submitRemoteLabRequest: helpers.submitRemoteLabRequest,
   });
-  assert.deepEqual(effects, ['reaction-failed', 'submit'], 'reaction failures must not block AI admission');
+  assert.deepEqual(effects, ['submit'], 'reaction failures must not block AI admission');
 
   let reactionPayload = null;
   const reaction = await addProcessingReaction({
@@ -132,21 +135,21 @@ try {
   assert.equal(mainlineSettings.responseMode, 'all');
   assert.equal(mainlineSettings.replyMode, 'thread');
   assert.match(mainlineSettings.systemPrompt, /Global instructions\n\nGroup instructions/);
-  assert.match(mainlineSettings.systemPrompt, /A concrete unanswered question or request needs a reply/);
+  assert.match(mainlineSettings.systemPrompt, /A concrete unanswered question or request directed to the assistant needs a reply/);
   assert.equal(resolveFeishuGroupSettings(groupConfig, { chatId: 'other' }).systemPrompt, 'Global instructions');
   const topicDefaults = resolveFeishuGroupSettings(groupConfig, {
     ...base, chatId: 'topic-chat', chatMode: 'topic', threadId: 'topic-1',
   });
   assert.equal(topicDefaults.responseMode, 'all', 'new groups use active participation by default');
-  assert.match(topicDefaults.systemPrompt, /Reply to each human message in the current topic/);
+  assert.match(topicDefaults.systemPrompt, /Reply to directed requests/);
   for (const topicIdentity of [{ threadId: 'report-thread' }, { topicId: 'report-topic' },
     { conversationKind: 'thread' }, { chatMode: 'topic', rootId: 'native-root' }]) {
     const topicSettings = resolveFeishuGroupSettings({
       groups: { 'group-1': { responseMode: 'mention_only', participationMode: 'ambient', quickReactions: true } },
     }, { ...base, ...topicIdentity });
     assert.equal(topicSettings.responseMode, 'all');
-    assert.match(topicSettings.systemPrompt, /By default, the human is speaking to you/);
-    assert.match(topicSettings.systemPrompt, /Reply to each human message in the current topic/);
+    assert.match(topicSettings.systemPrompt, /No repeated @ mention is required/);
+    assert.match(topicSettings.systemPrompt, /Reply to directed requests/);
     assert.equal(topicSettings.participationMode, undefined);
     assert.equal(topicSettings.quickReactions, undefined, 'topic replies cannot become reaction-only ambient turns');
   }
@@ -159,7 +162,7 @@ try {
   assert.equal(defaults.accessPolicy.mode, 'all');
   assert.deepEqual(defaults.responsePolicy, { group: 'mention_only' });
   await check('omitting the group setting blocks ordinary group messages', {}, [], {});
-  await check('omitting the group setting admits explicit Bot mentions', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit'], {});
+  await check('omitting the group setting admits explicit Bot mentions', { mentions: [{ openId: 'bot-self' }] }, ['submit'], {});
   await check('omitting the group setting still admits private messages', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit'], {});
 
   for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
@@ -173,12 +176,12 @@ try {
   await check('an unjoined thread requires an invitation', thread, []);
   await check('another human mention cannot invite this Bot into an unjoined topic', { ...thread, mentions: [{ openId: 'human' }] }, []);
   await check('@all cannot invite this Bot into an unjoined topic', { ...thread, mentions: [{ openId: 'all' }] }, []);
-  await check('explicit mention joins a thread', { ...thread, mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
+  await check('explicit mention joins a thread', { ...thread, mentions: [{ openId: 'bot-self' }] }, ['submit']);
   assert.equal((await findFeishuThreadSessionBinding(runtime, { ...base, ...thread })).sessionId, 'routing-session');
-  await check('thread replies need no further mention', thread, ['reaction', 'submit']);
+  await check('thread replies need no further mention', thread, ['submit']);
   await check('another human may continue the same thread', {
     ...thread, sender: { senderType: 'user', openId: 'another-human' },
-  }, ['reaction', 'submit']);
+  }, ['submit']);
   await check('a joined topic does not activate the group mainline', {}, []);
   for (const [label, identity] of [
     ['sibling thread', { ...thread, threadId: 'thread-2' }],
@@ -191,7 +194,7 @@ try {
   }
   await check('topic ID alias can continue a joined thread', {
     tenantKey: thread.tenantKey, topicId: thread.threadId,
-  }, ['reaction', 'submit']);
+  }, ['submit']);
   await check('an unmentioned app cannot loop in a joined thread', {
     ...thread, sender: { senderType: 'app', openId: 'other-bot' },
   }, []);
@@ -205,7 +208,7 @@ try {
     storagePaths: { ...runtime.storagePaths },
   };
   await handleMessage(restartedRuntime, { ...base, ...thread }, 'test', helpers);
-  assert.deepEqual(effects, ['reaction', 'submit'], 'participation survives a fresh runtime');
+  assert.deepEqual(effects, ['submit'], 'participation survives a fresh runtime');
   const firstBotIndex = runtime.storagePaths.messageIndexPath;
   runtime.storagePaths.messageIndexPath = join(testHome, 'bot-2', 'message-index.json');
   assert.equal(await findFeishuThreadSessionBinding(runtime, { ...base, ...thread }), null,
@@ -222,10 +225,10 @@ try {
   }, []);
   await check('a topic root may invite the Bot before a thread ID exists', {
     chatMode: 'topic', messageId: 'topic-root', mentions: [{ openId: 'bot-self' }],
-  }, ['reaction', 'submit']);
+  }, ['submit']);
   await check('native topic replies can identify the joined topic by root ID', {
     chatMode: 'topic', messageId: 'topic-reply', rootId: 'topic-root',
-  }, ['reaction', 'submit']);
+  }, ['submit']);
   await check('a different native topic stays passive', {
     chatMode: 'topic', messageId: 'other-topic-reply', rootId: 'other-topic-root',
   }, []);
@@ -244,7 +247,7 @@ try {
     }) } } } },
   };
   for (const [chatId, expected] of [
-    ['work-topic', ['reaction', 'submit']], ['sharing-topic', []], ['new-native-topic', ['reaction', 'submit']],
+    ['work-topic', ['submit']], ['sharing-topic', []], ['new-native-topic', ['submit']],
   ]) {
     effects = [];
     await handleMessage(topicRuntime, { ...base, chatId, chatMode: '', threadId: `${chatId}-first`,
@@ -262,7 +265,7 @@ try {
     await handleMessage(topicRuntime, { ...base, chatId: 'work-topic', chatMode: 'topic',
       threadId: `work-${sender.openId}`, sender,
     }, 'test', helpers);
-    assert.deepEqual(effects, sender.senderType === 'user' ? ['reaction', 'submit'] : [],
+    assert.deepEqual(effects, sender.senderType === 'user' ? ['submit'] : [],
       'an enabled native work topic admits humans without enabling Bot loops');
   }
 
@@ -270,7 +273,7 @@ try {
   await recordFeishuThreadSessionBinding(runtime, base, 'outbound-session', { threadId: 'created-by-reply' });
   await check('a thread created by the Bot reply can be continued', {
     threadId: 'created-by-reply',
-  }, ['reaction', 'submit']);
+  }, ['submit']);
 
   effects = [];
   await assert.rejects(handleMessage(runtime, {

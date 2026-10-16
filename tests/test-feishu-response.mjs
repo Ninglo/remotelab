@@ -15,8 +15,8 @@ try {
   const plan = { connector: 'feishu', sourceRouteId: 'bot', target: {
     chatId: 'group', tenantKey: 'tenant', chatType: 'group', conversationKind: 'main', messageId: 'root',
   } };
-  const options = { routingPilotMainline: true, routingPilotMainlineProtocol: 2,
-    sourceContext: { connector: 'feishu', feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } };
+  const options = {
+    sourceContext: { feishuResponseProtocolVersion: 1, connector: 'feishu', feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } };
   const accept = async (id, root, target = plan.target) => {
     const { record } = await requests.accept({ sessionId: 'session', requestId: id, text: id,
       options, deliveryPlan: { ...plan, target: { ...target, messageId: id } } });
@@ -78,6 +78,17 @@ try {
   const quietSaved = await requests.get(quiet.key);
   assert.deepEqual(quietSaved.deliveries.map(d => d.kind), ['reaction']);
   assert.equal(quietSaved.replyPlacement, undefined, 'a reaction does not choose the reply location');
+
+  const withdraw = await accept('withdraw');
+  await publish(withdraw, [final('withdraw', envelope({ reaction: null, noTextReason: '无需表情', participationReason: '已有人回答，无增量信息' }))]);
+  const withdrawn = await requests.get(withdraw.key);
+  assert.equal(withdrawn.deliveries.length, 1);
+  assert.equal(withdrawn.deliveries[0].emojiType, null);
+  assert.equal(withdrawn.deliveries[0].reactionStage, 2);
+  assert.equal(withdrawn.mainlineReply.contract.participationReason, '已有人回答，无增量信息');
+  const silentChat = await accept('silent');
+  await publish(silentChat, [final('silent', envelope({ noTextReason: '同事互聊，无需补充' }))]);
+  assert.deepEqual((await requests.get(silentChat.key)).deliveries, []);
 
   const file = await accept('file');
   const fileEvent = { ...final('attachment', envelope({ replyMode: 'thread' })),

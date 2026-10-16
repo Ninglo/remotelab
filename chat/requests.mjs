@@ -1,3 +1,4 @@
+import { readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
@@ -93,6 +94,17 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
   });
   return {
     get, accept, active: records.active, projectActive: records.projectActive, mutate,
+    // Streaming migration reader; do not retain archived prompt bodies in memory.
+    archived: async function* () {
+      let names;
+      try { names = await readdir(join(root, 'archive')); }
+      catch (error) { if (error.code === 'ENOENT') return; throw error; }
+      for (const name of names) {
+        if (!/^[a-f0-9]{24}\.json$/.test(name)) continue;
+        const record = await get(name.slice(0, -5));
+        if (record) yield record;
+      }
+    },
     byRequest: (sessionId, requestId) => get(requestKey(sessionId, requestId)),
     byResponse: (sessionId, responseId) => lookup('response', sessionId, responseId),
     byRunId: runId => lookup('run', '', runId),

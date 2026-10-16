@@ -23,7 +23,7 @@ try {
   config.groups = { private: { responseMode: 'mention_only' }, work: { responseMode: 'all' }, hidden: {
     participationMode: 'ambient', participationControls: true, participationStatusCard: false } };
   assert.equal(resolveFeishuGroupSettings(config, { ...source, chatId: 'private' }).responseMode, 'mention_only');
-  assert.equal(participationEnabled({ config }, { ...source, chatId: 'work' }), false, 'existing work groups retain their policy');
+  assert.equal(participationEnabled({ config }, { ...source, chatId: 'work' }), true, 'existing all-response groups use unified participation');
 
   let session = { id: 'a'.repeat(32), tool: 'codex', model: 'alpha', effort: 'low' };
   const catalog = { defaultModel: 'alpha', models: [
@@ -111,8 +111,8 @@ try {
   }
   const workCard = buildGroupConfigurationCard(record, { ...await controller.view(record), project: null,
     participationControls: false, responseMode: 'all' });
-  assert.match(JSON.stringify(workCard), /本群逐条回应/);
-  assert.equal(workCard.header.title.content, 'Agent · 话题内逐条回应');
+  assert.match(JSON.stringify(workCard), /按讨论需要参与/);
+  assert.equal(workCard.header.title.content, 'Agent · 按需回应（控制关闭）');
   const originalMessageId = record.cardMessageId;
   await runtime.participation.remember(source, session.id);
   assert.equal((await runtime.participation.state(source)).cardMessageId, originalMessageId,

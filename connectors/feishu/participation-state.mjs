@@ -9,6 +9,8 @@ import { buildGroupConfigurationCard } from './group-configuration-card.mjs';
 
 const MODES = new Set(['active', 'listening', 'paused']);
 const LABELS = { active: '主动参与', listening: '旁听', paused: '暂停接收' };
+const hasModeOverride = record => record?.modeOverride === true
+  || (record?.modeOverride === undefined && Boolean(record?.updatedAt || ['listening', 'paused'].includes(record?.mode)));
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 
 export function participationEnabled(runtime, summary) {
@@ -76,15 +78,25 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   async function state(summary) {
     const key = keyFor(summary);
     const existing = await records.get(key);
-    if (existing?.source) return existing;
+    const source = sourceFor(summary);
     const muted = (await getFeishuConversationSettings(runtime, summary)).muted;
-    return { key, source: sourceFor(summary), mode: muted ? 'paused' : 'active', epoch: 0,
-      invitedMessages: [], processedControls: [], ...existing, source: sourceFor(summary) };
+    const group = effectiveFeishuGroup(runtime.config, summary.chatId);
+    const initial = muted ? 'paused' : group.initialParticipationMode || 'active';
+    const override = hasModeOverride(existing);
+    const parent = source.topicId && !override ? await state({ ...summary, topicId: '', threadId: '', rootId: '',
+      parentId: '', conversationKind: 'main', chatMode: 'group', groupMessageType: 'group' }) : null;
+    const mode = muted ? 'paused' : override ? existing.mode : parent?.mode || initial;
+    const epoch = override ? existing.epoch : parent?.epoch || existing?.epoch || 0;
+    return { invitedMessages: [], processedControls: [], ...existing, key, source, mode, epoch,
+      modeOverride: override,
+      ...(parent ? { beforePause: parent.beforePause, contextAfterMs: Math.max(parent.contextAfterMs || 0, existing?.contextAfterMs || 0),
+        ...(existing?.epoch !== epoch ? { invitedMessages: [] } : {}) } : {}) };
   }
+
   async function remember(summary, sessionId, recent = []) {
     const key = keyFor(summary);
     const prior = await state(summary);
-    const record = await records.mutate(key, current => ({ ...prior, ...current, sessionId,
+    const record = await records.mutate(key, current => ({ ...current, ...prior, sessionId,
       // Preserve a semantic anchor across follow-ups; don't compare a new topic
       // against the mode command itself.
       topicAnchor: (current?.mode === 'listening' ? current.topicAnchor : '') || recent.slice(-5).map(x => x.text).join('\n').slice(-2500)
@@ -101,7 +113,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     return publishQueues.get(record.key)(() => publishCurrent(record, options));
   }
   async function publishCurrent(record, { existingOnly = false } = {}) {
-    record = { ...record, ...await records.get(record.key) };
+    record = { ...record, ...await state({ ...record.source, threadId: record.source.topicId }) };
     // Withdrawing a status card does not change participation or intake. Keep
     // the durable opt-out when restoring or changing modes so it cannot resend.
     if (record.cardSuppressed === true
@@ -158,7 +170,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       if (prior.processedControls?.includes(controlId)) return publish(prior);
       const mode = requested === 'resume_read' ? (prior.beforePause || 'listening') : requested;
       if (!MODES.has(mode)) throw new Error('Invalid Agent participation mode');
-      let record = await records.mutate(key, current => ({ ...prior, ...current, source: sourceFor(summary), mode,
+      let record = await records.mutate(key, current => ({ ...prior, ...current, source: sourceFor(summary), mode, modeOverride: true,
         beforePause: mode === 'paused' ? (prior.mode === 'paused' ? prior.beforePause : prior.mode) : prior.beforePause,
         // Reasserting active reception is a no-op for ongoing work. Advancing
         // its epoch would silently suppress otherwise valid replies.
@@ -174,10 +186,20 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       if (mode !== 'active') {
         const target = sessionId || record.sessionId || await resolveSession?.(summary);
         if (target) {
-          try { await cancelSession(target); }
+          try { await cancelSession(target, record); }
           catch (error) { await publish(record); throw error; }
         }
         await cleanup?.(record);
+        if (!record.source.topicId) {
+          for (const child of await records.active()) {
+            if (!child.source?.topicId || hasModeOverride(child)
+                || child.source.chatId !== record.source.chatId
+                || child.source.tenantKey !== record.source.tenantKey
+                || child.source.sourceRouteId !== record.source.sourceRouteId) continue;
+            if (child.sessionId) await cancelSession(child.sessionId, child);
+            await cleanup?.(child);
+          }
+        }
       }
       record = await records.mutate(key, current => ({ ...current, stopPending: false,
         processedControls: [...(current.processedControls || []), controlId].filter(Boolean).slice(-100) }));
@@ -192,7 +214,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       if (record.mode === 'active') return true;
       const forOther = summary.mentions?.length && !mentioned;
       const invited = !forOther && (mentioned || taskCommand);
-      record = await records.mutate(key, current => ({ ...record, ...current,
+      record = await records.mutate(key, current => ({ ...current, ...record,
         ...(invited ? { invitedMessages: [...(current?.invitedMessages || []), summary.messageId].slice(-100), topicHint: false }
           : {}),
       }));
@@ -235,7 +257,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       ...(record?.source.topicId ? { threadId: record.source.topicId } : {}),
       sender: { senderType: 'user', openId: actor }, eventId: raw.header?.event_id || event.event_id };
     if (!record || !actor || record.source.chatId !== chatId || record.cardMessageId !== messageId
-        || !MODES.has(value.mode) || value.epoch !== record.epoch || !participationEnabled(runtime, summary)
+        || !MODES.has(value.mode) || value.epoch !== (await state(summary)).epoch || !participationEnabled(runtime, summary)
         || !await authorize(summary)) return { toast: { type: 'error', content: '状态已变化或无权操作，请看最新卡片。' } };
     void change(summary, value.mode, { controlId: summary.eventId || `button:${actor}:${record.epoch}:${value.mode}` })
       .catch(error => console.warn(`[feishu-participation] ${error.message}`));

@@ -93,7 +93,7 @@ try {
   const threadPlan = { ...ambientPlan, target: { chatId: 'ambient-bridge', conversationKind: 'thread',
     threadId: 'provider-thread', rootId: 'ambient-root', messageId: 'stop-message', replyInThread: true } };
   const bridge = await rpc('thread-execution', threadPlan);
-  assert.deepEqual(bridge, { sessionId: ambientSession.id, continuationRunId: ambientRun.run.id });
+  assert.deepEqual(bridge, { sessionId: ambientSession.id, continuationRunId: ambientRun.run.id, threadOriginRunId: ambientRun.run.id });
   const stopOptions = { ...options('ambient-stop'), feishuConnectorAuthenticated: true, sourceDelivery: threadPlan,
     sourceContext: { connector: 'feishu', feishuContinuationRunId: bridge.continuationRunId } };
   await rpc('accept', bridge.sessionId, 'Stop this work; do not start again for this supplement.', [], stopOptions);
@@ -102,7 +102,7 @@ try {
   await rpc('cancel', bridge.sessionId, { expectedRunId: bridge.continuationRunId });
   await until(async () => (await rpc('request', bridge.sessionId, 'ambient-root'))?.result, 'original execution cancelled');
   assert.equal((await rpc('request', bridge.sessionId, 'ambient-root')).result.state, 'cancelled');
-  assert.equal(await rpc('thread-execution', threadPlan), null);
+  assert.deepEqual(await rpc('thread-execution', threadPlan), { sessionId: ambientSession.id, threadOriginRunId: ambientRun.run.id });
   await assert.rejects(rpc('accept', bridge.sessionId, 'A further correction is not permission to restart.', [], {
     ...stopOptions, requestId: 'after-stop',
   }), error => error.code === 'THREAD_CONTINUATION_EXPIRED');
@@ -129,18 +129,39 @@ try {
   const raceThread = { ...threadPlan, sourceRouteId: 'race-bot', target: { ...threadPlan.target, chatId: 'thread-completion-race', threadId: 'race-thread' } };
   await rpc('accept', threadRaceSession.id, 'RACE_NATIVE_COMPLETION', [], {
     ...options('thread-race-input'), feishuConnectorAuthenticated: true, sourceDelivery: raceThread,
-    sourceContext: { connector: 'feishu', feishuContinuationRunId: threadRaceRun.run.id },
+    sourceContext: { connector: 'feishu', feishuContinuationRunId: threadRaceRun.run.id, feishuThreadOriginRunId: threadRaceRun.run.id },
   });
-  await until(async () => (await rpc('request', threadRaceSession.id, 'thread-race-input'))?.result, 'run-bound completion race settles');
-  assert.equal((await rpc('request', threadRaceSession.id, 'thread-race-input')).result.state, 'failed');
-  assert.equal((await logs()).filter(event => event.kind === 'turn/start' && event.text.includes('RACE_NATIVE_COMPLETION')).length, 0,
-    'Codex may not start a fallback turn for an exact-execution continuation');
+  await until(async () => (await logs()).some(event => event.kind === 'turn/start' && event.text.includes('RACE_NATIVE_COMPLETION')), 'completion race queues a fresh turn in original Session');
+  const continued = await rpc('request', threadRaceSession.id, 'thread-race-input');
+  assert.equal(continued.sessionId, threadRaceSession.id);
+  assert.equal(continued.nativeDispatchRunId, null);
+  assert.equal(continued.options.sourceContext.feishuThreadOriginRunId, threadRaceRun.run.id);
+  assert.equal(continued.deliveryPlan.target.threadId, 'race-thread');
+  assert.equal((await logs()).filter(event => event.kind === 'turn/start' && event.text.includes('RACE_NATIVE_COMPLETION')).length, 1);
+  await writeFile(join(root, continued.runId + '.release'), '');
+  await until(async () => (await rpc('request', threadRaceSession.id, 'thread-race-input'))?.result, 'continuation result settles');
+  assert.equal((await rpc('request', threadRaceSession.id, 'thread-race-input')).result.state, 'completed');
   await until(async () => (await rpc('request', threadRaceSession.id, 'race-root'))?.result, 'race root settled');
+  const afterCompletion = await rpc('thread-execution', raceThread);
+  assert.equal(afterCompletion.sessionId, threadRaceSession.id);
+  assert.equal(afterCompletion.threadOriginRunId, threadRaceRun.run.id);
+  const followup = await rpc('accept', threadRaceSession.id, 'LATER_TOPIC_SUPPLEMENT', [], {
+    ...options('later-topic'), feishuConnectorAuthenticated: true, sourceDelivery: raceThread,
+    sourceContext: { connector: 'feishu', feishuThreadOriginRunId: afterCompletion.threadOriginRunId },
+  });
+  await until(async () => (await logs()).some(event => event.runId === followup.run.id && event.kind === 'turn/start'), 'later topic input resumes original context');
+  const resumedEvents = (await logs()).filter(event => event.runId === followup.run.id);
+  assert(resumedEvents.some(event => event.kind === 'thread/resume'), 'native conversation context resumes rather than creating another Session');
+  const unrelatedScope = { ...raceThread, target: { ...raceThread.target, threadId: 'unrelated-thread', rootId: 'unrelated-root' } };
+  assert.deepEqual(await rpc('cancel-conversation', threadRaceSession.id, unrelatedScope), { cancelledRunIds: [] });
+  assert.equal((await rpc('request', threadRaceSession.id, 'later-topic')).cancelRequestedAt, undefined, 'pausing another topic cannot stop this execution');
+  await writeFile(join(root, followup.run.id + '.release'), '');
+  await awaitAnswer(threadRaceSession.id, 'later-topic');
   let raceDelivery;
   while ((raceDelivery = await rpc('claim', { connector: 'feishu', sourceRouteId: 'race-bot' }))) {
     await rpc('complete', raceDelivery.delivery.id, raceDelivery.leaseId, { externalId: 'race-result' });
   }
-  await evidence('PASS thread completion race: native rejection cannot turn/start the bound addition');
+  await evidence('PASS thread completion race: definite native rejection queues exactly one continuation in the original Session and topic; completed-topic input resumes native context');
   const replyPlan = messageId => ({ connector: 'feishu', sourceRouteId: 'default', target: {
     chatId: 'steering-chat', chatType: 'group', conversationKind: 'thread', threadId: 'steering-thread',
     rootId: 'steering-root', messageId, replyInThread: true,

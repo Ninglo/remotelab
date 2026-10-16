@@ -58,8 +58,8 @@ export function createFeishuOutcomeReactionStore(root) {
     async snapshot(messageId) {
       const receipt = messageId ? await records.get(keyFor(messageId)) : null;
       return {
-        status: receipt?.reactionId ? 'applied' : 'not-recorded',
-        ...(receipt?.reactionId ? { emojiType: receipt.emojiType, stage: receipt.stage || 1 } : {}),
+        status: receipt?.withdrawn ? (receipt.pendingRemoval?.length ? 'withdrawal-pending' : 'withdrawn') : receipt?.reactionId ? 'applied' : 'not-recorded',
+        ...(receipt?.reactionId || receipt?.withdrawn ? { emojiType: receipt.emojiType, stage: receipt.stage || 1 } : {}),
         checkedAt: new Date().toISOString(),
       };
     },
@@ -67,6 +67,12 @@ export function createFeishuOutcomeReactionStore(root) {
       return serial(messageId, async key => {
         const previous = await records.get(key);
         if ((previous?.stage || 1) > stage) return { reactionId: previous.reactionId, superseded: true };
+        if (emojiType === null) {
+          await records.mutate(key, () => ({ messageId, emojiType: null, reactionId: '', withdrawn: true,
+            stage, pendingRemoval: [...new Set([...(previous?.pendingRemoval || []), previous?.reactionId].filter(Boolean))],
+            sequence: previous?.sequence || Date.now() }));
+          return { withdrawn: true };
+        }
         const receipt = previous?.emojiType === emojiType && previous.reactionId
           ? { reactionId: previous.reactionId } : await create();
         if (!receipt?.reactionId) return receipt;

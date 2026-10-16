@@ -152,7 +152,7 @@ try {
           } } } } : request(path, options),
         sendFeishuText: async () => { sent++; return { message_id: 'sent-' + sent, thread_id: 'separate-work' }; },
       });
-      assert.notEqual(originStatus.epoch, (await runtime.participation.state(routed)).epoch);
+      assert.equal(originStatus.epoch, (await runtime.participation.state(routed)).epoch, 'new topics inherit the group epoch until explicitly overridden');
       await deliver('routing-valid');
       assert.equal(sent, 1, 'a source mainline epoch must not be compared to a new topic epoch');
       await runtime.participation.change(routed, 'listening');
@@ -225,8 +225,8 @@ try {
   assert.equal((await deliver('final', root)).state, 'delivered',
     'learning the destination thread cannot turn a valid mainline result stale');
   const followup = { ...source, threadId: 'learned-thread', rootId: 'source-root', messageId: 'followup',
-    conversationKind: 'thread', replyInThread: true, participationEpoch: '0' };
-  assert.notEqual(sourceEpoch, (await runtime.participation.state(followup)).epoch);
+    conversationKind: 'thread', replyInThread: true, participationEpoch: String(sourceEpoch) };
+  assert.equal(sourceEpoch, (await runtime.participation.state(followup)).epoch);
   assert.equal((await deliver('followup-result', followup)).state, 'delivered');
   assert.equal(sent.at(-1).messageId, 'followup', 'the follow-up reply keeps its own anchor');
   await runtime.participation.change(followup, 'paused', { controlId: 'topic-pause' });

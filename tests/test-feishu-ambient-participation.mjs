@@ -33,7 +33,7 @@ try {
   const fallback = resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' });
   assert.equal(fallback.participationMode, undefined);
   assert.equal(fallback.replyMode, 'thread');
-  assert.equal(fallback.systemPrompt, '');
+  assert.match(fallback.systemPrompt, /feishu-response:/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread-1' }).participationMode, undefined);
   assert.equal(resolveFeishuGroupSettings({ ...config,
     groups: { [chatId]: { ...config.groups[chatId], responseMode: 'all' } },

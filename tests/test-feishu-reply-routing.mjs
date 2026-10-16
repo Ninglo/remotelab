@@ -13,7 +13,7 @@ import {
   buildFeishuSessionConversationTarget,
   buildFeishuSessionExternalTriggerId,
 } from '../connectors/feishu/reply-routing.mjs';
-import { recordFeishuThreadSessionBinding } from '../connectors/feishu/session-flow.mjs';
+import { recordFeishuThreadSessionBinding, recordFeishuOutboundMessageSession, resolveFeishuReferencedTopic } from '../connectors/feishu/session-flow.mjs';
 import { handleMessage, submitRemoteLabRequest } from '../scripts/feishu-connector.mjs';
 
 assert.deepEqual(normalizeFeishuReplyPolicy(), { group: 'thread', private: 'inline', chats: {} });
@@ -194,6 +194,19 @@ try {
     ...base, messageId: 'thread-followup', rootId: 'thread-root-1', threadId: 'provider-thread-1', messageText: 'continue here',
   });
   assert.equal(followup.sessionId, firstThread.sessionId, 'an existing Thread always reuses its topology-bound Session');
+
+  await recordFeishuOutboundMessageSession(runtime, { ...base, conversationKind: 'thread', threadId: 'provider-thread-1', rootId: 'thread-root-1' }, firstThread.sessionId, 'outbound-topic-answer');
+  const quote = { ...base, messageId: 'quote-supplement', parentId: 'outbound-topic-answer', messageText: '补充这项验收' };
+  const referenced = await resolveFeishuReferencedTopic(runtime, quote);
+  assert.equal(referenced.threadId, 'provider-thread-1');
+  assert.equal((await submitRemoteLabRequest(runtime, referenced)).sessionId, firstThread.sessionId);
+  assert.equal(await resolveFeishuReferencedTopic(runtime, { ...quote, chatId: 'other-chat' }).then(s => s.threadId), undefined);
+  assert.equal(await resolveFeishuReferencedTopic(runtime, { ...quote, tenantKey: 'other-tenant' }).then(s => s.threadId), undefined);
+  await recordFeishuOutboundMessageSession(runtime, { ...base, conversationKind: 'thread', threadId: 'other-topic', rootId: 'other-root' }, secondThread.sessionId, 'conflicting-answer');
+  const ambiguous = { ...quote, rootId: 'conflicting-answer' };
+  assert.equal(await resolveFeishuReferencedTopic(runtime, ambiguous), ambiguous, 'conflicting topic references never pick an owner');
+  const unreferenced = { ...base, messageId: 'similar-text', messageText: 'same topic title' };
+  assert.equal(await resolveFeishuReferencedTopic(runtime, unreferenced), unreferenced);
 
   let commandReply = '';
   await handleMessage(runtime, {

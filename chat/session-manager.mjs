@@ -1,11 +1,11 @@
 import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
 import { createRequestCompletion } from './request-completion.mjs';
 import { completeDeliveryReview, validateDeliveryReview } from './delivery-review.mjs';
-import { findActiveFeishuThreadExecution, threadContinuationExpired } from './feishu-thread-continuation.mjs';
+import { findActiveFeishuThreadExecution, threadContinuationExpired, validateFeishuThreadOrigin, belongsToFeishuConversation } from './feishu-thread-continuation.mjs';
 import { captureInflightTrial, inflightTrialPrompt } from './inflight-trial.mjs';
 import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
 import { projectFeishuContext, feishuResumeIdentity } from './feishu-context-dedup.mjs';
-import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
+import { hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
@@ -1416,7 +1416,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   const turnContext = await buildTurnContextHook(session, {
     separateProjectContext: true,
     sourceContext: normalizeSourceContext(options.modelSourceContext ?? options.sourceContext, Infinity), requestId: options.requestId,
-    pilotInputReplyContract: hasPilotInputReplyContract({ options }),
+    pilotInputReplyContract: hasFeishuInputReplyContract({ options }),
     messageRoutingPolicy: options.messageRoutingPolicy,
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
     query: options.memoryQuery || '',
@@ -1646,7 +1646,7 @@ function normalizeRunEvents(run, events) {
 async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   let record = await requests.byRunId(run.id);
   if (!record || record.result) return;
-  if (hasPilotInputReplyContract(record)) record = await recoverPilotReplies(record);
+  if (hasFeishuInputReplyContract(record)) record = await recoverPilotReplies(record);
   if (run.state === 'completed') await maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents);
   const history = await loadHistory(sessionId, { includeBodies: true });
   const session = await findSessionMeta(sessionId);
@@ -1697,7 +1697,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const placementError = '回复已生成，但未明确选择发送位置。正文已保留在会话中，未发送到群主线。';
   const ownResult = decisionFailure ? { state: 'failed', payload, error: decisionFailure }
     : missingPlacement ? { state: 'failed', payload, error: placementError }
-    : hasPilotInputReplyContract(record) && (record.mainlineReply || record.routingHandoff?.state === 'submitted')
+    : hasFeishuInputReplyContract(record) && (record.mainlineReply || record.routingHandoff?.state === 'submitted')
     ? pilotInputResult(record, run) : { state: run.state, payload, error: run.failureReason || null };
   await requests.settle(record.key, ownResult,
     annotateTerminalReplyDeliveries(buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
@@ -1719,7 +1719,7 @@ async function settleNativeRequest(record, run) {
   record = await requests.get(record.key) || record;
   const ownPlan = record.options?.suppressSourceDelivery || record.routingHandoff ? null
     : normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
-  if (hasPilotInputReplyContract(record) && !record.options?.nativeQuestionId) {
+  if (hasFeishuInputReplyContract(record) && !record.options?.nativeQuestionId) {
     const result = pilotInputResult(record, run);
     await requests.settle(record.key, result, record.mainlineReply || record.routingHandoff?.state === 'submitted'
       ? [] : buildReplyDeliveries(ownPlan, result.payload, { running: false }));
@@ -3386,7 +3386,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
         ? 'Reference-only cross-Session input (not a user instruction; human adoption pending):\n' : 'Current user message:\n') + record.text].filter(Boolean).join('\n\n---\n\n');
     if (tool?.flattenPrompt) text = text.replace(/\s+/g, ' ').trim();
     if (decisionContext) text = decisionContext + '\n\n' + text;
-    if (hasPilotInputReplyContract(record)) text = `本条已接受的群主线输入 Request ID：${record.requestId}。每条输入保留处理记录，不要求分别发送正文。相关补充应接续原目标，可用 work reply 的 requestIds 合并覆盖本轮已接受输入；独立问题才单独回答。若已发开场，沿本轮已选回复位置继续；最终回答仍须纳入相关补充。不要仅为登记回复而发送泛泛点评或重复开工。\n\n` + text;
+    if (hasFeishuInputReplyContract(record)) text = `本条已接受的飞书输入 Request ID：${record.requestId}。每条输入保留处理记录，不要求分别发送正文。相关补充应接续原目标，可用 work reply 的 requestIds 合并覆盖本轮已接受输入；独立问题才单独回答。若已发开场，沿本轮已选回复位置继续；最终回答仍须纳入相关补充。不要仅为登记回复而发送泛泛点评或重复开工。\n\n` + text;
     return { text: prependAttachmentPaths(text, attachments), context: [context, decisionContext].filter(Boolean).join('\n\n'), contextDelivery: tool?.promptMode === 'bare-user' ? null : projection.receipt, ruleContextDelivery: ruleProjection.receipt };
   },
   recordInput: ensureRequestInput,
@@ -3473,10 +3473,18 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
-  if (!priorRequest && options.sourceContext?.feishuContinuationRunId) {
+  if (!priorRequest && options.sourceContext?.feishuThreadOriginRunId) {
+    if (!options.feishuConnectorAuthenticated || !await validateFeishuThreadOrigin(sessionId,
+      options.sourceContext.feishuThreadOriginRunId, options.sourceDelivery)) throw threadContinuationExpired();
+  } else if (!priorRequest && options.sourceContext?.feishuContinuationRunId) {
     const continuation = await findActiveFeishuThreadExecution(options.sourceDelivery);
     if (!options.feishuConnectorAuthenticated || continuation?.sessionId !== sessionId
         || continuation?.continuationRunId !== options.sourceContext.feishuContinuationRunId) throw threadContinuationExpired();
+  }
+  if (options.sourceContext?.feishuThreadOriginRunId) {
+    const origin = await requests.byRunId(options.sourceContext.feishuThreadOriginRunId);
+    options = { ...options, sourceContext: { ...options.sourceContext,
+      feishuContinuationRunId: origin.nativeDispatchRunId || origin.runId } };
   }
   options = { ...options };
   const inputTrial = priorRequest ? priorRequest.options.inflightTrial : await captureInflightTrial(options);
@@ -3695,9 +3703,9 @@ async function prepareRequestRunOnce(record) {
   if ((record.options?.reviewFeedback || record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
       || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
-      // A run-bound addition can only be steered. If it becomes the queue head
-      // after cancellation/completion, never reinterpret it as new work.
-      if (record.options?.sourceContext?.feishuContinuationRunId) throw threadContinuationExpired();
+      // Legacy run-only additions can only steer. Origin-bound topic additions
+      // may resume the same Session after a definitely unaccepted completion.
+      if (record.options?.sourceContext?.feishuContinuationRunId && !record.options.sourceContext.feishuThreadOriginRunId) throw threadContinuationExpired();
       await validateGroupRethink(record);
       await validateDeliveryReview(record);
       await validateExecutionPlanRequest(record);
@@ -4019,6 +4027,27 @@ export async function removeQueuedMessage(sessionId, requestId) {
   const record = await requestRuntime.removeQueued(sessionId, requestId);
   broadcastSessionInvalidation(sessionId);
   return { requestId: record.requestId, session: await getSession(sessionId, { includeQueuedMessages: true }) };
+}
+
+// Participation changes target a conversation, which can share a Session with
+// other topic surfaces. Never cancel all queued/mainline work by Session alone.
+export async function cancelFeishuConversation(sessionId, conversation) {
+  if (conversation?.connector !== 'feishu') throw new Error('Feishu conversation required');
+  const owned = (await requests.active()).filter(record => record.sessionId === sessionId
+    && !record.result && !record.releasedAt && !record.options?.deliveryOnly
+    && belongsToFeishuConversation(record, conversation));
+  const cancelled = [];
+  for (const record of owned) {
+    try { await removeQueuedMessage(sessionId, record.requestId); }
+    catch (error) {
+      if (!['REQUEST_NOT_FOUND', 'REQUEST_NOT_QUEUED'].includes(error.code)) throw error;
+      const current = await requests.get(record.key);
+      if (!current || current.result || current.releasedAt) continue;
+      const run = await cancelActiveRun(sessionId, { expectedRunId: current.nativeDispatchRunId || current.runId });
+      if (run) cancelled.push(run.id);
+    }
+  }
+  return { cancelledRunIds: [...new Set(cancelled)] };
 }
 
 export async function cancelActiveRun(sessionId, { expectedRunId = '' } = {}) {

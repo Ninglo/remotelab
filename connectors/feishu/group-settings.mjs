@@ -1,11 +1,11 @@
 import { FEISHU_RESPONSE_DECISION_PROMPT } from '../../lib/feishu-response-decision.mjs';
 import { buildFeishuTopicId, isFeishuTopicChat } from './index.mjs';
 import { normalizeDailyReportMemory } from './daily-report-memory.mjs';
-import { FEISHU_REACTION_CATALOG_TEXT } from '../../lib/feishu-reaction-catalog.mjs';
+import { FEISHU_REACTION_CATALOG, normalizeFeishuReactionCandidates } from '../../lib/feishu-reaction-catalog.mjs';
 
 const AMBIENT_SESSION_PROMPT = [
   'This Feishu group sends its main-timeline messages to your continuing Session, including messages without an @ mention.',
-  'Read the recent group discussion and decide whether your participation helps. If the newest human message explicitly @ mentions another person and not you, treat it as their conversation: observe it without using tools or doing their task, unless they explicitly invite you too. Do not acknowledge every message in text.',
+  'Read the recent group discussion and decide whether your participation helps. In active mode, a human-to-human question may receive a concise useful contribution when you have relevant evidence, can correct a material mistake, or can resolve an unanswered question. An @ mention of another person is context, not a blanket prohibition. Do not take over their assigned work without authorization. Before joining, assess the added value, evidence, duplication and interruption cost; retain a brief participationReason in your hidden response decision. Do not acknowledge every message in text.',
   'If the newest human message explicitly @ mentions you, give a text reply unless it explicitly asks you to stay silent. For other messages, join only when you have a clear, useful contribution. If you use tools or start work, finish with a visible result or an honest handoff; never end that turn with only a reaction or an empty final answer.',
   'A concrete unanswered question or request directed to the assistant needs a reply even without an @ mention. Do not mistake a useful question for ordinary chatter.',
   'Related links, forwarded records and corrections supplement the ongoing discussion. Read the referenced material and use it to answer the shared question. Per-input accountability does not mean one separate message per input: combine related answers using the accepted requestIds; answer independent questions separately. A final answer must incorporate relevant supplementary findings, even if a short interim reply was already sent. Do not start a new task or repeat tool work merely to satisfy another input receipt.',
@@ -14,9 +14,9 @@ const AMBIENT_SESSION_PROMPT = [
 ].join('\n');
 
 const TOPIC_SESSION_PROMPT = [
-  'A Feishu topic is an intentional conversation with you.',
-  'By default, the human is speaking to you in this topic; no @ mention or earlier Bot invitation is required.',
-  'Reply to each human message in the current topic, including messages without an @ mention, unless the user explicitly asks you to stay silent or this topic is muted.',
+  'A Feishu topic is a continuing conversation. Preserve its existing task, participants and reply location.',
+  'No repeated @ mention is required for a follow-up to your work. In active mode, distinguish a request to you from human-to-human discussion; contribute when you add relevant evidence or a useful answer.',
+  'Reply to directed requests and substantive supplements; ordinary human-to-human chatter can remain silent. Assess added value, evidence, duplication and interruption cost and record participationReason when joining their discussion. Listening allows only a single explicit invitation; paused blocks ordinary input.',
   'Keep replies in the same topic.',
 ].join('\n');
 
@@ -26,19 +26,14 @@ const GROUP_SESSION_PROMPT = [
 ].join('\n');
 
 const QUICK_REACTION_SESSION_PROMPT = [
-  'In this group the connector immediately adds THINKING to each incoming human message as a temporary receipt. It removes that reaction after your final outcome reaction succeeds.',
-  'A message @ mentioning another person but not you is normally for that person. Do not start their work or use research/coding tools unless the message clearly invites you too.',
-  'Choose one outcome reaction in your final answer in the hidden response decision `<private>feishu-response:{"reaction":"EMOJI"}</private>`. The connector applies it as this Bot to the current source message before posting any visible text. Do not call a CLI, provide a message ID, or use personal OAuth for this reaction.',
-  `Available emoji types: ${FEISHU_REACTION_CATALOG_TEXT}. Choose a fitting tone. DONE, CheckMark and LGTM need actual completion or verification evidence. Get means received/accepted, including when the answer belongs in a work topic; it never proves successful transfer.`,
-  'For a useful short answer, choose a fitting reaction directive first, then your ordinary final answer. For reaction-only participation, finish with only the directive and no visible text. For human-to-human discussion needing no participation, finish with only an EatingFood directive. Never end with an empty final answer. If your directive is absent or invalid, the connector uses EatingFood. The connector removes the directive before any text is posted.',
-  'If you used research, coding, or other work tools, provide a visible result or honest handoff in the final answer even when you include a reaction. Never hide unfinished work with a reaction-only directive.',
+  'Reactions are optional. No temporary receipt or fallback emoji is added automatically.',
+  'Select an optional reaction in the hidden feishu-response decision. Omit reaction to retain existing feedback; use reaction:null to explicitly withdraw this Bot’s reaction, including late quick feedback. A reaction never substitutes for a substantive answer or proves completion.',
 ].join('\n');
 
 const JEV_REACTION_SESSION_PROMPT = [
-  `Available optional reactions: ${FEISHU_REACTION_CATALOG_TEXT}.`,
   'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, without treating a social reaction as a factual answer or task acceptance.',
   'Jev only selects an optional social reaction asynchronously. It never sends a substantive reply, accepts or starts work, opens a Thread, or chooses work placement. The main Session owns the complete handling of every admitted message, even when Jev succeeds: decide participation, reply location, whether to continue existing work, and the appropriate reaction. Its speed, failure or reaction choice cannot control your input or participation mode.',
-  'Use the supplied reaction receipt snapshot when available; it is a point-in-time receipt, not proof of task acceptance or completion. Never wait or poll for Jev. If its existing reaction fits, retain that choice; if absent or unsuitable, make your own choice from the full context. For a directed request you answer or work you undertake, include a fitting reaction in your final answer. For discussion needing no reaction, deliberately omit it; no forced emoji is added by code.',
+  'Use the supplied reaction receipt snapshot when available; it is a point-in-time receipt, not proof of task acceptance or completion. Never wait or poll for Jev. If its existing reaction fits, retain that choice; if absent or unsuitable, make your own choice from the full context. For a directed request you answer or work you undertake, choose a reaction only when useful. For discussion needing no reaction, deliberately omit it; no forced emoji is added by code.',
   'Jev feedback and main-Session handling are one response workflow for the same source message. Do not send a second acknowledgement paragraph just because Jev reacted or failed. Check existing replies, handoffs and work before starting: a supplement joins that work, a delivered answer is not resent, and an accepted handoff is not executed again here. Follow the current input’s authorization for any work-Session transfer; selecting a Thread reply does not itself start a second worker.',
 ].join('\n');
 
@@ -52,9 +47,14 @@ const GROUP_TIMELINE_SESSION_PROMPT = [
 // Explicit per-chat policies survive the default for newly added groups.
 export function effectiveFeishuGroup(config = {}, chatId = '') {
   const group = config.groups?.[chatId] || {};
-  if (config.defaultGroupParticipation !== 'active' || group.participationControls === false
-      || (group.responseMode && group.participationMode !== 'ambient')) return group;
-  return { participationMode: 'ambient', participationControls: true, groupFeed: true, ...group };
+  if (group.participationControls === false || (group.responseMode === 'mention_only' && !group.participationMode)) return group;
+  const explicit = ['active', 'listening', 'paused'].includes(group.participationMode);
+  if (explicit) return { participationControls: true, groupFeed: true, quickReactions: true, jevReactions: true, ...group,
+    participationMode: 'ambient', initialParticipationMode: group.participationMode };
+  if (!['active', 'listening', 'paused'].includes(config.defaultGroupParticipation)) return group;
+  return { participationControls: true, groupFeed: true, quickReactions: true, jevReactions: true, ...group,
+    participationMode: 'ambient', initialParticipationMode: group.participationMode === 'ambient' ? 'active'
+      : group.responseMode === 'mention_only' ? 'listening' : config.defaultGroupParticipation };
 }
 
 // Per-chat overrides select intake policy and the mainline participation pilot.
@@ -63,25 +63,26 @@ export function normalizeFeishuGroups(value = {}) {
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {
     if (!chatId.trim() || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid Feishu group settings');
     for (const key of Object.keys(raw)) {
-      if (!['responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'jevReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+      if (!['reactionCandidates', 'responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'jevReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
     }
     if (raw.participationControls !== undefined && typeof raw.participationControls !== 'boolean') throw new Error('Invalid participationControls');
-    if (raw.participationControls && raw.participationMode !== 'ambient') throw new Error('participationControls requires ambient mode');
+    if (raw.participationControls && !['ambient', 'active', 'listening', 'paused'].includes(raw.participationMode)) throw new Error('participationControls requires ambient mode');
     if (raw.participationStatusCard !== undefined && typeof raw.participationStatusCard !== 'boolean') throw new Error('Invalid participationStatusCard');
     if (raw.participationStatusMessageId !== undefined && !/^om_[A-Za-z0-9_]+$/.test(raw.participationStatusMessageId)) throw new Error('Invalid participationStatusMessageId');
     if (raw.responseMode !== undefined && !['all', 'mention_only'].includes(raw.responseMode)) throw new Error('Invalid group responseMode');
     if (raw.replyMode !== undefined && !['inline', 'thread'].includes(raw.replyMode)) throw new Error('Invalid group replyMode');
-    if (raw.participationMode !== undefined && raw.participationMode !== 'ambient') throw new Error('Invalid group participationMode');
+    if (raw.participationMode !== undefined && !['ambient', 'active', 'listening', 'paused'].includes(raw.participationMode)) throw new Error('Invalid group participationMode');
     if (raw.quickReactions !== undefined && typeof raw.quickReactions !== 'boolean') throw new Error('Invalid group quickReactions');
     if (raw.jevReactions !== undefined && typeof raw.jevReactions !== 'boolean') throw new Error('Invalid group jevReactions');
-    if (raw.jevReactions === true && (raw.quickReactions !== true || raw.participationMode !== 'ambient' || raw.groupFeed !== true)) {
+    if (raw.jevReactions === true && !['active', 'listening', 'paused'].includes(raw.participationMode) && (raw.quickReactions !== true || !['ambient', 'active', 'listening', 'paused'].includes(raw.participationMode) || raw.groupFeed !== true)) {
       throw new Error('jevReactions requires quickReactions, ambient participation and groupFeed');
     }
     if (raw.contextReactions !== undefined && typeof raw.contextReactions !== 'boolean') throw new Error('Invalid group contextReactions');
     if (raw.reactionFeedback !== undefined && typeof raw.reactionFeedback !== 'boolean') throw new Error('Invalid group reactionFeedback');
     if (raw.groupFeed !== undefined && typeof raw.groupFeed !== 'boolean') throw new Error('Invalid group groupFeed');
-    if (raw.groupFeed === true && raw.participationMode !== 'ambient') throw new Error('groupFeed requires ambient participationMode');
+    if (raw.groupFeed === true && !['ambient', 'active', 'listening', 'paused'].includes(raw.participationMode)) throw new Error('groupFeed requires ambient participationMode');
     if (raw.systemPrompt !== undefined && typeof raw.systemPrompt !== 'string') throw new Error('Group systemPrompt must be a string');
+    if (raw.reactionCandidates !== undefined) normalizeFeishuReactionCandidates(raw.reactionCandidates);
     const dailyReportMemory = normalizeDailyReportMemory(raw.dailyReportMemory);
     if (dailyReportMemory && raw.jevReactions !== true) throw new Error('dailyReportMemory requires jevReactions');
     return [chatId, { ...raw, ...(dailyReportMemory ? { dailyReportMemory } : {}) }];
@@ -98,8 +99,12 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const groupMainline = !privateChat && !topic
     && [summary.chatType, summary.chatMode].some(value => String(value || '').toLowerCase() === 'group');
   const ambient = groupMainline && group.participationMode === 'ambient';
-  const quickReactions = group.quickReactions === true && !privateChat && !topic;
+  const unified = (groupMainline || topic) && Boolean(group.initialParticipationMode) && group.participationControls !== false;
+  const quickReactions = (groupMainline || topic) && group.quickReactions === true && !privateChat && (!topic || unified);
+  const jevReactions = group.jevReactions === true && !privateChat && (ambient || unified);
+  const candidates = normalizeFeishuReactionCandidates(group.reactionCandidates);
   return {
+    reactionCandidates: candidates,
     // Explicit mention-only and existing group policies take precedence.
     responseMode: group.participationMode === 'ambient' ? 'all' : group.responseMode
       ?? 'mention_only',
@@ -108,14 +113,15 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
     ...(ambient ? { participationMode: 'ambient' } : {}),
     ...(ambient && typeof group.groupFeed === 'boolean' ? { groupFeed: group.groupFeed } : {}),
     ...(quickReactions ? { quickReactions: true } : {}),
-    ...(group.jevReactions === true && ambient ? { jevReactions: true } : {}),
-    ...(group.jevReactions === true && ambient && group.dailyReportMemory
+    ...(jevReactions ? { jevReactions: true } : {}),
+    ...(jevReactions && group.dailyReportMemory
       ? { dailyReportMemory: group.dailyReportMemory } : {}),
     systemPrompt: [config.systemPrompt, group.systemPrompt,
-      group.jevReactions === true && ambient ? JEV_REACTION_SESSION_PROMPT
+      !privateChat && (ambient || topic || quickReactions) ? `Optional reaction candidates: ${candidates.map(id => `${id} (${FEISHU_REACTION_CATALOG[id]})`).join(', ') || 'none'}. Omit reaction to retain it; reaction:null explicitly withdraws it.` : '',
+      jevReactions ? JEV_REACTION_SESSION_PROMPT
         : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
       ambient ? GROUP_TIMELINE_SESSION_PROMPT : '',
-      ambient ? FEISHU_RESPONSE_DECISION_PROMPT : '',
+      (groupMainline || topic) ? FEISHU_RESPONSE_DECISION_PROMPT : '',
       ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT
         : groupMainline && group.responseMode === 'all' ? GROUP_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),

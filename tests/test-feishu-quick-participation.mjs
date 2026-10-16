@@ -91,7 +91,7 @@ try {
   });
   await readFirst.handle({ chatId: 'pilot', chatType: 'group', messageId: 'read-first',
     createTime: String(Date.now()), sender: { senderType: 'user', openId: 'human' } });
-  assert.deepEqual(callOrder, ['reaction']);
+  assert.deepEqual(callOrder, []);
   const pilotReactionOrder = [];
   let completeThinking;
   const orderedPilot = createFeishuQuickParticipationPilot({
@@ -110,10 +110,9 @@ try {
   const orderedTurn = orderedPilot.handle({ chatId: 'pilot', chatType: 'group', messageId: 'ordered',
     createTime: String(Date.now()), sender: { senderType: 'user', openId: 'human' } });
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(pilotReactionOrder, ['start:THINKING'], 'pilot status must wait for the read receipt');
-  completeThinking();
+  assert.deepEqual(pilotReactionOrder, [], 'no automatic group receipt is published');
   await orderedTurn;
-  assert.deepEqual(pilotReactionOrder, ['start:THINKING', 'done:THINKING']);
+  assert.deepEqual(pilotReactionOrder, []);
   const submitOrder = [];
   let releaseRead;
   let readStarted;
@@ -163,9 +162,7 @@ try {
   });
   await pilot.handle({ ...base, messageId: 'first', messageText: '链接打不开。' });
   await pilot.handle({ ...base, messageId: 'second', messageText: '是机器人发的测试报告，下午要用。' });
-  assert.deepEqual(reactions, [
-    ['first', 'THINKING'], ['second', 'THINKING'],
-  ]);
+  assert.deepEqual(reactions, []);
   assert.equal(inputs.length, 0, 'legacy receipt path no longer calls a classifier');
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(handoffCandidates, []);
@@ -173,13 +170,13 @@ try {
   await pilot.handle({ ...base, chatId: 'other', messageId: 'other' });
   await pilot.handle({ ...base, threadId: 'thread', messageId: 'thread', messageText: '话题里的问题' });
   await pilot.handle({ ...base, sender: { senderType: 'bot', openId: 'other-bot' }, messageId: 'bot' });
-  assert.equal(reactions.length, 2, 'topics bypass quick-participation judgment and use direct replies');
+  assert.equal(reactions.length, 0, 'topics bypass quick-participation judgment and use direct replies');
   assert.equal(inputs.length, 0);
   const records = (await readFile(join(home, 'quick-participation.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert(records.every(item => item.decision === undefined));
   await pilot.handle({ ...base, threadId: 'unbound', messageId: 'unbound', messageText: '在话题里决定开工' },
     { reactionMode: 'none' });
-  assert.equal(reactions.length, 2, 'unbound topic intake must not add a quick reaction');
+  assert.equal(reactions.length, 0, 'unbound topic intake must not add a quick reaction');
 
   const eventsPath = join(home, 'events.jsonl');
   await writeFile(eventsPath, `${JSON.stringify({ allowed: true, summary: { ...base, messageId: 'restored', messageText: '早上说过报告打不开。' } })}\n`);
@@ -191,7 +188,7 @@ try {
   await restored.restore(eventsPath);
   await restored.handle({ ...base, messageId: 'now', messageText: '下午评审。' });
   assert.equal(restoredInput, '');
-  assert.deepEqual(reactions.at(-1), ['restored-test', 'THINKING']);
+  assert.deepEqual(reactions, []);
 
   restored.seedConversation(base, [
     { messageId: 'bot-reply', timestamp: Date.now(), senderType: 'app', senderId: 'self-app',
@@ -211,10 +208,10 @@ try {
   });
   await expressive.handle({ ...base, messageId: 'surprise', messageText: '这个结果真惊喜' });
   await expressive.handle({ ...base, messageId: 'no-reaction', messageText: '两个人聊别的' });
-  assert.deepEqual(contextualReactions, ['THINKING', 'THINKING']);
+  assert.deepEqual(contextualReactions, []);
   await expressive.handle({ ...base, messageId: 'praise-one', messageText: '这次对了' });
   await expressive.handle({ ...base, messageId: 'praise-two', messageText: '这次对了' });
-  assert.deepEqual(contextualReactions.slice(2), ['THINKING', 'THINKING']);
+  assert.deepEqual(contextualReactions.slice(2), []);
   const mentionedReactions = [];
   const mentioned = createFeishuQuickParticipationPilot(runtime, {
     classify: async () => ({ decision: 'silent', silentReaction: 'none' }),
@@ -222,7 +219,7 @@ try {
   });
   await mentioned.handle({ ...base, messageId: 'direct-mention', messageText: '@bot 帮我看看',
     mentions: [{ openId: 'bot' }] });
-  assert.deepEqual(mentionedReactions, ['THINKING']);
+  assert.deepEqual(mentionedReactions, []);
   const reactionOnly = createFeishuQuickParticipationPilot(runtime, {
     classify: async () => ({ decision: 'reply', handoffDecision: 'none' }),
     react: async (_summary, emojiType) => {
@@ -232,7 +229,7 @@ try {
   });
   await reactionOnly.handle({ ...base, messageId: 'reaction-only',
     messageText: '测试下表情能不能正常回复，茵蒂克丝回复个表情就行' });
-  assert.deepEqual(mentionedReactions.slice(1), ['THINKING']);
+  assert.deepEqual(mentionedReactions.slice(1), []);
   const prompt = resolveFeishuGroupSettings(runtime.config, base).systemPrompt;
   assert.match(prompt, /feishu-response:/);
   assert.match(prompt, /Keep this timeline for observing the discussion/,
@@ -293,11 +290,11 @@ try {
   assert.deepEqual(buildReplyDeliveries(plan, { text: '' }), [], 'silence must not invent a fallback emoji');
 
   assert.deepEqual(buildReplyDeliveries(plan, { text: '' }, { requireFeishuOutcome: true })
-    .map(part => [part.kind, part.emojiType]), [['reaction', 'EatingFood']],
-  'an empty model result still leaves one final reaction');
+    .map(part => [part.kind, part.emojiType]), [],
+  'legacy required-outcome flags no longer manufacture an emoji');
   assert.deepEqual(buildReplyDeliveries(plan, { text: '答复', reaction: 'BAD' },
     { requireFeishuOutcome: true }).map(part => part.emojiType || part.kind),
-  ['EatingFood', 'content']);
+  ['content']);
   assert.equal(buildReplyDeliveries({ ...plan, target: { chatId: 'pilot' } }, reactionPayload).length, 0,
     'a reaction needs the bound source message');
   const invalidPayload = buildReplyPublicationPayload(history('<private><feishu-reaction emoji="BAD"/></private>'), run,
