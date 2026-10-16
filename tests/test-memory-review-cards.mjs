@@ -77,5 +77,6 @@ try {
   assert.match(prompt, /Independent memory review cards are enabled/); assert.doesNotMatch(prompt, /no separate private message, card/);
   await updateAuthDocument(doc => { doc.people[0].preferences.personalMemory.enabled = false; });
   assert.equal((await action(raw('keep', (await entry()).version))).toast.type, 'error', 'pause applies to old cards too');
+  assert.equal((await sendMemoryReviewCard(runtime, delivery)).skipped, true, 'pause skips pending delivery without a new attention message');
   console.log('memory cards: independent outbox, readback, owner, keep/edit/discard, stale version and retries passed');
 } finally { await rm(home, { recursive: true, force: true }); }

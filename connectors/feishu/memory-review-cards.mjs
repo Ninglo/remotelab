@@ -45,7 +45,7 @@ async function current(ref, deps, sessionId) {
   const actor = { personId: ref.personId, identityId: ref.identityId, authDocument, ...(deps.memoryDir ? { memoryDir: deps.memoryDir } : {}) };
   const policy = await loadLearningPolicy(deps.memoryDir);
   const preference = personalMemoryPreference(actor);
-  if (!policy.reviewCardPersonIds?.includes(ref.personId) || !preference.enabled || !preference.conversational) throw Error('个人记忆卡片已暂停。');
+  if (!policy.reviewCardPersonIds?.includes(ref.personId) || !preference.enabled || !preference.conversational) throw Object.assign(Error('个人记忆卡片已暂停。'), { code: 'MEMORY_REVIEW_PAUSED' });
   const snapshot = await inspectLearning(actor);
   const entry = snapshot.profile.entries.find(e => e.id === ref.entryId);
   if (!entry || memoryReviewKey(ref.personId, ref.entryId) !== ref.key) throw Error('找不到对应记忆。');
@@ -59,7 +59,9 @@ export function sendMemoryReviewCard(runtime, delivery, deps = {}) {
   return queue(pathFor(runtime, ref.key), async () => {
     const path = pathFor(runtime, ref.key);
     let record = await readRecord(path);
-    const { entry } = await current(ref, deps, delivery.sessionId);
+    let entry;
+    try { ({ entry } = await current(ref, deps, delivery.sessionId)); }
+    catch (error) { if (error.code === 'MEMORY_REVIEW_PAUSED') return { skipped: true }; throw error; }
     if (entry.status === 'withdrawn' && !record?.messageId) return { skipped: true };
     const app = runtime.appClient.im.v1.message;
     const content = JSON.stringify(buildMemoryReviewCard(ref, entry));
