@@ -113,7 +113,6 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 - [Hardware discussion recording](platform-skills/hardware-recording.md) — optional macOS/Linux keypad and multi-receiver capture, durable audio submission and host acceptance boundary
 - [Service management access](platform-skills/service-access.md) — read-only instance service/sudo/local SSH checks before declaring a restart permission blocker
-- [Compact personal settings card](feishu-web-settings.md) — settings open to six compact name/current-value rows; expand a row to edit, while detailed help stays collapsed.
 - [Feishu group configuration](feishu-bot-setup.md) — body emoji now follow the requested tone, preserve Unicode sequences and render known aliases in plain prose as native emotion nodes;  native topic groups use normal Agent conversation/steer; ordinary groups use pinned participation, optional public Session link, model/effort and durable group prompt controls; missing public URLs do not disable the controls. Simple ordinary-group answers quote the source with no opening or phase heading; lookup/research work uses a thread, even for a short request. Personal display settings do not bypass mainline result-only delivery.
 
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
@@ -177,4 +176,4 @@ The information-routing group card can show an explicitly enabled public pilot r
 
 - [Feishu tasks](platform-skills/feishu-tasks.md) — human Todos use the existing Feishu task workflow; the former local personal list is retired.
 
-- [飞书私聊个人设置卡](feishu-web-settings.md) — 私聊内修改个人回复、记忆与分流偏好，首屏保留简短引入，设置与使用说明按两个大区域折叠，展开设置后直接查看当前值并选择；网页备用入口须另行本人登录。支持在指定卡片试阅方向能力介绍，与基础设置合为同一张卡；按大区域折叠，明确要求重发时更新有效卡片绑定。基础设置与本人身份保持不变，介绍不触发业务操作。首次欢迎、本人身份校验、旧卡与重试恢复沿原连接器维护。当前只对明确名单试用，增强版重复入口在对应用户迁移验证后退出。
+- [飞书私聊个人设置卡](feishu-web-settings.md) — 私聊内修改个人回复、记忆与分流偏好，首屏保留简短引入，个人设置默认展开，只展示六项名称和当前值，点开单项再选择；详细解释归入默认收起的使用说明；网页备用入口须另行本人登录。支持在指定卡片试阅方向能力介绍，与基础设置合为同一张卡；按大区域折叠，明确要求重发时更新有效卡片绑定。基础设置与本人身份保持不变，介绍不触发业务操作。首次欢迎、本人身份校验、旧卡与重试恢复沿原连接器维护。当前只对明确名单试用，增强版重复入口在对应用户迁移验证后退出。
