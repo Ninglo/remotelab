@@ -5,6 +5,7 @@ import { join, resolve } from 'path';
 import { IS_GUEST_INSTANCE, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import { resolveOrCreateExternalIdentity } from '../lib/auth.mjs';
 import { findSessionConversation } from './session-conversations.mjs';
+import { validateFeishuThreadOrigin } from './feishu-thread-continuation.mjs';
 import { SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { appendEvent, findLatestUserMessage, getHistorySnapshot, readEventBody } from './history.mjs';
@@ -408,10 +409,20 @@ export async function handleSessionMainRoutes({
           writeJson(res, 200, { decision });
           return true;
         }
+        const source = payload?.sourceContext;
+        const incomingThreadId = source?.threadId || source?.topicId || '';
+        // Ambient replies keep the main Session binding. Their delivered
+        // thread provenance is the same authority used by normal admission.
+        const sameThread = (target?.threadId || '') === incomingThreadId;
+        const deliveredThread = !sameThread && source?.feishuThreadOriginRunId
+          && await validateFeishuThreadOrigin(sessionId, source.feishuThreadOriginRunId, {
+            connector: source.connector, sourceRouteId: source.sourceRouteId,
+            target: { ...source, threadId: incomingThreadId, conversationKind: 'thread' },
+          });
         if (payload?.sourceContext?.connector !== 'feishu'
             || payload.sourceContext.chatId !== session.conversation.target?.chatId
             || payload.sourceContext.sourceRouteId !== session.conversation.sourceRouteId
-            || (target?.threadId || '') !== (payload.sourceContext.threadId || payload.sourceContext.topicId || '')
+            || (!sameThread && !deliveredThread)
             || (session.conversation.target?.tenantKey
               && payload.sourceContext.tenantKey !== session.conversation.target.tenantKey)
             || payload.sourceContext.messageId !== payload.sourceMessageId) {

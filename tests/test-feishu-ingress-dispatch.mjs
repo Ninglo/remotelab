@@ -83,11 +83,36 @@ try {
   const releaseHttp = deferred();
   const nextHttp = deferred();
   const received = [];
+  let rejectObservation = false;
+  const observations = [];
+  const notices = [];
   const server = createServer(async (request, response) => {
     let text = '';
     for await (const chunk of request) text += chunk;
     const body = text ? JSON.parse(text) : {};
     response.setHeader('content-type', 'application/json');
+    if (rejectObservation && request.url === '/api/session-conversations/resolve') {
+      response.end(JSON.stringify({ sessionId: 'origin-session', threadOriginRunId: 'origin-run' }));
+      return;
+    }
+    if (rejectObservation && request.url === '/api/sessions/origin-session') {
+      response.end(JSON.stringify({ session: { id: 'origin-session' } }));
+      return;
+    }
+    if (rejectObservation && request.url?.endsWith('/observations')) {
+      observations.push(body);
+      response.statusCode = 400;
+      response.end(JSON.stringify({ error: 'Observation source does not match the bound Feishu conversation' }));
+      return;
+    }
+    if (request.url === '/api/source-deliveries') {
+      notices.push(body);
+      // Lose the first queue acknowledgement: retry only the same notice.
+      response.statusCode = notices.length === 1 ? 503 : 202;
+      response.end(JSON.stringify(notices.length === 1 ? { error: 'temporarily unavailable' }
+        : { delivery: { id: 'failure-notice' } }));
+      return;
+    }
     if (request.method === 'GET' && request.url?.endsWith('/source-context')) {
       response.end(JSON.stringify({ sourceContext: { message: null } }));
       return;
@@ -132,6 +157,42 @@ try {
     assert.equal(Object.keys(known.senders).length, 9, 'concurrent ingress preserves every sender index update');
     const index = JSON.parse(await readFile(httpRuntime.storagePaths.messageIndexPath, 'utf8'));
     assert.equal(Object.keys(index.records).length, 18, 'all inbound and thread bindings survive concurrent handoffs');
+    inbox.stop(); await inbox.idle();
+    rejectObservation = true;
+    httpRuntime.requestRemoteLab = async (path, options = {}) => {
+      const response = await fetch(`${httpRuntime.config.chatBaseUrl}${path}`, {
+        method: options.method || 'GET', headers: { 'content-type': 'application/json' },
+        ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+      });
+      return { response, json: await response.json() };
+    };
+    httpRuntime.config.groups = { chat: { participationMode: 'active', participationStatusCard: false } };
+    const rejectedEnvelope = { summary: { ...base, messageId: 'rejected', threadId: 'ambient-topic' }, sourceLabel: 'test' };
+    const rejected = await inbox.accept('rejected', rejectedEnvelope);
+    await inbox.tick(); await inbox.idle();
+    assert.equal(observations.length, 1);
+    assert.equal(observations[0].sourceContext.feishuThreadOriginRunId, 'origin-run',
+      'observation must carry the delivered topic origin just like normal admission');
+    assert.equal(notices.length, 1);
+    const pendingFailure = await inbox.store.get(rejected.key);
+    assert.match(pendingFailure.admissionFailure, /Observation source/);
+    assert.equal(pendingFailure.complete, false, 'a failed notice remains durable');
+    // A cold Inbox retries the notification, not the input that was rejected.
+    inbox = initializeInbox(httpRuntime);
+    await inbox.store.mutate(rejected.key, current => ({ ...current, nextAttemptAt: 0 }));
+    await inbox.tick(); await inbox.idle();
+    assert.equal(observations.length, 1, 'notice recovery must not replay admission');
+    assert.equal(received.length, 9, 'the rejected input never starts a model');
+    assert.equal(notices.length, 2);
+    assert.deepEqual(notices[0], notices[1], 'uncertain delivery uses the identical idempotent packet');
+    assert.equal(notices[1].responseId, 'feishu-ingress-failure:rejected');
+    assert.equal(notices[1].sourceDelivery.target.threadId, 'ambient-topic');
+    const failed = await inbox.store.get(rejected.key);
+    assert.equal(failed.complete, true);
+    assert.equal(failed.receipt.failed, true);
+    await inbox.accept('rejected', rejectedEnvelope);
+    await inbox.tick(); await inbox.idle();
+    assert.equal(notices.length, 2, 'duplicate upstream events do not repeat the failure notice');
   } finally {
     releaseHttp.resolve();
     inbox.stop(); await inbox.idle();

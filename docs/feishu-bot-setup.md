@@ -867,7 +867,12 @@ natural-language invitations, mode changes or topic changes. `/unmute` restores 
 new messages; queued content from before restoration is not replayed as new work.
 Pausing or entering listening cancels that conversation's ongoing work and removes
 its retained THINKING reactions. Definite observation rejections are archived with
-their error instead of blocking later messages with endless retries. Delivery
+their error and enqueue one failure notice in the original conversation instead
+of silently disappearing. A notification retry never replays rejected work.
+Delivered ambient-topic provenance is checked by both observation and normal
+admission, so an original mainline binding does not reject its own follow-ups.
+Model/runtime and Session-entry footers are limited to the first user turn;
+later useful openings contain only their message. Delivery
 suppression cancels the matching unsent lease; it does not report a provider send.
 
 ```json

@@ -140,6 +140,35 @@ try {
   }
   assert.equal((await connectorRequest('POST', observePath, topicObservation)).status, 400,
     'topic discussion cannot enter the group mainline observer');
+  // Delivered ambient topics belong to the original main Session, even
+  // after its execution has completed and the Request has been archived.
+  const { requests } = await import('../chat/requests.mjs');
+  const { rememberFeishuThreadSurface } = await import('../chat/feishu-thread-continuation.mjs');
+  const ambient = (await requests.accept({ sessionId: groupFeedId, requestId: 'ambient-origin',
+    text: 'original question', result: { state: 'completed' }, plans: [] })).record;
+  const ambientPart = { ...groupFeedConversation, kind: 'content', state: 'delivered',
+    runId: ambient.runId, deliveredThreadId: 'ambient-topic',
+    target: { ...groupFeedConversation.target, conversationKind: 'thread',
+      rootId: 'ambient-root', sourceKind: 'ambient_thread_open' } };
+  await requests.mutate(ambient.key, current => ({ ...current, deliveries: [ambientPart] }));
+  await rememberFeishuThreadSurface(ambientPart);
+  const ambientObservation = { sourceMessageId: 'ambient-followup', text: 'follow up',
+    sourceContext: { ...observedSource, messageId: 'ambient-followup',
+      threadId: 'ambient-topic', feishuThreadOriginRunId: ambient.runId } };
+  assert.equal((await connectorRequest('POST', observePath, ambientObservation)).status, 201);
+  for (const [field, value] of [['threadId', 'different-topic'], ['chatId', 'other-chat'],
+    ['tenantKey', 'other-tenant'], ['sourceRouteId', 'other-bot'], ['feishuThreadOriginRunId', 'unknown-run']]) {
+    assert.equal((await connectorRequest('POST', observePath, { ...ambientObservation,
+      sourceContext: { ...ambientObservation.sourceContext, [field]: value } })).status, 400,
+      `origin must not permit a different ${field}`);
+  }
+  assert.equal((await connectorRequest('POST', topicObservePath, ambientObservation)).status, 400,
+    'origin cannot import a different Session');
+  await requests.mutate(ambient.key, current => ({ ...current, releasedAt: 'now', postCompletionPending: false }));
+  await requests.archiveFinished(ambient.key);
+  assert.equal((await connectorRequest('POST', observePath, { ...ambientObservation,
+    sourceMessageId: 'archived-followup', sourceContext: { ...ambientObservation.sourceContext,
+      messageId: 'archived-followup' } })).status, 201, 'archival retains valid thread provenance');
   const topicSnapshot = (await request('GET', `/api/sessions/${topicSession.body.session.id}`)).body.session;
   assert.equal(topicSnapshot.activity.run.state, 'idle', 'observations must not start a Harness');
   const observation = { sourceMessageId: 'observed-one', requestId: 'feishu:observed-one',

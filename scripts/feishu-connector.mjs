@@ -1147,7 +1147,9 @@ async function submitRemoteLabRequest(runtime, summary, {
       ...(attachmentResolution.failures.length > 0
         ? { attachmentDownloadFailures: attachmentResolution.failures } : {}),
     };
-    const sourceContext = buildMessageSourceContext(observedSummary);
+    const sourceContext = { ...buildMessageSourceContext(observedSummary),
+      ...(threadBinding?.threadOriginRunId ? { feishuThreadOriginRunId: threadBinding.threadOriginRunId } : {}),
+    };
     const observed = await requester(`/api/sessions/${encodeURIComponent(session.id)}/observations`, {
       method: 'POST', body: {
         sourceMessageId: effectiveSummary.messageId,
@@ -1737,9 +1739,9 @@ function extractLocalCommand(summary) {
   return parsed.commands.length > 0 ? parsed : null;
 }
 
-async function queueFeishuReply(runtime, summary, text) {
+async function queueFeishuReply(runtime, summary, text, { responseId = buildRequestId(summary) } = {}) {
   const result = await requestRemoteLab(runtime, '/api/source-deliveries', { method: 'POST', body: {
-    responseId: buildRequestId(summary), text,
+    responseId, text,
     sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: summary },
   } });
   if (!result.response.ok) throw new Error(result.json?.error || 'Failed to enqueue reply');
@@ -2149,27 +2151,47 @@ function buildFeishuInboxKey(summary) {
   ]);
 }
 
+async function notifyFeishuAdmissionFailure(runtime, entry) {
+  const summary = applyFeishuReplyRouting(runtime.config, entry.summary);
+  const notification = await queueFeishuReply(runtime, summary,
+    '这条消息已收到，但未能交给助手处理。请稍后在原对话重试。',
+    { responseId: `feishu-ingress-failure:${entry.id}` });
+  return { failed: true, permanent: true, error: entry.admissionFailure,
+    notificationDeliveryId: notification.deliveryId };
+}
+
 function initializeInbox(runtime) {
   return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
     conversationKey: entry => buildFeishuInboxKey(entry.summary),
     process: async (entry, update) => {
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
       if (!allowed) return { blocked: true };
+      // Once admission is definitely rejected, retries only publish the same
+      // durable notice. They must not execute the rejected input after a repair.
+      if (entry.admissionFailure) return notifyFeishuAdmissionFailure(runtime, entry);
       if (entry.summary.sourceKind === 'bot_added') return onboardFeishuGroup(runtime, entry.summary);
       if (['reaction_mute', 'reaction_feedback'].includes(entry.summary.sourceKind)) {
         return handleFeishuReactionFeedback(runtime, entry.summary);
       }
-      return handleMessage(runtime, entry.summary, entry.sourceLabel, {
-        participationSnapshot: entry.participationSnapshot,
-        preparedRuntimeCommand: entry.runtimeCommand,
-        saveRuntimeCommand: runtimeCommand => update({ runtimeCommand }),
-        submitRemoteLabRequest: (runtime, summary, options = {}) => submitRemoteLabRequest(runtime, summary, {
-          ...options, prepared: entry.submission, saveSubmission: submission => update({ submission }),
-        }),
-        observeRemoteLabMessage: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
-          observeOnly: true,
-        }),
-      });
+      try {
+        return await handleMessage(runtime, entry.summary, entry.sourceLabel, {
+          participationSnapshot: entry.participationSnapshot,
+          preparedRuntimeCommand: entry.runtimeCommand,
+          saveRuntimeCommand: runtimeCommand => update({ runtimeCommand }),
+          submitRemoteLabRequest: (runtime, summary, options = {}) => submitRemoteLabRequest(runtime, summary, {
+            ...options, prepared: entry.submission, saveSubmission: submission => update({ submission }),
+          }),
+          observeRemoteLabMessage: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
+            observeOnly: true,
+          }),
+        });
+      } catch (error) {
+        if (error.retryable !== false || isFeishuBotSender(entry.summary)) throw error;
+        const admissionFailure = error.message;
+        await update({ admissionFailure, lastError: admissionFailure });
+        console.error(`[feishu-inbox] ${entry.id}: ${admissionFailure}`);
+        return notifyFeishuAdmissionFailure(runtime, { ...entry, admissionFailure });
+      }
     },
     onError: error => console.error(`[feishu-inbox] ${error.message}`),
   });

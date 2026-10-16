@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-16 — Follow-ups must reach the existing conversation without appearing newly created
+
+- Feedback: topic follow-ups received neither an answer nor processing feedback. Repeated model and Session-detail footers also made later messages look like newly created Sessions.
+- Cause: the connector resolved the correct original Session, but its observation request omitted delivered-topic provenance and the observation route required the mainline binding. Separately, opening publication appended entry metadata on every execution.
+- Change: use the existing delivered-thread validation for observations, retain and notify definitive admission failures through the durable outbox, and keep entry footers on the first user turn only. Tests cover exact source scope, archived origins, notice retry without input replay, and later openings.
+
 ### 2026-10-16 — Intermediate conversation must not block task results
 
 - Feedback: another conversation reproduced a generated final being rejected after a question card or an intermediate reply. Review precedence across the reply rules instead of adding another exception to the prompt.

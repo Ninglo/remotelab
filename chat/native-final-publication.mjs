@@ -198,7 +198,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const includeEntry = plan.connector === 'feishu' && Boolean(session?.id)
       && !isFeishuMainlineReply(replyPlan)
       && ['opening', 'final'].includes(surface.surfaceKind)
-      && (surface.surfaceKind === 'opening' || firstUserTurn)
+      && firstUserTurn
       && !stored?.deliveries?.some(item => item.kind === 'session_entry' || item.sessionEntryIncluded);
     const entry = includeEntry ? buildSessionEntry(session, { runtimeSelection: publicationRun }) : null;
     // Display projection removes private blocks. Read control directives from

@@ -370,6 +370,16 @@ and, while the original native execution is accepting input, `continuationRunId`
 The connector sends these as `sourceContext.feishuThreadOriginRunId` and
 `feishuContinuationRunId`; admission verifies the actual delivered surface against
 the original Request, including archived records, and keeps the Session prompt.
+Observation admission uses the same delivered-thread provenance before Jev and
+main-model admission; it must not reject a valid topic solely because the original
+Session is bound to the mainline. A definitive ingress rejection is retained and
+queues one durable failure notice in the source conversation. Retrying that notice
+never re-executes the rejected input.
+
+Model/runtime and Session-entry footers appear only on the first user turn, with
+existing per-request delivery deduplication. A personal opening preference can
+publish another useful opening on later turns, but does not repeat that footer:
+a new execution within the conversation is not a new Session.
 
 The origin field permits a definitely unaccepted completion-race input to queue
 in the same Session and topic. Dispatch only steers the originating execution or

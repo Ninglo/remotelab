@@ -237,7 +237,7 @@ try {
     store: { get: async () => laterRecord, mutate: async (_key, fn) => { laterRecord = fn(laterRecord); } } });
   assert.equal(laterRecord.deliveries[0].text, '【最终答复】\n\n核查结果。');
   // A personal policy can request a useful opening after an earlier short
-  // inline answer. It must still identify this accepted runtime and Session.
+  // inline answer. A new execution is not a new Session: omit its entry footer.
   let optedInLater = { ...laterRecord, key: 'opted-in-later', deliveries: [],
     options: { messageReplyPolicy: { opening: true } },
     streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
@@ -249,9 +249,8 @@ try {
   await publishNativeFinalReplies(optedInLater, laterOpening, optedInOptions);
   assert.equal(optedInLater.deliveries.length, 1);
   assert.equal(optedInLater.deliveries[0].surfaceKind, 'opening');
-  assert.ok(optedInLater.deliveries[0].text.includes(runtimeDescription));
-  assert.ok(optedInLater.deliveries[0].text.includes('session='));
-  assert.equal(optedInLater.deliveries[0].sessionEntryIncluded, true);
+  assert.equal(optedInLater.deliveries[0].text, '【开始处理】\n\n现在开始核查。');
+  assert.equal(optedInLater.deliveries[0].sessionEntryIncluded, undefined);
   for (const cards of [true, false]) {
     const continuingHistory = [earlyInputs[1],
       { ...firstHistory[1], seq: 5, providerMessageId: 'later-opening', content: '继续检查。' },
