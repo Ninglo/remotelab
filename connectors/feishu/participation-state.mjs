@@ -171,11 +171,11 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     return records.mutate(record.key, current => ({ ...record, ...current, cardMessageId: messageId,
       cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, pinPending: existingOnly ? record.pinPending : false }));
   }
-  async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId } = {}) {
+  async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId, existingOnly = false } = {}) {
     const key = keyFor(summary);
     return exclusive(key, async () => {
       let prior = await state(summary);
-      if (prior.processedControls?.includes(controlId)) return publish(prior);
+      if (prior.processedControls?.includes(controlId)) return publish(prior, { existingOnly });
       const mode = requested === 'resume_read' ? (prior.beforePause || 'listening') : requested;
       if (!MODES.has(mode)) throw new Error('Invalid Agent participation mode');
       let record = await records.mutate(key, current => ({ ...prior, ...current, source: sourceFor(summary), mode, modeOverride: true,
@@ -195,7 +195,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         const target = sessionId || record.sessionId || await resolveSession?.(summary);
         if (target) {
           try { await cancelSession(target, record); }
-          catch (error) { await publish(record); throw error; }
+          catch (error) { await publish(record, { existingOnly }); throw error; }
         }
         await cleanup?.(record);
         if (!record.source.topicId) {
@@ -211,7 +211,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       }
       record = await records.mutate(key, current => ({ ...current, stopPending: false,
         processedControls: [...(current.processedControls || []), controlId].filter(Boolean).slice(-100) }));
-      return publish(record);
+      return publish(record, { existingOnly });
     });
   }
   async function assess(summary, { mentioned = false, taskCommand = false } = {}) {
@@ -276,7 +276,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       const source = await resolveSource(record.source);
       if (!participationEnabled(runtime, source)) continue;
       if (record.stopPending) await change(source, record.mode,
-        { sessionId: record.sessionId, controlId: `restore:${record.epoch}` });
+        { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true });
       else {
         if (record.mode !== 'active') await cleanup?.(record);
         try { await publish({ ...record, source }, { existingOnly: true }); }

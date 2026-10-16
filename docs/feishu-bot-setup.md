@@ -815,7 +815,8 @@ edit form. Set that exact group's
 and text controls. This also suppresses publication on restart and mode changes;
 withdraw the existing message and its top notice separately when requested.
 Restart refreshes only existing status cards; it never creates a missing card
-from remembered conversation state. Native topic records are excluded from
+from remembered conversation state, even when finishing a pending mode change.
+Native topic records are excluded from
 restoration, including pending old pause operations.
 
 The opt-in `projectCards: true` setting extends this same card to groups explicitly

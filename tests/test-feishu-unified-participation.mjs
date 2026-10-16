@@ -190,14 +190,17 @@ try {
     chatId: current.source.chatId, topicId: current.source.topicId,
     tenantKey: current.source.tenantKey, sourceRouteId: current.source.sourceRouteId,
   }, mode: 'paused', stopPending: true, cardMessageId: 'om_obsolete' }));
-  await oldController.remember({ ...base, chatId: 'ordinary', threadId: '', rootId: '' }, 'ordinary-session');
+  const ordinaryRecord = await oldController.remember({ ...base, chatId: 'ordinary', threadId: '', rootId: '' }, 'ordinary-session');
+  await restoreStore.mutate(ordinaryRecord.key, current => ({ ...current, mode: 'paused', stopPending: true }));
+  const recoveredStops = [];
   const recovery = createParticipationController(restoreRuntime, {
     resolveSource: async source => ({ ...source, chatMode: source.chatId === 'native-old' ? 'topic' : 'group' }),
-    cancelSession: async () => assert.fail('obsolete native pause must not cancel a Session'),
-    cleanup: async () => assert.fail('obsolete native pause must not clean up current work'),
+    cancelSession: async id => recoveredStops.push(id),
+    cleanup: async record => assert.equal(record.source.chatId, 'ordinary'),
     authorize: async () => true,
   });
   await recovery.restore();
+  assert.deepEqual(recoveredStops, ['ordinary-session'], 'only ordinary-group pending stops resume');
   await recovery.publish(await recovery.record(oldRecord.key));
   const rejectedNative = await recovery.action({ event: {
     action: { value: { namespace: 'participation', key: oldRecord.key, mode: 'active', epoch: 0 } },
