@@ -395,7 +395,10 @@ async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
   }
   const packet = { ...p, state: 'approved', confirmationRequestId: p.confirmationRequestId || record.requestId,
     returnPlan: p.returnPlan || origin };
-  await save(session.id, d => Object.assign(d.proposals.find(v => v.id === p.id), packet));
+  await save(session.id, d => {
+    const current = d.proposals.find(v => v.id === p.id);
+    if (['draft', 'approved'].includes(current.state)) Object.assign(current, packet);
+  });
   for (const r of inputs) await requests.mutate(r.key, current => {
     if (current.routingHandoff && current.routingHandoff.routeId !== p.id) fail('Original input already belongs to another transfer');
     return { ...current, routingHandoff: { targetSessionId: p.targetSessionId, routeId: p.id, state: 'reserved' } };
