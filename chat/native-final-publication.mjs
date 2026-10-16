@@ -1,5 +1,5 @@
 import { readFeishuResponseDecision } from '../lib/feishu-response-decision.mjs';
-import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
+import { hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
 import { assistantSurfaceMessageId, collectAssistantSurfaceMessages, parseProgressMessage } from '../lib/assistant-surface-messages.mjs';
 import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
@@ -110,7 +110,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       ? events.find(item => item.seq === surface.messageUpdateSeq) || event : event;
     // Structured finals atomically bind their answer to accepted inputs at
     // terminal publication. Do not publish them first through the legacy path.
-    if ((final || surface.surfaceKind === 'final') && hasPilotInputReplyContract(record)
+    if ((final || surface.surfaceKind === 'final') && hasFeishuInputReplyContract(record)
         && readFeishuResponseDecision(directiveEvent.content).specified) continue;
     const owner = final || surface.surfaceKind === 'question' ? record : scopes.get(event) || record;
     if (owner !== record && !owner.nativeReceipt?.accepted) continue;

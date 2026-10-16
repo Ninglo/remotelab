@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { CONFIG_DIR } from '../../lib/config.mjs';
 import { resolveFeishuGroupSettings } from './group-settings.mjs';
 import { isFeishuBotSender } from './response-policy.mjs';
-import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../../lib/feishu-reaction-catalog.mjs';
+import { FEISHU_SOCIAL_REACTION_CRITERIA, normalizeFeishuReactionCandidates } from '../../lib/feishu-reaction-catalog.mjs';
 
 const MAX_MESSAGES = 20;
 const MAX_AGE_MS = 2 * 60 * 60 * 1000;
@@ -67,8 +67,11 @@ export async function feishuJevApiKey() {
 export const feishuReactionApiKey = feishuJevApiKey;
 
 export async function classifyFeishuQuickParticipation(context, {
-  fetchImpl = fetch, key, timeoutMs = REACTION_TIMEOUT_MS,
+  fetchImpl = fetch, key, timeoutMs = REACTION_TIMEOUT_MS, reactionCandidates,
 } = {}) {
+  const candidates = normalizeFeishuReactionCandidates(reactionCandidates);
+  const criteria = Object.fromEntries(Object.entries(FEISHU_SOCIAL_REACTION_CRITERIA).filter(([id]) => candidates.includes(id)));
+  if (!Object.keys(criteria).length) return { emojiType: null, reason: 'empty_selection', latencyMs: 0 };
   const token = key || await feishuReactionApiKey();
   if (!token) return { emojiType: null, reason: 'missing_key', latencyMs: 0 };
   const controller = new AbortController();
@@ -81,7 +84,7 @@ export async function classifyFeishuQuickParticipation(context, {
       body: JSON.stringify({ model: REACTION_MODEL, state: { discussion: context }, questions: { reaction: {
           type: 'choice',
           instructions: 'Choose one fitting social reaction to the NEWEST message, or none. Older messages only clarify its recipient and tone. Do not answer factual questions, decide whether to reply, choose a work Session, infer permission, or change participation mode. Get only acknowledges receipt; it does not accept a task or prove handoff or completion. Praise, thanks, humor, criticism and empathy can use different reactions. Never laugh at bad news or misfortune. Neutral human-to-human updates and ambiguous tone need none.',
-          criteria: { ...FEISHU_SOCIAL_REACTION_CRITERIA, Get: 'Received the message; no task acceptance or completion claim.',
+          criteria: { ...criteria,
             none: 'No fitting social reaction is needed or sufficiently supported.' },
       }, reaction_needed: {
         type: 'choice',
@@ -99,7 +102,7 @@ export async function classifyFeishuQuickParticipation(context, {
     const needed = result?.answers?.reaction_needed;
     const reactProbability = needed?.probabilities?.yes;
     const validProbability = value => Number.isFinite(value) && value >= 0 && value <= 1;
-    const valid = (choice === 'none' || Object.hasOwn(FEISHU_SOCIAL_REACTION_CRITERIA, choice || ''))
+    const valid = (choice === 'none' || Object.hasOwn(criteria, choice || ''))
       && validProbability(probability) && ['yes', 'no'].includes(needed?.choice)
       && validProbability(reactProbability);
     // Confidence in reacting is distinct from choosing one of many synonyms.
@@ -188,21 +191,14 @@ export function createFeishuQuickParticipationPilot(runtime, {
     return [...active.values()];
   }
 
-  function handle(summary, { receivedAt = performance.now(), reactionMode = 'normal' } = {}) {
+  function handle(summary, { receivedAt = performance.now(), reactionMode = 'none' } = {}) {
     const recent = remember(summary);
     if (!recent || seen.has(summary.messageId)) return;
     seen.add(summary.messageId);
     if (seen.size > 5_000) seen.delete(seen.values().next().value);
     const started = receivedAt;
-    // Start the read receipt before any classification or Session work.
-    const readReaction = reactionMode === 'none'
-      ? Promise.resolve({ result: 'skipped', latencyMs: null, reactionId: '' })
-      : (async () => {
-        const receipt = await react(summary, 'THINKING');
-        if (!receipt?.reactionId) throw new Error('Feishu did not return a reaction ID');
-        return { result: 'ok', latencyMs: Math.round(performance.now() - started),
-          reactionId: receipt.reactionId };
-      })().catch(() => ({ result: 'failed', latencyMs: Math.round(performance.now() - started), reactionId: '' }));
+    // Compatibility receipts retain the API without publishing an emoji.
+    const readReaction = Promise.resolve({ result: 'skipped', latencyMs: null, reactionId: '' });
     readReceipts.set(summary.messageId, readReaction);
     if (readReceipts.size > 5_000) readReceipts.delete(readReceipts.keys().next().value);
     return (async () => {

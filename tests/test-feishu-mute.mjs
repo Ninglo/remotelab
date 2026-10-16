@@ -64,7 +64,7 @@ try {
   await silent('mention someone else', { mentions: [{ openId: 'another-human' }] });
   await silent('@all', { mentions: [{ openId: 'all' }] });
   await send('please help once', { mentions: [{ openId: 'self' }] });
-  assert.deepEqual(effects, ['reaction', 'submit']);
+  assert.deepEqual(effects, ['submit']);
   await silent('continue human discussion');
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, true);
   await send('/status');
@@ -77,7 +77,7 @@ try {
   const replyCountBeforeExplicitThread = replies.length;
   await send('/thread\n\nexplicit task');
   assert.equal(replies.length, replyCountBeforeExplicitThread);
-  assert.deepEqual(effects, ['reaction', 'submit'],
+  assert.deepEqual(effects, ['submit'],
     '/thread explicitly continues the fixed Thread instead of trying to split it');
 
   runtime = makeRuntime();
@@ -92,14 +92,14 @@ try {
   await silent('/unmute', { mentions: [{ openId: 'self' }], sender: { senderType: 'app', openId: 'peer' } });
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, true, 'peer bots cannot unmute');
   await send('explicit peer handoff', { mentions: [{ openId: 'self' }], sender: { senderType: 'app', openId: 'peer' } });
-  assert.deepEqual(effects, ['reaction', 'submit']);
+  assert.deepEqual(effects, ['submit']);
   await silent('second peer handoff', { mentions: [{ openId: 'self' }], sender: { senderType: 'app', openId: 'peer' } });
   await send('/unmute');
   assert.match(replies.at(-1), /已恢复当前话题/);
   assert.equal(feedback.at(-1).kind, 'unmute_command');
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, false);
   await send('automatic continuation restored');
-  assert.deepEqual(effects, ['reaction', 'submit']);
+  assert.deepEqual(effects, ['submit']);
 
   // A command remains recoverable when its acknowledgement fails after the save.
   await assert.rejects(send('/mute', {}, { queueFeishuReply: async () => { throw new Error('reply failed'); } }), /reply failed/);

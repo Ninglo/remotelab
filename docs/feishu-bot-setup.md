@@ -242,9 +242,8 @@ Notes:
   binary and that same config visible to harness processes
 - `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
   deferred results return through the Bot that owns the originating conversation
-- every admitted chat message receives a persistent `THINKING` reaction before
-  RemoteLab submission; this acknowledgement is fixed product behavior rather
-  than a third policy dimension, and failure to add it never blocks the request
+- group admission does not add a mandatory reaction; private-chat processing
+  receipts keep their existing behavior
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
@@ -253,8 +252,9 @@ participation (`defaultGroupParticipation: "active"`): the main Session receives
 discussion and decides when a useful contribution is needed. The Bot-added event
 automatically creates/reuses that group's main Session and publishes a pinned
 configuration card. The first admitted message is a fallback when that event is
-unavailable. Existing explicit `responseMode`, participation mode, mute, pause and
-card suppression settings are preserved. Set `defaultGroupParticipation` to
+unavailable. Existing mute, pause, card suppression, explicit `mention_only` and disabled
+participation controls are preserved. Legacy `responseMode: "all"` groups use
+the same three-state controller as other active groups. Set `defaultGroupParticipation` to
 `"mention_only"` for a connector whose new groups should require invitations, or
 set an individual group's `responseMode: "mention_only"`. Connector-wide legacy
 `responsePolicy.group` remains accepted for compatibility; the new setting controls
@@ -272,7 +272,8 @@ new groups otherwise use the active default. This intake setting does not remove
 or the self/peer-Bot guards.
 
 Each invited Thread creates or continues its own Session, scoped by Bot, tenant, chat
-and topic. The Session replies to every human message in that topic by default,
+and topic. The Session answers directed requests and relevant supplements;
+human-to-human chatter may remain silent,
 including forwarded messages, unless explicitly told to stay silent or paused.
 An accepted binding preserves Session continuity across connector restarts and
 admits later unmentioned human follow-ups. Quoting a message outside a Thread does not
@@ -484,38 +485,48 @@ The `/mute` setting still takes effect even when no Session exists.
 For groups with `reactionFeedback: true`, other human reactions on this Bot's
 replies are recorded as non-publishing feedback in the existing Session. A
 reaction on someone else's message is ignored. These signals do not change
-mute state or automatically become lasting instructions. In groups with
-`quickReactions: true`, the connector immediately adds `THINKING` to each
-admitted human message. This is a temporary receipt: after the final outcome
-reaction is confirmed, the connector removes its own `THINKING` reaction. It
-stores the temporary reaction ID across restarts so cleanup can be retried.
-The Session model then decides whether to participate.
-The same Session model chooses one outcome reaction by starting its final answer
-with `<private><feishu-reaction emoji="THANKS"/></private>`. The connector
-parses this private directive, binds it to the inbound message ID in the durable
-source-delivery outbox, and uses the configured Bot SDK identity to add the
-reaction before any ordinary text reply. The model does not start a CLI process
-for each message, cannot choose an arbitrary message ID, and does not use
-personal OAuth. Supported outcomes are `OnIt`, `EatingFood`, `OK`, `THUMBSUP`,
-`THANKS`, `GLANCE`, `SMILE`, `APPLAUSE`, `WOW`, `WHAT`, `DULL`, `TEARS`, `HUG`,
-and `COMFORT`. An invalid directive is removed and reported as a visible error.
-For a group with `quickReactions: true`, a missing or invalid outcome directive
-falls back to `EatingFood` in the durable delivery path. Each admitted message
-therefore has an outcome reaction even when the model gives no usable choice.
-This is a connector-native action selected through structured model output.
-An explicit model tool call would give immediate reaction feedback but needs a
-per-turn tool binding and round trip; launching the general connector CLI for
-every message adds a process and source-context lookup. This legacy receipt path no longer calls a fast classifier or nominates work
-handoffs. Receipt latency does not delay Session submission.
-A reaction-only final contains only the directive; reaction plus text puts the
-normal reply after it. Human-to-human discussion normally receives `EatingFood`
-without a text reply. If several inbound messages share one native turn, only
-the root message gets the model-selected reaction; the other messages get
-`EatingFood`. Work and handoff decisions belong to the main Session model. `contextReactions`
-is retained as a compatible setting but does not make an automatic reaction.
+mute state or automatically become lasting instructions. Group reactions are optional. Neither `quickReactions` nor legacy
+`feishuOutcomeRequired` adds THINKING or an EatingFood fallback. A silent decision
+may produce no provider message and no reaction.
+
+The main model uses the same hidden response decision as text publication:
+`<private>feishu-response:{"reaction":"THANKS"}</private>`. Omission retains
+existing feedback; `"reaction":null` explicitly withdraws this Bot's reaction.
+The outbox records the withdrawal at main-model stage 2 before cleanup, so late
+stage-1 Jev feedback cannot recreate it, including after restart. Only reaction
+IDs created by this Bot are removed. Unknown provider outcomes keep the existing
+reconciliation behavior.
+
+`groups[chatId].reactionCandidates` optionally selects supported protocol IDs.
+The same set appears in the main-model prompt, filters Jev's choices and is
+checked again before provider delivery. `[]` disables additions but permits
+withdrawal. Omission retains the existing protocol catalog; it does not install
+a new group policy automatically. The confirmed 2026-10-16 selection is exported
+as `FEISHU_CONFIRMED_REACTION_CANDIDATES` for explicit deployment configuration:
+
+```json
+["THUMBSUP", "OK", "SOB", "TOASTED", "JOYFUL", "PROUD", "EatingFood", "Typing", "OneSecond", "THANKS", "Yes", "No", "YouAreTheBest", "OnIt"]
+```
+
+The labels, in order, are 赞、OK、流泪、衰、愉快、得意、吃饭、敲键盘、稍等、谢谢、Yes、No、送你小红花、在做了.
+Source: human input `om_x100b622ba72c5ca4cd1ac80b92073aa` in parent Session
+`6552263e397cac937fea3a099fa70b94`; duplicate 赞 was removed. IDs and images were
+checked against the [official Feishu emoji reference](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message-reaction/emojis-introduce.md)
+on 2026-10-16. `SOB` is 流泪; `CRY` (hands over mouth), `TEARS` and `LOL` are
+different images. `YouAreTheBest` is the hand offering a red flower, not `ROSE`
+or `PRAISE`; `THANKS` is folded hands, not `ThanksFace`. The official public
+[Messenger bundle](https://sf1-scmcdn-cn.feishucdn.com/obj/feishu-static/ee/web-client/p/static/js/lark.951a2f3f.js)
+also pairs 流泪 and SOB through resource 6, 衰 and TOASTED through 13, 得意 and
+PROUD through 41. Jev receives only the social subset of the configured set;
+EatingFood, Typing, OneSecond, Yes, No and OnIt require main-model evidence.
+Both stages may choose no reaction; the main model may explicitly withdraw it.
+The preset does not modify any instance's actual configuration.
+
 Ambient group Sessions use the same light timeline instructions whether or not
-`groupFeed` is enabled in ChatUI. A message addressed only to another person is
-observed without tool work. If a Session nevertheless uses tools and completes
+`groupFeed` is enabled in ChatUI. In active mode, a message addressed to another person may receive a useful
+evidence-based contribution. The model assesses added value, evidence, duplication
+and interruption cost and records a brief `participationReason` in its hidden
+decision; this does not accept or start the other person’s assigned task. If a Session nevertheless uses tools and completes
 without a visible final answer, RemoteLab posts an incomplete-work notice with
 the Session link, even if the final contained only a reaction directive. Earlier
 commentary is not treated as a completed answer, and the notice does not claim
@@ -523,14 +534,15 @@ the task succeeded. The reaction delivery has a durable receipt and ordered
 claim, but the reaction create call has no message-send-style idempotency UUID: an unknown
 provider outcome requires reconciliation before deliberate retry.
 In an explicitly enabled group, admitted human messages on the main timeline
-reach a Session. Topic conversations retain direct replies. `quickReactions: true` only enables mainline reaction
-hints; topics use direct replies. An explicit @ mention normally asks for a text reply;
+reach a Session. Topic conversations use the same participation judgment, with their existing
+conversation and task context. Personal routing opt-in controls work routing,
+not text participation, reaction choice or response publication. An explicit @ mention normally asks for a text reply;
 the model includes `OnIt` before a normal answer. A message asking for only a
 reaction receives no visible text after the reaction is added.
 
-For a selected group mainline, add `jevReactions: true` to a group that
-already has `quickReactions: true`, `participationMode: "ambient"`, and
-`groupFeed: true`. Each admitted human message is appended once to its bound
+Legacy embedded configurations can explicitly enable `jevReactions` with
+`quickReactions`, `participationMode: "ambient"` and `groupFeed`; modern controlled
+groups receive these defaults through `effectiveFeishuGroup`. Each admitted human message is appended once to its bound
 group Session. The main Harness receives it without waiting for the fast reaction model, reaction
 persistence or the reaction provider. It decides whether to reply, where the
 reply belongs and whether authorized work needs a separate Session.
@@ -560,9 +572,9 @@ original message. Retries recover the same decision and outbox rather than sendi
 another answer. Quick Jev feedback remains a separate optional stage-1 receipt;
 the main model's stage-2 decision takes precedence.
 
-`jevReactions` enables this Jev fast path only in explicitly selected groups.
-Groups without this flag, legacy `quickReactions`, topic replies, and explicit
-participation controls keep their existing paths. Supply the TypeSafe key through
+Unified controlled groups and topics enable this optional Jev path by default;
+explicit `jevReactions: false` disables it. Listening and paused controls gate
+Jev before any classification, just as they gate substantive participation. Supply the TypeSafe key through
 `TYPESAFE_API_KEY`, or `TYPESAFE_KEY_FILE` (default: `<config-dir>/typesafe.env`,
 containing `TYPESAFE_API_KEY=...`). No OpenAI API credential or Codex login is used
 for this fast call. The timeout is 1,600 ms; failures do not call a slower model.
@@ -686,8 +698,9 @@ reusing a mainline observation must not omit the worker Session user event.
 
 Topics retain ordinary topic replies. Commands, explicit mute/pause state,
 access controls and Bot handoff limits retain their own admission paths.
-Disable `jevReactions` to return to the legacy quickReactions receipt/final
-reaction flow. Neither flow uses a small model to choose work placement.
+Disable `jevReactions` to keep only optional main-model reaction decisions.
+No mandatory receipt or final reaction is restored. Neither path uses a small
+model to choose work placement.
 
 All observed messages remain in the Session. The
 group-feed nightly review preserves incremental provenance and current work
@@ -712,32 +725,48 @@ reply settings and commands cannot move it back to the mainline or split it.
 The inbound message ID is only a delivery address and is never part of mainline
 Session identity.
 
-An exact `groups[chatId].participationMode: "ambient"` override changes the
-main timeline only. Every human mainline message enters the chat's continuing
-Session, including messages without an @ mention. The Session can return an
-empty answer to stay silent, a normal answer for an inline reply, or start its
-answer with `<private>feishu-reply:thread</private>` to place the visible answer
-in a Thread rooted at that input. The private marker is removed before
-publication. This reply-location choice remains available when personal
-`routing=none` disables automatic work-Session routing. It does not itself
-create a work Session. Ordinary observation turns have no processing reaction or
-Session-created notice; a standalone @ mention asks the Session to reconsider
-the recent unanswered discussion. The first Thread answer comes from the main
-Session. While that exact native execution is still active, its successful
-Thread delivery receipt connects Thread follow-ups to the same execution via
-native steer, including corrections and stop instructions. This temporary link
-does not replace the main Session's conversation or instructions. After the
-execution stops, subsequent inputs use the normal independent Thread Session
-with the Thread history; an unrelated later mainline execution cannot inherit
-the old Thread. Existing independent Thread bindings take precedence. Other
-chats keep their existing policy.
+Groups use `participationMode: "active" | "listening" | "paused"`;
+`ambient` remains a compatibility alias for active participation. `defaultGroupParticipation`
+accepts the same modes and legacy `mention_only`.
 
-A continuation admitted for an exact execution cannot start new work if that
-execution ends before native acceptance. It receives an explicit failure receipt
-and remains in history. If the execution ends before admission, the connector
-re-resolves the normal Thread destination without duplicating the input. Stop
-intent and permission to resume remain Harness judgments in conversation; the
-transport adds no keyword classifier or artificial batching delay.
+| Existing setting | Upgrade behavior |
+| --- | --- |
+| `responseMode: "all"` with active connector default | Unified active controller, including native topic groups |
+| Explicit `responseMode: "mention_only"` without a participation mode | Preserve invitation-only admission |
+| `participationControls: false` | Preserve the disabled control boundary |
+| Stored listening/paused state, or legacy conversation mute | Retain state; upgrading does not authorize resumption |
+| Suppressed/withdrawn status card | Retain suppression |
+
+Modern controlled groups and topics use optional asynchronous Jev social feedback
+by default. Explicit `jevReactions: false` remains an opt-out; missing credentials
+produce no reaction and never delay main-model admission. Legacy quick/group flags
+no longer require a reaction or select content/work placement. The old ambient
+alias is normalized by the connector's default policy; test/embedded configurations
+without that default keep their explicit compatibility settings.
+
+Each topic inherits the group's current state until explicitly overridden in that
+topic. Merely recording messages does not freeze inherited state. Mainline state
+changes fence inherited topic output and stop remembered inherited topic executions;
+an explicitly controlled independent topic retains its own state. Topic identity,
+not a group name or its project role, determines conversation ownership. Cancellation
+is scoped to matching Requests rather than the whole Session, preserving unrelated
+queued or running work in that Session.
+
+Ambient mainline inputs choose reply location through `feishu-response` before
+visible output. This remains available with personal `routing=none`, and does
+not authorize a new worker. Delivered topic surfaces retain the originating
+Session and Run as durable provenance. The first lookup also indexes pre-upgrade
+archived delivered receipts once, so completed phase-one topics keep their origin. Follow-ups steer only that execution or
+subsequent executions of the same topic; unrelated work in the Session cannot
+absorb them. Completion before admission or before definite native acceptance
+queues the supplement in the original Session and topic, retaining native
+conversation context. Accepted/uncertain inputs are never replayed; cancellation
+keeps unaccepted additions stopped. Older run-only continuation packets retain
+their fail-closed behavior. Existing independent topic bindings take precedence.
+
+A mainline reply/quote of a recorded outbound topic message can reuse that exact
+binding. Conflicting references, unknown messages and prose/title similarity do
+not choose a destination. No broad automatic new-topic routing is enabled.
 
 For groups using `participationControls: true`, the pinned status card shows
 active, listening or paused reception, the main Session link, its saved model and
@@ -770,8 +799,8 @@ refresh the card; per-card publication is serialized to avoid duplicate creates.
 See [project group cards and opening briefs](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)
 for scope, registration, feedback and acceptance boundaries.
 
-Participation controls apply independently to the main timeline and each existing
-Thread. `/mute` selects listening: messages are recorded without a model turn unless
+Participation controls apply to the main timeline and each existing Thread;
+Threads inherit the group state until an explicit topic override. `/mute` selects listening: messages are recorded without a model turn unless
 that message @ mentions the Bot or uses a task command.
 Listening still downloads image/file resources into the normal Session asset
 store and records attachment references on the observed message, so the Web
@@ -808,7 +837,8 @@ suppression cancels the matching unsent lease; it does not report a provider sen
 `inline`. `replyPolicy.chats[chatId]` and `groups[chatId].replyMode` override the
 default with `inline` or `thread`. `groups[chatId]` also supports
 `responseMode` (`all`/`mention_only`), optional `systemPrompt`, and the
-exact-chat `participationMode: "ambient"` setting. New groups and their topics use
+exact-chat `participationMode: "active" | "listening" | "paused"` setting
+(`"ambient"` remains a compatibility alias). New groups and their topics use
 `defaultGroupParticipation` (active by default); explicit per-group policies take
 precedence. A successfully bound topic continues without another mention. The
 group prompt is appended to global instructions and applied to existing Sessions

@@ -313,10 +313,8 @@ try {
   await waitFor(async () => (await getSessionReplyPublication(visibilitySession.id, visibilityOutcome.response.id))?.state === 'ready', 'visibility run finalization');
   const visibilityPublication = await getSessionReplyPublication(visibilitySession.id, visibilityOutcome.response.id);
   assert.equal(visibilityPublication.payload.text, '主 Harness 已经直接完成并交付结果。');
-  const visibilityReaction = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
-  assert.equal(visibilityReaction.delivery.kind, 'reaction', 'outcome is queued only when the final answer arrives');
-  await completeSourceDelivery(visibilityReaction.delivery.id, visibilityReaction.leaseId, { externalId: 'visibility-outcome' });
   const visibilityFinal = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' });
+  assert.equal(visibilityFinal.delivery.kind, 'content', 'legacy outcome-required does not manufacture a reaction');
   assert.equal(visibilityFinal.delivery.text, '【最终答复】\n\n主 Harness 已经直接完成并交付结果。');
   await completeSourceDelivery(visibilityFinal.delivery.id, visibilityFinal.leaseId, { externalId: 'visibility-final' });
   assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'visibility-test' }), null, 'settlement does not resend streamed replies');

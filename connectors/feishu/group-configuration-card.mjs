@@ -26,12 +26,10 @@ export function buildGroupConfigurationCard(record, view) {
   const states = { active: '主动参与', listening: '旁听', paused: '暂停' };
   const mode = record.mode || 'active';
   const selection = view.selection || {};
-  const workGroup = view.project?.group?.chatMode === 'topic'
-    || (view.participationControls === false && view.responseMode === 'all');
   const responseLabel = view.participationControls === false
-    ? (view.responseMode === 'mention_only' ? '点名回应' : '话题内逐条回应') : states[mode];
+    ? (view.responseMode === 'mention_only' ? '点名回应' : '按需回应（控制关闭）') : states[mode];
   const elements = [md(view.participationControls === false && view.responseMode === 'mention_only'
-    ? '沿用本群的点名回应设置。' : { active: workGroup ? '本群逐条回应，具体工作在各自话题中继续。' : '持续接收群消息，按讨论需要参与。',
+    ? '沿用本群的点名回应设置。' : { active: '持续接收群消息，按讨论需要参与。',
     listening: '持续接收群消息；@我可邀请回应。', paused: '暂停接收后续普通群消息。' }[mode])];
   if (view.participationControls !== false) elements.push({ tag: 'column_set', columns: Object.keys(states).map(state => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [{ tag: 'button',

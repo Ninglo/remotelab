@@ -1,8 +1,7 @@
 import { requests, appendDeliveries } from './requests.mjs';
 import { appendEvent } from './history.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
-import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
-import { readFeishuResponseDecision, normalizeFeishuResponsePayload, validateFeishuResponseFields } from '../lib/feishu-response-decision.mjs';
+import { readFeishuResponseDecision, normalizeFeishuResponsePayload, validateFeishuResponseFields, hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
 
 const fail = message => { throw new Error(message); };
@@ -59,28 +58,28 @@ export async function publishFeishuResponse(record, body, { store = requests, va
     const session = { id: record.sessionId };
     const origin = record.deliveryPlan || record.options?.sourceDelivery;
     if (validateInput) await validateInput(record);
-    if (!hasPilotInputReplyContract(record) || origin?.connector !== 'feishu') {
-      fail('Local per-input replies require the pilot mainline');
+    if (!hasFeishuInputReplyContract(record) || origin?.connector !== 'feishu') {
+      fail('Local per-input replies require the Feishu response protocol');
     }
     const decision = readFeishuResponseDecision(body.text);
     if (decision.error) fail(decision.error);
     body = { ...decision, ...body };
-    const fields = Object.fromEntries(['replyMode', 'requestIds', 'reaction', 'noTextReason']
+    const fields = Object.fromEntries(['replyMode', 'requestIds', 'reaction', 'noTextReason', 'participationReason']
       .filter(key => body[key] !== undefined).map(key => [key, body[key]]));
     validateFeishuResponseFields(fields);
     const text = decision.text;
     const noTextReason = body.noTextReason?.trim() || '';
     const reaction = body.reaction;
-    if ((!preparedPayload && text.length > 12000) || (!text && !noTextReason && !reaction && !preparedPayload?.attachments?.length)) fail('Provide reply text (tool replies allow up to 12000 characters) or a reason no text is needed');
+    if ((!preparedPayload && text.length > 12000) || (!text && !noTextReason && reaction === undefined && !preparedPayload?.attachments?.length)) fail('Provide reply text (tool replies allow up to 12000 characters) or a reason no text is needed');
     if ((text || preparedPayload?.attachments?.length) && noTextReason) fail('Select a text reply or a no-text decision');
     const ids = body.requestIds || [record.requestId];
     if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length
         || !ids.includes(record.requestId)) fail('Select 1–8 distinct input IDs including the current input');
     const inputs = await Promise.all(ids.map(id => store.byRequest(session.id, id)));
     const payload = normalizeFeishuResponsePayload({ ...(preparedPayload || {}), text,
-      attachments: preparedPayload?.attachments || [], ...(reaction ? { reaction, reactionStage: 2 } : {}) });
+      attachments: preparedPayload?.attachments || [], ...(reaction !== undefined ? { reaction, reactionStage: 2 } : {}) });
     const root = await store.byRunId(record.nativeDispatchRunId || record.runId);
-    if (!root || root.result) fail('Active pilot execution is required');
+    if (!root || root.result) fail('Active Feishu execution is required');
     if (body.replyMode !== undefined && !['inline', 'thread'].includes(body.replyMode)) fail('replyMode must be inline or thread');
     const ownerPlan = inputs[0]?.deliveryPlan || inputs[0]?.options?.sourceDelivery;
     const deliveryPlan = resolveAmbientFeishuReplyPlan(root, ownerPlan,
@@ -92,11 +91,12 @@ export async function publishFeishuResponse(record, body, { store = requests, va
     const legacyReservation = reserved && !Object.hasOwn(reserved, 'deliveryPlan') && body.replyMode === undefined;
     const reply = { requestIds: ids, ownerRequestId: ids[0], payload,
       ...(providerMessageId ? { providerMessageId } : {}),
-      ...((deliveryPlan || ownerPlan) && !legacyReservation ? { deliveryPlan: deliveryPlan || ownerPlan } : {}), ...(noTextReason ? { noTextReason } : {}) };
+      ...((deliveryPlan || ownerPlan) && !legacyReservation ? { deliveryPlan: deliveryPlan || ownerPlan } : {}), ...(noTextReason ? { noTextReason } : {}),
+      ...(body.participationReason ? { participationReason: body.participationReason } : {}) };
     for (const input of inputs) {
-      if (!input || !hasPilotInputReplyContract(input)
+      if (!input || !hasFeishuInputReplyContract(input)
           || (input.nativeDispatchRunId || input.runId) !== (record.nativeDispatchRunId || record.runId)) {
-        fail('Source input does not belong to this active pilot execution');
+        fail('Source input does not belong to this active Feishu execution');
       }
       if (validateInput) await validateInput(input);
       const source = { origin: input.deliveryPlan || input.options?.sourceDelivery };
@@ -112,7 +112,7 @@ export async function publishFeishuResponse(record, body, { store = requests, va
       }
     }
     await store.mutate(root.key, current => {
-      if (current.result) fail('Active pilot execution is required');
+      if (current.result) fail('Active Feishu execution is required');
       const prior = (current.mainlineReplyPlans || []).filter(p => p.requestIds.some(id => ids.includes(id)));
       if (prior.length && (prior.length !== 1 || JSON.stringify(prior[0]) !== JSON.stringify(reply))) {
         fail('Input already has a different reserved reply');

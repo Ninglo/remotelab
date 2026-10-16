@@ -1,3 +1,4 @@
+import { rememberFeishuThreadSurface } from './feishu-thread-continuation.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { FEISHU_OUTCOME_REACTIONS } from '../lib/feishu-reaction-directive.mjs';
 export { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
@@ -108,12 +109,13 @@ export async function getSourceDelivery(id) {
 
 export async function enqueueSourceDelivery(input = {}) {
   const plan = normalizeSourceDeliveryPlan(input.sourceDelivery);
-  const reaction = trimString(input.reaction);
+  const reaction = input.reaction === null ? null : trimString(input.reaction);
+  const hasReaction = reaction === null || Boolean(reaction);
   const reactionStage = input.reactionStage ?? 1;
-  if (reaction && ![1, 2].includes(reactionStage)) throw new Error('Invalid Feishu reaction stage');
-  if (reaction && (plan?.connector !== 'feishu' || !plan.target?.messageId
-      || !FEISHU_OUTCOME_REACTIONS.includes(reaction))) throw new Error('Invalid Feishu reaction delivery');
-  if (!plan || !input.responseId || (!input.text && !input.attachments?.length && !reaction)) {
+  if (hasReaction && ![1, 2].includes(reactionStage)) throw new Error('Invalid Feishu reaction stage');
+  if (hasReaction && (plan?.connector !== 'feishu' || !plan.target?.messageId
+      || (reaction !== null && !FEISHU_OUTCOME_REACTIONS.includes(reaction)))) throw new Error('Invalid Feishu reaction delivery');
+  if (!plan || !input.responseId || (!input.text && !input.attachments?.length && !hasReaction)) {
     throw new Error('Delivery requires target, responseId and content or a Feishu reaction');
   }
   const sessionId = input.sessionId || 'outbound';
@@ -127,7 +129,7 @@ export async function enqueueSourceDelivery(input = {}) {
   }
   const requestId = `outbound:${input.responseId}:${requestKey(plan.sourceRouteId, JSON.stringify(plan.target))}`;
   // This producer has no AI execution; it uses the same committed outbox aggregate.
-  const { record } = await requests.accept({ sessionId, requestId, text: input.text || (reaction ? '[reaction]' : '[attachment]'),
+  const { record } = await requests.accept({ sessionId, requestId, text: input.text || (hasReaction ? '[reaction]' : '[attachment]'),
     options: { deliveryOnly: true, responseId: input.responseId },
     result: { state: 'completed', payload: { text: input.text || '', attachments: input.attachments || [], reaction } },
     plans: buildReplyDeliveries(plan, { text: input.text, attachments: input.attachments, reaction }).map(part => ({ ...part,
@@ -188,6 +190,7 @@ async function mutateDelivery(id, update, { priorReceipt } = {}) {
       ...(updated.receiptRecovered ? { receiptRecovered: true } : {}),
       externalId: updated.externalId || '' }, { priorReceipt });
   }
+  await rememberFeishuThreadSurface(entry);
   await requests.archiveFinished(key);
   broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
   return record.deliveries[index];

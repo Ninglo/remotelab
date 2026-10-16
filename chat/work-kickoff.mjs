@@ -58,7 +58,7 @@ async function participation(origin, configPath) {
   const raw = await readRecord(configPath);
   if (!raw) fail('Participation configuration is unavailable');
   const config = { ...raw, sourceRouteId: origin.sourceRouteId, storageDir: raw.storageDir || dirname(configPath),
-    groups: normalizeFeishuGroups(raw.groups) };
+    defaultGroupParticipation: raw.defaultGroupParticipation || 'active', groups: normalizeFeishuGroups(raw.groups) };
   // Config path is operator-owned registration, never a tool payload path.
   if (raw.botId && sanitizeIdPart(raw.botId) !== origin.sourceRouteId) fail('Participation configuration belongs to another route');
   const runtime = { config }, summary = { ...origin.target };
@@ -79,7 +79,7 @@ async function actorFor(record) {
 }
 export function kickoffQuestion(p) {
   return { title: [ `是否将这项讨论移交干活群开工？（建议第 ${p.version} 版）`, `目标：${p.goal}`, `已定方案与范围：${p.plan}`,
-    `来源：${p.sources}`, `未决项：${p.unresolved}`, `目标干活群：${p.targetName}（${p.target.target.chatId}）`,
+    `来源：${p.sources}`, `未决项：${p.unresolved}`, `目标干活群：${p.targetName}`,
     `验收：${p.acceptance}`, '确认后才创建独立话题并启动，结果回到本讨论；继续讨论、暂不开展或未回答均不开工。' ].join('\n\n'),
     options: KICKOFF_CHOICES };
 }

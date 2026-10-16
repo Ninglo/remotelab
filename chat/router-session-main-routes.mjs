@@ -15,7 +15,7 @@ import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-disp
 import { clampGuestSessionFolder } from './session-folder.mjs';
 import { resolveStarterPresetDefinition } from './starter-session-content.mjs';
 import {
-  cancelActiveRun,
+  cancelActiveRun, cancelFeishuConversation,
   removeQueuedMessage,
   createSession,
   getRunState,
@@ -513,6 +513,12 @@ export async function handleSessionMainRoutes({
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'cancel') {
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+      const body = JSON.parse((await readBody(req, 32768)) || '{}');
+      if (body.participationConversation) {
+        if (authSession?.authKind !== 'service') { writeJson(res, 403, { error: 'Connector service authentication required' }); return true; }
+        writeJson(res, 200, await cancelFeishuConversation(sessionId, body.participationConversation));
+        return true;
+      }
       const run = await cancelActiveRun(sessionId);
       if (!run) {
         const session = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });

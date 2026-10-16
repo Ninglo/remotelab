@@ -90,7 +90,8 @@ export async function findFeishuThreadSessionBinding(runtime, summary) {
     const result = await request('/api/session-conversations/resolve', { method: 'POST', body: { conversation } });
     if (!result.response.ok) throw new Error(result.json?.error || 'Unable to resolve Session conversation');
     if (result.json.sessionId) return { sessionId: result.json.sessionId, direction: 'binding', chatId, conversationId: threadId,
-      ...(result.json.continuationRunId ? { continuationRunId: result.json.continuationRunId } : {}) };
+      ...(result.json.continuationRunId ? { continuationRunId: result.json.continuationRunId } : {}),
+      ...(result.json.threadOriginRunId ? { threadOriginRunId: result.json.threadOriginRunId } : {}) };
   }
   if (!pathname) return null;
   const binding = await findConnectorMessageIndexRecord(pathname, {
@@ -113,4 +114,23 @@ export async function findFeishuThreadSessionBinding(runtime, summary) {
     if (!adopted.response.ok) throw new Error(adopted.json?.error || 'Unable to adopt legacy conversation');
   }
   return binding;
+}
+
+// Only an explicit reply/quote to a recorded outbound topic message can move a
+// mainline supplement. Similar text, titles and links do not establish ownership.
+export async function resolveFeishuReferencedTopic(runtime, summary) {
+  if (buildFeishuTopicId(summary) || !runtime.storagePaths?.messageIndexPath) return summary;
+  const refs = [...new Set([summary.parentId, summary.rootId].filter(Boolean))];
+  if (!refs.length) return summary;
+  const records = await Promise.all(refs.map(messageId => findConnectorMessageIndexRecord(
+    runtime.storagePaths.messageIndexPath, { connector: FEISHU_CONNECTOR_ID, messageId,
+      accountId: getFeishuAccountId(summary), chatId: summary.chatId })));
+  const topics = records.filter(record => record?.direction === 'outbound' && record.conversationKind === 'thread'
+    && record.chatId === summary.chatId && (record.accountId || '') === getFeishuAccountId(summary));
+  if (!topics.length || new Set(topics.map(record => `${record.sessionId}:${record.conversationId}`)).size !== 1) return summary;
+  const target = topics[0];
+  const candidate = { ...summary, conversationKind: 'thread', threadId: target.conversationId,
+    rootId: target.rootId || target.conversationId, replyInThread: true };
+  const binding = await findFeishuThreadSessionBinding(runtime, candidate);
+  return binding?.sessionId === target.sessionId ? candidate : summary;
 }

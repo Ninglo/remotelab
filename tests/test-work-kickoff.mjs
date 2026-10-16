@@ -16,6 +16,8 @@ const origin = { connector: 'feishu', sourceRouteId: 'bot', target: { chatId: 'd
 const config = { botId: 'bot', storageDir: connectorDir, groups: Object.fromEntries(['discussion', 'work'].map(id => [id,
   { participationMode: 'ambient', participationControls: true, participationStatusCard: false }])),
   projectLinks: [{ projectId: 'project', discussionChatId: 'discussion', workChatId: 'work', workChatName: 'Work group' }] };
+// Real connector configs may omit the loader's active default.
+config.groups.work = { responseMode: 'all', participationStatusCard: false };
 await writeFile(join(connectorDir, 'config.json'), JSON.stringify(config));
 // Deliberately no group-routing-pilot.json or personal opt-in.
 await writeFile(join(dir, 'chat-sessions.json'), JSON.stringify([{ id: 'source', name: 'Discussion', folder: home, tool: 'fake', conversation: origin }]));
@@ -25,7 +27,7 @@ try {
   const { findSessionMeta, mutateSessionMeta, withSessionsMetaMutation, loadSessionsMeta } = await import('../chat/session-meta-store.mjs');
   const { handleWorkKickoff: act, kickoffQuestionDecision: decide, acceptWorkKickoff: accept,
     validateWorkKickoffPlan: validate, recoverWorkKickoffs, KICKOFF_CHOICES } = await import('../chat/work-kickoff.mjs');
-  const { recoverExecutionPlans, readExecutionPlans } = await import('../chat/work-execution-plans.mjs');
+  const { recoverExecutionPlans, readExecutionPlans, validateExecutionPlanRequest } = await import('../chat/work-execution-plans.mjs');
   const { createParticipationController } = await import('../connectors/feishu/participation-state.mjs');
   const { buildNativeQuestionCard } = await import('../connectors/feishu/native-question-cards.mjs');
   const { claimSourceDelivery, completeSourceDelivery, failSourceDelivery, resolveSourceDelivery, getSourceDelivery, listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
@@ -108,6 +110,8 @@ try {
   const changing = await propose('Mode changed'); const changingAnswer = await answer(changing);
   await mode.change(origin.target, 'listening', { controlId: 'listen' });
   await assert.rejects(propose('Listening invitation cannot propose'), /active participation/);
+  await validateExecutionPlanRequest({ options: { workPlanReview: { sourceSessionId: 'source', planId: execution.id } } });
+  await assert.rejects(validateExecutionPlanRequest(childInput), /mode changed/);
   await assert.rejects(accept(changingAnswer, api), /mode or target changed/);
   await mode.change(origin.target, 'active', { controlId: 'active' });
   await assert.rejects(accept(changingAnswer, api), /mode or target changed/);

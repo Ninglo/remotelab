@@ -756,7 +756,7 @@ export async function handleControlRoutes({
       const session = await findSessionConversation(payload.conversation);
       const continuation = session ? null : await findActiveFeishuThreadExecution(payload.conversation);
       writeJson(res, 200, { sessionId: session?.id || continuation?.sessionId || null,
-        ...(continuation ? { continuationRunId: continuation.continuationRunId } : {}),
+        ...(continuation ? { continuationRunId: continuation.continuationRunId, threadOriginRunId: continuation.threadOriginRunId } : {}),
         conversation: session?.conversation || null });
     } catch (error) { writeJson(res, 400, { error: error.message }); }
     return true;

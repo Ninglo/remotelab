@@ -1,5 +1,4 @@
-import { readFeishuResponseDecision } from '../lib/feishu-response-decision.mjs';
-import { hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
+import { readFeishuResponseDecision, hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { isFinalAssistantMessage, isReplyMessage } from '../lib/assistant-message-phase.mjs';
 import { assistantSurfaceMessageId } from '../lib/assistant-surface-messages.mjs';
 import { buildReplyPublicationPayload } from './reply-publication.mjs';
@@ -11,7 +10,7 @@ import { requests } from './requests.mjs';
 export async function publishNativeFeishuResponses(record, history, run, {
   store = requests, session, fullHistory = history, prepareFinal = async event => event,
 } = {}) {
-  if (!hasPilotInputReplyContract(record) || run.state !== 'completed') return record;
+  if (!hasFeishuInputReplyContract(record) || run.state !== 'completed') return record;
   const candidates = history.filter(isReplyMessage);
   const finals = candidates.filter(isFinalAssistantMessage);
   const selected = [];
@@ -41,7 +40,8 @@ export async function publishNativeFeishuResponses(record, history, run, {
         finalDirectiveContent: event.content });
       await publishFeishuResponse(owner, { text: payload.text, requestIds: ids,
         ...(decision.replyMode ? { replyMode: decision.replyMode } : {}),
-        ...(decision.reaction ? { reaction: decision.reaction } : {}),
+        ...(decision.reaction !== undefined ? { reaction: decision.reaction } : {}),
+        ...(decision.participationReason ? { participationReason: decision.participationReason } : {}),
         ...(decision.noTextReason ? { noTextReason: decision.noTextReason } : {}),
       }, { store, preparedPayload: payload, providerMessageId: messageId });
       await store.mutate(record.key, current => {

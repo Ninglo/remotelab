@@ -510,7 +510,8 @@ export async function validateExecutionPlanRequest(record) {
   const source = await findSessionMeta(ref.sourceSessionId);
   const p = plans(source).find(p => p.id === ref.planId);
   if (!p || source.archived || ['cancelled', 'stopping', 'draft'].includes(p.state)) fail('Execution plan is no longer active; do not restart cancelled work');
-  await validateKickoff(p);
+  // A completed result still returns to its owner after a participation change.
+  if (record.options.workPlanChild) await validateKickoff(p);
   if (record.options.workPlanChild) {
     const b = p.branches.find(b => b.id === ref.branchId);
     if (!b || b.stopRequested || b.sessionId !== record.sessionId) fail('This branch was stopped or replaced');
