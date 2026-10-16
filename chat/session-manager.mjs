@@ -2123,6 +2123,8 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
           title: result.promotedCount > 0 ? 'Memory entries saved' : 'Memory update not applied',
           summary: `RemoteLab updated ${result.promotedCount} memory entry(s). Entry status and execution evidence remain separate from retrieval or behavioral success.`,
           reason: paths.length > 0 ? `Updated: ${paths.join(', ')}` : '',
+          learningOwnerPersonId: request?.options?.viewPersonId,
+          learningSourceEventSeq: userMessage?.seq,
           learningResults: result.results || [],
           rejectedLearningUpdates: result.rejected || [],
           ...(result.error ? { memoryLearningError: result.error } : {}),

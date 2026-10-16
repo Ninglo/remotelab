@@ -1,6 +1,7 @@
+import { getHistoryHeadSeq, loadHistory } from './history.mjs';
 import { loadPersonalMemorySettings, personalMemoryPreference } from './personal-memory-settings.mjs';
 
-export async function buildPersonalMemoryConversationContext({ personId, identityId, sourceContext } = {}) {
+export async function buildPersonalMemoryConversationContext({ personId, identityId, sourceContext, sessionId } = {}) {
   if (['bot', 'app'].includes(sourceContext?.sender?.senderType)) return '';
   // Admission has already loaded the authenticated directory. Ordinary users
   // keep their pointer-only path and do not cause extra memory-policy reads.
@@ -9,12 +10,46 @@ export async function buildPersonalMemoryConversationContext({ personId, identit
     const settings = await loadPersonalMemorySettings({ personId, identityId });
     if (!settings.available || !settings.conversational) return '';
     if (!settings.enabled) return `Personal memory is paused for current speaker ${personId}. Do not generate, retrieve or propose automated personal memories for this input. Existing history is not erased; do not inherit another speaker's enabled mode. Explicit current requests and separately maintained manual agreements still apply.`;
-    return `Personal memory conversation trial is enabled for current speaker ${personId}. This choice follows the verified sender across Web and Feishu private, group and topic inputs, never the Session owner or another participant.
-Handle the current task and notice feedback about HOW to collaborate with this person in the same turn. A correction can contain both an immediate task instruction and a reusable personal signal. When the person says they have repeatedly needed to correct your explanations, initiative, interruptions or handoffs, inspect relevant memories now with 'remotelab memory inspect --json'; do not reduce the whole message to the immediate task or wait for the post-turn reviewer. Routine messages without such a signal need no memory lookup.
-Separate three decisions: ownership, proposing, and confirming. Product/project requirements (such as changing an app's font) stay with that project, even when repeated. A concrete personal collaboration signal from ONE interaction is enough to record an observed candidate and ask whether it should carry forward; independent-session counts govern inferred status, not permission to ask. “I have said this many times” is evidence of the person's reported repetition, not proof of multiple recorded sessions. Explicit long-term personal instructions can be saved as confirmed directly; a situational correction with unclear future scope needs a proposal.
-Compare meaning AND scope. An identical confirmed preference should be applied, not proposed again. A related preference limited to one domain does not already cover broader feedback: keep the confirmed scope intact and propose the additional scope separately, with a reference to the related entry, until the person decides. Do not broaden accepted permissions through memory. Example: after “你能处理的就都处理掉，强调很多次了，需要帮助的时候叫我”, consider “在已授权工作中主动完成能处理的步骤，确需本人帮助或决定时再询问”; do not turn this into unlimited permission. This example is not evidence about the current person.
-For a new supported candidate, record a habit observation first if needed, then call 'memory apply' action 'propose' with its key/kind, expectedVersion, exact question and current user evidence. After successful recording, append one natural sentence to the next useful ordinary answer in this turn: your concrete observation plus whether to retain it. You need not wait for a long task to finish. “Answer the task first” controls presentation order, not a requirement to finish all execution before noticing feedback. No separate private message, card, questionnaire, reminder or scheduled digest; no manufactured question on every message. Shared conversations must not expose private facts from elsewhere. If immediate urgent work or privacy prevents asking, keep only the observation and defer creating the proposal until ready to ask.
-A pending proposal suppresses repeat questions across this person's conversations. If a concurrent writer rejects your stale version, inspect before acting; never ask a duplicate. Recording a proposal is not delivery or acceptance. The question must preserve the candidate's meaning and scope. Observations and inferred candidates are not confirmed defaults.
-When this person clearly asks to retain that specific meaning, use the existing explicit revision workflow to confirm it; a vague “好/可以” with multiple possible referents is insufficient. If they narrow or correct it, update the same entry with evidence; if they decline, withdraw it. Inspect the entry's proposal and scope before resolving it, and do not confirm a proposal that changed since it was asked. Silence leaves it pending; do not chase. Direct instructions such as “以后请这样称呼我” already authorize that personal preference and need no extra question. The native Harness remains responsible for whether and how to ask.`;
+    const feedback = await recentMemoryFeedback(sessionId, personId);
+    return `Personal memory conversation trial is enabled for verified current speaker ${personId}, across Web and Feishu; never inherit the Session owner's preferences.
+While doing the task, notice feedback about HOW to collaborate (explanations, initiative, interruptions, handoffs). One concrete signal is enough to consider a candidate now; repeated corrections deserve attention in this turn, not only after completion. Product/project requirements stay with the project, even when repeated. Reported repetition is not fabricated independent evidence.
+On a signal, use 'remotelab memory inspect --json' and compare meaning AND scope. Apply an identical confirmed preference without asking again. Read actual conditions; a product name inside a preference is not by itself a restriction on where it applies. Preserve narrower accepted scopes; propose any supported additional scope separately. Memory never expands business authorization.
+Explicit long-term personal instructions: save as confirmed via 'memory apply' with original evidence, then briefly acknowledge the exact saved preference in the ordinary reply ONLY after success. Unclear future scope: record an observed habit and 'propose' with current version, exact question and evidence, then append one natural observation-plus-question to the next useful answer this turn. Do not wait for the whole task to finish. Candidate, pending and confirmed are different states.
+Read $REMOTELAB_PROJECT_ROOT/docs/memory-learning.md for write schemas. Resolve a pending proposal only after inspecting its unchanged meaning/scope and a clear owner decision; ambiguous “好/可以” or silence is not consent. Correct/narrow the same entry, withdraw a declined one. Pending suppresses duplicate questions; after version conflict inspect before retrying.
+At most one short memory sentence per useful reply; no separate private message, card, reminder or scheduled digest. Do not manufacture signals, repeatedly announce unchanged memories, or expose private facts from elsewhere. If urgency/privacy prevents asking, defer the proposal; keep only the observation. Failed writes are not saved memories. The Harness chooses appropriate timing and words.${feedback ? `\n${feedback}` : ''}`;
+  } catch { return ''; }
+}
+
+// Bounded, same-topic pointers only. A foreground context boundary prevents
+// replaying this opportunity every turn; it is NOT a user-delivery receipt.
+export function selectRecentMemoryFeedback(events, personId) {
+  const selected = new Map();
+  for (const event of [...events].reverse()) {
+    if (event.type === 'manager_context') break;
+    if (event.type !== 'context_operation' || event.operation !== 'write_memory'
+        || event.trigger !== 'automatic' || event.phase !== 'applied'
+        || event.learningOwnerPersonId !== personId) continue;
+    for (const result of event.learningResults || []) {
+      if (!result.changed || !result.path?.endsWith(`/reference/people/${personId}.md`)
+          || !/^mem_[a-f0-9]{16}$/.test(result.id || '') || !Number.isSafeInteger(result.version)
+          || !['confirmed', 'withdrawn'].includes(result.status)) continue;
+      if (!selected.has(result.id)) selected.set(result.id, { id: result.id, version: result.version,
+        status: result.status, sourceEventSeq: event.learningSourceEventSeq });
+      if (selected.size === 3) return [...selected.values()];
+    }
+  }
+  return [...selected.values()];
+}
+
+async function recentMemoryFeedback(sessionId, personId) {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId || '')) return '';
+  try {
+    const head = await getHistoryHeadSeq(sessionId);
+    const events = await loadHistory(sessionId, { fromSeq: Math.max(1, head - 63), includeBodies: false });
+    const pointers = selectRecentMemoryFeedback(events, personId);
+    if (!pointers.length) return '';
+    return 'Background memory writes from this speaker in this topic, after the last foreground context (pointers, not delivery or acceptance): '
+      + JSON.stringify(pointers)
+      + '. Inspect current entries before use. If still applicable and not already explained here, add one short natural sentence: acknowledge the still-confirmed save or withdrawal. Do not announce candidates as confirmed, repeat a pending question, expose unrelated profile content, or send a separate message. This opportunity may be deferred; no delivery is claimed.';
   } catch { return ''; }
 }

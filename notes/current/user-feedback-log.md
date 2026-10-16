@@ -1817,3 +1817,10 @@ still require observation in actual subsequent conversations.
 - Validation: isolated tests cover creator Web Sessions, unbound documents,
   repeated comments, restart, Bot isolation and lost creation acknowledgements.
   Real human comment delivery remains a separate deployment acceptance check.
+
+### 2026-10-16：记忆写入与人的感知分离
+
+- 反馈：试用者几乎感受不到个人记忆触发，认为规则仍有改进空间，并确认精简规则、补自然反馈、做隔离对照。
+- 核对：一个原始协作纠正已由旧后台评审保存，发生在新触发规则上线前；不能把该结果归因于新规则，也不能把静默保存当作自然询问体验。
+- 本次调整：前台缩短规则，成功保存后在普通答复中说明具体内容；后台写回用同话题下一轮的有限指针提供反馈机会，保持本人、状态和范围核对，不新增私聊或评审模型。机会投影不是送达保证。
+- 验证边界：机制测试与冻结历史的模型决策对照分别记录；自然使用中是否减少纠正仍需真实反馈，不能用新增条数替代效果。

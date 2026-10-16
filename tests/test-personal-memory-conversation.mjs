@@ -104,6 +104,30 @@ try {
   assert.equal(candidate.reviewProposal.status, 'pending');
   assert.equal(afterCorrection.find(e => e.key === narrow.key).content, narrow.content);
   assert.equal(afterCorrection.find(e => e.key === narrow.key).conditions, narrow.conditions);
+  // Only this speaker's successful personal background writes in this topic
+  // are offered. Context projection is an opportunity, never delivery proof.
+  const { selectRecentMemoryFeedback: select } = await import('../chat/personal-memory-conversation.mjs');
+  const { appendEvent } = await import('../chat/history.mjs');
+  const notice = { type: 'context_operation', operation: 'write_memory', phase: 'applied', trigger: 'automatic',
+    learningOwnerPersonId: actor.personId, learningSourceEventSeq: 1,
+    learningResults: [{ changed: true, path: `${memoryDir}/reference/people/person_alice.md`,
+      id: 'mem_0123456789abcdef', version: 1, status: 'confirmed' }] };
+  assert.equal(select([notice], actor.personId).length, 1);
+  assert.equal(select([notice], bob.personId).length, 0);
+  assert.equal(select([{ ...notice, learningResults: [{ ...notice.learningResults[0], status: 'observed' }] }], actor.personId).length, 0);
+  assert.equal(select([{ ...notice, phase: 'rejected' }], actor.personId).length, 0);
+  assert.equal(select([{ ...notice, learningOwnerPersonId: undefined }], actor.personId).length, 0);
+  assert.equal(select([{ ...notice, learningResults: [{ ...notice.learningResults[0], path: '/agent-handbook.md' }] }], actor.personId).length, 0);
+  assert.equal(select([notice, { type: 'manager_context' }], actor.personId).length, 0);
+  const updatedNotice = { ...notice, learningResults: [{ ...notice.learningResults[0], version: 2, status: 'withdrawn' }] };
+  assert.equal(select([notice, updatedNotice], actor.personId)[0].version, 2);
+  await appendEvent('memory-feedback-fixture', notice);
+  const feedbackContext = await buildTurnContextHook({ id: 'memory-feedback-fixture' }, actor);
+  assert.match(feedbackContext, /Background memory writes/);
+  assert.match(feedbackContext, /mem_0123456789abcdef/);
+  assert.doesNotMatch(feedbackContext, /解释陌生概念/);
+  await appendEvent('memory-feedback-fixture', { type: 'manager_context', content: feedbackContext });
+  assert.doesNotMatch(await buildTurnContextHook({ id: 'memory-feedback-fixture' }, actor), /Background memory writes/);
   await change({ enabled: false, confirm: true, expectedRevision: saved.revision }, actor);
   assert.match(await buildTurnContextHook({}, actor), /Personal memory is paused/);
   assert.equal(await mayReviewGroupPersonalMemory(groupInput), false);

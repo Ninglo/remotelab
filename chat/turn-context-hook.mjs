@@ -41,7 +41,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
-    !experimentInput.automated ? await buildPersonalMemoryConversationContext({ personId, identityId, sourceContext }) : '',
+    !experimentInput.automated ? await buildPersonalMemoryConversationContext({ personId, identityId, sourceContext, sessionId: session.id }) : '',
   ];
   const sectionsAfterProject = [
     await buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
