@@ -37,12 +37,12 @@ try {
   const group = await findSessionMeta('group');
   const ctx = { ...plan('reviewers').target, sourceRouteId: 'bot', connector: 'feishu' };
   assert.deepEqual(await deliveryReviewContext(group, ctx), [], 'pending send is not a feedback relationship');
+  const feedbackA = await input('group', 'feedback-a');
   const claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot' });
   await completeSourceDelivery(claim.delivery.id, claim.leaseId, { messageId: 'published-message', externalId: 'published-message' });
   assert.equal((await getSourceDelivery(posted.deliveryId)).deliveredMessageId, 'published-message');
   assert.equal((await findSessionMeta('work')).conversation.target.rootId, 'original', 'publication never rebinds original work');
   assert.equal((await findSessionMeta('group')).groupFeed, true);
-  const feedbackA = await input('group', 'feedback-a');
   let feedbackB = await input('group', 'feedback-b', 'b');
   feedbackB = await requests.mutate(feedbackB.key, r => ({ ...r, nativeDispatchRunId: feedbackA.runId }));
   const packet = { action: 'feedback', originSessionId: 'work', reviewId: posted.reviewId, messageId: 'published-message', requestIds: ['feedback-a','feedback-b'], reason: 'Both discuss this publication.', handled: 'Explained the known behavior.', unresolved: 'Two different proposed revisions remain.' };

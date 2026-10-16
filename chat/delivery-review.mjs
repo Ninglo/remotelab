@@ -106,7 +106,7 @@ export async function handleDeliveryReview(record, body, deps) {
       const input = await requests.byRequest(record.sessionId, id);
       if (!input || (input.runId !== rootRun && input.nativeDispatchRunId !== rootRun)) fail('Feedback input was not received by this execution');
       human(input);
-      if (!sameGroup(review.target, input.options.sourceContext) || Date.parse(input.acceptedAt) < Date.parse(sent.deliveredAt)) fail('Feedback is outside this publication');
+      if (!sameGroup(review.target, input.options.sourceContext) || Date.parse(input.acceptedAt) < Date.parse(review.createdAt)) fail('Feedback is outside this publication');
       inputs.push(input);
     }
     const packet = { requestIds: [...ids].sort(), messageId: sent.deliveredMessageId,

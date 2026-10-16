@@ -247,7 +247,7 @@ With explicitly authorized `publicRoster: true`, group cards display the pilot-w
 
 实现复用 Session 元数据、消息 outbox、Request 队列与完成回执。`work delivery --file <JSON> --json` 有三个操作：
 
-- `publish`：`key`、`chatId`、`text`、`scope`、`authorization`。Harness 核对当前真实人类指令确已授权发送和反馈回传；`authorization` 记录依据，不是新的批准按钮。服务端从当前输入固定原工作、作者、Bot 和租户，只能向已登记群发送。相同输入与 `key` 重试复用原正文及发送队列，修改内容会拒绝。初版发送文本（可包含成果链接），不隐式复制附件或整段私有上下文。实际发送回执中的消息 ID 才建立可用的反馈入口；未知或失败状态不宣称已送达。
+- `publish`：`key`、`chatId`、`text`、`scope`、`authorization`。Harness 核对当前真实人类指令确已授权发送和反馈回传；`authorization` 记录依据，不是新的批准按钮。服务端从当前输入固定原工作、作者、Bot 和租户，只能向已登记群发送。相同输入与 `key` 重试复用原正文及发送队列，修改内容会拒绝。初版发送文本（可包含成果链接），不隐式复制附件或整段私有上下文。实际发送回执中的消息 ID 才建立可用的反馈入口；未知或失败状态不宣称已送达。回执晚于成员反馈写入时，取得真实消息回执后仍可接收该发布建立以来的相关反馈，不把回执写入时间误当成发送时间。
 - `feedback`：`originSessionId`、`reviewId`、实际 `messageId`、`requestIds`、`reason`、`handled`、`unresolved`。只收本次执行实际接受的该群人类消息，最多八条，支持多位作者。语义关联由当前 Harness 判断并说明依据，工具验证消息来源和已发送的审阅关系；不能把任意群消息自动归入。群主仍保留本地答复责任。重复或交叠输入不会再次开工；丢失受理回执时重试同一包，原工作按既有队列接收，不拿反馈回答正在等待的人类确认。
 - `close`：原发布人从原工作提交 `reviewId`、`expectedVersion`、`reason`。关闭后不收新反馈，也不启动尚未准备的反馈处理；已经运行的处理不被冒称为取消。需要停止正在执行的工作仍走原停止入口。
 
