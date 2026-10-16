@@ -736,7 +736,7 @@ accepts the same modes and legacy `mention_only`.
 
 | Existing setting | Upgrade behavior |
 | --- | --- |
-| `responseMode: "all"` with active connector default | Unified active controller, including native topic groups |
+| `responseMode: "all"` with active connector default | Ordinary groups use the active controller; native topic groups use normal conversation/steer |
 | Explicit `responseMode: "mention_only"` without a participation mode | Preserve invitation-only admission |
 | `participationControls: false` | Preserve the disabled control boundary |
 | Stored listening/paused state, or legacy conversation mute | Retain state; upgrading does not authorize resumption |
@@ -775,7 +775,13 @@ batching delay. The explicit input list has no fixed eight-message ceiling;
 publication still verifies every input's accepted execution and reply ownership.
 This policy is maintained once in `lib/feishu-response-decision.mjs`; surface
 prompts describe the timeline/topic and optional Jev capability instead of adding
-another participation or placement policy.
+another participation or placement policy. Native topic prompts omit the redundant
+topic-surface paragraph; reaction retention/withdrawal is specified once in the
+response protocol. To check model behavior as well as transport, run the opt-in
+`tests/test-feishu-response-live.mjs` smoke: it uses the installed Codex against
+synthetic conversations, saves outputs for review, and never contacts Feishu.
+The deterministic `test-feishu-response-runtime.mjs` separately covers native
+steer, one combined delivery, and per-input settlement with a fixture model.
 
 Ambient mainline inputs choose reply location through `feishu-response` before
 visible output. This remains available with personal `routing=none`, and does

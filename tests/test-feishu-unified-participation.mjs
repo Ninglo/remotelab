@@ -44,7 +44,7 @@ try {
   assert.deepEqual(resolveFeishuGroupSettings({ ...config, groupReactionCandidates: selected, groups: { work: { reactionCandidates: ['THANKS'] } } }, base).reactionCandidates, ['THANKS']);
   assert.doesNotMatch(prompt, /Reply to each human message|By default, the human is speaking to you/);
   assert.match(prompt, /participationReason/);
-  assert.match(prompt, /human-to-human/);
+  assert.match(prompt, /join human discussion when useful/);
   assert.doesNotMatch(prompt, /work kickoff/);
   const discussionPrompt = resolveFeishuGroupSettings({ ...config, projectLinks: [{ discussionChatId: 'work', workChatId: 'target' }] }, base).systemPrompt;
   assert.match(discussionPrompt, /work kickoff --file/);

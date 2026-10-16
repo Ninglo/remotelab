@@ -14,6 +14,20 @@ Live agent smoke tests are intentionally opt-in because they spend real model/ru
 - Default smoke profile is `codex` with `effort=low`.
 - Override the smoke agent with `REMOTELAB_SMOKE_TOOL`, `REMOTELAB_SMOKE_MODEL`, and `REMOTELAB_SMOKE_EFFORT` when you want to trial a cheaper or alternate profile.
 
+The Feishu reply-policy semantic smoke is also opt-in:
+
+```sh
+REMOTELAB_LIVE_FEISHU_RESPONSE=1 node tests/test-feishu-response-live.mjs
+```
+
+It uses the installed Codex model/configuration, synthetic conversations and a
+read-only temporary workspace. It makes no Feishu calls and creates no RemoteLab
+Sessions. Six cases cover topic follow-up, failed Jev feedback, human chatter,
+combined questions/correction, complex thread choice and existing-topic continuity.
+It prints an evidence directory containing each input, policy and raw output.
+Review the text as well as assertions; six successes do not establish a general
+reliability rate. Native steer/delivery use the separate deterministic runtime test.
+
 High-value smoke scripts:
 
 - `tests/test-session-naming.mjs`

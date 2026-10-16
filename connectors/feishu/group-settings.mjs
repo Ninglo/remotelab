@@ -6,10 +6,10 @@ import { FEISHU_REACTION_CATALOG, normalizeFeishuReactionCandidates } from '../.
 // Participation, batching and placement have one policy below. These strings
 // describe only the current surface and optional feedback capability.
 const AMBIENT_SESSION_PROMPT = 'This Session follows the shared Feishu group timeline, including messages without an @ mention. A mention-only message invites you to reconsider recent unanswered messages together.';
-const TOPIC_SESSION_PROMPT = 'A Feishu topic is a continuing conversation. No repeated @ mention is required. Reply to directed requests and substantive supplements in this same topic; preserve its task and participants.';
+const TOPIC_SESSION_PROMPT = 'Continue the task and conversation in this same topic.';
 const GROUP_SESSION_PROMPT = 'Every admitted human message on this Feishu group mainline reaches your continuing Session.';
 const QUICK_REACTION_SESSION_PROMPT = 'Social reactions are optional; no temporary receipt or fallback emoji is added automatically.';
-const JEV_REACTION_SESSION_PROMPT = 'Jev supplies optional asynchronous social feedback. The main Session owns the complete handling of every admitted message. Use its reaction receipt if available; never wait or poll for Jev.';
+const JEV_REACTION_SESSION_PROMPT = 'Jev supplies optional asynchronous social feedback. Use its receipt if available; never wait for Jev.';
 
 const WORK_KICKOFF_SESSION_PROMPT = [
   'Only in active participation, when discussion has produced a concrete goal and executable plan, you may offer a discussion-to-work confirmation card. Judge the timing yourself from the discussion; do not use elapsed silence or an emoji as approval. Listening and paused modes do not offer this card.',
@@ -96,12 +96,12 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
     ...(jevReactions && group.dailyReportMemory
       ? { dailyReportMemory: group.dailyReportMemory } : {}),
     systemPrompt: [config.systemPrompt, group.systemPrompt,
-      !privateChat && (ambient || topic || quickReactions) ? `Optional reaction candidates: ${candidates.map(id => `${id} (${FEISHU_REACTION_CATALOG[id]})`).join(', ') || 'none'}. Omit reaction to retain it; reaction:null explicitly withdraws it.` : '',
+      !privateChat && (ambient || topic || quickReactions) ? `Optional reaction candidates: ${candidates.map(id => `${id} (${FEISHU_REACTION_CATALOG[id]})`).join(', ') || 'none'}.` : '',
       jevReactions ? JEV_REACTION_SESSION_PROMPT
         : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
       !topicGroup && (ambient || topic) && config.projectLinks?.some(link => link.discussionChatId === summary.chatId) ? WORK_KICKOFF_SESSION_PROMPT : '',
       (groupMainline || topic) ? buildFeishuResponseDecisionPrompt({ topicGroup }) : '',
-      ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT
+      ambient ? AMBIENT_SESSION_PROMPT : topic && !topicGroup ? TOPIC_SESSION_PROMPT
         : groupMainline && group.responseMode === 'all' ? GROUP_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
   };
