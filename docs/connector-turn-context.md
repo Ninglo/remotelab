@@ -193,7 +193,9 @@ additional-context bytes, not the complete native context or a Token count.
 Native inputs project the seven stable rule slots (surface, workboard
 instructions, source runtime, Session instructions, personal reply choices,
 strict-start policy and personally scoped in-flight tools), plus a separate project
-background slot containing the complete configured brief and source pointers.
+background slot containing versioned project brief pointers. Before substantive
+project work the Harness reads the relevant brief from its registered path;
+ordinary turns no longer carry its entire body.
 The first input carries their complete applicable
 set. A subsequent input in the same native thread carries a short recovery
 reference when its set and identity/source scope match the **latest accepted**
@@ -241,7 +243,8 @@ Fresh threads receive full rules. Changed identity/settings replace old slots,
 including revoked preferences. The snapshot is not a mutable latest-policy store;
 old accepted work and queued inputs retain their own rules. Every snapshot still
 contains ALL currently applicable blocks, including those omitted from a delta,
-so compaction restores complete rules and the complete current project brief.
+so compaction restores complete rules and the applicable versioned project brief
+pointers. Brief source files and their maintenance workflow remain unchanged.
 No TTL removes these
 files. Existing running native hosts need a new Run to install the hook; their
 supplementary inputs retain full rules until then.
@@ -357,3 +360,33 @@ authorization. Linked documents and media are not automatically read.
 这些是传输与恢复过程的证据。“恢复内容已生成”发生在恢复钩子输出之前，不能当作原生已应用的回执，更不能证明模型理解、记住或遵守了规则。未看到事件也不能判断规则已经丢失：历史记录、已有执行未加载新埋点、其他 Harness 和采集故障都可能留下空白。恢复失败保留原有停止继续推理的行为，埋点失败不改变恢复结果。
 
 目前快照覆盖 RemoteLab 的七类规则：消息显示、任务清单、来源运行、Session、个人回复、开工检查和运行中输入，以及独立的项目说明与来源入口。项目说明保持背景身份。接收记录区分全文、未变引用和仅变更块；三者对应的恢复快照都保存完整当前内容。原生系统指令、AGENTS.md、Skill 以及临时文件读取不在此快照内。压缩和恢复事件目前接入 Codex；其他 Harness 不显示虚构的“规则正常”结论。实际任务中的遗漏和不遵守仍需结合输出和工具行为检查。
+
+
+## Compact background projection (2026-10-16)
+
+Automatic context carries decision guidance and query entry points; detailed
+operation schemas stay in CLI help and the existing workflow documents. The
+execution trial still requires proposing useful independent branches, actual
+human approval for suggested splits, and immediate continuation of authorized
+parent work. It now reads `work --help` before plan/routing operations; registered
+routing groups are discovered with `work discover` rather than copied into every
+input. Personal trial activation and existing approval checks are unchanged.
+
+Project briefs are identified by path, URL and content hash. Read the relevant
+full brief before substantive project work; a pointer is not evidence it has
+been read. Unavailable briefs remain explicit. No summary replaces or edits
+source decisions, comments or history. A changed source hash invalidates its
+stable slot. The project directory keeps the same bounded candidate selection,
+Session ID, name, goal, state, priority and parent/project relationships. Repeated
+routes, navigation URLs and timestamps remain available through `work directory
+--json`. Its prompt version hashes only projected content, so irrelevant timestamp
+changes do not force the unchanged directory back into context. Verify live state,
+provenance and authorization before transfer; a directory is never an instruction.
+
+Startup, Feishu reaction/response and task-card instructions remove repeated
+explanations while retaining their existing authorization, delivery and acceptance
+rules. Source chat message bodies are not shortened by this change. Native Harness
+rules, Skill catalogs and private person profiles are outside this projection.
+Measure savings on the same saved input; fleet means also depend on task mix,
+identity changes, fresh/resumed threads and later on-demand reads. Existing
+provider history is not retroactively rewritten.

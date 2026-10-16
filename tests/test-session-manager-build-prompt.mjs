@@ -58,10 +58,10 @@ for (const receipt of [{ status: 'decided', needsChecklist: false }, { status: '
   }, '实验中的信息回复机制现在是什么样的？', 'codex', 'codex', null, { checklistGateReceipt: receipt });
   assert.match(prompt, /Visible checklist for this opt-in Session/,
     'an initial short question still gives the Harness the card rule when real investigation is necessary');
-  assert.match(prompt, /brief answer or straightforward action needs no card/);
-  assert.match(prompt, /renaming a project\/title/);
-  assert.match(prompt, /execution steps, not independent deliverables/);
-  assert.match(prompt, /Do not split one simple delivery/);
+  assert.match(prompt, /Otherwise execute and reply directly/);
+  assert.match(prompt, /only on explicit request or for at least two distinct outcomes/);
+  assert.match(prompt, /Inspection, edits, tests and delivery of one result are one outcome/);
+  assert.match(prompt, /Complexity, duration and tool use do not qualify/);
 }
 const optedOutPrompt = await buildPrompt('new-opted-out-question', {
   id: 'new-opted-out-question', workboardPilot: true, workboardOptInPersonId: 'other-person', systemPrompt: '',

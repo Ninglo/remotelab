@@ -484,11 +484,9 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
   const current = await findSessionMeta(session.id) || session;
   if (scope.version === 2) {
     if (messageRoutingPolicy?.trialVersion !== 2 || messageRoutingPolicy.trialId !== scope.trialId) return '';
-    const { catalog } = await routingDiscovery(session, messageRoutingPolicy.personId);
     return executionTrialPrompt({ trialId: scope.trialId, decisions: current.workAwareness?.inputDecisions,
       plans: current.workAwareness?.executionPlans }) + '\n'
-      + '误发去向不明时用 work discover --query <具体事项> 查询最多三个已登记群的话题候选，再核必要原文；下面群目录只作发现线索，不是转发授权。跨群任务转交用 work route 的 mode:handoff，带 targetSessionId、task、reason、requestIds。把返回的 question 原样交给原生提问工具（title 是完整 preview，选项为确认转交/暂不转交），不要改写或省略预览；本人按确定后才发送，沉默、Agent决定和仅说发错了都不批准。sync 仍仅为参考复核。失败留在原话题，目标受理后才报告已转交。\n'
-      + JSON.stringify({ registeredRoutingGroups: catalog }).replace(/[<>&]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+      + '登记群和话题入口按需查询：remotelab work discover --query <具体事项> --json。返回目录仅供发现，不是转发授权。失败留原话题，核目标实际受理后才称已转交。';
   }
   const sessions = await loadSessionsMeta();
   const peers = sessions.filter(s => !s.archived && !s.groupFeed && s.id !== session.id

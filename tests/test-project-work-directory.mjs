@@ -54,8 +54,14 @@ try {
   const text = prompt(directory, { sessionId: 'child', maxEntries: 3 });
   assert.match(text, /隐藏的项目工作目录/); assert.match(text, /work directory/);
   const data = JSON.parse(text.split('\n').at(-1));
+  assert(data.entries.every(e => !('sessionUrl' in e) && !('chatId' in e) && !('createdAt' in e)));
+  assert(directory.entries.some(e => e.sessionUrl && e.createdAt), 'full query retains details');
   assert.equal(data.entries.length, 3); assert(data.entries.some(e => e.sessionId === 'root'));
   assert(data.omittedCount > 0); assert(!text.includes('unrelated'));
+  const metadataOnly = { ...directory, entries: directory.entries.map(e => ({ ...e,
+    createdAt: '2026-10-15T00:00:00Z', lastUserMessageAt: '2026-10-15T01:00:00Z', sessionUrl: 'https://new.example/' })) };
+  assert.equal(prompt(metadataOnly, { sessionId: 'child', maxEntries: 3 }), text,
+    'unchanged projected directory is stable when only full-query metadata changes');
   const oldFamily = Array.from({ length: 20 }, (_, i) => ({ ...directory.entries[0], sessionId: 'old-child-' + i,
     parentSessionId: 'root', priority: 'historical' }));
   const crowded = JSON.parse(prompt({ ...directory, entries: [directory.entries[0], ...oldFamily, ...directory.entries.slice(1)] },
@@ -105,7 +111,8 @@ try {
   const { buildPrompt } = await import('../chat/session-manager.mjs');
   const child = sessions.find(s => s.id === 'child');
   const built = await buildPrompt(child.id, child, 'check', '', 'codex', { userMessageCount: 0 }, { skipSessionContinuation: true, workboardEnabled: false });
-  assert.match(built, /CURRENT_PROJECT_BRIEF_CONTENT/);
+  assert.doesNotMatch(built, /CURRENT_PROJECT_BRIEF_CONTENT/);
+  assert(built.includes(config.projects[0].briefPath));
   assert.match(built, /Hidden project work directory/);
   assert.match(built, /Investigate retry/);
   assert.doesNotMatch(built, /"sessionId":"unrelated"/);

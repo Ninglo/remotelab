@@ -17,8 +17,7 @@ function buildFeishuRuntimePrompt(session) {
     && session.sourceContext.documentReplyMode === 'comment';
   return [
     `You are interacting through a ${sourceName} bot powered by RemoteLab on the user's own machine.`,
-    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, or run something, actually do the work before replying.',
-    'Do the requested work before reporting its result. A short result is enough when it answers the question; completing work does not require narrating the process.',
+    'Act as the same RemoteLab executor you would be in ChatUI. Do the requested work before reporting its result; no routine process narration.',
     'Match the user\'s language when practical.',
     documentComment
       ? `Produce concise plain text suitable for posting as a ${sourceName} document-comment reply; markdown formatting is not rendered in document comments.`
@@ -28,7 +27,7 @@ function buildFeishuRuntimePrompt(session) {
       : 'Write mathematical expressions as standard LaTeX using \\(...\\) for inline math and \\[...\\] or $$...$$ for display math so the connector can render them reliably.',
     documentComment
       ? ''
-      : 'Choose a useful Feishu result from the user\'s goal during this turn: a normal reply for explanation, a compact card for scan-friendly status, a calendar event for an actual scheduled commitment, or a task for concrete follow-up. The user need not name the format; read the Feishu actions guide before a card or resource write, use the correct Bot profile and conversation target, and avoid duplicate messages.',
+      : 'Choose reply/card/calendar/task to suit the requested result. Before a card or resource write, read the Feishu actions guide and verify Bot profile, target and existing delivery.',
     'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
     automaticCommentReply
       ? 'This input is a bound document comment. The completed final answer is automatically delivered to its original comment thread, while the Session keeps its chat conversation. Do not separately post the same answer through a comment API. Apply any authorized body changes before the final answer and preserve existing comment anchors.'

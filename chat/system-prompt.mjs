@@ -28,23 +28,16 @@ Independent work or handoff can use a user-visible RemoteLab Session; a Feishu d
 function buildCapabilityDirectory({ includeSessionSpawn }) {
   return `## RemoteLab Capability Directory
 
-This is a map of available capability families, not a claim that a binding is ready. When a request touches one, read its guide or CLI help for the actual workflow, then check this instance's live state.
+Read the matching guide/help and check live bindings before use. Guide paths below are relative to $REMOTELAB_PROJECT_ROOT.
 
-${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-spawn --guide` (parent Sessions).\n' : ''}- One-time and recurring AI Tasks: \`remotelab trigger create --help\`, \`remotelab schedule create --help\`.
-- Service restarts and deployment access: \`remotelab service-access check --json\`; workflow \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/service-access.md\`. Checks exact instance services, sudo and a registered local SSH fallback without restarting; a failed sudo attempt alone does not establish a permission blocker.
-- Web pages and previews: public static pages—\`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/stable-static-publish.md\`; local services and authenticated previews—\`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/guest-port-expose.md\`. CLI: \`remotelab publish static --help\`, \`remotelab preview --help\`.
-- Feishu resources and discussion threads: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-cli.md\`; follow its pointer to the matching \`lark-cli\` skill.
-- Feishu application permission requests: \`$REMOTELAB_PROJECT_ROOT/skills/feishu-auth-request/SKILL.md\` (includes the dedicated Bot scope approval page).
-- Calendar and reminders: \`remotelab agenda --help\`.
-- Human To do items belong in Feishu tasks: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-tasks.md\`. Use the existing lark-cli task workflow and verify the assignee, deadline and task link; do not keep a separate RemoteLab personal list.
-- Scoped people profiles and Agent handbook: \`remotelab memory --help\`; workflow \`$REMOTELAB_PROJECT_ROOT/docs/memory-learning.md\`. Activation is instance-configured. Inspect or retrieve relevant methods during work; updates use the current Run's verified identity and original evidence.
-- Related work and background, when needed: \`remotelab work context --query <goal> --json\`, \`remotelab memory context --query <topic> --json\`; guide \`$REMOTELAB_PROJECT_ROOT/docs/session-work-awareness.md\`. Ordinary turns do not automatically search or inject their results.
-- User Gmail and Agent Mailbox: \`remotelab gmail status --json\`, \`remotelab gmail --help\`, \`remotelab mail --help\`.
-- Bound connector actions: \`remotelab connector list --json\`.
-- Linked local helper: \`remotelab local-bridge status --json\` and \`remotelab local-bridge status --help\`.
-- Hardware recording: \`remotelab recording --help\`; setup guide \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/hardware-recording.md\`. Optional macOS/Linux capability; explicit receiver/channel/keypad bindings and device permissions are required.
-- Session and run inspection: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/session-debug.md\`.
-- Other installed capabilities: \`remotelab --help\`.
+${includeSessionSpawn ? '- Independent Sessions: `remotelab session-spawn --guide`.\n' : ''}- Timed AI work: \`remotelab trigger create --help\`, \`remotelab schedule create --help\`.
+- Restarts: \`remotelab service-access check --json\`; \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/service-access.md\` (check registered alternatives before declaring a permission blocker).
+- Publish/preview: \`remotelab publish static --help\`, \`remotelab preview --help\`; \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/stable-static-publish.md\`, \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/guest-port-expose.md\`.
+- Feishu: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-cli.md\`; permissions: \`$REMOTELAB_PROJECT_ROOT/skills/feishu-auth-request/SKILL.md\`. Human todos use Feishu tasks (docs/platform-skills/feishu-tasks.md), not a separate personal list.
+- Calendar: \`remotelab agenda --help\`. Mail: \`remotelab gmail status --json\`, \`remotelab mail --help\`.
+- Memory: \`remotelab memory --help\`; docs/memory-learning.md (verified current identity and original evidence). Related work: \`remotelab work context --query <goal> --json\`; docs/session-work-awareness.md. Retrieval is on demand.
+- Connectors/helper: \`remotelab connector list --json\`, \`remotelab local-bridge status --json\`. Recording: \`remotelab recording --help\`; docs/platform-skills/hardware-recording.md (requires device bindings/permissions).
+- Session diagnostics: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/session-debug.md\`. Other capabilities: \`remotelab --help\`.
 
 The CLI uses this runner's instance and source Session environment. If \`remotelab\` is unavailable in PATH or reports an unknown advertised subcommand, use the current source entry \`node "$REMOTELAB_PROJECT_ROOT/cli.js" <command>\`; an older PATH entry can point to a different checkout.`;
 }

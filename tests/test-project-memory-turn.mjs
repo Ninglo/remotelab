@@ -21,7 +21,14 @@ try {
   const fresh=await buildPrompt(session.id,session,'begin','','codex',{userMessageCount:0},options);
   assert.match(fresh,/"release":"v1"/);assert.match(fresh,/"projectIds":\["alpha"\]/);assert.doesNotMatch(fresh,/Do not inject/);
   assert.match(fresh,/## Current project background/);
-  assert.equal(fresh.split('PROJECT_FULL_BRIEF_END_CONSTRAINT').length - 1, 1, 'project body occurs once, outside the dynamic turn block');
+  assert.doesNotMatch(fresh, /PROJECT_FULL_BRIEF_END_CONSTRAINT/, 'brief body is read on demand');
+  assert(fresh.includes(config.projects[0].briefPath));
+  assert.match(fresh, /Before substantive project work, read the relevant brief/);
+  assert.equal(await readFile(config.projects[0].briefPath, 'utf8'), 'PROJECT_FULL_BRIEF_END_CONSTRAINT');
+  await writeFile(config.projects[0].briefPath, 'UPDATED_BRIEF_END_CONSTRAINT');
+  const changed=await buildPrompt(session.id,session,'begin','','codex',{userMessageCount:0},options);
+  assert.notEqual(changed, fresh, 'a changed full brief hash refreshes the pointer slot');
+  assert.doesNotMatch(changed, /UPDATED_BRIEF_END_CONSTRAINT/);
   const personal=await buildPrompt(session.id,session,'begin','','codex',{userMessageCount:0},{...options,
     messageReplyPolicy:{scope:'person',version:2,opening:true,checklist:true,progress:'card_all',final:true}});
   assert.equal(personal.split('For substantial work, briefly state the issue and first action.').length - 1,1);

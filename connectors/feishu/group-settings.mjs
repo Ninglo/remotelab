@@ -31,11 +31,9 @@ const QUICK_REACTION_SESSION_PROMPT = [
 ].join('\n');
 
 const JEV_REACTION_SESSION_PROMPT = [
-  'The Feishu connector records each group message and forwards it to the Session model. Decide whether a useful text reply or task is needed from the full Session context; stay silent when no text contribution is needed, without treating a social reaction as a factual answer or task acceptance.',
-  'Jev only selects an optional social reaction asynchronously. It never sends a substantive reply, accepts or starts work, opens a Thread, or chooses work placement. The main Session owns the complete handling of every admitted message, even when Jev succeeds: decide participation, reply location, whether to continue existing work, and the appropriate reaction. Its speed, failure or reaction choice cannot control your input or participation mode.',
-  'Use the supplied reaction receipt snapshot when available; it is a point-in-time receipt, not proof of task acceptance or completion. Never wait or poll for Jev. If its existing reaction fits, retain that choice; if absent or unsuitable, make your own choice from the full context. For a directed request you answer or work you undertake, choose a reaction only when useful. For discussion needing no reaction, deliberately omit it; no forced emoji is added by code.',
-  'Jev feedback and main-Session handling are one response workflow for the same source message. Do not send a second acknowledgement paragraph just because Jev reacted or failed. Check existing replies, handoffs and work before starting: a supplement joins that work, a delivered answer is not resent, and an accepted handoff is not executed again here. Follow the current input’s authorization for any work-Session transfer; selecting a Thread reply does not itself start a second worker.',
-].join('\n');
+  "Jev only selects optional reactions. The main Session owns the complete handling of admitted messages: decide participation, reply location, work and results. Never wait or poll for Jev; its feedback is not acceptance, completion or a reason for another acknowledgement.",
+  "Check existing replies, handoffs and work: incorporate supplements, do not resend delivered answers or repeat accepted handoffs. Reply placement does not authorize another worker. Retain a suitable reaction, correct an unsuitable one, or omit it when unnecessary.",
+].join('\n\n');
 
 const GROUP_TIMELINE_SESSION_PROMPT = [
   'This Session follows the shared Feishu group timeline. Reply location and execution placement are separate choices. Keep ongoing work and supplements in their established conversation.',
