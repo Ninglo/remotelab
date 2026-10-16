@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-group-routing-'));
 setIsolatedTestHome(home);
+process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://remotelab.test';
 const dir = join(home, '.config/remotelab');
 await mkdir(dir, { recursive: true });
 await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_a', people: [

@@ -89,6 +89,7 @@ import {
 } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { handleWorkAwarenessRoutes } from './router-work-awareness.mjs';
+import { handleProtectedSourceRoutes } from './router-protected-sources.mjs';
 import { handleFeishuWebSettings } from './router-feishu-web-settings.mjs';
 import { handleFeishuPersonalWorkspace } from './router-feishu-personal-workspace.mjs';
 import { handleFeishuWebTopics } from './router-feishu-web-topics.mjs';
@@ -1445,6 +1446,8 @@ export async function handleRequest(req, res) {
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
+
+  if (await handleProtectedSourceRoutes({ req, res, pathname, authSession, writeJson })) return;
 
   if (await handleFeishuWebSettings({ req, res, pathname, parsedUrl, authSession, writeJson, nonce, runtime: feishuWebRuntime })) return;
   if (await handleFeishuPersonalWorkspace({ req, res, pathname, authSession, writeJson, nonce })) return;
