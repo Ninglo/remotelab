@@ -120,6 +120,19 @@ notification messages is not provided by this worker; an empty artifacts API
 response therefore remains a coverage gap unless an authorized source supplies
 the note link. No capability claim extends to all company-private materials.
 
+When this instance already has an authorized user identity in the same CLI
+profile, `userNoteLookup: true` explicitly enables one additional metadata path:
+Bot meeting details (`query_mode=0`) provide `note_id`, then the user-only
+`note +detail` resolves the note and standalone transcript tokens. This can work
+when `query_mode=1` returns an empty object. It does not log in, request new
+permissions, switch profiles or change resource ACLs. Transcript/Docx reads and
+group delivery still use the Bot. `source.json.noteLookup` records the separate
+metadata identity and note ID; default behavior remains Bot-only. Unified Note
+transcripts remain unsupported. Check the existing profile's actual authorization
+before enabling this option. Do not retry an old failure if its material has
+already been manually posted and analysed in the target group; retain that
+manual receipt separately rather than claiming automatic success or reposting it.
+
 `meeting-ingest/materials/<meetingId>/source.json` records provenance, actual read
 identity, provider errors and log IDs, original links, text length and hash. It
 preserves the original text in a private file. An empty or unavailable transcript

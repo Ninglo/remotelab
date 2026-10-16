@@ -47,11 +47,11 @@ export function transcriptLink(xml) {
 }
 export function createMeetingMaterialReader(runtime, options = {}) {
   const api = options.api || (args => meetingApi(runtime, args));
-  const cli = options.cli || (async args => {
+  const cli = options.cli || (async (args, identity = 'bot') => {
     let stdout;
     try {
       ({ stdout } = await exec(process.execPath, [launcher, '--profile', runtime.config.sourceRouteId || 'default', ...args,
-        '--as', 'bot', '--format', 'json'], { timeout: 60000, maxBuffer: 24 * 1024 * 1024,
+        '--as', identity, '--format', 'json'], { timeout: 60000, maxBuffer: 24 * 1024 * 1024,
         env: { ...process.env, LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' } }));
     } catch (error) {
       if (!error.stdout) throw new Error(`Feishu material CLI failed: ${error.code || 'transport'}`);
@@ -105,6 +105,27 @@ export function createMeetingMaterialReader(runtime, options = {}) {
     const minuteToken = artifactToken(evidence.minuteUrl, 'minutes');
     if (minuteToken) transcript = await attempt('minutes_transcript', () => exportTranscript(minuteToken)) || '';
     if (transcript.trim()) evidence.transcriptUrl = evidence.minuteUrl;
+    let noteArtifacts;
+    // Some tenants expose note_id in meeting metadata while hiding the
+    // query_mode=1 artifact fields. The Note API is user-only: use an existing
+    // authorized identity only when this instance explicitly opts in. Content
+    // reads and all group writes remain Bot operations.
+    if (!transcript.trim() && !evidence.noteUrl && !related.verbatim_doc_token && policy.userNoteLookup === true) {
+      const metadata = await attempt('meeting_note_id', () => api({ method: 'GET',
+        url: `/open-apis/vc/v1/meetings/${state.meetingId}`, params: { query_mode: 0 } }));
+      const noteId = metadata?.meeting?.note_id;
+      if (/^\d{10,30}$/.test(noteId || '')) {
+        evidence.noteLookup = { noteId, identity: 'user', profile: runtime.config.sourceRouteId || 'default' };
+        const data = await attempt('note_metadata', async () => {
+          const data = await cli(['note', '+detail', '--note-id', noteId], 'user');
+          if (data?.note?.note_id !== noteId) throw new Error('Note metadata identity mismatch');
+          return data;
+        });
+        noteArtifacts = data?.note;
+        evidence.noteLookup.displayType = noteArtifacts?.note_display_type || '';
+        evidence.noteUrl ||= docUrl(noteArtifacts?.note_doc_token);
+      }
+    }
     let note = '';
     if (artifactToken(evidence.noteUrl, 'docx')) {
       const data = await attempt('note_document', () => cli(['docs', '+fetch', '--doc', evidence.noteUrl]));
@@ -112,7 +133,8 @@ export function createMeetingMaterialReader(runtime, options = {}) {
       if (note) await writeFile(join(dir, 'note.xml'), note, { mode: 0o600 });
     }
     if (!transcript.trim()) {
-      const url = docUrl(related.verbatim_doc_token) || transcriptLink(note);
+      const url = noteArtifacts?.note_display_type === 'unified' ? ''
+        : docUrl(related.verbatim_doc_token) || docUrl(noteArtifacts?.verbatim_doc_token) || transcriptLink(note);
       if (url) {
         const data = await attempt('verbatim_document', () => cli(['docs', '+fetch', '--doc', url]));
         const content = data?.document?.content || '';

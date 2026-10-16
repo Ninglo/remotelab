@@ -132,5 +132,40 @@ try {
   const read = await reader(discovery('123456789011'), { noteUrl: 'https://tenant.feishu.cn/docx/note' });
   assert.equal(read.status, 'readable_transcript'); assert.equal(read.errors[0].code, 2091005);
   assert.equal((await readRecord(read.sourcePath)).transcriptUrl, 'https://tenant.feishu.cn/docx/transcript');
+  // Real failure mode: artifact fields are hidden, but meeting metadata exposes
+  // a Note ID. Opted-in user metadata resolves it; Bot still reads the text.
+  const lookupCalls = [];
+  let noteType = 'normal', returnedNoteId = '123456789099';
+  const lookupReader = createMeetingMaterialReader(runtime, {
+    api: async args => {
+      lookupCalls.push({ kind: 'api', mode: args.params?.query_mode });
+      if (args.url.endsWith('/recording')) return { recording: { url: 'https://tenant.feishu.cn/minutes/private' } };
+      return args.params.query_mode === 0 ? { meeting: { note_id: '123456789099' } } : { related_artifacts: {} };
+    },
+    exportTranscript: async () => { throw Object.assign(new Error('private Minutes'), { httpStatus: 403 }); },
+    cli: async (args, identity = 'bot') => {
+      lookupCalls.push({ kind: args[0], identity });
+      if (args[0] === 'note') return { note: { note_id: returnedNoteId, note_display_type: noteType,
+        note_doc_token: 'note', verbatim_doc_token: 'transcript' } };
+      assert.equal(identity, 'bot', 'user metadata authorization never changes content identity');
+      return { document: { content: args.includes('https://tenant.feishu.cn/docx/note')
+        ? '<p>summary only</p>' : '<p>Speaker 00:00:01 original speech</p>' } };
+    },
+  });
+  const defaultRead = await lookupReader(discovery('123456789012'), {}, p);
+  assert.equal(defaultRead.status, 'permission_denied');
+  assert.ok(!lookupCalls.some(c => c.kind === 'note' || c.mode === 0), 'no implicit user authorization');
+  const withLookup = await lookupReader(discovery('123456789013'), {}, { ...p, userNoteLookup: true });
+  assert.equal(withLookup.status, 'readable_transcript');
+  assert.equal(withLookup.noteLookup.identity, 'user'); assert.equal(withLookup.identity, 'bot');
+  assert.equal(withLookup.transcriptUrl, 'https://tenant.feishu.cn/docx/transcript');
+  assert.equal(lookupCalls.filter(c => c.kind === 'note').length, 1);
+  noteType = 'unified';
+  const unified = await lookupReader(discovery('123456789014'), {}, { ...p, userNoteLookup: true });
+  assert.equal(unified.transcriptPath, undefined, 'unified tokens are not standalone transcripts');
+  returnedNoteId = '123456789098';
+  const mismatch = await lookupReader(discovery('123456789015'), {}, { ...p, userNoteLookup: true });
+  assert.equal(mismatch.transcriptPath, undefined);
+  assert.ok(mismatch.errors.some(e => e.message === 'Note metadata identity mismatch'));
   console.log('meeting ingest: scope, observer handoff, subsequent event, retry, restart, material aliases, ambiguous send readback, durable admission, pause, limits and ACL fallback passed');
 } finally { for (const w of workers) w.stop(); await rm(root, { recursive: true, force: true }); }
