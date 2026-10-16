@@ -379,8 +379,14 @@ async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
     return '已取消这条转交，内容仍留在原话题。';
   }
   const target = await findSessionMeta(p.targetSessionId);
-  if (!target || target.archived || target.groupFeed || targetVersion(target) !== p.targetVersion
-      || !await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)) fail('目标或可转交范围已变化，尚未转交；请重新核对并确认。');
+  const prior = await requests.byRequest(p.targetSessionId, 'routing-handoff:' + p.id);
+  if (prior && (prior.options?.confirmedHandoff?.sourceSessionId !== session.id
+      || prior.options.confirmedHandoff.proposalId !== p.id || prior.options.viewPersonId !== p.personId)) fail('Existing admission does not match this approved handoff');
+  // Admission itself changes the destination's intent stamp. After a lost
+  // acknowledgement, recover the durable receipt instead of rejecting our own
+  // change or scheduling the task again. Fresh submissions still revalidate.
+  if (!prior && (!target || target.archived || target.groupFeed || targetVersion(target) !== p.targetVersion
+      || !await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId))) fail('目标或可转交范围已变化，尚未转交；请重新核对并确认。');
   const inputs = await Promise.all(p.originals.map(o => requests.byRequest(session.id, o.requestId)));
   for (let i = 0; i < inputs.length; i++) {
     const r = inputs[i];
@@ -392,12 +398,12 @@ async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
   await save(session.id, d => Object.assign(d.proposals.find(v => v.id === p.id), packet));
   for (const r of inputs) await requests.mutate(r.key, current => {
     if (current.routingHandoff && current.routingHandoff.routeId !== p.id) fail('Original input already belongs to another transfer');
-    return { ...current, routingHandoff: { targetSessionId: target.id, routeId: p.id, state: 'reserved' } };
+    return { ...current, routingHandoff: { targetSessionId: p.targetSessionId, routeId: p.id, state: 'reserved' } };
   });
   const manager = await api(deps);
   // Cross-group delivery must use the destination's participation scope, never
   // copy the source group's epoch onto a different group.
-  const delivery = structuredClone(target.conversation);
+  const delivery = structuredClone(target?.conversation || prior.deliveryPlan || prior.options.sourceDelivery);
   for (const k of ['participationEpoch', 'participationScopeTopicId', 'participationScopeMessageId']) delete delivery.target[k];
   const first = inputs[0];
   const options = { requestId: 'routing-handoff:' + p.id,
@@ -410,13 +416,13 @@ async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
       chatId: delivery.target.chatId, sourceSessionId: session.id, sourceRequestId: first.requestId },
     routingSource: { sessionId: session.id, requestId: first.requestId, routeId: p.id },
     confirmedHandoff: { sourceSessionId: session.id, proposalId: p.id },
-    tool: target.tool, model: target.model, effort: target.effort };
+    tool: target?.tool, model: target?.model, effort: target?.effort };
   const text = `原作者已确认将误发内容转交到本话题。\n限定任务：${p.task}\n理由：${p.reason}\n来源：${session.id}；确认输入：${packet.confirmationRequestId}\n仅承接这项已确认交办；原话题其他工作不变。结果在本话题答复，系统会回传来源，请勿重复发送。\n\n${inputs.map(r => `原输入 ${r.requestId}：\n${r.text}`).join('\n\n')}`;
-  const prior = await requests.byRequest(target.id, options.requestId);
   let receipt;
-  try { receipt = await manager.submitHttpMessage(target.id, prior?.text || text, [], prior?.options || options); }
+  try { receipt = prior ? { requestId: prior.requestId, run: { id: prior.runId } }
+    : await manager.submitHttpMessage(p.targetSessionId, text, [], options); }
   catch (error) {
-    if (!await requests.byRequest(target.id, options.requestId)) {
+    if (!await requests.byRequest(p.targetSessionId, options.requestId)) {
       for (const r of inputs) await requests.mutate(r.key, current => {
         if (current.routingHandoff?.routeId !== p.id) return current;
         const next = { ...current }; delete next.routingHandoff; return next;

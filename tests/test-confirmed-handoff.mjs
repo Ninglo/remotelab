@@ -100,7 +100,11 @@ try {
     submitHttpMessage: async (sessionId, text, images, supplied) => {
       const accepted = await requests.accept({ sessionId, requestId: supplied.requestId, text,
         images: supplied.preSavedAttachments, options: supplied, deliveryPlan: supplied.sourceDelivery });
-      if (!accepted.duplicate) { admissions++; throw Error('lost admission response'); }
+      if (!accepted.duplicate) {
+        admissions++;
+        await mutateSessionMeta(target.id, s => { s.workAwareness = { intents: [{ id: 'admission-changed-intent' }] }; return true; });
+        throw Error('lost admission response');
+      }
       return { requestId: accepted.record.requestId, run: { id: accepted.record.runId } };
     },
     enqueueSourceDelivery: async () => { if (deliveryFails) throw Error('receipt temporarily unavailable'); return { id: 'receipt' }; },
