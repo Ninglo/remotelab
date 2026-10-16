@@ -22,9 +22,12 @@ try {
   await writeFile(PROJECT_MEMORY_RUNTIME_FILE,JSON.stringify(config));
   const source={sourceRouteId:'bot',chatId:'chat'};
   let prompt=await buildProjectMemoryPromptBlock({id:'new'},source);
-  assert.match(prompt,/Human correction takes priority/);assert.match(prompt,/"hash"/);
+  assert.doesNotMatch(prompt,/Human correction takes priority/);assert.match(prompt,/"hash"/);
+  assert(prompt.includes(brief));assert.match(prompt,/Before substantive project work/);
   await writeFile(brief,'Changed after feedback');
-  assert.match(await buildProjectMemoryPromptBlock({id:'new'},source),/Changed after feedback/);
+  const changedPrompt=await buildProjectMemoryPromptBlock({id:'new'},source);
+  assert.notEqual(changedPrompt,prompt,'changed brief refreshes its hash');
+  assert.doesNotMatch(changedPrompt,/Changed after feedback/);
   assert.equal(await buildProjectMemoryPromptBlock({}, {...source,sourceRouteId:'other'}),'');
   await writeFile(brief,'x'.repeat(50*1024));
   assert.match(await buildProjectMemoryPromptBlock({},source),/unavailable/);
@@ -69,5 +72,5 @@ try {
   assert.ok(published.includes('overview'));
   const disconnected=signal();authAvailable=false;socket.close();await disconnected;
   assert.equal(runtime.projectCardsConnected,false);
-  console.log('Project group cards: scoped live invalidations, disconnect, completion distinction, unchanged response policy, and fresh bounded brief injection passed');
+  console.log('Project group cards: scoped live invalidations, disconnect, completion distinction, unchanged response policy, and fresh bounded brief pointers passed');
 } finally {worker?.stop();if(wss){for(const s of wss.clients)s.terminate();await new Promise(resolve=>wss.close(resolve));}await rm(home,{recursive:true,force:true});}
