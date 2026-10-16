@@ -5,7 +5,7 @@ import { join, resolve } from 'path';
 import { IS_GUEST_INSTANCE, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import { resolveOrCreateExternalIdentity } from '../lib/auth.mjs';
 import { findSessionConversation } from './session-conversations.mjs';
-import { validateFeishuThreadOrigin } from './feishu-thread-continuation.mjs';
+import { validateFeishuThreadOrigin, sameFeishuConversation } from './feishu-thread-continuation.mjs';
 import { SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { appendEvent, findLatestUserMessage, getHistorySnapshot, readEventBody } from './history.mjs';
@@ -398,7 +398,7 @@ export async function handleSessionMainRoutes({
         const payload = JSON.parse(await readBody(req, 512 * 1024));
         const session = await getSession(sessionId);
         const target = session?.conversation?.target;
-        const boundTopic = target?.chatType === 'group' && target?.threadId
+        const boundTopic = target?.chatType === 'group' && (target?.threadId || target?.rootId || target?.topicId)
           && ['thread', 'topic'].includes(target.conversationKind);
         if (session?.conversation?.connector !== 'feishu' || (!session.groupFeed && !boundTopic)) {
           writeJson(res, 400, { error: 'Observations require a bound Feishu group Session' });
@@ -413,7 +413,10 @@ export async function handleSessionMainRoutes({
         const incomingThreadId = source?.threadId || source?.topicId || '';
         // Ambient replies keep the main Session binding. Their delivered
         // thread provenance is the same authority used by normal admission.
-        const sameThread = (target?.threadId || '') === incomingThreadId;
+        const sameThread = boundTopic ? sameFeishuConversation(session.conversation, {
+          connector: source?.connector, sourceRouteId: source?.sourceRouteId,
+          target: { ...source, threadId: incomingThreadId, conversationKind: 'thread' },
+        }) : (target?.threadId || '') === incomingThreadId;
         const deliveredThread = !sameThread && source?.feishuThreadOriginRunId
           && await validateFeishuThreadOrigin(sessionId, source.feishuThreadOriginRunId, {
             connector: source.connector, sourceRouteId: source.sourceRouteId,

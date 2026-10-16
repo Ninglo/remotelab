@@ -34,6 +34,15 @@ native capability alone does not mean a follow-up can join the active request.
 
 ## Continuing an execution from its Feishu reply Thread
 
+New group mainline inputs use `feishuThreadSessionVersion: 1`: the Harness opens
+a bound independent thread Session through `work route` `mode:new` before
+substantive work. Thread follow-ups use ordinary native input in that Session;
+after completion they start its next turn. No running native execution is moved
+between Sessions. Dispatch does not steer a new-version mainline input into a
+pre-upgrade execution with a different frozen thread contract. Existing bound
+topics continue normally. The origin-run continuation below is retained only for
+legacy mainline-owned reply threads and already accepted inputs.
+
 When an ambient mainline execution places its reply in a new Thread, the
 successful delivery receipt connects subsequent Thread input to that exact
 active native Run. Existing independent Thread bindings still win. The temporary

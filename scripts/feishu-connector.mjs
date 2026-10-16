@@ -1235,6 +1235,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       ...(ambient ? {
         feishuParticipation: 'ambient',
         feishuReplyPlacementVersion: 1,
+        feishuThreadSessionVersion: 1,
         feishuExplicitMention: mentionsFeishuBot(runtime, effectiveSummary),
         ...(soleMention ? { feishuFeedback: 'reconsider_unanswered' } : {}),
       } : {}),

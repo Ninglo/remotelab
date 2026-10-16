@@ -16,6 +16,9 @@ export function canForwardNativeRequest(record, head) {
       || head.options?.routingRethink || record.options?.reviewFeedback || record.options?.workPlanReview || head.options?.workPlanReview) return false;
   if (!record.options?.nativeQuestionId && (record.options?.confirmedHandoff || head.options?.confirmedHandoff || head.options?.reviewFeedback)) return false;
   if (record.nativeDeclinedRunIds?.includes(head.runId)) return false;
+  if (!record.options?.nativeQuestionId
+      && (record.options?.sourceContext?.feishuThreadSessionVersion || 0)
+        !== (head.options?.sourceContext?.feishuThreadSessionVersion || 0)) return false;
   const origin = record.options?.sourceContext?.feishuThreadOriginRunId;
   const headOrigin = head.options?.sourceContext?.feishuThreadOriginRunId;
   if (!record.options?.nativeQuestionId && (origin || headOrigin)) {

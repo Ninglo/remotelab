@@ -1916,3 +1916,13 @@ Regression coverage checks final publication after supplementary replies and
 questions, duplicate-final rejection, visibility of replacement errors, and
 later-turn opening metadata. These mechanical fixes do not establish that
 the Harness now consistently continues authorized work to its intended result.
+# 2026-10-16 — Thread ownership and repeated conversation entries
+
+Users reported that ordinary-group Thread follow-ups disappeared after the first
+answer and that repeated model/session footers looked like newly created Sessions.
+The agreed behavior is one independent Session per new Thread or topic, reused
+for in-flight additions, later turns and restarts. New mainline inputs reuse the
+existing durable topic-creation operation before work begins; old accepted replies
+retain their original provenance. Observation and execution admission must agree
+on root/thread aliases. Runtime and Session-entry footers belong only to the first
+user turn, while later useful openings may still publish their content.

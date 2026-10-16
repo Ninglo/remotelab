@@ -140,6 +140,21 @@ try {
   }
   assert.equal((await connectorRequest('POST', observePath, topicObservation)).status, 400,
     'topic discussion cannot enter the group mainline observer');
+  // A user can reply before the outbound receipt has learned the provider's
+  // thread ID. The reserved root already identifies the bound conversation.
+  const pendingTopic = await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu', conversation: {
+      ...topicConversation, target: { ...topicConversation.target, threadId: undefined,
+        rootId: 'pending-root', messageId: 'pending-root' },
+    },
+  });
+  const pendingPath = `/api/sessions/${pendingTopic.body.session.id}/observations`;
+  const earlyInput = { sourceMessageId: 'early-followup', text: 'Add this detail',
+    sourceContext: { ...observedSource, messageId: 'early-followup', threadId: 'provider-new-thread', rootId: 'pending-root' } };
+  assert.equal((await connectorRequest('POST', pendingPath, earlyInput)).status, 201,
+    'follow-up before first receipt uses its reserved root');
+  assert.equal((await connectorRequest('POST', pendingPath, { ...earlyInput,
+    sourceContext: { ...earlyInput.sourceContext, rootId: 'another-root' } })).status, 400);
   // Delivered ambient topics belong to the original main Session, even
   // after its execution has completed and the Request has been archived.
   const { requests } = await import('../chat/requests.mjs');

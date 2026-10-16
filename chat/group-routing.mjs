@@ -40,10 +40,26 @@ async function api(deps) { return deps || await import('./session-manager.mjs');
 async function save(sessionId, update) {
   return mutateSessionMeta(sessionId, draft => { draft.groupRouting = state(draft); update(draft.groupRouting); return true; });
 }
-async function sourceFor(record, { explicitSyncDecision = false } = {}) {
+async function sourceFor(record, { explicitSyncDecision = false, newThread = false } = {}) {
   if (record.result || record.releasedAt) fail('Only an active accepted input can route work');
-  if (!explicitSyncDecision && !allowsMessageRouting(record.options)) fail('Message routing is disabled for this accepted input');
   const session = await findSessionMeta(record.sessionId);
+  const origin = record.deliveryPlan || record.options?.sourceDelivery;
+  // Opening a reply thread is a conversation operation, not permission to
+  // forward work into another existing task. Reuse the durable topic workflow.
+  if (newThread && record.options?.sourceContext?.feishuThreadSessionVersion === 1) {
+    if (!record.options.feishuConnectorAuthenticated
+        || !verifiedWorkActor(record.options.viewPersonId, record.options.initiatedByIdentityId)
+        || record.options.sourceContext.connector !== 'feishu'
+        || ['app', 'bot'].includes(record.options.sourceContext.sender?.senderType)
+        || record.options.internalOperation || record.options.automationTitle || record.options.routingRethink
+        || session?.conversation?.target?.chatType !== 'group'
+        || session.conversation.target.conversationKind !== 'main'
+        || origin?.target?.conversationKind !== 'main' || !sameGroup(session.conversation, origin)) {
+      fail('New reply threads require an authenticated human input in the bound group mainline');
+    }
+    return { session, origin, scope: { folder: session.folder, replyThread: true } };
+  }
+  if (!explicitSyncDecision && !allowsMessageRouting(record.options)) fail('Message routing is disabled for this accepted input');
   const scope = await routingPilotScope(session?.conversation, undefined, record.options?.viewPersonId);
   if (!isPilotInputSinceActivation(scope, record.acceptedAt)
       || !isPilotInputSinceActivation(scope, record.options?.sourceContext?.createTime || record.options?.sourceContext?.eventTs)
@@ -51,7 +67,6 @@ async function sourceFor(record, { explicitSyncDecision = false } = {}) {
       || record.options?.routingRethink || record.options?.automationTitle || record.options?.internalOperation
       || record.options?.sourceContext?.connector !== 'feishu'
       || ['app', 'bot'].includes(record.options?.sourceContext?.sender?.senderType)) fail('Routing requires a human Feishu input in the enabled pilot group');
-  const origin = record.deliveryPlan || record.options?.sourceDelivery;
   if (!sameGroup(session.conversation, origin)) fail('Input destination is outside the pilot group');
   if (scope.version === 2 && !explicitSyncDecision && (record.options?.messageRoutingPolicy?.trialVersion !== 2
       || record.options.messageRoutingPolicy.trialId !== scope.trialId)) fail('This accepted input predates the personal trial');
@@ -71,8 +86,8 @@ export { recoverPilotReplies, pilotInputResult } from './feishu-response.mjs';
 export async function routeGroupWork(record, body, deps) {
   return serial(record.sessionId, async () => {
     record = await requests.get(record.key) || record;
-    const { session, scope, origin } = await sourceFor(record);
     const mode = body.mode;
+    const { session, scope, origin } = await sourceFor(record, { newThread: mode === 'new' });
     if (!['new', 'continue', 'sync', 'handoff'].includes(mode)) fail('Use routing mode new, continue, sync or handoff');
     if (mode === 'handoff' && body.proposalId) {
       const p = state(session).proposals.find(p => p.id === body.proposalId && p.kind === 'task-handoff');
@@ -109,7 +124,9 @@ export async function routeGroupWork(record, body, deps) {
     const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
     for (const input of inputs) {
       if (!input || input.result || input.mainlineReply || input.options?.routingRethink || input.options?.automationTitle
-          || !allowsMessageRouting(input.options)
+          || !(scope.replyThread ? input.options?.feishuConnectorAuthenticated
+            && input.options?.sourceContext?.feishuThreadSessionVersion === 1
+            : allowsMessageRouting(input.options))
           || input.options?.internalOperation
           || (input.deliveries || []).some(d => ['content', 'attachment'].includes(d.kind))
           || (input.runId !== record.runId && input.nativeDispatchRunId !== (record.nativeDispatchRunId || record.runId)
@@ -131,7 +148,7 @@ export async function routeGroupWork(record, body, deps) {
       if (!target || target.archived) fail('Previously selected topic is unavailable');
     } else if (mode === 'new') {
       if (session.conversation.target.conversationKind !== 'main') fail('New topics start from the group mainline; continue the current topic directly');
-      if (state(session).routes.length >= 64) fail('Pilot topic limit reached');
+      if (!scope.replyThread && state(session).routes.length >= 64) fail('Pilot topic limit reached');
       const first = inputs[0], source = first.deliveryPlan || first.options.sourceDelivery;
       if (!source.target.messageId) fail('Source message anchor is required');
       const conversation = { ...source, target: { ...source.target, conversationKind: 'thread',
@@ -141,7 +158,7 @@ export async function routeGroupWork(record, body, deps) {
       const manager = await api(deps);
       target = await manager.createSession(scope.folder, record.runtimeSelection?.tool || session.tool,
         clean(body.name, 100) || task.slice(0, 60), { ...record.runtimeSelection,
-          sourceId: 'feishu', conversation, systemPrompt: contract,
+          sourceId: 'feishu', conversation, systemPrompt: scope.replyThread ? session.systemPrompt || '' : contract,
           initiatedByIdentityId: record.options.initiatedByIdentityId, viewPersonId: record.options.viewPersonId,
           externalTriggerId: 'routing-pilot:' + hash(JSON.stringify([source.sourceRouteId, source.target.chatId, source.target.messageId])) });
     }
@@ -164,6 +181,8 @@ export async function routeGroupWork(record, body, deps) {
         ...record.runtimeSelection, viewPersonId: input.options.viewPersonId,
         initiatedByIdentityId: input.options.initiatedByIdentityId,
         sourceContext: { ...input.options.sourceContext, feishuParticipation: undefined,
+          ...(scope.replyThread ? { feishuThreadSessionVersion: undefined, feishuReplyPlacementVersion: undefined,
+            conversationKind: 'thread', rootId: delivery.target.rootId, topicId: delivery.target.rootId } : {}),
           routingReplyMessageId: delivery.target.rootId || delivery.target.messageId }, sourceDelivery: delivery,
         preSavedAttachments: input.images, routingSource: { sessionId: session.id, requestId: input.requestId, routeId: route.id } };
       // On retry preserve the already admitted packet byte for byte.
@@ -183,6 +202,7 @@ export async function routeGroupWork(record, body, deps) {
         throw error;
       }
       await requests.mutate(claimed.key, current => ({ ...current, routingHandoff: { ...current.routingHandoff, state: 'submitted' } }));
+      if (scope.replyThread) continue; // Normal input feedback keeps its existing optional reaction policy.
       // The task has been admitted elsewhere. A separate durable receipt still
       // belongs on EACH original message, even when its mainline body is muted.
       try {
@@ -468,6 +488,14 @@ export async function completeGroupSync(record, run) {
     targetSessionId: packet.targetSessionId, result, deliveryId: receipt.id });
 }
 export async function buildGroupRoutingContext(session, sourceContext, { inputReplyContract = false, messageRoutingPolicy } = {}) {
+  if (sourceContext?.feishuThreadSessionVersion === 1 && session.conversation?.target?.conversationKind === 'main') {
+    return [
+      '## 新回复话题与独立 Session',
+      '群主线的简短答复直接 inline。需要展开查证或执行时，在业务工具和可见回复前，使用现有 work route 的 mode:new 创建当前消息的 thread 和独立 Session；目标 Session 承担工作与回复。已有 thread/话题直接在其绑定 Session 继续，不新建。',
+      '调用 node "$REMOTELAB_PROJECT_ROOT/cli.js" work route --file <JSON绝对路径> --json，JSON: {sourceRequestId:"本条已接受的Request ID",mode:"new",task:"原问题、必要上下文与交付要求",reason:"需要独立话题展开",name:"话题名"}。可用 requestIds 合并本轮已接受的相关补充。保留原问题和附件，不重复执行已经完成的动作。',
+      '创建和提交成功后由目标话题回复，主线结束当前输入，不重复开场、答案或会话入口。失败留在原处说明；未知结果按原请求重试，不另建话题。本入口仅允许为当前输入新开 thread，不授权向其他现有 Session 分流或同步。replyMode:thread 本身不再代替创建 Session。',
+    ].join('\n');
+  }
   if (!allowsMessageRouting({ messageRoutingPolicy })) {
     if (sourceContext?.connector !== 'feishu' || sourceContext.chatType !== 'group'
         || session.conversation?.connector !== 'feishu') return '';

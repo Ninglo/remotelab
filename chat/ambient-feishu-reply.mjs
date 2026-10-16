@@ -38,6 +38,9 @@ export function resolveAmbientFeishuReplyPlan(record, plan, history = []) {
   const selected = readFeishuReplyPlacement(history);
   if (!selected && requiresFeishuReplyPlacement(record)) return null;
   if (selected !== 'thread') return plan;
+  // New inputs open a bound independent Session through the native work tool.
+  // Never silently create a mainline-owned thread from a display marker.
+  if (record.options?.sourceContext?.feishuThreadSessionVersion === 1) return null;
   return normalizeConversation({
     ...conversation,
     target: {

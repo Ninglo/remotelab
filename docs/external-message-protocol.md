@@ -362,7 +362,21 @@ later thread choice cannot resurrect them. Ambient thread placement and its
 receipts belong to the shared execution, including when a steered input selects
 that placement. Terminal publication remains once per stopped execution.
 
-For an ambient mainline reply placed in a new Feishu Thread, the successful
+New ambient mainline inputs carry `feishuThreadSessionVersion: 1`. A substantive
+thread is opened through the existing `work route` `mode:new` operation, which
+reserves an independent Session bound to the source message root before admitting
+work. The Harness supplies the task and relevant context; the transport does not
+classify messages or move a running native execution. A `replyMode:thread` display
+marker alone is held for correction rather than opening a mainline-owned thread.
+This same-group creation does not enable cross-Session routing or sync. The
+original input keeps its handoff receipt and suppresses duplicate body delivery.
+The new Session owns the first substantive response and later messages, using
+ordinary native additions while running and fresh turns after completion. Provider
+thread IDs refine the durable root binding; neither completion nor service restart
+creates another Session. Observation admission accepts the same verified root/thread
+aliases as normal conversation resolution, including replies racing the first receipt.
+
+For a **legacy** ambient mainline reply placed in a new Feishu Thread, the successful
 outbox receipt indexes the provider Thread/root aliases with the originating Run.
 The index is written before Request archival and uses exact Bot, tenant and chat
 scope. Conflicting origins are not guessed. Resolution returns `threadOriginRunId`

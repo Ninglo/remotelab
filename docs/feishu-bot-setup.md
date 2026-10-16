@@ -597,12 +597,19 @@ questions, confirmation and review returns. Several short supplements can make
 one substantive discussion. Research, design feedback, cross-topic review,
 installation guidance and multi-step work normally belong in a Thread. Human
 placement instructions take priority; character count does not decide work
-ownership. A Thread reply does not itself launch another worker. Existing replies,
-accepted handoffs and ongoing work must be reused, not answered or started twice.
-Disabling automatic work-Session routing does not disable choosing a Thread reply.
+ownership. Each newly opened Thread has its own Session, just like a topic in a
+topic group. Before substantive work or the first visible reply, the Harness uses
+the existing `work route` `mode:new` command to reserve that Session and admit the
+original request with necessary context. The thread Session produces the answer;
+the group mainline does not repeat it. Existing topics continue their bound Session,
+including after a completed turn or restart. Existing replies, accepted handoffs
+and ongoing work are reused, not answered or started twice. Opening the current
+message's thread does not enable routing to another existing Session.
 
-Newly admitted ambient-group inputs carry `feishuReplyPlacementVersion: 1`.
-Before the first visible reply, the Harness selects placement in a hidden decision:
+Newly admitted ambient-group inputs carry `feishuReplyPlacementVersion: 1` and
+`feishuThreadSessionVersion: 1`. A new Thread requires the creation operation above;
+the display marker alone cannot create it. Inside a bound thread, or for an inline
+mainline answer, the Harness supplies its response decision before visible text:
 
 ```text
 <private>feishu-response:{"replyMode":"thread"}</private>
