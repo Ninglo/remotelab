@@ -651,8 +651,8 @@ try {
 assert.equal(normalizeReplyText('  \n\n  '), '');
 assert.equal(normalizeReplyText('  hello\r\n'), 'hello');
 assert.equal(normalizeReplyText(' <private>internal only</private> '), '');
-assert.equal(normalizeReplyText('  😺 hello [委屈]\r\n'), 'hello');
-assert.equal(normalizeReplyText('好的😺，我来处理。'), '好的，我来处理。');
+assert.equal(normalizeReplyText('  😺 hello [委屈]\r\n'), '😺 hello [委屈]');
+assert.equal(normalizeReplyText('好的😺，我来处理。'), '好的😺，我来处理。');
 
 let feishuCreatePayload = null;
 let feishuReplyPayload = null;
@@ -1133,8 +1133,8 @@ assert.equal(
 );
 assert.equal(
   compileFeishuReplyText('😺 @_user_1 [委屈] 这是一条消息。', mentionSummary.mentions),
-  '<at user_id="ou_mention_1">江虹</at> 这是一条消息。',
-  'outbound emoji and sticker aliases should be stripped before mention compilation',
+  '😺 <at user_id="ou_mention_1">江虹</at> [委屈] 这是一条消息。',
+  'outbound emoji and bracketed text survive mention compilation',
 );
 assert.equal(
   normalizeReplyText('前文  多余空格\n```json\n{\n  "nested": {\n    "value": 1\n  }\n}\n```\n后文  多余空格'),
@@ -2241,3 +2241,14 @@ console.log('ok - queued and preparing replies return acceptance immediately');
 console.log('ok - source delivery worker persists external receipts');
 
 await rm(tempHome, { recursive: true, force: true });
+
+const emojiPost = JSON.parse(await buildFeishuPostContent('[在做了] 嗨，我是 Index，你的 AI 好同事！\n项目进度、具体 case、方案探讨，都可以丢给我。\n接着聊。[吃饭] 👋', []));
+assert.equal(emojiPost.zh_cn.content[0][0].emoji_type, 'OnIt');
+assert.equal(emojiPost.zh_cn.content[2][1].emoji_type, 'EatingFood');
+assert.match(JSON.stringify(emojiPost), /👋/);
+for (const literal of ['`[吃饭]`', '[吃饭](https://example.com)', '\\[吃饭]', '```text\n[吃饭] 👋\n```', '```text\n[吃饭]']) {
+  const post = JSON.parse(await buildFeishuPostContent(literal, []));
+  assert.ok(!JSON.stringify(post).includes('"emotion"'), 'literal code and links must not become emoji');
+  assert.match(JSON.stringify(post), /吃饭/);
+}
+assert.equal(normalizeReplyText('[注意] 保留说明。👩‍💻 🇨🇳'), '[注意] 保留说明。👩‍💻 🇨🇳');

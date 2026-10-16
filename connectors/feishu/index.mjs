@@ -7,6 +7,7 @@
  */
 
 import { createHash } from 'crypto';
+import { FEISHU_CONFIRMED_REACTION_LABELS, FEISHU_REACTION_CATALOG } from '../../lib/feishu-reaction-catalog.mjs';
 
 import { stripHiddenBlocks } from '../../lib/reply-selection.mjs';
 import {
@@ -51,8 +52,6 @@ export const DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT = [
 export const MAX_FEISHU_TEXT_LENGTH = 5000;
 export const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
 
-const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\](?!\()/gu;
-const UNICODE_EMOJI_PATTERN = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?)*)/gu;
 const FEISHU_CODE_BLOCK_LANGUAGES = new Set([
   'BASH',
   'C',
@@ -871,16 +870,8 @@ function normalizeWhitespaceOutsideCodeFences(value) {
   return output.join('\n');
 }
 
-export function stripOutboundEmojiArtifacts(text) {
-  const stripped = String(text || '')
-    .replace(UNICODE_EMOJI_PATTERN, ' ')
-    .replace(FEISHU_EMOJI_ALIAS_PATTERN, ' ')
-    .replace(/[\u200D\uFE0E\uFE0F]/g, '');
-  return normalizeWhitespaceOutsideCodeFences(stripped);
-}
-
 export function cleanFeishuReplyText(text) {
-  return stripOutboundEmojiArtifacts(stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n'))).trim();
+  return normalizeWhitespaceOutsideCodeFences(stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n'))).trim();
 }
 
 export function normalizeReplyText(text) {
@@ -995,7 +986,31 @@ function buildFeishuTextRow(text) {
   return [{ tag: 'text', text: text || '\u200B' }];
 }
 
-function pushFeishuMarkdownRow(content, text, mentionEntries) {
+// Native emotion nodes can share a row with text, but not with post/md.
+// Convert plain prose only; keep Markdown, code, links and mentions intact.
+function buildFeishuEmojiRow(text, mentionEntries) {
+  const aliases = /\[([^\]\n]+)\]/g;
+  const nodes = [];
+  let cursor = 0;
+  for (const match of text.matchAll(aliases)) {
+    const id = (Object.hasOwn(FEISHU_CONFIRMED_REACTION_LABELS, match[1]) ? FEISHU_CONFIRMED_REACTION_LABELS[match[1]] : null)
+      || (Object.hasOwn(FEISHU_REACTION_CATALOG, match[1]) ? match[1] : null);
+    if (!id) continue;
+    if (match.index > cursor) nodes.push({ tag: 'text', text: text.slice(cursor, match.index) });
+    nodes.push({ tag: 'emotion', emoji_type: id });
+    cursor = match.index + match[0].length;
+  }
+  if (!nodes.length) return null;
+  if (cursor < text.length) nodes.push({ tag: 'text', text: text.slice(cursor) });
+  const prose = nodes.filter(node => node.tag === 'text').map(node => node.text).join('');
+  if (/[`*_<>\[\]\\|]/.test(prose) || /^\s*(?:#{1,6} |[-+] |\d+[.)] )/.test(prose)
+      || /\]\(/.test(text) || /https?:\/\//.test(prose) || findNextMentionMatch(text, mentionEntries, 0)) return null;
+  return nodes;
+}
+
+function pushFeishuMarkdownRow(content, text, mentionEntries, allowEmoji = true) {
+  const emojiRow = allowEmoji && buildFeishuEmojiRow(text, mentionEntries);
+  if (emojiRow) { content.push(emojiRow); return; }
   const markdown = compileFeishuMarkdownLine(text, mentionEntries);
   const previous = content[content.length - 1];
   // A post/md element is a Markdown document, not one source line. Keep
@@ -1007,10 +1022,10 @@ function pushFeishuMarkdownRow(content, text, mentionEntries) {
   }
 }
 
-function pushFeishuDocumentLine(content, block, mentionEntries) {
+function pushFeishuDocumentLine(content, block, mentionEntries, allowEmoji = true) {
   let markdown = '';
   const flushMarkdown = () => {
-    pushFeishuMarkdownRow(content, markdown, mentionEntries);
+    pushFeishuMarkdownRow(content, markdown, mentionEntries, allowEmoji);
     markdown = '';
   };
   let pushed = false;
@@ -1081,7 +1096,7 @@ export async function buildFeishuPostContent(text, mentions, options = {}) {
     if (block.type === 'line') {
       const line = getFeishuDocumentLineText(block);
       if (literalFence) {
-        pushFeishuDocumentLine(content, block, mentionEntries);
+        pushFeishuDocumentLine(content, block, mentionEntries, false);
         if (isMarkdownFenceEnd(line, literalFence)) literalFence = null;
         continue;
       }

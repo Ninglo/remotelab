@@ -963,7 +963,15 @@ admission tests alone do not prove platform event delivery.
 
 ### Markdown rendering
 
-Chat replies longer than 5,000 characters after hidden-content and emoji cleanup
+Body emoji follow the user's requested tone; transport preserves Unicode emoji
+(including joined sequences) and bracketed prose. Plain prose lines containing
+known Feishu aliases such as `[在做了]` / `[OnIt]` and `[吃饭]` / `[EatingFood]`
+use native `emotion` nodes alongside text. Code, links, mentions and formatted
+Markdown retain their original rendering; unrecognized aliases remain literal.
+These body elements are separate from message reactions and never add a reaction.
+
+
+Chat replies longer than 5,000 characters after hidden-content cleanup
 are sent as one `完整答复.md` file in the original chat or thread, preserving the
 complete visible Markdown instead of appending `[truncated]`. Replies whose
 serialized message content exceeds the conservative 28KB budget also use a file.

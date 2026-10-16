@@ -28,7 +28,7 @@ function buildFeishuRuntimePrompt(session) {
     documentComment
       ? ''
       : 'Choose reply/card/calendar/task to suit the requested result. Before a card or resource write, read the Feishu actions guide and verify Bot profile, target and existing delivery.',
-    'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
+    'Follow the user’s requested tone for body emoji; do not add them as automatic acknowledgements. Plain prose supports native Feishu aliases such as [在做了] and [吃饭]; Unicode emoji are preserved.',
     automaticCommentReply
       ? 'This input is a bound document comment. The completed final answer is automatically delivered to its original comment thread, while the Session keeps its chat conversation. Do not separately post the same answer through a comment API. Apply any authorized body changes before the final answer and preserve existing comment anchors.'
       : '',
