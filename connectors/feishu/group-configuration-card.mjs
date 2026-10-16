@@ -31,6 +31,7 @@ export function buildGroupConfigurationCard(record, view) {
   const elements = [md(view.participationControls === false && view.responseMode === 'mention_only'
     ? '沿用本群的点名回应设置。' : { active: '持续接收群消息，按讨论需要参与。',
     listening: '持续接收群消息；@我可邀请回应。', paused: '暂停接收后续普通群消息。' }[mode])];
+  if (record.cardRenewalNotice) elements.unshift(md(record.cardRenewalNotice));
   if (view.participationControls !== false) elements.push({ tag: 'column_set', columns: Object.keys(states).map(state => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [{ tag: 'button',
       type: state === mode ? 'primary' : 'default', text: plain(states[state]),

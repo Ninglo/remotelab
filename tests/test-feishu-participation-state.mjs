@@ -135,6 +135,32 @@ try {
   assert.equal(persisted.mode,'active');
   await runtime.participation.remember(fresh,'new-main');
   assert.equal((await runtime.participation.state(fresh)).sessionId,'new-main');
+
+  // Renewal explains a new message, while ordinary edits reuse the old one.
+  const { createRecordStore } = await import('../lib/durable-records.mjs');
+  const store = createRecordStore(join(home, 'participation-state'));
+  const notice = '旧卡片已满13天，更换新卡片';
+  assert.doesNotMatch(JSON.stringify(calls.cards.at(-1)), /旧卡片已满13天/);
+  await store.mutate(persisted.key, current => ({ ...current, cardCreatedAt: Date.now() - 13 * 86400_000 - 1000 }));
+  let creations = 0;
+  runtime.appClient.im.v1.message.create = async request => {
+    creations++;
+    assert.ok(request.data.content.includes(notice));
+    return { code: 0, data: { message_id: 'om_renewed' } };
+  };
+  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true });
+  assert.equal(creations, 0);
+  assert.ok(!JSON.stringify(calls.cards.at(-1)).includes(notice), 'patch-only refresh does not claim renewal');
+  await runtime.participation.publish(await runtime.participation.state(fresh));
+  const renewed = await runtime.participation.state(fresh);
+  assert.equal(creations, 1);
+  assert.equal(renewed.cardMessageId, 'om_renewed');
+  assert.equal(renewed.cardRenewalNotice, notice);
+  assert.ok(JSON.stringify(buildParticipationCard(renewed, {})).includes(notice), 'compact group card shows renewal');
+  runtime.participation = createParticipationController(runtime, options);
+  await runtime.participation.publish(await runtime.participation.state(fresh));
+  assert.equal(creations, 1, 'restart preserves the new binding without another message');
+  assert.ok(JSON.stringify(buildParticipationCard(await runtime.participation.state(fresh))).includes(notice));
   await Promise.all([...(runtime.jevReactionJobs?.values() || [])]);
   console.log('Feishu participation: observation, pause/resume, invitations, topic hints, scope and persistence passed');
 } finally { await rm(home, { recursive: true, force: true }); }
