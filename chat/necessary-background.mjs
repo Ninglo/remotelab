@@ -5,6 +5,8 @@ import { readMemoryDocument } from './memory-document.mjs';
 import { buildLearningContext } from './memory-learning.mjs';
 import { buildRelatedPersonContext } from './related-person-context.mjs';
 import { readTopicMemory } from './topic-memory-context.mjs';
+import { projectDirectoryScope } from './project-work-scope.mjs';
+import { loadSessionsMeta } from './session-meta-store.mjs';
 
 export function needsCompanyBackground(query = '') {
   return /办公室|办公(?:地点|地址)|上班|就餐|吃饭|午饭|晚饭|通勤|接待|来访|工位|附近.{0,8}(?:吃|饭|餐)|公司.{0,16}(?:背景|资料|信息|地址|位置|在哪|附近|周边|饭|餐|吃)/i.test(query);
@@ -47,10 +49,9 @@ export async function readNecessaryBackground(session = {}, { query = '', source
   try {
     const { config, hash } = await loadProjectMemoryRuntime(configPath);
     projectConfig = config;
-    const source = sourceContext || session.conversation || {};
-    const group = config.groups.find(entry => entry.sourceRouteId === source.sourceRouteId && entry.chatId === (source.chatId || source.target?.chatId));
-    const binding = config.sessionBindings.find(entry => entry.sessionId === session.id);
-    const projectIds = config.enabled ? group?.projectIds || binding?.projectIds || [] : [];
+    const scope = projectDirectoryScope(config, session, sourceContext,
+      config.directoryEnabled ? await loadSessionsMeta() : [session]);
+    const projectIds = config.enabled ? scope.projectIds : [];
     coverage.push({ kind: 'project', result: projectIds.length ? 'registered-pointers' : 'no-confirmed-association',
       projectIds, version: hash.slice(0, 16), index: config.indexPath, ledger: config.ledgerPath,
       contentLoaded: false, reason: 'No match here is not proof that the project ledger has no record; inspect the registered source when relevant.' });

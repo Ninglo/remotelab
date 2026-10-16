@@ -7,6 +7,7 @@ import { buildProjectWorkDirectoryPrompt } from './project-work-directory.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
 import { buildPersonalMemoryConversationContext } from './personal-memory-conversation.mjs';
 import { experimentBackground } from './feature-experiment-context.mjs';
+import { buildWebTopicDiscoveryPrompt } from './project-topic-context.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -43,6 +44,8 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     !experimentInput.automated ? await buildPersonalMemoryConversationContext({ personId, identityId, sourceContext }) : '',
   ];
   const sectionsAfterProject = [
+    await buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
+      automated: experimentInput.automated }),
     await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),
     groupRouting,
     // Classifier summaries are derived UI state, not fresh execution evidence.

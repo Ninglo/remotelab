@@ -78,6 +78,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - [Automation tasks and execution Sessions](task-center-v1.md#automation-session-collection) — explicit collection membership, existing-run migration and direct execution links.
 
 - [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.
+  Independent Web topics use the existing explicit lookup to find project candidates, current briefs and topic directories without automatically binding or resuming work; see [Web topic background](session-work-awareness.md#网页独立新话题的背景续接).
 - [Connector turn context](connector-turn-context.md) — current rule projection, recovery snapshots, shared project announcements for bound Feishu chats, topic snapshots and acceptance-based deduplication.
 
 - [RemoteLab deliverables](architecture-atlas/deliverables.html) — a generated chapter of the unified explanation project; reuses the feature catalog, page catalog and original source records instead of maintaining a separate memory document.

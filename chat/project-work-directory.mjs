@@ -27,9 +27,14 @@ export async function readProjectWorkDirectory(session, sourceContext, options =
   if (!config.enabled || !config.contextEnabled || config.directoryEnabled !== true) {
     return { enabled: false, reason: 'not-enabled', projects: [], entries: [] };
   }
+  const referenceProjectId = options.referenceProjectId || '';
+  if (referenceProjectId && !config.projects.some(p => p.id === referenceProjectId)) {
+    throw Object.assign(new Error('Unknown registered project: ' + referenceProjectId), { statusCode: 400 });
+  }
   const sessions = options.sessions || await loadSessionsMeta();
   const byId = new Map(sessions.map(s => [s.id, s]));
-  const scope = projectDirectoryScope(config, session, sourceContext, sessions, byId);
+  const registeredScope = projectDirectoryScope(config, session, sourceContext, sessions, byId);
+  const scope = referenceProjectId ? { projectIds: [referenceProjectId] } : registeredScope;
   const membership = new Map(sessions.map(s => [s.id, projectDirectoryScope(config, s, null, sessions, byId).projectIds]));
   const directoryGroup = !scope.projectIds.length && groupDirectoryScope(config, session, sourceContext, sessions, byId);
   if (!scope.projectIds.length && !directoryGroup) return { enabled: false, reason: 'no-confirmed-project', projects: [], entries: [] };
@@ -101,6 +106,8 @@ export async function readProjectWorkDirectory(session, sourceContext, options =
     || a.sessionId.localeCompare(b.sessionId));
   // Relative age and sample time are outside the stable version.
   return { enabled: true, version: hash({ projects, groups, entries }), checkedAt: new Date(now).toISOString(),
+    ...(referenceProjectId ? { association: 'explicit-reference-selection', confirmedProjectIds: registeredScope.projectIds,
+      boundary: 'Read-only project reference; this does not bind the Session, adopt rules, authorize transfer or resume historical work.' } : {}),
     scopeSessionId: scope.viaSessionId, projects, groups, entries };
 }
 

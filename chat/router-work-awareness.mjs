@@ -10,6 +10,7 @@ import { broadcastAll } from './ws-clients.mjs';
 import { handleExecutionPlan, readExecutionPlans } from './work-execution-plans.mjs';
 import { retrieveNecessaryContext } from './necessary-background.mjs';
 import { readProjectWorkDirectory } from './project-work-directory.mjs';
+import { readProjectTopicContext } from './project-topic-context.mjs';
 
 export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl, authSession, writeJson }) {
   if (pathname === '/api/monitoring/context-queries' && req.method === 'GET') {
@@ -30,7 +31,8 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     const observation = { sessionId, runId: record?.runId, requestId: record?.requestId, actorKind: record ? 'agent' : authSession?.authKind === 'service' ? 'system' : 'human' };
     const query = body.query || parsedUrl.searchParams.get('query') || record?.text || '';
     if (pathname.endsWith('/directory') && req.method === 'GET') {
-      writeJson(res, 200, await readProjectWorkDirectory(session, record?.options?.sourceContext));
+      writeJson(res, 200, await readProjectWorkDirectory(session, record?.options?.sourceContext,
+        { referenceProjectId: parsedUrl.searchParams.get('project') || '' }));
       return true;
     }
     if (pathname.endsWith('/people') && ['GET', 'POST'].includes(req.method)) {
@@ -47,8 +49,14 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
         const [related, candidates, suggestions] = await Promise.all([
           queryRelatedWork({ ...scope, limit: 3 }), queryWorkCandidates(scope), workInbox(sessionId, { describe: true }),
         ]);
+        const projectBackground = parsedUrl.searchParams.get('includeBackground') === 'false' ? null
+          : await readProjectTopicContext(session, record?.options?.sourceContext, { query, projectId: scope.projectId });
+        const ruleProjectIds = projectBackground?.selected?.map(p => p.projectId) || [];
         return { sessionId, current: session.workAwareness || null, routing: await readGroupRoutingState(session), executionPlans: await readExecutionPlans(session), related, candidates, suggestions,
-          ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : { background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
+          ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : {
+            projectBackground,
+            background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
+            ...(ruleProjectIds.length === 1 ? { project: ruleProjectIds[0] } : {}),
             personId: record?.options?.viewPersonId || authSession?.personId,
             identityId: record?.options?.initiatedByIdentityId || authSession?.identityId }) }) };
       });

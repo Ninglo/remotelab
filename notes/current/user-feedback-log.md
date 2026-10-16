@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-16 — Find the right background from an independent Web topic
+
+- Feedback: a new Web conversation should find the corresponding earlier topics, decisions and applicable project rules, as registered group conversations already can. A handoff or a task record alone does not deliver the feature.
+- Change: give ordinary Web inputs a small lookup pointer. Extend existing explicit work context with registered project-name candidates and versioned brief references; allow the existing directory reader to inspect a named project without binding the Session. Preserve configured and real-parent scope, ambiguous candidates, paused states and source gaps. The Harness verifies and adopts sources for the current goal; no extra classifier, ledger or full-context injection.
+- Verification: isolated input-hook, route and source tests cover ambiguous names, parent versus explicit scope, read-only selection, project switching, current corrections and unavailable/budget/disabled sources. Online Web creation and real Harness behavior remain a separate acceptance step.
+
 ### 2026-10-15 — Keep received message formats independent of participation mode
 
 - Feedback: group history showed only “Image attachment” for pictures received while listening. Changing participation mode should not change the format of stored messages or create a separate media path.

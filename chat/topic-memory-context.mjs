@@ -10,7 +10,7 @@ const noise = new Set(['工作', '项目', '处理', '这个', '那个', '一个
   '之前', '所以', '还是', '就是', '的是', '的一', '都是', '希望', '我的', '这台', '电脑',
   '显示', '连接', '做到', '修改', '程序', '今天', '明天', '继续']);
 
-function terms(query) {
+export function topicSearchTerms(query) {
   const text = String(query || '').slice(0, 1500).toLowerCase().replace(/https?:\/\/\S+/g, '');
   const found = text.match(/[a-z][a-z0-9_-]{2,}/g) || [];
   for (const run of text.match(/[\u4e00-\u9fff]+/g) || []) {
@@ -39,7 +39,7 @@ function passages(document) {
 
 export async function readTopicMemory({ query = '', memoryDir = MEMORY_DIR, projectConfig,
   maxChars = 3600, maxExcerpts = 4 } = {}) {
-  const cues = terms(query), budget = Math.min(6000, Math.max(0, maxChars));
+  const cues = topicSearchTerms(query), budget = Math.min(6000, Math.max(0, maxChars));
   const sources = new Map([
     [join(memoryDir, 'projects.md'), 16 * 1024],
     [join(memoryDir, 'tasks', 'index.md'), 16 * 1024],
