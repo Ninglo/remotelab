@@ -1,27 +1,34 @@
 import { getHistoryHeadSeq, loadHistory } from './history.mjs';
 import { loadPersonalMemorySettings, personalMemoryPreference } from './personal-memory-settings.mjs';
 import { loadLearningPolicy } from './memory-learning.mjs';
-import { MEMORY_ABSTRACTION_GUIDANCE } from './memory-abstraction.mjs';
 
-export async function buildPersonalMemoryConversationContext({ personId, identityId, sourceContext, sessionId } = {}) {
-  if (['bot', 'app'].includes(sourceContext?.sender?.senderType)) return '';
+export async function buildPersonalMemoryConversationParts({ personId, identityId, sourceContext, sessionId } = {}) {
+  if (['bot', 'app'].includes(sourceContext?.sender?.senderType)) return { rules: '', feedback: '' };
   // Admission has already loaded the authenticated directory. Ordinary users
   // keep their pointer-only path and do not cause extra memory-policy reads.
-  if (!personalMemoryPreference({ personId, identityId }).conversational) return '';
+  if (!personalMemoryPreference({ personId, identityId }).conversational) return { rules: '', feedback: '' };
   try {
     const settings = await loadPersonalMemorySettings({ personId, identityId });
-    if (!settings.available || !settings.conversational) return '';
-    if (!settings.enabled) return `Personal memory is paused for current speaker ${personId}. Do not generate, retrieve or propose automated personal memories for this input. Existing history is not erased; do not inherit another speaker's enabled mode. Explicit current requests and separately maintained manual agreements still apply.`;
+    if (!settings.available || !settings.conversational) return { rules: '', feedback: '' };
+    if (!settings.enabled) return { rules: `Personal memory is paused for current speaker ${personId}. Do not generate, retrieve or propose automated personal memories. Existing history remains; do not inherit another speaker's mode. Explicit requests and manual agreements still apply.`, feedback: '' };
     const cards = sourceContext?.connector === 'feishu' && (await loadLearningPolicy()).reviewCardPersonIds?.includes(personId);
     const feedback = cards ? '' : await recentMemoryFeedback(sessionId, personId);
-    return `Personal memory conversation trial is enabled for verified current speaker ${personId}, across Web and Feishu; never inherit the Session owner's preferences.
-While doing the task, notice feedback about HOW to collaborate (explanations, initiative, interruptions, handoffs). One concrete signal is enough to consider a candidate now; repeated corrections deserve attention in this turn, not only after completion. Personal difficulty following your explanations can support an activity-scoped candidate even inside a project. Changes to an artifact’s layout, contents, location or product behavior stay with the project; repetition or labeling them observed does not make them personal. Reported repetition is not fabricated independent evidence.
-${MEMORY_ABSTRACTION_GUIDANCE}
-On a signal, use 'remotelab memory inspect --json' and compare meaning AND scope. Apply an identical confirmed preference without asking or writing it again. Preserve explicit accepted limits; propose supported additional scope separately. Do not mistake source context for an accepted limit. Memory never expands business authorization.
-If an instruction could refer only to the current task, propose its future use; reported repetition alone does not confirm broader or long-term scope. Explicit long-term personal instructions: save as confirmed via 'memory apply' with original evidence, then briefly acknowledge the exact saved preference in the ordinary reply ONLY after success. Do not require proof of a long-term trait before asking whether a concrete personal signal should carry forward. Unclear future scope: record an observed habit and 'propose' with current version, exact question and evidence, ${cards ? 'the independent memory card will offer keep/edit/discard; do not ask the same question in the task reply or wait for a card answer.' : 'then append one natural observation-plus-question to the next useful answer this turn.'} Do not wait for the whole task to finish. Candidate, pending and confirmed are different states.
-Read $REMOTELAB_PROJECT_ROOT/docs/memory-learning.md for write schemas. Resolve a pending proposal only after inspecting its unchanged meaning/scope and a clear owner decision; ambiguous “好/可以” or silence is not consent. Correct/narrow the same entry, withdraw a declined one. Pending suppresses duplicate questions; after version conflict inspect before retrying.
-${cards ? 'Independent memory review cards are enabled here. New personal entries and proposals use the existing outbox automatically; never send a duplicate card yourself. Card responses update that memory only, without resuming, interrupting or steering the original task. No answer is not consent and never blocks the task. Keep task replies focused on the task.' : 'At most one short memory sentence per useful reply; no separate private message, card, reminder or scheduled digest.'} Do not manufacture signals, repeatedly announce unchanged memories, or expose private facts from elsewhere. ${cards ? 'If urgency/privacy prevents showing a card here, set deferReview:true on that memory update; keep the observation without a card. Later explicitly propose when appropriate.' : 'If urgency/privacy prevents asking, defer the proposal; keep only the observation.'} Failed writes are not saved memories. The Harness chooses appropriate timing and words.${feedback ? `\n${feedback}` : ''}`;
-  } catch { return ''; }
+    const rules = [
+      `Personal memory conversation trial is enabled only for verified current speaker ${personId}; never inherit another person's preferences.`,
+      'Notice concrete feedback about how to collaborate during the task; one signal can justify a candidate now. Product requirements and project decisions stay with their project. Memory never grants business authorization.',
+      'Before extracting, proposing or changing memory, read the relevant guidance and write schema in $REMOTELAB_PROJECT_ROOT/docs/memory-learning.md, then use remotelab memory inspect --json. Compare meaning AND scope; preserve original evidence, accepted limits and the strength of the person’s words.',
+      'Explicit personal long-term instructions may be confirmed; unclear future scope stays observed and may be proposed now. Silence or ambiguous replies are not consent. Pending proposals suppress duplicate questions. Only report a save after success.',
+      cards ? 'Independent memory review cards are enabled: use the existing memory outbox, do not duplicate its question in chat or wait for a decision to continue the task. Defer review when urgency or privacy requires it.'
+        : 'No independent review cards: after recording propose, ask at most one natural memory question in the next useful reply. Keep the task moving; defer when urgency or privacy requires it.',
+    ].join('\n');
+    return { rules, feedback };
+  } catch { return { rules: '', feedback: '' }; }
+}
+
+// Compatibility reader; the manager delivers stable rules separately from new feedback.
+export async function buildPersonalMemoryConversationContext(options = {}) {
+  const { rules, feedback } = await buildPersonalMemoryConversationParts(options);
+  return [rules, feedback].filter(Boolean).join('\n');
 }
 
 // Bounded, same-topic pointers only. A foreground context boundary prevents

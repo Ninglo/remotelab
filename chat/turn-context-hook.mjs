@@ -6,7 +6,7 @@ import { buildSourceContextPrompt } from './source-context-prompt.mjs';
 import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
 import { buildProjectWorkDirectoryPrompt } from './project-work-directory.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
-import { buildPersonalMemoryConversationContext } from './personal-memory-conversation.mjs';
+import { buildPersonalMemoryConversationParts } from './personal-memory-conversation.mjs';
 import { experimentBackground } from './feature-experiment-context.mjs';
 import { buildWebTopicDiscoveryPrompt } from './project-topic-context.mjs';
 
@@ -36,13 +36,17 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
   ]);
   const [project, groupRouting, directory] = sections.map((result, index) => result.status === 'fulfilled'
     ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['project', 'group-routing', 'project-directory'][index], reason: result.reason.message }));
+  const personalMemory = !experimentInput.automated
+    ? await buildPersonalMemoryConversationParts({ personId, identityId, sourceContext, sessionId: session.id })
+    : { rules: '', feedback: '' };
   const sectionsBeforeProject = [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildFeishuLogPromptBlock(sourceContext),
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
-    !experimentInput.automated ? await buildPersonalMemoryConversationContext({ personId, identityId, sourceContext, sessionId: session.id }) : '',
+    ...(!separateProjectContext ? [personalMemory.rules] : []),
+    personalMemory.feedback,
   ];
   const sectionsAfterProject = [
     await buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
@@ -57,6 +61,6 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
   // Keep the public text-only reader compatible. The input assembler can put
   // the complete project block in the existing acknowledged/recoverable slots.
   return separateProjectContext
-    ? { project, directory, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
+    ? { project, directory, personalMemory: personalMemory.rules, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
     : render([...sectionsBeforeProject, project, directory, ...sectionsAfterProject]);
 }

@@ -50,10 +50,15 @@ try {
       sourceContext: surface === 'web' ? undefined : { connector: 'feishu', chatType: surface === 'p2p' ? 'p2p' : 'group',
         conversationKind: surface === 'thread' ? 'thread' : 'main', sender: { senderType: 'user' } } });
     assert.match(context, /Personal memory conversation trial is enabled/, surface);
-    assert.equal(context.split(MEMORY_ABSTRACTION_GUIDANCE).length - 1, 1,
-      `${surface}: extraction guidance must reach the real turn once`);
-    assert.doesNotMatch(context, /BETA_SECRET/);
+    assert(!context.includes(MEMORY_ABSTRACTION_GUIDANCE), `${surface}: detailed examples stay on demand`);
+    assert.match(context, /docs\/memory-learning\.md/);
+    assert(context.length < 2200, `${surface}: ordinary learning context remains compact`);
+    assert.doesNotMatch(context, /BETA_SECRET|\[object Object\]/);
   }
+  const split = await buildTurnContextHook({}, { ...actor, separateProjectContext: true });
+  assert.match(split.personalMemory, /Personal memory conversation trial/);
+  assert.doesNotMatch(split.text, /Personal memory conversation trial|Synthetic contrasts/);
+  assert.equal((await buildTurnContextHook({}, { ...bob, separateProjectContext: true })).personalMemory, '');
   assert.doesNotMatch(await buildTurnContextHook({}, bob), /Personal memory conversation trial/);
   assert.doesNotMatch(await buildTurnContextHook({}, { ...actor, experimentInput: { automated: true } }), /Personal memory conversation trial/);
   assert.doesNotMatch(await buildTurnContextHook({}, { ...actor, sourceContext: { sender: { senderType: 'bot' } } }), /Personal memory conversation trial/);
@@ -127,6 +132,10 @@ try {
   await appendEvent('memory-feedback-fixture', notice);
   const feedbackContext = await buildTurnContextHook({ id: 'memory-feedback-fixture' }, actor);
   assert.match(feedbackContext, /Background memory writes/);
+  const feedbackSplit = await buildTurnContextHook({ id: 'memory-feedback-fixture' }, { ...actor, separateProjectContext: true });
+  assert.match(feedbackSplit.text, /Background memory writes/);
+  assert.doesNotMatch(feedbackSplit.personalMemory, /mem_0123456789abcdef/);
+
   assert.match(feedbackContext, /mem_0123456789abcdef/);
   assert.doesNotMatch(feedbackContext, /解释陌生概念/);
   await appendEvent('memory-feedback-fixture', { type: 'manager_context', content: feedbackContext });

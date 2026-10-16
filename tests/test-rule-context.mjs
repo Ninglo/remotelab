@@ -94,6 +94,18 @@ try {
   assert.match(directoryRecovered, /DIRECTORY_V2_NEW_CHILD/); assert.match(directoryRecovered, /PROJECT_BRIEF_V1/);
   const directoryOff = await project(rules, {}, directoryAck);
   assert.deepEqual(directoryOff.receipt.removedIds, ['project_work_directory']);
+  const learning = { id: 'personal_memory_learning', title: 'Personal memory learning', content: 'LEARNING_COMPACT', delivery: 'turn' };
+  const learningFirst = await project([...rules, learning]);
+  const learningAck = { manifest: async () => ({ ruleContextDelivery: learningFirst.receipt }) };
+  assert.doesNotMatch(renderModelContextSlots((await project([...rules, learning], {}, learningAck)).slots), /LEARNING_COMPACT/);
+  assert.match(renderModelContextSlots((await project([...rules, learning], { personId: 'b' }, learningAck)).slots), /LEARNING_COMPACT/);
+  const paused = await project([...rules, { ...learning, content: 'LEARNING_PAUSED' }], {}, learningAck);
+  assert.deepEqual(paused.receipt.changedIds, ['personal_memory_learning']);
+  assert.match(renderModelContextSlots(paused.slots), /LEARNING_PAUSED/);
+  assert.deepEqual((await project(rules, {}, learningAck)).receipt.removedIds, ['personal_memory_learning']);
+  await writeFile(transcript, JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: renderModelContextSlots(paused.slots) }] } }) + '\n');
+  assert.match(await recoverCodexRules({ transcript_path: transcript }, 'session', CONFIG_DIR), /LEARNING_PAUSED/);
   const legacy = { ...first.receipt }; delete legacy.scopeHash; delete legacy.slotHashes;
   assert.equal((await project(rules, {}, { manifest: async () => ({ ruleContextDelivery: legacy }) })).receipt.mode, 'full');
   const supplement = { request: async () => ({ requestId: 'previous', nativeDispatchRunId: 'run',

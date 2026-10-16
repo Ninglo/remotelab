@@ -390,3 +390,7 @@ rules, Skill catalogs and private person profiles are outside this projection.
 Measure savings on the same saved input; fleet means also depend on task mix,
 identity changes, fresh/resumed threads and later on-demand reads. Existing
 provider history is not retroactively rewritten.
+
+### Personal learning context
+
+The opt-in personal learning reminder is a compact `personal_memory_learning` slot, scoped to the verified speaker and reused through the existing accepted-input snapshot mechanism. Detailed extraction guidance and examples stay in `docs/memory-learning.md` for reading when a concrete signal occurs. Pausing, changing identity or changing the reminder invalidates reuse; compaction restores the current short rule. Newly applied memory feedback remains in per-turn context so stable-rule reuse cannot suppress it. Background review retains its extraction guidance.
