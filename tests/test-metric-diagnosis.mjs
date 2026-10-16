@@ -43,3 +43,13 @@ assert(metricRecovered(trendItems[0],healthy.map(s=>({...s,firstSessionRun:true}
 assert(!metricRecovered(trendItems[0],healthy,now+120000));
 
 assert.equal(trustCandidates({runtime:null},{recovery:[{key:'natural',kind:'service',status:'resolved',attempts:0,updatedAt:new Date(now).toISOString(),evidence:['observed']}]},[],now).length,0,'natural recovery is not reported as an executed repair');
+
+// A one-day jump must not require four monotonically rising days.
+const dailyJump=trend.map(s=>({...s,metrics:row(0,now,s.responseAt>=now-DAY+1?18000:10000).metrics}));
+const jumps=populationTrendCandidates(dailyJump,now);
+assert.equal(jumps.length,3);assert.match(jumps[0].trigger,/今日/);
+assert.equal(populationTrendCandidates(dailyJump.map(s=>({...s,metrics:row(0,now,s.responseAt>=now-DAY+1 && s.sessionId==='s2'?1000000:10000).metrics})),now).length,0,'one costly Session cannot trigger a daily mean alert');
+assert.equal(populationTrendCandidates(dailyJump.filter(s=>s.responseAt<now-DAY+1 || s.sessionId==='s2'),now).length,0,'today needs five Sessions');
+assert.equal(populationTrendCandidates([...dailyJump,...dailyJump],now)[0].ratio,jumps[0].ratio,'duplicates do not change the daily population');
+assert.equal(populationTrendCandidates(dailyJump.map(s=>({...s,background:true})),now).length,0);
+assert.equal(populationTrendCandidates(dailyJump.map(s=>({...s,metrics:{firstResponseMs:s.responseAt>=now-DAY+1?5000:2000}})),now).length,0,'relative growth still requires the absolute floor');

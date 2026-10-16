@@ -719,10 +719,18 @@ Test 曾作为 MukaHub 移植预览，与正式总览使用相同的数据和组
 
 To activate this extension, ask the instance agent to verify the existing private
 recipient and enable `sessionDiagnostics.metricPolicy.enabled` and
-`sessionDiagnostics.reportActions`. Both default off; general group delivery and
+`sessionDiagnostics.reportActions` as needed. Both default off; general group delivery and
 its risk-only setting remain independent. The existing five-minute diagnosis
 cycle performs the analysis and sends or updates private cards. No new schedule
-or independent classifier is needed.
+or independent classifier is needed. With private `noisePolicy.mode: "risk_only"`,
+metrics are observation-only unless `sessionDiagnostics.metricPolicy.notifyOnRegression: true`
+is explicitly enabled. This separate switch restores metric review notifications
+without enabling routine account/action reports or changing group delivery. A
+qualifying cross-Session metric sample notifies on the next diagnosis cycle;
+it does not need three repeated observer scans. A further rise of 30 percentage
+points updates the original card after the existing analysis cooldown. Recovery
+updates it once; ordinary sample/count fluctuations do not send again. Explicitly
+paused delivery still suppresses sends and edits, including replay on resume.
 
 The alert card preserves the trigger, analysis, action actually taken, verification,
 and remaining human decision. Successful automatic default-account switches,
@@ -751,7 +759,14 @@ Two comparisons remain distinct:
   Sessions, and a rise in at least 60% of Session medians. Sessions have equal
   weight. Three runs across two Sessions and a rise of 50% can trigger a clearly
   labelled small-sample review; high historical variability is also labelled.
-- The overall per-request mean is still reviewed when it rises across four
+- A daily population comparison uses today's per-request mean versus the preceding
+  three populated business dates (05:00 Asia/Shanghai boundary), with at least 10
+  runs and five Sessions on each date. A rise of 30% and the same absolute floors
+  must remain after separately removing the Session with the largest effect on the mean from each window.
+  A one-day jump can therefore alert without four consecutive days of growth;
+  a lone expensive Session cannot trigger this comparison. First-response dates
+  use the provider message timestamp where present, matching the dashboard.
+- The overall per-request mean is also reviewed when it rises across four
   populated business dates by at least 30%, with at least 10 runs and five
   Sessions on every date and a corroborating rise in Session medians. This
   catches changed experiment/task composition without claiming same-task

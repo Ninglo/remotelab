@@ -90,6 +90,35 @@ try {
  assert.equal(recoveredSends.length,3,'verified recovery rearms a later independent recurrence');
  assert.notEqual(recoveredSends[2].id,recoveredSends[0].id);
 
+ // Explicit metric notifications coexist with risk-only account policy.
+ const metricRows=Array.from({length:90},(_,i)=>({runId:'base'+i,sessionId:'m'+i%6,responseAt:start-(2+i%10)*86400000,state:'completed',model:'m',tool:'codex',metrics:{injectionChars:10000}}));
+ metricRows.push(...Array.from({length:12},(_,i)=>({runId:'new'+i,sessionId:'m'+i%6,responseAt:start-i*1000,state:'completed',model:'m',tool:'codex',metrics:{injectionChars:16000}})));
+ const metricSent=[];
+ const metricArgs={...args,stateFile:join(root,'metric.json'),config:{...config,reportActions:false,metricPolicy:{enabled:true,notifyOnRegression:true}},
+  readMetrics:async()=>({samples:metricRows,coverage:{}}),deliver:async item=>{metricSent.push(structuredClone(item));return {messageId:'om_metric',chatId:'oc_private',recipientKey:item.delivery.recipientKey};}};
+ await processSessionDiagnostics({...metricArgs,now:start,dryRun:true});assert.equal(metricSent.length,0);
+ await processSessionDiagnostics({...metricArgs,now:start});assert.equal(metricSent.length,1,'cross-session metric evidence not suppressed by risk_only');
+ await processSessionDiagnostics({...metricArgs,now:start+6*minute});assert.equal(metricSent.length,1,'same samples do not repeat');
+ for(const s of metricRows.slice(-12))s.metrics.injectionChars=17000;
+ await processSessionDiagnostics({...metricArgs,now:start+31*minute});assert.equal(metricSent.length,1,'small drift does not edit notification');
+ for(const s of metricRows.slice(-12))s.metrics.injectionChars=20000;
+ await processSessionDiagnostics({...metricArgs,now:start+62*minute});assert.equal(metricSent.length,2,'another thirty percentage points updates original card');
+ assert.equal(metricSent[1].delivery.messageId,'om_metric');
+ const good=Array.from({length:12},(_,i)=>({...metricRows.at(-1),runId:'good'+i,sessionId:'m'+i%6,responseAt:start+63*minute+i,metrics:{injectionChars:10500}}));
+ await processSessionDiagnostics({...metricArgs,now:start+68*minute,readMetrics:async()=>({samples:good,coverage:{}})});
+ assert.equal(metricSent.length,3);assert.equal(metricSent[2].status,'resolved');
+ await processSessionDiagnostics({...metricArgs,now:start+74*minute,readMetrics:async()=>({samples:good,coverage:{}})});assert.equal(metricSent.length,3);
+ const before=metricSent.length;
+ await processSessionDiagnostics({...metricArgs,stateFile:join(root,'metric-partial.json'),now:start,readMetrics:async()=>({samples:metricRows,coverage:{truncated:true}})});
+ await processSessionDiagnostics({...metricArgs,stateFile:join(root,'metric-disabled.json'),now:start,config:{...metricArgs.config,notification:{...config.notification,enabled:false}}});
+ await processSessionDiagnostics({...metricArgs,stateFile:join(root,'metric-optout.json'),now:start,config:{...metricArgs.config,metricPolicy:{enabled:true}}});
+ assert.equal(metricSent.length,before,'coverage, pause and opt-out remain respected');
+ const pausedMetric=join(root,'metric-disabled.json');
+ await processSessionDiagnostics({...metricArgs,stateFile:pausedMetric,now:start+6*minute});assert.equal(metricSent.length,before,'paused metric is not replayed on resume');
+ const migrationFile=join(root,'metric-migration.json');
+ await processSessionDiagnostics({...metricArgs,stateFile:migrationFile,now:start,config:{...metricArgs.config,metricPolicy:{enabled:true}}});
+ await processSessionDiagnostics({...metricArgs,stateFile:migrationFile,now:start+6*minute});assert.equal(metricSent.length,before+1,'explicit metric opt-in reports a currently qualifying formerly suppressed incident');
+
  let calls=0;
  const disabled=await processSessionDiagnostics({...args,config:{...config,enabled:false},readSessions:async()=>{calls++;}});
  assert.equal(disabled.skipped,'disabled');assert.equal(calls,0);

@@ -39,7 +39,8 @@ export function sessionDiagnosisCard(item, config) {
     + (resolved ? `处理方式：${resolutionAttribution(item)}\n处理结果：${item.summary || '指标已复查恢复'}\n确认时间：${alertTime(item.updatedAt)}\n`
       : `分析与处理：${accountRisk ? '已核对当前绑定、额度读数和执行需求；未重放任务。' : item.summary || '已核对记录，具体原因尚未确认'}${!accountRisk && item.action ? `；${item.action}` : ''}\n`)
     + (config.noisePolicy?.mode !== 'risk_only' ? `涉及会话：${item.members?.length || 0}个\n` : '')
-    + (!accountRisk && item.verification ? `验证：${item.verification}\n` : '') + `需要你：${next}`;
+    + (!accountRisk && item.verification ? `验证：${item.verification}\n` : '')
+    + (item.kind==='metric' ? (item.evidence || []).filter(line=>line.includes('增长线索')).join('\n')+'\n' : '') + `需要你：${next}`;
   const sessionId = item.processingSessionId || item.relatedRecovery?.sessionId || item.sessionId;
   const url = alertSessionUrl(sessionId, config.overviewUrl);
   const sourceUrl = item.members?.length === 1 ? alertSessionUrl(item.members[0].sessionId, config.overviewUrl) : '';
@@ -95,6 +96,7 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
   try {
     const state = await readRecord(stateFile) || {incidents:{}};
     const riskOnly=config.notification?.noisePolicy?.mode==='risk_only';
+    const metricAlerts=config.metricPolicy?.enabled===true && config.metricPolicy?.notifyOnRegression===true;
     const baselineIds=new Set(riskOnly && state.privateNotificationPolicy!==1?Object.keys(state.incidents):[]);
     // Reuse the minute observer; detailed sample scans run at most every five minutes.
     if(!dryRun && now-Date.parse(state.checkedAt || '') < 5*60000) return {enabled:true,skipped:'interval'};
@@ -111,7 +113,7 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       extras.unshift(...actions.filter(c=>c.metric==='account'));
       extras.push(...actions.filter(c=>c.metric!=='account'));
     }
-    if(riskOnly)for(const item of extras)if(item.kind==='metric') {
+    if(riskOnly && !metricAlerts)for(const item of extras)if(item.kind==='metric') {
       item.status='observing';
       item.nextStep='先核对任务构成、增长来源及真实执行影响；当前只保留诊断线索，无需你操作。';
     }
@@ -121,7 +123,7 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       item.fingerprint=diagnosisKey([item.fingerprint,'collection_incomplete']);
     }
     if(dryRun) return {enabled:true,dryRun:true,candidates:candidates.map(c => ({...c,...diagnoseSessionCandidate(c,snapshot)})),coverage:data.coverage,metrics:metricCoverage(comparisons,metrics.coverage),extraCandidates:extras,
-      ...(riskOnly?{notificationPreview:extras.map(item=>({key:item.key,...privateDiagnosisDecision(item),requiresDistinctObservations:3})),note:'仅展示候选资格；实际通知还受持续证据、历史基线、既有回执和暂停开关限制。'}:{})};
+      ...(riskOnly?{notificationPreview:extras.map(item=>({key:item.key,...privateDiagnosisDecision(item,{metricAlerts}),requiresDistinctObservations:metricAlerts && item.kind==='metric'?1:3})),note:'仅展示候选资格；实际通知还受持续证据、历史基线、既有回执和暂停开关限制。'}:{})};
     state.checkedAt = new Date(now).toISOString(); state.coverage = data.coverage;
     state.metricCoverage=metricCoverage(comparisons,metrics.coverage);
     let diagnosed=0, sent=0;
@@ -187,7 +189,7 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     }
     if(riskOnly) {
       const freshKeys=new Set(complete?extras.map(i=>i.key):[]);
-      for(const item of Object.values(state.incidents))item.notification=privateDiagnosisNotification(item,{fresh:freshKeys.has(item.key),baseline:baselineIds.has(item.id)||!validDiagnosisRecipient(config.notification)});
+      for(const item of Object.values(state.incidents))item.notification=privateDiagnosisNotification(item,{fresh:freshKeys.has(item.key),metricAlerts,baseline:((!metricAlerts || item.kind!=='metric') && baselineIds.has(item.id))||!validDiagnosisRecipient(config.notification)});
       state.privateNotificationPolicy=1;
     }
     await writeDurableJson(stateFile,state);
@@ -201,7 +203,7 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       await writeDurableJson(stateFile,state);
       try {
         item.delivery={...await deliver(item,config.notification),version,status:'delivered'};
-        if(riskOnly)item.notification={...item.notification,sentSemantic:item.notification.semantic,ready:false};
+        if(riskOnly)item.notification={...item.notification,sentSemantic:item.notification.semantic,...(item.kind==='metric'?{sentRatio:item.ratio,sentLevel:item.notification.level}:{}),ready:false};
       }
       catch { item.delivery.status='uncertain'; }
       sent++;
