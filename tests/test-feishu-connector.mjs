@@ -943,11 +943,10 @@ const reactionDeliveryResult = await processSourceDeliveryOnce({
 assert.equal(reactionDeliveryResult.state, 'delivered');
 assert.equal(reactionDeliveryRequests[1].options.body.externalId, 'reaction_receipt');
 assert.equal(reactionDeliveryRequests[1].options.body.messageId, '');
-assert.deepEqual(removedReactions, [['om_source_reaction', 'temporary_reaction']]);
-assert.deepEqual(reactionOrder, ['final-added', 'temporary-removed']);
-assert.equal(await reactionStore.remove('om_source_reaction', async () => {
-  throw new Error('cleanup was already completed');
-}), false);
+assert.deepEqual(removedReactions, [], 'social feedback does not end processing');
+assert.deepEqual(reactionOrder, ['final-added']);
+assert.equal(await reactionStore.remove('om_source_reaction', async () => {}), true,
+  'processing remains owned by its terminal cleanup');
 
 let longPollSignal;
 const longPollRuntime = {};

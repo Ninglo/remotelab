@@ -5,6 +5,7 @@ import { CONFIG_DIR } from '../lib/config.mjs';
 import { canonicalJson, createRecordStore, readRecord, serialQueue, writeDurableJson } from '../lib/durable-records.mjs';
 import { notifySourceDeliveryAvailable } from './source-delivery-signals.mjs';
 import { observeRequestUsage } from './usage-event-projection.mjs';
+import { feishuProcessingReaction } from '../lib/feishu-processing-reaction.mjs';
 
 export const requestKey = (sessionId, requestId) => createHash('sha256')
   .update(JSON.stringify([sessionId, requestId])).digest('hex').slice(0, 24);
@@ -23,7 +24,9 @@ export function appendDeliveries(current, plans) {
 function withResult(current, result, plans) {
   return { ...current, result, settledAt: new Date().toISOString(),
     postCompletionPending: !current.options.deliveryOnly && !current.options.internalOperation,
-    deliveries: appendDeliveries(current, plans) };
+    deliveries: appendDeliveries(current, [...plans,
+      ...(current.deliveries.some(part => part.processingState === 'active')
+        ? feishuProcessingReaction(current, 'finished') : [])]) };
 }
 
 export function createRequestStore(root, { onChange = () => {} } = {}) {
@@ -77,6 +80,7 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
       ...(input.boundConversation ? { boundConversation: true } : {}),
       acceptedAt: new Date().toISOString(), result: null, releasedAt: null, deliveries: [],
     };
+    if (!input.result) initial.deliveries = appendDeliveries(initial, feishuProcessingReaction(initial, 'active'));
     // Indices are immutable addresses, published before the accepted record.
     // A crash can leave an unused address, but cannot accept an unfindable request.
     await index('response', sessionId, initial.responseId, key);

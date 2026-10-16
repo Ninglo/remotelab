@@ -254,5 +254,55 @@ try {
     assert.doesNotMatch(calls[0].data.content, /开始处理|最终答复|最终输出/);
   }
 
+  // Processing feedback uses real durable admission/settlement and the outbox,
+  // with only the provider API faked. It is independent of social candidates.
+  const { requests } = await import('../chat/requests.mjs');
+  const processingAdds = [], processingRemoves = [];
+  const processingRuntime = { config: { storageDir: join(home, 'processing'), sourceRouteId: 'processing', defaultGroupParticipation: 'active',
+    groups: { work: { reactionCandidates: ['THANKS'], participationStatusCard: false } } }, storagePaths: {},
+    appClient: { im: { v1: { messageReaction: {
+      create: async body => { processingAdds.push([body.path.message_id, body.data.reaction_type.emoji_type]);
+        return { code: 0, data: { reaction_id: 'processing-' + processingAdds.length } }; },
+      delete: async body => { processingRemoves.push(body.path.message_id); return { code: 0 }; },
+    } } } } };
+  processingRuntime.participation = createParticipationController(processingRuntime, { cancelSession: async () => {} });
+  const processingHelpers = { enrichSummaryWithChatMetadata: async (_runtime, summary) => summary,
+    requestRemoteLab: async (path, { body = {} } = {}) => ({ response: { ok: true }, json:
+      path.endsWith('/claim') ? { claim: await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'processing' }) }
+        : path.endsWith('/complete') ? { delivery: await completeSourceDelivery(path.split('/')[3], body.leaseId, body) }
+        : { delivery: await resolveSourceDelivery(path.split('/')[3], body) } }) };
+  const drainProcessing = () => processSourceDeliveryOnce(processingRuntime, processingHelpers);
+  for (const state of ['completed', 'failed', 'cancelled']) {
+    const messageId = 'processing-' + state;
+    const processingPlan = { ...sourceDelivery, sourceRouteId: 'processing',
+      target: { ...sourceDelivery.target, messageId } };
+    const input = { sessionId: 'processing-session', requestId: messageId, text: 'input', options: {
+      feishuConnectorAuthenticated: true, sourceContext: { feishuProcessingReaction: true }, sourceDelivery: processingPlan } };
+    const { record } = await requests.accept(input);
+    assert.equal((await drainProcessing()).state, 'delivered');
+    assert.deepEqual(processingAdds.at(-1), [messageId, 'THINKING']);
+    const before = processingAdds.length;
+    assert.equal((await requests.accept(input)).duplicate, true);
+    assert.equal(processingAdds.length, before, 'redelivery never starts a second reaction');
+    delete processingRuntime.readReactionStore; // Restart retains the pending cleanup.
+    await enqueueSourceDelivery({ sessionId: 'social-session', responseId: 'social-' + state,
+      sourceDelivery: processingPlan, reaction: 'THANKS' });
+    await drainProcessing();
+    assert.ok(!processingRemoves.includes(messageId), 'Jev must not clear an ongoing processing indicator');
+    if (state === 'cancelled') {
+      await processingRuntime.participation.change(processingPlan.target, 'paused');
+    }
+    await requests.settle(record.key, { state, payload: { text: '', attachments: [] } });
+    assert.equal((await drainProcessing()).state, 'delivered');
+    assert.equal(processingRemoves.filter(id => id === messageId).length, 1,
+      'silence, failure and cancellation all clear Thinking, keeping the social reaction');
+    await requests.settle(record.key, { state, payload: { text: '' } });
+    assert.equal((await requests.get(record.key)).deliveries.filter(part => part.processingState === 'finished').length, 1);
+  }
+  const forwarded = await requests.accept({ sessionId: 'worker', requestId: 'forwarded', text: 'handoff', options: {
+    feishuConnectorAuthenticated: true, routingSource: { sessionId: 'main' },
+    sourceContext: { feishuProcessingReaction: true }, sourceDelivery } });
+  assert.equal(forwarded.record.deliveries.length, 0, 'handoff does not create another lifecycle on the original message');
+
   console.log('Unified participation: migration boundaries, topic inheritance, explicit scope override, invitation, silence, optional Jev, candidate enforcement and durable withdrawal passed');
 } finally { await rm(home, { recursive: true, force: true }); }

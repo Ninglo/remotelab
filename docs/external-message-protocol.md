@@ -390,6 +390,14 @@ Jev cannot restore it. The connector checks the current configured candidate set
 before adding a provider reaction. Neither old quick flags nor personal work
 routing preferences manufacture an emoji or choose substantive content.
 
+Authenticated Feishu group inputs opt into processing feedback with
+`sourceContext.feishuProcessingReaction: true`. Request admission appends a
+THINKING start delivery; terminal settlement appends its removal, including
+silent, failed and cancelled outcomes. These parts use the existing durable
+outbox and remain separate from model/Jev social reactions. Forwarded work does
+not start another lifecycle on the original message. Cleanup remains allowed
+after a participation-mode change; it never publishes new text.
+
 Example:
 
 ```bash

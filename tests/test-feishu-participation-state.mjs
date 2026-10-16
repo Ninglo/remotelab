@@ -80,7 +80,7 @@ try {
   await send('pause', '暂停接收消息');
   const observed = calls.observed.length;
   const submitted = calls.submitted.length;
-  const receipt = await send('private-segment', '@_bot 这段别读', { mentions: [{ openId: 'bot' }], messageType: 'file' });
+  const receipt = await send('private-segment', '这段别读', { mentions: [], messageType: 'file' });
   assert.equal(receipt.reason, 'participation_paused');
   assert.equal(calls.observed.length, observed, 'paused messages never reach the Session or classifier');
   assert.equal(calls.submitted.length, submitted);

@@ -6,7 +6,7 @@ import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { defaultFeishuGroupParticipation, normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
-import { participationEnabled, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
+import { participationEnabled, participationAllowsMessage, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
 import { createPersonalSettingsController } from '../connectors/feishu/personal-settings-card.mjs';
 import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
 import { startProjectGroupCards } from '../connectors/feishu/project-group-cards.mjs';
@@ -1021,8 +1021,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   if (!observeOnly && participationEnabled(runtime, summary)) {
     const state = await participationController(runtime).state(summary);
     const epoch = prepared?.payload?.sourceDelivery?.target?.participationEpoch ?? summary.participationEpoch;
-    if ((epoch !== undefined && Number(epoch) !== state.epoch) || state.mode === 'paused'
-        || (state.mode === 'listening' && !state.invitedMessages?.includes(summary.messageId))) {
+    if ((epoch !== undefined && Number(epoch) !== state.epoch) || !participationAllowsMessage(state, summary)) {
       return { ignored: true, reason: 'participation_changed' };
     }
   }
@@ -1224,7 +1223,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     sourceContext: {
       ...buildMessageSourceContext(messageSummary),
       ...(!['p2p', 'private'].includes(messageSummary.chatType) && !isFeishuBotSender(messageSummary)
-        ? { feishuResponseProtocolVersion: 1 } : {}),
+        ? { feishuResponseProtocolVersion: 1, feishuProcessingReaction: true } : {}),
       ...(threadBinding?.threadOriginRunId ? { feishuThreadOriginRunId: threadBinding.threadOriginRunId } : {}),
       ...(threadBinding?.continuationRunId ? { feishuContinuationRunId: threadBinding.continuationRunId } : {}),
       ...(messageSummary.logContinuation ? { feishuLog: {
@@ -1249,8 +1248,10 @@ async function submitRemoteLabRequest(runtime, summary, {
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
   };
   if (effectiveSummary.participationOnce) {
-    payload.text = '[当前状态：旁听。用户仅邀请你处理这一次；完成后保持旁听，不自行恢复主动参与。]\n' + payload.text;
-    payload.sourceContext.feishuParticipationMode = 'listening';
+    const mode = participationStatus?.mode || 'listening';
+    const label = mode === 'paused' ? '暂停' : '旁听';
+    payload.text = `[当前状态：${label}。用户仅邀请你处理这一次；完成后保持${label}，不自行恢复主动参与。]\n` + payload.text;
+    payload.sourceContext.feishuParticipationMode = mode;
   } else if (participationStatus) {
     payload.text = `[群参与状态：${participationStatus.mode}。状态由连接器执行并同步卡片；本条没有执行状态切换，不要宣称已切换。自然文字“先旁听”“暂停接收消息”“恢复参与”可切换。]\n` + payload.text;
     payload.sourceContext.feishuParticipationMode = participationStatus.mode;
@@ -1320,8 +1321,7 @@ function startJevReaction(runtime, summary, observationReceipt, helpers, control
         || !resolveFeishuGroupSettings(runtime.config, summary).reactionCandidates.includes(decision.emojiType)) return;
     if (controller) {
       const latest = await controller.state(summary);
-      if (Number(summary.participationEpoch) !== latest.epoch || latest.mode === 'paused'
-          || (latest.mode === 'listening' && !latest.invitedMessages?.includes(summary.messageId))) return;
+      if (Number(summary.participationEpoch) !== latest.epoch || !participationAllowsMessage(latest, summary)) return;
     }
     await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(runtime, summary, sessionId, decision.emojiType);
   }).catch(error => console.warn(`[feishu-reaction] ${summary.messageId}: ${error?.message || error}`))
@@ -1339,11 +1339,10 @@ async function handleJevObservedMessage(runtime, summary, observationReceipt, he
       taskCommand: Boolean(summary.commandBlock?.body) });
     const latest = await controller.state(summary);
     const stale = summary.participationEpoch !== undefined && Number(summary.participationEpoch) !== latest.epoch;
-    if (stale || latest.mode === 'paused'
-        || (latest.mode === 'listening' && !latest.invitedMessages?.includes(summary.messageId))) {
+    if (stale || !participationAllowsMessage(latest, summary)) {
       return { sessionId, externalTriggerId, observedOnly: true };
     }
-    if (latest.mode === 'listening') summary = { ...summary, participationOnce: true };
+    if (latest.mode !== 'active') summary = { ...summary, participationOnce: true };
   }
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId });
   if (runtime.storagePaths?.messageIndexPath) {
@@ -1380,7 +1379,7 @@ async function addProcessingReaction(runtime, summary, emojiType = 'THINKING', {
     });
     if (participationEnabled(runtime, summary)) {
       const state = await participationController(runtime).state(summary);
-      if (state.mode === 'paused' || (summary.participationEpoch !== undefined
+      if (!participationAllowsMessage(state, summary) || (summary.participationEpoch !== undefined
           && Number(summary.participationEpoch) !== state.epoch)) {
         await store.remove(messageId, (id, reactionId) => removeProcessingReaction(runtime, id, reactionId));
         return null;
@@ -1536,11 +1535,11 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     return result.json.delivery;
   };
   const acknowledge = async receipt => {
-    if (receipt.kind === 'reaction') {
+    if (receipt.kind === 'reaction' && !receipt.processingState) {
       await outcomeReactionStore.clean(receipt.target?.messageId,
         (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(
           runtime, messageId, reactionId));
-      await readReactionStore.remove(receipt.target?.messageId,
+      if (['p2p', 'private'].includes(receipt.target?.chatType)) await readReactionStore.remove(receipt.target?.messageId,
         (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(
           runtime, messageId, reactionId));
     }
@@ -1577,7 +1576,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     chatType: 'group', ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice',
     ...(delivery.foldedDetails ? { foldedDetails: delivery.foldedDetails } : {}) });
   return withFeishuHandoffLock(runtime, summary, async () => {
-    if (participationEnabled(runtime, summary)) {
+    if (delivery.processingState !== 'finished' && participationEnabled(runtime, summary)) {
       const controller = participationController(runtime, helpers);
       const status = await controller.state(summary);
       const scopeId = summary.participationScopeTopicId;
@@ -1604,14 +1603,19 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     let sent;
     try {
-      if (delivery.kind === 'reaction' && delivery.emojiType !== null
+      if (delivery.kind === 'reaction' && !delivery.processingState && delivery.emojiType !== null
           && !resolveFeishuGroupSettings(runtime.config, summary).reactionCandidates.includes(delivery.emojiType)) {
         const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
           body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Reaction is outside the current group selection' } });
         if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to cancel unselected reaction');
         return resolved.json?.delivery;
       }
-      sent = delivery.memoryReview
+      sent = delivery.processingState === 'finished'
+        ? (await readReactionStore.remove(summary.messageId,
+          (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId)), { withdrawn: true })
+        : delivery.processingState === 'active'
+        ? await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary)
+        : delivery.memoryReview
         ? await sendMemoryReviewCard(runtime, delivery)
         : delivery.nativeQuestion
         ? await sendNativeQuestionCard(runtime, delivery)
@@ -1652,7 +1656,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || sent.reactionId || '', messageId: sent.message_id || '',
       threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary,
-      kind: delivery.kind, ...(delivery.kind === 'content' ? { text: delivery.text } : {}) });
+      kind: delivery.kind, ...(delivery.processingState ? { processingState: delivery.processingState } : {}),
+      ...(delivery.kind === 'content' ? { text: delivery.text } : {}) });
     let completed;
     await receipts.flush(async receipt => { completed = await acknowledge(receipt); }, replayOptions);
     return completed;
@@ -2015,8 +2020,12 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     summary = { ...summary, messageText: result.taskText, textPreview: result.taskText };
     command = null;
   }
-  const listening = participationEnabled(runtime, summary)
-    && (await participationController(runtime, helpers).state(summary)).mode === 'listening';
+  const participation = participationEnabled(runtime, summary)
+    ? await participationController(runtime, helpers).state(summary) : null;
+  const listening = participation?.mode === 'listening';
+  if (participation && participation.mode !== 'active' && participationAllowsMessage(participation, summary)) {
+    summary = { ...summary, participationOnce: true };
+  }
   const jevObservation = groupSettings.jevReactions || listening
     ? await (helpers.observeRemoteLabMessage || ((runtime, summary) =>
       submitRemoteLabRequest(runtime, summary, { observeOnly: true })))(runtime, summary)

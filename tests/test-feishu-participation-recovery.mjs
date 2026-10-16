@@ -121,8 +121,23 @@ try {
     await send('pause', '暂停接收消息');
     assert.ok(effects.removed.includes('cancel-me'), 'direct topic THINKING is retained and removed on pause');
     assert.ok(!effects.removed.includes('other-conversation'), 'pause cannot clear another conversation');
-    assert.equal((await send('paused-at', '@_bot 旧请求', { mentions: [{ openId: 'bot' }] })).reason,
-      'participation_paused');
+    await send('paused-at', '@_bot 帮忙看一下', { mentions: [{ openId: 'bot' }] });
+    assert.equal(effects.runs.at(-1).messageId, 'paused-at');
+    assert.equal(effects.runs.at(-1).participationOnce, true);
+    assert.equal((await runtime.participation.state(base)).mode, 'paused');
+    const pausedInvite = effects.runs.at(-1);
+    const pausedPrepared = { ...prepared, payload: { text: 'paused invitation', sourceDelivery: { target: { participationEpoch: pausedInvite.participationEpoch } } } };
+    assert.equal((await submitRemoteLabRequest(runtime, pausedInvite, { prepared: pausedPrepared })).runId, 'fixture-run');
+    assert.equal((await send('paused-chat', '继续闲聊')).reason, 'participation_paused');
+    assert.ok(!effects.observed.includes('paused-chat'));
+    let pausedSent = false;
+    await processSourceDeliveryOnce(runtime, {
+      requestRemoteLab: async (path, options) => path === '/api/source-deliveries/claim'
+        ? { response: { ok: true }, json: { claim: { leaseId: 'paused-invitation', delivery: {
+          id: 'paused-invitation', target: pausedInvite, kind: 'content', text: '回答' } } } } : request(path, options),
+      sendFeishuText: async () => { pausedSent = true; return { message_id: 'paused-answer' }; },
+    });
+    assert.equal(pausedSent, true, 'paused invitation delivers without resuming the group');
     await reactionStore.add('suppressed', async () => ({ reactionId: 'temporary' }));
     const suppressed = await processSourceDeliveryOnce(runtime, {
       requestRemoteLab: async (path, options) => path === '/api/source-deliveries/claim'

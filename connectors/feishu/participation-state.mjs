@@ -6,12 +6,16 @@ import { getFeishuConversationSettings, setFeishuConversationMuted } from './con
 import { recordFeishuOutboundMessageSession } from './session-flow.mjs';
 import { effectiveFeishuGroup } from './group-settings.mjs';
 import { buildGroupConfigurationCard } from './group-configuration-card.mjs';
+import { mentionsFeishuBot } from './response-policy.mjs';
 
 const MODES = new Set(['active', 'listening', 'paused']);
 const LABELS = { active: '主动参与', listening: '旁听', paused: '暂停接收' };
 const hasModeOverride = record => record?.modeOverride === true
   || (record?.modeOverride === undefined && Boolean(record?.updatedAt || ['listening', 'paused'].includes(record?.mode)));
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
+
+export const participationAllowsMessage = (state, summary) => state.mode === 'active'
+  || state.invitedMessages?.includes(summary.messageId) === true;
 
 export function participationEnabled(runtime, summary) {
   if (!summary?.chatId || isFeishuTopicGroup(summary) || ['p2p', 'private'].includes(summary.chatType)) return false;
@@ -40,7 +44,7 @@ export function buildParticipationCard(record, configuration = null) {
   if (configuration && !record.source.topicId) return buildGroupConfigurationCard(record, configuration);
   const scope = record.source.topicId ? '这个话题' : '本群主讨论';
   const detail = { active: '持续接收消息，自主判断是否参与。',
-    listening: '持续接收消息；@我或使用任务命令可单次邀请。', paused: '后续普通消息不进入 Session；说“恢复接收消息”唤醒。' }[record.mode];
+    listening: '持续接收消息；@我或使用任务命令可单次邀请。', paused: '普通消息不进入 Session；@我可单次邀请，之后仍保持暂停。' }[record.mode];
   const actions = [...MODES].map(mode => ({ tag: 'button', type: mode === record.mode ? 'primary' : 'default',
     text: { tag: 'plain_text', content: LABELS[mode] }, value: {
       namespace: 'participation', key: record.key, mode, epoch: record.epoch || 0,
@@ -218,12 +222,11 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const key = keyFor(summary);
     return exclusive(key, async () => {
       let record = await state(summary);
-      if (record.mode === 'paused') return false;
       if (record.mode === 'active') return true;
       const forOther = summary.mentions?.length && !mentioned;
-      const invited = !forOther && (mentioned || taskCommand);
+      const invited = !forOther && (mentioned || (record.mode === 'listening' && taskCommand));
       record = await records.mutate(key, current => ({ ...current, ...record,
-        ...(invited ? { invitedMessages: [...(current?.invitedMessages || []), summary.messageId].slice(-100), topicHint: false }
+        ...(invited ? { invitedMessages: [...new Set([...(current?.invitedMessages || []), summary.messageId])].slice(-100), topicHint: false }
           : {}),
       }));
       await publish(record);
@@ -238,7 +241,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       return { participationControl: true, duplicate: true };
     }
     const others = (summary.mentions || []).some(x => x.openId && x.openId !== runtime.botIdentity?.openId);
-    const addressed = (summary.mentions || []).some(x => x.openId === runtime.botIdentity?.openId);
+    const addressed = mentionsFeishuBot(runtime, summary);
     const mode = !others || addressed ? parseParticipationText(summary.messageText || summary.textPreview) : null;
     if (mode) { await change(summary, mode); return { participationControl: true, mode }; }
     const at = Number(summary.createTime);
@@ -248,7 +251,8 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       return { ignored: true, reason: 'participation_before_resume' };
     }
     if (record.mode === 'paused') {
-      return { ignored: true, reason: 'participation_paused' };
+      if (!addressed) return { ignored: true, reason: 'participation_paused' };
+      await assess(summary, { mentioned: true });
     }
     return null;
   }
