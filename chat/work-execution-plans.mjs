@@ -359,7 +359,10 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     await save(sourceId, data => {
       const p = data.executionPlans.find(p => p.id === planId);
       const b = p.branches.find(b => b.id === branch.id);
-      if (!b.stopRequested) { p.state = 'running'; b.state = 'running'; }
+      if (!b.stopRequested && b.state === 'pending') {
+        if (p.state === 'approved') p.state = 'running';
+        b.state = 'running';
+      }
       b.runId = receipt.run.id;
     });
     const latest = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
@@ -385,7 +388,7 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     const current = data.executionPlans.find(p => p.id === planId);
     current.reviewRequestId = requestId;
     current.reviewRunId = receipt.run.id;
-    if (!['stopping', 'cancelled'].includes(current.state)) current.state = 'reviewing';
+    if (['approved', 'running'].includes(current.state)) current.state = 'reviewing';
   });
   const latest = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
   if (['stopping', 'cancelled'].includes(latest.state)) {
