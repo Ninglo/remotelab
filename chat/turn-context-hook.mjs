@@ -1,3 +1,4 @@
+import { deliveryReviewPrompt } from './delivery-review.mjs';
 import { buildGroupRoutingContext } from './group-routing.mjs';
 import { buildLocalBridgePromptBlock } from './local-bridge-prompt.mjs';
 import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
@@ -48,6 +49,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
       automated: experimentInput.automated }),
     await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),
     groupRouting,
+    await deliveryReviewPrompt(session, sourceContext),
     // Classifier summaries are derived UI state, not fresh execution evidence.
     // Keep them queryable on the session; do not replay stale blockers every turn.
   ];

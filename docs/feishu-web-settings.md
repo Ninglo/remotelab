@@ -110,3 +110,5 @@ The same personal routing preference is also available from eligible Feishu grou
 
 验证使用隔离环境的 `tests/test-feishu-personal-settings-card.mjs`，覆盖身份隔离、版本冲突、事件重放、
 记忆开关、首次欢迎去重及未知发送结果。真实私聊送达和本人点击应分别验收。
+
+说明与基础设置在同一张卡内呈现，每个折叠面板使用独立且刷新时稳定的组件标识，默认收起。明确要求重发完整试用卡时，发布器可使用 `renew: true` 更新有效消息绑定；保留当前持有人的设置与能力说明，旧卡不能继续修改设置。能力示例人物不改变卡片操作人的身份。

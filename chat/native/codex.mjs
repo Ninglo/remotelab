@@ -83,8 +83,8 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
         'Answers to the previous questions:',
         ...questions.map(q => {
           const origin = result.resolutions?.find(r => r.key === q.id)?.origin;
-          const value = result.answers[q.id]?.join(', ') || 'No answer';
-          return `${q.question}: ${value}${origin === 'timeout' ? ' [system timeout fallback; not a user response]'
+          const value = nativeQuestionAnswers(result)[q.id]?.join(', ') || 'No answer';
+          return `${q.question}: ${value}${origin === 'timeout' && !result.answers[q.id]?.length ? ' [system timeout fallback; not a user response]'
             : origin === 'superseded' ? ' [superseded by a later user message; not a user choice]' : ''}`;
         }),
       ].join('\n') })))

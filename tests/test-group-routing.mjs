@@ -29,9 +29,22 @@ try {
   const { recordWorkInput } = await import('../chat/work-awareness.mjs');
   const { routeGroupWork, replyGroupInput, recoverPilotReplies, pilotInputResult, acceptGroupSync, completeGroupSync, validateGroupRethink, readGroupRoutingState, buildGroupRoutingContext } = await import('../chat/group-routing.mjs');
   const { routingPilotScope, isPilotInputSinceActivation } = await import('../lib/group-routing-pilot.mjs');
+  const { groupSyncReturnPlan } = await import('../chat/group-sync-presentation.mjs');
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const options = { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a',
     sourceContext: { connector: 'feishu', chatId: 'pilot' }, sourceDelivery: origin };
+  for (const chosen of [origin, topic, { ...topic, target: { ...topic.target, threadId: 'existing-thread' } }]) {
+    const source = { options: { sourceContext: { feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } },
+      deliveryPlan: origin, replyPlacement: chosen };
+    const confirmation = { deliveryPlan: origin };
+    assert.deepEqual(await groupSyncReturnPlan(confirmation, { sourceSessionId: 'source', sourceRequestId: 'input' },
+      { byRequest: async () => source }), chosen, 'main, new thread and existing thread retain their selected placement');
+    const child = { ...source, nativeDispatchRunId: 'owner', replyPlacement: null };
+    assert.deepEqual(await groupSyncReturnPlan(confirmation, {}, {
+      byRequest: async () => child, byRunId: async () => source }), chosen, 'a supplement inherits its execution placement');
+    assert.deepEqual(await groupSyncReturnPlan({ deliveryPlan: topic }, {}, {
+      byRequest: async () => source }), topic, 'a human confirmation in an existing topic has priority');
+  }
   const input = async (id, text, extra = {}) => (await requests.accept({ sessionId: 'main', requestId: id, text,
     options: { ...options, ...extra }, deliveryPlan: extra.sourceDelivery || origin, runtimeSelection: { tool: 'codex', model: 'test' } })).record;
   let created = 0, submits = 0;
@@ -198,13 +211,25 @@ try {
   assert.equal(p.targetDeliveryState, 'pending');
   assert.equal(out.deliveries[0].target.messageId, 'one');
   assert.match(out.deliveries[0].text, /新事实成立/);
+  assert.equal(out.deliveries[0].foldedDetails.title, '同步复核结果');
+  assert.match(out.deliveries[0].foldedDetails.url, /open_thread_id=root/);
+  assert.doesNotMatch(out.deliveries[0].text, /sync_[a-f0-9]+/);
+  assert.match(await acceptGroupSync(human, manager), /复核结果/);
+  await requests.settle(human.key, { state: 'completed' });
+  assert.match(await acceptGroupSync(await requests.get(human.key), manager), /复核结果/,
+    'late callback observes the stored result without dispatching again');
+  // Lost proposal acknowledgement after a durable outbox write. A controller
+  // upgrade must reuse the old payload instead of creating another delivery.
+  await mutateSessionMeta('main', s => { s.groupRouting.proposals[0].state = 'submitted'; return true; });
+  await completeGroupSync(completed, { id: review.runId, state: 'completed' });
+  assert.equal((await readGroupRoutingState(await findSessionMeta('main'))).proposals[0].returnDeliveryId, p.returnDeliveryId);
   assert.equal((await requests.byRequest('work', review.requestId)).deliveries.length, 0);
   const fresh = await routeGroupWork(syncSource, { mode: 'sync', targetSessionId: 'work', task: '另一个事实', reason: '需要复核' }, manager);
   await mutateSessionMeta('work', s => { s.workAwareness = { intents: [{ id: 'changed' }] }; return true; });
   await assert.rejects(acceptGroupSync(await input('stale-confirm', fresh.confirmation), manager), /changed/);
   const rejected = await acceptGroupSync(await input('reject', '拒绝同步 ' + fresh.proposal.id), manager);
-  assert.match(rejected, /拒绝/); assert.equal(submits, 3);
-  assert.match(await acceptGroupSync(await requests.byRequest('main', 'reject'), manager), /rejected/);
+  assert.match(rejected, /取消/); assert.equal(submits, 3);
+  assert.match(await acceptGroupSync(await requests.byRequest('main', 'reject'), manager), /取消/);
   const crashDraft = await routeGroupWork(syncSource, { mode: 'sync', targetSessionId: 'work', task: '重试固定输入', reason: '模拟接受前故障' }, manager);
   const crashInput = await input('crash', crashDraft.confirmation);
   await assert.rejects(acceptGroupSync(crashInput, { ...manager, submitHttpMessage: async () => { throw new Error('interrupted'); } }), /interrupted/);
@@ -213,6 +238,15 @@ try {
   const secondReview = await requests.byRequest('work', 'routing-sync:' + crashDraft.proposal.id);
   await mutateSessionMeta('work', s => { s.workAwareness.intents.push({ id: 'newer' }); return true; });
   await assert.rejects(validateGroupRethink(secondReview), /目标讨论已变化/);
+  await completeGroupSync({ ...secondReview, result: { state: 'failed', error: '目标讨论已变化，请重新确认。',
+    payload: { text: '已核对的部分依据仍保留。还有一个必须回答的问题。' } } }, { id: secondReview.runId });
+  const failedPacket = (await readGroupRoutingState(await findSessionMeta('main'))).proposals.find(p => p.id === crashDraft.proposal.id);
+  const failure = (await requests.byRunId(failedPacket.returnRunId)).deliveries[0];
+  assert.equal(failure.foldedDetails.failed, true);
+  assert.match(failure.foldedDetails.summary, /目标讨论已变化/, 'failure stays visible outside the folded details');
+  assert.match(failure.text, /必须回答的问题/, 'a failed review retains partial findings and questions');
+  assert.doesNotMatch(failure.foldedDetails.summary, /部分依据/, 'partial detail does not flatten a failed review');
+  assert.equal(failedPacket.targetDeliveryId, undefined);
   const context = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext, { inputReplyContract: true });
   assert.match(context, /sourceRequestId/); assert(context.length < 16000);
   assert.match(context, /work reply/); assert.match(context, /不要在主线先读设备代码/);

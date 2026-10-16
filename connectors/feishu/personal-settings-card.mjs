@@ -7,11 +7,12 @@ import { loadPersonalMemorySettings, changePersonalMemorySettings } from '../../
 
 const plain = content => ({ tag: 'plain_text', content });
 const md = content => ({ tag: 'markdown', content });
-const panel = (title, elements) => ({ tag: 'collapsible_panel', expanded: false, header: { title: plain(title) }, elements });
 const progressLabels = { none: '只看最终结果', messages: '进展单独发消息', card_latest: '卡片只留最新进展', card_all: '卡片保留全部进展' };
 export const PERSONAL_INTRO = '嗨，我是 Index，你的 AI 同事。\n查资料、写文档、改代码、跑实验，都可以来找我。把正在讨论的事转给我也行，我们一起想办法，把事情做成。\n我会结合能读到的项目资料和已有讨论接着做，也会提出自己的判断。你随时可以补充、纠正；这些反馈会帮助我更懂团队的工作。';
 
 export function buildPersonalSettingsCard(record, { replies, memory, notice = '', webUrl = '' }) {
+  let panelId = 0;
+  const panel = (title, elements) => ({ tag: 'collapsible_panel', element_id: `personal_section_${panelId++}`, expanded: false, header: { title: plain(title) }, elements });
   // Instance-curated, per-card trial content. This is presentation only: it
   // neither changes the card owner nor grants access to the linked examples.
   const guide = record.capabilityGuide;
@@ -78,7 +79,7 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
     try { const url = new URL(runtime.config.personalSettings?.webUrl); if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) { url.search = '?tab=settings'; webUrl = url.href; } } catch {}
     return buildPersonalSettingsCard(record, { replies, memory, notice, webUrl });
   }
-  async function publish(source, { automatic = false } = {}) {
+  async function publish(source, { automatic = false, renew = false } = {}) {
     if (!enabled(source)) return null;
     const actor = await actorFor(source);
     const key = createHash('sha256').update(JSON.stringify([runtime.config.sourceRouteId, source.tenantKey, source.sender.openId, source.chatId])).digest('hex').slice(0, 24);
@@ -87,7 +88,7 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
       if (automatic && record) return record; // First-use welcome is not a recurring notification.
       if (!record) record = await store.mutate(key, () => ({ source, personId: actor.personId, identityId: actor.identityId, generation: 0 }));
       if (record.personId !== actor.personId || record.identityId !== actor.identityId) throw Error('个人身份关联已变化，请核对原卡归属。');
-      const fresh = record.messageId && now() - record.createdAt < 13 * 86400000;
+      const fresh = !renew && record.messageId && now() - record.createdAt < 13 * 86400000;
       const rendered = await card(record, actor);
       if (fresh) {
         const result = await runtime.appClient.im.v1.message.patch({ path: { message_id: record.messageId }, data: { content: JSON.stringify(rendered) } });

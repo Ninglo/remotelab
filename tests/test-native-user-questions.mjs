@@ -77,6 +77,16 @@ try {
     assert.deepEqual({ ...resolved.answers }, { format: ['Detailed'] });
     assert.equal(resolved.resolutions[0].origin, 'user', 'a delayed click remains a human choice');
     assert.equal(activityForQuestion(await readNativeQuestion(waitingRoot)).run.waiting, false, 'answering clears waiting');
+    const syncReady = once(humanBus, 'pending');
+    const sync = waiting.ask({ protocol: 'codex', id: 'sync', questions: [q] });
+    await syncReady;
+    await waiting.answer({ id: 'sync-choice', questionId: (await readNativeQuestion(waitingRoot)).id,
+      text: '1', systemOutcome: { text: '已提交复核，结论会回到这里。', context: '原卡已确认，不再发送重复受理回执。' } });
+    const syncResult = await sync;
+    assert.deepEqual({ ...syncResult.answers }, { format: ['Brief'] }, 'system status never changes the human selection');
+    assert.equal(humanEvents.at(-1).content, '已提交复核，结论会回到这里。');
+    assert.match(nativeQuestionAnswers(syncResult).format[0], /RemoteLab system receipt/);
+    assert.match(nativeQuestionAnswers(syncResult).format[0], /不再发送重复/);
     const continuationReady = once(humanBus, 'pending');
     const continuation = waiting.ask({ protocol: 'codex', id: 'continuation', questions: [q, { ...q, id: 'next' }] });
     await continuationReady;

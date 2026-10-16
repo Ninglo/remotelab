@@ -48,7 +48,7 @@
           "id": "work-awareness",
           "name": "开工背景、相关工作与参考建议",
           "purpose": "开工和继续工作时读取必要背景，发现可能重复的工作，并从已完成的成果中寻找可复用方法。",
-          "entry": "会话中的相关工作与参考建议；Agent 使用 work context、directory、start、update、suggest 和 people；个人试用使用 work plan 安排独立子 Session。启用隐藏项目目录后，已登记项目群及网页子会话随认知文档取得有时间和状态的检索目录；独立网页话题按需检索项目候选、当前简报和指定项目目录，不自动绑定。",
+          "entry": "会话中的相关工作与参考建议；Agent 使用 work context、directory、start、update、suggest 和 people；个人试用使用 work plan 安排独立子 Session。启用隐藏项目目录后，已登记项目群及网页子会话随认知文档取得有时间和状态的检索目录；独立网页话题按需检索项目候选、当前简报和指定项目目录，不自动绑定。 成果送群审阅使用 work delivery，相关反馈回原工作，群主保留解释和讨论责任。",
           "condition": "项目、消息作者与被提及者分别核对；关联不限制任何一方继续。已有 Session 的参考先经人核验送达，采用另由接收方确认；新 Session 分流先核验具体任务和目的地。公司资料按需读原位置，来源故障与预算跳过有说明。",
           "example": "核对当前任务的项目和涉及人物，看看有没有人在做同一对象、已有成果或可用方法，再给出有来源的协作建议。",
           "sources": [
@@ -63,11 +63,13 @@
             "chat/project-memory-runtime.mjs",
             "chat/necessary-background.mjs",
             "chat/related-person-context.mjs",
-            "chat/session-manager.mjs"
+            "chat/session-manager.mjs",
+            "chat/delivery-review.mjs"
           ],
           "commands": [
             "work"
-          ]
+          ],
+          "sourceRevision": "2f1687fc3eca9eaaade53e87fd2b69e6382413f6"
         },
         {
           "id": "conversation",
@@ -462,6 +464,7 @@
             "chat/ambient-feishu-reply.mjs",
             "chat/feishu-reply-placement-feedback.mjs",
             "chat/group-routing.mjs",
+            "chat/group-sync-presentation.mjs",
             "chat/work-execution-plans.mjs",
             "chat/work-execution-prompt.mjs",
             "lib/work-awareness-command.mjs",
