@@ -4,7 +4,7 @@
 
 - Feedback: CI adds waiting and interrupts iteration without enough value for the current RemoteLab workflow.
 - Decision: remove the GitHub Actions workflow and automatic CI repair scripts; validate affected behavior locally and push coherent changes directly to main. Keep existing local test commands and documentation publishing hooks.
-- Repository setting: an administrator must remove the obsolete required `test` status check from main protection. Deleting the workflow alone does not remove that requirement.
+- Completion: the user confirmed the setting change and direct-to-main delivery. Readback on 2026-10-16 verified main is unprotected, required checks are empty, and PR #76 is merged (`99139162`). The workflow list is empty; future routine changes use local validation followed by a direct main push.
 
 
 ### 2026-10-16 — Follow-ups must reach the existing conversation without appearing newly created

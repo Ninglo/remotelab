@@ -6,18 +6,11 @@ On 2026-10-16, the project requested removal of GitHub CI because its waiting an
 
 Run the checks relevant to the change locally, with isolated state for runtime tests. Check documentation impact before committing, then push the reviewed change directly to `main`. Documentation builds and instance-local publishing hooks remain available; see [documentation delivery](documentation-delivery.md). Native macOS changes need compilation and relevant tests on a macOS host.
 
-## Repository administrator action
+## Repository setting and completion
 
-The last verified `main` protection required the GitHub Actions `test` check. An administrator must remove that obsolete required-status-check configuration before the deletion can land and later commits can advance normally. Preserve the other branch protections. This source change does not itself modify GitHub settings.
+On 2026-10-16, the user confirmed the repository setting was changed and future work should push directly to `main`. Readback verified `protected: false`, no required status checks, and PR #76 merged as `99139162`. The GitHub Actions workflow list is empty. The former required `test` check no longer blocks delivery.
 
-With a repository administrator's GitHub login, remove only the status-check requirement:
-
-```bash
-gh api --method DELETE repos/Ninglo/remotelab/branches/main/protection/required_status_checks
-gh api repos/Ninglo/remotelab/branches/main/protection
-```
-
-After landing, verify that new pushes no longer start the retired workflow. Existing run history is retained. No fabricated status or replacement no-op workflow is needed.
+Existing run history is retained. Local validation and a normal fast-forward push to `main` are the delivery path; no integration branch or pull request is required for routine work.
 
 ## Existing macOS monitor installations
 
