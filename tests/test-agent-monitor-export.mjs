@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildAgentSnapshot, writeAtomic, publish } from '../integrations/agent-monitor/publish.mjs';
+import { parseAgentSnapshot, viewAgentSnapshot } from '../integrations/agent-monitor/contract.mjs';
+const now = Date.now(), generatedAt = new Date(now).toISOString();
+const account = status => ({ label: 'example', active: true, status, observedAt: generatedAt, windows: [], token: 'DO_NOT_EXPORT' });
+const snapshot = buildAgentSnapshot(null, { generatedAt, accounts: ['available','available','exhausted','error','stale'].map(account), secret: 'DO_NOT_EXPORT' }, 'test', now);
+assert.deepEqual(snapshot.accountSummary, {available:2, exhausted:1, unknown:2});
+assert(!JSON.stringify(snapshot).includes('DO_NOT_EXPORT'));
+assert.equal(viewAgentSnapshot(snapshot,false,now).accounts,null);
+assert.deepEqual(viewAgentSnapshot(snapshot,false,now).accountSummary,snapshot.accountSummary);
+assert.equal(viewAgentSnapshot(snapshot,true,now).accounts.items.length,5);
+assert.equal(viewAgentSnapshot(snapshot,false,now+300001).accountsStale,true);
+assert.equal(parseAgentSnapshot({...snapshot,accountSummary:undefined},now).accountSummary,null);
+assert.throws(()=>parseAgentSnapshot({...snapshot,schema:2},now));
+assert.throws(()=>parseAgentSnapshot({...snapshot,accountSummary:{available:-1,exhausted:0,unknown:0}},now));
+assert.throws(()=>buildAgentSnapshot(null,null,'test',now));
+for (const key of ['AGENT_MONITOR_DESTINATION','AGENT_MONITOR_KUBE_CONTEXT','AGENT_MONITOR_NAMESPACE','AGENT_MONITOR_DEPLOYMENT']) delete process.env[key];
+await assert.rejects(publish('{}'), /not configured/);
+const dir=await mkdtemp(join(tmpdir(),'agent-export-'));
+try {
+ const file=join(dir,'latest.json');
+ await writeAtomic(file,JSON.stringify(snapshot));
+ assert.deepEqual(parseAgentSnapshot(JSON.parse(await readFile(file,'utf8')),now),snapshot);
+ await writeAtomic(file,'second');assert.equal(await readFile(file,'utf8'),'second');
+ await writeFile(join(dir,'not-a-dir'),'preserve');
+ await assert.rejects(writeAtomic(join(dir,'not-a-dir','latest.json'),'invalid'));
+ assert.equal(await readFile(file,'utf8'),'second');
+} finally {await rm(dir,{recursive:true,force:true});}
+console.log('RL export: source-only account totals, allowlist, public/admin boundary, v1 compatibility, version rejection, atomic preservation and explicit target checks passed.');

@@ -1,0 +1,21 @@
+export type MetricKey = "meanTokens" | "meanInjectionChars" | "firstInjectionChars" | "meanFirstResponseMs" | "meanDeliveryMs" | "firstDeliveryMs" | "totalTokens";
+export type Sample = { count: number; mean: number | null };
+export type AgentDay = { day: string; start: string; sessions: number | null; usageRuns: number | null; unknownFirstRuns: number | null;
+  injection: Sample; firstInjection: Sample; delivery: Sample; firstDelivery: Sample; firstResponse: Sample;
+  journeyStages: Record<string, Sample>; deliveryStages: Record<string, Sample>; firstDeliveryStages: Record<string, Sample>;
+} & Record<MetricKey, number | null>;
+export type AgentAccount = { label: string; status: string; active: boolean; observedAt: string | null;
+  windows: { minutes: number; remainingPercent: number | null; resetsAt: string | null }[] };
+export type AccountSummary = { available: number; exhausted: number; unknown: number };
+export type AgentSnapshot = { schema: 1; accountSummary: AccountSummary | null; source: string; publishedAt: string;
+  dashboard: null | { generatedAt: string; timezone: "Asia/Shanghai"; dayStartHour: 5;
+    currentRunning: number | null; todayActiveSessions: number | null; unknownStates: number | null;
+    today: AgentDay; days: AgentDay[]; coverage: Record<string, number | boolean>; semantics: Record<string, string>;
+    documents: { name: string; chars: number | null; when: string }[];
+    sources: null | { observedAt: string; chars: number | null; entries: { name: string; chars: number | null }[] };
+  }; accounts: null | { generatedAt: string; items: AgentAccount[] } };
+export type AgentMonitorData = AgentSnapshot & { dashboardStale: boolean; accountsStale: boolean; accountsAllowed: boolean };
+
+export const metricDefinitions: readonly { key: MetricKey; label: string; unit: string; count: string }[];
+export function parseAgentSnapshot(value: unknown, now?: number): AgentSnapshot;
+export function viewAgentSnapshot(snapshot: AgentSnapshot, accountsAllowed: boolean, now?: number): AgentMonitorData;
