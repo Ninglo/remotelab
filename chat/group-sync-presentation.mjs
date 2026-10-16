@@ -19,7 +19,9 @@ export async function groupSyncReturnPlan(record, proposal, store) {
 
 export function groupWorkHref(plan, sessionId) {
   const target = normalizeConversation(plan)?.target || {};
-  const thread = target.threadId || target.topicId || target.rootId;
+  // rootId anchors a message reply, not a Feishu open_thread_id. Until the
+  // provider has returned the actual topic ID, use the working Session entry.
+  const thread = target.threadId || (target.topicId?.startsWith('omt_') ? target.topicId : '');
   if (target.chatId && thread && (target.replyInThread || target.conversationKind === 'thread')) {
     return `https://applink.feishu.cn/client/thread/open?open_chat_id=${encodeURIComponent(target.chatId)}&open_thread_id=${encodeURIComponent(thread)}`;
   }
