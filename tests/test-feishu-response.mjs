@@ -88,6 +88,24 @@ try {
     assert.equal((await requests.get(input.key)).deliveries.filter(d => d.kind === 'content').length, 1);
   }
 
+  // Processing feedback survives a hidden opener without settling its input.
+  const processing = await accept('processing');
+  await requests.mutate(processing.key, current => ({ ...current, options: { ...current.options,
+    messageReplyPolicy: { version: 3, opening: false } } }));
+  const processingEvent = { ...final('processing-opening', envelope({ replyMode: 'inline', reaction: 'OnIt' }, '我先检查。')),
+    phase: 'commentary', runId: processing.runId };
+  const processingOptions = { store: requests, run: { id: processing.runId, state: 'running' },
+    plan: processing.deliveryPlan, running: true, session: { id: 'session' } };
+  await publishLiveRunReplies(await requests.get(processing.key), [processingEvent], processingOptions);
+  await publishLiveRunReplies(await requests.get(processing.key), [processingEvent], processingOptions);
+  const processingSaved = await requests.get(processing.key);
+  assert.deepEqual(processingSaved.deliveries.map(d => [d.kind, d.emojiType]), [['reaction', 'OnIt']]);
+  assert.equal(processingSaved.deliveries[0].reactionStage, 2);
+  assert.equal(processingSaved.mainlineReply, undefined);
+  assert.equal(processingSaved.result, null);
+  await publish(processingSaved, [final('processing-done', envelope({ replyMode: 'inline', reaction: null }, '检查完成。'))]);
+  assert.deepEqual((await requests.get(processing.key)).deliveries.map(d => d.kind), ['reaction', 'reaction', 'content']);
+
   // The immediate tool is a facade over the same decision and receipt contract.
   const tool = await accept('tool-root'); const toolExtra = await accept('tool-extra', tool);
   await publishFeishuResponse(tool, { text: '<private><feishu-reaction emoji="Get"/></private>两个补充的结果。',

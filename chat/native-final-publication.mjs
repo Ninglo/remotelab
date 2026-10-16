@@ -124,6 +124,21 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const messageReplyPolicy = owner.options?.messageReplyPolicy;
     const ownerPlan = owner === record ? plan : normalizeConversation(owner.deliveryPlan || owner.options?.sourceDelivery);
     if (!ownerPlan) continue;
+    // A model-selected processing reaction is independent of opening/progress
+    // text visibility. It does not settle the input or accept work on its own.
+    const feedback = readFeishuResponseDecision(directiveEvent.content);
+    if (!final && plan.connector === 'feishu' && feedback.specified && !feedback.error
+        && feedback.reaction !== undefined && event.phase) {
+      const feedbackId = assistantSurfaceMessageId(event);
+      await store.mutate(record.key, current => {
+        if (!feedbackId || current.result || current.routingHandoff
+            || current.streamedReactionMessageIds?.includes(feedbackId)) return current;
+        const parts = buildReplyDeliveries(ownerPlan, { text: '', reaction: feedback.reaction, reactionStage: 2 });
+        return { ...current, streamedReactionMessageIds: [...(current.streamedReactionMessageIds || []), feedbackId],
+          deliveries: appendDeliveries(current, parts.map(part => ({ ...part, providerMessageId: feedbackId,
+            surfaceKind: 'processing', publicationRequestId: owner.requestId }))) };
+      });
+    }
     // Without a phase, a direct answer is indistinguishable from an opening.
     // Wait for terminal publication unless the Harness explicitly marks progress.
     if (plan.connector === 'feishu' && !event.phase && surface.surfaceKind === 'opening'

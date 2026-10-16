@@ -255,7 +255,10 @@ destinations still receive their result.
 
 For the Feishu response protocol, a completed final message queues its selected
 input replies immediately, even if a later steered task keeps the execution
-running. Streaming fragments and unphased drafts remain unpublished. Terminal
+running. Streaming fragments and unphased drafts remain unpublished. A main-model
+processing reaction in a completed opening (for example OnIt after undertaking
+a request) queues independently of opening-text visibility; it does not settle
+the input. The final decision replaces or withdraws that status reaction. Terminal
 reconciliation reuses the durable per-input receipts rather than sending again.
 
 Visible child delegation publishes its creation notice using the invoking Run's
