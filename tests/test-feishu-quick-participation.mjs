@@ -232,7 +232,7 @@ try {
   assert.deepEqual(mentionedReactions.slice(1), []);
   const prompt = resolveFeishuGroupSettings(runtime.config, base).systemPrompt;
   assert.match(prompt, /feishu-response:/);
-  assert.match(prompt, /Keep this timeline for observing the discussion/,
+  assert.match(prompt, /General automatic new-topic splitting is deferred/,
     'ambient timeline guard applies even without groupFeed');
   assert.doesNotMatch(prompt, /connector call feishu:react_to_source/);
   const onlyReaction = '<private><feishu-reaction emoji="THANKS"/></private>';
