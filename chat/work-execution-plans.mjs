@@ -96,7 +96,7 @@ export async function handleExecutionPlan(record, body, deps) {
   const followUps = [];
   const result = await serial(record.sessionId, async () => {
     record = await requests.get(record.key) || record;
-    const { actor, source, scope } = await actorFor(record, { existing: ['approve', 'stop', 'amend', 'answer', 'resume'].includes(body.action) });
+    const { actor, source, scope } = await actorFor(record, { existing: ['approve', 'stop', 'amend', 'continue', 'answer', 'resume'].includes(body.action) });
     if (body.action === 'record') {
       const decision = { requestId: record.requestId, at: new Date().toISOString(), actor,
         understanding: clean(body.understanding, 600), intent: clean(body.intent, 80),
@@ -109,6 +109,8 @@ export async function handleExecutionPlan(record, body, deps) {
     if (['propose', 'start'].includes(body.action)) {
       const goal = clean(body.goal, 600), context = clean(body.context, 6000), reason = clean(body.reason, 1000);
       const branches = validateBranches(body.branches);
+      const branchSurface = body.branchSurface || 'web-silent';
+      if (!['web-silent', 'feishu-thread'].includes(branchSurface)) fail('branchSurface must be web-silent or feishu-thread');
       if (!goal || !reason || !context) fail('A proposal needs goal, reason and bounded source context/constraints');
       if (body.action === 'start' && (!clean(body.authorization, 1000)
           || branches.length > 1 && body.executionMode !== 'parallel-sessions')) {
@@ -117,13 +119,14 @@ export async function handleExecutionPlan(record, body, deps) {
       if ((source.delegationDepth || 0) >= 2) fail('A delegated child cannot recursively create execution plans');
       const id = 'plan_' + hash(JSON.stringify([source.id, record.requestId, body.action, goal, context, reason, branches]));
       const old = plans(source).find(p => p.id === id);
+      if (old && (old.branchSurface || 'web-silent') !== branchSurface) fail('Retry must preserve branchSurface');
       if (old) { followUps.push(() => advancePlan(source.id, id, deps)); return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), duplicate: true }; }
       if (plans(source).length >= 32) fail('Plan limit reached; continue an existing plan');
       const plan = { id, state: 'draft', version: 1, goal, context, reason, branches, actor, trialId: scope.trialId,
         sourceSessionId: source.id, sourceRequestId: record.requestId, createdAt: new Date().toISOString(),
         runtimeSelection: record.runtimeSelection, folder: source.folder,
         returnPlan: record.deliveryPlan || record.options.sourceDelivery, controls: [],
-        branchSurface: 'feishu-thread', branchOrigin: branchOrigin(record) };
+        branchSurface, ...(branchSurface === 'feishu-thread' ? { branchOrigin: branchOrigin(record) } : {}) };
       if (body.action === 'start') Object.assign(plan, { state: 'approved', selected: branches.map(b => b.id),
         executionMode: branches.length > 1 ? 'parallel-sessions' : 'single-session',
         approvalRequestId: record.requestId, approvalText: clean(record.options.recordedUserText || record.text, 3000),
@@ -132,7 +135,7 @@ export async function handleExecutionPlan(record, body, deps) {
       await appendEvent(source.id, { type: 'work_event', action: body.action === 'start' ? 'execution-plan-started' : 'execution-plan-proposed', plan });
       if (body.action === 'start') followUps.push(() => advancePlan(source.id, id, deps));
       return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === id), boundary: body.action === 'start'
-        ? 'The explicitly requested branches were accepted. Feishu branches wait for the new topic delivery receipt before execution; The saved admission notices queue the task summaries and actual links to the source topic; do not repeat them. Queue admission is not delivery or task completion.'
+        ? 'The explicitly requested branches were accepted. Only explicit feishu-thread plans wait for a new topic receipt; web-silent children run in the background and return to the parent; The saved admission notices queue the task summaries and actual links to the source topic; do not repeat them. Queue admission is not delivery or task completion.'
         : 'Draft only; no Session created. Offer the proposal asynchronously and continue already authorized work in the source Session without waiting. Before a later approval, reconcile source progress so completed or active work is not duplicated.' };
     }
     let plan = plans(source).find(p => p.id === body.planId);
@@ -180,7 +183,7 @@ export async function handleExecutionPlan(record, body, deps) {
           branchId: b.id, sourceRequestId: record.requestId, targetRequestId: receipt.requestId, questionId: question.id });
 
       });
-    } else if (['stop', 'amend'].includes(body.action)) {
+    } else if (['stop', 'amend', 'continue'].includes(body.action)) {
       const selected = body.selected;
       if (!Array.isArray(selected) || !selected.length || new Set(selected).size !== selected.length
           || selected.some(id => !plan.branches.some(b => b.id === id))) fail('Select the exact affected branches');
@@ -193,13 +196,29 @@ export async function handleExecutionPlan(record, body, deps) {
         if (body.expectedVersion !== plan.version) fail('Plan changed; inspect current progress before controlling it');
         if (plan.state === 'draft' && body.action !== 'stop') fail('Revise the proposal before starting work');
         if (body.action === 'amend' && selected.some(id => !['pending', 'running'].includes(plan.branches.find(b => b.id === id).state))) {
-          fail('Completed or stopped branches need a new reviewed follow-up plan');
+          fail('Use continue for a human-authorized follow-up in an ended branch; stopped work cannot restart');
+        }
+        if (body.action === 'continue' && (['draft', 'cancelled', 'stopping', 'reviewing'].includes(plan.state)
+            || selected.some(id => { const b = plan.branches.find(b => b.id === id);
+              return !['completed', 'failed'].includes(b.state) || b.stopRequested || !b.sessionId; }))) {
+          fail('Continue needs an ended, non-stopped branch and no active parent review');
         }
         await save(source.id, data => {
           const p = data.executionPlans.find(p => p.id === plan.id);
           p.controls.push({ id, requestId: record.requestId, action: body.action, selected, text,
             actor, state: 'pending', at: new Date().toISOString() });
           p.version++;
+          if (body.action === 'continue') {
+            p.state = 'running';
+            p.reviewRound = (p.reviewRound || 0) + 1;
+            delete p.reviewRunId; delete p.reviewRequestId;
+            for (const b of p.branches) if (selected.includes(b.id)) {
+              b.previousResults ||= [];
+              b.previousResults.push({ requestId: b.requestId, state: b.state, result: b.result, completedAt: b.completedAt });
+              b.state = 'running'; b.requestId = id + ':' + b.id;
+              delete b.result; delete b.error; delete b.completedAt;
+            }
+          }
           if (body.action === 'stop') for (const b of p.branches) if (selected.includes(b.id)) {
             b.stopRequested = true;
             if (b.state === 'pending') b.state = 'cancelled';
@@ -221,7 +240,7 @@ export async function handleExecutionPlan(record, body, deps) {
     } else if (body.action === 'resume') {
       followUps.push(() => applyControls(source.id, plan.id, deps));
       followUps.push(() => advancePlan(source.id, plan.id, deps));
-    } else fail('Use propose, start, approve, record, amend, answer, stop or resume');
+    } else fail('Use propose, start, approve, record, amend, continue, answer, stop or resume');
     return { plan: plans(await findSessionMeta(source.id)).find(p => p.id === plan.id) };
   });
   // Admission/decisions have committed. External work cannot hold the command queue.
@@ -253,7 +272,10 @@ async function applyControls(sourceId, planId, deps) {
       } else {
         const requestId = control.id + ':' + b.id;
         const old = await requests.byRequest(b.sessionId, requestId);
-        await api.submitHttpMessage(b.sessionId, old?.text || `主话题中人的补充（来源 ${sourceId}，输入 ${control.requestId}）：\n${control.text}\n保持原任务及范围，说明这次补充怎样影响结果。`, [], old?.options || {
+        await save(sourceId, data => {
+          data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === id).requestId = requestId;
+        });
+        const receipt = await api.submitHttpMessage(b.sessionId, old?.text || `主话题中人的补充（来源 ${sourceId}，输入 ${control.requestId}）：\n${control.text}\n在当前子Session接续原工作，不再创建分支。保持原任务及范围，说明这次补充怎样影响结果。`, [], old?.options || {
           requestId, ...plan.runtimeSelection, viewPersonId: control.actor.personId,
           initiatedByIdentityId: control.actor.identityId, recordUserMessage: false,
           workPlanChild: { sourceSessionId: sourceId, planId, branchId: b.id },
@@ -261,7 +283,7 @@ async function applyControls(sourceId, planId, deps) {
         });
         await save(sourceId, data => {
           const branch = data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === id);
-          branch.requestId = requestId; // completion of an older input cannot close the corrected branch
+          branch.runId = receipt.run.id;
         });
       }
     }
@@ -278,7 +300,9 @@ async function publishPlanAdmissions(sourceId, planId) {
     const id = 'plan-admission:' + hash(plan.id + ':' + admitted.map(b => b.id).join(','));
     const text = ['已创建并提交以下独立子 Session：', '', ...admitted.map(b =>
       `- ${b.topicUrl ? `[${b.name}](${b.topicUrl})` : plan.branchSurface === 'feishu-thread' ? `${b.name}（已在当前群创建话题，飞书尚未返回话题链接）` : `[${b.name}](${b.sessionUrl})`}：${clipCompactionSection(b.task, 240).replace(/\s+/g, ' ').trim()}`),
-      '', '主话题继续负责协调、核验和汇总；你可以在这里补充要求，也可以打开对应分支继续交流。'].join('\n');
+      '', plan.branchSurface === 'feishu-thread'
+        ? '各独立话题承接对应工作；主话题负责协调、核验和汇总。'
+        : '子工作在网页后台执行；请继续在本话题补充和回答问题，由主话题协调、核验和汇总。网页链接用于查看执行记录。'].join('\n');
     // Freeze the batch before enqueue: retries cannot regroup it or duplicate it.
     await save(sourceId, data => {
       const p = data.executionPlans.find(p => p.id === planId);
@@ -383,7 +407,7 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     await save(sourceId, data => { data.executionPlans.find(p => p.id === planId).state = 'cancelled'; });
     return; // A stop cannot wake the parent or restart its work.
   }
-  const requestId = 'work-plan-review:' + plan.id;
+  const requestId = 'work-plan-review:' + plan.id + (plan.reviewRound ? ':' + plan.reviewRound : '');
   const text = `已确认方案 ${plan.id} 的选定分支已结束，请在主话题核验并汇总。\n原目标：${plan.goal}\n原范围与来源：${plan.context}\n${plan.branches.filter(b => b.state !== 'skipped').map(b => `${b.name} (${b.id}, Session ${b.sessionId || '未启动'})：${b.state}\n${b.result || b.error || '没有成果；不能认定完成。'}`).join('\n\n')}\n这次只核验和整合已有成果，回复原交办者。执行结束不等于业务验收；缺口、冲突和失败必须说明。不要自行重新开工、恢复停止分支或发布到其他群；人的后续决定优先。`;
   const prior = await requests.byRequest(sourceId, requestId);
   const receipt = await api.submitHttpMessage(sourceId, prior?.text || text, [], prior?.options || {
@@ -412,6 +436,7 @@ export async function completeExecutionPlan(record, run, deps) {
     if (!plan) return;
     if (record.options.workPlanReview) {
       if (['cancelled', 'stopping'].includes(plan.state)) return;
+      if (record.requestId !== 'work-plan-review:' + plan.id + (plan.reviewRound ? ':' + plan.reviewRound : '')) return;
       await save(source.id, data => { Object.assign(data.executionPlans.find(p => p.id === plan.id), {
         state: record.result?.state === 'completed' ? 'reviewed' : 'review-failed',
         reviewResult: clean(record.result?.payload?.text, 10000), reviewResultState: record.result?.state,
@@ -473,7 +498,7 @@ export async function forwardExecutionQuestions(record, events) {
   if (!ref) return;
   const source = await findSessionMeta(ref.sourceSessionId);
   const p = plans(source).find(p => p.id === ref.planId), b = p?.branches.find(b => b.id === ref.branchId);
-  if (!b || b.stopRequested || source.archived) return;
+  if (!b || b.stopRequested || source.archived || p.branchSurface === 'feishu-thread') return;
   for (const e of events) if (e.messageKind === 'user_question' && e.questionState === 'pending') {
     const question = e.nativeQuestion;
     if (!question || question.secret) continue;

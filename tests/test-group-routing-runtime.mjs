@@ -151,7 +151,7 @@ try {
     messageRoutingPolicy: { version: 1, mechanism: 'experimental', trialVersion: 2, trialId: 'fixture-v2' } };
   const sourceInput = (await requests.accept({ sessionId: main.id, requestId: 'plan-source', text: '提出分工',
     options: sourceOptions, runtimeSelection: runtime, deliveryPlan: origin })).record;
-  const proposed = await handleExecutionPlan(sourceInput, { action: 'propose', goal: '核对原讨论并汇总',
+  const proposed = await handleExecutionPlan(sourceInput, { action: 'propose', branchSurface: 'feishu-thread', goal: '核对原讨论并汇总',
     context: '只使用已提供的测试资料，禁止外部操作', reason: '两个独立检查', branches: [
       { id: 'one', name: '检查一', task: '核查第一份材料', writeScope: '只读', dependsOn: [] },
       { id: 'two', name: '检查二', task: '核查第二份材料', writeScope: '只读', dependsOn: [] },
@@ -195,8 +195,10 @@ try {
   for (const b of three.branches) {
     assert.equal(b.state, 'completed'); assert(b.sessionUrl);
     const child = await findSessionMeta(b.sessionId);
-    assert.equal(child.delegatedFromSessionId, main.id); assert.equal(child.sourceId, 'feishu');
-    assert((await requests.byRequest(b.sessionId, b.requestId)).deliveries.every(d => d.target.rootId === child.conversation.target.rootId));
+    assert.equal(child.delegatedFromSessionId, main.id); assert.equal(child.sourceId, 'chat');
+    assert.equal(child.conversation, undefined);
+    assert.equal(b.topicDeliveryId, undefined);
+    assert.equal((await requests.byRequest(b.sessionId, b.requestId)).deliveries.length, 0, 'silent children publish no group result');
   }
   assert((await requests.byRequest(main.id, three.reviewRequestId)).deliveries.every(d => d.target.messageId === 'input-root'));
   // Use the real native question/admission path. Successful confirmation
