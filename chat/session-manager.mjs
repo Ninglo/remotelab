@@ -29,6 +29,7 @@ import { prependAttachmentPaths } from './process-runner.mjs';
 import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
+import { isFinalAnswerDelivery } from '../lib/reply-deliveries.mjs';
 import { isFeishuMainlineReply } from '../lib/reply-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { resolveAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
@@ -1686,8 +1687,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const responseError = Object.keys(record.responseDecisionErrors || {}).length
     ? '答复已生成，但回复决定中的消息对应关系或字段无效。正文已保留，尚未完成投递。' : '';
   const uncoveredRoot = record.responseDecisionMessageIds?.length && !record.mainlineReply && !record.routingHandoff
-    && !record.deliveries.some(d => d.kind === 'content'
-      && !['opening', 'progress', 'reply', 'question', 'placement_error'].includes(d.surfaceKind));
+    && !record.deliveries.some(isFinalAnswerDelivery);
   const decisionFailure = responseError || (uncoveredRoot ? pilotInputResult(record, run).error : '');
   const deliveryPayload = decisionFailure ? { text: responseError, attachments: [] }
     : run.state === 'completed' ? pendingPayload : {

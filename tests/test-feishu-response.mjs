@@ -9,6 +9,7 @@ try {
   const { requests } = await import('../chat/requests.mjs');
   const { publishFeishuResponse, recoverPilotReplies, pilotInputResult } = await import('../chat/feishu-response.mjs');
   const { publishNativeFeishuResponses } = await import('../chat/feishu-response-publication.mjs');
+  const { publishLiveAssistantReplies } = await import('../chat/native-final-publication.mjs');
   const { buildReplyDeliveries } = await import('../lib/reply-deliveries.mjs');
   const { readFeishuResponseDecision } = await import('../lib/feishu-response-decision.mjs');
   const { resolveAmbientFeishuReplyPlan } = await import('../chat/ambient-feishu-reply.mjs');
@@ -27,6 +28,32 @@ try {
   const final = (id, content) => ({ type: 'message', role: 'assistant', phase: 'final', providerMessageId: id, seq: 10, content });
   const publish = (root, events) => publishNativeFeishuResponses(root, events,
     { id: root.runId, state: 'completed' }, { session: { id: 'session', sourceId: 'feishu' } });
+
+  // Real live-publication surfaces must not occupy the terminal answer slot.
+  // Cover native questions, direct supplementary replies and their combination.
+  for (const kinds of [['question'], ['reply'], ['question', 'reply']]) {
+    const name = 'dialogue-' + kinds.join('-');
+    let dialogue = await accept(name, null, { ...plan.target, conversationKind: 'thread',
+      threadId: name, rootId: name, replyInThread: true });
+    dialogue = await requests.mutate(dialogue.key, current => ({ ...current,
+      options: { ...current.options, messageReplyPolicy: { version: 3, opening: false, progress: 'none', final: true } } }));
+    const events = kinds.map((kind, i) => ({ type: 'message', role: 'assistant', phase: 'commentary',
+      seq: i + 1, runId: dialogue.runId, providerMessageId: `${name}-${kind}`,
+      content: kind === 'question' ? '请选择输出形式。' : '<reply>补充的问题已核对，原任务继续。</reply>',
+      ...(kind === 'question' ? { messageKind: 'user_question', questionId: name,
+        questionState: 'pending', nativeQuestion: { options: ['A', 'B'] } } : {}) }));
+    const session = { id: 'session', sourceId: 'feishu' };
+    await publishLiveAssistantReplies(dialogue, events, { store: requests, plan: dialogue.deliveryPlan,
+      session, fullHistory: events, running: true });
+    assert.deepEqual((await requests.get(dialogue.key)).deliveries.map(d => d.surfaceKind), kinds);
+    const answer = final(name + '-final', envelope({ replyMode: 'thread' }, '原任务已经完成。'));
+    await publish(dialogue, [...events, answer]);
+    await publish(dialogue, [...events, answer]);
+    const delivered = await requests.get(dialogue.key);
+    assert.equal(delivered.deliveries.filter(d => d.surfaceKind === 'final').length, 1,
+      'dialogue permits one final and replay does not duplicate it');
+    assert.deepEqual(delivered.responseDecisionErrors, {});
+  }
 
   // Every output entrance preserves the same chosen reaction, independent of
   // legacy directive order. No provider API or real group is used.

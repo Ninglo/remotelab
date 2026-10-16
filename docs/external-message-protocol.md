@@ -390,6 +390,15 @@ Jev cannot restore it. The connector checks the current configured candidate set
 before adding a provider reaction. Neither old quick flags nor personal work
 routing preferences manufacture an emoji or choose substantive content.
 
+Apply reply decisions in this order: admission uses the actual group kind and
+participation state; existing topic/work ownership fixes the conversation;
+the Harness decides participation and a useful reply; display preferences shape
+opening/progress only; the outbox deduplicates each published message. A later
+layer cannot reinterpret an earlier layer's task ownership or turn a question
+into completion. In particular, `question` and `reply` surfaces are intermediate
+conversation, so neither blocks a later final nor counts as the root task's
+result. Explicit final answers retain their input-ownership and replay checks.
+
 Authenticated Feishu group inputs opt into processing feedback with
 `sourceContext.feishuProcessingReaction: true`. Request admission appends a
 THINKING start delivery; terminal settlement appends its removal, including

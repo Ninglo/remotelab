@@ -731,8 +731,9 @@ the event. Connector registration alone does not enable platform delivery.
 
 ### Reply placement, Session topology, and one-shot Bot handoffs
 
-Every chat has one long-lived main Session. Every Feishu Thread has one separate
-Session. A message already inside a Thread always reuses that Thread's Session;
+Every chat has one long-lived main Session. A reply thread opened by that
+Session can retain its originating execution; explicit independent work creates
+a separate Session. A message already inside a thread reuses its recorded owner;
 reply settings and commands cannot move it back to the mainline or split it.
 The inbound message ID is only a delivery address and is never part of mainline
 Session identity.
