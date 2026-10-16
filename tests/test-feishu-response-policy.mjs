@@ -52,7 +52,7 @@ try {
     chatMode: 'topic', messageId: 'topic-default-root',
   }, ['submit']);
   await check('thread-type groups admit every human message', {
-    groupMessageType: 'thread', messageId: 'thread-type-default-root',
+    groupMessageType: 'thread', chatMode: '', messageId: 'thread-type-default-root',
   }, ['submit']);
   await check('an uninvited ordinary-group Thread stays passive', {
     threadId: 'ordinary-group-thread',
