@@ -28,8 +28,13 @@ try {
   const source = { chatId: 'chat', chatType: 'p2p', tenantKey: 'tenant', sender: { openId: 'ou_one' } };
   let record = await controller.publish(source, { automatic: true });
   assert.equal(creates, 1);
-  assert.match(JSON.stringify(sent), /来和你一起把事情往前推/);
-  assert.match(JSON.stringify(sent), /网页设置（备用）/);
+  assert.match(JSON.stringify(sent), /你的 AI 同事/);
+  assert.match(JSON.stringify(sent), /网页版备用入口（需另行登录）/);
+  const controls = sent.body.elements.filter(e => e.tag === 'column_set').flatMap(row => row.columns.flatMap(col => col.elements));
+  assert.equal(controls.length, 14, 'all six settings expose their options without expanding panels');
+  assert.equal(controls.filter(b => b.disabled && b.type === 'primary').length, 6, 'one current choice per setting');
+  const selectedOff = controls.find(b => b.behaviors[0].value.field === 'opening' && b.behaviors[0].value.value === false);
+  assert.equal(selectedOff.disabled, false);
   controller = createPersonalSettingsController(runtime, opts);
   await controller.publish(source, { automatic: true }); assert.equal(creates, 1, 'restart does not spam welcome');
   const event = (field, value, revision, extra = {}) => ({ header: { event_id: extra.eventId || 'event1' }, event: {
