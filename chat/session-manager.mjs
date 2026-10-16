@@ -1883,6 +1883,7 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
 
   reconcileAutomationHook(finalizedRun, manifest, { updateRun });
 
+  preparedInProcess.delete(run.id);
   const completedRequest = await requests.byRunId(run.id);
   if (completedRequest) {
     await requests.mutate(completedRequest.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso() }));
@@ -3675,11 +3676,17 @@ async function launchAutomationRun(runId, options = {}) {
   return spawnDetachedRunner(runId);
 }
 
+const preparedInProcess = new Set();
 async function prepareRequestRun(record) {
-  if (record.preparedAt) {
+  if (record.preparedAt && preparedInProcess.has(record.runId)) {
     const [run, launch] = await Promise.all([getRun(record.runId), readRecord(joinRequestPath(runDir(record.runId), 'launch.json'))]);
     if (run && (isTerminalRunState(run.state) || launch)) return;
   }
+  await prepareRequestRunOnce(record);
+  preparedInProcess.add(record.runId);
+}
+
+async function prepareRequestRunOnce(record) {
   if ((record.options?.reviewFeedback || record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
       || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
