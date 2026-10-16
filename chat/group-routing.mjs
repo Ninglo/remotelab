@@ -367,7 +367,7 @@ export function routingQuestionDecision(session, question, values) {
 async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
   const p = state(session).proposals.find(p => p.id === decision[2] && p.kind === 'task-handoff');
   if (!p || p.personId !== record.options.viewPersonId) fail('Only the original requester can confirm this handoff draft');
-  if (p.sourceRequestId === record.requestId) fail('Handoff requires a subsequent human decision');
+  if (p.state === 'draft' && p.sourceRequestId === record.requestId) fail('Handoff requires a subsequent human decision');
   if (['submitted', 'return-queued'].includes(p.state)) {
     await handoffAdmissionReceipt(p, deps);
     return `已转交到 ${p.targetGroup} / ${p.targetName}，不会重复发送。`;
