@@ -22,6 +22,12 @@ const cases = [
   { id: 'active-jev-failure', mode: 'inline',
     input: '普通群主动参与，Jev反馈失败。当前输入 id=a1：「Agent，17加25等于多少？」',
     check: d => assert.match(d.text, /42|四十二/) },
+  { id: 'simple-reception', mode: 'inline',
+    input: '普通群主动参与。当前输入 id=s1：「你现在能看到我消息吗？」',
+    check: d => { assert.match(d.text, /能|收到|看到/); assert.doesNotMatch(d.text, /开始处理|最终输出|最终答复/); } },
+  { id: 'short-lookup-request', mode: 'thread',
+    input: '普通群主动参与。当前输入 id=l1：「再试一下回复机制，你看一下现在的上下文注入情况怎么样？」现有对话没有当前注入数据，需要读取运行记录才能回答。',
+    check: d => assert.ok(d.text.length > 0) },
   { id: 'human-chatter', mode: 'inline', silent: true,
     input: '普通群主动参与。当前输入 id=h1：小王对小李说「我到楼下了，你下来吧」。你没有相关工作、问题或额外信息。',
     check: d => { assert.ok(d.noTextReason); assert.equal(d.text, ''); } },
@@ -44,6 +50,8 @@ for (const test of cases) {
   const path = join(out, `${test.id}.txt`);
   const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only',
     '-c', 'project_doc_max_bytes=0', '-o', path, '-'];
+  if (process.env.REMOTELAB_SMOKE_MODEL) args.splice(1, 0, '-m', process.env.REMOTELAB_SMOKE_MODEL);
+  if (process.env.REMOTELAB_SMOKE_EFFORT) args.splice(1, 0, '-c', `model_reasoning_effort=${process.env.REMOTELAB_SMOKE_EFFORT}`);
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('REMOTELAB_')));
   const result = await new Promise(resolve => {
     const child = spawn(process.env.REMOTELAB_SMOKE_CODEX || 'codex', args, { cwd: out, env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -55,7 +63,7 @@ for (const test of cases) {
     child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
     child.stdin.end(prompt);
   });
-  await writeFile(join(out, `${test.id}.json`), JSON.stringify({ input: test.input, rules, ...result }, null, 2));
+  await writeFile(join(out, `${test.id}.json`), JSON.stringify({ input: test.input, rules, args, ...result }, null, 2));
   let decision, error;
   try {
     assert.equal(result.code, 0, result.error || result.stderr?.slice(-1000));

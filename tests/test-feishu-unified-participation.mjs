@@ -212,7 +212,7 @@ try {
   // Provider metadata also governs project onboarding and queued output, whose
   // stored targets may incorrectly claim to be an ordinary group.
   nativeRuntime.appClient = { im: { v1: { chat: { get: async () => ({
-    code: 0, data: { chat_mode: 'topic', name: 'native group' },
+    code: 0, data: { chat_mode: 'topic', chat_type: 'private', name: 'native group' },
   }) } } } };
   const synthetic = { ...native, chatMode: 'group' };
   assert.equal((await onboardFeishuGroup(nativeRuntime, synthetic, {
@@ -229,6 +229,30 @@ try {
   });
   assert.equal(nativeDelivered, 1, 'old paused group settings cannot suppress native-topic output');
 
+
+  // Actual Chat API chat_type=private/public is group visibility. Exercise the
+  // real metadata -> outbox -> SDK request path, not a mocked send helper.
+  for (const visibility of ['private', 'public']) for (const thread of [false, true]) {
+    const calls = [];
+    const quoteRuntime = { config: { storageDir: join(home, `quote-${visibility}-${thread}`), sourceRouteId: 'bot' }, storagePaths: {},
+      appClient: { im: { v1: {
+        chat: { get: async () => ({ code: 0, data: { chat_mode: 'group', chat_type: visibility, group_message_type: 'chat' } }) },
+        message: {
+          reply: async body => { calls.push(body); return { code: 0, data: { message_id: 'quoted-result' } }; },
+          create: async () => assert.fail('a group answer must quote the source message'),
+        },
+      } } } };
+    const target = { ...sourceDelivery.target, ...(thread ? {
+      conversationKind: 'thread', replyInThread: true, rootId: sourceDelivery.target.messageId,
+    } : {}) };
+    await enqueueSourceDelivery({ sessionId: 'quote-session', responseId: `quote-${visibility}-${thread}`,
+      sourceDelivery: { ...sourceDelivery, target }, text: '能看到你的消息。' });
+    assert.equal((await processSourceDeliveryOnce(quoteRuntime, { requestRemoteLab: deliveryHelpers.requestRemoteLab })).state, 'delivered');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].path.message_id, sourceDelivery.target.messageId);
+    assert.equal(calls[0].data.reply_in_thread, thread);
+    assert.doesNotMatch(calls[0].data.content, /开始处理|最终答复|最终输出/);
+  }
 
   console.log('Unified participation: migration boundaries, topic inheritance, explicit scope override, invitation, silence, optional Jev, candidate enforcement and durable withdrawal passed');
 } finally { await rm(home, { recursive: true, force: true }); }

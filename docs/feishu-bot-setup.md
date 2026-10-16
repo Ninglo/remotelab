@@ -765,10 +765,17 @@ protection remains. An ordinary group's thread is not a native topic group;
 provider chat metadata determines this distinction, including restored records
 and project-card discovery. A legacy delivery target marked `chatMode: thread`
 only identifies reply placement; it does not establish a native topic group.
+The Chat API `chat_type` means private/public group visibility; `chat_mode`
+identifies group/topic/p2p. Metadata enrichment must not turn a private group
+into a private conversation or bypass source-message quote replies.
 
 For ordinary groups, the shared response policy has three decisions: the main Session decides whether
 its contribution is useful, combines pending questions/corrections into one answer
-when helpful, and uses a thread for complex work or continuing discussion. Jev's
+when helpful, and uses a thread for complex work, including lookup, research or
+execution even when the incoming question is short. Simple answers quote the source
+message inline in the main Session, with only the answer body. Mainline openings
+and progress are suppressed even when personal display preferences enable them;
+questions remain reachable. The inline final has no phase heading. Jev's
 optional preliminary social feedback never gates that decision. Several matters
 may share one answer; separate input IDs do not require separate messages or a
 batching delay. The explicit input list has no fixed eight-message ceiling;

@@ -796,7 +796,9 @@ async function loadFeishuChatMetadata(runtime, chatId) {
       name: trimString(response.data?.name),
       groupMessageType: trimString(response.data?.group_message_type),
       chatMode: trimString(response.data?.chat_mode),
-      chatType: trimString(response.data?.chat_type),
+      // Chat API chat_type means private/public visibility, not IM group/p2p.
+      chatType: response.data?.chat_mode === 'p2p' ? 'p2p'
+        : ['group', 'topic'].includes(response.data?.chat_mode) ? 'group' : '',
     };
     runtime.chatMetadataCache.set(normalizedChatId, metadata);
     return metadata;

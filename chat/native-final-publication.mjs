@@ -158,7 +158,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
       }
       continue;
     }
-    const hiddenMainline = isFeishuMainlineReply(replyPlan) && messageReplyPolicy?.version !== 3
+    const hiddenMainline = isFeishuMainlineReply(replyPlan)
       && ['opening', 'progress'].includes(surface.surfaceKind);
     if (hiddenMainline || suppressOpening(surface, stored || record, owner, messageReplyPolicy, replyPlan)) {
       // Hidden openers are consumed, not deferred. A later thread directive

@@ -20,9 +20,10 @@ The Feishu reply-policy semantic smoke is also opt-in:
 REMOTELAB_LIVE_FEISHU_RESPONSE=1 node tests/test-feishu-response-live.mjs
 ```
 
-It uses the installed Codex model/configuration, synthetic conversations and a
+Set `REMOTELAB_SMOKE_MODEL` and `REMOTELAB_SMOKE_EFFORT` to reproduce a saved
+production runtime; otherwise it uses the installed Codex configuration. It uses synthetic conversations and a
 read-only temporary workspace. It makes no Feishu calls and creates no RemoteLab
-Sessions. Six cases cover topic follow-up, failed Jev feedback, human chatter,
+Sessions. Eight cases cover simple reception, a short request requiring lookup, topic follow-up, failed Jev feedback, human chatter,
 combined questions/correction, complex thread choice and existing-topic continuity.
 It prints an evidence directory containing each input, policy and raw output.
 Review the text as well as assertions; six successes do not establish a general

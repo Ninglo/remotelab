@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-16 — Verify the actual quoted reply and a short lookup request
+
+- Feedback: a brief ordinary-group answer should quote the source message with no opening or final-output heading; work needing lookup belongs in a topic even when requested in one sentence. A real group interaction still violated this after policy smoke tests passed.
+- Cause: outbound enrichment treated Chat API private/public visibility as group/p2p identity, bypassing quote reply. Personal version-3 display settings also bypassed mainline opening suppression. The behavioral fixture covered an explicitly long discussion, not a short lookup request.
+- Change: map conversation identity from chat_mode, enforce result-only mainline publication independently of personal display settings, and clarify lookup in the existing placement principle. Test real outbox-to-SDK request parameters using private/public group metadata, and add the reported short request to live model tests.
+
 ### 2026-10-16 — Test reply behavior, not just fixed model fixtures
 
 - Feedback: reply rules kept growing despite three simple principles; passing code checks did not establish that the Agent would actually combine additions or choose the right reply surface.

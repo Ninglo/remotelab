@@ -140,8 +140,8 @@ test('all Feishu destinations publish the selected text components with one dura
     await publishLiveAssistantReplies(record, events.slice(0, -1), { store, plan, session, running: true });
     await publishLiveAssistantReplies(record, events, { store, plan, session, running: false });
     await publishLiveAssistantReplies(record, events, { store, plan, session, running: false });
-    assert.equal(record.deliveries.filter(d => d.surfaceKind === 'opening').length, 1, surface);
-    assert.equal(record.deliveries.filter(d => d.surfaceKind === 'progress').length, mode === 'messages' ? 2 : 0);
+    assert.equal(record.deliveries.filter(d => d.surfaceKind === 'opening').length, surface === 'group' ? 0 : 1, surface);
+    assert.equal(record.deliveries.filter(d => d.surfaceKind === 'progress').length, surface !== 'group' && mode === 'messages' ? 2 : 0);
     assert.equal(record.deliveries.filter(d => d.surfaceKind === 'question').length, 1);
     assert.equal(record.deliveries.filter(d => d.surfaceKind === 'final').length, 1);
   }

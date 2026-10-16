@@ -161,6 +161,7 @@ try {
   }
 
   let shortRecord = { ...openingRecord, key: 'short-reply', deliveries: [],
+    options: { ...openingRecord.options, messageReplyPolicy: { version: 3, scope: 'person', opening: true, progress: 'messages' } },
     streamedSurfaceMessageIds: [], streamedFinalReplyIds: [] };
   const shortPlan = { connector: 'feishu', target: { chatId: 'short-chat',
     chatType: 'group', conversationKind: 'main', messageId: 'short-source' } };
@@ -178,7 +179,7 @@ try {
   assert.equal(shortRecord.deliveries[0].target.messageId, 'short-source');
   assert.equal(shortRecord.deliveries[0].sessionEntryIncluded, undefined);
   assert.deepEqual(buildReplyDeliveries(shortPlan, { text: '准备回复', attachments: [{ assetId: 'early-file' }] },
-    { running: true, surfaceKind: 'opening' }), [], 'early files do not bypass short reply suppression');
+    { running: true, surfaceKind: 'opening', messageReplyPolicy: { version: 3, opening: true } }), [], 'early files do not bypass short reply suppression');
   assert.equal(buildReplyDeliveries(shortPlan, { text: '缺少哪项信息？' },
     { running: true, surfaceKind: 'question' }).length, 1, 'required user input stays reachable');
   for (const target of [

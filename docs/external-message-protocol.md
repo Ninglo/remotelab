@@ -578,6 +578,11 @@ Current normalized event types include:
 
 Normalized events support observation and debugging. Production source-delivery consumers send the committed request reply payload rather than selecting a session's latest assistant event: another request may already be running by then. The shared reply-selection logic excludes commentary and visible workboard checklists from final reply content, while retaining the fallback for older adapters without explicit message phases.
 
+Brief Feishu mainline replies quote the inbound message and publish only the final
+body, without a phase heading. Personal opening/progress preferences do not
+override this surface contract; required questions remain deliverable. Requests
+requiring lookup, research or execution select a thread before work begins.
+
 Native Codex messages retain their provider item identity and `commentary` or `final_answer` phase. Feishu final answers wait for the actual Run to stop, including when steering keeps execution alive. The request atomically records the item identity and its deliveries; restart replay and terminal settlement cannot send that final twice. Declared files and local image references are materialized before publication; a missing or unready asset defers the answer. No-phase legacy adapters retain terminal settlement. Delivery receipts are retained in Session history after Request archival.
 
 Terminal fallback publication retains an unambiguous final's provider identity
