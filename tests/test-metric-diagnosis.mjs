@@ -53,3 +53,8 @@ assert.equal(populationTrendCandidates(dailyJump.filter(s=>s.responseAt<now-DAY+
 assert.equal(populationTrendCandidates([...dailyJump,...dailyJump],now)[0].ratio,jumps[0].ratio,'duplicates do not change the daily population');
 assert.equal(populationTrendCandidates(dailyJump.map(s=>({...s,background:true})),now).length,0);
 assert.equal(populationTrendCandidates(dailyJump.map(s=>({...s,metrics:{firstResponseMs:s.responseAt>=now-DAY+1?5000:2000}})),now).length,0,'relative growth still requires the absolute floor');
+
+// Compare equally filtered windows: old long-tail costs must not be retained
+// only in the historical window when testing a broad current slowdown.
+const noisyDaily=dailyJump.map(s=>({...s,metrics:row(0,now,s.sessionId==='s2'?40000:(s.responseAt>=now-DAY+1?18000:10000)).metrics}));
+assert.equal(populationTrendCandidates(noisyDaily,now).length,3);

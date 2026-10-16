@@ -763,6 +763,7 @@ Two comparisons remain distinct:
   three populated business dates (05:00 Asia/Shanghai boundary), with at least 10
   runs and five Sessions on each date. A rise of 30% and the same absolute floors
   must remain after separately removing the Session with the largest effect on the mean from each window.
+  The filtered current and historical means use the same exclusion rule.
   A one-day jump can therefore alert without four consecutive days of growth;
   a lone expensive Session cannot trigger this comparison. First-response dates
   use the provider message timestamp where present, matching the dashboard.
