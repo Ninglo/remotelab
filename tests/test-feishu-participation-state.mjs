@@ -125,7 +125,6 @@ try {
   await runtime.participation.publish({ ...await runtime.participation.state(base), mode: 'paused', cardSuppressed: true });
   assert.equal(calls.cards.length, cardCallsBeforeHide, 'durable suppression also protects a withdrawn card');
 
-  runtime.config.groups.misc.participationStatusCard = false;
   // Every topic uses direct text, including mode controls and restart recovery.
   const topic = { ...base, threadId: 'topic-a', rootId: 'root-a', messageId: 'topic-listen', messageText: '先旁听' };
   const topicReplies = [];
@@ -135,7 +134,6 @@ try {
     topicReplies.push(request);
     return { code: 0, data: { message_id: 'topic-ack' } };
   };
-  delete runtime.config.groups.misc.participationStatusCard;
   await runtime.participation.intake(topic);
   assert.match(topicReplies[0].data.content, /旁听/);
   await runtime.participation.intake(topic);

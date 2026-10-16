@@ -29,7 +29,11 @@ try {
       groups: { misc: { participationMode: 'ambient', participationControls: true,
         participationStatusCard: false, quickReactions: true, groupFeed: true, jevReactions: true } } },
       storagePaths: {}, botIdentity: { openId: 'bot' },
-      appClient: { im: { v1: { messageReaction: {
+      appClient: { im: { v1: { message: { reply: async request => {
+        assert.equal(request.data.msg_type, 'text', 'topic controls acknowledge directly');
+        assert.equal(request.data.reply_in_thread, true);
+        return { code: 0, data: { message_id: `ack-${request.path.message_id}` } };
+      } }, messageReaction: {
         create: async x => ({ code: 0, data: { reaction_id: `reaction-${x.path.message_id}` } }),
         delete: async x => { effects.removed.push(x.path.message_id); return { code: 0 }; },
       } } } },
