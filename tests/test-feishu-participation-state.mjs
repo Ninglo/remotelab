@@ -125,6 +125,30 @@ try {
   await runtime.participation.publish({ ...await runtime.participation.state(base), mode: 'paused', cardSuppressed: true });
   assert.equal(calls.cards.length, cardCallsBeforeHide, 'durable suppression also protects a withdrawn card');
 
+  runtime.config.groups.misc.participationStatusCard = false;
+  // Every topic uses direct text, including mode controls and restart recovery.
+  const topic = { ...base, threadId: 'topic-a', rootId: 'root-a', messageId: 'topic-listen', messageText: '先旁听' };
+  const topicReplies = [];
+  runtime.appClient.im.v1.message.reply = async request => {
+    assert.equal(request.data.msg_type, 'text');
+    assert.equal(request.data.reply_in_thread, true);
+    topicReplies.push(request);
+    return { code: 0, data: { message_id: 'topic-ack' } };
+  };
+  delete runtime.config.groups.misc.participationStatusCard;
+  await runtime.participation.intake(topic);
+  assert.match(topicReplies[0].data.content, /旁听/);
+  await runtime.participation.intake(topic);
+  assert.equal(topicReplies.length, 1, 'retry never repeats a delivered acknowledgement');
+  await runtime.participation.remember(topic, 'topic-session');
+  await runtime.participation.publish(await runtime.participation.state(topic));
+  runtime.participation = createParticipationController(runtime, options);
+  runtime.config.groups.misc.participationStatusCard = false;
+  await runtime.participation.restore();
+  delete runtime.config.groups.misc.participationStatusCard;
+  assert.equal(calls.cards.length, cardCallsBeforeHide, 'topic intake, mode changes and recovery publish no cards');
+  assert.equal((await runtime.participation.state(topic)).mode, 'listening');
+
   // A live board can publish before onboarding remembers a newly registered group.
   runtime.appClient.im.v1.message.create = async () => ({code:0,data:{message_id:'om_new'}});
   runtime.appClient.im.v1.chatTopNotice = {putTopNotice:async()=>({code:0})};

@@ -804,6 +804,13 @@ refresh the card; per-card publication is serialized to avoid duplicate creates.
 See [project group cards and opening briefs](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)
 for scope, registration, feedback and acceptance boundaries.
 
+Participation status cards are only published on the group main timeline. All
+Threads use direct replies; intake, mode changes and restart recovery never
+create or update a topic status card. Explicit topic mode commands receive a
+deduplicated text reply after the state change completes. Old topic-card buttons
+are no longer accepted; withdrawing an already posted card remains a separate
+explicit operation.
+
 Participation controls apply to the main timeline and each existing Thread;
 Threads inherit the group state until an explicit topic override. `/mute` selects listening: messages are recorded without a model turn unless
 that message @ mentions the Bot or uses a task command.

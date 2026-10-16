@@ -117,7 +117,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     record = { ...record, ...await state({ ...record.source, threadId: record.source.topicId }) };
     // Withdrawing a status card does not change participation or intake. Keep
     // the durable opt-out when restoring or changing modes so it cannot resend.
-    if (record.cardSuppressed === true
+    if (record.source.topicId || record.cardSuppressed === true
         || effectiveFeishuGroup(runtime.config, record.source.chatId).participationStatusCard === false) return record;
     const configuration = !record.source.topicId ? await getConfiguration?.(record) : null;
     const group = effectiveFeishuGroup(runtime.config, record.source.chatId);
@@ -227,17 +227,33 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       return invited;
     });
   }
+  async function acknowledgeTopicControl(summary, record) {
+    if (!record.source.topicId || !summary.messageId) return;
+    const acknowledgements = record.controlAcknowledgements || [];
+    if (acknowledgements.includes(summary.messageId)) return;
+    const result = await runtime.appClient.im.v1.message.reply({ path: { message_id: summary.messageId },
+      data: { msg_type: 'text', content: JSON.stringify({ text: `这个话题已切换为${LABELS[record.mode]}。` }),
+        uuid: `part_ack_${hash(`${record.key}:${summary.messageId}`)}`, reply_in_thread: true } });
+    if (result?.code || !result?.data?.message_id) throw new Error(result?.msg || 'Participation acknowledgement failed');
+    await records.mutate(record.key, current => ({ ...current,
+      controlAcknowledgements: [...(current.controlAcknowledgements || []), summary.messageId].slice(-100) }));
+  }
   async function intake(summary, snapshot = null) {
     if (!participationEnabled(runtime, summary) || ['app', 'bot'].includes(summary.sender?.senderType)) return null;
     const record = await state(summary);
     if (record.processedControls?.includes(summary.messageId)) {
       await publish(record);
+      await acknowledgeTopicControl(summary, record);
       return { participationControl: true, duplicate: true };
     }
     const others = (summary.mentions || []).some(x => x.openId && x.openId !== runtime.botIdentity?.openId);
     const addressed = (summary.mentions || []).some(x => x.openId === runtime.botIdentity?.openId);
     const mode = !others || addressed ? parseParticipationText(summary.messageText || summary.textPreview) : null;
-    if (mode) { await change(summary, mode); return { participationControl: true, mode }; }
+    if (mode) {
+      const changed = await change(summary, mode);
+      await acknowledgeTopicControl(summary, changed);
+      return { participationControl: true, mode };
+    }
     const at = Number(summary.createTime);
     const messageTime = at > 0 ? (at < 10_000_000_000 ? at * 1000 : at) : snapshot?.receivedAt;
     if ((snapshot && snapshot.epoch !== record.epoch && snapshot.mode !== 'active')
@@ -261,7 +277,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const summary = { ...record?.source, chatId, chatType: 'group', messageId,
       ...(record?.source.topicId ? { threadId: record.source.topicId } : {}),
       sender: { senderType: 'user', openId: actor }, eventId: raw.header?.event_id || event.event_id };
-    if (!record || !actor || record.source.chatId !== chatId || record.cardMessageId !== messageId
+    if (!record || record.source.topicId || !actor || record.source.chatId !== chatId || record.cardMessageId !== messageId
         || !MODES.has(value.mode) || value.epoch !== (await state(summary)).epoch || !participationEnabled(runtime, summary)
         || !await authorize(summary)) return { toast: { type: 'error', content: '状态已变化或无权操作，请看最新卡片。' } };
     void change(summary, value.mode, { controlId: summary.eventId || `button:${actor}:${record.epoch}:${value.mode}` })
