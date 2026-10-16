@@ -1831,3 +1831,23 @@ still require observation in actual subsequent conversations.
 - 调整：设置选项直接显示并标出当前值，写清用途、选择效果和生效时间。介绍以团队共同协作为主，交办、补充、停止、授权和安装另设使用说明。
 - 入口边界：网页版会要求独立登录，不能以服务能返回登录页证明飞书用户可用。未验证个人登录时隐藏网页链接，保留私聊原生恢复入口。
 - 验收：真实私聊原卡更新、本人点击保存和移动端阅读分别核对；发送成功不代表体验通过。
+
+
+### 2026-10-16 — Keep the group response policy in one place
+
+- Feedback: repeated repairs kept increasing rules while missing three simple
+  expectations: quick preliminary feedback with the main Session responsible,
+  one answer for newly received matters, and threads for complex discussion.
+- Finding: surface prompts repeated participation and batching instructions;
+  another paragraph prohibited automatic topic routing, conflating a thread
+  reply with a new worker or cross-group transfer. Combined reply publication
+  already existed, but a fixed eight-input cap could reject valid batches.
+- Change: one shared response policy owns participation, input grouping and
+  inline/thread choice. Surface text describes context and feedback capability.
+  Compatible matters may share one final; complex replies can select a thread
+  directly. Work transfers retain their separate authorization. Remove the
+  arbitrary reply-input ceiling and its duplicate validation.
+- Verification: isolated publication tests include a ten-input burst, one final,
+  retries and per-input completion; native steering and thread continuation test
+  the existing runtime path. These checks establish delivery mechanics, not the
+  quality of model participation. Natural conversation feedback remains necessary.

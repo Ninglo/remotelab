@@ -3,48 +3,19 @@ import { buildFeishuTopicId, isFeishuTopicChat } from './index.mjs';
 import { normalizeDailyReportMemory } from './daily-report-memory.mjs';
 import { FEISHU_REACTION_CATALOG, normalizeFeishuReactionCandidates } from '../../lib/feishu-reaction-catalog.mjs';
 
-const AMBIENT_SESSION_PROMPT = [
-  'This Feishu group sends its main-timeline messages to your continuing Session, including messages without an @ mention.',
-  'Read the recent group discussion and decide whether your participation helps. In active mode, a human-to-human question may receive a concise useful contribution when you have relevant evidence, can correct a material mistake, or can resolve an unanswered question. An @ mention of another person is context, not a blanket prohibition. Do not take over their assigned work without authorization. Before joining, assess the added value, evidence, duplication and interruption cost; retain a brief participationReason in your hidden response decision. Do not acknowledge every message in text.',
-  'If the newest human message explicitly @ mentions you, give a text reply unless it explicitly asks you to stay silent. For other messages, join only when you have a clear, useful contribution. If you use tools or start work, finish with a visible result or an honest handoff; never end that turn with only a reaction or an empty final answer.',
-  'A concrete unanswered question or request directed to the assistant needs a reply even without an @ mention. Do not mistake a useful question for ordinary chatter.',
-  'Related links, forwarded records and corrections supplement the ongoing discussion. Read the referenced material and use it to answer the shared question. Per-input accountability does not mean one separate message per input: combine related answers using the accepted requestIds; answer independent questions separately. A final answer must incorporate relevant supplementary findings, even if a short interim reply was already sent. Do not start a new task or repeat tool work merely to satisfy another input receipt.',
-  'A native sync confirmation updates the original question card; the transport returns the review result once. These are already visible receipts: do not add another acceptance-only final or copy the returned review. Keep required questions, new substantive answers and failures visible. Never present submitted, internal sync identifiers or routing packets as ordinary reply text.',
-  'A message that only mentions you asks you to reconsider recent unanswered group messages together and reply. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
-].join('\n');
-
-const TOPIC_SESSION_PROMPT = [
-  'A Feishu topic is a continuing conversation. Preserve its existing task, participants and reply location.',
-  'No repeated @ mention is required for a follow-up to your work. In active mode, distinguish a request to you from human-to-human discussion; contribute when you add relevant evidence or a useful answer.',
-  'Reply to directed requests and substantive supplements; ordinary human-to-human chatter can remain silent. Assess added value, evidence, duplication and interruption cost and record participationReason when joining their discussion. Listening allows only a single explicit invitation; paused blocks ordinary input.',
-  'Keep replies in the same topic.',
-].join('\n');
-
-const GROUP_SESSION_PROMPT = [
-  'Every admitted human message on this Feishu group mainline reaches your Session, including messages without an @ mention.',
-  'Use the discussion context to decide whether a reply or task is useful. A concrete unanswered question or request needs a reply; human-to-human conversation or an update needing no contribution may be left without visible text.',
-].join('\n');
-
-const QUICK_REACTION_SESSION_PROMPT = [
-  'Reactions are optional. No temporary receipt or fallback emoji is added automatically.',
-  'Select an optional reaction in the hidden feishu-response decision. Omit reaction to retain existing feedback; use reaction:null to explicitly withdraw this Bot’s reaction, including late quick feedback. A reaction never substitutes for a substantive answer or proves completion.',
-].join('\n');
-
-const JEV_REACTION_SESSION_PROMPT = [
-  "Jev only selects optional reactions. The main Session owns the complete handling of admitted messages: decide participation, reply location, work and results. Never wait or poll for Jev; its feedback is not acceptance, completion or a reason for another acknowledgement.",
-  "Check existing replies, handoffs and work: incorporate supplements, do not resend delivered answers or repeat accepted handoffs. Reply placement does not authorize another worker. Retain a suitable reaction, correct an unsuitable one, or omit it when unnecessary.",
-].join('\n\n');
-
-const GROUP_TIMELINE_SESSION_PROMPT = [
-  'This Session follows the shared Feishu group timeline. Reply location and execution placement are separate choices. Keep ongoing work and supplements in their established conversation.',
-  'A substantial request does not itself authorize automatic new-topic routing. Continue authorized work here unless the human has selected another execution destination through the existing routing workflow. General automatic new-topic splitting is deferred.',
-].join('\n');
+// Participation, batching and placement have one policy below. These strings
+// describe only the current surface and optional feedback capability.
+const AMBIENT_SESSION_PROMPT = 'This Session follows the shared Feishu group timeline, including messages without an @ mention. A mention-only message invites you to reconsider recent unanswered messages together.';
+const TOPIC_SESSION_PROMPT = 'A Feishu topic is a continuing conversation. No repeated @ mention is required. Reply to directed requests and substantive supplements in this same topic; preserve its task and participants.';
+const GROUP_SESSION_PROMPT = 'Every admitted human message on this Feishu group mainline reaches your continuing Session.';
+const QUICK_REACTION_SESSION_PROMPT = 'Social reactions are optional; no temporary receipt or fallback emoji is added automatically.';
+const JEV_REACTION_SESSION_PROMPT = 'Jev supplies optional asynchronous social feedback. The main Session owns the complete handling of every admitted message. Use its reaction receipt if available; never wait or poll for Jev.';
 
 const WORK_KICKOFF_SESSION_PROMPT = [
   'Only in active participation, when discussion has produced a concrete goal and executable plan, you may offer a discussion-to-work confirmation card. Judge the timing yourself from the discussion; do not use elapsed silence or an emoji as approval. Listening and paused modes do not offer this card.',
   'Use node "$REMOTELAB_PROJECT_ROOT/cli.js" work kickoff --file <absolute JSON path> --json with {action:"propose",sourceRequestId:"the actual accepted human input ID",goal,plan,sources,unresolved,acceptance}. Include agreed scope, original sources, remaining decisions (or none), and concrete acceptance. The registered project relationship determines the target work group.',
   'If the result has a question, pass its complete title and options unchanged to the native user-input tool. The choices are transfer to the work group and start, continue discussion, or defer. Only the server-verified human answer creates a real work topic and starts execution after delivery. Do not substitute work plan start or route new for this confirmation. A missing question means there is no new card to send. Do not repeat an unchanged proposal already awaiting a reply.',
-  'Keep discussion and follow-ups here until the actual work topic is created. Reuse that work topic for subsequent supplements and results. This capability does not enable general automatic new-topic routing.',
+  'Keep discussion and follow-ups here until the actual work topic is created. Reuse that work topic for subsequent supplements and results. This cross-group work transfer is separate from choosing a thread for the current reply.',
 ].join('\n');
 
 export function defaultFeishuGroupParticipation(config = {}) {
@@ -127,7 +98,6 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
       !privateChat && (ambient || topic || quickReactions) ? `Optional reaction candidates: ${candidates.map(id => `${id} (${FEISHU_REACTION_CATALOG[id]})`).join(', ') || 'none'}. Omit reaction to retain it; reaction:null explicitly withdraws it.` : '',
       jevReactions ? JEV_REACTION_SESSION_PROMPT
         : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
-      ambient ? GROUP_TIMELINE_SESSION_PROMPT : '',
       (ambient || topic) && config.projectLinks?.some(link => link.discussionChatId === summary.chatId) ? WORK_KICKOFF_SESSION_PROMPT : '',
       (groupMainline || topic) ? FEISHU_RESPONSE_DECISION_PROMPT : '',
       ambient ? AMBIENT_SESSION_PROMPT : topic ? TOPIC_SESSION_PROMPT

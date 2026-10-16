@@ -757,9 +757,21 @@ not a group name or its project role, determines conversation ownership. Cancell
 is scoped to matching Requests rather than the whole Session, preserving unrelated
 queued or running work in that Session.
 
+The shared response policy has three decisions: the main Session decides whether
+its contribution is useful, combines pending questions/corrections into one answer
+when helpful, and uses a thread for complex work or continuing discussion. Jev's
+optional preliminary social feedback never gates that decision. Several matters
+may share one answer; separate input IDs do not require separate messages or a
+batching delay. The explicit input list has no fixed eight-message ceiling;
+publication still verifies every input's accepted execution and reply ownership.
+This policy is maintained once in `lib/feishu-response-decision.mjs`; surface
+prompts describe the timeline/topic and optional Jev capability instead of adding
+another participation or placement policy.
+
 Ambient mainline inputs choose reply location through `feishu-response` before
 visible output. This remains available with personal `routing=none`, and does
-not authorize a new worker. Delivered topic surfaces retain the originating
+not authorize a new worker. Complex replies can choose a thread directly, without
+a work-transfer approval. Delivered topic surfaces retain the originating
 Session and Run as durable provenance. The first lookup also indexes pre-upgrade
 archived delivered receipts once, so completed phase-one topics keep their origin. Follow-ups steer only that execution or
 subsequent executions of the same topic; unrelated work in the Session cannot
@@ -771,7 +783,8 @@ their fail-closed behavior. Existing independent topic bindings take precedence.
 
 A mainline reply/quote of a recorded outbound topic message can reuse that exact
 binding. Conflicting references, unknown messages and prose/title similarity do
-not choose a destination. No broad automatic new-topic routing is enabled.
+not choose a destination. Creating another execution Session or transferring work
+to another group still uses the existing authorization workflow.
 
 For groups using `participationControls: true`, the pinned status card shows
 active, listening or paused reception, the main Session link, its saved model and

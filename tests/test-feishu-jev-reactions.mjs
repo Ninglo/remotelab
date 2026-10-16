@@ -24,8 +24,8 @@ try {
   assert.equal(resolveFeishuGroupSettings(config, base).jevReactions, true);
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /main Session owns the complete handling/);
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /precedence over a late quick reaction/);
-  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /Choose participation, reply location and the inputs answered together/);
-  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /For a deliberate no-text decision/);
+  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /main Session makes one response decision/);
+  assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /deliberate silent final uses noTextReason/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread' }).jevReactions, undefined,
     'the pilot must stay on the selected group mainline');
   const workSummary = applyFeishuReplyRouting(config, {
@@ -43,7 +43,7 @@ try {
     /THINKING|<feishu-reaction emoji=/,
     'the new work Session must not be told to answer with a reaction');
   assert.match(resolveFeishuGroupSettings(config, workSummary).systemPrompt,
-    /Keep replies in the same topic/);
+    /in this same topic/);
   assert.equal(resolveFeishuGroupSettings(config, workSummary).responseMode, 'all');
 
 
@@ -135,7 +135,7 @@ try {
     { participationMode: 'ambient', quickReactions: true }, { participationMode: 'ambient', groupFeed: true }]) {
     const other = resolveFeishuGroupSettings({ groups: { other: settings } }, { ...base, chatId: 'other' });
     assert.equal(other.jevReactions, undefined, 'only explicit per-group opt-in may call Jev');
-    assert.doesNotMatch(other.systemPrompt, /Jev only selects/);
+    assert.doesNotMatch(other.systemPrompt, /Jev supplies optional asynchronous/);
   }
 
   const { observeSessionMessage, recordSessionObservationDecision } = await import('../chat/session-observations.mjs');

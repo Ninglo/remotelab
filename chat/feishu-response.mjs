@@ -73,8 +73,7 @@ export async function publishFeishuResponse(record, body, { store = requests, va
     if ((!preparedPayload && text.length > 12000) || (!text && !noTextReason && reaction === undefined && !preparedPayload?.attachments?.length)) fail('Provide reply text (tool replies allow up to 12000 characters) or a reason no text is needed');
     if ((text || preparedPayload?.attachments?.length) && noTextReason) fail('Select a text reply or a no-text decision');
     const ids = body.requestIds || [record.requestId];
-    if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length
-        || !ids.includes(record.requestId)) fail('Select 1–8 distinct input IDs including the current input');
+    if (!ids.includes(record.requestId)) fail('Response input IDs must include the current input');
     const inputs = await Promise.all(ids.map(id => store.byRequest(session.id, id)));
     const payload = normalizeFeishuResponsePayload({ ...(preparedPayload || {}), text,
       attachments: preparedPayload?.attachments || [], ...(reaction !== undefined ? { reaction, reactionStage: 2 } : {}) });

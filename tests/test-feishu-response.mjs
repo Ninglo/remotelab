@@ -56,6 +56,23 @@ try {
   assert.equal(pilotInputResult(await requests.get(link.key), { id: root.runId, state: 'completed' }).state, 'completed');
   assert.equal(saved.mainlineReply.contract.payload.reactionStage, 2);
 
+  // Several new matters and corrections can share one answer. The old eight-ID
+  // ceiling rejected an otherwise valid response after a burst of supplements.
+  const batch = await accept('batch-root');
+  const additions = [];
+  for (let i = 0; i < 9; i++) additions.push(await accept(`batch-${i}`, batch));
+  const batchAnswer = final('batch-answer', envelope({
+    requestIds: [batch.requestId, ...additions.map(r => r.requestId)], replyMode: 'thread',
+  }, '方案、耗时和新增约束一起答复。'));
+  await publish(batch, [batchAnswer]);
+  await publish(batch, [batchAnswer]);
+  assert.equal((await requests.get(batch.key)).deliveries.filter(d => d.kind === 'content').length, 1);
+  for (const input of additions) {
+    const value = await requests.get(input.key);
+    assert.equal(value.deliveries.length, 0);
+    assert.equal(pilotInputResult(value, { id: batch.runId }).state, 'completed');
+  }
+
   // A later independent supplement still publishes after the root was answered;
   // text retains the selected topic, the reaction belongs to the new message.
   const later = await accept('later-question', root);
