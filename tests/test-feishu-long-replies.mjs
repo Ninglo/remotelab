@@ -127,6 +127,39 @@ try {
   assert.equal(uncertain.uploads.length, 1);
   assert.equal(timeouts, 1);
   assert.equal(uncertain.sends.at(-1).data.msg_type, 'post');
+  // Sync details are a durable display contract independent of text length or
+  // reply location. Tables and the complete conclusion remain expandable.
+  const details = fixture('details');
+  const detailText = '结论：可以采纳。\n\n| 项目 | 依据 |\n| --- | --- |\n| 设计 | 保留原文 |\n\n仍需决定：第一批范围。';
+  const foldedDetails = { title: '同步复核结果', summary: '结论：可以采纳。', url: 'https://example.com/original-work' };
+  const detailDelivery = await outbox.enqueueSourceDelivery({ sessionId: 'details', responseId: 'review', text: detailText,
+    foldedDetails, sourceDelivery: { connector: 'feishu', sourceRouteId: 'details', target } });
+  await processSourceDeliveryOnce(details.runtime, { requestRemoteLab: async (path, options) => {
+    if (path.endsWith('/complete')) return { response: { ok: false }, json: { error: 'lost acknowledgement' } };
+    return requestRemoteLab(path, options);
+  } });
+  const card = JSON.parse(details.sends[0].data.content);
+  assert.equal(card.body.elements[0].content, foldedDetails.summary);
+  const panel = card.body.elements.at(-1);
+  assert.equal(panel.tag, 'collapsible_panel'); assert.equal(panel.expanded, false);
+  assert(!panel.elements.some(e => e.tag === 'table'), 'Feishu forbids native tables inside collapsed panels');
+  assert.match(JSON.stringify(panel), /\*\*项目\*\*：设计/);
+  assert.match(JSON.stringify(panel), /\*\*依据\*\*：保留原文/);
+  assert.match(JSON.stringify(panel), /仍需决定/);
+  assert.equal(details.sends[0].data.reply_in_thread, true);
+  const restartedDetails = { ...details.runtime }; delete restartedDetails.deliveryReceipts;
+  await processSourceDeliveryOnce(restartedDetails, { requestRemoteLab, receiptReplayOptions: { now: Date.now() + 60000 } });
+  assert.equal((await outbox.getSourceDelivery(detailDelivery.id)).state, 'delivered');
+  assert.equal(details.sends.length, 1, 'controller restart replays only the acknowledgement');
+  await sendFeishuText(details.runtime, { chatId: 'group', chatType: 'group', messageId: 'main', foldedDetails }, '短复核也可展开。', 'short-review');
+  assert.equal(details.sends.at(-1).data.reply_in_thread, false, 'explicit mainline stays mainline with collapsed details');
+  assert.equal(JSON.parse(details.sends.at(-1).data.content).body.elements.at(-1).expanded, false);
+  const rejectCard = details.runtime.appClient.im.v1.message.reply;
+  details.runtime.appClient.im.v1.message.reply = async payload => payload.data.msg_type === 'interactive'
+    ? { code: 230099, msg: 'invalid card' } : rejectCard(payload);
+  await sendFeishuText(details.runtime, { ...target, foldedDetails }, detailText, 'rejected-details');
+  assert.equal(details.sends.at(-1).data.msg_type, 'file', 'definite card rejection cannot flatten the details');
+  assert.equal(details.uploads.at(-1).data.file.toString('utf8'), detailText);
   console.log('Feishu long replies: complete files, payload budget, routing, safe retries and restart recovery passed');
 } finally {
   await rm(home, { recursive: true, force: true });

@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { routingPilotScope, routingSyncTargetAllowed, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
 import { loadSessionsMeta, findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
-import { requests, appendDeliveries } from './requests.mjs';
+import { requests, appendDeliveries, requestKey } from './requests.mjs';
 import { appendEvent, getHistorySnapshot } from './history.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
@@ -14,6 +14,8 @@ import { executionTrialPrompt } from './work-execution-prompt.mjs';
 import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
 import { routingDiscovery } from './work-routing-discovery.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { groupSyncReturnPlan, syncResultPresentation, syncDecisionOutcome } from './group-sync-presentation.mjs';
+import { normalizeConversation } from '../lib/conversation-target.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 20);
 const fail = message => { throw new Error(message); };
@@ -480,11 +482,12 @@ export async function acceptGroupSync(record, deps) {
   return serial(record.sessionId, async () => {
     // A callback retry can arrive after its owning native turn has completed.
     // Return only an existing outcome; terminal records cannot approve new work.
-    if ((record.result || record.releasedAt) && decision[2].startsWith('handoff_')) {
+    if (record.result || record.releasedAt) {
       const saved = await findSessionMeta(record.sessionId);
       const prior = state(saved || {}).proposals.find(p => p.id === decision[2]);
       if (prior?.confirmationRequestId === record.requestId && prior.personId === record.options?.viewPersonId
-          && ['submitted', 'return-queued', 'rejected'].includes(prior.state)) return '转交决定已处理，不会重复执行。';
+          && ['submitted', 'return-queued', 'rejected'].includes(prior.state)) return decision[2].startsWith('handoff_')
+            ? '转交决定已处理，不会重复执行。' : syncDecisionOutcome(prior);
     }
     // Confirming or rejecting an existing specific draft is an explicit action,
     // independent of whether automatic routing is now enabled for the sender.
@@ -495,18 +498,19 @@ export async function acceptGroupSync(record, deps) {
     if (proposal.personId && proposal.personId !== record.options.viewPersonId) fail('Only the proposal requester can confirm this personal trial');
     if (proposal.confirmationRequestId === record.requestId && proposal.state !== 'draft') {
       if (proposal.state === 'approved') return dispatchGroupSync(proposal, await findSessionMeta(proposal.targetSessionId), record, deps);
-      return '同步已经登记：' + proposal.state;
+      return syncDecisionOutcome(proposal);
     }
     if (proposal.state !== 'draft') fail('This proposal is no longer awaiting confirmation');
     if (decision[1] === '拒绝同步') {
       await save(session.id, d => Object.assign(d.proposals.find(p => p.id === proposal.id),
         { state: 'rejected', confirmationRequestId: record.requestId }));
-      return '已拒绝本条同步。';
+      return '已取消本条同步。';
     }
     const target = await findSessionMeta(proposal.targetSessionId);
     if (!target || target.archived || target.groupFeed || !await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)
         || stamp(target) !== proposal.targetStamp || stamp(session) !== proposal.sourceStamp) fail('Discussion changed; review a fresh sync proposal');
-    const packet = { ...proposal, confirmationRequestId: record.requestId, state: 'approved', returnPlan: origin, targetPlan: workDeliveryPlan(target.conversation, origin),
+    const packet = { ...proposal, confirmationRequestId: record.requestId, state: 'approved',
+      returnPlan: await groupSyncReturnPlan(record, proposal, requests), targetPlan: workDeliveryPlan(target.conversation, origin),
       actor: verifiedWorkActor(record.options.viewPersonId, record.options.initiatedByIdentityId) };
     await save(session.id, data => Object.assign(data.proposals.find(p => p.id === proposal.id), packet));
     await appendEvent(session.id, { type: 'work_event', action: 'routing-sync-approved', proposal: packet });
@@ -528,7 +532,16 @@ async function dispatchGroupSync(packet, target, record, deps) {
     const p = d.proposals.find(p => p.id === packet.id);
     if (p.state === 'approved') Object.assign(p, { state: 'submitted', runId: receipt.run.id, targetRequestId: receipt.requestId });
   });
-  return `同步已提交，目标会在可处理时补充思考；结论会回到这里。目标：${target.name}。这不表示已经完成。`;
+  return syncDecisionOutcome({ ...packet, state: 'submitted' });
+}
+
+async function enqueueSyncResult(input) {
+  // A crash can happen after outbox admission and before the proposal receipt.
+  // Reuse that exact committed payload, including pre-upgrade presentations.
+  const plan = normalizeConversation(input.sourceDelivery);
+  const id = `outbound:${input.responseId}:${requestKey(plan.sourceRouteId, JSON.stringify(plan.target))}`;
+  const prior = await requests.byRequest(input.sessionId, id);
+  return prior?.deliveries[0] || enqueueSourceDelivery(input);
 }
 export async function completeGroupSync(record, run) {
   if (record?.options?.confirmedHandoff) return completeConfirmedHandoff(record, run);
@@ -538,17 +551,22 @@ export async function completeGroupSync(record, run) {
   const packet = state(source || {}).proposals.find(p => p.id === route.proposalId);
   if (!packet || packet.state === 'return-queued') return;
   const success = record.result?.state === 'completed';
-  const result = clean(record.result?.payload?.text, 10000);
-  const text = `【同步复核${success ? '结果' : '未完成'}】\n来自：${packet.targetName}\n\n${success ? result || '目标已结束，但没有返回可用结论。' : '目标未完成复核：' + (record.result?.error || run?.state || 'unknown')}\n\n来源建议：${packet.id}`;
+  const result = stripHiddenBlocks(record.result?.payload?.text || '').trim();
+  const body = success ? result || '目标已结束，但没有返回可用结论。'
+    : '目标未完成复核：' + (record.result?.error || '执行已停止，请查看原工作话题。');
+  const foldedDetails = syncResultPresentation(packet, body, { failed: !success });
+  const text = `【${foldedDetails.title}】\n来自：${packet.targetName}\n\n${body}`
+    + (foldedDetails.url ? `\n\n[查看原工作话题](${foldedDetails.url})` : '');
   // Publish the approved information with the reconsideration in its owning
   // topic. Keep this separate from the model's ordinary reply stream so a
   // failed/stale review cannot announce that reference as adopted.
-  const targetReceipt = success ? await enqueueSourceDelivery({ sessionId: packet.targetSessionId,
+  const targetReceipt = success ? await enqueueSyncResult({ sessionId: packet.targetSessionId,
     responseId: 'routing-reviewed:' + packet.id,
-    text: `【经确认同步的复核】\n来源：${packet.sourceName || packet.sourceSessionId}\n同步信息与问题：${packet.task}\n影响：${packet.reason}\n\n${result || '未返回可用结论。'}\n\n同步记录：${packet.id}`,
+    text: `【经确认同步的复核】\n来源：${packet.sourceName || '来源对话'}\n同步信息与问题：${packet.task}\n影响：${packet.reason}\n\n${result || '未返回可用结论。'}`,
+    foldedDetails,
     sourceDelivery: packet.targetPlan }) : null;
-  const receipt = await enqueueSourceDelivery({ sessionId: source.id, responseId: 'routing-return:' + packet.id,
-    text, sourceDelivery: packet.returnPlan });
+  const receipt = await enqueueSyncResult({ sessionId: source.id, responseId: 'routing-return:' + packet.id,
+    text, foldedDetails, sourceDelivery: packet.returnPlan });
   await save(source.id, data => Object.assign(data.proposals.find(p => p.id === packet.id),
     { state: 'return-queued', result, resultState: record.result?.state, returnDeliveryId: receipt.id, returnRunId: receipt.runId, targetDeliveryId: targetReceipt?.id, targetReturnRunId: targetReceipt?.runId, runId: run.id }));
   await appendEvent(source.id, { type: 'work_event', action: 'routing-sync-result', proposalId: packet.id,

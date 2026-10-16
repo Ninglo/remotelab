@@ -88,10 +88,13 @@ export function nativeQuestionEvent(obj) {
 }
 
 export function nativeQuestionAnswers(result) {
-  return Object.fromEntries(Object.entries(result.answers).map(([key, values]) => [key,
-    result.resolutions?.find(r => r.key === key)?.origin === 'timeout'
-      ? values.map(value => `${value} [system timeout fallback; not a user response]`) : values,
-  ]));
+  return Object.fromEntries(Object.entries(result.answers).map(([key, values]) => {
+    const resolution = result.resolutions?.find(r => r.key === key);
+    const answers = resolution?.origin === 'timeout'
+      ? values.map(value => `${value} [system timeout fallback; not a user response]`) : values;
+    return [key, resolution?.systemOutcome?.context ? answers.map(answer =>
+      `${answer}\n[RemoteLab system receipt, not user text: ${resolution.systemOutcome.context}]`) : answers];
+  }));
 }
 
 // The detached native host owns questions, their deadline and native replies.
@@ -173,10 +176,10 @@ export function createNativeQuestionBroker({ directory, onEvent, onError = () =>
       : resolveQuestionAnswer(q, input.text);
     if (resolved.values.length) entry.answers[q.key] = resolved.values;
     entry.resolutions.push({ key: q.key, origin, kind: resolved.kind, values: resolved.values,
-      at: now(), ...(input ? { inputId: input.id } : {}) });
+      at: now(), ...(input ? { inputId: input.id, ...(input.systemOutcome ? { systemOutcome: input.systemOutcome } : {}) } : {}) });
     emit(entry, origin === 'timeout' ? 'timeout' : 'answered', origin === 'timeout'
       ? (q.options.length ? `未收到回复，已采用系统默认「${q.options[0].label}」。` : '未收到回复，已按“超时未答”继续处理。')
-      : `已回答：${resolved.values.join('、')}`, origin, resolved.values);
+      : input?.systemOutcome?.text || `已回答：${resolved.values.join('、')}`, origin, resolved.values);
     const questionId = `${entry.id}:${entry.index}`;
     entry.index++;
     await showQuestion();

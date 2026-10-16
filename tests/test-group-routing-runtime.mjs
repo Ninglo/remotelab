@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-routing-runtime-'));
 setIsolatedTestHome(home);
@@ -25,10 +26,16 @@ console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,output_t
 })().catch(e => { console.error(e); process.exitCode = 1; });
 `);
 await chmod(executable, 0o755);
+const nativeExecutable = join(home, 'bin/fake-sync-native');
+const nativeFixture = await readFile(new URL('./fixtures/native-codex-app-server.cjs', import.meta.url), 'utf8');
+await writeFile(nativeExecutable, nativeFixture.replaceAll("label: '简短'", "label: fs.readFileSync(path.join(root, 'sync-choice'), 'utf8')"));
+await chmod(nativeExecutable, 0o755);
 process.env.PATH = join(home, 'bin') + ':' + process.env.PATH;
 await writeFile(join(dir, 'tools.json'), JSON.stringify([{ id: 'fake-route', name: 'Fixture', command: 'fake-route',
   runtimeFamily: 'codex-json', models: [{ id: 'fixture', label: 'Fixture' }],
-  reasoning: { kind: 'enum', levels: ['low'], default: 'low' } }]));
+  reasoning: { kind: 'enum', levels: ['low'], default: 'low' } },
+  { id: 'fake-sync-native', name: 'Native fixture', command: 'fake-sync-native', runtimeFamily: 'codex-json',
+    inputMode: 'native', promptMode: 'bare-user' }]));
 await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_a', people: [
   { id: 'person_a', name: '甲', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
 ] }));
@@ -176,5 +183,47 @@ try {
     assert.equal((await requests.byRequest(b.sessionId, b.requestId)).deliveries.length, 0);
   }
   assert((await requests.byRequest(main.id, three.reviewRequestId)).deliveries.every(d => d.target.messageId === 'input-root'));
+  // Use the real native question/admission path. Successful confirmation
+  // updates the original question; only review completion creates a return.
+  const nativePlan = { ...origin, target: { ...origin.target, conversationKind: 'thread',
+    messageId: 'native-root', rootId: 'native-root', replyInThread: true } };
+  const nativeSession = await manager.createSession(home, 'fake-sync-native', 'Confirmation', {
+    conversation: nativePlan, sourceId: 'feishu' });
+  const nativeOptions = { ...authenticated, sourceDelivery: nativePlan };
+  const nativeTask = '保留结论和必须回答的问题', nativeReason = '核对同步展示路径';
+  const predictedId = 'sync_' + createHash('sha256').update(JSON.stringify([
+    nativeSession.id, 'native-sync-question', target.id, nativeTask, nativeReason])).digest('hex').slice(0, 20);
+  await writeFile(join(home, 'sync-choice'), '确认同步 ' + predictedId);
+  const nativeSetting = await loadPersonMessageReplies(actor);
+  await changePersonMessageReplies({ action: 'apply', expectedRevision: nativeSetting.revision, confirm: true,
+    choices: { ...nativeSetting.choices, routing: 'experimental' } }, actor);
+  const nativeRoot = await manager.submitHttpMessage(nativeSession.id, 'ASK_NATIVE_QUESTION PUBLISH_OPENING THREAD_OPENING', [], {
+    ...nativeOptions, requestId: 'native-sync-question', tool: 'fake-sync-native', model: '', effort: '',
+  });
+  const { readNativeQuestion } = await import('../chat/native-user-questions.mjs');
+  const { runDir } = await import('../chat/runs.mjs');
+  const question = await until(async () => { const q = await readNativeQuestion(runDir(nativeRoot.run.id)); return q?.state === 'pending' && q; });
+  const nativeDraft = await routeGroupWork(await requests.byRunId(nativeRoot.run.id), { mode: 'sync', targetSessionId: target.id,
+    task: nativeTask, reason: nativeReason });
+  assert.equal(nativeDraft.proposal.id, predictedId);
+  const answerOptions = { ...nativeOptions, requestId: 'native-sync-answer', nativeQuestionId: question.id,
+    nativeQuestionAnswerSource: 'control', sourceContext: { ...authenticated.sourceContext, createTime: String(Date.now()), messageType: 'interactive' } };
+  await manager.submitHttpMessage(nativeSession.id, '1', [], answerOptions);
+  const answered = await until(async () => { const r = await requests.byRequest(nativeSession.id, 'native-sync-answer'); return r?.nativeReceipt && r; });
+  assert.equal(answered.options.routingDecisionText, nativeDraft.confirmation);
+  assert.match(answered.nativeInput.systemOutcome.context, /不要再发送仅确认受理/);
+  assert.doesNotMatch(answered.nativeInput.systemOutcome.text, /submitted|sync_/);
+  const { loadHistory } = await import('../chat/history.mjs');
+  await until(async () => (await loadHistory(nativeSession.id, { includeBodies: true })).some(e => e.questionId === question.id && e.questionState === 'answered'));
+  const answerEvent = (await loadHistory(nativeSession.id, { includeBodies: true })).find(e => e.questionId === question.id && e.questionState === 'answered');
+  assert.match(answerEvent.content, /已提交|复核结果/);
+  assert((await requests.projectActive(records => records)).every(r => r.responseId !== 'routing-question-result:native-sync-answer'),
+    'successful native confirmation does not create a second receipt message');
+  const repeated = await manager.submitHttpMessage(nativeSession.id, '1', [], answerOptions);
+  assert.equal(repeated.duplicate, true);
+  await writeFile(join(home, `${nativeRoot.run.id}.release`), 'release');
+  const final = await until(async () => { const r = await requests.byRunId(nativeRoot.run.id); return r?.result && r; });
+  assert(final.deliveries.some(d => d.surfaceKind === 'final' && d.text.includes('durable native answer')),
+    'a substantive model final is still delivered separately');
   console.log('GROUP_ROUTING_RUNTIME_VERIFIED: actual admission, isolated worker, human approval dispatch, target completion hook and durable source outbox. No live model or Feishu send.');
 } finally { await manager.killAll(); await rm(home, { recursive: true, force: true }); }

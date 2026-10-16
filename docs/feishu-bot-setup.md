@@ -566,9 +566,13 @@ for this fast call. The timeout is 1,600 ms; failures do not call a slower model
 
 The main Session receives the message in parallel and owns the complete response,
 including participation, reply placement, continuation of existing work and the
-final reaction choice. It chooses inline versus Thread before the first visible
-opening; research, installation guidance and multi-step work normally belong in
-a Thread. A Thread reply does not itself launch another worker. Existing replies,
+final reaction choice. It chooses inline versus Thread for the whole discussion
+before the first visible opening, including earlier related messages, likely
+questions, confirmation and review returns. Several short supplements can make
+one substantive discussion. Research, design feedback, cross-topic review,
+installation guidance and multi-step work normally belong in a Thread. Human
+placement instructions take priority; character count does not decide work
+ownership. A Thread reply does not itself launch another worker. Existing replies,
 accepted handoffs and ongoing work must be reused, not answered or started twice.
 Disabling automatic work-Session routing does not disable choosing a Thread reply.
 
@@ -598,6 +602,24 @@ keeps the execution's selected destination and records coverage for every input;
 recovery sends only one answer. Per-input accountability does not require one
 message per input. Whether the content actually answers the common question
 remains the Harness's responsibility and needs semantic evaluation separately.
+
+Confirmed sync returns retain the source execution's selected destination;
+late callbacks do not select a new location. Their cards show a short original
+excerpt and work-topic link, with the full review, tables and unresolved questions
+in a closed detail panel. Feishu forbids native tables inside that panel, so
+each row retains all cells with their column labels as readable text. Ordinary
+unfolded replies keep native tables. This is a deterministic display contract, independent
+of personal opening/progress choices and without a summary model. Failures are
+visible outside the panel. If the card cannot preserve the content or is explicitly
+rejected, delivery uses a complete Markdown file rather than flattening the review
+into the mainline. Timeouts retain the existing uncertain-delivery fence.
+
+Native sync confirmation updates the original question card with one readable
+outcome; successful confirmation no longer creates a separate status post. The
+Harness receives that system receipt separately from the preserved human choice
+and must not repeat acceptance in a final. New substantive final answers, required
+questions and failures still publish normally. Protocol IDs remain in durable
+records; confirmation button labels and ordinary result bodies omit them.
 
 During input preparation the connector reads its local durable outcome receipt
 once and supplies a bounded snapshot to the main Session. Applied, not-recorded

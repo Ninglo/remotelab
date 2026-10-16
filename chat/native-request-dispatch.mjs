@@ -97,6 +97,7 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
               && !record.options?.routingSource && record.options?.recordUserMessage !== false
               ? { supersedeQuestions: true } : {}),
             ...(record.options?.nativeQuestionId ? { questionId: record.options.nativeQuestionId, answerText: nativeQuestionReplyText(record) } : {}),
+            ...(record.options?.nativeQuestionId && prepared.systemOutcome ? { systemOutcome: prepared.systemOutcome } : {}),
           }, nativeContext: context,
           nativeContextDelivery: prepared.contextDelivery || null,
           nativeRuleContextDelivery: prepared.ruleContextDelivery || null,

@@ -65,9 +65,9 @@ function nativeTable(table, parser) {
  * Return null when conversion cannot retain all content within card limits.
  * Contract: https://open.feishu.cn/document/feishu-cards/card-json-v2-components/content-components/table
  */
-export async function buildFeishuTableCard(postContent) {
+export async function buildFeishuTableCard(postContent, { foldedDetails } = {}) {
   const rows = JSON.parse(postContent).zh_cn?.content || [];
-  if (!rows.some(row => row.some(item => item.tag === 'md' && /\|/.test(item.text)))) return null;
+  if (!foldedDetails && !rows.some(row => row.some(item => item.tag === 'md' && /\|/.test(item.text)))) return null;
   const parser = await markdownParser();
   const elements = [];
   let tableCount = 0;
@@ -103,8 +103,26 @@ export async function buildFeishuTableCard(postContent) {
       markdown(item.text.replace(/[\\`*_{}\[\]()#+.!|<>~-]/g, '\\$&'));
     } else return null;
   }
-  if (!tableCount || elements.length > 100) return null;
-  const content = JSON.stringify({ schema: '2.0', config: { width_mode: 'fill' }, body: { elements } });
+  if ((!tableCount && !foldedDetails) || elements.length > 95) return null;
+  const card = { schema: '2.0', config: { width_mode: 'fill' }, body: { elements } };
+  if (foldedDetails) {
+    card.header = { title: { tag: 'plain_text', content: foldedDetails.title },
+      template: foldedDetails.failed ? 'red' : 'blue' };
+    card.body.elements = [
+      { tag: 'markdown', content: foldedDetails.summary },
+      ...(foldedDetails.url ? [{ tag: 'markdown', content: `[查看原工作话题](${foldedDetails.url})` }] : []),
+      { tag: 'collapsible_panel', expanded: false,
+        header: { title: { tag: 'plain_text', content: '完整复核、依据与待讨论问题' } },
+        // Feishu rejects native tables inside collapsible_panel (200621).
+        // Retain every cell with its column label and row grouping instead.
+        elements: elements.flatMap(element => element.tag !== 'table' ? [element] : element.rows.map(row => ({ tag: 'markdown',
+          content: element.columns.map(column =>
+            `**${column.display_name.replace(/[\\*_`]/g, '\\$&')}**：${row[column.name]}`).join('\n\n') }))),
+      },
+    ];
+    if (card.body.elements.at(-1).elements.length > 95) return null;
+  }
+  const content = JSON.stringify(card);
   // Leave headroom under the IM card payload limit; never truncate a reply.
   return Buffer.byteLength(content) <= 28_000 ? content : null;
 }

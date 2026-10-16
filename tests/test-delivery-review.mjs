@@ -72,6 +72,8 @@ try {
   await handleDeliveryReview(feedbackA, packet, deps);
   assert.equal((await deliveryReviewContext(group, ctx))[0].feedback[0].state, 'completed', 'retry preserves completion');
   await assert.rejects(handleDeliveryReview(feedbackA, { ...packet, requestIds: ['feedback-a'] }, deps), /already been returned/);
+  const duplicateInThread = await input('group-thread', 'feedback-a');
+  await assert.rejects(handleDeliveryReview(duplicateInThread, { ...packet, requestIds: ['feedback-a'] }, deps), /already been returned/);
   await assert.rejects(handleDeliveryReview(feedbackA, { ...packet, unresolved: 'new scope' }, deps), /immutable/);
   await assert.rejects(handleDeliveryReview(await input('work','other-close','b'), { action: 'close', reviewId: posted.reviewId, expectedVersion: 1, reason: 'done' }), /original publisher/);
   await handleDeliveryReview(author, { action: 'close', reviewId: posted.reviewId, expectedVersion: 1, reason: 'Review finished.' });

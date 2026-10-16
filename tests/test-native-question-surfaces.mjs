@@ -24,6 +24,14 @@ const rawAction = (value, fields = {}) => ({ header: { event_id: 'action-one' },
   action: { value: { namespace: 'native-question', ...identity, ...value }, form_value: fields },
 } });
 try {
+  const syncChoice = '确认同步 sync_0123456789abcdef0123';
+  const syncQuestion = { ...question, question: { question: '同步这条反馈？', options: [{ label: syncChoice }] } };
+  const syncCard = buildNativeQuestionCard(identity, syncQuestion);
+  assert.equal(syncCard.body.elements.find(e => e.tag === 'column_set').columns[0].elements[0].text.content, '确认同步');
+  assert.equal(syncQuestion.question.options[0].label, syncChoice, 'only display labels change, not the authorization packet');
+  const syncAnswered = buildNativeQuestionCard(identity, { ...syncQuestion, state: 'answered', statusText: '已回答：' + syncChoice });
+  assert.equal(syncAnswered.body.elements[0].content, '已回答：确认同步');
+  assert.doesNotMatch(JSON.stringify(syncAnswered), /sync_012345/);
   await sendNativeQuestionCard(runtime, delivery);
   assert.equal(calls[0][1].data.reply_in_thread, true);
   const first = JSON.parse(calls[0][1].data.content);

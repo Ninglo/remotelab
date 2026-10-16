@@ -463,6 +463,7 @@
             "chat/ambient-feishu-reply.mjs",
             "chat/feishu-reply-placement-feedback.mjs",
             "chat/group-routing.mjs",
+            "chat/group-sync-presentation.mjs",
             "chat/work-execution-plans.mjs",
             "chat/work-execution-prompt.mjs",
             "lib/work-awareness-command.mjs",

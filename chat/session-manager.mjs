@@ -3431,14 +3431,20 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
   prepareInput: async (record, manifest) => {
     if (record.options?.nativeQuestionId) {
+      let systemOutcome;
       if (syncDecisionText(record)) {
         const outcome = await recordWorkInputAndDeliver(await findSessionMeta(record.sessionId), record);
-        if (outcome.startsWith('Human work decision was NOT accepted:') || !record.options.routingDecisionText?.includes('转交')) {
+        const failed = outcome.startsWith('Human work decision was NOT accepted:');
+        // The original question owns confirmation; completion owns the result.
+        // A separate success post used to duplicate both that card and final.
+        if (failed) {
           await enqueueSourceDelivery({ sessionId: record.sessionId, responseId: 'routing-question-result:' + record.requestId,
             sourceDelivery: record.deliveryPlan || record.options.sourceDelivery, text: outcome });
         }
+        if (syncDecisionText(record)[2].startsWith('sync_')) systemOutcome = { text: failed ? '' : outcome,
+          context: `${outcome}\n这是系统处理回执，不是人的新要求。原问题卡承接确认，复核结果由系统单独回传；不要再发送仅确认受理的 final，也不要重复完整复核。新的实质结论、必答问题与失败仍须正常说明。` };
       }
-      return { text: nativeQuestionReplyText(record), context: '' };
+      return { text: nativeQuestionReplyText(record), context: '', ...(systemOutcome ? { systemOutcome } : {}) };
     }
     const attachments = await materializeFileAssetAttachments(record.images || []);
     const session = await findSessionMeta(record.sessionId);

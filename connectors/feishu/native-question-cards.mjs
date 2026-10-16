@@ -13,6 +13,9 @@ const plain = content => ({ tag: 'plain_text', content });
 const markdown = content => ({ tag: 'markdown', content });
 const collapsed = (title, elements) => ({ tag: 'collapsible_panel', expanded: false,
   header: { title: plain(title) }, elements });
+// Keep protocol IDs in the durable question/answer, not its human-facing label.
+const decisionLabel = text => String(text || '').replace(/^(确认同步|拒绝同步)\s+sync_[a-f0-9]{20}$/, '$1')
+  .replace(/^(确认转交|拒绝转交)\s+handoff_[a-f0-9]{20}$/, '$1');
 const optionRows = (options, button) => {
   const rows = [];
   // Long labels need a full row on phones. Keep each explanation beside its
@@ -44,7 +47,7 @@ export function buildNativeQuestionCard(identity, question) {
   const value = { namespace: 'native-question', ...identity };
   const button = (label, extra = {}) => ({ tag: 'button', text: plain(label), type: 'default', width: 'fill',
     behaviors: [{ type: 'callback', value: { ...value, ...extra } }] });
-  const options = q.options || [];
+  const options = (q.options || []).map(option => ({ ...option, label: decisionLabel(option.label) }));
   const elements = [];
   if (question.state === 'pending') {
     elements.push(markdown(q.question));
@@ -71,7 +74,7 @@ export function buildNativeQuestionCard(identity, question) {
     elements.push(markdown(!Number.isFinite(question.deadline) ? '可直接发消息继续沟通；旧问题会结束等待，不会自动选择。'
       : options.length ? '到期未答时默认选第 1 项。' : '到期未答时按未答继续。'));
   } else {
-    elements.push(markdown(question.statusText));
+    elements.push(markdown(String(question.statusText || '').replace(/^已回答：(.+)$/, (_, answer) => `已回答：${decisionLabel(answer)}`)));
     elements.push(collapsed('查看原问题', [markdown(q.question),
       ...options.map((option, i) => markdown(`${i + 1}. ${option.label}${option.description ? `：${option.description}` : ''}`))]));
   }

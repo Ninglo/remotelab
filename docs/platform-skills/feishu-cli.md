@@ -107,7 +107,12 @@ single-choice buttons share rows of two; long labels use full rows, and each
 explanation stays with its option. Optional custom input stays collapsed and
 uses a full-width input and a primary `提交答案` button; multi-select has its own
 `提交选择` button. A user answer changes the original header to green `已回答`
-and shows the answer, with the original question behind an expander. Timeout
+and shows the answer, with the original question behind an expander. Native sync
+confirmation shows its readable processing outcome on that same card, without
+another success-status message. The raw choice and protocol ID remain in durable
+records, while button labels omit the ID. Review results return in a detail card
+with an original-work link and closed full-content panel; failures stay visible.
+Required questions and substantive final answers remain separate. Timeout
 fallback uses blue `已采用默认` (or `超时未答` without options), while cancelled
 or ended questions use grey. Closed questions have no active answer controls.
 These controls reuse the existing `card.action.trigger`
