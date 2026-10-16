@@ -214,6 +214,10 @@ Harness 用 `remotelab work route --file packet.json --json`：
 
 `sync` 的确认只授权该信息的有限复核和结果回传。目标复核排在当前工作之后，不插入活跃执行、不代答原问题、不自动修改原任务或执行新业务操作。排队期间目标任务改变会终止过期复核并回报来源。成功复核后，目标话题展示已确认的信息、来源及复核结论，并把结果写回来源投递队列；失败或过期只回报来源，不在目标公告采纳。`work context` 中 `routing` 提供来源、目的地、草稿及回传状态：`submitted` 表示已接受，`return-queued` 表示结果已进入发送队列，`targetDeliveryState` 与 `returnDeliveryState` 分别跟踪目标展示与来源回传，`delivered` 才证明对应送达；三者均不等于业务采纳。
 
+同步回传沿用来源工作执行已经选定的回复位置，原生确认回调不会把话题改回群主线；人在已有话题确认时保留该话题。复核结果卡默认收起完整正文、表格和未决问题，首屏显示原结论摘录及原工作入口；失败原因在折叠区外可见，已经取得的部分依据与未答问题仍完整保留在详情中。展示摘录不决定工作归属，也不删减正文。无法完整表示或明确被飞书拒绝的详情卡转为完整 Markdown 文件，不回退成主线长文；发送结果未知时保留原去重保护。
+
+飞书折叠面板不支持原生表格，因此折叠区内按行展示表格，每格保留列名和完整内容；普通展开答复仍使用原生表格。原生同步确认只更新原问题卡，不再另外发送成功状态正文；按钮与已回答内容不展示内部同步编号。Harness 收到系统处理回执后不再重复发送仅确认受理的 final，复核完成由系统回传一次。必答问题、新的实质答复及失败仍分别展示。重复确认、控制服务重启或回传入队后丢失回执，均复用原接受记录和出站内容，不重新贴全文；已经送达的历史消息不会自动批量修改。以上不改变个人开场、清单及进展设置。
+
 该试点不增加前置语义分类模型。主线接收和目标执行各有自己的必要调用；明确接续不等待后台相关工作检索，跨话题复核异步排队。实际响应速度仍需用真实输入的接收、分流、目标接受、首次回复送达时间测量，不能用本地回放耗时替代。
 
 验证入口：`tests/test-confirmed-handoff.mjs` 验证有界发现、拒绝／过期草稿、真实原生数字确认及交接回传；`tests/test-group-routing.mjs` 检查归属、范围、拒绝、重复确认、过期和恢复；`tests/test-group-routing-runtime.mjs` 使用隔离假 Harness 验证接受、执行、完成钩子和回传队列。既有飞书回复、原生追加、参与状态和任务卡测试覆盖兼容性。真实群只由获准试测的人发送测试内容。
@@ -227,3 +231,26 @@ For explicitly selected recurring work, the [automation home](task-center-v1.md#
 A v2 pilot may explicitly set `personalOptIn: true` and a `scopeLabel`. This opens eligibility only in its registered route/tenant/chat tuples; each sender still needs their own confirmed `routing: experimental` preference. Existing allowlist pilots remain unchanged. Group cards show personal enable, disable and status buttons in both layouts. The signed callback validates the current card/chat and derives the Person from the clicker’s route-scoped Feishu identity; card payloads cannot nominate another Person. Unbound users are asked to send a message first. Changes reuse the existing personal reply setting, preserve other preferences, and affect subsequent accepted inputs. Shared cards do not display one member’s state as a group state. Child Sessions currently open on Web; the original Feishu topic remains the coordination and acceptance entrance.
 
 With explicitly authorized `publicRoster: true`, group cards display the pilot-wide list of enabled People (not the membership of each chat). The information routing section uses one purpose sentence, the roster, three personal controls and collapsed scope/rules. Changes to the existing personal settings file trigger a coalesced refresh of registered trial cards, including groups outside project-memory registration. Refreshes only patch existing messages; they never create replacement cards or change top notices. A failed patch keeps its failure visible in connector logs instead of silently sending a new message.
+
+## 群内交付审阅与反馈回传
+
+对 Agent 说明：“把这份成果发到指定群请大家审阅，把与这次成果相关的反馈带回当前工作。”发送前应明确目标群、实际正文和反馈范围；尚未获得这三项授权时先展示具体内容请人确认。普通分享、旧群消息、同项目标签不会自动建立审阅关系。
+
+| 用途 | 谁继续负责工作 | 群主 Session 的作用 |
+| --- | --- | --- |
+| 误发任务转交 `handoff` | 经本人确认的目标话题 | 核对去向后交接 |
+| 参考同步 `sync` | 两边保持各自工作 | 对已批准的信息复核影响 |
+| 并行子任务 `plan` | 主话题验收，子 Session 承担明确分工 | 汇总分支结果 |
+| 交付审阅 `delivery` | 发出成果的原工作 | 阅读、解释、讨论，选择相关反馈回传 |
+
+群主不是被绕过的收件箱。已知事实可直接回答，意见含糊时先讨论，缺陷、修改意见、验收结论或需要原上下文解决的问题应及时回传。可以一边在群里解释，一边回传；无须机械三选一，也不要求每条发言都回复。回传保留各人的原文、作者、附件、群内已答内容和未解决事项，不要求人再次去原工作喊“读一下群”。
+
+实现复用 Session 元数据、消息 outbox、Request 队列与完成回执。`work delivery --file <JSON> --json` 有三个操作：
+
+- `publish`：`key`、`chatId`、`text`、`scope`、`authorization`。Harness 核对当前真实人类指令确已授权发送和反馈回传；`authorization` 记录依据，不是新的批准按钮。服务端从当前输入固定原工作、作者、Bot 和租户，只能向已登记群发送。相同输入与 `key` 重试复用原正文及发送队列，修改内容会拒绝。初版发送文本（可包含成果链接），不隐式复制附件或整段私有上下文。实际发送回执中的消息 ID 才建立可用的反馈入口；未知或失败状态不宣称已送达。回执晚于成员反馈写入时，取得真实消息回执后仍可接收该发布建立以来的相关反馈，不把回执写入时间误当成发送时间。
+- `feedback`：`originSessionId`、`reviewId`、实际 `messageId`、`requestIds`、`reason`、`handled`、`unresolved`。只收本次执行实际接受的该群人类消息，最多八条，支持多位作者。语义关联由当前 Harness 判断并说明依据，工具验证消息来源和已发送的审阅关系；不能把任意群消息自动归入。群主仍保留本地答复责任。重复或交叠输入不会再次开工；丢失受理回执时重试同一包，原工作按既有队列接收，不拿反馈回答正在等待的人类确认。
+- `close`：原发布人从原工作提交 `reviewId`、`expectedVersion`、`reason`。关闭后不收新反馈，也不启动尚未准备的反馈处理；已经运行的处理不被冒称为取消。需要停止正在执行的工作仍走原停止入口。
+
+原工作收到反馈后结合已有上下文处理，只继续既有授权内的工作；暂停或停止的任务不因反馈恢复，新增要求或冲突决定交有权人判断。同一发布下的原始消息即使从不同群 Session 再次回传也会去重。结果回原工作入口；不会自动再次发到审阅群，也不会自动另开工作或转移群绑定。群主下一次处理消息时能读到反馈处理状态，但不自动获得原工作回复的正文；处理结束不等于反馈验收通过。是否再向群里解释、需要哪些可公开内容，由群主结合授权判断。没有后台群监听器、定时扫群或新增分类模型；现有群参与设置仍决定哪些输入交给 Harness。每群最多保留八项打开的审阅，更多成果应先结束旧审阅。
+
+`work context` 的 `deliveryReviews` 可读发送、反馈受理、处理结果及关闭状态；自动上下文只带关联元数据和摘要。普通工具已发出的旧消息暂不自动补绑定，需要明确来源与新的授权后再处理，不能把未知来源猜成原工作。隔离测试 `tests/test-delivery-review.mjs` 覆盖实际回执、归属不变、多作者与附件、重复/丢失回执、关闭及原生确认隔离；真实群发送及自然反馈效果单独验收，不由模拟测试替代。

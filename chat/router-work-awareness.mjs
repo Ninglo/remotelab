@@ -1,3 +1,4 @@
+import { handleDeliveryReview, deliveryReviewContext } from './delivery-review.mjs';
 import { observeContextQuery, readContextQueries } from './context-query-monitoring.mjs';
 import { routeGroupWork, replyGroupInput, readGroupRoutingState } from './group-routing.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -21,7 +22,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     catch { writeJson(res, 503, { error: 'Context query records unavailable' }); }
     return true;
   }
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan|directory|discover))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan|directory|discover|delivery))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -58,7 +59,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
         const projectBackground = parsedUrl.searchParams.get('includeBackground') === 'false' ? null
           : await readProjectTopicContext(session, record?.options?.sourceContext, { query, projectId: scope.projectId });
         const ruleProjectIds = projectBackground?.selected?.map(p => p.projectId) || [];
-        return { sessionId, current: session.workAwareness || null, routing: await readGroupRoutingState(session), executionPlans: await readExecutionPlans(session), related, candidates, suggestions,
+        return { sessionId, current: session.workAwareness || null, deliveryReviews: await deliveryReviewContext(session, record?.options?.sourceContext), routing: await readGroupRoutingState(session), executionPlans: await readExecutionPlans(session), related, candidates, suggestions,
           ...(parsedUrl.searchParams.get('includeBackground') === 'false' ? {} : {
             projectBackground,
             background: await retrieveNecessaryContext(session, { query, sourceContext: record?.options?.sourceContext,
@@ -86,10 +87,10 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       people: collectRelatedPeople({ personId: actor.personId, identityId: actor.identityId,
         sourceContext: record.options?.sourceContext, query: body.content || body.goal || '' }) };
     let result;
-    if (pathname.endsWith('/route') || pathname.endsWith('/reply') || pathname.endsWith('/plan')) {
+    if (pathname.endsWith('/route') || pathname.endsWith('/reply') || pathname.endsWith('/plan') || pathname.endsWith('/delivery')) {
       const input = body.sourceRequestId ? await requests.byRequest(sessionId, body.sourceRequestId) : record;
       if (!input || (input.runId !== record.runId && input.nativeDispatchRunId !== record.runId)) throw new Error('Source input does not belong to this active execution');
-      result = pathname.endsWith('/plan') ? await handleExecutionPlan(input, body)
+      result = pathname.endsWith('/delivery') ? await handleDeliveryReview(input, body) : pathname.endsWith('/plan') ? await handleExecutionPlan(input, body)
         : pathname.endsWith('/reply') ? await replyGroupInput(input, body) : await routeGroupWork(input, body);
     }
     else if (pathname.endsWith('/start')) result = await startWork(options);

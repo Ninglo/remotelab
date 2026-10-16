@@ -181,9 +181,12 @@ function harness(options = {}, onQuestion) {
   assert.ok(!h.events.some(e => e.item?.id === 'async-question'), 'async questions use the structured question projection, not a duplicate final');
   h.notify('turn/completed', { turn: { id: 'turn-1', status: 'completed', items: [] } });
   assert.equal(h.settled.length, 0, 'native host must stay alive for the question even after async inference finishes');
-  resolveAnswer({ answers: { '0': ['Detailed'] }, resolutions: [{ key: '0', origin: 'user' }] }); await tick();
+  resolveAnswer({ answers: { '0': ['Detailed'] }, resolutions: [{ key: '0', origin: 'user',
+    systemOutcome: { text: '已提交复核。', context: '原问题卡已确认，不重复发送受理回执。' } }] }); await tick();
   const followup = h.sent.findLast(e => e.method === 'turn/start');
   assert.match(followup.params.input[0].text, /Format\?: Detailed/);
+  assert.match(followup.params.input[0].text, /RemoteLab system receipt, not user text/);
+  assert.match(followup.params.input[0].text, /不重复发送受理回执/);
   h.reply('turn/start', { turn: { id: 'turn-2', status: 'inProgress' } }); await tick();
   h.notify('turn/completed', { turn: { id: 'turn-2', status: 'completed', items: [] } }); await tick();
   assert.equal(h.settled.length, 1);

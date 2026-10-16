@@ -78,6 +78,20 @@ try {
   controller = createPersonalSettingsController(runtime, opts);
   await assert.rejects(controller.publish(other), /仍待核对/);
   assert.equal(creates, 3, 'unknown transport failure never duplicates the welcome');
+  fail = false;
+  const beforeRenew = await loadPersonMessageReplies(actor);
+  const previousMessageId = record.messageId;
+  record = await controller.publish(source, { renew: true });
+  assert.equal(creates, 4, 'explicit renewal sends the integrated card');
+  assert.deepEqual(await loadPersonMessageReplies(actor), beforeRenew, 'renewal preserves the current owner settings');
+  const panels = sent.body.elements.filter(e => e.tag === 'collapsible_panel');
+  assert.ok(panels.every(e => e.expanded === false && e.element_id));
+  assert.equal(new Set(panels.map(e => e.element_id)).size, panels.length);
+  assert.equal((await controller.action(event('refresh', null, 2, { messageId: previousMessageId, eventId: 'old-card' }))).toast.type, 'error');
+  const refreshed = await controller.action(event('refresh', null, 2, { eventId: 'new-card' }));
+  assert.equal(refreshed.toast.type, 'success');
+  assert.equal(refreshed.card.data.body.elements[0].content, guide.intro);
+  assert.deepEqual(refreshed.card.data.body.elements.filter(e => e.tag === 'collapsible_panel').map(e => e.element_id), panels.map(e => e.element_id));
   await controller.idle();
   console.log('Personal cards: identity isolation, saved settings, replay/stale revisions, memory eligibility, restart and delivery fences passed');
 } finally { await rm(home, { recursive: true, force: true }); }

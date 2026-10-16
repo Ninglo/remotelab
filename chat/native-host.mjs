@@ -217,7 +217,8 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
         submissions++;
         const before = settlementRevision;
         try {
-          const answer = await questions.answer({ id: input.id, text: input.answerText || input.text, questionId: input.questionId });
+          const answer = await questions.answer({ id: input.id, text: input.answerText || input.text, questionId: input.questionId,
+            systemOutcome: input.systemOutcome });
           if (answer) return answer;
           const previousQuestions = input.supersedeQuestions && !input.referenceOnly ? await questions.snapshot() : [];
           if (input.continuationOnly && nativeResult) throw Object.assign(

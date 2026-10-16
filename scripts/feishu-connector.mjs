@@ -1432,9 +1432,12 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
   });
   let cardContent = null;
   if (!summary.deliveryNotice) {
-    try { cardContent = await buildFeishuTableCard(content); }
+    try { cardContent = await buildFeishuTableCard(content, { foldedDetails: summary.foldedDetails }); }
     catch (error) { console.warn(`[feishu-connector] table card conversion fallback: ${error.message}`); }
   }
+  // A folded detail contract must never fall back to a flat wall of text.
+  // Preserve the complete reply as one file when the card cannot represent it.
+  if (summary.foldedDetails && !cardContent) return sendFullReplyFile();
   // Markup/JSON expansion can exceed the payload budget even for short text.
   // Check both candidates so an explicit card rejection can safely use post.
   if (!summary.deliveryNotice && [content, cardContent].filter(Boolean).some(payload =>
@@ -1477,6 +1480,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
   // Only an explicit card-construction rejection proves no message was sent.
   // Timeouts, rate limits and ambiguous failures retain the durable retry path.
   if (cardContent && Number(response.code) === 230099 && !response.data?.message_id) {
+    if (summary.foldedDetails) return sendFullReplyFile();
     console.warn('[feishu-connector] card rejected; delivering original rich-text post');
     response = await send('post', content);
   }
@@ -1548,7 +1552,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const claim = json?.claim;
   if (!claim) return null;
   const delivery = claim.delivery;
-  const summary = { ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice' };
+  const summary = { ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice',
+    ...(delivery.foldedDetails ? { foldedDetails: delivery.foldedDetails } : {}) };
   return withFeishuHandoffLock(runtime, summary, async () => {
     if (participationEnabled(runtime, summary)) {
       const controller = participationController(runtime, helpers);
