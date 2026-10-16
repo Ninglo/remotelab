@@ -1,0 +1,82 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
+const home = await mkdtemp(join(tmpdir(), 'memory-cards-'));
+setIsolatedTestHome(home);
+process.env.REMOTELAB_MEMORY_DIR = join(home, 'memory');
+try {
+  const { updateAuthDocument, loadAuthDocument } = await import('../lib/auth-config.mjs');
+  await updateAuthDocument(doc => {
+    doc.people = [{ id: 'person_alice', name: 'Alice', credentials: [], preferences: { personalMemory: { version: 1, revision: 1, enabled: true, conversational: true } },
+      identities: [{ id: 'identity_alice', kind: 'feishu', realm: 'fixture', subjectId: 'alice' }] }];
+    doc.primaryPersonId = 'person_alice';
+  });
+  const memoryDir = process.env.REMOTELAB_MEMORY_DIR;
+  await mkdir(memoryDir, { recursive: true });
+  await writeFile(join(memoryDir, 'learning-policy.json'), JSON.stringify({ version: 1, enabled: true, profiles: true, personIds: ['person_alice'], reviewCardPersonIds: ['person_alice'] }));
+  const m = await import('../chat/memory-learning.mjs');
+  const { requests } = await import('../chat/requests.mjs');
+  const { sendMemoryReviewCard, handleMemoryReviewCardAction } = await import('../connectors/feishu/memory-review-cards.mjs');
+  const { buildPersonalMemoryConversationContext } = await import('../chat/personal-memory-conversation.mjs');
+  const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
+  const actor = { personId: 'person_alice', identityId: 'identity_alice', authDocument: await loadAuthDocument({ persistMigration: false }) };
+  const plan = { connector: 'feishu', sourceRouteId: 'fixture', target: { chatId: 'chat', tenantKey: 'tenant', chatType: 'group', messageId: 'original', threadId: 'thread', replyInThread: true } };
+  const { record: original } = await requests.accept({ sessionId: 'session', requestId: 'human', text: '请用熟悉的例子解释',
+    deliveryPlan: plan, options: { sourceDelivery: plan, viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId, feishuConnectorAuthenticated: true } });
+  const originalState = JSON.stringify(await requests.byRunId(original.runId));
+  const habit = { key: 'familiar-example', kind: 'habit', content: '解释时先用熟悉的例子。', conditions: '解释陌生概念时', exceptions: '', cues: ['解释'], evidence: [{ seq: 1, quote: '请用熟悉的例子解释' }] };
+  const saved = await m.applyLearningUpdates({ ...actor, updates: [habit], sources: [{ sessionId: 'session', runId: original.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
+  assert.equal(saved.promotedCount, 1);
+  assert.deepEqual(saved.rejected, []);
+  const deliveries = (await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview);
+  assert.equal(deliveries.length, 1);
+  const delivery = deliveries[0];
+  let created = 0, patched = 0;
+  const app = { reply: async () => { created++; return { code: 0, data: { message_id: 'card', thread_id: 'thread' } }; },
+    patch: async () => { patched++; return { code: 0 }; }, get: async () => ({ code: 0, data: { items: [{ message_id: 'card', chat_id: 'chat', msg_type: 'interactive' }] } }) };
+  const runtime = { config: { storageDir: join(home, 'connector'), sourceRouteId: 'fixture' }, appClient: { im: { v1: { message: app } } } };
+  await sendMemoryReviewCard(runtime, delivery);
+  await sendMemoryReviewCard(runtime, delivery);
+  assert.equal(created, 1); assert.equal(patched, 1);
+  const raw = (action, version, form = {}, open_id = 'alice') => ({ header: { event_id: 'event' }, event: {
+    context: { open_message_id: 'card', open_chat_id: 'chat' }, operator: { open_id, tenant_key: 'tenant' },
+    action: { value: { namespace: 'memory-review', key: delivery.memoryReview.key, action, version }, form_value: form } } });
+  const action = data => handleMemoryReviewCardAction(runtime, data, { authorize: async () => true });
+  const entry = async () => (await m.inspectLearning(actor)).profile.entries[0];
+  let e = await entry();
+  const rejected = await action(raw('keep', e.version, {}, 'bob'));
+  assert.equal(rejected.toast.type, 'error'); assert.equal(rejected.card, undefined);
+  assert.equal((await entry()).status, 'observed');
+  const kept = raw('keep', e.version);
+  assert.equal((await action(kept)).toast.type, 'success');
+  e = await entry(); assert.equal(e.status, 'confirmed');
+  assert.equal((await action(kept)).toast.type, 'success'); assert.equal((await entry()).version, e.version);
+  assert.equal((await action(raw('edit', 1, { content: '旧表单' }))).toast.type, 'error');
+  assert.equal((await action(raw('edit', e.version, { content: '先解释术语，再给例子。', conditions: '学习新领域时', exceptions: '已有背景时直接展开' }))).toast.type, 'success');
+  e = await entry(); assert.equal(e.content, '先解释术语，再给例子。'); assert.equal(e.conditions, '学习新领域时');
+  assert.equal((await action(raw('discard', e.version))).toast.type, 'success');
+  assert.equal((await entry()).status, 'withdrawn');
+  // Simulate a crash after the memory mutation but before the callback receipt.
+  const receiptPath = join(runtime.config.storageDir, 'memory-review-cards', `${delivery.memoryReview.key}.json`);
+  const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+  const lastEvidence = (await entry()).evidence.at(-1);
+  await writeFile(receiptPath, JSON.stringify({ ...receipt, applied: null, pending: { signature: receipt.applied, seq: lastEvidence.seq } }));
+  assert.equal((await action(raw('discard', e.version))).toast.type, 'success');
+  assert.equal((await entry()).version, e.version + 1, 'uncertain acknowledgement must not duplicate a mutation');
+  const deferred = await m.applyLearningUpdates({ ...actor, updates: [{ ...habit, key: 'deferred-example', deferReview: true }], sources: [{ sessionId: 'session', runId: original.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
+  assert.equal(deferred.promotedCount, 1);
+  assert.equal((await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview).length, 1, 'deferred observations do not publish');
+  const deferredEntry = (await m.inspectLearning(actor)).profile.entries.find(x => x.key === 'deferred-example');
+  await m.applyLearningUpdates({ ...actor, updates: [{ key: deferredEntry.key, kind: 'habit', action: 'propose', expectedVersion: deferredEntry.version, question: '以后这样解释，可以吗？', evidence: habit.evidence }], sources: [{ sessionId: 'session', runId: original.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
+  assert.equal((await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview).length, 2, 'explicit later proposal publishes the deferred memory');
+
+  assert.equal(JSON.stringify(await requests.byRunId(original.runId)), originalState, 'card interaction must not change the original request, queue input, or await an answer');
+  const prompt = await buildPersonalMemoryConversationContext({ ...actor, sourceContext: { connector: 'feishu' } });
+  assert.match(prompt, /Independent memory review cards are enabled/); assert.doesNotMatch(prompt, /no separate private message, card/);
+  await updateAuthDocument(doc => { doc.people[0].preferences.personalMemory.enabled = false; });
+  assert.equal((await action(raw('keep', (await entry()).version))).toast.type, 'error', 'pause applies to old cards too');
+  assert.equal((await sendMemoryReviewCard(runtime, delivery)).skipped, true, 'pause skips pending delivery without a new attention message');
+  console.log('memory cards: independent outbox, readback, owner, keep/edit/discard, stale version and retries passed');
+} finally { await rm(home, { recursive: true, force: true }); }
