@@ -18,7 +18,7 @@ try {
   await writeFile(join(memoryDir, 'learning-policy.json'), JSON.stringify({ version: 1, enabled: true, profiles: true, personIds: ['person_alice'], reviewCardPersonIds: ['person_alice'] }));
   const m = await import('../chat/memory-learning.mjs');
   const { requests } = await import('../chat/requests.mjs');
-  const { sendMemoryReviewCard, handleMemoryReviewCardAction } = await import('../connectors/feishu/memory-review-cards.mjs');
+  const { buildMemoryReviewCard, sendMemoryReviewCard, handleMemoryReviewCardAction } = await import('../connectors/feishu/memory-review-cards.mjs');
   const { buildPersonalMemoryConversationContext } = await import('../chat/personal-memory-conversation.mjs');
   const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
   const actor = { personId: 'person_alice', identityId: 'identity_alice', authDocument: await loadAuthDocument({ persistMigration: false }) };
@@ -33,9 +33,9 @@ try {
   const deliveries = (await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview);
   assert.equal(deliveries.length, 1);
   const delivery = deliveries[0];
-  let created = 0, patched = 0;
+  let created = 0, patched = 0, rendered, patchFails = false;
   const app = { reply: async () => { created++; return { code: 0, data: { message_id: 'card', thread_id: 'thread' } }; },
-    patch: async () => { patched++; return { code: 0 }; }, get: async () => ({ code: 0, data: { items: [{ message_id: 'card', chat_id: 'chat', msg_type: 'interactive' }] } }) };
+    patch: async args => { patched++; if (patchFails) throw Error('provider unavailable'); rendered = JSON.parse(args.data.content); return { code: 0 }; }, get: async () => ({ code: 0, data: { items: [{ message_id: 'card', chat_id: 'chat', msg_type: 'interactive' }] } }) };
   const runtime = { config: { storageDir: join(home, 'connector'), sourceRouteId: 'fixture' }, appClient: { im: { v1: { message: app } } } };
   await sendMemoryReviewCard(runtime, delivery);
   await sendMemoryReviewCard(runtime, delivery);
@@ -43,19 +43,50 @@ try {
   const raw = (action, version, form = {}, open_id = 'alice') => ({ header: { event_id: 'event' }, event: {
     context: { open_message_id: 'card', open_chat_id: 'chat' }, operator: { open_id, tenant_key: 'tenant' },
     action: { value: { namespace: 'memory-review', key: delivery.memoryReview.key, action, version }, form_value: form } } });
-  const action = data => handleMemoryReviewCardAction(runtime, data, { authorize: async () => true });
+  // Run callbacks through the same SDK normalization as the live connection.
+  const { EventDispatcher } = await import('@larksuiteoapi/node-sdk');
+  const dispatcher = new EventDispatcher({}).register({ 'card.action.trigger': data => handleMemoryReviewCardAction(runtime, data, { authorize: async () => true }) });
+  const action = data => dispatcher.invoke({ ...data, schema: '2.0', header: { ...data.header, event_type: 'card.action.trigger' } }, { needCheck: false });
   const entry = async () => (await m.inspectLearning(actor)).profile.entries[0];
   let e = await entry();
   const rejected = await action(raw('keep', e.version, {}, 'bob'));
   assert.equal(rejected.toast.type, 'error'); assert.equal(rejected.card, undefined);
   assert.equal((await entry()).status, 'observed');
+  const compact = buildMemoryReviewCard(delivery.memoryReview, e);
+  assert.equal(compact.body.elements.filter(x => x.tag === 'markdown').length, 1);
+  assert(!JSON.stringify(compact).includes('input'), 'default view has no hidden form or scope text');
+  assert(!JSON.stringify(compact).includes(e.conditions));
+  const opened = await action(raw('open_edit', e.version));
+  assert.equal(opened.toast.type, 'success');
+  assert.deepEqual(rendered, opened.card.data, 'message API persists the same visible card as the callback');
+  const formView = rendered.body.elements.find(x => x.tag === 'form');
+  assert(formView.elements.some(x => x.name === 'conditions' && x.default_value === e.conditions));
+  assert(formView.elements.some(x => x.name === 'save_memory' && x.form_action_type === 'submit'));
+  assert(formView.elements.every(x => x.tag !== 'collapsible_panel'), 'submit is directly inside the form');
+  await action(raw('cancel_edit', e.version));
+  assert.equal((await entry()).version, e.version, 'editing and cancelling do not mutate memory');
+  assert(!JSON.stringify(rendered).includes('input'));
   const kept = raw('keep', e.version);
   assert.equal((await action(kept)).toast.type, 'success');
   e = await entry(); assert.equal(e.status, 'confirmed');
+  assert.match(rendered.header.title.content, /已保留/);
   assert.equal((await action(kept)).toast.type, 'success'); assert.equal((await entry()).version, e.version);
   assert.equal((await action(raw('edit', 1, { content: '旧表单' }))).toast.type, 'error');
   assert.equal((await action(raw('edit', e.version, { content: '先解释术语，再给例子。', conditions: '学习新领域时', exceptions: '已有背景时直接展开' }))).toast.type, 'success');
   e = await entry(); assert.equal(e.content, '先解释术语，再给例子。'); assert.equal(e.conditions, '学习新领域时');
+  assert.match(rendered.header.title.content, /已保存修改/);
+  assert(!JSON.stringify(rendered).includes('input'), 'save returns to compact summary');
+  await sendMemoryReviewCard(runtime, delivery);
+  assert.match(rendered.header.title.content, /已保存修改/, 'delivery refresh preserves saved status');
+  const retry = raw('edit', e.version, { content: e.content, conditions: e.conditions, exceptions: e.exceptions });
+  patchFails = true;
+  const failedRefresh = await action(retry);
+  assert.match(failedRefresh.toast.content, /已保存.*刷新失败/);
+  const savedVersion = (await entry()).version;
+  patchFails = false;
+  assert.equal((await action(retry)).toast.type, 'success');
+  assert.equal((await entry()).version, savedVersion, 'refresh retry must not repeat the successful save');
+  e = await entry();
   assert.equal((await action(raw('discard', e.version))).toast.type, 'success');
   assert.equal((await entry()).status, 'withdrawn');
   // Simulate a crash after the memory mutation but before the callback receipt.

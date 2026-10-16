@@ -119,7 +119,7 @@ try {
   const localRoot = await input('local-root', '调查另一事项', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
   const statusInput = await input('status-input', '目前处理到哪了', { routingPilotMainline: true, routingPilotMainlineProtocol: 2,
     sourceDelivery: { ...origin, target: { ...origin.target, messageId: 'status-message' } } });
-  const status = await requests.mutate(statusInput.key, current => ({ ...current, nativeDispatchRunId: localRoot.runId }));
+  const status = await requests.mutate(statusInput.key, current => ({ ...current, nativeDispatchRunId: localRoot.runId, nativeReceipt: { accepted: true } }));
   const replyPacket = { text: '研究已接收，正在对应话题继续。' };
   const localReply = await replyGroupInput(status, replyPacket);
   assert.equal(localReply.state, 'queued');
@@ -135,11 +135,12 @@ try {
   const missing = await input('unhandled', '独立问题', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
   const missingResult = pilotInputResult(missing, { id: localRoot.runId, state: 'completed' });
   assert.equal(missingResult.state, 'failed');
-  assert.match(missingResult.payload.text, /尚未完成/);
+  assert.match(missingResult.error, /尚未完成/);
+  assert.equal(missingResult.payload.text, '', 'internal missing coverage must not create a group reply');
   await assert.rejects(replyGroupInput(status, { ...replyPacket, requestIds: ['status-input', 'unhandled'] }), /active pilot execution|different reply/);
   const combinedA = await input('combined-a', '补充 A', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
   const combinedB = await input('combined-b', '补充 B', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
-  const b = await requests.mutate(combinedB.key, current => ({ ...current, nativeDispatchRunId: combinedA.runId }));
+  const b = await requests.mutate(combinedB.key, current => ({ ...current, nativeDispatchRunId: combinedA.runId, nativeReceipt: { accepted: true } }));
   const combinedPacket = { text: '两个补充都已纳入。', requestIds: ['combined-a', 'combined-b'] };
   await replyGroupInput(b, combinedPacket); await replyGroupInput(b, combinedPacket);
   assert.equal((await requests.get(combinedA.key)).deliveries.length, 1);
@@ -166,7 +167,7 @@ try {
     options: { ...current.options, sourceContext: { ...current.options.sourceContext,
       feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } },
     replyPlacement: openedPlan, deliveries: [{ ...openedPlan, kind: 'content', surfaceKind: 'opening', text: '开始核对。' }] }));
-  const added = await requests.mutate(supplement.key, current => ({ ...current, nativeDispatchRunId: opened.runId }));
+  const added = await requests.mutate(supplement.key, current => ({ ...current, nativeDispatchRunId: opened.runId, nativeReceipt: { accepted: true } }));
   const joint = { text: '这个案例对应表格中的验收依据，仍缺最终结果。', requestIds: ['opened', 'supplement'] };
   await replyGroupInput(added, joint); await replyGroupInput(added, joint);
   assert.equal((await requests.get(opened.key)).deliveries.length, 2);
@@ -183,7 +184,7 @@ try {
   // Simulate a crash after the packet reservation but before member writes.
   const recoverA = await input('recover-a', '同一件事 A', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
   const recoverB = await input('recover-b', '同一件事 B', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
-  await requests.mutate(recoverB.key, current => ({ ...current, nativeDispatchRunId: recoverA.runId }));
+  await requests.mutate(recoverB.key, current => ({ ...current, nativeDispatchRunId: recoverA.runId, nativeReceipt: { accepted: true } }));
   const reserved = await requests.mutate(recoverA.key, current => ({ ...current, mainlineReplyPlans: [{
     requestIds: ['recover-a', 'recover-b'], ownerRequestId: 'recover-a', payload: { text: '合并答复。', attachments: [] },
   }] }));

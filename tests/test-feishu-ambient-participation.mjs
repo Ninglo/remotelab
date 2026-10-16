@@ -28,7 +28,7 @@ try {
   const settings = resolveFeishuGroupSettings(config, base);
   assert.equal(settings.responseMode, 'all');
   assert.equal(settings.replyMode, 'inline');
-  assert.match(settings.systemPrompt, /feishu-reply:thread/);
+  assert.match(settings.systemPrompt, /feishu-response:/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' }).responseMode, 'mention_only');
   const fallback = resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' });
   assert.equal(fallback.participationMode, undefined);

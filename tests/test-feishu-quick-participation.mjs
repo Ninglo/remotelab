@@ -234,7 +234,7 @@ try {
     messageText: '测试下表情能不能正常回复，茵蒂克丝回复个表情就行' });
   assert.deepEqual(mentionedReactions.slice(1), ['THINKING']);
   const prompt = resolveFeishuGroupSettings(runtime.config, base).systemPrompt;
-  assert.match(prompt, /<feishu-reaction emoji=/);
+  assert.match(prompt, /feishu-response:/);
   assert.match(prompt, /Keep this timeline for observing the discussion/,
     'ambient timeline guard applies even without groupFeed');
   assert.doesNotMatch(prompt, /connector call feishu:react_to_source/);

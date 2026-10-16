@@ -551,11 +551,14 @@ No project report is loaded into this call; `dailyReportMemory` is retained as
 compatible configuration but no longer feeds the reaction model. See the
 [retired report input](feishu-daily-report-memory.md).
 
-Main-Session final reaction directives are extracted from the original final
-message, including its latest provider revision, before private blocks are
-removed from the display projection. This applies to both reaction-only and
-text-plus-reaction answers; replay retains one stage-2 delivery and never
-prints the private directive.
+Main-Session responses use one decision containing reply placement, optional reaction,
+answered input IDs and, for deliberate silence, a reason. Native final answers and
+`work reply` use the same parser and durable response publisher. Reaction controls
+are read before display cleanup; combined replies retain the selected reaction.
+Text follows the selected topic, while the reaction targets the owner input's
+original message. Retries recover the same decision and outbox rather than sending
+another answer. Quick Jev feedback remains a separate optional stage-1 receipt;
+the main model's stage-2 decision takes precedence.
 
 `jevReactions` enables this Jev fast path only in explicitly selected groups.
 Groups without this flag, legacy `quickReactions`, topic replies, and explicit
@@ -577,12 +580,29 @@ accepted handoffs and ongoing work must be reused, not answered or started twice
 Disabling automatic work-Session routing does not disable choosing a Thread reply.
 
 Newly admitted ambient-group inputs carry `feishuReplyPlacementVersion: 1`.
-Before the first visible reply, the Harness must explicitly prefix its output
-with `<private>feishu-reply:inline</private>` or
-`<private>feishu-reply:thread</private>`, after any optional reaction directive.
-A reaction alone never selects placement. Existing topics and already queued
-reply destinations remain authoritative; silence and reaction-only outcomes
-need no new destination.
+Before the first visible reply, the Harness selects placement in a hidden decision:
+
+```text
+<private>feishu-response:{"replyMode":"thread"}</private>
+```
+
+For a final covering related accepted inputs, include their actual IDs and an
+optional reaction in that same decision, followed by the answer:
+
+```text
+<private>feishu-response:{"replyMode":"thread","requestIds":["feishu:original","feishu:supplement"],"reaction":"Get"}</private>
+The answer to the original question and its supplement.
+```
+
+`requestIds` defaults to the root input for a single-input answer. In the existing
+per-input mainline trial, terminal publication validates that all listed inputs
+belong to the same accepted execution and group, then reserves content, placement,
+reaction and coverage together. It does not require a later bookkeeping tool call.
+An unrelated, transferred or already answered input cannot be claimed. Omitting an
+input never means it was answered. Existing topics and already chosen destinations
+remain authoritative; reactions and deliberate silence do not choose a location.
+Old `feishu-reply` and `feishu-reaction` prefixes are parsed by compatibility
+adapters, without replaying historical deliveries or changing group activation.
 
 Missing placement retains the substantive reply instead of silently publishing
 it inline. A still-running native execution receives at most one structural
@@ -596,12 +616,16 @@ inline placement. Old accepted inputs keep their original contract; new inputs
 cannot join an incompatible old mainline execution. A suppressed unplaced
 opening is not replayed after the choice is corrected.
 
-Related inputs can share one `work reply` packet with explicit `requestIds`.
-An opening/progress receipt does not prevent a combined final answer. The packet
-keeps the execution's selected destination and records coverage for every input;
-recovery sends only one answer. Per-input accountability does not require one
-message per input. Whether the content actually answers the common question
-remains the Harness's responsibility and needs semantic evaluation separately.
+For an immediate answer while work continues, `work reply` accepts the same
+`text`, `requestIds`, `replyMode`, `reaction` and `noTextReason` fields. It is an
+alternate entrance to the response publisher, not a second acknowledgement step.
+Never send the same answer through both the tool and a native final. An opening
+or progress receipt does not prevent a combined answer. Content, reaction and
+input coverage recover from the original durable reservation after interruption.
+Attachments follow the same selected location. A no-text decision records its
+reason without creating a status paragraph. Invalid fields or input ownership
+retain the answer in history and an explicit error; no model guesses its coverage.
+Missing coverage remains incomplete internally; it does not authorize a transport-generated group reply. In particular, an empty final in a human-to-human discussion must not trigger a missing-bookkeeping acknowledgement for a steered input. Explicit no-text decisions record successful handling; an unmarked omission does not. The Harness still judges whether the answer actually addresses each input.
 
 Confirmed sync returns retain the source execution's selected destination;
 late callbacks do not select a new location. Their cards show a short original
@@ -631,8 +655,8 @@ it answers or work it undertakes, its instructions require a fitting final
 reaction; discussion needing no reaction can deliberately omit one. This is a
 Harness responsibility, not another classifier or an output-blocking gate.
 
-Prefix the final answer with
-`<private><feishu-reaction emoji="THANKS"/></private>` to express that choice.
+Set `reaction` in the final response decision to express that choice. The old
+`<private><feishu-reaction emoji="THANKS"/></private>` prefix remains compatible.
 Confirming the same emoji reuses the Bot receipt without another provider create;
 a changed choice replaces only its own recorded outcome after the new reaction
 succeeds. The main choice takes precedence over late quick feedback, including
@@ -640,7 +664,7 @@ when it keeps the same emoji. Retries preserve the receipt. There is no automati
 emoji fallback for an omitted directive, no extra acknowledgement paragraph, and
 no second task start on Jev completion or failure. Status or factual reactions
 require evidence, and a reaction alone cannot replace a result after doing work.
-Missing credentials produce no reaction and never fall back to TypeSafe.
+Missing credentials produce no reaction and do not invoke another provider.
 The deadline remains 1,600 ms; verify real latency and Chinese examples before
 claiming the provider is usable on an instance. The request has one named
 `choice` question with social emoji values and `none`; a selected emoji needs

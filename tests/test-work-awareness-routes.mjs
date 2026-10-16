@@ -147,7 +147,7 @@ try {
   const { record: followInput } = await requests.accept({ sessionId: 'a', requestId: 'pilot-follow', text: '处理到哪了',
     deliveryPlan: { ...plan, target: { ...plan.target, messageId: 'follow-anchor' } },
     options: { ...mainInput.options, viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' } });
-  await requests.mutate(followInput.key, value => ({ ...value, nativeDispatchRunId: mainInput.runId }));
+  await requests.mutate(followInput.key, value => ({ ...value, nativeDispatchRunId: mainInput.runId, nativeReceipt: { accepted: true } }));
   const replyBody = { runId: mainInput.runId, sourceRequestId: followInput.requestId, text: '正在研究话题处理。' };
   assert.equal((await call('/api/work-awareness/reply', replyBody, { authKind: 'web', personId: 'person_b' })).status, 403);
   assert.equal((await call('/api/work-awareness/reply', { ...replyBody, sourceRequestId: 'human' })).status, 400,

@@ -20,7 +20,7 @@ export async function notifyMissingFeishuReplyPlacement(record, { store, run, ma
   if (!claimed) return;
   const input = {
     id: `feishu-placement:${run.id}`, continuationOnly: true, referenceOnly: true,
-    text: 'RemoteLab delivery protocol error (not a new human request): your reply has no explicit Feishu placement and has not been sent. In this same execution, select <private>feishu-reply:inline</private> for a brief group answer or <private>feishu-reply:thread</private> for a distinct substantive discussion, after any optional reaction directive and before the next visible reply. Reuse completed work and incorporate related supplementary inputs; do not rerun tools or repeat business actions. No other model has chosen the location for you.',
+    text: 'RemoteLab delivery protocol error (not a new human request): your reply has no explicit Feishu placement and has not been sent. In this same execution, use the hidden feishu-response decision with replyMode inline for a brief group answer or thread for a distinct substantive discussion before the next visible reply. Keep optional reaction and answered requestIds in that same decision. Reuse completed work and incorporate related supplementary inputs; do not rerun tools or repeat business actions. No other model has chosen the location for you.',
   };
   let feedback;
   try {

@@ -76,7 +76,7 @@ try {
   const branch = (id, dependsOn = []) => ({ id, name: id, task: '只分析已有证据 ' + id, writeScope: '只读', dependsOn });
   const propose = async (id, branches) => {
     const r = await input(id, '请先提出分工，等我选择');
-    const { plan } = await act(r, { action: 'propose', goal: id, context: '原讨论已确定只读，不启动新业务；来源原话题。', reason: '独立分析后汇总', branches }, api);
+    const { plan } = await act(r, { action: 'propose', branchSurface: 'feishu-thread', goal: id, context: '原讨论已确定只读，不启动新业务；来源原话题。', reason: '独立分析后汇总', branches }, api);
     return { r, plan };
   };
   const approve = async (p, selected = p.branches.map(b => b.id)) => { const result = await act(await input('approve-' + p.id, '按刚才方案开这些分支'), {
@@ -195,7 +195,7 @@ try {
   assert.equal((await state(control.id)).state, 'cancelled'); assert.equal(reviews, reviewBefore, 'whole-plan stop cannot wake the parent');
 
   const directInput = await input('direct', '按讨论确认的方案，只做资料整理，开始吧');
-  const directBody = { action: 'start', goal: '整理资料', context: '讨论原件和约束', reason: '已有明确开工决定', authorization: '原话明确要求开始', branches: [branch('a')] };
+  const directBody = { action: 'start', branchSurface: 'feishu-thread', goal: '整理资料', context: '讨论原件和约束', reason: '已有明确开工决定', authorization: '原话明确要求开始', branches: [branch('a')] };
   const direct = await act(directInput, directBody, api);
   assert.equal(direct.plan.branches[0].state, 'pending');
   const child = await findSessionMeta(direct.plan.branches[0].sessionId);
@@ -290,6 +290,62 @@ try {
   const legacyBranch = (await state(legacy.id)).branches[0];
   assert.equal((await findSessionMeta(legacyBranch.sessionId)).sourceId, 'chat', 'historical Web plans keep their original contract');
   assert.equal(legacyBranch.topicDeliveryId, undefined);
+
+  // Delegation keeps the human in the parent conversation, even when the
+  // accepted instruction came from Feishu. Only explicit conversation splits
+  // publish a new topic.
+  const silentInput = await input('silent-child', '把这部分放后台处理，结果回这里');
+  const silentBody = { ...directBody, goal: '后台分工' };
+  delete silentBody.branchSurface;
+  const silent = (await act(silentInput, silentBody, api)).plan;
+  assert.equal(silent.branchSurface, 'web-silent');
+  const silentBranch = silent.branches[0], silentSession = await findSessionMeta(silentBranch.sessionId);
+  assert.equal(silentSession.sourceId, 'chat');
+  assert.equal(silentSession.conversation, undefined);
+  assert.equal(silentBranch.topicDeliveryId, undefined);
+  assert.equal(silentBranch.state, 'running');
+  const silentRequest = await requests.byRequest(silentBranch.sessionId, silentBranch.requestId);
+  assert.equal(silentRequest.options.suppressSourceDelivery, true);
+  assert.equal(silentRequest.deliveryPlan, undefined);
+  await assert.rejects(act(silentInput, { ...silentBody, branchSurface: 'feishu-thread' }, api), /preserve branchSurface/);
+  await assert.rejects(act(await input('invalid-surface'), { ...silentBody, branchSurface: 'automatic' }, api), /branchSurface/);
+  await mkdir(runDir(silentRequest.runId), { recursive: true });
+  await writeFile(join(runDir(silentRequest.runId), 'native-question.json'), JSON.stringify(question));
+  const questionEvent = { messageKind: 'user_question', questionState: 'pending', questionId: question.id, nativeQuestion: question.question };
+  await forwardExecutionQuestions(silentRequest, [questionEvent, questionEvent]);
+  const forwarded = (await listSourceDeliveries({ sessionId: 'source' })).filter(d => d.responseId?.startsWith('plan-question:') && d.text.includes('选哪份已有材料'));
+  assert.equal(forwarded.length, 1, 'only the silent child question is relayed, exactly once');
+  assert.equal(forwarded[0].target.rootId, 'root');
+  const createdBeforeAnswer = creations;
+  await act(await input('silent-answer', '用甲'), { action: 'answer', planId: silent.id, branchId: 'a', questionId: question.id, text: '甲' }, api);
+  const answerRecord = (await requests.active()).find(r => r.sessionId === silentBranch.sessionId && r.requestId.startsWith('plan-answer:'));
+  assert(answerRecord.options.suppressSourceDelivery);
+  assert.equal(creations, createdBeforeAnswer);
+  await complete(silent, 'a');
+  const firstReviewId = (await state(silent.id)).reviewRequestId;
+  const firstReview = await requests.byRequest('source', firstReviewId);
+  await requests.settle(firstReview.key, { state: 'completed', payload: { text: '第一轮汇总' } }, []);
+  await finish(await requests.get(firstReview.key), { id: firstReview.runId }, api);
+  const followUp = await input('silent-follow-up', '按刚才补充继续完成');
+  const continuation = { action: 'continue', planId: silent.id, expectedVersion: (await state(silent.id)).version, selected: ['a'], text: '按人的新补充继续完成原工作' };
+  await act(followUp, continuation, api);
+  const continued = (await state(silent.id)).branches[0];
+  assert.equal(continued.sessionId, silentBranch.sessionId);
+  assert.equal(continued.previousResults[0].state, 'completed');
+  assert.equal(creations, createdBeforeAnswer, 'follow-up reuses the same child');
+  const continuedRequest = await requests.byRequest(continued.sessionId, continued.requestId);
+  assert(continuedRequest.options.suppressSourceDelivery);
+  const submitsBeforeRetry = submits;
+  await act(followUp, continuation, api);
+  assert.equal(submits, submitsBeforeRetry);
+  await finish(await requests.get(silentRequest.key), { id: silentRequest.runId }, api);
+  assert.equal((await state(silent.id)).branches[0].state, 'running', 'old completion cannot close follow-up');
+  await complete(silent, 'a');
+  assert.notEqual((await state(silent.id)).reviewRequestId, firstReviewId, 'follow-up returns a fresh parent review');
+  await finish(await requests.get(firstReview.key), { id: firstReview.runId }, api);
+  assert.equal((await state(silent.id)).state, 'reviewing', 'late old review cannot close the new round');
+  await assert.rejects(act(await input('continue-stopped'), { ...continuation, planId: stopped.plan.id,
+    expectedVersion: (await state(stopped.plan.id)).version }, api), /Continue needs/);
 
   await mutateSessionMeta('source', s => { s.archived = true; return true; });
   const frozen = creations; await recoverExecutionPlans(api); assert.equal(creations, frozen, 'archived parent cannot be revived by recovery');
