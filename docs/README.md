@@ -24,6 +24,8 @@ Read these first when you need the current truth:
 
 ## Documentation delivery
 
+[受控原文读取与本机审计](protected-source-reading.md)说明外部原文快照的明确授权、逐次读取留痕和日志故障拒绝提供内容；也明确保留 sudo 阶段的旁路与本机日志可被管理员修改的边界。
+
 The [Agent dashboard](monitoring.md#agent-今日与七日概览2026-10-14) shows 05:00 Beijing business-day usage, context injection, first-Session-run and final-delivery trends, with authenticated source links and explicit sample coverage. Its collapsed document list distinguishes current original character counts from actual injected fragments and explains startup, conditional and on-demand loading. The main overview now uses a compact summary and detail drawer; account snapshot exports open its account tab and retain the frozen source data.
 
 [Prompt 安全审阅](monitoring.md#prompt-安全审阅) lives in Monitor → Prompt 安全: retained submission sources, full historical/incremental content review with exact deduplication, explicit gaps/failures, redacted evidence and measured Luna usage. It reports suggestions without applying remediation.
