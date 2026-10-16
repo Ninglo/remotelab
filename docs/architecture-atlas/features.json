@@ -961,6 +961,7 @@
             "docs/monitoring.md",
             "scripts/monitoring-alerts.mjs",
             "scripts/monitoring-report.mjs",
+            "lib/monitoring-snapshot.mjs",
             "scripts/project-inspection-plan.mjs",
             "scripts/check-todo-coverage.mjs",
             "docs/feishu-project-links.md",

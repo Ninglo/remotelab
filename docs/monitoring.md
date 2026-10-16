@@ -1,6 +1,10 @@
 # Operations overview
 
-Monitor Overview (`?tab=tasks&monitor=overview`) keeps the existing Session area and its visual style, followed only by account balances. Experiment configuration, inspection-scope/cost, disk and API panels are not displayed. Automations, usage analysis, feedback and their controls retain their existing separate views. **Prompt 安全** (`?tab=tasks&monitor=security`) provides the separate authenticated prompt-risk review view described below. Removing overview panels does not stop observers, experiments, alerts or recovery.
+Monitor Overview (`?tab=tasks&monitor=overview`) displays running/active Session counts, all seven daily metrics and seven-day charts, the timing breakdown, context sources and account balances directly on the page. There is no summary-only card or details drawer. The day boundary is stated once above the charts (Beijing time, 05:00). Daily sample tables and statistical definitions remain available beside their data; context sources start expanded and refresh preserves the reader’s choice. Account quotas and reset times share one table, replacing the duplicate expandable account cards.
+
+The former Test preview has been retired after its MukaHub migration; old `monitor=test` bookmarks resolve to Overview without loading a second dashboard. Shared metric collection and Hub snapshot export are retained.
+
+Usage analysis remains a separate view for period/Session filters and execution, delivery and usage breakdowns. Its selected observation interval is distinct from the Overview’s fixed business day. Automations, feedback and **Prompt 安全** retain their separate views and controls. Removing the Test UI does not stop observers, alerts, recovery or external synchronization.
 
 ## Prompt 安全审阅
 
@@ -672,11 +676,11 @@ Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-
 
 页面仍复用 `/api/monitoring/sessions?days=1|7|30&compact=1&dashboard=1`。账本一次扫描同时生成所选窗口和七日数据；七日投影独立缓存 60 秒，最多 5,000 个 Run、256 MiB 冷读、单文件 2 MiB，保留最多 20,000 个文件版本的纯统计投影。原诊断读取器的 1,000 Run／64 MiB 限制不变。统计中显示截断、缺失与实际覆盖，不读取完整聊天正文或启动模型。查看原文只在点击时进行。Hub 接入应复用相同 schema 和渲染资产，仅向已认证用户提供必要的汇总与账号窗口，不复制对话正文或实例凭据。
 
-### Test 同步预览
+### 已撤下的 Test 同步预览
 
-监控器新增独立 `Test` 标签（`?tab=tasks&monitor=test`），集中展示未来计划同步到 Muka Hub 的范围：会话数量、七项今日指标与七日趋势、可折叠注入来源、账号额度及重置时间。复用现有指标和账号渲染，不包含磁盘、服务、API、自动化和旧 Session 明细。这里只展示当前 RemoteLab 数据，不修改或部署 Muka Hub。
+Test 曾作为 MukaHub 移植预览，与正式总览使用相同的数据和组件。迁移完成后，2026-10-16 撤下重复标签、面板和独立刷新路径；旧链接回到正式总览。总览保留七项指标、来源说明和账户详情；MukaHub 同步沿原快照通路运行。
 
-平均值标题直接注明“每次执行”或“新 Session 首次执行”，每张卡解释分母；首次执行指标仍是所有有效新 Session 首次执行记录的平均。用量含前后台，注入只统计前台，交付耗时当前只统计有最终正文回执的飞书前台执行。Test 独立刷新两项数据，单项读取失败保留另一项结果；刷新保留展开选择。
+平均值标题注明“每次执行”或“新 Session 首次执行”，每张卡解释分母。用量含前后台，注入只统计前台，交付耗时只统计有最终正文回执的飞书前台执行。指标与账户独立读取，单项失败不影响另一项；刷新保留展开选择。
 
 ### 时长阶段切换与展示范围（2026-10-14）
 
@@ -684,11 +688,11 @@ Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-
 
 总耗时沿原最终正文回执口径。阶段使用同一条已完成飞书执行的 acceptedAt、startedAt、completedAt、最终正文全部 deliveredAt；四个时间齐全且有序才纳入阶段统计。阶段样本的三段相加等于其总耗时，阶段样本数可能小于原总耗时样本数。没有时间记录保留空缺，运行结束不表示工作验收完成。所有阶段按请求受理所在的北京时间 05:00 统计日归集，首次执行继续严格限定 Session 历史首次执行。
 
-总览在会话概览下方只保留账户余额，移除单独的 token 总数板块；实验状态、API、磁盘和检查范围板块不展示。旧具体会话卡片、异常统计和会话列表不再渲染。Test 保留既有同步预览及同一套时长切换、账户余额展示。
+总览在会话概览下方只保留账户余额，移除单独的 token 总数板块；实验状态、API、磁盘和检查范围板块不展示。旧具体会话卡片、异常统计和会话列表不再渲染。当时 Test 复用同一展示，现已撤下。
 
 ### 首次回复与各环节用时（2026-10-14）
 
-总览与 Test 共用第七张“平均首次响应时间”卡，从原始飞书消息的
+总览提供第七张“平均首次响应时间”卡，从原始飞书消息的
 `sourceContext.createTime`（毫秒）到第一条成功送达的文字回复计时，包含开场、进展、
 答复、提问和最终结果；排除表情、自动受理通知、附件及其他请求的回执。
 不限定新会话，按消息发送所在的北京时间 05:00 统计日归集。缺少发送时间、
@@ -775,11 +779,13 @@ Test 默认仅展示一张 Agent 监控摘要卡：运行中会话、今日 toke
 
 手机账户表将最近观测时间放到账户名称下面，在同一屏内保留账户、状态和额度三列；暗色模式对可用与耗尽文字单独提高对比度。
 
-### 正式总览采用紧凑布局（2026-10-14）
+### 正式总览完整展示（2026-10-16）
 
-正式监控总览与 Test 复用同一横向概览及详情抽屉：首页展示运行中会话、今日 token、平均首次响应和账户额度，详情按用量、响应与交付、上下文注入、账户切换。正式总览不再单列一整屏图表和账户板块；顶部明确今日 05:00 日界及近七日趋势，原用量分析页继续提供期间筛选。两个入口独立保留各自的展开、指标和阶段选择，控件 ID 不重复。继续复用原两个数据源，单项失败不影响另一项；无新增采集、账户调度或 Hub 部署。本条取代前文“正式总览维持原布局”的范围说明。
+根据用户反馈，总览直接展示完整指标，不再以四项概览加抽屉收纳详情。运行中与今日活跃会话、七项今日指标和趋势、今日各环节用时、上下文来源、账户额度在同一页面阅读。沿用既有响应式网格，手机单列；时长阶段、每日明细和来源展开状态刷新后保留。
 
-日报截图工具同步从总览的账户详情中提取截图，仍使用本轮冻结的账户数据，不上传或发送额外消息。
+撤下与总览重复的 Test 标签、面板与独立加载路径，旧 Test 链接回到总览。账户重置时间并入额度表，不再另列同一批账户卡片。用量分析仍负责期间和会话筛选，其观察时段与总览的固定统计日不同。继续复用原两个数据源，单项失败不影响另一项；采集、告警、同步和 MukaHub 页面均不因界面调整改变。此条取代2026-10-14的紧凑总览方案。
+
+日报截图工具继续从总览的账户区提取截图，使用本轮冻结的账户数据，不增加上传或消息发送。
 
 ### 预警卡片与处理历史（2026-10-15）
 

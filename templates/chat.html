@@ -117,11 +117,9 @@
           <button type="button" role="tab" id="monitoringAutomationsTab" aria-controls="monitoringAutomations" aria-selected="false" tabindex="-1" data-i18n="monitoring.automations">Automations</button>
           <button type="button" role="tab" id="monitoringFeedbackTab" aria-controls="monitoringFeedback" aria-selected="false" tabindex="-1" data-i18n="feedback.title">Feedback and improvement</button>
           <button type="button" role="tab" id="monitoringSecurityTab" aria-controls="monitoringSecurity" aria-selected="false" tabindex="-1">Prompt 安全</button>
-          <button type="button" role="tab" id="monitoringTestTab" aria-controls="monitoringTest" aria-selected="false" tabindex="-1">Test</button>
         </nav>
         <section id="monitoringOverview" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringOverviewTab" hidden>
           <div class="monitoring-toolbar">
-            <label><span data-i18n="monitoring.period">Usage period</span> <select id="monitoringPeriod"><option value="1" selected data-i18n="monitoring.day">Last 24 hours</option><option value="7" data-i18n="monitoring.week">Last 7 days</option><option value="30" data-i18n="monitoring.month">Last 30 days</option></select></label>
             <button class="task-center-icon-btn" id="monitoringRefresh" type="button" data-icon="refresh" title="Refresh overview" aria-label="Refresh overview" data-i18n-title="monitoring.refresh" data-i18n-aria-label="monitoring.refresh"></button>
           </div>
           <div class="monitoring-summary-panel">
@@ -137,14 +135,6 @@
             <button class="task-center-action" id="promptReviewRefresh" type="button">刷新进度</button>
           </div>
           <div id="promptReviewContent" aria-live="polite"><p class="monitoring-note">正在读取审阅记录…</p></div>
-        </section>
-        <section id="monitoringTest" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringTestTab" hidden>
-          <div class="monitoring-toolbar">
-            <p class="monitoring-note">未来同步到 Muka Hub 的内容预览 · 当前展示 RemoteLab 数据</p>
-            <button class="task-center-icon-btn" id="monitoringTestRefresh" type="button" data-icon="refresh" title="刷新 Test" aria-label="刷新 Test"></button>
-          </div>
-          <section class="monitoring-summary-panel"><h2>运行与用量</h2><div id="monitoringTestDashboard" aria-live="polite"><p class="monitoring-note">正在读取运行指标…</p></div></section>
-          <section class="monitoring-summary-panel"><div id="monitoringTestAccounts" aria-live="polite"><p class="monitoring-note">正在读取账号额度…</p></div></section>
         </section>
         <section id="monitoringUsage" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringUsageTab" hidden>
           <div class="monitoring-toolbar">
