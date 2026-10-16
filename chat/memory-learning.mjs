@@ -32,7 +32,7 @@ export async function loadLearningPolicy(memoryDir = MEMORY_DIR) {
       throw new Error('learning-policy.json requires explicit personIds');
     }
     return { enabled: true, profiles: policy.profiles === true, handbook: policy.handbook === true,
-      context: policy.context === true, personIds: policy.personIds };
+      context: policy.context === true, reviewCardPersonIds: Array.isArray(policy.reviewCardPersonIds) ? policy.reviewCardPersonIds.filter(id => policy.personIds.includes(id)) : [], personIds: policy.personIds };
   } catch (error) {
     if (error.code !== 'ENOENT') console.error(`[memory-learning] Policy disabled: ${error.message}`);
     return { enabled: false, readStatus: error.code === 'ENOENT' ? 'not-recorded' : 'unavailable' };
@@ -315,6 +315,13 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
         return { changed: true, path, id, version: entry.version, status: entry.status };
       }));
     } catch (error) { rejected.push({ key: update?.key, reason: error.message }); }
+  }
+  // Independent outbox only: never submit input to, wait on, or steer the source Run.
+  if (policy.reviewCardPersonIds?.includes(person) && personal.enabled && personal.conversational) {
+    try {
+      const { queueMemoryReviewCards } = await import('./memory-review-cards.mjs');
+      await queueMemoryReviewCards({ personId: person, identityId, results, updates, sources, memoryDir });
+    } catch (error) { rejected.push({ key: 'memory-review-card', reason: error.message, memorySaved: true }); }
   }
   return { promotedCount: results.filter(r => r.changed).length,
     promotedFiles: [...new Set(results.filter(r => r.changed).map(r => r.path))], results, rejected };
