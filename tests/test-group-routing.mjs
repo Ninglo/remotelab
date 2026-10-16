@@ -29,7 +29,8 @@ try {
   const { recordWorkInput } = await import('../chat/work-awareness.mjs');
   const { routeGroupWork, replyGroupInput, recoverPilotReplies, pilotInputResult, acceptGroupSync, completeGroupSync, validateGroupRethink, readGroupRoutingState, buildGroupRoutingContext } = await import('../chat/group-routing.mjs');
   const { routingPilotScope, isPilotInputSinceActivation } = await import('../lib/group-routing-pilot.mjs');
-  const { groupSyncReturnPlan } = await import('../chat/group-sync-presentation.mjs');
+  const { groupSyncReturnPlan, groupWorkHref } = await import('../chat/group-sync-presentation.mjs');
+  assert.match(groupWorkHref({ ...topic, target: { ...topic.target, threadId: 'omt_verified' } }, 'work'), /open_thread_id=omt_verified/);
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const options = { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a',
     sourceContext: { connector: 'feishu', chatId: 'pilot' }, sourceDelivery: origin };
@@ -212,7 +213,9 @@ try {
   assert.equal(out.deliveries[0].target.messageId, 'one');
   assert.match(out.deliveries[0].text, /新事实成立/);
   assert.equal(out.deliveries[0].foldedDetails.title, '同步复核结果');
-  assert.match(out.deliveries[0].foldedDetails.url, /open_thread_id=root/);
+  assert.match(out.deliveries[0].foldedDetails.url, /session=/);
+  assert.doesNotMatch(out.deliveries[0].foldedDetails.url, /open_thread_id=root/,
+    'a message root must never be passed off as a provider thread ID');
   assert.doesNotMatch(out.deliveries[0].text, /sync_[a-f0-9]+/);
   assert.match(await acceptGroupSync(human, manager), /复核结果/);
   await requests.settle(human.key, { state: 'completed' });
