@@ -55,7 +55,8 @@ try {
   const removal = runtime.removeQueued('session', 'last');
   const rejected = assert.rejects(removal, { code: 'REQUEST_NOT_QUEUED' }).then(() => { settled = true; });
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(settled, false, 'removal waits for in-flight scheduler preparation');
+  await rejected;
+  assert.equal(settled, true, 'a stale removal fails without waiting for preparation');
   unblock();
   await Promise.all([recovering, rejected]);
   assert.equal((await store.byRequest('session', 'last')).result, null, 'a stale click never cancels active work');

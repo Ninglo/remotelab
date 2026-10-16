@@ -90,7 +90,7 @@ import {
 } from '../connectors/feishu/quick-participation.mjs';
 import { createFeishuReadReactionStore, createFeishuOutcomeReactionStore } from '../connectors/feishu/read-reactions.mjs';
 import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../lib/feishu-reaction-catalog.mjs';
-import { sendNativeQuestionCard, handleNativeQuestionCardAction, withNativeQuestionCardLock } from '../connectors/feishu/native-question-cards.mjs';
+import { sendNativeQuestionCard, handleNativeQuestionCardAction } from '../connectors/feishu/native-question-cards.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
 import { createProjectSurface } from '../connectors/feishu/project-surface.mjs';
 import { summarizeFeishuReactionFeedback } from '../connectors/feishu/reaction-mute.mjs';
@@ -1583,7 +1583,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     let sent;
     try {
       sent = delivery.nativeQuestion
-        ? await withNativeQuestionCardLock(runtime, () => sendNativeQuestionCard(runtime, delivery))
+        ? await sendNativeQuestionCard(runtime, delivery)
         : delivery.kind === 'reaction'
         ? await outcomeReactionStore.apply(summary.messageId, delivery.emojiType,
           () => (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary, delivery.emojiType),

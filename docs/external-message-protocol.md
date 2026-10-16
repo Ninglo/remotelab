@@ -160,6 +160,14 @@ A connector has two independently recoverable jobs, not one long-lived function 
 5. An independent sender claims ready deliveries, formats and sends them, durably records the upstream receipt, then acknowledges the lease. It never waits for an individual AI run.
 6. After a restart, inbox processing and receipt/outbox processing resume from disk.
 
+Progress is driven by admission, execution-output and completion notifications,
+with bounded recovery checks for missed notifications. GET routes observe state;
+they do not finalize Runs or retry terminal hooks. The connector Inbox schedules
+failed attempts at their persisted deadline. Execution release, integration
+completion and upstream delivery are separate: a failed integration cannot hold
+the next execution, and an unknown send outcome cannot be blindly replayed.
+See [execution ownership](project-architecture.md#execution-ownership-and-asynchronous-progress).
+
 A protocol acknowledgement or optional “received” notice is not the final AI response. Failure of a decorative acknowledgement must not block admission.
 
 All connectors use this durable request/outbox contract. Feishu binds Sessions

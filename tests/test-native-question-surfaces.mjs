@@ -24,6 +24,22 @@ const rawAction = (value, fields = {}) => ({ header: { event_id: 'action-one' },
   action: { value: { namespace: 'native-question', ...identity, ...value }, form_value: fields },
 } });
 try {
+  let releaseSlow, slowEntered;
+  const slowGate = new Promise(resolve => { releaseSlow = resolve; });
+  const enteredSlow = new Promise(resolve => { slowEntered = resolve; });
+  const independentRuntime = { ...runtime, config: { ...runtime.config, storageDir: join(root, 'independent') },
+    appClient: { im: { v1: { message: {
+      reply: async ({ path }) => {
+        if (path.message_id === 'slow') { slowEntered(); await slowGate; }
+        return { code: 0, data: { message_id: path.message_id } };
+      },
+      get: async ({ path }) => ({ code: 0, data: { items: [{ message_id: path.message_id, chat_id: 'chat', msg_type: 'interactive' }] } }),
+    } } } } };
+  const slowCard = sendNativeQuestionCard(independentRuntime, { ...delivery, runId: 'slow', target: { ...delivery.target, messageId: 'slow' } });
+  await enteredSlow;
+  const fastCard = await sendNativeQuestionCard(independentRuntime, { ...delivery, runId: 'fast', target: { ...delivery.target, messageId: 'fast' } });
+  assert.equal(fastCard.messageId, 'fast', 'an unrelated card bypasses a slow network request');
+  releaseSlow(); await slowCard;
   const syncChoice = '确认同步 sync_0123456789abcdef0123';
   const syncQuestion = { ...question, question: { question: '同步这条反馈？', options: [{ label: syncChoice }] } };
   const syncCard = buildNativeQuestionCard(identity, syncQuestion);

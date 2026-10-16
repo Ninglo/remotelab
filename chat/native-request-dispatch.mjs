@@ -9,7 +9,7 @@ const now = () => new Date().toISOString();
 // Admission and dispatch must agree on whether this request may join the
 // current execution. Internal work stays sequential on either side of the pair.
 export function canForwardNativeRequest(record, head) {
-  if (!record || !head || record.key === head.key || record.preparedAt
+  if (!record || !head || record.key === head.key || record.preparedAt || record.executionClaimedAt
       || record.options?.freshThread || head.cancelRequestedAt
       || record.options?.internalOperation || record.options?.routingRethink
       || head.options?.routingRethink || record.options?.reviewFeedback || record.options?.workPlanReview || head.options?.workPlanReview) return false;
@@ -89,7 +89,7 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         const prepared = await prepareInput(record, manifest);
         const text = typeof prepared === 'string' ? prepared : prepared.text;
         const context = typeof prepared === 'string' ? '' : prepared.context || '';
-        record = await store.mutate(record.key, current => ({ ...current,
+        record = await store.mutate(record.key, current => current.releasedAt || current.executionClaimedAt ? current : ({ ...current,
           nativeDispatchRunId: head.runId, liveReplyPublicationVersion: 1, nativeInput: { id: record.requestId, text,
             ...(record.options?.sourceContext?.feishuContinuationRunId ? { continuationOnly: true } : {}),
             ...(record.options?.workReference ? { referenceOnly: true } : {}),
@@ -104,6 +104,7 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
           nativeInputBaseSeq: current.nativeInputBaseSeq ?? manifest.forkBaseSeq ?? 0,
         }));
         await changed(record.key);
+        if (record.releasedAt || !record.nativeDispatchRunId) return;
       }
       await recordInput(record, { managerTurnContext: record.nativeContext || '' });
       const task = send(record).catch(error => onError(error, record.sessionId))

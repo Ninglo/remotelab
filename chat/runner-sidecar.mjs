@@ -18,7 +18,7 @@ import {
   appendRunSpoolRecord,
   getRun,
   getRunManifest,
-  updateRun,
+  updateExecutionRun as updateRun,
   writeRunResult,
   runDir,
 } from './runs.mjs';
@@ -118,7 +118,7 @@ async function persistRunTerminalState(runId, result, nextState, options = {}) {
           ? { failureReason: options.failureReason }
           : (semanticFailureReason ? { failureReason: semanticFailureReason } : {})),
       };
-    });
+    }, { terminalFact: true });
   } catch (error) {
     await logSidecarDiagnostic(runId, 'Failed to persist detached runner status', {
       error: normalizeErrorMessage(error),
@@ -451,7 +451,7 @@ async function main() {
     spawnEnv.REMOTELAB_ATTACHMENT_PATHS = JSON.stringify(attachmentPaths);
   }
 
-  const resolvedFolder = resolveRunnableSessionFolder(manifest.folder);
+  const resolvedFolder = await resolveRunnableSessionFolder(manifest.folder);
   if (resolvedFolder.repaired) {
     await logSidecarDiagnostic(runId, 'Repaired stale session folder before tool launch', {
       requestedCwd: resolvedFolder.requestedCwd,

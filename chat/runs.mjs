@@ -1,3 +1,4 @@
+import { readRunState } from '../lib/run-state.mjs';
 import { observeRunUsage } from './usage-event-projection.mjs';
 import { requests } from './requests.mjs';
 import { randomBytes } from 'crypto';
@@ -25,9 +26,7 @@ const RUN_MUTATION_LOCK_RETRY_MS = 10;
 const RUN_MUTATION_LOCK_TIMEOUT_MS = 30_000;
 const RUN_MUTATION_LOCK_STALE_MS = 2 * 60_000;
 
-const runStatusCache = new Map();
 const runManifestCache = new Map();
-const runResultCache = new Map();
 const runArtifactCache = new Map();
 const localRunMutationQueue = createKeyedTaskQueue();
 
@@ -245,6 +244,7 @@ export function createRunRecord(input = {}) {
   const now = new Date().toISOString();
   return {
     id,
+    storageVersion: input.storageVersion ?? 2,
     sessionId: input.sessionId,
     requestId: input.requestId,
     responseId: input.responseId || null,
@@ -288,13 +288,7 @@ export function createRunRecord(input = {}) {
 }
 
 async function getRunUnlocked(runId) {
-  const run = await readJson(runStatusPath(runId), null);
-  if (run) {
-    runStatusCache.set(runId, run);
-  } else {
-    runStatusCache.delete(runId);
-  }
-  return clone(run);
+  return clone(await readRunState(runDir(runId), path => readJson(path, null)));
 }
 
 async function getRunManifestUnlocked(runId) {
@@ -305,22 +299,17 @@ async function getRunManifestUnlocked(runId) {
 }
 
 async function getRunResultUnlocked(runId) {
-  const result = await readJson(runResultPath(runId), null);
-  if (result) {
-    runResultCache.set(runId, result);
-  } else {
-    runResultCache.delete(runId);
-  }
+  const result = await readJson(runResultPath(runId), null)
+    || await readJson(join(runDir(runId), 'recovery-result.json'), null);
   return clone(result);
 }
 
 export async function createRun({ status, manifest }) {
   const run = createRunRecord(status);
-  await runMutationQueue(run.id, async () => {
+  await (run.storageVersion === 2 ? localRunMutationQueue : runMutationQueue)(run.id, async () => {
     await ensureRunDirectory(run.id);
     await writeJsonAtomic(runStatusPath(run.id), run);
     await writeJsonAtomic(runManifestPath(run.id), { ...(manifest || {}), id: run.id });
-    runStatusCache.set(run.id, run);
     observeRunUsage(run);
     runManifestCache.set(run.id, { ...(manifest || {}), id: run.id });
   });
@@ -329,11 +318,55 @@ export async function createRun({ status, manifest }) {
 
 export async function getRun(runId) {
   const run = await getRunUnlocked(runId);
-  observeRunUsage(run);
   return run;
 }
 
 export async function updateRun(runId, updater) {
+  return updateOwnedRun(runId, updater, 'status.json');
+}
+
+export async function updateExecutionRun(runId, updater, { terminalFact = false } = {}) {
+  return updateOwnedRun(runId, updater, 'execution.json', terminalFact);
+}
+
+export async function updateRecoveryRun(runId, updater) {
+  return updateOwnedRun(runId, updater, 'recovery.json');
+}
+
+async function updateOwnedRun(runId, updater, file, terminalFact = false) {
+  const base = await readJson(runStatusPath(runId), null);
+  if (base?.storageVersion === 2) return localRunMutationQueue(`${runId}:${file}`, async () => {
+    const current = await getRunUnlocked(runId);
+    if (!current) return null;
+    const draft = clone(current);
+    const proposed = typeof updater === 'function' ? (updater(draft) || draft) : { ...draft, ...updater };
+    const ownPath = join(runDir(runId), file);
+    const own = await readJson(ownPath, {});
+    // Persist only this writer's changes, never a stale copy of another writer's fields.
+    for (const [key, value] of Object.entries(proposed)) {
+      if (JSON.stringify(value) !== JSON.stringify(current[key])
+          || typeof updater !== 'function' && Object.hasOwn(updater, key)) own[key] = value;
+    }
+    if (file === 'execution.json' && terminalFact) {
+      // A terminal fact must be recorded even when it agrees with an inference
+      // already visible in the merged read model.
+      for (const key of ['state', 'startedAt', 'completedAt', 'result', 'failureReason']) {
+        if (Object.hasOwn(proposed, key)) own[key] = proposed[key];
+      }
+    }
+    if (file === 'status.json') {
+      if (proposed.state === 'failed' && current.state === 'completed') own.executionValidationFailure = true;
+      own.cancelRequested = own.cancelRequested === true || proposed.cancelRequested === true;
+      for (const key of ['normalizedLineCount', 'normalizedByteOffset', 'normalizedEventCount']) {
+        own[key] = pickMaxInt(own[key], proposed[key]);
+      }
+    }
+    own.updatedAt = new Date().toISOString();
+    await writeJsonAtomic(ownPath, own);
+    const next = await getRunUnlocked(runId);
+    observeRunUsage(next);
+    return next;
+  });
   return runMutationQueue(runId, async () => {
     const current = await getRunUnlocked(runId);
     if (!current) return null;
@@ -345,7 +378,6 @@ export async function updateRun(runId, updater) {
     const next = mergeRunRecords(latest, proposed);
     next.updatedAt = new Date().toISOString();
     await writeJsonAtomic(runStatusPath(runId), next);
-    runStatusCache.set(runId, next);
     observeRunUsage(next);
     return clone(next);
   });
@@ -360,6 +392,16 @@ export async function getRunResult(runId) {
 }
 
 export async function writeRunResult(runId, result, { onlyIfMissing = false } = {}) {
+  const base = await readJson(runStatusPath(runId), null);
+  if (base?.storageVersion === 2) {
+    const path = onlyIfMissing ? join(runDir(runId), 'recovery-result.json') : runResultPath(runId);
+    return localRunMutationQueue(path, async () => {
+      if (onlyIfMissing && (await getRunResultUnlocked(runId)
+          || isTerminalRunState((await getRunUnlocked(runId))?.state))) return null;
+      await writeJsonAtomic(path, result || {});
+      return clone(result || {});
+    });
+  }
   return runMutationQueue(runId, async () => {
     await ensureRunDirectory(runId);
     // Reconciliation uses a stale liveness snapshot. Check again under the
@@ -367,7 +409,6 @@ export async function writeRunResult(runId, result, { onlyIfMissing = false } = 
     if (onlyIfMissing && (await getRunResultUnlocked(runId)
       || isTerminalRunState((await getRunUnlocked(runId))?.state))) return null;
     await writeJsonAtomic(runResultPath(runId), result || {});
-    runResultCache.set(runId, result || {});
     return clone(result || {});
   });
 }
@@ -492,7 +533,8 @@ async function normalizeSpoolRecord(runId, record) {
 }
 
 export async function appendRunSpoolRecord(runId, record) {
-  return runMutationQueue(runId, async () => {
+  const base = await readJson(runStatusPath(runId), null);
+  return (base?.storageVersion === 2 ? localRunMutationQueue : runMutationQueue)(`${runId}`, async () => {
     await ensureRunDirectory(runId);
     const normalized = await normalizeSpoolRecord(runId, record);
     await appendFile(runSpoolPath(runId), `${JSON.stringify(normalized)}\n`, 'utf8');
@@ -640,12 +682,8 @@ export async function readRunSpoolDelta(runId, options = {}) {
       remainder += decoder.end();
       if (discardingOversizeLine) {
         processedLineCount += 1;
-      } else if (remainder) {
-        processedLineCount += 1;
-        const record = maybeParseSpoolRecord(remainder);
-        if (record) records.push(record);
       }
-      nextOffset = position;
+      nextOffset = position - Buffer.byteLength(remainder, 'utf8');
     } finally {
       await fd.close();
     }

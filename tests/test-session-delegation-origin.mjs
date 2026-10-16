@@ -27,7 +27,7 @@ try {
     ...protectedFields.map((fields, index) => ({ ...base, id: `protected-${index}`, ...fields })),
   ];
   await writeFile(path, JSON.stringify(rows));
-  const { loadSessionsMeta } = await import('../chat/session-meta-store.mjs');
+  const { loadSessionsMeta, mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
   const migrated = await loadSessionsMeta();
   for (const id of ['active', 'archived', 'email-child']) {
     const original = rows.find(row => row.id === id);
@@ -54,8 +54,11 @@ try {
   assert.equal(migrated.find(row => row.id === 'protected-3').sourceId, 'feishu');
   assert.equal(migrated.find(row => row.id === 'protected-4').internalRole, 'session_delegate');
   assert.equal(migrated.find(row => row.id === 'protected-5').sourceId, 'feishu');
+  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), rows, 'reading preserves legacy storage');
+  await mutateSessionMeta('active', draft => { draft.name = 'Explicit edit'; return true; });
+  migrated.find(row => row.id === 'active').name = 'Explicit edit';
   const stored = await readFile(path, 'utf8');
-  assert.deepEqual(JSON.parse(stored), migrated, 'origin repair is durable');
+  assert.deepEqual(JSON.parse(stored), migrated, 'explicit mutation persists normalized metadata');
   assert.deepEqual(await loadSessionsMeta(), migrated, 'reloading is idempotent');
   assert.equal(await readFile(path, 'utf8'), stored, 'reloading does not rewrite settled metadata');
   console.log('test-session-delegation-origin: ok');
