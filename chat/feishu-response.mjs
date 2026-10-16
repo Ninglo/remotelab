@@ -1,6 +1,6 @@
 import { requests, appendDeliveries } from './requests.mjs';
 import { appendEvent } from './history.mjs';
-import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+import { buildReplyDeliveries, isFinalAnswerDelivery } from '../lib/reply-deliveries.mjs';
 import { readFeishuResponseDecision, normalizeFeishuResponsePayload, validateFeishuResponseFields, hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
 
@@ -14,8 +14,7 @@ export async function withFeishuResponseLock(id, fn) {
 const sameGroup = (a, b) => a?.connector === 'feishu' && b?.connector === 'feishu'
   && a.sourceRouteId === b.sourceRouteId && a.target?.chatId === b.target?.chatId
   && a.target?.tenantKey === b.target?.tenantKey;
-const hasAnswerDelivery = input => input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind)
-  && !['opening', 'progress', 'placement_error'].includes(d.surfaceKind));
+const hasAnswerDelivery = input => input.deliveries?.some(isFinalAnswerDelivery);
 
 async function commitInputReply(input, reply, store = requests) {
   return store.mutate(input.key, current => {

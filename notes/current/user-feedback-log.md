@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-16 — Intermediate conversation must not block task results
+
+- Feedback: another conversation reproduced a generated final being rejected after a question card or an intermediate reply. Review precedence across the reply rules instead of adding another exception to the prompt.
+- Cause: input-ownership checks treated almost every content delivery as a completed answer, conflicting with the supported question and direct-reply surfaces. The terminal uncovered-input check repeated the same assumption.
+- Change: share one final-answer predicate between publication and settlement; intermediate surfaces do not occupy the result slot. Keep final replay and accepted-input ownership checks, and remove the unused duplicate predicate in routing. Tests use actual live publication before terminal publication, including repeated replay.
+
 ### 2026-10-16 — Preserve pause invitations and processing feedback
 
 - Feedback: keep the paused state but allow an explicit @ to receive one reply; listening may remain code-gated. The missing Thinking indicator is processing feedback, separate from optional social reactions.

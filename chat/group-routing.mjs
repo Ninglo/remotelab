@@ -20,8 +20,6 @@ const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 
 const fail = message => { throw new Error(message); };
 const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const stamp = session => session?.workAwareness?.intents?.at(-1)?.id || '';
-const hasAnswerDelivery = input => input.deliveries?.some(d => ['content', 'attachment'].includes(d.kind)
-  && !['opening', 'progress', 'placement_error'].includes(d.surfaceKind));
 const sameGroup = (a, b) => a?.connector === 'feishu' && b?.connector === 'feishu'
   && a.sourceRouteId === b.sourceRouteId && a.target?.chatId === b.target?.chatId
   && a.target?.tenantKey === b.target?.tenantKey;
