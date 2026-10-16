@@ -12,7 +12,7 @@ export const PERSONAL_INTRO = '嗨，我是 Index，你的 AI 同事。\n查资�
 
 export function buildPersonalSettingsCard(record, { replies, memory, notice = '', webUrl = '' }) {
   let panelId = 0;
-  const panel = (title, elements) => ({ tag: 'collapsible_panel', element_id: `personal_section_${panelId++}`, expanded: false, header: { title: plain(title) }, elements });
+  const panel = (title, elements) => ({ tag: 'collapsible_panel', element_id: `personal_section_${panelId++}`, expanded: false, header: { title: plain(title), icon: { tag: 'standard_icon', token: 'down-small-ccm_outlined' }, icon_position: 'right' }, elements });
   // Instance-curated, per-card trial content. This is presentation only: it
   // neither changes the card owner nor grants access to the linked examples.
   const guide = record.capabilityGuide;
@@ -53,20 +53,43 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     md('找不到这张卡时，私聊发送“我的设置”即可重新打开。修改失败时可先刷新，再重新选择。'),
     ...(webUrl ? [panel('网页版备用入口（需另行登录）', [md(`[打开网页设置](${webUrl})\n需要使用本人的网页账号登录，飞书登录不会自动通用。没有网页账号时，直接在这张卡修改，或私聊告诉我想调整哪一项。`)])] : []),
   ];
-  // Keep one visible settings overview; expand an individual row to change it.
-  const settingHelp = settings.filter(item => item.tag === 'collapsible_panel').flatMap(item => [
-    md(`**${item.header.title.content.split(' · ')[0]}**`),
-    ...item.elements.filter(element => element.tag === 'markdown'),
-  ]);
-  const compactSettings = settings.map(item => item.tag === 'collapsible_panel'
-    ? { ...item, elements: item.elements.filter(element => element.tag !== 'markdown') } : item);
-  const flatten = items => items.flatMap(item => item.tag === 'collapsible_panel'
-    ? [md(`**${item.header.title.content}**`), ...item.elements] : [item]);
+  // Keep the purpose beside the control. Only long explanations are folded.
+  const summaries = {
+    progress: ['进展消息', '决定进展在哪里看；最终结果会单独发。'],
+    checklist: ['任务清单', '多项成果分别打勾，方便跟进和验收。'],
+    memory: ['个人记忆', '记住称呼和协作习惯；新偏好先问你。'],
+    opening: ['开始工作时', '动手前简短说明目标和做法。'],
+    routing: ['多项工作并行 · 试用', '先提出分工，经你确认再分别推进。'],
+    strictStartCheck: ['开工前核对 · 试用', '多查项目背景和已有工作，准备会稍久。'],
+  };
+  const settingPanels = settings.filter(item => item.tag === 'collapsible_panel');
+  const byField = new Map(settingPanels.map(item => {
+    const buttons = item.elements.filter(e => e.tag === 'column_set').flatMap(row => row.columns.flatMap(col => col.elements));
+    const field = buttons[0].behaviors[0].value.field;
+    const current = buttons.find(b => b.disabled).behaviors[0].value;
+    const [title, summary] = summaries[field];
+    return [field, { tag: 'column', width: 'weighted', weight: 1, vertical_spacing: '8px', elements: [
+      md(`**${title}**\n${summary}`),
+      { tag: 'select_static', width: 'fill', initial_option: String(current.value),
+        options: buttons.map(b => ({ text: plain(b.text.content.replace(/^当前：/, '')), value: String(b.behaviors[0].value.value) })),
+        behaviors: [{ type: 'callback', value: { namespace: 'personal-settings', key: record.key, field, revision: current.revision, input: 'select' } }] },
+    ] }];
+  }));
+  const order = ['progress', 'checklist', 'memory', 'opening', 'routing', 'strictStartCheck'];
+  const tiles = order.map(field => byField.get(field) || { tag: 'column', width: 'weighted', weight: 1,
+    elements: [md('**个人记忆**\n记住称呼和协作习惯。当前账号尚未开放。')] });
+  const rows = [0, 2, 4].map(i => ({ tag: 'column_set', horizontal_spacing: '16px', columns: tiles.slice(i, i + 2) }));
+  const settingHelp = order.flatMap(field => {
+    const item = settingPanels.find(p => p.elements.some(e => e.tag === 'column_set' && e.columns[0].elements[0].behaviors[0].value.field === field));
+    return item ? [md(`**${summaries[field][0]}**`), ...item.elements.filter(e => e.tag === 'markdown')] : [];
+  });
   const elements = [
     md(hasGuide ? guide.intro : '嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'),
     ...(notice ? [md(notice)] : []),
-    { ...panel('个人设置', compactSettings), element_id: 'personal_settings_region', expanded: true },
-    { ...panel('使用说明', [...settingHelp, ...flatten(help)]), element_id: 'personal_help_region' },
+    { ...panel('个人设置', [md('选择后自动保存，仅调整与你的协作方式。'), ...rows,
+      panel('各项设置的详细说明', settingHelp), button('刷新设置', 'refresh', null)]),
+      element_id: 'personal_settings_region', expanded: true, vertical_spacing: '16px' },
+    { ...panel('使用指南 · 交办、补充与授权', help), element_id: 'personal_help_region' },
   ];
   return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 个人设置与使用说明') }, body: { elements } };
 }
@@ -138,6 +161,16 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
         actor = { ...await actorFor(record.source), eventId: raw.header?.event_id || event.event_id,
           chatId: record.source.chatId, messageId: record.messageId };
         if (!actor.eventId || actor.personId !== record.personId || actor.identityId !== record.identityId) throw Error('无法核对这次操作的身份。');
+        if (value.input === 'select') {
+          const option = event.action.option;
+          if (value.field === 'progress') {
+            if (!Object.hasOwn(progressLabels, option)) throw Error('设置选项无效。');
+            value = { ...value, value: option };
+          } else {
+            if (!['true', 'false'].includes(option)) throw Error('设置选项无效。');
+            value = { ...value, value: option === 'true' };
+          }
+        }
         if (value.field === 'memory') {
           await changePersonalMemorySettings({ enabled: value.value, expectedRevision: value.revision, confirm: true }, actor);
           saved = true;

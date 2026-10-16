@@ -34,13 +34,14 @@ try {
   const settingsRegion = sent.body.elements.find(e => e.element_id === 'personal_settings_region');
   assert.equal(sent.body.elements.length, 3, 'first screen contains introduction, settings overview and collapsed help');
   assert.equal(settingsRegion.expanded, true);
-  assert.equal(settingsRegion.elements.filter(e => e.tag === 'collapsible_panel' && e.expanded === false).length, 6, 'six compact rows reveal options only on demand');
-  assert.ok(settingsRegion.elements.filter(e => e.tag === 'collapsible_panel').every(e => e.elements.every(c => c.tag !== 'markdown')), 'long descriptions live in help');
-  const controls = settingsRegion.elements.flatMap(e => e.elements || [e]).filter(e => e.tag === 'column_set').flatMap(row => row.columns.flatMap(col => col.elements));
-  assert.equal(controls.length, 14, 'all six settings retain explicit options inside their panels');
-  assert.equal(controls.filter(b => b.disabled && b.type === 'primary').length, 6, 'one current choice per setting');
-  const selectedOff = controls.find(b => b.behaviors[0].value.field === 'opening' && b.behaviors[0].value.value === false);
-  assert.equal(selectedOff.disabled, false);
+  const rows = settingsRegion.elements.filter(e => e.tag === 'column_set');
+  assert.equal(rows.length, 3);
+  const tiles = rows.flatMap(row => row.columns);
+  assert.ok(tiles.every(tile => tile.elements[0].content.includes('\n')), 'every control keeps its explanation beside it');
+  const controls = tiles.flatMap(tile => tile.elements).filter(e => e.tag === 'select_static');
+  assert.equal(controls.length, 6);
+  assert.ok(controls.every(c => c.options.some(o => o.value === c.initial_option)), 'all controls display their saved value');
+  assert.equal(controls.reduce((n,c) => n + c.options.length, 0), 14);
   controller = createPersonalSettingsController(runtime, opts);
   await controller.publish(source, { automatic: true }); assert.equal(creates, 1, 'restart does not spam welcome');
   const guide = { version: 1, intro: '评测能力试用', sections: [{ title: '查询示例评测', body: '案例属于另一位同事，不改变本人身份。' }] };
@@ -57,7 +58,7 @@ try {
   assert.equal(feedback.toast.type, 'success'); assert.equal(feedback.card.type, 'raw');
   assert.equal(feedback.card.data.body.elements[0].content, guide.intro, 'guide survives a real settings callback');
   assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').expanded, true);
-  assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').elements.flatMap(e => e.elements || [e]).filter(e => e.tag === 'column_set').length, 7, 'guide retains every settings option row');
+  assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').elements.filter(e => e.tag === 'column_set').length, 3, 'guide retains every settings row');
   assert.equal((await loadPersonMessageReplies({ personId: 'two', identityId: 'id_two', authKind: 'test' })).revision, 0, 'example guide never changes another person');
   assert.equal((await loadPersonMessageReplies(actor)).choices.opening, false);
   await changePersonMessageReplies({ action: 'apply', confirm: true, expectedRevision: 1, choices: { ...(await loadPersonMessageReplies(actor)).choices, opening: true } }, actor);
@@ -95,6 +96,23 @@ try {
   assert.equal(refreshed.toast.type, 'success');
   assert.equal(refreshed.card.data.body.elements[0].content, guide.intro);
   assert.deepEqual(refreshed.card.data.body.elements.filter(e => e.tag === 'collapsible_panel').map(e => e.element_id), panels.map(e => e.element_id));
+  const selectEvent = (field, option, revision, eventId) => {
+    const raw = event(field, null, revision, { eventId });
+    raw.event.action.value.input = 'select'; raw.event.action.option = option;
+    return raw;
+  };
+  const beforeSelect = await loadPersonMessageReplies(actor);
+  assert.equal((await controller.action(selectEvent('progress', 'messages', beforeSelect.revision, 'select-progress'))).toast.type, 'success');
+  assert.equal((await loadPersonMessageReplies(actor)).choices.progress, 'messages');
+  const currentRevision = (await loadPersonMessageReplies(actor)).revision;
+  assert.equal((await controller.action(selectEvent('opening', 'false', currentRevision, 'select-opening'))).toast.type, 'success');
+  assert.equal((await loadPersonMessageReplies(actor)).choices.opening, false);
+  const beforeInvalid = await loadPersonMessageReplies(actor);
+  assert.equal((await controller.action(selectEvent('opening', 'yes', beforeInvalid.revision, 'select-invalid'))).toast.type, 'error');
+  assert.deepEqual(await loadPersonMessageReplies(actor), beforeInvalid);
+  const memoryRevision = (await loadPersonalMemorySettings(actor)).revision;
+  assert.equal((await controller.action(selectEvent('memory', 'false', memoryRevision, 'select-memory'))).toast.type, 'success');
+  assert.equal((await loadPersonalMemorySettings(actor)).enabled, false);
   await controller.idle();
   console.log('Personal cards: identity isolation, saved settings, replay/stale revisions, memory eligibility, restart and delivery fences passed');
 } finally { await rm(home, { recursive: true, force: true }); }
