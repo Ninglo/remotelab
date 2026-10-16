@@ -42,13 +42,13 @@
 
 提交前运行 `node scripts/check-documentation-impact.mjs --staged`。检查器复用功能目录中的源码与文档关联，列出本次变化涉及的说明，覆盖服务、前端、自动化、本地助手和运行脚本。改使用方式、启用条件或接口时，同一提交更新对应正文；修正旧段落，不只在末尾追加一条更新记录。
 
-确实不影响说明的修复可在提交信息写 `Docs-Impact: none — 具体原因`；commit-msg检查与CI都会读取这个理由。它是可审阅声明，不是机器证明内容正确。测试、纯文档及样式文件变化无需强行改README；新增未登记实现会提示补功能目录或README入口。新功能仍应补入原功能清单。
+确实不影响说明的修复可在提交信息写 `Docs-Impact: none — 具体原因`；本地commit-msg检查会读取这个理由。它是可审阅声明，不是机器证明内容正确。测试、纯文档及样式文件变化无需强行改README；新增未登记实现会提示补功能目录或README入口。新功能仍应补入原功能清单。
 
 ## 网站生成与同步
 
 `node scripts/documentation-site.mjs build --out /tmp/remotelab-guide` 从原目录组装网站，重新生成功能与产出页，并把目录中登记的Markdown正文生成可阅读页面。正文引用的本地图片随站点打包并记录哈希。文件清单附源码版本与输入哈希；原件链接保留，生成页不另写正文。
 
-CI在push和PR时检查文档影响、构建完整说明网站并保存构建产物。它不持有实例凭据，不直接发布到生产实例。实例维护者在已授权的源码目录执行 `node scripts/documentation-site.mjs install-hooks`，登记该实例原静态发布目录；已有Git钩子不会被覆盖。之后本仓库的commit和merge事件触发同一发布器，发布到原slug；无需新增定时任务。
+GitHub Actions CI已退役。文档影响在本地提交前检查；需要验证完整站点时运行上述build命令。实例维护者在已授权的源码目录执行 `node scripts/documentation-site.mjs install-hooks`，登记该实例原静态发布目录；已有Git钩子不会被覆盖。之后本仓库的commit和merge事件触发同一发布器，发布到原slug；无需新增定时任务。
 
 自动出版使用已提交快照，不读取其他人的未提交编辑；仅当文档输入改变时重新生成。发布前扫描公开产物并读回文件哈希，失败保留旧站及本地失败回执，在Git命令输出报错。提交本身不因后置出版失败而回滚。直接fetch、reset、手工改文件及绕过钩子的操作不会触发发布；这类部署完成后运行 `node scripts/documentation-site.mjs publish` 补齐。新机器也需登记自己的出版目标，不能沿用其他实例的私有配置。
 

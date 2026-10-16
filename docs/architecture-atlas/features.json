@@ -1042,11 +1042,11 @@
         },
         {
           "id": "optional-workflows",
-          "name": "可选的产品跟踪、GitHub 分诊与 CI 修复",
+          "name": "可选的产品跟踪与 GitHub 分诊",
           "purpose": "复用仓库中的专项脚本，将来源更新或开发故障带回既有工作流程。",
           "entry": "对应专项文档和脚本，由维护 Agent 先检查是否已经配置。",
-          "condition": "这些是可选流程，未逐一核对本实例启用状态。旧脚本存在不证明它仍在定时运行。",
-          "example": "检查这个仓库是否已有 CI 修复流程，说明状态和授权范围。",
+          "condition": "这些是可选流程，未逐一核对本实例启用状态。旧脚本存在不证明它仍在定时运行。 RemoteLab 的 GitHub Actions CI 和 CI 自动修复已退役。",
+          "example": "检查这个仓库是否已有 GitHub 分诊流程，说明状态和授权范围。",
           "sources": [
             "docs/remote-capability-monitor.md",
             "docs/github-auto-triage.md",

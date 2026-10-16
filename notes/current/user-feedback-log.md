@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+## 2026-10-16 — Retire GitHub CI from the delivery loop
+
+- Feedback: CI adds waiting and interrupts iteration without enough value for the current RemoteLab workflow.
+- Decision: remove the GitHub Actions workflow and automatic CI repair scripts; validate affected behavior locally and push coherent changes directly to main. Keep existing local test commands and documentation publishing hooks.
+- Repository setting: an administrator must remove the obsolete required `test` status check from main protection. Deleting the workflow alone does not remove that requirement.
+
+
 ### 2026-10-16 — Follow-ups must reach the existing conversation without appearing newly created
 
 - Feedback: topic follow-ups received neither an answer nor processing feedback. Repeated model and Session-detail footers also made later messages look like newly created Sessions.

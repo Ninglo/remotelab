@@ -7,7 +7,6 @@
     "scripts/proactive-observer.mjs": 1424,
     "scripts/remote-capability-monitor.mjs": 1415,
     "tests/test-http-runtime-phase1.mjs": 1007,
-    "scripts/github-ci-auto-repair.mjs": 973,
     "scripts/doubao-fast-agent.mjs": 867,
     "static/chat/settings-ui.js": 853,
     "static/chat/ui.js": 808

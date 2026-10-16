@@ -222,7 +222,7 @@ Inactive instances and explicitly opted-out people remain outside activation.
 ## Regression and evidence boundary
 
 `npm run test:workboard` is the fixed isolated acceptance entry point and runs
-inside the normal `npm test` / required CI check. Existing scenarios cover:
+inside the local `npm test` suite. Existing scenarios cover:
 
 - explicit and instance-default activation, future-member discovery, opt-outs,
   sender/destination validation and task context despite old negative Jev receipts;
@@ -248,7 +248,7 @@ final message with a delivery receipt. The implementation baseline is main
 the local acceptance record. Failure and native streaming/file scenarios also
 have isolated integration coverage; this is not a claim that every provider or
 Feishu client variant has been tested live. Future changes must retain the
-contract, pass CI and verify a real opted-in task's original card and result
+contract, pass the relevant local checks and verify a real opted-in task's original card and result
 receipts before claiming live delivery.
 
 ## Work process in task cards
