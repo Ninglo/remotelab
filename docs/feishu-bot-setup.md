@@ -763,7 +763,8 @@ a reply through normal Harness conversation/steer. No Jev participation decision
 three-mode status card, or legacy group mute gates these messages. Self/bot-loop
 protection remains. An ordinary group's thread is not a native topic group;
 provider chat metadata determines this distinction, including restored records
-and project-card discovery.
+and project-card discovery. A legacy delivery target marked `chatMode: thread`
+only identifies reply placement; it does not establish a native topic group.
 
 For ordinary groups, the shared response policy has three decisions: the main Session decides whether
 its contribution is useful, combines pending questions/corrections into one answer

@@ -432,8 +432,11 @@ export function normalizeFeishuMode(value) {
 
 // Native chat mode is distinct from a thread reply in an ordinary group.
 export function isFeishuTopicGroup(summary) {
-  if (normalizeFeishuMode(summary?.chatMode) === 'group') return false;
-  return isFeishuTopicChat(summary);
+  const mode = normalizeFeishuMode(summary?.chatMode);
+  if (['group', 'topic'].includes(mode)) return mode === 'topic';
+  // Stored reply targets also use chatMode=thread; that is not a group type.
+  return normalizeFeishuMode(summary?.chatType) === 'topic'
+    || ['thread', 'topic'].includes(normalizeFeishuMode(summary?.groupMessageType));
 }
 
 export function isFeishuTopicChat(summary) {

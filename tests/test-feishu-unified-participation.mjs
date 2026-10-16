@@ -161,6 +161,8 @@ try {
   assert.equal(resolveFeishuGroupSettings(nativeConfig, native).jevReactions, undefined);
   const { participationEnabled } = await import('../connectors/feishu/participation-state.mjs');
   assert.equal(participationEnabled(nativeRuntime, native), false);
+  assert.equal(participationEnabled(runtime, { ...base, chatMode: 'thread' }), true,
+    'legacy reply targets with chatMode=thread are not native topic groups');
   const { setFeishuConversationMuted } = await import('../connectors/feishu/conversation-settings.mjs');
   await setFeishuConversationMuted(nativeRuntime, native, true);
   const nativeSubmitted = [];
