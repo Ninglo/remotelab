@@ -188,7 +188,7 @@ test('confirmed choices take precedence over the historical group baseline', asy
     const prompt = await buildPrompt(session.id, { ...session, systemPrompt: '' }, '核对资料', 'codex', 'codex', null,
       { workboardEnabled: true, messageReplyPolicy: policy({ ...draft, opening: false, progress: 'none' }) });
     assert.match(prompt, /disabled the opening text/);
-    assert.doesNotMatch(prompt, /Feishu also sends each useful progress update as a new message/);
+    assert.doesNotMatch(prompt, /Feishu also sends progress text by default/);
     assert.equal(process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE, '2026-10-07', 'the legacy instance setting is retained');
   } finally { delete process.env.REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE; }
 });

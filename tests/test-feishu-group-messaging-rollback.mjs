@@ -51,7 +51,7 @@ test('group default restores messages despite newer disclosure metadata; other s
 test('the executing Harness receives the historical group contract and the current private contract', async () => {
   const prompt = await buildPrompt(session.id, { ...session, folder: home, systemPrompt: '' },
     '核查群消息', 'codex', 'codex', null, { workboardEnabled: true });
-  assert.match(prompt, /Feishu also sends each useful progress update as a new message/);
+  assert.match(prompt, /Feishu also sends progress text by default/);
   assert.doesNotMatch(prompt, /Feishu sends the opening only for a new conversation/);
   assert.doesNotMatch(prompt, /--progress-mode expanded\|collapsed/);
   const privatePrompt = await buildPrompt('private-session', { ...privateSession, id: 'private-session', folder: home, systemPrompt: '' },
