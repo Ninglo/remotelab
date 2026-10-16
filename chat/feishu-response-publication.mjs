@@ -8,16 +8,17 @@ import { requests } from './requests.mjs';
 // A final's content and input coverage are one publication. No second tool
 // call, prose classifier, or assumption that all steered inputs were answered.
 export async function publishNativeFeishuResponses(record, history, run, {
-  store = requests, session, fullHistory = history, prepareFinal = async event => event,
+  store = requests, session, fullHistory = history, prepareFinal = async event => event, live = false,
 } = {}) {
-  if (!hasFeishuInputReplyContract(record) || run.state !== 'completed') return record;
+  if (!hasFeishuInputReplyContract(record) || (!live && run.state !== 'completed')) return record;
   const candidates = history.filter(isReplyMessage);
   const finals = candidates.filter(isFinalAssistantMessage);
   const selected = [];
   const covered = new Set();
-  // A later final can revise an answer before terminal publication. Preserve
-  // the latest decision; unrelated explicit input sets remain independent.
-  for (const event of (finals.length ? finals : candidates.slice(-1)).slice().reverse()) {
+  // Completed final messages can publish while a steered execution continues.
+  // Prefer the latest uncommitted decision in this projection; durable receipts
+  // keep already published input sets immutable across later projections.
+  for (const event of (finals.length ? finals : live ? [] : candidates.slice(-1)).slice().reverse()) {
     const decision = readFeishuResponseDecision(event.content);
     if (!decision.specified) continue;
     const ids = decision.requestIds || [record.requestId];

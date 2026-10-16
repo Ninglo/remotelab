@@ -61,9 +61,12 @@ try {
   });
   const root = await manager.submitHttpMessage(session.id, '核对这些分类。', [], opts('response-root'));
   await until(async () => (await requests.byRunId(root.run.id))?.preparedAt);
-  await manager.submitHttpMessage(session.id, '补充链接，请一起考虑。', [], opts('response-link'));
+  await manager.submitHttpMessage(session.id, 'PUBLISH_FINAL_EARLY 补充链接，请一起考虑。', [], opts('response-link'));
   const extra = await until(async () => { const r = await requests.byRequest(session.id, 'response-link'); return r?.nativeReceipt?.accepted && r; });
   assert.equal(extra.nativeDispatchRunId, root.run.id);
+  const early = await until(async () => { const r = await requests.byRunId(root.run.id); return r?.mainlineReply && r; });
+  assert.equal(early.result, null, 'answer must publish before the continuing execution ends');
+  assert.deepEqual(early.deliveries.map(d => d.kind), ['reaction', 'content']);
   await writeFile(join(home, `${root.run.id}.release`), 'release');
   const result = await until(async () => { const r = await requests.byRunId(root.run.id); return r?.result && r; });
   const extraResult = await until(async () => { const r = await requests.byRequest(session.id, 'response-link'); return r?.result && r; });

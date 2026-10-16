@@ -66,6 +66,28 @@ try {
   assert.equal(laterSaved.deliveries[1].target.rootId, root.requestId);
   assert.equal(laterSaved.deliveries[1].target.conversationKind, 'thread');
 
+  // Completed answers must be queued while a later steered task is still
+  // running; terminal reconciliation must not publish either answer twice.
+  const { publishLiveRunReplies } = await import('../chat/native-final-publication.mjs');
+  const liveRoot = await accept('live-root');
+  const liveExtra = await accept('live-extra', liveRoot);
+  const liveRun = { id: liveRoot.runId, state: 'running', requestId: liveRoot.requestId };
+  const liveEvents = [final('live-root-answer', envelope({ replyMode: 'inline' }, '能看到。'))]
+    .map(e => ({ ...e, runId: liveRoot.runId }));
+  const liveOptions = { store: requests, run: liveRun, plan: liveRoot.deliveryPlan, running: true,
+    session: { id: 'session', sourceId: 'feishu' } };
+  await publishLiveRunReplies(liveRoot, liveEvents, liveOptions);
+  assert.equal((await requests.get(liveRoot.key)).deliveries.filter(d => d.kind === 'content').length, 1);
+  assert.equal((await requests.get(liveRoot.key)).result, null);
+  liveEvents.push({ ...final('live-extra-answer', envelope({ replyMode: 'inline', requestIds: [liveExtra.requestId] }, '补充也收到了。')), runId: liveRoot.runId });
+  await publishLiveRunReplies(await requests.get(liveRoot.key), liveEvents, liveOptions);
+  assert.equal((await requests.get(liveExtra.key)).deliveries.filter(d => d.kind === 'content').length, 1);
+  await publish(await requests.get(liveRoot.key), liveEvents);
+  await publishLiveRunReplies(await requests.get(liveRoot.key), liveEvents, liveOptions);
+  for (const input of [liveRoot, liveExtra]) {
+    assert.equal((await requests.get(input.key)).deliveries.filter(d => d.kind === 'content').length, 1);
+  }
+
   // The immediate tool is a facade over the same decision and receipt contract.
   const tool = await accept('tool-root'); const toolExtra = await accept('tool-extra', tool);
   await publishFeishuResponse(tool, { text: '<private><feishu-reaction emoji="Get"/></private>两个补充的结果。',

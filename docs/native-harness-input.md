@@ -253,6 +253,11 @@ incomplete rather than inheriting the root answer. See
 destinations, so the same conversation gets one final reply while distinct
 destinations still receive their result.
 
+For the Feishu response protocol, a completed final message queues its selected
+input replies immediately, even if a later steered task keeps the execution
+running. Streaming fragments and unphased drafts remain unpublished. Terminal
+reconciliation reuses the durable per-input receipts rather than sending again.
+
 Visible child delegation publishes its creation notice using the invoking Run's
 saved reply destination, independently of the eventual Harness final answer.
 The delegation API and CLI return `noticeDelivery` beside the child Session and

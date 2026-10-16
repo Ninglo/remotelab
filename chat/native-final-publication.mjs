@@ -1,3 +1,4 @@
+import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
 import { readFeishuResponseDecision } from '../lib/feishu-response-decision.mjs';
 import { hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { isFinalAssistantMessage } from '../lib/assistant-message-phase.mjs';
@@ -49,6 +50,11 @@ export async function publishLiveRunReplies(record, fullHistory, { store, run, .
   if (options.plan?.connector !== 'feishu') {
     return publishLiveAssistantReplies(record, rootEvents, { ...options, store, fullHistory });
   }
+  // Final message completion is independent of execution completion: a later
+  // steered task must not withhold an answer already ready for its input.
+  record = await publishNativeFeishuResponses(record, rootEvents, run, {
+    ...options, store, fullHistory, live: options.running !== false,
+  });
   const rootSet = new Set(rootEvents);
   const firstSeq = rootEvents.find(event => event.type === 'message' && event.role === 'user')?.seq || 0;
   const inputs = new Map();
@@ -75,7 +81,7 @@ export async function publishLiveRunReplies(record, fullHistory, { store, run, .
 // the existing card/message choice. The root owns durable delivery identities
 // and the terminal result for the shared execution.
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event, inputRecords = new Map() } = {}) {
-  if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
+  if (!record || record.result || (record.options?.suppressSourceDelivery && !record.mainlineReply) || record.options?.internalOperation
       || !plan) return;
   // Admission remains per turn even when the Session has cards enabled.
   // Ordinary unlisted progress remains in Web/history rather than a new post.
@@ -125,7 +131,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const messageId = assistantSurfaceMessageId(event);
     if (!messageId) continue;
     let stored = await store.get(record.key);
-    if (stored?.options?.suppressSourceDelivery || stored?.routingHandoff) return;
+    if ((stored?.options?.suppressSourceDelivery && !stored.mainlineReply) || stored?.routingHandoff) return;
     // Placement belongs to this execution. A steered input retains its own
     // source policy, but must see the root's durable placement and receipts.
     const replyRecord = current => owner === record ? current : { ...owner, key: record.key,
@@ -217,7 +223,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const parts = buildParts(stored || record);
     if (!parts.length) continue;
     const admit = () => store.mutate(record.key, current => {
-      if (!current || current.result || current.options?.suppressSourceDelivery || current.routingHandoff
+      if (!current || current.result || (current.options?.suppressSourceDelivery && (!current.mainlineReply || owner === record)) || current.routingHandoff
           || suppressOpening(surface, current, owner, messageReplyPolicy, resolveAmbientFeishuReplyPlan(replyRecord(current), ownerPlan, [event]))
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;

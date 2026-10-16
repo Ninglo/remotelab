@@ -760,7 +760,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       const record = await requests.byRunId(run.id);
       await forwardExecutionQuestions(record, normalizedEvents);
       const plan = normalizeSourceDeliveryPlan(record?.deliveryPlan || record?.options?.sourceDelivery);
-      if (plan && !record.options?.suppressSourceDelivery && !record.options?.internalOperation) {
+      if (plan && (!record.options?.suppressSourceDelivery || record.mainlineReply) && !record.options?.internalOperation) {
         const history = await loadHistory(sessionId, { includeBodies: true, deferFileDiffs: true });
         await publishLiveRunReplies(record, history, {
           store: requests, run, plan, running: !isTerminalRunState(run.state),
