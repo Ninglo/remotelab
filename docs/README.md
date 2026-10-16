@@ -113,6 +113,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 - [Hardware discussion recording](platform-skills/hardware-recording.md) — optional macOS/Linux keypad and multi-receiver capture, durable audio submission and host acceptance boundary
 - [Service management access](platform-skills/service-access.md) — read-only instance service/sudo/local SSH checks before declaring a restart permission blocker
+- [Compact personal settings card](feishu-web-settings.md) — settings open to six compact name/current-value rows; expand a row to edit, while detailed help stays collapsed.
 - [Feishu group configuration](feishu-bot-setup.md) — body emoji now follow the requested tone, preserve Unicode sequences and render known aliases in plain prose as native emotion nodes;  native topic groups use normal Agent conversation/steer; ordinary groups use pinned participation, optional public Session link, model/effort and durable group prompt controls; missing public URLs do not disable the controls. Simple ordinary-group answers quote the source with no opening or phase heading; lookup/research work uses a thread, even for a short request. Personal display settings do not bypass mainline result-only delivery.
 
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract

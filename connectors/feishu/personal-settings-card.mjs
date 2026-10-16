@@ -27,7 +27,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     md(description), choices(field, enabled, [[true, labels[0]], [false, labels[1]]], revision),
   ])];
   const c = replies.choices;
-  const settings = [md('修改从后续对话生效。标有“当前”的是已选项。'),
+  const settings = [md('点开一项即可修改，选择后自动保存。'),
     ...toggle('开始工作时的回复', 'opening', c.opening, '接到需要动手的任务后，先简短告诉你我理解的目标和准备做什么。简单问答直接回答。', ['先说一下怎么做', '直接开始']),
     ...toggle('任务清单', 'checklist', c.checklist, '一件工作有多项成果时，用清单显示哪些已完成、哪些还在做，方便你查看和验收。这里控制工作清单的展示；个人待办仍可直接交给我创建。', ['需要时显示', '不显示']),
     panel(`进展消息 · ${progressLabels[c.progress]}`, [md('有关键发现、阶段结果或需要调整方向时，我会报告进展。选择在哪里查看；需要你回答的问题和最终结果都会单独发送。'),
@@ -53,14 +53,20 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     md('找不到这张卡时，私聊发送“我的设置”即可重新打开。修改失败时可先刷新，再重新选择。'),
     ...(webUrl ? [panel('网页版备用入口（需另行登录）', [md(`[打开网页设置](${webUrl})\n需要使用本人的网页账号登录，飞书登录不会自动通用。没有网页账号时，直接在这张卡修改，或私聊告诉我想调整哪一项。`)])] : []),
   ];
-  // One disclosure per region: opening Settings reveals its controls directly.
+  // Keep one visible settings overview; expand an individual row to change it.
+  const settingHelp = settings.filter(item => item.tag === 'collapsible_panel').flatMap(item => [
+    md(`**${item.header.title.content.split(' · ')[0]}**`),
+    ...item.elements.filter(element => element.tag === 'markdown'),
+  ]);
+  const compactSettings = settings.map(item => item.tag === 'collapsible_panel'
+    ? { ...item, elements: item.elements.filter(element => element.tag !== 'markdown') } : item);
   const flatten = items => items.flatMap(item => item.tag === 'collapsible_panel'
     ? [md(`**${item.header.title.content}**`), ...item.elements] : [item]);
   const elements = [
     md(hasGuide ? guide.intro : '嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'),
     ...(notice ? [md(notice)] : []),
-    { ...panel('个人设置', flatten(settings)), element_id: 'personal_settings_region' },
-    { ...panel('使用说明', flatten(help)), element_id: 'personal_help_region' },
+    { ...panel('个人设置', compactSettings), element_id: 'personal_settings_region', expanded: true },
+    { ...panel('使用说明', [...settingHelp, ...flatten(help)]), element_id: 'personal_help_region' },
   ];
   return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 个人设置与使用说明') }, body: { elements } };
 }
