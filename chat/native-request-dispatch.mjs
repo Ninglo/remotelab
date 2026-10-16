@@ -12,8 +12,8 @@ export function canForwardNativeRequest(record, head) {
   if (!record || !head || record.key === head.key || record.preparedAt
       || record.options?.freshThread || head.cancelRequestedAt
       || record.options?.internalOperation || record.options?.routingRethink
-      || head.options?.routingRethink || record.options?.workPlanReview || head.options?.workPlanReview) return false;
-  if (!record.options?.nativeQuestionId && (record.options?.confirmedHandoff || head.options?.confirmedHandoff)) return false;
+      || head.options?.routingRethink || record.options?.reviewFeedback || record.options?.workPlanReview || head.options?.workPlanReview) return false;
+  if (!record.options?.nativeQuestionId && (record.options?.confirmedHandoff || head.options?.confirmedHandoff || head.options?.reviewFeedback)) return false;
   if (record.options?.sourceContext?.feishuContinuationRunId
       && record.options.sourceContext.feishuContinuationRunId !== head.runId) return false;
   if (!record.options?.nativeQuestionId && (record.options?.sourceContext?.documentBinding

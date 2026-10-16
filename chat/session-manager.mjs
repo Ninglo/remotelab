@@ -1,3 +1,4 @@
+import { completeDeliveryReview, validateDeliveryReview } from './delivery-review.mjs';
 import { findActiveFeishuThreadExecution, threadContinuationExpired } from './feishu-thread-continuation.mjs';
 import { captureInflightTrial, inflightTrialPrompt } from './inflight-trial.mjs';
 import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
@@ -2068,6 +2069,7 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
   if (record) {
     await recordWorkOutcome(sessionId, record, finalizedRun);
     await completeGroupSync(record, finalizedRun);
+    await completeDeliveryReview(record);
     await completeExecutionPlan(record, finalizedRun);
     await requests.mutate(record.key, current => ({ ...current, postCompletionPending: false }));
     await requestRuntime.refresh(record.key);
@@ -3579,7 +3581,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       throw Object.assign(new Error('这道问题已结束，回答未应用；需要修改时请直接说明新的选择。'), { code: 'QUESTION_EXPIRED' });
     }
   }
-  else if (!priorRequest && activeNative && !options.internalOperation && !options.workReference && !options.routingRethink && !options.routingSource && !syncDecisionText({ text, options }) && !savedImages.length) {
+  else if (!priorRequest && activeNative && !options.internalOperation && !options.workReference && !options.routingRethink && !options.reviewFeedback && !options.routingSource && !syncDecisionText({ text, options }) && !savedImages.length) {
     const question = await readNativeQuestion(runDir(activeRequest.runId));
     if (isNativeQuestionShortcut(question, { text, options })) options = { ...options, nativeQuestionId: question.id };
   }
@@ -3619,7 +3621,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       optInPersonId: options.viewPersonId,
     }) || session;
   }
-  if (!priorRequest && activeNative && !options.internalOperation && !options.routingRethink && !options.routingSource &&
+  if (!priorRequest && activeNative && !options.internalOperation && !options.routingRethink && !options.reviewFeedback && !options.routingSource &&
     (options.freshThread || ['tool', 'model', 'effort', 'thinking'].some(key => (runtimeSelection[key] || '') !== (activeRequest.runtimeSelection?.[key] || '')))) {
     throw Object.assign(new Error('当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。'), { code: 'SESSION_BUSY' });
   }
@@ -3752,13 +3754,14 @@ async function launchAutomationRun(runId, options = {}) {
 }
 
 async function prepareRequestRun(record) {
-  if ((record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
+  if ((record.options?.reviewFeedback || record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
       || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
       // A run-bound addition can only be steered. If it becomes the queue head
       // after cancellation/completion, never reinterpret it as new work.
       if (record.options?.sourceContext?.feishuContinuationRunId) throw threadContinuationExpired();
       await validateGroupRethink(record);
+      await validateDeliveryReview(record);
       await validateExecutionPlanRequest(record);
     }
     catch (error) {
