@@ -7,6 +7,7 @@ import { loadPersonalMemorySettings, changePersonalMemorySettings } from '../../
 
 const plain = content => ({ tag: 'plain_text', content });
 const md = content => ({ tag: 'markdown', content });
+const caption = content => ({ ...md(`<font color='grey'>${content}</font>`), text_size: 'notation' });
 const progressLabels = { none: '只看最终结果', messages: '进展单独发消息', card_latest: '卡片只留最新进展', card_all: '卡片保留全部进展' };
 export const PERSONAL_INTRO = '嗨，我是 Index，你的 AI 同事。\n查资料、写文档、改代码、跑实验，都可以来找我。把正在讨论的事转给我也行，我们一起想办法，把事情做成。\n我会结合能读到的项目资料和已有讨论接着做，也会提出自己的判断。你随时可以补充、纠正；这些反馈会帮助我更懂团队的工作。';
 
@@ -68,8 +69,10 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     const field = buttons[0].behaviors[0].value.field;
     const current = buttons.find(b => b.disabled).behaviors[0].value;
     const [title, summary] = summaries[field];
-    return [field, { tag: 'column', width: 'weighted', weight: 1, vertical_spacing: '8px', elements: [
-      md(`**${title}**\n${summary}`),
+    return [field, { tag: 'column', width: 'weighted', weight: 1, vertical_spacing: '6px',
+      background_style: 'grey', padding: '12px', vertical_align: 'top', elements: [
+      md(`**${title.replace(' · 试用', '')}**${title.includes(' · 试用') ? " <font color='grey'>· 试用</font>" : ''}`),
+      caption(summary),
       { tag: 'select_static', width: 'fill', initial_option: String(current.value),
         options: buttons.map(b => ({ text: plain(b.text.content.replace(/^当前：/, '')), value: String(b.behaviors[0].value.value) })),
         behaviors: [{ type: 'callback', value: { namespace: 'personal-settings', key: record.key, field, revision: current.revision, input: 'select' } }] },
@@ -78,20 +81,20 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
   const order = ['progress', 'checklist', 'memory', 'opening', 'routing', 'strictStartCheck'];
   const tiles = order.map(field => byField.get(field) || { tag: 'column', width: 'weighted', weight: 1,
     elements: [md('**个人记忆**\n记住称呼和协作习惯。当前账号尚未开放。')] });
-  const rows = [0, 2, 4].map(i => ({ tag: 'column_set', horizontal_spacing: '16px', columns: tiles.slice(i, i + 2) }));
+  const rows = [0, 2, 4].map(i => ({ tag: 'column_set', flex_mode: 'stretch', horizontal_spacing: '12px', columns: tiles.slice(i, i + 2) }));
   const settingHelp = order.flatMap(field => {
     const item = settingPanels.find(p => p.elements.some(e => e.tag === 'column_set' && e.columns[0].elements[0].behaviors[0].value.field === field));
     return item ? [md(`**${summaries[field][0]}**`), ...item.elements.filter(e => e.tag === 'markdown')] : [];
   });
   const elements = [
-    md(hasGuide ? guide.intro : '嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'),
+    md(hasGuide ? guide.intro.replace(/\n{2,}/g, '\n') : '嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'),
     ...(notice ? [md(notice)] : []),
-    { ...panel('个人设置', [md('选择后自动保存，仅调整与你的协作方式。'), ...rows,
-      panel('各项设置的详细说明', settingHelp), button('刷新设置', 'refresh', null)]),
-      element_id: 'personal_settings_region', expanded: true, vertical_spacing: '16px' },
+    { ...panel('个人设置', [caption('选择即保存 · 仅对你生效'), ...rows,
+      panel('设置详解 · 用途与生效范围', [...settingHelp, button('刷新设置', 'refresh', null)])]),
+      element_id: 'personal_settings_region', expanded: true, vertical_spacing: '12px' },
     { ...panel('使用指南 · 交办、补充与授权', help), element_id: 'personal_help_region' },
   ];
-  return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 个人设置与使用说明') }, body: { elements } };
+  return { schema: '2.0', config: { update_multi: true, enable_forward: false }, header: { template: 'blue', title: plain('Index · 个人设置与使用说明') }, body: { padding: '16px', vertical_spacing: '12px', elements } };
 }
 
 export function createPersonalSettingsController(runtime, { authorize = async () => false, now = Date.now } = {}) {

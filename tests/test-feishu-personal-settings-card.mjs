@@ -37,7 +37,7 @@ try {
   const rows = settingsRegion.elements.filter(e => e.tag === 'column_set');
   assert.equal(rows.length, 3);
   const tiles = rows.flatMap(row => row.columns);
-  assert.ok(tiles.every(tile => tile.elements[0].content.includes('\n')), 'every control keeps its explanation beside it');
+  assert.ok(tiles.every(tile => tile.elements.some(e => e.tag === 'markdown' && e.text_size === 'notation' && e.content.length > 30)), 'every control keeps its explanation beside it');
   const controls = tiles.flatMap(tile => tile.elements).filter(e => e.tag === 'select_static');
   assert.equal(controls.length, 6);
   assert.ok(controls.every(c => c.options.some(o => o.value === c.initial_option)), 'all controls display their saved value');
