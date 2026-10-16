@@ -95,9 +95,13 @@ try {
     assert.equal((await requests.get(bad.key)).mainlineReply, undefined);
   }
   const silent = await accept('no-body');
-  await publish(silent, [final('silent', envelope({ noTextReason: '人与人之间的通知，无需参与。' }))]);
+  const silentSupplement = await accept('human-mention', silent);
+  await publish(silent, [final('silent', envelope({ requestIds: [silent.requestId, silentSupplement.requestId],
+    noTextReason: '人与人之间的通知及追问，无需参与。' }))]);
   assert.equal((await requests.get(silent.key)).deliveries.length, 0);
   assert.equal(pilotInputResult(await requests.get(silent.key), { id: silent.runId }).state, 'completed');
+  assert.equal((await requests.get(silentSupplement.key)).deliveries.length, 0);
+  assert.equal(pilotInputResult(await requests.get(silentSupplement.key), { id: silent.runId }).state, 'completed');
 
   const stopped = await accept('stopped');
   await publishNativeFeishuResponses(stopped, [final('stopped-final', envelope({ replyMode: 'inline' }, '未完成的答复'))],

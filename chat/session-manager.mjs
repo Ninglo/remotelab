@@ -1691,8 +1691,8 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
     ? '答复已生成，但回复决定中的消息对应关系或字段无效。正文已保留，尚未完成投递。' : '';
   const uncoveredRoot = record.responseDecisionMessageIds?.length && !record.mainlineReply && !record.routingHandoff
     && !record.deliveries.some(d => d.kind === 'content' && !['opening', 'progress'].includes(d.surfaceKind));
-  const decisionFailure = responseError || (uncoveredRoot ? pilotInputResult(record, run).payload.text : '');
-  const deliveryPayload = decisionFailure ? { text: decisionFailure, attachments: [] }
+  const decisionFailure = responseError || (uncoveredRoot ? pilotInputResult(record, run).error : '');
+  const deliveryPayload = decisionFailure ? { text: responseError, attachments: [] }
     : run.state === 'completed' ? pendingPayload : {
     text: run.state === 'cancelled' ? '任务已取消。'
       : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`,

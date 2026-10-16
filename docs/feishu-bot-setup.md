@@ -625,7 +625,7 @@ input coverage recover from the original durable reservation after interruption.
 Attachments follow the same selected location. A no-text decision records its
 reason without creating a status paragraph. Invalid fields or input ownership
 retain the answer in history and an explicit error; no model guesses its coverage.
-The Harness still judges whether the answer actually addresses each input.
+Missing coverage remains incomplete internally; it does not authorize a transport-generated group reply. In particular, an empty final in a human-to-human discussion must not trigger a missing-bookkeeping acknowledgement for a steered input. Explicit no-text decisions record successful handling; an unmarked omission does not. The Harness still judges whether the answer actually addresses each input.
 
 Confirmed sync returns retain the source execution's selected destination;
 late callbacks do not select a new location. Their cards show a short original

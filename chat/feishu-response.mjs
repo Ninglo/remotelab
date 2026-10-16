@@ -140,6 +140,10 @@ export function pilotInputResult(record, run) {
     executionRunId: run.id, executionState: run.state, routingHandoff: record.routingHandoff };
   const text = run.state === 'cancelled' ? '本轮已取消，这条消息尚未完成分流或独立回复。'
     : '这条消息已接收，但本轮未保存它的分流或独立回复，处理尚未完成。';
-  return { state: run.state === 'cancelled' ? 'cancelled' : 'failed', payload: { text, attachments: [] },
+  // Missing bookkeeping is an internal failure, not a model-authored reply.
+  // Execution failure/cancellation is reported by its owning request. It does
+  // not authorize another reply to every unclaimed supplemental message.
+  return { state: run.state === 'cancelled' ? 'cancelled' : 'failed',
+    payload: { text: '', attachments: [] },
     executionRunId: run.id, error: text };
 }

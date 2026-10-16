@@ -15,9 +15,13 @@ const response = '<private>feishu-response:{"replyMode":"thread","requestIds":["
 const fixture = await readFile(new URL('./fixtures/native-codex-app-server.cjs', import.meta.url), 'utf8');
 await writeFile(executable, fixture.replace("finalText = 'durable native answer'", `finalText = ${JSON.stringify(response)}`));
 await chmod(executable, 0o755);
+const silentExecutable = join(home, 'bin/response-silent');
+await writeFile(silentExecutable, fixture.replace("finalText = 'durable native answer'", "finalText = ''"));
+await chmod(silentExecutable, 0o755);
 process.env.PATH = join(home, 'bin') + ':' + process.env.PATH;
 await writeFile(join(dir, 'tools.json'), JSON.stringify([{ id: 'response-native', name: 'Isolated response fixture',
-  command: 'response-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' }]));
+  command: 'response-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
+  { id: 'response-silent', name: 'Silent fixture', command: 'response-silent', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' }]));
 await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_a', people: [
   { id: 'person_a', name: 'A', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
 ] }));
@@ -74,6 +78,23 @@ try {
   assert.equal(history.filter(e => e.type === 'work_event' && e.action === 'mainline-input-reply').length, 1);
   assert(!history.some(e => e.type === 'tool_use' && /work reply/.test(JSON.stringify(e))),
     'native final owns coverage without an additional model tool call');
+  // Real group regression: a code link followed by an @mention of another
+  // human reaches the same native turn. Empty model finals must stay empty;
+  // missing input bookkeeping remains internal instead of creating a reply.
+  const silentSession = await manager.createSession(home, 'response-silent', 'Human discussion fixture', {
+    sourceId: 'feishu', conversation: origin, groupFeed: true,
+  });
+  const silentOpts = id => ({ ...opts(id), tool: 'response-silent' });
+  const silentRoot = await manager.submitHttpMessage(silentSession.id, '这里是代码链接。', [], silentOpts('silent-link'));
+  await until(async () => (await requests.byRunId(silentRoot.run.id))?.preparedAt);
+  await manager.submitHttpMessage(silentSession.id, '@同事 这个拉了不？', [], silentOpts('silent-mention'));
+  await until(async () => (await requests.byRequest(silentSession.id, 'silent-mention'))?.nativeReceipt?.accepted);
+  await writeFile(join(home, `${silentRoot.run.id}.release`), 'release');
+  const silentResult = await until(async () => { const r = await requests.byRequest(silentSession.id, 'silent-mention'); return r?.result && r; });
+  assert.equal(silentResult.result.state, 'failed', 'omission is not falsely marked as handled');
+  assert.match(silentResult.result.error, /尚未完成/);
+  assert.equal(silentResult.deliveries.length, 0, 'transport does not speak over the silent model');
+  assert.equal((await requests.byRunId(silentRoot.run.id)).deliveries.length, 0);
   console.log('FEISHU_RESPONSE_RUNTIME_VERIFIED: real admission, native steer, final projection and per-input settlement publish one combined answer and reaction; no Feishu or model network.');
 } finally {
   await manager.killAll();

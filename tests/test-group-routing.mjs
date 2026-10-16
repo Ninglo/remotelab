@@ -135,7 +135,8 @@ try {
   const missing = await input('unhandled', '独立问题', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
   const missingResult = pilotInputResult(missing, { id: localRoot.runId, state: 'completed' });
   assert.equal(missingResult.state, 'failed');
-  assert.match(missingResult.payload.text, /尚未完成/);
+  assert.match(missingResult.error, /尚未完成/);
+  assert.equal(missingResult.payload.text, '', 'internal missing coverage must not create a group reply');
   await assert.rejects(replyGroupInput(status, { ...replyPacket, requestIds: ['status-input', 'unhandled'] }), /active pilot execution|different reply/);
   const combinedA = await input('combined-a', '补充 A', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
   const combinedB = await input('combined-b', '补充 B', { routingPilotMainline: true, routingPilotMainlineProtocol: 2 });
