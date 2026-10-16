@@ -238,11 +238,14 @@ try {
   const secondReview = await requests.byRequest('work', 'routing-sync:' + crashDraft.proposal.id);
   await mutateSessionMeta('work', s => { s.workAwareness.intents.push({ id: 'newer' }); return true; });
   await assert.rejects(validateGroupRethink(secondReview), /目标讨论已变化/);
-  await completeGroupSync({ ...secondReview, result: { state: 'failed', error: '目标讨论已变化，请重新确认。' } }, { id: secondReview.runId });
+  await completeGroupSync({ ...secondReview, result: { state: 'failed', error: '目标讨论已变化，请重新确认。',
+    payload: { text: '已核对的部分依据仍保留。还有一个必须回答的问题。' } } }, { id: secondReview.runId });
   const failedPacket = (await readGroupRoutingState(await findSessionMeta('main'))).proposals.find(p => p.id === crashDraft.proposal.id);
   const failure = (await requests.byRunId(failedPacket.returnRunId)).deliveries[0];
   assert.equal(failure.foldedDetails.failed, true);
   assert.match(failure.foldedDetails.summary, /目标讨论已变化/, 'failure stays visible outside the folded details');
+  assert.match(failure.text, /必须回答的问题/, 'a failed review retains partial findings and questions');
+  assert.doesNotMatch(failure.foldedDetails.summary, /部分依据/, 'partial detail does not flatten a failed review');
   assert.equal(failedPacket.targetDeliveryId, undefined);
   const context = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext, { inputReplyContract: true });
   assert.match(context, /sourceRequestId/); assert(context.length < 16000);

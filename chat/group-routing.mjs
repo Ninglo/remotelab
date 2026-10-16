@@ -552,9 +552,10 @@ export async function completeGroupSync(record, run) {
   if (!packet || packet.state === 'return-queued') return;
   const success = record.result?.state === 'completed';
   const result = stripHiddenBlocks(record.result?.payload?.text || '').trim();
+  const failureNotice = '目标未完成复核：' + (record.result?.error || '执行已停止，请查看原工作话题。');
   const body = success ? result || '目标已结束，但没有返回可用结论。'
-    : '目标未完成复核：' + (record.result?.error || '执行已停止，请查看原工作话题。');
-  const foldedDetails = syncResultPresentation(packet, body, { failed: !success });
+    : [failureNotice, result].filter(Boolean).join('\n\n');
+  const foldedDetails = syncResultPresentation(packet, success ? body : failureNotice, { failed: !success });
   const text = `【${foldedDetails.title}】\n来自：${packet.targetName}\n\n${body}`
     + (foldedDetails.url ? `\n\n[查看原工作话题](${foldedDetails.url})` : '');
   // Publish the approved information with the reconsideration in its owning
