@@ -1099,6 +1099,11 @@ await writeFile(tempConfigPath, `${JSON.stringify({
 
 const loadedConfig = await loadConfig(tempConfigPath);
 const candidateConfigPath = join(tempConfigDir, 'candidate-config.json');
+assert.equal(loadedConfig.personalSettings.enabled, false, 'personal settings full rollout is explicit');
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', personalSettings: { enabled: true, openIds: ['ou_legacy'] } }));
+assert.deepEqual((await loadConfig(candidateConfigPath)).personalSettings, { enabled: true, openIds: ['ou_legacy'], webUrl: '' });
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', personalSettings: { enabled: 'true' } }));
+assert.equal((await loadConfig(candidateConfigPath)).personalSettings.enabled, false, 'truthy strings do not enable full rollout');
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', groupReactionCandidates: ['SOB', 'YouAreTheBest'] }));
 assert.deepEqual((await loadConfig(candidateConfigPath)).groupReactionCandidates, ['SOB', 'YouAreTheBest']);
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', groupReactionCandidates: ['not-valid'] }));

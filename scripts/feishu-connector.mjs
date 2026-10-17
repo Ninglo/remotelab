@@ -402,7 +402,11 @@ async function loadConfig(pathname) {
     groupReactionCandidates: normalizeFeishuReactionCandidates(parsed.groupReactionCandidates),
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     projectCards: parsed.projectCards === true,
-    personalSettings: { openIds: Array.isArray(parsed.personalSettings?.openIds) ? parsed.personalSettings.openIds.filter(x => typeof x === 'string' && /^ou_[a-zA-Z0-9]+$/.test(x)) : [], webUrl: trimString(parsed.personalSettings?.webUrl) },
+    personalSettings: {
+      enabled: parsed.personalSettings?.enabled === true,
+      openIds: Array.isArray(parsed.personalSettings?.openIds) ? parsed.personalSettings.openIds.filter(x => typeof x === 'string' && /^ou_[a-zA-Z0-9]+$/.test(x)) : [],
+      webUrl: trimString(parsed.personalSettings?.webUrl),
+    },
     projectSurfacesPath: trimString(parsed?.projectSurfacesPath)
       ? resolve(configDir, parsed.projectSurfacesPath) : '',
     replyPolicy: normalizeFeishuReplyPolicy(parsed?.replyPolicy),

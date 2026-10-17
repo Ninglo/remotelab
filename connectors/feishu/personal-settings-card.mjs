@@ -114,7 +114,8 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
   const queues = new Map();
   const serial = key => { if (!queues.has(key)) queues.set(key, serialQueue()); return queues.get(key); };
   const enabled = source => source?.chatType === 'p2p' && !!source.chatId && !!source.tenantKey && !!source.sender?.openId
-    && (runtime.config.personalSettings?.openIds || []).includes(source.sender.openId);
+    && (runtime.config.personalSettings?.enabled === true
+      || (runtime.config.personalSettings?.openIds || []).includes(source.sender.openId));
   async function actorFor(source, { discover = false } = {}) {
     if (!enabled(source) || !await authorize(source)) throw Error('当前账号尚未开放此设置入口。');
     const document = await loadAuthDocument({ persistMigration: false });
