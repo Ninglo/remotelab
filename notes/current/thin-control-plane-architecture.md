@@ -27,7 +27,9 @@ The selected Harness owns:
 
 RemoteLab must not wrap ordinary turns in a second hidden semantic gate, planner, or reply reviewer.
 
-The same boundary applies to prompt text. First-turn and per-turn projections carry RemoteLab-only facts and capabilities, not a global persona, reply style, execution bias, permission heuristic, generic content policy, or copied provider developer instructions. Code-backed access scope and connector bindings remain product responsibilities; prompts only describe the resulting state.
+The same boundary applies to prompt text. First-turn and per-turn projections carry RemoteLab facts and capabilities without adding a global persona, execution bias, permission heuristic, generic content policy, or copied provider developer instructions. Code-backed access scope and connector bindings remain product responsibilities; prompts describe the resulting state.
+
+The explicitly requested shared writing guidelines (2026-10-17) are maintained in `chat/prompt-assets/system/startup-context.md`: evidence-first research prose, causal mechanisms and business implications, necessary causal qualifications, concise comparisons, and deletion of redundant explanation and summaries. They are included by `buildSystemContext` for fresh provider contexts. Prompt assets are cached for the process lifetime, so deployment requires restarting the core service; already resumed native threads are not rewritten. This replaces the previous exclusion of shared reply-style guidance while leaving Harness execution and safety responsibilities intact.
 
 ## Current message path
 

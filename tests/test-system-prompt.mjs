@@ -16,7 +16,7 @@ const { buildSystemContext } = await import(`../chat/system-prompt.mjs?t=${Date.
 const context = await buildSystemContext({ sessionId: 'session-test-123' });
 
 assert.match(context, /RemoteLab is the transport and runtime substrate for this session/);
-assert.match(context, /does not replace the Harness's native task interpretation, planning, safety model, tool use, or response style/);
+assert.match(context, /does not replace the Harness's native task interpretation, planning, safety model, or tool use/);
 assert.match(context, /RemoteLab Surfaces/);
 assert.match(context, /default working directory for newly created files is ~\/instance-data\/workspace/);
 assert.match(context, /An explicit user-provided project or path takes precedence/);
