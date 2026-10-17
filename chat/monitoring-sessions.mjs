@@ -190,11 +190,14 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     const ledger=(dashboard ? usage.trendRuns || usage.topRuns || [] : usage.topRuns||[]).slice().sort((a,b)=>time(b.ts)-time(a.ts)).slice(0,maxRuns), grouped=new Map();
     for(let i=0;i<ledger.length;i+=8) await Promise.all(ledger.slice(i,i+8).map(async l=>{
       if(!safeId(l.runId)||!safeId(l.sessionId))return;
-      const run=projectRun(await readRunState(join(runsDir,l.runId), file => projected(file, r => ({
-        id:r.id, sessionId:r.sessionId, requestId:r.requestId, storageVersion:r.storageVersion,
-        state:r.state, startedAt:r.startedAt, completedAt:r.completedAt, contextInputTokens:r.contextInputTokens,
-        executionValidationFailure:r.executionValidationFailure, codexAccount:r.codexAccount ? {id:r.codexAccount.id} : undefined,
-      }), coverage)));
+      const run=projectRun(await readRunState(join(runsDir,l.runId), file => projected(file, r => {
+        // Execution/recovery shards are sparse patches. Absent fields must not
+        // erase the identity and timestamps supplied by the base status file.
+        const fields = ['id','sessionId','requestId','storageVersion','state','startedAt','completedAt','contextInputTokens','executionValidationFailure'];
+        const out = Object.fromEntries(fields.filter(k => Object.hasOwn(r,k)).map(k => [k,r[k]]));
+        if (Object.hasOwn(r,'codexAccount')) out.codexAccount = r.codexAccount ? {id:r.codexAccount.id} : r.codexAccount;
+        return out;
+      }, coverage)));
       let request=null;
       if(run?.requestId) {
         const k=key(l.sessionId,run.requestId);

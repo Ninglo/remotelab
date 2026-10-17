@@ -59,6 +59,17 @@ try {
  let calls=0,clock=0;const reader=createSessionMonitoringReader({configDir:root,runsDir:join(root,'runs'),sessionsFile:join(root,'sessions.json'),now:()=>clock,getPeople:async()=>people,getUsage:async()=>{calls++;return {runCount:1,topRuns:[ledger],bySession:[{sessionId:'s1'}]}}});
  const [a,b]=await Promise.all([reader(),reader()]);assert.equal(calls,1);assert.equal(a,b);assert.equal(a.sessions[0].metrics.prepareMs.mean,3000);assert(!JSON.stringify(a).includes('private'));
  clock=61000;const second=await reader();assert.equal(calls,2);assert.equal(second.coverage.bytesRead,0);assert.equal(second.coverage.cacheHits,3);
+ // Current runs store execution/recovery as sparse shards without identity.
+ await writeFile(join(root,'runs','r1','execution.json'),JSON.stringify({state:'completed',startedAt:run.startedAt,completedAt:run.completedAt}));
+ await writeFile(join(root,'runs','r1','recovery.json'),JSON.stringify({updatedAt:'2026-01-01T00:06:00Z'}));
+ clock=122000;const split=await reader();
+ assert.equal(split.sessions[0].metrics.prepareMs.mean,3000,'sparse shards preserve request association');
+ assert.equal(split.sessions[0].metrics.injectionBytes.mean,3,'sparse shards preserve manifest association');
+ assert.equal(split.sessions[0].metrics.runMs.mean,295000,'execution times survive a sparse recovery shard');
+ const shardReader=createSessionMonitoringReader({configDir:root,runsDir:join(root,'runs'),sessionsFile:join(root,'sessions.json'),now:()=>Date.parse('2026-01-01T01:00:00Z'),getPeople:async()=>people,getUsage:async()=>({runCount:1,trendRuns:[ledger],bySession:[]})});
+ const dashboard=await shardReader({days:7,dashboard:true});
+ assert.equal(dashboard.agentDashboard.today.injection.count,1);
+ assert.equal(dashboard.agentDashboard.today.injection.mean,3);
  const bounded=createSessionMonitoringReader({configDir:root,runsDir:join(root,'runs'),sessionsFile:join(root,'sessions.json'),maxReadBytes:0,getPeople:async()=>people,getUsage:async()=>({runCount:1,topRuns:[ledger],bySession:[]})});
  const c=await bounded();assert(c.coverage.truncated);assert.equal(c.sessions[0].metrics.prepareMs.count,0);
  const compact=await compactSessionMonitoring({...a,usage:{bySession:[{sessionId:'s1',totalTokens:400}],totals:{totalTokens:400}}},async()=>({run:{state:'running',waiting:true},queue:{count:0}}));

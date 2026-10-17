@@ -459,6 +459,11 @@ secrets never enter the response or projection cache. This does not backfill all
 history or instrument each model call. Full Session usage aggregates and bounded
 stage samples have separate coverage.
 
+Run measurements merge the base status with sparse execution and recovery shards.
+Projection retains only fields present in each shard, so absent shard identities or
+timestamps cannot erase the base Run/Request association. This also preserves
+manifest size measurements and current-day dashboard samples after split-state runs.
+
 Each stage has its own paired sample count: accepted→prepared includes queuing,
 prepared→started covers launch, started→completed includes explicit waits, and
 settled→all final content parts delivered covers final transport. Requests
