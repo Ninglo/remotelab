@@ -1,5 +1,5 @@
 import { codexRuleRecoveryHook } from '../codex-rule-recovery.mjs';
-import { buildCodexArgs } from '../adapters/codex.mjs';
+import { buildCodexArgs, codexErrorMessage } from '../adapters/codex.mjs';
 import { normalizeLimits } from '../../lib/codex-account-status.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
@@ -280,10 +280,10 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           if (activeTurnId === turn.id) activeTurnId = '';
           const terminal = { status: turn.status, turnId: turn.id,
             ...(finalAnswerTurns.has(turn.id) ? { finalAnswerCompleted: true } : {}),
-            ...(turn.error ? { error: turn.error.message || 'Codex turn failed' } : {}) };
+            ...(turn.error ? { error: codexErrorMessage(turn.error, 'Codex turn failed'), providerError: turn.error } : {}) };
           if (!activeTurnId) lastTerminal = terminal;
           onEvent(turn.status === 'failed'
-            ? { type: 'turn.failed', turn_id: turn.id, error: { message: terminal.error || 'Codex turn failed' } }
+            ? { type: 'turn.failed', thread_id: threadId, turn_id: turn.id, error: turn.error || { message: 'Codex turn failed' } }
             : { type: 'turn.completed', turn_id: turn.id, status: turn.status });
           maybeSettle();
           break;
@@ -321,7 +321,11 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
         case 'turn/plan/updated':
           onEvent({ type: 'item.completed', item: { id: `plan-${params.turnId}`, type: 'todo_list', items: (params.plan || []).map(step => ({ text: step.step, completed: step.status === 'completed' })) } });
           break;
-        case 'error': onEvent({ type: 'error', message: params.error?.message || params.message || 'Codex provider error' }); break;
+        case 'error': onEvent({ type: 'error', message: params.error?.message || params.message || 'Codex provider error',
+          ...(params.error ? { error: params.error } : {}),
+          thread_id: params.threadId || threadId, turn_id: params.turnId || activeTurnId,
+          ...(typeof params.willRetry === 'boolean' ? { will_retry: params.willRetry } : {}),
+        }); break;
         default: deltaItem(message.method, params); break;
       }
     } catch (error) { onError(error); }

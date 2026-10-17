@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { createCodexDriver } from '../chat/native/codex.mjs';
+import { createCodexAdapter } from '../chat/adapters/codex.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function harness(options = {}, onQuestion) {
@@ -25,6 +26,34 @@ function harness(options = {}, onQuestion) {
     return promise;
   }
   return { driver, sent, events, settled, errors, reply, notify, start };
+}
+
+{
+  const h = harness(); await h.start();
+  const error = { message: 'This request was blocked by our safety systems.',
+    codexErrorInfo: 'misalignmentPolicyViolation', additionalDetails: 'provider diagnostic',
+    misalignment: { errorType: 'other', detailedExplanation: 'Review the earlier action.',
+      steer: { message: 'Provider continuation instruction requiring human confirmation.' } } };
+  const requestCount = h.sent.length;
+  h.notify('error', { turnId: 'turn-1', error, willRetry: false });
+  assert.equal(h.settled.length, 0, 'notices do not settle the native turn');
+  h.notify('turn/completed', { turn: { id: 'turn-1', status: 'failed', error } });
+  const terminal = h.events.findLast(event => event.type === 'turn.failed');
+  assert.deepEqual(terminal.error, error, 'native public error details survive transport');
+  assert.deepEqual(h.settled[0].providerError, error);
+  assert.match(h.settled[0].error, /misalignment_policy_violation/);
+  const adapter = createCodexAdapter();
+  for (const event of h.events.filter(event => ['error', 'turn.failed'].includes(event.type))) {
+    const [normalized] = adapter.parseLine(JSON.stringify(event));
+    assert.deepEqual(normalized.providerError, error, 'durable event retains the full diagnostic');
+    assert.equal(normalized.providerThreadId, 'thread-1');
+    assert.equal(normalized.providerTurnId, 'turn-1');
+    assert.match(normalized.content, /Review the earlier action/);
+    if (event.type === 'error') assert.equal(normalized.willRetry, false);
+  }
+  await tick();
+  assert.equal(h.sent.length, requestCount, 'a block or provider steer must never auto-dispatch continuation');
+  h.driver.close();
 }
 
 {

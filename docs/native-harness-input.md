@@ -19,6 +19,14 @@ contract unless their tool record explicitly declares `"inputMode": "native"`.
 An arbitrary program that only mimics a CLI's output is not automatically a
 bidirectional implementation of that CLI's protocol.
 
+Codex errors retain the native `codexErrorInfo`, `additionalDetails` and optional
+public `misalignment` details in the durable spool and normalized status events,
+along with thread/turn IDs and `willRetry`. Only structured
+`misalignmentPolicyViolation` errors receive the behavior-review explanation;
+message text alone does not classify a block. Error notices remain nonterminal
+until the native turn fails, and returned continuation instructions are never
+automatically submitted. See [safety-block diagnosis and handling](platform-skills/session-debug.md#codex-safety-blocks).
+
 The HTTP endpoint remains `POST /api/sessions/:id/messages`. It durably accepts
 each requestId and returns a response address. Compatible active native inputs
 return `queued: false`; they are forwarded without waiting for the root task to

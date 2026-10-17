@@ -12,6 +12,23 @@ import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 import { nativeQuestionEvent } from '../native-user-questions.mjs';
 
+export function codexErrorMessage(error, fallback = 'unknown error') {
+  const message = error?.message || fallback;
+  const code = error?.codexErrorInfo ?? error?.codex_error_info ?? error?.code;
+  if (!['misalignmentPolicyViolation', 'misalignment_policy_violation'].includes(code)) return message;
+  const explanation = error?.misalignment?.detailedExplanation ?? error?.misalignment?.detailed_explanation;
+  return `${message}\nOpenAI stopped this conversation for review (misalignment_policy_violation). Review prior actions before continuing; do not automatically retry.${explanation ? `\n${explanation}` : ''}`;
+}
+
+function providerErrorEvent(obj, prefix, error) {
+  return { ...statusEvent(`${prefix}${codexErrorMessage(error)}`),
+    ...(error ? { providerError: error } : {}),
+    ...(obj.thread_id ? { providerThreadId: obj.thread_id } : {}),
+    ...(obj.turn_id ? { providerTurnId: obj.turn_id } : {}),
+    ...(typeof obj.will_retry === 'boolean' ? { willRetry: obj.will_retry } : {}),
+  };
+}
+
 /**
  * Codex CLI adapter.
  *
@@ -109,7 +126,7 @@ export function createCodexAdapter() {
 
         case 'turn.failed':
           // turn.failed is Codex's authoritative terminal failure event.
-          events.push(statusEvent(`error: ${obj.error?.message || 'unknown error'}`));
+          events.push(providerErrorEvent(obj, 'error: ', obj.error));
           break;
 
         case 'item.started':
@@ -145,7 +162,7 @@ export function createCodexAdapter() {
           // and then finish with turn.completed. Keep the notice visible without
           // terminalizing RemoteLab; a final turn.failed or non-zero process exit
           // remains authoritative for failure.
-          events.push(statusEvent(`Provider notice: ${obj.message || 'unknown error'}`));
+          events.push(providerErrorEvent(obj, 'Provider notice: ', obj.error || { message: obj.message || 'unknown error' }));
           break;
 
         default:

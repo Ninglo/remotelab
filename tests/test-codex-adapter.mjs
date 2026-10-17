@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { createCodexAdapter } from '../chat/adapters/codex.mjs';
+import { createCodexAdapter, codexErrorMessage } from '../chat/adapters/codex.mjs';
 
 const adapter = createCodexAdapter();
+
+assert.equal(codexErrorMessage({ message: 'Potentially unintended activity.' }), 'Potentially unintended activity.', 'message text alone must not classify a safety block');
+assert.match(codexErrorMessage({ message: 'blocked', codex_error_info: 'misalignment_policy_violation' }), /do not automatically retry/);
+const transportError = { message: 'stream disconnected', codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 503 } } };
+const [transportNotice] = adapter.parseLine(JSON.stringify({ type: 'error', error: transportError, will_retry: true }));
+assert.deepEqual(transportNotice.providerError, transportError);
+assert.equal(transportNotice.willRetry, true);
+assert.equal(transportNotice.content, 'Provider notice: stream disconnected');
 
 for (const phase of ['commentary', 'final_answer']) {
   const [message] = adapter.parseLine(JSON.stringify({ type: 'item.completed', item: {
