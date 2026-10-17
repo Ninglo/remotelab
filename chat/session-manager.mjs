@@ -1429,6 +1429,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   slots.push(createModelContextSlot('project_memory', 'Current project background', turnContext.project));
   slots.push(createModelContextSlot('project_work_directory', 'Hidden project work directory', turnContext.directory));
   slots.push(createModelContextSlot('personal_memory_learning', 'Personal memory learning', turnContext.personalMemory));
+  slots.push(createModelContextSlot('skill_extraction_trial', 'Personal Skill extraction pilot', turnContext.skillExtraction));
   slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));

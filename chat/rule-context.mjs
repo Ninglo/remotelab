@@ -10,7 +10,7 @@ import { readNativeInputReceipt } from './native-input-transport.mjs';
 import { createModelContextSlot } from './model-context-slots.mjs';
 
 const stable = new Set(['surface_messages', 'session_workboard', 'source_runtime',
-  'session_instructions', 'message_reply_mode', 'strict_start_check', 'inflight_trial', 'project_memory', 'project_work_directory', 'personal_memory_learning']);
+  'session_instructions', 'message_reply_mode', 'strict_start_check', 'inflight_trial', 'project_memory', 'project_work_directory', 'personal_memory_learning', 'skill_extraction_trial']);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 // Use the latest input, not any historical matching version: A -> B -> A must

@@ -7,6 +7,7 @@ import { buildProjectMemoryPromptBlock } from './project-memory-runtime.mjs';
 import { buildProjectWorkDirectoryPrompt } from './project-work-directory.mjs';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
 import { buildPersonalMemoryConversationParts } from './personal-memory-conversation.mjs';
+import { buildSkillExtractionTrial } from './skill-extraction-trial.mjs';
 import { experimentBackground } from './feature-experiment-context.mjs';
 import { buildWebTopicDiscoveryPrompt } from './project-topic-context.mjs';
 
@@ -39,6 +40,8 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
   const personalMemory = !experimentInput.automated
     ? await buildPersonalMemoryConversationParts({ personId, identityId, sourceContext, sessionId: session.id })
     : { rules: '', feedback: '' };
+  const skillExtraction = await buildSkillExtractionTrial({ personId, identityId, sourceContext,
+    automated: experimentInput.automated });
   const sectionsBeforeProject = [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
@@ -46,6 +49,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     buildSourceContextPrompt(sourceContext, requestId),
     buildPersonMemoryPromptBlock({ personId, identityId }),
     ...(!separateProjectContext ? [personalMemory.rules] : []),
+    ...(!separateProjectContext ? [skillExtraction] : []),
     personalMemory.feedback,
   ];
   const sectionsAfterProject = [
@@ -61,6 +65,6 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
   // Keep the public text-only reader compatible. The input assembler can put
   // the complete project block in the existing acknowledged/recoverable slots.
   return separateProjectContext
-    ? { project, directory, personalMemory: personalMemory.rules, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
+    ? { project, directory, personalMemory: personalMemory.rules, skillExtraction, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
     : render([...sectionsBeforeProject, project, directory, ...sectionsAfterProject]);
 }

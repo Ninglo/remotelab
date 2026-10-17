@@ -29,6 +29,12 @@ const project = (slots = rules, opts = {}, overrides = {}) => projectRuleContext
   { ...options, ...opts }, { ...deps, ...overrides });
 try {
   const first = await project();
+  const skillSlot = { id: 'skill_extraction_trial', title: 'Skill pilot', content: 'PERSON_A_SKILL_POINTER', delivery: 'turn' };
+  const withSkill = await project([...rules, skillSlot]);
+  const skillSnapshot = JSON.parse(await readFile(withSkill.receipt.file, 'utf8'));
+  assert.ok(skillSnapshot.rules.some(slot => slot.id === skillSlot.id));
+  const removedSkill = await project(rules, {}, { manifest: async () => ({ ruleContextDelivery: withSkill.receipt }) });
+  assert.ok(removedSkill.receipt.removedIds.includes(skillSlot.id), 'switching pilot off removes the previous active rule');
   assert.equal(first.receipt.mode, 'full');
   const snapshot = JSON.parse(await readFile(first.receipt.file, 'utf8'));
   assert.equal(snapshot.rules.length, 4);
