@@ -55,6 +55,76 @@ try {
     assert.deepEqual(delivered.responseDecisionErrors, {});
   }
 
+  // Production regression: native question callbacks do not carry the ordinary
+  // message protocol. They are context for the answer, not separate owners.
+  const clarified = await accept('clarified');
+  const clarification = await accept('feishu-question:accepted', clarified);
+  await requests.mutate(clarification.key, input => ({ ...input,
+    options: { nativeQuestionId: 'question-1', sourceContext: {
+      connector: 'feishu', sender: { senderType: 'user' } } },
+    nativeReceipt: { accepted: true, mode: 'question_answer', origin: 'user', questionId: 'question-1' } }));
+  const clarifiedFinal = final('clarified-final', envelope({ replyMode: 'thread',
+    requestIds: [clarification.requestId, clarified.requestId] }, '根据澄清已完成。'));
+  await publish(clarified, [clarifiedFinal]); await publish(clarified, [clarifiedFinal]);
+  const clarifiedSaved = await requests.get(clarified.key);
+  assert.deepEqual(clarifiedSaved.responseDecisionErrors, {});
+  assert.deepEqual(clarifiedSaved.mainlineReply.contract.requestIds, [clarified.requestId]);
+  assert.equal(clarifiedSaved.deliveries.filter(d => d.kind === 'content').length, 1);
+  assert.equal((await requests.get(clarification.key)).mainlineReply, undefined);
+  for (const mode of ['foreign-run', 'foreign-group', 'rejected', 'unknown']) {
+    const negative = await accept('question-negative-' + mode);
+    let qid = 'feishu-question:unknown';
+    if (mode !== 'unknown') {
+      const q = await accept('feishu-question:' + mode, mode === 'foreign-run' ? clarified : negative,
+        mode === 'foreign-group' ? { ...plan.target, chatId: 'other-group' } : plan.target);
+      qid = q.requestId;
+      await requests.mutate(q.key, input => ({ ...input,
+        options: { nativeQuestionId: 'q', sourceContext: { connector: 'feishu', sender: { senderType: 'user' } } },
+        nativeReceipt: { accepted: mode !== 'rejected', mode: 'question_answer', origin: 'user', questionId: 'q' } }));
+    }
+    await publish(negative, [final('negative-' + mode, envelope({ replyMode: 'thread',
+      requestIds: [negative.requestId, qid] }, '不得发送'))]);
+    assert(Object.keys((await requests.get(negative.key)).responseDecisionErrors).length);
+    assert.equal((await requests.get(negative.key)).deliveries.length, 0);
+  }
+
+  // The run-level final index must not claim the root's input slot when a
+  // supplemental answer was published first (including silent decisions).
+  for (const silent of [false, true]) {
+    const multi = await accept('supplement-first-' + silent);
+    const supplement = await accept('supplement-owner-' + silent, multi);
+    const extraFinal = final('extra-' + silent, envelope({ requestIds: [supplement.requestId], replyMode: 'thread',
+      ...(silent ? { noTextReason: '无需插话' } : {}) }, silent ? '' : '补充答复'));
+    const rootFinal = final('root-' + silent, envelope({ replyMode: 'thread',
+      ...(silent ? { noTextReason: '无需插话' } : {}) }, silent ? '' : '原问题答复'));
+    await publish(multi, [extraFinal, rootFinal]); await publish(multi, [extraFinal, rootFinal]);
+    assert.deepEqual((await requests.get(multi.key)).responseDecisionErrors, {});
+    assert((await requests.get(multi.key)).mainlineReply);
+    assert((await requests.get(supplement.key)).mainlineReply);
+  }
+
+  const overlap = await accept('overlap');
+  const overlapExtra = await accept('overlap-extra', overlap);
+  const combined = final('combined-old', envelope({ replyMode: 'thread',
+    requestIds: [overlap.requestId, overlapExtra.requestId] }, '已完成检查，按要求暂停。'));
+  const revised = final('revised-root', envelope({ replyMode: 'thread' }, '明天再继续。'));
+  await publish(overlap, [combined, revised]); await publish(overlap, [combined, revised]);
+  assert.deepEqual((await requests.get(overlap.key)).responseDecisionErrors, {});
+  assert.equal((await requests.get(overlap.key)).mainlineReply.contract.payload.text, '明天再继续。');
+  assert.deepEqual((await requests.get(overlapExtra.key)).mainlineReply.contract.requestIds, [overlapExtra.requestId]);
+  assert.equal((await requests.get(overlapExtra.key)).deliveries.filter(d => d.kind === 'content').length, 1);
+
+  const handed = await accept('handed');
+  await requests.mutate(handed.key, input => ({ ...input,
+    routingHandoff: { state: 'submitted', targetSessionId: 'child' } }));
+  const handedFinal = final('handed-final', envelope({ noTextReason: '已转交，主线无需重复回复。' }));
+  await publish(handed, [handedFinal]); await publish(handed, [handedFinal]);
+  assert.deepEqual((await requests.get(handed.key)).responseDecisionErrors, {});
+  assert.equal(pilotInputResult(await requests.get(handed.key), { id: handed.runId }).state, 'completed');
+  assert.equal((await requests.get(handed.key)).deliveries.length, 0);
+  await publish(handed, [final('handed-content', envelope({ replyMode: 'thread' }, '不应再发正文'))]);
+  assert(Object.keys((await requests.get(handed.key)).responseDecisionErrors).length);
+
   // Every output entrance preserves the same chosen reaction, independent of
   // legacy directive order. No provider API or real group is used.
   for (const text of [envelope({ replyMode: 'thread', reaction: 'Get' }, '结果'),

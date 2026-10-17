@@ -20,10 +20,33 @@ export async function publishNativeFeishuResponses(record, history, run, {
   for (const event of (finals.length ? finals : candidates.slice(-1)).slice().reverse()) {
     const decision = readFeishuResponseDecision(event.content);
     if (!decision.specified) continue;
-    const ids = decision.requestIds || [record.requestId];
-    if (!decision.error && ids.every(id => covered.has(id))) continue;
-    if (!decision.error && ids.some(id => covered.has(id))) decision.error = 'Final response input sets partially overlap';
-    ids.forEach(id => covered.add(id));
+    let ids = decision.requestIds || [record.requestId];
+    if (!decision.error) {
+      // Question answers are accepted context, not independent reply owners.
+      // Resolve real records; never discard an ID merely by its prefix.
+      const owners = [];
+      for (const id of ids) {
+        const input = await store.byRequest(record.sessionId, id);
+        const origin = record.deliveryPlan || record.options?.sourceDelivery;
+        const source = input?.deliveryPlan || input?.options?.sourceDelivery;
+        if (source?.connector === 'feishu' && source.sourceRouteId === origin?.sourceRouteId
+            && source.target?.chatId === origin?.target?.chatId
+            && source.target?.tenantKey === origin?.target?.tenantKey
+            && input?.options?.nativeQuestionId && input.nativeDispatchRunId === run.id
+            && input.nativeReceipt?.accepted === true && input.nativeReceipt.mode === 'question_answer'
+            && input.nativeReceipt.questionId === input.options.nativeQuestionId
+            && input.nativeReceipt.origin === 'user'
+            && input.options.sourceContext?.connector === 'feishu'
+            && input.options.sourceContext?.sender?.senderType === 'user') continue;
+        owners.push(id);
+      }
+      if (!owners.length) decision.error = 'Response needs an accepted message owner';
+      // A later final owns overlapping inputs; retain the earlier final for
+      // the inputs it explicitly answered that the later final did not claim.
+      ids = owners.filter(id => !covered.has(id));
+      if (!decision.error && !ids.length) continue;
+    }
+    if (!decision.error) ids.forEach(id => covered.add(id));
     selected.unshift({ event, decision, ids });
   }
   for (const { event, decision, ids } of selected) {
@@ -34,6 +57,17 @@ export async function publishNativeFeishuResponses(record, history, run, {
       if (decision.error) throw new Error(decision.error);
       const owner = await store.byRequest(record.sessionId, ids[0]);
       if (!owner || (owner.nativeDispatchRunId || owner.runId) !== run.id) throw new Error('Response input is outside this execution');
+      const silentHandoff = ids.length === 1 && owner.routingHandoff?.state === 'submitted'
+        && decision.noTextReason && !decision.text && decision.reaction === undefined
+        && !event.attachments?.length;
+      if (silentHandoff) {
+        await store.mutate(record.key, current => {
+          const errors = { ...current.responseDecisionErrors }; delete errors[messageId];
+          return { ...current, responseDecisionErrors: errors,
+            responseDecisionMessageIds: [...new Set([...(current.responseDecisionMessageIds || []), messageId])] };
+        });
+        continue;
+      }
       const prepared = await prepareFinal(event);
       if (!prepared) throw new Error('Response attachments are not ready');
       const payload = buildReplyPublicationPayload([prepared], run, { session, fullHistory, includeSessionEntry: false,

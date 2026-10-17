@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-17 — Repeated final-response rejection after clarification
+
+- Feedback: the same generic delivery-failure notice appeared repeatedly, including twice during ordinary task work on the same day.
+- Evidence: six actual request histories reproduced four failure paths in an isolated before/after replay. Two blocked task results included accepted native-question callback IDs; other cases involved a run-wide final index claiming the root input, silent completion after successful handoff, and partially overlapping final input sets.
+- Change: validate question callbacks as context without making them reply owners; distinguish run-level output bookkeeping from per-input completion; retain successful handoffs on a silent final; assign overlapping inputs to the later final while retaining the earlier final's remaining explicit inputs. Unknown, rejected, cross-group and cross-run claims remain rejected.
+- Verification: targeted ownership and native runtime tests plus replay of the six original histories. Repeated replay produced no additional deliveries. Historical requests were read only; replay did not contact Feishu or rewrite their receipts. Deployment and subsequent natural-use evidence are recorded separately in the task.
+
 ## 2026-10-16 — Retire GitHub CI from the delivery loop
 
 - Feedback: CI adds waiting and interrupts iteration without enough value for the current RemoteLab workflow.

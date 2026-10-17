@@ -15,6 +15,10 @@ const sameGroup = (a, b) => a?.connector === 'feishu' && b?.connector === 'feish
   && a.sourceRouteId === b.sourceRouteId && a.target?.chatId === b.target?.chatId
   && a.target?.tenantKey === b.target?.tenantKey;
 const hasAnswerDelivery = input => input.deliveries?.some(isFinalAnswerDelivery);
+// The root also indexes finals owned by other inputs in the same native run.
+// Only legacy/unassigned streamed finals occupy this input's reply slot.
+const hasUnassignedFinal = input => input.streamedFinalReplyIds?.some(
+  id => !input.responseDecisionMessageIds?.includes(id));
 
 async function commitInputReply(input, reply, store = requests) {
   return store.mutate(input.key, current => {
@@ -22,7 +26,7 @@ async function commitInputReply(input, reply, store = requests) {
       if (JSON.stringify(current.mainlineReply.contract) !== JSON.stringify(reply)) fail('Retry must preserve the input set and reply');
       return current;
     }
-    if (current.result || current.routingHandoff || current.streamedFinalReplyIds?.length
+    if (current.result || current.routingHandoff || hasUnassignedFinal(current)
         || hasAnswerDelivery(current)) fail('Input is no longer available for a local reply');
     const plans = input.requestId === reply.ownerRequestId
       ? buildReplyDeliveries(reply.deliveryPlan || input.deliveryPlan || input.options.sourceDelivery,
@@ -104,7 +108,7 @@ export async function publishFeishuResponse(record, body, { store = requests, va
           || ['app', 'bot'].includes(input.options?.sourceContext?.sender?.senderType)) fail('Only accepted human inputs can own a response');
       if (!sameGroup(origin, source.origin) || input.routingHandoff
           || (input.mainlineReply && JSON.stringify(input.mainlineReply.contract) !== JSON.stringify(reply))
-          || (!input.mainlineReply && (input.streamedFinalReplyIds?.length
+          || (!input.mainlineReply && (hasUnassignedFinal(input)
             || hasAnswerDelivery(input)))) {
         fail('Input already has a different reply or handoff');
       }
