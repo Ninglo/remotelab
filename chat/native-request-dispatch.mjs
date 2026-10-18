@@ -128,7 +128,15 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         await changed(record.key);
         if (record.releasedAt || !record.nativeDispatchRunId) return;
       }
-      await recordInput(record, { managerTurnContext: record.nativeContext || '' });
+      // History recording is durable, but can scan a long execution to recover
+      // an interrupted append. Do it once per dispatch, not on every receipt
+      // poll; write the receipt only after all input events have committed.
+      if (record.nativeInputRecordedRunId !== record.nativeDispatchRunId) {
+        await recordInput(record, { managerTurnContext: record.nativeContext || '' });
+        record = await store.mutate(record.key, current => ({ ...current,
+          nativeInputRecordedRunId: record.nativeDispatchRunId,
+        }));
+      }
       const task = send(record).catch(error => onError(error, record.sessionId))
         .finally(async () => { await changed(record.key); tasks.delete(record.key); });
       tasks.set(record.key, task);

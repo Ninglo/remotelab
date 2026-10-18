@@ -23,16 +23,21 @@ let unblock;
 const blocked = new Promise(resolve => { unblock = resolve; });
 const received = [];
 const recorded = [];
+let failRecording = true;
 let state = 'running';
 const server = await createNativeInputServer({ directory: join(root, head.runId), isAccepting: () => true,
   submit: async input => { received.push(input.id); if (input.id === 'known-ended') throw Object.assign(new Error('Original execution ended; continuation cannot start another turn'), { code: 'NATIVE_REJECTED' }); if (input.id === 'uncertain') throw Object.assign(new Error('lost native ack'), { code: 'NATIVE_UNCERTAIN' }); await blocked; return { accepted: true, id: input.id }; },
 });
 const waitFor = async predicate => { const until = Date.now() + 3000; while (!(await predicate())) { if (Date.now() > until) throw new Error('Timed out'); await new Promise(resolve => setTimeout(resolve, 5)); } };
-const dispatcher = createNativeRequestDispatcher({ store, getRun: async () => ({ id: head.runId, state }), getManifest: async () => ({ inputMode: 'native', forkBaseSeq: 42 }), runDirectory: id => join(root, id),
+const makeDispatcher = () => createNativeRequestDispatcher({ store, getRun: async () => ({ id: head.runId, state }), getManifest: async () => ({ inputMode: 'native', forkBaseSeq: 42 }), runDirectory: id => join(root, id),
   prepareInput: async r => ({ text: r.text, context: `Context for ${r.requestId}` }),
-  recordInput: async (r, manifest) => recorded.push([r.requestId, manifest.managerTurnContext]), changed: async () => {}, onError: error => { throw error; },
+  recordInput: async (r, manifest) => {
+    if (r.requestId === 'recording-retry' && failRecording) { failRecording = false; throw new Error('History write interrupted'); }
+    recorded.push([r.requestId, manifest.managerTurnContext]);
+  }, changed: async () => {}, onError: error => { throw error; },
   settle: async r => { if (state === 'completed') { await store.settle(r.key, { state: 'completed', payload: { text: 'shared final' } }); await store.mutate(r.key, current => ({ ...current, releasedAt: 'now', postCompletionPending: false })); } },
 });
+const dispatcher = makeDispatcher();
 try {
   await dispatcher.forward(second, head);
   await waitFor(() => received.includes('second'));
@@ -51,6 +56,25 @@ try {
   state = 'running';
   await dispatcher.forward(interruptedRecord); await dispatcher.idle();
   assert.deepEqual(recorded.at(-1), ['recovered', 'Durable recovered context'], 'recovery records the saved input Context before handoff');
+  const recordings = recorded.length;
+  for (let i = 0; i < 5; i++) {
+    await dispatcher.forward(await store.get(recovered.key)); await dispatcher.idle();
+  }
+  assert.equal(recorded.length, recordings, 'receipt polling must not rescan already recorded history');
+  const restartedDispatcher = makeDispatcher();
+  await restartedDispatcher.forward(await store.get(recovered.key)); await restartedDispatcher.idle();
+  assert.equal(recorded.length, recordings, 'the history recording receipt survives control-plane restarts');
+  const reassigned = await store.mutate(recovered.key, current => ({ ...current, nativeInputRecordedRunId: 'previous-run' }));
+  await restartedDispatcher.forward(reassigned); await restartedDispatcher.idle();
+  assert.equal(recorded.length, recordings + 1, 'a different dispatch must record its own context');
+  const retry = await accepted('recording-retry');
+  await assert.rejects(dispatcher.forward(retry, head), /History write interrupted/);
+  assert.equal((await store.get(retry.key)).nativeInputRecordedRunId, undefined,
+    'an interrupted history write must not publish its recording receipt');
+  assert.ok(!received.includes('recording-retry'), 'input dispatch waits for durable history');
+  await dispatcher.forward(await store.get(retry.key)); await dispatcher.idle();
+  assert.equal(recorded.filter(([id]) => id === 'recording-retry').length, 1,
+    'the next poll retries an interrupted recording');
   state = 'running';
   for (const [id, options] of [['reference', { workReference: { id: 'reference' } }],
     ['internal-message', { recordUserMessage: false }], ['explicit-answer', { nativeQuestionId: 'question-one' }]]) {
