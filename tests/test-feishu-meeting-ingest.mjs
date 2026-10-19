@@ -120,6 +120,36 @@ try {
   assert.equal((await state(resumed, '123456789004')).status, 'analysis_accepted');
   assert.equal(messages.length, 6);
   assert.ok(calls.filter(c => c.method === 'POST').every(c => c.data.receive_id === p.chatId));
+  // Explicit instance authorization hands a denied new recording to the
+  // existing Harness admission path without claiming its text was read.
+  const beforeRecovery = messages.length;
+  const recoveryPolicy = { ...p, permissionRecovery: { enabled: true,
+    instructionsPath: '/private/authorized-recovery.md', authorizationRefs: ['human:approved'] } };
+  await writeDurableJson(policyPath, recoveryPolicy);
+  const recovery = make({ readMaterials: async d => ({ ...material(d.meetingId),
+    transcriptPath: undefined, transcriptUrl: '', status: 'permission_denied' }) }); workers.push(recovery);
+  failAdmission = true;
+  await recovery.accept(discovery('123456789016')); await run(recovery);
+  assert.equal(messages.length, beforeRecovery + 1);
+  assert.match(messages.at(-1).body.content, /正在办理/);
+  assert.doesNotMatch(messages.at(-1).body.content, /原始文字已取回/);
+  clock += 5001; await run(recovery);
+  assert.equal((await state(recovery, '123456789016')).status, 'permission_recovery_accepted');
+  assert.equal(messages.length, beforeRecovery + 1, 'recovery admission retry never duplicates group notice');
+  assert.match(submissions.at(-1).summary.messageText, /先通知原所有者/);
+  assert.match(submissions.at(-1).summary.messageText, /human:approved/);
+  await recovery.accept(discovery('123456789016')); await run(recovery);
+  assert.equal(messages.length, beforeRecovery + 1);
+  // A denial without an actual recording URL must not create noisy group work.
+  const noRecording = make({ readMaterials: async () => ({ status: 'permission_denied' }) }); workers.push(noRecording);
+  await noRecording.accept(discovery('123456789017')); await run(noRecording);
+  assert.equal(messages.length, beforeRecovery + 1);
+  // Opt-in without a source of authority remains disabled.
+  await writeDurableJson(policyPath, { ...p, permissionRecovery: { enabled: true, instructionsPath: '/private/x' } });
+  await recovery.accept(discovery('123456789018')); await run(recovery);
+  assert.equal((await state(recovery, '123456789018')).status, 'permission_denied');
+  assert.equal(messages.length, beforeRecovery + 1);
+  await writeDurableJson(policyPath, p);
   assert.equal(artifactToken('https://evil.test/docx/token', 'docx'), '');
   assert.equal(transcriptLink('<a href="https://tenant.feishu.cn/docx/summary">summary</a>'), '');
   const reader = createMeetingMaterialReader(runtime, {

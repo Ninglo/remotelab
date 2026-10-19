@@ -141,7 +141,7 @@ never produces a success message in the group. Generation retries are bounded to
 attempts, with a durable two-hour material deadline). This accommodates observed production
 recording generation taking over forty minutes. Network retries start at 250 ms,
 then 500 ms, 1 s, 2 s, up to 5 s; application/ACL denial stops with recoverable
-evidence. Restart does not replenish an attempt budget.
+evidence by default. Restart does not replenish an attempt budget.
 
 Before sending, the worker persists its intention and a stable provider UUID.
 After success it reads the real message back and checks destination and source
@@ -160,6 +160,40 @@ is the source actor; neither the meeting owner nor a human approver is invented.
 Feishu delivery finished. Verify the Session response and source-delivery receipt
 and read the actual reply in the original meeting thread before claiming full
 acceptance. No transcript document is recreated or audio uploaded.
+
+For an explicitly authorized instance, `permissionRecovery` may opt a denied
+**identified Minutes recording** into the existing Harness execution path:
+
+```json
+{
+  "permissionRecovery": {
+    "enabled": true,
+    "instructionsPath": "/absolute/private/path/recording-permission-workflow.md",
+    "authorizationRefs": ["actual-human-request-id"]
+  }
+}
+```
+
+Keep the original ownership policy, exact notification wording, restoration and
+failure recovery steps in that private file. An enabled flag without both the
+instruction path and human authority references does not activate recovery.
+The Connector sends a truthful processing notice, verifies it, and admits one
+Request into that same recording-group thread. The Harness reads the instructions,
+notifies the original owner before changes, performs the authorized grant and
+restoration, checks actual access, then delivers the transcript analysis and verified
+participant information. The Connector itself never silently transfers ownership.
+`permission_recovery_accepted` means only that this work was admitted; its actual
+permission, restoration and delivery results remain in that Request's evidence.
+Duplicate events/restarts reuse the same job and message. A denied API without a
+known Minutes URL does not create a group notice. Recovery disabled in policy
+stops pending jobs before a new send/admission. Requests already admitted must be
+stopped via the normal Session controls.
+
+For future-only activation, set `notBefore` to the human-agreed cutoff and clear
+historical `sampleMeetingIds`/`samples`. This flow covers the existing enterprise
+meeting-ended discovery, including observed calls; it does not claim that arbitrary
+personal audio uploads generate an enterprise meeting event. Do not open a second
+same-app WebSocket to add event coverage.
 
 Inspect or recover through the existing Connector's private mailbox:
 
