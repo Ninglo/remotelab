@@ -199,6 +199,48 @@ The inspected HanLinYue editor 1.3.3 sends `{o:"set",k:1,m:"light",v:{enable:tru
 
 The helper reads the existing recorder's local control socket, watches recording state changes, and checks service health once per second. `starting`, stopped, unreadable state and an unresponsive recorder select light off; only the selected lane's live `recording` state selects red. It serializes light writes and clears the selected light on normal exit. A broken USB link cannot receive a clear command: keep the data cable connected, observe disconnect behavior during acceptance, and use the recording window as the authoritative fallback until that behavior is verified. The helper never starts/stops audio, changes keypad bindings or uploads files. It is opt-in and is not installed as a login service automatically.
 
+## Optional ANTICATER desktop knob
+
+> Connect my USB ANTICATER knob to the existing recording lane. Confirm its
+> exact serial and microphone first. Preserve the recorder's permission-bearing
+> app. Use a single F13 press to toggle the lane, coral feedback while starting,
+> a low-brightness blue breathing light only after PCM starts, and two warm-white
+> pulses fading out after a successful save. Reuse the recording panel's local
+> start/stop cues and the lane's existing delivery route. Label the physical
+> acceptance recording as a test and verify its original, transcript and delivery.
+
+Compile `scripts/recording-knob-hid-macos.swift` on the capture Mac. Run
+`scripts/recording-knob-light.mjs --help` for the required root, lane, exact USB
+serial and compiled helper paths. The bridge matches only the inspected
+`05ac:022c`, vendor usage page `ff00`, usage 1 collection; VID/PID alone must
+not select a device. It never listens to ordinary keyboard input or opens audio.
+`--probe` reads the six configuration reports without writing settings.
+`--configure-button` preserves the original reports under the recording root,
+maps only press to F13 and reads it back. Bind that exact serial with key 104,
+usage page 7, action `toggle` in the recorder. Rotation remains unchanged.
+
+`--demo [--cue LOCAL_AUDIO]` runs a seven-second light-only preview after the
+local cue completes and refuses an active recording. Normal mode watches the
+existing status file and verifies the live control socket, with a one-second
+health check. A 20 Hz animation timer deduplicates unchanged brightness and
+allows only one outstanding HID write. The four-second blue cycle spans
+15–35 percent brightness; offline state clears the light. Restarts adopt an
+ongoing recording without replaying the start animation. A missing/failed or
+interrupted save produces a distinct coral error pattern instead of the normal
+white ending. This helper does not play duplicate cues, capture, upload or change
+system volume. Keep the native recording panel running for spoken feedback.
+
+When the user requests a permanent desktop control, install this controller
+under the capture user's existing service manager, with explicit paths and logs.
+Normal shutdown and parent EOF clear the light. USB reconnect restores the
+current state; a disconnected USB cable cannot receive an off command, so verify
+physical disconnect behavior rather than treating the lamp as independent proof
+of capture. Custom RGB transitions are software-driven; firmware-native rotating
+effects and arbitrary per-LED control are not part of this interface. Confirm
+actual color, smoothness, key events, cues and the complete delivery chain on the
+target device. Existing short-recording, retention and publication policies remain
+with the recorder.
+
 ## Acceptance boundary
 
 Automated tests use synthetic audio, two receiver streams, real local asset uploads, RemoteLab message admission and a fake Harness. They cover independent start/stop, receiver failure isolation, segment repair, disk bounds, interrupted data, retry identity and instance-local daemon control. For changes to the macOS helper, compile it locally on macOS without accessing devices. These are software evidence.
