@@ -5,12 +5,17 @@ import { CHAT_RECURRING_SCHEDULES_FILE, CHAT_TRIGGERS_FILE } from '../../lib/con
 import { createRecordStore } from '../../lib/durable-records.mjs';
 import { buildFeishuTopicId } from './index.mjs';
 import { buildProjectCard } from './project-card.mjs';
+import { feishuResponseError } from './delivery-errors.mjs';
 import { loadProjectSources, projectDigest, projectMemoryCorrection, projectPages,
   projectRequest, readProjectTask, readProjectView } from './project-sources.mjs';
 
 const ACTIONS = new Set(['home', 'memory', 'tasks', 'audit', 'task', 'material', 'edit-help', 'pause', 'resume']);
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const warn = error => console.warn(`[feishu-project] ${error.message}`);
+const isExpired = record => record?.updateFailure?.code === 230031
+  && record.updateFailure.messageId === record.messageId;
+const expiredError = () => Object.assign(new Error(
+  '此项目入口卡片已超过飞书14天更新期限，原卡已保留。请在原话题直接询问当前项目状态；更换卡片需另行处理。'), { feishuCode: 230031 });
 
 export function parseProjectAction(raw) {
   const event = raw?.event || raw;
@@ -46,7 +51,28 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
   const auditFor = async projectId => (await actions.active()).filter(item => item.projectId === projectId)
     .sort((a, b) => a.at.localeCompare(b.at));
 
+  async function patch(record, card) {
+    if (isExpired(record)) throw expiredError();
+    try {
+      const result = await runtime.appClient.im.v1.message.patch({
+        path: { message_id: record.messageId }, data: { content: JSON.stringify(card) },
+      });
+      if (result?.code) throw feishuResponseError(result, '项目卡片更新失败。');
+    } catch (error) {
+      const code = Number(error?.feishuCode ?? error?.response?.data?.code ?? error?.code);
+      if (code !== 230031) throw error;
+      // Expiration is permanent for this message. Keep its last successful
+      // content receipt and original source; never send a replacement here.
+      await cards.mutate(record.key, current => ({ ...current, updateFailure: {
+        code, messageId: record.messageId, at: new Date().toISOString(),
+        message: String(error.message).slice(0, 500), logId: String(error.logId || '').slice(0, 200),
+      } }));
+      throw expiredError();
+    }
+  }
+
   async function publish(record, view, force = false) {
+    if (isExpired(record)) throw expiredError();
     const audit = await auditFor(view.source.link.projectId);
     // A fresh read time alone is not a content change.
     const digest = projectDigest({ tab: record.tab, page: record.page, alias: record.alias,
@@ -55,10 +81,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     const card = buildProjectCard(record, view, audit);
     let messageId = record.messageId;
     if (messageId) {
-      const result = await runtime.appClient.im.v1.message.patch({
-        path: { message_id: messageId }, data: { content: JSON.stringify(card) },
-      });
-      if (result?.code && result.code !== 0) throw new Error('项目卡片更新失败，输入 /project 可重试。');
+      await patch(record, card);
     } else {
       // Durable source + stable UUID allows the inbox to retry the same send.
       // A send with an uncertain outcome is never redirected to another source.
@@ -111,6 +134,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
       sender: { senderType: 'user', openId: action.actor, userId: action.userId, tenantKey: action.tenantKey } })) {
       throw new Error('当前账号无法修改此项目入口。');
     }
+    if (isExpired(record)) throw expiredError();
     const source = await loadProjectSources(runtime, action.chatId);
     if (source.bindingVersion !== action.bindingVersion) throw new Error('项目关联已变更，请先用 /project 刷新。');
     if (['pause', 'resume', 'task'].includes(action.action)
@@ -192,19 +216,25 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     const records = await cards.active();
     await Promise.allSettled(records.filter(record => record.messageId).map(record => exclusive(record.key, async () => {
       const current = await cards.get(record.key);
-      try { await publish(current, await getView(current)); }
+      if (isExpired(current)) return;
+      let view;
+      try { view = await getView(current); }
       catch (error) {
         // Never leave a last-known-good card looking current after a source or
-        // binding disappears. Keep the original delivery; do not send a copy.
-        await runtime.appClient.im.v1.message.patch({ path: { message_id: current.messageId }, data: {
-          content: JSON.stringify({ schema: '2.0', config: { update_multi: true },
+        // binding disappears. A provider update failure is a separate condition
+        // and must not trigger another PATCH claiming the source disappeared.
+        try {
+          await patch(current, { schema: '2.0', config: { update_multi: true },
             header: { title: { tag: 'plain_text', content: '项目入口当前不可核实' } },
             body: { elements: [{ tag: 'div', text: { tag: 'plain_text',
-              content: '来源登记或运行状态不可读取。请修复来源后输入 /project；此卡片暂停提供操作。' } }] } }),
-        } });
-        await cards.mutate(current.key, record => ({ ...record, digest: '' }));
+              content: '来源登记或运行状态不可读取。请修复来源后输入 /project；此卡片暂停提供操作。' } }] } });
+          await cards.mutate(current.key, record => ({ ...record, digest: '' }));
+        } catch (updateError) { warn(updateError); }
         warn(error);
+        return;
       }
+      try { await publish(current, view); }
+      catch (error) { warn(error); }
     })));
   }
 

@@ -88,6 +88,16 @@ cover atomic file replacement; source changes update the original card. A
 missing or ambiguous memory source is marked unavailable, never replaced with
 an old copy. No source directory scan or new memory store is introduced.
 
+If Feishu rejects an update with `230031` (the message is past its 14-day
+update window), the entry retains the original card, source and last successful
+content receipt, and records the rejection against that message. Automatic
+refreshes and restarts do not retry that expired message or send a replacement.
+`/project` and its buttons report the expiry; known expired controls cannot
+change schedules. Ask for current project state in the original conversation;
+replacing the card is a separate action. Transport failures do not falsely mark
+the project source unavailable, and transient failures can recover on a later
+refresh. Actual source failures still update an editable card with that status.
+
 Pause/resume buttons operate only on explicitly registered recurring schedules.
 The callback must match the stored card, chat, source binding, and current
 Connector access policy. Shared scope is shown beside every control. Before a

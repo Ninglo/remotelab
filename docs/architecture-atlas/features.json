@@ -544,6 +544,7 @@
             "docs/feishu-project-links.md",
             "docs/feishu-document-bindings.md",
             "docs/connector-turn-context.md",
+            "connectors/feishu/project-surface.mjs",
             "connectors/feishu/document-bindings.mjs",
             "connectors/feishu/created-document-bindings.mjs",
             "lib/feishu-document-creation.mjs",

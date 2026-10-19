@@ -50,6 +50,8 @@ try {
   let failReply = false;
   const sent = new Map();
   let onPatch;
+  let patchError;
+  let patchResult = { code: 0 };
   runtime.appClient = { im: { v1: { message: {
     reply: async ({ data }) => {
       if (!sent.has(data.uuid)) { sent.set(data.uuid, 'card-id'); created++; }
@@ -57,7 +59,12 @@ try {
       if (failReply) { failReply = false; throw new Error('Lost send acknowledgement'); }
       return { code: 0, data: { message_id: sent.get(data.uuid) } };
     },
-    patch: async ({ data }) => { card = JSON.parse(data.content); patches++; onPatch?.(); return { code: 0 }; },
+    patch: async ({ data }) => {
+      patches++;
+      if (patchError) throw patchError;
+      if (!patchResult.code) { card = JSON.parse(data.content); onPatch?.(); }
+      return patchResult;
+    },
   } } } };
   const options = { authorize: async summary => summary.sender.openId === 'allowed', watchFiles: false };
   const makeSurface = extra => { const surface = createProjectSurface(runtime, { ...options, ...extra });
@@ -173,7 +180,72 @@ try {
   assert(content().includes('记忆来源当前不可读'));
   assert(!content().includes('Live memory edit'), 'unavailable sources never silently use a stale snapshot');
   assert(patches > 0);
+
+  await surface.stop();
+  surface = makeSurface();
+  await writeFile(memoryPath, '## Project\n\nRestored source');
+  await surface.command(summary, 'tasks');
+  const controlsBeforeExpiry = choose('pause', 'daily');
+  const { createRecordStore } = await import('../lib/durable-records.mjs');
+  const records = createRecordStore(join(runtime.config.storageDir, 'project-surfaces', 'cards'));
+  const original = (await records.active())[0];
+  await writeFile(memoryPath, '## Project\n\nChanged source');
+  patchError = new Error('Temporary transport failure');
+  let before = patches;
+  await surface.refresh();
+  assert.equal(patches, before + 1, 'provider errors must not trigger a misleading source-error PATCH');
+  assert.equal((await records.get(original.key)).updateFailure, undefined, 'transient errors remain recoverable');
+  patchError = null;
+  await surface.refresh();
+  assert.equal(patches, before + 2, 'later refresh recovers a transient failure');
+  const lastGood = await records.get(original.key);
+
+  await writeFile(memoryPath, '## Project\n\nNewer source');
+  patchError = Object.assign(new Error('Message has expired when updating message'), {
+    code: 230031, httpStatus: 400, logId: 'provider-expiry-log',
+  });
+  before = patches;
+  await surface.refresh();
+  const expired = await records.get(original.key);
+  assert.equal(patches, before + 1, 'expiry causes only the first rejected PATCH');
+  assert.deepEqual(expired.source, original.source, 'original source stays intact');
+  assert.equal(expired.messageId, original.messageId);
+  assert.equal(expired.digest, lastGood.digest, 'do not advance the successful content receipt');
+  assert.equal(expired.readAt, lastGood.readAt);
+  assert.equal(expired.updateFailure.code, 230031);
+  assert.equal(expired.updateFailure.logId, 'provider-expiry-log');
+  await Promise.all([surface.refresh(), surface.refresh()]);
+  await surface.stop();
+  surface = makeSurface();
+  await surface.restore();
+  await assert.rejects(surface.command(summary), /14天更新期限/);
+  assert.equal((await surface.actionFeedback(controlsBeforeExpiry)).accepted, false);
+  const writes = requests.filter(call => call.options?.method === 'POST').length;
+  await assert.rejects(surface.handleAction(controlsBeforeExpiry), /14天更新期限/);
+  assert.equal(requests.filter(call => call.options?.method === 'POST').length, writes,
+    'known expired controls cannot change a schedule before failing to update the card');
+  assert.equal(patches, before + 1, 'expiry survives repeated refresh, manual commands and restart');
+  assert.equal(created, 1, 'expiry never sends a replacement message');
+
+  // A different message is not blocked by the previous message's receipt.
+  patchError = null;
+  await records.mutate(original.key, current => ({ ...current, messageId: 'new-card' }));
+  await surface.refresh();
+  assert.equal(patches, before + 2);
+  patchResult = { code: 230031, msg: 'Message expired' };
+  await assert.rejects(surface.command(summary), /14天更新期限/);
+  assert.equal((await records.get(original.key)).updateFailure.messageId, 'new-card',
+    'SDK business responses preserve expiry just like rejected transport errors');
+
+  await records.mutate(original.key, current => ({ ...current, messageId: 'unavailable-source-card' }));
+  await writeFile(registryPath, '{}');
+  before = patches;
+  await surface.refresh();
+  await surface.refresh();
+  assert.equal(patches, before + 1, 'expiry while publishing a real source failure also stops retries');
+  assert.equal((await records.get(original.key)).updateFailure.messageId, 'unavailable-source-card');
   console.log('PASS: Feishu project source binding, scoped reads, configuration controls, audit, replay/restart and live memory invalidation');
+  console.log('PASS: expired project card receipts, no duplicate PATCH, restart persistence, control rejection and transient recovery');
 } finally {
   await Promise.all(surfaces.map(surface => surface.stop()));
   await rm(home, { recursive: true, force: true });
