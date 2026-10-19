@@ -895,3 +895,22 @@ show the file list immediately. File bodies, modification records and source
 instruction/diffs expand in place. Long metric notes are collapsed. Public-origin
 visitors enter the authenticated preview once; no private content is copied into
 the public snapshot and no cross-site authentication token is exposed.
+
+#### Employee SSH Codex memory evidence
+
+An explicitly enabled `employeeHelper` in `monitoring-evidence.json` points to a
+root-owned installation of `scripts/employee-memory-evidence.py`. The existing
+authenticated evidence endpoint accepts `employee=<local-account>` and an optional
+16-character file ID. The helper resolves the account from passwd, accepts only
+current `/data/home/<account>/.codex/memories` Markdown files, and never accepts a
+request-supplied filesystem path. Directory traversal uses no-follow file
+descriptors; previews are read-only, escaped, no-store and limited to 2 MiB.
+Deployments must explicitly authorize this employee-memory scope and supply an
+existing service-account sudo route; this option does not create sudo permissions.
+
+Public monitoring exports may contain per-account counts, Unix mode bits and
+redacted file identifiers, but never employee memory bodies or detailed filenames.
+The employee list is distinct from the agent instance's own memory. Native memory
+database counts and `usage_count` are metadata, not file-read counts or proof of
+injection. SSH-native conversation attribution remains unknown unless backed by
+an explicit source record; do not derive it from timing or a matching name.

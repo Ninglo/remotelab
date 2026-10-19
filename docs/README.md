@@ -183,3 +183,5 @@ The information-routing group card can show an explicitly enabled public pilot r
 - [飞书私聊个人设置卡](feishu-web-settings.md) — 私聊内修改个人回复、记忆与分流偏好，首屏保留简短引入，个人设置默认展开，以浅灰分区、两列三行显示六项名称、辅助字号说明及当前值下拉框，窄屏自动堆叠；详细解释保留在设置区域内，使用指南按主题折叠；网页备用入口须另行本人登录。支持在指定卡片试阅方向能力介绍，与基础设置合为同一张卡；按大区域折叠，明确要求重发时更新有效卡片绑定。基础设置与本人身份保持不变，介绍不触发业务操作。首次欢迎、本人身份校验、旧卡与重试恢复沿原连接器维护。当前只对明确名单试用，增强版重复入口在对应用户迁移验证后退出。
 
 个人设置卡片支持首次进入私聊欢迎去重，以及“我的设置／使用说明”原生菜单消息入口；配置和验证边界见 [飞书个人设置](feishu-web-settings.md)。
+
+Employee SSH Codex memory: [authenticated account and file evidence](monitoring.md#employee-ssh-codex-memory-evidence) documents the opt-in helper, private inline previews, access metadata and native attribution limits.

@@ -1,3 +1,6 @@
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+const exec=promisify(execFile);
 import { constants } from 'node:fs';
 import { readFile, open, realpath } from 'node:fs/promises';
 import { extname } from 'node:path';
@@ -30,6 +33,17 @@ export async function handleMonitoringEvidence({req,res,pathname,authSession,con
  if(!authSession){send(401,'请登录 RemoteLab','<a href="/">打开登录页</a>');return true}
  if(req.method!=='GET'){send(405,'仅支持查看','');return true}
  try{
+ const employeeQuery=new URL(req.url,'http://local').searchParams;
+ const employee=employeeQuery.get('employee');
+ if(employee){
+  const conf=configOverride||await evidenceConfig();
+  if(!conf?.employeeHelper||!/^[-a-z0-9_]{1,40}$/.test(employee)){send(404,'未登记员工记忆入口','');return true}
+  const id=employeeQuery.get('file');if(id&&!/^[a-f0-9]{16}$/.test(id)){send(404,'文件不在登记范围','');return true}
+  const result=await exec('sudo',['-n','python3',conf.employeeHelper,employee,...(id?[id]:[])],{timeout:10000,maxBuffer:4*1024*1024});
+  const value=JSON.parse(result.stdout);
+  const body=id?'<p class="file-path">'+esc(value.name)+' · '+esc(value.mode)+'</p><pre>'+esc(value.body)+'</pre>':table(['文件'],value.files.map(f=>[link(f.name,{employee,file:f.id})]));
+  send(200,id?value.name:employee+' · 核心与详细记忆',body);return true;
+ }
  const config=configOverride||await evidenceConfig();if(!config){send(404,'未配置文件证据入口','');return true}
  if(/^https?:\/\//.test(config.returnUrl||''))returnUrl=config.returnUrl;
  const state=JSON.parse(await readFile(config.statePath,'utf8')),registry=JSON.parse(await readFile(config.registryPath,'utf8'));
