@@ -5,7 +5,7 @@
   const portalQuery = new URL(globalScope.location.href).searchParams;
   const management = portalQuery.get('monitor') === 'automations' ||
     (portalQuery.get('manage') === '1' && portalQuery.get('monitor') === 'security');
-  if (portal?.url && !management) {
+  if (portal?.url && !portal.preview && !management) {
     const target = new URL(portal.url);
     const routes = { overview: 'overview', test: 'overview', usage: 'labor', feedback: 'labor', security: 'safety' };
     target.searchParams.set('tab', routes[portalQuery.get('monitor')] || 'overview');
@@ -18,7 +18,7 @@
     if (portalQuery.get('tab') === 'tasks') open();
     return;
   }
-  if (portal?.url && management) {
+  if (portal?.url && !portal.preview && management) {
     const panel = document.getElementById('taskCenterPanel');
     const back = Object.assign(document.createElement('a'), {href:portal.url,textContent:'← 返回监管中心'});
     back.className='monitoring-note';panel?.prepend(back);

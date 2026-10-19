@@ -23,11 +23,31 @@ const settingsToc = document.getElementById("settingsToc");
 let voiceInputSettingsLoaded = false;
 const monitoringPortal = window.__REMOTELAB_BOOTSTRAP__?.monitoringPortal;
 if (monitoringPortal?.url) {
-  const link = document.createElement('a'); link.href = monitoringPortal.url;
-  link.textContent = '打开监管中心：成本、速度、项目效果与安全 →';
+  const link = document.createElement('a');
+  const destination = new URL(monitoringPortal.url);
+  destination.searchParams.set('from', 'settings');
+  link.href = destination.href;
+  link.textContent = monitoringPortal.preview ? '试用新版监管 →' : '打开监管中心 →';
   link.className = 'settings-toc-link'; link.dataset.testid = 'monitoring-portal-link';
+  link.addEventListener('click', () => {
+    try { sessionStorage.setItem('monitoring-settings-scroll', String(settingsPanel.scrollTop)); } catch {}
+    const theme = document.documentElement.dataset.theme;
+    if (['light','dark','amber'].includes(theme)) destination.searchParams.set('theme', theme);
+    link.href = destination.href;
+  });
   document.querySelector('#settingsPanel .settings-page-header')?.append(link);
 }
+// One return restores the position within Settings, without carrying Session IDs
+// or credentials to the independently hosted presentation.
+window.restoreMonitoringSettingsPosition = () => {
+  if (new URL(location.href).searchParams.get('monitorReturn') !== '1') return;
+  let top; try { top = Number(sessionStorage.getItem('monitoring-settings-scroll') || 0); } catch { top = 0; }
+  if (!Number.isFinite(top) || top < 0) return;
+  requestAnimationFrame(() => settingsPanel.scrollTo({top, behavior:'instant'}));
+  const url = new URL(location.href); url.searchParams.delete('monitorReturn');
+  history.replaceState(history.state, '', url);
+};
+
 
 
 function initSettingsNavigation() {

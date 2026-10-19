@@ -21,3 +21,12 @@ for(const query of ['monitor=automations','monitor=security&manage=1']){
  runInNewContext(source,{window,document,URL});assert.equal(redirected,false);assert.equal(back.href,'https://observe.example/');
 }
 console.log('passed: mapped dashboard links, explicit authenticated management retained');
+
+assert.deepEqual(normalizeMonitoringPortal({enabled:false,preview:true,url:'https://observe.example/'}),{url:'https://observe.example/',preview:true});
+for(const view of ['overview','usage','feedback','security','automations']) {
+ let redirected=false,changed=false;
+ const window={__REMOTELAB_BOOTSTRAP__:{monitoringPortal:{url:'https://observe.example/',preview:true}},location:{href:'https://app.example/?tab=tasks&monitor='+view,assign:()=>{redirected=true}}};
+ const document={getElementById:id=>id==='taskCenterPanel'?{replaceChildren:()=>{changed=true},prepend:()=>{changed=true}}:null};
+ runInNewContext(source,{window,document,URL});assert.equal(redirected,false);assert.equal(changed,false);
+}
+console.log('passed: preview leaves all original monitoring views unchanged');

@@ -830,7 +830,15 @@ Preserve authenticated automation management and prompt-review actions.”
 For that instance, `CONFIG_DIR/monitoring-portal.json` accepts
 `{"enabled":true,"url":"https://approved-monitor.example/"}`. Only HTTPS URLs
 without credentials, query or fragment are accepted. Absent/disabled/invalid
-configuration preserves the existing interface. The destination receives no
+configuration preserves the existing interface. For a trial before replacement, use
+`{"enabled":false,"preview":true,"url":"https://approved-monitor.example/"}`.
+This adds only a Settings link labelled “试用新版监管”; all existing Monitor
+views and action controls remain in place, with no automatic redirect. The link
+passes only `from=settings` and an optional UI theme. A return to
+`?tab=settings&monitorReturn=1` restores the Settings scroll position saved in
+that browser tab. The independent page must provide this return link.
+
+The destination receives no
 credentials, Session identifiers or private API responses from this redirect.
 
 The Monitor entry and old overview/usage/feedback/security bookmarks open the
