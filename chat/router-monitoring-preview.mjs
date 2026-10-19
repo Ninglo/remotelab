@@ -2,6 +2,11 @@
 import http from 'node:http';
 import {evidenceConfig} from './monitoring-file-evidence.mjs';
 import {readResolutionConfig} from './monitoring-resolution.mjs';
+export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview',publicOrigin}={}){
+ text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution)|app\.js|style\.css|["'])/g,'$1'+prefix+'/');
+ // Case reviews keep their established origin and browser storage.
+ return publicOrigin?text.replace(/(["'])\/case-review\//g,'$1'+publicOrigin+'/case-review/'):text;
+}
 export async function handleMonitoringPreview({req,res,pathname,configOverride}) {
  const prefix='/monitoring-preview';if(pathname!==prefix&&!pathname.startsWith(prefix+'/'))return false;
  const config=configOverride||await evidenceConfig(),port=config?.previewPort;
@@ -16,10 +21,7 @@ export async function handleMonitoringPreview({req,res,pathname,configOverride})
    response.on('end',()=>{
     let body=Buffer.concat(chunks);const type=response.headers['content-type']||'application/octet-stream';
     if(/html|javascript/.test(type)){
-     let text=body.toString().replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution)|app\.js|style\.css)/g,'$1'+prefix+'/');
-     // Case reviews keep their established origin and browser storage.
-     if(publicOrigin)text=text.replace(/(["'])\/case-review\//g,'$1'+publicOrigin+'/case-review/');
-     body=Buffer.from(text);
+     body=Buffer.from(rewriteMonitoringPresentation(body.toString(),{prefix,publicOrigin}));
     }
     res.writeHead(response.statusCode||502,{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(body);resolve();
    });

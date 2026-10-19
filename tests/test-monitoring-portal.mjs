@@ -1,6 +1,12 @@
 import './isolate-test-environment.mjs';
 import assert from 'node:assert/strict';
 import {normalizeMonitoringPortal} from '../chat/monitoring-portal.mjs';
+import {rewriteMonitoringPresentation} from '../chat/router-monitoring-preview.mjs';
+const scoped=rewriteMonitoringPresentation('<a href="/">Home</a><a href="/case-review/">Cases</a>fetch(\'/api/monitoring-resolution\');fetch(\'/api/snapshot\')',{publicOrigin:'https://observe.example'});
+assert(scoped.includes('href="/monitoring-preview/"'));
+assert(scoped.includes('href="https://observe.example/case-review/"'));
+assert(scoped.includes("fetch('/api/monitoring-resolution')"));
+assert(scoped.includes("fetch('/monitoring-preview/api/snapshot')"));
 assert.equal(normalizeMonitoringPortal({}),null);
 for(const url of ['javascript:alert(1)','http://example.com','https://name:secret@example.com','https://example.com/?token=secret','https://example.com/#secret'])assert.equal(normalizeMonitoringPortal({enabled:true,url}),null);
 assert.deepEqual(normalizeMonitoringPortal({enabled:true,url:'https://observe.example/'}),{url:'https://observe.example/'});

@@ -889,7 +889,9 @@ instance's existing authenticated-user model, not the public dashboard.
 With `previewPort` configured, `/monitoring-preview/` serves the same preview UI
 behind existing RemoteLab login, without forwarding cookies or credentials to the
 local service. Only fixed dashboard assets and read-only snapshot/review endpoints
-are proxied; HTML/JS root-relative dashboard URLs are scoped to the prefix. The
+are proxied; HTML/JS root-relative dashboard URLs, including the brand's home
+link, are scoped to the prefix. Native evidence and issue-action APIs remain
+on the authenticated origin. The
 preview Settings link may use this URL while `enabled:false` keeps the old primary
 monitoring entry intact. The independent public preview remains available.
 
