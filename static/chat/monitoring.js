@@ -3,13 +3,12 @@
 (function attachMonitoring(globalScope) {
   const portal = globalScope.__REMOTELAB_BOOTSTRAP__?.monitoringPortal;
   const portalQuery = new URL(globalScope.location.href).searchParams;
-  const management = portalQuery.get('monitor') === 'automations' ||
-    (portalQuery.get('manage') === '1' && portalQuery.get('monitor') === 'security');
+  const management = portalQuery.get('monitor') === 'automations' || portalQuery.get('manage') === '1';
   if (portal?.url && !portal.preview && !management) {
     const target = new URL(portal.url);
-    const routes = { overview: 'overview', test: 'overview', usage: 'labor', feedback: 'labor', security: 'safety' };
+    const routes = { overview: 'overview', test: 'overview', usage: 'usage', feedback: 'labor', security: 'safety' };
     target.searchParams.set('tab', routes[portalQuery.get('monitor')] || 'overview');
-    if (['usage','feedback'].includes(portalQuery.get('monitor'))) target.searchParams.set('portfolio', 'claude-tag');
+    if (portalQuery.get('monitor') === 'feedback') target.searchParams.set('portfolio', 'claude-tag');
     const panel = document.getElementById('taskCenterPanel');
     panel?.replaceChildren(Object.assign(document.createElement('h2'), {textContent:'监管中心'}),
       Object.assign(document.createElement('a'), {href:target.href,textContent:'打开统一监管中心 →'}));

@@ -845,6 +845,9 @@ The Monitor entry and old overview/usage/feedback/security bookmarks open the
 configured presentation. Settings also provides a link. Automation management
 remains at `?tab=tasks&monitor=automations`; prompt source inspection, filtering
 and bounded supplement-review remain at `?tab=tasks&monitor=security&manage=1`.
+An explicit `manage=1` also retains original usage filters, formal feedback and
+overview incident/delivery evidence. The new presentation should link these
+tools wherever its aggregate view does not cover the detailed operation.
 These are authenticated action tools, with a return link, not duplicated dashboard
 navigation. Collectors, schedules, original ledgers and permissions are unchanged.
 A presentation migration must separately verify public-field minimization,
@@ -895,6 +898,46 @@ show the file list immediately. File bodies, modification records and source
 instruction/diffs expand in place. Long metric notes are collapsed. Public-origin
 visitors enter the authenticated preview once; no private content is copied into
 the public snapshot and no cross-site authentication token is exposed.
+
+### Handle an analysis issue in a new Session
+
+An operator can ask: “Add 去解决 to each analysis finding. Preserve the finding,
+its evidence and acceptance criteria in a new web Session, then submit the work.
+Keep existing management tools available when switching the Monitor entry.”
+
+The optional instance file `monitoring-resolution.json` supplies an absolute
+`analysisRoot`, HTTPS `portalUrl`, HTTPS `publicOrigin`, and an optional `runtime`
+profile (`tool`, `model`, `effort`). The provider defaults apply when the profile
+is omitted. This file enables no scheduled analysis and grants no public API
+access. `analysisRoot/runs/<timestamp-id>/report.json` and `input.json` must be
+immutable saved analysis records; `report.inputHash` is the SHA-256 of
+`JSON.stringify(input)`. The report contains `output.items` with stable IDs and
+`evidenceRefs` pointing to the input's evidence records.
+
+After normal personal login, `POST /api/monitoring-resolution` takes only
+`{report,item}`. It requires a same-origin JSON request, reads the matching saved
+report and evidence, and uses native Session creation and idempotent HTTP message
+admission. It attributes the work to the clicking Person. A stable Person/report/
+item key reuses the same Session across concurrent clicks, refresh and retries;
+an archived handling Session is opened without restarting it. A failed submission
+can be retried into the already created Session. A GET reports the existing
+Session and whether admission was recorded; it never starts work.
+
+The initial message carries the selected finding, rationale, proposed next step,
+completion condition, analysis prompt/hash/time and original evidence data/links.
+It directs the Agent to check the current state and existing work before acting.
+The source report is dated evidence, not expanded authority: consequential business
+stops, permission changes and external messages still require their applicable
+authorization. No group delivery is inherited from another Session.
+
+The independent public site opens `/monitoring-resolve?report=...&item=...` in a
+login-protected window. That window accepts an explicit click relay only from
+its opener on the configured public origin, for the exact selected report/item,
+then makes the same authenticated POST. A copied link or link preview only shows
+the issue and a launch button. Login preserves the destination; if the opener
+is unavailable the user can launch from that authenticated page. Credentials
+never enter the public site. Case-review links retain their established public
+origin and review storage when the dashboard is viewed through the proxy.
 
 #### Employee SSH Codex memory evidence
 

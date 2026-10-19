@@ -124,6 +124,8 @@ export async function requireAuth(req, res) {
   // This API-shaped URL is a browser entry shared in chat. Preserve its
   // destination through the normal password login instead of showing JSON.
   if (req.method === 'GET' && (requestUrl.pathname === '/page/feishu-web-settings/connect'
+      || requestUrl.pathname === '/monitoring-resolve'
+      || requestUrl.pathname === '/monitoring-preview/'
       || requestUrl.pathname === '/page/feishu-web-workspace/connect'
       || /^\/api\/sessions\/[0-9a-f]{32}\/langsmith$/.test(requestUrl.pathname))) {
     const next = requestUrl.pathname + requestUrl.search;
