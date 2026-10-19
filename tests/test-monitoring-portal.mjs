@@ -8,11 +8,17 @@ assert(scoped.includes('href="/monitoring-preview/case-review/"'));
 assert.equal(rewriteMonitoringPresentation("fetch('/api/auth/me');fetch('/api/project-feedback?caseProject=x');"),"fetch('/api/auth/me');fetch('/api/project-feedback?caseProject=x');");
 assert(scoped.includes("fetch('/api/monitoring-resolution')"));
 assert(scoped.includes("fetch('/monitoring-preview/api/snapshot')"));
+// Proxying the dashboard must preserve date labels and other plain separators.
+const dateFormatter="new Date('2026-10-19T00:00:00Z').toISOString().slice(5,10).replace('-','/')";
+assert.equal(rewriteMonitoringPresentation(dateFormatter),dateFormatter);
+assert.equal(rewriteMonitoringPresentation("parts.join('/'); text.split(\"/\");"),"parts.join('/'); text.split(\"/\");");
+assert.equal(rewriteMonitoringPresentation("<a href = '/'>Home</a>"),"<a href = '/monitoring-preview/'>Home</a>");
 assert.equal(normalizeMonitoringPortal({}),null);
 for(const url of ['javascript:alert(1)','http://example.com','https://name:secret@example.com','https://example.com/?token=secret','https://example.com/#secret'])assert.equal(normalizeMonitoringPortal({enabled:true,url}),null);
 assert.deepEqual(normalizeMonitoringPortal({enabled:true,url:'https://observe.example/'}),{url:'https://observe.example/'});
 console.log('monitoring portal configuration passed');
 const {readFile}=await import('node:fs/promises');const {runInNewContext}=await import('node:vm');
+assert.equal(runInNewContext(rewriteMonitoringPresentation(dateFormatter)),'10/19');
 const source=await readFile(new URL('../static/chat/monitoring.js',import.meta.url),'utf8');
 for(const [view,tab] of [['overview','overview'],['security','safety'],['usage','usage'],['feedback','labor'],['test','overview']]){
  const assigned=[],panel={replaceChildren(...nodes){this.nodes=nodes}};

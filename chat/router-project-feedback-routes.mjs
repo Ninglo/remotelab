@@ -16,7 +16,7 @@ export function createProjectFeedbackHandler({ store = createProjectFeedbackStor
     if (pathname !== '/api/project-feedback') return false;
     res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('Vary', 'Cookie, Authorization');
     const send = (status, body) => writeJson(res, status, body);
-    if (!authSession?.personId || authSession.authKind==='service') { send(403, { error: '需要登录后查看或提交反馈。' }); return true; }
+    if (!authSession?.personId) { send(403, { error: '需要登录后查看或提交反馈。' }); return true; }
     if (!['GET', 'POST'].includes(req.method)) { send(405, { error: 'Method not allowed' }); return true; }
     try {
       if (req.method === 'GET') {
@@ -24,6 +24,9 @@ export function createProjectFeedbackHandler({ store = createProjectFeedbackStor
         if (params.has('caseProject')) { send(200, await store.readCases(params.get('caseProject'),params.get('caseSpace')));return true; }
         send(200, await store.read(params.has('subproject') ? params.get('subproject') : undefined, { includeUsage: params.get('usage') !== 'defer' }));
       } else {
+        // Existing authenticated collectors need GET access; only human writes
+        // require a personal login rather than the instance service credential.
+        if (authSession.authKind === 'service') { send(403, { error: '请用个人账号登录后提交反馈。' }); return true; }
         if (!sameOrigin(req)) { send(403, { error: '请从本站提交反馈。' }); return true; }
         if (!/^application\/json(?:;|$)/i.test(String(req.headers['content-type'] || ''))) { send(415, { error: '需要 JSON 请求。' }); return true; }
         const input = JSON.parse(await readBody(req, 16 * 1024));

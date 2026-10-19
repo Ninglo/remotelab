@@ -3,7 +3,10 @@ import http from 'node:http';
 import {evidenceConfig} from './monitoring-file-evidence.mjs';
 import {readResolutionConfig} from './monitoring-resolution.mjs';
 export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview',publicOrigin}={}){
- text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution|auth\/|project-feedback)|app\.js|style\.css|["'])/g,'$1'+prefix+'/');
+ // A standalone '/' in JavaScript may be a date/path separator, not a URL.
+ // Only the HTML home link and known presentation routes belong to this proxy.
+ text=text.replace(/(\bhref\s*=\s*)(["'])\/\2/gi,(_,attribute,quote)=>attribute+quote+prefix+'/'+quote);
+ text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution|auth\/|project-feedback)|app\.js|style\.css)/g,'$1'+prefix+'/');
  if(publicOrigin)for(const quote of ['"',"'"])text=text.split(quote+publicOrigin+'/?').join(quote+prefix+'/?');
  return text.replace(/(["'])\/case-review\//g,'$1'+prefix+'/case-review/');
 }

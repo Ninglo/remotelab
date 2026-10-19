@@ -40,6 +40,9 @@ for that subproject's records or one of the three non-assigned buckets.
 `subproject=group:<id>` returns the parent's child projects and only their assigned
 feedback; it excludes unassigned, contextual, and paused-history buckets. All reads
 require authentication to this shared instance and are served private/no-store.
+Existing authenticated service collectors retain read access, including deferred
+project summaries and case reviews. Only POST requires a personal login; service
+credentials cannot submit an evaluation attributed to a human reviewer.
 Provider identity objects, credentials and local evidence paths are not returned; stable original record IDs are retained for traceability.
 
 `POST /api/project-feedback` accepts `client_id` (UUID), `subproject_id` (or empty

@@ -977,3 +977,5 @@ The authenticated proxy keeps case navigation under `/monitoring-preview/case-re
 so the existing personal login and shared project-feedback API are available.
 The public case URL and its old browser storage remain available; public readers
 follow the explicit login link to submit named reviews.
+The proxy rewrites known presentation URLs and the HTML home link only. Plain
+JavaScript separators such as `'/'` in chart date labels are preserved.
