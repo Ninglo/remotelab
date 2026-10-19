@@ -1,6 +1,7 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { CHAT_HISTORY_DIR } from '../lib/config.mjs';
+import { recordFileEvidence } from './monitoring-file-evidence.mjs';
 import { observeHistoryUsage } from './usage-event-projection.mjs';
 import {
   createKeyedTaskQueue,
@@ -604,6 +605,7 @@ export async function appendEvent(sessionId, event) {
   return runSessionMutation(sessionId, async () => {
     const stored = await appendEventUnlocked(sessionId, event);
     observeHistoryUsage(sessionId, stored);
+    try { await recordFileEvidence(sessionId, stored); } catch (e) { console.warn("[monitoring-evidence] Projection failed:", e.code || e.name); }
     return stored;
   });
 }
@@ -611,7 +613,10 @@ export async function appendEvent(sessionId, event) {
 export async function appendEvents(sessionId, events, options = {}) {
   return runSessionMutation(sessionId, async () => {
     const stored = await appendEventsUnlocked(sessionId, events);
-    if (options.observeUsage !== false) for (const event of stored) observeHistoryUsage(sessionId, event);
+    if (options.observeUsage !== false) for (const event of stored) {
+      observeHistoryUsage(sessionId, event);
+      try { await recordFileEvidence(sessionId, event); } catch (e) { console.warn("[monitoring-evidence] Projection failed:", e.code || e.name); }
+    }
     return stored;
   });
 }

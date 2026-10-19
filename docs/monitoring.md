@@ -852,3 +852,31 @@ retained-source freshness, cases/reviews, and action-tool accessibility. Existin
 usage-analysis aggregates can be reused, but must retain whole-instance vs
 project scope, collection gaps and unknown denominators. Rule acceptance is
 transport evidence, not task acceptance or benefit attribution.
+
+### Authenticated memory file evidence
+
+An optional `monitoring-evidence.json` in the instance config directory supplies
+`registryPath`, `statePath`, `sourceRoot`, `indexDir` and an HTTP(S) `returnUrl`.
+The registry and private version state are produced by the existing monitoring
+collector. This does not change the Settings entry or enable a monitoring migration.
+
+`GET /api/monitoring-evidence?groups=<registered-group-ids>` lists the observed
+files after normal RemoteLab authentication. A `file=<opaque-id>` selects a file;
+`read=1` previews its current text, with size/format/path checks and escaped
+content. Public dashboards link here without carrying credentials or publishing
+file bodies. File lists remain limited to the registered, observed scope.
+
+Completed native `file_change` history events project private pointers into
+`indexDir`, only for registered paths and their matching accepted request/session.
+Forked or imported history is not treated as a new modification. The page rereads
+the canonical event and accepted request before showing the source conversation,
+original instruction and a `source=<session-id>:<event-seq>` link to the original
+instruction and saved diff. The instruction is evidence for purpose, not an
+inferred per-file rationale. The index retains the latest 200 events per file;
+historical backfill must state its time coverage.
+
+Version sampling and native file operations are displayed separately. Time
+proximity does not prove that a native operation caused a sampled version change.
+Shell edits, background writers and missing native events can remain unlinked;
+missing provenance never means authorization. Read access is covered by the
+instance's existing authenticated-user model, not the public dashboard.

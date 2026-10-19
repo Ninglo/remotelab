@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {mkdtemp,mkdir,writeFile,readFile,symlink,unlink,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';import {join} from 'node:path';
+import {fileId,recordFileEvidence,fileEvidence} from '../chat/monitoring-file-evidence.mjs';
+import {handleMonitoringEvidence} from '../chat/router-monitoring-evidence.mjs';
+const dir=await mkdtemp(join(tmpdir(),'monitoring-evidence-'));const sid='a'.repeat(32),path=join(dir,'memory.md');
+try{
+ await writeFile(path,'private body <script>alert(1)</script>');
+ const config={sourceRoot:dir,registryPath:join(dir,'registry.json'),statePath:join(dir,'state.json'),indexDir:join(dir,'index')};
+ await writeFile(join(dir,'monitoring-evidence.json'),JSON.stringify(config));
+ await writeFile(config.registryPath,JSON.stringify({groups:[{id:'navigation',name:'核心记忆',paths:[path],collectVersions:true}]}));
+ await writeFile(config.statePath,JSON.stringify({at:new Date().toISOString(),groups:{navigation:{files:{[path]:{target:path,size:45}}}},events:[{group:'navigation',object:fileId(path),at:new Date().toISOString(),kind:'content',before:'abc',after:'def'}]}));
+ const e={type:'file_change',changeState:'completed',filePath:path,seq:5,timestamp:Date.now(),requestId:'request-1',changeType:'update',diff:'-before\n+after'};
+ await mkdir(join(dir,'requests','active'),{recursive:true});
+ await writeFile(join(dir,'requests','active',createHash('sha256').update(JSON.stringify([sid,'request-1'])).digest('hex').slice(0,24)+'.json'),JSON.stringify({sessionId:sid,requestId:'request-1',acceptedAt:new Date().toISOString()}));
+ await recordFileEvidence(sid,{...e,changeState:'failed'},{configDir:dir});assert.equal((await fileEvidence(config,path)).length,0);
+ await recordFileEvidence(sid,e,{configDir:dir});await recordFileEvidence(sid,e,{configDir:dir});assert.equal((await fileEvidence(config,path)).length,1);
+ await recordFileEvidence(sid,{...e,filePath:join(dir,'outside.md')},{configDir:dir});assert.equal((await fileEvidence(config,join(dir,'outside.md'))).length,0);
+ const historyReader=async()=>[e],requestReader=async()=>({sessionId:sid,requestId:'request-1',acceptedAt:new Date().toISOString(),text:'<private>hidden</private>Current user message: 修复记忆入口 <b>原话</b>'});
+ async function get(query,auth=true){let status,body;await handleMonitoringEvidence({req:{method:'GET',url:'/api/monitoring-evidence?'+query},res:{setHeader(){},writeHead(s){status=s},end(b){body=b}},pathname:'/api/monitoring-evidence',authSession:auth?{}:null,configOverride:config,historyReader,requestReader});return{status,body}}
+ const base='groups=navigation&file='+fileId(path);
+ assert.equal((await get(base,false)).status,401);
+ assert.equal((await get('groups=navigation&file=../../etc/passwd')).status,404);
+ const list=await get('groups=navigation');assert.equal(list.status,200);assert(list.body.includes('memory.md'));assert(!list.body.includes('private body'));
+ const detail=await get(base);assert(detail.body.includes('待关联'));assert(detail.body.includes('对话 aaaaaaaa'));assert(detail.body.includes('修复记忆入口'));assert(!detail.body.includes('hidden'));assert(!detail.body.includes('private body'));
+ const content=await get(base+'&read=1');assert(content.body.includes('&lt;script&gt;'));assert(!content.body.includes('<script>'));
+ const original=await get(base+'&source='+sid+':5');assert(original.body.includes('+after'));assert.equal((await get(base+'&source='+sid+':99')).status,404);
+ await unlink(path);await symlink('/etc/passwd',path);assert.equal((await get(base+'&read=1')).status,409);
+ console.log('PASS: authenticated catalogue/body, escaping, exact native provenance, failed/duplicate/out-of-scope events, unknown source, symlink retarget');
+}finally{await rm(dir,{recursive:true,force:true})}

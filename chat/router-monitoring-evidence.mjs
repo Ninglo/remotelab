@@ -1,0 +1,79 @@
+import { constants } from 'node:fs';
+import { readFile, open, realpath } from 'node:fs/promises';
+import { extname } from 'node:path';
+import { evidenceConfig, fileId, fileEvidence } from './monitoring-file-evidence.mjs';
+import { loadHistory } from './history.mjs';
+import { requests } from './requests.mjs';
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const link=(label,q)=>`<a href="/api/monitoring-evidence?${esc(new URLSearchParams(q))}">${esc(label)}</a>`;
+const date=x=>new Date(x).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
+const kind=x=>({content:'内容修改',added:'新增观测',removed:'删除',permissions:'权限变化',target:'路径变化',update:'修改',add:'新增',delete:'删除'})[x]||x;
+function page(title,body,returnUrl='/?tab=settings'){return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} · 监管文件</title><style>
+*{box-sizing:border-box}body{margin:0;padding:24px;color:#171918;font:15px/1.7 "Segoe UI","PingFang SC",sans-serif;background:#f6f7f5;background-image:linear-gradient(#dfe3dd 1px,transparent 1px),linear-gradient(90deg,#dfe3dd 1px,transparent 1px);background-size:24px 24px}header,main{max-width:1200px;margin:auto;border:1px solid #171918}header{background:#171918;color:white;padding:16px 26px}header a{color:white}main{background:white;padding:26px;min-height:80vh}h1{font-size:26px}h2{font-size:19px;border-left:4px solid #1878dd;padding-left:12px;margin-top:28px}a{color:#126bc1}p,td,pre{overflow-wrap:anywhere}.muted{color:#626763}pre{white-space:pre-wrap;background:#f6f7f5;padding:16px;border:1px solid #d9ddd9;font:13px/1.7 monospace}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%}td,th{text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid #d9ddd9}th{background:#f1f4eb}summary{cursor:pointer}nav{display:flex;gap:20px;flex-wrap:wrap}@media(max-width:540px){body{padding:8px}main{padding:16px}header{padding:14px}h1{font-size:22px}thead{display:none}tr{display:block;border-bottom:1px solid #d9ddd9;padding:10px 0}td{display:block;border:0;padding:4px 0}td:before{content:attr(data-label)"：";color:#626763}td:first-child{font-weight:600}}
+</style><header><nav><a href="${esc(returnUrl)}">← 返回监管中心</a><a href="/?tab=settings&monitorReturn=1">RemoteLab 设置</a></nav></header><main><h1>${esc(title)}</h1>${body}</main></html>`}
+const table=(heads,rows)=>`<div class="table-wrap"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>`<td data-label="${esc(heads[i])}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+export async function readTrackedFile(path,entry){
+ if(!['.md','.json','.txt','.yaml','.yml','.toml'].includes(extname(path).toLowerCase()))throw Object.assign(Error('该格式暂不提供正文预览'),{status:415});
+ if(await realpath(path)!==entry.target)throw Object.assign(Error('文件路径已变化，请等待重新采样'),{status:409});
+ const handle=await open(entry.target,constants.O_RDONLY|constants.O_NOFOLLOW);
+ try{const stat=await handle.stat();if(!stat.isFile()||stat.size>2097152)throw Object.assign(Error('文件不可预览或超过 2 MiB'),{status:413});
+ const body=await handle.readFile('utf8');if(body.includes('\0'))throw Object.assign(Error('二进制文件不提供文本预览'),{status:415});return body;
+ }finally{await handle.close()}
+}
+export async function handleMonitoringEvidence({req,res,pathname,authSession,configOverride,historyReader=loadHistory,requestReader=(s,r)=>requests.byRequest(s,r)}){
+ if(pathname!=='/api/monitoring-evidence')return false;
+ res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
+ res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+ let returnUrl='/?tab=settings';
+ const send=(status,title,body)=>{res.writeHead(status,{'Content-Type':'text/html; charset=utf-8'});res.end(page(title,body,returnUrl))};
+ if(!authSession){send(401,'请登录 RemoteLab','<a href="/">打开登录页</a>');return true}
+ if(req.method!=='GET'){send(405,'仅支持查看','');return true}
+ try{
+ const config=configOverride||await evidenceConfig();if(!config){send(404,'未配置文件证据入口','');return true}
+ if(/^https?:\/\//.test(config.returnUrl||''))returnUrl=config.returnUrl;
+ const state=JSON.parse(await readFile(config.statePath,'utf8')),registry=JSON.parse(await readFile(config.registryPath,'utf8'));
+ const q=new URL(req.url,'http://local').searchParams,ids=(q.get('groups')||'').split(',');
+ const groups=registry.groups.filter(g=>g.collectVersions&&ids.includes(g.id));
+ if(!groups.length){send(404,'未找到登记对象','');return true}
+ const files=groups.flatMap(g=>Object.entries(state.groups[g.id]?.files||{}).map(([path,entry])=>({group:g,path,entry,id:fileId(path)})));
+ const selected=q.get('file'),file=selected?files.find(f=>f.id===selected):null;
+ if(selected&&!file){send(404,'文件不在当前登记范围','');return true}
+ const base={groups:groups.map(g=>g.id).join(',')};
+ let body=`<p class="muted">登记范围内 ${files.length} 个已观测文件；采样 ${esc(date(state.at))}。正文为当前文件，历史版本与原生修改记录分别保留。</p>`;
+ if(!file){
+ body+=table(['文件','所属区域','大小','操作'],files.map(f=>[esc(f.path),esc(f.group.name),esc(f.entry.size)+' B',link('查看文件与修改来源',{...base,file:f.id})]));
+ send(200,['navigation','policy','candidates'].every(id=>ids.includes(id))?'核心记忆区':groups.map(g=>g.name).join(' / '),body);return true;
+ }
+ body=link('← 返回文件清单',base)+`<p>${esc(file.path)}</p>`;
+ if(q.get('read')==='1'){
+  body+='<h2>当前文件正文</h2><p class="muted">只读预览；查看时间 '+esc(date(Date.now()))+'。</p><pre>'+esc(await readTrackedFile(file.path,file.entry))+'</pre>';
+ }else body+=`<p>${link('读取当前文件正文',{...base,file:file.id,read:'1'})}</p>`;
+ const native=await fileEvidence(config,file.path);
+ const valid=[];
+ for(const n of native.slice(-200).reverse()){
+  if(!/^[a-f0-9]{32}$/.test(n.sessionId)||!Number.isInteger(n.seq))continue;
+  const [e]=await historyReader(n.sessionId,{fromSeq:n.seq,toSeq:n.seq,includeBodies:false});
+  if(e?.type!=='file_change'||e.changeState!=='completed'||e.filePath!==n.path)continue;
+  const record=e.requestId?await requestReader(n.sessionId,e.requestId):null;
+  if(!record?.acceptedAt||record.sessionId!==n.sessionId||record.requestId!==e.requestId)continue;
+  const text=record.text||'';
+  // Display the accepted instruction as evidence, never invent a motive from timing.
+  const cleaned=text.replace(/<(private|hide)>[\s\S]*?<\/\1>/g,'').split('Current user message:').at(-1).trim();
+  valid.push({n,e,record,purpose:cleaned||'该轮原交办未取得；修改目的待核'});
+ }
+ body+='<h2>原生修改记录</h2><p class="muted">下列记录来自已完成的文件修改事件；“目的依据”引用当轮原交办，不等同已确认的逐文件修改理由。执行命令、后台脚本等未产生原生文件事件的修改仍可能缺失。</p>';
+ body+=valid.length?table(['时间 / 修改','来自对话','目的依据','原文'],valid.map(({n,e,purpose})=>[
+ esc(date(e.timestamp))+'<br>'+esc(kind(e.changeType)),`<a href="/?session=${esc(n.sessionId)}&tab=sessions">对话 ${esc(n.sessionId.slice(0,8))}</a><br>事件 #${n.seq}`,esc(purpose.slice(0,500))+(purpose.length>500?'…':''),link('本轮原文与修改证据',{...base,file:file.id,source:n.sessionId+':'+n.seq})
+ ])):'<p>尚无可关联的原生修改记录，来源与目的待关联。</p>';
+ const source=q.get('source'),detail=source&&valid.find(x=>x.n.sessionId+':'+x.n.seq===source);
+ if(source&&!detail){send(404,'未找到该文件的来源记录','');return true}
+ if(detail){const {n,e,purpose}=detail;const [full]=await historyReader(n.sessionId,{fromSeq:n.seq,toSeq:n.seq,includeBodies:true});
+ body+='<h2>该轮原文与修改证据</h2><p>轮次 '+esc(e.requestId||'未记录')+'</p><h3>原交办（已隐藏运行附带配置）</h3><pre>'+esc(purpose)+'</pre><h3>原生修改差异</h3><pre>'+esc(full?.diff||'该原生事件没有保存差异正文')+'</pre>';
+ }
+ const changes=(state.events||[]).filter(e=>e.group===file.group.id&&e.object===file.id).reverse();
+ body+='<h2>文件版本观测</h2><p class="muted">这是采样发现的变化时间。尚未与原生事件逐项核对，不能仅按时间邻近认定同一次修改；授权仍待核。</p>';
+ body+=changes.length?table(['发现时间','变化','版本摘要','来源'],changes.map(e=>[esc(date(e.at)),esc(kind(e.kind)),esc((e.before||'—')+' → '+(e.after||'—')),'待关联'])):'<p>基线后暂无已保存的版本变化。</p>';
+ send(200,file.path.split('/').at(-1),body);
+ }catch(e){send(e.status||503,'暂时无法读取文件证据',`<p>${esc(e.status?e.message:'来源暂不可用，请稍后重试；没有用空记录代替。')}</p>`)}
+ return true;
+}
