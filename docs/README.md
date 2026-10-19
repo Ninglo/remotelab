@@ -184,4 +184,4 @@ The information-routing group card can show an explicitly enabled public pilot r
 
 个人设置卡片支持首次进入私聊欢迎去重，以及“我的设置／使用说明”原生菜单消息入口；配置和验证边界见 [飞书个人设置](feishu-web-settings.md)。
 
-Employee SSH Codex memory: [authenticated account and file evidence](monitoring.md#employee-ssh-codex-memory-evidence) documents the opt-in helper, private inline previews, access metadata and native attribution limits.
+Employee SSH Codex memory: [authenticated account and file evidence](monitoring.md#employee-ssh-codex-memory-evidence) documents the opt-in helper, private inline previews, access metadata, `.codex-sg` installations and native attribution limits. The preview separates recent Skill document loads from completed execution.

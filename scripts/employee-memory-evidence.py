@@ -5,7 +5,8 @@ import os,sys,pwd,pathlib,json,hashlib,sqlite3,stat
 def evidence(account,selected=None):
  u=pwd.getpwnam(account)
  if not u.pw_dir.startswith('/data/home/') or pathlib.Path(u.pw_dir).name!=account:raise ValueError('not a registered employee account')
- base=pathlib.Path(u.pw_dir)/'.codex/memories';files=[]
+ home=pathlib.Path(u.pw_dir)
+ base=home/('.codex-sg' if (home/'.codex-sg').is_dir() else '.codex')/'memories';files=[]
  if base.exists() and base.resolve()!=base:raise ValueError('aliased memory root')
  if base.is_dir() and not base.is_symlink():
   for root,dirs,names in os.walk(base,followlinks=False):

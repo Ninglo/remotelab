@@ -902,7 +902,8 @@ An explicitly enabled `employeeHelper` in `monitoring-evidence.json` points to a
 root-owned installation of `scripts/employee-memory-evidence.py`. The existing
 authenticated evidence endpoint accepts `employee=<local-account>` and an optional
 16-character file ID. The helper resolves the account from passwd, accepts only
-current `/data/home/<account>/.codex/memories` Markdown files, and never accepts a
+current `/data/home/<account>/.codex-sg/memories` Markdown files when that
+installation exists, otherwise `.codex/memories`, and never accepts a
 request-supplied filesystem path. Directory traversal uses no-follow file
 descriptors; previews are read-only, escaped, no-store and limited to 2 MiB.
 Deployments must explicitly authorize this employee-memory scope and supply an
@@ -914,3 +915,10 @@ The employee list is distinct from the agent instance's own memory. Native memor
 database counts and `usage_count` are metadata, not file-read counts or proof of
 injection. SSH-native conversation attribution remains unknown unless backed by
 an explicit source record; do not derive it from timing or a matching name.
+
+The preview keeps employees in a compact directory and distinguishes absent memory
+databases from zero recorded usage. Read/write counts cover only the observer
+window; they are not historical totals. Its shared Skill catalog reuses reviewed
+entries, labels team-shared versus instance-only methods, links authenticated
+original files, and separately counts recent successful document-load tool calls.
+These counts do not establish completed Skill execution or cover SSH-native calls.
