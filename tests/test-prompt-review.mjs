@@ -94,6 +94,25 @@ try {
   assert.equal(recovered.coverage.failed, 3, 'a crashed admission remains failed with unknown usage');
   assert.ok(recovered.usage.calls > recovered.usage.measuredCalls, 'crash costs are unknown, not zero');
 
+  // Sort the complete filtered set before pagination, using actual review timestamps.
+  const snapshotPath = join(CONFIG_DIR, 'prompt-review', version, 'snapshot.json');
+  const snapshot = JSON.parse(await readFile(snapshotPath, 'utf8'));
+  const fixture = (id, severity, reviewedAt) => ({ id, state: 'reviewed', severity, reviewedAt, findings: [], refs: [{ sourceId: snapshot.sources[0].id, startLine: 1 }] });
+  snapshot.rows = Array.from({ length: 55 }, (_, i) => fixture(`high-${String(i).padStart(2, '0')}`, 'high', new Date(Date.UTC(2026, 0, i + 1)).toISOString()));
+  snapshot.rows.push(fixture('critical-old', 'critical', '2025-01-01T00:00:00Z'), fixture('low-new', 'low', '2027-01-01T00:00:00Z'), fixture('high-unknown', 'high', 'invalid'));
+  await put(snapshotPath, snapshot);
+  const severityPage = await readPromptReview({ severity: 'critical,high', state: 'reviewed' });
+  assert.equal(severityPage.sort, 'severity'); assert.equal(severityPage.total, 57);
+  assert.deepEqual(severityPage.rows.slice(0, 2).map(r => r.id), ['critical-old', 'high-54']);
+  const timePage = await readPromptReview({ severity: 'critical,high', state: 'reviewed', sort: 'time' });
+  assert.equal(timePage.rows[0].id, 'high-54', 'newest item outside stored first page must lead');
+  const tail = await readPromptReview({ severity: 'critical,high', sort: 'time', offset: 50 });
+  assert.deepEqual(tail.rows.slice(-2).map(r => r.id), ['critical-old', 'high-unknown']);
+  assert.equal(new Set([...timePage.rows, ...tail.rows].map(r => r.id)).size, 57);
+  assert.equal((await readPromptReview({ severity: 'high', sort: 'time' })).total, 56, 'single-level callers remain supported');
+  assert.equal((await readPromptReview({ sort: 'time' })).rows[0].id, 'low-new');
+  assert.equal((await readPromptReview({ sort: 'unknown' })).sort, 'severity');
+
   // Verify the runtime actually disables tools and treats @file/attack text as stdin data.
   const bin = join(home, 'bin'); await mkdir(bin);
   const fakePi = join(bin, 'pi');

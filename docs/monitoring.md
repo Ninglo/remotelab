@@ -15,7 +15,12 @@ Usage analysis remains a separate view for period/Session filters and execution,
 一次交接需要目标实例和是否允许使用其现有模型账号；如没有已登录账号或 Pi 安装，必须先补齐该依赖。不要把“低成本”理解成零计费。入口为 **监控器 → Prompt 安全**；筛选风险级别、审阅状态和分页，打开条目看证据、建议、脱敏原文及原会话。刷新页面只读持久化结果；“补审待处理内容”在已启用实例启动有界后台批处理。用户不需要手工复制运行命令。
 
 统一监管页的 **安全 → Prompt 审阅** 现在直接复用上述认证接口展示风险明细。
-总览单列严重／高风险的去重片段数；明细默认查看严重级别，可切换等级和翻页。
+总览的三个 Prompt 卡片均在二级抽屉直接提供信息：完整审阅展示覆盖、未完成片段、
+风险分布和累计 Token；风险抽屉直接列出原话、原因与建议；规则接收展示状态计数、
+最近版本记录和查询覆盖。完整原文或审阅管理等较少使用的材料再沿详细入口查看。
+风险明细默认查看严重与高两个级别，提供“最新优先”“严重优先”，可切换等级和翻页。
+时间指审阅时间，不能当作任务发生时间；严重优先时同级按审阅时间降序，未知时间置后。
+接口按完整筛选结果排序后再分页，刷新保留选择，不只重新排列当前页。
 每条保留模型原因、建议、审阅日期、示例来源和原会话链接；高风险证据标红，
 点击上下文后才读取经指纹校验的脱敏原文，并标出命中行。原文变化或不可取回时
 显示缺口。公开页面仅展示汇总及登录入口，风险原话不写入公开快照。
@@ -58,7 +63,7 @@ Usage analysis remains a separate view for period/Session filters and execution,
 
 结果、调用回执、进度在私有 `CONFIG_DIR/prompt-review/<规则指纹>/`；旧版本保留。每次调用记录实际模型、规则版本/哈希、provider response ID、实测输入/缓存/输出 token 与耗时，失败回执亦保留。既有 usage ledger 使用 `prompt_security_review` 操作归因。页面只展示实际 token、调用数与回执覆盖，不展示换算金额；缺回执不能算作零消耗。后端旧估算字段仅为既有接口兼容保留。
 
-接口沿用实例认证和全员共享权限：`GET /api/monitoring/prompt-review`（风险/状态筛选与分页）、`GET /api/monitoring/prompt-review/source?id=...`（指纹校验的脱敏原文）、`POST /api/monitoring/prompt-review/run`（同站启动已启用审阅）。验收用 `npm run test:prompt-review`；部署后仍需读真实首轮与增量任务回执。关闭配置可阻止下一次启动；已有进程会完成本轮有限批次。
+接口沿用实例认证和全员共享权限：`GET /api/monitoring/prompt-review`（`severity` 支持逗号分隔多级，`sort=severity|time`，状态筛选与分页）、`GET /api/monitoring/prompt-review/source?id=...`（指纹校验的脱敏原文）、`POST /api/monitoring/prompt-review/run`（同站启动已启用审阅）。验收用 `npm run test:prompt-review`；部署后仍需读真实首轮与增量任务回执。关闭配置可阻止下一次启动；已有进程会完成本轮有限批次。
 
 ## Account balances and Token total
 

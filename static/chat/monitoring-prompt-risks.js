@@ -3,11 +3,11 @@
   const labels = { critical: '严重', high: '高', medium: '中', low: '低', none: '未发现具体风险' };
   const categories = { injection: '外部内容被当成指令', authority: '越权或权限扩大', disclosure: '信息泄露', destructive: '破坏性操作', third_party: '影响他人或外部系统' };
   const kinds = { manifest: '运行准备文本', 'native-input': '后续提交文本', background: '后台辅助提示' };
-  const stamp = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '时间未记录';
+  const stamp = value => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '时间未记录';
   const node = (tag, text, className) => { const e = document.createElement(tag); if (text != null) e.textContent = text; if (className) e.className = className; return e; };
   const link = (text, href) => { const e = node('a', text); e.href = href; e.target = '_blank'; e.rel = 'noopener noreferrer'; return e; };
   const endpoint = new URL('/api/monitoring/prompt-review', location.origin);
-  const state = { severity: 'critical', offset: 0, data: null, folds: new Map(), sequence: 0, host: null };
+  const state = { severity: 'critical,high', sort: 'severity', offset: 0, data: null, folds: new Map(), sequence: 0, host: null };
   async function read(url) {
     const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw Error([401, 403].includes(response.status) ? '请登录 RemoteLab 后查看风险原文。' : '风险明细暂时无法读取，请重试。');
@@ -16,12 +16,18 @@
   function toolbar(data) {
     const bar = node('div', null, 'prompt-risk-toolbar'), label = node('label', '风险级别 '), select = node('select');
     select.setAttribute('aria-label', 'Prompt 风险级别');
-    for (const value of ['critical', 'high', 'medium', 'low', 'none', '']) {
-      const option = node('option', value ? `${labels[value]} · ${data?.risks?.[value] ?? '—'} 段` : '全部级别'); option.value = value; select.append(option);
+    for (const value of ['critical,high', 'critical', 'high', 'medium', 'low', 'none', '']) {
+      const text = value === 'critical,high' ? '严重与高' : value ? `${labels[value]} · ${data?.risks?.[value] ?? '—'} 段` : '全部级别';
+      const option = node('option', text); option.value = value; select.append(option);
     }
     select.value = state.severity;
     select.addEventListener('change', () => { state.severity = select.value; state.offset = 0; state.data = null; void load(); });
-    label.append(select); bar.append(label);
+    const sorting = node('div', null, 'prompt-risk-sort'); sorting.setAttribute('role', 'group'); sorting.setAttribute('aria-label', '风险排列方式');
+    for (const [value, title] of [['time', '最新优先'], ['severity', '严重优先']]) {
+      const button = node('button', title); button.type = 'button'; button.setAttribute('aria-pressed', String(state.sort === value));
+      button.addEventListener('click', () => { if (state.sort === value) return; state.sort = value; state.offset = 0; state.data = null; void load(); }); sorting.append(button);
+    }
+    label.append(select); bar.append(sorting, label);
     const refresh = node('button', '刷新风险明细'); refresh.type = 'button'; refresh.addEventListener('click', () => void load()); bar.append(refresh);
     return bar;
   }
@@ -62,6 +68,7 @@
     const summary = node('summary'), severity = node('span', labels[row.severity] || '待核', 'badge ' + (['critical', 'high'].includes(row.severity) ? 'bad' : 'warn'));
     summary.append(severity, node('strong', [...new Set(row.findings.map(f => categories[f.category] || f.category))].join('、') || '本段未发现具体风险'));
     summary.append(node('span', row.findings[0]?.reason || '只说明该片段的模型审阅结果，不代表已验证安全。', 'prompt-risk-preview'));
+    summary.append(node('small', `审阅 ${stamp(row.reviewedAt)}`, 'meta'));
     details.append(summary);
     const body = node('div', null, 'prompt-risk-body');
     body.append(node('p', `审阅 ${stamp(row.reviewedAt)} · ${kinds[row.source.kind] || row.source.kind} · 同文段关联 ${row.occurrences} 个来源`, 'meta'));
@@ -90,6 +97,7 @@
     if (!data) { if (!error) host.append(node('p', '正在读取已保存的风险明细…', 'meta')); return; }
     host.append(node('p', `结果更新 ${stamp(data.updatedAt)} · 审阅模型 ${data.model} · 规则 ${data.ruleVersion}。只读取已有结果，不启动模型审阅。`, 'meta'));
     host.append(node('p', '同一文本按指纹去重；关联来源数不等于独立事件数。处置结果尚未关联，旧标记不代表风险仍在发生。', 'meta'));
+    host.append(node('p', state.sort === 'time' ? '按审阅时间从新到旧排列；不是任务发生时间。' : '按严重程度从高到低排列，同级按审阅时间从新到旧。', 'meta'));
     const paging = () => {
       const bar = node('div', null, 'prompt-risk-toolbar');
       for (const [text, offset, disabled] of [['上一页', Math.max(0, state.offset - 50), state.offset === 0], ['下一页', state.offset + 50, state.offset + 50 >= data.total]]) {
@@ -107,7 +115,7 @@
     const sequence = ++state.sequence;
     render(state.data);
     try {
-      const url = new URL(endpoint); url.search = new URLSearchParams({ severity: state.severity, state: 'reviewed', offset: state.offset });
+      const url = new URL(endpoint); url.search = new URLSearchParams({ severity: state.severity, state: 'reviewed', sort: state.sort, offset: state.offset });
       const data = await read(url);
       if (sequence !== state.sequence) return;
       state.data = data; render(data);

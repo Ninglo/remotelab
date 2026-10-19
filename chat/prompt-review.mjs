@@ -250,18 +250,23 @@ export function summarizePromptReview(snapshot, config) {
     risks: Object.fromEntries(Object.keys(rank).map(severity => [severity, rows.filter(r => r.state === 'reviewed' && r.severity === severity).length])) };
 }
 
-export async function readPromptReview({ offset = 0, severity = '', state = '', sourceId = '' } = {}) {
+export async function readPromptReview({ offset = 0, severity = '', state = '', sourceId = '', sort = 'severity' } = {}) {
   const [snapshot, config] = await Promise.all([readRecord(join(root, 'snapshot.json')), promptReviewConfig()]);
   const summary = summarizePromptReview(snapshot, config);
   let owner; try { owner = await readRecord(join(PROMPT_REVIEW_ROOT, 'worker.lock')); } catch {}
   summary.workerRunning = Boolean(owner?.pid && live(owner.pid));
   if (summary.state === 'running' && !summary.workerRunning) summary.state = 'interrupted';
   const sourceMap = new Map((snapshot?.sources || []).map(s => [s.id, s]));
-  const rows = (snapshot?.rows || []).filter(r => (!severity || r.severity === severity) && (!state || r.state === state)
+  const levels = typeof severity === 'string' ? severity.split(',') : [];
+  const order = sort === 'time' ? 'time' : 'severity';
+  const reviewedTime = row => Number.isFinite(Date.parse(row.reviewedAt)) ? Date.parse(row.reviewedAt) : -Infinity;
+  const byTime = (a, b) => reviewedTime(a) === reviewedTime(b) ? 0 : reviewedTime(a) > reviewedTime(b) ? -1 : 1;
+  const bySeverity = (a, b) => (rank[b.severity] || 0) - (rank[a.severity] || 0);
+  const rows = (snapshot?.rows || []).filter(r => (!severity || levels.includes(r.severity)) && (!state || r.state === state)
     && (!sourceId || r.refs.some(ref => ref.sourceId === sourceId)))
-    .sort((a, b) => (rank[b.severity] || 0) - (rank[a.severity] || 0) || a.id.localeCompare(b.id));
+    .sort((a, b) => (order === 'time' ? byTime(a, b) || bySeverity(a, b) : bySeverity(a, b) || byTime(a, b)) || a.id.localeCompare(b.id));
   const start = Math.max(0, Number.parseInt(offset, 10) || 0);
-  return { ...summary, total: rows.length, offset: start, rows: rows.slice(start, start + 50).map(row => {
+  return { ...summary, sort: order, total: rows.length, offset: start, rows: rows.slice(start, start + 50).map(row => {
     const ref = row.refs.find(r => r.sourceId === sourceId) || row.refs[0], source = sourceMap.get(ref.sourceId);
     return { ...row, refs: undefined, occurrences: row.refs.length, source: { id: source.id, kind: source.kind,
       sessionId: source.sessionId, runId: source.runId, field: source.field, delivery: source.delivery, startLine: ref.startLine } };
