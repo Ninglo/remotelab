@@ -57,6 +57,7 @@ The component requires Node.js 18.15 or newer (for disk-space checks) and FFmpeg
 ```
 
 - Channel `0` means this receiver's left channel; `1` means its right channel. Sources are `(receiverId, channel)`, not global left/right. One capture process opens each active receiver; lane lifetimes are independent. Configuration rejects duplicate sources and ambiguous keypad buttons.
+- Set each lane's optional `deviceLabel` to its verified capture device, for example `DJI Mic 2号麦` or `DJI接收器1-左声道`. This is independent of the panel's `label` (which may describe a button or discussion). It is snapshotted when recording starts and included in uploaded filenames. Do not infer a physical microphone number or a speaker from a channel alone.
 - macOS uses an FFmpeg build exposing AVFoundation `audio_device_id` and `uid:`/`serial:` identities. Older FFmpeg builds without that option fail `doctor`; upgrade them rather than binding same-name receivers by changing numeric indexes. Xcode Command Line Tools compile the included Swift HID helper once per source version.
 - Linux uses a stable named ALSA card (`hw:CARD=...`) or a named PulseAudio source, Python 3 and explicit `/dev/input/by-id/...-event-kbd` access. Identical receivers may require distinct stable card names/udev configuration. Grant only the device access needed by the host user. Numeric card indexes and the default source must not be used.
 - `free3p` requires learning its actual HID events and verifying a short recording on the first machine. The helper does not seize the keyboard: configure unused function keys so events do not type text or invoke normal application shortcuts.
@@ -329,8 +330,12 @@ the panel adopts an ongoing capture silently rather than replaying its start.
 ### Audio filenames
 
 New uploaded originals use the capture machine's local date and start/end times,
-for example `2026-10-12_15-06-50至15-15-32.wav`. Cross-midnight recordings include
-both dates. Internal WAV attachments keep their ordered `第01段` suffix. The complete
+followed by the capture device, for example
+`2026-10-12_15-06-50至15-15-32_DJI Mic 2号麦.wav`. The name uses the saved
+`deviceLabel`, falling back to the lane label or receiver/channel identity for
+older manifests; an unidentified source is explicitly `设备未标注`. A test label
+retains the `【测试】` prefix. Cross-midnight recordings include both dates.
+Internal WAV attachments keep their ordered `第01段` suffix. The complete
 MP3 sent to Feishu uses the full recording interval without a segment suffix. A verified
 single speaker or explicitly verified main speaker adds their name; unknown or
 ambiguous speakers add nothing. The filename is saved before upload and reused

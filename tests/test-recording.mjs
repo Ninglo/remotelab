@@ -60,7 +60,10 @@ async function samples(root, record) {
 
 test('explicit device identities, unique lane/key bindings, and machine identity survive configure', async (t) => {
   const root = await temporary(t);
-  const first = await saveRecordingConfig(root, config());
+  const initial = config();
+  initial.lanes[0].deviceLabel = 'DJI Mic 左声道';
+  const first = await saveRecordingConfig(root, initial);
+  assert.equal((await readRecordingConfig(root)).lanes[0].deviceLabel, 'DJI Mic 左声道');
   assert.equal((await readRecordingConfig(root)).machineId, first.machineId);
   assert.equal((await stat(join(root, 'config.json'))).mode & 0o777, 0o600);
   assert.throws(() => config({ receivers: [{ id: 'rx1', backend: 'alsa', source: 'default' }] }), /explicit audio/);
@@ -104,13 +107,17 @@ test('arbitrary pipe boundaries preserve per-channel PCM without mixing receiver
 
 test('four independent discussions on two receivers: stopping one leaves the other three recording', async (t) => {
   const root = await temporary(t), factory = captureFactory();
-  const manager = new RecordingManager({ root, config: config(), spawnCapture: factory.spawnCapture });
+  const cfg = config();
+  cfg.lanes[0].deviceLabel = 'DJI Mic 左声道';
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
   await manager.init(); t.after(() => manager.shutdown());
   for (const lane of ['a', 'b', 'c', 'd']) await manager.start(lane);
   assert.equal(factory.captures.size, 2);
+  cfg.lanes[0].deviceLabel = 'changed after recording started';
   await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(1001, 2002));
   await feed(manager, factory.captures.get('rx2'), 'rx2', stereo(3003, 4004));
   const a = (await manager.stop('a')).recording;
+  assert.equal((await loadRecord(root, a.id)).deviceLabel, 'DJI Mic 左声道');
   assert.equal(factory.captures.get('rx1').killed, false);
   assert.equal(manager.status().length, 3);
   await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(5005, 6006));
@@ -511,15 +518,20 @@ test('retention waits for observation window and preserves pending, local and un
 });
 
 
-test('audio filenames use local start/end, stable segment order and only verified main speakers', async () => {
+test('audio filenames identify capture device, local interval, segments and only verified main speakers', async () => {
   const { recordingFileName } = await import('../lib/recording/file-name.mjs');
-  const record = { id: 'rec_example', timeZone: 'Asia/Shanghai', startedAt: '2026-10-12T07:06:50Z', endedAt: '2026-10-12T07:15:32Z', segments: [{}] };
-  assert.equal(recordingFileName(record), '2026-10-12_15-06-50至15-15-32.wav');
+  const record = { id: 'rec_example', label: '桌面旋钮', deviceLabel: 'DJI Mic 2号麦', timeZone: 'Asia/Shanghai', startedAt: '2026-10-12T07:06:50Z', endedAt: '2026-10-12T07:15:32Z', segments: [{}] };
+  assert.equal(recordingFileName(record), '2026-10-12_15-06-50至15-15-32_DJI Mic 2号麦.wav');
   assert.equal(recordingFileName({ ...record, speakers: [{ name: 'Guess', verified: false }] }), recordingFileName(record));
-  assert.equal(recordingFileName({ ...record, speakers: [{ name: '张三', verified: true }] }), '2026-10-12_15-06-50至15-15-32_张三.wav');
+  assert.equal(recordingFileName({ ...record, speakers: [{ name: '张三', verified: true }] }), '2026-10-12_15-06-50至15-15-32_DJI Mic 2号麦_张三.wav');
   assert.equal(recordingFileName({ ...record, speakers: [{ name: 'A', verified: true }, { name: 'B', verified: true }] }), recordingFileName(record));
-  assert.equal(recordingFileName({ ...record, segments: [{}, {}] }, 1), '2026-10-12_15-06-50至15-15-32_第02段.wav');
-  assert.equal(recordingFileName({ ...record, endedAt: '2026-10-12T16:01:00Z' }), '2026-10-12_15-06-50至2026-10-13_00-01-00.wav');
+  assert.equal(recordingFileName({ ...record, segments: [{}, {}] }, 1), '2026-10-12_15-06-50至15-15-32_DJI Mic 2号麦_第02段.wav');
+  assert.equal(recordingFileName({ ...record, endedAt: '2026-10-12T16:01:00Z' }), '2026-10-12_15-06-50至2026-10-13_00-01-00_DJI Mic 2号麦.wav');
+  assert.equal(recordingFileName({ ...record, label: '【测试】桌面旋钮' }), '【测试】2026-10-12_15-06-50至15-15-32_DJI Mic 2号麦.wav');
+  assert.equal(recordingFileName({ ...record, deviceLabel: undefined, label: '【测试】大疆左声道' }), '【测试】2026-10-12_15-06-50至15-15-32_大疆左声道.wav');
+  assert.match(recordingFileName({ ...record, deviceLabel: undefined, label: '', receiverId: 'rx2', channel: 1 }), /_rx2-右声道\.wav$/);
+  assert.match(recordingFileName({ ...record, deviceLabel: undefined, label: '' }), /_设备未标注\.wav$/);
+  assert.match(recordingFileName({ ...record, deviceLabel: 'DJI/2:麦' }), /_DJI-2-麦\.wav$/);
 });
 
 
@@ -528,6 +540,7 @@ test('complete publication preserves WAVs, joins in order, and keeps MP3 inside 
   const { promisify } = await import('node:util');
   const exec = promisify((await import('node:child_process')).execFile);
   const root = await temporary(t), record = await pendingRecord(root);
+  record.deviceLabel = 'DJI Mic 2号麦';
   record.segments.push({ filename: '00001.wav' });
   const originals = [];
   for (const [index, segment] of record.segments.entries()) {
@@ -539,7 +552,7 @@ test('complete publication preserves WAVs, joins in order, and keeps MP3 inside 
   }
   const audio = await preparePublicationAudio(root, record, { config: config() });
   assert.equal(audio.durationSeconds, 2); assert.equal(audio.bitrateKbps, 48);
-  assert.doesNotMatch(audio.displayName, /第\d+段/); assert.match(audio.displayName, /\.mp3$/);
+  assert.doesNotMatch(audio.displayName, /第\d+段/); assert.match(audio.displayName, /_DJI Mic 2号麦\.mp3$/);
   const { stdout: decoded } = await exec('ffmpeg', ['-v', 'error', '-i', join(recordDir(root, record.id), audio.filename), '-f', 's16le', '-'], { encoding: 'buffer' });
   assert.equal(decoded.length, 64000);
   for (let index = 0; index < 2; index++) {
