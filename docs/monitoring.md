@@ -888,7 +888,7 @@ instance's existing authenticated-user model, not the public dashboard.
 
 With `previewPort` configured, `/monitoring-preview/` serves the same preview UI
 behind existing RemoteLab login, without forwarding cookies or credentials to the
-local service. Only fixed dashboard assets and read-only snapshot/review endpoints
+local service. Only fixed dashboard/case-workbench assets and read-only snapshot/review endpoints
 are proxied; HTML/JS root-relative dashboard URLs, including the brand's home
 link, are scoped to the prefix. Native evidence and issue-action APIs remain
 on the authenticated origin. The
@@ -925,9 +925,13 @@ an archived handling Session is opened without restarting it. A failed submissio
 can be retried into the already created Session. A GET reports the existing
 Session and whether admission was recorded; it never starts work.
 
-The initial message carries the selected finding, rationale, proposed next step,
-completion condition, analysis prompt/hash/time and original evidence data/links.
+The initial message carries only the selected finding, proposed next step,
+completion condition, snapshot time and exact saved-file/evidence-ID pointers.
+The full analysis prompt, hashes and raw evidence remain in the immutable report
+and input files for reading on demand, rather than being pasted into the message.
 It directs the Agent to check the current state and existing work before acting.
+An already admitted request is reused without resubmitting or rewriting its text,
+including requests created before this compact format was introduced.
 The source report is dated evidence, not expanded authority: consequential business
 stops, permission changes and external messages still require their applicable
 authorization. No group delivery is inherited from another Session.
@@ -938,8 +942,9 @@ its opener on the configured public origin, for the exact selected report/item,
 then makes the same authenticated POST. A copied link or link preview only shows
 the issue and a launch button. Login preserves the destination; if the opener
 is unavailable the user can launch from that authenticated page. Credentials
-never enter the public site. Case-review links retain their established public
-origin and review storage when the dashboard is viewed through the proxy.
+never enter the public site. Case-review links inside the authenticated dashboard
+stay on that origin for named shared reviews; the public URL and its historical
+browser storage remain available independently.
 
 #### Employee SSH Codex memory evidence
 
@@ -967,3 +972,8 @@ window; they are not historical totals. Its shared Skill catalog reuses reviewed
 entries, labels team-shared versus instance-only methods, links authenticated
 original files, and separately counts recent successful document-load tool calls.
 These counts do not establish completed Skill execution or cover SSH-native calls.
+
+The authenticated proxy keeps case navigation under `/monitoring-preview/case-review/`
+so the existing personal login and shared project-feedback API are available.
+The public case URL and its old browser storage remain available; public readers
+follow the explicit login link to submit named reviews.

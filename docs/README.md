@@ -34,7 +34,7 @@ Metric regression private alerts merge new comparisons into one card for three h
 
 [Memory file evidence](monitoring.md#authenticated-memory-file-evidence) expands registered files inside the authenticated preview drawer, previews current text, and links completed native file changes to accepted instructions and source conversations. Sampled version changes remain separate when provenance is unverified.
 
-[Handling a monitoring issue](monitoring.md#handle-an-analysis-issue-in-a-new-session) lets an authenticated person use 去解决 to create and submit a web Session with the saved analysis and its evidence. Repeated clicks reuse that Session. An optional independent Monitor entry preserves original management tools, while public-site handoff uses login and an explicit click rather than an unauthenticated execution endpoint.
+[Handling a monitoring issue](monitoring.md#handle-an-analysis-issue-in-a-new-session) lets an authenticated person use 去解决 to create and submit a web Session with a concise task and pointers to saved evidence. Repeated clicks reuse that Session. An optional independent Monitor entry preserves original management tools, while public-site handoff uses login and an explicit click rather than an unauthenticated execution endpoint. Case-workbench login preserves the selected project and opens [named shared reviews](project-feedback.md#named-case-review); the server confirms the reviewer and retains revision history in the existing feedback store.
 
 [Prompt 安全审阅](monitoring.md#prompt-安全审阅) lives in Monitor → Prompt 安全: retained submission sources, full historical/incremental content review with exact deduplication, explicit gaps/failures, redacted evidence and measured Luna usage. It reports suggestions without applying remediation.
 

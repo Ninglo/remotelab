@@ -3,17 +3,18 @@ import http from 'node:http';
 import {evidenceConfig} from './monitoring-file-evidence.mjs';
 import {readResolutionConfig} from './monitoring-resolution.mjs';
 export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview',publicOrigin}={}){
- text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution)|app\.js|style\.css|["'])/g,'$1'+prefix+'/');
- // Case reviews keep their established origin and browser storage.
- return publicOrigin?text.replace(/(["'])\/case-review\//g,'$1'+publicOrigin+'/case-review/'):text;
+ text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution|auth\/|project-feedback)|app\.js|style\.css|["'])/g,'$1'+prefix+'/');
+ if(publicOrigin)for(const quote of ['"',"'"])text=text.split(quote+publicOrigin+'/?').join(quote+prefix+'/?');
+ return text.replace(/(["'])\/case-review\//g,'$1'+prefix+'/case-review/');
 }
+const caseAssets=new Set(['','index.html','project-adapter.js','workbench.js','review-model.js','case-catalog.json','session-bindings.json','agent-assessments.json','workbench.css','workbench-layout.css','feedback-layout.css','overview-layout.css','compact-layout.css','project-overview.js','overview-model.js','project-overview.json','project-feedback.json','feedback-review.js']);
 export async function handleMonitoringPreview({req,res,pathname,configOverride}) {
  const prefix='/monitoring-preview';if(pathname!==prefix&&!pathname.startsWith(prefix+'/'))return false;
  const config=configOverride||await evidenceConfig(),port=config?.previewPort;
  const publicOrigin=(await readResolutionConfig())?.publicOrigin;
  if(!Number.isInteger(port)||port<1||port>65535){res.writeHead(404);res.end();return true}
  const path=pathname.slice(prefix.length)||'/';
- if(req.method!=='GET'||!['/','/app.js','/style.css','/api/snapshot','/api/reviews'].includes(path)){res.writeHead(405);res.end();return true}
+ if(req.method!=='GET'||!(['/','/app.js','/style.css','/api/snapshot','/api/reviews'].includes(path)||path.startsWith('/case-review/')&&caseAssets.has(path.slice('/case-review/'.length)))){res.writeHead(405);res.end();return true}
  const query=new URL(req.url,'http://local').search;
  await new Promise(resolve=>{
   const upstream=http.get({hostname:'127.0.0.1',port,path:path+query,timeout:12000},response=>{

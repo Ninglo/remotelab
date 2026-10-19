@@ -7,6 +7,21 @@ import { buildFeedbackActivity } from './project-feedback-activity.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const clean = (v, max) => typeof v === 'string' && v.trim().length <= max ? v.trim() : null;
+const caseDimensions = ['understanding', 'timeliness', 'intervention', 'quality'];
+function caseReview(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = { projectId: clean(value.projectId,100), space: clean(value.space,100), caseId: clean(value.caseId,100),
+    category: clean(value.category,100), next: clean(value.next ?? '',2000), observation: clean(value.observation ?? '',2000) };
+  if (Object.values(out).some(v=>v===null) || !/^[a-z0-9-]+$/.test(out.projectId) ||
+      !['workbench-selected-v1','workbench-v2'].includes(out.space) || !/^[a-zA-Z0-9_-]+$/.test(out.caseId) || !out.category) return null;
+  const score = v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100;
+  if (!caseDimensions.every(d=>score(value.weights?.[d])) || Math.abs(caseDimensions.reduce((sum,d)=>sum+value.weights[d],0)-100)>1e-6) return null;
+  out.weights=Object.fromEntries(caseDimensions.map(d=>[d,value.weights[d]]));out.scores={};
+  for (const d of caseDimensions) for (const n of [0,1]) {
+    const key=d+'_'+n,v=value.scores?.[key];if(v!=null&&!score(v))return null;out.scores[key]=v??null;
+  }
+  return out;
+}
 export function feedbackUrl(v) {
   if (!v) return '';
   try { const u = new URL(v); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? u.href : ''; }
@@ -25,6 +40,10 @@ function normalize(input) {
     || (!out.comment && !out.usefulness) || (out.target_url && !feedbackUrl(out.target_url))) return null;
   out.client_id = out.client_id.toLowerCase();
   out.target_url = feedbackUrl(out.target_url);
+  if (input.case_review !== undefined) {
+    out.case_review=caseReview(input.case_review);
+    if(!out.case_review || !out.comment)return null;
+  }
   return out;
 }
 const fault = (code, message) => Object.assign(new Error(message), { code });
@@ -93,6 +112,7 @@ function webRecord(raw, classification, themes) {
     bucket: classification?.bucket || (raw.subproject_id ? 'assigned_feedback' : 'unassigned_feedback'),
     person_id: raw.actor?.person_id || '', kind: 'monitor_feedback', example: raw.example,
     related_feedback_id: raw.related_feedback_id, review_state: classification ? (classification.review_state || 'reviewed') : 'collected',
+    ...(raw.case_review ? { case_review: caseReview(raw.case_review) } : {}),
   };
 }
 
@@ -221,5 +241,10 @@ export function createProjectFeedbackStore({ configFile = join(CONFIG_DIR, 'feed
     usageCache = null;
     return { record: webRecord(raw, null, new Map()), duplicate: false };
   }
-  return { read, submit };
+  async function readCases(projectId, space) {
+    if (!/^[a-z0-9-]{1,100}$/.test(projectId||'') || !['workbench-selected-v1','workbench-v2'].includes(space)) throw fault('INVALID_INPUT','案例项目或材料版本无效。');
+    const data=await snapshot();
+    return { records:data.records.filter(r=>r.case_review?.projectId===projectId&&r.case_review.space===space), gaps:data.gaps };
+  }
+  return { read, submit, readCases };
 }

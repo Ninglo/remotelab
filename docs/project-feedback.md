@@ -162,3 +162,26 @@ results, reuse completed work, and respect paused/cancelled decisions.
 
 Browser verification mocks the execution endpoint: it checks confirmation,
 target/text, retry and reload deduplication without launching a real task.
+
+## Named case Review
+
+The supervision case workbench uses this same authenticated feedback store.
+`case_review` is an optional structured payload with `projectId`, material `space`,
+`caseId`, category, eight optional scores, four weights, proposed change and later
+observation. The server derives the reviewer from the logged-in Person, validates
+scores and weights, and preserves each submitted version under its client UUID.
+`GET /api/project-feedback?caseProject=...&caseSpace=...` reads the shared case
+reviews without loading usage history. The material space separates curated cases
+from legacy feedback fragments; matching IDs do not merge those reviews. Case
+project identity is retained independently of the existing feedback subproject
+classification, so unknown classifications remain unassigned.
+
+The authenticated workbench is `/monitoring-preview/case-review/?project=...`.
+The public workbench links to it for login and submission. Both use the existing
+personal login; anonymous/service clients cannot manufacture human reviews.
+Reviewer names and comments are shared with logged-in feedback readers, as in the
+existing feedback board. No new login provider, feedback daemon or notification
+is introduced. Old local reviews, drafts, assignments, anonymous records and
+exports remain in their original browser spaces. They are not silently uploaded
+or attributed to the currently logged-in person. A failed submit retains its
+client UUID for a safe retry; revisions append instead of overwriting history.

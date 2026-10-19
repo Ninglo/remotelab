@@ -75,13 +75,20 @@ try {
   assert.equal(session.initiatedByIdentityId,person.identityId);
   assert(!session.conversation);
   const submission = [...submissions.values()][0];
-  for (const value of ['Seven failures','Read the logs','New report delivered','Frozen analysis prompt','"errors": 7','可能已经过期']) assert(submission.text.includes(value));
-  assert(!submission.text.includes('other issue'));
+  for (const value of ['Seven failures','Read the logs','New report delivered','可能已经过期',directory,'input.json','report.json','service']) assert(submission.text.includes(value));
+  for (const value of ['Frozen analysis prompt','"errors": 7','other issue']) assert(!submission.text.includes(value));
+  assert(submission.text.length<1500);
+  assert.deepEqual(JSON.parse(await readFile(join(directory,'input.json'),'utf8')),input);
   assert.equal(submission.options.initiatedByIdentityId,person.identityId);
   assert.equal(submission.options.usagePersonId,person.personId);
   assert.equal(submission.options.suppressSourceDelivery,true);
   assert.equal((await call('GET')).json.session.sessionId,session.id);
   assert.equal((await call()).json.duplicate,true); assert.equal(submissions.size,1);
+  assert.equal(attempts,1);
+  // Old verbose requests must remain untouched after a formatter deployment.
+  submission.text='A previously admitted verbose input';
+  assert.equal((await call()).json.accepted,true); assert.equal(attempts,1);
+  assert.equal(submission.text,'A previously admitted verbose input');
   // A created Session survives failed submission; retry submits to the same one.
   const other = { ...person,personId:'person_other',identityId:'identity_other' };
   rejectNext = true;
@@ -113,7 +120,7 @@ try {
   assert.equal(request?.result?.state,'completed',JSON.stringify(request?.result));
   assert.equal(request.text.includes('Seven failures'),true);
   const history=await getHistory(native.json.session.sessionId);
-  assert(history.some(event=>event.role==='user'&&event.content.includes('"errors": 7')));
+  assert(history.some(event=>event.role==='user'&&event.content.includes('input.json')&&!event.content.includes('"errors": 7')));
   assert.equal((await call('POST',undefined,nativeOptions)).json.duplicate,true);
   assert.equal((await call('GET',undefined,nativeOptions)).json.accepted,true);
 

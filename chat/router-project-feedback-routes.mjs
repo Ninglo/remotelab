@@ -16,11 +16,12 @@ export function createProjectFeedbackHandler({ store = createProjectFeedbackStor
     if (pathname !== '/api/project-feedback') return false;
     res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('Vary', 'Cookie, Authorization');
     const send = (status, body) => writeJson(res, status, body);
-    if (!authSession?.personId) { send(403, { error: '需要登录后查看或提交反馈。' }); return true; }
+    if (!authSession?.personId || authSession.authKind==='service') { send(403, { error: '需要登录后查看或提交反馈。' }); return true; }
     if (!['GET', 'POST'].includes(req.method)) { send(405, { error: 'Method not allowed' }); return true; }
     try {
       if (req.method === 'GET') {
         const params = new URL(req.url, 'http://localhost').searchParams;
+        if (params.has('caseProject')) { send(200, await store.readCases(params.get('caseProject'),params.get('caseSpace')));return true; }
         send(200, await store.read(params.has('subproject') ? params.get('subproject') : undefined, { includeUsage: params.get('usage') !== 'defer' }));
       } else {
         if (!sameOrigin(req)) { send(403, { error: '请从本站提交反馈。' }); return true; }
