@@ -23,7 +23,7 @@
     const back = Object.assign(document.createElement('a'), {href:portal.url,textContent:'← 返回监管中心'});
     back.className='monitoring-note';panel?.prepend(back);
     // Retain original authenticated action tools, not a second dashboard.
-    const nav = panel?.querySelector('.monitoring-tabs');if(nav)nav.hidden=true;
+    const nav = panel?.querySelector('.monitoring-tabs');if(nav){nav.hidden=true;nav.style.display='none';}
   }
   const overview = document.getElementById("monitoringOverview");
   const automations = document.getElementById("monitoringAutomations");

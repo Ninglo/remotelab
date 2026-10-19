@@ -17,7 +17,7 @@ for(const [view,tab] of [['overview','overview'],['security','safety'],['usage',
 for(const query of ['monitor=automations','monitor=security&manage=1']){
  let redirected=false,back;
  const window={__REMOTELAB_BOOTSTRAP__:{monitoringPortal:{url:'https://observe.example/'}},location:{href:'https://app.example/?tab=tasks&'+query,assign:()=>{redirected=true}}};
- const document={getElementById:id=>id==='taskCenterPanel'?{prepend:x=>back=x,querySelector:()=>({})}:null,createElement:()=>({})};
+ const document={getElementById:id=>id==='taskCenterPanel'?{prepend:x=>back=x,querySelector:()=>({style:{}})}:null,createElement:()=>({})};
  runInNewContext(source,{window,document,URL});assert.equal(redirected,false);assert.equal(back.href,'https://observe.example/');
 }
 console.log('passed: mapped dashboard links, explicit authenticated management retained');
