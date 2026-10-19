@@ -256,7 +256,6 @@
       summary.append(node('p', `去重内容段 ${c.uniqueSegments || 0}：已审 ${c.reviewed || 0}，待审 ${c.pending || 0}，失败 ${c.failed || 0}；复用 ${c.deduplicatedOccurrences || 0} 次。`, 'monitoring-note'));
       summary.append(node('p', `内容段风险：严重 ${data.risks?.critical || 0} · 高 ${data.risks?.high || 0} · 中 ${data.risks?.medium || 0} · 低 ${data.risks?.low || 0}。同一内容段只计一次。`, 'monitoring-note'));
       summary.append(node('p', `实测输入 ${u.inputTokens ?? '—'} token（缓存 ${u.cachedInputTokens ?? '—'}），输出 ${u.outputTokens ?? '—'}；${u.measuredCalls || 0}/${u.calls || 0} 次调用有用量回执；调用累计 ${(Number(u.elapsedMs || 0) / 60000).toFixed(1)} 分钟。`, 'monitoring-note'));
-      summary.append(node('p', `仓库费率估算 $${Number(u.estimatedCostUsd || 0).toFixed(4)}（${u.estimatedCalls || 0} 次可估算）；实际账单金额不可得，缺用量调用不按零成本计算。`, 'monitoring-note'));
       summary.append(node('p', `扫描 ${time(data.scannedAt)} · 更新 ${time(data.updatedAt)} · 增量任务 ${data.config?.scheduleId || '尚未登记'}。页面读取不会调用模型。`, 'monitoring-note'));
       document.getElementById('promptReviewRun').disabled = !data.config?.enabled || data.workerRunning;
       const scope = node('details'); scope.dataset.reviewFold = 'scope'; scope.open = reviewFolds.get('scope') === true;

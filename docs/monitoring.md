@@ -14,6 +14,15 @@ Usage analysis remains a separate view for period/Session filters and execution,
 
 一次交接需要目标实例和是否允许使用其现有模型账号；如没有已登录账号或 Pi 安装，必须先补齐该依赖。不要把“低成本”理解成零计费。入口为 **监控器 → Prompt 安全**；筛选风险级别、审阅状态和分页，打开条目看证据、建议、脱敏原文及原会话。刷新页面只读持久化结果；“补审待处理内容”在已启用实例启动有界后台批处理。用户不需要手工复制运行命令。
 
+统一监管页的 **安全 → Prompt 审阅** 现在直接复用上述认证接口展示风险明细。
+总览单列严重／高风险的去重片段数；明细默认查看严重级别，可切换等级和翻页。
+每条保留模型原因、建议、审阅日期、示例来源和原会话链接；高风险证据标红，
+点击上下文后才读取经指纹校验的脱敏原文，并标出命中行。原文变化或不可取回时
+显示缺口。公开页面仅展示汇总及登录入口，风险原话不写入公开快照。
+页面刷新只读既有结果，不启动补审。关联来源数不是独立事件数；处置状态尚未
+关联，历史模型标记不能当作当前事故或已确认违规。展示沿用 token，不换算金额。
+客户端组件维护在 `static/chat/monitoring-prompt-risks.js`，样式在同目录同名 CSS。
+
 ### 来源和覆盖口径
 
 - 扫描本实例全部 `chat-runs/run_*/manifest.json` 的 `prompt`，及尚未包含在该文本中的 `modelContext`。这是实际运行准备保存的提交文本，不能单凭保存记录证明 provider 已接受。
@@ -24,7 +33,7 @@ Usage analysis remains a separate view for period/Session filters and execution,
 
 **这不是完整 provider 请求审计。** Harness 自行加载的 AGENTS/Skill、工具返回、内置系统指令、附件二进制、压缩后上下文和未留存的历史后台提示目前无法全量取回，其数量未知。分段覆盖表示所有可取回内容都经过审阅，跨段组合、真实授权和实际执行后果仍须结合原会话核查。“未发现具体风险”只描述本段结果，不提供安全保证。
 
-### 模型、费用与运行
+### 模型、Token 与运行
 
 固定审阅指令在 `chat/prompt-review-policy.mjs`，检查提示注入、越权与权限扩大、秘密外传、破坏性动作及第三方影响。审阅文本始终作为不可信 JSON 数据；通过现有 Codex 账号池及 Pi `openai-codex/gpt-6-luna` / low 路由调用，明确禁用所有工具、扩展、Skill、上下文文件、模板和会话保存，在私有临时目录运行，不执行整改。没有该安装或可用凭据时显示失败，不升级昂贵模型或切换其他账号身份来掩盖缺口。现有 Codex 登录需保持有效。
 
@@ -47,7 +56,7 @@ Usage analysis remains a separate view for period/Session filters and execution,
 
 并发限制 1–4，每批最多 300,000 字符/100 段，每次工作进程最多 1,000 批。`scripts/prompt-review.mjs` 执行一轮；`--launch` 脱离 HTTP 请求启动有限工作进程，原生 Schedule 的脚本条件可调用它后返回 false；`--status` 读状态。Schedule 需要显式携带本实例配置目录与 provider home，不能继承其他实例的存储。不要另建调度器、公开页面或消息推送。工作锁阻止同实例并发批审，进程退出后的下轮从持久结果恢复。
 
-结果、调用回执、进度在私有 `CONFIG_DIR/prompt-review/<规则指纹>/`；旧版本保留。每次调用记录实际模型、规则版本/哈希、provider response ID、实测输入/缓存/输出 token 与耗时，失败回执亦保留。既有 usage ledger 使用 `prompt_security_review` 操作归因。费用使用仓库 `model-pricing.mjs` 估算，页面同时显示有用量回执的调用数、可估算调用数和未知账单金额，不能把缺回执算作零消耗。
+结果、调用回执、进度在私有 `CONFIG_DIR/prompt-review/<规则指纹>/`；旧版本保留。每次调用记录实际模型、规则版本/哈希、provider response ID、实测输入/缓存/输出 token 与耗时，失败回执亦保留。既有 usage ledger 使用 `prompt_security_review` 操作归因。页面只展示实际 token、调用数与回执覆盖，不展示换算金额；缺回执不能算作零消耗。后端旧估算字段仅为既有接口兼容保留。
 
 接口沿用实例认证和全员共享权限：`GET /api/monitoring/prompt-review`（风险/状态筛选与分页）、`GET /api/monitoring/prompt-review/source?id=...`（指纹校验的脱敏原文）、`POST /api/monitoring/prompt-review/run`（同站启动已启用审阅）。验收用 `npm run test:prompt-review`；部署后仍需读真实首轮与增量任务回执。关闭配置可阻止下一次启动；已有进程会完成本轮有限批次。
 
