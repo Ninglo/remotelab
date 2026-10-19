@@ -24,8 +24,9 @@ export async function handleMonitoringEvidence({req,res,pathname,authSession,con
  if(pathname!=='/api/monitoring-evidence')return false;
  res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
  res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+ const fragment=new URL(req.url,'http://local').searchParams.get('fragment')==='1';
  let returnUrl='/?tab=settings';
- const send=(status,title,body)=>{res.writeHead(status,{'Content-Type':'text/html; charset=utf-8'});res.end(page(title,body,returnUrl))};
+ const send=(status,title,body)=>{res.writeHead(status,{'Content-Type':fragment?'application/json; charset=utf-8':'text/html; charset=utf-8'});res.end(fragment?JSON.stringify({title,html:body}):page(title,body,returnUrl))};
  if(!authSession){send(401,'请登录 RemoteLab','<a href="/">打开登录页</a>');return true}
  if(req.method!=='GET'){send(405,'仅支持查看','');return true}
  try{
@@ -39,14 +40,15 @@ export async function handleMonitoringEvidence({req,res,pathname,authSession,con
  const selected=q.get('file'),file=selected?files.find(f=>f.id===selected):null;
  if(selected&&!file){send(404,'文件不在当前登记范围','');return true}
  const base={groups:groups.map(g=>g.id).join(',')};
- let body=`<p class="muted">登记范围内 ${files.length} 个已观测文件；采样 ${esc(date(state.at))}。正文为当前文件，历史版本与原生修改记录分别保留。</p>`;
+ let body=`<p class="muted">登记范围内 ${files.length} 个文件 · ${esc(date(state.at))}</p>`;
  if(!file){
- body+=table(['文件','所属区域','大小','操作'],files.map(f=>[esc(f.path),esc(f.group.name),esc(f.entry.size)+' B',link('查看文件与修改来源',{...base,file:f.id})]));
+ body+=table(['文件','区域'],files.map(f=>[link(f.path.split('/').at(-1),{...base,file:f.id})+'<small class="file-path">'+esc(f.path)+'</small>',esc(f.group.name)]));
  send(200,['navigation','policy','candidates'].every(id=>ids.includes(id))?'核心记忆区':groups.map(g=>g.name).join(' / '),body);return true;
  }
- body=link('← 返回文件清单',base)+`<p>${esc(file.path)}</p>`;
+ body=(fragment?'':link('← 返回文件清单',base))+`<p class="file-path">${esc(file.path)}</p>`;
  if(q.get('read')==='1'){
   body+='<h2>当前文件正文</h2><p class="muted">只读预览；查看时间 '+esc(date(Date.now()))+'。</p><pre>'+esc(await readTrackedFile(file.path,file.entry))+'</pre>';
+  if(fragment){send(200,'当前文件正文',body);return true}
  }else body+=`<p>${link('读取当前文件正文',{...base,file:file.id,read:'1'})}</p>`;
  const native=await fileEvidence(config,file.path);
  const valid=[];
@@ -61,17 +63,19 @@ export async function handleMonitoringEvidence({req,res,pathname,authSession,con
   const cleaned=text.replace(/<(private|hide)>[\s\S]*?<\/\1>/g,'').split('Current user message:').at(-1).trim();
   valid.push({n,e,record,purpose:cleaned||'该轮原交办未取得；修改目的待核'});
  }
- body+='<h2>原生修改记录</h2><p class="muted">下列记录来自已完成的文件修改事件；“目的依据”引用当轮原交办，不等同已确认的逐文件修改理由。执行命令、后台脚本等未产生原生文件事件的修改仍可能缺失。</p>';
+ body+='<h2>原生修改记录</h2><p class="muted">目的依据为当轮原交办；缺少来源的保留待关联。</p>';
  body+=valid.length?table(['时间 / 修改','来自对话','目的依据','原文'],valid.map(({n,e,purpose})=>[
  esc(date(e.timestamp))+'<br>'+esc(kind(e.changeType)),`<a href="/?session=${esc(n.sessionId)}&tab=sessions">对话 ${esc(n.sessionId.slice(0,8))}</a><br>事件 #${n.seq}`,esc(purpose.slice(0,500))+(purpose.length>500?'…':''),link('本轮原文与修改证据',{...base,file:file.id,source:n.sessionId+':'+n.seq})
  ])):'<p>尚无可关联的原生修改记录，来源与目的待关联。</p>';
  const source=q.get('source'),detail=source&&valid.find(x=>x.n.sessionId+':'+x.n.seq===source);
  if(source&&!detail){send(404,'未找到该文件的来源记录','');return true}
  if(detail){const {n,e,purpose}=detail;const [full]=await historyReader(n.sessionId,{fromSeq:n.seq,toSeq:n.seq,includeBodies:true});
+ if(fragment)body='';
  body+='<h2>该轮原文与修改证据</h2><p>轮次 '+esc(e.requestId||'未记录')+'</p><h3>原交办（已隐藏运行附带配置）</h3><pre>'+esc(purpose)+'</pre><h3>原生修改差异</h3><pre>'+esc(full?.diff||'该原生事件没有保存差异正文')+'</pre>';
+ if(fragment){send(200,'原文与修改差异',body);return true}
  }
  const changes=(state.events||[]).filter(e=>e.group===file.group.id&&e.object===file.id).reverse();
- body+='<h2>文件版本观测</h2><p class="muted">这是采样发现的变化时间。尚未与原生事件逐项核对，不能仅按时间邻近认定同一次修改；授权仍待核。</p>';
+ body+='<h2>文件版本观测</h2><p class="muted">采样变化尚未逐项关联修改来源。</p>';
  body+=changes.length?table(['发现时间','变化','版本摘要','来源'],changes.map(e=>[esc(date(e.at)),esc(kind(e.kind)),esc((e.before||'—')+' → '+(e.after||'—')),'待关联'])):'<p>基线后暂无已保存的版本变化。</p>';
  send(200,file.path.split('/').at(-1),body);
  }catch(e){send(e.status||503,'暂时无法读取文件证据',`<p>${esc(e.status?e.message:'来源暂不可用，请稍后重试；没有用空记录代替。')}</p>`)}

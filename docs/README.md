@@ -32,7 +32,7 @@ The [Agent dashboard](monitoring.md#agent-今日与七日概览2026-10-14) shows
 
 Metric regression private alerts merge new comparisons into one card for three hours, retain original-card updates thereafter, and lead with a concise anomaly summary and handling status. Repeated comparisons stay in a closed evidence panel; dashboard charts focus on the latest five days with exact last values and a link to the full history. See [the monitoring notification policy](monitoring.md); delivery grouping and chart rendering live in `lib/metric-alert-bundle.mjs` and `lib/metric-alert-chart.mjs`.
 
-[Memory file evidence](monitoring.md#authenticated-memory-file-evidence) lists registered files behind RemoteLab login, previews current text, and links completed native file changes to accepted instructions and source conversations. Sampled version changes remain separate when provenance is unverified.
+[Memory file evidence](monitoring.md#authenticated-memory-file-evidence) expands registered files inside the authenticated preview drawer, previews current text, and links completed native file changes to accepted instructions and source conversations. Sampled version changes remain separate when provenance is unverified.
 
 [Prompt 安全审阅](monitoring.md#prompt-安全审阅) lives in Monitor → Prompt 安全: retained submission sources, full historical/incremental content review with exact deduplication, explicit gaps/failures, redacted evidence and measured Luna usage. It reports suggestions without applying remediation.
 

@@ -856,7 +856,8 @@ transport evidence, not task acceptance or benefit attribution.
 ### Authenticated memory file evidence
 
 An optional `monitoring-evidence.json` in the instance config directory supplies
-`registryPath`, `statePath`, `sourceRoot`, `indexDir` and an HTTP(S) `returnUrl`.
+`registryPath`, `statePath`, `sourceRoot`, `indexDir`, an HTTP(S) `returnUrl`,
+and optionally `previewPort` for the independently running local preview service.
 The registry and private version state are produced by the existing monitoring
 collector. This does not change the Settings entry or enable a monitoring migration.
 
@@ -880,3 +881,17 @@ proximity does not prove that a native operation caused a sampled version change
 Shell edits, background writers and missing native events can remain unlinked;
 missing provenance never means authorization. Read access is covered by the
 instance's existing authenticated-user model, not the public dashboard.
+
+
+With `previewPort` configured, `/monitoring-preview/` serves the same preview UI
+behind existing RemoteLab login, without forwarding cookies or credentials to the
+local service. Only fixed dashboard assets and read-only snapshot/review endpoints
+are proxied; HTML/JS root-relative dashboard URLs are scoped to the prefix. The
+preview Settings link may use this URL while `enabled:false` keeps the old primary
+monitoring entry intact. The independent public preview remains available.
+
+Object drawers fetch `fragment=1` from the authenticated evidence endpoint and
+show the file list immediately. File bodies, modification records and source
+instruction/diffs expand in place. Long metric notes are collapsed. Public-origin
+visitors enter the authenticated preview once; no private content is copied into
+the public snapshot and no cross-site authentication token is exposed.

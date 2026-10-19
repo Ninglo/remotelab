@@ -90,6 +90,7 @@ import {
 } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { handleWorkAwarenessRoutes } from './router-work-awareness.mjs';
+import { handleMonitoringPreview } from './router-monitoring-preview.mjs';
 import { handleMonitoringEvidence } from './router-monitoring-evidence.mjs';
 import { handleProtectedSourceRoutes } from './router-protected-sources.mjs';
 import { handleFeishuWebSettings } from './router-feishu-web-settings.mjs';
@@ -1451,6 +1452,7 @@ export async function handleRequest(req, res) {
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
 
+  if (await handleMonitoringPreview({ req, res, pathname })) return;
   if (await handleMonitoringEvidence({ req, res, pathname, authSession })) return;
   if (await handleProtectedSourceRoutes({ req, res, pathname, authSession, writeJson })) return;
 
