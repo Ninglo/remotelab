@@ -21,6 +21,14 @@ const voiceShortcutStatus = document.getElementById("voiceShortcutStatus");
 const sessionAutoArchiveSelect = document.getElementById("sessionAutoArchiveSelect");
 const settingsToc = document.getElementById("settingsToc");
 let voiceInputSettingsLoaded = false;
+const monitoringPortal = window.__REMOTELAB_BOOTSTRAP__?.monitoringPortal;
+if (monitoringPortal?.url) {
+  const link = document.createElement('a'); link.href = monitoringPortal.url;
+  link.textContent = '打开监管中心：成本、速度、项目效果与安全 →';
+  link.className = 'settings-toc-link'; link.dataset.testid = 'monitoring-portal-link';
+  document.querySelector('#settingsPanel .settings-page-header')?.append(link);
+}
+
 
 function initSettingsNavigation() {
   if (!settingsPanel || !settingsToc || settingsToc.dataset.bound === "true") return;

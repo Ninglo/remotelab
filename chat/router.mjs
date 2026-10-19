@@ -1,3 +1,4 @@
+import {readMonitoringPortal} from './monitoring-portal.mjs';
 import { readFile, readdir } from 'fs/promises';
 import { createReadStream, watch } from 'fs';
 import { homedir } from 'os';
@@ -649,14 +650,16 @@ function buildAuthInfo(authSession) {
 }
 
 async function buildChatPageBootstrap(authSession) {
-  const [settings, people] = await Promise.all([
+  const [settings, people, monitoringPortal] = await Promise.all([
     getBootstrapInstanceSettings(authSession),
     listPeopleForClient(),
+    readMonitoringPortal(),
   ]);
   return {
     auth: buildAuthInfo(authSession),
     assetUploads: getFileAssetBootstrapConfig(),
     defaultSessionFolder: MANAGED_WORK_ROOT_DIR,
+    monitoringPortal,
     people,
     settings,
   };

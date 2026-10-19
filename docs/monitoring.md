@@ -820,3 +820,27 @@ Test 默认仅展示一张 Agent 监控摘要卡：运行中会话、今日 toke
 
 
 指标合并卡先展示异常数值、主要增长来源及处理状态，同类任务与总体的重复统计收进默认折叠的依据区，原始证据完整保留。没有修复记录时明确显示尚未修复，不把统计核对写成处置完成。截图复用监管页面折线组件和同一轮采集的数值，固定展示最近五日并标精确末值，完整七日历史沿原页面查看；不重新采样或访问带身份的页面。图中展示全量均值，正文分别注明首轮／后续轮与同类任务口径；实质变化时刷新截图并标数据时间，图片失败保留文字证据。暂停、样本覆盖缺失、不确定投递不补发等约束继续有效。原始诊断与历史回执保留在既有诊断记录中。
+
+## Independent monitoring presentation (optional instance setting)
+
+An operator can ask: “Reuse this instance's existing monitoring collectors and
+replace its dashboard entry with our approved independent supervision site.
+Preserve authenticated automation management and prompt-review actions.”
+
+For that instance, `CONFIG_DIR/monitoring-portal.json` accepts
+`{"enabled":true,"url":"https://approved-monitor.example/"}`. Only HTTPS URLs
+without credentials, query or fragment are accepted. Absent/disabled/invalid
+configuration preserves the existing interface. The destination receives no
+credentials, Session identifiers or private API responses from this redirect.
+
+The Monitor entry and old overview/usage/feedback/security bookmarks open the
+configured presentation. Settings also provides a link. Automation management
+remains at `?tab=tasks&monitor=automations`; prompt source inspection, filtering
+and bounded supplement-review remain at `?tab=tasks&monitor=security&manage=1`.
+These are authenticated action tools, with a return link, not duplicated dashboard
+navigation. Collectors, schedules, original ledgers and permissions are unchanged.
+A presentation migration must separately verify public-field minimization,
+retained-source freshness, cases/reviews, and action-tool accessibility. Existing
+usage-analysis aggregates can be reused, but must retain whole-instance vs
+project scope, collection gaps and unknown denominators. Rule acceptance is
+transport evidence, not task acceptance or benefit attribution.
