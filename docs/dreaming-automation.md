@@ -1,7 +1,7 @@
 # Conditional experience review (Dreaming)
 
 Operator handoff: “Connect Dreaming to this instance's existing memory automations.
-Use these existing project/material paths, preserve their sources, run only when
+Use these existing project/material paths, preserve their sources, start only when
 idle with quota available, and keep review candidates and later validation in the
 automation's own records. Do not resume an old bounded trial.” Provide the input
 paths, destination instance and requester/source discussion once. No new service
@@ -80,9 +80,11 @@ normal delivery receipts, issue handling and thread binding remain authoritative
 Remove `resultDelivery` to disable this optional hook output.
 
 The beforeLaunch hook starts one bounded WebSocket guard outside the model runner,
-and awaits readiness. Competing foreground work, resource uncertainty, lost
-notification connection or the per-run deadline requests cancellation of that exact
-Run. Cancellation without a terminal receipt remains unconfirmed. No extra AI
+and awaits readiness. Before successful `claim`, competing foreground work blocks
+admission or requests cancellation. After claim, foreground activity, queued input,
+compaction and other due schedules no longer interrupt the bounded review or reject
+its `finish`. Host/quota protection, resource uncertainty, lost notification
+connection and the per-run deadline still request cancellation of that exact Run. Cancellation without a terminal receipt remains unconfirmed. No extra AI
 poller is created. Use fresh execution Sessions to avoid accumulated trial context.
 Admission count, cooldown and batch size are deterministic limits. Recorded token
 use is an observation, not a provider hard cap; one delayed usage report can exceed

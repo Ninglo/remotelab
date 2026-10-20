@@ -10,10 +10,10 @@ import { readProcessIdentity, isProcessIdentityAlive } from '../../lib/process-i
 import { read, save, transact, initialState, ingest, selectBatch, validateResult, commitReview } from './store.mjs';
 
 const filename = fileURLToPath(import.meta.url);
-export function resourceDecision(config, resources, ownSessionId = '', now = Date.now()) {
+export function resourceDecision(config, resources, ownSessionId = '', now = Date.now(), claimed = false) {
   const no = reason => ({ trigger: false, reason });
   if (resources?.status !== 'ready' || !Array.isArray(resources.sessions)) return no('资源状态待确认');
-  for (const session of resources.sessions) {
+  for (const session of claimed ? [] : resources.sessions) {
     const a = session.activity;
     if (!a?.run?.state || !Number.isInteger(a.queue?.count) || !a.compact?.state) return no('资源状态不完整');
     if ((session.id !== ownSessionId && a.run.state !== 'idle') || a.queue.count || a.compact.state !== 'idle') return no('等待前台空闲');
@@ -51,14 +51,16 @@ export async function createWorker(root, dependencies = {}) {
     await appendFile(join(root, 'audit.jsonl'), JSON.stringify({ at: new Date().toISOString(), kind, ...data }) + '\n', { mode: 0o600 });
   };
   const record = async decision => { await save(join(root, 'last-check.json'), { ...decision, at: new Date().toISOString() }); return decision; };
-  async function conditions(ownSessionId = '') {
+  async function conditions(ownSessionId = '', claimed = false) {
     const resources = (await api('/api/automation/resources')).resources;
-    const decision = resourceDecision(config, resources, ownSessionId);
+    const decision = resourceDecision(config, resources, ownSessionId, Date.now(), claimed);
     if (!decision.trigger) return decision;
-    const schedules = (await api('/api/schedules')).schedules;
-    if (!Array.isArray(schedules)) return { trigger: false, reason: '定时任务状态未知' };
-    if (schedules.some(s => s.id !== config.scheduleId && s.enabled && s.gate?.mode === 'direct'
-      && s.nextRunAt && Date.parse(s.nextRunAt) <= Date.now() + 15000)) return { trigger: false, reason: '优先执行到期的固定任务' };
+    if (!claimed) {
+      const schedules = (await api('/api/schedules')).schedules;
+      if (!Array.isArray(schedules)) return { trigger: false, reason: '定时任务状态未知' };
+      if (schedules.some(s => s.id !== config.scheduleId && s.enabled && s.gate?.mode === 'direct'
+        && s.nextRunAt && Date.parse(s.nextRunAt) <= Date.now() + 15000)) return { trigger: false, reason: '优先执行到期的固定任务' };
+    }
     let quota = (await api('/api/codex-auth/rate-limits')).codexUsage;
     if (quota?.status === 'ready' && Date.now() - Date.parse(quota.checkedAt || '') > 600000) quota = (await api('/api/codex-auth/rate-limits?refresh=1')).codexUsage;
     const auth = (await api('/api/codex-auth/status')).codexAuth;
@@ -147,7 +149,8 @@ export async function createWorker(root, dependencies = {}) {
   async function claim(runId, sessionId) {
     const run = await identity(runId, sessionId), state = await read(join(root, 'state.json'));
     if (!['accepted', 'running'].includes(run.state) || state.active?.runId !== runId || state.active.sessionId !== sessionId) throw new Error('No owned material batch');
-    const d = await conditions(sessionId); if (!d.trigger) return { proceed: false, reason: d.reason };
+    const claimed = state.attempts.some(a => a.runId === runId && a.claimedAt);
+    const d = await conditions(sessionId, claimed); if (!d.trigger) return { proceed: false, reason: d.reason };
     await transact(root, current => {
       if (current.active?.runId !== runId || current.active.sessionId !== sessionId) throw new Error('Batch owner changed');
       const attempt = current.attempts.find(a => a.runId === runId);
@@ -165,7 +168,9 @@ export async function createWorker(root, dependencies = {}) {
     const run = await identity(runId, sessionId);
     if (run.state !== 'running') throw new Error('Run no longer running');
     if (await read(join(root, `stop-${runId}.json`), null)) throw new Error('Yield requested; retain draft only');
-    const d = await conditions(sessionId); if (!d.trigger) throw new Error(d.reason);
+    const state = await read(join(root, 'state.json'));
+    const claimed = state.active?.runId === runId && state.attempts.some(a => a.runId === runId && a.claimedAt);
+    const d = await conditions(sessionId, claimed); if (!d.trigger) throw new Error(d.reason);
     const result = await read(join(root, `draft-${runId}.json`));
     await transact(root, async state => {
       if (state.active?.runId !== runId || state.active.sessionId !== sessionId) throw new Error('Batch owner changed');
@@ -195,7 +200,9 @@ export async function createWorker(root, dependencies = {}) {
         const run = await identity(runId, sessionId);
         if (['completed', 'failed', 'cancelled'].includes(run.state)) { finishGuard(); return; }
         if (cancelling) return;
-        const d = await conditions(sessionId);
+        const current = await read(join(root, 'state.json'));
+        const claimed = current.active?.runId === runId && current.attempts.some(a => a.runId === runId && a.claimedAt);
+        const d = await conditions(sessionId, claimed);
         if (!ready) { ready = true; await save(join(root, `ready-${runId}.json`), { ...d, pid: process.pid }); }
         if (!d.trigger) await stop(d.reason);
       } catch (e) { await audit('guard_error', { runId, error: e.message }); await stop('资源观察失败，停止本轮复盘'); }

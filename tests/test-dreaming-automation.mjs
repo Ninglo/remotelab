@@ -61,6 +61,8 @@ try {
   assert.equal(resourceDecision(config, { ...noIdle, sessions: [own] }, 's').trigger, true);
   assert.equal(resourceDecision(config, { ...noIdle, sessions: [own] }, 'another').trigger, false);
   assert.equal(resourceDecision(config, { ...noIdle, sessions: [{ ...own, activity: { ...own.activity, queue: { count: 1 } } }] }, 's').trigger, false);
+  assert.equal(resourceDecision(config, { ...noIdle, sessions: [own] }, 'another', Date.now(), true).trigger, true, 'claimed run ignores competing foreground');
+  assert.equal(resourceDecision(config, { ...noIdle, host: { loadPerCpu: 2, freeMemoryRatio: 0.5 } }, 's', Date.now(), true).trigger, false, 'claimed run retains host protection');
   assert.equal(resourceDecision(config, { status: 'observing', sessions: [] }).trigger, false);
   assert.equal(budgetDecision(config, { ...initialState(), attempts: [{ at: new Date().toISOString() }, { at: new Date().toISOString() }] }).trigger, false);
   assert.equal(budgetDecision(config, { ...initialState(), attempts: [{ at: new Date(Date.now() - 22000000).toISOString(), tokens: 90000 }] }).trigger, false);
@@ -89,17 +91,19 @@ try {
 
   // Real detached hook/guard against an isolated fake platform, never a live model.
   const liveRoot = join(root, 'lifecycle');
-  let busy = false, stoppedRun = false, resolveCancel;
+  let busy = false, hostOverload = false, stoppedRun = false, resolveCancel, resolveObserved;
+  let runState = 'accepted';
+  const observed = new Promise(resolve => { resolveObserved = resolve; });
   const cancelled = new Promise(resolve => { resolveCancel = resolve; });
   const server = createServer((req, res) => {
     if (req.url.startsWith('/?token=')) { res.writeHead(302, { 'set-cookie': 'test=dreaming' }); res.end(); return; }
     let data;
-    if (req.url === '/api/automation/resources') data = { resources: { ...noIdle, idleSince: new Date(Date.now() - 600000).toISOString(), sessions: busy ? [own] : [] } };
-    else if (req.url === '/api/schedules') data = { schedules: [] };
+    if (req.url === '/api/automation/resources') data = { resources: { ...noIdle, idleSince: new Date(Date.now() - 600000).toISOString(), sessions: busy ? [own] : [], host: hostOverload ? { loadPerCpu: 2, freeMemoryRatio: 0.5 } : noIdle.host } };
+    else if (req.url === '/api/schedules') data = { schedules: busy ? [{ id: 'other', enabled: true, gate: { mode: 'direct' }, nextRunAt: new Date().toISOString() }] : [] };
     else if (req.url.startsWith('/api/codex-auth/rate-limits')) data = { codexUsage: { status: 'ready', checkedAt: new Date().toISOString(), accountRevision: 'test', buckets: [{ id: 'codex', primary: { remainingPercent: 90 } }] } };
-    else if (req.url === '/api/codex-auth/status') data = { codexAuth: { accountRevision: 'test' } };
+    else if (req.url === '/api/codex-auth/status') { data = { codexAuth: { accountRevision: 'test' } }; if (busy) resolveObserved(); }
     else if (req.url === '/api/runs/run_guard/cancel') { stoppedRun = true; data = { ok: true }; resolveCancel(); setImmediate(() => { for (const ws of wss.clients) ws.send(JSON.stringify({ type: 'session_invalidated', sessionId: 'guard-session' })); }); }
-    else if (req.url === '/api/runs/run_guard') data = { run: { id: 'run_guard', sessionId: 'guard-session', state: stoppedRun ? 'cancelled' : 'accepted' } };
+    else if (req.url === '/api/runs/run_guard') data = { run: { id: 'run_guard', sessionId: 'guard-session', state: stoppedRun ? 'cancelled' : runState } };
     else if (req.url.startsWith('/api/usage/')) data = { totals: { totalTokens: 0 } };
     else { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(data));
@@ -116,19 +120,30 @@ try {
     assert.equal(guardState.attempts.length, 1);
     assert.equal((await real.before('run_guard', 'guard-session')).trigger, true, 'retry reuses the guard and admission');
     assert.equal((await read(join(liveRoot, 'state.json'))).attempts.length, 1);
+    runState = 'running';
     assert.equal((await real.claim('run_guard', 'guard-session')).proceed, true);
     const claimed = (await read(join(liveRoot, 'state.json'))).attempts[0];
     assert.ok(claimed.claimedAt, 'a successful model claim establishes actual execution');
     assert.equal(claimed.batchItemCount, guardState.active.batch.items.length);
     busy = true;
     for (const ws of wss.clients) ws.send(JSON.stringify({ type: 'sessions_invalidated' }));
+    let observationTimeout;
+    try { await Promise.race([observed, new Promise((_, reject) => { observationTimeout = setTimeout(() => reject(new Error('Guard did not inspect foreground event')), 5000); })]); }
+    finally { clearTimeout(observationTimeout); }
+    assert.equal((await real.claim('run_guard', 'guard-session')).proceed, true, 'claim retry retains successful admission during foreground work');
+    const liveBatch = guardState.active.batch;
+    await save(join(liveRoot, 'draft-run_guard.json'), { batchId: liveBatch.id, finding: 'isolated test', reviewedIds: liveBatch.items.map(i => i.id), candidates: [], validations: [] });
+    assert.equal((await real.finish('run_guard', 'guard-session')).staged, true, 'finish succeeds despite foreground and due schedules');
+    assert.equal(stoppedRun, false, 'foreground event after claim does not cancel');
+    hostOverload = true;
+    for (const ws of wss.clients) ws.send(JSON.stringify({ type: 'sessions_invalidated' }));
     let timeout;
     try { await Promise.race([cancelled, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Guard did not yield')), 5000); })]); }
     finally { clearTimeout(timeout); }
-    assert.match((await read(join(liveRoot, 'stop-run_guard.json'))).reason, /前台/);
+    assert.match((await read(join(liveRoot, 'stop-run_guard.json'))).reason, /主机/);
     await real.after('run_guard', 'guard-session');
     assert.equal((await read(join(liveRoot, 'state.json'))).active, null);
-    console.log('Dreaming: real prelaunch readiness, retry reuse, WebSocket foreground yield and terminal recovery passed');
+    console.log('Dreaming: real prelaunch readiness, retry reuse, claimed-run foreground continuity, finish, host protection and terminal recovery passed');
   } catch (error) {
     console.error(await readFile(join(liveRoot, 'guard-run_guard.log'), 'utf8').catch(() => 'no guard log'));
     console.error(await readFile(join(liveRoot, 'audit.jsonl'), 'utf8').catch(() => 'no audit'));

@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-20 — Let an admitted Dreaming review finish alongside foreground work
+
+- Feedback: a review that had successfully claimed material was interrupted when foreground work resumed; once started, it should continue.
+- Change: retain idle and due-task checks before claim. After successful claim, foreground runs, queued input, compaction and due schedules no longer cancel the review, block claim retries or reject finish. Keep the bounded deadline, host/quota protection, resource observation failures and explicit cancellation.
+- Verification: isolated detached guard receives a real WebSocket foreground event, preserves claim retry and finish, then cancels on host overload. Delivery regressions remain passing. The instance workflow is updated; subsequent hooks import the current runner without restarting the service. Natural execution remains to be observed.
+
 ### 2026-10-20 — Repeated correction does not activate a personal habit
 
 - Feedback: distinguish a preference repeated in different situations from repeatedly correcting the same unresolved Agent failure; protect pilot participants from unconfirmed inferences affecting later work. Consolidate the standard process instead of appending another rule for each correction.
