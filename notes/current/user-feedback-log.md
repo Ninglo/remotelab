@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-20 — Personal profiles should distinguish adopted memory from accumulated candidates
+
+- Feedback: a personal profile exposed many task-shaped observations and encoded history; the reader asked whether an automatic job kept appending to it.
+- Cause: the legacy profile stores readable entries and Base64 JSON with evidence/history in one file. Post-turn review can add observations, and the old reading surface placed every non-withdrawn entry alongside confirmed preferences. Earlier ownership guidance did not clean historical records.
+- Change: clarify that task-only corrections stay with the task and memory maintenance does not create another personal preference. Keep no-change turns write-free, document the actual per-turn and atomic-replacement behavior, and require current preferences, candidates and history to be presented separately. The instance reading surface now collapses candidates separately; storage and consent states remain unchanged.
+- Verification: isolated memory writeback/retrieval regressions and a browser fixture with confirmed, observed, inferred and withdrawn entries. These checks validate state/display behavior; subsequent natural-use review still determines extraction quality.
+
 ### 2026-10-20 — Distinguish apparent improvement from low activity and preserve rebound detection
 
 - Feedback: a rest date dominated a short metric reference; a longer normal reference should also retain a warning when a supported low period rebounds. A low value from too few requests must not be called an optimization.
