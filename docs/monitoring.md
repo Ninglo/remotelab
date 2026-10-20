@@ -993,3 +993,18 @@ The public case URL and its old browser storage remain available; public readers
 follow the explicit login link to submit named reviews.
 The proxy rewrites known presentation URLs and the HTML home link only. Plain
 JavaScript separators such as `'/'` in chart date labels are preserved.
+
+Case lists and their review drawers show initiator, initiation time and latest
+message time. The preview's `case-metadata.mjs` refreshes these fields in the
+existing collector from exact registered case/session associations and cited
+message sequence numbers. Identity comes from the original message's confirmed
+sender; delegated work may use its recorded initiating identity. Collection dates,
+Session settings timestamps and tool/status events are not message times.
+
+For shared or long-lived conversations, only the cited case message window is
+used and labeled “案例记录”; a dedicated topic may report its latest human/assistant
+message, labeled “关联话题”. Cases lacking an original assignment or exact source
+association display a missing value. These metadata projections do not change
+source evidence, existing case IDs, comments or reviews. The renderer is shared
+through `case-review/overview-model.js`; both the public site and authenticated
+Monitor proxy retain the same fields.
