@@ -28,6 +28,8 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
   const expansion = registry.personTodoExpansion;
   const expanded = expansion?.enabled === true;
   if (expanded && (!expansion.personIds?.length || !expansion.stateDirectory || !Number.isFinite(Date.parse(expansion.initialStart)))) throw new Error('Invalid person Todo expansion');
+  const newActivitySince = expanded ? expansion.newActivitySince : null;
+  if (newActivitySince != null && !Number.isFinite(Date.parse(newActivitySince))) throw new Error('Invalid person Todo new-activity boundary');
   const groups = runtime.groups.filter(g => readingLevel(runtime, g) === 'focused');
   const overviewSources = runtime.groups.filter(g => readingLevel(runtime, g) === 'overview').map(g => ({
     chatId: g.chatId, sourceRouteId: g.sourceRouteId, chatName: g.chatName, projectIds: g.projectIds,
@@ -77,7 +79,8 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
       reviewCheckpoint, knownThreads: [...threads], requiredMessageIds, pendingRetryCount: retries.length,
       todoTarget: needsTodo ? target.key : null,
       todoStateFile: needsTodo ? target.stateFile : null,
-      ...(needsTodo && target.scope === 'person' ? { personIds: target.personIds, registrationScope: 'person' } : {}) };
+      ...(needsTodo && target.scope === 'person' ? { personIds: target.personIds, registrationScope: 'person',
+        ...(newActivitySince ? { todoWindowStart: new Date(Math.max(startMs ?? -Infinity, Date.parse(newActivitySince))).toISOString() } : {}) } : {}) };
     if (focused) sources.push(source);
     if (needsTodo) todoSources.push(source);
   }
@@ -88,6 +91,7 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
     sources, todoSources, overviewSources, coverage,
     todoJudgmentSchemaVersion: expanded ? 2 : 1,
     personTodoIds: expanded ? expansion.personIds : [],
+    ...(newActivitySince ? { personTodoNewActivitySince: new Date(newActivitySince).toISOString() } : {}),
     todoTargets: morning ? targets.filter(t => todoSources.some(s => s.todoTarget === t.key)) : [],
     rules: ['Do not advance cursors on failed or incomplete reads', 'A cached bundle is evidence only; it does not authorize business execution',
       'Complete Todo assessment before publishing; keep source-specific failures and original delivery routes'] };

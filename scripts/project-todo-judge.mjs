@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { checkTodoCoverage } from './check-todo-coverage.mjs';
+import { checkTodoCoverage, timestamp } from './check-todo-coverage.mjs';
 
 const values = x => Array.isArray(x) ? x : Object.values(x || {});
 const flattened = index => {
@@ -18,6 +18,8 @@ export function assessTodo({ plan, indexes, judgments, evidence = [], collection
   const messages = new Map();
   const add = m => { if (m?.message_id) messages.set(m.message_id, m); for (const r of m?.thread_replies || []) add(r); };
   indexes.forEach(i => values(i.messages).forEach(add)); evidence.forEach(add);
+  const freshStart = plan.personTodoNewActivitySince == null ? null : timestamp(plan.personTodoNewActivitySince);
+  if (freshStart !== null && !Number.isFinite(freshStart)) throw new Error('Invalid person Todo new-activity boundary');
   const valid = [], invalid = [], ids = new Set(), attributionChecks = [];
   const normalized = text => String(text || '').replace(/\s+/g, ' ').trim();
   const proof = p => typeof p?.quote === 'string' && p.quote.trim().length > 0
@@ -71,11 +73,21 @@ export function assessTodo({ plan, indexes, judgments, evidence = [], collection
     result.coverageComplete = result.coverageComplete && !result.errors.length;
     return result;
   });
+  // Shared collection may retain old project context; a personal cutover must
+  // not turn that historical backlog into newly assigned work.
+  const skippedHistorical = valid.filter(action => action.disposition !== 'no_action' && freshStart !== null
+    && (plan.personTodoIds || []).some(id => action.relatedPersonIds.includes(id) || same(action.owner.actor, id) || same(action.next.actor, id))
+    && !action.sourceMessageIds.some(id => {
+      const message = messages.get(id), at = timestamp(message?.create_time);
+      return message?.sender?.sender_type === 'user' && at >= freshStart
+        && (!plan.scheduledAt || at < timestamp(plan.scheduledAt));
+    })).map(action => action.id);
+  const skipped = new Set(skippedHistorical);
   const views = {};
   for (const personId of plan.personTodoIds || []) {
     const view = { personal: [], delegated: [], waiting: [], needsReview: [], archived: [] };
     for (const action of valid) {
-      if (action.disposition === 'no_action') continue;
+      if (action.disposition === 'no_action' || skipped.has(action.id)) continue;
       if (!action.relatedPersonIds.includes(personId) && !same(action.owner.actor, personId) && !same(action.next.actor, personId)) continue;
       let bucket;
       if (['complete', 'paused', 'cancelled'].includes(action.status)) bucket = 'archived';
@@ -87,13 +99,14 @@ export function assessTodo({ plan, indexes, judgments, evidence = [], collection
     views[personId] = view;
   }
   const registration = valid.filter(a => a.disposition === 'create' || a.disposition === 'clarify').map(action => {
+    if (skipped.has(action.id)) return { id: action.id, eligible: false, reason: 'Historical personal backlog excluded by the authorized new-activity boundary' };
     const sources = (plan.todoSources || plan.sources || []).filter(s => action.sourceMessageIds.some(id => flattened(indexes.find(i => i.chat_id === s.chatId)).some(m => m.message_id === id)));
     const eligible = sources.some(s => !s.personIds || (s.personIds.some(id => action.relatedPersonIds?.includes(id) || same(action.owner?.actor, id))
       && [action.owner?.actor, action.next?.actor].every(a => a?.kind !== 'person' || s.personIds.includes(a.id))));
     return { id: action.id, eligible, reason: eligible ? 'Within original or configured person scope; original task write/readback rules still apply' : 'Outside configured people; preserve candidate without reassignment' };
   });
   return { schemaVersion: 2, validationComplete: invalid.length === 0 && coverage.every(c => c.coverageComplete),
-    coverage, invalid, attributionChecks, views, registration, boundary: 'Evidence and coverage checks, not a semantic score or a task-write receipt' };
+    coverage, invalid, attributionChecks, views, registration, skippedHistorical, boundary: 'Evidence and coverage checks, not a semantic score or a task-write receipt' };
 }
 async function main() {
   const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => v.startsWith('--') ? [...a, [v.slice(2), all[i + 1]]] : a, []));

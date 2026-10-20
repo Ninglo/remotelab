@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-function timestamp(value) {
+export function timestamp(value) {
   if (typeof value === 'number' || /^\d+$/.test(String(value))) {
     const n = Number(value);
     return n < 1e12 ? n * 1000 : n;
@@ -20,7 +20,8 @@ export function checkTodoCoverage({ source, index, judgments }) {
   const errors = [];
   if (!source?.todoTarget || !source.chatId) errors.push('Missing planned Todo target');
   if (index?.chat_id !== source?.chatId) errors.push('Source chat does not match the plan');
-  const start = source?.windowStart == null ? -Infinity : timestamp(source.windowStart);
+  const startValue = source?.todoWindowStart ?? source?.windowStart;
+  const start = startValue == null ? -Infinity : timestamp(startValue);
   const end = timestamp(source?.windowEnd);
   if (!(start < end) || !Number.isFinite(end)) errors.push('Invalid planned window');
   const raw = index?.messages;
@@ -57,7 +58,7 @@ export function checkTodoCoverage({ source, index, judgments }) {
   }
   const missingSourceIds = [...required].filter(id => !available.has(id));
   const missingJudgmentIds = [...required].filter(id => !reviewed.has(id));
-  return { target: source?.todoTarget, windowStart: source?.windowStart, windowEnd: source?.windowEnd,
+  return { target: source?.todoTarget, windowStart: startValue, windowEnd: source?.windowEnd,
     requiredMessages: required.size, reviewedMessages: [...required].filter(id => reviewed.has(id)).length,
     missingSourceIds, missingJudgmentIds, errors,
     coverageComplete: !errors.length && !missingSourceIds.length && !missingJudgmentIds.length,

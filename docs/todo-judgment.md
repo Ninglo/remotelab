@@ -32,6 +32,12 @@ node scripts/project-overview-collect.mjs --plan round/inspection-plan.json --in
 
 The first command reuses focused indexes and fully paginates additional roots and discovered/known threads. The second reuses those full reads for overview coverage instead of fetching the same group again. Preserve collection failures and attachment gaps; a saved index alone does not prove complete focused collection.
 
+### Starting with new activity instead of historical backlog
+
+After explicit authorization to stop backlog review, set `personTodoExpansion.newActivitySince` to the cutover timestamp and set `initialStart` to the same boundary. This changes the configured people's Todo scope, not their existing Task records or the project review scope. Do not synthesize a successful scan cursor. Additional sources expose `todoWindowStart` so older context collected for project review does not require personal backlog judgments.
+
+The plan carries `personTodoNewActivitySince`. The assessor excludes historical actions from these people's views and new registration unless the action cites a human message at or after that timestamp and before the scheduled endpoint. A fresh bot summary alone cannot reactivate an old action. `skippedHistorical` identifies excluded actions; the writer must also skip their maintenance, closure and reminders. Other people's original project maintenance authority is unchanged. A new human message must actually request or continue that action; unrelated messages must not be included just to pass the boundary. Existing Task records remain available for deduplication.
+
 ## Semantic decisions
 
 First assess existing tasks; then identify independent new requests against that state. The Harness reads actual messages and makes semantic decisions. Do not generate decisions using keyword templates, a fixed list of selected IDs, a desired task count, or summaries that have lost the original speakers.

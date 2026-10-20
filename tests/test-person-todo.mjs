@@ -60,6 +60,27 @@ const newAction = base('another-review', 'review', person('alice'), person('alic
 const dynamic = structuredClone(judgments); dynamic.actions.push(newAction);
 assert.equal(assessTodo({ plan, indexes: [index], judgments: dynamic }).views.alice.personal.length, 2, 'No fixed IDs or count select the view');
 
+const cutoverPlan = { ...plan, scheduledAt: '2026-10-21T00:00:00Z', personTodoNewActivitySince: '2026-10-20T00:00:00Z' };
+const historical = structuredClone(judgments);
+historical.actions[2].disposition = 'create';
+let cutover = assessTodo({ plan: cutoverPlan, indexes: [index], judgments: historical });
+assert.equal(cutover.views.alice.personal.length, 0);
+assert.equal(cutover.registration.find(a => a.id === 'draft').eligible, false, 'A cutover cannot recreate personal backlog');
+assert.ok(cutover.skippedHistorical.includes('draft'));
+const freshIndex = structuredClone(index);
+freshIndex.messages.push({ ...message('fresh-bot', 'bot', 'The old draft is still pending.', '2026-10-20T12:00:00Z'), sender: { id: 'bot', sender_type: 'app' } });
+historical.actions[2].sourceMessageIds.push('fresh-bot');
+assert.equal(assessTodo({ plan: cutoverPlan, indexes: [freshIndex], judgments: historical }).views.alice.personal.length, 0, 'A bot summary cannot restart historical work');
+freshIndex.messages.push(message('resume', 'alice', 'Please continue the draft.', '2026-10-20T12:00:00Z'));
+historical.actions[2].sourceMessageIds.push('resume');
+cutover = assessTodo({ plan: cutoverPlan, indexes: [freshIndex], judgments: historical });
+assert.equal(cutover.registration.find(a => a.id === 'draft').eligible, true);
+assert.deepEqual(cutover.views.alice.personal.map(a => a.id), ['draft'], 'New human continuation is eligible without deleting the old task');
+freshIndex.messages.at(-1).create_time = cutoverPlan.scheduledAt;
+assert.equal(assessTodo({ plan: cutoverPlan, indexes: [freshIndex], judgments: historical }).views.alice.personal.length, 0, 'The next scan owns messages at the exclusive endpoint');
+const originalScope = { ...cutoverPlan, todoSources: plan.todoSources.map(s => ({ ...s, personIds: undefined })) };
+assert.equal(assessTodo({ plan: originalScope, indexes: [index], judgments: other }).registration[0].eligible, true, 'Cutover does not remove other people\'s original project authority');
+
 const runtime = { enabled: true, reviewEnabled: true, projects: [{ id: 'p' }, { id: 'stop', status: 'paused' }], groups: [
   { chatId: 'focus', sourceRouteId: 'route', projectIds: ['p'], readingLevel: 'focused' },
   { chatId: 'overview', sourceRouteId: 'route', projectIds: [], readingLevel: 'overview' },
@@ -73,6 +94,17 @@ assert.deepEqual(expanded.todoSources.map(s => s.chatId), ['focus', 'overview'])
 assert.deepEqual(expanded.sources.map(s => s.chatId), ['focus']);
 assert.equal(expanded.todoSources[1].projectAnalysisEligible, false);
 assert.equal(expanded.todoSources[1].windowStart, new Date(registry.personTodoExpansion.initialStart).toISOString());
+const freshRegistry = structuredClone(registry);
+freshRegistry.personTodoExpansion.personIds = ['alice', 'bob', 'carol'];
+freshRegistry.personTodoExpansion.initialStart = '2026-10-19T10:00:00Z';
+freshRegistry.personTodoExpansion.newActivitySince = '2026-10-19T10:00:00Z';
+const freshPlan = await buildProjectInspectionPlan({ runtime, registry: freshRegistry, reviewRoot: '/review', at, load: async () => ({}) });
+assert.deepEqual(freshPlan.personTodoIds, ['alice', 'bob', 'carol']);
+assert.equal(freshPlan.sources[0].windowStart, null, 'Project collection keeps its original context');
+assert.equal(freshPlan.todoSources[0].todoWindowStart, '2026-10-19T10:00:00.000Z');
+assert.equal(freshPlan.personTodoNewActivitySince, '2026-10-19T10:00:00.000Z');
+const freshAssessment = assessTodo({ plan: { ...freshPlan, todoSources: [{ ...freshPlan.todoSources[0], chatId: 'chat' }] }, indexes: [index], judgments });
+assert.equal(freshAssessment.coverage[0].windowStart, freshPlan.todoSources[0].todoWindowStart);
 const afternoon = await buildProjectInspectionPlan({ runtime, registry, reviewRoot: '/review', at: '2026-10-20T10:00:00Z', load: async () => ({}) });
 assert.equal(afternoon.todoSources.length, 0);
 const done = await buildProjectInspectionPlan({ runtime, registry, reviewRoot: '/review', at, load: async () => ({ lastSuccessfulScanEnd: at }) });
