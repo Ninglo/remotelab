@@ -298,3 +298,14 @@ original speed rather than extracting sparse frames and changing their delays.
 Long source videos and the desktop pet's complete action system are not imported
 by this view. Validate the rendered bundle, device download and physical playback
 separately; a target interval is not a measured USB frame rate.
+
+When exporting transparent pet videos, sample continuous RGBA PNG frames first,
+then use `display/export-pet-gif.py` (Pillow required) with the matching
+`--duration-ms` and optional `--crop LEFT TOP RIGHT BOTTOM`. It reserves palette
+index 255 for transparency in every frame. Direct automatic RGBA-to-GIF export
+can change the transparent palette index between frames and produce flashing
+opaque rectangles. Check all frames through the actual GIF decoder and rendered
+JPEG bundle, including transparent corners, rather than inspecting a single
+preview. `tests/test-display-pet-gif.py` covers changing palettes, moving artwork,
+opaque black details and preserved timing. This export fix requires new assets,
+not a USB agent or pairing change.
