@@ -74,6 +74,18 @@ try {
   assert.ok(context.length <= 6000);
   assert.ok(context.indexOf(seed.id) >= 0, 'older specific match outranks recent generic matches');
   assert.doesNotMatch(context, /original 0|旧版|remotelab-learning-data/);
+  await writeFile(paths.profile, legacy(Array.from({ length: 20 }, (_, i) => ({
+    ...structuredClone(seed), id: `mem_person_${i}`, kind: 'preference', status: 'withdrawn',
+    content: `PERSON_WITHDRAWAL_${i}`, updatedAt: '2030-01-01',
+  }))));
+  assert.doesNotMatch(await m.buildLearningContext({ ...actor, query: '飞书权限' }), new RegExp(seed.id),
+    'default mixed-source budget behavior is unchanged');
+  const methodsOnly = await m.buildLearningContext({ ...actor, query: '飞书权限', handbookOnly: true });
+  assert.match(methodsOnly, new RegExp(seed.id));
+  assert.doesNotMatch(methodsOnly, /PERSON_WITHDRAWAL/);
+  await writeFile(paths.profile, '<!-- remotelab-learning:start -->broken');
+  assert.equal((await inspect({ handbookOnly: true, summary: true })).unavailable.length, 0);
+  await writeFile(paths.profile, 'PERSON ORIGINAL');
   const root = join(`${paths.handbook}.store`, migration.generation);
   const currentPath = join(root, 'current', `${seed.id}.json`);
   const firstRecord = JSON.parse(await readFile(currentPath, 'utf8'));

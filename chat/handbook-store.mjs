@@ -203,7 +203,16 @@ export async function commitHandbook(path, document, entry) {
 export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 * 1024 * 1024 } = {}) {
   const raw = await regular(path, maxLegacyBytes);
   const existing = envelope(raw);
-  if (existing) return { changed: false, path, format: 2, generation: existing.generation };
+  if (existing) {
+    const root = await storeFor(path, existing.generation);
+    const navigation = renderNavigation({ ...existing, managed: true }, root, existing.generation);
+    const changed = raw !== navigation;
+    if (changed) {
+      if (await regular(path, maxLegacyBytes) !== raw) throw new Error('Memory changed concurrently; retry migration');
+      await atomic(path, navigation);
+    }
+    return { changed, path, format: 2, generation: existing.generation, ...(changed ? { navigationUpdated: true } : {}) };
+  }
   const document = parseLegacy(raw);
   const ids = new Set();
   for (const entry of document.entries) {
@@ -219,14 +228,21 @@ export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 *
     if (!equal(await hydrate(root, await readCurrent(root, entry.id)), entry)) throw new Error('Handbook migration round-trip mismatch');
   }
   if (await regular(path, maxLegacyBytes) !== raw) throw new Error('Memory changed concurrently; retry migration');
+  const intro = renderNavigation(document, root, generation);
+  await atomic(path, intro);
+  return { changed: true, path, format: 2, generation, entries: ids.size,
+    backup: join(root, 'legacy.md'), sourceSha256: hash(raw), sourceBytes: Buffer.byteLength(raw) };
+}
+
+function renderNavigation(document, root, generation) {
   const intro = `${document.prefix}${document.managed ? '' : '\n\n'}${START}
 ## Agent 行动手册
 
 当前方法按条目保存在相邻的 \`agent-handbook.md.store/${generation}/current/\`；历史和原始证据保存在同目录的 \`objects/\`。受管理文件请通过 memory 命令维护。
 
-- 按场景读取：\`remotelab memory context --query <任务关键词> --json\`
-- 浏览当前条目：\`remotelab memory inspect --summary --json\`
-- 追溯一个方法：\`remotelab memory inspect --key <key或ID> --json\`
+- 按场景读取：\`remotelab memory context --handbook --query <任务关键词> --json\`
+- 浏览当前条目：\`remotelab memory inspect --handbook --summary --json\`
+- 追溯一个方法：\`remotelab memory inspect --handbook --key <key或ID> --json\`
 - 完整导出：\`remotelab memory handbook-export --file <新文件.md> --json\`
 
 原文件逐字备份在 \`${root}/legacy.md\`。撤销、反例、条件与版本继续沿用原语义；检索交付不代表实际采用或效果。
@@ -234,9 +250,7 @@ export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 *
 <!-- remotelab-handbook-store:${generation} -->
 ${END}${document.suffix || '\n'}`;
   if (Buffer.byteLength(intro) > 2 * 1024 * 1024) throw new Error('Handbook manual text exceeds the entry-point limit; original preserved');
-  await atomic(path, intro);
-  return { changed: true, path, format: 2, generation, entries: ids.size,
-    backup: join(root, 'legacy.md'), sourceSha256: hash(raw), sourceBytes: Buffer.byteLength(raw) };
+  return intro;
 }
 
 export async function exportHandbook(path, { parseLegacy, renderLegacy, file, rollback = false } = {}) {

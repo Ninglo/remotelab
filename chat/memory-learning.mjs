@@ -363,13 +363,14 @@ export async function maintainHandbook({ action, file, personId, identityId, aut
   });
 }
 
-export async function inspectLearning({ personId, identityId, authDocument, memoryDir = MEMORY_DIR, summary = false, key } = {}) {
+export async function inspectLearning({ personId, identityId, authDocument, memoryDir = MEMORY_DIR, summary = false, key, handbookOnly = false } = {}) {
   const person = verifiedLearningPerson({ personId, identityId, authDocument });
   if (!person) throw new Error('Current request has no verified Person');
   const paths = learningPaths(memoryDir, person);
   const policy = await loadLearningPolicy(memoryDir);
-  const snapshot = { personId: person, paths, policy, unavailable: [] };
-  await Promise.all(['profile', 'handbook'].map(async kind => {
+  const snapshot = { personId: person, paths, policy, unavailable: [],
+    ...(handbookOnly ? { profile: { prefix: '', suffix: '', entries: [], omitted: true } } : {}) };
+  await Promise.all((handbookOnly ? ['handbook'] : ['profile', 'handbook']).map(async kind => {
     try { snapshot[kind] = await readLearningSource(kind, paths[kind], { details: !summary, key }); }
     catch (error) {
       // Inspection can proceed for the independent readable source. Mutation
@@ -394,7 +395,7 @@ function cueRelevance(entry, query) {
 }
 
 export async function buildLearningContext({ personId, identityId, authDocument, query = '', project, session, sourceContext,
-  memoryDir = MEMORY_DIR, maxChars = 6000, onCoverage = () => {} } = {}) {
+  memoryDir = MEMORY_DIR, maxChars = 6000, onCoverage = () => {}, handbookOnly = false } = {}) {
   const policy = await loadLearningPolicy(memoryDir);
   if (policy.readStatus === 'unavailable') {
     onCoverage({ result: 'source-unavailable', path: join(memoryDir, 'learning-policy.json') });
@@ -407,7 +408,7 @@ export async function buildLearningContext({ personId, identityId, authDocument,
   }
   try {
     if (typeof project !== 'string') project = await resolveLearningProject(session, sourceContext);
-    const includeProfiles = policy.profiles && personalMemoryPreference({ personId, identityId, authDocument }).enabled;
+    const includeProfiles = !handbookOnly && policy.profiles && personalMemoryPreference({ personId, identityId, authDocument }).enabled;
     // A failed optional source must not hide a readable Person profile (or the
     // reverse). Writes still validate their own target independently.
     const paths = learningPaths(memoryDir, personId);

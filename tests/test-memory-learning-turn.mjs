@@ -106,6 +106,14 @@ try {
   await runMemoryLearningCommand(['handbook-export', '--file', join(home, 'delegated-export.md'),
     '--run-id', delegatedRun, '--json'], io);
   assert.equal(JSON.parse(printed).entries, 1);
+  printed = '';
+  await runMemoryLearningCommand(['context', '--handbook', '--query', '权限', '--run-id', delegatedRun, '--json'], io);
+  assert.match(JSON.parse(printed).context, /withdrawn.*查询当前身份/);
+  assert.doesNotMatch(JSON.parse(printed).context, /具体例子/);
+  assert.ok((await loadHistory(delegatedSession)).some(e => e.operation === 'read_memory' && e.learningReceipts.length));
+  printed = '';
+  await runMemoryLearningCommand(['inspect', '--handbook', '--summary', '--run-id', delegatedRun, '--json'], io);
+  assert.equal(JSON.parse(printed).profile.omitted, true);
   await assert.rejects(runMemoryLearningCommand(['apply', '--file', payload, '--run-id', delegatedRun, '--json'], io),
     /no matching accepted Request/, 'storage delegation must not relax semantic-write source checks');
   // A later authenticated Person can steer the same physical Run. Their
