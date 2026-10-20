@@ -448,6 +448,13 @@ The removed `/fork`, `/continue`, `/f`, and `/c` forms are ordinary text, not al
 
 ### Start a new private conversation
 
+New private conversations and on-demand history retrieval are standard product
+features for every authorized private-chat user of a deployed Bot. They have no
+per-Person trial list or opt-in switch and do not depend on the personal-settings
+or personal-memory pilots. All users share the same behavior: start a fresh
+context without automatically injecting old content, retain old work, and search
+recorded history within the current Bot/tenant/private chat when needed.
+
 Private mainline messages normally continue the Session bound to that Bot and
 chat; a completed task does not automatically create a new context. `/new`, or
 the exact private-chat menu text `新对话` / `开启新对话` / `New conversation`, creates
@@ -484,11 +491,13 @@ or reclaim a conversation after a newer `/new`. Different Bots, people/chats and
 group topics keep separate bindings. Ordinary private chat remains available;
 project work can still be started in the appropriate project group.
 
-The Index Bot can expose a fifth floating-menu item `新对话` using the same
-send-message action as its existing settings/report shortcuts. Configure and
-publish it for the intended application only after deploying the handler;
-preserve existing menu IDs, scopes, callbacks and availability. Online menu
-readback and an actual human client click are separate verification levels.
+Expose `新对话` as a standard floating-menu send-message action for the Bot's
+existing authorized audience, alongside its other shortcuts; no per-user menu
+rollout is needed. The Index Bot uses the fifth item after settings/help/reports.
+Configure and publish each intended application after deploying the handler;
+preserve existing menu IDs, scopes, callbacks and availability. Deploying the
+backend does not publish another Bot's menu or update another instance. Online
+menu readback and an actual human client click are separate verification levels.
 
 Two frequent commands have explicit stable aliases. Aliases resolve to the
 canonical name before validation and execution:
