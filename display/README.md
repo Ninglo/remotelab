@@ -367,10 +367,23 @@ left. Only the speech-tail geometry is mirrored; text and GIF bytes are not.
 Action names, library counts and asset credits stay in metadata rather than the
 screen footer. Quiet observations render no speech bubble by default. A Person
 can opt their preview into `casualSpeech: true`: quiet periods then show a short
-daily phrase, changing every five minutes through the existing scene refresh.
-Work observations and rest reminders take precedence. Casual phrases have no
-source timestamp or footer, make no claims about work status, and do not call
-a model. This option changes only the background text; the action playback ID
+character phrase, changing every five minutes through the existing scene refresh.
+Work observations and rest reminders take precedence. Casual bubbles contain
+only the main line, with no heading, character-name label, source timestamp or
+footer. They make no claims about work status and do not call a model.
+The nine short lines use the existing dsh-pet meme vocabulary plus two brief
+singing fragments; they do not play audio. Sources checked on 2026-10-20:
+
+- Existing [dsh-pet config](https://github.com/PC2005-cloud/dsh-pet/blob/c6f96350d9307bd6c23bc6ea31974e76a719a8b6/assets/config.jsonc),
+  `memes`: six short greetings/food/whale/sleep expressions, with punctuation
+  adapted for display. The upstream MIT notice is retained in `vendor/dsh-pet/LICENSE`.
+- [Community video: deepseek娘：才不是蓝色大肥鱼呢！](https://www.bilibili.com/video/BV1BtND69Euf/):
+  the short title catchphrase, not a claim of an official character script.
+- [罐装毕加索: 大肥鱼摸鱼歌《Let Me Go》](https://www.bilibili.com/video/BV1XbY66nEWr/):
+  two lyric fragments totaling seven English words, from the video's published
+  description (original credited to 星落落_oi, BV1R5YL69EC5).
+
+This option changes only the background text; the action playback ID
 and time axis stay intact. Existing previews remain unchanged unless opted in.
 Apply `studio-companion-library.patch` after the patches above;
 copy `companion-library.mjs`, its `vendor/dsh-pet/` directory,

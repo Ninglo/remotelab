@@ -14,23 +14,18 @@ const text = (value, max, name) => {
   return value.trim();
 };
 const isoTime = value => typeof value === 'string' && /(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value));
+// Short community/meme excerpts, not generated advice. Provenance is in
+// display/README.md. The two singing fragments total seven lyric words.
 const CASUAL_LINES = Object.freeze([
-  '我在旁边，慢慢来。',
-  '想喝点热乎乎的。',
-  '小小发个呆，也不错。',
-  '一会儿吃什么呢？',
-  '先做一小步，也算往前走。',
-  '让我安静陪你一会儿。',
-  '今天也想收集一个小惊喜。',
-  '脑袋打结了，就看看窗外。',
-  '事情一件件来，别挤成一团。',
-  '认真一下，再偷偷伸个懒腰。',
-  '想法会溜走，先记下来吧。',
-  '把这一小段做好，就很不错。',
-  '给水杯留个位置，也给自己留点空闲。',
-  '偶尔放空一下，灵感说不定就来了。',
-  '不用赶着和谁一样，按自己的节奏来。',
-  '忙完这一阵，去找点好吃的吧。',
+  'Ciallo～',
+  '才不是蓝色大肥鱼呢！',
+  '就一碗！',
+  '♪ Let me go～',
+  '吃饱饱～',
+  '哦鲸鲸……',
+  '♪ Let me do it～',
+  '深度睡眠……Zzz',
+  '厉害了我的鲸！',
 ]);
 
 function observationFor(payload) {
@@ -123,7 +118,7 @@ const THEMES = {
   attention: { label: '待确认记录', ink: '#98683b', chip: '#f4e8d8' },
   rest: { label: '歇一小会', ink: '#6b6389', chip: '#eeebf4' },
   quiet: { label: '陪伴中', ink: '#697484', chip: '#edf0f3' },
-  casual: { label: '碎碎念', ink: '#697484', chip: '#edf0f3' },
+  casual: { ink: '#697484' },
 };
 
 export function companionScene(payload, weather = null, nowMs = Date.now()) {
@@ -144,8 +139,10 @@ export function companionScene(payload, weather = null, nowMs = Date.now()) {
     { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : '';
   const lines = wrapSentence(observation.sentence);
   const fontSize = lines.length > 3 ? 35 : 40;
-  const firstY = lines.length === 1 ? 270 : lines.length === 2 ? 246 : lines.length > 3 ? 226 : 236;
   const lineHeight = lines.length > 3 ? 42 : 58;
+  const firstY = observation.kind === 'casual'
+    ? 256 - (lines.length - 1) * lineHeight / 2
+    : lines.length === 1 ? 270 : lines.length === 2 ? 246 : lines.length > 3 ? 226 : 236;
   const actionIndex = Math.floor(nowMs / 60_000) % payload.actions.length;
   const action = payload.actions[actionIndex];
   const gif = Buffer.from(action.gifBase64, 'base64');
@@ -167,9 +164,9 @@ export function companionScene(payload, weather = null, nowMs = Date.now()) {
   <path d="M516 104 Q516 58 562 58 H1408 Q1454 58 1454 104 V378 Q1454 424 1408 424 H562 Q516 424 516 378 V278 L470 298 L516 235Z" fill="#e5e4e3" transform="translate(1920 5) scale(-1 1)"/>
   <path d="M516 104 Q516 58 562 58 H1408 Q1454 58 1454 104 V378 Q1454 424 1408 424 H562 Q516 424 516 378 V278 L470 298 L516 235Z" fill="#fffdfb" transform="translate(1920 0) scale(-1 1)"/>
   <g transform="translate(-50 0)">
-  <rect x="568" y="87" width="128" height="38" rx="19" fill="${theme.chip}"/>
+  ${observation.kind === 'casual' ? '' : `<rect x="568" y="87" width="128" height="38" rx="19" fill="${theme.chip}"/>
   <text data-fit="chip" x="632" y="113" text-anchor="middle" fill="${theme.ink}" font-family="${FONT}" font-size="21" font-weight="500">${theme.label}</text>
-  <text data-fit="subject" x="568" y="168" fill="#737c89" font-family="${FONT}" font-size="${subjectSize}">${xml(observation.subject)}</text>
+  <text data-fit="subject" x="568" y="168" fill="#737c89" font-family="${FONT}" font-size="${subjectSize}">${xml(observation.subject)}</text>`}
   ${lines.map((line, index) => `<text data-fit="sentence" x="568" y="${firstY + index * lineHeight}" fill="#333f58" font-family="${FONT}" font-size="${fontSize}" font-weight="700">${xml(line)}</text>`).join('\n')}
   ${observation.kind === 'casual' ? '' : `<circle cx="572" cy="390" r="3" fill="${theme.ink}"/>
   <text data-fit="source" x="588" y="397" fill="#7c8490" font-family="${FONT}" font-size="19">${xml(sourceLine)}</text>`}

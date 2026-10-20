@@ -85,8 +85,9 @@ test('opt-in casual speech fills quiet time while work reminders preempt it', ()
   const input = { ...payload, actions: [payload.actions[0]], observation: quiet, casualSpeech: true };
   const initial = companionScene(input, null, now);
   assert.equal(initial.meta.kind, 'casual');
-  assert.match(initial.svg, /data-role="observation"|碎碎念/);
-  assert.doesNotMatch(initial.svg, /data-fit="source"|记录时间|对话更新|旧空闲文案/);
+  assert.match(initial.svg, /data-role="observation"/);
+  assert.doesNotMatch(initial.svg, /data-fit="(?:source|chip|subject)"|碎碎念|记录时间|对话更新|旧空闲文案/);
+  assert.match(initial.svg, /data-fit="sentence" x="568" y="256"/);
   assert.deepEqual(companionScene(input, null, now + 60_000).meta.lines, initial.meta.lines);
   assert.notDeepEqual(companionScene(input, null, now + 300_000).meta.lines, initial.meta.lines);
   assert.deepEqual(companionScene(input, null, now + 300_000).animations, initial.animations);
