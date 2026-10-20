@@ -65,6 +65,11 @@ export function wrapSentence(value, max = 20) {
     let take = Math.min(max, chars.length);
     // Leave punctuation with its clause while retaining EVERY character.
     if (/^[，。；！？、：）】]/.test(chars[take] || '') && take > 1) take--;
+    if (/[A-Za-z0-9]/.test(chars[take - 1] || '') && /[A-Za-z0-9]/.test(chars[take] || '')) {
+      let wordStart = take;
+      while (wordStart > 0 && /[A-Za-z0-9]/.test(chars[wordStart - 1])) wordStart--;
+      if (wordStart > 0) take = wordStart;
+    }
     lines.push(chars.splice(0, take).join(''));
   }
   // A 60-character sentence may need a fourth line for punctuation safety.
@@ -95,7 +100,7 @@ export function describeWeather(weather, nowMs) {
 }
 const THEMES = {
   result: { label: '最近结论', ink: '#496e61', chip: '#e7eee8' },
-  attention: { label: '等你确认', ink: '#98683b', chip: '#f4e8d8' },
+  attention: { label: '待确认记录', ink: '#98683b', chip: '#f4e8d8' },
   rest: { label: '歇一小会', ink: '#6b6389', chip: '#eeebf4' },
   quiet: { label: '陪伴中', ink: '#697484', chip: '#edf0f3' },
 };

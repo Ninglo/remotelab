@@ -391,7 +391,9 @@ The existing local-player cache and previous-loop-on-failure behavior remain.
 An administrator-only `GET /v1/people/:personId/companion-observation` reuses the
 existing summary reader, scoped to that Person's initiator identities, with a
 30-second cache. It does not read full conversations or invoke a model. Active
-waiting entries can show `needsFromUser`; idle, nonqueued entries can show
+waiting entries can show `needsFromUser` as “待确认记录”; waiting also includes
+resource queues, so this is not a claim that the current run awaits a human.
+Idle, nonqueued entries can show
 `knownConclusions`. Archived/internal entries, stale (>24h), unsafe metadata,
 long (>60-character) and process-only items are excluded as whole items.
 Summary text is attributed to “对话更新” using `lastAssistantMessageAt`; this is

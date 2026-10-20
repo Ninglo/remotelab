@@ -69,3 +69,10 @@ test('invalid transport inputs fail without returning a partially changed scene'
   assert.throws(() => validateCompanion({ ...payload, timeZone: 'UTC' }), /Beijing/);
   assert.throws(() => validateCompanion({ ...payload, observation: { ...observation, observedAt: '2026-10-20T13:00' } }), /time zone/);
 });
+
+test('mixed-language lines keep ordinary Latin words together', () => {
+  const sentence = '上下文由原生信息、RemoteLab 启动目录和会话历史共同构成。';
+  const lines = wrapSentence(sentence);
+  assert.equal(lines.join(''), sentence);
+  assert(lines.some(line => line.includes('RemoteLab')));
+});
