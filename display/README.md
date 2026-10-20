@@ -389,7 +389,9 @@ For a library scene, replace inline `actions` with `libraryId`, set
 `design: "companion-v2"` and optionally `liveObservation: true`. Keep the supplied
 fallback `subject`, `sentence`, explicitly zoned `observedAt`, credit, Beijing
 weather and `Asia/Shanghai` time fields. The server loads only the selected GIF
-and rotates a deterministic permutation once per minute. All entries get a turn
+and rotates a deterministic permutation every 20 seconds, independently of the
+minute clock refresh. A typical 10.1-second clip repeats about twice while that
+slot is visible; this is not a one-shot player. All entries get a turn
 within a full library cycle; installed size is not a client startup download.
 The existing local-player cache and previous-loop-on-failure behavior remain.
 
