@@ -1,0 +1,159 @@
+--- a/concept-v14/preview-server.mjs
++++ b/concept-v14/preview-server.mjs
+@@ -7,6 +7,7 @@
+ import { createOperationGate } from './operation-gate.mjs';
+ import { createWeatherSource } from './weather-source.mjs';
+ import { validateCompanion, companionScene } from './companion-scene.mjs';
++import { createCompanionLibraryReader } from './companion-library.mjs';
+ 
+ const root = path.dirname(fileURLToPath(import.meta.url));
+ const v21Root = process.env.NODE_ENV === 'test' && process.env.PREVIEW_TEST_V21_ROOT
+@@ -20,6 +21,7 @@
+ const adminTokenPath = process.env.PREVIEW_ADMIN_TOKEN_FILE || path.join(process.env.HOME, '.config/remotelab/display-admin-token');
+ const testRefreshMs = process.env.NODE_ENV === 'test' ? Number(process.env.PREVIEW_TEST_REFRESH_MS || 0) : 0;
+ const maxBody = 13 * 1024 * 1024;
++const companionLibraries = createCompanionLibraryReader(path.join(root, 'private/companion-libraries'));
+ const activeFile = path.join(root, 'private/active-preview.json');
+ const appliedFile = path.join(root, 'private/last-applied-preview.json');
+ const liveRefreshMs = 2_000;
+@@ -161,7 +163,7 @@
+ }
+ 
+ async function render(payload, liveMetrics = null, weather = null) {
+-  if (payload.version === 22) return renderCompanion(payload, weather);
++  if (payload.version === 22) return renderCompanion(payload, weather, liveMetrics?.companionObservation);
+   if (payload.version === 21) return renderV21(payload, liveMetrics, weather);
+   const context = await newRenderContext(payload);
+   try {
+@@ -232,8 +234,13 @@
+   }
+ }
+ 
+-async function renderCompanion(payload, weather) {
+-  const scene = companionScene(payload, weather);
++async function renderCompanion(payload, weather, observation = null) {
++  const selected = payload.libraryId ? await companionLibraries.select(payload.libraryId) : null;
++  const scenePayload = { ...payload,
++    ...(selected ? { actions: [selected.action], libraryInfo: { total: selected.total, category: selected.category, actionName: selected.action.name } } : {}),
++    ...(observation ? { observation } : {}),
++  };
++  const scene = companionScene(scenePayload, weather);
+   const context = await newRenderContext(payload);
+   try {
+     const page = await context.newPage();
+@@ -401,6 +408,26 @@
+   };
+ }
+ 
++async function companionObservationFor(personId) {
++  try {
++    const adminToken = (await fs.promises.readFile(adminTokenPath, 'utf8')).trim();
++    const response = await fetch(`${displayBaseUrl}/v1/people/${encodeURIComponent(personId)}/companion-observation`, {
++      headers: { Authorization: `Bearer ${adminToken}` }, signal: AbortSignal.timeout(5_000),
++    });
++    if (!response.ok) throw Error(`Companion source returned ${response.status}`);
++    const result = await response.json();
++    return { companionObservation: result.observation };
++  } catch (error) {
++    return { companionObservation: { subject: '陪你工作', sentence: '工作摘记暂时没连上，先专注眼前这一件事。',
++      observedAt: null, kind: 'quiet', label: '' } };
++  }
++}
++
++async function sceneMetricsFor(payload, personId) {
++  if (payload.version === 22 && payload.liveObservation === true) return companionObservationFor(personId);
++  return needsLiveMetrics(payload) ? liveMetricsFor(personId) : null;
++}
++
+ function needsLiveMetrics(payload) {
+   if (payload.version === 22) return false;
+   return payload.version === 21
+@@ -480,6 +507,7 @@
+ 
+ function metricsFingerprint(metrics) {
+   if (!metrics) return '';
++  if (metrics.companionObservation) return JSON.stringify(metrics.companionObservation);
+   const { running, waiting, queued, pendingReview, pendingResults, deliveryIssues, active, projects, reminderSources } = metrics;
+   // The Feishu poll timestamp changes even when the visible reminder does not.
+   // Redrawing for that timestamp delays real Session changes behind rendering.
+@@ -502,7 +530,7 @@
+     const current = await currentPreview(record.personId);
+     if (current?.frameId !== record.lastFrameId) { await clearActive(); return; }
+     const [metrics, weather] = await Promise.all([
+-      needsLiveMetrics(record.payload) ? liveMetricsFor(record.personId) : null,
++      sceneMetricsFor(record.payload, record.personId),
+       [21, 22].includes(record.payload.version) ? weatherForCity(record.payload.weatherCity || record.payload.state?.weatherCity || '北京') : null,
+     ]);
+     const fingerprint = stateFingerprint(metrics, weather);
+@@ -512,7 +540,7 @@
+     const renewLease = Date.parse(current.expiresAt) - Date.now() <= 60 * 60 * 1000;
+     let published = false;
+     if (renewLease || fingerprint !== record.lastMetricsFingerprint || minute !== record.lastRenderedMinute
+-      || (metrics && statusTick !== record.lastRenderedStatusTick)) {
++      || (metrics && !metrics.companionObservation && statusTick !== record.lastRenderedStatusTick)) {
+       const rendered = await render(record.payload, metrics, weather);
+       const nextFrameId = frameIdFor(rendered);
+       if (renewLease || nextFrameId !== record.lastFrameId) {
+@@ -651,7 +679,7 @@
+     const personId = String(req.headers['x-preview-person-id'] || config.personId || '');
+     await pairedDevice(personId);
+     const [metrics, weather] = await Promise.all([
+-      needsLiveMetrics(payload) ? liveMetricsFor(personId) : null,
++      sceneMetricsFor(payload, personId),
+       [21, 22].includes(payload.version) ? weatherForCity(payload.weatherCity || payload.state?.weatherCity || '北京') : null,
+     ]);
+     const rendered = await render(payload, metrics, weather);
+--- a/concept-v14/test-preview-stream.mjs
++++ b/concept-v14/test-preview-stream.mjs
+@@ -26,6 +26,8 @@
+ let lastSeenOffset = 0;
+ let puts = [];
+ let metricReads = 0;
++let observationReads = 0;
++let observation = { kind: 'result', subject: '测试项目', sentence: '已完成对照测试，下一步复核真机。', observedAt: new Date().toISOString(), label: '对话更新' };
+ let waitingCount = 0;
+ let projectMetrics = [{ name: 'Project', running: 1, waiting: 0, queued: 0, compacting: 0, sessions: [{id:'sample',title:'Existing title',status:'running'}] }];
+ let fixedRunning = null;
+@@ -103,6 +105,7 @@
+   await fs.copyFile(path.join(source, 'operation-gate.mjs'), path.join(temp, 'operation-gate.mjs'));
+   await fs.copyFile(path.join(source, 'weather-source.mjs'), path.join(temp, 'weather-source.mjs'));
+   await fs.copyFile(path.join(source, 'companion-scene.mjs'), path.join(temp, 'companion-scene.mjs'));
++  for (const name of ['companion-scene-v2.mjs', 'companion-library.mjs']) await fs.copyFile(path.join(source, name), path.join(temp, name));
+   for (const name of ['index.html', 'styles.css', 'studio-v8.css', 'studio-v9.css', 'studio-v10.css', 'studio-v11.css', 'studio-v12.css', 'studio-v14.css', 'app.js', 'theme-presets.js', 'device-sync.js', 'device-endpoint.json', 'fonts', 'assets', 'node_modules']) {
+     await fs.symlink(path.join(source, name), path.join(temp, name));
+   }
+@@ -113,6 +116,8 @@
+     } else if (req.method === 'GET' && req.url === `/v1/people/${personId}/status`) {
+       metricReads += 1;
+       json(res, { metrics: { projects: projectMetrics, running: fixedRunning ?? metricReads, waiting: waitingCount, queued: 0, pendingReview: 1, deliveryIssues: 0, active: [{ name: `Session ${fixedRunning ?? metricReads}` }], observedAt: new Date().toISOString() } });
++    } else if (req.url === `/v1/people/${personId}/companion-observation` && req.method === 'GET') {
++      observationReads++; json(res, { observation });
+     } else if (req.url === `/v1/people/${personId}/preview-frame` && req.method === 'GET') {
+       if (previewReadFailures > 0) { previewReadFailures -= 1; res.writeHead(503); res.end('{}'); failedPreviewRead?.(); return; }
+       json(res, latest ? { configured: true, devicePlayback: playback.map(item => ({ ...item, bundleFrameId: latest })), frameId: latest, expiresAt, updatedAt: new Date().toISOString(), animationCount: animationsReceived.length } : { configured: false });
+@@ -355,6 +360,25 @@
+   const companionRecord = await waitActive(record => record?.lastFrameId === companionId);
+   assert.equal(companionRecord.payload.observedAt, companion.observedAt, 'clock refresh must preserve source time');
+   assert.equal(metricReads, beforeCompanionMetrics, 'clock/weather refresh does not scan Sessions');
++  const libraryRoot = path.join(temp, 'private/companion-libraries/test');
++  await fs.mkdir(libraryRoot, { recursive: true });
++  const libraryGif = Buffer.from(companion.actions[0].gifBase64, 'base64');
++  const sha256 = crypto.createHash('sha256').update(libraryGif).digest('hex');
++  await fs.writeFile(path.join(libraryRoot, 'action.gif'), libraryGif);
++  await fs.writeFile(path.join(libraryRoot, 'manifest.json'), JSON.stringify({ version: 1, id: 'test', actions: [{ name: '挥手', category: '小动作', file: 'action.gif', sha256, frames: 2, durationMs: 200 }] }));
++  const libraryPayload = { ...companion, design: 'companion-v2', actions: undefined, libraryId: 'test', liveObservation: true };
++  const libraryApply = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(libraryPayload) });
++  assert.equal(libraryApply.status, 200, await libraryApply.text());
++  assert(observationReads > 0);
++  assert.equal(metricReads, beforeCompanionMetrics);
++  assert.equal(animationsReceived[0].gifBase64, companion.actions[0].gifBase64);
++  const beforeText = latest;
++  const textChanged = waitFrame();
++  observation = { kind: 'attention', subject: '测试项目', sentence: '对照结果已备好，请选定下一组条件。', observedAt: new Date().toISOString(), label: '对话更新' };
++  const afterText = await textChanged;
++  assert.notEqual(afterText, beforeText, 'new text must create a fresh frame without a minute tick');
++  assert.equal(metricReads, beforeCompanionMetrics, 'text reads never call the process metrics feed');
++
+   const replacement = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(v21Payload) });
+   assert.equal(replacement.status, 200);
+   latest = 'another-owner-frame';

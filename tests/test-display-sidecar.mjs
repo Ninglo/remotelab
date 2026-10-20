@@ -116,7 +116,7 @@ const api = createServer((req, res) => {
         activity: { run: { state: 'idle' }, queue: { count: 0 } },
         lastAssistantMessageAt: Date.now(),
         lastReviewedAt: 0,
-        workSummary: { summary: '整理本周进展' },
+        workSummary: { summary: '整理本周进展', knownConclusions: ['离线对比已完成，下一步核对独立评测。'] },
         deliveryIssueCount: 0,
       },
       ...waitingSessions,
@@ -219,6 +219,17 @@ try {
   assert.equal(frame.headers.get('x-remotelab-display-running'), '1');
   const png = Buffer.from(await frame.arrayBuffer());
   assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const observationUrl = `http://127.0.0.1:${displayPort}/v1/people/${personA}/companion-observation`;
+  assert.equal((await fetch(observationUrl)).status, 401);
+  const observationResponse = await fetch(observationUrl, { headers: publicHeaders });
+  assert.equal(observationResponse.status, 200);
+  const observation = (await observationResponse.json()).observation;
+  assert.equal(observation.sentence, '离线对比已完成，下一步核对独立评测。');
+  assert.equal(observation.label, '对话更新');
+  assert.equal((await (await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/companion-observation`, { headers: publicHeaders })).json()).observation.kind, 'quiet');
+  const savedObservations = JSON.parse(await readFile(join(configDir, 'display-companion-observations.json'), 'utf8'));
+  assert(savedObservations[personA].current, 'dedupe state is durable');
 
   const contentUrl = `http://127.0.0.1:${displayPort}/v1/people/${personA}/content`;
   const contentPayload = { sentence: '今天先做好一件事', gifBase64: animatedGif.toString('base64') };

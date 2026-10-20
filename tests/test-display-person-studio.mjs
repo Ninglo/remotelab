@@ -15,7 +15,7 @@ await writeFile(join(root, 'source/concept-v21/index.html'), 'test');
 await mkdir(configDir);
 await writeFile(join(configDir, 'display-admin-token'), 'test-administrator');
 await writeFile(join(source, 'private/pairing.json'), '{"personId":"someone-else","token":"do-not-copy"}');
-for (const file of ['preview-server.mjs', 'operation-gate.mjs', 'weather-source.mjs', 'index.html', 'styles.css',
+for (const file of ['preview-server.mjs', 'operation-gate.mjs', 'weather-source.mjs', 'companion-scene.mjs', 'companion-scene-v2.mjs', 'companion-library.mjs', 'index.html', 'styles.css',
   'studio-v8.css', 'studio-v9.css', 'studio-v10.css', 'studio-v11.css', 'studio-v12.css', 'studio-v14.css',
   'app.js', 'theme-presets.js', 'device-sync.js', 'device-endpoint.json']) await writeFile(join(source, file), 'test');
 for (const directory of ['fonts', 'assets', 'node_modules']) await mkdir(join(source, directory));
@@ -45,6 +45,7 @@ try {
   assert.equal(registry.people.person_test.personId, 'person_test');
   const pairing = JSON.parse(await readFile(join(result.runtime, 'private/pairing.json'), 'utf8'));
   assert.equal(pairing.personId, 'person_test');
+  for (const name of ['companion-scene.mjs', 'companion-scene-v2.mjs', 'companion-library.mjs']) assert.equal(await readFile(join(result.runtime, name), 'utf8'), await readFile(join(source, name), 'utf8'));
   assert.equal(pairing.deviceId, options.deviceId);
   assert.match(pairing.token, /^[a-f0-9]{64}$/);
   assert.equal((await readFile(result.tokenFile, 'utf8')).trim(), pairing.token);

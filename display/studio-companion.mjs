@@ -1,3 +1,4 @@
+import { validateCompanion as validateV2, companionScene as sceneV2 } from './companion-scene-v2.mjs';
 // A deterministic pet scene for the existing authenticated preview renderer.
 // No Session scan, model call, network fetch, or mutable process-global settings.
 const WIDTH = 1920;
@@ -11,6 +12,7 @@ const text = (value, max, label) => {
 const xml = value => String(value).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function validateCompanion(payload) {
+  if (payload?.design === 'companion-v2') return validateV2(payload);
   if (payload?.version !== 22) bad('Invalid companion version');
   text(payload.timeZone, 80, 'time zone');
   try { new Intl.DateTimeFormat('en', { timeZone: payload.timeZone }); } catch { bad('Invalid companion time zone'); }
@@ -59,6 +61,7 @@ function wrapSentence(value, max = 20) {
 }
 
 export function companionScene(payload, weather = null, nowMs = Date.now()) {
+  if (payload?.design === 'companion-v2') return sceneV2(payload, weather, nowMs);
   validateCompanion(payload);
   const clock = formatDate(nowMs, payload.timeZone, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const day = formatDate(nowMs, payload.timeZone, { month: '2-digit', day: '2-digit', weekday: 'long' });

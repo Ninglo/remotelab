@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const codeFiles = ['preview-server.mjs', 'operation-gate.mjs', 'weather-source.mjs'];
+const optionalCodeFiles = ['companion-scene.mjs', 'companion-scene-v2.mjs', 'companion-library.mjs'];
 const sharedFiles = ['index.html', 'styles.css', 'studio-v8.css', 'studio-v9.css', 'studio-v10.css',
   'studio-v11.css', 'studio-v12.css', 'studio-v14.css', 'app.js', 'theme-presets.js',
   'device-sync.js', 'device-endpoint.json', 'fonts', 'assets', 'node_modules'];
@@ -91,6 +92,10 @@ export async function configurePersonStudio({ personId, deviceId, port, sourceRo
     const token = pairing?.token || randomBytes(32).toString('hex');
     await mkdir(privateDir, { recursive: true, mode: 0o700 });
     for (const file of codeFiles) await copyFile(join(source, file), join(runtime, file));
+    for (const file of optionalCodeFiles) {
+      try { await copyFile(join(source, file), join(runtime, file)); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
     for (const file of sharedFiles) await sharedLink(join(source, file), join(runtime, file));
     await sharedLink(join(source, 'private/browser-libs'), join(privateDir, 'browser-libs'));
     await sharedLink(resolve(source, '../concept-v21'), join(home, 'concept-v21'));

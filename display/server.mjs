@@ -12,6 +12,7 @@ import { findPerson, loadAuthDocument } from '../lib/auth-config.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createProjectViewReader, summarizeProjectSessions } from './project-sessions.mjs';
 import { createSessionSummaryReader } from '../lib/session-summary-reader.mjs';
+import { advanceObservation } from './companion-observation.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { emptySignalStore, makeStatusSnapshot, replaceSource, selectOfficialScene, validateSourcePacket } from './status-state.mjs';
 import { remotelabStatusSource } from './remotelab-status-source.mjs';
@@ -352,6 +353,25 @@ async function getPersonIdentityIds(personId) {
 }
 
 const projectViews = createProjectViewReader(join(configDir, 'chat-sessions.json'));
+const companionObservationCache = new Map();
+const companionObservationFile = join(configDir, 'display-companion-observations.json');
+const companionObservationStates = await readJson(companionObservationFile, {});
+const advanceCompanion = createSerialTaskQueue();
+
+async function companionObservationFor(personId) {
+  const identityIds = await getPersonIdentityIds(personId);
+  return advanceCompanion(async () => {
+    const scope = JSON.stringify([...identityIds].sort());
+    const cached = companionObservationCache.get(personId);
+    if (cached && cached.scope === scope && cached.expiresAt > Date.now()) return cached.value;
+    const sessions = await sessionSummaries.read();
+    const { observation, state } = advanceObservation(sessions, { personId, identityIds }, companionObservationStates[personId]);
+    companionObservationStates[personId] = state;
+    await writeJsonAtomic(companionObservationFile, companionObservationStates, { mode: 0o600 });
+    companionObservationCache.set(personId, { scope, value: observation, expiresAt: Date.now() + 30_000 });
+    return observation;
+  });
+}
 
 async function collectSnapshot(personId) {
   const { ids: identityIds, feishuLinked } = await personIdentityInfo(personId);
@@ -592,6 +612,13 @@ async function handle(req, res) {
   }
   if (pathname === '/upgrade-agent.sh' && req.method === 'GET') {
     sendText(res, 200, 'text/x-shellscript; charset=utf-8', await readFile(join(moduleDir, 'upgrade-agent.sh')));
+    return;
+  }
+  const observationMatch = /^\/v1\/people\/([^/]+)\/companion-observation$/.exec(pathname);
+  if (observationMatch && req.method === 'GET') {
+    if (!await requireAdmin(req, res, url)) return;
+    const observation = await companionObservationFor(decodeURIComponent(observationMatch[1]));
+    sendJson(res, 200, { observation });
     return;
   }
   const previewMatch = /^\/v1\/people\/([^/]+)\/preview-frame$/.exec(pathname);

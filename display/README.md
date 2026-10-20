@@ -277,7 +277,8 @@ use the local-playback protocol below.
 
 The instance-local studio can accept an opt-in version-22 scene containing a pet
 action playlist, one supplied sentence, its source timestamp, a local clock and
-cached city weather. Install `studio-companion.mjs` as `companion-scene.mjs` beside
+cached city weather. Install `studio-companion.mjs` as `companion-scene.mjs` and
+copy `companion-scene-v2.mjs` beside
 that studio's `preview-server.mjs`, then apply `studio-companion.patch` from the
 studio root after `git apply --check`. Run the patched `test-preview-stream.mjs`
 in its isolated test state and the repository's `tests/test-display-companion.mjs`
@@ -287,7 +288,7 @@ The existing authenticated apply API and Person pairing remain authoritative.
 The existing refresh loop advances the clock and rotates actions once per minute;
 weather uses the existing source and its 15-minute cache. The source timestamp
 stays fixed and is labeled as a record time, never as a new completion time.
-No Session scan or model call is made by this scene. Supplying a new sentence is
+The supplied-sentence variant makes no Session scan or model call. Supplying a new sentence is
 separate from its display refresh. Weather failure is shown explicitly.
 
 Payload fields are `version: 22`, `timeZone`, `subject`, `sentence`, `observedAt`
@@ -356,3 +357,50 @@ JPEG bundle, including transparent corners, rather than inspecting a single
 preview. `tests/test-display-pet-gif.py` covers changing palettes, moving artwork,
 opaque black details and preserved timing. This export fix requires new assets,
 not a USB agent or pairing change.
+
+### Complete action library and useful text
+
+The opt-in `design: "companion-v2"` scene uses the same v22 apply route and v3
+Mac player. Apply `studio-companion-library.patch` after the patches above;
+copy `companion-library.mjs`, `companion-scene-v2.mjs` and the updated
+`studio-companion.mjs` (as `companion-scene.mjs`) into that personal studio.
+Run the patched stream test before restarting the renderer. Existing supplied
+v22 scenes retain their original layout and validation.
+
+Install an operator-owned export manifest into the studio's private directory:
+
+```sh
+node display/install-companion-library.mjs /absolute/export/manifest.json \
+  /absolute/studio/concept-v14/private/companion-libraries library-v1
+```
+
+The installer verifies hashes and decodes every GIF before an atomic install.
+A canonical manifest has `version: 1`, `id` and `actions` with `name`, `category`,
+relative `file`, SHA-256, frame count and duration. Keep licensed personal assets
+private; the repository carries the loader, not the character library. A new
+library ID leaves the previous set intact for rollback.
+
+For a library scene, replace inline `actions` with `libraryId`, set
+`design: "companion-v2"` and optionally `liveObservation: true`. Keep the supplied
+fallback `subject`, `sentence`, explicitly zoned `observedAt`, credit, Beijing
+weather and `Asia/Shanghai` time fields. The server loads only the selected GIF
+and rotates a deterministic permutation once per minute. All entries get a turn
+within a full library cycle; installed size is not a client startup download.
+The existing local-player cache and previous-loop-on-failure behavior remain.
+
+An administrator-only `GET /v1/people/:personId/companion-observation` reuses the
+existing summary reader, scoped to that Person's initiator identities, with a
+30-second cache. It does not read full conversations or invoke a model. Active
+waiting entries can show `needsFromUser`; idle, nonqueued entries can show
+`knownConclusions`. Archived/internal entries, stale (>24h), unsafe metadata,
+long (>60-character) and process-only items are excluded as whole items.
+Summary text is attributed to “对话更新” using `lastAssistantMessageAt`; this is
+not a claim's creation time or an independent verification of completion.
+
+Per-Person dedupe state persists privately across restarts. New results dwell
+for a minute; unresolved requests repeat no sooner than 30 minutes. With no new
+item the pet stays quiet. A neutral rest reminder can appear after 90 minutes
+between 09:00 and 21:00 Beijing time; it does not claim to measure actual work.
+Text changes refresh the background independently of the action minute; a
+missing source or stale weather is shown explicitly. The display adds no model
+calls. Reuse of summaries does not replace their source task's verification.
