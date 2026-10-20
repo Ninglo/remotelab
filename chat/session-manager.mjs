@@ -11,7 +11,7 @@ import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
-import { strictStartCheckPrompt } from './strict-start-check.mjs';
+import { strictStartCheckPrompt, strictStartCheckProvenance } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
 import { acceptGroupSync, syncDecisionText, routingQuestionDecision, completeGroupSync, validateGroupRethink, pilotInputResult, recoverPilotReplies } from './group-routing.mjs';
@@ -1439,6 +1439,11 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     || Boolean(options.viewPersonId && options.initiatedByIdentityId) });
   if (startCheck) slots.push(createModelContextSlot('strict_start_check',
     strictStartEnabled ? '开工严格检查 (personal trial)' : 'Personal work-start mode', startCheck));
+  const startProvenance = strictStartCheckProvenance(options.messageReplyPolicy, {
+    personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
+  });
+  if (startProvenance) slots.push(createModelContextSlot('strict_start_origin',
+    'Current work-start provenance', startProvenance));
   const trialPrompt = inflightTrialPrompt(options);
   if (trialPrompt) {
     slots.push(createModelContextSlot('inflight_trial', 'Personal in-flight input tools', trialPrompt));

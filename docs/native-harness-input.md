@@ -128,6 +128,13 @@ joins the stable rule-context snapshot; only the current input address is new
 per input. Unknown acceptance still conservatively retains context rather than
 claiming it was consumed. This does not promise zero repeated background text.
 
+The ordinary capability prompt now contains eligibility, useful triggers,
+consent/delivery boundaries and a pointer to [the operation guide](inflight-input-tools.md).
+Read its relevant section before inspect/reply/stop; exact schemas below remain
+available there rather than copied into every input. Ordinary native replies
+need no additional lookup. This changes prompt projection only, not the captured
+opt-in version, accepted-request scope, outbox deduplication or cancellation.
+
 - `input-trial inspect --request-id <id> --json` reads this execution's accepted
   opted-in inputs, retained unanswered questions and delivery receipts. Input
   bodies are omitted unless `--include-text` is requested. It does not inject,

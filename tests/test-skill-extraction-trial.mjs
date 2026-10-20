@@ -22,7 +22,10 @@ try {
   await writeFile(file, JSON.stringify(policy));
   const on = await build(alice);
   assert.match(on, /ON only/);
-  assert.ok(on.length < 1100, 'ordinary input carries a short pointer, not the procedure');
+  assert.ok(on.length < 600, 'ordinary input carries a trigger and pointer, not the procedure');
+  assert.match(on, /Trigger:.*reusable lesson/);
+  assert.match(on, /explicit confirmation/);
+  assert.match(on, /docs\/skill-extraction-trial\/SKILL\.md/);
   assert.equal(await build({ personId: 'person_bob', identityId: 'web_bob' }), '');
   assert.equal(await build({ ...alice, identityId: 'web_bob' }), '');
   assert.equal(await build({ ...alice, automated: true }), '');

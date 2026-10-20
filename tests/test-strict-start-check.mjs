@@ -17,7 +17,7 @@ try {
   });
   const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { resolveMessageReplyPolicy } = await import('../chat/message-reply-settings.mjs');
-  const { strictStartCheckPrompt, captureStrictStartRule } = await import('../chat/strict-start-check.mjs');
+  const { strictStartCheckPrompt, captureStrictStartRule, strictStartCheckProvenance } = await import('../chat/strict-start-check.mjs');
   const { buildPrompt } = await import('../chat/session-manager.mjs');
   const { requests } = await import('../chat/requests.mjs');
   const { handleMessageReplySettings } = await import('../chat/router-message-reply-settings.mjs');
@@ -128,6 +128,51 @@ try {
   await assert.rejects(runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'constructor'], io), /strict-start/);
   assert.equal((await call(path, { runId: record.runId, setting: 'strict-start', enabled: true,
     expectedRevision: (await loadPersonMessageReplies(alice)).revision, confirm: true, ruleVersion: 'constructor' })).status, 400);
+  await runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'v3', '--json'], io);
+  assert.equal(JSON.parse(output).settings.active.strictStartRuleVersion, 'v3');
+  const v3 = await resolveMessageReplyPolicy({ usageSurface: 'web', viewPersonId: alice.personId,
+    initiatedByIdentityId: alice.identityId });
+  assert.equal(v3.strictStartRule.version, 'v3');
+  assert.match(v3.strictStartRule.content, /work-start\/v2\.md/);
+  assert.doesNotMatch(v3.strictStartRule.content, /--focus work|--focus project/,
+    'operational query syntax stays in the on-demand guide');
+  const v3Next = { ...v3, strictStartRule: { ...v3.strictStartRule,
+    origin: { ...v3.strictStartRule.origin, requestId: 'different-input' } } };
+  assert.equal(strictStartCheckPrompt(v3, alice), strictStartCheckPrompt(v3Next, alice),
+    'per-input provenance cannot invalidate the stable procedure');
+  assert.match(strictStartCheckProvenance(v3Next, alice), /different-input/);
+  assert.equal(strictStartCheckProvenance(v2, alice), '', 'legacy provenance remains in the exact old prompt');
+  assert.equal(strictStartCheckProvenance(v3, { ...alice, identityId: 'web_bob' }), '');
+  assert.equal(strictStartCheckProvenance({ ...v3, strictStartCheck: false }, alice), '');
+  assert.equal(strictStartCheckProvenance({ ...v3, strictStartRule: {
+    ...v3.strictStartRule, content: 'tampered' } }, alice), '');
+  const v3Prompt = await buildPrompt('strict-session', { id: 'strict-session', codexThreadId: 'existing-thread' },
+    '继续', 'codex', 'codex', null, { messageReplyPolicy: v3Next,
+      viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId });
+  assert.match(v3Prompt, /Current work-start provenance/);
+  assert.match(v3Prompt, /different-input/);
+  assert.match(v3Prompt, /# 开工检查 v3/);
+  assert.ok(strictStartCheckPrompt(v3, alice).length + strictStartCheckProvenance(v3, alice).length
+    < strictStartCheckPrompt(v2, alice).length, 'count provenance as well as the procedure when checking savings');
+  assert.equal(v2.strictStartRule.version, 'v2', 'new selection never rewrites existing v2 work');
+  assert.deepEqual((await loadPersonMessageReplies(alice)).choices, oldChoices);
+  const { projectRuleContext } = await import('../chat/rule-context.mjs');
+  const ruleSlots = policy => [{ id: 'strict_start_check', content: strictStartCheckPrompt(policy, alice) },
+    { id: 'strict_start_origin', content: strictStartCheckProvenance(policy, alice) }];
+  const ruleOptions = { enabled: true, identity: { field: 'codexThreadId', id: 'thread-v3' },
+    recovery: 'codex-session-start', requestId: 'current', personId: alice.personId, identityId: alice.identityId };
+  const deps = { head: async () => 1, history: async () => [], snapshot: async () => {} };
+  const firstV3 = await projectRuleContext('strict-session', ruleSlots(v3), ruleOptions, deps);
+  const nextV3 = await projectRuleContext('strict-session', ruleSlots(v3Next), ruleOptions, { ...deps,
+    history: async () => [{ type: 'message', role: 'user', requestId: 'previous' }],
+    request: async () => ({ runId: 'previous-run', nativeReceipt: { accepted: true } }),
+    run: async () => ({ id: 'previous-run', sessionId: 'strict-session', codexThreadId: 'thread-v3' }),
+    manifest: async () => ({ ruleContextDelivery: firstV3.receipt }) });
+  assert.equal(nextV3.receipt.mode, 'reference');
+  assert.deepEqual(nextV3.receipt.changedIds, []);
+  assert.equal(nextV3.slots.some(s => s.id === 'strict_start_check'), false);
+  assert.equal(nextV3.slots.find(s => s.id === 'strict_start_origin').content,
+    strictStartCheckProvenance(v3Next, alice), 'new origin still reaches the native input');
   assert.doesNotMatch(strictStartCheckPrompt(legacy, alice), /# 开工检查 v1/);
   const bob = { personId: 'person_bob', identityId: 'web_bob' };
   const bobPolicy = { ...snapshot, personId: bob.personId, policyId: 'reply_bob' };

@@ -15,11 +15,10 @@ export async function buildPersonalMemoryConversationParts({ personId, identityI
     const feedback = cards ? '' : await recentMemoryFeedback(sessionId, personId);
     const rules = [
       `Personal memory conversation trial is enabled only for verified current speaker ${personId}; never inherit another person's preferences.`,
-      'Notice concrete feedback about how to collaborate during the task; one signal can justify a candidate now. Product requirements and project decisions stay with their project. Memory never grants business authorization.',
-      'Before extracting, proposing or changing memory, read the relevant guidance and write schema in $REMOTELAB_PROJECT_ROOT/docs/memory-learning.md, then use remotelab memory inspect --json. Compare meaning AND scope; preserve original evidence, accepted limits and the strength of the person’s words.',
-      'Explicit personal long-term instructions may be confirmed; unclear future scope stays observed and may be proposed now. Silence or ambiguous replies are not consent. Pending proposals suppress duplicate questions. Only report a save after success.',
-      cards ? 'Independent memory review cards are enabled: use the existing memory outbox, do not duplicate its question in chat or wait for a decision to continue the task. Defer review when urgency or privacy requires it.'
-        : 'No independent review cards: after recording propose, ask at most one natural memory question in the next useful reply. Keep the task moving; defer when urgency or privacy requires it.',
+      'Trigger: concrete feedback about how to collaborate, or an explicit personal memory instruction. Project requirements stay with the project; memory grants no authorization.',
+      'On that trigger, before inspecting, proposing or writing memory, read the relevant section of $REMOTELAB_PROJECT_ROOT/docs/memory-learning.md. Use existing context otherwise; do not routinely read profiles. Preserve consent and accepted scope; report saves only after success.',
+      cards ? 'Review mode: existing independent memory outbox; do not duplicate its question in chat or block the task.'
+        : 'Review mode: at most one natural question in a useful reply after recording the proposal. Keep the task moving.',
     ].join('\n');
     return { rules, feedback };
   } catch { return { rules: '', feedback: '' }; }

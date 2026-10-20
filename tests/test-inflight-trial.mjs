@@ -39,6 +39,10 @@ try {
   const aliceOptions = opts();
   aliceOptions.inflightTrial = await captureInflightTrial(aliceOptions);
   assert.match(inflightTrialPrompt(aliceOptions), /does not erase shared model history/);
+  assert.match(inflightTrialPrompt(aliceOptions), /docs\/inflight-input-tools\.md/);
+  assert.match(inflightTrialPrompt(aliceOptions), /Silence or a side answer is not permission/);
+  assert.doesNotMatch(inflightTrialPrompt(aliceOptions), /--request-id|--expected-run|replyId/);
+  assert.ok(inflightTrialPrompt(aliceOptions).length < 1000, 'exact command schemas remain on demand');
   assert.equal(inflightTrialPrompt({ ...opts('bob'), inflightTrial: aliceOptions.inflightTrial }), '');
   const store = createRequestStore(join(home, 'requests'));
   const accept = async (id, options = aliceOptions) => (await store.accept({ sessionId: 'fixture-session', requestId: id, text: `input ${id}`, options, deliveryPlan: options.sourceDelivery })).record;

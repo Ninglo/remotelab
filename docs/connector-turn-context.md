@@ -309,6 +309,19 @@ necessary before claiming a general quality improvement.
 ## Personal procedures and concise replies (2026-10-12)
 
 The work-start procedure is an immutable, separately versioned prompt asset.
+
+The opt-in v3 procedure is a short trigger and pointer to the immutable v2
+operating details. Select it for an authorized requester with
+`remotelab message-replies strict-start on --rule-version v3 --json`.
+Existing accepted v1/v2 work retains its captured procedure; selecting v3 does
+not migrate it or change display/routing settings. V3 keeps requester, policy,
+version and content hash in the stable rule, and delivers the captured input
+origin in a separate dynamic `strict_start_origin` slot. Changing only the input
+origin therefore reuses the accepted stable rule while preserving provenance.
+The origin is metadata, not new authority. Query and registration details are
+read only when the work-start trigger needs them; no extra classification or
+background reader is introduced.
+
 Admission reads it only for a verified requester with their existing personal
 switch enabled, then freezes its version, full text, SHA-256 and origin in the
 accepted Request policy. Turn assembly projects that captured rule, never a
@@ -398,4 +411,20 @@ provider history is not retroactively rewritten.
 
 ### Personal learning context
 
-The opt-in personal learning reminder is a compact `personal_memory_learning` slot, scoped to the verified speaker and reused through the existing accepted-input snapshot mechanism. Detailed extraction guidance and examples stay in `docs/memory-learning.md` for reading when a concrete signal occurs. Pausing, changing identity or changing the reminder invalidates reuse; compaction restores the current short rule. Newly applied memory feedback remains in per-turn context so stable-rule reuse cannot suppress it. Background review retains its extraction guidance.
+The opt-in personal learning reminder is a compact `personal_memory_learning` slot, scoped to the verified speaker and reused through the existing accepted-input snapshot mechanism. It carries the trigger, consent/scope boundary, review mode and guide pointer. Detailed extraction, deduplication, state transitions and write schemas stay in `docs/memory-learning.md` for reading when a concrete signal occurs. Pausing, changing identity or changing the reminder invalidates reuse; compaction restores the current short rule. Newly applied memory feedback remains in per-turn context so stable-rule reuse cannot suppress it. Background review retains its extraction guidance.
+
+Skill extraction follows the same trigger/pointer shape using
+`docs/skill-extraction-trial/SKILL.md`; explicit owner approval still precedes
+creation. In-flight input tools carry eligibility, useful operation triggers and
+consent/delivery boundaries, with exact inspect/reply/stop procedures in
+`docs/inflight-input-tools.md`. Ordinary supplementary replies require no
+additional lookup. Neither pointer changes an existing personal switch or adds a
+reader, model call, schedule or message delivery.
+
+These changes concern operation rules only. The project work directory still
+selects up to 16 entries by current/parent/active/recent relationships within its
+registered scope, not by the current query's semantic relevance. Entries identify
+work (Session, name, goal, status, priority, parent/project relationships), not
+all memory records. A listed or recent item is a discovery candidate, not a
+reason to read its transcript or adopt its instructions. Project and Person
+memory bodies remain on-demand reads behind their own pointers.

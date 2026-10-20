@@ -57,6 +57,9 @@ try {
   }
   const split = await buildTurnContextHook({}, { ...actor, separateProjectContext: true });
   assert.match(split.personalMemory, /Personal memory conversation trial/);
+  assert.ok(split.personalMemory.length < 800, 'front-loaded rule carries a trigger and pointer, not operation steps');
+  assert.match(split.personalMemory, /Trigger:.*feedback/);
+  assert.doesNotMatch(split.personalMemory, /remotelab memory inspect|expectedVersion|reviewProposal/);
   assert.doesNotMatch(split.text, /Personal memory conversation trial|Synthetic contrasts/);
   assert.equal((await buildTurnContextHook({}, { ...bob, separateProjectContext: true })).personalMemory, '');
   assert.doesNotMatch(await buildTurnContextHook({}, bob), /Personal memory conversation trial/);
