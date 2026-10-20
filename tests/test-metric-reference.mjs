@@ -7,6 +7,7 @@ import { metricComparisons, metricCandidate, populationTrendCandidates } from '.
 import { metricRecipientKey } from '../lib/metric-alert-bundle.mjs';
 import { processSessionDiagnostics, sessionDiagnosisCard } from '../chat/session-diagnostics.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
+import { privateDiagnosisNotification } from '../lib/session-diagnosis.mjs';
 
 const now = Date.parse('2026-10-20T06:00:00Z'), DAY = 86400000;
 const row = (id, at, value) => ({ runId: `r${id}`, sessionId: `s${id % 6}`, responseAt: at, at,
@@ -16,6 +17,9 @@ const history = Array.from({ length: 8 }, (_, d) => Array.from({ length: 12 }, (
   row(d * 100 + i, now - (d + 2) * DAY - i * 1000, 10000))).flat();
 const recent = Array.from({ length: 12 }, (_, i) => row(2000 + i, now - i * 1000, 10000));
 const rest = { excludedDates: ['2026-10-18'] };
+assert.equal(privateDiagnosisNotification({ kind: 'metric', status: 'resolved',
+  notification: { reason: 'resolved', sentSemantic: 'legacy-closed', sentRatio: 2 } },
+{ metricAlerts: true }).ready, false, 'a policy upgrade does not resend already closed legacy cards');
 const injection = rows => metricComparisons(rows, now, rest).find(c => c.metric === 'injectionChars' && !c.comparisonType);
 
 const partial = row(3000, now - DAY - 3600000, 500);

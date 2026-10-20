@@ -819,6 +819,8 @@ original private card and pre-correction evidence are retained. A comparison tha
 no longer qualifies is marked “基准已更正/已复核”, not performance recovery. A lack
 of data cannot close it. Existing unresolved incidents keep their original
 recovery target while new comparisons report their actual current reference.
+Already closed legacy cards retain their delivered notification identity; a
+reference-policy upgrade does not announce their old recovery again.
 
 Increased daily request
 volume alone cannot trigger these per-request comparisons. Experiment exposure
