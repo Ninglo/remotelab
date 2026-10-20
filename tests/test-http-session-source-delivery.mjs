@@ -78,6 +78,21 @@ try {
   await waitFor(async () => {
     try { return (await request('GET', '/api/auth/me')).status === 200; } catch { return false; }
   }, 'server startup');
+  const privateConversationStart = { messageId: 'om_newhttp', at: Date.now() };
+  const freshPrivate = await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu',
+    externalTriggerId: 'feishu:private-marker-fixture',
+    conversation: { connector: 'feishu', sourceRouteId: 'private-bot', target: {
+      chatId: 'private-chat', tenantKey: 'private-tenant', chatType: 'p2p', conversationKind: 'main',
+    } },
+    privateConversationStart,
+  });
+  assert.equal(freshPrivate.status, 201);
+  assert.deepEqual(freshPrivate.body.session.privateConversationStart, privateConversationStart,
+    'the connector API must preserve the private conversation history boundary');
+  assert.deepEqual((await request('GET', `/api/sessions/${freshPrivate.body.session.id}`))
+    .body.session.privateConversationStart, privateConversationStart,
+    'the private conversation history boundary must survive a metadata read');
   const groupFeedConversation = { connector: 'feishu', sourceRouteId: 'pilot-bot',
     target: { chatId: 'pilot-group', tenantKey: 'pilot-tenant', chatType: 'group', conversationKind: 'main' } };
   const legacyGroup = await request('POST', '/api/sessions', {
