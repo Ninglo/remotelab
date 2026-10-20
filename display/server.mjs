@@ -211,6 +211,7 @@ function devicePlaybackFor(personId) {
     .map(([deviceId, item]) => ({ deviceId, reportedAt: item.reportedAt, usbFrames: item.usbFrames,
       usbAckMs: item.usbAckMs, usbFrameMs: item.usbFrameMs, animationFrames: item.animationFrames,
       bundleFrameId: item.bundleFrameId, usbFps: item.usbFps,
+      playerVersion: item.playerVersion, playbackId: item.playbackId, playbackState: item.playbackState,
       targetIntervalMs: item.targetIntervalMs, actualIntervalMs: item.actualIntervalMs }));
 }
 
@@ -852,6 +853,9 @@ async function handle(req, res) {
         devicePlayback.set(device.id, { personId: device.personId, reportMs, reportedAt: new Date(reportMs).toISOString(),
           usbFrames: payload.usbFrames, usbAckMs: payload.usbAckMs, usbFrameMs: payload.usbFrameMs,
           animationFrames: payload.animationFrames, bundleFrameId: payload.bundleFrameId, usbFps,
+          playerVersion: payload.playerVersion === 5 ? 5 : null,
+          playbackId: /^[a-f0-9]{12}$/.test(payload.playbackId || '') ? payload.playbackId : null,
+          playbackState: ['playing', 'ended'].includes(payload.playbackState) ? payload.playbackState : null,
           targetIntervalMs: Number.isInteger(payload.targetIntervalMs) && payload.targetIntervalMs >= 50 && payload.targetIntervalMs <= 500 ? payload.targetIntervalMs : null,
           actualIntervalMs: Number.isInteger(payload.actualIntervalMs) && payload.actualIntervalMs >= 0 && payload.actualIntervalMs <= 30_000 ? payload.actualIntervalMs : null });
       }
@@ -898,6 +902,8 @@ async function handle(req, res) {
           return { assetId, box: item.box, fit: item.fit || 'contain' };
         });
         const body = Buffer.from(JSON.stringify({ version: 3, frameId: preview.frameId,
+          ...(preview.animations.length === 1 && preview.animations[0].playOnce === true
+            ? { playOnce: true, playbackId: preview.animations[0].playbackId } : {}),
           intervalMs: 100, backgroundPng: preview.pngBase64, layers, assets }));
         trackAnimationDelivery(device, body, 0, 'local-gif-scene', 0, preview.frameId);
         sendText(res, 200, 'application/vnd.remotelab.display-scene+json', body, headers);

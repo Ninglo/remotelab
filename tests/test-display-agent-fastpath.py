@@ -58,6 +58,67 @@ class FrameHandler(BaseHTTPRequestHandler):
 
 
 class DisplayAgentFastPathTest(unittest.TestCase):
+    def test_once_finishes_on_usb_and_background_refresh_does_not_restart(self):
+        worker = agent.DisplayWorker()
+        frames = (b"\xff\xd8first", b"\xff\xd8middle", b"\xff\xd8last")
+        worker.update_sequence(frames, 0.05, True, "0123456789ab")
+        started = worker.sequence_started
+        worker.update_sequence(tuple(f + b"-new-bg" for f in frames), 0.05, True, "0123456789ab")
+        self.assertEqual(worker.sequence_started, started)
+        self.assertEqual(agent.animation_frame_index(100, 0, 0.05, 3, True), 2)
+        sent = []
+        enough = threading.Event()
+
+        class FakeUsb:
+            def show(self, jpeg):
+                sent.append(jpeg)
+                # Worker reports ended only after this real boundary returns.
+                if len(sent) == 1:
+                    self.assert_not_ended()
+                if len(sent) >= 10:
+                    enough.set()
+                return 512
+
+            def assert_not_ended(self):
+                assert worker.status()["playbackState"] == "playing"
+
+            def close(self):
+                pass
+
+        with patch.object(agent, "UsbDisplay", FakeUsb):
+            worker.start()
+            try:
+                self.assertTrue(enough.wait(2))
+                self.assertEqual(worker.status()["playbackState"], "ended")
+                self.assertEqual(sent[0], frames[0] + b"-new-bg")
+                self.assertTrue(all(f == frames[-1] + b"-new-bg" for f in sent[4:]), "hold finishing pose, never wrap")
+                worker.update_sequence(frames, 0.05, True, "0123456789ab")
+                self.assertEqual(worker.status()["playbackState"], "ended", "clock refresh preserves ended")
+                worker.update_sequence(frames, 0.05, True, "abcdef012345")
+                self.assertEqual(worker.status()["playbackState"], "playing")
+                self.assertGreater(worker.sequence_started, started)
+            finally:
+                worker.close()
+
+    def test_stale_usb_ack_cannot_finish_replacement_action(self):
+        worker = agent.DisplayWorker()
+        frames = (b"\xff\xd8first", b"\xff\xd8last")
+        worker.update_sequence(frames, 0.05, True, "0123456789ab")
+        worker.sequence_started -= 10
+
+        class FakeUsb:
+            def show(self, jpeg):
+                worker.update_sequence(frames, 0.05, True, "abcdef012345")
+                worker.stop.set()
+                return 512
+            def close(self):
+                pass
+
+        with patch.object(agent, "UsbDisplay", FakeUsb):
+            worker._run()
+        self.assertEqual(worker.status()["playbackId"], "abcdef012345")
+        self.assertEqual(worker.status()["playbackState"], "playing")
+
     def test_jpeg_and_animation_use_system_https_proxy_and_reuse_tunnel(self):
         jpeg_response = Mock(status=200)
         jpeg_response.getheaders.return_value = [("Content-Type", "image/jpeg")]

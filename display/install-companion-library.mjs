@@ -34,7 +34,8 @@ export async function installCompanionLibrary({ sourceManifest, root, id }) {
       actions.push({ name: entry.name, category: entry.category || '日常', file, sha256,
         frames: entry.frames, durationMs: entry.durationMs, width: decoded.width, height: decoded.height });
     }
-    const manifest = { version: 1, id, installedAt: new Date().toISOString(), actions };
+    const manifest = { version: 1, id, installedAt: new Date().toISOString(), actions,
+      ...(input.behavior === 'dsh-pet' ? { behavior: 'dsh-pet' } : {}) };
     await writeFile(join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: 0o600 });
     await rename(stage, target);
     return { id, count: actions.length, target, bytes: entries.reduce((n, a) => n + (a.bytes || 0), 0) };

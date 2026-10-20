@@ -1,10 +1,19 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { createHash } from 'node:crypto';
+import { pick, rollKind, pickCategoryAction } from './vendor/dsh-pet/pickers.mjs';
+import defaults from './vendor/dsh-pet/animation-config.json' with { type: 'json' };
 
-// A 10-second source should not repeat six times just to wait for the clock.
-export const COMPANION_ACTION_INTERVAL_MS = 20_000;
-export const companionActionTick = (nowMs = Date.now()) => Math.floor(nowMs / COMPANION_ACTION_INTERVAL_MS);
+// Same fixed-position, left-facing chain as upstream playIdle(). Called only
+// after the player reports ended; clock/text refreshes reuse the current name.
+export function nextCompanionAction(library, current) {
+  if (library.behavior !== 'dsh-pet') return pick(library.actions.map(a => a.name), current);
+  const { animations: a, animationWeights: w } = defaults;
+  if (!current) return a.idle[0];
+  return rollKind(Math.random(), w, { fixed: true }) === 'idle'
+    ? pick(a.idle, current)
+    : pickCategoryAction(a.categories, a.idle, 'left', current).name;
+}
 
 // Libraries are installed by the operator, never uploaded as paths by a device.
 export function createCompanionLibraryReader(root) {
@@ -38,16 +47,14 @@ export function createCompanionLibraryReader(root) {
     manifests.set(id, { version, value: loaded });
     return loaded;
   }
-  return { manifest, async select(id, nowMs = Date.now()) {
+  return { manifest,
+    async next(id, current) { return nextCompanionAction(await manifest(id), current); },
+    async select(id, name) {
     const library = await manifest(id);
-    const tick = companionActionTick(nowMs);
     const count = library.actions.length;
-    const cycle = Math.floor(tick / count);
-    // A stable permutation visits every action once before starting another cycle.
-    const order = library.actions.map(action => ({ action,
-      rank: createHash('sha256').update(`${id}:${cycle}:${action.sha256}`).digest('hex') }))
-      .sort((a, b) => a.rank.localeCompare(b.rank));
-    const action = order[tick % count].action;
+    const selectedName = name || nextCompanionAction(library);
+    const action = library.actions.find(a => a.name === selectedName);
+    if (!action) throw Error(`Companion action is not installed: ${selectedName}`);
     let gifBase64 = assets.get(action.sha256);
     if (!gifBase64) {
       const filename = await contained(library.directory, action.file);
@@ -59,6 +66,6 @@ export function createCompanionLibraryReader(root) {
       while (assets.size > 4) assets.delete(assets.keys().next().value);
     }
     return { action: { name: action.name, gifBase64 }, total: count, category: action.category || '日常',
-      durationMs: action.durationMs, frames: action.frames, libraryId: id, tick };
+      durationMs: action.durationMs, frames: action.frames, libraryId: id };
   } };
 }

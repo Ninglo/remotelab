@@ -287,7 +287,8 @@ try {
   assert.equal(staticDelivery.animationDelivery[0]?.lastFormat, 'jpeg');
   const otherPreview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/preview-frame`, { headers: publicHeaders });
   assert.equal((await otherPreview.json()).configured, false, 'another Person must not inherit the preview');
-  const animation = [{ gifBase64: animatedGif.toString('base64'), box: { x: 100, y: 100, width: 40, height: 40 }, fit: 'contain' }];
+  const animation = [{ gifBase64: animatedGif.toString('base64'), box: { x: 100, y: 100, width: 40, height: 40 }, fit: 'contain',
+    playOnce: true, playbackId: '123456abcdef' }];
   const preparedAnimation = prepareAnimatedPreview(png, animation);
   assert.notDeepEqual(renderAnimatedPreview(preparedAnimation, 0), renderAnimatedPreview(preparedAnimation, 450), 'different GIF frames must produce different complete display images');
   assert.notDeepEqual(renderAnimatedPreviewJpeg(preparedAnimation, 0), renderAnimatedPreviewJpeg(preparedAnimation, 450), 'direct JPEG frames must animate too');
@@ -348,6 +349,7 @@ try {
   const playbackReport = await fetch(`http://127.0.0.1:${displayPort}${heartbeatPath}`, {
     method: 'POST', headers: { Authorization: `Bearer ${joined.deviceToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ usbFrames: 42, usbAckMs: Date.now(), usbFrameMs: 12,
+      playerVersion: 5, playbackId: '123456abcdef', playbackState: 'ended',
       animationFrames: faster.frames.length, bundleFrameId: faster.frameId, targetIntervalMs: 100, actualIntervalMs: 106 }),
   });
   assert.equal(playbackReport.status, 200);
@@ -359,6 +361,11 @@ try {
   assert.equal(sceneResponse.status, 200);
   const scene = await sceneResponse.json();
   assert.equal(scene.version, 3);
+  assert.equal(scene.playOnce, true);
+  assert.equal(scene.playbackId, '123456abcdef');
+  assert.equal(playback?.playerVersion, 5);
+  assert.equal(playback?.playbackId, scene.playbackId);
+  assert.equal(playback?.playbackState, 'ended');
   assert.equal(scene.intervalMs, 100);
   assert.equal(scene.frameId, animatedReceipt.frameId);
   assert.equal(scene.layers.length, 1);

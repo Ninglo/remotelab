@@ -294,7 +294,7 @@ class JpegFrameConnection:
         try:
             if self.connection is None: self.connection = self.open_connection()
             self.connection.request("GET", self.path, headers={"Authorization": f"Bearer {self.token}",
-                "Accept": accept, "User-Agent": "RemoteLab-Display/4"})
+                "Accept": accept, "User-Agent": "RemoteLab-Display/5"})
             response = self.connection.getresponse()
             headers = {key.lower(): value for key, value in response.getheaders()}
             body = response.read(18 * 1024 * 1024 + 1)
@@ -408,9 +408,10 @@ class UsbDisplay:
         self.handle, self.context, self.claimed = None, None, False
 
 
-def animation_frame_index(now: float, started: float, interval: float, frame_count: int) -> int:
+def animation_frame_index(now: float, started: float, interval: float, frame_count: int, play_once: bool = False) -> int:
     """Choose the GIF frame by elapsed time, not by completed USB writes."""
-    return max(0, int((now - started) / interval)) % frame_count
+    index = max(0, int((now - started) / interval))
+    return min(index, frame_count - 1) if play_once else index % frame_count
 
 
 class DisplayWorker:
@@ -419,6 +420,10 @@ class DisplayWorker:
         self.frames: tuple[bytes, ...] = ()
         self.frame_index = 0
         self.sequence_started = 0.0
+        self.play_once = False
+        self.playback_id = ""
+        self.playback_ended = False
+        self.playback_changed = threading.Event()
         self.usb_frames = 0
         self.usb_ack_ms = 0
         self.usb_frame_ms = 0
@@ -439,24 +444,38 @@ class DisplayWorker:
             self.frames = (jpeg,)
             self.frame_index = 0
             self.sequence_started = time.monotonic()
+            self.play_once = False
+            self.playback_id = ""
+            self.playback_ended = False
             self.interval = max(0.18, min(0.5, interval))
 
-    def update_sequence(self, frames: tuple[bytes, ...], interval: float = 0.1) -> None:
+    def update_sequence(self, frames: tuple[bytes, ...], interval: float = 0.1,
+                        play_once: bool = False, playback_id: str = "") -> None:
         if not 1 <= len(frames) <= 128:
             raise ValueError("invalid animation frame count")
         for frame in frames:
             frame_packets(frame)
+        if play_once and not re.fullmatch(r"[a-f0-9]{12}", playback_id):
+            raise ValueError("invalid playback ID")
         with self.lock:
+            same_playback = play_once and self.play_once and self.playback_id == playback_id
             self.frames = frames
             self.jpeg = frames[0]
             self.frame_index = 0
-            self.sequence_started = time.monotonic()
+            if not same_playback:
+                self.sequence_started = time.monotonic()
+                self.playback_ended = False
+            self.play_once = play_once
+            self.playback_id = playback_id if play_once else ""
             self.interval = max(0.05, min(0.5, interval))
+            self.playback_changed.set()
 
     def status(self) -> dict:
         with self.lock:
             return {"usbFrames": self.usb_frames, "usbAckMs": self.usb_ack_ms,
                     "usbFrameMs": self.usb_frame_ms, "animationFrames": len(self.frames),
+                    "playerVersion": 5, "playbackId": self.playback_id,
+                    "playbackState": ("ended" if self.playback_ended else "playing") if self.play_once else "",
                     "targetIntervalMs": round(self.interval * 1000),
                     "actualIntervalMs": round(sum(self.usb_intervals_ms) / len(self.usb_intervals_ms)) if self.usb_intervals_ms else 0}
 
@@ -469,11 +488,15 @@ class DisplayWorker:
             try:
                 with self.lock:
                     interval = self.interval
+                    playback_id = self.playback_id
+                    sequence_started = self.sequence_started
+                    frame_count = len(self.frames)
+                    frame_index = 0
                     if len(self.frames) > 1:
                         # Stay on the GIF's time axis even if a USB write stalls.
                         # Otherwise a 100 ms animation sent at ~160 ms/USB frame
                         # plays in slow motion. Skip late frames rather than drift.
-                        frame_index = animation_frame_index(started, self.sequence_started, interval, len(self.frames))
+                        frame_index = animation_frame_index(started, self.sequence_started, interval, len(self.frames), self.play_once)
                         jpeg = self.frames[frame_index]
                     else:
                         jpeg = self.frames[0] if self.frames else None
@@ -499,6 +522,15 @@ class DisplayWorker:
                     self.usb_frames = count
                     self.usb_ack_ms = round(time.time() * 1000)
                     self.usb_frame_ms = elapsed_ms
+                    # End only after the finishing pose reached USB and its full
+                    # duration elapsed. A concurrent new scene must not inherit
+                    # the previous action's acknowledgment.
+                    if (self.play_once and not self.playback_ended
+                            and self.playback_id == playback_id and self.sequence_started == sequence_started
+                            and frame_index == frame_count - 1
+                            and ack_monotonic - sequence_started >= interval * frame_count):
+                        self.playback_ended = True
+                        self.playback_changed.set()
                 if count <= 3 or count % 30 == 0:
                     event("usb_frame", count=count, bytes=len(jpeg), ack_bytes=ack,
                           elapsed_ms=elapsed_ms)
@@ -580,6 +612,7 @@ def run() -> None:
     bundle_id = ""
     bundle_frame_id = ""
     next_playback_report = 0.0
+    last_playback_key = None
     playback_thread = None
     last_frame_saved = 0.0
     APP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -597,7 +630,8 @@ def run() -> None:
                             mode, headers, scene = jpeg_connection.read_scene(scene_id, tuple(scene_cache.assets))
                             if mode == "updated":
                                 frames, interval = scene_cache.compose(scene, int(state.get("rotation") or 0))
-                                worker.update_sequence(frames, interval=interval)
+                                worker.update_sequence(frames, interval=interval,
+                                    play_once=scene.get("playOnce") is True, playback_id=scene.get("playbackId", ""))
                                 scene_id = bundle_frame_id = scene["frameId"]
                                 received_bytes = len(json.dumps(scene))
                                 event("local_scene_loaded", frame_id=scene_id, frame_count=len(frames),
@@ -669,20 +703,23 @@ def run() -> None:
                     running=headers.get("x-remotelab-display-running", ""),
                     pending_review=headers.get("x-remotelab-display-pending-review", ""),
                 )
-                if time.monotonic() >= next_playback_report and (playback_thread is None or not playback_thread.is_alive()):
-                    playback = worker.status()
+                playback = worker.status()
+                playback_key = (playback["playbackId"], playback["playbackState"])
+                if (time.monotonic() >= next_playback_report or playback_key != last_playback_key) and (playback_thread is None or not playback_thread.is_alive()):
                     if playback["usbAckMs"] and playback["animationFrames"]:
                         playback["bundleFrameId"] = bundle_frame_id
                         playback_thread = threading.Thread(target=report_playback,
                             args=(state["heartbeatUrl"], state["deviceToken"], playback), daemon=True)
                         playback_thread.start()
+                        last_playback_key = playback_key
                     next_playback_report = time.monotonic() + 10
                 retry_delay = 1
                 try:
                     poll_seconds = float(headers.get("x-remotelab-display-poll-seconds") or state.get("pollSeconds") or 8)
                 except (TypeError, ValueError):
                     poll_seconds = 8
-                stopping.wait(max(0.05, min(30, poll_seconds) - (time.monotonic() - started)))
+                worker.playback_changed.wait(max(0.05, min(30, poll_seconds) - (time.monotonic() - started)))
+                worker.playback_changed.clear()
             except Exception as exc:
                 event("server_error", error=str(exc))
                 stopping.wait(retry_delay)

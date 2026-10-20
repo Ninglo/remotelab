@@ -4,8 +4,8 @@
  import { createOperationGate } from './operation-gate.mjs';
  import { createWeatherSource } from './weather-source.mjs';
  import { validateCompanion, companionScene } from './companion-scene.mjs';
-+import { createCompanionLibraryReader, companionActionTick } from './companion-library.mjs';
- 
++import { createCompanionLibraryReader } from './companion-library.mjs';
+
  const root = path.dirname(fileURLToPath(import.meta.url));
  const v21Root = process.env.NODE_ENV === 'test' && process.env.PREVIEW_TEST_V21_ROOT
 @@ -20,6 +21,7 @@
@@ -16,23 +16,26 @@
  const activeFile = path.join(root, 'private/active-preview.json');
  const appliedFile = path.join(root, 'private/last-applied-preview.json');
  const liveRefreshMs = 2_000;
-@@ -161,7 +163,7 @@
+@@ -160,8 +162,8 @@
+   }
  }
- 
- async function render(payload, liveMetrics = null, weather = null) {
+
+-async function render(payload, liveMetrics = null, weather = null) {
 -  if (payload.version === 22) return renderCompanion(payload, weather);
-+  if (payload.version === 22) return renderCompanion(payload, weather, liveMetrics?.companionObservation);
++async function render(payload, liveMetrics = null, weather = null, companionAction = null) {
++  if (payload.version === 22) return renderCompanion(payload, weather, liveMetrics?.companionObservation, companionAction);
    if (payload.version === 21) return renderV21(payload, liveMetrics, weather);
    const context = await newRenderContext(payload);
    try {
-@@ -232,15 +234,20 @@
+@@ -232,15 +234,22 @@
    }
  }
- 
+
 -async function renderCompanion(payload, weather) {
 -  const scene = companionScene(payload, weather);
-+async function renderCompanion(payload, weather, observation = null) {
-+  const selected = payload.libraryId ? await companionLibraries.select(payload.libraryId) : null;
++async function renderCompanion(payload, weather, observation = null, companionAction = null) {
++  const selected = payload.libraryId ? await companionLibraries.select(payload.libraryId, companionAction?.name) : null;
++  const playback = selected ? companionAction || { name: selected.action.name, playbackId: crypto.randomBytes(6).toString('hex') } : null;
 +  const scenePayload = { ...payload,
 +    ...(selected ? { actions: [selected.action], libraryInfo: { total: selected.total, category: selected.category, actionName: selected.action.name } } : {}),
 +    ...(observation ? { observation } : {}),
@@ -45,14 +48,33 @@
      await page.evaluate(() => document.fonts.ready);
      const png = await page.locator('svg').screenshot({ type: 'png', animations: 'disabled' });
 -    return { png, animations: scene.animations };
-+    return { png, animations: scene.animations, companionActionTick: selected?.tick ?? null };
++    return { png, animations: scene.animations.map(animation => playback
++      ? { ...animation, playOnce: true, playbackId: playback.playbackId } : animation), companionAction: playback };
    } finally { await context.close(); }
  }
 
-@@ -401,6 +408,26 @@
+@@ -357,7 +366,7 @@
+   return [{ id: target.id, name: target.name, lastSeenAt: target.lastSeenAt }];
+ }
+
+-async function currentPreview(personId) {
++async function currentPreview(personId, playbackDeviceId = config.deviceId) {
+   const adminToken = (await fs.promises.readFile(adminTokenPath, 'utf8')).trim();
+   const response = await fetch(`${displayBaseUrl}/v1/people/${encodeURIComponent(personId)}/preview-frame`, {
+     headers: { Authorization: `Bearer ${adminToken}` },
+@@ -368,7 +377,7 @@
+   return result.configured ? { frameId: result.frameId, updatedAt: result.updatedAt, expiresAt: result.expiresAt,
+     animationCount: result.animationCount || 0,
+     animationDelivery: (result.animationDelivery || []).filter(item => item.deviceId === config.deviceId),
+-    devicePlayback: (result.devicePlayback || []).filter(item => item.deviceId === config.deviceId) } : null;
++    devicePlayback: (result.devicePlayback || []).filter(item => item.deviceId === playbackDeviceId) } : null;
+ }
+
+ async function liveMetricsFor(personId) {
+@@ -401,6 +410,26 @@
    };
  }
- 
+
 +async function companionObservationFor(personId) {
 +  try {
 +    const adminToken = (await fs.promises.readFile(adminTokenPath, 'utf8')).trim();
@@ -76,16 +98,20 @@
  function needsLiveMetrics(payload) {
    if (payload.version === 22) return false;
    return payload.version === 21
-@@ -480,6 +507,7 @@
- 
+@@ -480,6 +509,7 @@
+
  function metricsFingerprint(metrics) {
    if (!metrics) return '';
 +  if (metrics.companionObservation) return JSON.stringify(metrics.companionObservation);
    const { running, waiting, queued, pendingReview, pendingResults, deliveryIssues, active, projects, reminderSources } = metrics;
    // The Feishu poll timestamp changes even when the visible reminder does not.
    // Redrawing for that timestamp delays real Session changes behind rendering.
-@@ -502,17 +530,19 @@
-     const current = await currentPreview(record.personId);
+@@ -499,21 +529,29 @@
+   const record = activeRecord;
+   try {
+     await pairedDevice(record.personId);
+-    const current = await currentPreview(record.personId);
++    const current = await currentPreview(record.personId, config.playbackDeviceId || config.deviceId);
      if (current?.frameId !== record.lastFrameId) { await clearActive(); return; }
      const [metrics, weather] = await Promise.all([
 -      needsLiveMetrics(record.payload) ? liveMetricsFor(record.personId) : null,
@@ -95,26 +121,34 @@
      const fingerprint = stateFingerprint(metrics, weather);
      const minute = Math.floor(Date.now() / 60_000);
      const statusTick = Math.floor(Date.now() / 15_000);
-+    const actionTick = record.payload.version === 22 && record.payload.libraryId ? companionActionTick() : null;
++    const usesLibrary = record.payload.version === 22 && record.payload.libraryId;
++    const actionEnded = usesLibrary && record.companionAction && current.devicePlayback.some(item =>
++      item.playbackId === record.companionAction.playbackId && item.playbackState === 'ended');
      // The sidecar's frame lease also needs renewal when a static image is unchanged.
      const renewLease = Date.parse(current.expiresAt) - Date.now() <= 60 * 60 * 1000;
      let published = false;
      if (renewLease || fingerprint !== record.lastMetricsFingerprint || minute !== record.lastRenderedMinute
 -      || (metrics && statusTick !== record.lastRenderedStatusTick)) {
-+      || (actionTick !== null && actionTick !== record.lastRenderedActionTick)
+-      const rendered = await render(record.payload, metrics, weather);
++      || (usesLibrary && !record.companionAction) || actionEnded
 +      || (metrics && !metrics.companionObservation && statusTick !== record.lastRenderedStatusTick)) {
-       const rendered = await render(record.payload, metrics, weather);
++      const action = actionEnded
++        ? { name: await companionLibraries.next(record.payload.libraryId, record.companionAction.name),
++          playbackId: crypto.randomBytes(6).toString('hex') }
++        : record.companionAction;
++      const rendered = await render(record.payload, metrics, weather, action);
        const nextFrameId = frameIdFor(rendered);
        if (renewLease || nextFrameId !== record.lastFrameId) {
-@@ -524,6 +554,7 @@
+         const installed = await publishViaPairing(rendered, record.personId);
+@@ -524,6 +562,7 @@
        record.lastMetricsFingerprint = fingerprint;
        record.lastRenderedMinute = minute;
        record.lastRenderedStatusTick = statusTick;
-+      record.lastRenderedActionTick = rendered.companionActionTick ?? null;
++      record.companionAction = rendered.companionAction ?? null;
      }
      record.refreshedAt = new Date().toISOString();
      if (published || record.payload.version !== 22) await persistActive();
-@@ -651,7 +682,7 @@
+@@ -651,7 +690,7 @@
      const personId = String(req.headers['x-preview-person-id'] || config.personId || '');
      await pairedDevice(personId);
      const [metrics, weather] = await Promise.all([
@@ -123,13 +157,13 @@
        [21, 22].includes(payload.version) ? weatherForCity(payload.weatherCity || payload.state?.weatherCity || '北京') : null,
      ]);
      const rendered = await render(payload, metrics, weather);
-@@ -661,7 +692,8 @@
+@@ -661,7 +700,8 @@
      activeRecord = { personId, deviceId: config.deviceId, payload, firstFrameId: installed, lastFrameId: installed,
        startedAt: new Date().toISOString(), refreshedAt: new Date().toISOString(),
        lastMetricsFingerprint: stateFingerprint(metrics, weather), lastRenderedMinute: Math.floor(Date.now() / 60_000),
 -      lastRenderedStatusTick: Math.floor(Date.now() / 15_000) };
 +      lastRenderedStatusTick: Math.floor(Date.now() / 15_000),
-+      lastRenderedActionTick: rendered.companionActionTick ?? null };
++      companionAction: rendered.companionAction ?? null };
      await persistApplied(activeRecord);
      await persistActive();
      scheduleRefresh();
@@ -144,15 +178,16 @@
  let waitingCount = 0;
  let projectMetrics = [{ name: 'Project', running: 1, waiting: 0, queued: 0, compacting: 0, sessions: [{id:'sample',title:'Existing title',status:'running'}] }];
  let fixedRunning = null;
-@@ -103,6 +105,7 @@
+@@ -103,6 +105,8 @@
    await fs.copyFile(path.join(source, 'operation-gate.mjs'), path.join(temp, 'operation-gate.mjs'));
    await fs.copyFile(path.join(source, 'weather-source.mjs'), path.join(temp, 'weather-source.mjs'));
    await fs.copyFile(path.join(source, 'companion-scene.mjs'), path.join(temp, 'companion-scene.mjs'));
 +  for (const name of ['companion-scene-v2.mjs', 'companion-library.mjs']) await fs.copyFile(path.join(source, name), path.join(temp, name));
++  await fs.cp(path.join(source, 'vendor'), path.join(temp, 'vendor'), { recursive: true });
    for (const name of ['index.html', 'styles.css', 'studio-v8.css', 'studio-v9.css', 'studio-v10.css', 'studio-v11.css', 'studio-v12.css', 'studio-v14.css', 'app.js', 'theme-presets.js', 'device-sync.js', 'device-endpoint.json', 'fonts', 'assets', 'node_modules']) {
      await fs.symlink(path.join(source, name), path.join(temp, name));
    }
-@@ -113,6 +116,8 @@
+@@ -113,6 +117,8 @@
      } else if (req.method === 'GET' && req.url === `/v1/people/${personId}/status`) {
        metricReads += 1;
        json(res, { metrics: { projects: projectMetrics, running: fixedRunning ?? metricReads, waiting: waitingCount, queued: 0, pendingReview: 1, deliveryIssues: 0, active: [{ name: `Session ${fixedRunning ?? metricReads}` }], observedAt: new Date().toISOString() } });
@@ -161,7 +196,7 @@
      } else if (req.url === `/v1/people/${personId}/preview-frame` && req.method === 'GET') {
        if (previewReadFailures > 0) { previewReadFailures -= 1; res.writeHead(503); res.end('{}'); failedPreviewRead?.(); return; }
        json(res, latest ? { configured: true, devicePlayback: playback.map(item => ({ ...item, bundleFrameId: latest })), frameId: latest, expiresAt, updatedAt: new Date().toISOString(), animationCount: animationsReceived.length } : { configured: false });
-@@ -355,6 +360,44 @@
+@@ -355,6 +361,59 @@
    const companionRecord = await waitActive(record => record?.lastFrameId === companionId);
    assert.equal(companionRecord.payload.observedAt, companion.observedAt, 'clock refresh must preserve source time');
    assert.equal(metricReads, beforeCompanionMetrics, 'clock/weather refresh does not scan Sessions');
@@ -185,22 +220,37 @@
 +  assert(observationReads > 0);
 +  assert.equal(metricReads, beforeCompanionMetrics);
 +  const initialLibraryRecord = await waitActive(record => record?.payload.libraryId === 'test');
-+  const rotatedAssets = new Set([animationsReceived[0].gifBase64]);
-+  for (let i = 1; i <= 2; i++) {
++  assert.equal(animationsReceived[0].playOnce, true);
++  const initialAction = initialLibraryRecord.companionAction;
++  const initialAsset = animationsReceived[0].gifBase64;
++  // Neither elapsed clock time, stale receipts nor a different device ends an action.
++  for (const report of [[], [{ deviceId, playbackId: 'ffffffffffff', playbackState: 'ended' }],
++    [{ deviceId: 'another-display', playbackId: initialAction.playbackId, playbackState: 'ended' }]]) {
++    playback = report;
++    const clockChanged = waitFrame();
++    child.send({ type: 'test-clock', offset: rotationMinute + 60_000 * (puts.length + 1) - Date.now() });
++    const id = await clockChanged;
++    const record = await waitActive(value => value?.lastFrameId === id);
++    assert.deepEqual(record.companionAction, initialAction);
++    assert.equal(animationsReceived[0].gifBase64, initialAsset);
++  }
++  let currentAction = initialAction;
++  for (let i = 0; i < 2; i++) {
 +    const actionChanged = waitFrame();
-+    child.send({ type: 'test-clock', offset: rotationMinute + i * 20_000 - Date.now() });
++    playback = [{ deviceId, playbackId: currentAction.playbackId, playbackState: 'ended' }];
 +    const changedId = await actionChanged;
 +    const record = await waitActive(value => value?.lastFrameId === changedId);
-+    assert.equal(record.lastRenderedMinute, initialLibraryRecord.lastRenderedMinute, 'rotate without changing the clock minute');
-+    assert.equal(record.lastRenderedActionTick, initialLibraryRecord.lastRenderedActionTick + i);
-+    rotatedAssets.add(animationsReceived[0].gifBase64);
++    assert.notEqual(record.companionAction.name, currentAction.name, 'next action only follows ended');
++    assert.notEqual(record.companionAction.playbackId, currentAction.playbackId);
++    currentAction = record.companionAction;
 +  }
-+  assert.equal(rotatedAssets.size, 3, 'three distinct GIFs are actually published in one minute');
 +  const beforeText = latest;
 +  const textChanged = waitFrame();
 +  observation = { kind: 'attention', subject: '测试项目', sentence: '对照结果已备好，请选定下一组条件。', observedAt: new Date().toISOString(), label: '对话更新' };
 +  const afterText = await textChanged;
 +  assert.notEqual(afterText, beforeText, 'new text must create a fresh frame without a minute tick');
++  const textRecord = await waitActive(value => value?.lastFrameId === afterText);
++  assert.deepEqual(textRecord.companionAction, currentAction, 'text refresh and duplicate ended do not restart or advance playback');
 +  assert.equal(metricReads, beforeCompanionMetrics, 'text reads never call the process metrics feed');
 +
    const replacement = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(v21Payload) });

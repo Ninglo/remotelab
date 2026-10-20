@@ -367,7 +367,8 @@ left. Only the speech-tail geometry is mirrored; text and GIF bytes are not.
 Action names, library counts and asset credits stay in metadata rather than the
 screen footer. Quiet observations render no speech bubble or filler message.
 Apply `studio-companion-library.patch` after the patches above;
-copy `companion-library.mjs`, `companion-scene-v2.mjs` and the updated
+copy `companion-library.mjs`, its `vendor/dsh-pet/` directory,
+`companion-scene-v2.mjs` and the updated
 `studio-companion.mjs` (as `companion-scene.mjs`) into that personal studio.
 Run the patched stream test before restarting the renderer. Existing supplied
 v22 scenes retain their original layout and validation.
@@ -389,11 +390,31 @@ For a library scene, replace inline `actions` with `libraryId`, set
 `design: "companion-v2"` and optionally `liveObservation: true`. Keep the supplied
 fallback `subject`, `sentence`, explicitly zoned `observedAt`, credit, Beijing
 weather and `Asia/Shanghai` time fields. The server loads only the selected GIF
-and rotates a deterministic permutation every 20 seconds, independently of the
-minute clock refresh. A typical 10.1-second clip repeats about twice while that
-slot is visible; this is not a one-shot player. All entries get a turn
-within a full library cycle; installed size is not a client startup download.
-The existing local-player cache and previous-loop-on-failure behavior remain.
+and plays it once. The Mac agent (player version 5) keeps the final pose after
+its full duration and USB acknowledgment, then reports `playbackState: "ended"`
+with the action's `playbackId` through the existing heartbeat route. The studio
+selects a new action only for a matching receipt from its playback device.
+Clock, weather and text updates retain that ID and do not restart the action.
+A delayed download keeps the finishing pose visible; there is no timed fallback
+that advances the action without a device receipt. Earlier agents still loop
+and need the existing `upgrade-agent.sh` update before this behavior works.
+
+Set `behavior: "dsh-pet"` in the reviewed export/installed manifest to use the
+vendored upstream picker and default animation weights (see
+`vendor/dsh-pet/README.md` for revision/license). The adapter uses upstream's
+fixed-position option and left-facing orientation: idle keeps its original
+10% probability, while the remaining probability chooses an original weighted
+category. The picker excludes the current action when that pool has alternatives;
+a single idle candidate can repeat, as in the original. Interaction and event
+assets remain installed/addressable but are not randomly mixed into the ambient
+chain. Other libraries select from their installed names, excluding the current
+name when possible. This is not an all-assets-once permutation.
+
+By default the paired device supplies completion receipts. If the same Person's
+screen is physically attached to another enrolled device, an operator can set
+`playbackDeviceId` in the private studio pairing file to that owned device's ID.
+This only selects the receipt source; it does not change pairing or expose another
+Person's data. Existing device-scoped status grants remain scoped as before.
 
 An administrator-only `GET /v1/people/:personId/companion-observation` reuses the
 existing summary reader, scoped to that Person's initiator identities, with a

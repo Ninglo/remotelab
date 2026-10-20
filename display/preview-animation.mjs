@@ -39,6 +39,8 @@ export function prepareAnimatedPreview(png, animations = []) {
     const fit = item.fit || 'contain';
     if (!['contain', 'cover', 'fill'].includes(fit)) invalid('Unsupported GIF fit');
     if (item.completeLoop !== undefined && typeof item.completeLoop !== 'boolean') invalid('Invalid complete-loop setting');
+    if (item.playOnce !== undefined && typeof item.playOnce !== 'boolean') invalid('Invalid play-once setting');
+    if (item.playOnce === true && !/^[a-f0-9]{12}$/.test(item.playbackId || '')) invalid('Invalid playback ID');
     return { box, fit, frames: decoded.frames, completeLoop: item.completeLoop === true };
   });
   return { backgroundPng: png, layers };
