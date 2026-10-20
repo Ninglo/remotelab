@@ -148,7 +148,7 @@
      }
      record.refreshedAt = new Date().toISOString();
      if (published || record.payload.version !== 22) await persistActive();
-@@ -651,7 +690,7 @@
+@@ -651,17 +690,21 @@
      const personId = String(req.headers['x-preview-person-id'] || config.personId || '');
      await pairedDevice(personId);
      const [metrics, weather] = await Promise.all([
@@ -156,8 +156,14 @@
 +      sceneMetricsFor(payload, personId),
        [21, 22].includes(payload.version) ? weatherForCity(payload.weatherCity || payload.state?.weatherCity || '北京') : null,
      ]);
-     const rendered = await render(payload, metrics, weather);
-@@ -661,7 +700,8 @@
+-    const rendered = await render(payload, metrics, weather);
++    const continuingAction = payload.version === 22 && payload.libraryId
++      && activeRecord?.personId === personId && activeRecord.payload.libraryId === payload.libraryId
++      ? activeRecord.companionAction : null;
++    const rendered = await render(payload, metrics, weather, continuingAction);
+     const expected = frameIdFor(rendered);
+     const installed = await publishViaPairing(rendered, personId);
+     if (installed !== expected) throw Error('RemoteLab 接收的画面与预览站生成的画面不一致。');
      activeRecord = { personId, deviceId: config.deviceId, payload, firstFrameId: installed, lastFrameId: installed,
        startedAt: new Date().toISOString(), refreshedAt: new Date().toISOString(),
        lastMetricsFingerprint: stateFingerprint(metrics, weather), lastRenderedMinute: Math.floor(Date.now() / 60_000),
@@ -196,7 +202,7 @@
      } else if (req.url === `/v1/people/${personId}/preview-frame` && req.method === 'GET') {
        if (previewReadFailures > 0) { previewReadFailures -= 1; res.writeHead(503); res.end('{}'); failedPreviewRead?.(); return; }
        json(res, latest ? { configured: true, devicePlayback: playback.map(item => ({ ...item, bundleFrameId: latest })), frameId: latest, expiresAt, updatedAt: new Date().toISOString(), animationCount: animationsReceived.length } : { configured: false });
-@@ -355,6 +361,59 @@
+@@ -355,6 +361,66 @@
    const companionRecord = await waitActive(record => record?.lastFrameId === companionId);
    assert.equal(companionRecord.payload.observedAt, companion.observedAt, 'clock refresh must preserve source time');
    assert.equal(metricReads, beforeCompanionMetrics, 'clock/weather refresh does not scan Sessions');
@@ -252,6 +258,13 @@
 +  const textRecord = await waitActive(value => value?.lastFrameId === afterText);
 +  assert.deepEqual(textRecord.companionAction, currentAction, 'text refresh and duplicate ended do not restart or advance playback');
 +  assert.equal(metricReads, beforeCompanionMetrics, 'text reads never call the process metrics feed');
++  const casualApply = await fetch(`${base}/api/preview`, { method: 'POST',
++    headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' },
++    body: JSON.stringify({ ...libraryPayload, casualSpeech: true }) });
++  assert.equal(casualApply.status, 200);
++  const casualRecord = await waitActive(value => value?.payload.casualSpeech === true);
++  assert.deepEqual(casualRecord.companionAction, currentAction, 'enabling casual text preserves the live action');
++  assert.equal(animationsReceived[0].playbackId, currentAction.playbackId);
 +
    const replacement = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(v21Payload) });
    assert.equal(replacement.status, 200);

@@ -365,7 +365,13 @@ Mac player. The v2 layout places the original, unmirrored character against the
 right edge, its speech bubble in the center, and Beijing time/weather on the
 left. Only the speech-tail geometry is mirrored; text and GIF bytes are not.
 Action names, library counts and asset credits stay in metadata rather than the
-screen footer. Quiet observations render no speech bubble or filler message.
+screen footer. Quiet observations render no speech bubble by default. A Person
+can opt their preview into `casualSpeech: true`: quiet periods then show a short
+daily phrase, changing every five minutes through the existing scene refresh.
+Work observations and rest reminders take precedence. Casual phrases have no
+source timestamp or footer, make no claims about work status, and do not call
+a model. This option changes only the background text; the action playback ID
+and time axis stay intact. Existing previews remain unchanged unless opted in.
 Apply `studio-companion-library.patch` after the patches above;
 copy `companion-library.mjs`, its `vendor/dsh-pet/` directory,
 `companion-scene-v2.mjs` and the updated

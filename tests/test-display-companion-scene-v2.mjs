@@ -77,6 +77,27 @@ test('invalid transport inputs fail without returning a partially changed scene'
   assert.throws(() => validateCompanion({ ...payload, actions: [{ name: 'bad', gifBase64: 'AAAA' }] }), /GIF/);
   assert.throws(() => validateCompanion({ ...payload, timeZone: 'UTC' }), /Beijing/);
   assert.throws(() => validateCompanion({ ...payload, observation: { ...observation, observedAt: '2026-10-20T13:00' } }), /time zone/);
+  assert.throws(() => validateCompanion({ ...payload, casualSpeech: 'true' }), /casual speech/);
+});
+
+test('opt-in casual speech fills quiet time while work reminders preempt it', () => {
+  const quiet = { kind: 'quiet', subject: '陪伴', sentence: '旧空闲文案', observedAt: null, label: '' };
+  const input = { ...payload, actions: [payload.actions[0]], observation: quiet, casualSpeech: true };
+  const initial = companionScene(input, null, now);
+  assert.equal(initial.meta.kind, 'casual');
+  assert.match(initial.svg, /data-role="observation"|碎碎念/);
+  assert.doesNotMatch(initial.svg, /data-fit="source"|记录时间|对话更新|旧空闲文案/);
+  assert.deepEqual(companionScene(input, null, now + 60_000).meta.lines, initial.meta.lines);
+  assert.notDeepEqual(companionScene(input, null, now + 300_000).meta.lines, initial.meta.lines);
+  assert.deepEqual(companionScene(input, null, now + 300_000).animations, initial.animations);
+  for (const kind of ['attention', 'result', 'rest']) {
+    const reminder = { ...observation, kind, ...(kind === 'rest' ? { observedAt: null } : {}) };
+    const scene = companionScene({ ...input, observation: reminder }, null, now);
+    assert.equal(scene.meta.kind, kind);
+    assert.equal(scene.meta.lines.join(''), reminder.sentence);
+    assert.doesNotMatch(scene.svg, /碎碎念/);
+  }
+  assert.equal(companionScene({ ...input, casualSpeech: false }, null, now).meta.kind, 'quiet');
 });
 
 test('mixed-language lines keep ordinary Latin words together', () => {
