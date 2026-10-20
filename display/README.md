@@ -271,3 +271,30 @@ The original GIF and sentence are stored in the private instance config file
 ## 个人待办已退役
 
 副屏不再保存或展示自建个人待办；待办统一使用[飞书任务](../docs/platform-skills/feishu-tasks.md)。旧 `/v1/people/:id/todos` 接口返回 410，状态响应不再包含 `reminderSources.todo`。已有清单文件保留归档，设备配对、画面和其他提醒来源继续沿用原接口。
+
+## Pet companion with clock and weather
+
+The instance-local studio can accept an opt-in version-22 scene containing a pet
+action playlist, one supplied sentence, its source timestamp, a local clock and
+cached city weather. Install `studio-companion.mjs` as `companion-scene.mjs` beside
+that studio's `preview-server.mjs`, then apply `studio-companion.patch` from the
+studio root after `git apply --check`. Run the patched `test-preview-stream.mjs`
+in its isolated test state and the repository's `tests/test-display-companion.mjs`
+before restarting only the affected personal studio renderer.
+
+The existing authenticated apply API and Person pairing remain authoritative.
+The existing refresh loop advances the clock and rotates actions once per minute;
+weather uses the existing source and its 15-minute cache. The source timestamp
+stays fixed and is labeled as a record time, never as a new completion time.
+No Session scan or model call is made by this scene. Supplying a new sentence is
+separate from its display refresh. Weather failure is shown explicitly.
+
+Payload fields are `version: 22`, `timeZone`, `subject`, `sentence`, `observedAt`
+(ISO timestamp with zone), `weatherCity`, `credit`, and `actions`, an array of
+`{name, gifBase64}`. Original GIF timing is preserved by the scene; the transport
+still applies its own limits. For the current v2 client, a complete 32-frame
+clip at 100ms per frame lasts 3.2 seconds. Use a continuous source excerpt at its
+original speed rather than extracting sparse frames and changing their delays.
+Long source videos and the desktop pet's complete action system are not imported
+by this view. Validate the rendered bundle, device download and physical playback
+separately; a target interval is not a measured USB frame rate.

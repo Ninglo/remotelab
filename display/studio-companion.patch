@@ -1,0 +1,110 @@
+--- a/concept-v14/preview-server.mjs
++++ b/concept-v14/preview-server.mjs
+@@ -6,6 +6,7 @@
+ import { chromium } from 'playwright';
+ import { createOperationGate } from './operation-gate.mjs';
+ import { createWeatherSource } from './weather-source.mjs';
++import { validateCompanion, companionScene } from './companion-scene.mjs';
+ 
+ const root = path.dirname(fileURLToPath(import.meta.url));
+ const v21Root = process.env.NODE_ENV === 'test' && process.env.PREVIEW_TEST_V21_ROOT
+@@ -134,6 +135,7 @@
+ }
+ 
+ function validate(payload) {
++  if (payload?.version === 22) { validateCompanion(payload); return; }
+   if (payload?.version !== 14 && payload?.version !== 21) throw Object.assign(Error('画面配置版本不匹配。'), { status: 400 });
+   if (typeof payload.timeZone !== 'string' || payload.timeZone.length > 80) throw Object.assign(Error('缺少编辑页时区。'), { status: 400 });
+   try { new Intl.DateTimeFormat('en', { timeZone: payload.timeZone }); }
+@@ -159,6 +161,7 @@
+ }
+ 
+ async function render(payload, liveMetrics = null, weather = null) {
++  if (payload.version === 22) return renderCompanion(payload, weather);
+   if (payload.version === 21) return renderV21(payload, liveMetrics, weather);
+   const context = await newRenderContext(payload);
+   try {
+@@ -229,6 +232,18 @@
+   }
+ }
+ 
++async function renderCompanion(payload, weather) {
++  const scene = companionScene(payload, weather);
++  const context = await newRenderContext(payload);
++  try {
++    const page = await context.newPage();
++    await page.setContent('<html><head><style>html,body{margin:0;width:1920px;height:480px;overflow:hidden}svg{display:block}</style></head><body>' + scene.svg + '</body></html>');
++    await page.evaluate(() => document.fonts.ready);
++    const png = await page.locator('svg').screenshot({ type: 'png', animations: 'disabled' });
++    return { png, animations: scene.animations };
++  } finally { await context.close(); }
++}
++
+ async function renderV21(payload, liveMetrics = null, weather = null) {
+   if (payload.state.work === 'projects' && !Array.isArray(liveMetrics?.projects)) throw Error('项目状态暂不可用，未应用新画面。');
+   const context = await newRenderContext(payload);
+@@ -387,6 +402,7 @@
+ }
+ 
+ function needsLiveMetrics(payload) {
++  if (payload.version === 22) return false;
+   return payload.version === 21
+     ? ['overview', 'running', 'review', 'projects'].includes(payload.state.work)
+       || ['feishu', 'session', 'automation', 'todo'].some((type) => payload.state.reminders?.[type])
+@@ -487,7 +503,7 @@
+     if (current?.frameId !== record.lastFrameId) { await clearActive(); return; }
+     const [metrics, weather] = await Promise.all([
+       needsLiveMetrics(record.payload) ? liveMetricsFor(record.personId) : null,
+-      record.payload.version === 21 ? weatherForCity(record.payload.state.weatherCity || '北京') : null,
++      [21, 22].includes(record.payload.version) ? weatherForCity(record.payload.weatherCity || record.payload.state?.weatherCity || '北京') : null,
+     ]);
+     const fingerprint = stateFingerprint(metrics, weather);
+     const minute = Math.floor(Date.now() / 60_000);
+@@ -636,7 +652,7 @@
+     await pairedDevice(personId);
+     const [metrics, weather] = await Promise.all([
+       needsLiveMetrics(payload) ? liveMetricsFor(personId) : null,
+-      payload.version === 21 ? weatherForCity(payload.state.weatherCity || '北京') : null,
++      [21, 22].includes(payload.version) ? weatherForCity(payload.weatherCity || payload.state?.weatherCity || '北京') : null,
+     ]);
+     const rendered = await render(payload, metrics, weather);
+     const expected = frameIdFor(rendered);
+--- a/concept-v14/test-preview-stream.mjs
++++ b/concept-v14/test-preview-stream.mjs
+@@ -102,6 +102,7 @@
+   await fs.copyFile(path.join(source, 'preview-server.mjs'), path.join(temp, 'preview-server.mjs'));
+   await fs.copyFile(path.join(source, 'operation-gate.mjs'), path.join(temp, 'operation-gate.mjs'));
+   await fs.copyFile(path.join(source, 'weather-source.mjs'), path.join(temp, 'weather-source.mjs'));
++  await fs.copyFile(path.join(source, 'companion-scene.mjs'), path.join(temp, 'companion-scene.mjs'));
+   for (const name of ['index.html', 'styles.css', 'studio-v8.css', 'studio-v9.css', 'studio-v10.css', 'studio-v11.css', 'studio-v12.css', 'studio-v14.css', 'app.js', 'theme-presets.js', 'device-sync.js', 'device-endpoint.json', 'fonts', 'assets', 'node_modules']) {
+     await fs.symlink(path.join(source, name), path.join(temp, name));
+   }
+@@ -340,13 +341,27 @@
+   const afterRestart = await fetch(`${base}/api/paired-device`, { headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId } });
+   assert.equal((await afterRestart.json()).preview, null);
+   assert.equal(puts.length, writesBeforeRestart, 'explicitly removed layout must stay removed across restart');
++  const companion = { version: 22, timeZone: 'Asia/Shanghai', subject: 'Completed comparison',
++    sentence: '对比已完成，能力提升仍待独立评测。', observedAt: '2026-10-19T13:06:00Z', weatherCity: '北京', credit: 'Original author',
++    actions: ['wave', 'stretch'].map(name => ({ name, gifBase64: 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==' })) };
++  const beforeCompanionMetrics = metricReads;
++  const companionResponse = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(companion) });
++  assert.equal(companionResponse.status, 200, await companionResponse.text());
++  assert.equal(animationsReceived.length, 1);
++  assert.equal(metricReads, beforeCompanionMetrics, 'companion does not scan Session metrics');
++  const companionTick = waitFrame();
++  child.send({ type: 'test-clock', offset: 61_000 });
++  const companionId = await companionTick;
++  const companionRecord = await waitActive(record => record?.lastFrameId === companionId);
++  assert.equal(companionRecord.payload.observedAt, companion.observedAt, 'clock refresh must preserve source time');
++  assert.equal(metricReads, beforeCompanionMetrics, 'clock/weather refresh does not scan Sessions');
+   const replacement = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(v21Payload) });
+   assert.equal(replacement.status, 200);
+   latest = 'another-owner-frame';
+   await waitActive(record => record === null);
+   assert.equal(latest, 'another-owner-frame', 'must not overwrite a newer layout from another source');
+   assert.equal(deletes, 1, 'must not delete a newer layout from another source');
+-  process.stdout.write(`PASS: v14/v21 frames, GIF, metrics, waiting-only refresh, scoped status, queued applies, 48h live refresh and restart, unchanged frame lease renewal, dependency recovery, backup, device-scoped playback, explicit removal, frame ownership\n`);
++  process.stdout.write(`PASS: v14/v21/v22 frames, companion clock with fixed source time and zero metrics reads, GIF, metrics, waiting-only refresh, scoped status, queued applies, 48h live refresh and restart, unchanged frame lease renewal, dependency recovery, backup, device-scoped playback, explicit removal, frame ownership\n`);
+ 
+ } finally {
+   if (child && !child.killed) await stopChild();
