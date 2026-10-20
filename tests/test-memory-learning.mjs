@@ -210,6 +210,26 @@ try {
   assert.equal(coverage.unavailable[0].path, paths.handbook);
   assert.ok(partial.length <= 6000, 'failure notices share the unchanged context budget');
   assert.equal(await context('解释', { maxChars: 100 }), '');
+  const inspected = await snapshot();
+  assert.equal(inspected.unavailable[0].kind, 'handbook');
+  assert.ok(inspected.profile.entries.length > 0);
+  let isolatedReviewCalls = 0;
+  const personalOnly = await m.reviewMemoryLearning({ ...actor, sessionId: 'source-isolation',
+    session: {}, run: { id: 'run_source_isolation' }, userMessage: '今后称呼我请用全名',
+    sourceEventSeq: 1, turnEvents: [], assistantTurnText: '收到。',
+    runPrompt: async prompt => {
+      isolatedReviewCalls++;
+      assert.match(prompt, /Unavailable sources.*handbook/);
+      return JSON.stringify({ updates: [{ key: 'isolated-personal-name', kind: 'preference',
+        content: '称呼时用全名。', explicit: true, cues: ['称呼'], conditions: '称呼本人时',
+        evidence: [{ seq: 1, quote: '今后称呼我请用全名' }] }] });
+    } });
+  assert.equal(isolatedReviewCalls, 1);
+  assert.equal(personalOnly.results[0].status, 'confirmed');
+  assert.equal((await readFile(paths.handbook, 'utf8')).length, 2 * 1024 * 1024 + 1);
+  const blockedMethod = await apply([{ ...method, key: 'oversized-method' }], sources('bad-target', '检查权限', '{"code":0}'));
+  assert.equal(blockedMethod.promotedCount, 0);
+  assert.match(blockedMethod.rejected[0].reason, /bounded regular file/);
   await writeFile(paths.profile, '<!-- remotelab-learning:start -->broken profile');
   const isolatedMethod = { id: 'mem_isolated', version: 1, kind: 'method', scope: 'instance',
     status: 'verified', content: '可读手册中的方法仍可按需返回。', cues: ['独立读取'],
@@ -222,6 +242,10 @@ try {
   assert.match(reverse, /保留适用限制/);
   assert.equal(coverage.unavailable[0].path, paths.profile);
   assert.doesNotMatch(reverse, /remotelab-learning-data|人工维护的称呼偏好/);
+  const reverseInspection = await snapshot();
+  assert.equal(reverseInspection.unavailable[0].kind, 'profile');
+  assert.equal(reverseInspection.handbook.entries[0].id, isolatedMethod.id);
+  assert.match(await readFile(paths.profile, 'utf8'), /broken profile/);
   await writeFile(paths.profile, before);
   await writeFile(paths.handbook, handbookBefore);
   await mkdir(`${paths.profile}.learning-lock`);

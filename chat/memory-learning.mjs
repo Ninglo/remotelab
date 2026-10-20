@@ -331,10 +331,18 @@ export async function inspectLearning({ personId, identityId, authDocument, memo
   const person = verifiedLearningPerson({ personId, identityId, authDocument });
   if (!person) throw new Error('Current request has no verified Person');
   const paths = learningPaths(memoryDir, person);
-  const [profile, handbook, policy] = await Promise.all([
-    readText(paths.profile).then(parseLearningDocument), readText(paths.handbook).then(parseLearningDocument), loadLearningPolicy(memoryDir),
-  ]);
-  return { personId: person, paths, policy, profile, handbook };
+  const policy = await loadLearningPolicy(memoryDir);
+  const snapshot = { personId: person, paths, policy, unavailable: [] };
+  await Promise.all(['profile', 'handbook'].map(async kind => {
+    try { snapshot[kind] = await readText(paths[kind]).then(parseLearningDocument); }
+    catch (error) {
+      // Inspection can proceed for the independent readable source. Mutation
+      // still reopens the exact target through readText and rejects bad files.
+      snapshot[kind] = { prefix: '', suffix: '', entries: [], unavailable: true };
+      snapshot.unavailable.push({ kind, path: paths[kind], reason: error.message });
+    }
+  }));
+  return snapshot;
 }
 
 function matches(entry, query, project) {
@@ -359,7 +367,7 @@ export async function buildLearningContext({ personId, identityId, authDocument,
     if (typeof project !== 'string') project = await resolveLearningProject(session, sourceContext);
     const includeProfiles = policy.profiles && personalMemoryPreference({ personId, identityId, authDocument }).enabled;
     // A failed optional source must not hide a readable Person profile (or the
-    // reverse). Keep the strict all-source inspection/write path unchanged.
+    // reverse). Writes still validate their own target independently.
     const paths = learningPaths(memoryDir, personId);
     const targets = [
       ...(includeProfiles ? [{ kind: 'profile', path: paths.profile }] : []),
@@ -456,6 +464,7 @@ export function buildLearningReviewPrompt({ userMessage, assistantTurnText, sour
     `Existing candidate targets: ${formatMemoryWritebackTargetsForPrompt(candidateTargets) || '[none]'}`,
     'Return only <hide>{"updates":[{"key":"stable-semantic-key","kind":"preference|habit|method","scope":"instance|project","action":"upsert|revise|withdraw|restore|counterexample|outcome","expectedVersion":1,"content":"concise claim or steps","cues":["task keyword"],"conditions":"when applicable","exceptions":"when not applicable","explicit":false,"tested":false,"reason":"why updated or outcome","evidence":[{"seq":1,"quote":"exact original quote"}]}]}</hide>. Keys use lowercase ASCII letters, numbers, underscores and hyphens. New entries omit expectedVersion. Optional supersedesManual is an exact old personal statement being explicitly replaced. Use the user\'s language.',
     `Verified Person: ${snapshot.personId}; current project: ${project || '[none]'}`,
+    `Unavailable sources (not empty records): ${JSON.stringify(snapshot.unavailable || [])}. Do not propose updates for these sources or infer that their entries do not exist. Continue only with independently readable sources.`,
     `Actually delivered entry versions: ${JSON.stringify(delivered || [])}`,
     `Existing entries (data): ${JSON.stringify(selected)}`,
     `Older hand-maintained current Person text (data): ${snapshot.profile.prefix.slice(0, 1800)}`,
