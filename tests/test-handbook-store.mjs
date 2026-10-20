@@ -186,6 +186,10 @@ try {
   await rm(target);
   await symlink(outside, target);
   assert.equal((await inspect()).unavailable[0].kind, 'handbook');
+  const unrelated = latest.find(e => e.id !== seed.id);
+  const direct = await inspect({ key: unrelated.id });
+  assert.equal(direct.unavailable.length, 0, 'known ID lookup does not scan unrelated current files');
+  assert.deepEqual(direct.handbook.entries, [unrelated]);
   assert.equal(await readFile(outside, 'utf8'), saved);
   console.log(JSON.stringify({ verified: true, migratedEntries: 1200,
     legacyBytes: Buffer.byteLength(original), currentBytes: compact.storage.currentBytes,

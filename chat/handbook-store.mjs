@@ -151,7 +151,8 @@ export async function readHandbook(path, { parseLegacy, details = false, entryId
     return { ...document, raw };
   }
   const root = await storeFor(path, pointer.generation);
-  const ids = entryId ? [entryId] : (await readdir(join(root, 'current')))
+  const requestedId = entryId || (/^mem_[a-zA-Z0-9_-]{1,100}$/.test(key || '') ? key : undefined);
+  const ids = requestedId ? [requestedId] : (await readdir(join(root, 'current')))
     .filter(name => name.endsWith('.json')).sort().map(name => name.slice(0, -5));
   const entries = [], records = new Map(), originals = new Map();
   let currentBytes = 0;
@@ -160,7 +161,7 @@ export async function readHandbook(path, { parseLegacy, details = false, entryId
   for (let offset = 0; offset < ids.length; offset += 64) {
     const batch = await Promise.all(ids.slice(offset, offset + 64).map(async id => {
       try { return await readCurrent(root, id); }
-      catch (error) { if (entryId && error.code === 'ENOENT') return null; throw error; }
+      catch (error) { if (requestedId && error.code === 'ENOENT') return null; throw error; }
     }));
     for (const record of batch.filter(Boolean)) {
       if (key && record.entry.key !== key && record.entry.id !== key) continue;
