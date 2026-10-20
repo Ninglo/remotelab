@@ -168,7 +168,9 @@ export async function handleSessionMainRoutes({
     res.setHeader('Cache-Control', 'private, no-store');
     try {
       const query = typeof parsedUrl.query.q === 'string' ? parsedUrl.query.q : '';
-      writeJson(res, 200, await searchSessionLogs(query));
+      const scope = parsedUrl.query.scope ?? 'all';
+      const sessionId = parsedUrl.query.sessionId ?? '';
+      writeJson(res, 200, await searchSessionLogs(query, { scope, sessionId }));
     } catch (error) {
       writeJson(res, error.statusCode === 400 ? 400 : 503, { error: error.statusCode === 400
         ? error.message : 'Session search is temporarily unavailable' });

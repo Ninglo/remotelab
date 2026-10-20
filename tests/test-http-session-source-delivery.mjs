@@ -602,6 +602,16 @@ try {
   assert.equal(searchReply.body.sessions[0].id, boundId);
   assert.equal(searchReply.body.sessions[0].sessionUrl, `https://fixture.example.test/?session=${boundId}&tab=sessions`);
   assert.equal((await request('GET', '/api/sessions/search')).status, 400);
+  const privateId = freshPrivate.body.session.id;
+  await request('PATCH', `/api/sessions/${privateId}`, { name: 'PrivateHistoryNeedle' });
+  const privateSearch = await request('GET', `/api/sessions/search?q=PrivateHistoryNeedle&scope=private-chat&sessionId=${privateId}`);
+  assert.equal(privateSearch.status, 200);
+  assert.equal(privateSearch.body.scope, 'private-chat');
+  assert.equal(privateSearch.body.sessions[0].id, privateId);
+  assert.equal((await request('GET', `/api/sessions/search?q=UniqueSearchNeedle&scope=private-chat&sessionId=${privateId}`)).body.sessions.length, 0);
+  assert.equal((await request('GET', `/api/sessions/search?q=needle&scope=private-chat&sessionId=${boundId}`)).status, 400);
+  assert.equal((await request('GET', '/api/sessions/search?q=needle&scope=private-chat')).status, 400);
+  assert.equal((await request('GET', '/api/sessions/search?q=needle&scope=private-chat&scope=all')).status, 400);
   const unauthorizedSearch = await fetch(`http://127.0.0.1:${port}/api/sessions/search?q=UniqueSearchNeedle`, { redirect: 'manual' });
   assert([401, 403].includes(unauthorizedSearch.status), 'history search requires authentication');
   assert.deepEqual(bound.body.session.conversation, conversation, 'creation must retain the optional conversation');

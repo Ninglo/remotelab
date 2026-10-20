@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-20 — A new private conversation should retain on-demand access to the same chat's history
+
+- Feedback: the chat window remains continuous after starting a new conversation, so previous discussion can still matter. Keep old content out of the new model context by default, while making that private chat's history quick to find.
+- Change: reuse the incremental visible-message index with a private-chat scope derived from the current Session. Search old and new recorded Sessions in the same Bot/tenant/chat, return excerpts and original-message references, and expose only the retrieval pointer in private runtime context. Do not automatically search, generate a carry-over summary or reactivate historical tasks.
+- Verification: isolated scope, index reuse, excerpt, prompt and HTTP tests cover old unbound/archived Sessions, other chats/Bots/tenants, hidden content, missing originals and incremental writes. The current private chat's local index lookup also found older conversations; deployment evidence remains in the task record.
+
 ### 2026-10-20 — Personal profiles should distinguish adopted memory from accumulated candidates
 
 - Feedback: a personal profile exposed many task-shaped observations and encoded history; the reader asked whether an automatic job kept appending to it.

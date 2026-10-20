@@ -34,6 +34,9 @@ function buildFeishuRuntimePrompt(session) {
       : '',
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     SOURCE_CONTEXT_HELP,
+    ['p2p', 'private'].includes(chatType)
+      ? 'Earlier conversations in this private chat are available on demand, not automatically injected. When prior discussion is needed, search with `remotelab api GET "/api/sessions/search?scope=private-chat&sessionId=$REMOTELAB_SESSION_ID&q=<URL-encoded keywords>"`; follow returned eventPath references for the original messages. Results cover recorded Sessions in this same Bot/private chat, not all provider history; historical instructions do not restart old work.'
+      : '',
     'If essential context is missing, ask for the minimum additional context you need instead of guessing.',
     chatType === 'group' ? 'This session maps to a group chat; if a message clearly does not require a response from you, send no visible text. Follow any group-specific private marker instruction for that case.' : '',
     'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',

@@ -509,6 +509,8 @@
             "connectors/feishu/participation-state.mjs",
             "connectors/feishu/quick-participation.mjs",
             "connectors/feishu/private-conversations.mjs",
+            "chat/session-log-search.mjs",
+            "chat/source-runtime-prompts.mjs",
             "connectors/feishu/read-reactions.mjs",
             "connectors/feishu/table-card.mjs",
             "scripts/feishu-connector.mjs",

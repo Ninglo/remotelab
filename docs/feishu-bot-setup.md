@@ -363,11 +363,28 @@ the model for questions that explicitly ask about historical Sessions.
 The authenticated `GET /api/sessions/search?q=...` endpoint uses the instance's
 normal shared Session access. Internal helper Sessions, hidden blocks, reasoning
 and tool output are excluded. A disposable index under
-`CONFIG_DIR/cache/session-log-search/` stores term counts and event cursors;
+`CONFIG_DIR/cache/session-log-search/` stores term counts, matching event positions and event cursors;
 subsequent searches index only new events. The first search on a large history
 may need a retry while the index builds. Missing/corrupt indexes are rebuilt;
 unreadable histories are reported as incomplete results. Existing LangSmith
 snapshot links retain their normal LangSmith access requirements.
+
+For an on-demand lookup within the current private chat, use
+`GET /api/sessions/search?scope=private-chat&sessionId=<current-session>&q=<URL-encoded-keywords>`.
+The server derives the Bot route, tenant and private chat from the Session's
+binding or retained original source. It selects that scope before indexing;
+archived and unbound older conversations remain searchable. A missing or
+non-private source returns an error rather than falling back to instance-wide
+search. The filter does not change the instance's shared Session access model.
+Results include up to three Sessions and three matching message excerpts per
+Session, timestamps, event sequence numbers, and `eventPath` references. Read an
+`eventPath` through `remotelab api GET` for the original message. This path does
+not query LangSmith or fetch the provider's complete chat archive. It covers
+visible user/assistant messages already recorded in RemoteLab, including long
+externalized bodies; hidden blocks, reasoning and tool output are excluded.
+`searchedSessionCount` reports the scope size and `incomplete` reports unreadable
+histories or matching originals. The index persists across restarts and subsequent
+queries read new events and selected originals, without rescanning old tool logs.
 
 Chat results use the instance's `/api/sessions/{id}/langsmith` browser entry.
 The authenticated `?format=json` variant returns the exact current trace URL,
@@ -453,6 +470,13 @@ older Sessions are excluded even if an old job finishes later. Native thread
 IDs and old transcripts are not copied. Explicitly required references can
 still be retrieved, and current identity/preferences/capability pointers remain
 available. Unknown message ownership is not a private-memory access guarantee.
+
+Private-chat runtime context carries only a short pointer to the scoped history
+search above. It does not run a search or attach old excerpts/continuation
+summaries automatically. When the new question refers to earlier discussion,
+the Harness can search this same private chat and follow the original-message
+references. Historical decisions remain reference material; retrieval does not
+restart old tasks or expand the current authorization.
 
 Creation reuses the existing atomic `replaceConversation` contract and a command
 message-derived idempotency key. Repeated delivery cannot create extra Sessions

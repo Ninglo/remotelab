@@ -9,6 +9,14 @@ assert.match(shortcutPrompt, /speech-friendly answer/, 'shortcut runtime prompt 
 const feishuPrompt = buildSourceRuntimePrompt({ sourceId: 'feishu', sourceName: 'Feishu' });
 assert.match(feishuPrompt, /markdown will be rendered as Feishu\/Lark rich text/i, 'feishu runtime prompt should allow markdown replies');
 assert.match(feishuPrompt, /standard LaTeX/i, 'feishu runtime prompt should request standard formula delimiters');
+const privatePrompt = buildSourceRuntimePrompt({ sourceId: 'feishu', sourceContext: {
+  chatType: 'p2p', conversationContext: { messages: [{ text: 'OLD_HISTORY_CANARY' }] },
+} });
+assert.match(privatePrompt, /scope=private-chat&sessionId=\$REMOTELAB_SESSION_ID/);
+assert.match(privatePrompt, /not automatically injected/);
+assert.doesNotMatch(privatePrompt, /OLD_HISTORY_CANARY/);
+assert.doesNotMatch(buildSourceRuntimePrompt({ sourceId: 'feishu', sourceContext: { chatType: 'group' } }),
+  /scope=private-chat/, 'only private chats get the private-history capability pointer');
 
 const feishuCommentPrompt = buildSourceRuntimePrompt({
   sourceId: 'feishu',
