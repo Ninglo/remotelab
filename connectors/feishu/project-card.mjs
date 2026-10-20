@@ -22,6 +22,7 @@ export function buildProjectCard(record, view, audit = []) {
   })) });
   const elements = [row([button('项目入口', 'home'), button('项目记忆', 'memory'),
     button('自动任务', 'tasks'), button('修改记录', 'audit')])];
+  if (record.renewalNotice) elements.unshift(text(record.renewalNotice));
   const tab = record.tab || 'home';
   const page = Math.max(0, Math.min(record.page || 0, (memory.pages?.length || 1) - 1));
   if (tab === 'memory') {

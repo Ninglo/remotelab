@@ -54,7 +54,7 @@ try {
   let patchResult = { code: 0 };
   runtime.appClient = { im: { v1: { message: {
     reply: async ({ data }) => {
-      if (!sent.has(data.uuid)) { sent.set(data.uuid, 'card-id'); created++; }
+      if (!sent.has(data.uuid)) { created++; sent.set(data.uuid, created === 1 ? 'card-id' : `card-id-${created}`); }
       card = JSON.parse(data.content);
       if (failReply) { failReply = false; throw new Error('Lost send acknowledgement'); }
       return { code: 0, data: { message_id: sent.get(data.uuid) } };
@@ -209,35 +209,66 @@ try {
   const expired = await records.get(original.key);
   assert.equal(patches, before + 1, 'expiry causes only the first rejected PATCH');
   assert.deepEqual(expired.source, original.source, 'original source stays intact');
-  assert.equal(expired.messageId, original.messageId);
-  assert.equal(expired.digest, lastGood.digest, 'do not advance the successful content receipt');
-  assert.equal(expired.readAt, lastGood.readAt);
-  assert.equal(expired.updateFailure.code, 230031);
-  assert.equal(expired.updateFailure.logId, 'provider-expiry-log');
+  assert.notEqual(expired.messageId, original.messageId, 'renew the expired message in its original topic');
+  assert.equal(expired.cardHistory[0].messageId, original.messageId);
+  assert.equal(expired.cardHistory[0].digest, lastGood.digest, 'preserve the old successful content receipt');
+  assert.equal(expired.cardHistory[0].readAt, lastGood.readAt);
+  assert.equal(expired.cardHistory[0].updateFailure.code, 230031);
+  assert.equal(expired.cardHistory[0].updateFailure.logId, 'provider-expiry-log');
+  assert(content().includes('旧卡片已满13天，更换新卡片'));
+  assert.equal(created, 2);
+  patchError = null;
   await Promise.all([surface.refresh(), surface.refresh()]);
   await surface.stop();
   surface = makeSurface();
   await surface.restore();
-  await assert.rejects(surface.command(summary), /14天更新期限/);
   assert.equal((await surface.actionFeedback(controlsBeforeExpiry)).accepted, false);
   const writes = requests.filter(call => call.options?.method === 'POST').length;
-  await assert.rejects(surface.handleAction(controlsBeforeExpiry), /14天更新期限/);
+  await assert.rejects(surface.handleAction(controlsBeforeExpiry), /原卡片/);
   assert.equal(requests.filter(call => call.options?.method === 'POST').length, writes,
     'known expired controls cannot change a schedule before failing to update the card');
-  assert.equal(patches, before + 1, 'expiry survives repeated refresh, manual commands and restart');
-  assert.equal(created, 1, 'expiry never sends a replacement message');
+  assert.equal(patches, before + 1, 'unchanged refresh and restart reuse the replacement');
+  assert.equal(created, 2);
 
-  // A different message is not blocked by the previous message's receipt.
-  patchError = null;
-  await records.mutate(original.key, current => ({ ...current, messageId: 'new-card' }));
+  // Age alone must renew even when the content digest has not changed.
+  await records.mutate(original.key, current => ({ ...current, createdAt: Date.now() - 13 * 86400_000 - 1 }));
   await surface.refresh();
-  assert.equal(patches, before + 2);
+  assert.equal(created, 3);
+  assert.equal(patches, before + 1, 'do not PATCH a card already due for renewal');
   patchResult = { code: 230031, msg: 'Message expired' };
-  await assert.rejects(surface.command(summary), /14天更新期限/);
-  assert.equal((await records.get(original.key)).updateFailure.messageId, 'new-card',
-    'SDK business responses preserve expiry just like rejected transport errors');
+  await surface.command(summary);
+  assert.equal(created, 4, 'SDK business errors also renew and preserve old rejection evidence');
+  patchResult = { code: 0 };
 
-  await records.mutate(original.key, current => ({ ...current, messageId: 'unavailable-source-card' }));
+  // Recover an old record's missing creation date from the original message.
+  let ageReads = 0;
+  runtime.appClient.im.v1.message.get = async ({ path }) => {
+    ageReads++;
+    return { code: 0, data: { items: [{ message_id: path.message_id, create_time: String(Date.now() - 13 * 86400_000 - 1) }] } };
+  };
+  await records.mutate(original.key, current => ({ ...current, createdAt: null }));
+  await surface.refresh();
+  assert.equal(ageReads, 1);
+  assert.equal(created, 5);
+  await surface.refresh();
+  assert.equal(ageReads, 1, 'persist the new card creation time');
+
+  // Unknown send results survive restart without a second send or lost binding.
+  const beforeUncertain = await records.get(original.key);
+  await records.mutate(original.key, current => ({ ...current, createdAt: Date.now() - 13 * 86400_000 - 1 }));
+  failReply = true;
+  await surface.refresh();
+  assert.equal(created, 6);
+  assert.equal((await records.get(original.key)).messageId, beforeUncertain.messageId);
+  assert((await records.get(original.key)).renewalPending);
+  await surface.stop();
+  surface = makeSurface();
+  await surface.restore();
+  await assert.rejects(surface.command(summary), /发送结果待核实/);
+  assert.equal(created, 6, 'do not blindly repeat a renewal with no acknowledgement');
+
+  await records.mutate(original.key, current => ({ ...current, messageId: 'unavailable-source-card', renewalPending: null }));
+  patchResult = { code: 230031, msg: 'Message expired' };
   await writeFile(registryPath, '{}');
   before = patches;
   await surface.refresh();
@@ -245,7 +276,7 @@ try {
   assert.equal(patches, before + 1, 'expiry while publishing a real source failure also stops retries');
   assert.equal((await records.get(original.key)).updateFailure.messageId, 'unavailable-source-card');
   console.log('PASS: Feishu project source binding, scoped reads, configuration controls, audit, replay/restart and live memory invalidation');
-  console.log('PASS: expired project card receipts, no duplicate PATCH, restart persistence, control rejection and transient recovery');
+  console.log('PASS: 13-day renewal, legacy dates, retained evidence, stale controls, restart and uncertain-send protection');
 } finally {
   await Promise.all(surfaces.map(surface => surface.stop()));
   await rm(home, { recursive: true, force: true });

@@ -88,15 +88,18 @@ cover atomic file replacement; source changes update the original card. A
 missing or ambiguous memory source is marked unavailable, never replaced with
 an old copy. No source directory scan or new memory store is introduced.
 
-If Feishu rejects an update with `230031` (the message is past its 14-day
-update window), the entry retains the original card, source and last successful
-content receipt, and records the rejection against that message. Automatic
-refreshes and restarts do not retry that expired message or send a replacement.
-`/project` and its buttons report the expiry; known expired controls cannot
-change schedules. Ask for current project state in the original conversation;
-replacing the card is a separate action. Transport failures do not falsely mark
-the project source unavailable, and transient failures can recover on a later
-refresh. Actual source failures still update an editable card with that status.
+On the next refresh after 13 days, the entry replaces the card in its original
+conversation and displays “旧卡片已满13天，更换新卡片”. Feishu rejection `230031`
+also triggers replacement instead of repeatedly patching the expired message.
+Legacy records read and retain the provider's original send time once. The old
+message remains visible; its ID, source, last successful content receipt and
+any expiry rejection remain in the durable record. Old controls cannot change
+schedules after replacement, and renewal itself does not change task state.
+A renewal records its stable send UUID before sending. An uncertain send stays
+pending across restarts and requires receipt verification before another send;
+a confirmed rejection may retry that same UUID. Transport failures do not mark
+the project source unavailable. Actual source failures still update an editable
+card with that status, and do not create replacement cards from unavailable data.
 
 Pause/resume buttons operate only on explicitly registered recurring schedules.
 The callback must match the stored card, chat, source binding, and current
@@ -271,10 +274,15 @@ invalidations refresh the same card without a polling AI task.
 Existing callbacks validate the card, actor and source before changes.
 
 When a card reaches 13 days from its original send time, the next normal
-publication replaces it. The replacement displays “旧卡片已满13天，更换新卡片”
+publication or native background refresh replaces it. A confirmed `230031`
+rejection also renews it. The replacement displays “旧卡片已满13天，更换新卡片”
 inside the card, and retains that explanation through later edits and restarts.
-First-time cards and in-place edits do not add this notice or send a separate
-announcement. Editing content does not reset the card's age.
+The original group or topic and participation mode are preserved; suppressed
+cards remain suppressed, and a background refresh never creates a first card.
+Patch-only restoration skips overdue cards. First-time cards and in-place edits
+do not add this notice or send a separate announcement. Editing content does not
+reset the card's age. Old message IDs and expiry receipts remain in card history.
+Uncertain renewal sends remain pending for verification, including after restart.
 
 The normal prompt builder checks registered projects’ opening briefs on each
 accepted input, including resumed topics, and projects their hash and source

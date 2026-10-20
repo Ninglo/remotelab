@@ -7,6 +7,8 @@ import { recordFeishuOutboundMessageSession } from './session-flow.mjs';
 import { effectiveFeishuGroup } from './group-settings.mjs';
 import { buildGroupConfigurationCard } from './group-configuration-card.mjs';
 import { mentionsFeishuBot } from './response-policy.mjs';
+import { classifyFeishuDeliveryError, feishuResponseError } from './delivery-errors.mjs';
+import { CARD_RENEWAL_AGE_MS, CARD_RENEWAL_NOTICE, isFeishuCardExpired, readCardCreatedAt } from './card-renewal.mjs';
 
 const MODES = new Set(['active', 'listening', 'paused']);
 const LABELS = { active: '主动参与', listening: '旁听', paused: '暂停接收' };
@@ -118,7 +120,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     if (!publishQueues.has(record.key)) publishQueues.set(record.key, serialQueue());
     return publishQueues.get(record.key)(() => publishCurrent(record, options));
   }
-  async function publishCurrent(record, { existingOnly = false } = {}) {
+  async function publishCurrent(record, { existingOnly = false, renewExisting = false } = {}) {
     const source = await resolveSource({ ...record.source, threadId: record.source.topicId });
     if (isFeishuTopicGroup(source)) return record;
     record = { ...record, ...await state(source) };
@@ -130,30 +132,66 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const group = effectiveFeishuGroup(runtime.config, record.source.chatId);
     let messageId = record.cardMessageId || (!record.source.topicId ? group.participationStatusMessageId : '');
     if (existingOnly && !messageId) return record;
-    const createdAt = record.cardCreatedAt || Date.now();
-    if (messageId && !existingOnly && Date.now() - createdAt >= 13 * 86400_000) {
-      record = { ...record, cardRenewalNotice: '旧卡片已满13天，更换新卡片' };
+    if (record.cardRenewalPending) throw new Error('换卡发送结果待核实，未重复发送。');
+    let createdAt = record.cardCreatedAt || 0;
+    const rejected = record.cardUpdateFailure?.messageId === messageId && record.cardUpdateFailure?.code === 230031;
+    if (messageId && !createdAt && !rejected) {
+      createdAt = await readCardCreatedAt(runtime, messageId);
+      record = await records.mutate(record.key, current => ({ ...record, ...current,
+        cardMessageId: messageId, cardCreatedAt: createdAt }));
+    }
+    const renewing = Boolean(messageId) && (rejected || Date.now() - createdAt >= CARD_RENEWAL_AGE_MS);
+    if (renewing && existingOnly && !renewExisting) return record;
+    if (renewing) {
+      record = { ...record, cardRenewalNotice: CARD_RENEWAL_NOTICE };
     }
     const card = buildParticipationCard(record, configuration);
     const digest = hash(JSON.stringify(card));
     if (messageId && digest === record.cardDigest && !record.pinPending
-        && Date.now() - createdAt < 13 * 86400_000) return record;
-    if (messageId && (existingOnly || Date.now() - createdAt < 13 * 86400_000)) {
-      const result = await runtime.appClient.im.v1.message.patch({ path: { message_id: messageId },
-        data: { content: JSON.stringify(card) } });
-      if (result?.code) throw new Error(result.msg || 'Agent status card update failed');
+        && !renewing) return record;
+    if (messageId && !renewing) {
+      try {
+        const result = await runtime.appClient.im.v1.message.patch({ path: { message_id: messageId },
+          data: { content: JSON.stringify(card) } });
+        if (result?.code) throw feishuResponseError(result, 'Agent status card update failed');
+      } catch (error) {
+        if (!isFeishuCardExpired(error)) throw error;
+        await records.mutate(record.key, current => ({ ...record, ...current, cardUpdateFailure: {
+          messageId, code: 230031, at: new Date().toISOString(), logId: error.logId || '',
+        } }));
+        return publishCurrent(record, { existingOnly, renewExisting });
+      }
     } else {
-      const uuid = `part_${record.key}_${Math.floor(Date.now() / 86400_000)}`;
-      const result = record.source.topicId
-        ? await runtime.appClient.im.v1.message.reply({ path: { message_id: record.source.messageId },
-          data: { msg_type: 'interactive', content: JSON.stringify(card), uuid, reply_in_thread: true } })
-        : await runtime.appClient.im.v1.message.create({ params: { receive_id_type: 'chat_id' },
-          data: { receive_id: record.source.chatId, msg_type: 'interactive', content: JSON.stringify(card), uuid } });
-      if (result?.code || !result?.data?.message_id) throw new Error(result?.msg || 'Agent status card creation failed');
+      const previousMessageId = messageId;
+      const uuid = renewing ? `part_renew_${hash(`${record.key}:${messageId}`)}`
+        : `part_${record.key}_${Math.floor(Date.now() / 86400_000)}`;
+      if (renewing) await records.mutate(record.key, current => ({ ...record, ...current,
+        cardRenewalPending: { uuid, previousMessageId, startedAt: new Date().toISOString() } }));
+      let result;
+      try {
+        result = record.source.topicId
+          ? await runtime.appClient.im.v1.message.reply({ path: { message_id: record.source.messageId },
+            data: { msg_type: 'interactive', content: JSON.stringify(card), uuid, reply_in_thread: true } })
+          : await runtime.appClient.im.v1.message.create({ params: { receive_id_type: 'chat_id' },
+            data: { receive_id: record.source.chatId, msg_type: 'interactive', content: JSON.stringify(card), uuid } });
+        if (result?.code) throw feishuResponseError(result, 'Agent status card creation failed');
+        if (!result?.data?.message_id) throw new Error('Agent status card creation receipt missing');
+      } catch (error) {
+        if (renewing && classifyFeishuDeliveryError(error).definiteFailure) {
+          await records.mutate(record.key, current => ({ ...current, cardRenewalPending: null,
+            cardRenewalFailure: { at: new Date().toISOString(), error: classifyFeishuDeliveryError(error).error } }));
+        }
+        throw error;
+      }
       messageId = result.data.message_id;
       // Commit the successful send before pinning; retry cannot duplicate it.
       record = await records.mutate(record.key, current => ({ ...record, ...current,
-        cardMessageId: messageId, cardCreatedAt: Date.now(), cardRenewalNotice: record.cardRenewalNotice || '',
+        cardMessageId: messageId, cardCreatedAt: Number(result.data.create_time) || Date.now(),
+        cardRenewalPending: null, cardRenewalNotice: record.cardRenewalNotice || '',
+        ...(renewing ? { cardHistory: [...(current?.cardHistory || []), {
+          messageId: previousMessageId, createdAt, replacedAt: new Date().toISOString(),
+          updateFailure: current?.cardUpdateFailure || null,
+        }] } : {}),
         pinPending: !record.source.topicId }));
       // A retried idempotent create may return the card from an earlier
       // uncertain send. Bring that exact message to the current durable state.
@@ -161,7 +199,8 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         data: { content: JSON.stringify(card) } });
       if (updated?.code) throw new Error(updated.msg || 'Agent status card update failed');
     }
-    if (record.pinPending && !existingOnly) {
+    const canPin = !existingOnly || renewExisting;
+    if (record.pinPending && canPin) {
       const result = await runtime.appClient.im.v1.chatTopNotice.putTopNotice({ path: { chat_id: record.source.chatId },
         data: { chat_top_notice: [{ action_type: '1', message_id: messageId }] } });
       if (result?.code) throw new Error(result.msg || 'Agent status card pin failed');
@@ -173,7 +212,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       }, record.sessionId, messageId);
     }
     return records.mutate(record.key, current => ({ ...record, ...current, cardMessageId: messageId,
-      cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, pinPending: existingOnly ? record.pinPending : false }));
+      cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, pinPending: canPin ? false : record.pinPending }));
   }
   async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId, existingOnly = false } = {}) {
     const key = keyFor(summary);

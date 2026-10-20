@@ -5,7 +5,8 @@ import { CHAT_RECURRING_SCHEDULES_FILE, CHAT_TRIGGERS_FILE } from '../../lib/con
 import { createRecordStore } from '../../lib/durable-records.mjs';
 import { buildFeishuTopicId } from './index.mjs';
 import { buildProjectCard } from './project-card.mjs';
-import { feishuResponseError } from './delivery-errors.mjs';
+import { classifyFeishuDeliveryError, feishuResponseError } from './delivery-errors.mjs';
+import { CARD_RENEWAL_AGE_MS, CARD_RENEWAL_NOTICE, isFeishuCardExpired, readCardCreatedAt } from './card-renewal.mjs';
 import { loadProjectSources, projectDigest, projectMemoryCorrection, projectPages,
   projectRequest, readProjectTask, readProjectView } from './project-sources.mjs';
 
@@ -15,7 +16,7 @@ const warn = error => console.warn(`[feishu-project] ${error.message}`);
 const isExpired = record => record?.updateFailure?.code === 230031
   && record.updateFailure.messageId === record.messageId;
 const expiredError = () => Object.assign(new Error(
-  '此项目入口卡片已超过飞书14天更新期限，原卡已保留。请在原话题直接询问当前项目状态；更换卡片需另行处理。'), { feishuCode: 230031 });
+  '此项目入口卡片已超过飞书14天更新期限，原卡已保留。请使用最新卡片，或在原话题输入 /project 更换。'), { feishuCode: 230031 });
 
 export function parseProjectAction(raw) {
   const event = raw?.event || raw;
@@ -72,28 +73,60 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
   }
 
   async function publish(record, view, force = false) {
-    if (isExpired(record)) throw expiredError();
+    if (record.renewalPending) throw new Error('项目换卡发送结果待核实，未重复发送。');
+    if (record.messageId && !record.createdAt && !isExpired(record)) {
+      const createdAt = await readCardCreatedAt(runtime, record.messageId);
+      record = await cards.mutate(record.key, current => ({ ...current, createdAt }));
+    }
+    const renewing = Boolean(record.messageId) && (isExpired(record)
+      || Date.now() - record.createdAt >= CARD_RENEWAL_AGE_MS);
+    if (renewing) record = { ...record, renewalNotice: CARD_RENEWAL_NOTICE };
     const audit = await auditFor(view.source.link.projectId);
     // A fresh read time alone is not a content change.
     const digest = projectDigest({ tab: record.tab, page: record.page, alias: record.alias,
-      notice: record.notice, source: view.source, memory: view.memory, tasks: view.tasks, materials: view.materials, audit });
-    if (!force && record.messageId && digest === record.digest) return record;
+      notice: record.notice, renewalNotice: record.renewalNotice,
+      source: view.source, memory: view.memory, tasks: view.tasks, materials: view.materials, audit });
+    if (!force && !renewing && record.messageId && digest === record.digest) return record;
     const card = buildProjectCard(record, view, audit);
     let messageId = record.messageId;
-    if (messageId) {
-      await patch(record, card);
+    let createdAt = record.createdAt;
+    if (messageId && !renewing) {
+      try { await patch(record, card); }
+      catch (error) {
+        if (!isFeishuCardExpired(error)) throw error;
+        return publish(await cards.get(record.key), view, true);
+      }
     } else {
       // Durable source + stable UUID allows the inbox to retry the same send.
       // A send with an uncertain outcome is never redirected to another source.
-      const result = await runtime.appClient.im.v1.message.reply({
-        path: { message_id: record.source.messageId }, data: { msg_type: 'interactive',
-          content: JSON.stringify(card), reply_in_thread: !!record.source.threadId,
-          uuid: `project-${record.key}` },
-      });
-      messageId = result?.data?.message_id;
-      if (result?.code || !messageId) throw new Error('项目卡片发送未获回执，请重试原命令。');
+      const uuid = renewing ? `project-renew-${projectDigest(`${record.key}:${messageId}`)}` : `project-${record.key}`;
+      if (renewing) await cards.mutate(record.key, current => ({ ...current,
+        renewalPending: { uuid, previousMessageId: messageId, startedAt: new Date().toISOString() } }));
+      let result;
+      try {
+        result = await runtime.appClient.im.v1.message.reply({
+          path: { message_id: record.source.messageId }, data: { msg_type: 'interactive',
+            content: JSON.stringify(card), reply_in_thread: !!record.source.threadId, uuid },
+        });
+        if (result?.code) throw feishuResponseError(result, '项目卡片发送失败。');
+        messageId = result?.data?.message_id;
+        if (!messageId) throw new Error('项目卡片发送未获回执，请核实原消息。');
+      } catch (error) {
+        if (renewing && classifyFeishuDeliveryError(error).definiteFailure) {
+          await cards.mutate(record.key, current => ({ ...current, renewalPending: null,
+            renewalFailure: { at: new Date().toISOString(), error: classifyFeishuDeliveryError(error).error } }));
+        }
+        throw error;
+      }
+      createdAt = Number(result.data.create_time) || Date.now();
     }
-    return cards.mutate(record.key, current => ({ ...current, messageId, digest,
+    return cards.mutate(record.key, current => ({ ...current, messageId, digest, createdAt,
+      renewalPending: null, renewalNotice: record.renewalNotice || '',
+      ...(renewing ? { cardHistory: [...(current?.cardHistory || []), {
+        messageId: record.messageId, createdAt: record.createdAt || null,
+        digest: record.digest, readAt: record.readAt, updateFailure: record.updateFailure || null,
+        replacedAt: new Date().toISOString(),
+      }] } : {}),
       projectId: view.source.link.projectId, readAt: view.readAt }));
   }
 
@@ -216,7 +249,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     const records = await cards.active();
     await Promise.allSettled(records.filter(record => record.messageId).map(record => exclusive(record.key, async () => {
       const current = await cards.get(record.key);
-      if (isExpired(current)) return;
+      if (current.renewalPending) return;
       let view;
       try { view = await getView(current); }
       catch (error) {

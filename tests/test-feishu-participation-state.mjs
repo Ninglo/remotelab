@@ -27,6 +27,7 @@ try {
     groups: { work: { responseMode: 'all' }, misc: { participationMode: 'ambient', jevReactions: true, participationControls: true,
       participationStatusMessageId: 'om_existing' } } }, storagePaths: {}, botIdentity: { openId: 'bot' },
     appClient: { im: { v1: { message: {
+      get: async ({ path }) => ({ code: 0, data: { items: [{ message_id: path.message_id, create_time: String(Date.now()) }] } }),
       patch: async x => { calls.cards.push(x); return { code: 0 }; },
       create: async () => { throw new Error('must reuse existing main card'); },
     } } } } };
@@ -152,16 +153,26 @@ try {
   await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true });
   assert.equal(creations, 0);
   assert.ok(!JSON.stringify(calls.cards.at(-1)).includes(notice), 'patch-only refresh does not claim renewal');
-  await runtime.participation.publish(await runtime.participation.state(fresh));
+  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, renewExisting: true });
   const renewed = await runtime.participation.state(fresh);
   assert.equal(creations, 1);
   assert.equal(renewed.cardMessageId, 'om_renewed');
   assert.equal(renewed.cardRenewalNotice, notice);
+  assert.equal(renewed.cardHistory[0].messageId, persisted.cardMessageId);
+  assert.equal(renewed.pinPending, false, 'background renewal moves the existing group notice to the new card');
   assert.ok(JSON.stringify(buildParticipationCard(renewed, {})).includes(notice), 'compact group card shows renewal');
   runtime.participation = createParticipationController(runtime, options);
   await runtime.participation.publish(await runtime.participation.state(fresh));
   assert.equal(creations, 1, 'restart preserves the new binding without another message');
   assert.ok(JSON.stringify(buildParticipationCard(await runtime.participation.state(fresh))).includes(notice));
+
+  const empty = { ...fresh, chatId: 'never-published' };
+  await runtime.participation.publish(await runtime.participation.state(empty), { existingOnly: true, renewExisting: true });
+  assert.equal(creations, 1, 'background renewal never creates an unregistered card');
+  await store.mutate(renewed.key, current => ({ ...current, cardCreatedAt: Date.now() - 14 * 86400_000, cardSuppressed: true }));
+  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, renewExisting: true });
+  assert.equal(creations, 1, 'suppressed cards stay suppressed even when overdue');
+  await store.mutate(renewed.key, current => ({ ...current, cardCreatedAt: Date.now(), cardSuppressed: false }));
   await runtime.participation.change(fresh, 'listening', { controlId: 'card-stall-listen' });
   let releaseCard, deadline;
   const cardGate = new Promise(resolve => { releaseCard = resolve; });

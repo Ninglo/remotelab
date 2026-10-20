@@ -78,7 +78,7 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
     const summary = summaryFor(project?.group || pilot || readingGroup);
     if (!summary.tenantKey) throw Error(`Missing verified tenant for ${chatId}`);
     const record = await participation().state(summary);
-    await participation().publish(record, { existingOnly: true });
+    await participation().publish(record, { existingOnly: true, renewExisting: true });
   }
   async function drain() {
     if (draining || stopped) return;
