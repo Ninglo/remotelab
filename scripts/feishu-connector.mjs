@@ -32,6 +32,7 @@ import {
 import { prepareFeishuLogContinuation } from '../connectors/feishu/log-command.mjs';
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
 import { getFeishuConversationSettings, handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
+import { startFeishuPrivateConversation, filterPrivateConversationContext } from '../connectors/feishu/private-conversations.mjs';
 import { findConnectorMessageIndexRecord } from '../lib/connector-message-index.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
@@ -1187,10 +1188,12 @@ async function submitRemoteLabRequest(runtime, summary, {
     // preparation removes only context proven present in the resumed thread.
     loadFeishuConversationContext(runtime, effectiveSummary, {
       includeMetadata: true, complete: true,
+      ...(session.privateConversationStart ? { sinceTimeMs: session.privateConversationStart.at,
+        sinceMessageId: session.privateConversationStart.messageId } : {}),
       // The source container is the scope: a topic or the bound group.
       // Neither Session creation nor the last admission proves older messages
       // were read. Fetch every provider page before delivery dedup/budgeting.
-    })
+    }).then(context => filterPrivateConversationContext(runtime, effectiveSummary, session, context))
       .catch((error) => {
         console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
         return { messages: [], truncated: true, error: String(error?.message || error) };
@@ -1714,7 +1717,10 @@ function extractLocalCommand(summary) {
   if (!['group', 'topic', 'p2p', 'private'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  const parsed = parseFeishuCommandBlock(summary.chatType === 'p2p' && ['我的设置', '个人设置', '使用说明', 'My settings', 'How to use'].includes(commandText.trim()) ? '/settings' : commandText);
+  const privateChat = ['p2p', 'private'].includes(summary.chatType);
+  const normalized = privateChat && ['开启新对话', '新对话', 'New conversation'].includes(commandText.trim()) ? '/new'
+    : privateChat && ['我的设置', '个人设置', '使用说明', 'My settings', 'How to use'].includes(commandText.trim()) ? '/settings' : commandText;
+  const parsed = parseFeishuCommandBlock(normalized);
   if (parsed.error) return parsed;
   return parsed.commands.length > 0 ? parsed : null;
 }
@@ -2033,7 +2039,20 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute', 'progress'].includes(name))) {
     return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');
   }
+  if (commandNames.includes('new') && (commandNames.length !== 1 || command.body)) {
+    return enqueue(runtime, summary, '/new 请单独使用，开启后再发送新问题。');
+  }
   if (command && !taskCommand && !command.body) {
+    if (commandNames.includes('new')) {
+      if (commandNames.length !== 1) return enqueue(runtime, summary, '/new 请单独使用。');
+      const result = await startFeishuPrivateConversation(runtime, summary, {
+        request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
+        resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),
+        systemPrompt: resolveFeishuGroupSettings(runtime.config, summary).systemPrompt,
+      });
+      if (result.superseded) return { receipt: { ignored: true, reason: 'new_conversation_superseded' } };
+      return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, result.text);
+    }
     if (commandNames.some(name => ['mute', 'unmute'].includes(name))) {
       if (commandNames.length !== 1) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, '静默命令不能和其他命令同时使用。');
       const muteCommand = command.commands[0];

@@ -79,6 +79,13 @@ try {
     userMessage: '检查权限', sourceEventSeq: 1, turnEvents: [{ type: 'tool_result', seq: 2, runId: 'run_method_source', exitCode: 0, output: '{"code":0}' }] }), updates: [method] });
   let printed = '';
   const io = { stdout: { write(value) { printed += value; } } };
+  await runMemoryLearningCommand(['handbook-migrate', '--run-id', cliRun, '--json'], io);
+  assert.equal(JSON.parse(printed).format, 2);
+  printed = '';
+  await runMemoryLearningCommand(['inspect', '--summary', '--key', method.key, '--run-id', cliRun, '--json'], io);
+  assert.equal(JSON.parse(printed).handbook.entries.length, 1);
+  assert.equal(JSON.parse(printed).handbook.storage.format, 2);
+  printed = '';
   await runMemoryLearningCommand(['context', '--query', '权限', '--run-id', cliRun, '--json'], io);
   assert.match(JSON.parse(printed).context, /verified.*查询当前身份/);
   const receipts = m.learningDeliveryReceipts(await loadHistory(cliSession), cliRun);
@@ -91,6 +98,16 @@ try {
   assert.equal(JSON.parse(printed).results[0].status, 'withdrawn');
   assert.ok((await loadHistory(cliSession)).some(e => e.operation === 'write_memory' && e.phase === 'applied'));
   assert.match(await m.buildLearningContext({ ...actor, query: '一个新任务' }), /withdrawn.*查询当前身份/);
+  const delegatedSession = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', delegatedRun = 'run_storage_delegated';
+  await requests.accept({ sessionId: delegatedSession, requestId: 'storage_delegation', runId: delegatedRun,
+    text: '维护行动手册存储', options: { viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId,
+      sourceContext: { connector: 'work-plan' } } });
+  printed = '';
+  await runMemoryLearningCommand(['handbook-export', '--file', join(home, 'delegated-export.md'),
+    '--run-id', delegatedRun, '--json'], io);
+  assert.equal(JSON.parse(printed).entries, 1);
+  await assert.rejects(runMemoryLearningCommand(['apply', '--file', payload, '--run-id', delegatedRun, '--json'], io),
+    /no matching accepted Request/, 'storage delegation must not relax semantic-write source checks');
   // A later authenticated Person can steer the same physical Run. Their
   // message must not inherit the original requester's personal identity.
   await requests.accept({ sessionId: cliSession, requestId: 'beta_input', runId: 'run_beta_input',

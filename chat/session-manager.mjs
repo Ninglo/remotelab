@@ -2264,6 +2264,14 @@ export async function createSession(folder, tool, name, extra = {}) {
     thinking: quickRuntime ? false : extra.thinking === true,
   });
   const requestedConversation = requireConversation(extra.conversation);
+  const privateStart = extra.privateConversationStart;
+  if (privateStart !== undefined && (requestedConversation?.connector !== 'feishu'
+      || requestedConversation.target.conversationKind !== 'main'
+      || !['p2p', 'private'].includes(requestedConversation.target.chatType)
+      || !privateStart || !/^om_[a-zA-Z0-9]+$/.test(privateStart.messageId || '')
+      || !Number.isSafeInteger(privateStart.at) || privateStart.at <= 0)) {
+    throw new Error('Invalid private conversation boundary');
+  }
   const requestedGroupFeed = extra.groupFeed === true;
   if (requestedConversation && !extra.sourceId) extra = { ...extra, sourceId: requestedConversation.connector };
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
@@ -2538,6 +2546,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
     if (requestedSourceContext) session.sourceContext = requestedSourceContext;
     if (requestedConversation) session.conversation = requestedConversation;
+    if (privateStart) session.privateConversationStart = { messageId: privateStart.messageId, at: privateStart.at };
     if (extra.forkedFromSessionId) session.forkedFromSessionId = extra.forkedFromSessionId;
     if (Number.isInteger(extra.forkedFromSeq)) session.forkedFromSeq = extra.forkedFromSeq;
     if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;

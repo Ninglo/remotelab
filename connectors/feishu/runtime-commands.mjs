@@ -13,6 +13,7 @@ import {
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const CONFIG_COMMANDS = new Set(['harness', 'model', 'effort', 'tier']);
 const HELP = [
+  '/new — 私聊开启新对话；旧对话和已接任务保留。项目工作建议在对应群新开话题。',
   '任务命令可把正文写在同行：/inline [修饰参数] 正文、/thread [修饰参数] 正文、/quick 正文、/sota 正文。',
   '/inline 和 /thread 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>。',
   '普通聊天群支持 inline/thread；话题群固定使用 Thread。Quick 是独立执行模式，不改变回复位置。',

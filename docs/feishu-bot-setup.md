@@ -429,6 +429,38 @@ Only `/inline` and `/thread` accept `--harness <id>`, `--model <id>`, and
 that itself starts with `--`.
 The removed `/fork`, `/continue`, `/f`, and `/c` forms are ordinary text, not aliases.
 
+### Start a new private conversation
+
+Private mainline messages normally continue the Session bound to that Bot and
+chat; a completed task does not automatically create a new context. `/new`, or
+the exact private-chat menu text `新对话` / `开启新对话` / `New conversation`, creates
+a blank Session and atomically moves the private-chat binding to it. The command
+must stand alone; the next message supplies the new question. Discussing the
+feature in a sentence does not activate it. In a group, `/new` only points the
+user to an appropriate project-group topic.
+
+The old Session, work records, evidence and accepted jobs remain intact. Their
+saved delivery destinations still apply; the command neither stops nor
+duplicates them. The new Session has its own `privateConversationStart` marker:
+provider history is fetched only after that command, and indexed replies from
+older Sessions are excluded even if an old job finishes later. Native thread
+IDs and old transcripts are not copied. Explicitly required references can
+still be retrieved, and current identity/preferences/capability pointers remain
+available. Unknown message ownership is not a private-memory access guarantee.
+
+Creation reuses the existing atomic `replaceConversation` contract and a command
+message-derived idempotency key. Repeated delivery cannot create extra Sessions
+or reclaim a conversation after a newer `/new`. Different Bots, people/chats and
+group topics keep separate bindings. Ordinary private chat remains available;
+the completion receipt recommends using the appropriate project group for
+project work, without automatically moving or publishing private content.
+
+The Index Bot can expose a fifth floating-menu item `新对话` using the same
+send-message action as its existing settings/report shortcuts. Configure and
+publish it for the intended application only after deploying the handler;
+preserve existing menu IDs, scopes, callbacks and availability. Online menu
+readback and an actual human client click are separate verification levels.
+
 Two frequent commands have explicit stable aliases. Aliases resolve to the
 canonical name before validation and execution:
 

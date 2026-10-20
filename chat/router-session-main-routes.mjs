@@ -684,6 +684,7 @@ export async function handleSessionMainRoutes({
         createOptions.conversation = payload.conversation;
         createOptions.replaceConversation = payload.replaceConversation === true;
       }
+      if (Object.hasOwn(payload, 'privateConversationStart')) createOptions.privateConversationStart = payload.privateConversationStart;
       if (requestedStarterPreset) {
         createOptions.starterPreset = requestedStarterPreset;
       }

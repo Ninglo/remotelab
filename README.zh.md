@@ -14,6 +14,8 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 > 同一套系统可以从桌面、手机，以及飞书 / 邮件这类接入面进入。
 
+飞书私聊支持用 `/new` 或“新对话”明确开启一段新上下文，保留旧对话和已接任务。项目工作建议在对应群的话题里发起；私聊入口与菜单配置见[飞书接入说明](docs/feishu-bot-setup.md#start-a-new-private-conversation)。
+
 可选的[讨论录音能力](docs/platform-skills/hardware-recording.md)支持在 macOS/Linux 上绑定小键盘和多台 USB 接收器：每场独立开始、结束并交给 RemoteLab 处理。每台机器首次需要授权，并配置音源、按键与交付位置。
 
 ## 快速安装

@@ -5,6 +5,20 @@ as its input channel is available. The Harness owns when those messages affect
 model inference, tool execution, retries and subsequent turns. Receiving an
 input is not a claim that an already-running model call has consumed it.
 
+## New private conversation versus active input
+
+Feishu `/new` creates a blank Session using the existing atomic conversation
+replacement; it does not steer a request into the old native thread or cancel
+old work. The connector submits an idempotent message-derived external key and
+`privateConversationStart: {messageId, at}` with the new Session. Creation accepts
+that marker only for a Feishu private mainline with a valid provider message ID
+and positive millisecond time. The marker persists independently of subsequent
+source-context updates. Provider backfill starts after it, and indexed late
+answers owned by older Sessions are excluded from new context. Existing accepted
+deliveries keep their addresses. Group topics remain separate; the private
+entry recommends the appropriate project group without transferring private
+content. See [the private conversation entry](feishu-bot-setup.md#start-a-new-private-conversation).
+
 ## Supported transports
 
 | Harness | Transport | Active input | Stop |

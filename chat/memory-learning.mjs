@@ -9,6 +9,7 @@ import { resolveLearningProject } from './project-memory-runtime.mjs';
 import { formatMemoryWritebackTargetsForPrompt } from './memory-writeback-targets.mjs';
 import { personalMemoryPreference } from './personal-memory-settings.mjs';
 import { MEMORY_ABSTRACTION_GUIDANCE } from './memory-abstraction.mjs';
+import { readHandbook, commitHandbook, migrateHandbook, exportHandbook } from './handbook-store.mjs';
 
 const START = '<!-- remotelab-learning:start -->';
 const END = '<!-- remotelab-learning:end -->';
@@ -79,7 +80,7 @@ function entryBody(entry) {
     `  更新：${entry.updatedAt}。`,
     entry.supersedesManual ? `  替代人工原文：${entry.supersedesManual}。` : '',
     entry.reviewProposal ? `  对话核验：${entry.reviewProposal.status}；${entry.reviewProposal.question}` : '',
-    `  独立 Session：${new Set(entry.evidence.map(e => e.sessionId)).size}；证据：${entry.evidence.slice(-4).map(e => `${e.sessionId}/${e.runId}#${e.seq}`).join(', ')}。`,
+    `  独立 Session：${entry.independentSessions ?? new Set(entry.evidence.map(e => e.sessionId)).size}；证据：${entry.evidence.slice(-4).map(e => `${e.sessionId}/${e.runId}#${e.seq}`).join(', ')}。`,
     entry.counterexamples?.length ? `  反例：${entry.counterexamples.slice(-2).map(e => `${e.sessionId}#${e.seq}: ${e.quote}`).join('; ')}` : '',
   ].filter(Boolean).join('\n');
 }
@@ -95,24 +96,35 @@ function renderDocument(document) {
 
 // Async atomic replacement, in-process serialization plus a cross-process lock.
 // A stale lock fails visibly; do not guess that another writer has stopped.
-async function mutateDocument(path, mutate) {
+async function withLearningLock(path, task) {
   return queue(path, async () => {
     await mkdir(dirname(path), { recursive: true });
     const lock = `${path}.learning-lock`;
     await mkdir(lock);
+    try { return await task(); }
+    finally { await rm(lock, { recursive: true, force: true }); }
+  });
+}
+
+async function mutateDocument(path, mutate, { handbook = false, entryId } = {}) {
+  return withLearningLock(path, async () => {
     const temp = `${path}.tmp-${randomUUID()}`;
     try {
-      const raw = await readText(path);
-      const document = parseLearningDocument(raw);
+      const profileRaw = handbook ? undefined : await readText(path);
+      const document = handbook ? await readHandbook(path, { parseLegacy: parseLearningDocument, entryId })
+        : { ...parseLearningDocument(profileRaw), raw: profileRaw };
+      const raw = document.raw;
       const result = mutate(document);
       if (!result.changed) return result;
-      if (await readText(path) !== raw) throw new Error('Memory changed concurrently; retry from current version');
-      await writeFile(temp, renderDocument(document), { encoding: 'utf8', mode: 0o600 });
-      await rename(temp, path);
+      if (document.store) await commitHandbook(path, document, document.entries.find(e => e.id === result.id));
+      else {
+        if (await readText(path) !== raw) throw new Error('Memory changed concurrently; retry from current version');
+        await writeFile(temp, renderDocument(document), { encoding: 'utf8', mode: 0o600 });
+        await rename(temp, path);
+      }
       return result;
     } finally {
       await rm(temp, { force: true });
-      await rm(lock, { recursive: true, force: true });
     }
   });
 }
@@ -313,7 +325,7 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
         entry.updatedAt = now;
         if (!current) document.entries.push(entry);
         return { changed: true, path, id, version: entry.version, status: entry.status };
-      }));
+      }, { handbook: kind === 'method', entryId: id }));
     } catch (error) { rejected.push({ key: update?.key, reason: error.message }); }
   }
   // Independent outbox only: never submit input to, wait on, or steer the source Run.
@@ -327,14 +339,38 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
     promotedFiles: [...new Set(results.filter(r => r.changed).map(r => r.path))], results, rejected };
 }
 
-export async function inspectLearning({ personId, identityId, authDocument, memoryDir = MEMORY_DIR } = {}) {
+async function readLearningSource(kind, path, { details = false, key } = {}) {
+  const document = kind === 'handbook'
+    ? await readHandbook(path, { parseLegacy: parseLearningDocument, details, key })
+    : parseLearningDocument(await readText(path));
+  // Raw legacy data and internal transaction metadata never enter a prompt or
+  // CLI snapshot. Explicit inspect retains the full entry schema by default.
+  const { raw, store, ...publicDocument } = document;
+  if (key) publicDocument.entries = publicDocument.entries.filter(e => e.key === key || e.id === key);
+  return publicDocument;
+}
+
+export async function maintainHandbook({ action, file, personId, identityId, authDocument, memoryDir = MEMORY_DIR } = {}) {
+  const person = verifiedLearningPerson({ personId, identityId, authDocument });
+  if (!person) throw new Error('Current request has no verified Person');
+  const path = learningPaths(memoryDir, person).handbook;
+  return withLearningLock(path, async () => {
+    if (action === 'migrate') return migrateHandbook(path, { parseLegacy: parseLearningDocument });
+    if (action === 'export' || action === 'rollback') return exportHandbook(path, {
+      parseLegacy: parseLearningDocument, renderLegacy: renderDocument, file, rollback: action === 'rollback',
+    });
+    throw new Error('Unknown handbook maintenance action');
+  });
+}
+
+export async function inspectLearning({ personId, identityId, authDocument, memoryDir = MEMORY_DIR, summary = false, key } = {}) {
   const person = verifiedLearningPerson({ personId, identityId, authDocument });
   if (!person) throw new Error('Current request has no verified Person');
   const paths = learningPaths(memoryDir, person);
   const policy = await loadLearningPolicy(memoryDir);
   const snapshot = { personId: person, paths, policy, unavailable: [] };
   await Promise.all(['profile', 'handbook'].map(async kind => {
-    try { snapshot[kind] = await readText(paths[kind]).then(parseLearningDocument); }
+    try { snapshot[kind] = await readLearningSource(kind, paths[kind], { details: !summary, key }); }
     catch (error) {
       // Inspection can proceed for the independent readable source. Mutation
       // still reopens the exact target through readText and rejects bad files.
@@ -349,6 +385,12 @@ function matches(entry, query, project) {
   if (entry.scope === 'project' && entry.project !== project) return false;
   if (entry.kind !== 'method' && !entry.cues?.length) return true;
   return entry.cues?.some(cue => query.toLowerCase().includes(cue.toLowerCase()));
+}
+
+function cueRelevance(entry, query) {
+  const normalized = query.toLowerCase();
+  const cues = [...new Set((entry.cues || []).map(cue => cue.toLowerCase()))];
+  return cues.reduce((score, cue) => score + (normalized.includes(cue) ? 1 : 0), 0);
 }
 
 export async function buildLearningContext({ personId, identityId, authDocument, query = '', project, session, sourceContext,
@@ -373,7 +415,7 @@ export async function buildLearningContext({ personId, identityId, authDocument,
       ...(includeProfiles ? [{ kind: 'profile', path: paths.profile }] : []),
       ...(policy.handbook ? [{ kind: 'handbook', path: paths.handbook }] : []),
     ];
-    const reads = await Promise.allSettled(targets.map(({ path }) => readText(path).then(parseLearningDocument)));
+    const reads = await Promise.allSettled(targets.map(({ kind, path }) => readLearningSource(kind, path)));
     const snapshot = { paths, profile: { prefix: '', entries: [] }, handbook: { entries: [] } };
     const unavailable = [];
     reads.forEach((result, index) => {
@@ -393,9 +435,14 @@ export async function buildLearningContext({ personId, identityId, authDocument,
       blocks.push(`本人档案（人工维护）：\n${snapshot.profile.prefix.trim()}`);
     }
     const candidates = [...(includeProfiles ? snapshot.profile.entries : []), ...(policy.handbook ? snapshot.handbook.entries : [])];
-    const selected = candidates.filter(e => ['confirmed', 'inferred', 'verified', 'withdrawn'].includes(e.status)
+    const chronological = candidates.filter(e => ['confirmed', 'inferred', 'verified', 'withdrawn'].includes(e.status)
       && (e.status === 'withdrawn' && (e.scope !== 'project' || e.project === project) || matches(e, query, project)))
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const methods = chronological.filter(e => e.kind === 'method')
+      .sort((a, b) => cueRelevance(b, query) - cueRelevance(a, query));
+    let methodIndex = 0;
+    // Preserve the existing personal-memory order and budget positions.
+    const selected = chronological.map(entry => entry.kind === 'method' ? methods[methodIndex++] : entry);
     let skipped = includeProfiles && snapshot.profile.prefix.trim() && !blocks.length ? 1 : 0;
     for (const entry of selected.slice(0, 12)) {
       const body = entryBody(entry);
@@ -435,7 +482,7 @@ export function buildLearningReviewPrompt({ userMessage, assistantTurnText, sour
       cues: e.cues, conditions: e.conditions, exceptions: e.exceptions, status: e.status, version: e.version,
       supersedesManual: e.supersedesManual,
       reviewProposal: e.reviewProposal,
-      independentSessions: new Set(e.evidence.map(s => s.sessionId)).size, counterexamples: e.counterexamples.slice(-2) }));
+      independentSessions: e.independentSessions ?? new Set(e.evidence.map(s => s.sessionId)).size, counterexamples: e.counterexamples.slice(-2) }));
   const selected = [];
   let usedChars = 2;
   for (const entry of known) {
@@ -482,7 +529,7 @@ export async function reviewMemoryLearning({ sessionId, session, run, userMessag
   }
   const sources = learningTurnEvidence({ sessionId, runId: run?.id, userMessage, sourceEventSeq, turnEvents });
   if (!sources.length || !userMessage) return { attempted: false, promotedCount: 0, promotedFiles: [] };
-  const snapshot = await inspectLearning({ personId, identityId, authDocument, memoryDir });
+  const snapshot = await inspectLearning({ personId, identityId, authDocument, memoryDir, summary: true });
   const personal = personalMemoryPreference({ personId, identityId, authDocument });
   if (!personal.enabled) snapshot.profile = { ...snapshot.profile, entries: [], prefix: '' };
   const project = await resolveLearningProject(session, sourceContext);

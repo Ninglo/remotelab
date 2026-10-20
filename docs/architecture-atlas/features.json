@@ -800,6 +800,8 @@
             "chat/project-memory-runtime.mjs",
             "chat/person-memory-context.mjs",
             "chat/memory-learning.mjs",
+            "chat/handbook-store.mjs",
+            "lib/memory-learning-command.mjs",
             "chat/memory-abstraction.mjs",
             "docs/memory-learning.md",
             "chat/personal-memory-settings.mjs",
