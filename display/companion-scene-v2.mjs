@@ -55,7 +55,7 @@ export function validateCompanion(payload) {
 }
 
 const date = (at, options) => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', ...options }).format(new Date(at));
-export function wrapSentence(value, max = 20) {
+export function wrapSentence(value, max = 20, keepWords = true) {
   const clauses = value.split('；');
   if (clauses.length === 2 && [...clauses[0]].length < max && [...clauses[1]].length <= max) {
     return [clauses[0] + '；', clauses[1]];
@@ -65,14 +65,15 @@ export function wrapSentence(value, max = 20) {
     let take = Math.min(max, chars.length);
     // Leave punctuation with its clause while retaining EVERY character.
     if (/^[，。；！？、：）】]/.test(chars[take] || '') && take > 1) take--;
-    if (/[A-Za-z0-9]/.test(chars[take - 1] || '') && /[A-Za-z0-9]/.test(chars[take] || '')) {
+    if (keepWords && /[A-Za-z0-9]/.test(chars[take - 1] || '') && /[A-Za-z0-9]/.test(chars[take] || '')) {
       let wordStart = take;
       while (wordStart > 0 && /[A-Za-z0-9]/.test(chars[wordStart - 1])) wordStart--;
       if (wordStart > 0) take = wordStart;
     }
     lines.push(chars.splice(0, take).join(''));
   }
-  // A 60-character sentence may need a fourth line for punctuation safety.
+  // Bound vertical space even when many Latin words would leave short lines.
+  if (keepWords && lines.length > 4) return wrapSentence(value, max, false);
   return lines;
 }
 function weatherLabel(code) {

@@ -76,3 +76,10 @@ test('mixed-language lines keep ordinary Latin words together', () => {
   assert.equal(lines.join(''), sentence);
   assert(lines.some(line => line.includes('RemoteLab')));
 });
+
+test('word-aware wrapping stays within the four-line display budget', () => {
+  const sentence = ('abcdefghijk ').repeat(5);
+  const lines = wrapSentence(sentence);
+  assert.equal(lines.join(''), sentence);
+  assert(lines.length <= 4);
+});
