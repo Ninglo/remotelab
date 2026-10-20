@@ -265,14 +265,17 @@ groups filter uninvited messages before attachment handling or model submission.
 An accepted topic binding permits later human follow-ups in that same topic;
 other groups, tenants and Bots never inherit it.
 
-Participation cards are replaced on the next publication or native background
-refresh after reaching 13 days from their original send time, or after a confirmed
-`230031` expiry rejection. Such replacements show “旧卡片已满13天，更换新卡片”
-inside the new card; ordinary edits keep the same message and do not reset its age.
-Renewal preserves the original group or topic and participation mode. Suppressed
-cards stay suppressed; patch-only restoration does not send replacement cards.
-An uncertain renewal send stays pending for verification across restarts.
-See [group card presentation](feishu-project-links.md) for the retained controls.
+Only the managed group top-notice card is continuously maintained. A background
+refresh first compares displayed content and controls; unchanged data never
+causes an age read, patch or replacement. Real changes update the current card;
+if it is beyond the provider's 14-day window or rejected with `230031`, the
+pinned card may be replaced and its top-notice binding updated. There is no
+13-day renewal trigger. Suppressed or superseded bindings stay inactive.
+Conversation participation cards are updated only during their current
+interaction; they are never renewed by age or restored as live dashboards.
+Unknown replacement sends stay pending across restart. See
+[group card presentation](feishu-project-links.md) for binding evidence and
+provider readback limitations.
 
 Work and learning topic groups that are intended as assistant task entry points
 must explicitly set `groups[chatId].responseMode: "all"`; do not infer their role
@@ -855,8 +858,9 @@ edit form. Set that exact group's
 `participationStatusCard: false` to hide the card while keeping participation
 and text controls. This also suppresses publication on restart and mode changes;
 withdraw the existing message and its top notice separately when requested.
-Restart refreshes only existing status cards; it never creates a missing card
-from remembered conversation state, even when finishing a pending mode change.
+Restart refreshes only existing managed group top-notice cards; it never
+creates a missing card or repaints historical thread cards from remembered
+conversation state, even when finishing a pending mode change.
 Native topic records are excluded from
 restoration, including pending old pause operations.
 

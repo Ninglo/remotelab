@@ -56,7 +56,7 @@ try {
   worker=await startProjectGroupCards(runtime,{
     request:async path=>({response:{ok:true},json:path==='/api/sessions'?{sessions:[topic,other]}:{session:topic}}),
     ensureAuthCookie:async()=>{if(!authAvailable)throw Error('offline test');return 'test';},onboard:async(_s,opts)=>{assert.equal(opts.projectCard,true);assert.notEqual(_s.chatId,'overview');},
-    participation:()=>({state:async summary=>({...record,source:{chatId:summary.chatId}}),publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);assert.equal(opts.renewExisting,true);published.push(_record.source.chatId);if(_record.source.chatId==='overview')overviewResolve();seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));signalResolve?.();}}),
+    participation:()=>({state:async summary=>({...record,source:{chatId:summary.chatId}}),publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);assert.equal(opts.background,true);published.push(_record.source.chatId);if(_record.source.chatId==='overview')overviewResolve();seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));signalResolve?.();}}),
   });
   const [socket]=await connected;await initial;
   assert.equal(seen.at(-1)[0].state,'进行中');

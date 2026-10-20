@@ -12,7 +12,7 @@ try {
   const { CARD_RENEWAL_NOTICE } = await import('../connectors/feishu/card-renewal.mjs');
   const store = createRecordStore(join(home, 'participation-state'));
   const oldTime = Date.now() - 14 * 86400_000;
-  const options = { existingOnly: true, renewExisting: true };
+  const options = { existingOnly: true, background: true };
   const sends = [], patches = [], pins = [];
   let getCount = 0, failPin = false, uncertainSend = false, rejectSend = false, expirePatch = false;
   const runtime = { config: { storageDir: home, sourceRouteId: 'fixture', groups: {} }, storagePaths: {},
@@ -45,9 +45,9 @@ try {
   let controller = createParticipationController(runtime);
   const source = name => ({ chatId: name, tenantKey: 'tenant', chatType: 'group', chatMode: 'group' });
   async function seed(name, extra = {}) {
-    const record = await controller.state(source(name));
+    const record = await controller.state({ ...(extra.source || source(name)), threadId: extra.source?.topicId || '' });
     return store.mutate(record.key, () => ({ ...record, cardMessageId: `old-${name}`, cardCreatedAt: oldTime,
-      mode: 'listening', modeOverride: true, ...extra }));
+      mode: 'listening', modeOverride: true, pinPending: false, ...extra }));
   }
 
   const legacy = await seed('legacy', { cardCreatedAt: 0 });
@@ -63,6 +63,11 @@ try {
   assert.equal(renewed.pinPending, false);
   assert(!patches.some(call => call.path.message_id === legacy.cardMessageId));
 
+  await store.mutate(renewed.key, current => ({ ...current, cardCreatedAt: oldTime }));
+  const beforeSame = { sends: sends.length, patches: patches.length, getCount };
+  await controller.publish(await store.get(renewed.key), options);
+  assert.deepEqual({ sends: sends.length, patches: patches.length, getCount }, beforeSame,
+    'expiry alone does not update, query age or republish an unchanged pinned card');
   const pin = await seed('pin');
   failPin = true;
   await assert.rejects(controller.publish(pin, options), /Pin temporarily/);
@@ -105,11 +110,34 @@ try {
   const hidden = await seed('hidden', { cardSuppressed: true });
   await controller.publish(hidden, options);
   assert.equal(sends.length, 6, 'withdrawn cards stay withdrawn');
-  const patchOnly = await seed('patch-only');
-  const before = patches.length;
-  await controller.publish(patchOnly, { existingOnly: true });
-  assert.equal(patches.length, before, 'read-only restoration does not retry an expired message');
-  assert.equal(sends.length, 6);
+  const unpinned = await seed('unpinned', { pinnedMessageId: 'different-message' });
+  await controller.publish(unpinned, options);
+  assert.equal(sends.length, 6, 'a replaced pin binding does not maintain the old message');
+  const cleared = await seed('cleared', { pinnedMessageId: '' });
+  await controller.publish(cleared, options);
+  assert.equal(sends.length, 6, 'an explicitly cleared pin is not mistaken for a legacy binding');
+  const topic = await seed('topic', { source: { ...source('topic'), topicId: 'thread', messageId: 'source-message' } });
+  const beforeTopic = patches.length;
+  await controller.publish(topic, options);
+  assert.equal(patches.length, beforeTopic);
+  assert.equal(sends.length, 6, 'background refresh never republishes conversation status cards');
+  await controller.publish(topic);
+  assert.equal(sends.length, 6, 'explicit state changes do not renew expired conversation status cards');
+  const insideWindow = await seed('inside-window', { cardCreatedAt: Date.now() - 13 * 86400_000 - 1 });
+  const beforeWindow = { sends: sends.length, patches: patches.length };
+  await controller.publish(insideWindow, options);
+  assert.equal(sends.length, beforeWindow.sends, 'a real change on day thirteen still edits the original pin');
+  assert.equal(patches.length, beforeWindow.patches + 1);
+
+  const configuration = { project: { id: 'project', name: 'Project', briefUrl: 'https://example.com/brief', briefUpdated: 'day-one' } };
+  const withConfiguration = createParticipationController(runtime, { getConfiguration: async () => configuration });
+  const metadataOnly = await seed('metadata-only', { cardCreatedAt: Date.now() });
+  await withConfiguration.publish(metadataOnly, options);
+  const beforeMetadata = { sends: sends.length, patches: patches.length };
+  configuration.project.briefUpdated = 'day-two';
+  await withConfiguration.publish(await store.get(metadataOnly.key), options);
+  assert.deepEqual({ sends: sends.length, patches: patches.length }, beforeMetadata,
+    'a source-document timestamp alone does not repaint the persistent card');
   await controller.idle();
   console.log('PASS: renewal source, legacy age, concurrency, pause preservation, expiry fallback, pin recovery and uncertain sends');
 } finally { await rm(home, { recursive: true, force: true }); }

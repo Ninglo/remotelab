@@ -141,9 +141,9 @@ try {
   // Renewal explains a new message, while ordinary edits reuse the old one.
   const { createRecordStore } = await import('../lib/durable-records.mjs');
   const store = createRecordStore(join(home, 'participation-state'));
-  const notice = '旧卡片已满13天，更换新卡片';
+  const { CARD_RENEWAL_NOTICE: notice } = await import('../connectors/feishu/card-renewal.mjs');
   assert.doesNotMatch(JSON.stringify(calls.cards.at(-1)), /旧卡片已满13天/);
-  await store.mutate(persisted.key, current => ({ ...current, cardCreatedAt: Date.now() - 13 * 86400_000 - 1000 }));
+  await store.mutate(persisted.key, current => ({ ...current, cardCreatedAt: Date.now() - 15 * 86400_000 - 1000 }));
   let creations = 0;
   runtime.appClient.im.v1.message.create = async request => {
     creations++;
@@ -153,7 +153,10 @@ try {
   await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true });
   assert.equal(creations, 0);
   assert.ok(!JSON.stringify(calls.cards.at(-1)).includes(notice), 'patch-only refresh does not claim renewal');
-  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, renewExisting: true });
+  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, background: true });
+  assert.equal(creations, 0, 'expiry alone does not renew an unchanged pinned card');
+  await store.mutate(persisted.key, current => ({ ...current, cardContentDigest: 'previous-content', cardDigest: 'previous-content' }));
+  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, background: true });
   const renewed = await runtime.participation.state(fresh);
   assert.equal(creations, 1);
   assert.equal(renewed.cardMessageId, 'om_renewed');
@@ -167,10 +170,10 @@ try {
   assert.ok(JSON.stringify(buildParticipationCard(await runtime.participation.state(fresh))).includes(notice));
 
   const empty = { ...fresh, chatId: 'never-published' };
-  await runtime.participation.publish(await runtime.participation.state(empty), { existingOnly: true, renewExisting: true });
+  await runtime.participation.publish(await runtime.participation.state(empty), { existingOnly: true, background: true });
   assert.equal(creations, 1, 'background renewal never creates an unregistered card');
   await store.mutate(renewed.key, current => ({ ...current, cardCreatedAt: Date.now() - 14 * 86400_000, cardSuppressed: true }));
-  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, renewExisting: true });
+  await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, background: true });
   assert.equal(creations, 1, 'suppressed cards stay suppressed even when overdue');
   await store.mutate(renewed.key, current => ({ ...current, cardCreatedAt: Date.now(), cardSuppressed: false }));
   await runtime.participation.change(fresh, 'listening', { controlId: 'card-stall-listen' });

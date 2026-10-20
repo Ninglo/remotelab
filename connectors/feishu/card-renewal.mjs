@@ -1,7 +1,8 @@
 import { feishuResponseError } from './delivery-errors.mjs';
 
-export const CARD_RENEWAL_AGE_MS = 13 * 86400_000;
-export const CARD_RENEWAL_NOTICE = '旧卡片已满13天，更换新卡片';
+// Provider capability boundary, never a timer or a reason to send a message.
+export const CARD_UPDATE_WINDOW_MS = 14 * 86400_000;
+export const CARD_RENEWAL_NOTICE = '原卡片已超过可更新期限，已按本次需要更换';
 export const isFeishuCardExpired = error =>
   Number(error?.feishuCode ?? error?.response?.data?.code ?? error?.code) === 230031;
 

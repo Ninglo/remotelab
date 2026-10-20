@@ -8,7 +8,7 @@ import { effectiveFeishuGroup } from './group-settings.mjs';
 import { buildGroupConfigurationCard } from './group-configuration-card.mjs';
 import { mentionsFeishuBot } from './response-policy.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from './delivery-errors.mjs';
-import { CARD_RENEWAL_AGE_MS, CARD_RENEWAL_NOTICE, isFeishuCardExpired, readCardCreatedAt } from './card-renewal.mjs';
+import { CARD_UPDATE_WINDOW_MS, CARD_RENEWAL_NOTICE, isFeishuCardExpired, readCardCreatedAt } from './card-renewal.mjs';
 
 const MODES = new Set(['active', 'listening', 'paused']);
 const LABELS = { active: '主动参与', listening: '旁听', paused: '暂停接收' };
@@ -111,7 +111,9 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         || String(summary.messageText || summary.textPreview || '').slice(0, 1200),
     }));
     if (getConfiguration && !record.source.topicId) {
-      try { return await publish(record); }
+      const existing = Boolean(record.cardMessageId
+        || effectiveFeishuGroup(runtime.config, record.source.chatId).participationStatusMessageId);
+      try { return await publish(record, { existingOnly: existing, background: existing }); }
       catch (error) { console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`); }
     }
     return record;
@@ -120,7 +122,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     if (!publishQueues.has(record.key)) publishQueues.set(record.key, serialQueue());
     return publishQueues.get(record.key)(() => publishCurrent(record, options));
   }
-  async function publishCurrent(record, { existingOnly = false, renewExisting = false } = {}) {
+  async function publishCurrent(record, { existingOnly = false, background = false } = {}) {
     const source = await resolveSource({ ...record.source, threadId: record.source.topicId });
     if (isFeishuTopicGroup(source)) return record;
     record = { ...record, ...await state(source) };
@@ -128,11 +130,30 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     // the durable opt-out when restoring or changing modes so it cannot resend.
     if (record.cardSuppressed === true
         || effectiveFeishuGroup(runtime.config, record.source.chatId).participationStatusCard === false) return record;
+    // Topic replies are bounded interactions, not persistent dashboards.
+    if (background && record.source.topicId) return record;
     const configuration = !record.source.topicId ? await getConfiguration?.(record) : null;
     const group = effectiveFeishuGroup(runtime.config, record.source.chatId);
     let messageId = record.cardMessageId || (!record.source.topicId ? group.participationStatusMessageId : '');
     if (existingOnly && !messageId) return record;
+    // Existing legacy records committed pinPending=false only after a successful
+    // top-notice write. New records retain the exact acknowledged pin binding.
+    const managedPin = !record.source.topicId && Boolean(messageId) && (
+      record.pinnedMessageId === messageId || record.pinPending
+      || (!Object.hasOwn(record, 'pinnedMessageId') && record.pinPending === false)
+      || (!Object.hasOwn(record, 'pinnedMessageId') && !record.cardMessageId && group.participationStatusMessageId === messageId));
+    if (background && !managedPin) return record;
     if (record.cardRenewalPending) throw new Error('换卡发送结果待核实，未重复发送。');
+    const semanticConfiguration = configuration?.project ? { ...configuration,
+      project: { ...configuration.project, briefUpdated: '' } } : configuration;
+    const semanticCard = buildParticipationCard({ ...record, cardRenewalNotice: '' }, semanticConfiguration);
+    const contentDigest = hash(JSON.stringify(semanticCard));
+    const existingCard = buildParticipationCard(record, configuration);
+    const sameContent = record.cardContentDigest
+      ? record.cardContentDigest === contentDigest
+      : record.cardDigest === hash(JSON.stringify(existingCard));
+    // Content comparison precedes every age read and renewal decision.
+    if (messageId && sameContent && !record.pinPending) return record;
     let createdAt = record.cardCreatedAt || 0;
     const rejected = record.cardUpdateFailure?.messageId === messageId && record.cardUpdateFailure?.code === 230031;
     if (messageId && !createdAt && !rejected) {
@@ -140,15 +161,16 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       record = await records.mutate(record.key, current => ({ ...record, ...current,
         cardMessageId: messageId, cardCreatedAt: createdAt }));
     }
-    const renewing = Boolean(messageId) && (rejected || Date.now() - createdAt >= CARD_RENEWAL_AGE_MS);
-    if (renewing && existingOnly && !renewExisting) return record;
+    const renewing = Boolean(messageId) && (rejected || Date.now() - createdAt >= CARD_UPDATE_WINDOW_MS);
+    // An expired conversation card stays historical. Current interaction state
+    // remains authoritative and can still be read through the normal dialogue.
+    if (renewing && record.source.topicId) return record;
+    if (renewing && background && !managedPin) return record;
     if (renewing) {
       record = { ...record, cardRenewalNotice: CARD_RENEWAL_NOTICE };
     }
     const card = buildParticipationCard(record, configuration);
     const digest = hash(JSON.stringify(card));
-    if (messageId && digest === record.cardDigest && !record.pinPending
-        && !renewing) return record;
     if (messageId && !renewing) {
       try {
         const result = await runtime.appClient.im.v1.message.patch({ path: { message_id: messageId },
@@ -159,7 +181,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         await records.mutate(record.key, current => ({ ...record, ...current, cardUpdateFailure: {
           messageId, code: 230031, at: new Date().toISOString(), logId: error.logId || '',
         } }));
-        return publishCurrent(record, { existingOnly, renewExisting });
+        return publishCurrent(record, { existingOnly, background });
       }
     } else {
       const previousMessageId = messageId;
@@ -199,11 +221,12 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         data: { content: JSON.stringify(card) } });
       if (updated?.code) throw new Error(updated.msg || 'Agent status card update failed');
     }
-    const canPin = !existingOnly || renewExisting;
+    const canPin = !record.source.topicId && (!existingOnly || managedPin);
     if (record.pinPending && canPin) {
       const result = await runtime.appClient.im.v1.chatTopNotice.putTopNotice({ path: { chat_id: record.source.chatId },
         data: { chat_top_notice: [{ action_type: '1', message_id: messageId }] } });
       if (result?.code) throw new Error(result.msg || 'Agent status card pin failed');
+      record = await records.mutate(record.key, current => ({ ...current, pinnedMessageId: messageId, pinPending: false }));
     }
     if (runtime.storagePaths?.messageIndexPath && record.sessionId) {
       await recordFeishuOutboundMessageSession(runtime, { ...record.source, chatType: 'group',
@@ -212,13 +235,15 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       }, record.sessionId, messageId);
     }
     return records.mutate(record.key, current => ({ ...record, ...current, cardMessageId: messageId,
-      cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, pinPending: canPin ? false : record.pinPending }));
+      cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, cardContentDigest: contentDigest,
+      pinPending: canPin ? false : record.pinPending }));
   }
-  async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId, existingOnly = false } = {}) {
+  async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId,
+    existingOnly = false, background = false } = {}) {
     const key = keyFor(summary);
     return exclusive(key, async () => {
       let prior = await state(summary);
-      if (prior.processedControls?.includes(controlId)) return publish(prior, { existingOnly });
+      if (prior.processedControls?.includes(controlId)) return publish(prior, { existingOnly, background });
       const mode = requested === 'resume_read' ? (prior.beforePause || 'listening') : requested;
       if (!MODES.has(mode)) throw new Error('Invalid Agent participation mode');
       let record = await records.mutate(key, current => ({ ...prior, ...current, source: sourceFor(summary), mode, modeOverride: true,
@@ -238,7 +263,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         const target = sessionId || record.sessionId || await resolveSession?.(summary);
         if (target) {
           try { await cancelSession(target, record); }
-          catch (error) { await publish(record, { existingOnly }); throw error; }
+          catch (error) { await publish(record, { existingOnly, background }); throw error; }
         }
         await cleanup?.(record);
         if (!record.source.topicId) {
@@ -254,7 +279,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       }
       record = await records.mutate(key, current => ({ ...current, stopPending: false,
         processedControls: [...(current.processedControls || []), controlId].filter(Boolean).slice(-100) }));
-      return publish(record, { existingOnly });
+      return publish(record, { existingOnly, background });
     });
   }
   async function assess(summary, { mentioned = false, taskCommand = false } = {}) {
@@ -319,10 +344,10 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       const source = await resolveSource(record.source);
       if (!participationEnabled(runtime, source)) continue;
       if (record.stopPending) await change(source, record.mode,
-        { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true });
+        { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true, background: true });
       else {
         if (record.mode !== 'active') await cleanup?.(record);
-        try { await publish({ ...record, source }, { existingOnly: true }); }
+        try { await publish({ ...record, source }, { existingOnly: true, background: true }); }
         catch (error) { console.warn(`[feishu-participation] card restore failed: ${error.message}`); }
       }
     }

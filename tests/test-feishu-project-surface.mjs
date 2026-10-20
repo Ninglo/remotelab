@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -49,20 +49,21 @@ try {
   let patches = 0;
   let failReply = false;
   const sent = new Map();
-  let onPatch;
+  let liveMessageId = 'card-id';
   let patchError;
   let patchResult = { code: 0 };
   runtime.appClient = { im: { v1: { message: {
     reply: async ({ data }) => {
       if (!sent.has(data.uuid)) { created++; sent.set(data.uuid, created === 1 ? 'card-id' : `card-id-${created}`); }
       card = JSON.parse(data.content);
+      liveMessageId = sent.get(data.uuid);
       if (failReply) { failReply = false; throw new Error('Lost send acknowledgement'); }
       return { code: 0, data: { message_id: sent.get(data.uuid) } };
     },
     patch: async ({ data }) => {
       patches++;
       if (patchError) throw patchError;
-      if (!patchResult.code) { card = JSON.parse(data.content); onPatch?.(); }
+      if (!patchResult.code) { card = JSON.parse(data.content); }
       return patchResult;
     },
   } } } };
@@ -75,7 +76,7 @@ try {
   const content = () => JSON.stringify(card);
   const values = () => card.body.elements.flatMap(element => element.columns || [])
     .flatMap(column => column.elements || []).flatMap(element => element.behaviors || []).map(behavior => behavior.value);
-  const event = value => ({ context: { open_chat_id: 'discussion', open_message_id: 'card-id' },
+  const event = value => ({ context: { open_chat_id: 'discussion', open_message_id: liveMessageId },
     operator: { operator_id: { open_id: 'allowed' } }, action: { value } });
   const choose = (action, alias) => event(values().find(value => value.action === action && (!alias || value.alias === alias)));
 
@@ -90,13 +91,13 @@ try {
   assert(content().includes('方案尚未实施'));
   assert(!content().includes('DO NOT SHOW'), 'materials expose only explicitly registered fields');
   await writeFile(auditPath, JSON.stringify({ status: 'completed', preserve: ['原控制面'] }));
-  await surface.refresh();
+  await surface.command(summary, 'material memory-audit');
   assert(content().includes('本项已完成'), 'audit material reads are also bound to their original source');
   await surface.command(summary, 'memory');
   assert(content().includes('Original fact'));
   assert(!content().includes('PRIVATE OTHER PROJECT'), 'only the explicitly registered section is exposed');
   await writeFile(memoryPath, '# Ledger\n\n## Project\n\nCorrected fact\n\n## Other\n\nPRIVATE OTHER PROJECT');
-  await surface.refresh();
+  await surface.command(summary, 'memory');
   assert(content().includes('Corrected fact'), 'the view reads authoritative memory, not a synchronized copy');
   const correction = await surface.command(summary, 'memory 请纠正负责人，保留原来源');
   assert(correction.taskText.includes(memoryPath));
@@ -163,120 +164,70 @@ try {
   assert(submitted.messageText.includes('用户原文：\n补充新事实'));
   assert.equal(submitted.startThread, undefined, 'memory edits continue the original topic');
 
-  // Exercise actual filesystem notifications, including atomic replacement.
-  await surface.stop();
-  surface = makeSurface({ watchFiles: true });
-  await surface.command(summary, 'memory');
-  const updated = new Promise((resolve, reject) => {
-    const deadline = setTimeout(() => reject(new Error('memory invalidation did not update the card')), 3000);
-    onPatch = () => { if (content().includes('Live memory edit')) { clearTimeout(deadline); resolve(); } };
-  });
-  await writeFile(`${memoryPath}.next`, '## Project\n\nLive memory edit\n\n## Other\n\nExcluded');
-  await rename(`${memoryPath}.next`, memoryPath);
-  await updated;
-  onPatch = null;
-  await rm(memoryPath);
-  await surface.refresh();
-  assert(content().includes('记忆来源当前不可读'));
-  assert(!content().includes('Live memory edit'), 'unavailable sources never silently use a stale snapshot');
-  assert(patches > 0);
-
-  await surface.stop();
-  surface = makeSurface();
-  await writeFile(memoryPath, '## Project\n\nRestored source');
-  await surface.command(summary, 'tasks');
-  const controlsBeforeExpiry = choose('pause', 'daily');
   const { createRecordStore } = await import('../lib/durable-records.mjs');
   const records = createRecordStore(join(runtime.config.storageDir, 'project-surfaces', 'cards'));
-  const original = (await records.active())[0];
-  await writeFile(memoryPath, '## Project\n\nChanged source');
-  patchError = new Error('Temporary transport failure');
-  let before = patches;
-  await surface.refresh();
-  assert.equal(patches, before + 1, 'provider errors must not trigger a misleading source-error PATCH');
-  assert.equal((await records.get(original.key)).updateFailure, undefined, 'transient errors remain recoverable');
-  patchError = null;
-  await surface.refresh();
-  assert.equal(patches, before + 2, 'later refresh recovers a transient failure');
-  const lastGood = await records.get(original.key);
+  await surface.command(summary, 'home');
+  const beforeHiddenChange = patches;
+  task.nextRunAt = '2030-01-01T00:00:00Z';
+  task.schedule.missedCount++;
+  task.prompt = 'New execution rule, not displayed on the home page';
+  await surface.command(summary, 'home');
+  assert.equal(patches, beforeHiddenChange, 'off-page data and read times do not repaint the current card');
+  await surface.command(summary, 'tasks');
+  assert(patches > beforeHiddenChange, 'opening another page reads its current data and actions');
 
-  await writeFile(memoryPath, '## Project\n\nNewer source');
-  patchError = Object.assign(new Error('Message has expired when updating message'), {
-    code: 230031, httpStatus: 400, logId: 'provider-expiry-log',
-  });
-  before = patches;
+  const original = (await records.active())[0];
+  await records.mutate(original.key, current => ({ ...current, createdAt: Date.now() - 15 * 86400_000 }));
+  await writeFile(memoryPath, '## Project\n\nNew authoritative memory');
+  const beforeRecovery = { patches, created, reads: requests.length };
   await surface.refresh();
-  const expired = await records.get(original.key);
-  assert.equal(patches, before + 1, 'expiry causes only the first rejected PATCH');
-  assert.deepEqual(expired.source, original.source, 'original source stays intact');
-  assert.notEqual(expired.messageId, original.messageId, 'renew the expired message in its original topic');
-  assert.equal(expired.cardHistory[0].messageId, original.messageId);
-  assert.equal(expired.cardHistory[0].digest, lastGood.digest, 'preserve the old successful content receipt');
-  assert.equal(expired.cardHistory[0].readAt, lastGood.readAt);
-  assert.equal(expired.cardHistory[0].updateFailure.code, 230031);
-  assert.equal(expired.cardHistory[0].updateFailure.logId, 'provider-expiry-log');
-  assert(content().includes('旧卡片已满13天，更换新卡片'));
-  assert.equal(created, 2);
-  patchError = null;
-  await Promise.all([surface.refresh(), surface.refresh()]);
   await surface.stop();
   surface = makeSurface();
   await surface.restore();
-  assert.equal((await surface.actionFeedback(controlsBeforeExpiry)).accepted, false);
-  const writes = requests.filter(call => call.options?.method === 'POST').length;
-  await assert.rejects(surface.handleAction(controlsBeforeExpiry), /原卡片/);
-  assert.equal(requests.filter(call => call.options?.method === 'POST').length, writes,
-    'known expired controls cannot change a schedule before failing to update the card');
-  assert.equal(patches, before + 1, 'unchanged refresh and restart reuse the replacement');
-  assert.equal(created, 2);
+  assert.deepEqual({ patches, created, reads: requests.length }, beforeRecovery,
+    'background invalidations and restart do not inspect or maintain historical conversation cards');
+  assert.equal((await surface.actionFeedback(choose('pause', 'daily'))).accepted, false,
+    'expired controls cannot write a schedule before failing to publish');
+  await surface.command(summary, 'memory');
+  assert.equal(created, 2, 'an explicit human request may replace an expired conversation card');
+  assert(content().includes('New authoritative memory'));
+  assert.equal((await records.get(original.key)).cardHistory[0].messageId, original.messageId);
 
-  // Age alone must renew even when the content digest has not changed.
+  // Thirteen days is still inside the provider update window.
   await records.mutate(original.key, current => ({ ...current, createdAt: Date.now() - 13 * 86400_000 - 1 }));
+  await surface.command(summary, 'home');
+  assert.equal(created, 2, 'no thirteen-day preemptive renewal');
+  await surface.command(summary, 'tasks');
+  const beforeProviderExpiry = await records.get(original.key);
+  patchError = Object.assign(new Error('Provider says expired'), { code: 230031, httpStatus: 400, logId: 'expiry-log' });
+  await surface.command(summary, 'memory');
+  assert.equal(created, 3, 'a confirmed expiry is handled only during the explicit request');
+  const renewed = await records.get(original.key);
+  assert.notEqual(renewed.messageId, beforeProviderExpiry.messageId);
+  assert.equal(renewed.cardHistory.at(-1).updateFailure.code, 230031);
+  patchError = null;
+  const beforeRestart = { patches, created };
+  await surface.stop();
+  surface = makeSurface();
+  await surface.restore();
   await surface.refresh();
-  assert.equal(created, 3);
-  assert.equal(patches, before + 1, 'do not PATCH a card already due for renewal');
-  patchResult = { code: 230031, msg: 'Message expired' };
-  await surface.command(summary);
-  assert.equal(created, 4, 'SDK business errors also renew and preserve old rejection evidence');
-  patchResult = { code: 0 };
+  assert.deepEqual({ patches, created }, beforeRestart);
 
-  // Recover an old record's missing creation date from the original message.
-  let ageReads = 0;
-  runtime.appClient.im.v1.message.get = async ({ path }) => {
-    ageReads++;
-    return { code: 0, data: { items: [{ message_id: path.message_id, create_time: String(Date.now() - 13 * 86400_000 - 1) }] } };
-  };
-  await records.mutate(original.key, current => ({ ...current, createdAt: null }));
-  await surface.refresh();
-  assert.equal(ageReads, 1);
-  assert.equal(created, 5);
-  await surface.refresh();
-  assert.equal(ageReads, 1, 'persist the new card creation time');
-
-  // Unknown send results survive restart without a second send or lost binding.
-  const beforeUncertain = await records.get(original.key);
-  await records.mutate(original.key, current => ({ ...current, createdAt: Date.now() - 13 * 86400_000 - 1 }));
+  await rm(memoryPath);
+  await surface.command(summary, 'memory');
+  assert(content().includes('记忆来源当前不可读'));
+  assert(!content().includes('New authoritative memory'));
+  await writeFile(memoryPath, '## Project\n\nRestored memory');
+  await records.mutate(original.key, current => ({ ...current, createdAt: Date.now() - 15 * 86400_000 }));
   failReply = true;
-  await surface.refresh();
-  assert.equal(created, 6);
-  assert.equal((await records.get(original.key)).messageId, beforeUncertain.messageId);
-  assert((await records.get(original.key)).renewalPending);
+  await assert.rejects(surface.command(summary), /Lost send/);
+  const beforeUncertainRestart = { patches, created };
   await surface.stop();
   surface = makeSurface();
   await surface.restore();
   await assert.rejects(surface.command(summary), /发送结果待核实/);
-  assert.equal(created, 6, 'do not blindly repeat a renewal with no acknowledgement');
-
-  await records.mutate(original.key, current => ({ ...current, messageId: 'unavailable-source-card', renewalPending: null }));
-  patchResult = { code: 230031, msg: 'Message expired' };
-  await writeFile(registryPath, '{}');
-  before = patches;
-  await surface.refresh();
-  await surface.refresh();
-  assert.equal(patches, before + 1, 'expiry while publishing a real source failure also stops retries');
-  assert.equal((await records.get(original.key)).updateFailure.messageId, 'unavailable-source-card');
-  console.log('PASS: Feishu project source binding, scoped reads, configuration controls, audit, replay/restart and live memory invalidation');
-  console.log('PASS: 13-day renewal, legacy dates, retained evidence, stale controls, restart and uncertain-send protection');
+  assert.deepEqual({ patches, created }, beforeUncertainRestart, 'uncertain explicit replacements survive restart without resending');
+  console.log('PASS: scoped current reads, explicit interactions, no background card maintenance, visible-content comparison and expiry/replay recovery');
 } finally {
   await Promise.all(surfaces.map(surface => surface.stop()));
   await rm(home, { recursive: true, force: true });

@@ -83,23 +83,25 @@ buttons. Optional `materials` register existing JSON source files with an
 `alias`, `name`, absolute `path`, and a `fields` object mapping allowed top-level
 field names to display labels. `/project material <alias> [page]` and card buttons
 read those original audit/context fields inside Feishu; unregistered fields are
-excluded. Read times and source versions are visible. Directory notifications
-cover atomic file replacement; source changes update the original card. A
+excluded. Read times and source versions are visible. Explicit opens read current files, including atomic replacements;
+conversation cards are not maintained by background directory notifications. A
 missing or ambiguous memory source is marked unavailable, never replaced with
 an old copy. No source directory scan or new memory store is introduced.
 
-On the next refresh after 13 days, the entry replaces the card in its original
-conversation and displays “旧卡片已满13天，更换新卡片”. Feishu rejection `230031`
-also triggers replacement instead of repeatedly patching the expired message.
-Legacy records read and retain the provider's original send time once. The old
-message remains visible; its ID, source, last successful content receipt and
-any expiry rejection remain in the durable record. Old controls cannot change
-schedules after replacement, and renewal itself does not change task state.
-A renewal records its stable send UUID before sending. An uncertain send stays
-pending across restarts and requires receipt verification before another send;
-a confirmed rejection may retry that same UUID. Transport failures do not mark
-the project source unavailable. Actual source failures still update an editable
-card with that status, and do not create replacement cards from unavailable data.
+Conversation project cards are bounded snapshots. They do not watch memory,
+schedule or material files, and background refresh/restart never edits or
+replaces them. `/project` and page/control interactions read the original
+sources again. Only the current page and its action semantics are compared;
+read timestamps and off-page task changes do not repaint an unchanged card.
+
+There is no 13-day renewal timer. An explicit `/project` open may replace an
+uneditable card after the provider's 14-day window or a confirmed `230031`
+rejection. Existing controls reject a known expired card before changing a
+schedule; use `/project` for a fresh interaction. A replacement preserves the
+old message, source and rejection evidence. Its stable UUID and pending-send
+receipt survive restart; uncertain sends are verified before retry. Recovery
+may inspect interrupted configuration-operation receipts but does not repaint
+historical conversation cards.
 
 Pause/resume buttons operate only on explicitly registered recurring schedules.
 The callback must match the stored card, chat, source binding, and current
@@ -115,8 +117,8 @@ This is not a transaction across independent clients modifying the scheduler.
 the exact canonical source, registered heading, observed version, and the
 human's original request. The Harness rechecks evidence and concurrent edits,
 writes the original memory through its normal workflow, and replies with what
-was actually adopted. Submission is not a successful write. The card then reads
-that same source; it never maintains a synchronized editable copy. Arbitrary
+was actually adopted. Submission is not a successful write. The card reads
+that same source on the next explicit interaction; it never maintains a synchronized editable copy. Arbitrary
 task-rule edits similarly use the original conversation and existing schedule
 tools. `/status`, `/model`, `/effort`, `/tier`, `/mute`, and `/unmute` retain their
 existing conversation scope.
@@ -273,16 +275,26 @@ creation scope first. Publication suppression remains effective. Native Session
 invalidations refresh the same card without a polling AI task.
 Existing callbacks validate the card, actor and source before changes.
 
-When a card reaches 13 days from its original send time, the next normal
-publication or native background refresh replaces it. A confirmed `230031`
-rejection also renews it. The replacement displays “旧卡片已满13天，更换新卡片”
-inside the card, and retains that explanation through later edits and restarts.
-The original group or topic and participation mode are preserved; suppressed
-cards remain suppressed, and a background refresh never creates a first card.
-Patch-only restoration skips overdue cards. First-time cards and in-place edits
-do not add this notice or send a separate announcement. Editing content does not
-reset the card's age. Old message IDs and expiry receipts remain in card history.
-Uncertain renewal sends remain pending for verification, including after restart.
+Only the managed group top-notice card is a persistent view. Background
+invalidation and restart update an existing acknowledged pin binding; topic
+participation cards are excluded. Suppressed cards and bindings superseded by
+another message are not maintained. New pin receipts retain `pinnedMessageId`;
+legacy `pinPending: false` records represent a completed top-notice write.
+
+The displayed content and its controls are compared before checking age.
+Unchanged content never causes a patch, renewal, or age lookup. On a real change,
+a card still inside the provider update window is edited in place. An expired
+pinned card is replaced only for that change, and the successful send is recorded
+before updating the top notice. A failed pin is retried against the same sent
+message. The old message and expiry receipt remain in history. Unknown send
+outcomes remain pending across restarts. No age-only renewal or new background
+conversation card is allowed.
+
+The current top-notice integration exposes write/remove operations, not a provider
+readback of a human's external top-notice removal. Maintenance uses acknowledged
+managed bindings and the existing withdrawal/suppression setting; it does not
+claim to detect an external client unpin automatically. Ordinary `pins.list`
+bookmarks are a different resource and must not substitute for top notices.
 
 The normal prompt builder checks registered projects’ opening briefs on each
 accepted input, including resumed topics, and projects their hash and source

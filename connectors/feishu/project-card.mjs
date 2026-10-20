@@ -91,7 +91,7 @@ export function buildProjectCard(record, view, audit = []) {
       text('查看记忆、核对执行规则、暂停或恢复任务都可以在此卡片完成。记忆纠正在原话题继续。\n输入 /project 可重新读取并更新这张卡片。'));
   }
   if (record.notice) elements.push(text(record.notice));
-  elements.push(text(`状态读取于 ${dateName(view.readAt)}。内容变更后更新原卡；来源不可核实时会明确标出。`));
+  elements.push(text(`本页信息读取于 ${dateName(view.readAt)}。输入 /project 或打开其他页面时重新读取最新信息。`));
   return { schema: '2.0', config: { update_multi: true },
     header: { template: 'blue', title: { tag: 'plain_text', content: `${source.name} · 项目入口` } },
     body: { elements } };

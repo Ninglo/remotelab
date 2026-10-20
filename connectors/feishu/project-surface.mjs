@@ -1,12 +1,10 @@
-import { watch } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { createKeyedTaskQueue } from '../../chat/fs-utils.mjs';
-import { CHAT_RECURRING_SCHEDULES_FILE, CHAT_TRIGGERS_FILE } from '../../lib/config.mjs';
 import { createRecordStore } from '../../lib/durable-records.mjs';
 import { buildFeishuTopicId } from './index.mjs';
 import { buildProjectCard } from './project-card.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from './delivery-errors.mjs';
-import { CARD_RENEWAL_AGE_MS, CARD_RENEWAL_NOTICE, isFeishuCardExpired, readCardCreatedAt } from './card-renewal.mjs';
+import { CARD_UPDATE_WINDOW_MS, CARD_RENEWAL_NOTICE, isFeishuCardExpired, readCardCreatedAt } from './card-renewal.mjs';
 import { loadProjectSources, projectDigest, projectMemoryCorrection, projectPages,
   projectRequest, readProjectTask, readProjectView } from './project-sources.mjs';
 
@@ -31,21 +29,15 @@ export function parseProjectAction(raw) {
 }
 
 export function createProjectSurface(runtime, { request = runtime.requestRemoteLab,
-  authorize = async () => false, watchFiles = true } = {}) {
+  authorize = async () => false } = {}) {
   const root = join(runtime.config.storageDir, 'project-surfaces');
   const cards = createRecordStore(join(root, 'cards'));
   const actions = createRecordStore(join(root, 'actions'));
   const exclusive = createKeyedTaskQueue();
-  const watchers = new Map();
-  const activeRefreshes = new Set();
-  let refreshTimer;
-  let stopped = false;
 
   const keyFor = summary => projectDigest(`${summary.chatId}:${buildFeishuTopicId(summary) || 'main'}`);
   const getView = async record => {
     const view = await readProjectView(runtime, record.source.chatId, request);
-    observe(view.source.memory.path);
-    for (const material of view.source.materials) observe(material.path);
     for (const task of view.tasks) task.promptPages = projectPages(task.prompt || '未提供执行规则。');
     return view;
   };
@@ -72,21 +64,23 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     }
   }
 
-  async function publish(record, view, force = false) {
+  async function publish(record, view, allowReplacement = false) {
     if (record.renewalPending) throw new Error('项目换卡发送结果待核实，未重复发送。');
     if (record.messageId && !record.createdAt && !isExpired(record)) {
       const createdAt = await readCardCreatedAt(runtime, record.messageId);
       record = await cards.mutate(record.key, current => ({ ...current, createdAt }));
     }
-    const renewing = Boolean(record.messageId) && (isExpired(record)
-      || Date.now() - record.createdAt >= CARD_RENEWAL_AGE_MS);
+    const expired = Boolean(record.messageId) && (isExpired(record)
+      || Date.now() - record.createdAt >= CARD_UPDATE_WINDOW_MS);
+    if (expired && !allowReplacement) throw expiredError();
+    const renewing = expired && allowReplacement;
     if (renewing) record = { ...record, renewalNotice: CARD_RENEWAL_NOTICE };
     const audit = await auditFor(view.source.link.projectId);
-    // A fresh read time alone is not a content change.
-    const digest = projectDigest({ tab: record.tab, page: record.page, alias: record.alias,
-      notice: record.notice, renewalNotice: record.renewalNotice,
-      source: view.source, memory: view.memory, tasks: view.tasks, materials: view.materials, audit });
-    if (!force && !renewing && record.messageId && digest === record.digest) return record;
+    // Compare the displayed page and its actions, excluding the read timestamp.
+    // Off-page task counters, next-run times and material bodies are not changes
+    // to this card. Explicit opens still read the current authoritative sources.
+    const digest = projectDigest(buildProjectCard(record, { ...view, readAt: '' }, audit));
+    if (!renewing && record.messageId && digest === record.digest) return record;
     const card = buildProjectCard(record, view, audit);
     let messageId = record.messageId;
     let createdAt = record.createdAt;
@@ -94,7 +88,8 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
       try { await patch(record, card); }
       catch (error) {
         if (!isFeishuCardExpired(error)) throw error;
-        return publish(await cards.get(record.key), view, true);
+        if (!allowReplacement) throw expiredError();
+        return publish(await cards.get(record.key), view, allowReplacement);
       }
     } else {
       // Durable source + stable UUID allows the inbox to retry the same send.
@@ -167,7 +162,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
       sender: { senderType: 'user', openId: action.actor, userId: action.userId, tenantKey: action.tenantKey } })) {
       throw new Error('当前账号无法修改此项目入口。');
     }
-    if (isExpired(record)) throw expiredError();
+    if (isExpired(record) || (record.createdAt && Date.now() - record.createdAt >= CARD_UPDATE_WINDOW_MS)) throw expiredError();
     const source = await loadProjectSources(runtime, action.chatId);
     if (source.bindingVersion !== action.bindingVersion) throw new Error('项目关联已变更，请先用 /project 刷新。');
     if (['pause', 'resume', 'task'].includes(action.action)
@@ -238,59 +233,8 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     });
   }
 
-  function refresh() {
-    if (stopped) return Promise.resolve();
-    const work = refreshRecords();
-    activeRefreshes.add(work);
-    return work.finally(() => activeRefreshes.delete(work));
-  }
-
-  async function refreshRecords() {
-    const records = await cards.active();
-    await Promise.allSettled(records.filter(record => record.messageId).map(record => exclusive(record.key, async () => {
-      const current = await cards.get(record.key);
-      if (current.renewalPending) return;
-      let view;
-      try { view = await getView(current); }
-      catch (error) {
-        // Never leave a last-known-good card looking current after a source or
-        // binding disappears. A provider update failure is a separate condition
-        // and must not trigger another PATCH claiming the source disappeared.
-        try {
-          await patch(current, { schema: '2.0', config: { update_multi: true },
-            header: { title: { tag: 'plain_text', content: '项目入口当前不可核实' } },
-            body: { elements: [{ tag: 'div', text: { tag: 'plain_text',
-              content: '来源登记或运行状态不可读取。请修复来源后输入 /project；此卡片暂停提供操作。' } }] } });
-          await cards.mutate(current.key, record => ({ ...record, digest: '' }));
-        } catch (updateError) { warn(updateError); }
-        warn(error);
-        return;
-      }
-      try { await publish(current, view); }
-      catch (error) { warn(error); }
-    })));
-  }
-
-  function observe(path) {
-    if (stopped || !watchFiles || watchers.has(path)) return;
-    const observer = watch(dirname(path), { persistent: false }, (_, filename) => {
-      if (filename && String(filename) !== basename(path)) return;
-      clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => { if (!stopped) void refresh().catch(warn); }, 150);
-    });
-    observer.on('error', warn);
-    watchers.set(path, observer);
-  }
-
   async function restore() {
     if (!runtime.config.projectSurfacesPath) return;
-    observe(runtime.config.projectSurfacesPath);
-    observe(CHAT_RECURRING_SCHEDULES_FILE);
-    observe(CHAT_TRIGGERS_FILE);
-    for (const link of runtime.config.projectLinks || []) {
-      try { observe((await loadProjectSources(runtime, link.discussionChatId)).memory.path); }
-      catch (error) { warn(error); }
-    }
     // Interrupted actions are inspected without replaying a configuration write.
     for (const pending of (await actions.active()).filter(action => action.status === 'pending')) {
       try {
@@ -301,15 +245,12 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
             : '重启后未读回目标状态；未重复执行，请核对当前状态' }));
       } catch (error) { warn(error); }
     }
-    await refresh();
   }
 
-  return { command, actionFeedback, handleAction, refresh, restore,
+  // Conversation cards are snapshots. Recovery inspects business receipts only;
+  // it never refreshes or republishes historical messages.
+  return { command, actionFeedback, handleAction, refresh: async () => {}, restore,
     async stop() {
-      stopped = true;
-      clearTimeout(refreshTimer);
-      for (const observer of watchers.values()) observer.close();
-      await Promise.allSettled([...activeRefreshes]);
       await Promise.all([cards.idle(), actions.idle()]);
     } };
 }
