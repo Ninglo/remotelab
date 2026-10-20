@@ -109,7 +109,7 @@ Person 必须存在于本实例的认证目录。文件缺失、配置损坏、�
 
 ## 对话中的检查和修订入口
 
-`remotelab memory inspect --json` 显示当前请求者档案、行动手册、观察状态、证据和修订历史。默认从 `REMOTELAB_RUN_ID` 找实际请求身份；没有可核身份就拒绝写人员档案。这里的身份是归属，沿用共享实例的完整访问权，不新增 Session 私有权限。
+`remotelab memory inspect --json` 显示当前请求者档案、行动手册、观察状态、证据和修订历史。两类来源独立读取；超限、损坏或不可读的来源列在 `unavailable`，不阻断另一来源的检查及后台提取，也不视为没有旧条目。实际写入仍逐目标检查原文件，不覆盖不可读来源。默认从 `REMOTELAB_RUN_ID` 找实际请求身份；没有可核身份就拒绝写人员档案。这里的身份是归属，沿用共享实例的完整访问权，不新增 Session 私有权限。
 
 个人开关 API 为 `/api/personal-memory-settings`，只接受本人登录身份；对话操作使用 `/api/personal-memory-settings/current-run?runId=<当前运行>`，从已接受的当前人类请求核对身份。POST 需要 `enabled`、`expectedRevision`、`confirm:true`（对话入口另带 `runId`），不接受调用者指定另一个 Person。关闭后旧模型历史不会被清除。
 
