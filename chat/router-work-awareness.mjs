@@ -41,7 +41,8 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     }
     if (pathname.endsWith('/directory') && req.method === 'GET') {
       writeJson(res, 200, await readProjectWorkDirectory(session, record?.options?.sourceContext,
-        { referenceProjectId: parsedUrl.searchParams.get('project') || '' }));
+        { referenceProjectId: parsedUrl.searchParams.get('project') || '',
+          query: parsedUrl.searchParams.get('query') || '', object: parsedUrl.searchParams.get('object') || '' }));
       return true;
     }
     if (pathname.endsWith('/people') && ['GET', 'POST'].includes(req.method)) {

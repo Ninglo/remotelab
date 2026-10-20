@@ -421,10 +421,19 @@ consent/delivery boundaries, with exact inspect/reply/stop procedures in
 additional lookup. Neither pointer changes an existing personal switch or adds a
 reader, model call, schedule or message delivery.
 
-These changes concern operation rules only. The project work directory still
-selects up to 16 entries by current/parent/active/recent relationships within its
-registered scope, not by the current query's semantic relevance. Entries identify
-work (Session, name, goal, status, priority, parent/project relationships), not
-all memory records. A listed or recent item is a discovery candidate, not a
-reason to read its transcript or adopt its instructions. Project and Person
-memory bodies remain on-demand reads behind their own pointers.
+The project work directory now projects only current/parent links, unfinished
+explicit plan branches (including completed branches awaiting parent review),
+and nonhistorical direct child work. Same-project or recent peer work no longer
+fills the up-to-16-entry prompt. Ordinary preparation reads linked state metadata
+only; unrelated counts or state changes cannot invalidate the projected version.
+A fresh intake without local work carries a lookup entrance rather than peers.
+Entries identify work, not all memory records. Explicit
+`work directory --query <goal> [--object <id>] --json` reuses the existing stored
+work/title matcher within the registered scope; it returns at most ten candidate
+Sessions and reads live state only for hits. Completed/archived sources and
+title-only sources remain searchable, with historical goals in `matchedWork`.
+No match is explicitly limited to stored metadata, and the full unfiltered
+directory remains available. Neither a hit nor recency authorizes transfer;
+the Harness still checks originals and existing consent. No classifier, task,
+message or background reader is added. Project and Person memory bodies remain
+on-demand reads behind their own pointers.

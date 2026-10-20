@@ -6,16 +6,23 @@ const hash = value => createHash('sha256').update(JSON.stringify(value)).digest(
 const noise = new Set(['工作', '项目', '处理', '这个', '那个', '一个', '我们', '可以', '方案',
   '一下', '然后', '但是', '觉得', '我觉', '确实', '相关', '问题', '内容', '需要', '已经', '其实',
   '这里', '那里', '现在', '之后', '之前', '所以', '还是', '就是', '的是', '的一', '都是', '继续', '续吧',
-  '电脑', '显示', '连接', '希望', '什么', '怎么', '这台']);
+  '电脑', '显示', '连接', '希望', '什么', '怎么', '这台', '进展', '进度']);
+const chineseNoiseBoundary = new RegExp([...noise].filter(token => /^[\u4e00-\u9fff]+$/.test(token)).join('|'), 'g');
 // Workflow vocabulary can be the subject of a search, but a title starting
 // with it must not become a named-topic fence for every other candidate.
 const genericHeadings = new Set(['开工', '核对', '规则', '策略', '检索', '上下', '下文']);
+const genericNames = new Set(['task', 'work', 'project', 'report', 'test', 'status', 'update',
+  'plan', 'session', 'current', 'check', 'review', 'context', 'run', 'output']);
 
 function tokens(value) {
   const text = clean(value, 4000).toLowerCase();
   const out = text.match(/[a-z0-9_./:-]{3,}/g) || [];
   for (const run of text.match(/[\u4e00-\u9fff]+/g) || []) {
-    for (let i = 0; i < run.length - 1; i++) out.push(run.slice(i, i + 2));
+    // Stop words separate terms; do not invent cross-word clues such as 理进
+    // from the generic phrase 处理进展.
+    for (const part of run.split(chineseNoiseBoundary)) {
+      for (let i = 0; i < part.length - 1; i++) out.push(part.slice(i, i + 2));
+    }
   }
   return new Set(out.filter(token => !noise.has(token)));
 }
@@ -73,8 +80,9 @@ export function candidateWorkFromSessions(sessions, options = {}) {
     const matched = [...tokens(searchText(work))].filter(token => queryTokens.has(token));
     const informative = matched.filter(token => (frequency.get(token) || 0) < Math.max(3, entries.length * 0.25));
     const specificTerm = informative.some(token => /[a-z]/.test(token) && (token.length >= 8 || /[./:]/.test(token)));
-    const namedTopic = informative.some(token => /^[\u4e00-\u9fff]{2}$/.test(token)
-      && work.sessionName.includes(token) && frequency.get(token) <= Math.max(2, entries.length * 0.1));
+    const namedTopic = informative.some(token => (/^[\u4e00-\u9fff]{2}$/.test(token)
+      || /^[a-z][a-z0-9_-]{2,}$/.test(token) && !genericNames.has(token))
+      && work.sessionName.toLowerCase().includes(token) && frequency.get(token) <= Math.max(2, entries.length * 0.1));
     if (!sameObject && namedTopics.length && !matched.some(token => namedTopics.includes(token))) continue;
     if (!sameObject && informative.length < 2 && !specificTerm && !namedTopic) continue;
     const weight = informative.reduce((sum, token) => sum + Math.log(1 + entries.length / frequency.get(token)), 0);
