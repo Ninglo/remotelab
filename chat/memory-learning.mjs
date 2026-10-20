@@ -357,13 +357,31 @@ export async function buildLearningContext({ personId, identityId, authDocument,
   }
   try {
     if (typeof project !== 'string') project = await resolveLearningProject(session, sourceContext);
-    const snapshot = await inspectLearning({ personId, identityId, authDocument, memoryDir });
     const includeProfiles = policy.profiles && personalMemoryPreference({ personId, identityId, authDocument }).enabled;
+    // A failed optional source must not hide a readable Person profile (or the
+    // reverse). Keep the strict all-source inspection/write path unchanged.
+    const paths = learningPaths(memoryDir, personId);
+    const targets = [
+      ...(includeProfiles ? [{ kind: 'profile', path: paths.profile }] : []),
+      ...(policy.handbook ? [{ kind: 'handbook', path: paths.handbook }] : []),
+    ];
+    const reads = await Promise.allSettled(targets.map(({ path }) => readText(path).then(parseLearningDocument)));
+    const snapshot = { paths, profile: { prefix: '', entries: [] }, handbook: { entries: [] } };
+    const unavailable = [];
+    reads.forEach((result, index) => {
+      const target = targets[index];
+      if (result.status === 'fulfilled') snapshot[target.kind] = result.value;
+      else unavailable.push({ ...target, reason: result.reason.message });
+    });
     const blocks = [], budget = Math.min(6000, Math.max(0, maxChars));
+    const failureNotice = unavailable.length
+      ? '\nScoped memory sources unavailable (not missing records): ' + JSON.stringify(unavailable) : '';
+    const skippedNotice = '\nSome scoped entries were skipped by budget; read their registered original sources before relying on them.';
+    const bodyBudget = budget - CONTEXT_HEADER.length - failureNotice.length - skippedNotice.length;
     // Hand-maintained profile text is still authoritative. Keep it whole and
     // bounded; a large legacy document stays behind the original file pointer.
     if (includeProfiles && snapshot.profile.prefix.trim().length <= 1800 && snapshot.profile.prefix.trim()
-      && snapshot.profile.prefix.trim().length + CONTEXT_HEADER.length + 20 <= budget) {
+      && snapshot.profile.prefix.trim().length + 20 <= bodyBudget) {
       blocks.push(`本人档案（人工维护）：\n${snapshot.profile.prefix.trim()}`);
     }
     const candidates = [...(includeProfiles ? snapshot.profile.entries : []), ...(policy.handbook ? snapshot.handbook.entries : [])];
@@ -373,18 +391,20 @@ export async function buildLearningContext({ personId, identityId, authDocument,
     let skipped = includeProfiles && snapshot.profile.prefix.trim() && !blocks.length ? 1 : 0;
     for (const entry of selected.slice(0, 12)) {
       const body = entryBody(entry);
-      if (blocks.join('\n\n').length + body.length + CONTEXT_HEADER.length + 2 > budget) { skipped++; continue; }
+      if (blocks.join('\n\n').length + body.length + 2 > bodyBudget) { skipped++; continue; }
       blocks.push(body);
     }
     skipped += Math.max(0, selected.length - 12);
-    onCoverage({ result: skipped ? 'partial-budget-skipped' : blocks.length ? 'found' : 'no-match-in-applicable-scoped-entries', paths: snapshot.paths, skipped });
+    onCoverage({ result: unavailable.length ? unavailable.length === targets.length ? 'source-unavailable' : 'partial-source-unavailable'
+      : skipped ? 'partial-budget-skipped' : blocks.length ? 'found' : 'no-match-in-applicable-scoped-entries',
+      paths: snapshot.paths, skipped, ...(unavailable.length ? { unavailable } : {}) });
     if (!blocks.length) {
-      const pointer = 'Scoped collaboration memory is enabled for the verified current Person; no applicable entries fit this snapshot. '
+      const pointer = failureNotice.trim() || 'Scoped collaboration memory is enabled for the verified current Person; no applicable entries fit this snapshot. '
         + 'For a new task or a discovered error, inspect current method status with `remotelab memory context --query <topic> --json`. '
         + 'Use the original sources for details.';
       return pointer.length <= budget ? pointer : '';
     }
-    return CONTEXT_HEADER + blocks.join('\n\n') + (skipped ? '\nSome scoped entries were skipped by budget; read their registered original sources before relying on them.' : '');
+    return CONTEXT_HEADER + blocks.join('\n\n') + failureNotice + (skipped ? skippedNotice : '');
   } catch (error) {
     console.error(`[memory-learning] Context unavailable: ${error.message}`);
     onCoverage({ result: 'source-unavailable', path: learningPaths(memoryDir, personId).profile, reason: error.message });

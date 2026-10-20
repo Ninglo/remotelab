@@ -77,7 +77,9 @@ export async function buildRelatedPersonContext(options = {}) {
       continue;
     }
     try {
-      const source = await readMemoryDocument(path, 128 * 1024);
+      // Managed profiles retain encoded evidence/history. Match their existing
+      // 2 MiB storage read limit; the projected naming budget is unchanged.
+      const source = await readMemoryDocument(path, 2 * 1024 * 1024);
       if (source.status !== 'available') {
         deferred.push({ personId: person.personId, profile: path, status: source.status,
           reason: source.status === 'not-recorded' ? 'No recorded profile; do not invent preferences.'

@@ -200,6 +200,30 @@ try {
   // Locks and malformed documents preserve the original rather than silently
   // losing an edit or recreating memory. Path symlinks cannot redirect writes.
   const before = await readFile(paths.profile, 'utf8');
+  const handbookBefore = await readFile(paths.handbook, 'utf8');
+  await writeFile(paths.handbook, 'x'.repeat(2 * 1024 * 1024 + 1));
+  let coverage;
+  const partial = await context('解释', { onCoverage: value => { coverage = value; } });
+  assert.match(partial, /人工维护的称呼偏好/);
+  assert.match(partial, /handbook.*bounded regular file/);
+  assert.equal(coverage.result, 'partial-source-unavailable');
+  assert.equal(coverage.unavailable[0].path, paths.handbook);
+  assert.ok(partial.length <= 6000, 'failure notices share the unchanged context budget');
+  assert.equal(await context('解释', { maxChars: 100 }), '');
+  await writeFile(paths.profile, '<!-- remotelab-learning:start -->broken profile');
+  const isolatedMethod = { id: 'mem_isolated', version: 1, kind: 'method', scope: 'instance',
+    status: 'verified', content: '可读手册中的方法仍可按需返回。', cues: ['独立读取'],
+    conditions: '测试场景', exceptions: '保留适用限制', evidence: [], updatedAt: '2026-01-01' };
+  await writeFile(paths.handbook, '<!-- remotelab-learning:start -->\n<!-- remotelab-learning-data:'
+    + Buffer.from(JSON.stringify({ version: 1, entries: [isolatedMethod] })).toString('base64')
+    + ' -->\n<!-- remotelab-learning:end -->');
+  const reverse = await context('独立读取', { onCoverage: value => { coverage = value; } });
+  assert.match(reverse, /可读手册中的方法仍可按需返回/);
+  assert.match(reverse, /保留适用限制/);
+  assert.equal(coverage.unavailable[0].path, paths.profile);
+  assert.doesNotMatch(reverse, /remotelab-learning-data|人工维护的称呼偏好/);
+  await writeFile(paths.profile, before);
+  await writeFile(paths.handbook, handbookBefore);
   await mkdir(`${paths.profile}.learning-lock`);
   result = await apply([{ ...habit, key: 'another-habit' }], sources('locked', '用大白话解释'));
   assert.equal(result.promotedCount, 0);

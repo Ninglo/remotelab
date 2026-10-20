@@ -39,6 +39,25 @@ try {
   assert.doesNotMatch(await buildRelatedPersonContext({ ...options, sourceContext: {}, query: '修正 CSS' }), /完整姓名张思源/);
   assert.match(await buildRelatedPersonContext({ ...options, sourceContext: {}, query: '引用张思源的建议' }), /完整姓名张思源/);
   assert.match(await buildRelatedPersonContext({ ...options, sourceContext: null, query: '引用张思源的建议' }), /完整姓名张思源/);
+  // Evidence/history may make storage large while the naming rule stays tiny.
+  // Preserve supersession and conditions; never project the encoded payload.
+  const namingEntry = { id: 'mem_name', key: 'preferred-name', kind: 'preference', version: 2,
+    status: 'withdrawn', content: '旧称呼要求已撤销。', supersedesManual: '旧称呼约定。',
+    conditions: '仅限此人', exceptions: '原文引用保留作者原话',
+    history: [{ evidence: 'UNRELATED_HISTORY'.repeat(16000) }] };
+  const encoded = Buffer.from(JSON.stringify({ version: 1, entries: [namingEntry] })).toString('base64');
+  await writeFile(profile, '# 张思源\n\n## 称呼偏好\n旧称呼约定。\n'
+    + '\n<!-- remotelab-learning:start -->\n<!-- remotelab-learning-data:' + encoded
+    + ' -->\n<!-- remotelab-learning:end -->');
+  const largeProfile = await buildRelatedPersonContext(options);
+  assert.match(largeProfile, /superseded/);
+  assert.match(largeProfile, /withdrawn.*旧称呼要求已撤销/);
+  assert.match(largeProfile, /仅限此人.*原文引用保留作者原话/);
+  assert.doesNotMatch(largeProfile, /UNRELATED_HISTORY|remotelab-learning-data/);
+  assert.ok(largeProfile.length < 3500);
+  assert.match(await buildRelatedPersonContext({ ...options, maxChars: 5 }), /did not fit/);
+  await writeFile(profile, 'x'.repeat(2 * 1024 * 1024 + 1));
+  assert.match(await buildRelatedPersonContext(options), /too-large-or-not-file/);
   await writeFile(company, '# 公共背景\n办公室资料以本文件为准。\n\n## 已由用户提供\n办公地点：测试创新大厦。\n\n## 周边餐饮线索\n旧网页线索需要当次核验。');
   const started = performance.now();
   const restaurant = await readNecessaryBackground({}, { memoryDir, query: '公司附近吃点什么' });
