@@ -6,6 +6,9 @@ from __future__ import annotations
 import ctypes as C
 import ctypes.util
 import base64
+import hashlib
+import io
+import math
 import http.client
 import json
 import os
@@ -32,6 +35,97 @@ IN_ENDPOINT = 0x81
 MAX_JPEG_BYTES = 650_000
 APP_DIR = Path.home() / "Library/Application Support/RemoteLab/display-agent"
 STATE_FILE = APP_DIR / "state.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent / "vendor"))
+try:
+    from PIL import Image, ImageOps
+except ImportError:
+    Image = ImageOps = None
+
+
+class LocalSceneCache:
+    """Cache original small GIF assets; compose complete loops on this Mac."""
+    def __init__(self):
+        self.assets = {}
+
+    def compose(self, scene, rotation=0):
+        if Image is None:
+            raise RuntimeError("Local animation needs the display agent Pillow update")
+        if scene.get("version") != 3 or not re.fullmatch(r"[a-f0-9]{12}", str(scene.get("frameId", ""))):
+            raise ValueError("invalid local scene")
+        interval_ms = scene.get("intervalMs")
+        if not isinstance(interval_ms, int) or not 50 <= interval_ms <= 500:
+            raise ValueError("invalid local scene interval")
+        layers = scene.get("layers")
+        if not isinstance(layers, list) or not 1 <= len(layers) <= 4:
+            raise ValueError("invalid local scene layers")
+        raw_bg = base64.b64decode(scene["backgroundPng"], validate=True)
+        if len(raw_bg) > 4 * 1024 * 1024:
+            raise ValueError("local scene background too large")
+        with Image.open(io.BytesIO(raw_bg)) as source:
+            if source.size != (1920, 480):
+                raise ValueError("invalid local scene dimensions")
+            background = source.convert("RGBA")
+        # Commit asset cache changes only after the complete scene is valid.
+        assets = dict(self.assets)
+        for asset_id, encoded in scene.get("assets", {}).items():
+            raw = base64.b64decode(encoded, validate=True)
+            if len(raw) > 3 * 1024 * 1024 or hashlib.sha256(raw).hexdigest()[:12] != asset_id:
+                raise ValueError("invalid local GIF asset")
+            with Image.open(io.BytesIO(raw)) as gif:
+                if gif.width * gif.height > 640 * 480 or not 1 <= gif.n_frames <= 128:
+                    raise ValueError("local GIF exceeds size/frame limits")
+                frames, ends, duration = [], [], 0
+                for i in range(gif.n_frames):
+                    gif.seek(i)
+                    duration += max(100, gif.info.get("duration", 100))
+                    frames.append(gif.convert("RGBA")); ends.append(duration)
+                if duration > 30000:
+                    raise ValueError("local GIF exceeds duration limit")
+                assets[asset_id] = (frames, ends, duration)
+        prepared = []
+        for layer in layers:
+            source_frames, ends, duration = assets[layer["assetId"]]
+            box = layer["box"]
+            values = [box[key] for key in ("x", "y", "width", "height")]
+            if any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in values):
+                raise ValueError("invalid local GIF box")
+            x, y, width, height = [round(v) for v in values]
+            if x < 0 or y < 0 or width < 1 or height < 1 or x + width > 1920 or y + height > 480:
+                raise ValueError("local GIF lies outside screen")
+            fit = layer.get("fit", "contain")
+            if fit not in ("contain", "cover", "fill"):
+                raise ValueError("invalid local GIF fit")
+            resized = []
+            for frame in source_frames:
+                if fit == "fill": item = frame.resize((width, height), Image.Resampling.LANCZOS)
+                elif fit == "cover": item = ImageOps.fit(frame, (width, height), method=Image.Resampling.LANCZOS)
+                else: item = ImageOps.contain(frame, (width, height), method=Image.Resampling.LANCZOS)
+                resized.append(item)
+            prepared.append((resized, ends, duration, x, y, width, height))
+        frame_count = math.ceil(max(item[2] for item in prepared) / interval_ms)
+        if frame_count > 128:
+            raise ValueError("local scene exceeds 128 playback frames")
+        output = []
+        for i in range(frame_count):
+            canvas = background.copy()
+            for frames, ends, duration, x, y, width, height in prepared:
+                phase = (i * interval_ms) % duration
+                index = next(j for j, end in enumerate(ends) if phase < end)
+                frame = frames[index]
+                canvas.alpha_composite(frame, (x + (width - frame.width) // 2, y + (height - frame.height) // 2))
+            canvas = canvas.convert("RGB")
+            if rotation: canvas = canvas.rotate(-rotation, expand=True)
+            for quality in (85, 75, 65):
+                encoded = io.BytesIO(); canvas.save(encoded, format="JPEG", quality=quality)
+                data = encoded.getvalue()
+                if len(data) <= MAX_JPEG_BYTES: break
+            frame_packets(data); output.append(data)
+        # Four layers are supported; retain recent assets for action rotation.
+        used = {layer["assetId"] for layer in layers}
+        while len(assets) > 12:
+            assets.pop(next(key for key in assets if key not in used))
+        self.assets = assets
+        return tuple(output), interval_ms / 1000
 
 
 def event(name: str, **values) -> None:
@@ -189,6 +283,30 @@ class JpegFrameConnection:
             self.close()
             raise
 
+    def read_scene(self, frame_id="", asset_ids=()):
+        if frame_id and not re.fullmatch(r"[a-f0-9]{12}", frame_id):
+            raise ValueError("invalid scene id")
+        if len(asset_ids) > 12 or any(not re.fullmatch(r"[a-f0-9]{12}", value) for value in asset_ids):
+            raise ValueError("invalid scene asset ids")
+        accept = "application/vnd.remotelab.display-scene+json;v=3"
+        if frame_id: accept += ";id=" + frame_id
+        if asset_ids: accept += ";assets=" + ".".join(asset_ids)
+        try:
+            if self.connection is None: self.connection = self.open_connection()
+            self.connection.request("GET", self.path, headers={"Authorization": f"Bearer {self.token}",
+                "Accept": accept, "User-Agent": "RemoteLab-Display/4"})
+            response = self.connection.getresponse()
+            headers = {key.lower(): value for key, value in response.getheaders()}
+            body = response.read(18 * 1024 * 1024 + 1)
+            if len(body) > 18 * 1024 * 1024: raise ValueError("local scene too large")
+            if response.status in (204, 304):
+                return ("unavailable" if response.status == 204 else "unchanged"), headers, None
+            if response.status != 200 or headers.get("content-type", "").split(";", 1)[0] != "application/vnd.remotelab.display-scene+json":
+                raise RuntimeError(f"local scene returned HTTP {response.status}")
+            return "updated", headers, json.loads(body)
+        except Exception:
+            self.close(); raise
+
 
 def find_libusb() -> str:
     explicit = os.environ.get("THERMALRIGHT_LIBUSB_PATH")
@@ -324,7 +442,7 @@ class DisplayWorker:
             self.interval = max(0.18, min(0.5, interval))
 
     def update_sequence(self, frames: tuple[bytes, ...], interval: float = 0.1) -> None:
-        if not 1 <= len(frames) <= 32:
+        if not 1 <= len(frames) <= 128:
             raise ValueError("invalid animation frame count")
         for frame in frames:
             frame_packets(frame)
@@ -454,6 +572,8 @@ def run() -> None:
     worker = DisplayWorker()
     worker.start()
     jpeg_connection = JpegFrameConnection(state["frameUrl"], state["deviceToken"])
+    scene_cache = LocalSceneCache()
+    scene_id = ""
     retry_delay = 1
     next_jpeg_probe = 0.0
     next_bundle_probe = 0.0
@@ -473,8 +593,20 @@ def run() -> None:
                 received_bytes = 0
                 if started >= next_bundle_probe:
                     try:
-                        mode, headers, bundle = jpeg_connection.read_bundle(bundle_id)
-                        if mode == "updated":
+                        if Image is not None:
+                            mode, headers, scene = jpeg_connection.read_scene(scene_id, tuple(scene_cache.assets))
+                            if mode == "updated":
+                                frames, interval = scene_cache.compose(scene, int(state.get("rotation") or 0))
+                                worker.update_sequence(frames, interval=interval)
+                                scene_id = bundle_frame_id = scene["frameId"]
+                                received_bytes = len(json.dumps(scene))
+                                event("local_scene_loaded", frame_id=scene_id, frame_count=len(frames),
+                                      interval_ms=round(interval * 1000), network_bytes=received_bytes)
+                            if mode == "unavailable": scene_id = ""
+                            bundle = None
+                        else:
+                            mode, headers, bundle = jpeg_connection.read_bundle(bundle_id)
+                        if mode == "updated" and bundle is not None:
                             frames = bundle["frames"]
                             rotation = int(state.get("rotation") or 0)
                             if rotation:
@@ -496,7 +628,17 @@ def run() -> None:
                             source = "bundle" if mode == "updated" else "bundle-current"
                     except Exception as exc:
                         event("animation_bundle_fallback", error=str(exc))
+                        if scene_id:
+                            # Keep the verified local loop during a failed refresh;
+                            # do not replace it with sparse network JPEG snapshots.
+                            bundle_active = True
+                            headers = {"x-remotelab-display-poll-seconds": "2"}
+                            source = "local-scene-cached"
                         next_bundle_probe = time.monotonic() + 30
+                elif scene_id:
+                    bundle_active = True
+                    headers = {"x-remotelab-display-poll-seconds": "2"}
+                    source = "local-scene-cached"
                 if not bundle_active:
                     source = "jpeg"
                     if started >= next_jpeg_probe:
@@ -555,6 +697,9 @@ def main() -> None:
         raise SystemExit("usage: agent.py check-usb | check-device | enroll URL | run")
     if sys.argv[1] == "check-usb":
         print(find_libusb())
+    elif sys.argv[1] == "check-renderer":
+        if Image is None: raise SystemExit("Pillow is missing from the display agent vendor directory")
+        event("renderer_ready", version=3, pillow=Image.__version__)
     elif sys.argv[1] == "check-device":
         display = UsbDisplay()
         display.close()

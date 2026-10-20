@@ -1,0 +1,20 @@
+--- a/concept-v14/preview-server.mjs
++++ b/concept-v14/preview-server.mjs
+@@ -19,7 +19,7 @@
+ if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(displayBaseUrl)) throw Error('副屏服务必须是本机回环地址。');
+ const adminTokenPath = process.env.PREVIEW_ADMIN_TOKEN_FILE || path.join(process.env.HOME, '.config/remotelab/display-admin-token');
+ const testRefreshMs = process.env.NODE_ENV === 'test' ? Number(process.env.PREVIEW_TEST_REFRESH_MS || 0) : 0;
+-const maxBody = 9 * 1024 * 1024;
++const maxBody = 13 * 1024 * 1024;
+ const activeFile = path.join(root, 'private/active-preview.json');
+ const appliedFile = path.join(root, 'private/last-applied-preview.json');
+ const liveRefreshMs = 2_000;
+@@ -526,7 +526,7 @@
+       record.lastRenderedStatusTick = statusTick;
+     }
+     record.refreshedAt = new Date().toISOString();
+-    await persistActive();
++    if (published || record.payload.version !== 22) await persistActive();
+     if (published) process.stdout.write(JSON.stringify({ event: 'studio_preview_refreshed', personId: record.personId, frameId: record.lastFrameId }) + '\n');
+   } catch (error) {
+     process.stderr.write(JSON.stringify({ event: 'studio_preview_refresh_failed', error: error.message || 'unknown' }) + '\n');

@@ -47,7 +47,7 @@ const sidecar = createServer(async (req, res) => {
     forwardedPrefix: req.headers['x-forwarded-prefix'] || '',
     body,
   });
-  if (url.pathname === '/install.sh') {
+  if (['/install.sh', '/upgrade-agent.sh'].includes(url.pathname)) {
     res.writeHead(200, { 'Content-Type': 'text/x-shellscript' });
     res.end('#!/bin/sh\n');
     return;
@@ -183,6 +183,11 @@ try {
   const installer = await requestJson(`${base}/display/install.sh`);
   assert.equal(installer.response.status, 200);
   assert.equal(installer.text, '#!/bin/sh\n');
+
+  const upgrader = await requestJson(`${base}/display/upgrade-agent.sh`);
+  assert.equal(upgrader.response.status, 200);
+  assert.equal(upgrader.text, '#!/bin/sh\n');
+  assert.equal(calls.at(-1).authorization, '', 'updater is public code, not paired state');
 
   const publicEnrollment = await requestJson(`${base}/display/v1/enroll/rld_enroll_test-token`, {
     method: 'POST',

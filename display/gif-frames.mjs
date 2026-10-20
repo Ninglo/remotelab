@@ -2,7 +2,7 @@ import { deflateSync } from 'node:zlib';
 
 const MAX_GIF_BYTES = 3 * 1024 * 1024;
 const MAX_PIXELS = 640 * 480;
-const MAX_FRAMES = 48;
+const MAX_FRAMES = 128;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const CRC_TABLE = Array.from({ length: 256 }, (_, value) => {
   let crc = value;
@@ -157,7 +157,7 @@ export function decodeGifFrames(input) {
       continue;
     }
     if (marker !== 0x2c) invalid('Invalid GIF block');
-    if (frames.length >= MAX_FRAMES) invalid('GIF may contain at most 48 frames');
+    if (frames.length >= MAX_FRAMES) invalid('GIF may contain at most 128 frames');
     const descriptor = take(9);
     const left = descriptor.readUInt16LE(0);
     const top = descriptor.readUInt16LE(2);

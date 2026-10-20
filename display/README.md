@@ -10,9 +10,9 @@ and device inventory under `/display`.
 
 The generated command deliberately downloads both the installer and agent from
 the same Server that issued the enrollment URL, so their protocol versions
-match. v0 supports macOS and the Thermalright `0416:5408` display only. Updates,
-cross-version compatibility, and automatic migration are intentionally out of
-scope; reinstalling from the target Server is the recovery path.
+match. v0 supports macOS and the Thermalright `0416:5408` display only. A paired Mac can explicitly update its player with the upgrade command below;
+automatic client migration is not enabled. Reinstalling from the target Server
+remains the recovery path for a damaged installation.
 
 ## Optional project module
 
@@ -260,13 +260,14 @@ removes the personal content and returns to the existing signal or classic view.
 Content belongs to the signed-in Person, so another Person's display and editor
 remain separate. One Person's paired displays share the same content in this MVP.
 
-Uploads are limited to 3 MB, 48 frames, 30 seconds, and 307,200 pixels per frame.
+Uploads are limited to 3 MB, 128 frames, 30 seconds, and 307,200 pixels per frame.
 The sidecar decodes GIF frames once and sends a complete 1920 × 480 frame on each
-device request. The new macOS agent reads the frame interval returned by the
+device request. The legacy macOS agent reads the frame interval returned by the
 server (0.45 seconds for personal content, 8 seconds for the status screen).
 The screen is sampled animation rather than full GIF frame-rate playback.
 The original GIF and sentence are stored in the private instance config file
-`display-personal-content.json` with mode `0600`; no GIF is sent to the USB agent.
+`display-personal-content.json` with mode `0600`; this simple-content path remains server-rendered. Studio animation layers can
+use the local-playback protocol below.
 
 ## 个人待办已退役
 
@@ -295,7 +296,7 @@ Payload fields are `version: 22`, `timeZone`, `subject`, `sentence`, `observedAt
 still applies its own limits. Companion layers opt into `completeLoop: true`:
 both the starter and full v2 bundle include the action's first and final poses,
 with their interval adjusted to retain its entire duration. Slow links that stay
-on a starter therefore still get a complete action. The installed client accepts
+on a starter therefore still get a complete action. The legacy v2 client accepts
 at most 32 frames and at most 500ms per frame; a ten-second action is consequently
 about 3 FPS in its full bundle. This is a software transport limit, not a measured
 hardware limit. Longer than 16 seconds requires a player update; the opt-in path
@@ -305,6 +306,45 @@ end and preserve its duration; do not substitute a middle excerpt for an action.
 The desktop pet's complete action system is not imported by this view.
 Validate the rendered bundle, device download and physical playback
 separately; a target interval is not a measured USB frame rate.
+
+### Local playback update for paired Macs
+
+Operator handoff: “Update the player on the paired Mac without changing its
+pairing, rotation, or layout. Verify local-scene receipt, USB frame timing, and
+physical smoothness separately.” When the executor cannot access that Mac,
+the unavoidable local step is running its own server's updater in Terminal:
+
+```sh
+curl -fsSL 'https://your-remotelab.example/display/upgrade-agent.sh' | sh
+```
+
+The updater reads the existing server from `state.json`, downloads its agent,
+installs Pillow in the agent's private `vendor` directory, checks JPEG support,
+and restarts the existing LaunchAgent. Dependency failures leave the running
+player unchanged; validation or launch failures restore the previous agent and
+vendor directory. Pairing and layout are preserved.
+
+With Pillow available, the agent requests
+`application/vnd.remotelab.display-scene+json;v=3;id=<frameId>;assets=<hash>.<hash>`
+on its existing authenticated frame URL. The response has a background PNG,
+layer geometry and original small GIF assets, keyed by their SHA-256 prefix.
+The server omits assets already in the agent's memory cache and returns 304 for
+an unchanged scene. The Mac composites the complete loop locally and submits
+JPEG frames to the existing USB worker at a target 100ms interval. Ten-second
+pet exports can retain 101 frames instead of the old 20/32-frame samples.
+Asset cache lasts until the player restarts. Clock refresh downloads only the
+background after the current GIF is cached; no model call is involved.
+
+Source GIFs retain the 3 MB, 128-frame, 30-second and 307,200-pixel limits.
+A composed local loop must fit 128 playback frames (12.8 seconds at 10 FPS);
+longer loops fail explicitly instead of truncating. A failed scene refresh
+keeps the last verified local loop. Old clients continue using v2 unchanged.
+For v22 playlists, apply `studio-local-playback.patch` after the companion
+patch and recopy `studio-companion.mjs`: this allows a 13 MB request containing
+three full actions and persists the scene only when the minute changes.
+Validate with `tests/test-display-local-scene.py` (Pillow), the sidecar and main
+route tests. Logs distinguish `local_scene_loaded` from USB heartbeat timing;
+the configured 10 FPS remains a target until measured on the actual display.
 
 When exporting transparent pet videos, sample continuous RGBA PNG frames first,
 then use `display/export-pet-gif.py` (Pillow required) with the matching

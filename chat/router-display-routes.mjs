@@ -102,6 +102,7 @@ async function proxy(req, res, path, { body, authenticated = false } = {}) {
 function publicDisplayPath(pathname, method) {
   if (method === 'GET' && pathname === `${publicPrefix}/install.sh`) return '/install.sh';
   if (method === 'GET' && pathname === `${publicPrefix}/agent.py`) return '/agent.py';
+  if (method === 'GET' && pathname === `${publicPrefix}/upgrade-agent.sh`) return '/upgrade-agent.sh';
   const enrollment = new RegExp(`^${publicPrefix}/v1/enroll/(rld_enroll_[A-Za-z0-9_-]+)$`).exec(pathname);
   if (method === 'POST' && enrollment) return `/v1/enroll/${enrollment[1]}`;
   const device = new RegExp(`^${publicPrefix}/v1/devices/(display-[a-f0-9]{16})/(frame\\.png|heartbeat)$`).exec(pathname);
@@ -144,7 +145,7 @@ export async function handleDisplayPublicRoutes({ req, res, pathname, writeJson 
       if (suppliedOrigin && suppliedOrigin !== expectedOrigin) { writeJson(res, 403, { error: '副屏预览请求来源不符。' }); return true; }
       const authorization = singleHeader(req.headers.authorization);
       if (!/^Bearer [a-f0-9]{64}$/.test(authorization)) { writeJson(res, 401, { error: '副屏预览专属链接无效。' }); return true; }
-      const body = req.method === 'POST' ? await readBody(req, 9 * 1024 * 1024) : undefined;
+      const body = req.method === 'POST' ? await readBody(req, 13 * 1024 * 1024) : undefined;
       const response = await fetch(`${config.baseUrl}${req.method === 'POST' ? '/api/preview' : '/api/paired-device'}`, {
         method: req.method,
         headers: { Authorization: authorization, 'X-Preview-Person-Id': config.personId, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
@@ -158,7 +159,7 @@ export async function handleDisplayPublicRoutes({ req, res, pathname, writeJson 
       }
       await sendProxyResponse(res, response);
     } catch (error) {
-      writeJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 503, { error: error?.code === 'BODY_TOO_LARGE' ? '画面或图片超过 9 MB。' : '副屏预览服务暂时不可用。' });
+      writeJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 503, { error: error?.code === 'BODY_TOO_LARGE' ? '画面或图片超过 13 MB。' : '副屏预览服务暂时不可用。' });
     }
     return true;
   }
@@ -246,7 +247,7 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       const requestOrigin = trimString(req.headers.origin);
       const expectedOrigin = `${forwardedOriginHeaders(req)['X-Forwarded-Proto']}://${forwardedOriginHeaders(req)['X-Forwarded-Host']}`;
       if (requestOrigin !== expectedOrigin) { writeJson(res, 403, { error: '副屏预览请求来源不符。' }); return true; }
-      const raw = await readBody(req, 9 * 1024 * 1024);
+      const raw = await readBody(req, 13 * 1024 * 1024);
       const response = await fetch(`${endpoint.replace(/\/+$/, '')}/api/preview`, {
         method: 'POST',
         headers: {

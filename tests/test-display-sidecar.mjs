@@ -343,6 +343,22 @@ try {
   const playbackStatus = await fetch(previewUrl, { headers: publicHeaders });
   const playback = (await playbackStatus.json()).devicePlayback[0];
   assert.equal(playback?.bundleFrameId, bundle.frameId);
+  const sceneAccept = 'application/vnd.remotelab.display-scene+json;v=3';
+  const sceneResponse = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: sceneAccept } });
+  assert.equal(sceneResponse.status, 200);
+  const scene = await sceneResponse.json();
+  assert.equal(scene.version, 3);
+  assert.equal(scene.intervalMs, 100);
+  assert.equal(scene.frameId, animatedReceipt.frameId);
+  assert.equal(scene.layers.length, 1);
+  assert.equal(scene.assets[scene.layers[0].assetId], animatedGif.toString('base64'));
+  const cachedAssets = scene.layers.map(layer => layer.assetId).join('.');
+  const cachedScene = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: `${sceneAccept};assets=${cachedAssets}` } });
+  assert.deepEqual((await cachedScene.json()).assets, {}, 'clock redraw must not download cached GIFs again');
+  const unchangedScene = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: `${sceneAccept};id=${scene.frameId};assets=${cachedAssets}` } });
+  assert.equal(unchangedScene.status, 304);
+  const deniedScene = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: 'Bearer invalid-token', Accept: sceneAccept } });
+  assert.equal(deniedScene.status, 401);
   assert.equal(playback?.targetIntervalMs, 100);
   assert.equal(playback?.actualIntervalMs, 106);
   // Model a device whose starter download/next poll takes over four seconds.

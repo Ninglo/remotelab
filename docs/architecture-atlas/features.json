@@ -753,7 +753,9 @@
           "example": "检查已配对显示设备，说明现在能展示哪些内容。",
           "sources": [
             "chat/router-display-routes.mjs",
-            "static/chat/display-settings.js"
+            "static/chat/display-settings.js",
+            "display/README.md",
+            "display/USER_GUIDE.md"
           ],
           "commands": []
         }

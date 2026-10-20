@@ -815,7 +815,7 @@ async function handle(req, res) {
       if (payload && typeof payload === 'object' && Number.isInteger(payload.usbFrames) && payload.usbFrames >= 0 && payload.usbFrames < 1_000_000_000
         && Number.isInteger(payload.usbAckMs) && payload.usbAckMs > 0
         && Number.isInteger(payload.usbFrameMs) && payload.usbFrameMs >= 0 && payload.usbFrameMs < 30_000
-        && Number.isInteger(payload.animationFrames) && payload.animationFrames >= 1 && payload.animationFrames <= 32
+        && Number.isInteger(payload.animationFrames) && payload.animationFrames >= 1 && payload.animationFrames <= 128
         && (payload.bundleFrameId === '' || /^[a-f0-9]{12}$/.test(payload.bundleFrameId))) {
         const previous = devicePlayback.get(device.id);
         const reportMs = Date.now();
@@ -849,6 +849,33 @@ async function handle(req, res) {
         });
       }
       const accept = String(req.headers.accept || '').trim();
+      const sceneRequest = deviceMatch[2] === 'frame.png'
+        ? /^application\/vnd\.remotelab\.display-scene\+json;v=3(?:;id=([a-f0-9]{12}))?(?:;assets=([a-f0-9]{12}(?:\.[a-f0-9]{12}){0,11}))?$/.exec(accept)
+        : null;
+      if (sceneRequest) {
+        await getPersonIdentityIds(device.personId);
+        const preview = await previewFor(device.personId);
+        if (!preview?.animations?.length) {
+          sendText(res, 204, 'text/plain', '', { 'X-RemoteLab-Display-Poll-Seconds': '1' });
+          return;
+        }
+        const headers = { 'X-RemoteLab-Display-Poll-Seconds': '2', 'X-RemoteLab-Display-Animated': '1' };
+        if (sceneRequest[1] === preview.frameId) {
+          res.writeHead(304, { 'Cache-Control': 'no-store, max-age=0', ...headers }); res.end(); return;
+        }
+        const known = new Set((sceneRequest[2] || '').split('.'));
+        const assets = {};
+        const layers = preview.animations.map(item => {
+          const assetId = createHash('sha256').update(Buffer.from(item.gifBase64, 'base64')).digest('hex').slice(0, 12);
+          if (!known.has(assetId)) assets[assetId] = item.gifBase64;
+          return { assetId, box: item.box, fit: item.fit || 'contain' };
+        });
+        const body = Buffer.from(JSON.stringify({ version: 3, frameId: preview.frameId,
+          intervalMs: 100, backgroundPng: preview.pngBase64, layers, assets }));
+        trackAnimationDelivery(device, body, 0, 'local-gif-scene', 0, preview.frameId);
+        sendText(res, 200, 'application/vnd.remotelab.display-scene+json', body, headers);
+        return;
+      }
       const bundleRequest = deviceMatch[2] === 'frame.png'
         ? /^application\/vnd\.remotelab\.display-frames\+json;v=([12])(?:;id=([a-f0-9]{12}))?$/.exec(accept)
         : null;

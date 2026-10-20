@@ -28,7 +28,7 @@ export function validateCompanion(payload) {
     if (gif.toString('base64') !== action.gifBase64 || gif.length > 3 * 1024 * 1024 || !/^GIF8[79]a/.test(gif.toString('ascii', 0, 6))) bad('Invalid companion GIF');
     bytes += action.gifBase64.length;
   }
-  if (bytes > 8 * 1024 * 1024) bad('Companion actions exceed request size');
+  if (bytes > 12 * 1024 * 1024) bad('Companion actions exceed request size');
 }
 
 function formatDate(now, timeZone, options) {

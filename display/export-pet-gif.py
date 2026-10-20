@@ -10,12 +10,12 @@ from pathlib import Path
 from PIL import Image
 
 
-def palette_frame(image):
+def palette_frame(image, colors=255):
     rgba = image.convert("RGBA")
     # Reserve one palette index in EVERY frame. Pillow's automatic RGBA palette
     # can assign a different transparent index per frame; a shared save option
     # then turns some of those pixels into opaque black (or another colour).
-    indexed = rgba.convert("RGB").quantize(colors=255)
+    indexed = rgba.convert("RGB").quantize(colors=colors)
     palette = indexed.getpalette()
     indexed.putpalette((palette + [0] * 768)[:765] + [0, 0, 0])
     indexed.paste(255, mask=rgba.getchannel("A").point(lambda a: 255 if a <= 80 else 0))
@@ -23,14 +23,16 @@ def palette_frame(image):
     return indexed
 
 
-def export_frames(frames, destination, duration_ms=100):
+def export_frames(frames, destination, duration_ms=100, colors=255):
     frames = list(frames)
     if not frames or not 100 <= duration_ms <= 500 or duration_ms % 10:
         raise ValueError("Need frames and a GIF frame duration of 100–500 ms in 10 ms units")
     if len({frame.size for frame in frames}) != 1:
         raise ValueError("All frames must have the same dimensions")
-    encoded = [palette_frame(frame) for frame in frames]
-    encoded[0].save(destination, save_all=True, append_images=encoded[1:],
+    if not 2 <= colors <= 255:
+        raise ValueError("Need 2–255 opaque palette colours")
+    encoded = [palette_frame(frame, colors) for frame in frames]
+    encoded[0].save(destination, format="GIF", save_all=True, append_images=encoded[1:],
                     duration=duration_ms, loop=0, disposal=2, optimize=False,
                     transparency=255, background=255)
 
