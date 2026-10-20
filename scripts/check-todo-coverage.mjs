@@ -25,7 +25,9 @@ export function checkTodoCoverage({ source, index, judgments }) {
   if (!(start < end) || !Number.isFinite(end)) errors.push('Invalid planned window');
   const raw = index?.messages;
   if (!raw || typeof raw !== 'object') errors.push('Missing source messages');
-  const messages = Array.isArray(raw) ? raw : Object.values(raw || {});
+  const messages = [];
+  const add = message => { messages.push(message); for (const reply of message?.thread_replies || []) add(reply); };
+  (Array.isArray(raw) ? raw : Object.values(raw || {})).forEach(add);
   const available = new Set();
   const required = new Set(source?.requiredMessageIds || []);
   for (const message of messages) {
@@ -68,7 +70,7 @@ async function main() {
   for (const key of ['plan', 'target', 'index', 'judgments', 'output']) if (!args[key]) throw new Error(`--${key} is required`);
   const read = async path => JSON.parse(await readFile(path, 'utf8'));
   const [plan, index, judgments] = await Promise.all([read(args.plan), read(args.index), read(args.judgments)]);
-  const source = plan.sources?.find(s => s.todoTarget === args.target);
+  const source = (plan.todoSources || plan.sources)?.find(s => s.todoTarget === args.target);
   if (!source) throw new Error('Target is not in this inspection plan');
   const output = resolve(args.output);
   if ([args.plan, args.index, args.judgments].some(p => resolve(p) === output)) throw new Error('Output must not overwrite an input');

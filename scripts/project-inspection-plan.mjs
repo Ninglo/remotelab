@@ -25,6 +25,9 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
   const morning = clock.hour === '04';
   if (!['04', '18'].includes(clock.hour)) throw new Error('Use the original 04:00 or 18:00 scheduled time');
   const paused = new Set((runtime.projects || []).filter(x => x.status === 'paused').map(x => x.id));
+  const expansion = registry.personTodoExpansion;
+  const expanded = expansion?.enabled === true;
+  if (expanded && (!expansion.personIds?.length || !expansion.stateDirectory || !Number.isFinite(Date.parse(expansion.initialStart)))) throw new Error('Invalid person Todo expansion');
   const groups = runtime.groups.filter(g => readingLevel(runtime, g) === 'focused');
   const overviewSources = runtime.groups.filter(g => readingLevel(runtime, g) === 'overview').map(g => ({
     chatId: g.chatId, sourceRouteId: g.sourceRouteId, chatName: g.chatName, projectIds: g.projectIds,
@@ -37,8 +40,19 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
   const allowed = new Set(groups.map(g => g.chatId));
   const targets = (registry.targets || []).filter(t => t.enabled && allowed.has(t.chatId)
     && !(t.projectId && paused.has(t.projectId)));
-  const sources = [];
-  for (const group of groups) {
+  if (expanded) {
+    for (const group of runtime.groups) {
+      if (!['focused', 'overview'].includes(readingLevel(runtime, group)) || group.sourceRouteId !== registry.sourceRouteId) continue;
+      if (targets.some(t => t.chatId === group.chatId)) continue;
+      targets.push({ key: `person-${group.chatId}`, chatId: group.chatId, chatName: group.chatName,
+        enabled: true, scope: 'person', personIds: expansion.personIds,
+        stateFile: join(expansion.stateDirectory, `${group.chatId}.json`) });
+    }
+  }
+  const sources = [], todoSources = [];
+  const collectionGroups = [...groups, ...(expanded && morning ? runtime.groups.filter(g => readingLevel(runtime, g) === 'overview' && g.sourceRouteId === registry.sourceRouteId) : [])];
+  for (const group of collectionGroups) {
+    const focused = readingLevel(runtime, group) === 'focused';
     const target = morning ? targets.find(t => t.chatId === group.chatId) : null;
     const reviewCheckpoint = join(reviewRoot, 'chat-sync', 'checkpoints', `${group.chatId}.json`);
     const checkpoint = await load(reviewCheckpoint, {});
@@ -48,24 +62,33 @@ export async function buildProjectInspectionPlan({ runtime, registry, reviewRoot
     const retries = todoState.pendingRetries || [];
     if (!Array.isArray(retries)) throw new Error(`Invalid pendingRetries for ${target?.key || group.chatId}`);
     const needsTodo = Boolean(target && (!Number.isFinite(todoEnd) || todoEnd < endMs || retries.length));
+    if (!focused && !needsTodo) continue;
     // Missing baselines require a complete initial read, rather than silently dropping backlog.
-    const ends = [reviewEnd, ...(needsTodo ? [todoEnd] : [])];
+    const baseline = target?.scope === 'person' && !Number.isFinite(todoEnd) ? Date.parse(expansion.initialStart) + 48 * 3600_000 : todoEnd;
+    const ends = [...(focused ? [reviewEnd] : []), ...(needsTodo ? [baseline] : [])];
     const startMs = ends.every(Number.isFinite) ? Math.min(...ends) - 48 * 3600_000 : null;
     const threads = new Set([...threadIds(checkpoint.threads), ...(needsTodo ? threadIds(todoState.knownThreads) : []),
       ...retries.map(r => r.threadId || r.thread_id).filter(Boolean)]);
     const requiredMessageIds = [...new Set(retries.flatMap(r => [r.sourceMessageId, r.messageId,
       ...(Array.isArray(r.sourceMessageIds) ? r.sourceMessageIds : [])]).filter(Boolean))];
-    sources.push({ chatId: group.chatId, sourceRouteId: group.sourceRouteId, projectIds: group.projectIds,
+    const source = { chatId: group.chatId, chatName: group.chatName, sourceRouteId: group.sourceRouteId, projectIds: group.projectIds,
+      readingLevel: readingLevel(runtime, group), projectAnalysisEligible: focused,
       windowStart: startMs === null ? null : new Date(startMs).toISOString(), windowEnd: new Date(endMs).toISOString(),
       reviewCheckpoint, knownThreads: [...threads], requiredMessageIds, pendingRetryCount: retries.length,
       todoTarget: needsTodo ? target.key : null,
-      todoStateFile: needsTodo ? target.stateFile : null });
+      todoStateFile: needsTodo ? target.stateFile : null,
+      ...(needsTodo && target.scope === 'person' ? { personIds: target.personIds, registrationScope: 'person' } : {}) };
+    if (focused) sources.push(source);
+    if (needsTodo) todoSources.push(source);
   }
   return { schemaVersion: 1, scheduledAt: new Date(endMs).toISOString(),
     localDate: `${clock.year}-${clock.month}-${clock.day}`, phase: morning ? 'morning' : 'afternoon',
     sourceCollection: 'once_per_chat', tasklistGuid: registry.tasklistGuid,
     tasklistRead: morning ? 'once_for_all_enabled_targets_then_recheck_each_write_under_original_lock' : 'reuse_latest_completed_inspection',
-    sources, overviewSources, coverage, todoTargets: morning ? targets.filter(t => sources.some(s => s.todoTarget === t.key)) : [],
+    sources, todoSources, overviewSources, coverage,
+    todoJudgmentSchemaVersion: expanded ? 2 : 1,
+    personTodoIds: expanded ? expansion.personIds : [],
+    todoTargets: morning ? targets.filter(t => todoSources.some(s => s.todoTarget === t.key)) : [],
     rules: ['Do not advance cursors on failed or incomplete reads', 'A cached bundle is evidence only; it does not authorize business execution',
       'Complete Todo assessment before publishing; keep source-specific failures and original delivery routes'] };
 }

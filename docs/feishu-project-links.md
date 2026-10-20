@@ -18,7 +18,7 @@ Optional `readingPolicy.excludeNamePrefixes` excludes explicitly named private/r
 
 The inspection plan retains `sources` for focused analysis and Todo only. `overviewSources` is separate, collected with
 `scripts/project-overview-collect.mjs --plan <plan> --profile <bot> --output <overview-dir>`: one page of up to 50 new roots
-per group over 24 hours, no thread/resource/reaction expansion. Its manifest is explicitly `analysisEligible: false`.
+per group over 24 hours, no thread/resource/reaction expansion. Its manifest is explicitly `analysisEligible: false`. A separately authorized per-person Todo expansion may fully read and reuse these messages for action judgment, without promoting them to general project-analysis sources; see [the Todo contract](todo-judgment.md).
 Overflow is `sampled`, errors are `failed`; neither means a full history was read. Do not advance focused cursors or feed
 overview content to project conclusions, report analysis, or Todo decisions. Reports show per-group methods and actual
 coverage from both receipts, with paused/excluded reasons; new or failed coverage belongs in a short summary.

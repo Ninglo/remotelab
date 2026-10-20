@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { lark } from './project-reading-sync.mjs';
 
 // Kept outside the focused collector/index: overview content cannot enter its analysis inputs.
-export async function collectOverview(plan, { output, profile, request = lark }) {
+export async function collectOverview(plan, { output, profile, indexes, request = lark }) {
   await mkdir(output, { recursive: true });
   const rows = [];
   for (const source of plan.overviewSources || []) {
@@ -12,6 +12,14 @@ export async function collectOverview(plan, { output, profile, request = lark })
       method: '新增主线，最多50条；不展开话题、附件或表情', windowStart: source.windowStart, windowEnd: source.windowEnd };
     try {
       if (source.analysisEligible !== false || source.readingLevel !== 'overview') throw new Error('Invalid overview scope');
+      if (indexes && plan.todoSources?.some(s => s.chatId === source.chatId && !s.projectAnalysisEligible)) {
+        const indexPath = join(indexes, `index-${source.chatId}.json`);
+        const index = JSON.parse(await readFile(indexPath, 'utf8'));
+        if (!index.complete || index.chat_id !== source.chatId || index.windowEnd !== source.windowEnd) throw new Error('Incomplete shared Todo read');
+        row.status = 'reused'; row.method = '复用本轮完整待办来源；项目分析资格保持不变';
+        row.messageCount = Array.isArray(index.messages) ? index.messages.length : Object.keys(index.messages).length;
+        row.evidencePath = indexPath; rows.push(row); continue;
+      }
       const params = { container_id_type: 'chat', container_id: source.chatId, page_size: 50,
         sort_type: 'ByCreateTimeDesc', start_time: String(Date.parse(source.windowStart) / 1000), end_time: String(Date.parse(source.windowEnd) / 1000) };
       const data = await request(['api', 'GET', '/open-apis/im/v1/messages', '--params', JSON.stringify(params)], profile);

@@ -990,7 +990,7 @@
           "name": "独立告警、日报来源与获授权的失败恢复",
           "purpose": "在明确配置后观察重要问题，保留告警和恢复记录，并把日常情况归入既有日报。",
           "entry": "由维护 Agent 配置现有监控 observer 与日报流程。",
-          "condition": "页面可打开不代表告警或自动恢复已启用。恢复需额外授权与配置；发送成功也不等于故障已修复。 群发现与分层采集复用原巡检轮次，一般了解限量读取、不进入项目分析或Todo；日报披露实际覆盖，配置不等于已完成读取。",
+          "condition": "页面可打开不代表告警或自动恢复已启用。恢复需额外授权与配置；发送成功也不等于故障已修复。 群发现与分层采集复用原巡检轮次，一般了解默认限量读取、不进入项目分析；获授权的人员待办扩展可复用完整消息与旧话题，按原作者、负责人和下一步生成不同视图；日报披露实际覆盖，配置不等于已完成读取。",
           "example": "检查现有监控是否启用告警与恢复，说明范围和真实记录。",
           "sources": [
             "docs/monitoring.md",
@@ -1000,7 +1000,10 @@
             "scripts/project-inspection-plan.mjs",
             "scripts/check-todo-coverage.mjs",
             "docs/feishu-project-links.md",
-            "scripts/project-overview-collect.mjs"
+            "scripts/project-overview-collect.mjs",
+            "docs/todo-judgment.md",
+            "scripts/project-todo-collect.mjs",
+            "scripts/project-todo-judge.mjs"
           ],
           "commands": []
         },
