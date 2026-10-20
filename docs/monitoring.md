@@ -771,28 +771,56 @@ suppress population alarms until a complete scan is available.
 Two comparisons remain distinct:
 
 - Matched model, effort, Harness, surface, first/follow-up and recorded experiment
-  cohort: last 24 hours versus the preceding three populated business dates,
-  looking back at most 14 days. A 30% rise also needs an absolute increase
+  cohort: last 24 hours versus up to seven complete populated business dates
+  before that window's starting date, looking back at most 14 days. Each reference
+  date needs five runs across two Sessions; the combined reference needs at least
+  three dates, 20 runs and five Sessions. Partial dates never enter the reference.
+  A 30% rise also needs an absolute increase
   (1,000 characters, five seconds first response, or 30 seconds final delivery),
   at least 10 current runs across three Sessions, 20 historical runs across five
   Sessions, and a rise in at least 60% of Session medians. Sessions have equal
-  weight. Three runs across two Sessions and a rise of 50% can trigger a clearly
-  labelled small-sample review; high historical variability is also labelled.
+  weight. Smaller current samples remain observations, even when apparently much
+  better or worse; they cannot establish an improvement or trigger a trend alert.
+  High historical variability is labelled.
 - A daily population comparison uses today's per-request mean versus the preceding
-  three populated business dates (05:00 Asia/Shanghai boundary), with at least 10
+  up to seven complete populated business dates (05:00 Asia/Shanghai boundary), with at least three historical dates and at least 10
   runs and five Sessions on each date. A rise of 30% and the same absolute floors
   must remain after separately removing the Session with the largest effect on the mean from each window.
   The filtered current and historical means use the same exclusion rule.
   A one-day jump can therefore alert without four consecutive days of growth;
   a lone expensive Session cannot trigger this comparison. First-response dates
   use the provider message timestamp where present, matching the dashboard.
-- The overall per-request mean is also reviewed when it rises across four
+- The overall per-request mean is also reviewed when it rises across at least four
   populated business dates by at least 30%, with at least 10 runs and five
   Sessions on every date and a corroborating rise in Session medians. This
   catches changed experiment/task composition without claiming same-task
   regression. Current-day incompleteness and experimental share are shown.
 
-An idle date is skipped, not treated as a zero baseline. Increased daily request
+The existing `sessionDiagnostics.metricPolicy` accepts `referenceDays` (3–10,
+default 7) and `excludedDates` (explicit `YYYY-MM-DD` Beijing rest dates). Rest days
+are never inferred from weekends. Calendar-date samples are excluded even before
+the 05:00 reporting boundary; a reporting date explicitly listed as resting is
+also skipped as a historical reference. An idle or insufficiently sampled date
+is skipped, not treated as zero. Evidence lists exact reference dates and counts.
+
+A separate same-configuration comparison can flag a return from a recently lower
+level even when the long reference is not breached. The latest complete period
+with at least 10 runs across three Sessions must have dropped at least 30% (and
+the metric's absolute floor) against at least three earlier supported dates with
+20 runs and five Sessions. A subsequent rise needs the normal current-sample,
+absolute and cross-Session conditions. The lower level remains an unconfirmed
+observation; no code/configuration change or optimization benefit is inferred.
+Task content, concurrency and effective versions are not fully paired. Evidence
+shows common Session coverage, which does not itself establish matching tasks.
+
+An explicitly changed baseline policy rechecks active same-configuration incidents
+only with complete collection, a supported historical reference and present current observations. Old small-sample alerts may be withdrawn by the stricter rule without establishing an improvement. The
+original private card and pre-correction evidence are retained. A comparison that
+no longer qualifies is marked “基准已更正/已复核”, not performance recovery. A lack
+of data cannot close it. Existing unresolved incidents keep their original
+recovery target while new comparisons report their actual current reference.
+
+Increased daily request
 volume alone cannot trigger these per-request comparisons. Experiment exposure
 is read from the original record; unmarked does not mean nonexperimental.
 The first analysis compares injection sources or timing phases and reports clues,

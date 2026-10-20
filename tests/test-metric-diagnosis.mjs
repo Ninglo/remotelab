@@ -13,7 +13,7 @@ assert(metricComparisons([...baseline,...recent.map(s=>({...s,metrics:{...s.metr
 assert(metricComparisons([...baseline,...recent.map(s=>({...s,model:'different'}))],now).every(c=>!c.alarm),'model mix cannot become regression');
 assert(metricComparisons([...baseline,...recent.map(s=>({...s,experiment:'new-experiment'}))],now).every(c=>!c.alarm),'new experiment has its own baseline');
 assert(metricComparisons([...baseline,...recent.slice(0,1)],now).every(c=>!c.alarm),'one spike is not a trend');
-cs=metricComparisons([...baseline,...recent.slice(0,3)],now);assert(cs[0].alarm);assert.equal(cs[0].confidence,'small_sample');
+cs=metricComparisons([...baseline,...recent.slice(0,3)],now);assert(!cs[0].alarm,'small samples remain observations, including large apparent changes');assert.equal(cs[0].confidence,'small_sample');
 assert(metricComparisons([...baseline,...recent.map(s=>({...s,sessionId:'one'}))],now).every(c=>!c.alarm),'one chat cannot stand for the whole population');
 const holiday=baseline.filter(s=>s.responseAt!==now-2*DAY);
 assert(metricComparisons([...holiday,...recent.map((s,i)=>({...s,metrics:row(0,now,10000).metrics}))],now).every(c=>!c.alarm),'activity returning after idle day is not deterioration');

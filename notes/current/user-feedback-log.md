@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-20 — Distinguish apparent improvement from low activity and preserve rebound detection
+
+- Feedback: a rest date dominated a short metric reference; a longer normal reference should also retain a warning when a supported low period rebounds. A low value from too few requests must not be called an optimization.
+- Change: select supported complete historical dates, allow explicitly confirmed rest-date exclusions, retain low-sample observations without establishing a new normal, and flag supported recent lows followed by a broad rebound with cause unconfirmed. Report common Session coverage without claiming task, load or effective-version matching.
+- Verification: replay the original numeric samples and exercise sparse lows, holiday lows, a real supported rebound, partial dates and original-card baseline correction. Correction preserves original evidence and is not labelled performance recovery; live deployment evidence remains instance-local.
+
 ### 2026-10-17 — Repeated final-response rejection after clarification
 
 - Feedback: the same generic delivery-failure notice appeared repeatedly, including twice during ordinary task work on the same day.

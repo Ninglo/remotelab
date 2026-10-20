@@ -11,6 +11,7 @@ import { diagnosisKey, diagnosisStages, sessionDiagnosisCandidates, diagnoseSess
 import { acquireProviderRuntimeLease } from './provider-runtime-queue.mjs';
 import { createSessionMonitoringReader } from './monitoring-sessions.mjs';
 import { metricComparisons, metricCandidate, metricRecovered, metricCoverage, metricLabels, populationTrendCandidates } from '../lib/metric-diagnosis.mjs';
+import { metricReferencePolicy } from '../lib/metric-reference.mjs';
 import { subscriptionAvailability } from '../lib/codex-accounts.mjs';
 import { readTrustAccounts, trustCandidates } from './monitoring-trust.mjs';
 import { monitoringIm } from './monitoring-alert-message.mjs';
@@ -85,7 +86,7 @@ export async function deliverSessionDiagnosis(item, config, execute = promisify(
 export async function readSessionDiagnostics(file = SESSION_DIAGNOSIS_FILE) {
   const state = await readRecord(file);
   return {checkedAt:state?.checkedAt || null, coverage:state?.coverage || null, metricCoverage:state?.metricCoverage || null,
-    incidents:Object.values(state?.incidents || {}).map(i => ({id:i.id,metric:i.metric,status:i.status,summary:i.summary,
+    incidents:Object.values(state?.incidents || {}).map(i => ({id:i.id,metric:i.metric,status:i.status,summary:i.summary,resolutionType:i.resolutionType,comparisonType:i.comparisonType,
       nextStep:i.nextStep,trigger:i.trigger,action:i.action,verification:i.verification,evidence:i.evidence,suspects:i.suspects,limitations:i.limitations,relatedRecovery:i.relatedRecovery,
       sessionIds:i.members.map(m => m.sessionId),checkedAt:i.diagnosedAt,updatedAt:i.updatedAt,
       deliveryStatus:Object.values(state?.metricNotifications || {}).find(g=>g.memberIds?.includes(i.id))?.delivery?.status || i.delivery?.status || 'disabled',notificationReason:i.notification?.reason,test:i.test === true}))};
@@ -106,9 +107,11 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     const data = await readSessions({days:7});
     const candidates = sessionDiagnosisCandidates(data.sessions,now);
     const metrics=config.metricPolicy?.enabled === true ? await readMetrics({dryRun}) : {samples:[],coverage:{}};
-    const comparisons=metricComparisons(metrics.samples || [],now);
+    const metricPolicy=config.metricPolicy || {},baselinePolicyKey=diagnosisKey(metricReferencePolicy(metricPolicy));
+    const comparisons=metricComparisons(metrics.samples || [],now,metricPolicy);
     const complete=metrics.coverage?.truncated!==true && !(metrics.coverage?.limitedFiles>0) && !(metrics.coverage?.readErrors>0);
-    const extras=complete ? [...populationTrendCandidates(metrics.samples || [],now),...comparisons.filter(c=>c.alarm).map(c=>metricCandidate(c,now))] : [];
+    const populations=complete?populationTrendCandidates(metrics.samples || [],now,{...metricPolicy,includeObservations:true}):[];
+    const extras=complete ? [...populations.filter(c=>c.alarm),...comparisons.filter(c=>c.alarm).map(c=>metricCandidate(c,now))] : [];
     const tracked=Object.values(state.incidents).filter(i=>i.riskType==='exhausted_bindings'&&i.status!=='resolved').flatMap(i=>i.members.map(m=>m.sessionId));
     const accounts=config.reportActions === true ? await readAccounts(metrics.samples || [],undefined,now,tracked) : null;
     if(accounts) {
@@ -130,6 +133,25 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     state.checkedAt = new Date(now).toISOString(); state.coverage = data.coverage;
     state.metricCoverage=metricCoverage(comparisons,metrics.coverage);
     let diagnosed=0, sent=0;
+    // A changed reference definition invalidates the old statistical comparison,
+    // not the original evidence. Recheck on complete, supported observations;
+    // never describe a baseline correction as a performance recovery.
+    if(complete)for(const item of Object.values(state.incidents)) {
+      if(item.kind!=='metric' || item.status==='resolved'&&item.resolutionType!=='baseline_recalibrated' || item.baselinePolicyKey===baselinePolicyKey)continue;
+      const excludedLow=item.comparisonType==='rebound'&&metricReferencePolicy(metricPolicy).excludedDates.includes(item.referenceDate);
+      const c=item.comparisonType==='population'?populations.find(c=>c.key===item.key):comparisons.find(c=>c.metric===item.metric&&c.cohort===item.cohort
+        &&(excludedLow?!c.comparisonType:c.comparisonType===item.comparisonType&&c.referenceDate===item.referenceDate));
+      if(!c || c.confidence==='baseline_insufficient' || !c.currentCount)continue;
+      const revision={at:state.checkedAt,baseline:item.baseline,ratio:item.ratio,summary:item.summary,evidence:item.evidence,baselinePolicyKey:item.baselinePolicyKey || 'legacy'};
+      (item.baselineRevisions ||= []).push(revision);
+      if(!excludedLow)Object.assign(item,item.comparisonType==='population'?c:metricCandidate(c,now));
+      Object.assign(item,{baselinePolicyKey,recoveryBaseline:c.baseline,diagnosedAt:state.checkedAt,updatedAt:state.checkedAt});
+      delete item.resolutionType;
+      if(excludedLow || !c.alarm)Object.assign(item,{status:'resolved',resolutionType:'baseline_recalibrated',
+        summary:`原比较基准已更正；新参考 ${c.baseline.toFixed(1)} → 当前 ${c.current.toFixed(1)}，变化 ${((c.ratio-1)*100).toFixed(1)}%，未满足预警条件。`,
+        verification:'按完整日期、样本支持与已确认休息日重新核查；这是预警依据更正，不代表性能恢复。',nextStep:'保留原始预警与更正记录。'});
+      if(excludedLow)item.summary='原低位来自已排除的休息日；原反弹比较依据撤回，不能据此认定优化失效。';
+    }
     for(const [id,item] of Object.entries(state.incidents))if(item.delivery?.status==='delivered' && ['resolved','action_verified'].includes(item.status) && now-Date.parse(item.updatedAt)>7*86400000)delete state.incidents[id];
     for(const c of candidates) {
       let item = Object.values(state.incidents).find(i => i.key === c.key && i.status !== 'resolved');
@@ -159,14 +181,14 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       // unchanged. Repeated reads of one quota sample never confirm an alert.
       if(item && riskOnly && candidate.riskType==='exhausted_bindings')item.notificationEvidenceKey=candidate.notificationEvidenceKey;
       if(item?.fingerprint===candidate.fingerprint)continue;
-      if(item && candidate.kind==='metric' && now-Date.parse(item.diagnosedAt)<cooldown)continue;
+      if(item && candidate.kind==='metric' && item.baselinePolicyKey===candidate.baselinePolicyKey && now-Date.parse(item.diagnosedAt)<cooldown)continue;
       if(!item) {
         if(Object.keys(state.incidents).length>=100)continue;
         item={id:diagnosisKey([candidate.key,now]),createdAt:state.checkedAt,test};state.incidents[item.id]=item;
       }
-      const frozenBaseline=item.baseline;
+      const recoveryBaseline=item.recoveryBaseline ?? item.baseline;
       Object.assign(item,candidate,{diagnosedAt:state.checkedAt,updatedAt:state.checkedAt});
-      if(frozenBaseline!=null)item.baseline=frozenBaseline;
+      if(recoveryBaseline!=null)item.recoveryBaseline=recoveryBaseline;
       diagnosed++;
     }
     for(const item of Object.values(state.incidents)) {
@@ -187,7 +209,7 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     for (const item of Object.values(state.incidents)) {
       item.originalTrigger ||= item.trigger || item.evidence?.join('；') || `${item.members?.length || 0}个会话出现指标异常`;
       if (!item.history?.length) appendAlertHistory(item, { at: item.createdAt, label: '触发预警', summary: item.originalTrigger });
-      appendAlertHistory(item, { at: item.updatedAt, label: item.status === 'resolved' ? '复查确认恢复' : '分析与处理',
+      appendAlertHistory(item, { at: item.updatedAt, label: item.resolutionType==='baseline_recalibrated'?'更正比较基准':item.status === 'resolved' ? '复查确认恢复' : '分析与处理',
         summary: [item.summary, item.action, item.verification, item.limitations].filter(Boolean).join('；'), status: item.status });
     }
     if(riskOnly) {
