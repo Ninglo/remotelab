@@ -5,10 +5,11 @@ import { tmpdir } from 'node:os';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'feishu-new-conversation-'));
 setIsolatedTestHome(home);
+process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://remote.example';
 try {
   const { createSession, getSession } = await import('../chat/session-manager.mjs');
   const { startFeishuPrivateConversation: start, filterPrivateConversationContext: filter } = await import('../connectors/feishu/private-conversations.mjs');
-  const { extractLocalCommand } = await import('../scripts/feishu-connector.mjs');
+  const { extractLocalCommand, handleMessage } = await import('../scripts/feishu-connector.mjs');
   const { loadFeishuConversationContext: context } = await import('../connectors/feishu/conversation-context.mjs');
   const { appendEvent, getHistoryHeadSeq } = await import('../chat/history.mjs');
   const { findSessionConversation } = await import('../chat/session-conversations.mjs');
@@ -38,8 +39,15 @@ try {
   assert.equal(await getHistoryHeadSeq(old.id), 1, 'old evidence remains intact');
   assert.equal(await getHistoryHeadSeq(fresh.sessionId), 0, 'new provider work receives no old transcript');
   const freshSession = await getSession(fresh.sessionId);
+  assert.match(fresh.text, /模型：gpt-6\.1-sol · 思考强度：xhigh · 执行工具：codex/);
+  assert.ok(fresh.text.includes(`https://remote.example/?session=${fresh.sessionId}&tab=sessions`),
+    'creation receipt contains the new Session link before the first question');
   assert.deepEqual(freshSession.privateConversationStart, { messageId: summary.messageId, at: 1792485000000 });
   assert.equal((await start(runtime, summary, deps)).sessionId, fresh.sessionId, 'duplicate command is idempotent');
+  const changedDefaults = await start(runtime, summary, { ...deps,
+    resolveDefault: async () => ({ tool: 'codex', model: 'gpt-6-astra', effort: 'high' }),
+  });
+  assert.equal(changedDefaults.text, fresh.text, 'retry describes the stored Session, not newer defaults');
   const newer = await start(runtime, { ...summary, messageId: 'om_new2', createTime: '1792485002000' }, deps);
   const replay = await start(runtime, summary, deps);
   assert.equal(replay.superseded, true);
@@ -71,5 +79,23 @@ try {
   }, { lookup: async (_path, key) => ({ sessionId: key.messageId === 'old-finish' ? old.id : freshSession.id }) });
   assert.deepEqual(filtered.messages.map(m => m.text), ['NEW_RESULT', 'NEW_QUESTION'],
     'a late old-task result is delivered but does not contaminate the new model context');
-  console.log('PRIVATE_CONVERSATIONS_VERIFIED: explicit command only, fresh history, retained old work, atomic binding, idempotent replay, provider boundary, late old replies and group isolation');
+  const replies = [];
+  await handleMessage(runtime, { ...summary, messageId: 'om_menu', messageType: 'text',
+    messageText: '新对话', createTime: '1792485004000' }, 'test', {
+    enrichSummaryWithChatMetadata: async (_runtime, incoming) => incoming,
+    requestRemoteLab: request,
+    resolveFeishuRuntimeSelection: deps.resolveDefault,
+    queueFeishuReply: async (_runtime, incoming, text) => {
+      replies.push({ incoming, text });
+      return { deliveryId: 'new-conversation-receipt' };
+    },
+    submitRemoteLabRequest: async () => { assert.fail('new conversation must not wait for a model turn'); },
+  });
+  const menuSession = await findSessionConversation(conversation);
+  assert.equal(replies.length, 1, 'one menu click queues one complete receipt');
+  assert.equal(replies[0].incoming.chatId, summary.chatId);
+  assert.match(replies[0].text, /模型：gpt-6\.1-sol · 思考强度：xhigh · 执行工具：codex/);
+  assert.ok(replies[0].text.includes(`https://remote.example/?session=${menuSession.id}&tab=sessions`));
+  assert.equal(await getHistoryHeadSeq(menuSession.id), 0, 'receipt does not require a question or model run');
+  console.log('PRIVATE_CONVERSATIONS_VERIFIED: immediate menu receipt with saved runtime and new link, no model turn, fresh history, retained old work, atomic binding, idempotent replay, provider boundary, late old replies and group isolation');
 } finally { await rm(home, { recursive: true, force: true }); }

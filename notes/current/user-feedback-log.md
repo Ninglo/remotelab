@@ -1996,3 +1996,12 @@ admission and cold retry, queued/archived feedback without duplicate input,
 concurrent topic creation, original attachment carry, post-completion/cold
 continuation, participation controls and HTTP execution/delivery. Natural-use
 model judgment and real provider delivery remain separate acceptance evidence.
+
+## 2026-10-20 — Return runtime and link when a private conversation is created
+
+Clicking “新对话” should create the conversation and immediately show its model,
+reasoning effort, Harness and link. Showing these only after the next question
+left the user unable to verify the new conversation at the point of creation.
+The command receipt now uses the saved Session and the shared navigation footer,
+without waiting for a model turn. Retries retain the same Session and describe
+its actual runtime even when the instance default has since changed.

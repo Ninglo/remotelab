@@ -3,6 +3,7 @@ import { buildFeishuTopicId, buildSessionSourceContext } from './index.mjs';
 import { buildFeishuSessionConversationTarget, buildFeishuSessionExternalTriggerId } from './reply-routing.mjs';
 import { parseFeishuMessageTime } from './conversation-context.mjs';
 import { findConnectorMessageIndexRecord } from '../../lib/connector-message-index.mjs';
+import { appendSessionEntryFooter, buildSessionEntry } from '../../lib/session-navigation.mjs';
 
 export async function filterPrivateConversationContext(runtime, summary, session, context, {
   lookup = findConnectorMessageIndexRecord,
@@ -42,5 +43,5 @@ export async function startFeishuPrivateConversation(runtime, summary, { request
   // replaying an old command cannot reclaim a newer conversation binding.
   if (!session.conversation) return { created: false, superseded: true, sessionId: session.id };
   return { created: true, sessionId: session.id,
-    text: '已开启新对话。接下来发消息即可，不带入上一段聊天背景。\n旧对话和正在执行的工作保留；需要接续时请说明是哪件事。项目工作建议在对应群里发起。' };
+    text: appendSessionEntryFooter('已开启新对话，直接发送新问题即可。', buildSessionEntry(session)) };
 }

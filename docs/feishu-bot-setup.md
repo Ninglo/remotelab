@@ -439,6 +439,12 @@ must stand alone; the next message supplies the new question. Discussing the
 feature in a sentence does not activate it. In a group, `/new` only points the
 user to an appropriate project-group topic.
 
+The creation receipt immediately includes the new Session's saved model,
+reasoning effort, Harness and direct Session link, using the instance's public
+URL. It does not wait for the first question or a model run. Runtime selection
+uses the same configured default as other new Feishu Sessions; a retried command
+reports the existing Session's actual selection even if defaults have changed.
+
 The old Session, work records, evidence and accepted jobs remain intact. Their
 saved delivery destinations still apply; the command neither stops nor
 duplicates them. The new Session has its own `privateConversationStart` marker:
@@ -452,8 +458,7 @@ Creation reuses the existing atomic `replaceConversation` contract and a command
 message-derived idempotency key. Repeated delivery cannot create extra Sessions
 or reclaim a conversation after a newer `/new`. Different Bots, people/chats and
 group topics keep separate bindings. Ordinary private chat remains available;
-the completion receipt recommends using the appropriate project group for
-project work, without automatically moving or publishing private content.
+project work can still be started in the appropriate project group.
 
 The Index Bot can expose a fifth floating-menu item `新对话` using the same
 send-message action as its existing settings/report shortcuts. Configure and
