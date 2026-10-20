@@ -4,7 +4,7 @@
  import { createOperationGate } from './operation-gate.mjs';
  import { createWeatherSource } from './weather-source.mjs';
  import { validateCompanion, companionScene } from './companion-scene.mjs';
-+import { createCompanionLibraryReader } from './companion-library.mjs';
++import { createCompanionLibraryReader, companionActionTick } from './companion-library.mjs';
  
  const root = path.dirname(fileURLToPath(import.meta.url));
  const v21Root = process.env.NODE_ENV === 'test' && process.env.PREVIEW_TEST_V21_ROOT
@@ -25,7 +25,7 @@
    if (payload.version === 21) return renderV21(payload, liveMetrics, weather);
    const context = await newRenderContext(payload);
    try {
-@@ -232,8 +234,13 @@
+@@ -232,15 +234,20 @@
    }
  }
  
@@ -41,6 +41,14 @@
    const context = await newRenderContext(payload);
    try {
      const page = await context.newPage();
+     await page.setContent('<html><head><style>html,body{margin:0;width:1920px;height:480px;overflow:hidden}svg{display:block}</style></head><body>' + scene.svg + '</body></html>');
+     await page.evaluate(() => document.fonts.ready);
+     const png = await page.locator('svg').screenshot({ type: 'png', animations: 'disabled' });
+-    return { png, animations: scene.animations };
++    return { png, animations: scene.animations, companionActionTick: selected?.tick ?? null };
+   } finally { await context.close(); }
+ }
+
 @@ -401,6 +408,26 @@
    };
  }
@@ -76,7 +84,7 @@
    const { running, waiting, queued, pendingReview, pendingResults, deliveryIssues, active, projects, reminderSources } = metrics;
    // The Feishu poll timestamp changes even when the visible reminder does not.
    // Redrawing for that timestamp delays real Session changes behind rendering.
-@@ -502,7 +530,7 @@
+@@ -502,17 +530,19 @@
      const current = await currentPreview(record.personId);
      if (current?.frameId !== record.lastFrameId) { await clearActive(); return; }
      const [metrics, weather] = await Promise.all([
@@ -85,16 +93,28 @@
        [21, 22].includes(record.payload.version) ? weatherForCity(record.payload.weatherCity || record.payload.state?.weatherCity || '北京') : null,
      ]);
      const fingerprint = stateFingerprint(metrics, weather);
-@@ -512,7 +540,7 @@
+     const minute = Math.floor(Date.now() / 60_000);
+     const statusTick = Math.floor(Date.now() / 15_000);
++    const actionTick = record.payload.version === 22 && record.payload.libraryId ? companionActionTick() : null;
+     // The sidecar's frame lease also needs renewal when a static image is unchanged.
      const renewLease = Date.parse(current.expiresAt) - Date.now() <= 60 * 60 * 1000;
      let published = false;
      if (renewLease || fingerprint !== record.lastMetricsFingerprint || minute !== record.lastRenderedMinute
 -      || (metrics && statusTick !== record.lastRenderedStatusTick)) {
++      || (actionTick !== null && actionTick !== record.lastRenderedActionTick)
 +      || (metrics && !metrics.companionObservation && statusTick !== record.lastRenderedStatusTick)) {
        const rendered = await render(record.payload, metrics, weather);
        const nextFrameId = frameIdFor(rendered);
        if (renewLease || nextFrameId !== record.lastFrameId) {
-@@ -651,7 +679,7 @@
+@@ -524,6 +554,7 @@
+       record.lastMetricsFingerprint = fingerprint;
+       record.lastRenderedMinute = minute;
+       record.lastRenderedStatusTick = statusTick;
++      record.lastRenderedActionTick = rendered.companionActionTick ?? null;
+     }
+     record.refreshedAt = new Date().toISOString();
+     if (published || record.payload.version !== 22) await persistActive();
+@@ -651,7 +682,7 @@
      const personId = String(req.headers['x-preview-person-id'] || config.personId || '');
      await pairedDevice(personId);
      const [metrics, weather] = await Promise.all([
@@ -103,6 +123,16 @@
        [21, 22].includes(payload.version) ? weatherForCity(payload.weatherCity || payload.state?.weatherCity || '北京') : null,
      ]);
      const rendered = await render(payload, metrics, weather);
+@@ -661,7 +692,8 @@
+     activeRecord = { personId, deviceId: config.deviceId, payload, firstFrameId: installed, lastFrameId: installed,
+       startedAt: new Date().toISOString(), refreshedAt: new Date().toISOString(),
+       lastMetricsFingerprint: stateFingerprint(metrics, weather), lastRenderedMinute: Math.floor(Date.now() / 60_000),
+-      lastRenderedStatusTick: Math.floor(Date.now() / 15_000) };
++      lastRenderedStatusTick: Math.floor(Date.now() / 15_000),
++      lastRenderedActionTick: rendered.companionActionTick ?? null };
+     await persistApplied(activeRecord);
+     await persistActive();
+     scheduleRefresh();
 --- a/concept-v14/test-preview-stream.mjs
 +++ b/concept-v14/test-preview-stream.mjs
 @@ -26,6 +26,8 @@
@@ -131,22 +161,41 @@
      } else if (req.url === `/v1/people/${personId}/preview-frame` && req.method === 'GET') {
        if (previewReadFailures > 0) { previewReadFailures -= 1; res.writeHead(503); res.end('{}'); failedPreviewRead?.(); return; }
        json(res, latest ? { configured: true, devicePlayback: playback.map(item => ({ ...item, bundleFrameId: latest })), frameId: latest, expiresAt, updatedAt: new Date().toISOString(), animationCount: animationsReceived.length } : { configured: false });
-@@ -355,6 +360,25 @@
+@@ -355,6 +360,44 @@
    const companionRecord = await waitActive(record => record?.lastFrameId === companionId);
    assert.equal(companionRecord.payload.observedAt, companion.observedAt, 'clock refresh must preserve source time');
    assert.equal(metricReads, beforeCompanionMetrics, 'clock/weather refresh does not scan Sessions');
 +  const libraryRoot = path.join(temp, 'private/companion-libraries/test');
 +  await fs.mkdir(libraryRoot, { recursive: true });
 +  const libraryGif = Buffer.from(companion.actions[0].gifBase64, 'base64');
-+  const sha256 = crypto.createHash('sha256').update(libraryGif).digest('hex');
-+  await fs.writeFile(path.join(libraryRoot, 'action.gif'), libraryGif);
-+  await fs.writeFile(path.join(libraryRoot, 'manifest.json'), JSON.stringify({ version: 1, id: 'test', actions: [{ name: '挥手', category: '小动作', file: 'action.gif', sha256, frames: 2, durationMs: 200 }] }));
++  const libraryActions = [];
++  for (let i = 0; i < 3; i++) {
++    const bytes = Buffer.from(libraryGif); bytes[13] = i * 64;
++    const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
++    const file = `action-${i}.gif`;
++    await fs.writeFile(path.join(libraryRoot, file), bytes);
++    libraryActions.push({ name: `动作${i}`, category: '小动作', file, sha256, frames: 1, durationMs: 100 });
++  }
++  await fs.writeFile(path.join(libraryRoot, 'manifest.json'), JSON.stringify({ version: 1, id: 'test', actions: libraryActions }));
++  const rotationMinute = Math.floor((Date.now() + 120_000) / 60_000) * 60_000 + 1000;
++  child.send({ type: 'test-clock', offset: rotationMinute - Date.now() });
 +  const libraryPayload = { ...companion, design: 'companion-v2', actions: undefined, libraryId: 'test', liveObservation: true };
 +  const libraryApply = await fetch(`${base}/api/preview`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'X-Preview-Person-Id': personId, 'Content-Type': 'application/json' }, body: JSON.stringify(libraryPayload) });
 +  assert.equal(libraryApply.status, 200, await libraryApply.text());
 +  assert(observationReads > 0);
 +  assert.equal(metricReads, beforeCompanionMetrics);
-+  assert.equal(animationsReceived[0].gifBase64, companion.actions[0].gifBase64);
++  const initialLibraryRecord = await waitActive(record => record?.payload.libraryId === 'test');
++  const rotatedAssets = new Set([animationsReceived[0].gifBase64]);
++  for (let i = 1; i <= 2; i++) {
++    const actionChanged = waitFrame();
++    child.send({ type: 'test-clock', offset: rotationMinute + i * 20_000 - Date.now() });
++    const changedId = await actionChanged;
++    const record = await waitActive(value => value?.lastFrameId === changedId);
++    assert.equal(record.lastRenderedMinute, initialLibraryRecord.lastRenderedMinute, 'rotate without changing the clock minute');
++    assert.equal(record.lastRenderedActionTick, initialLibraryRecord.lastRenderedActionTick + i);
++    rotatedAssets.add(animationsReceived[0].gifBase64);
++  }
++  assert.equal(rotatedAssets.size, 3, 'three distinct GIFs are actually published in one minute');
 +  const beforeText = latest;
 +  const textChanged = waitFrame();
 +  observation = { kind: 'attention', subject: '测试项目', sentence: '对照结果已备好，请选定下一组条件。', observedAt: new Date().toISOString(), label: '对话更新' };

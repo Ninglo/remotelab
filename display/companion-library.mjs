@@ -2,6 +2,10 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 
+// A 10-second source should not repeat six times just to wait for the clock.
+export const COMPANION_ACTION_INTERVAL_MS = 20_000;
+export const companionActionTick = (nowMs = Date.now()) => Math.floor(nowMs / COMPANION_ACTION_INTERVAL_MS);
+
 // Libraries are installed by the operator, never uploaded as paths by a device.
 export function createCompanionLibraryReader(root) {
   const manifests = new Map();
@@ -36,7 +40,7 @@ export function createCompanionLibraryReader(root) {
   }
   return { manifest, async select(id, nowMs = Date.now()) {
     const library = await manifest(id);
-    const tick = Math.floor(nowMs / 60_000);
+    const tick = companionActionTick(nowMs);
     const count = library.actions.length;
     const cycle = Math.floor(tick / count);
     // A stable permutation visits every action once before starting another cycle.
@@ -55,6 +59,6 @@ export function createCompanionLibraryReader(root) {
       while (assets.size > 4) assets.delete(assets.keys().next().value);
     }
     return { action: { name: action.name, gifBase64 }, total: count, category: action.category || '日常',
-      durationMs: action.durationMs, frames: action.frames, libraryId: id };
+      durationMs: action.durationMs, frames: action.frames, libraryId: id, tick };
   } };
 }
