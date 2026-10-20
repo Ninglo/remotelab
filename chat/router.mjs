@@ -289,6 +289,7 @@ async function readSessionMessagePayload(req, pathname) {
       source: typeof payload?.source === 'string' ? payload.source.trim() : '',
       sourceContext: payload?.sourceContext && typeof payload.sourceContext === 'object' ? payload.sourceContext : null,
       sourceDelivery: payload?.sourceDelivery,
+      ...(payload?.recordUserMessage === false ? { recordUserMessage: false } : {}),
       attachments,
     };
   }
@@ -358,6 +359,7 @@ async function readSessionMessagePayload(req, pathname) {
     source: parseFormString(formData.get('source')),
     sourceContext: parseFormJson(parseFormString(formData.get('sourceContext')), null),
     sourceDelivery: parseFormJson(parseFormString(formData.get('sourceDelivery')), undefined),
+    ...(parseFormString(formData.get('recordUserMessage')) === 'false' ? { recordUserMessage: false } : {}),
     attachments,
   };
 }

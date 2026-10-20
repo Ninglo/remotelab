@@ -95,6 +95,7 @@
             "chat/source-deliveries.mjs",
             "connectors/feishu/session-flow.mjs",
             "lib/connector-turn-flow.mjs",
+            "chat/router.mjs",
             "chat/router-session-main-routes.mjs",
             "docs/project-architecture.md",
             "chat/request-runtime.mjs",

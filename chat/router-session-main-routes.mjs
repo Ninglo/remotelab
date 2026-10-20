@@ -398,10 +398,15 @@ export async function handleSessionMainRoutes({
         const payload = JSON.parse(await readBody(req, 512 * 1024));
         const session = await getSession(sessionId);
         const target = session?.conversation?.target;
-        const boundTopic = target?.chatType === 'group' && (target?.threadId || target?.rootId || target?.topicId)
-          && ['thread', 'topic'].includes(target.conversationKind);
+        // Scheduled publications can bind only a chat and a reply root. Those
+        // aliases already resolve the Session; optional topology metadata must
+        // not make its follow-up fail a second, incompatible admission check.
+        const boundTopic = target && !target.commentId
+          && !['p2p', 'private'].includes(target.chatType) && target.conversationKind !== 'main'
+          && (target.threadId || target.rootId || target.topicId || (target.replyInThread && target.messageId));
         if (session?.conversation?.connector !== 'feishu' || (!session.groupFeed && !boundTopic)) {
-          writeJson(res, 400, { error: 'Observations require a bound Feishu group Session' });
+          writeJson(res, 400, { error: 'Observations require a bound Feishu group Session',
+            code: 'FEISHU_OBSERVATION_BINDING_REQUIRED' });
           return true;
         }
         if (parts.length === 5) {
@@ -413,7 +418,12 @@ export async function handleSessionMainRoutes({
         const incomingThreadId = source?.threadId || source?.topicId || '';
         // Ambient replies keep the main Session binding. Their delivered
         // thread provenance is the same authority used by normal admission.
-        const sameThread = boundTopic ? sameFeishuConversation(session.conversation, {
+        const sameThread = boundTopic ? sameFeishuConversation({
+          ...session.conversation,
+          // A stored tenant remains authoritative. Sparse publication bindings
+          // use the authenticated connector's tenant after matching Bot/chat/root.
+          target: { ...target, tenantKey: target.tenantKey || source?.tenantKey },
+        }, {
           connector: source?.connector, sourceRouteId: source?.sourceRouteId,
           target: { ...source, threadId: incomingThreadId, conversationKind: 'thread' },
         }) : (target?.threadId || '') === incomingThreadId;
@@ -429,7 +439,8 @@ export async function handleSessionMainRoutes({
             || (session.conversation.target?.tenantKey
               && payload.sourceContext.tenantKey !== session.conversation.target.tenantKey)
             || payload.sourceContext.messageId !== payload.sourceMessageId) {
-          writeJson(res, 400, { error: 'Observation source does not match the bound Feishu conversation' });
+          writeJson(res, 400, { error: 'Observation source does not match the bound Feishu conversation',
+            code: 'FEISHU_OBSERVATION_SOURCE_MISMATCH' });
           return true;
         }
         const initiator = await resolveSessionInitiator(authSession, 'feishu', payload.sourceContext);

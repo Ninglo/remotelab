@@ -375,6 +375,14 @@ ordinary native additions while running and fresh turns after completion. Provid
 thread IDs refine the durable root binding; neither completion nor service restart
 creates another Session. Observation admission accepts the same verified root/thread
 aliases as normal conversation resolution, including replies racing the first receipt.
+Scheduled publications may bind only a Bot, chat and reply root, without
+`chatType`, `conversationKind` or `tenantKey`. Observation admission accepts
+that same root binding; known Bot/chat/thread/tenant conflicts still reject it.
+An explicitly private or mainline binding cannot be reinterpreted as a topic.
+After a connector has persisted the observation, JSON and multipart message
+admission preserve `recordUserMessage: false` to avoid recording the same human
+input twice. Only authenticated connector service requests may apply that flag;
+ordinary browser input remains recorded.
 
 For a **legacy** ambient mainline reply placed in a new Feishu Thread, the successful
 outbox receipt indexes the provider Thread/root aliases with the originating Run.
@@ -389,6 +397,9 @@ main-model admission; it must not reject a valid topic solely because the origin
 Session is bound to the mainline. A definitive ingress rejection is retained and
 queues one durable failure notice in the source conversation. Retrying that notice
 never re-executes the rejected input.
+Binding rejections retain a structured reason and identify the broken association
+in the notice. Permanent rejection notices do not tell the user to resend an input
+that will fail unchanged.
 
 Model/runtime and Session-entry footers appear only on the first user turn, with
 existing per-request delivery deduplication. A personal opening preference can

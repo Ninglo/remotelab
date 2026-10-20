@@ -1940,3 +1940,23 @@ existing durable topic-creation operation before work begins; old accepted repli
 retain their original provenance. Observation and execution admission must agree
 on root/thread aliases. Runtime and Session-entry footers belong only to the first
 user turn, while later useful openings may still publish their content.
+
+## 2026-10-20 — A known result topic must accept its follow-up
+
+A user asked for the page from a scheduled result and received a generic
+“received, but could not hand to the assistant; retry later” notice. The topic
+resolved to its original Session, but observation admission rejected the sparse
+Bot/chat/root binding because it lacked interactive-ingress topology fields.
+The request never reached the Harness. Accept the same proven root in both
+paths, retain known scope conflicts, and report binding failures explicitly.
+Permanent rejection notices must not recommend an unchanged retry.
+The HTTP regression also exposed a dropped `recordUserMessage: false` field:
+observation succeeded, then normal admission recorded the same human input
+again. Preserve the field through payload decoding with the existing service
+authentication gate, and test observation followed by actual execution.
+
+The broader coupling remains visible: active messages with optional reactions
+still await observation persistence before normal admission. Reaction
+classification is asynchronous; that does not make its observation dependency
+non-blocking. Further consolidation should use one durable input acceptance
+boundary and keep optional feedback failures outside the execution decision.

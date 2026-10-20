@@ -102,7 +102,8 @@ try {
     if (rejectObservation && request.url?.endsWith('/observations')) {
       observations.push(body);
       response.statusCode = 400;
-      response.end(JSON.stringify({ error: 'Observation source does not match the bound Feishu conversation' }));
+      response.end(JSON.stringify({ error: 'Observation source does not match the bound Feishu conversation',
+        code: 'FEISHU_OBSERVATION_SOURCE_MISMATCH' }));
       return;
     }
     if (request.url === '/api/source-deliveries') {
@@ -176,6 +177,7 @@ try {
     assert.equal(notices.length, 1);
     const pendingFailure = await inbox.store.get(rejected.key);
     assert.match(pendingFailure.admissionFailure, /Observation source/);
+    assert.equal(pendingFailure.admissionFailureCode, 'FEISHU_OBSERVATION_SOURCE_MISMATCH');
     assert.equal(pendingFailure.complete, false, 'a failed notice remains durable');
     // A cold Inbox retries the notification, not the input that was rejected.
     inbox = initializeInbox(httpRuntime);
@@ -186,6 +188,8 @@ try {
     assert.equal(notices.length, 2);
     assert.deepEqual(notices[0], notices[1], 'uncertain delivery uses the identical idempotent packet');
     assert.equal(notices[1].responseId, 'feishu-ingress-failure:rejected');
+    assert.match(notices[1].text, /关联校验失败/);
+    assert.doesNotMatch(notices[1].text, /请稍后.*重试/);
     assert.equal(notices[1].sourceDelivery.target.threadId, 'ambient-topic');
     const failed = await inbox.store.get(rejected.key);
     assert.equal(failed.complete, true);

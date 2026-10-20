@@ -878,6 +878,11 @@ their error and enqueue one failure notice in the original conversation instead
 of silently disappearing. A notification retry never replays rejected work.
 Delivered ambient-topic provenance is checked by both observation and normal
 admission, so an original mainline binding does not reject its own follow-ups.
+Replies to scheduled result topics also reuse their recorded Bot/chat/root
+binding when optional topology or tenant metadata was not supplied by the task.
+Known conflicting identifiers and explicit private/mainline bindings remain
+rejected. Binding failures have a specific notice and retained reason; permanent
+failures no longer ask the user to retry an unchanged input.
 Model/runtime and Session-entry footers are limited to the first user turn;
 later useful openings contain only their message. Delivery
 suppression cancels the matching unsent lease; it does not report a provider send.

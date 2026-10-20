@@ -1166,6 +1166,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     if (!observed.response.ok) {
       const status = observed.response.status;
       throw Object.assign(new Error(observed.json?.error || 'Unable to record Feishu message in Session'), {
+        code: observed.json?.code,
         retryable: !(status >= 400 && status < 500 && ![408, 429].includes(status)),
       });
     }
@@ -2158,8 +2159,12 @@ function buildFeishuInboxKey(summary) {
 
 async function notifyFeishuAdmissionFailure(runtime, entry) {
   const summary = applyFeishuReplyRouting(runtime.config, entry.summary);
+  const bindingFailure = ['FEISHU_OBSERVATION_BINDING_REQUIRED', 'FEISHU_OBSERVATION_SOURCE_MISMATCH']
+    .includes(entry.admissionFailureCode);
   const notification = await queueFeishuReply(runtime, summary,
-    '这条消息已收到，但未能交给助手处理。请稍后在原对话重试。',
+    bindingFailure
+      ? '这条消息已保存，但话题与原会话的关联校验失败，尚未交给助手。需要先修复关联；重复发送同样的内容不能解决这个问题。'
+      : '这条消息已保存，但交给助手时被系统拒绝，尚未开始处理。失败记录已保留，需要排查后恢复。',
     { responseId: `feishu-ingress-failure:${entry.id}` });
   return { failed: true, permanent: true, error: entry.admissionFailure,
     notificationDeliveryId: notification.deliveryId };
@@ -2194,9 +2199,10 @@ function initializeInbox(runtime) {
       } catch (error) {
         if (error.retryable !== false || isFeishuBotSender(entry.summary)) throw error;
         const admissionFailure = error.message;
-        await update({ admissionFailure, lastError: admissionFailure });
+        const admissionFailureCode = error.code || '';
+        await update({ admissionFailure, admissionFailureCode, lastError: admissionFailure });
         console.error(`[feishu-inbox] ${entry.id}: ${admissionFailure}`);
-        return notifyFeishuAdmissionFailure(runtime, { ...entry, admissionFailure });
+        return notifyFeishuAdmissionFailure(runtime, { ...entry, admissionFailure, admissionFailureCode });
       }
     },
     onError: error => console.error(`[feishu-inbox] ${error.message}`),

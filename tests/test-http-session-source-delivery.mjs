@@ -67,9 +67,10 @@ async function request(method, path, body) {
   return { status: res.status, body: await res.json() };
 }
 async function connectorRequest(method, path, body) {
+  const multipart = body instanceof FormData;
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-    method, headers: { Cookie: 'session_token=connector', 'Content-Type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+    method, headers: { Cookie: 'session_token=connector', ...(!multipart ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: multipart ? body : JSON.stringify(body) } : {}),
   });
   return { status: res.status, body: await res.json() };
 }
@@ -155,6 +156,92 @@ try {
     'follow-up before first receipt uses its reserved root');
   assert.equal((await connectorRequest('POST', pendingPath, { ...earlyInput,
     sourceContext: { ...earlyInput.sourceContext, rootId: 'another-root' } })).status, 400);
+  // A scheduled result is a real bound conversation even when its template
+  // supplied only a chat and a root, without interactive-ingress metadata.
+  const scheduledConversation = { connector: 'feishu', sourceRouteId: 'pilot-bot',
+    target: { chatId: 'pilot-group', rootId: 'scheduled-root', replyInThread: true } };
+  const scheduledTopic = await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', conversation: scheduledConversation,
+  });
+  assert.equal(scheduledTopic.status, 201);
+  const scheduledPath = `/api/sessions/${scheduledTopic.body.session.id}/observations`;
+  const scheduledInput = { sourceMessageId: 'scheduled-followup', requestId: 'feishu:scheduled-followup',
+    text: '页面发我一下',
+    sourceContext: { ...observedSource, messageId: 'scheduled-followup', chatType: 'group',
+      threadId: 'scheduled-thread', rootId: 'scheduled-root' } };
+  const resolvedScheduled = await connectorRequest('POST', '/api/session-conversations/resolve', {
+    conversation: { ...scheduledConversation, target: { ...scheduledInput.sourceContext, conversationKind: 'thread' } },
+  });
+  assert.equal(resolvedScheduled.body.sessionId, scheduledTopic.body.session.id);
+  const scheduledObservation = await connectorRequest('POST', scheduledPath, scheduledInput);
+  assert.equal(scheduledObservation.status, 201, JSON.stringify(scheduledObservation.body));
+  assert.equal((await connectorRequest('POST', scheduledPath, scheduledInput)).status, 200,
+    'a retried scheduled follow-up is recorded once');
+  assert.equal((await connectorRequest('POST', `${scheduledPath}/decision`, {
+    sourceMessageId: scheduledInput.sourceMessageId, purpose: 'reaction', emojiType: null,
+  })).status, 200, 'optional feedback can use the same sparse binding');
+  for (const [field, value] of [['rootId', 'other-root'], ['chatId', 'other-chat'], ['sourceRouteId', 'other-bot']]) {
+    const rejected = await connectorRequest('POST', scheduledPath, { ...scheduledInput,
+      sourceContext: { ...scheduledInput.sourceContext, [field]: value } });
+    assert.equal(rejected.status, 400, `sparse binding still rejects a different ${field}`);
+    assert.equal(rejected.body.code, 'FEISHU_OBSERVATION_SOURCE_MISMATCH');
+  }
+  const wrongTenant = await connectorRequest('POST', topicObservePath, { ...topicObservation,
+    sourceContext: { ...topicObservation.sourceContext, tenantKey: 'other-tenant' } });
+  assert.equal(wrongTenant.status, 400, 'a stored tenant must never be replaced by the incoming tenant');
+  const privateTopic = await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', conversation: { ...scheduledConversation,
+      target: { ...scheduledConversation.target, rootId: 'private-root', chatType: 'p2p' } },
+  });
+  const privateObservation = await connectorRequest('POST',
+    `/api/sessions/${privateTopic.body.session.id}/observations`, scheduledInput);
+  assert.equal(privateObservation.status, 400);
+  assert.equal(privateObservation.body.code, 'FEISHU_OBSERVATION_BINDING_REQUIRED');
+  const scheduledRun = await connectorRequest('POST', `/api/sessions/${scheduledTopic.body.session.id}/messages`, {
+    requestId: 'feishu:scheduled-followup', text: scheduledInput.text,
+    tool: 'fake-codex', model: 'fake-model', recordUserMessage: false,
+    sourceContext: scheduledInput.sourceContext,
+    sourceDelivery: { ...scheduledConversation,
+      target: { ...scheduledInput.sourceContext, conversationKind: 'thread', replyInThread: true } },
+  });
+  assert.equal(scheduledRun.status, 202, JSON.stringify(scheduledRun.body));
+  await waitFor(async () => {
+    const result = await request('GET', `/api/runs/${scheduledRun.body.run.id}`);
+    return result.body.run?.state === 'completed';
+  }, 'scheduled topic follow-up completion');
+  const scheduledEvents = (await request('GET',
+    `/api/sessions/${scheduledTopic.body.session.id}/events?filter=all`)).body.events;
+  assert.equal(scheduledEvents.filter(event => event.type === 'message' && event.role === 'user').length, 1,
+    'observation then admission keeps one user message in the original scheduled Session');
+  const multipartInput = { ...scheduledInput, sourceMessageId: 'scheduled-file-followup',
+    requestId: 'feishu:scheduled-file-followup',
+    sourceContext: { ...scheduledInput.sourceContext, messageId: 'scheduled-file-followup' } };
+  assert.equal((await connectorRequest('POST', scheduledPath, multipartInput)).status, 201);
+  const multipartFollowup = new FormData();
+  for (const [key, value] of Object.entries({ text: multipartInput.text, requestId: multipartInput.requestId,
+    tool: 'fake-codex', model: 'fake-model', recordUserMessage: 'false' })) multipartFollowup.set(key, value);
+  multipartFollowup.set('sourceContext', JSON.stringify(multipartInput.sourceContext));
+  const multipartRun = await connectorRequest('POST',
+    `/api/sessions/${scheduledTopic.body.session.id}/messages`, multipartFollowup);
+  assert.equal(multipartRun.status, 202);
+  const browserRun = await request('POST', `/api/sessions/${privateTopic.body.session.id}/messages`, {
+    requestId: 'browser-record-required', text: 'Keep this browser input',
+    tool: 'fake-codex', model: 'fake-model', recordUserMessage: false,
+  });
+  assert.equal(browserRun.status, 202);
+  await waitFor(async () => {
+    const results = await Promise.all([multipartRun, browserRun].map(run =>
+      request('GET', `/api/runs/${run.body.run.id}`)));
+    return results.every(result => result.body.run?.state === 'completed');
+  }, 'multipart observation and browser input completion');
+  const multipartEvents = (await request('GET',
+    `/api/sessions/${scheduledTopic.body.session.id}/events?filter=all`)).body.events;
+  assert.equal(multipartEvents.filter(event => event.type === 'message' && event.role === 'user').length, 2,
+    'multipart connector admission also preserves the existing observation');
+  const browserEvents = (await request('GET',
+    `/api/sessions/${privateTopic.body.session.id}/events?filter=all`)).body.events;
+  assert.equal(browserEvents.filter(event => event.type === 'message' && event.role === 'user'
+    && event.requestId === 'browser-record-required').length, 1, 'browser input cannot suppress its own history');
   // Delivered ambient topics belong to the original main Session, even
   // after its execution has completed and the Request has been archived.
   const { requests } = await import('../chat/requests.mjs');
@@ -382,7 +469,14 @@ try {
     })).status, 200);
   }
   assert.equal(pilotDeliveries.filter(item => item.kind === 'reaction').length, 2);
-  assert.equal(pilotDeliveries.filter(item => item.kind === 'content').length, 3);
+  assert.equal(pilotDeliveries.filter(item => item.kind === 'content').length, 5);
+  const scheduledReplies = pilotDeliveries.filter(item => item.kind === 'content'
+    && item.sessionId === scheduledTopic.body.session.id);
+  assert.equal(scheduledReplies.length, 2, 'both scheduled follow-ups produce their own reply');
+  assert(scheduledReplies.every(item => item.target.rootId === 'scheduled-root'),
+    'scheduled follow-ups keep the original result topic');
+  assert.equal(scheduledReplies.find(item => item.responseId === 'feishu:scheduled-followup')?.target.threadId,
+    'scheduled-thread', 'the resolved provider topic survives through reply delivery');
   assert.ok(pilotDeliveries.every(item => item.kind !== 'session_entry'), 'no fixed Feishu creation message');
   const workReply = pilotDeliveries.find(delivery => delivery.target?.rootId === 'observed-work');
   assert(workReply, 'the work reply must be published');
