@@ -33,6 +33,12 @@ The explicitly requested shared writing guidelines (2026-10-17) are maintained i
 
 ## Current message path
 
+Session identity and creation criteria follow the single
+[Session conversation contract](session-conversations.md). Feishu active inputs
+use one durable admission; optional feedback projects that accepted Request.
+Listening records without execution, while Harness-chosen silence settles a
+normal input. Neither is an admission failure or a reason to create new work.
+
 1. Resolve or create a Session.
 2. Accept the message with structural validation and request-id idempotency.
 3. Queue it only when the Session is already busy.

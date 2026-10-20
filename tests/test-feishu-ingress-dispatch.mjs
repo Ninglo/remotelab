@@ -84,8 +84,10 @@ try {
   const nextHttp = deferred();
   const received = [];
   let rejectObservation = false;
+  let rejectAdmission = false;
   const observations = [];
   const notices = [];
+  const retryPackets = [];
   const server = createServer(async (request, response) => {
     let text = '';
     for await (const chunk of request) text += chunk;
@@ -106,6 +108,11 @@ try {
         code: 'FEISHU_OBSERVATION_SOURCE_MISMATCH' }));
       return;
     }
+    if (rejectAdmission && request.url?.endsWith('/messages')) {
+      response.statusCode = 400;
+      response.end(JSON.stringify({ error: 'Fixture admission rejected', code: 'FIXTURE_ADMISSION_REJECTED' }));
+      return;
+    }
     if (request.url === '/api/source-deliveries') {
       notices.push(body);
       // Lose the first queue acknowledgement: retry only the same notice.
@@ -120,6 +127,14 @@ try {
     }
     if (request.url === '/api/sessions') {
       response.end(JSON.stringify({ session: { id: body.externalTriggerId.split(':').at(-1) } }));
+      return;
+    }
+    if (body.requestId === 'feishu:retry-prepared') {
+      retryPackets.push(body);
+      if (retryPackets.length === 1) received.push(body.requestId);
+      response.statusCode = retryPackets.length === 1 ? 503 : 202;
+      response.end(JSON.stringify(retryPackets.length === 1 ? { error: 'admission acknowledgement lost' }
+        : { response: { id: body.requestId }, run: { id: 'same-run' }, duplicate: true }));
       return;
     }
     received.push(body.requestId);
@@ -159,7 +174,25 @@ try {
     const index = JSON.parse(await readFile(httpRuntime.storagePaths.messageIndexPath, 'utf8'));
     assert.equal(Object.keys(index.records).length, 18, 'all inbound and thread bindings survive concurrent handoffs');
     inbox.stop(); await inbox.idle();
+    const uncertain = await inbox.accept('retry-prepared', { summary: {
+      ...base, messageId: 'retry-prepared', threadId: 'retry-topic',
+    }, sourceLabel: 'test' });
+    await inbox.tick(); await inbox.idle();
+    const frozen = (await inbox.store.get(uncertain.key)).submission;
+    assert.equal(frozen.mode, 'execute');
+    httpRuntime.config.replyPolicy = { group: 'inline' };
+    httpRuntime.requestRemoteLab = async () => assert.fail('a prepared retry must not resolve its Session again');
+    inbox = initializeInbox(httpRuntime);
+    await inbox.store.mutate(uncertain.key, current => ({ ...current, nextAttemptAt: 0 }));
+    await inbox.tick(); await inbox.idle();
+    assert.equal(retryPackets.length, 2);
+    assert.deepEqual(retryPackets[0], retryPackets[1], 'cold retry preserves the exact accepted payload');
+    const recovered = await inbox.store.get(uncertain.key);
+    assert.equal(recovered.receipt.sessionId, frozen.sessionId);
+    assert.equal(recovered.receipt.duplicate, true);
+    assert.equal(recovered.receipt.runId, 'same-run');
     rejectObservation = true;
+    rejectAdmission = true;
     httpRuntime.requestRemoteLab = async (path, options = {}) => {
       const response = await fetch(`${httpRuntime.config.chatBaseUrl}${path}`, {
         method: options.method || 'GET', headers: { 'content-type': 'application/json' },
@@ -171,24 +204,22 @@ try {
     const rejectedEnvelope = { summary: { ...base, messageId: 'rejected', threadId: 'ambient-topic' }, sourceLabel: 'test' };
     const rejected = await inbox.accept('rejected', rejectedEnvelope);
     await inbox.tick(); await inbox.idle();
-    assert.equal(observations.length, 1);
-    assert.equal(observations[0].sourceContext.feishuThreadOriginRunId, 'origin-run',
-      'observation must carry the delivered topic origin just like normal admission');
+    assert.equal(observations.length, 0, 'rejected input does not start optional feedback');
     assert.equal(notices.length, 1);
     const pendingFailure = await inbox.store.get(rejected.key);
-    assert.match(pendingFailure.admissionFailure, /Observation source/);
-    assert.equal(pendingFailure.admissionFailureCode, 'FEISHU_OBSERVATION_SOURCE_MISMATCH');
+    assert.match(pendingFailure.admissionFailure, /Fixture admission/);
+    assert.equal(pendingFailure.admissionFailureCode, 'FIXTURE_ADMISSION_REJECTED');
     assert.equal(pendingFailure.complete, false, 'a failed notice remains durable');
     // A cold Inbox retries the notification, not the input that was rejected.
     inbox = initializeInbox(httpRuntime);
     await inbox.store.mutate(rejected.key, current => ({ ...current, nextAttemptAt: 0 }));
     await inbox.tick(); await inbox.idle();
-    assert.equal(observations.length, 1, 'notice recovery must not replay admission');
-    assert.equal(received.length, 9, 'the rejected input never starts a model');
+    assert.equal(observations.length, 0, 'notice recovery must not replay admission');
+    assert.equal(received.length, 10, 'the rejected input never starts a model');
     assert.equal(notices.length, 2);
     assert.deepEqual(notices[0], notices[1], 'uncertain delivery uses the identical idempotent packet');
     assert.equal(notices[1].responseId, 'feishu-ingress-failure:rejected');
-    assert.match(notices[1].text, /关联校验失败/);
+    assert.match(notices[1].text, /被系统拒绝/);
     assert.doesNotMatch(notices[1].text, /请稍后.*重试/);
     assert.equal(notices[1].sourceDelivery.target.threadId, 'ambient-topic');
     const failed = await inbox.store.get(rejected.key);
@@ -197,6 +228,18 @@ try {
     await inbox.accept('rejected', rejectedEnvelope);
     await inbox.tick(); await inbox.idle();
     assert.equal(notices.length, 2, 'duplicate upstream events do not repeat the failure notice');
+    rejectAdmission = false;
+    const accepted = await inbox.accept('feedback-unavailable', { summary: {
+      ...base, messageId: 'feedback-unavailable', threadId: 'ambient-topic',
+    }, sourceLabel: 'test' });
+    await inbox.tick(); await inbox.idle();
+    await Promise.all(httpRuntime.jevReactionJobs.values());
+    assert.equal(received.at(-1), 'feishu:feedback-unavailable');
+    assert.deepEqual(observations.at(-1), { acceptedRequestId: 'feishu:feedback-unavailable' },
+      'feedback reads the accepted Request without another source or Session decision');
+    assert.equal((await inbox.store.get(accepted.key)).complete, true);
+    assert.equal((await inbox.store.get(accepted.key)).admissionFailure, undefined);
+    assert.equal(notices.length, 2, 'feedback failure cannot produce an ingress failure notice');
   } finally {
     releaseHttp.resolve();
     inbox.stop(); await inbox.idle();

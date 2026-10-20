@@ -491,7 +491,7 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
   if (sourceContext?.feishuThreadSessionVersion === 1 && session.conversation?.target?.conversationKind === 'main') {
     return [
       '## 新回复话题与独立 Session',
-      '群主线的简短答复直接 inline。需要展开查证或执行时，在业务工具和可见回复前，使用现有 work route 的 mode:new 创建当前消息的 thread 和独立 Session；目标 Session 承担工作与回复。已有 thread/话题直接在其绑定 Session 继续，不新建。',
+      '群主线默认在本 Session 处理并 inline 回复。用户明确另开话题，或工作确需独立保存上下文、推进和续接时，使用现有 work route 的 mode:new 创建当前消息的 thread 和独立 Session，再由目标 Session 承担工作与回复。使用工具、问题长短和执行耗时本身不构成拆分理由。已有 thread/话题中的补充、纠正、追加工作及完成后的追问，直接在其绑定 Session 继续。',
       '调用 node "$REMOTELAB_PROJECT_ROOT/cli.js" work route --file <JSON绝对路径> --json，JSON: {sourceRequestId:"本条已接受的Request ID",mode:"new",task:"原问题、必要上下文与交付要求",reason:"需要独立话题展开",name:"话题名"}。可用 requestIds 合并本轮已接受的相关补充。保留原问题和附件，不重复执行已经完成的动作。',
       '创建和提交成功后由目标话题回复，主线结束当前输入，不重复开场、答案或会话入口。失败留在原处说明；未知结果按原请求重试，不另建话题。本入口仅允许为当前输入新开 thread，不授权向其他现有 Session 分流或同步。replyMode:thread 本身不再代替创建 Session。',
     ].join('\n');

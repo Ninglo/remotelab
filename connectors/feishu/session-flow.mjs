@@ -77,12 +77,14 @@ export async function recordFeishuThreadSessionBinding(runtime, summary, session
   });
 }
 
-export async function findFeishuThreadSessionBinding(runtime, summary) {
+// Mainline, private chat and topic inputs resolve through the same authority.
+// The connector's thread index is only a reader for pre-binding records.
+export async function findFeishuSessionBinding(runtime, summary) {
   const pathname = trimString(runtime?.storagePaths?.messageIndexPath);
   const threadId = getFeishuThreadId(summary);
   const messageId = buildFeishuThreadBindingMessageId(threadId);
   const chatId = trimString(summary?.chatId);
-  if (!messageId || !chatId) return null;
+  if (!chatId) return null;
   const conversation = { connector: FEISHU_CONNECTOR_ID,
     sourceRouteId: runtime.config?.sourceRouteId || 'default', target: buildFeishuSessionConversationTarget(summary) };
   const request = runtime.requestRemoteLab;
@@ -93,7 +95,7 @@ export async function findFeishuThreadSessionBinding(runtime, summary) {
       ...(result.json.continuationRunId ? { continuationRunId: result.json.continuationRunId } : {}),
       ...(result.json.threadOriginRunId ? { threadOriginRunId: result.json.threadOriginRunId } : {}) };
   }
-  if (!pathname) return null;
+  if (!pathname || !messageId) return null;
   const binding = await findConnectorMessageIndexRecord(pathname, {
     connector: FEISHU_CONNECTOR_ID,
     accountId: getFeishuAccountId(summary),
@@ -114,6 +116,10 @@ export async function findFeishuThreadSessionBinding(runtime, summary) {
     if (!adopted.response.ok) throw new Error(adopted.json?.error || 'Unable to adopt legacy conversation');
   }
   return binding;
+}
+
+export async function findFeishuThreadSessionBinding(runtime, summary) {
+  return getFeishuThreadId(summary) ? findFeishuSessionBinding(runtime, summary) : null;
 }
 
 // Only an explicit reply/quote to a recorded outbound topic message can move a

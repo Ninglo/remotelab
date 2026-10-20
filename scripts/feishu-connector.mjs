@@ -115,7 +115,6 @@ import { normalizeFeishuReplyPolicy } from '../connectors/feishu/reply-policy.mj
 import {
   applyFeishuReplyRouting,
   buildFeishuRequestDeliveryTarget,
-  buildFeishuLegacyGroupWorkThreadTarget,
   buildFeishuSessionConversationTarget,
   buildFeishuSessionExternalTriggerId,
   isFeishuThreadConversation,
@@ -141,7 +140,7 @@ import {
 } from '../lib/connector-turn-flow.mjs';
 import { isQuickSession } from '../lib/quick-session-profile.mjs';
 import {
-  findFeishuThreadSessionBinding, resolveFeishuReferencedTopic,
+  findFeishuSessionBinding, findFeishuThreadSessionBinding, resolveFeishuReferencedTopic,
   recordFeishuMessageSession,
   recordFeishuOutboundMessageSession,
   recordFeishuThreadSessionBinding,
@@ -1018,18 +1017,33 @@ async function resolveFeishuRuntimeSelection(runtime) {
 
 async function submitRemoteLabRequest(runtime, summary, {
   prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
-  observedRecent = null, legacyGroupWorkThread = false, observedSessionId = null,
+  observedSessionId = null,
   observedAttachments = null,
 } = {}) {
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
-  if (!observeOnly && participationEnabled(runtime, summary)) {
+  if (prepared?.mode) observeOnly = prepared.mode === 'observe';
+  if (participationEnabled(runtime, summary)) {
     const state = await participationController(runtime).state(summary);
     const epoch = prepared?.payload?.sourceDelivery?.target?.participationEpoch ?? summary.participationEpoch;
-    if ((epoch !== undefined && Number(epoch) !== state.epoch) || !participationAllowsMessage(state, summary)) {
+    if ((epoch !== undefined && Number(epoch) !== state.epoch)
+        || ((!observeOnly || state.mode === 'paused') && !participationAllowsMessage(state, summary))) {
       return { ignored: true, reason: 'participation_changed' };
     }
   }
   if (prepared) {
+    if (observeOnly) {
+      const observed = await requester(`/api/sessions/${encodeURIComponent(prepared.sessionId)}/observations`, {
+        method: 'POST', body: prepared.payload,
+      });
+      if (!observed.response.ok) {
+        const status = observed.response.status;
+        throw Object.assign(new Error(observed.json?.error || 'Unable to record Feishu message in Session'), {
+          code: observed.json?.code,
+          retryable: !(status >= 400 && status < 500 && ![408, 429].includes(status)),
+        });
+      }
+      return { ...prepared.receipt, sessionId: prepared.sessionId, observation: observed.json };
+    }
     let submission;
     try {
       submission = await submitConnectorMessage(requester, prepared.sessionId, {
@@ -1040,10 +1054,11 @@ async function submitRemoteLabRequest(runtime, summary, {
         ? { recordUserMessage: false } : {}),
       });
     } catch (error) {
-      if (error.code !== 'THREAD_CONTINUATION_EXPIRED') throw error;
-      // Nothing was admitted. Resolve the now-independent topic normally and
-      // replace the saved preparation, preserving the same inbound identity.
-      return submitRemoteLabRequest(runtime, summary, { saveSubmission, skipUserMessage });
+      // Current origin-backed topics continue after Run completion. An expired
+      // legacy run-only packet has no proven new owner: retain its preparation
+      // for repair instead of silently creating a different Session.
+      if (error.code === 'THREAD_CONTINUATION_EXPIRED') error.retryable = false;
+      throw error;
     }
     return { ...prepared.receipt, sessionId: prepared.sessionId, runId: submission.runId,
       requestId: submission.requestId, responseId: submission.responseId,
@@ -1093,8 +1108,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       target: buildFeishuSessionConversationTarget(effectiveSummary),
     },
     externalTriggerId,
-    ...(groupFeed ? { groupFeed: true, replaceConversation: true }
-      : groupFeedRollback ? { replaceConversation: true } : {}),
+    ...(groupFeed ? { groupFeed: true } : {}),
     sourceContext: buildSessionSourceContext(effectiveSummary),
     ...(isQuickCommand ? { executionProfile: 'quick' } : {}),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
@@ -1103,7 +1117,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   };
   const threadBinding = effectiveSummary.logContinuation?.sessionId
     ? { sessionId: effectiveSummary.logContinuation.sessionId }
-    : await findFeishuThreadSessionBinding(runtime, effectiveSummary);
+    : await findFeishuSessionBinding(runtime, effectiveSummary);
   let session;
   if (threadBinding?.sessionId) {
     const result = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`);
@@ -1154,23 +1168,16 @@ async function submitRemoteLabRequest(runtime, summary, {
     const sourceContext = { ...buildMessageSourceContext(observedSummary),
       ...(threadBinding?.threadOriginRunId ? { feishuThreadOriginRunId: threadBinding.threadOriginRunId } : {}),
     };
-    const observed = await requester(`/api/sessions/${encodeURIComponent(session.id)}/observations`, {
-      method: 'POST', body: {
+    const handoff = { mode: 'observe', sessionId: session.id, summary: effectiveSummary,
+      receipt: { externalTriggerId, attachmentResolution }, payload: {
         sourceMessageId: effectiveSummary.messageId,
         requestId: buildRequestId(effectiveSummary),
         text: buildAttributedFeishuMessage(observedSummary),
         attachments: attachmentResolution.attachments,
         sourceContext,
-      },
-    });
-    if (!observed.response.ok) {
-      const status = observed.response.status;
-      throw Object.assign(new Error(observed.json?.error || 'Unable to record Feishu message in Session'), {
-        code: observed.json?.code,
-        retryable: !(status >= 400 && status < 500 && ![408, 429].includes(status)),
-      });
-    }
-    return { sessionId: session.id, externalTriggerId, observation: observed.json, attachmentResolution };
+      } };
+    await saveSubmission(handoff);
+    return submitRemoteLabRequest(runtime, summary, { prepared: handoff, saveSubmission });
   }
   const participationStatus = participationEnabled(runtime, effectiveSummary)
     ? await participationController(runtime).state(effectiveSummary) : null;
@@ -1194,15 +1201,9 @@ async function submitRemoteLabRequest(runtime, summary, {
     }),
     topicAnnouncementContext(runtime, effectiveSummary, session.id),
   ]);
-  const groupObservationContext = Array.isArray(observedRecent) ? {
-    messages: observedRecent.slice(0, -1)
-      .map(entry => ({ sender: entry.sender, time: new Date(entry.time || Date.now()).toISOString(), text: entry.text }))
-      .filter(entry => entry.sender && entry.text),
-  } : null;
   const messageSummary = {
     ...effectiveSummary,
-    ...(conversationContext ? { conversationContext }
-      : groupObservationContext?.messages.length ? { conversationContext: groupObservationContext } : {}),
+    ...(conversationContext ? { conversationContext } : {}),
     ...(linkedProjectContext ? { linkedProjectContext } : {}),
     ...(groupAnnouncement ? { groupAnnouncement } : {}),
     ...(attachmentResolution.failures.length > 0
@@ -1214,9 +1215,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   // selected for that inbound message.
   const deliverySummary = { ...messageSummary, ...(participationStatus
     ? { participationEpoch: String(effectiveSummary.participationEpoch ?? participationStatus.epoch) } : {}) };
-  const requestDeliveryTarget = legacyGroupWorkThread
-    ? buildFeishuLegacyGroupWorkThreadTarget(deliverySummary)
-    : buildFeishuRequestDeliveryTarget(deliverySummary);
+  const requestDeliveryTarget = buildFeishuRequestDeliveryTarget(deliverySummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: messageSummary.logContinuation
@@ -1272,7 +1271,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       .catch(() => ({ status: 'unavailable', checkedAt: new Date().toISOString() }));
   }
   payload.sourceContext = await freezeLargeSourceContext(session.id, payload.sourceContext);
-  const handoff = { sessionId: session.id, payload, receipt: {
+  const handoff = { mode: 'execute', sessionId: session.id, summary: effectiveSummary, payload, receipt: {
     externalTriggerId, attachmentCount: attachmentResolution.attachments.length,
     attachmentDownloadFailureCount: attachmentResolution.failures.length,
   } };
@@ -1301,12 +1300,19 @@ async function enqueueJevOutcomeReaction(runtime, summary, sessionId, emojiType)
 
 // Optional feedback has its own lifetime. Its failure must not retry or delay
 // admission. Once selected, the existing observation and outbox make it durable.
-function startJevReaction(runtime, summary, observationReceipt, helpers, controller) {
+function startJevReaction(runtime, summary, receipt, helpers, controller) {
   const jobs = runtime.jevReactionJobs ||= new Map();
   const key = `${summary.chatId}:${summary.messageId}`;
   if (jobs.has(key)) return;
-  const { sessionId, observation } = observationReceipt;
+  const { sessionId } = receipt;
   const job = Promise.resolve().then(async () => {
+    const observation = receipt.observation || await (helpers.loadAcceptedObservation || (async (_runtime, _summary, accepted) => {
+      const result = await requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(accepted.sessionId)}/observations`, {
+        method: 'POST', body: { acceptedRequestId: accepted.requestId },
+      });
+      if (!result.response.ok) throw new Error(result.json?.error || 'Unable to read accepted input for feedback');
+      return result.json;
+    }))(runtime, summary, receipt);
     let decision = observation.decision;
     if (!decision) {
       const verdict = await (helpers.classifyJevReaction || classifyFeishuQuickParticipation)(
@@ -1335,38 +1341,6 @@ function startJevReaction(runtime, summary, observationReceipt, helpers, control
   }).catch(error => console.warn(`[feishu-reaction] ${summary.messageId}: ${error?.message || error}`))
     .finally(() => jobs.delete(key));
   jobs.set(key, job);
-}
-
-async function handleJevObservedMessage(runtime, summary, observationReceipt, helpers = {}) {
-  const { sessionId, externalTriggerId, observation } = observationReceipt;
-  if (!observation?.eventSeq) throw new Error('Feishu message was not recorded in Session');
-  const controller = participationEnabled(runtime, summary) ? participationController(runtime, helpers) : null;
-  if (controller) {
-    await controller.remember(summary, sessionId, observation.recent);
-    await controller.assess(summary, { mentioned: mentionsFeishuBot(runtime, summary),
-      taskCommand: Boolean(summary.commandBlock?.body) });
-    const latest = await controller.state(summary);
-    const stale = summary.participationEpoch !== undefined && Number(summary.participationEpoch) !== latest.epoch;
-    if (stale || !participationAllowsMessage(latest, summary)) {
-      return { sessionId, externalTriggerId, observedOnly: true };
-    }
-    if (latest.mode !== 'active') summary = { ...summary, participationOnce: true };
-  }
-  await recordFeishuBotHandoffScope(runtime, summary, { sessionId });
-  if (runtime.storagePaths?.messageIndexPath) {
-    await recordFeishuMessageSession(runtime, summary, sessionId, { externalTriggerId });
-    await recordFeishuThreadSessionBinding(runtime, summary, sessionId, { externalTriggerId });
-  }
-  if (resolveFeishuGroupSettings(runtime.config, summary).jevReactions) {
-    startJevReaction(runtime, summary, observationReceipt, helpers, controller);
-  }
-  const workReceipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(
-    runtime, summary, { skipUserMessage: true, observedSessionId: sessionId,
-      observedAttachments: observationReceipt.attachmentResolution });
-  if (workReceipt?.ignored) return { sessionId, externalTriggerId, observedOnly: true };
-  return { sessionId, externalTriggerId,
-    ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId,
-      workSessionId: workReceipt.sessionId } : {}) };
 }
 
 async function addProcessingReaction(runtime, summary, emojiType = 'THINKING', { track = true } = {}) {
@@ -1864,16 +1838,13 @@ async function onboardFeishuGroup(runtime, summary, helpers = {}) {
   if (isFeishuTopicGroup(summary)) return { ignored: true, reason: 'native_topic_group' };
   if (!helpers.projectCard && !participationEnabled(runtime, summary)) return { ignored: true, reason: 'explicit_group_policy' };
   const requester = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
-  if (helpers.projectCard) {
-    const existing = await requester('/api/session-conversations/resolve', { method: 'POST', body: {
-      conversation: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
-        target: buildFeishuSessionConversationTarget(summary) } } });
-    if (!existing.response.ok) throw new Error(existing.json?.error || 'Cannot resolve group main Session');
-    if (existing.json?.sessionId) {
-      const controller = participationController(runtime, helpers);
-      await controller.publish(await controller.remember(summary, existing.json.sessionId));
-      return { onboarded: true, sessionId: existing.json.sessionId };
-    }
+  const existing = await findFeishuSessionBinding({ ...runtime, requestRemoteLab: requester }, {
+    ...summary, conversationKind: 'main',
+  });
+  if (existing?.sessionId) {
+    const controller = participationController(runtime, helpers);
+    await controller.publish(await controller.remember(summary, existing.sessionId));
+    return { onboarded: true, sessionId: existing.sessionId };
   }
   const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
   const groupFeed = groupSettings.groupFeed === true;
@@ -1892,8 +1863,7 @@ async function onboardFeishuGroup(runtime, summary, helpers = {}) {
       target: buildFeishuSessionConversationTarget({ ...summary, conversationKind: 'main' }) },
     externalTriggerId: groupFeed ? baseId.replace('feishu:main:', 'feishu:group-feed:')
       : groupFeedRollback ? baseId.replace('feishu:main:', 'feishu:legacy-return:') : baseId,
-    ...(groupFeed ? { groupFeed: true, replaceConversation: true }
-      : groupFeedRollback ? { replaceConversation: true } : {}),
+    ...(groupFeed ? { groupFeed: true } : {}),
   });
   const controller = participationController(runtime, helpers);
   const record = await controller.remember(summary, session.id);
@@ -1924,6 +1894,11 @@ async function handleFeishuReactionFeedback(runtime, summary, helpers = {}) {
 }
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
+  if (helpers.preparedSubmission) {
+    // Retry the saved ownership, body and mode. New settings or another
+    // runtime-command pass must not rebuild a possibly accepted packet.
+    return processFeishuMessage(runtime, helpers.preparedSubmission.summary || summary, null, helpers);
+  }
   // Publication can create thread aliases before its HTTP acknowledgement.
   // Fence only routing and bot admission against that publication; reaction,
   // attachment and RemoteLab transport work must not lock every chat topic.
@@ -2028,16 +2003,6 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     summary = { ...summary, messageText: result.taskText, textPreview: result.taskText };
     command = null;
   }
-  const participation = participationEnabled(runtime, summary)
-    ? await participationController(runtime, helpers).state(summary) : null;
-  const listening = participation?.mode === 'listening';
-  if (participation && participation.mode !== 'active' && participationAllowsMessage(participation, summary)) {
-    summary = { ...summary, participationOnce: true };
-  }
-  const jevObservation = groupSettings.jevReactions || listening
-    ? await (helpers.observeRemoteLabMessage || ((runtime, summary) =>
-      submitRemoteLabRequest(runtime, summary, { observeOnly: true })))(runtime, summary)
-    : null;
   if (command?.error) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, command.error);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
   const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name));
@@ -2105,7 +2070,31 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     });
     summary = { ...summary, runtimeSelectionOverride: commandPlan.selection };
   }
-  if (jevObservation) return handleJevObservedMessage(runtime, summary, jevObservation, helpers);
+  const controller = participationEnabled(runtime, summary) ? participationController(runtime, helpers) : null;
+  let participation = controller ? await controller.state(summary) : null;
+  if (participation && summary.participationEpoch !== undefined
+      && Number(summary.participationEpoch) !== participation.epoch && !helpers.preparedSubmission) {
+    return { ignored: true, reason: 'participation_changed' };
+  }
+  if (participation && participation.mode !== 'active' && !helpers.preparedSubmission) {
+    await controller.assess(summary, { mentioned: mentionsFeishuBot(runtime, summary), taskCommand });
+    participation = await controller.state(summary);
+  }
+  if (participation && participation.mode !== 'active' && participationAllowsMessage(participation, summary)) {
+    summary = { ...summary, participationOnce: true };
+  }
+  const observeOnly = helpers.preparedSubmission
+    ? helpers.preparedSubmission.mode === 'observe'
+    : participation?.mode === 'listening' && !participationAllowsMessage(participation, summary);
+  if (observeOnly) {
+    const receipt = await (helpers.observeRemoteLabMessage || ((runtime, summary) =>
+      submitRemoteLabRequest(runtime, summary, { observeOnly: true })))(runtime, summary);
+    if (receipt.ignored) return receipt;
+    if (!receipt.observation?.eventSeq) throw new Error('Feishu message was not recorded in Session');
+    try { await controller?.remember(summary, receipt.sessionId, receipt.observation.recent); }
+    catch (error) { console.warn(`[feishu-participation] remember: ${error.message}`); }
+    return { ...receipt, observedOnly: true };
+  }
   try {
     if (groupSettings.quickReactions && runtime.quickParticipation) {
       runtime.quickParticipation.handle(summary);
@@ -2132,6 +2121,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
       (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId));
     return receipt;
   }
+  if (groupSettings.jevReactions) startJevReaction(runtime, summary, receipt, helpers, controller);
   if (runtime.personalSettings?.enabled(summary)) {
     try { await runtime.personalSettings.publish(summary, { automatic: true }); }
     catch (error) { console.warn(`[feishu-personal-settings] welcome: ${error.message}`); }
@@ -2139,9 +2129,11 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
   if (runtime.groupConfiguration && !buildFeishuTopicId(summary) && participationEnabled(runtime, summary)) {
     const controller = participationController(runtime, helpers);
-    const record = await controller.remember(summary, receipt.sessionId);
-    try { await controller.publish(record); }
+    try { await controller.publish(await controller.remember(summary, receipt.sessionId)); }
     catch (error) { console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`); }
+  } else if (controller) {
+    try { await controller.remember(summary, receipt.sessionId); }
+    catch (error) { console.warn(`[feishu-participation] remember: ${error.message}`); }
   }
   if (runtime.storagePaths?.messageIndexPath) {
     await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
@@ -2186,6 +2178,7 @@ function initializeInbox(runtime) {
       }
       try {
         return await handleMessage(runtime, entry.summary, entry.sourceLabel, {
+          preparedSubmission: entry.submission,
           participationSnapshot: entry.participationSnapshot,
           preparedRuntimeCommand: entry.runtimeCommand,
           saveRuntimeCommand: runtimeCommand => update({ runtimeCommand }),
@@ -2193,7 +2186,7 @@ function initializeInbox(runtime) {
             ...options, prepared: entry.submission, saveSubmission: submission => update({ submission }),
           }),
           observeRemoteLabMessage: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
-            observeOnly: true,
+            observeOnly: true, prepared: entry.submission, saveSubmission: submission => update({ submission }),
           }),
         });
       } catch (error) {

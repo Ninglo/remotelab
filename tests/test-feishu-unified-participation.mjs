@@ -32,6 +32,7 @@ try {
   const controller = runtime.participation;
   const main = { ...base, threadId: '', rootId: '', chatMode: 'group', conversationKind: 'main' };
   const helpers = { enrichSummaryWithChatMetadata: async (_r, s) => s,
+    loadAcceptedObservation: async () => ({ accepted: true, recent: [] }),
     observeRemoteLabMessage: async (_r, s) => { observed.push(s); return { sessionId: 'topic', observation: { eventSeq: 1, recent: [] } }; },
     submitRemoteLabRequest: async (_r, s) => { submitted.push(s); return { sessionId: 'topic' }; },
     classifyJevReaction: async () => { decisions.push('jev'); return { emojiType: null }; },
@@ -61,7 +62,7 @@ try {
   assert.equal(cancelled.length - beforeCancel, 2, 'main and inherited topic scopes both stop even when they share a Session');
   assert.equal((await controller.state(base)).mode, 'listening');
   await handleMessage(runtime, { ...base, messageId: 'quiet' }, 'test', helpers);
-  assert.equal(observed.length, 2);
+  assert.equal(observed.length, 1, 'only listening inputs use observation admission');
   assert.equal(submitted.length, 1);
   assert.equal(decisions.length, 1, 'listening runs neither main model nor Jev without invitation');
   await handleMessage(runtime, { ...base, messageId: 'invite', mentions: [{ openId: 'bot' }] }, 'test', helpers);

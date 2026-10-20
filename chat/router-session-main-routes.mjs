@@ -35,7 +35,7 @@ import { normalizeSessionExecutionProfile, QUICK_SESSION_PROFILE } from '../lib/
 import { readLangSmithCaseConfig, getLangSmithCaseStatus } from '../lib/langsmith-case-link.mjs';
 import { buildLangSmithCaseNavigationHref, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { searchSessionLogs } from './session-log-search.mjs';
-import { observeSessionMessage, recordSessionObservationDecision } from './session-observations.mjs';
+import { observeSessionMessage, observeAcceptedSessionMessage, hasObservedSessionInput, recordSessionObservationDecision } from './session-observations.mjs';
 import { createSessionListCache } from './session-list-cache.mjs';
 import { onSessionInvalidation } from './ws-clients.mjs';
 import { loadSessionMetaVersionIndex } from './session-meta-store.mjs';
@@ -396,6 +396,18 @@ export async function handleSessionMainRoutes({
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       try {
         const payload = JSON.parse(await readBody(req, 512 * 1024));
+        // A durable admission is the authority for optional feedback, including
+        // queued work and old Requests whose conversation has since changed.
+        if (parts.length === 5) {
+          const decision = await recordSessionObservationDecision(sessionId, payload.sourceMessageId, payload);
+          writeJson(res, 200, { decision });
+          return true;
+        }
+        if (payload.acceptedRequestId) {
+          const observed = await observeAcceptedSessionMessage(sessionId, payload.acceptedRequestId);
+          writeJson(res, 200, observed);
+          return true;
+        }
         const session = await getSession(sessionId);
         const target = session?.conversation?.target;
         // Scheduled publications can bind only a chat and a reply root. Those
@@ -407,11 +419,6 @@ export async function handleSessionMainRoutes({
         if (session?.conversation?.connector !== 'feishu' || (!session.groupFeed && !boundTopic)) {
           writeJson(res, 400, { error: 'Observations require a bound Feishu group Session',
             code: 'FEISHU_OBSERVATION_BINDING_REQUIRED' });
-          return true;
-        }
-        if (parts.length === 5) {
-          const decision = await recordSessionObservationDecision(sessionId, payload.sourceMessageId, payload);
-          writeJson(res, 200, { decision });
           return true;
         }
         const source = payload?.sourceContext;
@@ -484,6 +491,12 @@ export async function handleSessionMainRoutes({
         const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments, {
           sessionId,
         });
+        // Upgrade recovery: old observation-first Inbox packets did not persist
+        // their skip flag. Reuse only an exact, already recorded source/request
+        // event in this Session, keeping retries identical to prior admission.
+        const alreadyObserved = authSession?.authKind === 'service'
+          && payload.sourceContext?.connector === 'feishu'
+          && await hasObservedSessionInput(sessionId, payload.sourceContext.messageId, requestId);
         const messageOptions = {
           usageSurface: authSession?.authKind === 'service' ? (payload.sourceContext?.connector === 'feishu' ? 'feishu' : 'agent') : 'web',
           usageActorKind: authSession?.authKind !== 'service' ? 'human' : payload.sourceContext?.connector === 'feishu'
@@ -504,7 +517,7 @@ export async function handleSessionMainRoutes({
           allowGroupFeedWrite: authSession?.authKind === 'service',
           feishuConnectorAuthenticated: authSession?.authKind === 'service'
             && payload.sourceContext?.connector === 'feishu',
-          ...(authSession?.authKind === 'service' && payload.recordUserMessage === false
+          ...(authSession?.authKind === 'service' && (payload.recordUserMessage === false || alreadyObserved)
             ? { recordUserMessage: false } : {}),
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         };

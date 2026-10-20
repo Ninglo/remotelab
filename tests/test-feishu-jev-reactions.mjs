@@ -161,16 +161,16 @@ try {
   const runtime = { config, botIdentity: { openId: 'bot' }, storagePaths: {} };
   const sent = [], submissions = [];
   const helpers = {
-    observeRemoteLabMessage: async (_r, summary) => ({ sessionId: 'group-session',
-      observation: { eventSeq: 1, recent: [{ text: summary.messageText }] } }),
+    observeRemoteLabMessage: async () => assert.fail('active inputs never use observation admission'),
+    loadAcceptedObservation: async (_r, summary) => ({ accepted: true, recent: [{ text: summary.messageText }] }),
     classifyJevReaction: async () => ({ emojiType: 'WOW' }),
     recordJevDecision: async (_s, _m, decision) => ({ decision }),
-    submitRemoteLabRequest: async (_r, summary, options) => {
+    submitRemoteLabRequest: async (_r, summary, options = {}) => {
       submissions.push({ summary, options });
-      assert.equal(options.skipUserMessage, true);
+      assert.equal(options.skipUserMessage, undefined);
       assert.equal(options.legacyGroupWorkThread, undefined);
       assert.notEqual(summary.startThread, true);
-      return { sessionId: 'group-session', runId: 'run' };
+      return { sessionId: 'group-session', runId: 'run', requestId: `feishu:${summary.messageId}` };
     },
     enqueueJevReaction: async (_r, summary, _s, emoji) => { sent.push([summary.messageId, emoji]); return { id: 'reaction' }; },
   };
@@ -184,9 +184,10 @@ try {
   release({ decision: 'silent', workMode: 'complex', controlMode: 'paused', emojiType: 'WOW' });
   await drain();
   assert.deepEqual(sent, [['praise', 'WOW']]);
-  for (const failure of ['throw', 'record', 'enqueue']) {
+  for (const failure of ['observe', 'throw', 'record', 'enqueue']) {
     const receipt = await handleMessage(runtime, { ...base, messageId: failure }, 'test', {
       ...helpers,
+      ...(failure === 'observe' ? { loadAcceptedObservation: async () => { throw new Error('feedback context unavailable'); } } : {}),
       ...(failure === 'throw' ? { classifyJevReaction: () => { throw new Error('classifier offline'); } } : {}),
       ...(failure === 'record' ? { recordJevDecision: async () => { throw new Error('record offline'); } } : {}),
       ...(failure === 'enqueue' ? { enqueueJevReaction: async () => { throw new Error('queue offline'); } } : {}),
@@ -197,26 +198,23 @@ try {
   // Persisted old semantics never choose a new Session or answer a fact.
   for (const emoji of ['Yes', 'OnIt', 'THANKS']) {
     const receipt = await handleMessage(runtime, { ...base, messageId: 'old-' + emoji }, 'test', {
-      ...helpers, observeRemoteLabMessage: async () => ({ sessionId: 'group-session', observation: {
-        eventSeq: 2, decision: { participation: 'reply', workMode: 'complex', emojiType: emoji },
-      } }),
+      ...helpers, loadAcceptedObservation: async () => ({
+        accepted: true, decision: { participation: 'reply', workMode: 'complex', emojiType: emoji },
+      }),
       classifyJevReaction: () => { throw new Error('do not reclassify'); },
     });
-    assert.equal(receipt.workSessionId, 'group-session');
+    assert.equal(receipt.sessionId, 'group-session');
     await drain();
   }
   assert.deepEqual(sent.slice(1), [['old-THANKS', 'THANKS']]);
-  // Feedback also runs while input preparation is slow, using its own address.
-  let releaseInput, feedbackDone;
-  const input = new Promise(resolve => { releaseInput = resolve; });
-  const feedback = new Promise(resolve => { feedbackDone = resolve; });
-  const pending = handleMessage(runtime, { ...base, messageId: 'slow-input' }, 'test', {
-    ...helpers, submitRemoteLabRequest: () => input,
-    enqueueJevReaction: async (_r, summary) => { assert.equal(summary.messageId, 'slow-input'); feedbackDone(); },
+  // A stalled feedback-context read cannot hold the accepted input receipt.
+  let releaseContext;
+  const feedbackContext = new Promise(resolve => { releaseContext = resolve; });
+  const pending = await handleMessage(runtime, { ...base, messageId: 'slow-context' }, 'test', {
+    ...helpers, loadAcceptedObservation: () => feedbackContext,
   });
-  await feedback;
-  releaseInput({ sessionId: 'group-session' });
-  await pending;
+  assert.equal(pending.runId, 'run');
+  releaseContext({ accepted: true, recent: [] });
   await drain();
   // A late reaction cannot survive an explicit pause/resume epoch change.
   let epoch = 1, releaseLate;

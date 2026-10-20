@@ -37,6 +37,7 @@ try {
   let verdict = { decision: 'reply', workMode: 'short', invited: false, topicChanged: false };
   const helpers = {
     enrichSummaryWithChatMetadata: async (_r, s) => s,
+    loadAcceptedObservation: async () => ({ accepted: true, recent: [] }),
     observeRemoteLabMessage: async (_r, s) => {
       calls.observed.push(s.messageId);
       return { sessionId: 's1', observation: { eventSeq: calls.observed.length, recent: [
@@ -161,6 +162,23 @@ try {
   await runtime.participation.publish(await runtime.participation.state(fresh));
   assert.equal(creations, 1, 'restart preserves the new binding without another message');
   assert.ok(JSON.stringify(buildParticipationCard(await runtime.participation.state(fresh))).includes(notice));
+  await runtime.participation.change(fresh, 'listening', { controlId: 'card-stall-listen' });
+  let releaseCard, deadline;
+  const cardGate = new Promise(resolve => { releaseCard = resolve; });
+  runtime.appClient.im.v1.message.patch = () => cardGate;
+  try {
+    const invitation = { ...fresh, messageId: 'card-stall-invite', mentions: [{ openId: 'bot' }] };
+    const invited = await Promise.race([
+      runtime.participation.assess(invitation, { mentioned: true }),
+      new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('card blocked invitation')), 750); }),
+    ]);
+    assert.equal(invited, true);
+    assert.ok((await runtime.participation.state(fresh)).invitedMessages.includes(invitation.messageId));
+  } finally {
+    clearTimeout(deadline);
+    releaseCard({ code: 0 });
+    await runtime.participation.idle();
+  }
   await Promise.all([...(runtime.jevReactionJobs?.values() || [])]);
   console.log('Feishu participation: observation, pause/resume, invitations, topic hints, scope and persistence passed');
 } finally { await rm(home, { recursive: true, force: true }); }

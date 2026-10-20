@@ -33,10 +33,11 @@ try {
     sourceContext: { connector: 'feishu', sourceRouteId: 'bot', chatType: 'group', chatId: 'group',
       tenantKey: 'tenant', sender: { senderType: 'user' }, feishuParticipation: 'ambient',
       feishuResponseProtocolVersion: 1, feishuReplyPlacementVersion: 1, feishuThreadSessionVersion: 1 } };
-  const accept = async (id, extra = {}) => (await requests.accept({ sessionId: 'main', requestId: id,
-    text: 'Original human question', options: { ...options, ...extra }, deliveryPlan: conversation,
+  const accept = async (id, extra = {}, images = []) => (await requests.accept({ sessionId: 'main', requestId: id,
+    text: 'Original human question', images, options: { ...options, ...extra }, deliveryPlan: conversation,
     runtimeSelection: { tool: 'codex', model: 'fixture' } })).record;
-  const first = await accept('first');
+  const originalAttachments = [{ assetId: 'fasset_fixture', originalName: 'original.png' }];
+  const first = await accept('first', {}, originalAttachments);
   const context = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext,
     { messageRoutingPolicy: options.messageRoutingPolicy });
   assert.match(context, /mode:new/);
@@ -65,6 +66,7 @@ try {
   assert.equal(child.conversation.target.rootId, 'root');
   const admitted = await requests.byRequest(child.id, 'routed:first');
   assert.match(admitted.text, /Original human question/);
+  assert.deepEqual(admitted.options.preSavedAttachments, originalAttachments, 'handoff retains original attachment identities');
   assert.equal(admitted.options.sourceContext.conversationKind, 'thread');
   assert.equal(admitted.options.sourceContext.feishuThreadSessionVersion, undefined);
   assert.equal((await requests.get(first.key)).options.suppressSourceDelivery, true);
@@ -79,6 +81,12 @@ try {
   for (const chatMode of ['group', 'topic']) {
     const binding = await findFeishuThreadSessionBinding(runtime, { ...followup.target, chatMode });
     assert.equal(binding.sessionId, child.id, 'ordinary threads and topic groups share Session resolution');
+  }
+  const { findFeishuSessionBinding } = await import('../connectors/feishu/session-flow.mjs');
+  for (const groupFeed of [false, true]) {
+    runtime.config.groups = { group: { groupFeed } };
+    assert.equal((await findFeishuSessionBinding(runtime, conversation.target)).sessionId, 'main',
+      'mainline lookup keeps its owner when group-feed configuration changes');
   }
   const next = { key: 'next', options: { ...admitted.options, sourceDelivery: followup }, runtimeSelection: {} };
   const head = { ...admitted, runtimeSelection: {} };

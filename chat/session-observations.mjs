@@ -4,9 +4,10 @@ import { FEISHU_SOCIAL_REACTION_CRITERIA } from '../lib/feishu-reaction-catalog.
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { createRecordStore } from '../lib/durable-records.mjs';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
-import { appendEvent, getHistoryHeadSeq, readEventsAfter } from './history.mjs';
+import { appendEvent, getHistoryHeadSeq, loadHistory, readEventsAfter } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { buildMessageAttachmentRefs } from './session-attachments.mjs';
+import { requests } from './requests.mjs';
 
 const store = createRecordStore(join(CONFIG_DIR, 'session-observations'));
 const serialize = createKeyedTaskQueue();
@@ -19,9 +20,18 @@ const boundedProbability = value => Number.isFinite(value) && value >= 0 && valu
 const keyFor = (sessionId, sourceMessageId) => createHash('sha256')
   .update(JSON.stringify([sessionId, sourceMessageId])).digest('hex').slice(0, 24);
 
+export async function hasObservedSessionInput(sessionId, sourceMessageId, requestId) {
+  if (!sourceMessageId || !requestId) return false;
+  const record = await store.get(keyFor(sessionId, sourceMessageId));
+  if (!record?.eventSeq) return false;
+  const events = await loadHistory(sessionId, { fromSeq: record.eventSeq, toSeq: record.eventSeq, includeBodies: false });
+  return events.some(event => event.seq === record.eventSeq && event.type === 'message'
+    && event.role === 'user' && event.requestId === requestId && event.sourceMessageId === sourceMessageId);
+}
+
 async function ensureDecisionEvent(sessionId, sourceMessageId, key, record) {
   if (!record.decision || record.decisionEventSeq) return record;
-  const after = await readEventsAfter(sessionId, record.eventSeq);
+  const after = await readEventsAfter(sessionId, record.eventSeq || record.baseSeq || 0);
   const prior = after.find(event => event.type === 'reaction_decision'
     && event.sourceMessageId === sourceMessageId);
   const decisionEventSeq = prior?.seq || (await appendEvent(sessionId, {
@@ -35,11 +45,17 @@ async function ensureDecisionEvent(sessionId, sourceMessageId, key, record) {
   return store.mutate(key, current => ({ ...current, decisionEventSeq }));
 }
 
-async function recentMessages(sessionId, latestSeq) {
-  const events = await readEventsAfter(sessionId, Math.max(0, latestSeq - MAX_RECENT_EVENTS), { includeBodies: true });
+async function recentMessages(sessionId, latestSeq, exclude = null) {
+  const events = await loadHistory(sessionId, {
+    fromSeq: Math.max(1, latestSeq - MAX_RECENT_EVENTS + 1), toSeq: latestSeq, includeBodies: true,
+  });
   const cutoff = Date.now() - MAX_RECENT_AGE_MS;
   return events.filter(event => event.seq <= latestSeq
       && event.type === 'message' && ['user', 'assistant'].includes(event.role)
+      && (!exclude || (event.requestId !== exclude.requestId
+        && event.sourceMessageId !== exclude.sourceMessageId
+        && event.sourceContext?.messageId !== exclude.sourceMessageId))
+      && (!exclude || Number(event.timestamp) <= exclude.acceptedAt)
       && Number(event.timestamp) >= cutoff)
     .slice(-MAX_RECENT_MESSAGES)
     .map(event => ({
@@ -49,6 +65,43 @@ async function recentMessages(sessionId, latestSeq) {
         || (event.role === 'assistant' ? 'assistant' : '群成员'),
       text: trim(event.content).slice(0, 1200),
     }));
+}
+
+// Optional feedback projects an already accepted Request. It cannot append a
+// second human input or resolve/revalidate the current Session binding. A
+// queued Request is sufficient; feedback never waits for Harness execution.
+export async function observeAcceptedSessionMessage(sessionId, requestId) {
+  const request = await requests.byRequest(sessionId, trim(requestId));
+  const source = request?.options?.sourceContext;
+  if (!request?.options?.feishuConnectorAuthenticated || source?.connector !== 'feishu'
+      || !source.messageId || ['p2p', 'private'].includes(source.chatType)
+      || source.conversationKind === 'document_comment') {
+    throw new Error('An accepted Feishu group request is required');
+  }
+  const sourceMessageId = source.messageId;
+  const key = keyFor(sessionId, sourceMessageId);
+  return serialize(key, async () => {
+    let record = await store.get(key);
+    const duplicate = Boolean(record);
+    if (!record) {
+      const baseSeq = await getHistoryHeadSeq(sessionId);
+      record = await store.mutate(key, () => ({
+        sessionId, sourceMessageId, acceptedRequestId: request.requestId,
+        baseSeq, eventSeq: 0, decision: null, decisionEventSeq: 0,
+      }));
+    }
+    record = await ensureDecisionEvent(sessionId, sourceMessageId, key, record);
+    const recent = await recentMessages(sessionId, record.baseSeq || record.eventSeq, {
+      requestId: request.requestId, sourceMessageId, acceptedAt: Date.parse(request.acceptedAt),
+    });
+    recent.push({
+      time: Date.parse(request.acceptedAt),
+      sender: trim(source.sender?.name) || '群成员',
+      text: trim(request.text).slice(-1200),
+    });
+    return { accepted: true, duplicate, decision: record.decision || null,
+      recent: recent.slice(-MAX_RECENT_MESSAGES) };
+  });
 }
 
 export async function observeSessionMessage(sessionId, input = {}) {
@@ -94,7 +147,7 @@ export async function recordSessionObservationDecision(sessionId, sourceMessageI
   const key = keyFor(sessionId, trim(sourceMessageId));
   return serialize(key, async () => {
     let record = await store.get(key);
-    if (!record?.eventSeq) throw new Error('Source message has not entered the Session');
+    if (!record?.eventSeq && !record?.acceptedRequestId) throw new Error('Source message has not entered the Session');
     const participation = proposed?.participation;
     const emojiType = trim(proposed?.emojiType);
     const workMode = trim(proposed?.workMode);

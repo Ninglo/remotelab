@@ -229,7 +229,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         ...(invited ? { invitedMessages: [...new Set([...(current?.invitedMessages || []), summary.messageId])].slice(-100), topicHint: false }
           : {}),
       }));
-      await publish(record);
+      void publish(record).catch(error => console.warn(`[feishu-participation] invitation card: ${error.message}`));
       return invited;
     });
   }

@@ -1,6 +1,6 @@
 # Session conversations
 
-Status: implemented and verified in isolated tests, 2026-09-14. Deployment acceptance is tracked separately.
+Status: current contract, revised 2026-10-20. Deployment acceptance is tracked separately.
 
 ## Contract
 
@@ -23,9 +23,84 @@ Feishu group settings override connector defaults for response mode and optional
 - Scheduled template normalization and construction are shared by recurring schedules and one-time triggers. Legacy sourceDelivery input is translated at this boundary.
 - Per-request `sourceDelivery` is the reply authority for that request. Bound Sessions provide the default and constrain explicit snapshots so they cannot cross transport scopes.
 
+## Creation, continuation and silence
+
+This is the canonical decision contract, subordinate to the object definitions in
+[Core domain contract](core-domain-contract.md). Feishu setup and API documentation
+map these rules to provider fields and calls; they do not maintain separate policy.
+
+1. An exact external conversation has one stable owning Session within its
+   connector, Bot/route, tenant and chat scope. Root and provider thread IDs are
+   aliases of that conversation. Resolve the binding before creation, including
+   group mainlines, private chats and topics. Atomic creation resolves concurrent
+   first messages to the same Session. Configuration changes and onboarding
+   cannot replace an existing binding.
+2. Follow-ups, corrections and added work in an existing topic continue its
+   Session. Run completion, archive state, model changes, compaction and restart
+   do not create a new Session. Running work uses native input or queueing;
+   stopped work starts a later execution in the same Session.
+3. Create an independent Session for an explicit new-topic request or work that
+   needs its own durable context and continuation. Tool use, input length and
+   execution duration alone do not justify splitting. A group mainline has a
+   stable Session whose Harness may answer inline, remain silent or explicitly
+   create a bound work topic. No second semantic dispatcher is required.
+4. Handoff preserves the actual accepted inputs, attachments, attribution and
+   necessary context. The destination owns work and replies after successful
+   transfer; the origin retains provenance and the handoff receipt. References,
+   similar titles and copied text alone do not transfer ownership.
+5. A published interactive topic must resolve back to the Session producing it.
+   Scheduled and background results follow the same binding/receipt path as
+   interactive work. Publication receipt refinement precedes acknowledgement.
+6. Silence is a normal response decision, not a failed admission. Participation
+   controls can record without executing or stop reception. Errors retain the
+   original Request and destination; recovery cannot silently fork work or
+   reinterpret a failure as deliberate silence.
+
+| Input or event | Session outcome |
+| --- | --- |
+| Supplement or correction in a bound topic | Continue its Session |
+| Follow-up after completion, restart or runtime change | Continue its Session |
+| Explicit independent new topic | Create and bind a new Session |
+| Independent work received on the group mainline | Harness explicitly creates a work Session/topic |
+| Local mainline question | Continue the mainline Session |
+| Reply to a scheduled/background result | Continue the producing Session |
+| Explicit continuation of uniquely identified old work | Continue under the verified target and applicable authorization |
+| Ordinary human discussion needing no contribution | Record/execute only as allowed; a silent response need not create a Session |
+| Duplicate event or uncertain transport receipt | Recover the original preparation/Request; no new work identity |
+
+Native topic groups address every human input to the topic's Agent. Ordinary
+groups retain their configured participation boundary. This difference governs
+participation, not the meaning or lifetime of Session identity.
+
+## Single admission and optional feedback
+
+The connector resolves a Session, prepares the immutable payload and reply
+destination, and persists that preparation before submitting it. A retry uses
+that Session, body and execution/observation mode. It does not parse runtime
+commands again or rebuild ownership from changed settings.
+
+Active inputs go directly to Request admission. Optional social feedback uses
+`acceptedRequestId` to project an already admitted Request; it never appends a
+second human input or performs another conversation-binding admission. Queued and
+archived Requests remain valid sources. Feedback read, classification, decision
+storage and provider failures cannot reject the main input.
+
+Listening inputs use the same preparation/resolution path in observation mode,
+preserving attachments without starting a Harness. Invitations are decided from
+explicit participation controls before selecting the mode. Old prepared inputs
+retain their accepted packet contract.
+
 ## Verification
 
 Use fake Harnesses and mocked Feishu sends with isolated instance state. Cover two independent scheduled occurrences, same-topic continuation, browser input, restart, duplicate delivery acknowledgements, pending replies before topic creation, native active input, foreign route isolation, failed sends, ordinary Sessions, true forks and optional per-group instructions. Production acceptance is separate from passing code tests.
+
+Contract regressions must cover concurrent first input, post-completion and cold
+restart continuation, mainline reuse after configuration changes, original
+attachments through handoff, optional feedback failure, queued Request feedback
+without a duplicate history event, listening invitations, frozen retry packets
+and rejection/delivery recovery. See `test-feishu-thread-session.mjs`,
+`test-feishu-ingress-dispatch.mjs`, `test-feishu-accepted-feedback.mjs`,
+`test-feishu-participation-recovery.mjs` and `test-http-session-source-delivery.mjs`.
 
 ## Configuration and code map
 
@@ -57,6 +132,7 @@ stay internal to the Home Session instead of creating one topic per check.
 | Shared timer creation template and CLI option | `lib/scheduled-session.mjs`, `lib/scheduled-conversation-command.mjs` |
 | Group defaults and overrides | `connectors/feishu/group-settings.mjs` |
 | Feishu normalization and legacy index adoption | `connectors/feishu/session-flow.mjs`, `scripts/feishu-connector.mjs` |
+| Accepted-input feedback projection and listening records | `chat/session-observations.mjs` |
 
 ## Compatibility
 

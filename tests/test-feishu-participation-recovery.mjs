@@ -46,6 +46,7 @@ try {
     };
     const helpers = {
       requestRemoteLab: request,
+      loadAcceptedObservation: async () => ({ accepted: true, recent: [] }),
       enrichSummaryWithChatMetadata: async (_r, s) => s,
       observeRemoteLabMessage: async (_r, s) => {
         effects.observed.push(s.messageId);

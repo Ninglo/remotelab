@@ -20,6 +20,7 @@ const runtime = {
   storagePaths: {},
 };
 const helpers = {
+  loadAcceptedObservation: async () => ({ accepted: true, recent: [] }),
   addProcessingReaction: async () => { effects.push('reaction'); },
   observeRemoteLabMessage: async () => ({ sessionId: 'routing-session', observation: { eventSeq: 1, recent: [] } }),
   classifyJevReaction: async () => ({ emojiType: null }),
@@ -148,7 +149,7 @@ try {
       groups: { 'group-1': { responseMode: 'mention_only', participationMode: 'ambient', quickReactions: true } },
     }, { ...base, ...topicIdentity });
     assert.equal(topicSettings.responseMode, 'all');
-    assert.match(topicSettings.systemPrompt, /without requiring another @ mention/);
+    assert.match(topicSettings.systemPrompt, /no new @ mention is required/);
     assert.match(topicSettings.systemPrompt, /answer directed questions\/requests|every human message is addressed to the Agent and needs a reply/);
     assert.equal(topicSettings.participationMode, undefined);
     assert.equal(topicSettings.quickReactions, undefined, 'topic replies cannot become reaction-only ambient turns');

@@ -150,11 +150,16 @@ try {
   await runtime.participation.remember({ ...source, chatId: 'hidden' }, session.id);
   assert.equal(cards.length, writes, 'hidden status cards are not recreated');
   const onboardRequests = [];
+  let joinedSession = null;
   const onboardOptions = { enrichSummaryWithChatMetadata: async (_runtime, summary) => summary,
     resolveFeishuRuntimeSelection: async () => session,
     requestRemoteLab: async (path, options) => {
+      if (path === '/api/session-conversations/resolve') {
+        return { response: { ok: true }, json: { sessionId: joinedSession } };
+      }
       onboardRequests.push({ path, body: options.body });
       assert.equal(path, '/api/sessions', 'joining a group creates a Session without submitting a fake user input');
+      joinedSession = session.id;
       return { response: { ok: true }, json: { session } };
     } };
   const joined = { ...source, chatId: 'joined', messageId: 'bot-added:real-event', sourceKind: 'bot_added' };
@@ -162,8 +167,8 @@ try {
   await onboardFeishuGroup(runtime, joined, onboardOptions);
   assert.equal((await runtime.participation.state(joined)).mode, 'active');
   assert.match(onboardRequests[0].body.externalTriggerId, /feishu:group-feed:/);
-  assert.equal(onboardRequests[0].body.externalTriggerId, onboardRequests[1].body.externalTriggerId,
-    'event retry uses the same idempotent main Session identity');
+  assert.equal(onboardRequests.length, 1, 'rejoining resolves the same main Session before creation');
+  assert.equal(onboardRequests[0].body.replaceConversation, undefined, 'onboarding cannot steal an existing binding');
   assert.equal((await runtime.participation.state(joined)).sessionId, session.id);
   await runtime.participation.change(joined, 'paused', { controlId: 'keep-pause' });
   await onboardFeishuGroup(runtime, joined, onboardOptions);

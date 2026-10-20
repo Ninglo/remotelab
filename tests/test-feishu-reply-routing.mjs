@@ -157,12 +157,13 @@ try {
     'a live reply surface must not replace the main Session instructions');
   expireContinuation = true;
   let saved;
-  const stale = await submitRemoteLabRequest(runtime, { ...bridgedSummary, messageId: 'late-thread-supplement' }, {
+  const sessionCount = sessions.length;
+  await assert.rejects(submitRemoteLabRequest(runtime, { ...bridgedSummary, messageId: 'late-thread-supplement' }, {
     saveSubmission: async value => { saved = value; },
-  });
-  assert.notEqual(stale.sessionId, firstMain.sessionId, 'a pre-admission completion resolves the independent topic normally');
-  assert.equal(saved.sessionId, stale.sessionId, 'durable preparation follows the re-resolved destination');
-  assert.equal(saved.payload.sourceContext.feishuContinuationRunId, undefined);
+  }), error => error.code === 'THREAD_CONTINUATION_EXPIRED' && error.retryable === false);
+  assert.equal(sessions.length, sessionCount, 'an expired legacy execution never silently creates a new Session');
+  assert.equal(saved.sessionId, firstMain.sessionId, 'repair retains the exact selected destination');
+  assert.equal(saved.payload.sourceContext.feishuContinuationRunId, 'original-run');
   delete runtime.requestRemoteLab;
 
   runtime.config.replyPolicy = normalizeFeishuReplyPolicy({ group: 'thread', private: 'inline' });

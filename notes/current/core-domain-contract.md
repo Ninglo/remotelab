@@ -1,346 +1,121 @@
 # Core Domain Contract
 
-> Status: current baseline for the next RemoteLab refactor cycle.
-> Purpose: freeze the product/domain model so route, storage, and UI work stop drifting between overlapping abstractions.
->
-> For the current shipped architecture and code map, read `docs/project-architecture.md` first.
-> This file is the shorter domain contract that current and future refactors should preserve.
+Status: current baseline, revised 2026-10-20.
+
+This is the canonical product-object contract. The conversation creation and
+continuation rules live in [Session conversations](session-conversations.md).
+Platform documents describe their mapping to this contract; they do not define
+another work identity or lifecycle.
+
+## Durable work and execution
 
----
-
-## One-Screen Model
-
-RemoteLab should be understood through five durable objects:
-
-```text
-Principal -> App -> Session -> many Runs
-                      \
-                       -> many ShareSnapshots
-```
-
-And through one strict rule:
-
-> `Session` is the primary product object. `Run` is the execution object beneath it. `App` is reusable policy. `ShareSnapshot` is separate publication. `Principal` is the access subject.
-
-Everything else is downstream UI or compatibility detail.
-
----
-
-## What RemoteLab Is Optimizing For
-
-RemoteLab is not primarily:
-
-- a terminal emulator
-- a mobile IDE
-- a generalized multi-user SaaS
-- a share-first publishing product
-
-RemoteLab is primarily:
-
-- a control plane for AI workers running on one machine
-- centered around durable conversation threads
-- with reusable app-shaped entry points
-- with optional read-only publication of conversation history
-
-That framing matters because it keeps the system centered on durable work, not transport tricks or account taxonomy.
-
----
-
-## Canonical Objects
-
-### 1. Session
-
-`Session` is the core product record.
-
-It owns:
-
-- durable conversation identity
-- canonical message/event history association
-- archive state
-- app association
-- user-facing presentation fields such as name/title, group, description
-- compatibility execution hints that still exist in the current product, such as `folder`
-
-It does **not** own:
-
-- a specific execution attempt
-- a public published artifact
-- authorization decisions
-- sidebar/progress summaries as domain truth
-
-Minimum mental model:
-
-```text
-session = one durable thread of work
-```
-
-Practical note:
-
-- current code still carries some execution-adjacent fields on the session record for compatibility and UX convenience
-- that does not change the product center: the session is the durable thread, not the runtime attempt
-
-### 2. Run
-
-`Run` is one execution attempt under a session.
-
-It owns:
-
-- tool/provider selection for that attempt
-- model/reasoning selection for that attempt
-- lifecycle state (`accepted`, `running`, `completed`, `failed`, `cancelled`)
-- resume metadata when the underlying tool supports it
-- execution result / error / timing metadata
-- pointers to normalized event output and spool state
-
-It does **not** own:
-
-- the long-lived identity of the conversation
-- session naming/grouping/archive semantics
-- public sharing semantics
-
-Minimum mental model:
-
-```text
-run = one concrete attempt to advance a session
-```
-
-`Run` must remain explicit. Treating it as “just cache” will blur retry, resume, interrupt, and status semantics.
-
-### 3. App
-
-`App` is reusable policy and bootstrap, not a live conversation.
-
-It answers questions like:
-
-- what context should this kind of session start with?
-- what identity/presentation should it have?
-- what defaults or capability boundaries apply?
-- how should a non-owner enter this workflow?
-
-It owns:
-
-- reusable bootstrap/configuration
-- welcome/presentation defaults
-- shareability policy and app-shaped identity
-- future capability/policy expansion
-
-It does **not** own:
-
-- the live state of a specific conversation
-- the execution history of a run
-- read-only share snapshots
-
-Minimum mental model:
-
-```text
-app = reusable policy + bootstrap package for sessions
-```
-
-Current stance:
-
-- the shipped system still presents App mostly as a shareable template
-- the refactor direction is that every session conceptually belongs to one App, including the owner-default experience
-
-### 4. Principal
-
-`Principal` is the access subject.
-
-It answers one question:
-
-> who is acting through this session right now, and with what server-enforced scope?
-
-Current practical shapes inside one single-user instance:
-
-- owner principal
-- app-scoped non-owner principal
-
-A human user's durable isolation boundary is a separate RemoteLab instance with its own config, memory, workspace, auth, Connector bindings, and runtime permissions. `Principal` scopes access to a surface inside that instance; it is not a lightweight replacement for instance isolation or a hidden multi-user account model.
-
-Why `Principal` matters:
-
-- it prevents “visitor” from hardening into the final product abstraction
-- it avoids prematurely committing to a full user-account system
-- it keeps access control in the domain without turning RemoteLab into multi-tenant SaaS
-
-### 5. ShareSnapshot
-
-`ShareSnapshot` is a separate publication object.
-
-It owns:
-
-- a frozen read-only slice of a session
-- publication metadata / token / visibility settings
-- any materialized shared rendering state
-
-It does **not** own:
-
-- ongoing session execution
-- app policy
-- future session updates after the snapshot boundary
-
-Minimum mental model:
-
-```text
-share snapshot = published artifact over fixed session history
-```
-
-This separation matters because “share” is publication, not execution.
-
----
-
-## Relationship Rules
-
-The following boundaries should hold across refactors:
-
-1. `Session` is the product center.
-2. `Run` is subordinate but real.
-3. `App` is reusable policy, not a session alias.
-4. `Principal` stays as the access subject even if specific role names evolve.
-5. `ShareSnapshot` stays separate from both `Session` and `App`.
-6. Sidebar/progress/grouping/filtering remain derived product surfaces, not domain truth.
-
-If a change blurs any of those lines, it should be treated as a domain change, not an implementation detail.
-
----
-
-## Authorization Rules
-
-Authorization is server-enforced.
-
-That means:
-
-- the model may suggest naming, grouping, status, or presentation metadata
-- the model may not define who can read, write, or administer a resource
-- app policy can inform the server’s access decision surface
-- the server remains the final authority for ownership, session scope, app scope, and share scope
-
-RemoteLab should not evolve toward “permissions are mostly prompt-level conventions.”
-
----
-
-## Lifecycle Rules
-
-The default lifecycle should be read like this:
-
-1. choose a principal and an app context
-2. create or open a session
-3. append a user message to the session
-4. create a run for that execution attempt
-5. normalize events/results back into durable session history
-6. finalize the run state
-7. optionally publish a share snapshot over some frozen range
-
-This preserves a clean answer to three different questions:
-
-- what conversation is this? → `Session`
-- what attempt just ran? → `Run`
-- what reusable workflow/policy framed it? → `App`
-
-### Session fork rule
-
-`Session fork` is a **new session creation operation**, not a special mode inside one session.
-
-Current shipped contract:
-
-- fork means **hard clone + hard isolation**
-- the child session copies the durable parent state that defines the conversation starting point
-- the child does **not** inherit live execution linkage such as `activeRunId`, `activeRun`, provider resume/thread ids, `externalTriggerId`, or `completionTargets`
-- future parent/child updates do not sync after creation
-
-Practical consequence:
-
-- same-session continuation may reuse provider-native resume state
-- true branching may not reuse that state, because sharing a provider-native thread would break branch isolation
-
-Current exactness boundary:
-
-- the shipped v1 cut is **head fork**: clone the current durable session state as it exists now
-- historical fork points that would require reconstructing an earlier pre-compaction live prompt state should be rejected rather than silently approximated
-
-So the mental model is:
-
-```text
-fork = create a fresh session from copied durable state, then continue independently
-```
-
----
-
-## Derived Surfaces
-
-The following are important product surfaces, but they are not the core domain:
-
-- sidebar grouping
-- workflow lanes
-- workflow attention priority
-- progress summaries
-- task-like labels that do not have an independent lifecycle
-- “needs your decision” indicators
-- list filters
-- archive tabs
-- folder/cwd display labels
-
-They should be derived from canonical objects, not treated as new objects with independent authority.
-
-For the current workflow-organization baseline, also read `session-first-workflow-surfaces.md`.
-The short version is:
-
-- `Session` is the only durable work object today
-- `group`, `workflowState`, and `workflowPriority` are session metadata
-- list/progress-style organization is a projection over sessions, not a parallel task system
-
-Two practical consequences:
-
-- session presentation metadata can be real and durable without becoming the deepest model
-- the current `folder` field can remain as runtime/cwd compatibility without reclaiming the product center
-
----
-
-## Current Compatibility Notes
-
-These are pragmatic allowances in the shipped system, not long-term centers of gravity:
-
-- `folder` / cwd is still a practical runtime field
-- owner vs visitor still exists as a concrete compatibility split in routes/auth/session scope
-- app records are still lighter than the eventual policy model
-- some run/tool fields may still appear on session records for convenience
-
-Keep them where useful, but do not let them redefine the domain.
-
----
-
-## Explicit Non-Goals
-
-This contract does **not** attempt to solve:
-
-- full multi-user account infrastructure
-- organization/team/workspace SaaS abstractions
-- background autonomy as a shipped baseline
-- provider registry implementation details
-- exact frontend component boundaries
-- every migration step from the current code
-
-Those belong to architecture, provider, or directional notes.
-
----
-
-## Refactor Test
-
-A proposed refactor is likely aligned if it makes the following clearer rather than blurrier:
-
-- session identity vs run identity
-- policy/app vs live execution
-- publication vs live work
-- server authority vs model suggestion
-- derived UI vs canonical state
-
-If a change makes those distinctions harder to explain, it is probably moving the repo backward.
-
----
-
-## Related Docs
-
-- `docs/project-architecture.md` — current shipped implementation map
-- `notes/current/memory-activation-architecture.md` — current memory-loading model
-- `notes/directional/app-centric-architecture.md` — longer-term App direction
-- `notes/directional/provider-architecture.md` — provider/model direction
-- `notes/directional/ai-driven-interaction.md` — deferred triggers and AI-initiated work
+`Session` is the only durable work object. It owns the conversation identity,
+history, artifacts, current work context, runtime preferences, archive state and
+optional external conversation binding. A message can add requirements, correct
+earlier instructions or resume completed work without creating another Session.
+
+`Request` is a durable accepted input within a Session. It preserves the original
+input and attachments, initiator, idempotency identity, accepted options and reply
+destination. Acceptance is distinct from execution and delivery.
+
+`Run` is a concrete Harness execution. It owns its frozen runtime selection,
+execution state, provider references and output. Native steering may feed several
+accepted Requests into one Run. A Session may have many Runs over time.
+Completion, failure, cancellation, model changes, compaction and service restart
+do not change Session identity. Provider-native conversation IDs support resume;
+they are not the durable work identity.
+
+`Delivery` records publication of a Request's output and its external receipt.
+Several parts may deliver one answer. Sending again, receiving a late receipt or
+recovering a process cannot create another task or silently move the Request.
+
+These execution and transport records support the Session. They do not create
+parallel task objects with competing work ownership.
+
+## People and access
+
+People and external identities provide attribution, authentication and personal
+views. Every authenticated Person has full access to the instance's Sessions;
+Person identity does not impose Session ownership or authorization partitions.
+Space, Project group and sidebar ordering are per-Person projections. Session
+history, title, runtime and workflow state are shared.
+
+Authentication, resource access, connector scope and backend tool authorization
+remain enforced by code. A prompt cannot grant access. Sharing an authenticated
+instance does not imply authorization to send a particular message or perform
+every available external action.
+
+Interactive App/template and Visitor role objects are retired. The previous
+`Principal -> App -> Session` diagram and single-owner access model are historical,
+not a refactor direction. New work must not reintroduce them through compatibility
+fields or UI labels.
+
+## Publication
+
+`ShareSnapshot` is an immutable read-only publication of selected Session history.
+It is separate from a live Session and does not receive future execution updates.
+It remains the unauthenticated publication surface.
+
+A Feishu topic is an interactive address for a Session, not a ShareSnapshot.
+Publishing a scheduled or background result binds its actual topic receipt back
+to the producing Session so human follow-ups can continue that work.
+
+## Decision ownership
+
+RemoteLab resolves exact conversation bindings, stores accepted inputs, handles
+idempotency, queues execution and delivers results. The Harness interprets the
+task, decides whether a contribution is useful, performs authorized work and
+chooses when an independent persistent Session is useful.
+
+The Session decision and response decision are separate. Existing bindings select
+the Session; participation rules decide whether to receive/execute, and the Harness
+may decide to remain silent. A deliberate silent result is distinct from an
+unaccepted, failed, cancelled or undelivered Request. Optional reactions and
+presentation must never become another admission or routing authority.
+
+For the detailed ownership rules, scenario matrix and acceptance cases, use
+[Session conversations](session-conversations.md). The Harness/control-plane
+boundary is maintained in [Thin control plane](thin-control-plane-architecture.md).
+
+## Forks and independent work
+
+A true history fork creates a new Session with copied durable context and hard
+isolation. It does not inherit an active Run, provider-native resume ID, external
+trigger identity, external conversation binding or completion targets.
+Later parent/child changes do not synchronize automatically.
+
+The supported exact fork point is the current durable head. An unsupported
+historical pre-compaction state must not be silently approximated.
+
+Opening an independent work Session may carry the accepted source inputs and
+relevant context rather than clone the whole history. It retains provenance and
+an explicit delivery destination. Handoff does not discard the original text,
+attachments or the original input's delivery responsibility.
+
+## Derived surfaces
+
+Session lists, workflow views, progress cards, attention cues and task-like labels
+project Session and execution records. They do not own a parallel work lifecycle.
+Persisted presentation metadata remains legitimate; its existence does not make
+it the authoritative task object. The working directory is execution context,
+not a work identity.
+
+See [Session-first workflow surfaces](session-first-workflow-surfaces.md) for
+organization behavior. A future cross-Session work object requires an explicit
+product decision and independent lifecycle; it cannot emerge accidentally from
+a card, transport index or classification output.
+
+## Refactor acceptance
+
+Every refactor must preserve:
+
+- Session identity across input, execution, publication and later continuation.
+- Original input, attachments and attribution through explicit handoff.
+- One responsible execution destination per accepted input.
+- Idempotent recovery without creating new work from uncertain receipts.
+- Shared authenticated access and per-Person presentation as separate concerns.
+- Harness semantic judgment and deterministic transport responsibilities.
+
+The shipped code map is [Project architecture](../../docs/project-architecture.md).
+Historical decisions remain in Git history and explicitly historical notes;
+they must not be labeled as a second current baseline.

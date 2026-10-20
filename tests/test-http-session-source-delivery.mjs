@@ -199,7 +199,7 @@ try {
   assert.equal(privateObservation.body.code, 'FEISHU_OBSERVATION_BINDING_REQUIRED');
   const scheduledRun = await connectorRequest('POST', `/api/sessions/${scheduledTopic.body.session.id}/messages`, {
     requestId: 'feishu:scheduled-followup', text: scheduledInput.text,
-    tool: 'fake-codex', model: 'fake-model', recordUserMessage: false,
+    tool: 'fake-codex', model: 'fake-model',
     sourceContext: scheduledInput.sourceContext,
     sourceDelivery: { ...scheduledConversation,
       target: { ...scheduledInput.sourceContext, conversationKind: 'thread', replyInThread: true } },
@@ -212,7 +212,7 @@ try {
   const scheduledEvents = (await request('GET',
     `/api/sessions/${scheduledTopic.body.session.id}/events?filter=all`)).body.events;
   assert.equal(scheduledEvents.filter(event => event.type === 'message' && event.role === 'user').length, 1,
-    'observation then admission keeps one user message in the original scheduled Session');
+    'old observation-first packets recover without depending on an unpersisted skip flag');
   const multipartInput = { ...scheduledInput, sourceMessageId: 'scheduled-file-followup',
     requestId: 'feishu:scheduled-file-followup',
     sourceContext: { ...scheduledInput.sourceContext, messageId: 'scheduled-file-followup' } };
@@ -242,6 +242,44 @@ try {
     `/api/sessions/${privateTopic.body.session.id}/events?filter=all`)).body.events;
   assert.equal(browserEvents.filter(event => event.type === 'message' && event.role === 'user'
     && event.requestId === 'browser-record-required').length, 1, 'browser input cannot suppress its own history');
+  // Active inputs are submitted directly. Optional feedback reads the durable
+  // Request, even if it used a sparse scheduled binding; it never appends input.
+  const acceptedFeedback = await connectorRequest('POST', scheduledPath, {
+    acceptedRequestId: 'feishu:scheduled-followup',
+  });
+  assert.equal(acceptedFeedback.status, 200, JSON.stringify(acceptedFeedback.body));
+  assert.equal(acceptedFeedback.body.accepted, true);
+  assert.equal((await connectorRequest('POST', scheduledPath, { acceptedRequestId: 'missing' })).status, 400);
+  assert.equal((await request('POST', scheduledPath, {
+    acceptedRequestId: 'feishu:scheduled-followup',
+  })).status, 403);
+  assert.equal((await connectorRequest('POST', `/api/sessions/${privateTopic.body.session.id}/observations`, {
+    acceptedRequestId: 'browser-record-required',
+  })).status, 400, 'a browser Request cannot become connector feedback');
+  assert.equal((await request('GET',
+    `/api/sessions/${scheduledTopic.body.session.id}/events?filter=all`)).body.events
+    .filter(event => event.type === 'message' && event.role === 'user').length, 2);
+  const directConversation = { connector: 'feishu', sourceRouteId: 'feedback-bot',
+    target: { chatId: 'feedback-group', chatType: 'group', conversationKind: 'main' } };
+  const directSession = (await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', conversation: directConversation,
+  })).body.session.id;
+  const directPath = `/api/sessions/${directSession}`;
+  const directPayload = { requestId: 'direct-input', text: 'Thanks, continue here',
+    tool: 'fake-codex', model: 'fake-model', sourceContext: {
+      ...directConversation.target, connector: 'feishu', sourceRouteId: 'feedback-bot',
+      messageId: 'direct-input', sender: { name: 'Ada', openId: 'person-1' },
+    }, sourceDelivery: { ...directConversation, target: { ...directConversation.target, messageId: 'direct-input' } } };
+  const direct = await connectorRequest('POST', `${directPath}/messages`, directPayload);
+  assert.equal(direct.status, 202, JSON.stringify(direct.body));
+  assert.equal((await connectorRequest('POST', `${directPath}/observations`, {
+    acceptedRequestId: directPayload.requestId,
+  })).body.accepted, true, 'mainline feedback uses admission rather than a second topology guard');
+  assert.equal((await connectorRequest('POST', `${directPath}/messages`, directPayload)).body.duplicate, true);
+  await waitFor(async () => (await request('GET', `/api/runs/${direct.body.run.id}`)).body.run?.state === 'completed',
+    'direct input with asynchronous feedback');
+  const directEvents = (await request('GET', `${directPath}/events?filter=all`)).body.events;
+  assert.equal(directEvents.filter(e => e.type === 'message' && e.role === 'user').length, 1);
   // Delivered ambient topics belong to the original main Session, even
   // after its execution has completed and the Request has been archived.
   const { requests } = await import('../chat/requests.mjs');

@@ -232,8 +232,8 @@ try {
   assert.deepEqual(mentionedReactions.slice(1), []);
   const prompt = resolveFeishuGroupSettings(runtime.config, base).systemPrompt;
   assert.match(prompt, /feishu-response:/);
-  assert.match(prompt, /Use a thread for complex work/,
-    'reply placement remains available without groupFeed or a work-transfer approval');
+  assert.match(prompt, /work needs its own durable context and follow-up/,
+    'new Session decisions follow work independence rather than tool use');
   assert.doesNotMatch(prompt, /mainline replies stay inline unless|General automatic new-topic splitting is deferred/);
   assert.doesNotMatch(prompt, /connector call feishu:react_to_source/);
   const onlyReaction = '<private><feishu-reaction emoji="THANKS"/></private>';

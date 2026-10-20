@@ -553,8 +553,12 @@ reaction receives no visible text after the reaction is added.
 Legacy embedded configurations can explicitly enable `jevReactions` with
 `quickReactions`, `participationMode: "ambient"` and `groupFeed`; modern controlled
 groups receive these defaults through `effectiveFeishuGroup`. Each admitted human message is appended once to its bound
-group Session. The main Harness receives it without waiting for the fast reaction model, reaction
-persistence or the reaction provider. It decides whether to reply, where the
+group Session. Active inputs go directly through Request admission; an asynchronous
+feedback job reads that immutable Request with `acceptedRequestId`. It does not
+submit another observation input or resolve the Session a second time. Queued
+and archived Requests remain readable, without adding another history event.
+The main Harness receives the input without waiting for feedback context,
+the fast reaction model, reaction persistence or the reaction provider. It decides whether to reply, where the
 reply belongs and whether authorized work needs a separate Session.
 
 TypeSafe Jev (`jev-1.13.0`, `POST /v1/systemone`) receives a bounded recent Session window (at most 20 messages and 5,000
@@ -594,10 +598,11 @@ including participation, reply placement, continuation of existing work and the
 final reaction choice. It chooses inline versus Thread for the whole discussion
 before the first visible opening, including earlier related messages, likely
 questions, confirmation and review returns. Several short supplements can make
-one substantive discussion. Research, design feedback, cross-topic review,
-installation guidance and multi-step work normally belong in a Thread. Human
-placement instructions take priority; character count does not decide work
-ownership. Each newly opened Thread has its own Session, just like a topic in a
+one discussion. Open a new work topic when the human requests it or the work needs
+independent durable context and continuation. Tool use, message length and duration
+alone do not require splitting. The canonical rules are
+[Session conversations](../notes/current/session-conversations.md).
+Each newly opened Thread has its own Session, just like a topic in a
 topic group. Before substantive work or the first visible reply, the Harness uses
 the existing `work route` `mode:new` command to reserve that Session and admit the
 original request with necessary context. The thread Session produces the answer;
@@ -789,9 +794,9 @@ into a private conversation or bypass source-message quote replies.
 
 For ordinary groups, the shared response policy has three decisions: the main Session decides whether
 its contribution is useful, combines pending questions/corrections into one answer
-when helpful, and uses a thread for complex work, including lookup, research or
-execution even when the incoming question is short. Simple answers quote the source
-message inline in the main Session, with only the answer body. Mainline openings
+when helpful, and explicitly creates a topic for independently continued work.
+Existing topics keep their Session through corrections, added work and completion.
+Local mainline answers quote the source message inline. Simple answers contain only the answer body. Mainline openings
 and progress are suppressed even when personal display preferences enable them;
 questions remain reachable. The inline final has no phase heading. Jev's
 optional preliminary social feedback never gates that decision. Several matters
@@ -808,10 +813,10 @@ synthetic conversations, saves outputs for review, and never contacts Feishu.
 The deterministic `test-feishu-response-runtime.mjs` separately covers native
 steer, one combined delivery, and per-input settlement with a fixture model.
 
-Ambient mainline inputs choose reply location through `feishu-response` before
-visible output. This remains available with personal `routing=none`, and does
-not authorize a new worker. Complex replies can choose a thread directly, without
-a work-transfer approval. Delivered topic surfaces retain the originating
+Already accepted legacy ambient inputs may have opened a topic through only the
+`feishu-response` placement marker. New inputs use the independent-Session
+creation contract above; a placement marker cannot create or transfer work.
+Legacy delivered topic surfaces retain the originating
 Session and Run as durable provenance. The first lookup also indexes pre-upgrade
 archived delivered receipts once, so completed phase-one topics keep their origin. Follow-ups steer only that execution or
 subsequent executions of the same topic; unrelated work in the Session cannot
@@ -873,16 +878,25 @@ Jev does not interpret
 natural-language invitations, mode changes or topic changes. `/unmute` restores active participation for
 new messages; queued content from before restoration is not replayed as new work.
 Pausing or entering listening cancels that conversation's ongoing work and removes
-its retained THINKING reactions. Definite observation rejections are archived with
+its retained THINKING reactions. Listening observations use a durable preparation
+with the same Session resolver, attachment ingestion and fixed retry packet as
+normal inputs. Feedback for active inputs reads the accepted Request instead.
+Definite input rejections are archived with
 their error and enqueue one failure notice in the original conversation instead
 of silently disappearing. A notification retry never replays rejected work.
-Delivered ambient-topic provenance is checked by both observation and normal
-admission, so an original mainline binding does not reject its own follow-ups.
+Listening observations and normal admission accept delivered ambient-topic
+provenance, so an original mainline binding does not reject its own follow-ups.
 Replies to scheduled result topics also reuse their recorded Bot/chat/root
 binding when optional topology or tenant metadata was not supplied by the task.
 Known conflicting identifiers and explicit private/mainline bindings remain
 rejected. Binding failures have a specific notice and retained reason; permanent
 failures no longer ask the user to retry an unchanged input.
+An expired legacy run-only reference retains its original preparation for repair;
+it cannot silently create another Session. Normal origin-backed topic follow-ups
+continue after completion. Mainline/private/topic lookup uses the same canonical
+resolver; joining a group or changing display/group-feed settings never replaces
+an existing binding. New group work, explicitly requested forks and scheduled
+occurrences still use their documented creation paths.
 Model/runtime and Session-entry footers are limited to the first user turn;
 later useful openings contain only their message. Delivery
 suppression cancels the matching unsent lease; it does not report a provider send.

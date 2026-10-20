@@ -110,6 +110,12 @@ The connector can add a short preface such as actor, source, URL, or thread titl
 
 ## Session conversation binding
 
+The canonical creation, continuation and silence rules are maintained in
+[Session conversations](../notes/current/session-conversations.md), under the
+[Core domain contract](../notes/current/core-domain-contract.md). This section
+defines their transport mapping. Existing bindings survive completion, runtime
+changes and restart; optional feedback cannot change admission or ownership.
+
 The authenticated API accepts `conversation: { connector, sourceRouteId, target }` on
 `POST /api/sessions` and `PATCH /api/sessions/:id`. Set it to `null` to detach.
 `POST /api/session-conversations/resolve` with `{ conversation }` returns the
@@ -363,7 +369,9 @@ receipts belong to the shared execution, including when a steered input selects
 that placement. Terminal publication remains once per stopped execution.
 
 New ambient mainline inputs carry `feishuThreadSessionVersion: 1`. A substantive
-thread is opened through the existing `work route` `mode:new` operation, which
+independent thread is opened on explicit request or when work needs its own
+durable context and continuation. Tool use, message length and execution duration
+alone do not require splitting. The existing `work route` `mode:new` operation
 reserves an independent Session bound to the source message root before admitting
 work. The Harness supplies the task and relevant context; the transport does not
 classify messages or move a running native execution. A `replyMode:thread` display
@@ -382,7 +390,25 @@ An explicitly private or mainline binding cannot be reinterpreted as a topic.
 After a connector has persisted the observation, JSON and multipart message
 admission preserve `recordUserMessage: false` to avoid recording the same human
 input twice. Only authenticated connector service requests may apply that flag;
-ordinary browser input remains recorded.
+ordinary browser input remains recorded. Recovery of an old prepared packet
+without the flag also recognizes the exact persisted source-message/Request
+event in this Session. Optional feedback projections never count as such an input.
+
+New active inputs submit directly to `/messages`. Optional feedback calls
+`POST /api/sessions/:id/observations` with `{acceptedRequestId}` and reads the
+immutable accepted Feishu group Request. This projection never appends a human
+message or revalidates a later conversation binding. Queued and archived Requests
+are valid; browser/private inputs and missing Request IDs are rejected. Decision
+storage uses the existing observation record and outbox. All feedback failures
+remain outside main admission.
+
+Only listening inputs use observation admission without a Request/Run. Both
+paths persist the selected Session, payload and mode before transport. Inbox
+retries use this frozen preparation without rerunning commands or re-resolving
+ownership. An expired legacy run-only continuation retains its original packet
+for repair rather than creating a different Session. Definitive input 4xx
+rejections retain their reason and one durable notice; authentication, timeout,
+busy/conflict and rate-limit responses remain recoverable.
 
 For a **legacy** ambient mainline reply placed in a new Feishu Thread, the successful
 outbox receipt indexes the provider Thread/root aliases with the originating Run.
@@ -392,8 +418,8 @@ and, while the original native execution is accepting input, `continuationRunId`
 The connector sends these as `sourceContext.feishuThreadOriginRunId` and
 `feishuContinuationRunId`; admission verifies the actual delivered surface against
 the original Request, including archived records, and keeps the Session prompt.
-Observation admission uses the same delivered-thread provenance before Jev and
-main-model admission; it must not reject a valid topic solely because the original
+Listening observation admission uses the same delivered-thread provenance;
+it must not reject a valid topic solely because the original
 Session is bound to the mainline. A definitive ingress rejection is retained and
 queues one durable failure notice in the source conversation. Retrying that notice
 never re-executes the rejected input.

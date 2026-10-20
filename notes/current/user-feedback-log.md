@@ -1960,3 +1960,26 @@ still await observation persistence before normal admission. Reaction
 classification is asynchronous; that does not make its observation dependency
 non-blocking. Further consolidation should use one durable input acceptance
 boundary and keep optional feedback failures outside the execution decision.
+
+## 2026-10-20 — Make Session ownership the stable connector contract
+
+The user approved a first refactor around create, continue and deliberate silence.
+Session identity must survive Run completion and restart; new work contexts need
+explicit creation, and tool use alone must not force a new topic. The canonical
+rules and scenario matrix now live in `session-conversations.md`; the stale
+App/Visitor domain model in `core-domain-contract.md` is replaced by the existing
+Session-only shared-instance model.
+
+Active Feishu inputs now submit once, with optional feedback projected from the
+accepted Request. Listening retains observation without execution. Mainlines,
+private chats and topics share canonical binding lookup; configuration changes
+and onboarding cannot replace the owner. Frozen retry packets retain Session,
+body and mode. Expired legacy run-only references fail with their original
+preparation instead of creating unrelated work. Existing exact observation events
+remain deduplicated when old pending packets did not save their skip flag.
+
+Acceptance covers fake-provider ingress with unavailable feedback, uncertain
+admission and cold retry, queued/archived feedback without duplicate input,
+concurrent topic creation, original attachment carry, post-completion/cold
+continuation, participation controls and HTTP execution/delivery. Natural-use
+model judgment and real provider delivery remain separate acceptance evidence.
