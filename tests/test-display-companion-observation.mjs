@@ -76,8 +76,9 @@ test('unchanged summary does not become new when assistant timestamp advances', 
   const first = advanceObservation([session()], options, null, now);
   const same = session('one', { lastAssistantMessageAt: new Date(now + 60_000).toISOString() });
   assert.equal(advanceObservation([same], options, first.state, now + 60_000).observation.kind, 'quiet');
-  const corrected = session('one', { workSummary: { knownConclusions: ['更正：离线数据尚未核对完成。'] } });
-  assert.equal(advanceObservation([corrected], options, first.state, now + 60_000).observation.sentence, '更正：离线数据尚未核对完成。');
+  const sentence = '更正：离线数据尚未核对完成，请提供独立评测结果。';
+  const corrected = session('one', { workSummary: { knownConclusions: [sentence] } });
+  assert.equal(advanceObservation([corrected], options, first.state, now + 60_000).observation.sentence, sentence);
 });
 test('pending attention repeats only after cooldown; results get a turn', () => {
   const data = [session(), session('ask', { activity: waiting })];
@@ -114,4 +115,39 @@ test('night rest is suppressed and state is isolated per Person; JSON round trip
 test('input order and duplicated source entries do not affect choice', () => {
   const data = [session('a'), session('b'), session('a')];
   assert.deepEqual(observationCandidates(data, options, now), observationCandidates(data.toReversed(), options, now));
+});
+
+test('actual low-value screen messages, generic capabilities and negated invitations stay quiet', () => {
+  const noise = [
+    '处理记录缺少证据、关联错误或损坏时不会误清空首页。',
+    '原精选案例、人评、草稿和并发编辑成果得到保留；四项目页面及相关回归检查通过。',
+    '未完成事项支持跨日追踪；支持分支并回原事项，避免重复计数。',
+    '文字读取已有工作记录中的新结论与待确认事项，带具体时间并去重；未增加AI扫描。',
+    '设备回执显示动画约10帧/秒；更新后的右侧人物布局已收到播放回执。',
+    '报告已完成。', '功能支持下载和查看报告。', '现在不能查看报告。',
+    '暂不需要你确认屏幕。', '如果报告完成，可以查看结果。',
+    '等到上线后，你可以开始验收。', '无需提供额外信息。',
+  ];
+  for (const sentence of noise) for (const activity of [session().activity, waiting]) {
+    const workSummary = { knownConclusions: [sentence], needsFromUser: [sentence] };
+    assert.equal(selectObservation([session('noise', { workSummary, activity })], options, now).kind, 'quiet', sentence);
+  }
+});
+
+test('concrete reader invitations keep wording and incomplete-result qualifications', () => {
+  for (const sentence of ['真机弄好了，快去看看吧。', '新版已经部署，可以开始验收画面。',
+    '请选择要安装的版本。', '录音尚未上传，请先连接网络。',
+    '报告已生成，你可以查看结果。', '实机效果仍需本人确认。']) {
+    const chosen = selectObservation([session('useful', { workSummary: { knownConclusions: [sentence] } })], options, now);
+    assert.equal(chosen.sentence, sentence);
+    assert.equal(chosen.kind, 'result');
+  }
+});
+
+test('fresh results expire after 15 minutes while pending reader requests retain their own horizon', () => {
+  const old = session('old', { lastAssistantMessageAt: new Date(now - 15 * 60_000).toISOString() });
+  assert.equal(selectObservation([old], options, now).kind, 'quiet');
+  assert.equal(selectObservation([{ ...old, activity: waiting }], options, now).kind, 'attention');
+  const first = advanceObservation([session()], options, null, now);
+  assert.equal(advanceObservation([old], options, first.state, now + 1).observation.kind, 'quiet');
 });

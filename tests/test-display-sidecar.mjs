@@ -116,7 +116,7 @@ const api = createServer((req, res) => {
         activity: { run: { state: 'idle' }, queue: { count: 0 } },
         lastAssistantMessageAt: Date.now(),
         lastReviewedAt: 0,
-        workSummary: { summary: '整理本周进展', knownConclusions: ['离线对比已完成，下一步核对独立评测。'] },
+        workSummary: { summary: '整理本周进展', knownConclusions: ['离线对比已完成，请查看独立评测结果。'] },
         deliveryIssueCount: 0,
       },
       ...waitingSessions,
@@ -225,7 +225,7 @@ try {
   const observationResponse = await fetch(observationUrl, { headers: publicHeaders });
   assert.equal(observationResponse.status, 200);
   const observation = (await observationResponse.json()).observation;
-  assert.equal(observation.sentence, '离线对比已完成，下一步核对独立评测。');
+  assert.equal(observation.sentence, '离线对比已完成，请查看独立评测结果。');
   assert.equal(observation.label, '对话更新');
   assert.equal((await (await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/companion-observation`, { headers: publicHeaders })).json()).observation.kind, 'quiet');
   const savedObservations = JSON.parse(await readFile(join(configDir, 'display-companion-observations.json'), 'utf8'));

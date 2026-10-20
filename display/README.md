@@ -364,6 +364,8 @@ The opt-in `design: "companion-v2"` scene uses the same v22 apply route and v3
 Mac player. The v2 layout places the original, unmirrored character against the
 right edge, its speech bubble in the center, and Beijing time/weather on the
 left. Only the speech-tail geometry is mirrored; text and GIF bytes are not.
+Action names, library counts and asset credits stay in metadata rather than the
+screen footer. Quiet observations render no speech bubble or filler message.
 Apply `studio-companion-library.patch` after the patches above;
 copy `companion-library.mjs`, `companion-scene-v2.mjs` and the updated
 `studio-companion.mjs` (as `companion-scene.mjs`) into that personal studio.
@@ -396,8 +398,13 @@ existing summary reader, scoped to that Person's initiator identities, with a
 30-second cache. It does not read full conversations or invoke a model. Active
 waiting entries can show `needsFromUser` as “待确认记录”; waiting also includes
 resource queues, so this is not a claim that the current run awaits a human.
-Idle, nonqueued entries can show
-`knownConclusions`. Archived/internal entries, stale (>24h), unsafe metadata,
+Idle, nonqueued entries can show `knownConclusions` from the last 15 minutes.
+Both kinds must contain an explicit reader action, such as a request to confirm,
+provide or choose something, or an invitation to view, try or accept a result.
+Generic capabilities, preservation notes and test-passed statements alone do
+not qualify. This conservative text gate preserves whole sentences and can
+omit useful messages that do not express a next step; it adds no AI classifier.
+Archived/internal entries, stale (>=24h for requests), unsafe metadata,
 long (>60-character) and process-only items are excluded as whole items.
 Summary text is attributed to “对话更新” using `lastAssistantMessageAt`; this is
 not a claim's creation time or an independent verification of completion.
@@ -407,5 +414,5 @@ for a minute; unresolved requests repeat no sooner than 30 minutes. With no new
 item the pet stays quiet. A neutral rest reminder can appear after 90 minutes
 between 09:00 and 21:00 Beijing time; it does not claim to measure actual work.
 Text changes refresh the background independently of the action minute; a
-missing source or stale weather is shown explicitly. The display adds no model
+missing text source leaves the pet quiet; stale weather is shown explicitly. The display adds no model
 calls. Reuse of summaries does not replace their source task's verification.

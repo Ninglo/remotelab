@@ -23,7 +23,8 @@ test('single selected library action and observation override legacy text withou
     libraryInfo: { total: 106, category: '日常', actionName: '元气挥手' } }, null, now);
   assert.equal(scene.meta.action, 'wave');
   assert.equal(scene.animations[0].gifBase64, gifBase64);
-  assert.match(scene.svg, /动作库 106/);
+  assert.doesNotMatch(scene.svg, /动作库 106|元气挥手|github\.com|data-fit="library"/);
+  assert.equal(scene.meta.libraryInfo.total, 106);
   assert.match(scene.svg, /对话更新/);
   assert.doesNotMatch(scene.svg, /结论生成|结论记录|离线动作对比/);
   assert.match(scene.svg, /测试 &lt;script&gt;/);
@@ -64,6 +65,11 @@ test('quiet and rest do not pretend to be findings or have conversation timestam
     const scene = companionScene({ ...payload, observation: { kind, subject: '陪伴', sentence: '看看远处，喝口水吧。', observedAt: null, label: '' } }, null, now);
     assert.equal(scene.meta.observed, '');
     assert.doesNotMatch(scene.svg, /对话更新|最近结论|完成/);
+    if (kind === 'quiet') {
+      assert.doesNotMatch(scene.svg, /data-role="observation"|看看远处|陪伴中|留一点轻松/);
+      assert.match(scene.svg, /北京时间/);
+      assert.equal(scene.animations.length, 1);
+    } else assert.match(scene.svg, /data-role="observation"|看看远处/);
   }
 });
 test('invalid transport inputs fail without returning a partially changed scene', () => {

@@ -2,6 +2,7 @@
 const MINUTE = 60_000;
 export const DEFAULT_POLICY = Object.freeze({
   maxAgeMs: 24 * 60 * MINUTE,
+  resultMaxAgeMs: 15 * MINUTE,
   dwellMs: MINUTE,
   attentionRepeatMs: 30 * MINUTE,
   restIntervalMs: 90 * MINUTE,
@@ -36,6 +37,19 @@ const NOISE = [
 export function usableSummaryText(value) {
   const sentence = clean(value);
   return sentence && count(sentence) <= 60 && !NOISE.some(rule => rule.test(sentence)) ? sentence : null;
+}
+
+// A safe short sentence is not automatically worth an interruption. Require a
+// concrete next step addressed to the reader; keep the original wording intact.
+// This is deliberately conservative and does not verify the underlying claim.
+export function hasReaderAction(sentence) {
+  if (/(?:如果|假如|一旦|若是|等到)/.test(sentence)) return false;
+  return sentence.split(/[，。；！？]/).some(clause => {
+    if (/(?:无需|无须|不用|不必|不需要|不能|不可|暂不|尚不|还不能)/.test(clause)) return false;
+    return /(?:请(?:你|您|本人)?|麻烦(?:你|您)?|(?:需要|还需|仍需|等待|等)(?:你|您|本人))(?:先|再|尽快|直接)?(?:确认|选择|提供|补充|查看|检查|核对|打开|下载|安装|试用|体验|验收|测试|运行|连接|回答)/.test(clause)
+      || /^(?:你|您|现在|目前)?(?:可以|可)(?:直接|开始|前往)?(?:打开|查看|下载|安装|试用|体验|验收|测试|领取).+/.test(clause.trim())
+      || /^(?:快去|去)(?:看看|看一下|试试|验收)/.test(clause.trim());
+  });
 }
 
 export function sourceTimeMs(value) {
@@ -77,13 +91,15 @@ export function observationCandidates(sessions, options, nowMs = Date.now()) {
       && session.activity?.compact?.state !== 'pending';
     if (!waiting && !idle) continue;
     const kind = waiting ? 'attention' : 'result';
+    // Do not replay a day's backlog of already-delivered conclusions.
+    if (kind === 'result' && nowMs - at >= policy.resultMaxAgeMs) continue;
     const items = waiting ? session.workSummary?.needsFromUser : session.workSummary?.knownConclusions;
     if (!Array.isArray(items)) continue;
     const subject = usableSummaryText(session.name);
     if (!subject) continue;
     for (const value of items) {
       const sentence = usableSummaryText(value);
-      if (!sentence) continue;
+      if (!sentence || !hasReaderAction(sentence)) continue;
       const item = { kind, subject: [...subject].slice(0, 30).join(''), sentence,
         observedAt: new Date(at).toISOString(), label: TIME_LABEL, sessionId: session.id,
         source: { type: 'session-summary', field: waiting ? 'workSummary.needsFromUser' : 'workSummary.knownConclusions',
