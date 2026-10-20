@@ -922,8 +922,9 @@ its evidence and acceptance criteria in a new web Session, then submit the work.
 Keep existing management tools available when switching the Monitor entry.”
 
 The optional instance file `monitoring-resolution.json` supplies an absolute
-`analysisRoot`, HTTPS `portalUrl`, HTTPS `publicOrigin`, and an optional `runtime`
-profile (`tool`, `model`, `effort`). The provider defaults apply when the profile
+`analysisRoot`, HTTPS `portalUrl`, HTTPS `publicOrigin`, an optional absolute
+`resultWorkflow` Markdown path, and an optional `runtime` profile (`tool`, `model`,
+`effort`). The provider defaults apply when the profile
 is omitted. This file enables no scheduled analysis and grants no public API
 access. `analysisRoot/runs/<timestamp-id>/report.json` and `input.json` must be
 immutable saved analysis records; `report.inputHash` is the SHA-256 of
@@ -946,6 +947,14 @@ and input files for reading on demand, rather than being pasted into the message
 It directs the Agent to check the current state and existing work before acting.
 An already admitted request is reused without resubmitting or rewriting its text,
 including requests created before this compact format was introduced.
+When `resultWorkflow` is configured, new handling requests include that local
+method pointer. The handling Agent records its judgement against the original
+completion condition and the actual verification evidence before delivery. This
+is an instance-owned result adapter, not a second model reviewer or a new
+schedule. A run ending or a Session being archived is not resolution evidence.
+The independent display can hide findings with verified resolution receipts,
+omit the whole attention block when none remain, and retain immutable reports
+and receipts outside the homepage. An unfinished result remains visible.
 The source report is dated evidence, not expanded authority: consequential business
 stops, permission changes and external messages still require their applicable
 authorization. No group delivery is inherited from another Session.

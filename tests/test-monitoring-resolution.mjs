@@ -79,6 +79,12 @@ try {
   for (const value of ['Frozen analysis prompt','"errors": 7','other issue']) assert(!submission.text.includes(value));
   assert(submission.text.length<1500);
   assert.deepEqual(JSON.parse(await readFile(join(directory,'input.json'),'utf8')),input);
+  const workflow=join(root,'handling.md');
+  await writeFile(workflow,'Record verified results without modifying the original report.');
+  const withWorkflow=await loadResolutionContext({...config,resultWorkflow:workflow},report,item);
+  assert(withWorkflow.text.includes(workflow));
+  assert(withWorkflow.text.includes('运行结束本身不代表问题解决'));
+  assert(!submission.text.includes('结果回写方法'));
   assert.equal(submission.options.initiatedByIdentityId,person.identityId);
   assert.equal(submission.options.usagePersonId,person.personId);
   assert.equal(submission.options.suppressSourceDelivery,true);
