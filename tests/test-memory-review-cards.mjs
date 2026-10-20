@@ -105,7 +105,7 @@ try {
 
   assert.equal(JSON.stringify(await requests.byRunId(original.runId)), originalState, 'card interaction must not change the original request, queue input, or await an answer');
   const prompt = await buildPersonalMemoryConversationContext({ ...actor, sourceContext: { connector: 'feishu' } });
-  assert.match(prompt, /Independent memory review cards are enabled/); assert.doesNotMatch(prompt, /no separate private message, card/);
+  assert.match(prompt, /Review mode: existing independent memory outbox/); assert.doesNotMatch(prompt, /no separate private message, card/);
   await updateAuthDocument(doc => { doc.people[0].preferences.personalMemory.enabled = false; });
   assert.equal((await action(raw('keep', (await entry()).version))).toast.type, 'error', 'pause applies to old cards too');
   assert.equal((await sendMemoryReviewCard(runtime, delivery)).skipped, true, 'pause skips pending delivery without a new attention message');

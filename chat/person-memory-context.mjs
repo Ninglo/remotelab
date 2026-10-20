@@ -16,7 +16,7 @@ export function buildPersonMemoryPromptBlock({
     JSON.stringify({ personId, index: join(memoryDir, 'reference', 'people', 'index.md'),
       profile: join(memoryDir, 'reference', 'people', `${personId}.md`) }),
     'Names: `remotelab work people --query 称呼 --json`; preferences: `remotelab memory context --query <topic> --json`. '
-      + 'If omitted, read the needed section separately; do not cat whole profiles or encoded records. '
-      + 'Keep preferences here, not in shared AGENTS.md or another Person profile.',
+      + 'If omitted, read the needed section separately. Only confirmed preferences guide work; observed/inferred stay candidates. '
+      + 'Keep them here, not in shared AGENTS.md or another Person profile.',
   ].join('\n');
 }

@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-20 — Repeated correction does not activate a personal habit
+
+- Feedback: distinguish a preference repeated in different situations from repeatedly correcting the same unresolved Agent failure; protect pilot participants from unconfirmed inferences affecting later work. Consolidate the standard process instead of appending another rule for each correction.
+- Change: reorganize the existing reviewer and operator guide around ownership/value, reconciliation with existing memory, and eligibility for use. Remove the initial three-Session promotion threshold. Repetition retains evidence while personal observations stay candidates; task retrieval accepts confirmed personal entries and withdrawal notices, excluding both new observations and legacy inferred records. Preserve inspection, proposals, explicit confirmation, history and verified Agent methods. The reviewer distinguishes unresolved work from a reusable personal need; a new Session ID does not establish independent evidence.
+- Verification: isolated repetition, legacy inferred-file read without mutation, explicit-confirmation retrieval, withdrawal, methods, identity and review-card checks. Semantic attribution remains a model judgment, monitored in the existing pilot; no second reviewer or new recurring task.
+
 ### 2026-10-20 — A new private conversation should retain on-demand access to the same chat's history
 
 - Feedback: the chat window remains continuous after starting a new conversation, so previous discussion can still matter. Keep old content out of the new model context by default, while making that private chat's history quick to find.

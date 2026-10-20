@@ -54,8 +54,19 @@ try {
     await apply([{ ...habit, expectedVersion: entry.version }], sources(sessionId, '用大白话解释'));
     entry = (await snapshot()).profile.entries[0];
   }
-  assert.equal(entry.status, 'inferred');
-  assert.match(await context(), /inferred.*大白话/);
+  assert.equal(entry.status, 'observed', 'cross-session repetition never activates a personal preference');
+  assert.doesNotMatch(await context(), /倾向于大白话/);
+  // Existing inferred records must remain reviewable without leaking into task
+  // retrieval. Loading them must not rewrite statuses, evidence or versions.
+  const legacy = m.parseLearningDocument(await readFile(paths.profile, 'utf8'));
+  legacy.entries[0].status = 'inferred';
+  const legacyRaw = (await readFile(paths.profile, 'utf8')).replace(/<!-- remotelab-learning-data:[A-Za-z0-9+/=]+ -->/,
+    `<!-- remotelab-learning-data:${Buffer.from(JSON.stringify({ version: 1, entries: legacy.entries })).toString('base64')} -->`);
+  await writeFile(paths.profile, legacyRaw);
+  assert.equal((await snapshot()).profile.entries[0].status, 'inferred');
+  assert.doesNotMatch(await context(), /倾向于大白话/);
+  assert.deepEqual(m.learningContextReceipts(await context()), []);
+  assert.equal(await readFile(paths.profile, 'utf8'), legacyRaw);
   assert.doesNotMatch(await context(), /BETA_SECRET/);
   assert.doesNotMatch(await context('下载文件'), /倾向于大白话/);
   const narrowed = await apply([{ ...habit, action: 'revise', expectedVersion: entry.version,
@@ -76,7 +87,7 @@ try {
       promptCalls += 1;
       assert.equal(prompt.split(MEMORY_ABSTRACTION_GUIDANCE).length - 1, 1,
         'the existing reviewer receives the same extraction guidance once');
-      assert.match(prompt, /same Session|one independent observation/);
+      assert.match(prompt, /Repetition never confirms a personal preference/);
       assert.match(prompt, /plain-language/);
       return `<hide>${JSON.stringify({ updates: [{ ...habit, kind: 'preference', action: 'revise',
         expectedVersion: entry.version, explicit: true, reason: '本人明确长期偏好' }] })}</hide>`;
@@ -86,6 +97,8 @@ try {
   assert.equal(result.promotedCount, 1);
   entry = (await snapshot()).profile.entries[0];
   assert.equal(entry.status, 'confirmed');
+  assert.match(await context(), /confirmed.*大白话/);
+  assert.ok(m.learningContextReceipts(await context()).some(r => r.id === entry.id && r.status === 'confirmed'));
   assert.equal((await snapshot()).profile.entries.length, 1);
   assert.match(await readFile(paths.profile, 'utf8'), /人工维护的称呼偏好/);
   const candidateResult = await maybeRunMemoryWriteback({ ...actor, sessionId: 'decision', session: {}, run: { id: 'run_decision' },

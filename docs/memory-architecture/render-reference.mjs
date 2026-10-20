@@ -38,6 +38,7 @@ for(const c of guide.routeExamples)text+='\n### '+c.label+'（虚构）\n\n'+c.i
 text += '\n## 按任务读取的方案\n\n';
 for(const c of guide.readingCases){
   text+='### '+c.label+'\n\n';
+  if(c.intro)text+=c.intro+'\n\n';
   c.steps.forEach(([title,body],i)=>{text+=(i+1)+'. **'+title+'：** '+body+'\n';});
   text+='\n通常无需读：'+c.skip+'\n\n';
 }
