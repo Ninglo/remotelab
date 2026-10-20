@@ -413,13 +413,14 @@
         {
           "id": "dreaming",
           "name": "闲时经验复盘（Dreaming）",
-          "purpose": "在空闲和资源条件满足时，分批复盘已有项目材料的变化，保留有来源的改进候选及后续验证。",
+          "purpose": "在空闲和资源条件满足时，分批复盘执行经历，按实例授权做方法小试验，保留候选与后续验证；可将实际启动后的工作摘要投递到指定群。",
           "entry": "会话中明确接入范围；监控器 → 自动化 → 记忆流程。",
           "condition": "实例明确启用；复用条件任务、空闲事件和执行保护。候选不是正式记忆，长期收益需要后续真实任务验证。",
           "example": "把这个项目的执行经验接入闲时复盘，有新材料且资源允许时处理，保留来源和验证记录。",
           "sources": [
             "automation/dreaming/store.mjs",
             "automation/dreaming/runner.mjs",
+            "automation/dreaming/delivery.mjs",
             "docs/dreaming-automation.md"
           ],
           "commands": []

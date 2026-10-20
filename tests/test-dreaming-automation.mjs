@@ -116,6 +116,10 @@ try {
     assert.equal(guardState.attempts.length, 1);
     assert.equal((await real.before('run_guard', 'guard-session')).trigger, true, 'retry reuses the guard and admission');
     assert.equal((await read(join(liveRoot, 'state.json'))).attempts.length, 1);
+    assert.equal((await real.claim('run_guard', 'guard-session')).proceed, true);
+    const claimed = (await read(join(liveRoot, 'state.json'))).attempts[0];
+    assert.ok(claimed.claimedAt, 'a successful model claim establishes actual execution');
+    assert.equal(claimed.batchItemCount, guardState.active.batch.items.length);
     busy = true;
     for (const ws of wss.clients) ws.send(JSON.stringify({ type: 'sessions_invalidated' }));
     let timeout;

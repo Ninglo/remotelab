@@ -128,11 +128,13 @@ export async function createWorker(root, dependencies = {}) {
     const run = await identity(runId, sessionId);
     if (!['completed', 'cancelled', 'failed'].includes(run.state)) throw new Error('Run is not terminal');
     const usage = await api(`/api/usage/summary?days=2&sessionId=${encodeURIComponent(sessionId)}&top=1`);
+    const stopped = await read(join(root, `stop-${runId}.json`), null);
     await transact(root, async state => {
       let attempt = state.attempts.find(a => a.runId === runId);
       // A rejected preflight is still an admission and consumes the daily attempt budget.
       if (!attempt) { attempt = { runId, sessionId, at: run.createdAt || new Date().toISOString() }; state.attempts.push(attempt); }
       attempt.tokens = Math.max(attempt.tokens || 0, usage.totals?.totalTokens || 0); attempt.state = run.state;
+      attempt.stopReason = stopped?.reason || run.failureReason || '';
       if (state.active?.runId !== runId) return;
       const staged = await read(join(root, `result-${runId}.json`), null);
       if (run.state === 'completed' && staged) await commitReview(root, state, state.active, staged);
@@ -146,10 +148,18 @@ export async function createWorker(root, dependencies = {}) {
     const run = await identity(runId, sessionId), state = await read(join(root, 'state.json'));
     if (!['accepted', 'running'].includes(run.state) || state.active?.runId !== runId || state.active.sessionId !== sessionId) throw new Error('No owned material batch');
     const d = await conditions(sessionId); if (!d.trigger) return { proceed: false, reason: d.reason };
+    await transact(root, current => {
+      if (current.active?.runId !== runId || current.active.sessionId !== sessionId) throw new Error('Batch owner changed');
+      const attempt = current.attempts.find(a => a.runId === runId);
+      if (!attempt) throw new Error('Review admission missing');
+      attempt.claimedAt ||= new Date().toISOString();
+      attempt.batchItemCount = current.active.batch.items.length;
+    });
     return { proceed: true, ...state.active.batch, output: join(root, `draft-${runId}.json`),
       existingMemoryPaths: config.memoryPaths, resultSchema: { batchId: state.active.batch.id, finding: '结论与证据限制',
         reviewedIds: state.active.batch.items.map(i => i.id), candidates: [{ kind: 'method|project|personal', change: '具体改进', overlap: '与已有规则关系', destination: '对应现行入口', validation: '后续如何验证', evidenceIds: ['材料ID'] }],
-        validations: [{ candidateId: '已有候选ID', status: 'supported|rejected|pending', reason: '后续真实证据支持什么', evidenceIds: ['本批新增材料ID'] }] } };
+        validations: [{ candidateId: '已有候选ID', status: 'supported|rejected|pending', reason: '后续真实证据支持什么', evidenceIds: ['本批新增材料ID'] }],
+        activitySummary: '简述本轮实际做了什么和结果；没有新候选也如实说明，不把启动当作效果' } };
   }
   async function finish(runId, sessionId) {
     const run = await identity(runId, sessionId);

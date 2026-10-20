@@ -122,6 +122,8 @@ export function validateResult(result, batch) {
     if (!batch.candidates.some(c => c.id === v.candidateId) || !['supported', 'rejected', 'pending'].includes(v.status)
       || !evidence(v.evidenceIds) || typeof v.reason !== 'string' || !v.reason.trim() || v.reason.length > 1600) throw new Error('Validation lacks new evidence');
   }
+  if (result.activitySummary !== undefined && (typeof result.activitySummary !== 'string'
+    || !result.activitySummary.trim() || result.activitySummary.length > 1000)) throw new Error('Activity summary must be non-empty and at most 1000 characters');
   return result;
 }
 export async function commitReview(root, state, active, result, now = new Date().toISOString()) {
