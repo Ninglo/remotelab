@@ -2,9 +2,9 @@
 // This module returns a complete opaque background and an unchanged GIF layer.
 export const LAYOUT = Object.freeze({
   width: 1920, height: 480,
-  pet: Object.freeze({ x: 23, y: 20, width: 442, height: 422 }),
-  bubble: Object.freeze({ x: 516, y: 58, width: 938, height: 366 }),
-  text: Object.freeze({ x: 568, width: 834 }),
+  pet: Object.freeze({ x: 1466, y: 20, width: 442, height: 422 }),
+  bubble: Object.freeze({ x: 466, y: 58, width: 938, height: 366 }),
+  text: Object.freeze({ x: 518, width: 834 }),
 });
 const FONT = 'Noto Sans CJK SC,sans-serif';
 const bad = message => { throw Object.assign(new TypeError(message), { status: 400 }); };
@@ -121,6 +121,12 @@ export function companionScene(payload, weather = null, nowMs = Date.now()) {
   const lineHeight = lines.length > 3 ? 42 : 58;
   const actionIndex = Math.floor(nowMs / 60_000) % payload.actions.length;
   const action = payload.actions[actionIndex];
+  const gif = Buffer.from(action.gifBase64, 'base64');
+  const sourceWidth = gif.readUInt16LE(6), sourceHeight = gif.readUInt16LE(8);
+  if (!sourceWidth || !sourceHeight) bad('GIF dimensions');
+  const width = Math.min(LAYOUT.pet.width, Math.round(sourceWidth * LAYOUT.pet.height / sourceHeight));
+  const petBox = { ...LAYOUT.pet, x: 1920 - 12 - width, width };
+  const petCenter = petBox.x + petBox.width / 2;
   const weatherInfo = describeWeather(weather, nowMs);
   // Pure metadata: total means available library items, never completed work.
   const library = payload.libraryInfo;
@@ -130,26 +136,30 @@ export function companionScene(payload, weather = null, nowMs = Date.now()) {
   const subjectSize = [...observation.subject].length > 27 ? 20 : 25;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="480" viewBox="0 0 1920 480">
   <rect width="1920" height="480" fill="#f4f1ed"/>
-  <ellipse cx="244" cy="427" rx="125" ry="13" fill="#dce0e5"/>
-  <path d="M516 104 Q516 58 562 58 H1408 Q1454 58 1454 104 V378 Q1454 424 1408 424 H562 Q516 424 516 378 V278 L470 298 L516 235Z" fill="#e5e4e3" transform="translate(0 5)"/>
-  <path d="M516 104 Q516 58 562 58 H1408 Q1454 58 1454 104 V378 Q1454 424 1408 424 H562 Q516 424 516 378 V278 L470 298 L516 235Z" fill="#fffdfb"/>
+  <ellipse cx="${petCenter}" cy="427" rx="125" ry="13" fill="#dce0e5"/>
+  <path d="M516 104 Q516 58 562 58 H1408 Q1454 58 1454 104 V378 Q1454 424 1408 424 H562 Q516 424 516 378 V278 L470 298 L516 235Z" fill="#e5e4e3" transform="translate(1920 5) scale(-1 1)"/>
+  <path d="M516 104 Q516 58 562 58 H1408 Q1454 58 1454 104 V378 Q1454 424 1408 424 H562 Q516 424 516 378 V278 L470 298 L516 235Z" fill="#fffdfb" transform="translate(1920 0) scale(-1 1)"/>
+  <g transform="translate(-50 0)">
   <rect x="568" y="87" width="128" height="38" rx="19" fill="${theme.chip}"/>
   <text data-fit="chip" x="632" y="113" text-anchor="middle" fill="${theme.ink}" font-family="${FONT}" font-size="21" font-weight="500">${theme.label}</text>
   <text data-fit="subject" x="568" y="168" fill="#737c89" font-family="${FONT}" font-size="${subjectSize}">${xml(observation.subject)}</text>
   ${lines.map((line, index) => `<text data-fit="sentence" x="568" y="${firstY + index * lineHeight}" fill="#333f58" font-family="${FONT}" font-size="${fontSize}" font-weight="700">${xml(line)}</text>`).join('\n')}
   <circle cx="572" cy="390" r="3" fill="${theme.ink}"/>
   <text data-fit="source" x="588" y="397" fill="#7c8490" font-family="${FONT}" font-size="19">${xml(sourceLine)}</text>
-  <path d="M1503 98 V382" stroke="#dededc" stroke-width="1"/>
+  </g>
+  <g transform="translate(-1440 0)">
+  <path d="M1857 98 V382" stroke="#dededc" stroke-width="1"/>
   <text x="1680" y="119" text-anchor="middle" fill="#818590" font-family="${FONT}" font-size="19" letter-spacing="3">北京时间</text>
   <text data-fit="clock" x="1680" y="222" text-anchor="middle" fill="#333f58" font-family="${FONT}" font-size="94" font-weight="500">${xml(clock)}</text>
   <text data-fit="date" x="1680" y="269" text-anchor="middle" fill="#737c89" font-family="${FONT}" font-size="25">${xml(day)}</text>
   <text data-fit="weather" x="1680" y="331" text-anchor="middle" fill="#45546b" font-family="${FONT}" font-size="${weatherInfo.observedAt ? 30 : 26}">${xml(weatherInfo.text)}</text>
   <text data-fit="weather-source" x="1680" y="367" text-anchor="middle" fill="#7c8490" font-family="${FONT}" font-size="18">${xml(weatherInfo.detail)}</text>
-  <text data-fit="library" x="244" y="465" text-anchor="middle" fill="#7c8490" font-family="${FONT}" font-size="16">${xml(shortLibraryText)}</text>
-  <text x="1454" y="463" text-anchor="end" fill="#92969e" font-family="${FONT}" font-size="14">${library ? `动作库 ${library.total}` : ''}</text>
-  <text x="1867" y="463" text-anchor="end" fill="#92969e" font-family="${FONT}" font-size="13">${xml(payload.credit)}</text>
+  </g>
+  <text data-fit="library" x="${petCenter}" y="465" text-anchor="middle" fill="#7c8490" font-family="${FONT}" font-size="16">${xml(shortLibraryText)}</text>
+  <text x="1404" y="463" text-anchor="end" fill="#92969e" font-family="${FONT}" font-size="14">${library ? `动作库 ${library.total}` : ''}</text>
+  <text x="410" y="463" text-anchor="end" fill="#92969e" font-family="${FONT}" font-size="13">${xml(payload.credit)}</text>
   </svg>`;
-  return { svg, animations: [{ gifBase64: action.gifBase64, box: { ...LAYOUT.pet }, fit: 'contain', completeLoop: true }],
+  return { svg, animations: [{ gifBase64: action.gifBase64, box: petBox, fit: 'contain', completeLoop: true }],
     meta: { clock, observed, sourceLabel: observation.label, kind: observation.kind,
       weatherText: weatherInfo.text, weatherTime: weatherInfo.observedAt,
       action: action.name, actionIndex, libraryInfo: library || null, lines } };

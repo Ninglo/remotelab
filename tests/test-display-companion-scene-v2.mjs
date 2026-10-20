@@ -29,13 +29,16 @@ test('single selected library action and observation override legacy text withou
   assert.match(scene.svg, /测试 &lt;script&gt;/);
   assert.doesNotMatch(scene.svg, /<script>/);
 });
-test('1920×480 opaque canvas keeps original contain geometry and full loop', () => {
+test('1920×480 layout right-aligns complete character without mirroring it', () => {
   const scene = companionScene(payload, null, now);
   assert.match(scene.svg, /width="1920" height="480"/);
   assert.match(scene.svg, /<rect width="1920" height="480" fill="#f4f1ed"/);
-  assert.deepEqual(scene.animations[0].box, { x: 23, y: 20, width: 442, height: 422 });
+  assert.deepEqual(scene.animations[0].box, { x: 1486, y: 20, width: 422, height: 422 });
+  assert.equal(scene.animations[0].gifBase64, gifBase64);
+  assert.match(scene.svg, /translate\(-1440 0\)/);
+  assert.match(scene.svg, /translate\(1920 0\) scale\(-1 1\)/);
   assert.equal(scene.animations[0].fit, 'contain');
-  assert.ok(LAYOUT.pet.x + LAYOUT.pet.width < 470, 'pet ends before speech tail');
+  assert.ok(LAYOUT.pet.x > 1450, 'pet starts after the mirrored speech tail');
 });
 test('wrapping preserves all wording and qualifications', () => {
   for (const sentence of [payload.sentence, '一'.repeat(19) + '；' + '二'.repeat(19) + '。' + '三'.repeat(19) + '！', 'W'.repeat(60)]) {

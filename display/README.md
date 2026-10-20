@@ -361,7 +361,10 @@ not a USB agent or pairing change.
 ### Complete action library and useful text
 
 The opt-in `design: "companion-v2"` scene uses the same v22 apply route and v3
-Mac player. Apply `studio-companion-library.patch` after the patches above;
+Mac player. The v2 layout places the original, unmirrored character against the
+right edge, its speech bubble in the center, and Beijing time/weather on the
+left. Only the speech-tail geometry is mirrored; text and GIF bytes are not.
+Apply `studio-companion-library.patch` after the patches above;
 copy `companion-library.mjs`, `companion-scene-v2.mjs` and the updated
 `studio-companion.mjs` (as `companion-scene.mjs`) into that personal studio.
 Run the patched stream test before restarting the renderer. Existing supplied
