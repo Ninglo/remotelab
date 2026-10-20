@@ -16,6 +16,7 @@ assert.match(a.meta.observed, /10\/19 21:06/);
 assert.equal(a.meta.observed, b.meta.observed, 'source time must not advance with the live clock');
 assert.notEqual(a.meta.action, b.meta.action);
 assert.equal(a.animations[0].gifBase64, gifBase64, 'preserve source GIF bytes and timing');
+assert.equal(a.animations[0].completeLoop, true, 'pet actions require complete playback even in a starter bundle');
 assert.match(a.svg, /北京  11°  晴/);
 assert.match(a.svg, /评测 &lt;script&gt;/);
 assert.doesNotMatch(a.svg, /<script>/);

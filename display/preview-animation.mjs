@@ -38,7 +38,8 @@ export function prepareAnimatedPreview(png, animations = []) {
       || box.x + box.width > WIDTH + 0.01 || box.y + box.height > HEIGHT + 0.01) invalid('GIF lies outside preview screen');
     const fit = item.fit || 'contain';
     if (!['contain', 'cover', 'fill'].includes(fit)) invalid('Unsupported GIF fit');
-    return { box, fit, frames: decoded.frames };
+    if (item.completeLoop !== undefined && typeof item.completeLoop !== 'boolean') invalid('Invalid complete-loop setting');
+    return { box, fit, frames: decoded.frames, completeLoop: item.completeLoop === true };
   });
   return { backgroundPng: png, layers };
 }
@@ -88,22 +89,40 @@ function gcd(left, right) {
   return left;
 }
 
+export function completeLoopTimeline(layers, intervalMs, stage = 'full') {
+  if (layers.length !== 1) throw Error('Complete-loop playback currently requires one animation layer');
+  const frames = layers[0].frames;
+  const durationMs = frames.reduce((sum, frame) => sum + frameDelay(frame, intervalMs), 0);
+  // The installed v2 agent accepts <=32 frames and <=500ms per frame. A
+  // starter must also span the WHOLE action because slow links may keep it.
+  if (durationMs > 32 * 500) throw Error('Complete animation exceeds the installed player’s 16-second loop capacity');
+  const frameCount = Math.min(32, Math.ceil(durationMs / intervalMs),
+    stage === 'starter' ? Math.max(8, Math.ceil(durationMs / 500)) : 32);
+  const playbackIntervalMs = Math.max(intervalMs, Math.ceil(durationMs / frameCount));
+  const lastFrameAt = durationMs - frameDelay(frames.at(-1), intervalMs);
+  const times = Array.from({ length: frameCount }, (_, i) => frameCount === 1 ? 0 : i * lastFrameAt / (frameCount - 1));
+  return { times, intervalMs: playbackIntervalMs, durationMs };
+}
+
 export function renderAnimatedPreviewBundle(prepared, frameId, intervalMs = 180, version = 1, stage = 'full') {
   if (![1, 2].includes(version) || !Number.isInteger(intervalMs) || intervalMs < 50 || intervalMs > 500) throw Error('Unsupported display animation bundle timing');
   if (!['full', 'starter'].includes(stage) || (version === 1 && stage !== 'full')) throw Error('Unsupported display animation bundle stage');
   const maxFrames = stage === 'starter' ? 8 : 32;
   const loopLengths = prepared.layers.map((layer) => layer.frames.reduce((sum, frame) => sum + frameDelay(frame, intervalMs, intervalMs) / intervalMs, 0));
   const loopFrames = Math.min(maxFrames, loopLengths.reduce((value, count) => Math.min(maxFrames, value / gcd(value, count) * count), 1));
+  const complete = version === 2 && prepared.layers.some(layer => layer.completeLoop)
+    ? completeLoopTimeline(prepared.layers, intervalMs, stage) : null;
+  const times = complete?.times || Array.from({ length: loopFrames }, (_, index) => index * intervalMs);
   const frames = [];
   let encodedBytes = 0;
-  for (let index = 0; index < loopFrames; index += 1) {
-    const frame = encodeJpeg(animatedSvg(prepared, index * intervalMs, intervalMs, intervalMs));
+  for (const time of times) {
+    const frame = encodeJpeg(animatedSvg(prepared, time, intervalMs, complete ? 0 : intervalMs));
     encodedBytes += frame.length;
     if (encodedBytes > 6 * 1024 * 1024) throw Object.assign(Error('Animated preview bundle is too large'), { status: 413 });
     frames.push(frame.toString('base64'));
   }
   const bundleId = previewBundleId(frameId, version, intervalMs, stage);
-  return { frameCount: frames.length, body: Buffer.from(JSON.stringify({ version, frameId, bundleId, intervalMs, frames })) };
+  return { frameCount: frames.length, body: Buffer.from(JSON.stringify({ version, frameId, bundleId, intervalMs: complete?.intervalMs || intervalMs, frames })) };
 }
 
 export function renderStaticPreviewJpeg(png) {

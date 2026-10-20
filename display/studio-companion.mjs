@@ -82,6 +82,6 @@ export function companionScene(payload, weather = null, nowMs = Date.now()) {
     <text x="1680" y="351" text-anchor="middle" font-family="${FONT}" font-size="18" fill="#8b909a">${weatherValid ? `Open-Meteo · ${xml(weatherTime)}` : '稍后自动重试'}</text>
     <text x="1866" y="452" text-anchor="end" font-family="${FONT}" font-size="15" fill="#999ca5">${xml(payload.credit)}</text>
   </svg>`;
-  return { svg, animations: [{ gifBase64: action.gifBase64, box: { x: 23, y: 20, width: 442, height: 422 }, fit: 'contain' }],
+  return { svg, animations: [{ gifBase64: action.gifBase64, box: { x: 23, y: 20, width: 442, height: 422 }, fit: 'contain', completeLoop: true }],
     meta: { clock, observed, weatherText, weatherTime, action: action.name, actionIndex } };
 }

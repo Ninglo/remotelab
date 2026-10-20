@@ -292,11 +292,18 @@ separate from its display refresh. Weather failure is shown explicitly.
 Payload fields are `version: 22`, `timeZone`, `subject`, `sentence`, `observedAt`
 (ISO timestamp with zone), `weatherCity`, `credit`, and `actions`, an array of
 `{name, gifBase64}`. Original GIF timing is preserved by the scene; the transport
-still applies its own limits. For the current v2 client, a complete 32-frame
-clip at 100ms per frame lasts 3.2 seconds. Use a continuous source excerpt at its
-original speed rather than extracting sparse frames and changing their delays.
-Long source videos and the desktop pet's complete action system are not imported
-by this view. Validate the rendered bundle, device download and physical playback
+still applies its own limits. Companion layers opt into `completeLoop: true`:
+both the starter and full v2 bundle include the action's first and final poses,
+with their interval adjusted to retain its entire duration. Slow links that stay
+on a starter therefore still get a complete action. The installed client accepts
+at most 32 frames and at most 500ms per frame; a ten-second action is consequently
+about 3 FPS in its full bundle. This is a software transport limit, not a measured
+hardware limit. Longer than 16 seconds requires a player update; the opt-in path
+rejects such a loop instead of silently cutting it. Existing non-opt-in layouts
+retain their timing. Select frames spanning the source video from beginning to
+end and preserve its duration; do not substitute a middle excerpt for an action.
+The desktop pet's complete action system is not imported by this view.
+Validate the rendered bundle, device download and physical playback
 separately; a target interval is not a measured USB frame rate.
 
 When exporting transparent pet videos, sample continuous RGBA PNG frames first,
