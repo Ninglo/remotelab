@@ -108,6 +108,24 @@ test('mixed-language lines keep ordinary Latin words together', () => {
   assert(lines.some(line => line.includes('RemoteLab')));
 });
 
+test('supplied speech stays fixed across refreshes, is escaped, and preserves reminders and animation', () => {
+  const quiet = { kind: 'quiet', subject: '陪伴', sentence: '空闲', observedAt: null, label: '' };
+  const input = { ...payload, actions: [payload.actions[0]], observation: quiet, casualSpeech: true,
+    speechText: '大肥鱼 <可爱> & 好看' };
+  const first = companionScene(input, null, now);
+  const later = companionScene(input, null, now + 300_000);
+  assert.equal(first.meta.lines.join(''), input.speechText);
+  assert.deepEqual(later.meta.lines, first.meta.lines);
+  assert.deepEqual(later.animations, first.animations);
+  assert.match(first.svg, /大肥鱼 &lt;可爱&gt; &amp; 好看/);
+  assert.doesNotMatch(first.svg, /data-fit="(?:source|chip|subject)"/);
+  assert.equal(companionScene({ ...input, casualSpeech: false }, null, now).meta.lines.join(''), input.speechText);
+  assert.equal(companionScene({ ...input, observation }, null, now).meta.lines.join(''), observation.sentence);
+  for (const speechText of ['', ' ', '长'.repeat(61), '换\n行', 3, null]) {
+    assert.throws(() => validateCompanion({ ...input, speechText }), /speech text/);
+  }
+});
+
 test('word-aware wrapping stays within the four-line display budget', () => {
   const sentence = ('abcdefghijk ').repeat(5);
   const lines = wrapSentence(sentence);

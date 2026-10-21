@@ -36,6 +36,7 @@ function observationFor(payload) {
 export function validateCompanion(payload) {
   if (payload?.version !== 22) bad('version');
   if (payload.casualSpeech !== undefined && typeof payload.casualSpeech !== 'boolean') bad('casual speech setting');
+  if (payload.speechText !== undefined) text(payload.speechText, 60, 'speech text');
   // The commissioned screen keeps Beijing time/weather.
   if (payload.timeZone !== 'Asia/Shanghai' || payload.weatherCity !== '北京') bad('Beijing time/weather');
   text(payload.credit, 100, 'asset credit');
@@ -128,9 +129,9 @@ export function companionScene(payload, weather = null, nowMs = Date.now()) {
   const sourceObservation = observationFor(payload);
   // Explicit per-preview choice. Existing useful observations always win.
   // Reuse ordinary scene refreshes; no separate timer or model request.
-  const observation = sourceObservation.kind === 'quiet' && payload.casualSpeech === true
+  const observation = sourceObservation.kind === 'quiet' && (payload.speechText !== undefined || payload.casualSpeech === true)
     ? { kind: 'casual', subject: '大肥鱼', observedAt: null, label: '',
-      sentence: CASUAL_LINES[Math.floor(nowMs / 300_000) % CASUAL_LINES.length] }
+      sentence: payload.speechText?.trim() ?? CASUAL_LINES[Math.floor(nowMs / 300_000) % CASUAL_LINES.length] }
     : sourceObservation;
   const theme = THEMES[observation.kind];
   const clock = date(nowMs, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });

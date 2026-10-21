@@ -371,6 +371,13 @@ character phrase, changing every five minutes through the existing scene refresh
 Work observations and rest reminders take precedence. Casual bubbles contain
 only the main line, with no heading, character-name label, source timestamp or
 footer. They make no claims about work status and do not call a model.
+For a supplied message, set `speechText` to a nonempty single line of at most
+60 characters. It replaces rotating casual phrases during quiet periods and
+stays fixed across clock/action updates; work observations and rest reminders
+still take precedence. Omit `speechText` to restore the existing quiet/casual
+behavior. To keep only the supplied message, use a quiet `observation` and
+leave `liveObservation` disabled. Apply through the same authenticated studio
+route; updating text preserves the current action when the library is unchanged.
 The nine short lines use the existing dsh-pet meme vocabulary plus two brief
 singing fragments; they do not play audio. Sources checked on 2026-10-20:
 
