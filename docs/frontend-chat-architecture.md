@@ -60,6 +60,15 @@ These are frontend-owned and may be reconstructed locally:
 
 This state belongs in the frontend store rather than scattered globals.
 
+Session links (`?session=…`) select the conversation unless an explicit `tab`
+parameter requests another view. Settings is temporary browser UI state: its
+button toggles it, its close control returns to the workspace that opened it,
+and opening it does not persist Settings as the next workspace. Explicit
+`tab=settings` URLs still support direct entry and reload; older persisted
+Settings values are ignored. Deferred Session loading preserves a newer user
+choice, including closing Settings before that load finishes. The navigation
+regressions live in `tests/test-monitor-navigation-race.mjs`.
+
 ### 2.3 View-only ephemeral state
 
 These should stay in render/UI code and should not leak into the shared shell state model:

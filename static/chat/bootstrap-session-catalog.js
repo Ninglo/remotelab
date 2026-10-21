@@ -164,6 +164,7 @@ function persistActiveSessionId(sessionId) {
 
 function persistActiveSidebarTab(tab) {
   if (!isNavigationPersistenceEnabled()) return;
+  if (tab === "settings") return;
   localStorage.setItem(
     ACTIVE_SIDEBAR_TAB_STORAGE_KEY,
     normalizeSidebarTab(tab),

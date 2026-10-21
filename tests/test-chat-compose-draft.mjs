@@ -208,6 +208,7 @@ function createContext({
     },
     pendingNavigationState: {},
     ACTIVE_SIDEBAR_TAB_STORAGE_KEY: 'activeSidebarTab',
+    getInitialSidebarTab() { return 'sessions'; },
     normalizeSidebarTab(value) {
       return value === 'settings' || value === 'progress' ? 'settings' : 'sessions';
     },

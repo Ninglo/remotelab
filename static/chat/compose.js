@@ -1216,10 +1216,9 @@ function restoreFailedSendState(sessionId, text, images, requestId = "") {
 // ---- Application views ----
 let activeTab = normalizeSidebarTab(
   (typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") ||
-    pendingNavigationState.tab ||
-    localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY) ||
-    "sessions",
+    getInitialSidebarTab(),
 ); // "sessions" | "tasks" | "settings"
+let settingsReturnTab = "sessions";
 
 if (typeof setChatActiveTab === "function") {
   setChatActiveTab(activeTab, {
@@ -1250,6 +1249,9 @@ function switchTab(tab, { syncState = true } = {}) {
   const resolvedSortSessionListBtn = typeof sortSessionListBtn !== "undefined" ? sortSessionListBtn : null;
   const resolvedNewSessionBtn = typeof newSessionBtn !== "undefined" ? newSessionBtn : null;
   const nextTab = normalizeSidebarTab(tab);
+  if (nextTab === "settings" && activeTab !== "settings") {
+    settingsReturnTab = activeTab;
+  }
   // A user can navigate before the initial Session catalog finishes loading.
   // Restore the pending Session, but respect their newer workspace choice.
   if (syncState && typeof pendingNavigationState !== "undefined" && pendingNavigationState) {
@@ -1287,6 +1289,7 @@ function switchTab(tab, { syncState = true } = {}) {
   }
   if (resolvedTabSettings) {
     resolvedTabSettings.classList.toggle("active", activeTab === "settings");
+    resolvedTabSettings.setAttribute?.("aria-expanded", String(showingSettings));
     if (activeTab === "settings") resolvedTabSettings.setAttribute?.("aria-current", "page");
     else resolvedTabSettings.removeAttribute?.("aria-current");
   }
@@ -1318,6 +1321,10 @@ function switchTab(tab, { syncState = true } = {}) {
   }
 }
 
+function closeSettings() {
+  if (activeTab === "settings") switchTab(settingsReturnTab);
+}
+
 if (typeof tabTasks !== "undefined" && tabTasks) {
   tabTasks.addEventListener("click", () => switchTab("tasks"));
 }
@@ -1325,7 +1332,11 @@ if (typeof headerTasksBtn !== "undefined" && headerTasksBtn) {
   headerTasksBtn.addEventListener("click", () => switchTab("tasks"));
 }
 if (typeof tabSettings !== "undefined" && tabSettings) {
-  tabSettings.addEventListener("click", () => switchTab("settings"));
+  tabSettings.addEventListener("click", () => {
+    if (activeTab === "settings") closeSettings();
+    else switchTab("settings");
+  });
 }
+document.getElementById("closeSettingsBtn")?.addEventListener("click", closeSettings);
 
 switchTab(activeTab, { syncState: false });

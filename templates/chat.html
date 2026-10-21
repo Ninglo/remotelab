@@ -93,7 +93,7 @@
         </button>
       </nav>
       <nav class="sidebar-footer-nav" aria-label="Settings" data-i18n-aria-label="nav.settings">
-        <button class="sidebar-nav-button" id="tabSettings" type="button">
+        <button class="sidebar-nav-button" id="tabSettings" type="button" aria-controls="settingsPanel" aria-expanded="false">
           <span class="sidebar-nav-icon" data-icon="gear" aria-hidden="true"></span>
           <span data-i18n="nav.settings">Settings</span>
         </button>
@@ -304,6 +304,7 @@
       <div class="settings-panel" id="settingsPanel">
         <div class="settings-layout">
           <header class="workspace-page-header settings-page-header">
+            <button class="header-btn settings-close-btn" id="closeSettingsBtn" type="button" title="Close settings" aria-label="Close settings" data-i18n-title="settings.close" data-i18n-aria-label="settings.close" data-icon="close">&#x2715;</button>
             <h2 data-i18n="nav.settings">Settings</h2>
             <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
           </header>

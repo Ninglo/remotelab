@@ -837,13 +837,18 @@
           "id": "appearance",
           "name": "语言、主题、思考显示与会话开场设置",
           "purpose": "调整阅读语言、已提供主题和过程展开方式，以及会话默认视图。",
-          "entry": "设置 → 常规／会话。",
+          "entry": "设置 → 常规／会话。设置按钮可再次点击关闭，页内也有关闭按钮；会话链接默认打开聊天，显式 tab=settings 链接才直接打开设置。",
           "condition": "不同选项可能属于浏览器、个人或共享实例；以设置说明为准。额外主题的指标展示需相应后端数据。",
           "example": "把界面语言设成中文，并收起默认展开的过程内容。",
           "sources": [
             "templates/chat.html",
             "static/chat/settings-ui.js",
-            "static/chat/instance-settings.js"
+            "static/chat/instance-settings.js",
+            "static/chat/bootstrap.js",
+            "static/chat/bootstrap-session-catalog.js",
+            "static/chat/compose.js",
+            "static/chat/i18n.js",
+            "docs/frontend-chat-architecture.md"
           ],
           "commands": []
         },

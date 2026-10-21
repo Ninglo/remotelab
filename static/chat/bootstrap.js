@@ -690,12 +690,11 @@ function normalizeNavigationState(raw) {
     }
   }
 
+  sessionId = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : null;
   return {
-    sessionId:
-      typeof sessionId === "string" && sessionId.trim()
-        ? sessionId.trim()
-        : null,
-    tab: tab ? normalizeSidebarTab(tab) : null,
+    sessionId,
+    // A Session link requests the conversation unless it explicitly names a view.
+    tab: tab ? normalizeSidebarTab(tab) : (sessionId ? "sessions" : null),
   };
 }
 
@@ -707,6 +706,13 @@ function readNavigationStateFromLocation() {
 }
 
 let pendingNavigationState = readNavigationStateFromLocation();
+function getInitialSidebarTab() {
+  if (pendingNavigationState?.tab) return normalizeSidebarTab(pendingNavigationState.tab);
+  const storedTab = localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY);
+  // Settings is temporary UI state; ignore the sticky value saved by older clients.
+  return storedTab === "settings" ? "sessions" : normalizeSidebarTab(storedTab);
+}
+
 let currentSessionId =
   pendingNavigationState.sessionId ||
   localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY) ||
@@ -767,11 +773,7 @@ const chatStore = chatStoreModel.createStore({
   activePersonFilter:
     localStorage.getItem(ACTIVE_PERSON_FILTER_STORAGE_KEY)
     || bootstrapPersonFilterDefault,
-  activeTab: normalizeSidebarTab(
-    pendingNavigationState.tab
-    || localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY)
-    || "sessions",
-  ),
+  activeTab: getInitialSidebarTab(),
   sessionStatus,
 });
 
@@ -948,11 +950,7 @@ function getActiveSidebarTabValue() {
   if (typeof storeValue === "string" && storeValue.trim()) {
     return normalizeSidebarTab(storeValue);
   }
-  return normalizeSidebarTab(
-    pendingNavigationState.tab
-    || localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY)
-    || "sessions",
-  );
+  return getInitialSidebarTab();
 }
 
 function getActiveSourceFilterValue() {

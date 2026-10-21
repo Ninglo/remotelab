@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-21 — Session links should open conversations and Settings should close
+
+- Feedback: opening a Session link unexpectedly showed Settings, and clicking Settings again did not close it.
+- Cause: navigation without an explicit tab inherited the browser's persisted workspace; the Settings button only selected the Settings view.
+- Change: Session-only links select the conversation, Settings no longer persists as the next workspace, and its button toggles back to the prior workspace. A close control remains available inside Settings on desktop and mobile. Explicit Settings URLs still work.
+- Verification: navigation regressions cover stored Settings/Monitor state, explicit Settings links, repeated toggling, returning to the prior workspace, and closing during deferred Session restoration. Authenticated live-browser checks passed for the reported Session link, explicit Settings reload, in-page Session navigation, and the mobile close control. An unrelated archive-filter assertion in the broader Session-state test also fails on the unmodified baseline.
+
 ### 2026-10-20 — Let an admitted Dreaming review finish alongside foreground work
 
 - Feedback: a review that had successfully claimed material was interrupted when foreground work resumed; once started, it should continue.
