@@ -2,444 +2,122 @@
 
 [English](README.md) | 中文
 
-**让普通人也能把重复数字工作交给 AI 的跨端工作台。**
+**以飞书为主要协作入口、可自托管的开源 AI 同事运行平台。**
 
-RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把 AI 的自动化能力带给更多普通用户，尤其是那些每天有大量重复数字工作、却没有研发自动化背景的人。
+把工作交给群里的 AI，让它沿着话题继续做、在真实机器上执行，并把结果交回团队正在使用的地方。RemoteLab 连接飞书、网页、Agent 执行环境与持久上下文，让一次对话中的工作能够延续到下一次协作。
 
-它并不执着于用户到底从手机、平板还是桌面端进入。端只是入口，真正重要的是：让用户能把一个模糊但反复出现的问题、样例文件或截图交给 AI，由 AI 先帮忙把问题想清楚，再让 `codex`、`claude` 和兼容的本地工具在真实机器上把活做掉。
+我们关心的是：AI 能否理解团队在做什么，记住已经确认的事实和决定，复用有效的方法，并在人的纠正下改进。少重复解释，少找材料，少追问进展，最终交出能用的结果。
 
-![RemoteLab 跨端演示](docs/readme-multisurface-demo.png)
+**开源的是协作与运行机制；长期形成差异的是每个组织自己积累的上下文。** 项目为何这样决策、哪些方法在实际工作中有效、不同人的职责与协作习惯，都需要在持续合作中建立。部署同一份代码提供共同的起点，组织自己的知识、反馈和工作记录让它逐渐成为熟悉业务的同事。
 
-> 当前基线：`v1.0` —— 支持多人共享 Session、每人独立侧边栏视图、落盘持久历史、内建 Welcome 引导，以及同时兼容手机和桌面的无构建 Web UI。
+## 在团队里怎么用
 
-> 同一套系统可以从桌面、手机，以及飞书 / 邮件这类接入面进入。
+飞书是日常协作入口：在群、话题或私聊里交办、补充和纠正，结果回到对应对话。网页提供持续工作记录、文件和运行管理，手机与桌面都能访问。群内何时响应、使用哪些能力，由实例与群配置决定。
 
-飞书私聊支持用 `/new` 或“新对话”明确开启一段新上下文，保留旧对话和已接任务。项目工作建议在对应群的话题里发起；私聊入口与菜单配置见[飞书接入说明](docs/feishu-bot-setup.md#start-a-new-private-conversation)。
+| 工作方式 | RemoteLab 提供什么 |
+| --- | --- |
+| 在项目话题里持续推进一件事 | 将对话绑定到持久 Session，保留消息、执行记录和结果；后续补充继续原工作 |
+| 整理资料、分析数据、修改代码 | 让配置好的 Agent 在 macOS/Linux 主机上使用文件、命令、代码仓库和已授权工具 |
+| 把讨论变成可使用的成果 | 回复、文件、报告页面，以及通过已配置的飞书工具维护文档、表格、多维表格、任务和日历 |
+| 接续项目背景与既有决定 | 按已登记的项目和来源找到相关说明、历史与证据，减少每次从头解释 |
+| 把有效做法用于下一次工作 | 通过记忆文件、Skills 和行动手册保存适用条件、来源与修订；个人协作记忆按人启用 |
+| 定时处理重复工作 | 用 Trigger／Schedule 安排一次性或周期工作，查看每次执行和结果投递状态 |
+| 并行推进独立任务 | 创建可打开的独立工作 Session，保留来源与交接关系，分别查看过程和成果 |
+| 了解运行情况 | 查看用量、自动化记录和失败原因，定位消息接收、执行与结果投递中的问题 |
 
-可选的[讨论录音能力](docs/platform-skills/hardware-recording.md)支持在 macOS/Linux 上绑定小键盘和多台 USB 接收器：每场独立开始、结束并交给 RemoteLab 处理。每台机器首次需要授权，并配置音源、按键与交付位置。
+这些能力以实际配置为准：飞书办公操作需要相应应用权限和资源访问权；项目知识需要接入自己的资料；个人记忆学习等增强功能需单独启用。会议采集、硬件录音和其他外部连接也有各自的安装与验证条件，见[文档目录](docs/README.md)。
+
+## 上下文怎样积累
+
+一次工作会留下不同用途的信息。把它们按归属保存，下一次才能读到相关内容，而不会把某次临时要求扩展成全组织规则。
+
+| 内容 | 保存与复用方式 |
+| --- | --- |
+| 这次工作发生了什么 | Session 历史、执行记录和成果链接保留过程，后续可以接续或回查 |
+| 项目目标、决定与认识 | 项目索引指向维护中的项目资料，具体结论保留来源；状态变化时回到原处更新 |
+| 人的称呼与协作偏好 | 归属于已核实身份的个人记录，带上适用范围；观察到的习惯需确认后才作为默认偏好 |
+| 可重复执行的方法 | Skills、项目工作流与行动手册保存步骤、条件和经验，按任务选择使用 |
+
+读取采用“先找入口，再读相关正文”的方式。启动时提供精简索引和指针，Agent 根据当前任务读取项目资料、人员记录或方法。共享的记忆文件可以供不同 Harness 使用；原生模型线程仍按各自的运行方式接续。
+
+启用记忆学习后，人的明确要求、纠正和实际工具结果可以成为更新依据。条目保留来源、范围和版本，可以修订或撤销；未确认的推断保留为候选。这种积累要靠后续真实工作检验：是否减少重复纠正，是否找到正确材料，是否把同类工作做得更好。
+
+开源仓库适合保存通用机制、文档和脱敏示例。组织自己的项目事实、人员记录、内部讨论、业务数据和凭据应留在其管理的实例及业务系统中。贡献代码或反馈问题时，只提供复现所需的最小脱敏材料。
+
+## 运行机制
+
+```mermaid
+flowchart LR
+    F["飞书：群、话题、私聊"] <--> R["RemoteLab：会话、运行、调度与投递"]
+    W["网页：对话、成果、运行管理"] <--> R
+    R <--> H["Harness：Codex / Claude Code / Pi / 其他适配器"]
+    C["实例上下文：项目、人员、记忆与方法"] --> R
+    H <--> T["主机文件、代码仓库与已授权服务"]
+    R <--> D["持久状态：历史、执行记录与结果"]
+```
+
+RemoteLab 负责入口连接、持久会话、上下文提供、运行状态、定时工作和结果投递。Harness 是实际理解任务、规划、选择工具和执行工作的 Agent 层，保留其原生能力与安全机制。当前原生接入包括 Codex、Claude Code、Pi 和 Antigravity，详见[运行接入说明](docs/native-harness-input.md)。模型、账号与可用工具取决于部署者的配置。
+
+Session 是持续工作的单位，Run 是一次执行。历史和运行状态落盘，控制服务与执行进程分离；浏览器断开后记录仍在，服务重启后可依据持久状态恢复或核对运行。具体状态格式需与源码兼容，升级前按[迁移说明](docs/request-state-upgrade.md)检查。
+
+技术栈为 Node.js、原生 JavaScript 网页与本地运行适配器，无前端构建步骤。飞书通过长连接接收事件，网页提供 HTTP 状态读取和 WebSocket 更新通知。代码位置见[架构说明](docs/project-architecture.md)。
 
 ## 快速安装
 
-> **已有实例准备升级？** 2026-09-07 的 Request 状态变更需要先停机转换，不能直接更新后重启。请先读[升级与恢复说明](docs/request-state-upgrade.md)；共享这份源码的其他实例也要分别检查。
+准备一台 macOS/Linux 主机、符合 [package.json](package.json) 要求的 Node.js，以及至少一个已经安装并完成认证的 Agent 工具。接入飞书需要管理员创建应用、配置权限和可用范围；网页访问可按需选择 Cloudflare Tunnel、cpolar 或 Tailscale。
 
-如果上面的 demo 已经说明白了，那就别往下看了。直接在部署机器上开一个新的终端，启动 Codex、Claude Code 或其他 coding agent，然后把下面这段 prompt 粘贴进去：
-
-```text
-我想在这台机器上配置 RemoteLab，这样我就能从不同设备把重复数字工作交给 AI，并让它在真实机器上完成自动化。
-
-网络模式：[cloudflare | cpolar | tailscale]
-
-# Cloudflare 模式：
-我的域名：[YOUR_DOMAIN]
-我想用的子域名：[SUBDOMAIN]
-
-# cpolar 模式：
-访问策略：[临时公网地址 | 固定二级子域名]
-如果我还没有 cpolar 账号，请按这个链接给我注册指引：https://www.cpolar.com/?channel=0&invite=6WH2
-如果我已经想好了要长期保留的二级子域名，也一起告诉你。
-
-# Tailscale 模式：
-（无需额外配置——宿主机和我想使用的客户端设备都已安装 Tailscale，并在同一个 tailnet 中。）
-
-请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` 当作配置契约和唯一真相来源。
-如果我选择 cpolar 模式，也请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` 当作注册和隧道配置的专项说明。
-不要假设这个仓库已经提前 clone 到本地。如果 `~/code/remotelab` 还不存在，请你先读取那份契约，再自行 clone `https://github.com/Ninglo/remotelab.git`，然后继续完成安装。
-后续流程都留在这个对话里。
-开始执行前，请先用一条消息把缺少的上下文一次性问全，让我集中回复一次。
-能自动完成的步骤请直接做。
-我回复后，请持续自主执行；只在真的遇到 [HUMAN] 步骤、授权确认或最终完成时停下来。
-停下来时，请明确告诉我具体要做什么，以及我做完后你会怎么验证。
-```
-
-如果你想先看更完整的说明，可以跳到 [安装细节](#安装细节) 或直接打开 `docs/setup.md`。
-
-如果主要是给中国大陆的同事、客户或自己访问，优先考虑 `cpolar`。它对用户层面的好处很直接：国内可以直接访问，不用梯子。专项文档见 `docs/cpolar-setup.md`。
-
----
-
-在 **监控 → 自动化** 中，通过同一级的“自动化总览、自动化流程、详细任务”切换视图：总览按现行时间排列固定日程、循环检查和一次性安排；流程展示读取、处理、写入与投递；详细任务保留筛选和操作。已登记后台机制和原任务记录保留，页面展示不会改变任务的运行配置。实例可为说明指定语言，让标签与正文一致；具体规则见[自动化页面说明](docs/task-center-v1.md)。
-
-## 给人类看的部分
-
-### 愿景
-
-如果说得更直接一点，RemoteLab 是一个面向普通人的 AI 自动化工作台：它优先服务那些有重复数字工作、却还没有把 AI 真正用进日常流程的人。
-
-我们希望用户不需要先理解模型、密钥、部署、机器或运维这些细节；理想状态下，用户只要打开一个专属链接，就能直接进入一个已经可工作的 AI 环境。
-
-它的第一阶段目标也很具体：让用户花很短时间，就能把一个原本每周都要做几小时的琐碎工作交给 AI，例如数据整理、简单分析、报表生成、文件批处理、导出导入、通知触发这类事情；现阶段先把本地运行、本地 skill 复用和开箱即用打磨扎实，不预设云端分发或 skill 上下行流程。
-
-### 基础判断
-
-- 最值得解决的问题，不是鼓励用户同时开无数个 session，而是先找到那些确实值得自动化的重复工作。
-- 目标用户默认不是 AI-native，也不是天生会写 prompt 的产品经理；AI 需要先帮他们把问题澄清、把输入要齐、把方案设计出来。
-- 首屏不能只是一个空的 session list。新用户需要一条内建的 Welcome 引导，配上几个真实示例会话和一个清晰的第一步，而不是只给一个空白侧边栏和输入框。
-- 模型接入、机器、权限、连接与运维复杂度应该尽量封装在服务内部；普通用户面对的应该是一个开箱即用的入口，而不是一套需要先理解和配置的技术栈。
-- 最好的切入点是简单、明确、回报快的数字工作：数据整理、分析、文件处理、报表、通知、脚本化重复操作。
-- 手机 + 桌面 + 真机执行是组合优势：用户可以随手发上下文，AI 在真实机器上做重活，结果和审批再回到最方便的设备上。
-- 持久 `Session`、并发和可复用的本地工作流仍然重要，但它们更像能力层，不应该压过首期价值验证。
-
-### RemoteLab 是什么
-
-- 一个运行在真实机器之上的 AI 自动化工作台
-- 一个帮助用户把模糊问题澄清成可执行方案的 AI 协作入口
-- 一个尽量把模型、机器、权限与运维复杂度封装在服务端的低门槛 AI 服务
-- 一个让手机端发起、桌面端继续、AI 在本机执行的跨端控制面
-- 一个帮助人类在长任务中恢复上下文、而不是反复重讲需求的持久化工作线程系统
-- 一个可以把验证过的自动化继续、分派或定时执行的持久 Session 层
-
-### RemoteLab 不是什么
-
-- 终端模拟器
-- 传统的 editor-first IDE
-- 只服务 AI 专家的“并发 session 驾驶舱”
-- 一个默认假设用户已经把需求拆解得非常清楚的 prompt playground
-- 通用多用户聊天 SaaS
-- 一个默认假设远端用户能直接浏览宿主机、按本地路径取结果的产品
-- 一套试图在单任务执行层面正面超越 `codex` / `claude` 的闭环执行栈
-
-### 两条核心产品线
-
-1. **先帮用户解决重复数字工作。** RemoteLab 要能接住一个模糊但反复出现的任务，帮用户澄清输入、输出和约束，然后尽快把它变成一个能稳定省时间的自动化流程。
-2. **再复用被验证的 workflow。** 当某个自动化真的帮用户省下时间后，可以显式地从来源 Session 创建新 Session，或者把它纳入定时执行。
-
-### 产品语法
-
-当前产品模型刻意保持简单：
-
-- `Instance` —— 一套隔离的 RemoteLab 环境；同一宿主机可以运行多个 guest instance
-- `Person` —— 用于归因和个人 UI 偏好的已认证用户身份，不承担 Session 权限隔离
-- `Session` —— 实例内所有已认证 Person 共享的一条持久化工作线程
-- `Run` —— 会话内部的一次执行尝试
-- `Share snapshot` —— 不可变的只读会话导出
-
-这些模型背后的架构假设是：
-
-- HTTP 是规范状态路径，WebSocket 只负责提示“有东西变了”
-- 浏览器是控制面，不是系统事实来源
-- 运行时进程可以丢，持久状态必须落在磁盘上
-- 每个已认证 Person 都拥有实例的完整使用权；未认证请求不能进入工作台
-- Person 身份只用于归因和前端筛选，不用于可见性或权限控制
-- 每个 Person 只有一个可读 Handle；Web 用户名直接使用它，飞书身份会自动与之归并
-- Session 标题、消息、运行状态与工作流状态全员共享；Space、Group 和侧边栏顺序属于每个 Person 的独立视图
-- 前端保持轻量、无框架，并兼容不同端的使用方式
-
-### 为什么这个边界重要
-
-RemoteLab 在几个点上是刻意有立场的：
-
-- **先帮用户把问题讲明白，再执行。** RemoteLab 不应假设用户本身已经会像 AI 产品经理一样派活；AI 需要承担一部分问题澄清与方案设计责任。
-- **通过用户可达的界面交付，而不是甩本地路径。** AI 可以操作这台机器，但用户协作面应该是 RemoteLab 和显式暴露的产品界面；如果结果只存在于宿主机本地，还不算完成交付。
-- **不重造执行器这一层。** RemoteLab 不应该把主要精力花在优化单任务 Agent 内部实现细节上。
-- **强调上下文恢复，不堆原始日志。** 比起终端连续性，durable session 更重要。
-- **显式复用已经验证的工作。** 定时、分派和继续都围绕持久 Session 展开，不再维护第二套模板对象模型。
-- **接入最强工具，并保持可替换。** 它更像一层稳定抽象，让更强执行器出现时可以被快速接入，而不是把自己做成重闭环 runtime。
-
-### 你现在可以做什么
-
-- 用手机或桌面端发消息，让 agent 在真实机器上执行
-- 在 workflow 产出结果文件时，直接在会话里下载它们，而不是去宿主机上找路径
-- 浏览器断开后依然保留持久化历史
-- 在控制面重启后恢复长时间运行的工作
-- 让 agent 自动生成会话标题和侧边栏分组
-- 直接往聊天里粘贴截图
-- 界面自动跟随系统亮色 / 暗色外观
-- 生成不可变的只读分享快照
-- 按发起 Person 筛选 Session，但不隐藏其他人的工作
-- 每个 Person 可以把同一批共享 Session 放入不同 Space、Group，并采用不同侧边栏顺序
-
-### Provider 说明
-
-- RemoteLab 现在把 `Codex`（`codex`）作为默认内置工具，并放到选择器最前面。
-- 这并不意味着“执行器选择本身就是产品”。恰恰相反：RemoteLab 应该保持 adapter-first，把当前最强的本地执行器接进来。
-- 对这种自托管控制面来说，API key / 本地 CLI 风格的集成通常比基于消费级登录态的远程封装更稳妥。
-- `Claude Code` 依然可以在 RemoteLab 里使用；其他兼容的本地工具也可以接入，前提是它们的认证方式和服务条款适合你的实际场景。
-- 长期目标是 executor portability，而不是绑定某一个闭环 runtime。
-- 实际风险通常来自底层提供商的认证方式和服务条款，而不只是某个 CLI 的名字本身。是否接入、是否继续用，请你自行判断。
-
-### 安装细节
-
-最快的方式仍然是：把一段 setup prompt 粘贴给部署机器上的 Codex、Claude Code 或其他靠谱的 coding agent。它可以自动完成绝大多数步骤，只会在 Cloudflare 登录、cpolar 注册或 cpolar 后台里保留固定二级子域名这类真正需要人工参与的地方停下来。
-
-这个仓库里的配置类和功能接入类文档都按同一个原则来写：人只需要把 prompt 发给自己的 AI agent，Agent 会尽量在最开始一轮把需要的上下文都问清楚，然后后续流程都留在那段对话里，只有明确标记为 `[HUMAN]` 的步骤才需要人离开对话手工处理。
-
-最优雅的模式就是一次性交接：Agent 先一轮收齐信息，人回一次；之后 Agent 自己连续完成剩余工作，除非真的需要人工授权、浏览器操作、校验确认或最终验收。
-
-**粘贴前的前置条件：**
-- **macOS**：已安装 Homebrew + Node.js 18+
-- **Linux**：Node.js 18+
-- 至少安装了一个 AI 工具（`codex`、`claude`、`cline` 或兼容的本地工具）
-- **网络**（三选一）：
-  - **Cloudflare Tunnel**：域名已接入 Cloudflare（[免费账号](https://cloudflare.com)，域名约 ¥10–90/年，可从 Namecheap 或 Porkbun 购买）
-  - **cpolar**：适合希望让中国大陆用户直接打开 RemoteLab、无需梯子的场景；注册可走[这个带邀请码的入口](https://www.cpolar.com/?channel=0&invite=6WH2)，详细流程见 `docs/cpolar-setup.md`
-  - **Tailscale**：[个人使用免费](https://tailscale.com)——宿主机和你想使用的各个客户端设备都安装 Tailscale 并加入同一个 tailnet，无需域名
-
-**在宿主机开一个新的终端，启动 Codex 或其他 coding agent，然后粘贴这段 prompt：**
+在目标机器上打开自己的 coding agent，把下面这段交给它：
 
 ```text
-我想在这台机器上配置 RemoteLab，这样我就能从不同设备把重复数字工作交给 AI，并让它在真实机器上完成自动化。
+请在这台机器上部署 RemoteLab，作为团队通过飞书协作的 AI 工作环境。
 
-网络模式：[cloudflare | cpolar | tailscale]
+仓库：https://github.com/Ninglo/remotelab
+安装说明：https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md
+飞书接入：https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/feishu-bot-setup.md
 
-# Cloudflare 模式：
-我的域名：[YOUR_DOMAIN]
-我想用的子域名：[SUBDOMAIN]
+主机系统：[macOS / Linux]
+准备使用的 Agent 工具：[已安装的工具名称]
+网页网络模式：[cloudflare / cpolar / tailscale]
+飞书环境：[飞书中国版 / Lark 国际版]
+应用管理员：[我有管理权限 / 需要管理员协助]
 
-# cpolar 模式：
-访问策略：[临时公网地址 | 固定二级子域名]
-如果我还没有 cpolar 账号，请按这个链接给我注册指引：https://www.cpolar.com/?channel=0&invite=6WH2
-如果我已经想好了要长期保留的二级子域名，也一起告诉你。
-
-# Tailscale 模式：
-（无需额外配置——宿主机和我想使用的客户端设备都已安装 Tailscale，并在同一个 tailnet 中。）
-
-请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` 当作配置契约和唯一真相来源。
-如果我选择 cpolar 模式，也请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` 当作注册和隧道配置的专项说明。
-不要假设这个仓库已经提前 clone 到本地。如果 `~/code/remotelab` 还不存在，请你先读取那份契约，再自行 clone `https://github.com/Ninglo/remotelab.git`，然后继续完成安装。
-后续流程都留在这个对话里。
-开始执行前，请先用一条消息把缺少的上下文一次性问全，让我集中回复一次。
-能自动完成的步骤请直接做。
-我回复后，请持续自主执行；只在真的遇到 [HUMAN] 步骤、授权确认或最终完成时停下来。
-停下来时，请明确告诉我具体要做什么，以及我做完后你会怎么验证。
+先检查现有环境；仓库尚未存在时自行克隆。已有实例先核对升级与迁移要求。
+开始前一次收齐缺少的信息，包括域名或网络配置、Agent 认证状态和飞书配置。
+沿说明完成可自动执行的安装、服务配置和验证。
+必须人工处理的登录、应用授权或控制台操作，请说明具体动作及接续方式。
+凭据留在实例配置中，不写入仓库或公开示例。
+最后验证网页访问，以及飞书一条真实消息的接收、执行和回复，返回入口与未完成项。
 ```
 
-如果你想看完整的配置契约和人工节点说明，请直接看 `docs/setup.md`。如果你关心的是面向中国大陆的直接访问方案，请直接看 `docs/cpolar-setup.md`。
+完整要求和人工操作见[安装说明](docs/setup.md)与[飞书接入说明](docs/feishu-bot-setup.md)。也可以先使用网页，再接入飞书。模型使用、主机与外部服务的费用由部署者承担。
 
-### 配置完成后你会得到什么
+## 数据与访问边界
 
-在你想使用的设备上打开 RemoteLab 地址：
-- **Cloudflare**：`https://[subdomain].[domain]/?token=YOUR_TOKEN`
-- **cpolar**：`https://[cpolar-hostname]/?token=YOUR_TOKEN`
-- **Tailscale**：`http://[hostname].[tailnet].ts.net:7690/?token=YOUR_TOKEN`
+RemoteLab 面向可信团队共享实例。**同一实例内，所有已认证 Person 都有完整的 Session 访问权。** 人员身份用于归因、偏好和个人视图，不提供逐人或逐群的 Session 权限隔离。需要不同信任边界时，应使用独立实例并配置相应的系统权限；不能把飞书私聊入口理解为实例内私有空间。
 
-![Dashboard](docs/new-dashboard.png)
+默认持久数据位于以下目录，独立实例可以覆盖路径：
 
-- 新建一个本地 AI 工具会话，默认优先使用 Codex
-- 默认从 `~` 开始，也可以让 agent 切到其他仓库路径
-- 发送消息时，界面会在后台不断重新拉取规范 HTTP 状态
-- 关掉浏览器后再回来，不会丢失会话线程
-- 生成不可变的只读会话分享快照
-- 在设置中添加更多 Person 与登录凭据，并按需启用推送通知
+| 位置 | 内容 |
+| --- | --- |
+| `~/.config/remotelab/` | 认证、连接器配置、Session 历史、Run 记录及发布成果 |
+| `~/.remotelab/memory/` | 实例自己的记忆、项目索引与人员记录 |
+| `~/.remotelab/workspace/` | 工作文件与交付物的默认目录 |
 
-### 日常使用
+部署者负责这些数据的访问控制、备份和保留策略。对话历史与运行输出会持续积累；归档 Session 不会删除其数据。模型提供商、飞书及其他已连接服务会处理任务中发送给它们的内容，自托管不等于全部数据都留在本机。
 
-配置完成后，服务可以在开机时自动启动（macOS LaunchAgent / Linux systemd）。你平时只需要在手机或桌面端打开网址。
+## 继续阅读与参与
 
-```bash
-remotelab start
-remotelab stop
-remotelab restart chat
-```
+| 想了解什么 | 入口 |
+| --- | --- |
+| 部署与飞书接入 | [主机安装](docs/setup.md) · [飞书机器人](docs/feishu-bot-setup.md) · [cpolar](docs/cpolar-setup.md) |
+| 日常办公与结果交付 | [飞书操作](docs/platform-skills/feishu-cli.md) · [发布静态页面](docs/platform-skills/stable-static-publish.md) |
+| 上下文与记忆维护 | [记忆与组织协作](docs/memory-architecture/README.md) · [人员记忆与行动手册](docs/memory-learning.md) |
+| 定时工作与独立 Session | [自动化](docs/task-center-v1.md) · [工作交接](docs/platform-skills/session-delegate.md) |
+| 实现与排障 | [系统架构](docs/project-architecture.md) · [Harness 接入](docs/native-harness-input.md) · [会话诊断](docs/platform-skills/session-debug.md) |
+| 修改代码与文档 | [仓库约定](AGENTS.md) · [测试](tests/README.md) · [文档同步](docs/documentation-delivery.md) |
 
-## 文档地图
+欢迎通过 [Issues](https://github.com/Ninglo/remotelab/issues) 和 Pull Requests 贡献问题、修复和通用能力。描述用户想完成的工作、实际结果和复现条件，保留有用的机制与证据，移除真实人员、私有内容、凭据及可访问内部资源的链接。
 
-如果你是经历了很多轮架构迭代后重新回来看，现在推荐按这个顺序读：
+## 许可证
 
-1. `README.md` / `README.zh.md` —— 产品概览、安装路径、日常操作
-2. `docs/project-architecture.md` —— 当前已落地架构和代码地图
-3. `docs/README.md` —— 文档分层和同步规则
-4. `notes/current/core-domain-contract.md` —— 当前领域模型 / 重构基线
-5. `notes/README.md` —— 笔记分桶和清理规则
-6. `docs/setup.md`、`docs/external-message-protocol.md`、`docs/feishu-bot-setup.md` 这类专题文档
-
----
-
-## 架构速览
-
-RemoteLab 当前的落地架构已经稳定在：一个主 chat 控制面、detached runners，以及落盘的持久状态。
-
-| 服务 | 端口 | 职责 |
-|------|------|------|
-| `chat-server.mjs` | `7690` | 生产可用的主 chat / 控制面 |
-
-```
-浏览器 / 客户端入口                    浏览器 / 客户端入口
-   │                                      │
-   ▼                                      ▼
-Cloudflare Tunnel                    Tailscale (VPN)
-   │                                      │
-   ▼                                      ▼
-chat-server.mjs (:7690)             chat-server.mjs (:7690)
-   │
-   ├── HTTP 控制面
-   ├── 鉴权 + 策略
-   ├── session/run 编排
-   ├── 持久化历史 + run 存储
-   ├── 很薄的 WS invalidation
-   └── detached run 执行面
-```
-
-如果要给中国大陆用户做“可直接打开”的公网入口，`cpolar` 也可以接到同一个 `chat-server.mjs (:7690)` 前面。
-
-当前最重要的架构规则：
-
-- `Session` 是主持久对象，`Run` 是它下面的执行对象
-- 浏览器状态始终要回收敛到 HTTP 读取结果
-- WebSocket 是无效化通道，不是规范消息通道
-- 之所以能在控制面重启后恢复活跃工作，是因为真正的状态在磁盘上
-- 开发 RemoteLab 自身时，`7690` 就是唯一默认 chat/control plane；现在依赖干净重启后的恢复能力，而不是常驻第二个验证服务
-
-完整代码地图和流程拆解请看 `docs/project-architecture.md`。
-
-外部渠道接入的规范契约请看 `docs/external-message-protocol.md`。
-
----
-
-## CLI 命令
-
-```text
-remotelab setup                运行交互式配置向导
-remotelab start                启动所有服务
-remotelab stop                 停止所有服务
-remotelab restart [service]    重启：chat | tunnel | all
-remotelab guest-instance       创建带独立 config + memory 的访客实例
-remotelab chat                 前台运行 chat server（调试用）
-remotelab generate-token       生成新的访问 token
-remotelab set-password         设置用户名和密码登录
-remotelab --help               显示帮助
-```
-
-如果要把试用用户开通流程固定下来，默认优先用 `remotelab guest-instance create-trial`。它会自动选择下一个标准的 `trialN` 名称、分配安全端口、写好 Cloudflare hostname / tunnel ingress，并在 mailbox worker 已配置时顺手同步这个实例的收件地址。只有在你明确想要自定义实例名时，再用 `remotelab guest-instance create <name>`。如果 agent mailbox 已初始化，`create`、`create-trial` 和 `show` 都会直接打印这个实例对应的默认收件地址，比如 `rowan+trial4@example.com` 或 `trial4@example.com`；具体格式取决于 mailbox identity 的 `instanceAddressMode`。当 Cloudflare mailbox worker 已配置好时，创建流程也会自动尝试同步 Email Routing，这样每个新实例默认都会得到一个可用的对外收件地址；只有你明确想跳过这一步时，才传 `--no-mailbox-sync`。
-
-日常运维尽量只记这几条稳定命令，不要再靠临时翻实现：
-
-```text
-remotelab guest-instance create-trial      # 创建下一个标准 trial 实例
-remotelab guest-instance links             # 打印所有 guest 实例的带 token 分享链接
-remotelab guest-instance links trial24     # 打印单个实例的带 token 分享链接
-remotelab guest-instance links --check     # 在链接之外顺手探测当前本地/公网可达性
-remotelab guest-instance expose trial24 --label report --port 3000
-                                          # 把实例自己拥有的 loopback 端口暴露成 trial24-report.<domain>
-remotelab guest-instance unexpose trial24 --label report
-                                          # 删除这条受控的公网子域名映射
-remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当前源码树
-```
-
-现在默认的外部入口模型是子域名。`create`、`create-trial`、`show`、`links` 和 `report` 都把 `https://<instance>.<domain>` 当成主入口来展示。
-
-如果某个 guest instance 里还跑着一个预览页、报告页或临时 review 服务，需要额外给它一个公网地址，就用 `remotelab guest-instance expose <instance> --label <label> --port <port>`。这个命令不会再去直接改 Cloudflare tunnel 配置，而是把映射写进 host router 读取的受控 registry。v1 故意收得比较紧：实例必须已经隔离、目标端口必须先在 loopback 上监听、而且监听进程必须属于该实例自己的系统用户。
-
-如果结果只是 HTML/CSS/JS 静态文件，不要再启动一个预览服务。使用 `remotelab publish static --source <文件或目录> --slug <slug>`；RemoteLab 会把审阅过的产物复制到当前实例自己的 `public-pages` 数据目录，并通过 `/public-pages/<slug>/` 提供访问，生成页面不会进入 Git 工作区。使用 `remotelab publish list` 和 `remotelab publish delete <slug>` 管理本机发布内容。
-
-如果你需要第二套入口，但仍然坚持子域名模型，可以把模板地址写进 `~/.config/remotelab/guest-instance-defaults.json`：
-
-```json
-{
-  "bridgeBaseUrlTemplate": "https://{name}-jolab.cpolar.top"
-}
-```
-
-这样 `links` 和报告里就会统一带出 `owner-jolab`、`trial1-jolab` 这类备用入口。
-
-如果你确实还保留着一条按路径进入的旧 bridge，再改成写共享根地址：
-
-```json
-{
-  "bridgeRootBaseUrl": "https://bridge.example.com"
-}
-```
-
-配置好之后，`links` 和报告里仍然可以带出这条 bridge 入口，但新实例默认不会再把这类入口写进自己的运行时环境。`bridgeRootBaseUrl` 只该留给还没退掉的 path-prefix 部署。
-
-如果某个部署还保留这条 bridge，再用 `NATAPP_BRIDGE_SERVICE_NAME` / `NATAPP_BRIDGE_SERVICE_PORT` 去控制它。路由原则见 [docs/prefix-bridge-routing.md](docs/prefix-bridge-routing.md)。
-
-如果机器上还留着早期那种按实例复制出来的 runtime（例如 `remotelab-trial-runtime`），可以运行 `remotelab guest-instance converge <name>` 或 `remotelab guest-instance converge --all`。它会保持原来的端口、域名、登录信息、config 和 memory 目录不变，只把 launch agent 的代码入口切回当前的 `~/code/remotelab`，这样以后代码更新就能统一落到所有实例上，而不用改用户手里的链接。
-
-完成收敛后，这些共享代码树的 guest runtime 会在各自重启后直接加载当前源码版本。重启前需按[升级说明](docs/request-state-upgrade.md)检查每个实例的数据格式是否兼容；外部链接和实例的数据目录仍保持独立。
-
-如果你希望每个 guest instance 都有一个对外可用的收件地址，优先做法应该是把 Cloudflare Email Routing 配成 catch-all -> Email Worker，而不是给每个实例单独建邮箱账号。`node scripts/agent-mail-cloudflare-routing.mjs status` 会打印期望的路由形态，`probe --address <email>` 可以直接验证像 `trial6@example.com` 这样的地址当前在 SMTP 层是否会被接受。
-
-## 配置项
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `CHAT_PORT` | `7690` | Chat server 端口 |
-| `CHAT_BIND_HOST` | `127.0.0.1` | Chat server 监听地址（`127.0.0.1` 用于 Cloudflare / 仅本机访问，`0.0.0.0` 用于 Tailscale 或局域网访问） |
-| `SESSION_EXPIRY` | `2592000000` | Cookie 有效期（毫秒，30 天） |
-| `SECURE_COOKIES` | `1` | Tailscale 或本地 HTTP 访问时设为 `0`（无 HTTPS） |
-| `REMOTELAB_INSTANCE_ROOT` | 未设置 | 可选的额外实例数据根目录；设置后默认使用 `<root>/config` + `<root>/memory` |
-| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、push、provider runtime home |
-| `REMOTELAB_PUBLIC_PAGES_DIR` | `<config>/public-pages` | 可选的静态页面本机存储目录覆盖；默认永远不指向 Git 工作区 |
-| `REMOTELAB_PUBLIC_PAGES_BASE_URL` | `<public-base>/public-pages` | 可选的静态页面公网 URL 前缀覆盖 |
-| `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | 可选的用户 memory 目录覆盖，供 pointer-first 启动使用 |
-
-## 常用文件位置
-
-下面这些是未设置实例覆盖变量时的默认路径。
-
-| 路径 | 内容 |
-|------|------|
-| `~/.config/remotelab/auth.json` | People、登录凭据、外部身份与 connector service token |
-| `~/.config/remotelab/auth-sessions.json` | 映射到 Person 的浏览器登录会话 |
-| `~/.config/remotelab/chat-sessions.json` | Chat 会话元数据 |
-| `~/.config/remotelab/chat-history/` | 每个会话的事件存储（`meta.json`、`context.json`、`events/*.json`、`bodies/*.txt`） |
-| `~/.config/remotelab/chat-runs/` | 持久化 run manifest、spool 输出和最终结果 |
-| `~/.config/remotelab/shared-snapshots/` | 不可变的只读会话分享快照 |
-| `~/.config/remotelab/public-pages/` | 当前实例发布的本机静态页面 |
-| `~/.remotelab/memory/` | pointer-first 启动时使用的机器私有 memory |
-| `~/Library/Logs/chat-server.log` | Chat server 标准输出 **(macOS)** |
-| `~/Library/Logs/cloudflared.log` | Tunnel 标准输出 **(macOS)** |
-| `/var/log/remotelab/chat-server.log` | Chat server 标准输出 **(Linux)** |
-| `/var/log/remotelab/cloudflared.log` | Tunnel 标准输出 **(Linux)** |
-
-## 安全
-
-- **Cloudflare 模式**：通过 Cloudflare 提供 HTTPS（边缘 TLS，机器侧仍是本地 HTTP）；服务只绑定 `127.0.0.1`
-- **Tailscale 模式**：流量由 Tailscale 的 WireGuard mesh 加密；服务绑定 `0.0.0.0`（所有接口），因此端口也可从局域网/公网访问——在不可信网络中，建议配置防火墙将 `7690` 端口限制为 Tailscale 子网（如 `100.64.0.0/10`）
-- `256` 位随机访问 token，做时序安全比较
-- 可选 scrypt 哈希密码登录
-- `HttpOnly` + `Secure` + `SameSite=Strict` 的认证 cookie（Tailscale 模式下关闭 `Secure`）
-- 登录失败按 IP 限流，并做指数退避
-- 默认服务只绑定 `127.0.0.1`，不直接暴露到公网；如需局域网访问，设置 `CHAT_BIND_HOST=0.0.0.0`
-- 分享快照是只读的，并与已认证工作台隔离
-- CSP 头使用基于 nonce 的脚本白名单
-
-## 手动起第二实例
-
-- `scripts/chat-instance.sh` 现在除了旧的 `--home` 模式，也支持 `--instance-root`、`--config-dir`、`--memory-dir`。
-- 如果你想让第二实例继续复用当前机器的 provider 登录状态、但把 RemoteLab 自己的数据和 memory 完全隔离，优先用 `--instance-root`。
-- 示例：`scripts/chat-instance.sh start --port 7692 --name companion --instance-root ~/.remotelab/instances/companion --secure-cookies 1`
-
-## 故障排查
-
-**服务启动失败**
-
-```bash
-# macOS
-tail -50 ~/Library/Logs/chat-server.error.log
-
-# Linux
-journalctl -u remotelab.service -n 50
-tail -50 /var/log/remotelab/chat-server.error.log
-```
-
-**DNS 还没解析出来**
-
-配置完成后等待 `5–30` 分钟，再执行：
-
-```bash
-dig SUBDOMAIN.DOMAIN +short
-```
-
-**端口被占用**
-
-```bash
-lsof -i :7690
-```
-
-**重启单个服务**
-
-```bash
-remotelab restart chat
-remotelab restart tunnel
-```
-
----
-
-## License
-
-MIT
-
-## 使用与维护说明
-
-[副屏使用说明](display/USER_GUIDE.md) · [专题文档目录](docs/README.md) · [说明更新与发布](docs/documentation-delivery.md)。整体说明网站的“使用与维护”从这些仓库原文生成，不另维护一份正文。
+[MIT](LICENSE)。

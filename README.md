@@ -2,446 +2,126 @@
 
 [中文](README.zh.md) | English
 
-**A cross-surface AI workbench that helps ordinary people hand repetitive digital work to AI.**
+**An open-source, self-hosted platform for AI coworkers, built around collaboration in Feishu/Lark.**
 
-RemoteLab is not only for the small group of people who already know how to use AI well. The goal is to bring AI automation to a much wider set of users, especially people with lots of repetitive digital work but no engineering automation background.
+Hand work to an AI in your team chat, continue it in the same thread, let it execute on a real machine, and receive the result where your team already works. RemoteLab connects Feishu/Lark, the web, agent runtimes, and durable context so work can carry forward from one conversation to the next.
 
-It does not care much whether the control surface is a phone, tablet, or desktop. The point is to let a user hand over a messy recurring task, screenshot, or sample file, have the AI clarify the problem first, and then let strong executors like `codex`, `claude`, and compatible local tools do the real work on a real machine.
+Our goal is an AI coworker that understands what the team is trying to accomplish, remembers confirmed facts and decisions, reuses effective methods, and improves through correction. Less repeated explanation, less searching for material, fewer status requests—and usable results.
 
-![RemoteLab across surfaces](docs/readme-multisurface-demo.png)
+**The collaboration and runtime mechanisms are open source. The lasting value comes from the context each organization builds for itself.** Why a project made a decision, which methods actually work, who owns what, and how people collaborate emerge through ongoing work. The same code gives teams a common starting point; their own knowledge, feedback, and work history make it useful to their business.
 
-> Current baseline: `v1.0` — a multi-person shared Session workbench with durable on-disk history, per-person sidebar views, a built-in Welcome flow, and a no-build web UI that works across phone and desktop.
+## Working with your team
 
-> Reach the same system from desktop, phone, and integration surfaces like Feishu or email-driven flows.
+Feishu/Lark is the primary collaboration surface: assign work, add information, and correct the agent in a group, thread, or direct message; results return to the corresponding conversation. The web provides durable work history, files, and runtime management on desktop and mobile. When the agent responds in groups and which capabilities it uses depend on instance and group configuration.
 
-Optional [hardware discussion recording](docs/platform-skills/hardware-recording.md) connects explicitly bound keypads and multiple USB receivers to independent recordings and RemoteLab Sessions on macOS/Linux. Each host needs one-time permissions and source/delivery configuration.
+| Way of working | What RemoteLab provides |
+| --- | --- |
+| Continue work in a project thread | Bind the conversation to a durable Session with messages, execution records, and results; follow-ups continue that work |
+| Research, analyze data, or change code | Let configured agents use files, commands, repositories, and authorized tools on a macOS/Linux host |
+| Turn discussion into usable output | Replies, files, report pages, and configured Feishu tools for documents, spreadsheets, Base records, tasks, and calendars |
+| Pick up project background and decisions | Find relevant descriptions, history, and evidence through registered projects and sources |
+| Reuse what worked | Keep methods, conditions, sources, and revisions in memory files, Skills, and an agent handbook; enable personal collaboration memory per person |
+| Repeat useful work | Schedule one-time or recurring work through Triggers and Schedules, with execution and delivery records |
+| Advance independent tasks in parallel | Create separate, visible work Sessions with source and handoff links, each with its own progress and results |
+| Understand operations | Inspect usage, automation history, and failures across message intake, execution, and result delivery |
 
-## Quick install
+Capabilities depend on configuration. Feishu office operations require app permissions and resource access; project knowledge requires your own sources; enhancements such as personal memory learning are opt-in. Meeting ingestion, hardware recording, and other integrations have their own setup and validation requirements. See the [documentation index](docs/README.md).
 
-> **Upgrading an existing instance?** The 2026-09-07 Request state change requires offline conversion before restart. Read the [upgrade notice and recovery procedure](docs/request-state-upgrade.md) first, including for instances sharing this source tree.
+## How context accumulates
 
-If the demo makes sense, do not keep reading. Open a fresh terminal on the host machine, start Codex, Claude Code, or another coding agent, and paste this:
+Work produces several kinds of information. Keeping each in its proper scope helps the next task find relevant context without turning a temporary request into an organization-wide rule.
 
-```text
-I want to set up RemoteLab on this machine so I can hand repetitive digital work to AI from any device and let it automate the work on a real computer.
+| Context | How it is retained and reused |
+| --- | --- |
+| What happened in this task | Session history, execution records, and result links preserve the work for continuation or lookup |
+| Project goals, decisions, and understanding | A project index points to maintained source material; conclusions retain evidence and are updated in place |
+| A person's collaboration preferences | Records belong to a verified identity and retain their scope; observed habits need confirmation before becoming default preferences |
+| Repeatable methods | Skills, project workflows, and the agent handbook retain procedures, conditions, and experience for relevant tasks |
 
-Network mode: [cloudflare | cpolar | tailscale]
+Retrieval starts with a small index and pointers. The agent then reads the project material, personal records, or methods relevant to the current task. Shared memory files can be used by different Harnesses, while native model threads continue through their respective runtimes.
 
-# For Cloudflare mode:
-My domain: [YOUR_DOMAIN]
-Subdomain I want to use: [SUBDOMAIN]
+When memory learning is enabled, explicit requests, corrections, and actual tool results can support updates. Entries retain their source, scope, and version and can be revised or withdrawn; unconfirmed inferences remain candidates. The value is tested in later work: fewer repeated corrections, better retrieval, and better results on similar tasks.
 
-# For cpolar mode:
-Access preference: [temporary public URL | reserved stable subdomain]
-If I do not already have a cpolar account, use https://www.cpolar.com/?channel=0&invite=6WH2 for signup guidance.
-If I already want a fixed reserved subdomain, include the label I want to keep.
-
-# For Tailscale mode:
-(No extra config needed — the host machine and the client devices I want to use are on the same tailnet.)
-
-Use the setup contract at `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` as the source of truth.
-If I choose cpolar mode, also use `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` as the focused guide for registration and tunnel setup.
-Do not assume the repo is already cloned. If `~/code/remotelab` does not exist yet, fetch that contract, clone `https://github.com/Ninglo/remotelab.git` yourself, and continue.
-Keep the workflow inside this chat.
-Before you start work, collect every missing piece of context in one message so I can answer once.
-Do every step you can automatically.
-After my reply, continue autonomously through every low-loss, reversible, auditable step. Stop only for an inaccessible credential/browser action, hard authorization, or an unscoped irreversible high-impact action.
-If you must stop, actively tell me exactly what I need to do, preserve resumable state, and explain how you'll verify and continue after I reply.
-```
-
-Need the longer version first? Jump to [Setup details](#setup-details) or open `docs/setup.md`.
-
-If the people opening RemoteLab are mainly in mainland China, prefer `cpolar`. The main user-facing benefit is simple: they can open it directly without a VPN. For the focused setup path, use `docs/cpolar-setup.md`.
-
----
-
-## For Humans
-
-### Vision
-
-Bluntly: RemoteLab is an AI automation workbench for ordinary people. It should first serve people who have repetitive digital work but have not yet turned AI into part of their daily operating flow.
-
-The first goal is concrete: in a short conversation, help a user hand off a tedious job that used to cost hours every week — data cleanup, light analysis, report generation, file batch work, exports/imports, triggered notifications, and other scriptable chores.
-
-### Core judgments
-
-- The biggest unmet need is not encouraging people to open endless concurrent sessions; it is finding repetitive work that is actually worth automating.
-- Most target users are not AI-native operators and do not arrive with product-manager-grade prompts; the AI needs to help clarify the task, gather examples, and design a workable approach.
-- The product should absorb most of the operational complexity: tool choice, model choice, session structure, and machine-side execution are implementation details unless the user explicitly needs to care.
-- The first high-fit user slice is not literally everyone with a computer; it looks more like time-pressed middle managers / owner-operators in traditional industries who both coordinate others and still personally carry repetitive digital admin work.
-- The first screen cannot be a blank session list. New users need a built-in Welcome flow with concrete example transcripts and one clear first automation path, not an empty sidebar and a generic text box.
-- The best wedge is simple, fast-payback digital work: data cleanup, analysis, file processing, reports, notifications, and other repetitive scriptable tasks.
-- Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and inspect results or resolve the rare true blocker from the most convenient device.
-- Durable `Session` threads and reusable local workflow building blocks still matter, but they are enabling layers rather than the first headline.
-
-### What RemoteLab is
-
-- an AI automation workbench that sits above strong executors running on a real machine
-- an AI collaboration entry point that helps users turn vague problems into executable plans
-- a cross-surface control plane where people can start from phone, continue from desktop, and let the machine do the work
-- a durable work-thread system that helps humans recover context instead of repeatedly re-explaining the task
-- a durable Session layer that lets proven automations be scheduled, forked, or continued
-
-### What RemoteLab is not
-
-- a terminal emulator
-- a traditional editor-first IDE
-- a power-user cockpit whose main value is opening as many concurrent sessions as possible
-- a prompt playground that assumes the user already knows how to specify the work perfectly
-- a generic multi-user chat SaaS
-- a product that assumes remote users can browse the host machine or fetch results from local paths
-- a closed all-in-one executor stack trying to out-execute `codex` or `claude`
-
-### Two core product layers
-
-1. **First, solve repetitive digital work.** RemoteLab should accept a messy but recurring task, help the user clarify inputs, outputs, and constraints, and turn it into an automation that reliably saves time.
-2. **Then reuse what works.** Once an automation proves valuable, RemoteLab can schedule it or start another Session from an explicit source Session.
-
-### Product grammar
-
-The current product model is intentionally simple:
-
-- `Instance` — one isolated RemoteLab environment; a host may run several guest instances
-- `Person` — an authenticated human identity used for attribution and UI preferences, never for Session authorization
-- `Session` — one durable work thread shared by every authenticated Person in the instance
-- `Run` — one execution attempt inside a session
-- `Share snapshot` — an immutable read-only export of a session
-
-The architectural assumptions behind that model:
-
-- HTTP is the canonical state path and WebSocket only hints that something changed
-- the browser is a control surface, not the system of record
-- runtime processes are disposable; durable state lives on disk
-- every authenticated Person has full instance access; unauthenticated requests cannot enter the workbench
-- Person identity controls attribution and frontend filtering only, never visibility or authorization
-- each Person has one readable handle; Web usernames use it and Feishu identities bind to it automatically
-- Session title, transcript, runtime and workflow state are shared; Space, Group and sidebar order are per-Person views
-- the frontend stays framework-light and endpoint-flexible
-
-### Why this boundary matters
-
-RemoteLab is opinionated in a few ways:
-
-- **Clarify the problem before executing.** RemoteLab should not assume the user already thinks like an AI product manager; the AI needs to carry part of the problem-framing and solution-design work.
-- **Deliver through reachable surfaces, not host paths.** The AI may operate the machine, but the user collaborates through RemoteLab and explicitly exposed product surfaces. A result that only exists on the host is not a finished handoff.
-- **Do not rebuild the executor layer.** RemoteLab should not spend most of its energy optimizing single-task agent internals.
-- **Recover context, do not dump logs.** Durable sessions matter more than raw terminal continuity.
-- **Reuse proven work explicitly.** Scheduling, delegation and continuation all point at durable Sessions instead of creating a second template object model.
-- **Integrate the strongest tools, keep them replaceable.** The point is a stable abstraction layer so better executors can be adopted quickly as the ecosystem evolves.
-
-### What you can do
-
-- start a session from phone or desktop while the agent works on your real machine
-- hand independent work to a visible child session and open its link to inspect progress; the [shared delegation workflow](docs/platform-skills/session-delegate.md) works across normal Harnesses (`remotelab session-spawn --guide`)
-- download returned files directly from chat when a workflow publishes result assets
-- keep durable history even if the browser disconnects
-- recover long-running work after control-plane restarts
-- let the agent auto-title and auto-group sessions in the sidebar
-- paste screenshots directly into the chat
-- let the UI follow your system light/dark appearance automatically
-- create immutable read-only share snapshots
-- filter Sessions by initiating Person without hiding anyone else's work
-- let each Person organize the same shared Sessions into independent Spaces, Groups and sidebar order
-
-### Provider note
-
-- RemoteLab treats `Codex` (`codex`) as the default built-in tool and shows it first in the picker.
-- That is not because executor choice is the product. The opposite is true: RemoteLab should stay adapter-first and integrate the strongest executors available locally.
-- API-key / local-CLI style integrations are usually a cleaner fit for a self-hosted control plane than consumer-login-based remote wrappers.
-- `Claude Code` still works in RemoteLab, and any other compatible local tool can fit as long as its auth and terms work for your setup.
-- `Antigravity` (`agy`) is a built-in native Harness when the official CLI is installed. Authenticate once with an interactive `agy` session; RemoteLab then uses its documented headless `stream-json` protocol and official conversation IDs.
-- Over time, the goal is portability across executors, not loyalty to one closed runtime.
-- In practice, the main risk is usually the underlying provider auth / terms, not the binary name by itself. Make your own call based on the provider and account type behind that tool.
-
-### Setup details
-
-The fastest path is still to paste a setup prompt into Codex, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login or cpolar signup / dashboard-only actions when those modes are in play.
-
-Configuration and feature-rollout docs in this repo are model-first and prompt-first: the human copies a prompt into their own AI coding agent, the agent gathers the needed context up front in as few rounds as possible, and the rest of the work stays inside that conversation except for explicit `[HUMAN]` steps.
-
-The best pattern is one early handoff: the agent asks for everything it needs in one message, the human replies once, and then the agent keeps going autonomously until a true manual checkpoint or final completion.
-
-**Prerequisites before you paste the prompt:**
-- **macOS**: Homebrew installed + Node.js 18+
-- **Linux**: Node.js 18+
-- At least one AI tool installed (`codex`, `claude`, `cline`, or a compatible local tool)
-- **Network** (pick one):
-  - **Cloudflare Tunnel**: a domain pointed at Cloudflare ([free account](https://cloudflare.com), domain ~$1–12/yr from Namecheap or Porkbun)
-  - **cpolar**: best when users in mainland China need to open RemoteLab directly without a VPN; register via [the cpolar signup link](https://www.cpolar.com/?channel=0&invite=6WH2) and see `docs/cpolar-setup.md` for the prompt-first flow
-  - **Tailscale**: [free for personal use](https://tailscale.com) — install on the host machine and any client device you want to use, join the same tailnet, no domain needed
-
-**Open a fresh terminal on the host machine, start Codex or another coding agent, and paste this:**
-
-```text
-I want to set up RemoteLab on this machine so I can hand repetitive digital work to AI from any device and let it automate the work on a real computer.
-
-Network mode: [cloudflare | cpolar | tailscale]
-
-# For Cloudflare mode:
-My domain: [YOUR_DOMAIN]
-Subdomain I want to use: [SUBDOMAIN]
-
-# For cpolar mode:
-Access preference: [temporary public URL | reserved stable subdomain]
-If I do not already have a cpolar account, use https://www.cpolar.com/?channel=0&invite=6WH2 for signup guidance.
-If I already want a fixed reserved subdomain, include the label I want to keep.
-
-# For Tailscale mode:
-(No extra config needed — the host machine and the client devices I want to use are on the same tailnet.)
-
-Use the setup contract at `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` as the source of truth.
-If I choose cpolar mode, also use `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` as the focused guide for registration and tunnel setup.
-Do not assume the repo is already cloned. If `~/code/remotelab` does not exist yet, fetch that contract, clone `https://github.com/Ninglo/remotelab.git` yourself, and continue.
-Keep the workflow inside this chat.
-Before you start work, collect every missing piece of context in one message so I can answer once.
-Do every step you can automatically.
-After my reply, continue autonomously through every low-loss, reversible, auditable step. Stop only for an inaccessible credential/browser action, hard authorization, or an unscoped irreversible high-impact action.
-If you must stop, actively tell me exactly what I need to do, preserve resumable state, and explain how you'll verify and continue after I reply.
-```
-
-If you want the full setup contract and the human-only checkpoints, use `docs/setup.md`. If your main concern is mainland-friendly direct access, use `docs/cpolar-setup.md`.
-
-### What you'll have when done
-
-Open your RemoteLab URL on the device you want to use:
-- **Cloudflare**: `https://[subdomain].[domain]/?token=YOUR_TOKEN`
-- **cpolar**: `https://[cpolar-hostname]/?token=YOUR_TOKEN`
-- **Tailscale**: `http://[hostname].[tailnet].ts.net:7690/?token=YOUR_TOKEN`
-
-![Dashboard](docs/new-dashboard.png)
-
-- create a session with a local AI tool, with Codex first by default
-- start from `~` by default, or point the agent at another repo when needed
-- send messages while the UI re-fetches canonical HTTP state in the background
-- leave and come back later without losing the conversation thread
-- share immutable read-only snapshots of a session
-- add more People and sign-in credentials in Settings, and optionally enable push notifications
-
-### Daily usage
-
-Once set up, the service can auto-start on boot (macOS LaunchAgent / Linux systemd). Open the URL from phone or desktop and work from there.
-
-```bash
-remotelab start
-remotelab stop
-remotelab restart chat
-```
-
-## Documentation map
-
-If you are refreshing yourself after several architecture iterations, use this reading order:
-
-1. `README.md` / `README.zh.md` — product overview, setup path, daily operations
-2. `docs/project-architecture.md` — current shipped architecture and code map
-3. `docs/README.md` — documentation taxonomy and sync rules
-4. `notes/current/core-domain-contract.md` — current domain/refactor baseline
-5. `notes/README.md` — note buckets and cleanup policy
-6. focused guides such as `docs/setup.md`, `docs/external-message-protocol.md`, and `docs/feishu-bot-setup.md`
-
----
+The open-source repository is for general mechanisms, documentation, and sanitized examples. An organization's project facts, personal records, internal discussions, business data, and credentials belong in its managed instance and business systems. Contributions and issue reports should contain only the minimum sanitized material needed to reproduce a problem.
 
 ## Architecture at a glance
 
-RemoteLab’s shipped architecture is now centered on a stable chat control plane, detached runners, and durable on-disk state.
-
-| Service | Port | Role |
-|---------|------|------|
-| `chat-server.mjs` | `7690` | Primary chat/control plane for production use |
-
-```
-Browser / client surface               Browser / client surface
-   │                                      │
-   ▼                                      ▼
-Cloudflare Tunnel                    Tailscale (VPN)
-   │                                      │
-   ▼                                      ▼
-chat-server.mjs (:7690)             chat-server.mjs (:7690)
-   │
-   ├── HTTP control plane
-   ├── auth + policy
-   ├── session/run orchestration
-   ├── durable history + run storage
-   ├── thin WS invalidation
-   └── detached run execution plane
+```mermaid
+flowchart LR
+    F["Feishu/Lark: groups, threads, DMs"] <--> R["RemoteLab: sessions, runs, scheduling, delivery"]
+    W["Web: conversations, results, operations"] <--> R
+    R <--> H["Harness: Codex / Claude Code / Pi / other adapters"]
+    C["Instance context: projects, people, memory, methods"] --> R
+    H <--> T["Host files, repositories, authorized services"]
+    R <--> D["Durable state: history, runs, results"]
 ```
 
-For mainland-friendly public access, `cpolar` can point at that same `chat-server.mjs (:7690)` plane.
+RemoteLab owns channel connections, durable Sessions, context projection, run state, scheduled work, and result delivery. The Harness is the agent layer that interprets tasks, plans, chooses tools, and executes, retaining its native capabilities and safety mechanisms. Current native integrations include Codex, Claude Code, Pi, and Antigravity; see [Harness input](docs/native-harness-input.md). Models, accounts, and available tools depend on the operator's configuration.
 
-Key architectural rules:
+A Session is a continuing work thread; a Run is an execution attempt. History and run state are persisted on disk, and execution processes are separate from the control service. Records survive browser disconnects, and the service can recover or reconcile runs after a restart. Persisted state must remain compatible with the code; check the [migration requirements](docs/request-state-upgrade.md) before upgrading.
 
-- `Session` is the primary durable object; `Run` is the execution object beneath it
-- browser state always converges back to HTTP reads
-- WebSocket is an invalidation channel, not the canonical transcript
-- active work can recover after control-plane restarts because the durable state is on disk
-- `7690` is the shipped chat/control plane; restart recovery now removes the need for a permanent second validation service
+The stack uses Node.js, a vanilla JavaScript web interface, and local runtime adapters, with no frontend build step. The Feishu connector receives events over a persistent connection; the web uses HTTP for state and WebSocket notifications for updates. See the [architecture guide](docs/project-architecture.md) for the code map.
 
-For the full code map and flow breakdown, read `docs/project-architecture.md`.
+## Quick install
 
-For the canonical contract that external channels should follow, read `docs/external-message-protocol.md`.
+Prepare a macOS/Linux host, Node.js meeting the requirements in [package.json](package.json), and at least one installed, authenticated agent tool. Feishu/Lark integration needs an administrator to create an app and configure permissions and availability. Web access can use Cloudflare Tunnel, cpolar, or Tailscale.
 
----
-
-## CLI Reference
+Open your coding agent on the target machine and give it this prompt:
 
 ```text
-remotelab setup                Run interactive setup wizard
-remotelab start                Start all services
-remotelab stop                 Stop all services
-remotelab restart [service]    Restart: chat | tunnel | all
-remotelab guest-instance       Create isolated guest instances with separate config + memory
-remotelab chat                 Run chat server in foreground (debug)
-remotelab generate-token       Generate a new access token
-remotelab set-password         Set username & password login
-remotelab --help               Show help
+Deploy RemoteLab on this machine as an AI work environment for our team in Feishu/Lark.
+
+Repository: https://github.com/Ninglo/remotelab
+Setup: https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md
+Feishu/Lark: https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/feishu-bot-setup.md
+
+Host OS: [macOS / Linux]
+Agent tools to use: [installed tools]
+Web network mode: [cloudflare / cpolar / tailscale]
+Feishu environment: [Feishu CN / Lark Global]
+App administration: [I have access / an administrator must help]
+
+Inspect the existing environment first; clone the repository if needed.
+For an existing instance, check upgrade and migration requirements first.
+Collect missing inputs together, including domain/network configuration,
+agent authentication status, and Feishu app configuration.
+Follow the guides through all automatable installation, service setup, and validation.
+For required human login, authorization, or console actions, explain the exact
+action and how you will resume afterward.
+Keep credentials in instance configuration, out of the repository and public examples.
+Finally verify web access and one real Feishu message from receipt through execution
+and reply. Return the working entry points and any unfinished items.
 ```
 
-For the fixed trial-user flow, prefer `remotelab guest-instance create-trial`. It auto-picks the next standard `trialN` name, allocates the next safe port, wires the Cloudflare hostname/tunnel ingress, and syncs the instance mailbox when the mailbox worker is already configured. Use `remotelab guest-instance create <name>` only when you intentionally want a custom instance name. If the agent mailbox is initialized, `create`, `create-trial`, and `show` also print the default inbound mailbox for that instance, such as `rowan+trial4@example.com` or `trial4@example.com`, depending on the mailbox identity's `instanceAddressMode`. When the Cloudflare mailbox worker is already configured, creation attempts the Email Routing sync automatically so each new instance gets a live inbound address by default; pass `--no-mailbox-sync` only when you explicitly want to skip that step.
+The [setup contract](docs/setup.md) and [Feishu guide](docs/feishu-bot-setup.md) contain the full requirements and human-only steps. You can also start with the web and add Feishu later. Operators pay for their own model usage, host, and external services.
 
-For day-to-day operator use, keep the workflow to a few stable commands instead of ad-hoc inspection:
+## Data and access boundaries
 
-```text
-remotelab guest-instance create-trial      # create the next standard trial instance
-remotelab guest-instance links             # print tokenized share links for every guest instance
-remotelab guest-instance links trial24     # print tokenized share links for one instance
-remotelab guest-instance links --check     # same, plus current local/public reachability
-remotelab guest-instance expose trial24 --label report --port 3000
-                                          # publish one guest-owned loopback port as trial24-report.<domain>
-remotelab guest-instance unexpose trial24 --label report
-                                          # remove that controlled public route
-remotelab guest-instance converge --all    # repoint all guest instances at the current source tree
-```
+RemoteLab supports a shared instance for a trusted team. **Every authenticated Person in an instance has full access to its Sessions.** Identity supports attribution, preferences, and personal views; it does not provide per-person or per-group Session isolation. Use separate instances with appropriate operating-system permissions for different trust boundaries. A Feishu direct-message entry is not a private space within the instance.
 
-Subdomain-style public hostnames are the primary external entrypoint. `create`, `create-trial`, `show`, `links`, and `report` all treat `https://<instance>.<domain>` as the canonical access URL.
+Default persistent locations are below; isolated instances can override them:
 
-When a guest instance needs one extra public URL for a preview app or report server, use `remotelab guest-instance expose <instance> --label <label> --port <port>`. This does not edit the Cloudflare tunnel config directly. Instead it writes a controlled guest-route registry that the host router reads behind the existing wildcard domain. v1 intentionally stays strict: the instance must be isolated, the target port must already be listening on loopback only, and the listener must belong to the same guest instance user.
+| Location | Contents |
+| --- | --- |
+| `~/.config/remotelab/` | Authentication, connector configuration, Session history, Run records, and published results |
+| `~/.remotelab/memory/` | Instance-owned memory, project pointers, and personal records |
+| `~/.remotelab/workspace/` | Default working files and deliverables |
 
-For static HTML/CSS/JS output, do not run another preview server. Use `remotelab publish static --source <file-or-directory> --slug <slug>`. RemoteLab copies the reviewed output into the current instance's managed `public-pages` data directory and serves it under `/public-pages/<slug>/`; generated pages never live in the Git checkout. `remotelab publish list` and `remotelab publish delete <slug>` manage the local publication set.
+Operators manage access, backups, and retention. History and run output accumulate over time; archiving a Session does not delete its data. Model providers, Feishu/Lark, and other connected services process the content sent to them during tasks. Self-hosting does not imply that all data stays on the host.
 
-If you want a second access path that still stays subdomain-style, store a template URL in `~/.config/remotelab/guest-instance-defaults.json`:
+## Documentation and contributions
 
-```json
-{
-  "bridgeBaseUrlTemplate": "https://{name}-jolab.cpolar.top"
-}
-```
+| Topic | Entry points |
+| --- | --- |
+| Deployment and Feishu/Lark | [Host setup](docs/setup.md) · [Feishu bot](docs/feishu-bot-setup.md) · [cpolar](docs/cpolar-setup.md) |
+| Office work and delivery | [Feishu actions](docs/platform-skills/feishu-cli.md) · [Static page publishing](docs/platform-skills/stable-static-publish.md) |
+| Context and memory | [Memory and organizational collaboration](docs/memory-architecture/README.md) · [Personal memory and agent handbook](docs/memory-learning.md) |
+| Scheduled work and independent Sessions | [Automations](docs/task-center-v1.md) · [Work handoffs](docs/platform-skills/session-delegate.md) |
+| Implementation and diagnosis | [Architecture](docs/project-architecture.md) · [Harness input](docs/native-harness-input.md) · [Session diagnostics](docs/platform-skills/session-debug.md) |
+| Code and documentation changes | [Repository guidelines](AGENTS.md) · [Tests](tests/README.md) · [Documentation delivery](docs/documentation-delivery.md) |
 
-`links` and reports will then surface `owner-jolab`, `trial1-jolab`, and so on as the alternate access URLs.
-
-If you intentionally keep a legacy path-prefixed bridge, store its shared root URL instead:
-
-```json
-{
-  "bridgeRootBaseUrl": "https://bridge.example.com"
-}
-```
-
-After that, `links` and reports can surface an extra bridge URL when it exists. New instances do not bake bridge routing into their runtime environment by default. Keep `bridgeRootBaseUrl` only for deployments that still need the bridge service; otherwise prefer the subdomain entrypoint exclusively.
-
-If you keep the prefix bridge, use `NATAPP_BRIDGE_SERVICE_NAME` / `NATAPP_BRIDGE_SERVICE_PORT` to control it. See [docs/prefix-bridge-routing.md](docs/prefix-bridge-routing.md) for the current routing stance.
-
-If you still have older instance-specific runtime copies such as `remotelab-trial-runtime`, run `remotelab guest-instance converge <name>` or `remotelab guest-instance converge --all`. It keeps the same port, hostname, auth, config, and memory directories, but repoints the launch agent back to the current `~/code/remotelab` source tree so future code updates land everywhere without changing the user-facing link.
-
-If you want public inbound email per guest instance, prefer Cloudflare Email Routing into the Email Worker rather than creating separate mailbox accounts. `node scripts/agent-mail-cloudflare-routing.mjs status` prints the desired routing shape, `sync` backfills older instances that predate automatic provisioning, and `probe --address <email>` verifies whether SMTP will currently accept a guest mailbox such as `trial6@example.com`.
-
-RemoteLab boots the current source tree directly after restart. First check [state compatibility and required migrations](docs/request-state-upgrade.md); when compatible, use `remotelab restart chat` to pick up shared-code changes. Guest instances sharing that tree also need their own state checked before their next restart.
-
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CHAT_PORT` | `7690` | Chat server port |
-| `CHAT_BIND_HOST` | `127.0.0.1` | Host to bind the chat server (`127.0.0.1` for Cloudflare/local only, `0.0.0.0` for Tailscale or LAN access) |
-| `SESSION_EXPIRY` | `2592000000` | Cookie lifetime in ms (30 days) |
-| `SECURE_COOKIES` | `1` | Set `0` for Tailscale or local HTTP access (no HTTPS) |
-| `REMOTELAB_INSTANCE_ROOT` | unset | Optional isolated data root for an additional instance; defaults to `<root>/config` + `<root>/memory` when set |
-| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, push, and provider-managed homes |
-| `REMOTELAB_PUBLIC_PAGES_DIR` | `<config>/public-pages` | Optional local storage override for published static pages; never points into the Git checkout by default |
-| `REMOTELAB_PUBLIC_PAGES_BASE_URL` | `<public-base>/public-pages` | Optional external URL base override for static page links |
-| `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | Optional user-memory override for pointer-first startup files |
-| `REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS` | `window overflow` | Optional auto-compact override in current-context tokens; unset = compact only after current context exceeds 100% of a known context window, `Inf` = disable |
-
-## Common file locations
-
-These are the default paths when no instance overrides are set.
-
-| Path | Contents |
-|------|----------|
-| `~/.config/remotelab/auth.json` | People, credentials, external identities, and the connector service token |
-| `~/.config/remotelab/auth-sessions.json` | Authenticated browser sessions mapped to People |
-| `~/.config/remotelab/chat-sessions.json` | Chat session metadata |
-| `~/.config/remotelab/chat-history/` | Per-session event store (`meta.json`, `context.json`, `events/*.json`, `bodies/*.txt`) |
-| `~/.config/remotelab/chat-runs/` | Durable run manifests, spool output, and final results |
-| `~/.config/remotelab/shared-snapshots/` | Immutable read-only session share snapshots |
-| `~/.config/remotelab/public-pages/` | Instance-local published static pages |
-| `~/.remotelab/memory/` | Private machine-specific memory used for pointer-first startup |
-| `~/Library/Logs/chat-server.log` | Chat server stdout **(macOS)** |
-| `~/Library/Logs/cloudflared.log` | Tunnel stdout **(macOS)** |
-| `/var/log/remotelab/chat-server.log` | Chat server stdout **(Linux)** |
-| `/var/log/remotelab/cloudflared.log` | Tunnel stdout **(Linux)** |
-
-## Storage growth and manual cleanup
-
-- RemoteLab is durability-first: session history, run output, artifacts, and logs accumulate on disk over time.
-- Archiving a session is organizational only. It hides the session from the active list, but it does **not** delete the stored history or run data behind it.
-- On long-lived installs, storage can grow materially, especially if you keep long conversations, large tool outputs, heavy reasoning traces, or generated artifacts.
-- RemoteLab does **not** automatically delete old data and does **not** currently ship a one-click cleanup feature. This is intentional: keeping user data is safer than guessing what is safe to remove.
-- If you want to reclaim disk space, periodically review old archived sessions and prune them manually from the terminal, or ask an AI operator to help you clean them up carefully.
-- In practice, most storage growth lives under `~/.config/remotelab/chat-history/` and `~/.config/remotelab/chat-runs/`.
-
-## Ad-hoc extra instances
-
-- `scripts/chat-instance.sh` now supports `--instance-root`, `--config-dir`, and `--memory-dir` in addition to the older `--home` mode.
-- Use `--instance-root` when you want a second instance to keep the same machine `HOME` (so provider auth keeps working) while isolating RemoteLab's own runtime data and memory.
-- Example: `scripts/chat-instance.sh start --port 7692 --name companion --instance-root ~/.remotelab/instances/companion --secure-cookies 1`
-
-## Security
-
-- **Cloudflare mode**: HTTPS via Cloudflare (TLS at the edge, localhost HTTP on the machine); services bind to `127.0.0.1` only
-- **Tailscale mode**: traffic encrypted by Tailscale's WireGuard mesh; services bind to `0.0.0.0` (all interfaces), so the port is also reachable from LAN/WAN — on untrusted networks, configure a firewall to restrict port `7690` to the Tailscale subnet (e.g. `100.64.0.0/10`)
-- `256`-bit random access token with timing-safe comparison
-- optional scrypt-hashed password login
-- `HttpOnly` + `Secure` + `SameSite=Strict` auth cookies (`Secure` disabled in Tailscale mode)
-- per-IP rate limiting with exponential backoff on failed login
-- default: services bind to `127.0.0.1` only — no direct external exposure; set `CHAT_BIND_HOST=0.0.0.0` for LAN access
-- share snapshots are read-only and isolated from the authenticated workbench
-- CSP headers with nonce-based script allowlist
-
-## Troubleshooting
-
-**Service won't start**
-
-```bash
-# macOS
-tail -50 ~/Library/Logs/chat-server.error.log
-
-# Linux
-journalctl -u remotelab.service -n 50
-tail -50 /var/log/remotelab/chat-server.error.log
-```
-
-**DNS not resolving yet**
-
-Wait `5–30` minutes after setup, then verify:
-
-```bash
-dig SUBDOMAIN.DOMAIN +short
-```
-
-**Port already in use**
-
-```bash
-lsof -i :7690
-```
-
-**Restart a single service**
-
-```bash
-remotelab restart chat
-remotelab restart tunnel
-```
-
----
+Contributions through [Issues](https://github.com/Ninglo/remotelab/issues) and pull requests are welcome. Describe the user's intended outcome, actual behavior, and reproduction conditions. Preserve useful mechanisms and evidence while removing real identities, private content, credentials, and links that grant access to internal resources.
 
 ## License
 
-MIT
+[MIT](LICENSE).
