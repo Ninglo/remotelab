@@ -1,3 +1,4 @@
+import { acceptedParallelWorkPolicy } from './parallel-work-policy.mjs';
 import { threadContinuationExpired, sameFeishuConversation } from './feishu-thread-continuation.mjs';
 import { submitNativeInput, readNativeInputReceipt } from './native-input-transport.mjs';
 import { nativeQuestionReplyText } from './native-user-questions.mjs';
@@ -37,6 +38,9 @@ export function canForwardNativeRequest(record, head) {
   if (!record.options?.nativeQuestionId && !origin
       && (record.options?.messageRoutingPolicy?.mechanism || 'legacy')
         !== (head.options?.messageRoutingPolicy?.mechanism || 'legacy')) return false;
+  if (!record.options?.nativeQuestionId && !origin
+      && Boolean(acceptedParallelWorkPolicy(record.options).enabled)
+        !== Boolean(acceptedParallelWorkPolicy(head.options).enabled)) return false;
   // A pre-upgrade turn does not know the per-input reply contract. Preserve its
   // accepted behavior; only two new-protocol pilot inputs may share execution.
   if (!record.options?.nativeQuestionId && (hasFeishuInputReplyContract(record) || hasFeishuInputReplyContract(head))

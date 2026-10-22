@@ -2,14 +2,13 @@
 // their transport, admission and return contracts; it never calls a classifier.
 import { createHash } from 'node:crypto';
 import { routingPilotScope, routingSyncTargetAllowed, isPilotInputSinceActivation, hasPilotInputReplyContract } from '../lib/group-routing-pilot.mjs';
-import { loadSessionsMeta, findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
+import { findSessionMeta, mutateSessionMeta } from './session-meta-store.mjs';
 import { requests, requestKey } from './requests.mjs';
 import { appendEvent, getHistorySnapshot } from './history.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { verifiedWorkActor } from './work-awareness.mjs';
 import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { allowsMessageRouting } from './message-routing-policy.mjs';
-import { executionTrialPrompt } from './work-execution-prompt.mjs';
 import { publishFeishuResponse, withFeishuResponseLock as serial } from './feishu-response.mjs';
 import { routingDiscovery } from './work-routing-discovery.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
@@ -548,42 +547,12 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
       '创建和提交成功后由目标话题回复，主线结束当前输入，不重复开场、答案或会话入口。失败留在原处说明；未知结果按原请求重试，不另建话题。本入口仅允许为当前输入新开 thread，不授权向其他现有 Session 分流或同步。replyMode:thread 本身不再代替创建 Session。',
     ].join('\n');
   }
-  if (!allowsMessageRouting({ messageRoutingPolicy })) {
-    if (sourceContext?.connector !== 'feishu' || sourceContext.chatType !== 'group'
-        || session.conversation?.connector !== 'feishu') return '';
-    return [
-    '## 本条消息不分流',
-    '本条消息不自动转交其他工作 Session；在当前绑定的 Session 处理，不沿用历史中的自动分流或主线 work reply 指令。用户明确要求转交且内容、目标已确定时可用 work route handoff 并携带本条指令的 authorization；已有批准草稿可按 proposalId 恢复，均保留登记范围校验。此限制不决定是否回复或回复位置：群主线仍可由主模型在首个可见回复前用 feishu-response 的 replyMode:thread 选择话题回复；已有话题内继续原话题。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
-  ].join('\n');
-  }
-  const scope = await routingPilotScope(session?.conversation, undefined, messageRoutingPolicy?.personId);
-  if (!scope || sourceContext?.connector !== 'feishu' || ['app', 'bot'].includes(sourceContext.sender?.senderType)
-      || !isPilotInputSinceActivation(scope, sourceContext.createTime || sourceContext.eventTs)) return '';
-  const current = await findSessionMeta(session.id) || session;
-  if (scope.version === 2) {
-    if (messageRoutingPolicy?.trialVersion !== 2 || messageRoutingPolicy.trialId !== scope.trialId) return '';
-    return executionTrialPrompt({ trialId: scope.trialId, decisions: current.workAwareness?.inputDecisions,
-      plans: current.workAwareness?.executionPlans }) + '\n'
-      + '登记群和话题入口按需查询：remotelab work discover --query <具体事项> --json。返回目录仅供发现，不是转发授权。失败留原话题，核目标实际受理后才称已转交。';
-  }
-  const sessions = await loadSessionsMeta();
-  const peers = sessions.filter(s => !s.archived && !s.groupFeed && s.id !== session.id
-    && sameGroup(s.conversation, session.conversation)).slice(-12).map(s => ({ sessionId: s.id, name: s.name, goal: s.workSummary?.goal }));
-  return ['## 本群分流试点（只在本群生效）',
-    '你负责理解消息之间的关系，不另调用分流模型。区分是否参与、事项归属、执行位置、回复位置、是否向另一话题同步信息。',
-    '群主线负责尽快确定事项和去向，仅核对作者、授权、已有话题和当前处理状态；执行前的业务检查放到工作话题。不要在主线先读设备代码、查论文或展开业务研究，也不要为选择去向完成整项调查。归属不清时做一次有界的相关状态查询；关键授权仍须核实。已有话题正常回复继续当前话题，补充优先接续下面已有的话题。',
-    '用 node "$REMOTELAB_PROJECT_ROOT/cli.js" work route --file <JSON绝对路径> --json。JSON: {sourceRequestId:"本条输入的Request ID（原生追加时必填）",mode:"new"|"continue",task:"本次限定任务",reason:"新事项或接续理由",name:"新话题名",targetSessionId:"continue时必填",requestIds:["当前Request ID以及已接受的连续补充ID"]}。成功后由目标话题回复，主线不重复正文。失败必须说明，不得宣称已转交。',
-    '这是本群工作话题的专用接续入口，代替本试点中会丢失飞书话题绑定的普通 session-spawn。新话题先预留再开工，重试复用原目的地；不要为了等补充而固定延时。',
-    ...(inputReplyContract ? ['群主线的新消息可 steer 进入同一次执行，但每条仍有自己的作者、Request ID、事项和回复责任；及时处理补充、催问和停止要求。不要把进入同一次执行理解为同一任务。',
-    '主线简短答复（尤其催问）用 node "$REMOTELAB_PROJECT_ROOT/cli.js" work reply --file <JSON绝对路径> --json，JSON: {sourceRequestId:"要回应的已接受输入ID",text:"这条输入的答复",requestIds:["明确由这段答复一起覆盖的输入ID"]}。只使用本次执行实际收到的输入，不猜ID。此入口按原消息地址立即进入发送队列，不等整轮结束；每条输入只能选择移交或本地答复。重试保持正文和ID集合不变。',
-    '追加输入必须分别 work route 或 work reply；不要依赖根输入的 final 代替它们的答复。不需要正文的闲聊、致谢或仅表情回应，用 work reply 的 {sourceRequestId,noTextReason:"不需要正文的具体理由"} 保存处理结论，保留已有表情，不额外发状态文字。根输入未移交且未单独答复时仍可正常 final。已经通过入口答复的内容不再重复发送。催问先依据已保存的接收、排队、运行或移交回执简短回答；深入漏回调查另交工作话题，不把调查完成作为当场回应的前提。']
-      : ['本条沿用接受时的执行与回复契约；正常 final 或 work route 保留原路径，不使用新的主线 work reply。']),
-    '信息可能影响另一个话题时先读相关内容，再 work route --file 创建 {mode:"sync",targetSessionId,task:"具体信息和要求对方复核的问题",reason:"影响哪项结论、为什么"}。这仅保存草稿，不发送。向人展示目标、具体内容、影响、在目标展示已批准信息及复核结论、并回传来源的范围，以及返回的“确认同步 sync_...”短句；人发该短句后才送达并让目标补充思考。不要自动批准，不要求人在目标重复确认同一范围。',
-    '同步只限本群工作话题；不触碰其他群、自动通知或既有任务的执行状态。复核结果自动回来源，不能把已提交说成已采纳或已完成。需要新业务动作另提建议。',
-    '本试点已经获得在本群自动新建工作话题和接续同一事项的授权；跨话题复核另按具体草稿请人确认。这一试点入口优先于通用新建Session说明。相关检索和同步建议不能阻塞当前简短答复，不为每条聊天全局扫描所有会话。路由/同步记录可通过 work context 查看。',
-    JSON.stringify({ routes: state(current).routes.slice(-12).map(({ id, targetSessionId, task, reason, state, requestIds }) =>
-      ({ id, targetSessionId, task: task.slice(0, 300), reason: reason.slice(0, 160), state, requestIds })),
-      proposals: state(current).proposals.slice(-5).map(({ id, targetName, state, reason }) => ({ id, targetName, state, reason })), workTopics: peers }),
+  if (sourceContext?.connector !== 'feishu' || sourceContext.chatType !== 'group'
+      || session.conversation?.connector !== 'feishu') return '';
+  return [
+    '## 主动分流试用已撤回',
+    '在当前话题接续工作，不沿用历史中的主动误发识别、自动分流或主线 work reply 指令。并行分工仅按本条独立的并行设置与人的授权执行。正常话题回复和用户明确要求的新话题不受影响。',
+    '用户明确要求转交且内容、目标已确定时，仍可用 work route handoff 并携带本条指令的 authorization；已批准草稿可按 proposalId 恢复。保留登记范围、身份和实际投递核验，不自行扩权。',
   ].join('\n');
 }
 

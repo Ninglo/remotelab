@@ -26,6 +26,7 @@ try {
   const { requests } = await import('../chat/requests.mjs');
   const { findSessionMeta, mutateSessionMeta, withSessionsMetaMutation } = await import('../chat/session-meta-store.mjs');
   const { changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
+  const { buildParallelWorkContext } = await import('../chat/parallel-work-policy.mjs');
   const { captureMessageRoutingOptions } = await import('../chat/message-routing-policy.mjs');
   const { routingPilotScope, routingSyncTargetAllowed } = await import('../lib/group-routing-pilot.mjs');
   const { routeGroupWork, acceptGroupSync, buildGroupRoutingContext } = await import('../chat/group-routing.mjs');
@@ -95,10 +96,10 @@ try {
   assert.equal(await routingSyncTargetAllowed(conversation, { ...second, target: { ...second.target, chatId: 'outside' } }, 'person_a'), false);
   await changePersonMessageReplies({ action: 'routing', enabled: true, expectedRevision: 0, confirm: true }, { personId: 'person_a', identityId: 'identity_a' });
   const captured = await captureMessageRoutingOptions(await findSessionMeta('source'), base);
-  assert.equal(captured.messageRoutingPolicy.trialVersion, 2);
+  assert.equal(captured.parallelWorkPolicy.trialVersion, 2);
   const outsider = await captureMessageRoutingOptions(await findSessionMeta('source'), { ...base, viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' });
   assert.equal(outsider.messageRoutingPolicy.mechanism, 'none');
-  assert.match(await buildGroupRoutingContext(await findSessionMeta('source'), base.sourceContext, captured), /讨论已形成结论/);
+  assert.match(await buildParallelWorkContext(await findSessionMeta('source'), base.sourceContext, captured), /讨论已形成结论/);
   const sync = await routeGroupWork(await input('sync', 'A中的结论影响B'), { mode: 'sync', task: '仅复核结论', reason: '同一依据变化', targetSessionId: 'target' }, api);
   await assert.rejects(acceptGroupSync(await input('wrong-human', sync.confirmation, { viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' }), api));
   await acceptGroupSync(await input('sync-human', sync.confirmation), api);
@@ -214,7 +215,7 @@ try {
   assert.equal((await state(direct.plan.id)).state, 'running');
   const n = creations; await act(directInput, directBody, api); assert.equal(creations, n);
   await assert.rejects(act(await input('bypass'), { ...directBody, branches: [branch('a'), branch('b')] }, api), /executionMode parallel-sessions/);
-  const explicit = await act(await input('explicit-parallel', '这三项分别开子Session并行处理'), {
+  const explicit = await act(await input('explicit-parallel', '这三项分别开子Session并行处理', { messageRoutingPolicy: { version: 1, mechanism: 'none' }, parallelWorkPolicy: captured.parallelWorkPolicy }), {
     ...directBody, executionMode: 'parallel-sessions', authorization: '本人明确要求三个具体分工开子Session并行',
     branches: [branch('pool'), branch('resources'), branch('oracle')],
   }, api);

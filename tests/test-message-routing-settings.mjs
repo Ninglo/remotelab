@@ -1,23 +1,24 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
-const home = await mkdtemp(join(tmpdir(), 'remotelab-message-routing-'));
+const home = await mkdtemp(join(tmpdir(), 'remotelab-parallel-settings-'));
 setIsolatedTestHome(home);
 try {
   const { updateAuthDocument } = await import('../lib/auth-config.mjs');
   const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { captureMessageRoutingOptions } = await import('../chat/message-routing-policy.mjs');
-  const { buildGroupRoutingContext, routeGroupWork, replyGroupInput } = await import('../chat/group-routing.mjs');
+  const { buildParallelWorkContext } = await import('../chat/parallel-work-policy.mjs');
+  const { buildTurnContextHook } = await import('../chat/turn-context-hook.mjs');
+  const { routeGroupWork } = await import('../chat/group-routing.mjs');
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const { requests } = await import('../chat/requests.mjs');
-  const { buildReplyPreview } = await import('../static/chat/message-reply-model.js');
   const actor = name => ({ personId: `person_${name}`, identityId: `identity_${name}` });
   await updateAuthDocument(doc => {
     doc.people = ['alice', 'bob'].map(name => ({ id: actor(name).personId, name, handle: name,
-      identities: [{ id: actor(name).identityId, kind: 'feishu', realm: 'fixture', subjectId: name }] }));
+      identities: [{ id: actor(name).identityId, kind: 'feishu', realm: 'bot', subjectId: name }] }));
     doc.primaryPersonId = 'person_alice';
   });
   const dir = join(home, '.config/remotelab');
@@ -26,67 +27,74 @@ try {
     chatId: 'oc_pilot', tenantKey: 'tenant', chatType: 'group', conversationKind: 'main', messageId: 'om_source' } };
   const session = { id: 'main', folder: home, conversation };
   await writeFile(join(dir, 'chat-sessions.json'), JSON.stringify([session]));
-  await writeFile(join(dir, 'group-routing-pilot.json'), JSON.stringify({ version: 1, enabled: true,
+  await writeFile(join(dir, 'group-routing-pilot.json'), JSON.stringify({ version: 2, enabled: true,
+    trialId: 'parallel', personalOptIn: true,
     groups: [{ sourceRouteId: 'bot', chatId: 'oc_pilot', tenantKey: 'tenant', folder: home }] }));
   const input = name => ({ viewPersonId: actor(name).personId, initiatedByIdentityId: actor(name).identityId,
     feishuConnectorAuthenticated: true, sourceDelivery: conversation, sourceContext: { connector: 'feishu', sourceRouteId: 'bot',
       chatType: 'group', chatId: 'oc_pilot', messageId: 'om_source', sender: { openId: name, senderType: 'user' } } });
   const capture = (name = 'alice', extra = {}) => captureMessageRoutingOptions(session, { ...input(name), ...extra });
   const defaults = await loadPersonMessageReplies(actor('alice'));
-  assert.equal(defaults.choices.routing, 'none');
-  const off = await capture('alice', { routingPilotMainline: true, messageRoutingPolicy: { version: 1, mechanism: 'experimental' } });
-  assert.equal(off.messageRoutingPolicy.mechanism, 'none', 'caller cannot invent a preference');
-  assert.equal(off.routingPilotMainline, undefined, 'enabled group alone never opts a person in');
-  assert.match(await buildGroupRoutingContext(session, off.sourceContext, off), /本条消息不分流/);
-  const denied = (await requests.accept({ sessionId: session.id, requestId: 'off', text: 'a matter', options: off, deliveryPlan: conversation })).record;
-  await assert.rejects(routeGroupWork(denied, { mode: 'new', task: 'a matter', reason: 'new' }), /routing is disabled/);
-  await assert.rejects(replyGroupInput(denied, { text: 'status' }), /routing is disabled/);
-  const choices = { ...defaults.choices, routing: 'experimental', progress: 'card_all', strictStartCheck: true };
-  let settings = await changePersonMessageReplies({ action: 'apply', choices, expectedRevision: 0, confirm: true }, actor('alice'));
-  assert.equal((await loadPersonMessageReplies(actor('alice'))).choices.routing, 'experimental');
-  assert.equal((await loadPersonMessageReplies(actor('bob'))).choices.routing, 'none');
+  assert.equal(defaults.choices.parallelWork, false);
+  const off = await capture('alice', { parallelWorkPolicy: { version: 1, enabled: true },
+    routingPilotMainline: true, messageRoutingPolicy: { version: 1, mechanism: 'experimental' } });
+  assert.equal(off.parallelWorkPolicy.enabled, false, 'untrusted options cannot enable parallel work');
+  assert.equal(off.messageRoutingPolicy.mechanism, 'none');
+  assert.equal(off.routingPilotMainline, undefined);
+  assert.equal(await buildParallelWorkContext(session, off.sourceContext, off), '');
+
+  // Read old saved choices without mutating configuration or enrolling anybody new.
+  await updateAuthDocument(doc => { doc.people[0].preferences = { messageReplies: { version: 1, revision: 1,
+    active: { ...defaults.choices, parallelWork: undefined, routing: 'experimental', version: 3,
+      scope: 'person', personId: 'person_alice', policyId: 'old' } } }; });
+  const before = await readFile(join(dir, 'auth.json'), 'utf8');
+  let settings = await loadPersonMessageReplies(actor('alice'));
+  assert.equal(settings.choices.parallelWork, true);
+  assert.equal(settings.choices.routing, 'none');
+  assert.equal(await readFile(join(dir, 'auth.json'), 'utf8'), before, 'no read-time migration');
+  assert.equal((await loadPersonMessageReplies(actor('bob'))).choices.parallelWork, false);
   const on = await capture();
-  assert.equal(on.routingPilotMainlineProtocol, 2);
-  assert.match(await buildGroupRoutingContext(session, on.sourceContext, { messageRoutingPolicy: on.messageRoutingPolicy, inputReplyContract: true }), /本群分流试点/);
-  assert.equal((await capture('bob', { messageReplyPolicy: settings.active })).routingPilotMainline, undefined,
-    'another sender sharing execution cannot inherit the routing preference of its head');
+  assert.equal(on.parallelWorkPolicy.enabled, true);
+  assert.equal(on.parallelWorkPolicy.trialId, 'parallel');
+  assert.equal(on.messageRoutingPolicy.mechanism, 'none');
+  assert.equal(on.routingPilotMainline, undefined);
+  const context = await buildTurnContextHook(session, { sourceContext: on.sourceContext,
+    personId: 'person_alice', identityId: 'identity_alice', ...on });
+  assert.match(context, /本人的多项工作并行试用/);
+  assert.doesNotMatch(context, /## 新输入与当前工作的关系|## 本群分流试点|误发归属不清用work discover/);
+  const denied = (await requests.accept({ sessionId: session.id, requestId: 'on', text: 'a matter', options: on, deliveryPlan: conversation })).record;
+  await assert.rejects(routeGroupWork(denied, { mode: 'new', task: 'a matter', reason: 'new' }), /routing is disabled/);
   for (const extra of [ { initiatedByIdentityId: 'identity_bob' }, { feishuConnectorAuthenticated: false },
     { automationTitle: 'scheduled' }, { internalOperation: true },
     { sourceContext: { ...input('alice').sourceContext, sender: { openId: 'alice', senderType: 'bot' } } } ]) {
-    assert.equal((await capture('alice', extra)).messageRoutingPolicy.mechanism, 'none');
+    assert.equal((await capture('alice', extra)).parallelWorkPolicy.enabled, false);
   }
+  assert.equal((await capture('bob', { messageReplyPolicy: settings.active })).parallelWorkPolicy.enabled, false);
   const outside = await captureMessageRoutingOptions({ ...session, conversation: { ...conversation,
     target: { ...conversation.target, chatId: 'oc_other' } } }, input('alice'));
-  assert.equal(outside.routingPilotMainline, undefined, 'the choice does not authorize additional groups');
-  settings = await changePersonMessageReplies({ action: 'strict-start', enabled: false,
+  assert.equal(outside.parallelWorkPolicy.enabled, false);
+  settings = await changePersonMessageReplies({ action: 'strict-start', enabled: true,
     expectedRevision: settings.revision, confirm: true }, actor('alice'));
-  assert.equal(settings.choices.routing, 'experimental', 'strict-start toggle preserves the routing choice');
-  const { routing, ...olderClient } = settings.choices;
-  settings = await changePersonMessageReplies({ action: 'apply', choices: olderClient,
+  assert.equal(settings.choices.parallelWork, true);
+  const { routing, parallelWork, ...displayOnly } = settings.choices;
+  settings = await changePersonMessageReplies({ action: 'apply', choices: displayOnly,
     expectedRevision: settings.revision, confirm: true }, actor('alice'));
-  assert.equal(settings.choices.routing, 'experimental', 'older display-only clients cannot erase the selected mechanism');
-  await assert.rejects(changePersonMessageReplies({ action: 'apply', choices: { ...settings.choices, routing: 'everything' },
-    expectedRevision: settings.revision, confirm: true }, actor('alice')), /无效/);
-  await changePersonMessageReplies({ action: 'reset', expectedRevision: settings.revision, confirm: true }, actor('alice'));
-  assert.equal((await capture()).messageRoutingPolicy.mechanism, 'none');
+  assert.equal(settings.choices.parallelWork, true, 'older display-only saves preserve the choice');
+  settings = await changePersonMessageReplies({ action: 'parallel-work', enabled: false,
+    expectedRevision: settings.revision, confirm: true }, actor('alice'));
+  assert.equal((await capture()).parallelWorkPolicy.enabled, false);
   assert.deepEqual(await captureMessageRoutingOptions(session, input('alice'), { options: on }), on,
-    'already accepted requests retain their contract after a setting change');
-  const handedOff = await captureMessageRoutingOptions({ ...session, id: 'work-topic' }, input('alice'), { sessionId: session.id, options: on });
-  assert.deepEqual(handedOff.messageRoutingPolicy, on.messageRoutingPolicy);
-  assert.equal(handedOff.routingPilotMainline, undefined, 'work-topic results are not settled as source-mainline inputs');
-  const legacy = { ...on }; delete legacy.messageRoutingPolicy;
-  assert.equal((await captureMessageRoutingOptions(session, input('bob'), { options: legacy })).messageRoutingPolicy, undefined);
-  assert.equal((await captureMessageRoutingOptions(session, input('bob'), { options: legacy })).routingPilotMainline, true);
+    'accepted work and retries retain their snapshot');
+  const legacy = { ...on, parallelWorkPolicy: undefined, messageRoutingPolicy: {
+    version: 1, mechanism: 'experimental', personId: 'person_alice', trialId: 'parallel', trialVersion: 2 } };
+  assert.match(await buildParallelWorkContext(session, legacy.sourceContext, legacy), /多项工作并行/);
+  assert.equal(await buildParallelWorkContext(session, legacy.sourceContext, {
+    ...legacy, parallelWorkPolicy: { version: 1, enabled: false } }), '', 'explicit new off wins over legacy routing');
   const runtimeSelection = { tool: 'codex', model: 'fixture' };
-  assert.equal(canForwardNativeRequest({ key: 'a', options: on, runtimeSelection }, { key: 'b', options: off, runtimeSelection }), false,
-    'experimental and default inputs must not share a context with conflicting routing instructions');
-  assert.equal(canForwardNativeRequest({ key: 'a', options: off, runtimeSelection }, { key: 'b', options: off, runtimeSelection }), true);
-  assert.equal(buildReplyPreview({ ...defaults.choices, groups: [] })[0].text.includes('不分流'), true);
-  // Existing display choices missing the new field also read as no routing.
-  await updateAuthDocument(doc => {
-    doc.people.find(p => p.id === 'person_alice').preferences.messageReplies.active = { ...choices,
-      routing: undefined, version: 3, scope: 'person', personId: 'person_alice' };
-  });
-  assert.equal((await loadPersonMessageReplies(actor('alice'))).choices.routing, 'none');
-  console.log('message routing: defaults, personal isolation, persistence, admission, scope, server guards and accepted contracts passed');
+  assert.equal(canForwardNativeRequest({ key: 'a', options: on, runtimeSelection }, { key: 'b', options: off, runtimeSelection }), false);
+  assert.equal(canForwardNativeRequest({ key: 'a', options: on, runtimeSelection }, { key: 'b', options: on, runtimeSelection }), true,
+    'ordinary steer is unchanged');
+  await assert.rejects(changePersonMessageReplies({ action: 'parallel-work', enabled: true,
+    expectedRevision: settings.revision, confirm: true }, { ...actor('alice'), identityId: 'identity_bob' }), /本人/);
+  console.log('Parallel isolation verified: legacy read-only compatibility, default off, independent settings, actual context, retired routing, identity/group scope, retry and ordinary steer.');
 } finally { await rm(home, { recursive: true, force: true }); }

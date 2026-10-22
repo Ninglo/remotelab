@@ -7,7 +7,7 @@
 ```text
 请把飞书 Web 插件的设置整理为「页面显示／消息设置」。保留既有显示偏好、
 原生消息、输入草稿和并行维护的模块。消息设置复用当前 Person 的回复配置，
-包含首条回复、验收清单、进展展示、开工严格检查和实验分流；模型只影响当前
+包含首条回复、验收清单、进展展示、开工严格检查和多项工作并行；模型只影响当前
 已关联飞书对话的后续消息。保存全部成功后收起，失败时保留草案并说明已保存
 的部分。用隔离账号验证读写、账号切换和并发冲突，再核对部署与安装版本。
 不要传输实例所有者凭据或代用户完成首次个人账号连接。
@@ -15,7 +15,7 @@
 
 插件里的页面显示仍按原生飞书账号保存于当前浏览器；布局和宠物位置属于设备。
 消息设置直接读写 `person-message-replies.mjs` 的同一份个人配置，因此网页、飞书
-私聊、普通群和话题中的后续新工作沿用同一选择。实验分流仍受现有群试点限制。
+私聊、普通群和话题中的后续新工作沿用同一选择。多项工作并行仍受现有群试点限制。
 模型修改复用 Session 的运行配置，正在执行的 Run 保留已接纳的模型快照；共享
 群话题后续参与者也会使用这个对话的配置，Quick 对话保持创建后固定。
 
@@ -66,20 +66,20 @@
 固定记录 Web 发布版本及 SHA-256，安装检查试验资源基线、保留原包备份、重新签名
 并验证；新版本适配需要重新验证，不能直接套用浏览器扩展的自动更新器。
 
-The same personal routing preference is also available from eligible Feishu group configuration cards. “为我开启试用 / 为我关闭试用 / 查看我的状态” resolve the signed callback operator to their own Person; they do not change group participation, other members, or already accepted inputs. Callback audit entries retain event/chat/message provenance, and repeated callback events cannot undo a later personal choice. See [the scoped trial contract](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards).
+The same personal parallel-work preference is also available from eligible Feishu group configuration cards. “为我开启试用 / 为我关闭试用 / 查看我的状态” resolve the signed callback operator to their own Person; they do not change group participation, other members, or already accepted inputs. Callback audit entries retain event/chat/message provenance, and repeated callback events cannot undo a later personal choice. See [the scoped trial contract](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards).
 
 ## 飞书私聊个人设置卡（2026-10-16，小范围试用）
 
 个人设置以普通飞书私聊为主入口，网页只作备用，沿用同一份 Person 配置。
 增强版最终只保留本机显示、连接和当前对话模型等自身功能，不重复放个人
-开场、交付清单、进展、分流、记忆开关。当前先验证私聊卡，既有增强版安装
+开场、交付清单、进展、并行、记忆开关。当前先验证私聊卡，既有增强版安装
 尚未移除旧入口；在卡片验证并覆盖对应使用者之前不让他们失去原设置渠道。
 
 连接器配置 `personalSettings: {enabled: true, webUrl: "https://instance.example"}`
 向该连接器访问策略允许的私聊用户开放“我的设置”和“使用说明”入口。
 未设 `enabled: true` 时，沿用 `openIds: ["ou_..."]` 限定试用人；默认空名单不触达其他人。
 全量开放只改变入口范围，仍按本次操作者解析本人身份，不改变已有人的选择，
-不自动开启个人对话记忆，也不扩大个人记忆试点和分流群范围。webUrl 只接受无凭据、无查询参数
+不自动开启个人对话记忆，也不扩大个人记忆试点和并行试点群范围。webUrl 只接受无凭据、无查询参数
 的 HTTPS 根入口；卡片追加 `?tab=settings`，不会携带所有者或个人登录票据。
 网页版需要本人独立登录，不能把飞书身份当作网页登录；链接仅放在明确说明登录要求
 的折叠备用区。尚未验证本人能登录的试点应省略 webUrl，使用卡片刷新或私聊
@@ -87,7 +87,7 @@ The same personal routing preference is also available from eligible Feishu grou
 
 已开放的用户在私聊发送“我的设置”“个人设置”或 `/settings`，会在聊天底部重新收到卡片；“使用说明”会展开指南。首次进入私聊通过 `im.chat.access_event.bot_p2p_chat_entered_v1` 发送欢迎卡，首次普通消息仍作补充入口，两者共用持久去重记录。首次进入可沿既有外部身份解析创建本人身份，不启动模型工作、不改个人开关。卡片首屏保留简短个人引入，“个人设置”默认展开，以两列呈现七项设置：进展与清单、记忆与开场、并行与开工核对，以及默认关闭的交付前自检。每项使用浅灰底、统一内边距，名称加粗、简短作用用辅助字号灰字，并保留带边框的下拉选择器；窄屏自动堆叠。选择器展示当前值，修改后自动保存。较长的用途、限制和选择效果保留在设置区域内的“设置详解 · 用途与生效范围”；使用指南按主题逐层展开，并以箭头标明折叠入口。说明覆盖交办、补充、
 停止、资料授权、增强安装和可见范围。
-个人记忆仍受原试点名单限制；对话分流开关不扩大已登记群范围。
+个人记忆仍受原试点名单限制；个人并行开关不扩大已登记群范围。
 
 卡片回调校验签名入口后的操作者、租户、原私聊、当前消息和已绑定 Person，
 不信任载荷中的身份。下拉回调读取单选 option，布尔值仅接受 true/false，进展值仅接受已列举选项；原按钮回调仍兼容。每次设置沿原版本校验写入，成功后返回当前卡和保存提示；
@@ -114,6 +114,8 @@ The same personal routing preference is also available from eligible Feishu grou
 说明与基础设置在同一张卡内呈现，两个大区域使用独立且刷新时稳定的组件标识，设置区域默认展开，单项说明与当前值直接可见，选项通过原生下拉框展开；说明区域默认收起。明确要求重发完整试用卡时，发布器可使用 `renew: true` 更新有效消息绑定；保留当前持有人的设置与能力说明，旧卡不能继续修改设置。能力示例人物不改变卡片操作人的身份。
 
 机器人原生悬浮菜单可通过官方 v7 application ability 配置两个 `menu_content_type: 4` 的发送消息入口：“我的设置”和“使用说明”，复用消息处理通路；首次进入需增量订阅上述事件，保留其他事件与长连接方式。能力更改须发布并回读在线版本。菜单可见范围与连接器入口开放范围分开配置；向所有获准私聊用户推全时需显式设置 `personalSettings.enabled: true`，仅发布菜单不会改变后端开放范围。新用户未明确开启时对话个人记忆默认关闭，已有人的选择不变。
+
+并行开关现独立保存为 `parallelWork`。旧共用开关只读兼容为并行选择，新的自动分流固定关闭，旧卡回调不会重新开启它。关闭并行不停止已存在计划。实际实例部署与个人开启另行核验。
 
 ## 可选交付前自检
 

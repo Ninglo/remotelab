@@ -25,7 +25,8 @@ try {
   assert.deepEqual(view.enabledNames,['enabled']);
   const card=buildGroupConfigurationCard({key:'key',mode:'active'}, {routingTrial:view});
   const content=JSON.stringify(card);
-  assert.match(content,/信息分流机制/);
+  assert.match(content,/多项工作并行/);
+  assert.doesNotMatch(content,/信息分流机制/);
   assert.match(content,/试点已开启/);
   assert.doesNotMatch(content,/个人分流与并行试用/);
   assert.ok(card.body.elements.some(e=>e.tag==='collapsible_panel'&&e.expanded===false));
@@ -42,8 +43,8 @@ try {
   const record={key:'a'.repeat(24),source,mode:'active'};
   await controller.publish(record,{existingOnly:true});
   assert.equal(creates,0,'missing original card is not silently replaced');
-  await controller.publish({...record,cardMessageId:'old',cardCreatedAt:1,pinPending:true},{existingOnly:true});
-  assert.equal(patches,1,'even aged cards use patch only');
+  await controller.publish({...record,cardMessageId:'old',cardCreatedAt:Date.now(),pinPending:false,pinnedMessageId:'old'},{existingOnly:true});
+  assert.equal(patches,1,'a current existing card is patched without replacement');
   assert.equal(creates,0);assert.equal(pins,0,'no extra message or top-notice update');
   console.log('Public routing roster: explicit scope, personal state, removal, compact copy and patch-only refresh passed');
 } finally {await rm(home,{recursive:true,force:true});}

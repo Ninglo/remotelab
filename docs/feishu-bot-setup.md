@@ -624,8 +624,9 @@ claim, but the reaction create call has no message-send-style idempotency UUID: 
 provider outcome requires reconciliation before deliberate retry.
 In an explicitly enabled group, admitted human messages on the main timeline
 reach a Session. Topic conversations use the same participation judgment, with their existing
-conversation and task context. Personal routing opt-in controls work routing,
-not text participation, reaction choice or response publication. An explicit @ mention normally asks for a text reply;
+conversation and task context. The personal parallel-work opt-in controls proposed independent branches. Automatic
+work routing is withdrawn for new inputs; text participation, reaction choice, explicit
+handoffs and response publication keep their existing contracts. An explicit @ mention normally asks for a text reply;
 the model includes `OnIt` before a normal answer. A message asking for only a
 reaction receives no visible text after the reaction is added.
 

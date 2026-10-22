@@ -418,12 +418,12 @@
                 </div>
                 <div class="settings-section reply-settings-parts">
                   <div class="settings-section-title" data-i18n="settings.replies.draft">我的回复设置</div>
-                  <label for="replyRouting" data-i18n="settings.replies.routing">分流机制</label>
-                  <select class="settings-inline-select" id="replyRouting">
-                    <option value="none" selected data-i18n="settings.replies.routingNone">不分流（默认）</option>
-                    <option value="experimental" data-i18n="settings.replies.routingExperimental">实验分流</option>
+                  <label for="replyParallelWork" data-i18n="settings.replies.parallel">多项工作并行（试用）</label>
+                  <select class="settings-inline-select" id="replyParallelWork">
+                    <option value="off" selected data-i18n="settings.replies.parallelOff">不主动建议（默认）</option>
+                    <option value="on" data-i18n="settings.replies.parallelOn">主动建议并行</option>
                   </select>
-                  <p class="settings-section-note" data-i18n="settings.replies.routingNote">不分流时在当前会话处理并回复。实验分流在已启用试点的飞书群中，将新事项交给工作话题、把补充接到原工作，催问可先在群中答复。保存后对之后发来的群消息生效。</p>
+                  <p class="settings-section-note" data-i18n="settings.replies.parallelNote">在登记群中建议可独立推进的分工，经你授权后执行，结果回到原话题。保存后对本人之后发来的群消息生效；主动分流试用已撤回。</p>
                   <label><input id="replyStrictStartCheck" type="checkbox"><span data-i18n="settings.replies.strictStartCheck">开工严格检查</span></label>
                   <p class="settings-section-note" data-i18n="settings.replies.strictStartCheckNote">开工前核对事项归属、现行机制和相关工作，再分别确定执行位置、回复位置与展示方式。关闭此项即可恢复普通开工，不改变其他回复选择。</p>
                   <label><input id="replySelfReview" type="checkbox"><span data-i18n="settings.replies.selfReview">交付前自检</span></label>

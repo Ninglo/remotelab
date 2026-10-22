@@ -441,6 +441,12 @@ try {
     await until(async () => (await receipt(pilotRoot.run.id, id))?.state === 'accepted', id + ' reaches held execution');
   }
   assert.equal((await logs()).filter(event => event.runId === pilotRoot.run.id && event.kind === 'completed').length, 0);
+  // New admission has withdrawn routing. Exercise recovery of already accepted
+  // legacy pilot work without restoring the production opt-in path.
+  for (const id of ['pilot-root', 'pilot-supplement', 'pilot-independent', 'pilot-status', 'pilot-unhandled']) {
+    assert.equal((await rpc('request', pilot.id, id)).options.messageRoutingPolicy.mechanism, 'none');
+    await rpc('legacy-routing-snapshot', pilot.id, id);
+  }
   const handoff = await rpc('route-input', pilot.id, 'pilot-root', {
     mode: 'new', task: 'Research A including the supplement', reason: 'same research', requestIds: ['pilot-root', 'pilot-supplement'] });
   const separate = await rpc('route-input', pilot.id, 'pilot-independent', {

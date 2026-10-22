@@ -35,7 +35,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     choices('progress', c.progress, Object.entries(progressLabels).slice(0, 2)),
     choices('progress', c.progress, Object.entries(progressLabels).slice(2)),
     md('卡片会持续更新；选择“全部进展”时，历史记录默认收起，想看时再展开。')]),
-    ...toggle('多项工作并行（试用）', 'routing', c.routing === 'experimental', '有几件事能独立推进时，我会提出分工，确认后分开做，你仍在原话题收结果。关闭后不主动提出这类分工；目前仅在已开放的试点群生效。', ['主动建议分工', '不主动建议']),
+    ...toggle('多项工作并行（试用）', 'parallelWork', c.parallelWork === true, '有几件事能独立推进时，我会提出分工，确认后分开做，你仍在原话题收结果。关闭后不主动提出这类分工；目前仅在已开放的试点群生效。', ['主动建议分工', '不主动建议']),
     ...(memory.available ? toggle('个人记忆', 'memory', memory.conversational && memory.enabled,
       '记住你的称呼、表达偏好和协作习惯，减少下次重复交代。新发现的习惯会先问你是否保留；你也可以随时问“你记住了什么”，或要求修改、删除。关闭不会删除已有记录。', ['开启', '关闭'], memory.revision)
       : [md('**个人记忆 · 尚未开放**\n用于记住称呼、表达偏好和协作习惯。当前账号暂未开放此试用。')]),
@@ -62,7 +62,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     checklist: ['任务清单', '多项成果分别打勾，方便跟进和验收。'],
     memory: ['个人记忆', '记住称呼和协作习惯；新偏好先问你。'],
     opening: ['开始工作时', '动手前简短说明目标和做法。'],
-    routing: ['多项工作并行 · 试用', '先提出分工，经你确认再分别推进。'],
+    parallelWork: ['多项工作并行 · 试用', '先提出分工，经你确认再分别推进。'],
     selfReview: ['交付前自检', '默认关闭；核对成果、验收条件与交付入口。'],
     strictStartCheck: ['开工前核对 · 试用', '多查项目背景和已有工作，准备会稍久。'],
   };
@@ -81,7 +81,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
         behaviors: [{ type: 'callback', value: { namespace: 'personal-settings', key: record.key, field, revision: current.revision, input: 'select' } }] },
     ] }];
   }));
-  const order = ['progress', 'checklist', 'memory', 'opening', 'routing', 'strictStartCheck', 'selfReview'];
+  const order = ['progress', 'checklist', 'memory', 'opening', 'parallelWork', 'strictStartCheck', 'selfReview'];
   const tiles = order.map(field => byField.get(field) || { tag: 'column', width: 'weighted', weight: 1,
     elements: [md('**个人记忆**\n记住称呼和协作习惯。当前账号尚未开放。')] });
   const rows = Array.from({ length: Math.ceil(tiles.length / 2) }, (_, i) => i * 2).map(i => ({ tag: 'column_set', flex_mode: 'stretch', horizontal_spacing: '12px', columns: tiles.slice(i, i + 2) }));
@@ -201,12 +201,13 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
           await changePersonalMemorySettings({ enabled: value.value, expectedRevision: value.revision, confirm: true }, actor);
           saved = true;
         } else if (value.field !== 'refresh') {
-          if (!['opening', 'checklist', 'progress', 'routing', 'strictStartCheck', 'selfReview'].includes(value.field)) throw Error('未知设置。');
+          if (!['opening', 'checklist', 'progress', 'routing', 'parallelWork', 'strictStartCheck', 'selfReview'].includes(value.field)) throw Error('未知设置。');
           const current = await loadPersonMessageReplies(actor);
           if (value.field !== 'progress' && typeof value.value !== 'boolean') throw Error('设置选项无效。');
-          const next = value.field === 'routing' ? value.value ? 'experimental' : 'none' : value.value;
+          const field = value.field === 'routing' ? 'parallelWork' : value.field; // pre-upgrade parallel cards
+          const next = value.value;
           await changePersonMessageReplies({ action: 'apply', expectedRevision: value.revision, confirm: true,
-            choices: { ...current.choices, [value.field]: next } }, actor);
+            choices: { ...current.choices, [field]: next } }, actor);
           saved = true;
         }
         const rendered = await card(record, actor, saved ? '已保存，用于你的后续对话。' : '已读取当前设置。');

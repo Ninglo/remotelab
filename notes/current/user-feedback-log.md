@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-22 — Separate parallel work from the withdrawn routing trial
+
+- Feedback: actual parallel branches exist, while proactive misroute detection and delivery have not passed real-use acceptance. Keep parallel work and withdraw routing for independent redesign.
+- Change: independent personal parallel setting, accepted-input policy and execution gate; new inputs never activate automatic routing, and proactive misroute prompts are removed. Preserve old parallel choices without rewriting configuration, ongoing plan controls, ordinary thread continuation and explicitly authorized handoff receipts.
+- Verification: isolated settings, identity/group scope, prompt projection, branch execution, retry/steer and browser checks. No production configuration, deployment or service restart in this delivery.
+
 ### 2026-10-21 — Session links should open conversations and Settings should close
 
 - Feedback: opening a Session link unexpectedly showed Settings, and clicking Settings again did not close it.

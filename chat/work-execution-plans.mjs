@@ -1,5 +1,6 @@
 // The Harness interprets input and human decisions. This module stores the
 // bounded plan, validates its provenance, and transports accepted work/results.
+import { acceptedParallelWorkPolicy } from './parallel-work-policy.mjs';
 import { createHash } from 'node:crypto';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
@@ -44,8 +45,8 @@ async function actorFor(record, { existing = false } = {}) {
   if (!scope || scope.version !== 2 || !isPilotInputSinceActivation(scope, o.sourceContext.createTime || o.sourceContext.eventTs)) {
     fail('Input is outside the personal execution trial');
   }
-  if (!existing && (o.messageRoutingPolicy?.trialId !== scope.trialId
-      || o.messageRoutingPolicy?.mechanism !== 'experimental')) fail('Execution trial is disabled for this input');
+  const parallel = acceptedParallelWorkPolicy(o);
+  if (!existing && (parallel.version !== 1 || !parallel.enabled || parallel.trialId !== scope.trialId)) fail('Execution trial is disabled for this input');
   return { actor, source, scope };
 }
 function validateBranches(branches) {

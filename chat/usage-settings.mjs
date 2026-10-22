@@ -51,10 +51,11 @@ export const personSettingValues = preferences => ({
 export function replySettingValues(choices, version = 2) {
   return choices ? { 'reply.mode': 'custom', 'reply.opening': toggle(choices.opening),
     'reply.checklist': toggle(choices.checklist),
-    ...(version >= 3 ? { 'reply.self_review': toggle(choices.selfReview), 'reply.strict_start_check': toggle(choices.strictStartCheck), 'reply.routing': choices.routing || 'none' } : {}),
+    ...(version >= 3 ? { 'reply.self_review': toggle(choices.selfReview), 'reply.strict_start_check': toggle(choices.strictStartCheck), 'reply.routing': 'none',
+      'reply.parallel_work': toggle(choices.parallelWork ?? choices.routing === 'experimental') } : {}),
     'reply.progress': choices.progress === 'messages' && version < 2 ? 'text_messages' : choices.progress }
     : { 'reply.mode': 'default', 'reply.opening': 'inherit', 'reply.checklist': 'inherit', 'reply.progress': 'inherit',
-      ...(version >= 3 ? { 'reply.self_review': 'off', 'reply.strict_start_check': 'off', 'reply.routing': 'none' } : {}) };
+      ...(version >= 3 ? { 'reply.self_review': 'off', 'reply.strict_start_check': 'off', 'reply.routing': 'none', 'reply.parallel_work': 'off' } : {}) };
 }
 
 export function replySettingRows(settings, groups) {

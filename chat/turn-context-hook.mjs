@@ -10,7 +10,7 @@ import { buildPersonalMemoryConversationParts } from './personal-memory-conversa
 import { buildSkillExtractionTrial } from './skill-extraction-trial.mjs';
 import { experimentBackground } from './feature-experiment-context.mjs';
 import { buildWebTopicDiscoveryPrompt } from './project-topic-context.mjs';
-import { buildMisroutePrompt } from './work-routing-discovery.mjs';
+import { buildParallelWorkContext } from './parallel-work-policy.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -27,7 +27,7 @@ function buildFeishuLogPromptBlock(sourceContext) {
   ].join('\n');
 }
 
-export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', experimentInput = {}, pilotInputReplyContract = false, messageRoutingPolicy, separateProjectContext = false } = {}) {
+export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', experimentInput = {}, pilotInputReplyContract = false, messageRoutingPolicy, parallelWorkPolicy, separateProjectContext = false } = {}) {
   // Ordinary turns carry accepted source/state and small identity/project
   // pointers. The Harness chooses explicit work/memory reads for its task;
   // only an explicitly enrolled experiment may restore automatic background.
@@ -54,7 +54,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     personalMemory.feedback,
   ];
   const sectionsAfterProject = [
-    ...(!experimentInput.automated ? [buildMisroutePrompt(sourceContext)] : []),
+    ...(!experimentInput.automated ? [await buildParallelWorkContext(session, sourceContext, { messageRoutingPolicy, parallelWorkPolicy })] : []),
     await buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
       automated: experimentInput.automated }),
     await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),

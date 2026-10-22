@@ -1,11 +1,11 @@
 import { resolvePersonMessageReplyPolicy } from './person-message-replies.mjs';
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
 
-// Routing belongs to each input's sender, independently of the display policy
-// inherited by a native execution. Never let another sender's head opt them in.
+// Capture the sender's independent parallel setting at admission. The routing
+// field remains only for accepted legacy work; new inputs always disable it.
 export async function captureMessageRoutingOptions(session, supplied, preserved) {
   const options = { ...supplied };
-  for (const key of ['messageRoutingPolicy', 'routingPilotMainline', 'routingPilotMainlineProtocol']) {
+  for (const key of ['messageRoutingPolicy', 'parallelWorkPolicy', 'routingPilotMainline', 'routingPilotMainlineProtocol']) {
     delete options[key];
     if (preserved && Object.hasOwn(preserved.options || {}, key)) options[key] = preserved.options[key];
   }
@@ -29,20 +29,15 @@ export async function captureMessageRoutingOptions(session, supplied, preserved)
     try { personal = await resolvePersonMessageReplyPolicy(options); }
     catch (error) { console.warn(`[message-routing] ${error.message}; routing disabled`); }
   }
-  options.messageRoutingPolicy = { version: 1, mechanism: personal?.routing === 'experimental' ? 'experimental' : 'none',
-    ...(personal ? { personId: personal.personId, policyId: personal.policyId } : {}) };
+  // New inputs never acquire automatic routing. Already accepted inputs above
+  // retain their snapshots, including pending confirmations and running plans.
+  options.messageRoutingPolicy = { version: 1, mechanism: 'none' };
   const scope = humanGroup ? await routingPilotScope(session.conversation, undefined, personal?.personId) : null;
-  if (scope?.version === 2 && options.messageRoutingPolicy.mechanism === 'experimental'
-      && isPilotInputSinceActivation(scope, source.createTime || source.eventTs)) {
-    options.messageRoutingPolicy.trialId = scope.trialId;
-    options.messageRoutingPolicy.trialVersion = 2;
-  }
-  if (options.messageRoutingPolicy.mechanism === 'experimental'
-      && session.conversation?.target?.conversationKind === 'main'
-      && isPilotInputSinceActivation(scope, source.createTime || source.eventTs)) {
-    options.routingPilotMainline = true;
-    options.routingPilotMainlineProtocol = 2;
-  }
+  const enabled = personal?.parallelWork === true && scope?.version === 2
+    && isPilotInputSinceActivation(scope, source.createTime || source.eventTs);
+  options.parallelWorkPolicy = { version: 1, enabled: Boolean(enabled),
+    ...(personal ? { personId: personal.personId, policyId: personal.policyId } : {}),
+    ...(enabled ? { trialId: scope.trialId, trialVersion: 2 } : {}) };
   return options;
 }
 

@@ -7,7 +7,7 @@ import { loadPersonMessageReplies, changePersonMessageReplies } from '../../chat
 export async function personalRoutingCardAction(runtime, record, openId, action, eventId) {
   try {
     const scope = await routingPilotCardScope({ connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId, target: record.source });
-    if (!scope?.personalOptIn) throw Error('本群尚未开放个人分流试用。');
+    if (!scope?.personalOptIn) throw Error('本群尚未开放个人并行试用。');
     const document = await loadAuthDocument({ persistMigration: false });
     const matches = document.people.flatMap(person => (person.identities || [])
       .filter(identity => identity.kind === 'feishu' && identity.realm === runtime.config.sourceRouteId && identity.subjectId === openId)
@@ -16,13 +16,13 @@ export async function personalRoutingCardAction(runtime, record, openId, action,
     if (!eventId) throw Error('缺少卡片操作标识，请重新点击。');
     const actor = matches[0];
     let settings = await loadPersonMessageReplies(actor);
-    if (action !== 'routing-status') {
-      const enabled = action === 'routing-on';
-      if ((settings.choices.routing === 'experimental') !== enabled) {
-        settings = await changePersonMessageReplies({ action: 'routing', enabled, confirm: true, expectedRevision: settings.revision }, actor);
+    if (!['routing-status', 'parallel-status'].includes(action)) {
+      const enabled = ['routing-on', 'parallel-on'].includes(action);
+      if (settings.choices.parallelWork !== enabled) {
+        settings = await changePersonMessageReplies({ action: 'parallel-work', enabled, confirm: true, expectedRevision: settings.revision }, actor);
       }
     }
-    return { toast: { type: 'success', content: `你本人的分流试用${settings.choices.routing === 'experimental' ? '已开启' : '已关闭'}。仅影响你的后续输入，其他成员不变。` } };
+    return { toast: { type: 'success', content: `你本人的并行试用${settings.choices.parallelWork ? '已开启' : '已关闭'}。仅影响你的后续输入，其他成员不变；主动分流试用已撤回。` } };
   } catch (error) {
     return { toast: { type: 'error', content: error.message } };
   }
@@ -37,7 +37,7 @@ export async function personalRoutingCardView(conversation) {
   const names = document.people.filter(person => {
     const active = person.preferences?.messageReplies?.active;
     return active?.version === 3 && active.scope === 'person' && active.personId === person.id
-      && active.routing === 'experimental' && person.identities?.some(i => i.kind === 'feishu' && i.realm === conversation.sourceRouteId);
+      && (active.parallelWork ?? active.routing === 'experimental') && person.identities?.some(i => i.kind === 'feishu' && i.realm === conversation.sourceRouteId);
   }).map(person => String(person.name || '未命名成员').replace(/[<>\[\]`*_\n\r]/g, '').slice(0, 64)).sort();
   return { ...scope, enabledNames: names };
 }

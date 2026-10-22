@@ -1421,7 +1421,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     separateProjectContext: true,
     sourceContext: normalizeSourceContext(options.modelSourceContext ?? options.sourceContext, Infinity), requestId: options.requestId,
     pilotInputReplyContract: hasFeishuInputReplyContract({ options }),
-    messageRoutingPolicy: options.messageRoutingPolicy,
+    messageRoutingPolicy: options.messageRoutingPolicy, parallelWorkPolicy: options.parallelWorkPolicy,
     personId: options.viewPersonId, identityId: options.initiatedByIdentityId,
     query: options.memoryQuery || '',
     experimentInput: { baselineSourceContext: options.sourceContext, attachmentCount: options.preSavedAttachments?.length || 0,
@@ -3611,7 +3611,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // These are admission-time projections, not user input. A retry keeps the
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
-    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy', 'messageRoutingPolicy', 'groupDeliverySelfReviewPolicy', 'featureObservation',
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy', 'messageRoutingPolicy', 'parallelWorkPolicy', 'groupDeliverySelfReviewPolicy', 'featureObservation',
       'usageSurface', 'usageActorKind', 'usagePersonId']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];
@@ -3673,6 +3673,7 @@ async function ensureRequestInput(record, manifest) {
       ...(sourceContext ? { sourceContext } : {}),
       ...(record.options.messageReplyPolicy ? { messageReplyPolicy: record.options.messageReplyPolicy } : {}),
       ...(record.options.messageRoutingPolicy ? { messageRoutingPolicy: record.options.messageRoutingPolicy } : {}),
+      ...(record.options.parallelWorkPolicy ? { parallelWorkPolicy: record.options.parallelWorkPolicy } : {}),
       ...(workboardAdmission(record.options) ? { workboardAdmission: workboardAdmission(record.options) } : {}),
     }));
     const inputSession = await findSessionMeta(record.sessionId);

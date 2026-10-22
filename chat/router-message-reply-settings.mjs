@@ -30,7 +30,7 @@ export async function handleMessageReplySettings({ req, res, pathname, parsedUrl
       }
       const actor = await currentRunActor(input.runId || parsedUrl?.query?.runId, authSession, req.method === 'POST');
       const setting = input.setting || parsedUrl?.query?.setting || 'strict-start';
-      if (!['strict-start', 'input-trial', 'routing', 'self-review'].includes(setting)) throw new Error('Unknown personal trial');
+      if (!['strict-start', 'input-trial', 'parallel-work', 'routing', 'self-review'].includes(setting)) throw new Error('Unknown personal trial');
       if (input.ruleVersion !== undefined && setting !== 'strict-start') throw new Error('Rule version only applies to strict-start');
       const settings = setting === 'input-trial'
         ? (req.method === 'GET' ? await loadInflightTrial(actor) : await changeInflightTrial(input, actor))

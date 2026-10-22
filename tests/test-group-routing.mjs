@@ -34,7 +34,7 @@ try {
   assert.match(groupWorkHref({ ...topic, target: { ...topic.target, threadId: 'omt_verified' } }, 'work'), /open_thread_id=omt_verified/);
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const options = { viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a',
-    sourceContext: { connector: 'feishu', chatId: 'pilot' }, sourceDelivery: origin };
+    sourceContext: { connector: 'feishu', chatType: 'group', chatId: 'pilot' }, sourceDelivery: origin };
   for (const chosen of [origin, topic, { ...topic, target: { ...topic.target, threadId: 'existing-thread' } }]) {
     const source = { options: { sourceContext: { feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 } },
       deliveryPlan: origin, replyPlacement: chosen };
@@ -253,11 +253,11 @@ try {
   assert.doesNotMatch(failure.foldedDetails.summary, /部分依据/, 'partial detail does not flatten a failed review');
   assert.equal(failedPacket.targetDeliveryId, undefined);
   const context = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext, { inputReplyContract: true });
-  assert.match(context, /sourceRequestId/); assert(context.length < 16000);
-  assert.match(context, /work reply/); assert.match(context, /不要在主线先读设备代码/);
+  assert.match(context, /主动分流试用已撤回/); assert(context.length < 16000);
+  assert.doesNotMatch(context, /不要在主线先读设备代码/);
   const legacyContext = await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext);
   assert.doesNotMatch(legacyContext, /新消息可 steer/);
-  assert.match(legacyContext, /沿用接受时/);
+  assert.match(legacyContext, /主动分流试用已撤回/);
   const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
   const reactions = (await listSourceDeliveries({ connector: 'feishu', sourceRouteId: 'bot' }))
     .filter(delivery => delivery.kind === 'reaction');
@@ -289,7 +289,7 @@ try {
   assert.equal((await requests.get(failed.key)).routingHandoff.feedbackError, null);
   await writeFile(configPath, JSON.stringify({ ...config, enabled: false }));
   assert.equal(await routingPilotScope(origin), null);
-  assert.equal(await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext), '');
+  assert.match(await buildGroupRoutingContext(await findSessionMeta('main'), options.sourceContext), /主动分流试用已撤回/);
   await assert.rejects(routeGroupWork(syncSource, { mode: 'sync', targetSessionId: 'work', task: 'disabled', reason: 'disabled' }, manager), /enabled pilot/);
   console.log('GROUP_ROUTING_VERIFIED: scoped handoff and continuation, stable ownership and retries, confirmed bounded reconsideration, queued return receipt, stale/rejected/off-scope inputs fail closed; no external messages or models.');
 } finally { await rm(home, { recursive: true, force: true }); }

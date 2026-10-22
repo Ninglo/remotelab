@@ -173,19 +173,19 @@ remotelab work update --file update.json --json
 
 隔离测试覆盖同时开工与双向检索、草稿／送达／采用边界、版本冲突、结果回收、多人引用的姓名与适用范围、普通问法与公司背景、更正／损坏／缺失／超预算、UI 仅填人类草稿、原生输入去重与问题保护。原生测试使用可控模拟 Harness，可以证明传输和状态保护，不能代替真实模型在全部语言情境下都遵守规则。正式效果还要观察实际回答、漏检、误报、读取延迟和上下文开销；不通过向真实群发测试消息来验收。
 
-## 群分流试点与个人执行安排
+## 个人并行试用与明确交接
 
-个人 v2 试用由当前 Harness 结合原讨论，判断输入是在提问、讨论、形成决定、明确交办、补充还是停止，再选择在哪里做、如何推进。平台不增加前置语义分类模型。简单答复不等待全局检索；快慢和并行由依赖决定。讨论已有明确执行决定时，携带目标、结论、约束、来源和验收要求直接开工；讨论充分、引用建议和沉默都不能单独授权执行。
+并行使用独立个人选择 `parallelWork` 和接受输入时保存的 `parallelWorkPolicy`。它仅判断当前已授权目标中有哪些可以独立推进的分工；不注入主动误发识别或自动分流指引。新输入的 `messageRoutingPolicy` 固定为 `none`。主线另开回复话题、已有话题接续和有明确人类指令的 `work route handoff` 保留原入口、身份与登记范围检查。
 
-A话题混入疑似B内容时，先判断它是对A的补充、明确改目标，还是属于B的独立内容。不能仅因最新消息提到B就改写A的目标、假设和验收标准。明确属于B的内容保留原来源，按已有确认边界交接；归属不清时查必要原件或只问归属问题。A中不受影响的工作继续，只暂停确实依赖歧义输入的步骤。这里的判断保护工作准确度；可选并行确认则只影响执行方式，不能阻塞已授权开工。
-
-实例只配置获准的人与群，个人还须选择 `routing=experimental`；两层条件均满足才启用。旧请求保留原快照，不重放。
+实例沿用 `<CONFIG_DIR>/group-routing-pilot.json` 中已经登记的 route／tenant／chat 和个人范围，不修改这个文件来扩群。个人还须开启 `parallelWork`，两层条件都满足才启用；新用户仍默认关闭。旧个人 `routing=experimental` 只作为原并行选择的只读兼容，显式保存的 `parallelWork=false` 优先，不批量重写配置、不恢复自动分流。已接受请求保留快照，旧运行和已批准的转交可完成或停止；新输入不会继承另一人的开关。
 
 ```json
 {"version":2,"enabled":true,"trialId":"personal-execution-v2","personIds":["person_example"],"crossGroupSync":true,"groups":[{"sourceRouteId":"bot-route","tenantKey":"tenant","chatId":"chat","folder":"/absolute/workspace","activatedAt":"2026-10-15T00:00:00.000Z"}]}
 ```
 
-`remotelab message-replies routing status|on|off --json` 按当前接受的人类请求核对本人，保留其他回复设置。群范围不从个人开关推断。新建和明确接续仍限同群；`sync` 可以经人确认在同一 v2 试用登记的群之间传递参考、复核并回传，不跨 Bot／租户。其他人不能代为确认本人的草稿；确认时说明目标展示和来源回传范围。同步复核不自动允许修改目标原任务。
+设置入口：Web“设置 → 消息设置 → 多项工作并行”、飞书私聊“我的设置”及登记群配置卡。`remotelab message-replies parallel-work status|on|off --json` 按当前接受的人类请求核对本人，保留其他回复选择，作用于保存后接受的新输入。旧 `routing` 设置操作仅兼容为并行开关，返回的 `routing` 始终为 `none`；不能用旧卡或旧客户端重新开启自动分流。
+
+并行关闭后，普通输入继续当前话题，已存在计划的停止、补充、回答和结果回收不依赖新开关。明确交接的传输代码与回执仍保留，方便后续独立修订分流，而不影响正在运行的任务。是否部署、本人是否开启、真实分支是否交付分别核验。
 
 ### 讨论转开工确认卡
 
@@ -247,11 +247,11 @@ A话题混入疑似B内容时，先判断它是对A的补充、明确改目标�
 
 飞书分支先把话题原帖写入持久出站队列，实际送达并绑定到子 Session 后才启动执行；待投递、失败或送达不明时保留原分支，不能静默改成网页执行。回执驱动继续执行，启动恢复复用同一投递，不新增轮询任务。受理通知返回原话题，优先给实际飞书话题链接；飞书只返回消息 ID 时明确链接暂缺，不伪造话题 ID，也不用网页链接替代。同次就绪的分支合并通知，后续就绪的分支再补入口。分支中的追问沿话题绑定回到同一 Session；已创建的历史网页分支不自动迁移。回执批次先保存再投递，重启或重试不重复发送；仅有草稿、未选分支和未启动依赖不会显示成已经创建。投递入队仍需连接器实际送达，不能当作业务完成。通用session-spawn的可见创建通知也沿调用Run保存的回复地址回传；Web调用和隐藏子会话不会因旧群绑定而向飞书发通知。
 
-维护入口：`chat/work-execution-prompt.mjs` 生成给当前试点请求的 Harness／Agent 读取的分工指引；`chat/work-execution-plans.mjs` 保存计划并执行分支创建、依赖与回传；`chat/source-deliveries.mjs` 以投递回执触发话题绑定后的接续。它们是内部提示与执行机制，不是给群成员阅读的计划文档。渠道要求需同时更新提示、实现和测试。
+维护入口：`chat/parallel-work-policy.mjs` 单独核对并行快照并构建上下文；`chat/work-execution-prompt.mjs` 生成给当前试点请求的 Harness／Agent 读取的分工指引；`chat/work-execution-plans.mjs` 保存计划并执行分支创建、依赖与回传；`chat/source-deliveries.mjs` 以投递回执触发话题绑定后的接续。它们是内部提示与执行机制，不是给群成员阅读的计划文档。渠道要求需同时更新提示、实现和测试。
 
 验证入口：`tests/test-work-execution-plans.mjs` 覆盖个人/群范围、跨群确认、草稿、部分选择、依赖、失败、空结果、补充、提问、停止和恢复；`tests/test-group-routing-runtime.mjs` 通过真实受理与隔离假执行器验证子任务完成、主话题核验和原地址出站。话题投递回执、原帖绑定、失败不启动、重复回执与停止后不启动由隔离测试覆盖。隔离回归不证明真实模型理解所有语言情境；真人试用继续看漏接、误开工、耗时、重复解释和人工跟进负担，不以转接次数代替效果。
 
-### 原 v1 单群试点兼容
+### 原 v1 单群试点历史兼容（新输入不再启用）
 
 `<CONFIG_DIR>/group-routing-pilot.json` 是实例本地开关，不随代码默认开启：
 
@@ -298,13 +298,13 @@ Harness 用 `remotelab work route --file packet.json --json`：
 
 For explicitly selected recurring work, the [automation home](task-center-v1.md#stable-automation-home-explicit-opt-in) is a stable task-context branch with source/task links and durable definition revisions. It records source lineage but does not inherit the source transcript, model context or agreements; older full-history homes can be explicitly replaced while retaining their history. Individual execution Sessions point back to that home. Reading status does not send a message to the worker or queue behind its active Run. Discussion references supplied with an adjustment are retained as reported provenance, not verified authorization.
 
-个人 `routing=none` 限制自动转交工作 Session，不限制主模型在群主线首个可见回复前选择话题回复。话题回复标记不会自行创建独立工作 Session；已有可见投递继续锁定原位置。另开或接续工作 Session 仍遵循本条输入的授权与分流策略，表情不参与这两项选择。
+新输入的 `routing=none` 限制自动转交工作 Session，不限制主模型在群主线首个可见回复前选择话题回复。话题回复标记不会自行创建独立工作 Session；已有可见投递继续锁定原位置。另开或接续工作 Session 仍遵循本条输入的授权与分流策略，表情不参与这两项选择。
 
 ### Personal trial controls on Feishu group cards
 
-A v2 pilot may explicitly set `personalOptIn: true` and a `scopeLabel`. This opens eligibility only in its registered route/tenant/chat tuples; each sender still needs their own confirmed `routing: experimental` preference. Existing allowlist pilots remain unchanged. Group cards show personal enable, disable and status buttons in both layouts. The signed callback validates the current card/chat and derives the Person from the clicker’s route-scoped Feishu identity; card payloads cannot nominate another Person. Unbound users are asked to send a message first. Changes reuse the existing personal reply setting, preserve other preferences, and affect subsequent accepted inputs. Shared cards do not display one member’s state as a group state. Child Sessions currently open on Web; the original Feishu topic remains the coordination and acceptance entrance.
+A v2 pilot may explicitly set `personalOptIn: true` and a `scopeLabel`. This opens eligibility only in its registered route/tenant/chat tuples; each sender still needs their own `parallelWork: true` preference (or a pre-upgrade combined opt-in, read as parallel-only). Existing allowlist pilots remain unchanged. Group cards show personal enable, disable and status buttons in both layouts. The signed callback validates the current card/chat and derives the Person from the clicker’s route-scoped Feishu identity; card payloads cannot nominate another Person. Unbound users are asked to send a message first. Changes reuse the existing personal reply setting, preserve other preferences, and affect subsequent accepted inputs. Shared cards do not display one member’s state as a group state. Child Sessions currently open on Web; the original Feishu topic remains the coordination and acceptance entrance.
 
-With explicitly authorized `publicRoster: true`, group cards display the pilot-wide list of enabled People (not the membership of each chat). The information routing section uses one purpose sentence, the roster, three personal controls and collapsed scope/rules. Changes to the existing personal settings file trigger a coalesced refresh of registered trial cards, including groups outside project-memory registration. Refreshes only patch existing messages; they never create replacement cards or change top notices. A failed patch keeps its failure visible in connector logs instead of silently sending a new message.
+With explicitly authorized `publicRoster: true`, group cards display the pilot-wide list of enabled People (not the membership of each chat). The parallel work section uses one purpose sentence, the roster, three personal controls and collapsed scope/rules. Changes to the existing personal settings file trigger a coalesced refresh of registered trial cards, including groups outside project-memory registration. Refreshes only patch existing messages; they never create replacement cards or change top notices. A failed patch keeps its failure visible in connector logs instead of silently sending a new message.
 
 ## 群内交付审阅与反馈回传
 

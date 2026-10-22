@@ -92,7 +92,7 @@ try {
   });
   assert.equal((await admission('human')).messageRoutingPolicy.mechanism, 'none');
   assert.equal((await action('routing-on', {}, null, { eventId: 'enable-once' })).toast.type, 'success');
-  assert.equal((await admission('human')).messageRoutingPolicy.trialId, 'test');
+  assert.equal((await admission('human')).parallelWorkPolicy.trialId, 'test');
   assert.equal((await admission('other')).messageRoutingPolicy.mechanism, 'none');
   assert.equal((await loadPersonMessageReplies(actor('other'))).revision, 0);
   const rev = (await loadPersonMessageReplies(actor('human'))).revision;

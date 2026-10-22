@@ -97,7 +97,7 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
         || record.source.chatId !== chatId || record.cardMessageId !== messageId || !await authorize(summary)) {
       return { toast: { type: 'error', content: '配置卡片已失效或无权操作。' } };
     }
-    if (['routing-on', 'routing-off', 'routing-status'].includes(value.action)) {
+    if (['parallel-on', 'parallel-off', 'parallel-status', 'routing-on', 'routing-off', 'routing-status'].includes(value.action)) {
       return personalRoutingCardAction(runtime, record, actor, value.action, summary.eventId);
     }
     if (!['refresh', 'board-page', 'model', 'effort', 'prompt', 'self-review-on', 'self-review-off'].includes(value.action)) return { toast: { type: 'error', content: '未知配置操作。' } };

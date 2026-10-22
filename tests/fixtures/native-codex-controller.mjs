@@ -27,6 +27,11 @@ process.on('message', async ({ id, action, args }) => {
       : action === 'route-input' ? await routing.routeGroupWork(await requests.byRequest(args[0], args[1]), args[2])
       : action === 'reply-input' ? await routing.replyGroupInput(await requests.byRequest(args[0], args[1]), args[2])
       : action === 'message-settings' ? await changePersonMessageReplies(...args)
+      // Restore a captured pre-upgrade contract only in this isolated fixture.
+      : action === 'legacy-routing-snapshot' ? await requests.mutate((await requests.byRequest(args[0], args[1])).key,
+        r => { const options = { ...r.options, routingPilotMainline: true, routingPilotMainlineProtocol: 2,
+          messageRoutingPolicy: { version: 1, mechanism: 'experimental' } };
+          delete options.parallelWorkPolicy; return { ...r, options }; })
       : action === 'request' ? await requests.byRequest(...args)
       : action === 'thread-execution' ? await findActiveFeishuThreadExecution(...args)
       : action === 'claim' ? await delivery.claimSourceDelivery(...args)

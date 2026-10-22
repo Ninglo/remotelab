@@ -122,13 +122,13 @@ try {
   await until(async () => (await requests.byRunId(disabled.run.id))?.result);
   let setting = await loadPersonMessageReplies(actor);
   setting = await changePersonMessageReplies({ action: 'apply', expectedRevision: setting.revision, confirm: true,
-    choices: { ...setting.choices, routing: 'experimental' } }, actor);
+    choices: { ...setting.choices, parallelWork: true } }, actor);
   const enabled = await manager.submitHttpMessage(main.id, '选择实验分流', [], { ...authenticated, requestId: 'routing-on' });
-  assert.equal((await requests.byRunId(enabled.run.id)).options.routingPilotMainlineProtocol, 2);
+  assert.equal((await requests.byRunId(enabled.run.id)).options.routingPilotMainlineProtocol, undefined);
   await until(async () => (await requests.byRunId(enabled.run.id))?.result);
   await changePersonMessageReplies({ action: 'reset', expectedRevision: setting.revision, confirm: true }, actor);
   await manager.submitHttpMessage(main.id, '选择实验分流', [], { ...authenticated, requestId: 'routing-on' });
-  assert.equal((await requests.byRunId(enabled.run.id)).options.messageRoutingPolicy.mechanism, 'experimental', 'retry keeps the original selection');
+  assert.equal((await requests.byRunId(enabled.run.id)).options.messageRoutingPolicy.mechanism, 'none', 'retry keeps automatic routing disabled');
   // The v2 plan uses the real request admission, detached worker, completion
   // hooks and parent review queue. Neither a provider nor Feishu is contacted.
   await writeFile(join(dir, 'group-routing-pilot.json'), JSON.stringify({ version: 2, enabled: true,
@@ -147,8 +147,13 @@ try {
     throw new Error('Fixture topic outbox did not drain');
   };
 
-  const sourceOptions = { ...authenticated, sourceContext: { ...authenticated.sourceContext, createTime: String(Date.now()) },
-    messageRoutingPolicy: { version: 1, mechanism: 'experimental', trialVersion: 2, trialId: 'fixture-v2' } };
+  setting = await loadPersonMessageReplies(actor);
+  await changePersonMessageReplies({ action: 'parallel-work', enabled: true, expectedRevision: setting.revision, confirm: true }, actor);
+  const { captureMessageRoutingOptions } = await import('../chat/message-routing-policy.mjs');
+  const sourceOptions = await captureMessageRoutingOptions(main, { ...authenticated,
+    sourceContext: { ...authenticated.sourceContext, createTime: String(Date.now()) } });
+  assert.equal(sourceOptions.parallelWorkPolicy.enabled, true);
+  assert.equal(sourceOptions.messageRoutingPolicy.mechanism, 'none');
   const sourceInput = (await requests.accept({ sessionId: main.id, requestId: 'plan-source', text: '提出分工',
     options: sourceOptions, runtimeSelection: runtime, deliveryPlan: origin })).record;
   const proposed = await handleExecutionPlan(sourceInput, { action: 'propose', branchSurface: 'feishu-thread', goal: '核对原讨论并汇总',
@@ -221,6 +226,7 @@ try {
   const { readNativeQuestion } = await import('../chat/native-user-questions.mjs');
   const { runDir } = await import('../chat/runs.mjs');
   const question = await until(async () => { const q = await readNativeQuestion(runDir(nativeRoot.run.id)); return q?.state === 'pending' && q; });
+  await requests.mutate((await requests.byRunId(nativeRoot.run.id)).key, r => ({ ...r, options: { ...r.options, messageRoutingPolicy: { version: 1, mechanism: 'experimental', trialVersion: 2, trialId: 'fixture-v2', personId: 'person_a' } } }));
   const nativeDraft = await routeGroupWork(await requests.byRunId(nativeRoot.run.id), { mode: 'sync', targetSessionId: target.id,
     task: nativeTask, reason: nativeReason });
   assert.equal(nativeDraft.proposal.id, predictedId);

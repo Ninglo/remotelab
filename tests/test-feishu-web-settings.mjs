@@ -40,7 +40,7 @@ test('connection verifies login, limits scope, survives reload, and never activa
   await assert.rejects(api.authorizeFeishuWebSettings(grant.token, origin, nativeAccount), /失效/);
   const active = await api.authorizeFeishuWebSettings(second.token, origin, nativeAccount);
   const before = await api.loadFeishuWebReplies(active);
-  const choices = { opening: true, checklist: false, progress: 'card_all', strictStartCheck: true, routing: 'experimental', selfReview: false };
+  const choices = { opening: true, checklist: false, progress: 'card_all', strictStartCheck: true, routing: 'none', parallelWork: true, selfReview: false };
   await api.saveFeishuWebReplies({ action: 'apply', confirm: true, expectedRevision: before.revision, choices }, active);
   assert.deepEqual((await loadPersonMessageReplies(actor('alice'))).choices, choices, 'same personal settings as the ordinary Web route');
   assert.equal((await loadPersonMessageReplies(actor('bob'))).active, null, 'other people keep their own settings');

@@ -8,14 +8,14 @@ function routingControls(record, view) {
   const button = (label, action) => ({ tag: 'button', type: 'default', text: plain(label),
     behaviors: [{ type: 'callback', value: { namespace: 'group-configuration', key: record.key, action } }] });
   const names = view.routingTrial.enabledNames;
-  return [{ tag: 'hr' }, md('**信息分流机制 · 试用**\n主动判断是否转接对话、分流对话、开启子 Session。'),
+  return [{ tag: 'hr' }, md('**多项工作并行 · 试用**\n建议可独立推进的分工，经你授权后执行，原话题收结果。'),
   ...(Array.isArray(names) ? [md('**试点已开启**：' + (names.join('、') || '暂无'))] : []),
-  { tag: 'column_set', columns: [button('为我开启', 'routing-on'), button('为我关闭', 'routing-off'), button('我的状态', 'routing-status')]
+  { tag: 'column_set', columns: [button('为我开启', 'parallel-on'), button('为我关闭', 'parallel-off'), button('我的状态', 'parallel-status')]
     .map(element => ({ tag: 'column', width: 'weighted', weight: 1, elements: [element] })) },
   { tag: 'collapsible_panel', expanded: false, header: { title: plain('范围与规则') }, elements: [
     md(view.routingTrial.scopeLabel + '。个人开关在试点群共用。'
       + (view.routingTrial.publicRoster ? '开启后，姓名显示在这些群的已开启名单中；关闭后移除。' : '')
-      + '\n明确要求并行时开独立子 Session；建议拆分先征询，未答继续原工作。跨话题交接须确认，主话题负责汇总验收。'
+      + '\n明确要求并行时开独立子 Session；建议拆分先征询，未答继续原工作。主话题负责汇总验收；主动分流试用已撤回。'
       + '\n子 Session 在 Web 打开，不自动新建飞书话题；开关只影响后续新输入。'),
   ] }];
 }

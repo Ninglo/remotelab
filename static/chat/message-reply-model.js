@@ -10,7 +10,8 @@ export function replyProgressUsesCard(policy) {
 
 export function validateReplyDraft(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups', 'strictStartCheck', 'routing', 'selfReview'].includes(key))
+      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups', 'strictStartCheck', 'routing', 'parallelWork', 'selfReview'].includes(key))
+      || value.parallelWork !== undefined && typeof value.parallelWork !== 'boolean'
       || value.routing !== undefined && !['none', 'experimental'].includes(value.routing)
       || value.selfReview !== undefined && typeof value.selfReview !== 'boolean'
       || value.strictStartCheck !== undefined && typeof value.strictStartCheck !== 'boolean'
@@ -27,6 +28,7 @@ export function validateReplyDraft(value) {
     ...(value.strictStartCheck !== undefined ? { strictStartCheck: value.strictStartCheck } : {}),
     ...(value.selfReview !== undefined ? { selfReview: value.selfReview } : {}),
     ...(value.routing !== undefined ? { routing: value.routing } : {}),
+    ...(value.parallelWork !== undefined ? { parallelWork: value.parallelWork } : {}),
     groups: [...new Map(groups.map(group => [`${group.sourceRouteId}:${group.chatId}`, group])).values()] };
 }
 
@@ -34,12 +36,12 @@ export function buildReplyPreview(draft, locale = 'zh') {
   const value = validateReplyDraft(draft);
   const en = locale.startsWith('en');
   const steps = [];
-  steps.push({ kind: 'routing', title: en ? 'Message routing' : '消息分流',
-    text: value.routing === 'experimental'
-      ? en ? 'Experimental routing: in your enabled trial groups, choose where and how to proceed. Continue existing work; confirm cross-topic information and parallel plans before dispatch. Results return to the source conversation.'
-        : '实验分流：在本人已启用的试点群中判断在哪里做、怎样推进；补充接续原工作，跨话题信息与并行分工经确认后交接，结果回到原对话。'
-      : en ? 'No routing (default): handle work and reply in the current conversation.'
-        : '不分流（默认）：在当前会话中处理并回复。' });
+  steps.push({ kind: 'parallel_work', title: en ? 'Parallel work' : '多项工作并行',
+    text: (value.parallelWork ?? value.routing === 'experimental')
+      ? en ? 'Suggest independent branches in registered Feishu groups. Start after your authorization and return results to the original topic. Automatic message routing is withdrawn.'
+        : '在登记群中建议可独立推进的分工，经你授权后执行，结果回到原话题。主动分流试用已撤回。'
+      : en ? 'Parallel suggestions are off by default. Continue work in the current conversation.'
+        : '默认不主动建议并行，继续在当前会话推进工作。' });
   if (value.strictStartCheck) steps.push({ kind: 'start_check', title: en ? 'Strict work-start check' : '开工严格检查',
     text: en ? 'Check ownership, the existing mechanism and related work before starting. Decide work placement, reply destination and display separately.'
       : '先核对事项归属、现行机制和相关工作，再决定接续还是另开；回复位置与清单、进展展示分别判断。' });
