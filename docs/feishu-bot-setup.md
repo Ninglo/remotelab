@@ -536,8 +536,10 @@ exact plan before applying it, so retries keep the admitted Session snapshot.
 ### Mute a discussion
 
 Send `/mute` in a task thread to stop ordinary discussion messages from starting
-AI turns. The Connector drops these messages before processing reactions,
-attachment downloads, Session creation and model submission. It still records
+AI turns, including in native topic groups. Explicit conversation mute takes
+precedence over their default all-message admission. The Connector drops these
+messages before processing reactions, attachment downloads, Session creation
+and model submission. It still records
 normal transport receipts. Existing running or queued tasks continue and can
 deliver their results.
 
@@ -858,10 +860,13 @@ is scoped to matching Requests rather than the whole Session, preserving unrelat
 queued or running work in that Session.
 
 Native topic groups and ordinary groups have different participation rules.
-In a native topic group, every human message enters its topic Session and needs
-a reply through normal Harness conversation/steer. No Jev participation decision,
-three-mode status card, or legacy group mute gates these messages. Self/bot-loop
-protection remains. An ordinary group's thread is not a native topic group;
+In a native topic group, human messages enter their topic Session by default and
+receive replies through normal Harness conversation/steer. No Jev participation
+decision or three-mode status card gates these messages. Explicit `/mute` still
+blocks ordinary input in its conversation scope; a mention of this Bot or a task
+command wakes it once without clearing mute, and `/unmute` restores normal
+admission. Self/bot-loop protection remains. An ordinary group's thread is not
+a native topic group;
 provider chat metadata determines this distinction, including restored records
 and project-card discovery. A legacy delivery target marked `chatMode: thread`
 only identifies reply placement; it does not establish a native topic group.

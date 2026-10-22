@@ -57,8 +57,8 @@ try {
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, true);
   assert.equal(await shouldRouteFeishuMessageToRemoteLab(runtime, base), false);
   runtime.config.groups = { chat: { responseMode: 'all' } };
-  assert.equal(await shouldRouteFeishuMessageToRemoteLab(runtime, { ...base, chatMode: 'topic' }), true,
-    'native topic groups bypass legacy ordinary-group mute state');
+  assert.equal(await shouldRouteFeishuMessageToRemoteLab(runtime, { ...base, chatMode: 'topic' }), false,
+    'explicit conversation mute takes precedence over native topic group admission');
   await silent('human discussion');
   await silent('attachment discussion', { messageType: 'file', attachments: [{ fileKey: 'file' }] });
   await silent('mention someone else', { mentions: [{ openId: 'another-human' }] });
@@ -111,6 +111,35 @@ try {
   await silent('private chatter', privateChat);
   await send('/unmute', privateChat);
   assert.equal((await getFeishuConversationSettings(runtime, { ...base, ...privateChat })).muted, false);
+
+  const nativeTopic = { chatId: 'native-chat', chatMode: 'topic', threadId: 'native-thread' };
+  runtime.config.defaultGroupParticipation = 'active';
+  await recordFeishuThreadSessionBinding(runtime, { ...base, ...nativeTopic }, 's1');
+  effects.length = 0;
+  await send('/mute', nativeTopic);
+  assert.deepEqual(effects, [], 'native topic mute is handled without a model turn');
+  assert.match(replies.at(-1), /已静默当前话题/);
+  await silent('ordinary native topic discussion', nativeTopic);
+  await silent('native topic attachment', { ...nativeTopic, messageType: 'file', attachments: [{ fileKey: 'file' }] });
+  for (const openId of ['another-human', 'all']) {
+    await silent('mention does not wake this Bot', { ...nativeTopic, mentions: [{ openId }] });
+  }
+  await send('please help once', { ...nativeTopic, mentions: [{ openId: 'self' }] });
+  assert.deepEqual(effects, ['submit']);
+  await silent('native topic stays muted after one-time mention', nativeTopic);
+  await send('/thread\n\nexplicit native topic task', nativeTopic);
+  assert.deepEqual(effects, ['submit']);
+  await silent('native topic stays muted after task command', nativeTopic);
+  await send('/status', nativeTopic);
+  assert.match(replies.at(-1), /静默：开启/);
+  assert.equal(await shouldRouteFeishuMessageToRemoteLab(runtime,
+    { ...base, ...nativeTopic, threadId: 'native-sibling' }), true, 'sibling topics retain normal admission');
+  runtime = makeRuntime();
+  await silent('native topic mute survives restart', nativeTopic);
+  await send('/unmute', nativeTopic);
+  assert.match(replies.at(-1), /已恢复当前话题/);
+  await send('native topic automatic continuation restored', nativeTopic);
+  assert.deepEqual(effects, ['submit']);
   console.log('test-feishu-mute: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

@@ -149,8 +149,8 @@ try {
   assert.equal(selectedResult.emojiType, 'SOB');
   config.groups.work.reactionCandidates = [];
   assert.match(resolveFeishuGroupSettings(config, base).systemPrompt, /Optional reaction candidates: none/);
-  // Native topic groups bypass all ordinary-group participation state. Human
-  // follow-ups use the existing submission/steer path, even with old controls.
+  // Native topic groups bypass ordinary-group participation state. Human
+  // follow-ups use the submission/steer path unless explicitly muted.
   const native = { ...base, chatId: 'native', chatMode: 'topic', threadId: 'native-topic' };
   const nativeConfig = { ...config, storageDir: join(home, 'native'), groups: {
     native: { participationMode: 'paused', responseMode: 'mention_only' },
@@ -165,7 +165,6 @@ try {
   assert.equal(participationEnabled(runtime, { ...base, chatMode: 'thread' }), true,
     'legacy reply targets with chatMode=thread are not native topic groups');
   const { setFeishuConversationMuted } = await import('../connectors/feishu/conversation-settings.mjs');
-  await setFeishuConversationMuted(nativeRuntime, native, true);
   const nativeSubmitted = [];
   for (const [id, text] of [['first', 'hello'], ['steer', '补充一下'], ['control-text', '先旁听']]) {
     await handleMessage(nativeRuntime, { ...native, messageId: id, messageText: text }, 'test', {
@@ -177,6 +176,15 @@ try {
   assert.equal(nativeSubmitted.length, 3);
   assert.equal(nativeRuntime.participation, undefined, 'native conversation never opens a three-mode controller');
   assert.equal(nativeSubmitted[0].participationEpoch, undefined);
+  await setFeishuConversationMuted(nativeRuntime, native, true);
+  const nativeMuted = await handleMessage(nativeRuntime, { ...native, messageId: 'explicitly-muted' }, 'test', {
+    ...helpers,
+    observeRemoteLabMessage: async () => assert.fail('muted native topics do not use observation'),
+    submitRemoteLabRequest: async () => assert.fail('explicit mute prevents native topic submission'),
+  });
+  assert.equal(nativeMuted.ignored, true);
+  assert.equal(nativeRuntime.participation, undefined, 'mute does not enable ordinary-group controls');
+  await setFeishuConversationMuted(nativeRuntime, native, false);
 
   // Restart must resolve old records that lack chat metadata, skip obsolete
   // native-topic controls, and never create a missing ordinary-group card.
