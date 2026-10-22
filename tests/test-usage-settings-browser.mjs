@@ -124,7 +124,7 @@ try {
   let savedReply = replySave();
   await page.locator('#replyActivate').click();
   reply = await savedReply;
-  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: true, routing: 'none', parallelWork: true });
+  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: true, routing: 'none', parallelWork: true, selfReview: false });
   await page.reload();
   await page.waitForFunction(() => document.querySelector('#replyStrictStartCheck').checked);
   assert.equal(await page.locator('#replyParallelWork').inputValue(), 'on');
@@ -134,7 +134,7 @@ try {
   savedReply = replySave();
   await page.locator('#replyActivate').click();
   reply = await savedReply;
-  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: false, routing: 'none', parallelWork: true });
+  assert.deepEqual(reply.settings.choices, { opening: false, checklist: false, progress: 'card_latest', strictStartCheck: false, routing: 'none', parallelWork: true, selfReview: false });
   await page.goto(base + '/?tab=tasks&monitor=usage', { waitUntil: 'domcontentloaded' });
   const restored = await request('POST', '/api/message-reply-settings', { action: 'reset', expectedRevision: reply.settings.revision, confirm: true });
   assert.equal(restored.status, 200);
