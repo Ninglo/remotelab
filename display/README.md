@@ -70,6 +70,13 @@ token inside the target server's verified TLS connection. Loopback HTTP remains
 direct. SOCKS-only and HTTPS-to-proxy transports are not supported by this path;
 use the proxy application's local HTTP endpoint when required.
 
+JSON requests, including completed-action receipts, and fallback PNG downloads
+re-read the proxy configuration for each request. They do not retain urllib's
+process-wide opener: after a proxy is disabled, a stale heartbeat route would
+leave a play-once action holding its last pose despite successful frame downloads
+and USB writes. This change preserves configured proxies, bypass rules and TLS
+verification; it does not force direct connections.
+
 Existing paired Macs need the updated `agent.py` and a restart of their existing
 LaunchAgent. Updating the server's installer alone does not update an installed
 Mac agent; preserve `state.json`, pairing and screen layout during the update.

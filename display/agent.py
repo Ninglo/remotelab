@@ -155,7 +155,10 @@ def request_json(url: str, *, token: str = "", data: dict | None = None, timeout
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=body, headers=headers, method="POST" if data is not None else "GET")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        # urlopen caches a process-wide ProxyHandler. macOS proxy settings may
+        # change while the player runs; completed-action receipts must follow
+        # the current route rather than a proxy that has already been stopped.
+        with urllib.request.build_opener().open(request, timeout=timeout) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")[:300]
@@ -168,7 +171,7 @@ def download(url: str, token: str, destination: Path) -> dict:
         headers={"Authorization": f"Bearer {token}", "User-Agent": "RemoteLab-Display/0"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.build_opener().open(request, timeout=30) as response:
             body = response.read()
             headers = {key.lower(): value for key, value in response.headers.items()}
     except urllib.error.HTTPError as exc:

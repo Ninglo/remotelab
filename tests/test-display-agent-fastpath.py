@@ -2,6 +2,7 @@ import base64
 import importlib.util
 import json
 import threading
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -58,6 +59,53 @@ class FrameHandler(BaseHTTPRequestHandler):
 
 
 class DisplayAgentFastPathTest(unittest.TestCase):
+    def test_heartbeat_and_fallback_download_follow_proxy_changes_without_restart(self):
+        class Handler(BaseHTTPRequestHandler):
+            def respond(self):
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                body = json.dumps({"route": self.server.route}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST = respond
+
+            def log_message(self, *_args):
+                pass
+
+        servers = [HTTPServer(("127.0.0.1", 0), Handler) for _ in range(2)]
+        origin, proxy = servers
+        origin.route, proxy.route = "direct", "proxy"
+        threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in servers]
+        for thread in threads:
+            thread.start()
+        url = f"http://127.0.0.1:{origin.server_port}/heartbeat"
+        try:
+            for operation in ("heartbeat", "download"):
+                with self.subTest(operation=operation), tempfile.TemporaryDirectory() as temporary, \
+                        patch.object(agent.urllib.request, "_opener", None), \
+                        patch.object(agent.urllib.request, "proxy_bypass", return_value=False), \
+                        patch.object(agent.urllib.request, "getproxies") as getproxies:
+                    def read_route():
+                        if operation == "heartbeat":
+                            return agent.request_json(url, token="test-token", data={"playbackState": "ended"})["route"]
+                        target = Path(temporary) / "frame.png"
+                        agent.download(url, "test-token", target)
+                        return json.loads(target.read_text())["route"]
+
+                    getproxies.return_value = {"http": f"http://127.0.0.1:{proxy.server_port}"}
+                    self.assertEqual(read_route(), "proxy")
+                    getproxies.return_value = {}
+                    self.assertEqual(read_route(), "direct", "disabling a system proxy must affect the next request")
+                    getproxies.return_value = {"http": f"http://127.0.0.1:{proxy.server_port}"}
+                    self.assertEqual(read_route(), "proxy", "re-enabling a proxy must not require restarting the player")
+        finally:
+            for server, thread in zip(servers, threads):
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
     def test_once_finishes_on_usb_and_background_refresh_does_not_restart(self):
         worker = agent.DisplayWorker()
         frames = (b"\xff\xd8first", b"\xff\xd8middle", b"\xff\xd8last")
