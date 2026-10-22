@@ -25,6 +25,28 @@ the loopback service challenges unauthenticated requests, then serves it at
 domain and tunnel. Keep the service under a restart-safe supervisor. Use
 `remotelab preview unexpose --slug <name>` to remove the route.
 
+Preview routes allow GET and HEAD by default. Byte-range requests and response
+headers are preserved so video playback can seek without downloading the whole
+file. For an application that saves user input, register each exact POST path
+and any required custom request header explicitly:
+
+```bash
+remotelab preview expose --slug review --port 18746 --replace \
+  --post-path /api/review --forward-header x-review-action --json
+```
+
+Both options can be repeated. POST is enabled only at the registered paths;
+other paths and existing routes remain read-only. The application still owns
+authentication, request validation and CSRF protection. Standard authorization,
+content metadata, origin and range headers are forwarded; RemoteLab cookies
+are not. Custom headers must be lowercase `x-` application headers, excluding
+proxy address headers. Replacement supplies the complete route configuration;
+omitting these options resets the route to read-only.
+
+Verify through the public URL, including an unauthenticated request, a real
+video seek and a save against isolated test data. Local playback or local POST
+success alone does not verify the ingress path.
+
 Guest instances can instead assign a sibling hostname through the managed
 guest command below.
 
