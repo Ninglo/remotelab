@@ -10,6 +10,7 @@ import { buildPersonalMemoryConversationParts } from './personal-memory-conversa
 import { buildSkillExtractionTrial } from './skill-extraction-trial.mjs';
 import { experimentBackground } from './feature-experiment-context.mjs';
 import { buildWebTopicDiscoveryPrompt } from './project-topic-context.mjs';
+import { buildMisroutePrompt } from './work-routing-discovery.mjs';
 
 function buildFeishuLogPromptBlock(sourceContext) {
   const target = sourceContext?.connector === 'feishu' ? sourceContext.feishuLog : null;
@@ -53,6 +54,7 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     personalMemory.feedback,
   ];
   const sectionsAfterProject = [
+    ...(!experimentInput.automated ? [buildMisroutePrompt(sourceContext)] : []),
     await buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
       automated: experimentInput.automated }),
     await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),

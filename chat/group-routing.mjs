@@ -40,7 +40,7 @@ async function api(deps) { return deps || await import('./session-manager.mjs');
 async function save(sessionId, update) {
   return mutateSessionMeta(sessionId, draft => { draft.groupRouting = state(draft); update(draft.groupRouting); return true; });
 }
-async function sourceFor(record, { explicitSyncDecision = false, newThread = false } = {}) {
+async function sourceFor(record, { explicitSyncDecision = false, explicitHandoff = false, newThread = false } = {}) {
   if (record.result || record.releasedAt) fail('Only an active accepted input can route work');
   const session = await findSessionMeta(record.sessionId);
   const origin = record.deliveryPlan || record.options?.sourceDelivery;
@@ -59,8 +59,10 @@ async function sourceFor(record, { explicitSyncDecision = false, newThread = fal
     }
     return { session, origin, scope: { folder: session.folder, replyThread: true } };
   }
-  if (!explicitSyncDecision && !allowsMessageRouting(record.options)) fail('Message routing is disabled for this accepted input');
+  if (explicitHandoff && record.options?.feishuConnectorAuthenticated !== true) fail('Explicit handoff requires an authenticated human Feishu input');
+  if (!explicitSyncDecision && !explicitHandoff && !allowsMessageRouting(record.options)) fail('Message routing is disabled for this accepted input');
   const scope = await routingPilotScope(session?.conversation, undefined, record.options?.viewPersonId);
+  if (explicitHandoff && !scope) fail('Handoff source is outside the enabled registered group scope; no transfer was made');
   if (!isPilotInputSinceActivation(scope, record.acceptedAt)
       || !isPilotInputSinceActivation(scope, record.options?.sourceContext?.createTime || record.options?.sourceContext?.eventTs)
       || !verifiedWorkActor(record.options?.viewPersonId, record.options?.initiatedByIdentityId)
@@ -68,7 +70,7 @@ async function sourceFor(record, { explicitSyncDecision = false, newThread = fal
       || record.options?.sourceContext?.connector !== 'feishu'
       || ['app', 'bot'].includes(record.options?.sourceContext?.sender?.senderType)) fail('Routing requires a human Feishu input in the enabled pilot group');
   if (!sameGroup(session.conversation, origin)) fail('Input destination is outside the pilot group');
-  if (scope.version === 2 && !explicitSyncDecision && (record.options?.messageRoutingPolicy?.trialVersion !== 2
+  if (scope.version === 2 && !explicitSyncDecision && !explicitHandoff && (record.options?.messageRoutingPolicy?.trialVersion !== 2
       || record.options.messageRoutingPolicy.trialId !== scope.trialId)) fail('This accepted input predates the personal trial');
   return { session, scope, origin };
 }
@@ -87,22 +89,46 @@ export async function routeGroupWork(record, body, deps) {
   return serial(record.sessionId, async () => {
     record = await requests.get(record.key) || record;
     const mode = body.mode;
-    const { session, scope, origin } = await sourceFor(record, { newThread: mode === 'new' });
+    const authorization = mode === 'handoff' && body.authorization ? handoffAuthorization(record, body.authorization) : null;
+    const { session, scope, origin } = await sourceFor(record, { newThread: mode === 'new',
+      explicitHandoff: mode === 'handoff' });
     if (!['new', 'continue', 'sync', 'handoff'].includes(mode)) fail('Use routing mode new, continue, sync or handoff');
     if (mode === 'handoff' && body.proposalId) {
       const p = state(session).proposals.find(p => p.id === body.proposalId && p.kind === 'task-handoff');
       if (!p || p.personId !== record.options.viewPersonId || !p.confirmationRequestId
           || !['approved', 'submitted', 'return-queued'].includes(p.state)) fail('Only an already human-approved handoff can resume');
-      if (['task', 'reason', 'requestIds', 'targetSessionId'].some(k => body[k] !== undefined)) fail('Resume cannot change an approved packet');
+      if (['task', 'reason', 'requestIds', 'targetSessionId', 'authorization'].some(k => body[k] !== undefined)) fail('Resume cannot change an approved packet');
       return { outcome: await acceptConfirmedHandoff(record, ['','确认转交',p.id], session, origin, deps) };
     }
     const task = clean(body.task, 6000), reason = clean(body.reason, 600);
     if (!task || !reason) fail('Explain the task and its relationship to this input');
+    // Recover an identical explicit instruction before checking mutable target
+    // metadata. Admission changes that metadata; it must not create a new task.
+    if (authorization) {
+      const old = state(session).proposals.find(p => p.kind === 'task-handoff'
+        && p.authorization?.sourceRequestId === record.requestId && p.authorization.quote === authorization.quote
+        && p.targetSessionId === body.targetSessionId && p.task === task && p.reason === reason
+        && JSON.stringify(p.originals.map(o => o.requestId)) === JSON.stringify(body.requestIds || [record.requestId]));
+      if (old) return { proposalId: old.id,
+        outcome: await acceptConfirmedHandoff(record, ['', '确认转交', old.id], session, origin, deps) };
+    }
     let target = body.targetSessionId ? await findSessionMeta(body.targetSessionId) : null;
-    if (mode !== 'new' && (!target || target.archived || target.groupFeed || target.id === session.id
+    if (mode === 'handoff') {
+      if (!target) fail('Handoff target Session was not found; select a concrete existing topic');
+      if (target.archived || target.groupFeed || target.internalRole || target.id === session.id) fail('Handoff target is not an available separate human work topic');
+      if (!await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)) {
+        fail('Handoff target is outside the registered Bot, tenant or group scope; no transfer was made');
+      }
+    }
+    if (!['new', 'handoff'].includes(mode) && (!target || target.archived || target.groupFeed || target.id === session.id
         || !(['sync', 'handoff'].includes(mode) ? await routingSyncTargetAllowed(origin, target.conversation, record.options.viewPersonId)
           : sameGroup(origin, target.conversation)))) fail('Select an available work topic in this same pilot group or confirmed sync scope');
-    if (mode === 'handoff') return draftConfirmedHandoff(record, body, session, target, task, reason, origin);
+    if (mode === 'handoff') {
+      const draft = await draftConfirmedHandoff(record, body, session, target, task, reason, origin, authorization);
+      if (!authorization) return draft;
+      return { proposalId: draft.proposal.id, outcome: await acceptConfirmedHandoff(record,
+        ['', '确认转交', draft.proposal.id], await findSessionMeta(session.id), origin, deps) };
+    }
     if (mode === 'sync') {
       const proposalId = 'sync_' + hash(JSON.stringify([session.id, record.requestId, target.id, task, reason]));
       const old = state(session).proposals.find(p => p.id === proposalId);
@@ -231,8 +257,18 @@ export async function routeGroupWork(record, body, deps) {
 const targetVersion = s => hash(JSON.stringify([s?.name, s?.conversation, s?.archived, stamp(s),
   s?.workSummary?.goal, (s?.workAwareness?.works || []).map(w => [w.id, w.version, w.status])]));
 const inputVersion = r => hash(JSON.stringify([r.text, r.images, r.options?.viewPersonId, r.options?.initiatedByIdentityId]));
-async function draftConfirmedHandoff(record, body, session, target, task, reason, origin) {
-  if (target.internalRole || target.conversation?.target?.conversationKind !== 'thread') fail('Select an existing human work topic');
+function handoffAuthorization(record, value) {
+  // The Harness interprets the instruction. Code binds its evidence to the
+  // actual current human input; a flag, invented quote or another run cannot consent.
+  const quote = clean(value?.quote, 6000);
+  if (value?.sourceRequestId !== record.requestId || !quote || !record.text.includes(quote)) {
+    fail('Explicit handoff needs authorization.sourceRequestId and an exact quote from that accepted human instruction');
+  }
+  return { sourceRequestId: record.requestId, quote, personId: record.options?.viewPersonId,
+    identityId: record.options?.initiatedByIdentityId };
+}
+async function draftConfirmedHandoff(record, body, session, target, task, reason, origin, authorization) {
+  if (target.internalRole || !['thread', 'topic'].includes(target.conversation?.target?.conversationKind)) fail('Select an existing human work topic');
   const ids = body.requestIds || [record.requestId];
   if (!Array.isArray(ids) || !ids.length || ids.length > 8 || new Set(ids).size !== ids.length) fail('Select 1–8 distinct original input IDs');
   const inputs = await Promise.all(ids.map(id => requests.byRequest(session.id, id)));
@@ -246,8 +282,10 @@ async function draftConfirmedHandoff(record, body, session, target, task, reason
   }
   if (inputs.reduce((n, r) => n + r.text.length, 0) > 24000) fail('Select a smaller original input set (maximum 24000 characters)');
   const originals = inputs.map(r => ({ requestId: r.requestId, version: inputVersion(r), text: r.text,
+    author: verifiedWorkActor(r.options.viewPersonId, r.options.initiatedByIdentityId),
+    sourceContext: r.options.sourceContext, sourceDelivery: r.deliveryPlan || r.options.sourceDelivery,
     attachments: (r.images || []).map(i => ({ name: i.name || i.filename || i.originalName || '附件', id: i.assetId || i.id || i.path })) }));
-  const id = 'handoff_' + hash(JSON.stringify([session.id, record.requestId, target.id, targetVersion(target), task, reason, originals]));
+  const id = 'handoff_' + hash(JSON.stringify([session.id, record.requestId, target.id, targetVersion(target), task, reason, originals, authorization]));
   const old = state(session).proposals.find(p => p.id === id);
   if (old) return handoffPreview(old);
   if (state(session).proposals.length >= 64) fail('Pilot proposal limit reached');
@@ -259,7 +297,8 @@ async function draftConfirmedHandoff(record, body, session, target, task, reason
     sourceRequestId: record.requestId, sourceName: session.name, personId: record.options.viewPersonId,
     targetSessionId: target.id, targetName: target.name, targetGroup: group?.name || target.conversation.target.chatId,
     targetStatus: latestWork?.status || '未确认，需结合原话题判断', targetLastInputAt: snapshot.lastUserMessageAt || null,
-    targetVersion: targetVersion(target), task, reason, originals, createdAt: new Date().toISOString() };
+    targetVersion: targetVersion(target), task, reason, originals, ...(authorization ? { authorization } : {}),
+    createdAt: new Date().toISOString() };
   await save(session.id, data => data.proposals.push(proposal));
   await appendEvent(session.id, { type: 'work_event', action: 'routing-handoff-draft', proposal });
   return handoffPreview(proposal);
@@ -283,7 +322,8 @@ export function routingQuestionDecision(session, question, values) {
 async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
   const p = state(session).proposals.find(p => p.id === decision[2] && p.kind === 'task-handoff');
   if (!p || p.personId !== record.options.viewPersonId) fail('Only the original requester can confirm this handoff draft');
-  if (p.state === 'draft' && p.sourceRequestId === record.requestId) fail('Handoff requires a subsequent human decision');
+  if (p.state === 'draft' && p.sourceRequestId === record.requestId
+      && p.authorization?.sourceRequestId !== record.requestId) fail('Handoff requires a subsequent human decision');
   if (['submitted', 'return-queued'].includes(p.state)) {
     await handoffAdmissionReceipt(p, deps);
     return `已转交到 ${p.targetGroup} / ${p.targetName}，不会重复发送。`;
@@ -310,6 +350,7 @@ async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
         || (r.routingHandoff && r.routingHandoff.routeId !== p.id)) fail('Original input changed or already transferred; review a fresh draft');
   }
   const packet = { ...p, state: 'approved', confirmationRequestId: p.confirmationRequestId || record.requestId,
+    approvedAt: p.approvedAt || new Date().toISOString(),
     returnPlan: p.returnPlan || origin };
   await save(session.id, d => {
     const current = d.proposals.find(v => v.id === p.id);
@@ -334,13 +375,17 @@ async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
     sourceContext: { connector: 'routing-handoff', sourceRouteId: delivery.sourceRouteId,
       chatId: delivery.target.chatId, sourceSessionId: session.id, sourceRequestId: first.requestId },
     routingSource: { sessionId: session.id, requestId: first.requestId, routeId: p.id },
-    confirmedHandoff: { sourceSessionId: session.id, proposalId: p.id },
+    confirmedHandoff: { sourceSessionId: session.id, proposalId: p.id,
+      authorization: p.authorization || { sourceRequestId: packet.confirmationRequestId, kind: 'confirmed-draft' },
+      originals: p.originals.map(({ requestId, author, sourceContext, sourceDelivery }) => ({ requestId, author, sourceContext, sourceDelivery })) },
     tool: target?.tool, model: target?.model, effort: target?.effort };
   const text = `原作者已确认将误发内容转交到本话题。\n限定任务：${p.task}\n理由：${p.reason}\n来源：${session.id}；确认输入：${packet.confirmationRequestId}\n仅承接这项已确认交办；原话题其他工作不变。结果在本话题答复，系统会回传来源，请勿重复发送。\n\n${inputs.map(r => `原输入 ${r.requestId}：\n${r.text}`).join('\n\n')}`;
   let receipt;
   try { receipt = prior ? { requestId: prior.requestId, run: { id: prior.runId } }
     : await manager.submitHttpMessage(p.targetSessionId, text, [], options); }
   catch (error) {
+    await save(session.id, d => Object.assign(d.proposals.find(v => v.id === p.id), {
+      lastError: error.message, lastAttemptAt: new Date().toISOString() }));
     if (!await requests.byRequest(p.targetSessionId, options.requestId)) {
       for (const r of inputs) await requests.mutate(r.key, current => {
         if (current.routingHandoff?.routeId !== p.id) return current;
@@ -354,18 +399,25 @@ async function acceptConfirmedHandoff(record, decision, session, origin, deps) {
   await save(session.id, d => {
     const current = d.proposals.find(v => v.id === p.id);
     Object.assign(current, { ...(current.state === 'approved' ? { state: 'submitted' } : {}),
-      targetRequestId: receipt.requestId, runId: receipt.run.id });
+      targetRequestId: receipt.requestId, runId: receipt.run.id,
+      submittedAt: current.submittedAt || new Date().toISOString(), lastError: null });
   });
   await appendEvent(session.id, { type: 'work_event', action: 'routing-handoff-submitted', proposalId: p.id, receipt });
   await handoffAdmissionReceipt(packet, deps);
   return '转交已受理，接收回执已排入原话题；这不表示业务已经完成。';
 }
 async function handoffAdmissionReceipt(p, deps) {
-  const receipt = await (deps?.enqueueSourceDelivery || enqueueSourceDelivery)({ sessionId: p.sourceSessionId,
-    responseId: 'routing-handoff-receipt:' + p.id, sourceDelivery: p.returnPlan,
-    text: `已按你的确认转交到 ${p.targetGroup} / ${p.targetName}，目标已接收，处理结果会回到这里。\n${buildSessionNavigationHref(p.targetSessionId)}` });
+  let receipt;
+  try {
+    receipt = await (deps?.enqueueSourceDelivery || enqueueSourceDelivery)({ sessionId: p.sourceSessionId,
+      responseId: 'routing-handoff-receipt:' + p.id, sourceDelivery: p.returnPlan,
+      text: `已按你的确认转交到 ${p.targetGroup} / ${p.targetName}，目标已接收，处理结果会回到这里。\n${buildSessionNavigationHref(p.targetSessionId)}` });
+  } catch (error) {
+    await save(p.sourceSessionId, d => Object.assign(d.proposals.find(v => v.id === p.id), { receiptError: error.message }));
+    throw error;
+  }
   await save(p.sourceSessionId, d => Object.assign(d.proposals.find(v => v.id === p.id), {
-    admissionDeliveryId: receipt.id, admissionRunId: receipt.runId }));
+    admissionDeliveryId: receipt.id, admissionRunId: receipt.runId, receiptError: null }));
 }
 async function completeConfirmedHandoff(record, run) {
   const route = record.options.confirmedHandoff;
@@ -501,7 +553,7 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
         || session.conversation?.connector !== 'feishu') return '';
     return [
     '## 本条消息不分流',
-    '本条消息不自动转交其他工作 Session；在当前绑定的 Session 处理，不使用 work route 或主线 work reply，不沿用历史中的实验分流指令。此限制不决定是否回复或回复位置：群主线仍可由主模型在首个可见回复前用 feishu-response 的 replyMode:thread 选择话题回复；已有话题内继续原话题。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
+    '本条消息不自动转交其他工作 Session；在当前绑定的 Session 处理，不沿用历史中的自动分流或主线 work reply 指令。用户明确要求转交且内容、目标已确定时可用 work route handoff 并携带本条指令的 authorization；已有批准草稿可按 proposalId 恢复，均保留登记范围校验。此限制不决定是否回复或回复位置：群主线仍可由主模型在首个可见回复前用 feishu-response 的 replyMode:thread 选择话题回复；已有话题内继续原话题。用户明确要求另开或接续其他 Session 时，仍按对应工具及授权处理。',
   ].join('\n');
   }
   const scope = await routingPilotScope(session?.conversation, undefined, messageRoutingPolicy?.personId);

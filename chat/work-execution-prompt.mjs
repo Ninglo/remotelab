@@ -9,7 +9,7 @@ export function executionTrialPrompt({ trialId, decisions = [], plans = [] }) {
     "操作前读 `node \"$REMOTELAB_PROJECT_ROOT/cli.js\" work --help` 和 `$REMOTELAB_PROJECT_ROOT/docs/session-work-awareness.md` 的对应流程。work plan --file <JSON绝对路径> --json；sourceRequestId须为本次实际接受的相关人类输入，不冒用根输入。propose保留来源、上下文和依赖；相同文件需隔离或串行。",
     "approve只接受原本人后续明确选择且版本/含义不变；他人、其他话题、含糊同意、系统通知和Agent文字不批准。迟到确认先核进展，只移交仍未执行的适用部分；过期草稿stop后重提，已完成不再拆。默认原话题执行，不另造串行方案。",
     "补充/停止先核最新计划，用amend/stop仅修改选中分支，核对终态才称已停止；continue只接续明确授权的已结束且未停止分支，保留原Session成果。失败不启动依赖分支；resume复用失败方案。answer核对当前问题并传人的原答案，不代替授权决定。完成分支后主话题逐项核验汇总，启动或模型结束不等于完成。",
-    "同群接续沿work route new/continue；跨群handoff或sync须展示具体目标、原文附件、影响和回传范围并由本人确认，只限登记群。参考同步不授权新业务。误发归属不清用work discover，最多三个候选再读原文；handoff返回的完整question原样交原生提问工具，不能自行批准。",
+    "同群接续沿work route new/continue；跨群任务交办用handoff，只限登记群。人已明确指定原内容与去向时携带本条指令的authorization直接交接；疑似误发或候选目标用草稿返回的完整question原样交原生提问，由本人确认。sync仍须确认且仅同步参考，不授权新业务。误发归属不清用work discover，最多三个候选再读原文，不能自行批准。",
     "成果群审阅用work delivery publish，须已有发送内容/目标/相关反馈回原工作的明确授权；普通分享不默认开启反馈收集。核实际回执一次发送，相关反馈用feedback回原工作，避免重复承接。",
     "有实质归属或安排取舍才用record记录理由。相关补充合并回答，独立问题及时答；统一feishu-response仅列实际回答的requestIds，不再另调work reply登记同一final。已移交输入不重复正文，plan操作不转移原输入责任。",
     JSON.stringify({ trialId, recentDecisions: decisions.slice(-3), plans: plans.slice(-4).map(p => ({ id: p.id, version: p.version,
