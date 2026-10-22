@@ -1,5 +1,32 @@
 # Operations overview
 
+## 新功能持续观察
+
+`GET /api/monitoring/feature-observations` 沿现有实例认证提供观察汇总；`?view=1` 提供原工作、检查项、事件编号及阶段用量。公开监管页的 **AI Labor → Claude Tag → 新功能持续跟踪** 通过既有 120 秒采集器只读这个接口；公开投影不含 Person、原任务正文或检查证据，证据入口需要登录。前端补丁维护在该实例原监管站点，部署须与本接口配套；未部署不表示已开始观察。
+
+配置位于 `CONFIG_DIR/feature-observations/config.json`，不存在即关闭。下面的 Person 是占位值，不能作为迁移或代人授权：
+
+```json
+{"version":1,"trials":[{"id":"delivery-review-week","projectId":"claude-tag","featureId":"delivery-self-review","name":"交付自检一周观察","enabled":true,"durationDays":7,"personIds":["person_explicitly_authorized"],"metrics":[{"id":"found","label":"发现的交付或验收缺项数"},{"id":"fixed","label":"在授权范围内修复并重验通过的缺项数"},{"id":"unresolved","label":"仍未解决的缺项数"}]}]}
+```
+
+配置只选观察对象，不替其开启功能。首条符合本人及功能选择的输入接纳后开始七天窗口；一周以墙钟计时，暂停不顺延。窗口结束停止新记录，保留已有数据和用户开关。试点由 Person 白名单界定，项目 ID 是监管归属，不能据此把他的其他已授权输入声称为该项目的业务成果。当前适配器是交付自检；其他新功能可复用登记、窗口、证据、计量和页面，需补其实际触发位置与指标定义。更换范围或指标使用新观察 ID，不覆盖旧窗口。
+
+| 计数或指标 | 依据 |
+| --- | --- |
+| 已启用输入 | 接纳时冻结的实际个人／群策略；补充输入单独计数 |
+| 原生已接收 | 原 Request 的 nativeReceipt.accepted；待接收和缺原件分列 |
+| 自检执行数 | 同一原生运行的一次 begin；重试幂等，多条补充不重计 |
+| 效果 | finish 中的通过、修复后通过、阻塞、不适用，以及可配置缺项计数；标为 Agent 自报 |
+| 验收证据 | 引用原 Session 已存在的工具结果、文件变化或附件记录；纯“我完成了”的文本不能充当证据 |
+| 消耗 | begin 与 finish 各自之后首个 provider 采样的累计输入、缓存输入、输出差值；按天汇总并显示有计量／未知覆盖 |
+
+运行中的本人输入或服务执行身份可用 `remotelab feature-observation begin --request-id <id>`，完成核对后 `finish --request-id <id> --file <结果JSON>`。结果包含 outcome、非负整数 metrics 和 checks（criterion、verdict、evidenceSeqs）。通过或修复后通过不能夹带失败／未知检查项；已存在的真实附件可以完成验收。回执验证引用存在，不替代语义验收，也不把 Agent 自报当作人的确认。记录失败不阻塞交付，不触发重复发送或自动续跑。
+
+当前 Codex App Server 提供阶段计量。其他 Harness、计数器重置、缺少起止采样或未结束的执行显示未知，不能补零，也不能把整轮用量归给自检。阶段用量包括上下文及 finish 工具编排，begin 之前和 finish 返回后的最终答复未计入；它不是“开启相对于关闭”的净增成本。不增加独立审查模型；每次正常回报需要 begin、finish 及取证工具，真实代价见验证记录。保留未开始／未结束／不适用的分母，不能只用成功回执计算功能成功率。
+
+确定性验证：`tests/test-feature-observation.mjs`；真实模型隔离验证：`REMOTELAB_LIVE_FEATURE_OBSERVATION=1 node tests/test-feature-observation-live.mjs`。两者不写生产配置、不发飞书消息。
+
 Monitor Overview (`?tab=tasks&monitor=overview`) displays running/active Session counts, all seven daily metrics and seven-day charts, the timing breakdown, context sources and account balances directly on the page. There is no summary-only card or details drawer. The day boundary is stated once above the charts (Beijing time, 05:00). Daily sample tables and statistical definitions remain available beside their data; context sources start expanded and refresh preserves the reader’s choice. Account quotas and reset times share one table, replacing the duplicate expandable account cards.
 
 The former Test preview has been retired after its MukaHub migration; old `monitor=test` bookmarks resolve to Overview without loading a second dashboard. Shared metric collection and Hub snapshot export are retained.

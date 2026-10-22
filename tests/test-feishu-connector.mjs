@@ -1677,6 +1677,13 @@ try {
   });
   assert.equal(submittedPayload.sourceContext.groupAnnouncement.revision, '3');
   assert.equal(submittedPayload.sourceContext.groupAnnouncement.messages[0].text, 'Use the project checklist.');
+  assert.equal(submittedPayload.sourceContext.groupSelfReview, undefined, 'existing groups stay off');
+  announcementRuntime.config.groups = { 'announcement-group': { selfReview: true } };
+  await submitRemoteLabRequest(announcementRuntime, {
+    chatType: 'group', chatMode: 'topic', chatId: 'announcement-group', threadId: 'announcement-topic',
+    messageId: 'review-enabled-input', messageText: '核对交付', sender: { openId: 'ou_scope_test' },
+  });
+  assert.deepEqual(submittedPayload.sourceContext.groupSelfReview, { enabled: true, revision: 0 });
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

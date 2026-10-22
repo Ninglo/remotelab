@@ -30,9 +30,12 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
   };
   async function reload(chatId) {
     const saved = await records.get(keyFor(chatId));
-    if (saved && Object.hasOwn(saved, 'systemPrompt')) {
+    if (saved) {
       runtime.config.groups ||= {};
-      runtime.config.groups[chatId] = { ...runtime.config.groups[chatId], systemPrompt: saved.systemPrompt };
+      runtime.config.groups[chatId] = { ...runtime.config.groups[chatId],
+        ...(Object.hasOwn(saved, 'systemPrompt') ? { systemPrompt: saved.systemPrompt } : {}),
+        ...(Object.hasOwn(saved, 'selfReview') ? { selfReview: saved.selfReview === true,
+          selfReviewRevision: saved.version } : {}) };
     }
     return saved;
   }
@@ -73,8 +76,9 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     return { routingTrial: await personalRoutingCardView({ connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId, target: record.source }), project, reading, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
       participationControls: group.participationMode === 'ambient' && group.participationControls === true,
       responseMode: group.responseMode, selection, catalog, reasoning: reasoningForRuntimeProfile(catalog, selection.model), systemPrompt,
+      selfReview: group.selfReview === true,
       sessionAvailable: Boolean(session), effectiveSystemPrompt: session?.systemPrompt || '',
-      revision: hash([record.epoch, record.sessionId || '', selection, systemPrompt, saved?.version || 0]),
+      revision: hash([record.epoch, record.sessionId || '', selection, systemPrompt, group.selfReview === true, saved?.version || 0]),
       ...(session?.activeRunId ? { runningSelection: { tool: session.tool, model: session.model, effort: session.effort } } : {}),
       promptVersion: saved?.version || 0, updatedBy: saved?.updatedByName || (saved?.updatedBy ? '群成员' : '') };
   }
@@ -96,7 +100,7 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     if (['routing-on', 'routing-off', 'routing-status'].includes(value.action)) {
       return personalRoutingCardAction(runtime, record, actor, value.action, summary.eventId);
     }
-    if (!['refresh', 'board-page', 'model', 'effort', 'prompt'].includes(value.action)) return { toast: { type: 'error', content: '未知配置操作。' } };
+    if (!['refresh', 'board-page', 'model', 'effort', 'prompt', 'self-review-on', 'self-review-off'].includes(value.action)) return { toast: { type: 'error', content: '未知配置操作。' } };
     // Callback returns promptly; each group has one serial mutation queue.
     void exclusive(chatId, async () => {
       const latestRecord = await participation().state(summary);
@@ -110,7 +114,15 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
         runtime.groupBoardPages ||= new Map(); runtime.groupBoardPages.set(chatId, value.page);
       }
       const fields = event.action?.form_value || {};
-      if (value.action === 'model' || value.action === 'effort') {
+      if (value.action === 'self-review-on' || value.action === 'self-review-off') {
+        const selfReview = value.action === 'self-review-on';
+        await records.mutate(keyFor(chatId), previous => ({ ...previous, chatId, selfReview,
+          version: (previous?.version || 0) + 1, updatedBy: actor,
+          updatedByName: trim(event.operator?.name), updatedAt: new Date().toISOString(),
+          history: [...(previous?.history || []), { action: value.action, eventId: summary.eventId,
+            previousValue: current.selfReview, selfReview, actor, time: new Date().toISOString() }].slice(-20) }));
+        await reload(chatId);
+      } else if (value.action === 'model' || value.action === 'effort') {
         const chosen = trim(fields[value.action]);
         if (!chosen) throw new Error('请选择一个值后保存。');
         const plan = await prepareFeishuRuntimeCommandPlan(runtime, summary, [{ name: value.action, value: chosen }],

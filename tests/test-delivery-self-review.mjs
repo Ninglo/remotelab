@@ -17,7 +17,7 @@ try {
   });
   const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { resolveMessageReplyPolicy } = await import('../chat/message-reply-settings.mjs');
-  const { captureDeliverySelfReview, deliverySelfReviewPrompt } = await import('../chat/delivery-self-review.mjs');
+  const { captureDeliverySelfReview, deliverySelfReviewPrompt, captureGroupDeliverySelfReviewPolicy } = await import('../chat/delivery-self-review.mjs');
   const { buildPrompt } = await import('../chat/session-manager.mjs');
   const { handleMessageReplySettings } = await import('../chat/router-message-reply-settings.mjs');
   const { requests } = await import('../chat/requests.mjs');
@@ -111,6 +111,43 @@ try {
   const disabled = await projectRuleContext('review', slots(off), scope, prev);
   assert.deepEqual(disabled.receipt.changedIds, ['delivery_self_review']);
   assert.match(disabled.slots.find(s => s.id === 'delivery_self_review').content, /OFF/);
+  const groupInput = { viewPersonId: a.personId, initiatedByIdentityId: a.identityId, feishuConnectorAuthenticated: true,
+    sourceContext: { connector: 'feishu', sourceRouteId: 'bot-a', tenantKey: 'tenant-a', chatType: 'group', chatId: 'oc_a',
+      messageId: 'om_a', sender: { openId: 'a', senderType: 'user' }, groupSelfReview: { enabled: true, revision: 1 } },
+    sourceDelivery: { connector: 'feishu', sourceRouteId: 'bot-a', target: { tenantKey: 'tenant-a', chatId: 'oc_a' } } };
+  const group = await captureGroupDeliverySelfReviewPolicy(groupInput, off);
+  assert.equal(group.scope, 'group');
+  assert.equal(group.deliverySelfReview.status, 'captured');
+  assert.equal((await loadPersonMessageReplies(a)).choices.selfReview, false, 'group opt-in does not mutate personal choices');
+  assert.equal(await captureGroupDeliverySelfReviewPolicy(groupInput, policy), null, 'both enabled still use one personal review');
+  const groupContext = { ...groupInput, ...a };
+  assert.match(deliverySelfReviewPrompt(group, groupContext), /Enabled by this Feishu group/);
+  assert.match(await buildPrompt('review', { id: 'review', systemPrompt: '' }, '交付', 'codex', 'codex', null,
+    { ...groupInput, groupDeliverySelfReviewPolicy: group }), /交付前自检 v1/);
+  const otherGroupInput = { ...groupInput, viewPersonId: b.personId, initiatedByIdentityId: b.identityId };
+  assert.equal((await captureGroupDeliverySelfReviewPolicy(otherGroupInput, null)).personId, b.personId);
+  assert.match(deliverySelfReviewPrompt(group, { ...groupInput, ...b }), /OFF/, 'a saved receipt cannot impersonate another sender');
+  for (const mutate of [
+    x => { x.feishuConnectorAuthenticated = false; }, x => { x.sourceContext.chatType = 'p2p'; },
+    x => { x.sourceContext.sender.senderType = 'bot'; }, x => { x.automationTitle = 'timer'; },
+    x => { x.sourceDelivery.sourceRouteId = 'bot-b'; }, x => { x.sourceDelivery.target.tenantKey = 'tenant-b'; },
+    x => { x.sourceDelivery.target.chatId = 'oc_b'; }, x => { x.initiatedByIdentityId = b.identityId; },
+    x => { x.sourceContext.groupSelfReview.enabled = false; }, x => { delete x.sourceContext.groupSelfReview; },
+  ]) {
+    const invalid = structuredClone(groupInput); mutate(invalid);
+    assert.equal(await captureGroupDeliverySelfReviewPolicy(invalid, off), null);
+  }
+  for (const key of ['chatId', 'tenantKey', 'sourceRouteId']) {
+    const moved = structuredClone(groupContext);
+    moved.sourceContext[key] = 'other';
+    if (key === 'sourceRouteId') moved.sourceDelivery[key] = 'other'; else moved.sourceDelivery.target[key] = 'other';
+    assert.match(deliverySelfReviewPrompt(group, moved), /OFF/, 'group receipt cannot leave its address');
+  }
+  const afterGroupOff = structuredClone(groupInput); delete afterGroupOff.sourceContext.groupSelfReview;
+  assert.deepEqual(await captureGroupDeliverySelfReviewPolicy(afterGroupOff, off,
+    { options: { groupDeliverySelfReviewPolicy: group } }), group, 'ongoing work preserves group activation');
+  assert.equal(await captureGroupDeliverySelfReviewPolicy(groupInput, off, { options: {} }), null, 'ongoing off work does not inherit later activation');
+  assert.equal(await captureGroupDeliverySelfReviewPolicy(afterGroupOff, off), null, 'new work reads group off');
   // Preserve the June 15 attachment-only regression with a real stored file,
   // a mirrored result event and the same visible projection used by the API.
   const { publishLocalFileAssetFromPath } = await import('../chat/file-assets.mjs');

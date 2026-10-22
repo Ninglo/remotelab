@@ -53,6 +53,7 @@ Usage:
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab workboard                Read task evidence and submit compact state updates
   remotelab message-replies          Manage personal work-start and in-flight input trials
+  remotelab feature-observation      Record an opted-in feature check and its evidence
   remotelab input-trial             Inspect, answer or stop opted-in in-flight work
   remotelab recording                Enable device-bound hardware recording and submit saved audio
   remotelab local-bridge            Manage linked local helper bridges for a session
@@ -73,6 +74,12 @@ Usage:
 }
 
 switch (command) {
+  case 'feature-observation': {
+    const { runFeatureObservationCommand } = await import(scriptPath('lib/feature-observation-command.mjs'));
+    try { process.exitCode = await runFeatureObservationCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'source-read': {
     const { runProtectedSourceCommand } = await import(scriptPath('lib/protected-source-command.mjs'));
     try { process.exitCode = await runProtectedSourceCommand(args); }

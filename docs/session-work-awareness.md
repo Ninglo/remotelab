@@ -106,7 +106,9 @@
 
 ### 可选交付前自检
 
-本人可交办：“为我开启／关闭交付前自检，保留其他设置。”入口在飞书私聊“我的设置”与网页“设置 → 消息”。Agent 在本人已接受的运行中使用 `remotelab message-replies self-review on|off|status --json`；复用原个人设置身份验证、版本冲突与来源审计，不用共享 CLI 账号代替当前发起人。
+本人可交办：“为我开启／关闭交付前自检，保留其他设置。”个人入口在飞书私聊“我的设置”与网页“设置 → 消息”。Agent 在本人已接受的运行中使用 `remotelab message-replies self-review on|off|status --json`；复用原个人设置身份验证、版本冲突与来源审计，不用共享 CLI 账号代替当前发起人。群入口在现有“群设置”卡的“交付前自检 · 本群”，沿原群设置的操作人、卡片及版本校验保存。
+
+个人设置跟随已核实的 Person；群设置绑定 Bot 路由、租户和 chat，涵盖该群主线和话题的真人输入。两者任一开启即执行一次自检：群关闭时仍尊重本人开启；本人关闭时已开启的群仍适用。私聊、其他群、其他 Bot、后台任务不会继承群选择。所有群默认关闭，没有全局迁移或按群自动启用。群策略以 `groupDeliverySelfReviewPolicy` 独立冻结，不影响个人回复格式、进展显示及分流。
 
 未配置以及既有配置缺少 `selfReview` 时都为关闭，不执行迁移写入。开启后，新工作接纳时读取 `chat/prompt-assets/experiments/delivery-self-review/v1.md`，将版本、正文、哈希与 Person／策略 ID 冻结到 `messageReplyPolicy.deliverySelfReview`。同一人的运行中接续、排队和重试保留快照；换人按本人设置取值；运行结束后的新输入读取最新选择。旧客户端不传此字段时保留已有选择。未开启不读取规则、不增加审查模型调用；简短的 OFF 状态防止沿用历史开启规则，基本诚实与必要验证照常生效。
 
@@ -115,6 +117,8 @@
 历史依据为 `8172ab91` 的可见回合检查、`ceefdb5d^:chat/session-reply-self-check.mjs` 中的 `attachment_delivery` 与 `resultRunId` 支持，以及反馈日志 2026-06-15“附件已交付却被误判未完成”、2026-06-02“续跑把先前回答折叠”。本版复用可见交付作为证据的设计，不恢复旧版默认隐藏审查、遇到不确定就继续跑和自动补答。原始附件可通过既有 `/api/sessions/:id/events?filter=visible` 读取；网页可下载、连接器排队、外部实际送达分别确认，未知回执不能触发盲目重发。
 
 验证入口：`tests/test-delivery-self-review.mjs` 覆盖默认、身份、开启／关闭、规则快照、各 Harness 提示及真实文件的附件投影；`tests/test-native-harness-integration.mjs` 覆盖持续运行、不同人、中途切换、重试、停止和单次投递；私聊卡和有限 Web 设置接口沿原回归。`REMOTELAB_LIVE_SELF_REVIEW=1 node tests/test-delivery-self-review-live.mjs` 使用真实本机 Codex、隔离任务文件与本地 HTTP 文件，记录实际结果、时间和 tokens，不修改生产个人设置或向飞书发测试消息。该小样本用于功能验收，不能推出稳定成功率或固定开销。实测样本与耗时见[验证记录](../notes/current/delivery-self-review-validation.md)。
+
+可选的[功能持续观察](monitoring.md#新功能持续观察)另需实例显式配置，默认不存在。接纳输入、原生接收、开始自检、提交带证据引用的结果分别计数。观察使用同一 Harness 的 begin/finish 回执和 provider 累计计数差，不新增判定模型，不拦截最终交付；未回报与无计量保留为缺口。短问答可记为不适用。观察窗口结束不关闭用户的功能选择。
 
 ### 个人试用：开工严格检查
 

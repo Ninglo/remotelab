@@ -93,6 +93,7 @@ import { handleWorkAwarenessRoutes } from './router-work-awareness.mjs';
 import { handleMonitoringPreview } from './router-monitoring-preview.mjs';
 import { handleMonitoringResolution } from './monitoring-resolution.mjs';
 import { handleMonitoringEvidence } from './router-monitoring-evidence.mjs';
+import { handleFeatureObservation } from './router-feature-observation.mjs';
 import { handleProtectedSourceRoutes } from './router-protected-sources.mjs';
 import { handleFeishuWebSettings } from './router-feishu-web-settings.mjs';
 import { handleFeishuPersonalWorkspace } from './router-feishu-personal-workspace.mjs';
@@ -1458,6 +1459,7 @@ export async function handleRequest(req, res) {
   if (await handleMonitoringResolution({ req, res, pathname, authSession, writeJson })) return;
   if (await handleMonitoringPreview({ req, res, pathname })) return;
   if (await handleMonitoringEvidence({ req, res, pathname, authSession })) return;
+  if (await handleFeatureObservation({ req, res, pathname, parsedUrl, authSession, writeJson })) return;
   if (await handleProtectedSourceRoutes({ req, res, pathname, authSession, writeJson })) return;
 
   if (await handleFeishuWebSettings({ req, res, pathname, parsedUrl, authSession, writeJson, nonce, runtime: feishuWebRuntime })) return;

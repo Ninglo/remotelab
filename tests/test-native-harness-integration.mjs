@@ -647,6 +647,27 @@ try {
   await awaitAnswer(policySession.id, 'policy-disabled');
   await evidence('PASS: shared native admission isolates each Person strict-start/display policy, preserves same-author continuations and retries, and refuses unknown-author inheritance.');
 
+  const groupReviewSession = await rpc('create');
+  const groupReviewOptions = (id, enabled) => {
+    const o = policyOptions(id, 'a'); o.sourceContext.tenantKey = 'tenant'; o.sourceDelivery.target.tenantKey = 'tenant';
+    if (enabled) o.sourceContext.groupSelfReview = { enabled: true, revision: 1 };
+    return o;
+  };
+  const groupRoot = await rpc('accept', groupReviewSession.id, 'Hold group review', [], groupReviewOptions('group-review-root', true));
+  await until(async () => (await logs()).some(e => e.runId === groupRoot.run.id && e.kind === 'turn/start'), 'group review starts');
+  const groupPolicy = (await rpc('request', groupReviewSession.id, 'group-review-root')).options.groupDeliverySelfReviewPolicy;
+  assert.equal(groupPolicy.scope, 'group');
+  assert.equal((await rpc('request', groupReviewSession.id, 'group-review-root')).options.messageReplyPolicy.selfReview, false);
+  await rpc('accept', groupReviewSession.id, 'Continue after group off', [], groupReviewOptions('group-review-steer', false));
+  await until(async () => (await receipt(groupRoot.run.id, 'group-review-steer'))?.state === 'accepted', 'group review steer accepted');
+  assert.deepEqual((await rpc('request', groupReviewSession.id, 'group-review-steer')).options.groupDeliverySelfReviewPolicy, groupPolicy);
+  await writeFile(join(root, groupRoot.run.id + '.release'), '');
+  for (const id of ['group-review-root','group-review-steer']) await awaitAnswer(groupReviewSession.id,id);
+  const groupOff = await rpc('accept', groupReviewSession.id, 'Fresh after group off', [], groupReviewOptions('group-review-off', false));
+  assert.equal((await rpc('request', groupReviewSession.id, 'group-review-off')).options.groupDeliverySelfReviewPolicy, undefined);
+  await writeFile(join(root, groupOff.run.id + '.release'), ''); await awaitAnswer(groupReviewSession.id,'group-review-off');
+  await evidence('PASS group self-review: independent personal/display settings, same-work snapshot, native steer and new work after disable.');
+
   {
   // Real manager -> native transport -> durable receipt -> next prompt, including
   // controller recovery. No model or Feishu network is involved.

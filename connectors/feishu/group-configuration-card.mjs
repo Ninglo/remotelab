@@ -50,6 +50,11 @@ export function buildGroupConfigurationCard(record, view) {
   if (project?.skills?.length) elements.push(md('**常用技能**\n'
     + project.skills.slice(0, 3).map(skill => `• **${skill.name}**：${skill.description}`).join('\n')));
   elements.push(...routingControls(record, view));
+  elements.push({ tag: 'hr' }, md(`**交付前自检 · 本群：${view.selfReview === true ? '开启' : '关闭'}**`),
+    md('默认关闭。开启后，本 Bot 在本群主线及话题接纳的新工作会核对成果、验收条件和交付入口，可能增加耗时与用量。当前运行和中途补充保留原设置。\n个人开关在“我的设置”中独立保存；群或个人任一开启即生效，关闭本群不关闭个人选择。'),
+    { tag: 'button', type: 'default', text: plain(view.selfReview === true ? '关闭本群自检' : '开启本群自检'),
+      behaviors: [{ type: 'callback', value: { namespace: 'group-configuration', key: record.key,
+        action: view.selfReview === true ? 'self-review-off' : 'self-review-on', revision: view.revision } }] });
   if (view.error) elements.push(md(view.error));
   if (record.stopPending) elements.push(md('正在停止当前任务。'));
   return { schema: '2.0', config: { update_multi: true, enable_forward: false },

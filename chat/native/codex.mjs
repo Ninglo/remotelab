@@ -315,7 +315,10 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
         case 'thread/tokenUsage/updated': {
           const usage = params.tokenUsage?.last;
           if (!usage) break;
-          onEvent({ type: 'remotelab.context_metrics', contextTokens: usage.totalTokens, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedInputTokens: usage.cachedInputTokens, reasoningTokens: usage.reasoningOutputTokens, contextWindowTokens: params.tokenUsage.modelContextWindow, contextSource: 'codex_app_server' });
+          onEvent({ type: 'remotelab.context_metrics', contextTokens: usage.totalTokens, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedInputTokens: usage.cachedInputTokens, reasoningTokens: usage.reasoningOutputTokens, contextWindowTokens: params.tokenUsage.modelContextWindow, contextSource: 'codex_app_server',
+            ...(params.tokenUsage.total ? { featureUsage: { threadId: params.threadId || threadId,
+              inputTokens: params.tokenUsage.total.inputTokens, outputTokens: params.tokenUsage.total.outputTokens,
+              cachedInputTokens: params.tokenUsage.total.cachedInputTokens } } : {}) });
           break;
         }
         case 'turn/plan/updated':

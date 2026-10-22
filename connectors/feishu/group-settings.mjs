@@ -41,8 +41,9 @@ export function normalizeFeishuGroups(value = {}) {
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {
     if (!chatId.trim() || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid Feishu group settings');
     for (const key of Object.keys(raw)) {
-      if (!['reactionCandidates', 'responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'jevReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+      if (!['reactionCandidates', 'responseMode', 'replyMode', 'systemPrompt', 'selfReview', 'participationMode', 'quickReactions', 'jevReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
     }
+    if (raw.selfReview !== undefined && typeof raw.selfReview !== 'boolean') throw new Error('Invalid selfReview');
     if (raw.participationControls !== undefined && typeof raw.participationControls !== 'boolean') throw new Error('Invalid participationControls');
     if (raw.participationControls && !['ambient', 'active', 'listening', 'paused'].includes(raw.participationMode)) throw new Error('participationControls requires ambient mode');
     if (raw.participationStatusCard !== undefined && typeof raw.participationStatusCard !== 'boolean') throw new Error('Invalid participationStatusCard');
@@ -84,6 +85,9 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const candidates = normalizeFeishuReactionCandidates(group.reactionCandidates ?? (privateChat ? undefined : config.groupReactionCandidates));
   return {
     reactionCandidates: candidates,
+    // No inherited bot-wide default: every group starts off independently.
+    selfReview: !privateChat && group.selfReview === true,
+    selfReviewRevision: group.selfReviewRevision || 0,
     // Native topic groups always receive humans; ordinary groups keep their policies.
     responseMode: topicGroup || group.participationMode === 'ambient' ? 'all' : group.responseMode
       ?? 'mention_only',

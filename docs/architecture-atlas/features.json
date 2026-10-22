@@ -858,7 +858,7 @@
           "name": "飞书私聊个人设置与 Web 页面显示",
           "purpose": "在飞书设置主题、字体、阅读、宠物，以及个人回复展示、开工检查、实验分流和当前对话模型。",
           "entry": "机器人私聊底部菜单“我的设置”／“使用说明”，或发送同名文字；Web 插件 → 设置 → 页面显示／消息设置，首次连接本人账号。",
-          "condition": "私聊入口由连接器 personalSettings.enabled 显式向所有获准用户开放；未开启时沿用 openIds 试用名单。首次进入和首次普通消息共用欢迎去重，新用户按本人身份建卡；个人记忆仍沿原试点条件且对话记忆默认关闭。显示偏好保存在当前浏览器；消息选项共用服务器上的本人配置，后续新工作生效。实验分流保留现有试点群范围；模型只改变已关联飞书对话的后续消息，Quick 固定。代码、部署、安装与本人实际使用分别核验。 Mac 原生 r13 在消息分组侧栏显示逐项测试标注和底部设置版本；新增已读同步须本人明确连接，回执仅确认已观察的结果，新结果仍待读。 交付前自检默认关闭，本人主动开启后由当前 Harness 在交付前核对验收条件、实际产物及链接／附件；当前运行与中途补充保留原设置，不启动独立后台续跑。",
+          "condition": "私聊入口由连接器 personalSettings.enabled 显式向所有获准用户开放；未开启时沿用 openIds 试用名单。首次进入和首次普通消息共用欢迎去重，新用户按本人身份建卡；个人记忆仍沿原试点条件且对话记忆默认关闭。显示偏好保存在当前浏览器；消息选项共用服务器上的本人配置，后续新工作生效。实验分流保留现有试点群范围；模型只改变已关联飞书对话的后续消息，Quick 固定。代码、部署、安装与本人实际使用分别核验。 Mac 原生 r13 在消息分组侧栏显示逐项测试标注和底部设置版本；新增已读同步须本人明确连接，回执仅确认已观察的结果，新结果仍待读。 交付前自检默认关闭，本人主动开启后由当前 Harness 在交付前核对验收条件、实际产物及链接／附件；当前运行与中途补充保留原设置，不启动独立后台续跑。 本人或本群任一开启即适用一次；所有群默认关闭，已接纳工作保留原策略，其他群及后台任务不继承。",
           "example": "保留首条回复，收起全部进展，同时开启开工严格检查和实验分流。",
           "sources": [
             "docs/feishu-web-settings.md",
@@ -876,7 +876,10 @@
             "chat/router-message-reply-settings.mjs",
             "static/chat/message-reply-settings.js",
             "static/chat/message-reply-model.js",
-            "docs/session-work-awareness.md"
+            "docs/session-work-awareness.md",
+            "connectors/feishu/group-configuration.mjs",
+            "connectors/feishu/group-configuration-card.mjs",
+            "connectors/feishu/group-settings.mjs"
           ],
           "commands": [
             "message-replies"
@@ -931,7 +934,7 @@
           "name": "监控器的总览与自动化列表",
           "purpose": "依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；磁盘圆盘、账户进度与近 7 天 Session／上下文／Token 曲线展示真实样本，缺失留空；完整明细按需展开。 对本实例可取回的历史及增量提交文本做Luna风险审阅，展示覆盖缺口、失败、脱敏证据及实际调用消耗。",
           "entry": "从首页顶部或侧栏进入监控器，默认总览；加载期间的点击不会被会话恢复覆盖。 Prompt安全入口：监控器 → Prompt 安全（?tab=tasks&monitor=security）。 实例启用独立监管站时，监控器与设置页监管链接转至配置的站点；安全板块登录后直接展示Prompt风险片段、原因、建议及标红上下文；自动化管理与补审保留原专用入口。 配置问题处理入口后，分析项的“去解决”会保存上下文并提交新网页Session；同一人对同一分析项重复点击复用原Session。",
-          "condition": "需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。页面统计按需读取并缓存，不触发操作；可单独启用会话准备／启动异常巡检，复用现有观察器、私信原卡更新，具体条件见监管说明。账号、磁盘、服务与 API 属于实例共享资源。 Prompt审阅需显式启用、已登录Codex账号与Pi；不覆盖未留存的Harness内部请求，不自动修改提示或整改。 独立展示由实例配置启用，默认保持原界面；跳转不传递凭据，来源采集与权限继续沿用原后端。 处理按钮要求本人登录；公共站通过可信窗口交接，不开放匿名执行。冻结分析需先复核现状，重大业务处置仍按原授权。",
+          "condition": "需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。页面统计按需读取并缓存，不触发操作；可单独启用会话准备／启动异常巡检，复用现有观察器、私信原卡更新，具体条件见监管说明。账号、磁盘、服务与 API 属于实例共享资源。 Prompt审阅需显式启用、已登录Codex账号与Pi；不覆盖未留存的Harness内部请求，不自动修改提示或整改。 独立展示由实例配置启用，默认保持原界面；跳转不传递凭据，来源采集与权限继续沿用原后端。 处理按钮要求本人登录；公共站通过可信窗口交接，不开放匿名执行。冻结分析需先复核现状，重大业务处置仍按原授权。 可选功能观察默认关闭，按明确配置的人群从首次生效输入起跟踪一周；启用输入、原生接收、Agent回执、证据引用和阶段Token分开统计，未知保留缺口。",
           "example": "查看本实例的紧急问题和覆盖缺口，给我最新观测时间。",
           "sources": [
             "docs/monitoring.md",
@@ -988,10 +991,15 @@
             "static/chat/settings-ui.js",
             "chat/monitoring-resolution.mjs",
             "chat/router-monitoring-preview.mjs",
-            "static/chat/monitoring-resolve.js"
+            "static/chat/monitoring-resolve.js",
+            "chat/feature-observation.mjs",
+            "chat/router-feature-observation.mjs",
+            "lib/feature-observation-command.mjs",
+            "chat/native/codex.mjs"
           ],
           "commands": [
-            "usage-summary"
+            "usage-summary",
+            "feature-observation"
           ]
         },
         {

@@ -11,7 +11,8 @@ import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
-import { deliverySelfReviewPrompt } from './delivery-self-review.mjs';
+import { deliverySelfReviewPrompt, captureGroupDeliverySelfReviewPolicy } from './delivery-self-review.mjs';
+import { captureFeatureObservation, observeFeatureAdmission, featureObservationPrompt } from './feature-observation.mjs';
 import { strictStartCheckPrompt, strictStartCheckProvenance } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
@@ -1434,8 +1435,10 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
-  slots.push(createModelContextSlot('delivery_self_review', 'Personal delivery self-review',
-    deliverySelfReviewPrompt(options.messageReplyPolicy, { personId: options.viewPersonId, identityId: options.initiatedByIdentityId })));
+  slots.push(createModelContextSlot('delivery_self_review', 'Delivery self-review',
+    deliverySelfReviewPrompt(options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy,
+      { ...options, personId: options.viewPersonId, identityId: options.initiatedByIdentityId })
+      + '\n' + featureObservationPrompt(options.featureObservation, options.requestId)));
   const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;
   const startCheck = strictStartCheckPrompt(options.messageReplyPolicy, { personId: options.viewPersonId,
     identityId: options.initiatedByIdentityId, resetDisabled: options.messageReplyPolicy?.scope === 'person'
@@ -3530,6 +3533,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   options = { ...options };
   if (messageReplyPolicy) options.messageReplyPolicy = messageReplyPolicy;
   else delete options.messageReplyPolicy;
+  const groupReview = await captureGroupDeliverySelfReviewPolicy(options, messageReplyPolicy, inherited);
+  if (groupReview) options.groupDeliverySelfReviewPolicy = groupReview;
+  else delete options.groupDeliverySelfReviewPolicy;
+  const featureObservation = priorRequest ? priorRequest.options.featureObservation : await captureFeatureObservation(options);
+  if (featureObservation) options.featureObservation = featureObservation;
+  else delete options.featureObservation;
   if (priorRequest?.options?.nativeQuestionId) options = { ...options, nativeQuestionId: priorRequest.options.nativeQuestionId };
   else if (!priorRequest && options.nativeQuestionId) {
     const question = activeNative ? await readNativeQuestion(runDir(activeRequest.runId)) : null;
@@ -3602,7 +3611,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // These are admission-time projections, not user input. A retry keeps the
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
-    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy', 'messageRoutingPolicy',
+    for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy', 'messageRoutingPolicy', 'groupDeliverySelfReviewPolicy', 'featureObservation',
       'usageSurface', 'usageActorKind', 'usagePersonId']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];
@@ -3615,6 +3624,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, sourceDelivery: deliveryPlan, ...runtimeSelection })
     : [];
   const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries, deliveryPlan, boundConversation: Boolean(session.conversation) });
+  await observeFeatureAdmission(record);
   await recordWorkInputAndDeliver(session, record);
   const activeRun = activeRequest ? await getRun(activeRequest.runId) : null;
   const nativeFollowUp = activeNative && !activeRun?.cancelRequested && canForwardNativeRequest(record, activeRequest);

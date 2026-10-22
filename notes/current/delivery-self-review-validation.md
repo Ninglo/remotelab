@@ -32,3 +32,24 @@ The first test run exposed an overly broad test instruction to always attach fil
 These checks do not establish that every Harness will follow the optional procedure, nor that a human has clicked the production Feishu control. The implementation preserves ordinary verification while off; a person can opt in through existing settings. Deployment version and active-instance scope must be read from the service separately.
 
 This delivery is prepared for review only. The later human constraint excludes production deployment, restart, mainline/source switching, automatic website publication and enabling any existing Person. Production rollout and real Feishu opt-in remain separate acceptance steps.
+
+## Group scope and one-week observation follow-up
+
+The requester subsequently asked for an independent group switch (every group still off), explicitly chose personal activation **when deployed**, and requested a week of counts, effects and separate consumption in the existing Claude Tag supervision page. That does not authorize deployment in this round. No production personal/group setting, service or monitoring source was changed.
+
+Group and personal switches use OR semantics and one review. Group identity is the verified connector route + tenant + chat, covering the mainline and threads; personal identity remains the verified Person. New-work admission captures the choice, while same-person native steer and retries preserve the accepted choice. The group control reuses the existing card authorization, stale revision check and durable settings history; it does not modify message routing or long-task monitoring.
+
+The observer separately counts admitted enabled inputs, native receipts, begin/finish execution receipts, outcomes, configurable issue counts and daily provider usage. `feature-observations/config.json` is absent by default; a selected cohort starts its seven-day window on the first enabled input. The public supervision projection contains aggregates only; raw checks and original work stay behind the authenticated evidence route. Existing 120-second collection is reused, with no new scheduled model review. Later features reuse the window/storage/view and add an actual activation adapter plus project-specific metrics.
+
+| Validation | Result |
+| --- | --- |
+| Full workboard suite | All original 26 scenario scripts passed, including same-run steer, recovery, person isolation and single final/file publication |
+| Group contracts | Defaults, all personal/group permutations, route/tenant/chat isolation, stale card, unauthorized actor, persisted enable/disable and ordinary native steer passed |
+| Observer deterministic test | Default absent/off, other-person isolation, first-exposure week, expiry, immutable dedup, text-only evidence rejected, historical attachment accepted, unknown usage and delayed provider sampling passed |
+| Real Codex App Server | Corrected report from 999/999/mock to 2 rows / 30 units; one repaired receipt with real tool references; 3 failed criteria repaired |
+| Observation cost sample | Whole task 42.092 s; begin/finish 29.198 s; phase 61,356 input (57,088 cached) + 574 output = 61,930 tokens. Whole run 93,552 input + 750 output is kept separate |
+| Supervision page | Actual isolated HTTP server and Chromium: SSR, JavaScript module, 1440/390/320 widths, expandable daily rows, no-script view, public whitelist and project filtering passed |
+
+The first live observation discovered that provider usage arrives **after** a tool completes: begin could have no baseline and finish could see a stale sample. The implementation now reads the first actual samples following each boundary, without blocking the task or creating another model turn. A regression covers that ordering. Missing samples stay unknown. The phase excludes the final response after finish and is not a causal cost difference against a disabled control; the sample establishes functioning metering, not stable latency or improved success probability. Effects remain evidence-linked Agent reports, with human acceptance obtained from the original work.
+
+The supervisor is an existing instance-local source tree outside this Git repository. Its matching patch and baseline hashes are delivered with this review; applying only the backend commit would not add the page. Production Feishu control use, actual group/person activation, monitoring collection and the seven days of natural results remain unperformed under the no-deployment boundary.

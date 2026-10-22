@@ -1231,6 +1231,8 @@ async function submitRemoteLabRequest(runtime, summary, {
     runtimeSelectionScope: 'auto',
     sourceContext: {
       ...buildMessageSourceContext(messageSummary),
+      ...(groupSettings.selfReview ? { groupSelfReview: { enabled: true,
+        revision: groupSettings.selfReviewRevision } } : {}),
       ...(!['p2p', 'private'].includes(messageSummary.chatType) && !isFeishuBotSender(messageSummary)
         ? { feishuResponseProtocolVersion: 1, feishuProcessingReaction: true } : {}),
       ...(threadBinding?.threadOriginRunId ? { feishuThreadOriginRunId: threadBinding.threadOriginRunId } : {}),

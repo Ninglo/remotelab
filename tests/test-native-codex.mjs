@@ -104,7 +104,7 @@ function harness(options = {}, onQuestion) {
   h.notify('item/completed', { item: { id: 'text-1', type: 'agentMessage', text: 'hello', phase: 'final_answer' } });
   h.notify('item/completed', { item: { id: 'reason-1', type: 'reasoning', summary: ['A', 'B'], content: ['hidden body'] } });
   h.notify('item/completed', { item: { id: 'file-1', type: 'fileChange', status: 'completed', changes: [{ path: 'a.js', kind: { type: 'update' }, diff: '-old\n+new' }] } });
-  h.notify('thread/tokenUsage/updated', { turnId: 'turn-1', tokenUsage: { total: { totalTokens: 90 }, last: { inputTokens: 30, outputTokens: 10, cachedInputTokens: 5, reasoningOutputTokens: 2, totalTokens: 40 }, modelContextWindow: 128000 } });
+  h.notify('thread/tokenUsage/updated', { turnId: 'turn-1', tokenUsage: { total: { inputTokens: 70, cachedInputTokens: 20, outputTokens: 20, totalTokens: 90 }, last: { inputTokens: 30, outputTokens: 10, cachedInputTokens: 5, reasoningOutputTokens: 2, totalTokens: 40 }, modelContextWindow: 128000 } });
   h.notify('turn/completed', { turn: { id: 'turn-1', status: 'completed', items: [] } });
   await tick();
   assert.equal(h.settled.length, 1);
@@ -113,6 +113,8 @@ function harness(options = {}, onQuestion) {
   assert.equal(h.events.find(value => value.item?.type === 'reasoning').item.text, 'A\n\nB');
   assert.equal(h.events.find(value => value.item?.type === 'file_change').item.changes[0].kind, 'update');
   assert.equal(h.events.find(value => value.type === 'remotelab.context_metrics').contextTokens, 40);
+  assert.deepEqual(h.events.find(value => value.type === 'remotelab.context_metrics').featureUsage,
+    { threadId: 'thread-1', inputTokens: 70, cachedInputTokens: 20, outputTokens: 20 }, 'feature metering uses total, not last context usage');
   h.driver.close();
 }
 {
