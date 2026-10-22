@@ -5,10 +5,10 @@ import { observeSettingRows, settingRows, replySettingValues } from './usage-set
 
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const choices = value => {
-  if (!value || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'strictStartCheck', 'routing'].includes(key))) fail('消息回复设置无效。');
-  const { opening, checklist, progress, strictStartCheck = false, routing = 'none' } = validateReplyDraft({ ...value, groups: [] });
+  if (!value || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'strictStartCheck', 'routing', 'selfReview'].includes(key))) fail('消息回复设置无效。');
+  const { opening, checklist, progress, strictStartCheck = false, routing = 'none', selfReview = false } = validateReplyDraft({ ...value, groups: [] });
   if (progress === 'card') fail('请选择三种进展展示方式之一。');
-  return { opening, checklist, progress, strictStartCheck, routing };
+  return { opening, checklist, progress, strictStartCheck, routing, selfReview };
 };
 const defaults = () => choices({ opening: DEFAULT_REPLY_DRAFT.opening,
   checklist: DEFAULT_REPLY_DRAFT.checklist, progress: DEFAULT_REPLY_DRAFT.progress });
@@ -20,11 +20,11 @@ function settingsFor(person) {
   if (stored.active && (stored.active.version !== 3 || stored.active.scope !== 'person' || stored.active.personId !== person.id)) fail('个人回复设置归属无法核对。', 500);
   const active = stored.active ? { ...stored.active, ...choices({ opening: stored.active.opening,
     checklist: stored.active.checklist, progress: stored.active.progress, strictStartCheck: stored.active.strictStartCheck,
-    routing: stored.active.routing }) } : null;
+    routing: stored.active.routing, selfReview: stored.active.selfReview }) } : null;
   if (active?.strictStartCheck && !active.strictStartRuleVersion) active.strictStartRuleVersion = LEGACY_STRICT_START_VERSION;
   return { personId: person.id, revision: stored.revision, active, choices: active ? choices({
     opening: active.opening, checklist: active.checklist, progress: active.progress, strictStartCheck: active.strictStartCheck,
-    routing: active.routing }) : defaults() };
+    routing: active.routing, selfReview: active.selfReview }) : defaults() };
 }
 
 function requireActor(document, actor) {
@@ -40,10 +40,10 @@ export async function loadPersonMessageReplies(actor) {
 
 export async function changePersonMessageReplies(input, actor) {
   if (!input || Object.keys(input).some(key => !['action', 'expectedRevision', 'confirm', 'choices', 'enabled', 'ruleVersion'].includes(key))
-      || !['apply', 'reset', 'strict-start', 'routing'].includes(input.action)) fail('未知的个人回复设置操作。');
+      || !['apply', 'reset', 'strict-start', 'routing', 'self-review'].includes(input.action)) fail('未知的个人回复设置操作。');
   if (input.confirm !== true) fail('请明确保存并应用你的回复设置。');
-  if (['strict-start', 'routing'].includes(input.action) && (typeof input.enabled !== 'boolean' || input.choices !== undefined)) fail('请明确开启或关闭个人设置。');
-  if (!['strict-start', 'routing'].includes(input.action) && input.enabled !== undefined) fail('未知的个人回复设置操作。');
+  if (['strict-start', 'routing', 'self-review'].includes(input.action) && (typeof input.enabled !== 'boolean' || input.choices !== undefined)) fail('请明确开启或关闭个人设置。');
+  if (!['strict-start', 'routing', 'self-review'].includes(input.action) && input.enabled !== undefined) fail('未知的个人回复设置操作。');
   if (input.ruleVersion !== undefined && (input.action !== 'strict-start'
       || !isStrictStartRuleVersion(input.ruleVersion))) fail('未知的开工检查规则版本。');
   if (input.action === 'apply') choices(input.choices);
@@ -52,11 +52,13 @@ export async function changePersonMessageReplies(input, actor) {
     const current = settingsFor(person);
     if (actor.authKind === 'feishu-card' && actor.eventId && person.preferences?.messageReplies?.audit?.some(entry => entry.eventId === actor.eventId && entry.identityId === actor.identityId)) return current;
     if (input.expectedRevision !== current.revision) fail('你的设置已更新，请重新载入后再保存。', 409);
-    const value = input.action === 'routing' ? { ...current.choices, routing: input.enabled ? 'experimental' : 'none' }
+    const value = input.action === 'self-review' ? { ...current.choices, selfReview: input.enabled }
+      : input.action === 'routing' ? { ...current.choices, routing: input.enabled ? 'experimental' : 'none' }
       : input.action === 'strict-start' ? { ...current.choices, strictStartCheck: input.enabled }
       : input.action === 'apply' ? choices({ ...input.choices,
         routing: input.choices.routing ?? current.choices.routing,
-        strictStartCheck: input.choices.strictStartCheck ?? current.choices.strictStartCheck }) : null;
+        strictStartCheck: input.choices.strictStartCheck ?? current.choices.strictStartCheck,
+        selfReview: input.choices.selfReview ?? current.choices.selfReview }) : null;
     const revision = current.revision + 1, now = new Date().toISOString();
     const active = value ? { ...value, version: 3, scope: 'person', personId: person.id,
       policyId: `reply_${person.id}_${revision}`, activatedAt: now,

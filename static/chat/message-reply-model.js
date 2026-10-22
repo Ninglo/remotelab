@@ -10,8 +10,9 @@ export function replyProgressUsesCard(policy) {
 
 export function validateReplyDraft(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups', 'strictStartCheck', 'routing'].includes(key))
+      || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'groups', 'strictStartCheck', 'routing', 'selfReview'].includes(key))
       || value.routing !== undefined && !['none', 'experimental'].includes(value.routing)
+      || value.selfReview !== undefined && typeof value.selfReview !== 'boolean'
       || value.strictStartCheck !== undefined && typeof value.strictStartCheck !== 'boolean'
       || typeof value.opening !== 'boolean' || typeof value.checklist !== 'boolean'
       || !['none', 'messages', 'card_latest', 'card_all', 'card'].includes(value.progress) || !Array.isArray(value.groups)
@@ -24,6 +25,7 @@ export function validateReplyDraft(value) {
   });
   return { opening: value.opening, checklist: value.checklist, progress: value.progress,
     ...(value.strictStartCheck !== undefined ? { strictStartCheck: value.strictStartCheck } : {}),
+    ...(value.selfReview !== undefined ? { selfReview: value.selfReview } : {}),
     ...(value.routing !== undefined ? { routing: value.routing } : {}),
     groups: [...new Map(groups.map(group => [`${group.sourceRouteId}:${group.chatId}`, group])).values()] };
 }
@@ -62,6 +64,9 @@ export function buildReplyPreview(draft, locale = 'zh') {
   steps.push({ kind: 'question', title: en ? 'When needed · separate question' : '需要时 · 单独提问',
     text: en ? 'Should this paragraph use last month’s data or the latest data?'
       : '这一段采用上个月的数据，还是最新的数据？' });
+  if (value.selfReview) steps.push({ kind: 'self_review', title: en ? 'Delivery self-review' : '交付前自检',
+    text: en ? 'Before final delivery, check the actual goal, acceptance criteria, output and usable links or attachments. Repair authorized gaps and recheck; report remaining blockers.'
+      : '最终交付前，对照实际目标、验收条件、产物和可用链接或附件；修复授权内缺项并重验，如实报告仍未解决的问题。' });
   steps.push({ kind: 'final', title: en ? 'Final reply · always sent' : '最终回复 · 始终发送',
     text: en ? 'The report review is complete. Two figures were corrected; one date still needs your confirmation.'
       : '报告核对完成，已更正两处数字；还有一处日期需要你确认。' });

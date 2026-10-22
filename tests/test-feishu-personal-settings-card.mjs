@@ -35,13 +35,13 @@ try {
   assert.equal(sent.body.elements.length, 3, 'first screen contains introduction, settings overview and collapsed help');
   assert.equal(settingsRegion.expanded, true);
   const rows = settingsRegion.elements.filter(e => e.tag === 'column_set');
-  assert.equal(rows.length, 3);
+  assert.equal(rows.length, 4);
   const tiles = rows.flatMap(row => row.columns);
   assert.ok(tiles.every(tile => tile.elements.some(e => e.tag === 'markdown' && e.text_size === 'notation' && e.content.length > 30)), 'every control keeps its explanation beside it');
   const controls = tiles.flatMap(tile => tile.elements).filter(e => e.tag === 'select_static');
-  assert.equal(controls.length, 6);
+  assert.equal(controls.length, 7);
   assert.ok(controls.every(c => c.options.some(o => o.value === c.initial_option)), 'all controls display their saved value');
-  assert.equal(controls.reduce((n,c) => n + c.options.length, 0), 14);
+  assert.equal(controls.reduce((n,c) => n + c.options.length, 0), 16);
   controller = createPersonalSettingsController(runtime, opts);
   await controller.publish(source, { automatic: true }); assert.equal(creates, 1, 'restart does not spam welcome');
   const guide = { version: 1, intro: '评测能力试用', sections: [{ title: '查询示例评测', body: '案例属于另一位同事，不改变本人身份。' }] };
@@ -58,7 +58,7 @@ try {
   assert.equal(feedback.toast.type, 'success'); assert.equal(feedback.card.type, 'raw');
   assert.equal(feedback.card.data.body.elements[0].content, guide.intro, 'guide survives a real settings callback');
   assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').expanded, true);
-  assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').elements.filter(e => e.tag === 'column_set').length, 3, 'guide retains every settings row');
+  assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').elements.filter(e => e.tag === 'column_set').length, 4, 'guide retains every settings row');
   assert.equal((await loadPersonMessageReplies({ personId: 'two', identityId: 'id_two', authKind: 'test' })).revision, 0, 'example guide never changes another person');
   assert.equal((await loadPersonMessageReplies(actor)).choices.opening, false);
   await changePersonMessageReplies({ action: 'apply', confirm: true, expectedRevision: 1, choices: { ...(await loadPersonMessageReplies(actor)).choices, opening: true } }, actor);
@@ -82,6 +82,17 @@ try {
   await assert.rejects(controller.publish(other), /仍待核对/);
   assert.equal(creates, 3, 'unknown transport failure never duplicates the welcome');
   fail = false;
+  const reviewControl = controls.find(c => c.behaviors[0].value.field === 'selfReview');
+  assert.equal(reviewControl.initial_option, 'false');
+  for (const enabled of [true, false]) {
+    const current = await loadPersonMessageReplies(actor);
+    const callback = event('selfReview', enabled, current.revision, { eventId: 'review-' + enabled });
+    callback.event.action.value.input = 'select'; callback.event.action.option = String(enabled);
+    const result = await controller.action(callback);
+    assert.equal(result.toast.type, 'success');
+    assert.equal((await loadPersonMessageReplies(actor)).choices.selfReview, enabled);
+    assert.equal((await loadPersonMessageReplies({ personId: 'two', identityId: 'id_two', authKind: 'test' })).choices.selfReview, false);
+  }
   const beforeRenew = await loadPersonMessageReplies(actor);
   const previousMessageId = record.messageId;
   record = await controller.publish(source, { renew: true });

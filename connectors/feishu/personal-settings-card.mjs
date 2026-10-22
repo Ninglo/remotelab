@@ -41,6 +41,8 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
       : [md('**个人记忆 · 尚未开放**\n用于记住称呼、表达偏好和协作习惯。当前账号暂未开放此试用。')]),
     ...toggle('开工前核对（试用）', 'strictStartCheck', c.strictStartCheck,
       '接到新工作时，额外查一下项目资料、现有做法和相关任务，减少重复做或接错工作。开启后准备时间可能更长；关闭后按通常方式开始。', ['增加核对', '通常方式']),
+    ...toggle('交付前自检', 'selfReview', c.selfReview === true,
+      '默认关闭。交付前对照原要求、实际产物和验收条件，检查链接或附件能否使用；修复授权内缺项后重验，可能增加耗时与用量。仅影响你在本实例网页和飞书发起的新工作；当前运行和其中途补充保留原设置，结束后的新输入采用新设置。关闭不取消基本诚实和必要验证。'),
     button('刷新设置', 'refresh', null),
   ];
   const help = [
@@ -61,6 +63,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     memory: ['个人记忆', '记住称呼和协作习惯；新偏好先问你。'],
     opening: ['开始工作时', '动手前简短说明目标和做法。'],
     routing: ['多项工作并行 · 试用', '先提出分工，经你确认再分别推进。'],
+    selfReview: ['交付前自检', '默认关闭；核对成果、验收条件与交付入口。'],
     strictStartCheck: ['开工前核对 · 试用', '多查项目背景和已有工作，准备会稍久。'],
   };
   const settingPanels = settings.filter(item => item.tag === 'collapsible_panel');
@@ -78,10 +81,10 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
         behaviors: [{ type: 'callback', value: { namespace: 'personal-settings', key: record.key, field, revision: current.revision, input: 'select' } }] },
     ] }];
   }));
-  const order = ['progress', 'checklist', 'memory', 'opening', 'routing', 'strictStartCheck'];
+  const order = ['progress', 'checklist', 'memory', 'opening', 'routing', 'strictStartCheck', 'selfReview'];
   const tiles = order.map(field => byField.get(field) || { tag: 'column', width: 'weighted', weight: 1,
     elements: [md('**个人记忆**\n记住称呼和协作习惯。当前账号尚未开放。')] });
-  const rows = [0, 2, 4].map(i => ({ tag: 'column_set', flex_mode: 'stretch', horizontal_spacing: '12px', columns: tiles.slice(i, i + 2) }));
+  const rows = Array.from({ length: Math.ceil(tiles.length / 2) }, (_, i) => i * 2).map(i => ({ tag: 'column_set', flex_mode: 'stretch', horizontal_spacing: '12px', columns: tiles.slice(i, i + 2) }));
   const settingHelp = order.flatMap(field => {
     const item = settingPanels.find(p => p.elements.some(e => e.tag === 'column_set' && e.columns[0].elements[0].behaviors[0].value.field === field));
     return item ? [md(`**${summaries[field][0]}**`), ...item.elements.filter(e => e.tag === 'markdown')] : [];
@@ -198,7 +201,7 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
           await changePersonalMemorySettings({ enabled: value.value, expectedRevision: value.revision, confirm: true }, actor);
           saved = true;
         } else if (value.field !== 'refresh') {
-          if (!['opening', 'checklist', 'progress', 'routing', 'strictStartCheck'].includes(value.field)) throw Error('未知设置。');
+          if (!['opening', 'checklist', 'progress', 'routing', 'strictStartCheck', 'selfReview'].includes(value.field)) throw Error('未知设置。');
           const current = await loadPersonMessageReplies(actor);
           if (value.field !== 'progress' && typeof value.value !== 'boolean') throw Error('设置选项无效。');
           const next = value.field === 'routing' ? value.value ? 'experimental' : 'none' : value.value;

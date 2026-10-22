@@ -603,7 +603,7 @@ try {
   // or work-start defaults. Exercise admission, not only the settings resolver.
   const policyActor = who => ({ personId: `person_${who}`, identityId: `identity_${who}` });
   const originalPolicy = await rpc('message-settings', { action: 'apply', expectedRevision: 1, confirm: true,
-    choices: { opening: false, checklist: false, progress: 'none', strictStartCheck: true, routing: 'none' } }, policyActor('a'));
+    choices: { opening: false, checklist: false, progress: 'none', strictStartCheck: true, selfReview: true, routing: 'none' } }, policyActor('a'));
   const otherPolicy = await rpc('message-settings', { action: 'apply', expectedRevision: 1, confirm: true,
     choices: { opening: true, checklist: false, progress: 'card_latest', strictStartCheck: false, routing: 'none' } }, policyActor('b'));
   const policySession = await rpc('create');
@@ -617,8 +617,9 @@ try {
   assert.equal(acceptedRootPolicy.strictStartRule.origin.requestId, 'policy-root');
   assert.equal(acceptedRootPolicy.strictStartRule.origin.sessionId, policySession.id);
 
-  await rpc('message-settings', { action: 'strict-start', expectedRevision: originalPolicy.revision,
-    confirm: true, enabled: false }, policyActor('a'));
+  assert.equal(acceptedRootPolicy.deliverySelfReview.status, 'captured');
+  await rpc('message-settings', { action: 'apply', expectedRevision: originalPolicy.revision,
+    confirm: true, choices: { ...originalPolicy.choices, strictStartCheck: false, selfReview: false } }, policyActor('a'));
   for (const [id, who] of [['policy-other', 'b'], ['policy-same', 'a']]) {
     await rpc('accept', policySession.id, 'Continue shared execution', [], who === 'b' ? policyOtherOptions : policyOptions(id, who));
     await until(async () => (await receipt(policyRoot.run.id, id))?.state === 'accepted', id + ' steers once');
@@ -640,6 +641,10 @@ try {
   await writeFile(join(root, policyRoot.run.id + '.release'), '');
   for (const id of ['policy-root', 'policy-other', 'policy-same', 'policy-unknown']) await awaitAnswer(policySession.id, id);
   assert.equal((await logs()).filter(event => event.runId === policyRoot.run.id && event.kind === 'process-start').length, 1);
+  const afterToggle = await rpc('accept', policySession.id, 'New work after disable', [], policyOptions('policy-disabled', 'a'));
+  assert.equal((await rpc('request', policySession.id, 'policy-disabled')).options.messageReplyPolicy.selfReview, false);
+  await writeFile(join(root, afterToggle.run.id + '.release'), '');
+  await awaitAnswer(policySession.id, 'policy-disabled');
   await evidence('PASS: shared native admission isolates each Person strict-start/display policy, preserves same-author continuations and retries, and refuses unknown-author inheritance.');
 
   {

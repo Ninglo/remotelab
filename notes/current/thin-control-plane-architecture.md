@@ -25,7 +25,7 @@ The selected Harness owns:
 - self-review and task-specific validation
 - the user-facing answer
 
-RemoteLab must not wrap ordinary turns in a second hidden semantic gate, planner, or reply reviewer.
+RemoteLab must not wrap ordinary turns in a second hidden semantic gate, planner, or reply reviewer. The optional personal delivery self-review setting (default off) projects the user-selected acceptance check into the existing Harness turn; it adds no separate reviewer call or continuation supervisor. See [the opt-in contract](../../docs/session-work-awareness.md#可选交付前自检).
 
 The same boundary applies to prompt text. First-turn and per-turn projections carry RemoteLab facts and capabilities without adding a global persona, execution bias, permission heuristic, generic content policy, or copied provider developer instructions. Code-backed access scope and connector bindings remain product responsibilities; prompts describe the resulting state.
 

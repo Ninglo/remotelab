@@ -10,6 +10,7 @@ function readChoices() {
   return { opening: byId('replyOpening').checked, checklist: byId('replyChecklist').checked,
     routing: byId('replyRouting').value,
     strictStartCheck: byId('replyStrictStartCheck').checked,
+    selfReview: byId('replySelfReview').checked,
     progress: byId('replyShowProgress').checked ? byId('replyProgress').value : 'none' };
 }
 function readDraft() { return { ...readChoices(), groups: [] }; }
@@ -66,8 +67,8 @@ function renderPreview() {
 }
 
 function describeChoices(value) {
-  return copy(`${value.routing === 'experimental' ? '实验分流' : '不分流'}；开工严格检查${value.strictStartCheck ? '开启' : '关闭'}；首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展', card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' })[value.progress]}`,
-    `${value.routing === 'experimental' ? 'experimental routing' : 'no routing'}; strict work-start check ${value.strictStartCheck ? 'on' : 'off'}; first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'card + separate text updates', card_latest: 'latest progress in a card', card_all: 'all progress in a collapsed card', card: 'previously saved card progress' })[value.progress]}`);
+  return copy(`${value.routing === 'experimental' ? '实验分流' : '不分流'}；开工严格检查${value.strictStartCheck ? '开启' : '关闭'}；交付前自检${value.selfReview ? '开启' : '关闭'}；首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展', card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' })[value.progress]}`,
+    `${value.routing === 'experimental' ? 'experimental routing' : 'no routing'}; strict work-start check ${value.strictStartCheck ? 'on' : 'off'}; delivery self-review ${value.selfReview ? 'on' : 'off'}; first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'card + separate text updates', card_latest: 'latest progress in a card', card_all: 'all progress in a collapsed card', card: 'previously saved card progress' })[value.progress]}`);
 }
 
 function renderCurrent() {
@@ -80,6 +81,7 @@ function renderCurrent() {
 function renderState() {
   const value = state.choices;
   byId('replyRouting').value = value.routing || 'none';
+  byId('replySelfReview').checked = value.selfReview === true;
   byId('replyStrictStartCheck').checked = value.strictStartCheck === true;
   byId('replyOpening').checked = value.opening;
   byId('replyChecklist').checked = value.checklist;

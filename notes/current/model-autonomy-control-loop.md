@@ -7,3 +7,5 @@ The former RemoteLab-owned turn-close self-check, automatic continuation, and se
 Current boundary: `notes/current/thin-control-plane-architecture.md`.
 
 Historical design: `notes/archive/model-autonomy-control-loop.md`.
+
+2026-10-22: an explicit personal opt-in now projects a bounded delivery check into the current Harness before its final answer. It is off by default and does not restore the retired supervisor or continuation loop. See [delivery self-review](../../docs/session-work-awareness.md#可选交付前自检).

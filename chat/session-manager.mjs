@@ -11,6 +11,7 @@ import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
+import { deliverySelfReviewPrompt } from './delivery-self-review.mjs';
 import { strictStartCheckPrompt, strictStartCheckProvenance } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
@@ -1433,6 +1434,8 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
+  slots.push(createModelContextSlot('delivery_self_review', 'Personal delivery self-review',
+    deliverySelfReviewPrompt(options.messageReplyPolicy, { personId: options.viewPersonId, identityId: options.initiatedByIdentityId })));
   const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;
   const startCheck = strictStartCheckPrompt(options.messageReplyPolicy, { personId: options.viewPersonId,
     identityId: options.initiatedByIdentityId, resetDisabled: options.messageReplyPolicy?.scope === 'person'

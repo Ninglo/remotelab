@@ -7,6 +7,7 @@ import { DEFAULT_REPLY_DRAFT, validateReplyDraft } from '../static/chat/message-
 import { observeSettingRows, replySettingRows } from './usage-settings.mjs';
 
 import { resolvePersonMessageReplyPolicy } from './person-message-replies.mjs';
+import { captureDeliverySelfReview } from './delivery-self-review.mjs';
 import { captureStrictStartRule } from './strict-start-check.mjs';
 
 const path = join(CONFIG_DIR, 'message-reply-settings.json');
@@ -92,7 +93,9 @@ export async function resolveMessageReplyPolicy(options = {}) {
     if (personal) {
       const rule = await captureStrictStartRule(personal, { personId: options.viewPersonId,
         identityId: options.initiatedByIdentityId, sessionId: options.sessionId, requestId: options.requestId });
-      return { ...personal, final: true, ...(rule ? { strictStartRule: rule } : {}) };
+      const review = await captureDeliverySelfReview(personal, { personId: options.viewPersonId, identityId: options.initiatedByIdentityId });
+      return { ...personal, final: true, ...(rule ? { strictStartRule: rule } : {}),
+        ...(review ? { deliverySelfReview: review } : {}) };
     }
   } catch (error) {
     console.warn(`[message-reply-mode] ${error.message}; preserving default display`);

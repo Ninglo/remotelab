@@ -196,9 +196,9 @@ additional-context bytes, not the complete native context or a Token count.
 
 ## Stable rule snapshots (2026-10-12)
 
-Native inputs project the seven stable rule slots (surface, workboard
+Native inputs project stable rule slots (surface, workboard
 instructions, source runtime, Session instructions, personal reply choices,
-strict-start policy and personally scoped in-flight tools), plus a separate project
+strict-start policy, optional personal delivery self-review and personally scoped in-flight tools), plus a separate project
 background slot containing versioned project brief pointers. Before substantive
 project work the Harness reads the relevant brief from its registered path;
 ordinary turns no longer carry its entire body.
