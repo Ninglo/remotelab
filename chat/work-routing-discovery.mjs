@@ -25,6 +25,7 @@ export async function routingDiscovery(session, personId, { query = '', sessions
   if (!query.trim() || !groups.length) return { catalog, candidates: [],
     observation: { metadataReads: 0, transcriptReads: 0, elapsedMs: Math.round(performance.now() - started) } };
   const available = (sessions || await loadSessionsMeta()).filter(s => !s.groupFeed && !s.internalRole
+    && ['thread', 'topic'].includes(s.conversation?.target?.conversationKind)
     && s.conversation?.target?.tenantKey === session.conversation?.target?.tenantKey
     && groups.some(g => g.route === s.conversation?.sourceRouteId && g.chatId === s.conversation?.target?.chatId));
   const found = candidateWorkFromSessions(available, { sessionId: session.id, query, limit: 3 });
@@ -46,7 +47,7 @@ export async function routingDiscovery(session, personId, { query = '', sessions
     return { sessionId: s.id, name: c.sessionName, goal: c.goal.slice(0, 300), group,
       status, matchedWorkStatus: c.status, archived: !!s.archived, createdAt: iso(s.created),
       lastUserMessageAt, lastWorkUpdateAt: iso(latest?.updatedAt),
-      transfer: s.archived ? 'unavailable-archived' : 'requires-human-confirmation',
+      transfer: s.archived ? 'unavailable-archived' : 'explicit-instruction-or-confirmed-draft',
       handoff: s.archived ? null : { mode: 'handoff', targetSessionId: s.id,
         authorization: 'An explicit human instruction naming this destination and content can supply authorization.sourceRequestId + quote; otherwise request the draft question.' },
       sessionUrl: buildSessionNavigationHref(s.id),

@@ -135,11 +135,14 @@ try {
     // A source command may forward older originals, but never approve for another author.
     const reads = [];
     const result = await routingDiscovery(source, 'a', { query: 'Settings card', sessions: [source,
+      { ...target, id: 'main-is-not-a-handoff-topic', conversation: conversation('destination', 'main') },
       ...Array.from({ length: 1000 }, (_, i) => ({ ...target, id: 'candidate-' + i,
         ...(i < 10 ? {} : { name: 'Unrelated ' + i, workSummary: { goal: 'Unrelated ' + i } }) }))],
       history: async (id, opts) => { reads.push(id); assert.equal(opts.metadataOnly, true); return { lastUserMessageAt: Date.now() }; } });
     assert.equal(reads.length, 3); assert.equal(result.observation.transcriptReads, 0);
     assert.equal(result.candidates[0].handoff.mode, 'handoff');
+    assert.equal(result.candidates[0].transfer, 'explicit-instruction-or-confirmed-draft');
+    assert(!reads.includes('main-is-not-a-handoff-topic'));
     console.log(JSON.stringify({ explicitHandoffMs: +handoffMs.toFixed(2), extraHumanRounds: 0, discovery: result.observation,
       admissions, verified: 'steer preserved; ambiguous draft; explicit disabled-policy and legacy topic; unauthorized scope/author; original attachment/provenance; duplicate/lost acknowledgement/known failure/receipt recovery' }));
   }
