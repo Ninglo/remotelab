@@ -361,7 +361,9 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       const result = await request(resumeId ? 'thread/resume' : 'thread/start', {
         approvalPolicy: 'never', sandbox,
         ...(recoveryConfig ? { config: recoveryConfig } : {}),
-        ...(resumeId ? { threadId: resumeId } : {}),
+        // We only need the id; Codex still restores its full model context.
+        // Avoid returning the entire transcript as one large JSONL frame.
+        ...(resumeId ? { threadId: resumeId, excludeTurns: true } : {}),
         ...(cwd ? { cwd } : {}),
         ...(options.model ? { model: options.model } : {}),
       });

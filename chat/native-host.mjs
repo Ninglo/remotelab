@@ -1,6 +1,7 @@
 import { observeAcceptedRules, observeContextRule } from './context-rule-monitoring.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { createLfLineReader } from '../lib/lf-line-reader.mjs';
 import { createNativeInputServer, recordInitialNativeInputReceipt } from './native-input-transport.mjs';
 import { createCodexDriver } from './native/codex.mjs';
 import { createPiDriver } from './native/pi.mjs';
@@ -18,29 +19,6 @@ const factories = {
   'claude-stream-json': createClaudeDriver,
   'antigravity-stream-json': createAntigravityDriver,
 };
-
-function createLfLineReader(stream, onLine) {
-  let buffer = '';
-  stream.setEncoding('utf8');
-  const closed = new Promise((resolve, reject) => {
-    stream.on('data', chunk => {
-      buffer += chunk;
-      let end;
-      while ((end = buffer.indexOf('\n')) >= 0) {
-        let line = buffer.slice(0, end);
-        buffer = buffer.slice(end + 1);
-        if (line.endsWith('\r')) line = line.slice(0, -1);
-        onLine(line);
-      }
-    });
-    stream.once('end', () => {
-      if (buffer) onLine(buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer);
-      resolve();
-    });
-    stream.once('error', reject);
-  });
-  return { closed };
-}
 
 // The detached sidecar owns the bidirectional native process. The controller
 // can disappear without closing stdin or losing the Harness's active tools.

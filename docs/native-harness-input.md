@@ -40,6 +40,20 @@ contract unless their tool record explicitly declares `"inputMode": "native"`.
 An arbitrary program that only mimics a CLI's output is not automatically a
 bidirectional implementation of that CLI's protocol.
 
+Codex resumes use `thread/resume` with `excludeTurns: true`: the server restores
+the full model conversation but omits the unused `thread.turns` response payload.
+This does not compact history or change model, effort, instructions, steering,
+or publication policy. The shared native JSONL reader scans each incoming chunk
+once and joins incomplete frame fragments only at LF (or stream end), avoiding
+repeated full-frame scans on long transcripts and large tool outputs. UTF-8,
+Unicode separators inside JSON strings, CRLF and final unterminated frames keep
+their existing interpretation; frames are not truncated.
+
+`tests/test-lf-line-reader.mjs` covers byte boundaries, stream failure and a
+fragmented 64 MiB frame. The installed-Codex loopback test also resumes a completed
+thread and verifies that earlier inputs, assistant output, model, reasoning and
+instructions remain in the next model request. No real provider call is used.
+
 Codex errors retain the native `codexErrorInfo`, `additionalDetails` and optional
 public `misalignment` details in the durable spool and normalized status events,
 along with thread/turn IDs and `willRetry`. Only structured

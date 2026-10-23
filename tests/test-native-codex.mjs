@@ -21,6 +21,11 @@ function harness(options = {}, onQuestion) {
     const threadRequest = sent.findLast(value => value.method === 'thread/start' || value.method === 'thread/resume');
     assert.equal(threadRequest.params.approvalPolicy, 'never');
     assert.equal(threadRequest.params.sandbox, 'danger-full-access');
+    if (options.threadId || options.codexThreadId) {
+      assert.equal(threadRequest.params.excludeTurns, true, 'resume omits unused client history, not model context');
+    } else {
+      assert.equal(Object.hasOwn(threadRequest.params, 'excludeTurns'), false, 'start keeps its own protocol shape');
+    }
     reply(options.threadId || options.codexThreadId ? 'thread/resume' : 'thread/start', { thread: { id: 'thread-1' } }); await tick();
     reply('turn/start', { turn: { id: 'turn-1', status: 'inProgress' } });
     return promise;

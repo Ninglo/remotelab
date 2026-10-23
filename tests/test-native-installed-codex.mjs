@@ -12,7 +12,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const binary = process.env.REMOTELAB_NATIVE_CODEX_BIN;
 const originalPath = process.env.PATH;
-test('installed Codex: App Server accepts steering during held inference and drains through native host', {
+test('installed Codex: steering and metadata-only resume preserve native conversation input', {
   skip: !binary, timeout: 45_000,
 }, async () => {
   const home = await mkdtemp(join(tmpdir(), 'remotelab-native-installed-codex-'));
@@ -78,6 +78,27 @@ test('installed Codex: App Server accepts steering during held inference and dra
     assert.equal(events.filter(event => event.type === 'turn.completed').length, 1, 'the native turn settles only after consuming the correction');
     assert.ok(events.some(event => event.type === 'item.updated' && event.native_stream === true && event.item?.type === 'agent_message'), 'real App Server streams text deltas into the spool');
     assert.ok(events.some(event => event.type === 'item.completed' && event.item?.text === 'local Codex fixture answer 2'));
+
+    const threadId = events.find(event => event.type === 'thread.started')?.thread_id;
+    assert.ok(threadId);
+    const resumedEvents = [], resumedDirectory = join(home, 'resumed-run');
+    await mkdir(resumedDirectory);
+    const resumed = await runNativeHost({ directory: resumedDirectory, command: binary, runtimeFamily: 'codex-json',
+      options: { model: 'gpt-5.4', effort: 'low', disableApps: true, codexThreadId: threadId },
+      prompt: 'Continue with the preserved conversation.', cwd: home, env,
+      onStdout: line => resumedEvents.push(JSON.parse(line)), onStderr: line => stderr.push(line),
+      onProcess: proc => { child = proc; } });
+    assert.equal(resumed.code, 0, `${resumed.error?.message || ''}\n${stderr.join('\n')}`);
+    assert.equal(bodies.length, 3, 'resume itself does not make an inference call');
+    const resumedInput = JSON.stringify(bodies[2].input);
+    for (const preserved of ['short local fixture acknowledgement', 'second local fixture message',
+      'local Codex fixture answer 2', 'Continue with the preserved conversation.']) {
+      assert.ok(resumedInput.includes(preserved), `model input retains ${preserved}`);
+    }
+    assert.equal(bodies[2].model, bodies[1].model);
+    assert.deepEqual(bodies[2].reasoning, bodies[1].reasoning);
+    assert.equal(bodies[2].instructions, bodies[1].instructions);
+    assert.ok(resumedEvents.some(event => event.type === 'item.completed' && event.item?.text === 'local Codex fixture answer 3'));
   } finally {
     releaseFirst(); child?.kill('SIGKILL'); await running.catch(() => {});
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
