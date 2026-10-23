@@ -1,7 +1,9 @@
 import './isolate-test-environment.mjs';
 import assert from 'node:assert/strict';
 import {normalizeMonitoringPortal} from '../chat/monitoring-portal.mjs';
-import {rewriteMonitoringPresentation} from '../chat/router-monitoring-preview.mjs';
+import {rewriteMonitoringPresentation,handleMonitoringPreview} from '../chat/router-monitoring-preview.mjs';
+import http from 'node:http';
+import {once} from 'node:events';
 const scoped=rewriteMonitoringPresentation('<a href="/">Home</a><a href="/case-review/">Cases</a>fetch(\'/api/monitoring-resolution\');fetch(\'/api/snapshot\')',{publicOrigin:'https://observe.example'});
 assert(scoped.includes('href="/monitoring-preview/"'));
 assert(scoped.includes('href="/monitoring-preview/case-review/"'));
@@ -13,6 +15,17 @@ const dateFormatter="new Date('2026-10-19T00:00:00Z').toISOString().slice(5,10).
 assert.equal(rewriteMonitoringPresentation(dateFormatter),dateFormatter);
 assert.equal(rewriteMonitoringPresentation("parts.join('/'); text.split(\"/\");"),"parts.join('/'); text.split(\"/\");");
 assert.equal(rewriteMonitoringPresentation("<a href = '/'>Home</a>"),"<a href = '/monitoring-preview/'>Home</a>");
+assert.equal(rewriteMonitoringPresentation("import '/feature-trials.js'"),"import '/monitoring-preview/feature-trials.js'");
+// A missing imported module prevents every interactive dashboard control from loading.
+const upstream=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/javascript'});res.end('export const trials = [];')});
+upstream.listen(0,'127.0.0.1');await once(upstream,'listening');
+const proxy=http.createServer((req,res)=>{void handleMonitoringPreview({req,res,pathname:new URL(req.url,'http://local').pathname,configOverride:{previewPort:upstream.address().port}})});
+proxy.listen(0,'127.0.0.1');await once(proxy,'listening');
+try{
+ const base='http://127.0.0.1:'+proxy.address().port;
+ const response=await fetch(base+'/monitoring-preview/feature-trials.js');assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/javascript/);assert.match(await response.text(),/export const trials/);
+ assert.equal((await fetch(base+'/monitoring-preview/private.json')).status,405);
+}finally{await Promise.all([new Promise(r=>proxy.close(r)),new Promise(r=>upstream.close(r))])}
 assert.equal(normalizeMonitoringPortal({}),null);
 for(const url of ['javascript:alert(1)','http://example.com','https://name:secret@example.com','https://example.com/?token=secret','https://example.com/#secret'])assert.equal(normalizeMonitoringPortal({enabled:true,url}),null);
 assert.deepEqual(normalizeMonitoringPortal({enabled:true,url:'https://observe.example/'}),{url:'https://observe.example/'});

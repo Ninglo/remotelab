@@ -968,6 +968,12 @@ on the authenticated origin. The
 preview Settings link may use this URL while `enabled:false` keeps the old primary
 monitoring entry intact. The independent public preview remains available.
 
+The fixed asset allowlist includes `feature-trials.js`, imported by the current
+dashboard entry. A missing module blocks all browser enhancements even when the
+server-rendered snapshot is visible. Validate module loading through the
+authenticated preview as well as the independent site; private files remain
+outside the proxy allowlist.
+
 Object drawers fetch `fragment=1` from the authenticated evidence endpoint and
 show the file list immediately. File bodies, modification records and source
 instruction/diffs expand in place. Long metric notes are collapsed. Public-origin
