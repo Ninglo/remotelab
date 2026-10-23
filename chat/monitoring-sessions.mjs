@@ -10,6 +10,8 @@ import { listPeopleForClient } from '../lib/auth.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
 import { currentExperiment } from './feature-experiment-store.mjs';
 import { diagnosisMeasurements } from '../lib/session-diagnosis.mjs';
+import { projectMessageSource, classifyMessageOrigin, monitoringConnectorSources, createMessageOriginLookup } from './monitoring-message-origin.mjs';
+import { collectGroupMonitoring, projectGroupRequest } from './monitoring-groups.mjs';
 
 const safeId = value => typeof value === 'string' && /^[a-zA-Z0-9_:-]{1,160}$/.test(value);
 const key = (a, b) => createHash('sha256').update(JSON.stringify([a, b])).digest('hex').slice(0, 24);
@@ -42,6 +44,7 @@ function messageSentAt(request) {
 export function projectRequest(r) {
   if (!r) return null;
   return { requestId: r.requestId, sessionId: r.sessionId, runId: r.runId, nativeDispatchRunId: r.nativeDispatchRunId,
+    source: projectMessageSource(r.options?.sourceContext), group: projectGroupRequest(r),
     responseTiming: projectResponseTiming(r), surface: r.options?.sourceContext?.connector || r.options?.usageSurface || 'unknown',
     sentAt: messageSentAt(r), acceptedAt: r.acceptedAt, preparedAt: r.preparedAt, settledAt: r.settledAt,
     excluded: Boolean(r.options?.internalOperation || r.options?.deliveryOnly || r.options?.recordUserMessage === false),
@@ -86,6 +89,7 @@ export function runMeasurement(ledger, run, request, injection = null) {
   } : null;
   const journeyStages = journey && Object.values(journey).every(finite) ? journey : null;
   return { sessionId: ledger.sessionId, sources: validRun ? injection?.sources || [] : [], runId: ledger.runId, at: time(ledger.ts), model: ledger.model || 'unknown', tool: ledger.tool || 'unknown', effort: ledger.effort || 'unknown', surface: request?.surface || 'unknown',
+    origin: validRequest ? request.origin || classifyMessageOrigin(request.source) : { kind: 'unknown', basis: 'missing-request' },
     accountId:validRun?run.accountId:null, state: validRun ? run.state : 'unknown',
     background: ledger.backgroundOperation === true || request?.excluded === true,
     responseEligible: validRequest && !ledger.backgroundOperation && request.responseTiming !== null && request.responseTiming !== undefined, responseAt: validRequest ? time(request?.acceptedAt) : NaN, sentAt: validRequest ? time(request.sentAt) : NaN,
@@ -134,21 +138,22 @@ export function measurementSignals(samples) {
 }
 
 export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CHAT_RUNS_DIR, sessionsFile=CHAT_SESSIONS_FILE,
-  getUsage=queryUsageLedger, getPeople=listPeopleForClient, now=Date.now, maxRuns=1000, maxReadBytes=64*1024*1024, includeInjection=true, includeSamples=false, projectionFile=null }={}) {
-  const windows=new Map(), files=new Map(); let loaded=false;
+  getUsage=queryUsageLedger, getPeople=listPeopleForClient, now=Date.now, maxRuns=1000, maxReadBytes=64*1024*1024, includeInjection=true, includeSamples=false, projectionFile=null, storageOverrides={}, maxGroupProjectionFiles=50000 }={}) {
+  const windows=new Map(), files=new Map(), groupFiles=new Map(); let loaded=false;
   async function loadProjections() {
     if (loaded) return; loaded=true;
     const saved=projectionFile ? await readRecord(projectionFile) : null;
-    if(saved?.version === 2) for(const [path,value] of Object.entries(saved.files || {})) files.set(path,value);
+    if(saved?.version === 4) for(const [path,value] of Object.entries(saved.files || {})) files.set(path,value);
+    if(saved?.version === 4) for(const [path,value] of Object.entries(saved.groupFiles || {})) groupFiles.set(path,value);
   }
-  async function projected(file, project, coverage, limit=2*1024*1024) {
+  async function projected(file, project, coverage, limit=2*1024*1024, cache=files) {
     try {
-      const s=await stat(file), version=`${s.ino}:${s.mtimeMs}:${s.size}`, cached=files.get(file);
+      const s=await stat(file), version=`${s.ino}:${s.mtimeMs}:${s.size}`, cached=cache.get(file);
       if(cached?.version===version) { coverage.cacheHits++; return cached.value; }
       if(s.size>limit || coverage.bytesRead+s.size>maxReadBytes) { coverage.limitedFiles++; return null; }
       coverage.bytesRead+=s.size;
       const value=project(JSON.parse(await readFile(file,'utf8')));
-      files.set(file,{version,value}); if(files.size>20000)files.delete(files.keys().next().value);
+      cache.set(file,{version,value}); if(cache.size>(cache === groupFiles ? maxGroupProjectionFiles : 20000))cache.delete(cache.keys().next().value);
       return value;
     } catch(e) { if(e.code!=='ENOENT')coverage.readErrors++; return null; }
   }
@@ -173,6 +178,18 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       try { experiments=(await readdir(join(configDir,'feature-experiments'),{withFileTypes:true})).filter(e=>e.isDirectory() && /^[\w.-]+$/.test(e.name)).map(e=>e.name).slice(0,20); } catch(e) { if(e.code!=='ENOENT')coverage.readErrors++; }
     }
     const metadata=JSON.parse(raw), list=Array.isArray(metadata)?metadata:metadata.sessions||[];
+    const read = (file, project) => projected(file, project, coverage);
+    const connectors = await monitoringConnectorSources(configDir, read, storageOverrides);
+    const originFor = createMessageOriginLookup(connectors, read);
+    const readRequests = new Map();
+    const requestFor = async (sessionId, requestId) => {
+      if (!safeId(sessionId) || typeof requestId !== 'string' || !requestId) return null;
+      const k = key(sessionId, requestId);
+      const request = await read(join(configDir, 'requests', 'active', k + '.json'), projectRequest)
+        || await read(join(configDir, 'requests', 'archive', k + '.json'), projectRequest);
+      if (request) readRequests.set(k, request);
+      return request;
+    };
     const rows=new Map(list.filter(s=>!s.archived).map(s=>[s.id,{sessionId:s.id,name:label(s.name),model:label(s.model),activeRunId:s.activeRunId,...sessionOwnership(s,people)}]));
     for(const bucket of usage.bySession||[]) { const s=list.find(s=>s.id===bucket.sessionId); if(!rows.has(bucket.sessionId))rows.set(bucket.sessionId,{sessionId:bucket.sessionId,name:label(s?.name||bucket.sessionName),model:label(s?.model),activeRunId:s?.activeRunId,...sessionOwnership(s||{},people),archived:s?.archived===true}); }
     const firstRuns = new Map();
@@ -200,9 +217,8 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
       }, coverage)));
       let request=null;
       if(run?.requestId) {
-        const k=key(l.sessionId,run.requestId);
-        request=await projected(join(configDir,'requests','active',k+'.json'),projectRequest,coverage)
-          ||await projected(join(configDir,'requests','archive',k+'.json'),projectRequest,coverage);
+        request=await requestFor(l.sessionId,run.requestId);
+        if (request) request = { ...request, origin: await originFor(request.source) };
       }
       if(!run)coverage.missingRuns++;
       if(!request)coverage.missingRequests++;
@@ -223,7 +239,27 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     for(const row of rows.values()) {const samples=(grouped.get(row.sessionId)||[]).filter(s => !dashboard || s.at >= time(usage.window?.start));row.sampledRuns=samples.length;row.metrics=summarizeMeasurements(samples.filter(s=>!s.background));row.backgroundRuns=samples.filter(s=>s.background).length;row.signals=measurementSignals(samples);row.diagnosisMeasurements=diagnosisMeasurements(samples,now());}
     const allSamples=[...grouped.values()].flat();
     const agentDashboard=dashboard ? buildAgentDashboard(usage,allSamples,started,coverage) : null;
-    if(projectionFile) await writeDurableJson(projectionFile,{version:2,files:Object.fromEntries(files)});
+    if (agentDashboard) {
+      const groupCoverage = { bytesRead: 0, cacheHits: 0, limitedFiles: 0, readErrors: 0 };
+      const groupRead = (file, project) => projected(file, project, groupCoverage, 2*1024*1024, groupFiles);
+      const groupRequestFor = async (sessionId, requestId) => {
+        if (!safeId(sessionId) || typeof requestId !== 'string' || !requestId) return null;
+        const k = key(sessionId, requestId);
+        return readRequests.get(k) || await groupRead(join(configDir, 'requests', 'active', k + '.json'), projectRequest)
+          || await groupRead(join(configDir, 'requests', 'archive', k + '.json'), projectRequest);
+      };
+      agentDashboard.groupParticipation = await collectGroupMonitoring({ connectors, read: groupRead, requestFor: groupRequestFor,
+        deliveryFor: async id => {
+          const match = /^srcd_([a-f0-9]{24})_(\d+)$/.exec(id || '');
+          if (!match) return null;
+          const r = await groupRead(join(configDir, 'requests', 'active', match[1] + '.json'), projectRequest)
+            || await groupRead(join(configDir, 'requests', 'archive', match[1] + '.json'), projectRequest);
+          return r?.group.deliveries.find(d => d.id === id) || null;
+        },
+        sessions: list, ledger, now: started, coverage: groupCoverage, requests: [...readRequests.values()] });
+      agentDashboard.groupParticipation.coverage.ledgerTruncated = (usage.trendRunCount ?? usage.runCount) > ledger.length;
+    }
+    if(projectionFile) await writeDurableJson(projectionFile,{version:4,files:Object.fromEntries(files),groupFiles:Object.fromEntries(groupFiles)});
     if (agentDashboard) agentDashboard.documents = await readContextDocuments();
     return {generatedAt:new Date(now()).toISOString(),...(includeSamples?{samples:allSamples}:{}),agentDashboard,contextExperiment,responseTiming:summarizeResponseTiming([...grouped.values()].flat(),days,now()),window:usage.window,currentSessionCount:list.filter(s=>!s.archived).length,usage:{...usage,topRuns:[],trendRuns:undefined},sessions:[...rows.values()],
       coverage:{...coverage,eligibleRuns:usage.runCount,sampledRuns:ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length,truncated:usage.runCount>ledger.filter(s=>!dashboard || time(s.ts)>=time(usage.window?.start)).length||coverage.limitedFiles>0,

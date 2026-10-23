@@ -938,7 +938,7 @@
           "name": "监控器的总览与自动化列表",
           "purpose": "依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；磁盘圆盘、账户进度与近 7 天 Session／上下文／Token 曲线展示真实样本，缺失留空；完整明细按需展开。 对本实例可取回的历史及增量提交文本做Luna风险审阅，展示覆盖缺口、失败、脱敏证据及实际调用消耗。",
           "entry": "从首页顶部或侧栏进入监控器，默认总览；加载期间的点击不会被会话恢复覆盖。 Prompt安全入口：监控器 → Prompt 安全（?tab=tasks&monitor=security）。 实例启用独立监管站时，监控器与设置页监管链接转至配置的站点；安全板块登录后直接展示Prompt风险片段、原因、建议及标红上下文；自动化管理与补审保留原专用入口。 配置问题处理入口后，分析项的“去解决”会保存上下文并提交新网页Session；同一人对同一分析项重复点击复用原Session。",
-          "condition": "需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。页面统计按需读取并缓存，不触发操作；可单独启用会话准备／启动异常巡检，复用现有观察器、私信原卡更新，具体条件见监管说明。账号、磁盘、服务与 API 属于实例共享资源。 Prompt审阅需显式启用、已登录Codex账号与Pi；不覆盖未留存的Harness内部请求，不自动修改提示或整改。 独立展示由实例配置启用，默认保持原界面；跳转不传递凭据，来源采集与权限继续沿用原后端。 处理按钮要求本人登录；公共站通过可信窗口交接，不开放匿名执行。冻结分析需先复核现状，重大业务处置仍按原授权。 可选功能观察默认关闭，按明确配置的人群从首次生效输入起跟踪一周；启用输入、原生接收、Agent回执、证据引用和阶段Token分开统计，未知保留缺口。",
+          "condition": "需要实例登录。Session 与资源分别加载，失败明确显示；未知归属和样本缺口保留。页面统计按需读取并缓存，不触发操作；可单独启用会话准备／启动异常巡检，复用现有观察器、私信原卡更新，具体条件见监管说明。账号、磁盘、服务与 API 属于实例共享资源。 Prompt审阅需显式启用、已登录Codex账号与Pi；不覆盖未留存的Harness内部请求，不自动修改提示或整改。 独立展示由实例配置启用，默认保持原界面；跳转不传递凭据，来源采集与权限继续沿用原后端。 处理按钮要求本人登录；公共站通过可信窗口交接，不开放匿名执行。冻结分析需先复核现状，重大业务处置仍按原授权。 可选功能观察默认关闭，按明确配置的人群从首次生效输入起跟踪一周；启用输入、原生接收、Agent回执、证据引用和阶段Token分开统计，未知保留缺口。 普通会话响应按原始入站来源剔除群主线与未知；群参与区保留处理、文字／表情回执、合并覆盖及数据缺口，群主线消耗复用原账本。独立监管站需配套部署统计分区，源码更新不等于页面已上线。",
           "example": "查看本实例的紧急问题和覆盖缺口，给我最新观测时间。",
           "sources": [
             "docs/monitoring.md",
@@ -999,7 +999,12 @@
             "chat/feature-observation.mjs",
             "chat/router-feature-observation.mjs",
             "lib/feature-observation-command.mjs",
-            "chat/native/codex.mjs"
+            "chat/native/codex.mjs",
+            "chat/monitoring-message-origin.mjs",
+            "chat/monitoring-groups.mjs",
+            "integrations/agent-monitor/supervision-partition.mjs",
+            "integrations/agent-monitor/contract.mjs",
+            "integrations/agent-monitor/README.md"
           ],
           "commands": [
             "usage-summary",

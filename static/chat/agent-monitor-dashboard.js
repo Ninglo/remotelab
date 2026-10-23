@@ -63,9 +63,36 @@
     });
     return card;
   }
+  // Aggregate-only HTML is shared with the independent supervision site's SSR.
+  function groupMonitoringHtml(g, selectedDay) {
+    if (!g) return '<section class="section agent-group-participation"><h2>群主线参与</h2><p>尚未取得群参与统计。</p></section>';
+    const escape = value => String(value ?? '—').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const n = value => Number.isFinite(value) ? value.toLocaleString('zh-CN') : '—';
+    const tab = (headers, rows) => '<div class="table-wrap agent-table"><table><thead><tr>' + headers.map(h => '<th scope="col">' + escape(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(row => '<tr>' + row.map(v => '<td>' + escape(v) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+    const d = g.days?.find(d => d.day === selectedDay) || g.today || {}, c = g.current || {}, coverage = g.coverage || {};
+    const stats = [['当前主动参与群', c.active, '有效启用 ' + n(c.enabledGroups) + '；旁听 ' + n(c.listening) + '；暂停 ' + n(c.paused)],
+      ['收到主线消息', d.received, n(d.groupsWithInput) + ' 个群有输入'], ['有文字回执的输入', d.withTextReceipt, '含合并覆盖 ' + n(d.mergedInputs) + ' 条'],
+      ['群主线 token', d.usage?.totalTokens, n(d.usage?.runs) + ' 个 Run；全实例总量的子集']];
+    const receipts = [['群内文字',d.inlineReplies],['新话题文字',d.newThreadReplies],['已有话题文字',d.existingThreadReplies],['去向未确认',d.unknownPlacementReplies],['社交表情',d.reactionReceipts],['自动处理提示',d.processingReceipts]];
+    return '<section class="section agent-group-participation" data-testid="group-participation"><h2>群主线参与</h2><p class="meta agent-note">' + escape(d.day) + ' · 北京时间 05:00 分日。当前参与状态是实时快照；原生话题群与话题续聊归普通会话。</p>'
+      + (coverage.partial ? '<p class="notice agent-note">当前群数据覆盖不完整；以下计数为已读取部分。受限文件 ' + n(coverage.limitedFiles) + '，未读取记录 ' + n(coverage.unreadRecords) + '。</p>' : '')
+      + (coverage.ledgerTruncated ? '<p class="notice agent-note">用量账本读取已截断；群主线 token 仅为已读取部分。</p>' : '')
+      + '<div class="grid metrics agent-counts">' + stats.map(([name,value,note]) => '<div class="metric"><small>' + escape(name) + '</small><strong>' + n(value) + '</strong><small>' + escape(note) + '</small></div>').join('') + '</div>'
+      + '<h3>输入处理</h3>' + tab(['已处理','不回复','失败／取消','处理中','待确认'],[[d.processed,d.noReply,d.failed,d.processing,d.unconfirmed].map(n)])
+      + '<p class="meta agent-note">决定记录：旁听 ' + n(d.observed) + '、跳过 ' + n(d.skipped) + '、明确无文字决定 ' + n(d.explicitNoText) + '。无文字回执共 ' + n(d.withoutTextReceipt) + ' 条，不能全部当作不回复。</p>'
+      + '<h3>实际投递</h3>' + tab(receipts.map(r=>r[0]),[receipts.map(r=>n(r[1]))])
+      + '<p class="meta agent-note">确认打开 ' + n(d.newThreads) + ' 个新话题，其中有 ' + n(d.newWorkSessions) + ' 个关联工作会话。话题建立通知单列；同一外部文字或表情回执只计一次，一个合并回复可覆盖多条输入。</p>'
+      + '<h3>首个回执时延</h3>' + tab(['类型','样本数','均值','中位数','P95'],[['文字',d.textLatency],['工作话题建立',d.topicLatency],['社交表情',d.reactionLatency],['自动处理提示',d.processingLatency]].map(([label,s])=>[label,n(s?.count),duration(s?.mean),duration(s?.median),duration(s?.p95)]))
+      + '<p class="meta agent-note">从所属原消息发出计时；合并覆盖输入不重复生成首响样本。社交表情缺可靠时间 ' + n(d.reactionTimeUnknown) + ' 条。</p>'
+      + '<details data-agent-fold="group-days"><summary>群主线近七日明细</summary>' + tab(['日期','收到','已处理','不回复','失败','处理中','待确认','群内文字','新话题','社交表情','文字首响均值','群主线 token'],(g.days||[]).map(r=>[r.day,n(r.received),n(r.processed),n(r.noReply),n(r.failed),n(r.processing),n(r.unconfirmed),n(r.inlineReplies),n(r.newThreads),n(r.reactionReceipts),duration(r.textLatency?.mean),n(r.usage?.totalTokens)])) + '</details>'
+      + '<details data-agent-fold="group-scope"><summary>群统计覆盖与口径</summary><p class="meta agent-note">缺请求 ' + n(coverage.missingRequests) + '；主线模型输入未关联计量 ' + n(d.usage?.unmeteredInputs) + '；主线 Run 缺消息来源 ' + n(d.usage?.unmatchedRuns) + '；排除关联工作 Run ' + n(coverage.excludedRelatedRuns) + '；当前参与状态未知 ' + n(c.unknown) + '。</p>'
+      + '<p class="meta agent-note">文字回执不能归属本区输入 ' + n(coverage.unattributedTextReceipts) + '；缺平台 ID ' + n(coverage.textWithoutProviderId) + '；缺送达时间 ' + n(coverage.textTimeUnknown) + '；缺开话题回执 ' + n(coverage.topicReceiptMissing) + '；原消息缺时间 ' + n(coverage.missingMessageTimes) + '、来源未知 ' + n(coverage.unknownOrigins) + '。覆盖缺口统计范围为本次七日采集，原消息缺时间无法定日。</p>'
+      + (g.semantics||[]).map(s=>'<p class="meta agent-note">'+escape(s)+'</p>').join('') + '</details></section>';
+  }
   function render(root, d, { state = {}, sourceBase = '', sessionBase = '' } = {}) {
     root.replaceChildren(); root.classList.add('agent-dashboard'); root.setAttribute('translate', 'no'); root.dataset.testid = 'agent-dashboard';
     if (!d) { root.append(el('p', '统计暂不可用，请稍后刷新。')); return; }
+    const ordinary = d.responseScope === 'ordinary-input';
     const heading = el('div', '', 'agent-heading');
     heading.append(el('p', `${d.today.day} 05:00 — 次日 05:00 · 北京时间 · 今日尚未结束 · 下方为近七日趋势`, 'agent-note'));
     root.append(heading);
@@ -80,13 +107,13 @@
       ['meanInjectionChars', '平均上下文注入量', '字符 / 次', r => r.injection.count, '每次对话执行前，RemoteLab 自动注入的上下文字符数取平均。'],
       ['firstInjectionChars', '新会话首轮平均注入量', '字符 / 首轮', r => r.firstInjection.count, '仅统计新会话首轮自动注入的上下文，按字符数取平均。'],
     ]) grid.append(chart(d, ...args, state));
-    const response = chart(d, 'meanFirstResponseMs', '平均首次响应时间', '耗时', r => r.firstResponse?.count ?? 0, '从消息发出到首条文字回复送达。开场和进展计入，表情和自动受理通知不计入。', state);
+    const response = chart(d, 'meanFirstResponseMs', ordinary ? '普通会话首次响应时间' : '平均首次响应时间', '耗时', r => r.firstResponse?.count ?? 0, ordinary ? '剔除原始群主线与来源未知。按本条输入归属计时；追加输入的回复不会提前本条首响。' : '从消息发出到首条文字成功送达。', state);
     response.classList.add('agent-first-response'); grid.append(response);
-    grid.append(durationChart(d, 'meanDeliveryMs', '平均交付用时', false, state),
-      durationChart(d, 'firstDeliveryMs', '新会话首轮平均交付用时', true, state));
+    grid.append(durationChart(d, 'meanDeliveryMs', ordinary ? '普通会话平均交付用时' : '平均交付用时', false, state),
+      durationChart(d, 'firstDeliveryMs', ordinary ? '普通新会话首轮交付用时' : '新会话首轮交付用时', true, state));
     root.append(grid);
     const journey = el('section', '', 'agent-journey'); journey.dataset.testid = 'journey-timing';
-    journey.append(el('h3', '今日各环节用时'));
+    journey.append(el('h3', ordinary ? '普通会话今日各环节用时' : '今日各环节用时'));
     const stages = d.today.journeyStages || {};
     journey.append(el('p', `统计 ${stages.total?.count ?? 0} 条时间记录完整的飞书消息，各环节使用同一批样本。`, 'agent-note'));
     journey.append(table(['环节', '计时范围', '平均用时', '样本数'], [
@@ -99,6 +126,16 @@
     ].map(([key, name, range]) => [name, range, duration(stages[key]?.mean), stages[key]?.count ?? 0])));
     journey.append(el('p', '首次响应可能发生在执行过程中，因此单独统计，不重复计入总耗时。', 'agent-note'));
     root.append(journey);
+    const origin = d.today.originCoverage || {};
+    if (ordinary) root.append(el('p', `普通首响候选 ${origin.ordinary ?? '—'} 条；剔除原始群主线 ${origin.groupMainline ?? '—'} 条、来源未知 ${origin.unknown ?? '—'} 条；请求来源回退 ${origin.requestFallback ?? '—'} 条。按输入归属的首响不等于同次执行首次可见输出。`, 'agent-note'));
+    if (d.groupParticipation) {
+      const groups = el('div'); groups.innerHTML = groupMonitoringHtml(d.groupParticipation);
+      for (const detail of groups.querySelectorAll('details')) {
+        const key = detail.dataset.agentFold; detail.open = state[key] === true;
+        detail.addEventListener('toggle', () => { if (detail.isConnected) state[key] = detail.open; });
+      }
+      root.append(groups);
+    }
     const sources = disclosure('上下文注入来源', 'sources', state);
     if (d.documents?.length) {
       sources.append(el('h4', '常用文档'));
@@ -229,5 +266,5 @@
     root.append(intro, card, dialog);
     if (wasOpen) { dialog.showModal(); if (focused) close.focus(); }
   }
-  g.RemoteLabAgentDashboard = { render, renderCompact };
-})(window);
+  g.RemoteLabAgentDashboard = { render, renderCompact, groupMonitoringHtml };
+})(globalThis);

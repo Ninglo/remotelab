@@ -6,7 +6,7 @@ export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview'
  // A standalone '/' in JavaScript may be a date/path separator, not a URL.
  // Only the HTML home link and known presentation routes belong to this proxy.
  text=text.replace(/(\bhref\s*=\s*)(["'])\/\2/gi,(_,attribute,quote)=>attribute+quote+prefix+'/'+quote);
- text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution|auth\/|project-feedback)|app\.js|feature-trials\.js|style\.css)/g,'$1'+prefix+'/');
+ text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution|auth\/|project-feedback)|app\.js|feature-trials\.js|group-participation\.js|style\.css)/g,'$1'+prefix+'/');
  if(publicOrigin)for(const quote of ['"',"'"])text=text.split(quote+publicOrigin+'/?').join(quote+prefix+'/?');
  return text.replace(/(["'])\/case-review\//g,'$1'+prefix+'/case-review/');
 }
@@ -17,7 +17,7 @@ export async function handleMonitoringPreview({req,res,pathname,configOverride})
  const publicOrigin=(await readResolutionConfig())?.publicOrigin;
  if(!Number.isInteger(port)||port<1||port>65535){res.writeHead(404);res.end();return true}
  const path=pathname.slice(prefix.length)||'/';
- if(req.method!=='GET'||!(['/','/app.js','/feature-trials.js','/style.css','/api/snapshot','/api/reviews'].includes(path)||path.startsWith('/case-review/')&&caseAssets.has(path.slice('/case-review/'.length)))){res.writeHead(405);res.end();return true}
+ if(req.method!=='GET'||!(['/','/app.js','/feature-trials.js','/group-participation.js','/style.css','/api/snapshot','/api/reviews'].includes(path)||path.startsWith('/case-review/')&&caseAssets.has(path.slice('/case-review/'.length)))){res.writeHead(405);res.end();return true}
  const query=new URL(req.url,'http://local').search;
  await new Promise(resolve=>{
   const upstream=http.get({hostname:'127.0.0.1',port,path:path+query,timeout:12000},response=>{

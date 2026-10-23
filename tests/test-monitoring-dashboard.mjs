@@ -19,7 +19,7 @@ assert.equal(source.reduce((n,s)=>n+s.chars,0), [...manifest.modelContext].lengt
 assert(!JSON.stringify(source).includes('中文'));
 const ledger={runId:'r',sessionId:'s',ts:new Date(at).toISOString()};
 const run={id:'r',sessionId:'s',state:'completed',startedAt:new Date(at+100).toISOString(),completedAt:new Date(at+1000).toISOString()};
-const raw={requestId:'q',runId:'r',sessionId:'s',acceptedAt:new Date(at).toISOString(),settledAt:new Date(at+1000).toISOString(),preparedAt:new Date(at+50).toISOString(),options:{sourceContext:{connector:'feishu',createTime:String(at)}},deliveries:[
+const raw={requestId:'q',runId:'r',sessionId:'s',acceptedAt:new Date(at).toISOString(),settledAt:new Date(at+1000).toISOString(),preparedAt:new Date(at+50).toISOString(),options:{sourceContext:{connector:'feishu',chatType:'p2p',createTime:String(at)}},deliveries:[
   {kind:'content',connector:'feishu',surfaceKind:'opening',state:'delivered',createdAt:at+10,deliveredAt:at+20},
   {kind:'content',connector:'feishu',surfaceKind:'final',state:'delivered',createdAt:at+1000,deliveredAt:at+2000},
   {kind:'content',connector:'feishu',surfaceKind:'final',state:'delivered',createdAt:at+1000,deliveredAt:at+3000},
@@ -29,7 +29,7 @@ assert.equal(sample.metrics.finalDeliveryMs,3000);
 assert.equal(sample.metrics.firstResponseMs,20,'opening is the first visible reply, not final delivery');
 assert.deepEqual(sample.metrics.journeyStages,{receive:0,prepare:50,launch:50,run:900,send:2000,total:3000});
 for (const createTime of [undefined, 'invalid', String(at/1000), String(at+1)]) {
-  const measured=runMeasurement(ledger,run,projectRequest({...raw,options:{sourceContext:{connector:'feishu',createTime}}}));
+  const measured=runMeasurement(ledger,run,projectRequest({...raw,options:{sourceContext:{connector:'feishu',chatType:'p2p',createTime}}}));
   assert.equal(measured.metrics.firstResponseMs,null,'missing or invalid sent time must not fall back to accepted time');
   assert.equal(measured.metrics.journeyStages,null);
 }
@@ -43,7 +43,7 @@ for (const change of [{nativeDispatchRunId:'r'},{options:{sourceContext:{connect
   {deliveries:raw.deliveries.map(d=>({...d,publicationRequestId:'foreign'}))}]) {
   assert.equal(runMeasurement(ledger,run,projectRequest({...raw,...change})).metrics.firstResponseMs,null);
 }
-const beforeBoundary=runMeasurement(ledger,run,projectRequest({...raw,options:{sourceContext:{connector:'feishu',createTime:String(at-500)}}}));
+const beforeBoundary=runMeasurement(ledger,run,projectRequest({...raw,options:{sourceContext:{connector:'feishu',chatType:'p2p',createTime:String(at-500)}}}));
 const crossed=buildAgentDashboard({dailyTrend:{days:[]}},[beforeBoundary],at+4000,{});
 assert.equal(crossed.today.firstResponse.count,0);
 assert.equal(crossed.days.at(-2).meanFirstResponseMs,520);
