@@ -15,6 +15,45 @@ const stores = new Map();
 const store = root => { if (!stores.has(root)) stores.set(root, createRecordStore(join(root, 'executions'))); return stores.get(root); };
 const fail = message => { throw Object.assign(new Error(message), { status: 400 }); };
 const effective = options => options?.groupDeliverySelfReviewPolicy || options?.messageReplyPolicy;
+const REVIEW_METRICS = [{id:'found',label:'发现的验收缺项数'}, {id:'fixed',label:'修复并重验通过的缺项数'}, {id:'unresolved',label:'仍未解决的缺项数'}];
+const executionId = record => record.nativeDispatchRunId || record.runId;
+const receiptKey = record => fingerprint(['delivery-self-review', executionId(record)]).slice(0, 24);
+async function receipt(record, root) {
+  return await store(root).get(receiptKey(record)) || (record.options?.featureObservation
+    ? await store(root).get(fingerprint([record.options.featureObservation.trialId, executionId(record)]).slice(0, 24)) : null);
+}
+
+// Receipts belong to the feature, not to a temporary observation cohort. The
+// cohort may expire without making normal self-review invisible again.
+export async function readFeatureReviewStatus(record, {root = ROOT} = {}) {
+  if (effective(record?.options)?.selfReview !== true || record.options.internalOperation) return null;
+  const row = await receipt(record, root);
+  return { state: row?.finishedAt ? 'finished' : row?.startedAt ? 'started' : 'no_record',
+    ...(row ? { id:row.id, startedAt:row.startedAt, finishedAt:row.finishedAt || null,
+      outcome:row.outcome || null, checks:row.checks?.length || 0, metrics:row.metrics || {} } : {}) };
+}
+
+export async function appendFeatureReviewStatus(payload, record, {frozenStatus} = {}) {
+  if (!payload || payload.featureReview || (!payload.text && !payload.attachments?.length)) return payload;
+  let status;
+  try { status = frozenStatus === undefined ? await readFeatureReviewStatus(record) : frozenStatus; }
+  catch { status = {state:'unavailable'}; }
+  if (!status) return payload;
+  const result = {passed:'核对通过', repaired:'修复后核对通过', blocked:'仍有未解决项', not_applicable:'本轮不适用'};
+  const label = status.state === 'finished'
+    ? `${result[status.outcome]}${status.outcome === 'not_applicable' ? '' : ` · ${status.checks} 项`}${status.metrics.fixed ? ` · 修复 ${status.metrics.fixed} 项` : ''}`
+    : {started:'已开始，未收到完成回执', no_record:'已开启，本轮无执行回执', unavailable:'回执暂不可读'}[status.state];
+  const footer = `自检：${label}。`;
+  return {...payload, featureReview:{...status, footer}, text:[payload.text, footer].filter(Boolean).join('\n\n')};
+}
+
+export function clearFeatureReviewStatus(payload) {
+  const {featureReview, ...plain} = payload;
+  if (featureReview?.footer && plain.text?.endsWith(featureReview.footer)) {
+    plain.text = plain.text.slice(0, -featureReview.footer.length).trimEnd();
+  }
+  return plain;
+}
 
 export function validateFeatureTrials(value) {
   if (!value) return [];
@@ -63,10 +102,11 @@ export async function observeFeatureAdmission(record, root = ROOT, now = Date.no
   } catch (error) { console.warn('[feature-observation] admission record failed: ' + error.message); }
 }
 
-export function featureObservationPrompt(observation, requestId) {
-  if (!observation) return '';
+export function featureObservationPrompt(observation, requestId, enabled = Boolean(observation)) {
+  if (!enabled) return '';
+  observation ||= {metrics:REVIEW_METRICS};
   const quotedId = "'" + String(requestId).replaceAll("'", "'\\''") + "'";
-  return `本次交付自检纳入已开启的功能观察。最终交付前最多记录一次核对阶段：先运行 remotelab feature-observation begin --request-id ${quotedId}，再核对实际成果；完成后用 remotelab feature-observation finish --request-id ${quotedId} --file <JSON绝对路径> 保存结果。JSON为 {outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"实际验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际工具/附件事件编号]}]}。指标含义：${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核对，不编造；短问答不需要额外成果，用 not_applicable。记录失败如实保留缺口，不重复自检、阻塞交付或新发消息。观察只记录证据，不代替验收。`;
+  return `已开启自检执行回执${observation.trialId ? '及限时功能观察' : ''}。最终交付前最多记录一次核对阶段：先运行 remotelab feature-observation begin --request-id ${quotedId}，再核对实际成果；完成后用 remotelab feature-observation finish --request-id ${quotedId} --file <JSON绝对路径> 保存结果。JSON为 {outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"实际验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际工具/附件事件编号]}]}。指标含义：${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核对，不编造；短问答不需要额外成果，用 not_applicable。系统根据实际回执在最终回复附自检状态，无需另写状态标志。记录失败如实保留缺口，不重复自检、阻塞交付或新发消息。回执只记录证据，不代替验收。`;
 }
 
 // Codex exposes cumulative provider counters. Other Harnesses remain unknown
@@ -99,19 +139,18 @@ export function featureUsageDelta(before, after) {
 }
 
 export async function recordFeatureExecution(record, input, { root = ROOT, now = Date.now(), meter = readFeatureMeter } = {}) {
-  const observation = record.options?.featureObservation;
-  if (!observation || effective(record.options)?.selfReview !== true) fail('当前输入未启用本次功能观察');
-  const window = await readRecord(join(root, observation.trialId, 'window.json'));
-  if (!window || window.specHash !== observation.specHash) fail('观察窗口缺失或已变更');
-  const executionRunId = record.nativeDispatchRunId || record.runId;
-  const key = fingerprint([observation.trialId, executionRunId]).slice(0, 24);
-  const existing = await store(root).get(key);
+  const observation = record.options?.featureObservation || {metrics:REVIEW_METRICS};
+  if (effective(record.options)?.selfReview !== true || record.options.internalOperation) fail('当前输入未启用交付自检');
+  const window = observation.trialId ? await readRecord(join(root, observation.trialId, 'window.json')) : null;
+  const executionRunId = executionId(record);
+  const existing = await receipt(record, root);
+  const key = existing?.id || receiptKey(record);
   if (input.action === 'begin' && existing?.startedAt || input.action === 'finish' && existing?.finishedAt) return existing;
   if (input.action === 'begin') {
-    if (now >= window.endsAt) fail('观察窗口已结束');
     const [baseline, evidenceAfterSeq] = await Promise.all([meter(executionRunId), getHistoryHeadSeq(record.sessionId)]);
     return store(root).mutate(key, previous => previous?.startedAt ? previous : ({ schema: 1, id: key,
-      trialId: observation.trialId, sessionId: record.sessionId, requestId: record.requestId,
+      trialId: window && window.specHash === observation.specHash && now < window.endsAt ? observation.trialId : null,
+      sessionId: record.sessionId, requestId: record.requestId,
       runId: executionRunId, startedAt: now, baseline, evidenceAfterSeq }));
   }
   if (input.action !== 'finish' || !existing?.startedAt) fail('请先记录开始核对');
@@ -143,7 +182,21 @@ export async function recordFeatureExecution(record, input, { root = ROOT, now =
     evidenceLevel: 'agent_report_with_event_refs' }));
 }
 
-export async function readFeatureObservations({ root = ROOT, now = Date.now(), lookup = requests.byRequest, meter = readFeatureMeter } = {}) {
+export async function readFeatureNativeReceipt(runId) {
+  try {
+    // Bounded prefix: Codex acknowledges turn/start before any model output.
+    // Unsupported adapters or missing/truncated receipts remain unknown.
+    const lines = createInterface({input:createReadStream(join(runDir(runId),'spool.jsonl'), {end:262143}), crlfDelay:Infinity});
+    for await (const line of lines) {
+      let row, event;
+      try { row=JSON.parse(line); event=row.json || JSON.parse(row.line || '{}'); } catch { continue; }
+      if (event.type === 'turn.started') return true;
+    }
+  } catch { /* Missing provider receipt is not a failed task. */ }
+  return false;
+}
+
+export async function readFeatureObservations({ root = ROOT, now = Date.now(), lookup = requests.byRequest, meter = readFeatureMeter, nativeReceipt = readFeatureNativeReceipt } = {}) {
   const configured = await trials(root), executions = await store(root).active();
   const report = [];
   for (const config of configured) {
@@ -151,11 +204,23 @@ export async function readFeatureObservations({ root = ROOT, now = Date.now(), l
     const spec = window?.spec || config;
     const inputs = await records(join(root, config.id, 'inputs'));
     let delivered = 0, pending = 0, missing = 0;
+    const requestStates = [];
+    const runReceipts = new Map();
     for (const row of inputs.items) {
       const request = await lookup(row.sessionId, row.requestId);
+      const runId = request ? executionId(request) : row.runId;
+      if (request && !request.nativeDispatchRunId && !runReceipts.has(runId)) runReceipts.set(runId, await nativeReceipt(runId));
+      // Root inputs are launched directly and do not have a steer receipt.
+      // A provider thread/turn receipt or normalized provider event is needed;
+      // launch time / a successful process exit alone cannot establish this.
+      const received = request?.nativeReceipt?.accepted === true || (!request?.nativeDispatchRunId && runReceipts.get(runId) === true);
       if (!request) missing++;
-      else if (request.nativeReceipt?.accepted === true) delivered++;
+      else if (received) delivered++;
       else pending++;
+      const execution = executions.find(e => e.trialId === config.id && e.runId === runId);
+      requestStates.push({...row, runId, received,
+        state: !request ? 'missing_request' : execution?.finishedAt ? 'finished' : execution?.startedAt ? 'started'
+          : request.result || request.releasedAt ? 'no_record' : received ? 'awaiting_review' : 'awaiting_receipt'});
     }
     const rows = [];
     for (const row of executions.filter(e => e.trialId === config.id)) {
@@ -186,6 +251,9 @@ export async function readFeatureObservations({ root = ROOT, now = Date.now(), l
       window: window ? { startsAt: window.startsAt, endsAt: window.endsAt } : null,
       durationDays: spec.durationDays, admittedInputs: inputs.items.length, deliveredInputs: delivered,
       pendingDelivery: pending, missingRequests: missing, started: rows.length, finished: finished.length,
+      noExecutionReceipt: requestStates.filter(r => r.state === 'no_record').length,
+      awaitingReview: requestStates.filter(r => r.state === 'awaiting_review').length,
+      inputRecords: requestStates,
       inputScopes: { person: inputs.items.filter(r => r.scope === 'person').length, group: inputs.items.filter(r => r.scope === 'group').length },
       daily: [...daily.values()].sort((a,b) => a.day.localeCompare(b.day)),
       unfinished: rows.length - finished.length, outcomes: Object.fromEntries(['passed','repaired','blocked','not_applicable'].map(k => [k, finished.filter(r => r.outcome === k).length])),

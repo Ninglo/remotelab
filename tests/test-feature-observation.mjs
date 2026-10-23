@@ -11,7 +11,7 @@ try {
   const { CONFIG_DIR } = await import('../lib/config.mjs');
   const root = join(CONFIG_DIR, 'feature-observations');
   const { captureFeatureObservation, observeFeatureAdmission, recordFeatureExecution, readFeatureObservations,
-    featureUsageDelta, readFeatureMeter, validateFeatureTrials } = await import('../chat/feature-observation.mjs');
+    featureUsageDelta, readFeatureMeter, validateFeatureTrials, readFeatureReviewStatus, appendFeatureReviewStatus, featureObservationPrompt } = await import('../chat/feature-observation.mjs');
   const { appendEvent } = await import('../chat/history.mjs');
   const { requests } = await import('../chat/requests.mjs');
   const { appendRunSpoolRecord } = await import('../chat/runs.mjs');
@@ -89,5 +89,30 @@ try {
   await runFeatureObservationCommand(['begin','--request-id','r1'],{runId:record.runId,stdout:{write:t=>{output+=t}},
     client:{request:async(_,opts)=>{const r=await call(opts.body);return {response:{ok:r.status===200},json:r.json}}}});
   assert.equal(JSON.parse(output).observation.id,ended.id);
+  // The visible receipt remains usable when no observation was captured.
+  const ordinary = (await requests.accept({sessionId:'feature-test',requestId:'no-cohort',text:'当前真实任务',options})).record;
+  assert.match(featureObservationPrompt(null,ordinary.requestId,true),/执行回执/);
+  assert.equal(featureObservationPrompt(null,ordinary.requestId,false),'');
+  assert.equal((await readFeatureReviewStatus(ordinary)).state,'no_record');
+  assert.match((await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary)).text,/无执行回执/);
+  assert.equal((await appendFeatureReviewStatus({text:'',attachments:[]},ordinary)).text,'','silent decisions stay silent');
+  assert.equal((await appendFeatureReviewStatus({text:'普通答复'}, {...ordinary,options:{}})).text,'普通答复');
+  await recordFeatureExecution(ordinary,{action:'begin'});
+  assert.equal((await readFeatureReviewStatus(ordinary)).state,'started');
+  await recordFeatureExecution(ordinary,{action:'finish',outcome:'passed',checks:[{criterion:'实际文件',verdict:'pass',evidenceSeqs:[tool.seq]}]});
+  const shown=await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary);
+  assert.match(shown.text,/核对通过 · 1 项/);
+  assert.deepEqual(await appendFeatureReviewStatus(shown,ordinary),shown,'no duplicate footer');
+  assert.match((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:{state:'no_record'}})).text,/无执行回执/);
+  // Receiving a root turn is real provider evidence, independent of a steer receipt.
+  const unreviewed=(await requests.accept({sessionId:'feature-test',requestId:'no-review',text:'未自检',options:{...options,featureObservation}})).record;
+  await observeFeatureAdmission(unreviewed,root,t+11000);
+  await appendRunSpoolRecord(unreviewed.runId,{ts:new Date().toISOString(),json:{type:'turn.started'}});
+  await requests.mutate(unreviewed.key,r=>({...r,result:{state:'completed'}}));
+  const gaps=(await readFeatureObservations({root,now:t+12000})).trials[0];
+  assert.equal(gaps.noExecutionReceipt,1);
+  assert.equal(gaps.deliveredInputs,1);
+  assert.equal(gaps.inputRecords.find(r=>r.requestId==='no-review').state,'no_record');
+  assert.equal(gaps.finished,3,'non-cohort review does not pollute observation counts');
   console.log('PASS feature observation: scoped opt-in, first-exposure week, expiry, immutable receipts, real event evidence, attachment-only acceptance, provider stage deltas, unknowns, API identity and CLI');
 } finally {await rm(home,{recursive:true,force:true});}

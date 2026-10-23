@@ -118,6 +118,8 @@
 
 验证入口：`tests/test-delivery-self-review.mjs` 覆盖默认、身份、开启／关闭、规则快照、各 Harness 提示及真实文件的附件投影；`tests/test-native-harness-integration.mjs` 覆盖持续运行、不同人、中途切换、重试、停止和单次投递；私聊卡和有限 Web 设置接口沿原回归。`REMOTELAB_LIVE_SELF_REVIEW=1 node tests/test-delivery-self-review-live.mjs` 使用真实本机 Codex、隔离任务文件与本地 HTTP 文件，记录实际结果、时间和 tokens，不修改生产个人设置或向飞书发测试消息。该小样本用于功能验收，不能推出稳定成功率或固定开销。实测样本与耗时见[验证记录](../notes/current/delivery-self-review-validation.md)。
 
+开启自检后，当前 Harness 在核对前后记录开始与完成回执；发送端在最终答复附上实际状态，缺回执明确显示，沉默决定保持沉默。回执记录不依赖限时观察配置，不增加审查模型；原输入未开启则不生成标志。
+
 可选的[功能持续观察](monitoring.md#新功能持续观察)另需实例显式配置，默认不存在。接纳输入、原生接收、开始自检、提交带证据引用的结果分别计数。观察使用同一 Harness 的 begin/finish 回执和 provider 累计计数差，不新增判定模型，不拦截最终交付；未回报与无计量保留为缺口。短问答可记为不适用。观察窗口结束不关闭用户的功能选择。
 
 ### 个人试用：开工严格检查

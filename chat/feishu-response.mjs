@@ -3,6 +3,7 @@ import { appendEvent } from './history.mjs';
 import { buildReplyDeliveries, isFinalAnswerDelivery } from '../lib/reply-deliveries.mjs';
 import { readFeishuResponseDecision, normalizeFeishuResponsePayload, validateFeishuResponseFields, hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { resolveAmbientFeishuReplyPlan, requiresFeishuReplyPlacement } from './ambient-feishu-reply.mjs';
+import { appendFeatureReviewStatus } from './feature-observation.mjs';
 
 const fail = message => { throw new Error(message); };
 const queues = new Map();
@@ -78,7 +79,7 @@ export async function publishFeishuResponse(record, body, { store = requests, va
     const ids = body.requestIds || [record.requestId];
     if (!ids.includes(record.requestId)) fail('Response input IDs must include the current input');
     const inputs = await Promise.all(ids.map(id => store.byRequest(session.id, id)));
-    const payload = normalizeFeishuResponsePayload({ ...(preparedPayload || {}), text,
+    let payload = normalizeFeishuResponsePayload({ ...(preparedPayload || {}), text,
       attachments: preparedPayload?.attachments || [], ...(reaction !== undefined ? { reaction, reactionStage: 2 } : {}) });
     const root = await store.byRunId(record.nativeDispatchRunId || record.runId);
     if (!root || root.result) fail('Active Feishu execution is required');
@@ -90,6 +91,10 @@ export async function publishFeishuResponse(record, body, { store = requests, va
     if ((text || payload.attachments.length) && !deliveryPlan) fail('Choose replyMode inline or thread before sending a reply; related inputs may share requestIds');
     // A pre-upgrade reservation keeps its exact retry contract and destination.
     const reserved = root.mainlineReplyPlans?.find(item => item.requestIds.some(id => ids.includes(id)));
+    // Freeze the receipt alongside the existing reply reservation. A retry
+    // must not change its text if a late finish arrives after publication.
+    payload = await appendFeatureReviewStatus(payload, inputs[0] || record,
+      reserved ? {frozenStatus:reserved.payload.featureReview || null} : {});
     const legacyReservation = reserved && !Object.hasOwn(reserved, 'deliveryPlan') && body.replyMode === undefined;
     const reply = { requestIds: ids, ownerRequestId: ids[0], payload,
       ...(providerMessageId ? { providerMessageId } : {}),

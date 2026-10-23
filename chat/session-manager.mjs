@@ -12,7 +12,7 @@ import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-s
 import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
 import { deliverySelfReviewPrompt, captureGroupDeliverySelfReviewPolicy } from './delivery-self-review.mjs';
-import { captureFeatureObservation, observeFeatureAdmission, featureObservationPrompt } from './feature-observation.mjs';
+import { captureFeatureObservation, observeFeatureAdmission, featureObservationPrompt, appendFeatureReviewStatus, clearFeatureReviewStatus } from './feature-observation.mjs';
 import { strictStartCheckPrompt, strictStartCheckProvenance } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
@@ -1438,7 +1438,8 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   slots.push(createModelContextSlot('delivery_self_review', 'Delivery self-review',
     deliverySelfReviewPrompt(options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy,
       { ...options, personId: options.viewPersonId, identityId: options.initiatedByIdentityId })
-      + '\n' + featureObservationPrompt(options.featureObservation, options.requestId)));
+      + '\n' + featureObservationPrompt(options.featureObservation, options.requestId,
+        (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.selfReview === true && !options.internalOperation)));
   const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;
   const startCheck = strictStartCheckPrompt(options.messageReplyPolicy, { personId: options.viewPersonId,
     identityId: options.initiatedByIdentityId, resetDisabled: options.messageReplyPolicy?.scope === 'person'
@@ -1670,12 +1671,12 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
     prepareFinal: event => prepareNativeFinalFiles(record, event, { run, manifest }),
   });
   const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
-  const payload = buildReplyPublicationPayload(runHistory, run, {
+  const payload = await appendFeatureReviewStatus(buildReplyPublicationPayload(runHistory, run, {
     session, fullHistory: history,
     includeSessionEntry: !isFeishuMainlineReply(plan)
       && record.options.sourceContext?.feishuParticipation !== 'ambient'
       && !record.deliveries.some(delivery => delivery.kind === 'session_entry' || delivery.sessionEntryIncluded),
-  });
+  }), record);
   if (run.state === 'completed' && record.options.sourceContext?.feishuParticipation === 'ambient') {
     const notice = buildFeishuAmbientIncompleteWorkNotice(runHistory, payload, session);
     if (notice) {
@@ -1692,9 +1693,9 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const ambientWorkStarted = runHistory.some(event => event?.type === 'tool_use' && event.role === 'assistant');
   const publishedMessageIds = [...(record.streamedFinalReplyIds || []), ...(record.streamedSurfaceMessageIds || [])];
   const pendingPayload = publishedMessageIds.length
-    ? buildReplyPublicationPayload(excludePublishedFinalReplies(runHistory, publishedMessageIds), run, {
+    ? await appendFeatureReviewStatus(buildReplyPublicationPayload(excludePublishedFinalReplies(runHistory, publishedMessageIds), run, {
         session, fullHistory: history, includeSessionEntry: false,
-      })
+      }), record)
     : payload;
   const responseError = Object.keys(record.responseDecisionErrors || {}).length
     ? '答复已生成，但回复决定中的消息对应关系或字段无效。正文已保留，尚未完成投递。' : '';
@@ -1757,8 +1758,10 @@ async function settleNativeRequest(record, run) {
   // A newer message anchor or a learned root/thread alias does not create a
   // second conversation. Compare transport identity, not entire snapshots.
   const sharedConversation = sameConversation(rootPlan, ownPlan);
+  const ownPayload = root.result.state === 'completed'
+    ? await appendFeatureReviewStatus(clearFeatureReviewStatus(root.result.payload), record) : root.result.payload;
   if (ownPlan && !sharedConversation && ownDestination !== destination(rootPlan)) {
-    const payload = root.result.state === 'completed' ? root.result.payload
+    const payload = root.result.state === 'completed' ? ownPayload
       : { text: root.result.state === 'cancelled' ? '任务已取消。' : `任务执行失败：${root.result.error || root.result.state}`, attachments: [] };
     // The model selected a reaction for the root input only. A native turn may
     // fan the same text out to another destination, but must not react to a
@@ -1781,7 +1784,7 @@ async function settleNativeRequest(record, run) {
     await requestRuntime.refresh(root.key);
   }
   const outcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
-  await requests.settle(record.key, { ...root.result, executionRunId: run.id },
+  await requests.settle(record.key, { ...root.result, payload:ownPayload, executionRunId: run.id },
     outcomeRequired ? buildReplyDeliveries(ownPlan, { text: '' }, { requireFeishuOutcome: true }) : []);
   await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: true }));
   await requestRuntime.refresh(record.key);

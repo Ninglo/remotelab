@@ -6,6 +6,7 @@ import { getAssistantReplyAttachments } from '../lib/reply-selection.mjs';
 import { appendDeliveries } from './requests.mjs';
 import { buildReplyDeliveries, isFeishuMainlineReply } from '../lib/reply-deliveries.mjs';
 import { buildReplyPublicationPayload, collectReplyPublicationHistory, isFirstUserTurnPublication } from './reply-publication.mjs';
+import { appendFeatureReviewStatus } from './feature-observation.mjs';
 import { resolveAmbientFeishuReplyPlan, rememberAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
 import {
   extractAssistantArtifactBlockReferences, extractAssistantLocalMarkdownImageReferences,
@@ -203,8 +204,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const entry = includeEntry ? buildSessionEntry(session, { runtimeSelection: publicationRun }) : null;
     // Display projection removes private blocks. Read control directives from
     // the original final (or its latest revision), never from display text.
-    const payload = final ? buildReplyPublicationPayload([prepared], publicationRun,
-      { session, fullHistory, includeSessionEntry: Boolean(entry), finalDirectiveContent: directiveEvent.content }) : {
+    const payload = final ? await appendFeatureReviewStatus(buildReplyPublicationPayload([prepared], publicationRun,
+      { session, fullHistory, includeSessionEntry: Boolean(entry), finalDirectiveContent: directiveEvent.content }), owner) : {
       text: appendSessionEntryFooter(prepared.content, entry), attachments: getAssistantReplyAttachments(prepared),
     };
     const buildParts = current => buildReplyDeliveries(resolveAmbientFeishuReplyPlan(replyRecord(current), ownerPlan, [event]), payload, {

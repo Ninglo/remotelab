@@ -29,6 +29,27 @@ try {
   const publish = (root, events) => publishNativeFeishuResponses(root, events,
     { id: root.runId, state: 'completed' }, { session: { id: 'session', sourceId: 'feishu' } });
 
+  // Final status comes from the real receipt, remains frozen on retry, and
+  // does not weaken reply-content conflict detection or no-text decisions.
+  const {recordFeatureExecution} = await import('../chat/feature-observation.mjs');
+  let reviewed=await accept('receipt-visible');
+  reviewed=await requests.mutate(reviewed.key,r=>({...r,options:{...r.options,messageReplyPolicy:{selfReview:true}}}));
+  const packet={text:envelope({replyMode:'thread'},'交付内容')};
+  await publishFeishuResponse(reviewed,packet);
+  const firstReceipt=(await requests.get(reviewed.key)).mainlineReply.contract.payload;
+  assert.match(firstReceipt.text,/已开启，本轮无执行回执/);
+  await recordFeatureExecution(reviewed,{action:'begin'});
+  await recordFeatureExecution(reviewed,{action:'finish',outcome:'not_applicable',checks:[]});
+  await publishFeishuResponse(reviewed,packet);
+  assert.deepEqual((await requests.get(reviewed.key)).mainlineReply.contract.payload,firstReceipt);
+  await assert.rejects(publishFeishuResponse(reviewed,{text:envelope({replyMode:'thread'},'偷偷更改内容')}),/different|preserve/);
+  let finishedReview=await accept('receipt-finished');
+  finishedReview=await requests.mutate(finishedReview.key,r=>({...r,options:{...r.options,messageReplyPolicy:{selfReview:true}}}));
+  await recordFeatureExecution(finishedReview,{action:'begin'});
+  await recordFeatureExecution(finishedReview,{action:'finish',outcome:'not_applicable',checks:[]});
+  await publish(finishedReview,[final('review-final',envelope({replyMode:'thread'},'简短回答'))]);
+  assert.match((await requests.get(finishedReview.key)).deliveries.find(d=>d.kind==='content').text,/本轮不适用/);
+
   // Real live-publication surfaces must not occupy the terminal answer slot.
   // Cover native questions, direct supplementary replies and their combination.
   for (const kinds of [['question'], ['reply'], ['question', 'reply']]) {

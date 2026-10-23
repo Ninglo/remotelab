@@ -68,10 +68,10 @@ async function until(predicate, description) {
 const receipt = (runId, requestId) => readFile(join(config, 'chat-runs', runId, 'native-inputs', `${createHash('sha256').update(requestId).digest('hex').slice(0, 32)}.json`), 'utf8').then(JSON.parse).catch(() => null);
 const options = requestId => ({ requestId, tool: 'fake-native', promptMode: 'bare-user', sourceDelivery: { connector: 'feishu', sourceRouteId: 'default', target: { chatId: 'same-chat' } } });
 async function accept(sessionId, requestId, text) { return rpc('accept', sessionId, text, [], options(requestId)); }
-async function awaitAnswer(sessionId, requestId) {
+async function awaitAnswer(sessionId, requestId, reviewExpected = false) {
   await until(async () => (await rpc('response', sessionId, requestId))?.state === 'ready', `${requestId} gets final response`);
   const result = await rpc('response', sessionId, requestId);
-  assert.equal(result.payload.text, 'durable native answer');
+  assert.equal(result.payload.text, 'durable native answer' + (reviewExpected ? '\n\n自检：已开启，本轮无执行回执。' : ''));
   return result;
 }
 try {
@@ -645,7 +645,7 @@ try {
   assert.deepEqual((await rpc('request', policySession.id, 'policy-other')).options.messageReplyPolicy,
     admittedOther.options.messageReplyPolicy, 'retry retains its own saved policy despite later setting changes');
   await writeFile(join(root, policyRoot.run.id + '.release'), '');
-  for (const id of ['policy-root', 'policy-other', 'policy-same', 'policy-unknown']) await awaitAnswer(policySession.id, id);
+  for (const id of ['policy-root', 'policy-other', 'policy-same', 'policy-unknown']) await awaitAnswer(policySession.id, id, ['policy-root','policy-same'].includes(id));
   assert.equal((await logs()).filter(event => event.runId === policyRoot.run.id && event.kind === 'process-start').length, 1);
   const afterToggle = await rpc('accept', policySession.id, 'New work after disable', [], policyOptions('policy-disabled', 'a'));
   assert.equal((await rpc('request', policySession.id, 'policy-disabled')).options.messageReplyPolicy.selfReview, false);
@@ -668,7 +668,7 @@ try {
   await until(async () => (await receipt(groupRoot.run.id, 'group-review-steer'))?.state === 'accepted', 'group review steer accepted');
   assert.deepEqual((await rpc('request', groupReviewSession.id, 'group-review-steer')).options.groupDeliverySelfReviewPolicy, groupPolicy);
   await writeFile(join(root, groupRoot.run.id + '.release'), '');
-  for (const id of ['group-review-root','group-review-steer']) await awaitAnswer(groupReviewSession.id,id);
+  for (const id of ['group-review-root','group-review-steer']) await awaitAnswer(groupReviewSession.id,id,true);
   const groupOff = await rpc('accept', groupReviewSession.id, 'Fresh after group off', [], groupReviewOptions('group-review-off', false));
   assert.equal((await rpc('request', groupReviewSession.id, 'group-review-off')).options.groupDeliverySelfReviewPolicy, undefined);
   await writeFile(join(root, groupOff.run.id + '.release'), ''); await awaitAnswer(groupReviewSession.id,'group-review-off');

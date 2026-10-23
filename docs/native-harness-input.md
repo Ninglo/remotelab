@@ -19,6 +19,13 @@ deliveries keep their addresses. Group topics remain separate; the private
 entry recommends the appropriate project group without transferring private
 content. See [the private conversation entry](feishu-bot-setup.md#start-a-new-private-conversation).
 
+Self-review status is derived from the accepted input's frozen opt-in and saved
+begin/finish receipt. Final publication appends the result or an explicit missing
+receipt status; silence stays silent. The status is frozen with a reserved reply
+so late receipts cannot rewrite a retry. Shared-run fallback responses recompute
+this footer for each recipient's own policy instead of inheriting the root
+Person's setting. See [execution observation](monitoring.md#新功能持续观察).
+
 ## Supported transports
 
 | Harness | Transport | Active input | Stop |
