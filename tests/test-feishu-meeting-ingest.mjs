@@ -9,9 +9,9 @@ import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'meeting-ingest-'));
 let clock = Date.parse('2026-10-15T16:00:00Z');
-const runtime = { config: { storageDir: root, appId: 'cli_test', sourceRouteId: 'bot-2' } };
+const runtime = { config: { storageDir: root, appId: 'cli_test', sourceRouteId: 'bot-2' }, botIdentity: { openId: 'ou_bot' } };
 const p = { enabled: true, appId: 'cli_test', tenantKey: 'tenant', chatId: 'oc_target',
-  documentBaseUrl: 'https://tenant.feishu.cn', notBefore: '2026-10-15T15:00:00Z' };
+  documentBaseUrl: 'https://tenant.feishu.cn', notBefore: '2026-10-15T15:00:00Z', scope: { mode: 'participating' } };
 const policyPath = join(root, 'meeting-ingest-policy.json');
 const discovery = id => ({ meetingId: id, appId: p.appId, tenantKey: p.tenantKey, topic: 'Meeting',
   startedAt: String(Math.floor((clock - 100000) / 1000)), endedAt: String(Math.floor(clock / 1000)), discoveryEvents: [] });
@@ -23,6 +23,9 @@ const material = id => ({ status: 'readable_transcript', transcriptPath: `/priva
 const readMaterials = async state => materialMode === 'ready' ? material(state.meetingId) : { status: materialMode };
 const api = async args => {
   calls.push(args);
+  if (/\/vc\/v1\/meetings\/\d+$/.test(args.url)) return {
+    meeting: { id: args.url.split('/').at(-1), participants: [{ id: 'ou_bot', first_join_time: '1792079900' }] },
+  };
   if (args.method === 'POST') {
     if (sendMode === 'reject') throw Object.assign(new Error('permission denied'), { code: 99991672 });
     const item = { message_id: `om_${messages.length}`, thread_id: `omt_${messages.length}`, chat_id: p.chatId,

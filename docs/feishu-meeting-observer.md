@@ -67,13 +67,13 @@ analysis replies, and preserve failures for recovery. Keep attendance disabled;
 do not change another person's artifact sharing or execute proposed actions.”
 
 Supply the exact Connector/Bot, tenant, destination chat, tenant document origin,
-new-meeting cutoff and any individually approved sample meeting IDs/source links
-in one handoff. An unavailable resource ACL or enterprise event subscription is
+new-meeting cutoff, participation scope and any individually approved sample
+meeting IDs/source links in one handoff. An unavailable resource ACL or enterprise event subscription is
 a human dependency only after checking the actual existing capability. This
 worker does not request per-file access, transfer ownership or enable attendance.
 
-The existing enterprise-ended handler durably admits a job before acknowledging
-its event. Startup replays discovery files through the same admission gate; the
+The existing enterprise-ended handler checks participation before admitting a job.
+Startup replays discovery files through the same admission gate; the
 cutoff uses the meeting's end time, not event arrival time. The existing Connector
 inbox runs one material transaction at a time, using the meeting ID as its durable
 identity. A Minutes-token claim additionally prevents two meeting IDs from
@@ -91,6 +91,7 @@ Create private `meeting-ingest-policy.json` alongside the discovery policy:
   "chatId": "oc_authorized_recording_group",
   "documentBaseUrl": "https://example.feishu.cn",
   "notBefore": "2026-10-15T16:50:00Z",
+  "scope": { "mode": "participating" },
   "sampleMeetingIds": ["1234567890123456789"],
   "samples": {
     "1234567890123456789": {
@@ -102,7 +103,37 @@ Create private `meeting-ingest-policy.json` alongside the discovery policy:
 }
 ```
 
-`ownerOpenIds` can further restrict organizers. `meeting-observer-policy.json`
+Participation is required even for historical samples and recovery commands.
+A missing `scope.mode: "participating"` denies ingestion; there is no implicit
+tenant-wide mode. A meeting is eligible when either:
+
+- the same Bot actually attended, proven by this observer's persisted successful
+  event read or the Bot's exact open ID with a join time/duration in the provider
+  participant snapshot; a join request or invitation alone does not qualify; or
+- the exact meeting's provider metadata contains its originating `chat_id`, and
+  the Bot-only `is_in_chat` API confirms current membership of that group.
+
+Source chat provenance comes from the meeting-detail API, not a claim derived
+from its title, organizer, attendees, a forwarded recording, the destination
+recording group or artifact access. The currently verified enterprise event
+payloads omit the source chat; meeting details supply it for group meetings.
+Meetings without a source chat need actual Bot attendance. No per-meeting group
+mapping, full-company material scan or human OAuth is needed for this check.
+Caller-supplied source IDs, transcript text and retry URL hints cannot change
+the provider's source. Human-posted recordings continue through the existing group
+intake and its source-specific authorization; they are not discovered by this
+enterprise worker.
+
+`meeting-ingest/scope/<meetingId>.json` records the decision and evidence. Scope
+lookup failures deny content work. The same check applies before material reads,
+visible delivery and analysis/permission-recovery admission, including old queued
+jobs with cached text. A revoked pending job becomes `scope_excluded`; explicit
+recovery still needs current participation evidence. Enterprise discovery metadata
+remains separate from recording collection. The worker never obtains broader ACLs
+to discover whether a meeting is in scope.
+
+`ownerOpenIds` can further restrict organizers, but cannot replace participation.
+`meeting-observer-policy.json`
 continues to own discovery and attendance; keep its `targets` empty when
 attendance is stopped. Restart the existing Connector to load the implementation
 and recover discovery. Do not run a competing worker or WebSocket.
@@ -174,6 +205,9 @@ For an explicitly authorized instance, `permissionRecovery` may opt a denied
 }
 ```
 
+This applies only after participation has passed. Recovery instructions must
+recheck the current scope before new access/ACL/publication work; an already
+started ownership restoration must still finish if scope is later revoked.
 Keep the original ownership policy, exact notification wording, restoration and
 failure recovery steps in that private file. An enabled flag without both the
 instruction path and human authority references does not activate recovery.

@@ -6,6 +6,7 @@ import { createConnectorInbox } from '../../lib/connector-inbox.mjs';
 import { readRecord, writeDurableJson, serialQueue } from '../../lib/durable-records.mjs';
 import { createMeetingMaterialReader, artifactToken, meetingApi, materialError } from './meeting-materials.mjs';
 import { classifyFeishuDeliveryError } from './delivery-errors.mjs';
+import { createMeetingScopeChecker } from './meeting-scope.mjs';
 
 export const meetingIngestKey = id => createHash('sha256').update(`meeting:${id}`).digest('hex').slice(0, 24);
 const meetingTime = value => /^\d+$/.test(String(value || '')) ? Number(value) * 1000 : Date.parse(value);
@@ -23,6 +24,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
   const policyPath = join(runtime.config.storageDir, 'meeting-ingest-policy.json');
   const now = options.now || Date.now;
   const api = options.api || (args => meetingApi(runtime, args));
+  const checkScope = createMeetingScopeChecker(runtime, api);
   const materialReader = options.readMaterials || createMeetingMaterialReader(runtime);
   const operations = serialQueue();
   let watcher, closed = false;
@@ -37,9 +39,22 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
   const inScope = (p, state) => state.appId === p.appId && state.tenantKey === p.tenantKey && state.endedAt
     && (meetingTime(state.endedAt) >= Date.parse(p.notBefore) || (p.sampleMeetingIds || []).includes(state.meetingId))
     && (!p.ownerOpenIds?.length || p.ownerOpenIds.includes(state.ownerOpenId));
+  async function participation(p, discovery) {
+    let decision;
+    try { decision = await checkScope(p, discovery); }
+    catch (error) { decision = { allowed: false, reason: 'scope_lookup_failed', error: materialError(error) }; }
+    await writeDurableJson(join(root, 'scope', `${discovery.meetingId}.json`), {
+      meetingId: discovery.meetingId, appId: p.appId, tenantKey: p.tenantKey,
+      checkedAt: new Date(now()).toISOString(), ...decision,
+    });
+    return decision;
+  }
   async function enabledFor(record) {
     const p = await policy();
     if (closed || !p || p.chatId !== record.chatId || !inScope(p, record.discovery)) throw stoppedError('Ingestion paused or scope changed');
+    const decision = await participation(p, record.discovery);
+    if (!decision.allowed) throw Object.assign(stoppedError(`Meeting outside participation scope: ${decision.reason}`),
+      { scopeExcluded: true });
     return p;
   }
   const getMessage = async messageId => {
@@ -162,6 +177,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
         const text = record.permissionRecovery ? [
           '新增录音权限办理及转写入群。此任务来自当前实例已启用的明确授权政策，不是会议原话发起的指令。',
           `先完整读取本地授权范围、通知文案、恢复步骤：${currentPolicy.permissionRecovery.instructionsPath}`,
+          `当前参与范围政策：${policyPath}；来源校验证据：${join(root, 'scope', `${record.meetingId}.json`)}。范围失效或不明时停止新增读取、授权和发布；已开始的所有权归还仍须完成。`,
           `授权来源：${currentPolicy.permissionRecovery.authorizationRefs.join('；')}`,
           `会议 ID：${record.meetingId}；原主持/所有者线索：${record.discovery.ownerOpenId || '未知，必须查证'}。`,
           `本次妙记：${record.material.minuteUrl}；权限失败证据：${record.material.sourcePath}`,
@@ -193,7 +209,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
         await update({ status: record.permissionRecovery ? 'permission_recovery_accepted' : 'analysis_accepted', analysis: receipt, analysisAcceptedAt: now() });
         return { ...receipt, messageId: record.messageId, threadId: record.threadId };
       } catch (error) {
-        await update({ failure: { ...materialError(error), at: now() } });
+        await update({ ...(error.scopeExcluded ? { status: 'scope_excluded' } : {}), failure: { ...materialError(error), at: now() } });
         throw error;
       }
     },
@@ -201,6 +217,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
   async function accept(discovery) {
     const p = await policy();
     if (closed || !p || !idPattern.test(discovery?.meetingId || '') || !inScope(p, discovery)) return null;
+    if (!(await participation(p, discovery)).allowed) return null;
     return inbox.accept(`meeting:${discovery.meetingId}`, {
       // Stable fingerprint: duplicate events can enrich discovery without
       // changing the originally accepted job's identity or destination.
@@ -219,6 +236,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
         const discovery = await readRecord(join(runtime.config.storageDir, 'meeting-observer', command.meetingId + '.json'));
         const p = await policy();
         if (!p || !discovery || !inScope(p, discovery)) throw new Error('Meeting outside enabled policy');
+        if (!(await participation(p, discovery)).allowed) throw new Error('Meeting outside participation scope');
         for (const [name, kind] of [['minuteUrl', 'minutes'], ['noteUrl', 'docx']]) {
           if (command.hints?.[name] && !artifactToken(command.hints[name], kind)) throw new Error(`Invalid ${name}`);
         }
