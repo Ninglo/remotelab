@@ -6,9 +6,9 @@ import { readPromptAsset } from './prompt-asset-loader.mjs';
 // to v1, not a moving "latest"; accepted Requests retain the exact text/hash.
 export const LEGACY_STRICT_START_VERSION = 'v1';
 const versions = Object.freeze({ v1: 'experiments/work-start/v1.md', v2: 'experiments/work-start/v2.md',
-  v3: 'experiments/work-start/v3.md', v4: 'experiments/work-start/v4.md' });
+  v3: 'experiments/work-start/v3.md', v4: 'experiments/work-start/v4.md', v5: 'experiments/work-start/v5.md' });
 export const isStrictStartRuleVersion = version => Object.hasOwn(versions, version);
-const separateOrigin = version => ['v3', 'v4'].includes(version);
+const separateOrigin = version => ['v3', 'v4', 'v5'].includes(version);
 const digest = content => createHash('sha256').update(content).digest('hex');
 const matches = (policy, context) => policy?.scope === 'person'
   && policy.personId === context.personId && Boolean(buildPersonMemoryPromptBlock(context));

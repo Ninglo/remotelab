@@ -23,7 +23,8 @@ export function appendDeliveries(current, plans) {
 
 function withResult(current, result, plans) {
   return { ...current, result, settledAt: new Date().toISOString(),
-    postCompletionPending: !current.options.deliveryOnly && !current.options.internalOperation,
+    postCompletionPending: !current.options.deliveryOnly && (!current.options.internalOperation
+      || current.options.internalOperation === 'context_retrieval' && Boolean(current.options.contextRetrieval)),
     deliveries: appendDeliveries(current, [...plans,
       ...(current.deliveries.some(part => part.processingState === 'active')
         ? feishuProcessingReaction(current, 'finished') : [])]) };

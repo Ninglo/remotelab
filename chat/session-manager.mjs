@@ -2,6 +2,7 @@ import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from 
 import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
 import { createRequestCompletion } from './request-completion.mjs';
 import { completeDeliveryReview, validateDeliveryReview } from './delivery-review.mjs';
+import { completeAsyncContextRetrieval, validateAsyncContextRetrieval, RETRIEVAL_OPERATION } from './async-context-retrieval.mjs';
 import { findActiveFeishuThreadExecution, threadContinuationExpired, validateFeishuThreadOrigin, belongsToFeishuConversation } from './feishu-thread-continuation.mjs';
 import { captureInflightTrial, inflightTrialPrompt } from './inflight-trial.mjs';
 import { normalizeSessionCollection, canCollectAutomationSession } from '../lib/session-collection.mjs';
@@ -1381,6 +1382,7 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 }
 
 async function buildManagerTurnContextSlots(session, options = {}) {
+  if (options.internalOperation === RETRIEVAL_OPERATION) return [];
   const slots = [];
   slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
     await readPromptAsset(options.messageReplyPolicy?.scope === 'person'
@@ -1523,7 +1525,7 @@ function shouldPersistManagerTurnContext() {
 
 async function buildPromptPackage(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}, preparedTurnContext = null) {
   const toolDefinition = await getToolDefinitionAsync(effectiveTool);
-  const promptMode = toolDefinition?.promptMode === 'bare-user'
+  const promptMode = toolDefinition?.promptMode === 'bare-user' || options.internalOperation === RETRIEVAL_OPERATION
     ? 'bare-user'
     : 'default';
   const flattenPrompt = toolDefinition?.flattenPrompt === true;
@@ -1995,6 +1997,8 @@ function requestCooperationEffects(record, run) {
     groupSync: () => completeGroupSync(record, run),
     deliveryReview: () => completeDeliveryReview(record),
     executionPlan: () => completeExecutionPlan(record, run),
+    ...(record.options?.contextRetrieval || record.contextRetrievals?.length
+      ? { contextRetrieval: () => completeAsyncContextRetrieval(record) } : {}),
   };
 }
 
@@ -3743,7 +3747,7 @@ async function prepareRequestRun(record) {
 }
 
 async function prepareRequestRunOnce(record) {
-  if ((record.options?.reviewFeedback || record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
+  if ((record.options?.contextRetrieval || record.options?.reviewFeedback || record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
       || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
       // Legacy run-only additions can only steer. Origin-bound topic additions
@@ -3752,6 +3756,7 @@ async function prepareRequestRunOnce(record) {
       await validateGroupRethink(record);
       await validateDeliveryReview(record);
       await validateExecutionPlanRequest(record);
+      await validateAsyncContextRetrieval(record);
     }
     catch (error) {
       const result = { exitCode: 1, error: error.message, completedAt: nowIso() };

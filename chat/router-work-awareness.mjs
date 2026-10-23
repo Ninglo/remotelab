@@ -1,4 +1,5 @@
 import { handleWorkKickoff } from './work-kickoff.mjs';
+import { handleAsyncContextRetrieval } from './async-context-retrieval.mjs';
 import { handleDeliveryReview, deliveryReviewContext } from './delivery-review.mjs';
 import { observeContextQuery, readContextQueries } from './context-query-monitoring.mjs';
 import { routeGroupWork, replyGroupInput, readGroupRoutingState } from './group-routing.mjs';
@@ -24,7 +25,7 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     catch { writeJson(res, 503, { error: 'Context query records unavailable' }); }
     return true;
   }
-  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan|kickoff|directory|discover|delivery))?$/.test(pathname)) return false;
+  if (!/^\/api\/work-awareness(?:\/(?:start|update|suggest|explain|people|review|route|reply|plan|kickoff|directory|discover|delivery|retrieve))?$/.test(pathname)) return false;
   try {
     const body = req.method === 'POST' ? JSON.parse(await readBody(req, 32 * 1024)) : {};
     const runId = body.runId || parsedUrl.searchParams.get('runId');
@@ -107,10 +108,10 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
       people: collectRelatedPeople({ personId: actor.personId, identityId: actor.identityId,
         sourceContext: record.options?.sourceContext, query: body.content || body.goal || '' }) };
     let result;
-    if (pathname.endsWith('/route') || pathname.endsWith('/reply') || pathname.endsWith('/plan') || pathname.endsWith('/kickoff') || pathname.endsWith('/delivery')) {
+    if (pathname.endsWith('/route') || pathname.endsWith('/reply') || pathname.endsWith('/plan') || pathname.endsWith('/kickoff') || pathname.endsWith('/delivery') || pathname.endsWith('/retrieve')) {
       const input = body.sourceRequestId ? await requests.byRequest(sessionId, body.sourceRequestId) : record;
       if (!input || (input.runId !== record.runId && input.nativeDispatchRunId !== record.runId)) throw new Error('Source input does not belong to this active execution');
-      result = pathname.endsWith('/kickoff') ? await handleWorkKickoff(input, body) : pathname.endsWith('/delivery') ? await handleDeliveryReview(input, body) : pathname.endsWith('/plan') ? await handleExecutionPlan(input, body)
+      result = pathname.endsWith('/retrieve') ? await handleAsyncContextRetrieval(input, body) : pathname.endsWith('/kickoff') ? await handleWorkKickoff(input, body) : pathname.endsWith('/delivery') ? await handleDeliveryReview(input, body) : pathname.endsWith('/plan') ? await handleExecutionPlan(input, body)
         : pathname.endsWith('/reply') ? await replyGroupInput(input, body) : await routeGroupWork(input, body);
     }
     else if (pathname.endsWith('/start')) result = await startWork(options);

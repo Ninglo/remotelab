@@ -187,6 +187,18 @@ try {
     '按已有方法继续', 'codex', 'codex', null, { messageReplyPolicy: v4,
       viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId });
   assert.match(v4Prompt, /# 已存信息主动调用 v4/);
+  await runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'v5', '--json'], io);
+  const v5 = await resolveMessageReplyPolicy({ usageSurface: 'web', viewPersonId: alice.personId,
+    initiatedByIdentityId: alice.identityId });
+  assert.equal(v5.strictStartRule.version, 'v5');
+  assert.match(v5.strictStartRule.content, /work retrieve/);
+  assert.match(strictStartCheckPrompt(v5, alice), /# 已存信息按需调用 v5/);
+  assert.equal(JSON.parse(strictStartCheckProvenance(v5, alice)).version, 'v5');
+  assert.deepEqual(await loadPersonMessageReplies({ personId: 'person_bob', identityId: 'web_bob' }), bobBefore);
+  const workerPrompt = await buildPrompt('strict-session', { id: 'strict-session' }, '只读检索任务',
+    'codex', 'codex', null, { internalOperation: 'context_retrieval', skipSessionContinuation: true,
+      messageReplyPolicy: v5, viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId });
+  assert.equal(workerPrompt, '只读检索任务', 'worker receives its task without copying personal rules or main-thread history');
   await runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'v3', '--json'], io);
   assert.equal((await resolveMessageReplyPolicy({ usageSurface: 'web', viewPersonId: alice.personId,
     initiatedByIdentityId: alice.identityId })).strictStartRule.version, 'v3', 'rollback uses the same personal selector');
