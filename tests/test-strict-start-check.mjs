@@ -24,7 +24,7 @@ try {
   const { runMessageReplyCommand } = await import('../lib/message-reply-command.mjs');
   const alice = { personId: 'person_alice', identityId: 'web_alice' };
   const bobBefore = await loadPersonMessageReplies({ personId: 'person_bob', identityId: 'web_bob' });
-  const display = { opening: false, checklist: true, progress: 'card_all', routing: 'none', selfReview: false };
+  const display = { opening: false, checklist: true, progress: 'card_all', routing: 'none', parallelWork: false, selfReview: false };
   assert.equal((await loadPersonMessageReplies(alice)).choices.strictStartCheck, false);
   await changePersonMessageReplies({ action: 'apply', expectedRevision: 0, confirm: true, choices: display }, alice);
   const record = (await requests.accept({ sessionId: 'strict-session', requestId: 'human', text: '为我开启开工严格检查',
@@ -62,7 +62,7 @@ try {
   const document = await loadAuthDocument({ persistMigration: false });
   assert.equal(document.people.find(p => p.id === alice.personId).preferences.messageReplies.audit.at(-1).requestId, 'human');
 
-  for (const surface of ['web', 'p2p', 'group', 'thread']) {
+  const surfaceOptions = surface => {
     const options = { viewPersonId: alice.personId, initiatedByIdentityId: surface === 'web' ? 'web_alice' : 'feishu_alice' };
     if (surface === 'web') options.usageSurface = 'web';
     else Object.assign(options, { feishuConnectorAuthenticated: true,
@@ -70,6 +70,10 @@ try {
         chatId: 'oc_fixture', messageId: 'om_human', sender: { openId: 'alice', senderType: 'user' } },
       sourceDelivery: { connector: 'feishu', sourceRouteId: 'fixture', target: { chatId: 'oc_fixture',
         conversationKind: surface === 'thread' ? 'thread' : 'main' } } });
+    return options;
+  };
+  for (const surface of ['web', 'p2p', 'group', 'thread']) {
+    const options = surfaceOptions(surface);
     const policy = await resolveMessageReplyPolicy(options);
     assert.equal(policy.strictStartCheck, true, surface);
     assert.equal(await resolveMessageReplyPolicy({ ...options, automationTitle: 'scheduled work' }), null);
@@ -156,23 +160,56 @@ try {
     < strictStartCheckPrompt(v2, alice).length, 'count provenance as well as the procedure when checking savings');
   assert.equal(v2.strictStartRule.version, 'v2', 'new selection never rewrites existing v2 work');
   assert.deepEqual((await loadPersonMessageReplies(alice)).choices, oldChoices);
+  await runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'v4', '--json'], io);
+  assert.equal(JSON.parse(output).settings.active.strictStartRuleVersion, 'v4');
+  const v4 = await resolveMessageReplyPolicy({ usageSurface: 'web', viewPersonId: alice.personId,
+    initiatedByIdentityId: alice.identityId });
+  assert.equal(v4.strictStartRule.version, 'v4');
+  for (const surface of ['web', 'p2p', 'group', 'thread']) {
+    const options = surfaceOptions(surface);
+    assert.equal((await resolveMessageReplyPolicy(options)).strictStartRule.version, 'v4', surface);
+    assert.equal(await resolveMessageReplyPolicy({ ...options, automationTitle: 'scheduled work' }), null);
+    assert.equal(await resolveMessageReplyPolicy({ ...options, initiatedByIdentityId: 'web_bob' }), null);
+  }
+  assert.deepEqual((await loadPersonMessageReplies(alice)).choices, oldChoices);
+  assert.deepEqual(await loadPersonMessageReplies({ personId: 'person_bob', identityId: 'web_bob' }), bobBefore,
+    'selecting the pilot for one Person never enables or migrates another Person');
+  assert.equal(v3.strictStartRule.version, 'v3', 'accepted work retains its captured version');
+  assert.ok(Buffer.byteLength(v4.strictStartRule.content) <= Buffer.byteLength(v3.strictStartRule.content),
+    'the pilot replaces the existing prompt within its byte budget, without claiming token equivalence');
+  const v4Next = { ...v4, strictStartRule: { ...v4.strictStartRule,
+    origin: { ...v4.strictStartRule.origin, requestId: 'next-v4-input' } } };
+  assert.equal(strictStartCheckPrompt(v4, alice), strictStartCheckPrompt(v4Next, alice));
+  assert.equal(JSON.parse(strictStartCheckProvenance(v4Next, alice)).version, 'v4');
+  assert.doesNotMatch(strictStartCheckPrompt(v4, { personId: 'person_bob', identityId: 'web_bob' }), /# 已存信息主动调用/);
+  assert.equal(strictStartCheckProvenance(v4, { personId: 'person_bob', identityId: 'web_bob' }), '');
+  const v4Prompt = await buildPrompt('strict-session', { id: 'strict-session', codexThreadId: 'existing-thread' },
+    '按已有方法继续', 'codex', 'codex', null, { messageReplyPolicy: v4,
+      viewPersonId: alice.personId, initiatedByIdentityId: alice.identityId });
+  assert.match(v4Prompt, /# 已存信息主动调用 v4/);
+  await runMessageReplyCommand(['strict-start', 'on', '--rule-version', 'v3', '--json'], io);
+  assert.equal((await resolveMessageReplyPolicy({ usageSurface: 'web', viewPersonId: alice.personId,
+    initiatedByIdentityId: alice.identityId })).strictStartRule.version, 'v3', 'rollback uses the same personal selector');
+  assert.equal(v4.strictStartRule.version, 'v4', 'rollback does not rewrite already accepted pilot work');
   const { projectRuleContext } = await import('../chat/rule-context.mjs');
   const ruleSlots = policy => [{ id: 'strict_start_check', content: strictStartCheckPrompt(policy, alice) },
     { id: 'strict_start_origin', content: strictStartCheckProvenance(policy, alice) }];
   const ruleOptions = { enabled: true, identity: { field: 'codexThreadId', id: 'thread-v3' },
     recovery: 'codex-session-start', requestId: 'current', personId: alice.personId, identityId: alice.identityId };
   const deps = { head: async () => 1, history: async () => [], snapshot: async () => {} };
-  const firstV3 = await projectRuleContext('strict-session', ruleSlots(v3), ruleOptions, deps);
-  const nextV3 = await projectRuleContext('strict-session', ruleSlots(v3Next), ruleOptions, { ...deps,
-    history: async () => [{ type: 'message', role: 'user', requestId: 'previous' }],
-    request: async () => ({ runId: 'previous-run', nativeReceipt: { accepted: true } }),
-    run: async () => ({ id: 'previous-run', sessionId: 'strict-session', codexThreadId: 'thread-v3' }),
-    manifest: async () => ({ ruleContextDelivery: firstV3.receipt }) });
-  assert.equal(nextV3.receipt.mode, 'reference');
-  assert.deepEqual(nextV3.receipt.changedIds, []);
-  assert.equal(nextV3.slots.some(s => s.id === 'strict_start_check'), false);
-  assert.equal(nextV3.slots.find(s => s.id === 'strict_start_origin').content,
-    strictStartCheckProvenance(v3Next, alice), 'new origin still reaches the native input');
+  for (const [policy, nextPolicy] of [[v3, v3Next], [v4, v4Next]]) {
+    const first = await projectRuleContext('strict-session', ruleSlots(policy), ruleOptions, deps);
+    const next = await projectRuleContext('strict-session', ruleSlots(nextPolicy), ruleOptions, { ...deps,
+      history: async () => [{ type: 'message', role: 'user', requestId: 'previous' }],
+      request: async () => ({ runId: 'previous-run', nativeReceipt: { accepted: true } }),
+      run: async () => ({ id: 'previous-run', sessionId: 'strict-session', codexThreadId: 'thread-v3' }),
+      manifest: async () => ({ ruleContextDelivery: first.receipt }) });
+    assert.equal(next.receipt.mode, 'reference');
+    assert.deepEqual(next.receipt.changedIds, []);
+    assert.equal(next.slots.some(s => s.id === 'strict_start_check'), false);
+    assert.equal(next.slots.find(s => s.id === 'strict_start_origin').content,
+      strictStartCheckProvenance(nextPolicy, alice), 'new origin reaches the input without repeating the stable rule');
+  }
   assert.doesNotMatch(strictStartCheckPrompt(legacy, alice), /# 开工检查 v1/);
   const bob = { personId: 'person_bob', identityId: 'web_bob' };
   const bobPolicy = { ...snapshot, personId: bob.personId, policyId: 'reply_bob' };

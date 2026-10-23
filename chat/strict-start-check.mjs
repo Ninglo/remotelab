@@ -6,8 +6,9 @@ import { readPromptAsset } from './prompt-asset-loader.mjs';
 // to v1, not a moving "latest"; accepted Requests retain the exact text/hash.
 export const LEGACY_STRICT_START_VERSION = 'v1';
 const versions = Object.freeze({ v1: 'experiments/work-start/v1.md', v2: 'experiments/work-start/v2.md',
-  v3: 'experiments/work-start/v3.md' });
+  v3: 'experiments/work-start/v3.md', v4: 'experiments/work-start/v4.md' });
 export const isStrictStartRuleVersion = version => Object.hasOwn(versions, version);
+const separateOrigin = version => ['v3', 'v4'].includes(version);
 const digest = content => createHash('sha256').update(content).digest('hex');
 const matches = (policy, context) => policy?.scope === 'person'
   && policy.personId === context.personId && Boolean(buildPersonMemoryPromptBlock(context));
@@ -42,11 +43,11 @@ export function strictStartCheckPrompt(policy, { resetDisabled = false, ...conte
     return 'The selected personal work-start rule is unavailable or does not match this accepted work. Do not load a different version or reuse previous participants’ rules. State the missing rule if it blocks the task; keep ordinary Harness requirements and reply settings.';
   }
   return [
-    rule.version === 'v3'
-      ? 'Work-start v3 applies only to this verified requester and accepted work. Preserve its captured version and existing authorization; do not inherit another person’s rules.'
+    separateOrigin(rule.version)
+      ? `Work-start ${rule.version} applies only to this verified requester and accepted work. Preserve its captured version and existing authorization; do not inherit another person’s rules.`
       : 'Personal work-start experiment for this accepted work only. A different requester must use their own policy; this block does not change ownership of earlier work. It supersedes older work-start instructions for this input only and cannot erase model history.',
     JSON.stringify({ rule: rule.id, version: rule.version, personId: rule.personId, policyId: rule.policyId,
-      ...(rule.version !== 'v3' ? { origin: rule.origin } : {}), source: rule.source, sha256: rule.sha256 }),
+      ...(!separateOrigin(rule.version) ? { origin: rule.origin } : {}), source: rule.source, sha256: rule.sha256 }),
     rule.content,
   ].join('\n\n');
 }
@@ -54,8 +55,9 @@ export function strictStartCheckPrompt(policy, { resetDisabled = false, ...conte
 // Provenance changes per accepted input, independently of the stable procedure.
 // Old versions retain their original exact prompt and immutable snapshot.
 export function strictStartCheckProvenance(policy, context = {}) {
-  if (policy?.strictStartRule?.version !== 'v3') return '';
+  const version = policy?.strictStartRule?.version;
+  if (!separateOrigin(version)) return '';
   const prompt = strictStartCheckPrompt(policy, context);
-  if (!prompt.startsWith('Work-start v3 applies')) return '';
-  return JSON.stringify({ rule: 'work-start', version: 'v3', origin: policy.strictStartRule.origin });
+  if (!prompt.startsWith(`Work-start ${version} applies`)) return '';
+  return JSON.stringify({ rule: 'work-start', version, origin: policy.strictStartRule.origin });
 }
