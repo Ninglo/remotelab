@@ -15,6 +15,8 @@ Resolve the source CLI, consumer module directory, destination file or existing 
 
 JSON: `schema: 1`, `source`, `publishedAt`, `dashboard`, `accounts`, `accountSummary`.
 
+`dashboard.schema` identifies metric semantics independently of the v1 transport envelope: version 2 carries `responseScope: "ordinary-input"` and per-day `originCoverage`. First response and delivery exclude original group-mainline and unknown origins; usage and injection retain their original scope. Missing nested schema is legacy version 1. Update pinned consumer contracts and labels before adopting version 2; old values must not be labelled as ordinary-only. The exporter retains these scope fields but does not export the new group activity section to an unmodified Hub consumer.
+
 `dashboard` contains source-computed values, seven-day trends, sample counts, stage timings, coverage and semantics. Timezone is Asia/Shanghai, business day starts at 05:00; durations are milliseconds and ratios are percentages. Missing values remain null. Source `generatedAt` timestamps never become publish timestamps. Account summary contains `available`, `exhausted`, `unknown` totals. Account labels/quotas remain in the private `accounts` portion; consumers must filter it server-side.
 
 Account summary is additive to v1: an older payload without it remains readable with summary null. Consumers must not reconstruct it from private rows. Invalid or unsupported versions fail closed; keep the last valid published file. Additive fields may be ignored by old readers. Renaming fields, changing units/meaning or removing fields requires a new schema version and coordinated reader migration.
@@ -30,3 +32,17 @@ The contract allows no session/run IDs, raw messages, source paths or credential
 Use the existing deterministic publisher timer, switch its working directory/entry to this RL module and supply target settings through a private service environment file. Validate a real local export first, then run the unit once and read back the destination. A failed source read or publish preserves the previous snapshot. The consumer marks source data older than five minutes stale. No AI schedule is involved.
 
 Validation: `node scripts/run-with-clean-instance-env.mjs node tests/test-agent-monitor-export.mjs`. The consumer must also validate its public/admin responses and visual interactions against a real snapshot before deployment.
+
+## Instance-owned supervision partition
+
+The independent supervision site uses the source dashboard directly through its existing collector; it is separate from the pinned Hub export contract. Prepare its source changes without touching a running site:
+
+```sh
+node integrations/agent-monitor/supervision-partition.mjs /absolute/existing-site /absolute/separate-overlay
+```
+
+The overlay contains `public/app.js`, `public/style.css`, `public/group-participation.js`, `collect.mjs` and `server.mjs`. It reuses the native group renderer and source-calculated aggregates, adds the new collector fields and static asset, and separates group participation from ordinary response performance on the existing speed page. Source-anchor mismatches stop preparation for review. A legacy snapshot stays labelled as unpartitioned until new data arrives. The existing cost page, full retained history, 00:00 accounting boundary, authentication, navigation and collector cadence remain unchanged.
+
+Validate in a copy of the site with a real aggregate snapshot. `tests/test-monitoring-groups-browser.mjs` accepts the Playwright module path, browser executable, prepared site and evidence output directory; it verifies desktop/mobile layouts, source values, refresh disclosure state, JavaScript-free SSR and read-only requests. Apply the reviewed overlay and source version through the instance's existing deployment process; preparing it does not deploy or restart services. Retain the previous files for rollback and read the normal authenticated entry after deployment. Reconcile current site changes before replacing any file.
+
+Group data contains aggregate counts only. Keep raw source samples and projection caches private. Known gaps include missing original inbox/request/receipt evidence, revised reaction timestamps, unknown publication owners, truncated reads and auxiliary costs lacking group attribution. The new seven-day activity totals are a subset of the corrected ledger; do not add them to the retained all-time group cost total.

@@ -46,17 +46,20 @@ function day(value         )           {
     injection: sample(d.injection), firstInjection: sample(d.firstInjection), delivery: sample(d.delivery), firstDelivery: sample(d.firstDelivery), firstResponse: sample(d.firstResponse),
     journeyStages: stages(d.journeyStages, ["receive", "prepare", "launch", "run", "send", "total"]),
     deliveryStages: stages(d.deliveryStages, ["total", "wait", "run", "send"]), firstDeliveryStages: stages(d.firstDeliveryStages, ["total", "wait", "run", "send"]),
+    ...(d.originCoverage ? { originCoverage: Object.fromEntries(["ordinary", "groupMainline", "unknown", "requestFallback"].map(k => [k, number(obj(d.originCoverage)[k])])) } : {}),
   };
 }
 function dashboard(value         )                             {
   if (value === null) return null;
   const d = obj(value); check(d.timezone === "Asia/Shanghai" && d.dayStartHour === 5);
+  const schema = d.schema ?? 1; check([1, 2].includes(schema));
+  if (schema === 2) check(d.responseScope === "ordinary-input");
   const c = obj(d.coverage), coverage                                   = {};
   for (const k of ["limitedFiles", "readErrors", "missingRuns", "missingRequests", "missingInjections", "eligibleRuns", "sampledRuns"]) coverage[k] = number(c[k]);
   check(typeof c.truncated === "boolean"); coverage.truncated = c.truncated;
   const days = rows(d.days, 7).map(day); check(new Set(days.map(d => d.day)).size === days.length);
   const s = d.sources == null ? null : obj(d.sources);
-  return { generatedAt: stamp(d.generatedAt), timezone: "Asia/Shanghai", dayStartHour: 5,
+  return { schema, ...(schema === 2 ? { responseScope: "ordinary-input" } : {}), generatedAt: stamp(d.generatedAt), timezone: "Asia/Shanghai", dayStartHour: 5,
     currentRunning: nullable(d.currentRunning), todayActiveSessions: nullable(d.todayActiveSessions), unknownStates: nullable(d.unknownStates),
     today: day(d.today), days, coverage,
     semantics: Object.fromEntries(["usage", "injection", "first", "firstResponse", "journey", "stages", "delivery"].filter(k => d.semantics != null && obj(d.semantics)[k] != null).map(k => [k, text(obj(d.semantics)[k], 2000)])),

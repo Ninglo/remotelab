@@ -176,3 +176,12 @@
 #monitoringSessions.agent-compact { border-top: 1px solid var(--border); padding-top: 24px; }
 #monitoringSessions.agent-compact .monitoring-table-wrap td:first-child { min-width: 0; max-width: none; }
 :is(#monitoringOverview, #monitoringTest) .monitoring-toolbar > p { flex: 1; }
+
+/* Group input monitoring */
+.agent-group-participation { min-width: 0; margin-top: 24px; }
+.agent-group-participation .agent-table { max-width: 100%; overflow-x: auto; }
+.agent-group-participation th, .agent-group-participation td { white-space: nowrap; }
+.agent-group-participation .agent-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.agent-group-participation .agent-counts > div { display: flex; flex-direction: column; min-width: 0; gap: 7px; }
+.agent-group-participation .agent-counts small { overflow-wrap: anywhere; line-height: 1.6; }
+.agent-group-participation details { margin-block: 14px; }

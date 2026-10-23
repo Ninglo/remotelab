@@ -102,7 +102,7 @@ The separate bottom Token-total section has been removed. Token statistics remai
 in the Session dashboard: daily total and average usage with seven-day trends.
 Account collection and the usage-analysis view are unchanged.
 
-Session's seven daily/weekly charts are defined in the Agent dashboard section below. They share existing reads and do not add model calls, timers, quota probes or scans. Refresh preserves disclosure choices; missing data is not interpreted as zero.
+Session's seven daily/weekly charts are defined in the Agent dashboard section below. They share the existing usage read and do not add model calls, timers or quota probes. The group panel also reads bounded projections of the existing connector inbox, participation state and delivery records. Refresh preserves disclosure choices; missing data is not interpreted as zero.
 
 ## Session changes and automatic diagnosis
 
@@ -718,17 +718,17 @@ Session 的按需查询详情同时提供[规则与压缩记录](connector-turn-
 
 用量均值是含前后台的已记录 Token 总数除以执行次数，按运行结束／落账日归集，跨日运行不拆分。注入与交付按人工请求受理日归集，统计各自有效的前台执行样本。注入使用 Unicode 字符数，含保存的 modelContext 标题和分隔符，不把 UTF-8 字节、Token、工具输出、Harness 原生历史混算。首轮严格取历史首条用户消息对应的 Run；最多读取开头 32 个事件的窄投影，不能证实时记为未知，不以统计窗口最早记录代替。
 
-交付指从受理到最终正文所有部分成功送达，排除开场、进展、其它请求回执、失败和未完成运行。当前飞书最终回执有可验证来源；Web、运行中追加输入和缺少最终回执者不混入交付均值。该值衡量最终答复送达，不宣称业务任务通过验收。旧首次正文／首次答复面板已移除，现行首次回复指标见下文。
+普通会话交付指从受理到最终正文所有部分成功送达，按原始入站来源剔除群主线和来源未知，排除开场、进展、其它请求回执、失败和未完成运行。当前飞书最终回执有可验证来源；Web、运行中追加输入和缺少最终回执者不混入交付均值。该值衡量最终答复送达，不宣称业务任务通过验收。旧首次正文／首次答复面板已移除，现行首次回复指标见下文。
 
 “上下文注入来源”默认折叠，先列工作区 AGENTS.md、bootstrap.md、projects.md、skills.md、启动和条件规则的当前原文字数、加载方式与原文链接。明确区分 Harness 加载、启动投射和按需读取，不把原文字数当作实际注入量。随后取最近一个可证实首轮的实际内容块，列名称、实际注入字符数、当前规则文档／组装源码入口和原 Session。来源条目之和等于保存的完整注入字符数。动态人员和群背景并非固定文档；链接是当前规则，历史内容沿原 Session 保存。原生 AGENTS.md、Skill 与工具读取尚不在计量范围，不能推断未读取。固定来源接口 `GET /api/monitoring/context-source?id=...` 沿用实例认证，只接受源码中的白名单，不接受任意文件路径。
 
-页面仍复用 `/api/monitoring/sessions?days=1|7|30&compact=1&dashboard=1`。账本一次扫描同时生成所选窗口和七日数据；七日投影独立缓存 60 秒，最多 5,000 个 Run、256 MiB 冷读、单文件 2 MiB，保留最多 20,000 个文件版本的纯统计投影。原诊断读取器的 1,000 Run／64 MiB 限制不变。统计中显示截断、缺失与实际覆盖，不读取完整聊天正文或启动模型。查看原文只在点击时进行。Hub 接入应复用相同 schema 和渲染资产，仅向已认证用户提供必要的汇总与账号窗口，不复制对话正文或实例凭据。
+页面仍复用 `/api/monitoring/sessions?days=1|7|30&compact=1&dashboard=1`。账本一次扫描同时生成所选窗口和七日数据；七日投影独立缓存 60 秒，最多 5,000 个 Run、256 MiB 冷读、单文件 2 MiB，保留最多 20,000 个文件版本的纯统计投影。群参与读取使用独立的同额冷读预算和 50,000 个文件版本缓存，避免挤占普通首响覆盖；上限可由 createSessionMonitoringReader 的 maxReadBytes、maxGroupProjectionFiles 调整。持久投影版本为 4，旧版由原件重建；缓存不保存消息正文、提示或凭据。接口 agentDashboard 为 schema 2、responseScope 为 ordinary-input，旧消费者须同步来源口径与文案。原诊断读取器的 1,000 Run／64 MiB 限制不变。统计中显示截断、缺失与实际覆盖。读取既有 JSON 后仅保留统计字段，不另读聊天事件正文或启动模型。查看原文只在点击时进行。Hub 接入应复用相同 schema 和渲染资产，仅向已认证用户提供必要的汇总与账号窗口，不复制对话正文或实例凭据。
 
 ### 已撤下的 Test 同步预览
 
 Test 曾作为 MukaHub 移植预览，与正式总览使用相同的数据和组件。迁移完成后，2026-10-16 撤下重复标签、面板和独立刷新路径；旧链接回到正式总览。总览保留七项指标、来源说明和账户详情；MukaHub 同步沿原快照通路运行。
 
-平均值标题注明“每次执行”或“新 Session 首次执行”，每张卡解释分母。用量含前后台，注入只统计前台，交付耗时只统计有最终正文回执的飞书前台执行。指标与账户独立读取，单项失败不影响另一项；刷新保留展开选择。
+平均值标题注明“每次执行”或“新 Session 首次执行”，每张卡解释分母。用量含前后台，注入只统计前台，交付耗时只统计有最终正文回执、来源可判定为普通会话的飞书前台执行。指标与账户独立读取，单项失败不影响另一项；刷新保留展开选择。
 
 ### 时长阶段切换与展示范围（2026-10-14）
 
@@ -736,16 +736,18 @@ Test 曾作为 MukaHub 移植预览，与正式总览使用相同的数据和组
 
 总耗时沿原最终正文回执口径。阶段使用同一条已完成飞书执行的 acceptedAt、startedAt、completedAt、最终正文全部 deliveredAt；四个时间齐全且有序才纳入阶段统计。阶段样本的三段相加等于其总耗时，阶段样本数可能小于原总耗时样本数。没有时间记录保留空缺，运行结束不表示工作验收完成。所有阶段按请求受理所在的北京时间 05:00 统计日归集，首次执行继续严格限定 Session 历史首次执行。
 
-总览在会话概览下方只保留账户余额，移除单独的 token 总数板块；实验状态、API、磁盘和检查范围板块不展示。旧具体会话卡片、异常统计和会话列表不再渲染。当时 Test 复用同一展示，现已撤下。
+总览在会话概览下方保留群主线参与区与账户余额，移除单独的 token 总数板块；实验状态、API、磁盘和检查范围板块不展示。旧具体会话卡片、异常统计和会话列表不再渲染。当时 Test 复用同一展示，现已撤下。
 
 ### 首次回复与各环节用时（2026-10-14）
 
-总览提供第七张“平均首次响应时间”卡，从原始飞书消息的
+总览提供第七张“普通会话首次响应时间”卡，从原始飞书消息的
 `sourceContext.createTime`（毫秒）到第一条成功送达的文字回复计时，包含开场、进展、
 答复、提问和最终结果；排除表情、自动受理通知、附件及其他请求的回执。
 不限定新会话，按消息发送所在的北京时间 05:00 统计日归集。缺少发送时间、
 发送时间晚于受理或缺少送达回执时不计入，不能用受理时间冒充发送时间。
 覆盖仍限于现有账本关联的可归属执行；执行中的追加输入不制造独立样本。
+来源优先读取原始 inbox，普通群主线剔除；私聊、原生话题群及话题续聊保留。群内引用或回复可只有 rootId，不能据此当成话题续聊。inbox 缺失时只采用可判定的 Request 来源，改写后的开话题目标不足以反推原输入；来源未知剔除并展示缺口。
+归属按 publicationRequestId 保持逐输入一致。同次执行里追加输入产生的较早回复不提前根输入首响；执行级首次可见输出是另一口径，本面板不把它当作输入完成证据。
 送达回执表示平台接受投递，不代表人的客户端已显示或人已阅读。
 
 图表下方直接显示“今日各环节用时”，列出消息接收、排队与准备、启动执行、
@@ -755,6 +757,23 @@ Test 曾作为 MukaHub 移植预览，与正式总览使用相同的数据和组
 缺少准备时间只排除该表样本，不影响独立有效的首回复或最终交付指标。
 首回复可能发生在执行过程中，是独立指标，不作为第六个环节重复加总。
 页面用“会话”“执行记录”等中文称呼，移除旧会话明细；账户展示保留；底部单独的 token 总数板块已移除。
+
+### 群主线参与（2026-10-23）
+
+普通会话响应与群主线参与分区。`agentDashboard.groupParticipation` 复用既有 connector inbox、participation-state、conversation-settings、Request、投递回执、Session 路由及纠错用量账本，不写新的消息或消耗账。输入限原始普通群主线的人工发言；七日窗口与普通会话一致，均在北京时间 05:00 分日。群与消息按 connector route 隔离。
+
+| 展示项 | 统计依据与缺口 |
+| --- | --- |
+| 当前参与群 | 已配置或有主线参与状态的群，应用现行有效设置、模式覆盖及静音；区分主动、旁听、暂停、未知。当前快照不冒充历史状态或平台成员资格 |
+| 输入处理 | 原消息 ID 去重；处理、不回复、失败／取消、处理中、待确认互斥。处理含文字覆盖、参与控制和已接纳转交；失败包括文字投递失败；没有回执不推断为不回复 |
+| 文字投递 | 外部消息 ID 去重；依据实际目标与 thread ID 分群内、新话题、已有话题、未知。合并回复仅用明确 contract 关联覆盖输入，回执和文字首响只归所属输入一次 |
+| 新工作话题 | 既有 routing／work-plan 关系与原消息锚点关联实际开话题回执；数量和建立时延单列，缺回执不能算已建立。子话题后续回复不转计原输入完成 |
+| 社交表情／处理提示 | 实际 reaction ID 去重，自动处理提示单列；删除不计新增。旧表情替换缺可靠创建时间则保留数量、时延为空 |
+| 群主线 Token | 原纠错账本按 Run 去重，仅群主线运行；关联工作 Session 排除。属于全实例总量子集，不重复相加。按落账日归集，与消息发送日不同；缺输入计量、缺来源 Run、账本截断单列，无法关联的后台调用不分摊 |
+
+表格及口径说明显示数据覆盖；原始来源、消息时间、请求、外部 ID、开话题回执或归属缺失不补零。相同运行的其他输入拥有文字回执时，只记录归属缺口。当前版本不回写历史归属，不改变参与决策、回复显示、模型、提示及执行／投递策略。
+
+实例独立监管站的接入与隔离预览见 [Agent monitor integration](../integrations/agent-monitor/README.md#instance-owned-supervision-partition)。原成本页的全留存历史与 00:00 分日保留；本区七日 05:00 活动窗口不能替代或叠加旧账。
 
 ### 监控文案与底部汇总（2026-10-14）
 
