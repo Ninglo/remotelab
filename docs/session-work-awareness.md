@@ -137,9 +137,13 @@ v4是“已存信息主动调用”个人试验，覆盖理解目标、选择做
 
 v5增加个人范围的按需异步检索。本人可交办：“只为我开启异步资料检索试验，保留其他设置。”通过原 `message-replies strict-start on --rule-version v5` 个人入口启用；用v4回退为原同步按需调用，或关闭strict-start。默认和其他Person均不改变。主Harness判断可并行找资料时调用 `work retrieve --query <问题> --context <目标及已知信息> --json`，原任务继续；关键依赖仍直接检索。运行中补充须用 `--source-request <实际接受的输入ID>`，服务端从该输入核对本人身份及当前v5开关，后台任务不能递归启动。
 
-后台复用内部Session、Run及完成事件，继承发起运行的模型和推理配置。只带检索问题和必要上下文，不复制主会话全文或个人规则；只读任务约束由Harness执行，并非新增权限沙箱。它沿现有工具、目录和原文逐轮追索，先过滤候选再读取正文片段，提示在本地去掉历史规则注入、避免整份目录和会话输出；约3000字的单次片段目标是读取提示，不是强制token上限。最终返回最多3条发现及来源；空结果、错误不注入。命中通过原生reference-only输入补给原Run，不回答人的问题、不扩大授权、不新开主任务。新的人类输入、原运行结束/取消、本人关闭试验或超出回传期限时，只保留记录；原任务完成会沿现有取消通路停止尚在运行的检索。相同输入与查询包去重，重试复用原子会话。
+后台复用内部Session、Run及完成事件，继承发起运行的模型和推理配置。只带检索问题和必要上下文，不复制主会话全文或个人规则；只读任务约束由Harness执行，并非新增权限沙箱。它沿现有工具、目录和原文逐轮追索，先过滤候选再读取正文片段，提示在本地去掉历史规则注入、避免整份目录和会话输出；约3000字的单次片段目标是读取提示，不是强制token上限。核实一条有用发现就通过 `work retrieve --report <JSON> --json` 返回，无需等全部检索结束。每包最多3条，最终JSON只补尚未报告的内容；空结果、过程说明和错误不注入。命中通过原生reference-only输入补给原Run，不回答人的问题、不扩大授权、不新开主任务。新的人类输入、原运行结束/取消、本人关闭试验或超出回传期限时，只保留记录；原任务完成会沿现有取消通路停止尚在运行的检索。相同输入与查询包去重，重试复用原子会话。
 
-`work retrieve --file <JSON> --json` 可传query、context、object、sourceRequestId及durationMs（默认120000，可设1000—600000）；durationMs是结果回传有效期及模型工作预算提示，不是强制执行超时。`{"action":"status"}`按需读取当前输入的任务状态，不要求轮询。检索记录在原Request的contextRetrievals，包含子Run、耗时、结果与原生投递回执；子Run沿已有usage记录计费。accepted表示参考输入已接收，是否被采用及是否改善最终交付仍须结合主任务证据评估。比较主任务加后台的总输入、交付耗时及返工；异步并不保证节约token。验证入口：`tests/test-async-context-retrieval.mjs`和`tests/test-strict-start-check.mjs`。
+`--report` 仅供该检索的登记子Run调用，来源、目标和身份从已保存的任务关系取得，调用方不能指定另一个接收任务。报告格式为 `{"findings":[{"text":"已核实的发现","source":"原件来源","whyUseful":"对当前任务的作用"}]}`，字段上限分别为900、600、300字。每条按正文和来源生成稳定投递ID；分批重叠、并发重试和最终汇总不会重复投递同一条。逐条回执沿原生输入日志恢复，未知结果不能换ID重发。子任务后来失败或最终返回空数组，仍保留此前已投递资料及回执。主任务收到资料不代表采用，也不产生分流授权。
+
+同一报告接口可携带 `phase: "work-check" | "supplement"` 与 `phaseStatus: "started" | "completed"` 记录阶段开始和结束，允许空findings；阶段记录不注入主任务。先报开始再报结束，重复上报保留原时间。后台默认只执行补充资料阶段；work-check记录接口不自动开启重复开工识别、弹窗或转交。原有人工确认边界保持。阶段用时是Harness实际报告的墙钟时间，未报完成保留未完成，不能由子Run退出推算成功。
+
+`work retrieve --file <JSON> --json` 可传query、context、object、sourceRequestId及durationMs（默认120000，可设1000—600000）；durationMs是结果回传有效期及模型工作预算提示，不是强制执行超时。`{"action":"status"}`按需读取当前输入的任务状态，不要求轮询。检索记录在原Request的contextRetrievals，包含子Run、总耗时、phases、firstFindingMs（首次上报相对入队时间）、firstAcceptedMs（首次确认接收相对入队时间）及逐条deliveries。原会话追加context-retrieval-phase、context-retrieval-finding和context-retrieval-finished事件，可沿现有事件通道实时读取，无新增轮询器。摘要delivery=accepted表示至少一条已接收，uncertainCount保留其他未知回执；完整结果看逐条deliveries。子Run沿已有usage记录计费，阶段墙钟时间不能当阶段token分摊。是否被采用及是否改善最终交付仍须结合主任务证据评估。比较主任务加后台的总输入、交付耗时及返工，并包含未命中和中途失败；异步并不保证节约token。验证入口：`tests/test-async-context-retrieval.mjs`和`tests/test-strict-start-check.mjs`。
 
 实际规则版本、正文、SHA-256、个人配置 ID、发起人与原请求／Session 来源冻结在 `messageReplyPolicy.strictStartRule` 中，再由每轮 `strict_start_check` 槽位投影。相同发起人的运行中接续和重试保留原快照；换人发起的新请求按其本人设置捕获，不改写原工作的归属。关闭、未配置、身份未知或不匹配时不读取或注入正文。规则缺失、版本未知或快照校验不符时保留正常回复设置并说明规则不可用，不借用其他版本或前一人的正文。
 
