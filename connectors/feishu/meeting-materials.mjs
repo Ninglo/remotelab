@@ -45,23 +45,26 @@ export function transcriptLink(xml) {
   }
   return '';
 }
-export function createMeetingMaterialReader(runtime, options = {}) {
-  const api = options.api || (args => meetingApi(runtime, args));
-  const cli = options.cli || (async (args, identity = 'bot') => {
+export function createMeetingCli(runtime) {
+  return async (args, identity = 'bot') => {
     let stdout;
     try {
       ({ stdout } = await exec(process.execPath, [launcher, '--profile', runtime.config.sourceRouteId || 'default', ...args,
         '--as', identity, '--format', 'json'], { timeout: 60000, maxBuffer: 24 * 1024 * 1024,
         env: { ...process.env, LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' } }));
     } catch (error) {
-      if (!error.stdout) throw new Error(`Feishu material CLI failed: ${error.code || 'transport'}`);
-      stdout = error.stdout;
+      stdout = error.stdout || error.stderr;
+      if (!stdout) throw new Error(`Feishu material CLI failed: ${error.code || 'transport'}`);
     }
     const result = JSON.parse(stdout);
     if (!result.ok) throw Object.assign(new Error(result.error?.message || 'Feishu material read failed'),
       { code: result.error?.code, logId: result.error?.log_id });
     return result.data;
-  });
+  };
+}
+export function createMeetingMaterialReader(runtime, options = {}) {
+  const api = options.api || (args => meetingApi(runtime, args));
+  const cli = options.cli || createMeetingCli(runtime);
   const exportTranscript = options.exportTranscript || (async minuteToken => {
     const result = await runtime.appClient.minutes.v1.minuteTranscript.get({ path: { minute_token: minuteToken },
       params: { need_speaker: true, need_timestamp: true, file_format: 'txt' } });

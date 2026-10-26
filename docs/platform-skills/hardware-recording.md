@@ -6,6 +6,30 @@ Give this to the AI running on the machine that owns the receiver and keypad:
 
 The result is a reusable, optional capability shipped with RemoteLab on macOS and Linux. A keypad starts or ends one discussion. The machine saves that receiver channel locally; RemoteLab receives the finished audio in a Session for the configured Harness to transcribe and analyze. The capture service runs no transcription model. This does not enable hardware automatically after an upgrade.
 
+### Receiving-instance processing defaults
+
+An operator can choose “automatically transcribe and archive uploads to this
+recording group; analyze only when requested.” Configure the receiving instance's
+private `recording-intake-policy.json` under its config directory:
+
+```json
+{"enabled":true,"rules":[{"sourceRouteId":"approved-route","chatId":"oc_approved_group","mode":"transcribe_archive","authorizationRefs":["actual-human-request"]}]}
+```
+
+The message endpoint applies this rule only to an automatic recording request
+with matching machine/recording identity and a Session already bound to that
+exact Feishu route/group. It preserves the original capture template in
+`sourceContext.captureRequestText`, original audio references and delivery
+identity; the processing request now asks only for complete transcription,
+source preservation and intake registration. Old capture clients need no update.
+Human follow-ups, explicit analysis requests and other destinations are unchanged.
+`analysis` stays pending, without automatically scheduling a later consumer.
+Admission remains separate from actual transcription/archive completion. The
+rule does not start devices, release held recordings or expand upload authority.
+Ordinary phone/file uploads follow the destination's current intake workflow;
+they must not be mistaken for automatic recorder packets just because they have
+audio attachments.
+
 ## Collect once
 
 Ask for the following together, using context already provided:

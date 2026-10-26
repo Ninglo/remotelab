@@ -750,6 +750,7 @@
           "example": "核对录音设备和交付位置，再配置这台机器的录音入口。",
           "sources": [
             "lib/recording-command.mjs",
+            "lib/recording/intake-policy.mjs",
             "docs/platform-skills/hardware-recording.md"
           ],
           "commands": [

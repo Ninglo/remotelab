@@ -43,6 +43,29 @@ try {
   assert.equal((await check(policy, discovery)).reason, 'source_group_member');
   member = false;
   assert.equal((await check(policy, discovery)).allowed, false, 'leaving source group revokes admission');
+  let pageCalls = 0;
+  const humanPolicy = { ...policy, scope: { ...policy.scope,
+    groupMemberOpenIds: ['ou_authorized'], userGroupLookup: true } };
+  const humanCheck = createMeetingScopeChecker(runtime, api, { cli: async (args, identity) => {
+    assert.equal(identity, 'user');
+    const params = JSON.parse(args.at(-1)); assert.equal(params.chat_id, sourceChatId);
+    pageCalls++;
+    return params.page_token ? { items: [{ member_id: 'ou_authorized', member_id_type: 'open_id', tenant_key: 'tenant' }] }
+      : { items: [{ member_id: 'ou_other', name: 'Authorized person' }], has_more: true, page_token: 'next' };
+  } });
+  assert.equal((await humanCheck(humanPolicy, discovery)).reason, 'authorized_source_group_member');
+  assert.equal(pageCalls, 2, 'authorized member can be on a later page');
+  await humanCheck(policy, discovery); assert.equal(pageCalls, 2, 'human metadata access is opt-in');
+  const deniedCheck = createMeetingScopeChecker(runtime, api, { cli: async () => { throw Error('Operator outside chat'); } });
+  assert.equal((await deniedCheck(humanPolicy, discovery)).reason, 'source_group_membership_unavailable');
+  const foreignCheck = createMeetingScopeChecker(runtime, api, { cli: async () => ({ items: [
+    { member_id: 'ou_authorized', member_id_type: 'open_id', tenant_key: 'other' },
+    { member_id: 'ou_authorized', member_id_type: 'user_id', tenant_key: 'tenant' },
+  ] }) });
+  assert.equal((await foreignCheck(humanPolicy, discovery)).allowed, false, 'IDs require matching type and tenant');
+  sourceChatId = '';
+  assert.equal((await humanCheck(humanPolicy, { ...discovery, chatId: 'oc_source' })).allowed, false);
+  assert.equal(pageCalls, 2, 'caller-supplied groups do not trigger human lookup');
   member = true; sourceChatId = '';
   assert.equal((await check(policy, { ...discovery, chatId: 'oc_source' })).allowed, false,
     'caller-supplied chat and ingestion destination cannot substitute for the original source');

@@ -29,10 +29,10 @@ if (!['status', 'retry'].includes(action) || !value('--storage-dir')) {
       }
       const policy = await readRecord(join(value('--storage-dir'), 'meeting-ingest-policy.json'));
       console.log(JSON.stringify({ enabled: policy?.enabled === true, chatId: policy?.chatId, notBefore: policy?.notBefore,
-        scopeMode: policy?.scope?.mode || 'unconfigured',
+        scopeMode: policy?.scope?.mode || 'unconfigured', processingMode: policy?.processingMode || 'analyze',
         jobs: [...records.values()].map(r => ({ meetingId: r.meetingId, status: r.status, complete: r.complete,
           attempts: r.attempts, nextAttemptAt: r.nextAttemptAt, messageId: r.messageId, threadId: r.threadId,
-          analysis: r.analysis, failure: r.failure, sourcePath: r.material?.sourcePath, receipt: r.receipt })) }, null, 2));
+          analysis: r.analysis, archive: r.archive, failure: r.failure, sourcePath: r.material?.sourcePath, receipt: r.receipt })) }, null, 2));
     } else {
       if (!meetingId) throw new Error('--meeting-id is required');
       const hints = {};

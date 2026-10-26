@@ -1,4 +1,5 @@
 import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
+import { applyRecordingIntakePolicy } from '../lib/recording/intake-policy.mjs';
 import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
 import { createRequestCompletion } from './request-completion.mjs';
 import { completeDeliveryReview, validateDeliveryReview } from './delivery-review.mjs';
@@ -3506,6 +3507,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  const recordingInput = await applyRecordingIntakePolicy({ text, requestId: options.requestId,
+    nativeQuestionId: options.nativeQuestionId, sourceContext: options.sourceContext }, session, { priorRequest });
+  text = recordingInput.text;
+  if (recordingInput.sourceContext !== options.sourceContext) options = { ...options, sourceContext: recordingInput.sourceContext };
   if (!priorRequest && options.sourceContext?.feishuThreadOriginRunId) {
     if (!options.feishuConnectorAuthenticated || !await validateFeishuThreadOrigin(sessionId,
       options.sourceContext.feishuThreadOriginRunId, options.sourceDelivery)) throw threadContinuationExpired();

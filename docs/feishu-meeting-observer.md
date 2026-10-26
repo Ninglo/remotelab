@@ -92,6 +92,7 @@ Create private `meeting-ingest-policy.json` alongside the discovery policy:
   "documentBaseUrl": "https://example.feishu.cn",
   "notBefore": "2026-10-15T16:50:00Z",
   "scope": { "mode": "participating" },
+  "processingMode": "transcribe_archive",
   "sampleMeetingIds": ["1234567890123456789"],
   "samples": {
     "1234567890123456789": {
@@ -118,11 +119,23 @@ from its title, organizer, attendees, a forwarded recording, the destination
 recording group or artifact access. The currently verified enterprise event
 payloads omit the source chat; meeting details supply it for group meetings.
 Meetings without a source chat need actual Bot attendance. No per-meeting group
-mapping, full-company material scan or human OAuth is needed for this check.
+mapping or full-company material scan is needed for this check.
 Caller-supplied source IDs, transcript text and retry URL hints cannot change
 the provider's source. Human-posted recordings continue through the existing group
 intake and its source-specific authorization; they are not discovered by this
 enterprise worker.
+
+An explicit `scope.groupMemberOpenIds` list with `scope.userGroupLookup: true`
+can additionally admit source groups containing any specified human. It uses
+the same CLI profile's already-authorized user identity to read that exact
+group's paginated member list, matching open ID, ID type and tenant. This does
+not treat a meeting attendee or a matching display name as group membership.
+Verify the existing identity before enabling it. If neither Bot nor authorized
+user can read the source group's membership, the result remains
+`source_group_membership_unavailable`; no artifact is read to infer membership.
+Do not claim coverage of every named person's groups when the reader lacks
+access. New scope does not restore deleted material or retry historical jobs;
+set the agreed new-meeting cutoff before deployment.
 
 `meeting-ingest/scope/<meetingId>.json` records the decision and evidence. Scope
 lookup failures deny content work. The same check applies before material reads,
@@ -184,13 +197,24 @@ separately. The source marker is visible for audit and recovery.
 
 Only after message readback does the worker submit to the existing Connector
 Session/Request path. The original group's current prompt is reused, with an
-explicit analysis-only instruction and private source-file pointers. Submission
+explicit processing instruction and private source-file pointers. Submission
 is persisted before HTTP admission and retries reuse the same Request. The Bot
 is the source actor; neither the meeting owner nor a human approver is invented.
 `analysis_accepted` means the Request was admitted, not that the analysis or its
 Feishu delivery finished. Verify the Session response and source-delivery receipt
 and read the actual reply in the original meeting thread before claiming full
 acceptance. No transcript document is recreated or audio uploaded.
+
+`processingMode: "transcribe_archive"` separates intake from analysis. Readable
+text and authorized permission recovery both submit only source preservation,
+complete transcription, intake registration and a short archive receipt. The
+Harness leaves `analysis: pending` and does not produce summaries, candidate
+memories/actions or schedule later analysis. A human's subsequent request can
+use the saved original text. `archive_accepted` records admission only, with a
+separate `archive` Request receipt; verify actual files and index before calling
+the archive complete. Omit the mode (or use `analyze`) to preserve a legacy
+instance's automatic summary workflow. Permission recovery still restores
+original ownership immediately, before any later processing.
 
 For an explicitly authorized instance, `permissionRecovery` may opt a denied
 **identified Minutes recording** into the existing Harness execution path:

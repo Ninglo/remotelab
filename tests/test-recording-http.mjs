@@ -116,10 +116,22 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
     } } }, segments: [{ filename: '00000.wav' }] };
   delete bound.sessionId; delete bound.requestId; delete bound.runId; delete bound.submittedAt;
   await saveRecord(spool, bound);
+  await writeFile(join(configDir, 'recording-intake-policy.json'), JSON.stringify({ enabled: true,
+    rules: [{ sourceRouteId: 'recording-test-route', chatId: 'recording-test-chat',
+      mode: 'transcribe_archive', authorizationRefs: ['human:fixture'] }] }));
   const second = new WavWriter(join(recordDir(spool, bound.id), '00000.wav')); await second.start(); await second.append(Buffer.from([42, 0])); await second.finish();
   await submitRecording(spool, bound, { config, client });
   assert.notEqual(bound.sessionId, saved.sessionId);
   const boundRun = await terminalRun(client, ws, bound.runId); assert.equal(boundRun.state, 'completed', output);
+  const boundEvents = (await client.request(`/api/sessions/${bound.sessionId}/events`)).json.events;
+  const boundInput = boundEvents.find(e => e.role === 'user' || e.type === 'user');
+  assert.match(await readFile(promptPath, 'utf8'), /只完成转写和归档/);
+  assert.equal(boundInput.sourceContext.recordingProcessing.mode, 'transcribe_archive');
+  assert.match(boundInput.sourceContext.captureRequestText, /独立分析/);
+  await writeFile(join(configDir, 'recording-intake-policy.json'), JSON.stringify({ enabled: false }));
+  const retry = { ...bound, status: 'pending' };
+  await submitRecording(spool, retry, { config, client });
+  assert.equal(retry.runId, bound.runId, 'policy changes cannot duplicate or reject an accepted recorder retry');
   const delivery = (await client.request('/api/source-deliveries?connector=feishu&sourceRouteId=recording-test-route')).json.deliveries.find((d) => d.runId === bound.runId && d.kind === 'content');
   assert.ok(delivery, 'Completed analysis must retain the lane-bound delivery');
   assert.equal(delivery.target.chatId, 'recording-test-chat'); assert.equal(delivery.target.threadId, 'recording-thread');
@@ -144,7 +156,7 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
         connector: 'feishu', sourceRouteId: 'recording-publish-test',
       } })).json.claim;
       assert.equal(claimed.delivery.kind, 'attachment'); assert.equal(claimed.delivery.sessionId, published.sessionId);
-      assert.match(claimed.delivery.attachment.originalName, /^测试自动发群-.*\.mp3$/);
+      assert.match(claimed.delivery.attachment.originalName, /^【测试】.*_测试自动发群\.mp3$/);
       assert.doesNotMatch(claimed.delivery.attachment.originalName, /第\d+段/);
       assert.equal(claimed.delivery.attachment.mimeType, 'audio/mpeg');
       sentFiles++;
@@ -164,6 +176,6 @@ console.log(JSON.stringify({type:'turn.completed', usage:{input_tokens:1,output_
   const groupResult = (await client.request('/api/source-deliveries?connector=feishu&sourceRouteId=recording-publish-test')).json.deliveries.find(part => part.runId === resumed.runId && part.kind === 'content');
   assert.equal(groupResult.target.rootId, 'om_original_file'); assert.equal(groupResult.target.threadId, 'omt_original_file');
   const publishedAsset = (await client.request(`/api/assets/${resumed.segments[0].assetId}`)).json.asset;
-  assert.match(publishedAsset.originalName, /^测试自动发群-/);
+  assert.match(publishedAsset.originalName, /^【测试】.*_测试自动发群/);
   assert.equal(delivery.state, 'pending', 'No real Connector sends are performed in this test');
 });

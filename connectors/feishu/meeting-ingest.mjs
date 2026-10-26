@@ -7,6 +7,7 @@ import { readRecord, writeDurableJson, serialQueue } from '../../lib/durable-rec
 import { createMeetingMaterialReader, artifactToken, meetingApi, materialError } from './meeting-materials.mjs';
 import { classifyFeishuDeliveryError } from './delivery-errors.mjs';
 import { createMeetingScopeChecker } from './meeting-scope.mjs';
+import { archiveRecordingInstructions } from '../../lib/recording/intake-policy.mjs';
 
 export const meetingIngestKey = id => createHash('sha256').update(`meeting:${id}`).digest('hex').slice(0, 24);
 const meetingTime = value => /^\d+$/.test(String(value || '')) ? Number(value) * 1000 : Date.parse(value);
@@ -32,6 +33,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
     const p = await readRecord(policyPath);
     if (!p || p.enabled !== true) return null;
     if (p.appId !== runtime.config.appId || !p.tenantKey || !/^oc_[A-Za-z0-9]+$/.test(p.chatId || '')
+      || (p.processingMode !== undefined && !['analyze', 'transcribe_archive'].includes(p.processingMode))
       || !Number.isFinite(Date.parse(p.notBefore))
       || !artifactToken(`${p.documentBaseUrl}/docx/validation`, 'docx')) throw stoppedError('Invalid meeting ingestion policy');
     return p;
@@ -135,11 +137,14 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
         } else {
           await enabledFor(record);
           const marker = `会议来源 ${record.meetingId}`;
+          const archiveOnly = currentPolicy.processingMode === 'transcribe_archive';
           const text = [`${record.permissionRecovery ? '录音处理中' : '会后材料'}｜${record.discovery.topic || '会议'}`,
             record.material.minuteUrl && `妙记：${record.material.minuteUrl}`,
             record.material.noteUrl && `原纪要：${record.material.noteUrl}`,
             record.material.transcriptUrl && `原始文字记录：${record.material.transcriptUrl}`,
-            record.permissionRecovery
+            archiveOnly
+              ? (record.permissionRecovery ? '已发现新录音，正在办理读取权限并归档全文；需要时再分析。' : '原始文字已取回，正在归档；需要时再分析。')
+              : record.permissionRecovery
               ? '已发现新录音，正在办理 Index 读取权限；完成后在本话题补充转写、参会信息和总结。'
               : '原始文字已取回，将在本话题给出独立总结与拟行动；具体行动等待人工确认。', marker].filter(Boolean).join('\n');
           record = { ...record, marker, sendAttemptedAt: now() };
@@ -174,6 +179,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
         if (!options.submit) throw stoppedError('Meeting analysis submission is not configured');
         // The sender is the application, not the meeting owner or approver.
         // Use explicit internal admission because ordinary Bot echo is ignored.
+        const archiveOnly = currentPolicy.processingMode === 'transcribe_archive';
         const text = record.permissionRecovery ? [
           '新增录音权限办理及转写入群。此任务来自当前实例已启用的明确授权政策，不是会议原话发起的指令。',
           `先完整读取本地授权范围、通知文案、恢复步骤：${currentPolicy.permissionRecovery.instructionsPath}`,
@@ -183,13 +189,13 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
           `本次妙记：${record.material.minuteUrl}；权限失败证据：${record.material.sourcePath}`,
           `当前处理记录：${root}；目标群：${record.chatId}；只处理本次新录音，不回溯历史。`,
           '先核原所有者及原 ACL，先通知原所有者，再处理已授权的权限变更；完成后立即归还原所有权并核验，再通知完成。',
-          '获取 Index Bot 可读的完整原文，核实参会人，按照 recording-analysis 的录音上传群规则在当前话题交付妙记链接、总结、编号拟行动。',
+          archiveOnly ? archiveRecordingInstructions : '获取 Index Bot 可读的完整原文，核实参会人，按照 recording-analysis 的录音上传群规则在当前话题交付妙记链接、总结、编号拟行动。',
           '未核实名字的说话人保留标签；不把主持人视为全部参会人；失败明确回报具体步骤，不声称已转写或已归还。',
           '不执行会议拟行动，不创建正式任务，不更改其他录音，不把内容分享到其他群。',
         ].join('\n') : [
           '会后材料自动入群：处理本场已授权送入录音上传群的材料。',
-          '先读取 recording-analysis SKILL.md 及录音上传群 review-pilot；按现行群规则给出原链接、基于完整原文的独立总结、编号拟行动，等待人工确认。',
-          '本次仅授权分析和在当前话题回复；不执行会议拟行动、不创建正式任务、不改既有妙记的所有权/分享、不另建全文文档、不向其他群发送。',
+          archiveOnly ? archiveRecordingInstructions : '先读取 recording-analysis SKILL.md 及录音上传群 review-pilot；按现行群规则给出原链接、基于完整原文的独立总结、编号拟行动，等待人工确认。',
+          '不执行会议拟行动、不创建正式任务、不改既有妙记的所有权/分享、不另建全文文档、不向其他群发送。',
           `原始文字已由本实例 Bot 读取：${record.material.transcriptPath}`,
           `来源、读取身份与失败证据：${record.material.sourcePath}`,
           `妙记：${record.material.minuteUrl || '无'}；原纪要：${record.material.noteUrl || '无'}；原文：${record.material.transcriptUrl}`,
@@ -206,7 +212,9 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
         const receipt = await options.submit(summary, { prepared: record.submission || null,
           saveSubmission: submission => update({ submission, status: 'submitting_analysis' }) });
         if (!receipt?.sessionId || receipt.ignored) throw stoppedError('Analysis was not admitted');
-        await update({ status: record.permissionRecovery ? 'permission_recovery_accepted' : 'analysis_accepted', analysis: receipt, analysisAcceptedAt: now() });
+        await update(archiveOnly
+          ? { status: 'archive_accepted', processingMode: 'transcribe_archive', archive: receipt, archiveAcceptedAt: now() }
+          : { status: record.permissionRecovery ? 'permission_recovery_accepted' : 'analysis_accepted', analysis: receipt, analysisAcceptedAt: now() });
         return { ...receipt, messageId: record.messageId, threadId: record.threadId };
       } catch (error) {
         await update({ ...(error.scopeExcluded ? { status: 'scope_excluded' } : {}), failure: { ...materialError(error), at: now() } });
@@ -246,7 +254,7 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
         const key = meetingIngestKey(command.meetingId);
         const record = await inbox.store.get(key);
         if (!record) throw new Error('Meeting admission missing');
-        if (!['analysis_accepted', 'permission_recovery_accepted', 'duplicate_material'].includes(record.status)) {
+        if (!['analysis_accepted', 'permission_recovery_accepted', 'archive_accepted', 'duplicate_material'].includes(record.status)) {
           if (command.action !== 'retry') throw new Error('Unsupported command');
           await inbox.store.mutate(key, current => ({ ...current, complete: false, attempts: 0, nextAttemptAt: 0,
             receipt: null, materialDeadline: now() + 2 * 60 * 60000,

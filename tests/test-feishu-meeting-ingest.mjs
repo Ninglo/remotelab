@@ -152,6 +152,22 @@ try {
   await recovery.accept(discovery('123456789018')); await run(recovery);
   assert.equal((await state(recovery, '123456789018')).status, 'permission_denied');
   assert.equal(messages.length, beforeRecovery + 1);
+  // Archive-only handles both readable text and access recovery without
+  // scheduling the old summary/action workflow or claiming archive completion.
+  await writeDurableJson(policyPath, { ...recoveryPolicy, processingMode: 'transcribe_archive' });
+  await recovery.accept(discovery('123456789020')); await run(recovery);
+  const archivedRecovery = await state(recovery, '123456789020');
+  assert.equal(archivedRecovery.status, 'archive_accepted');
+  assert.ok(archivedRecovery.archive.sessionId); assert.equal(archivedRecovery.analysis, undefined);
+  assert.match(submissions.at(-1).summary.messageText, /只完成转写和归档/);
+  assert.match(submissions.at(-1).summary.messageText, /先通知原所有者/);
+  assert.doesNotMatch(submissions.at(-1).summary.messageText, /交付妙记链接、总结、编号拟行动/);
+  const archiveReader = make(); workers.push(archiveReader);
+  await archiveReader.accept(discovery('123456789021')); await run(archiveReader);
+  assert.equal((await state(archiveReader, '123456789021')).status, 'archive_accepted');
+  assert.match(submissions.at(-1).summary.messageText, /analysis 保持 pending/);
+  assert.doesNotMatch(submissions.at(-1).summary.messageText, /独立总结/);
+  assert.match(messages.at(-1).body.content, /正在归档/);
   await writeDurableJson(policyPath, p);
   assert.equal(artifactToken('https://evil.test/docx/token', 'docx'), '');
   assert.equal(transcriptLink('<a href="https://tenant.feishu.cn/docx/summary">summary</a>'), '');
