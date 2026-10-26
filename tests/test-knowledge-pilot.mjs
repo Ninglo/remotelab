@@ -1,0 +1,88 @@
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,readFile,symlink,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {Readable} from 'node:stream';
+const temp=await mkdtemp(join(tmpdir(),'knowledge-pilot-'));
+process.env.REMOTELAB_CONFIG_DIR=join(temp,'config');
+try {
+  const {KNOWLEDGE_ROOT:root,captureKnowledgePilot,observeKnowledgeAdmission,queryKnowledge,readKnowledgeObservations,
+    readKnowledgeRunMetrics,knowledgePilotPrompt}=await import('../chat/knowledge-pilot.mjs');
+  const {requests}=await import('../chat/requests.mjs');
+  const {appendEvent}=await import('../chat/history.mjs');
+  const {appendRunSpoolRecord,writeRunResult}=await import('../chat/runs.mjs');
+  const {handleKnowledgePilot}=await import('../chat/router-knowledge-pilot.mjs');
+  const {runKnowledgeCommand}=await import('../lib/knowledge-command.mjs');
+  const corpus=join(temp,'corpus');await mkdir(corpus,{recursive:true});await mkdir(root,{recursive:true});
+  await writeFile(join(corpus,'index.json'),JSON.stringify({version:'v1',pages:[{file:'01-loss.md',title:'比较loss口径',aliases:['归一化','loss']},{file:'02-escape.md',title:'escape',aliases:[]}]}));
+  await writeFile(join(corpus,'01-loss.md'),'只比较相同 mask 的 loss。');await writeFile(join(corpus,'README.md'),'目录');
+  await writeFile(join(temp,'private.md'),'private');await symlink(join(temp,'private.md'),join(corpus,'02-escape.md'));
+  const config={version:1,id:'kb',projectId:'claude-tag',enabled:true,name:'组织知识库',personIds:['person_a'],corpusPath:corpus,verificationRequestIds:['verify']};
+  const options={viewPersonId:'person_a',initiatedByIdentityId:'identity_a'};
+  assert.equal(await captureKnowledgePilot(options),null,'absent config disables');
+  await writeFile(join(root,'config.json'),JSON.stringify(config));
+  const p=await captureKnowledgePilot(options);assert.equal(p.personId,'person_a');
+  for(const change of [{viewPersonId:'person_b'},{initiatedByIdentityId:null},{internalOperation:'job'},{scheduleId:'job'},{automationTitle:'job'},{recordUserMessage:false}])
+    assert.equal(await captureKnowledgePilot({...options,...change}),null,'scope must not leak');
+  assert.equal(await captureKnowledgePilot(options,{groupFeed:true}),null);
+  assert.equal(await captureKnowledgePilot(options,{internalRole:'worker'}),null);
+  assert.match(knowledgePilotPrompt(p,'request1'),/remotelab knowledge search/);
+  assert.equal(knowledgePilotPrompt(null,'r'), '');
+  const {buildPrompt}=await import('../chat/session-manager.mjs');
+  const prepared={project:'',directory:'',personalMemory:'',skillExtraction:'',text:''};
+  const actualPrompt=await buildPrompt('test-knowledge',{id:'test-knowledge',tool:'codex'},'loss为什么不一样',null,'codex',null,
+    {...options,knowledgePilot:p,requestId:'request1'},prepared);
+  assert.match(actualPrompt,/Organization knowledge on demand/);
+  const otherPrompt=await buildPrompt('test-other',{id:'test-other',tool:'codex'},'hello',null,'codex',null,
+    {...options,viewPersonId:'person_b',requestId:'other'},prepared);
+  assert.doesNotMatch(otherPrompt,/remotelab knowledge search/);
+  const r=(await requests.accept({sessionId:'test-knowledge',requestId:'request1',text:'loss为什么不一样',options:{...options,knowledgePilot:p}})).record;
+  const at=Date.now();await observeKnowledgeAdmission(r,root,at);await observeKnowledgeAdmission(r,root,at+1);
+  const search=await queryKnowledge(r,{action:'search',query:'loss 归一化',operationId:'search1'});
+  assert.equal(search.matches[0].file,'01-loss.md');assert.equal(search.matches[0].text,undefined);
+  assert.equal((await queryKnowledge(r,{action:'search',query:'unmatched token',operationId:'search2'})).matches.length,0);
+  const read=await queryKnowledge(r,{action:'read',page:'01-loss.md',operationId:'read1'});
+  assert.equal(read.chars,[...read.text].length);assert.equal(read.kind,'body');
+  assert.equal((await queryKnowledge(r,{action:'read',page:'01-loss.md',operationId:'read1'})).replayed,true);
+  await assert.rejects(queryKnowledge(r,{action:'read',page:'README.md',operationId:'read1'}),/different/);
+  await queryKnowledge(r,{action:'read',page:'01-loss.md',operationId:'read2'});
+  await queryKnowledge(r,{action:'read',page:'README.md',operationId:'read3'});
+  await assert.rejects(queryKnowledge(r,{action:'read',page:'../private.md',operationId:'escape1'}),/index/);
+  await assert.rejects(queryKnowledge(r,{action:'read',page:'02-escape.md',operationId:'escape2'}),/outside/);
+  await assert.rejects(queryKnowledge({...r,options:{...r.options,viewPersonId:'person_b'}},{action:'read',page:'01-loss.md',operationId:'other'}),/not enabled/);
+  const tool=await appendEvent(r.sessionId,{type:'tool_result',runId:r.runId,output:'mask differs in current source'});
+  await assert.rejects(queryKnowledge(r,{action:'report',operationId:'bad-evidence',report:{effect:'helped',reason:'changed analysis',evidenceSeqs:[999999]}}),/evidence/);
+  await queryKnowledge(r,{action:'report',operationId:'report1',report:{effect:'helped',reason:'先对齐mask再比较',evidenceSeqs:[tool.seq]}});
+  const verify=(await requests.accept({sessionId:'test-knowledge',requestId:'verify',text:'test',options:{...options,knowledgePilot:p}})).record;
+  await queryKnowledge(verify,{action:'read',page:'01-loss.md',operationId:'verify1'});
+  const noRead=(await requests.accept({sessionId:'test-knowledge-2',requestId:'not-read',text:'hello',options:{...options,knowledgePilot:p}})).record;
+  await observeKnowledgeAdmission(noRead);
+  const sample=(input,output,cached,lastInput,lastOutput,lastCached)=>({type:'remotelab.context_metrics',inputTokens:lastInput,outputTokens:lastOutput,cachedInputTokens:lastCached,featureUsage:{threadId:'t1',inputTokens:input,outputTokens:output,cachedInputTokens:cached}});
+  await appendRunSpoolRecord(r.runId,{ts:new Date(at).toISOString(),json:sample(1200,120,800,200,20,100)});
+  await appendRunSpoolRecord(r.runId,{ts:new Date(at+100).toISOString(),json:sample(1600,160,1000,400,40,200)});
+  await writeRunResult(r.runId,{completedAt:new Date(at+1000).toISOString(),exitCode:0});
+  assert.deepEqual((await readKnowledgeRunMetrics(r.runId)).usage,{inputTokens:600,cachedInputTokens:300,outputTokens:60,source:'provider_run_counter_delta'});
+  const report=await readKnowledgeObservations({nativeReceipt:async()=>true});
+  assert.equal(report.admittedInputs,2);assert.equal(report.verification.inputs,1);
+  assert.equal(report.totals.bodyReadCalls,2);assert.equal(report.totals.repeatedReads,1);
+  assert.equal(report.totals.readInputs,1);assert.equal(report.totals.noReadInputs,1);
+  assert.equal(report.totals.effects.helped,1);assert.equal(report.usage.inputTokens,600);
+  assert.equal(report.usage.unknown,1);assert.equal(report.usage.incrementalTokens,null);
+  await appendRunSpoolRecord(r.runId,{ts:new Date(at+200).toISOString(),json:sample(10,10,0,10,10,0)});
+  assert.equal((await readKnowledgeRunMetrics(r.runId)).usage,null,'counter reset cannot become negative savings');
+  const api=async(body,auth={authKind:'service'})=>{
+    let status,reply;
+    await handleKnowledgePilot({req:Object.assign(Readable.from([JSON.stringify(body)]),{method:'POST'}),res:{},pathname:'/api/knowledge-pilot',authSession:auth,writeJson:(_r,s,v)=>{status=s;reply=v;}});
+    return {status,reply};
+  };
+  const body={runId:r.runId,requestId:r.requestId,action:'read',page:'01-loss.md',operationId:'api1'};
+  assert.equal((await api(body,{authKind:'person',personId:'person_b'})).status,403);
+  assert.equal((await api({...body,requestId:'not-in-session'})).status,403);
+  assert.equal((await api(body)).status,200);
+  let sent,output='';await runKnowledgeCommand(['read','--page','01-loss.md'],{requestId:'request1',runId:r.runId,stdout:{write:s=>output+=s},client:{request:async(path,options)=>{sent={path,...options};return {response:{ok:true},json:read};}}});
+  assert.equal(sent.path,'/api/knowledge-pilot');assert.equal(sent.body.requestId,'request1');assert.equal(JSON.parse(output).sha256,read.sha256);
+  await writeFile(join(root,'config.json'),JSON.stringify({...config,enabled:false}));
+  assert.equal(await captureKnowledgePilot(options),null);
+  assert.equal((await api({...body,operationId:'disabled'})).status,403);
+  console.log('PASS knowledge scope/default-off, actual page read/search, hash/Unicode counts, retry and duplicates, symlink escape, source evidence, verification exclusion, run counters/reset/unknown, API identity and CLI');
+} finally {await rm(temp,{recursive:true,force:true});}

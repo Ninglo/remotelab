@@ -15,6 +15,7 @@ import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
 import { deliverySelfReviewPrompt, captureGroupDeliverySelfReviewPolicy } from './delivery-self-review.mjs';
 import { captureFeatureObservation, observeFeatureAdmission, featureObservationPrompt, appendFeatureReviewStatus, clearFeatureReviewStatus } from './feature-observation.mjs';
+import { captureKnowledgePilot, observeKnowledgeAdmission, knowledgePilotPrompt } from './knowledge-pilot.mjs';
 import { strictStartCheckPrompt, strictStartCheckProvenance } from './strict-start-check.mjs';
 import { projectRuleContext } from './rule-context.mjs';
 import { replyProgressUsesCard } from '../static/chat/message-reply-model.js';
@@ -1436,6 +1437,8 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   slots.push(createModelContextSlot('personal_memory_learning', 'Personal memory learning', turnContext.personalMemory));
   slots.push(createModelContextSlot('skill_extraction_trial', 'Personal Skill extraction pilot', turnContext.skillExtraction));
   slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
+  slots.push(createModelContextSlot('organization_knowledge', 'Organization knowledge on demand',
+    knowledgePilotPrompt(options.knowledgePilot, options.requestId)));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
   slots.push(createModelContextSlot('delivery_self_review', 'Delivery self-review',
@@ -3551,6 +3554,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const featureObservation = priorRequest ? priorRequest.options.featureObservation : await captureFeatureObservation(options);
   if (featureObservation) options.featureObservation = featureObservation;
   else delete options.featureObservation;
+  const knowledgePilot = priorRequest ? priorRequest.options.knowledgePilot : await captureKnowledgePilot(options, session);
+  if (knowledgePilot) options.knowledgePilot = knowledgePilot;
+  else delete options.knowledgePilot;
   if (priorRequest?.options?.nativeQuestionId) options = { ...options, nativeQuestionId: priorRequest.options.nativeQuestionId };
   else if (!priorRequest && options.nativeQuestionId) {
     const question = activeNative ? await readNativeQuestion(runDir(activeRequest.runId)) : null;
@@ -3624,7 +3630,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     // original policy/draft (including old Jev receipts) and its fingerprint.
     options = { ...options };
     for (const key of ['workboardEnabled', 'checklistGateReceipt', 'workboardDraft', 'routingPilotMainline', 'routingPilotMainlineProtocol', 'messageReplyPolicy', 'messageRoutingPolicy', 'parallelWorkPolicy', 'groupDeliverySelfReviewPolicy', 'featureObservation',
-      'usageSurface', 'usageActorKind', 'usagePersonId']) {
+      'knowledgePilot', 'usageSurface', 'usageActorKind', 'usagePersonId']) {
       if (Object.hasOwn(priorRequest.options, key)) options[key] = priorRequest.options[key];
       else delete options[key];
     }
@@ -3637,6 +3643,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     : [];
   const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries, deliveryPlan, boundConversation: Boolean(session.conversation) });
   await observeFeatureAdmission(record);
+  await observeKnowledgeAdmission(record).catch(error => console.warn('[knowledge-pilot] admission: ' + error.message));
   await recordWorkInputAndDeliver(session, record);
   const activeRun = activeRequest ? await getRun(activeRequest.runId) : null;
   const nativeFollowUp = activeNative && !activeRun?.cancelRequested && canForwardNativeRequest(record, activeRequest);

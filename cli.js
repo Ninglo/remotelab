@@ -54,6 +54,7 @@ Usage:
   remotelab workboard                Read task evidence and submit compact state updates
   remotelab message-replies          Manage personal work-start and in-flight input trials
   remotelab feature-observation      Record an opted-in feature check and its evidence
+  remotelab knowledge                Search/read an explicitly enabled organization knowledge pilot
   remotelab input-trial             Inspect, answer or stop opted-in in-flight work
   remotelab recording                Enable device-bound hardware recording and submit saved audio
   remotelab local-bridge            Manage linked local helper bridges for a session
@@ -74,6 +75,12 @@ Usage:
 }
 
 switch (command) {
+  case 'knowledge': {
+    const { runKnowledgeCommand } = await import(scriptPath('lib/knowledge-command.mjs'));
+    try { process.exitCode = await runKnowledgeCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'feature-observation': {
     const { runFeatureObservationCommand } = await import(scriptPath('lib/feature-observation-command.mjs'));
     try { process.exitCode = await runFeatureObservationCommand(args); }

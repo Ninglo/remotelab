@@ -1,5 +1,21 @@
 # Operations overview
 
+## 组织知识库按需调用与持续监管
+
+可交给实例 Agent：“将现有组织知识库的按需调用接入 Claude Tag 持续功能监管，先只对我生效；记录入口、正文读取量和次数、Token、时延及实际效果。复用原采集，不增加群消息或另一套定时监控。”执行者须核对当前已验证 Person、既有知识目录及原监管站点；默认关闭，配置不从公开网页接受。
+
+实例配置 `CONFIG_DIR/knowledge-pilot/config.json`：`{version:1,id:"organization-knowledge-v1",projectId:"claude-tag",name:"组织知识库调用",enabled:true,enabledAt:"ISO时间",personIds:["明确授权的Person"],corpusPath:"现有知识库绝对路径",verificationRequestIds:[]}`。人群变化使用新 id 保留旧记录；关闭 enabled 停止新的入口和读取，保留统计。Person 只界定调用试点，知识内容仍归组织。Web、飞书的已验证本人普通输入可获得短入口；自动任务、内部调用和群主线背景处理排除。其他成员不继承。该试用持续运行，未设自动到期日；不改变原有七天自检观察窗口。
+
+每条符合范围的新输入捕获独立开关，并把短入口放进原规则上下文及恢复快照。Agent 根据工作需要调用 `remotelab knowledge search --query <问题>` 和 `read --page <文件名>`；搜索当前 `index.json` 的标题与别名，正文仅按页返回，不自动加载整库。空匹配可回读 README。读取只允许当前索引页及 README、CONFIDENCE、sources 三个入口，校验真实路径，记录实际版本、正文哈希、Unicode字符、字节、响应量及服务端处理时长。原件沿正文引用继续核查；工具不能修改知识库。重复读取保留次数，同一 operation-id 的传输重试幂等。
+
+实际读后，原 Harness 可用 `remotelab knowledge report --file <JSON>` 回报 `{effect:"helped|no_change|misled|unknown",reason:"具体改变的判断或没有帮助的原因",evidenceSeqs:[原任务工具/附件事件编号]}`。非 unknown 需要实际事件引用；效果保留为 Agent 自评，不能当作人的验收或因果收益。未读正文、读后未回报、无法判断分别保留；无需让用户每次填表。新增真实反馈仍在原工作记录中核查。
+
+监管复用 `/api/monitoring/feature-observations` 及原独立站120秒采集，在 Claude Tag 的“新功能持续跟踪”展示。公开只输出聚合；正文、身份、原任务和具体证据只在原认证入口可见。安装验证 request 明确列入 verificationRequestIds，从自然样本排除，不把测试次数当真实收益。后台读取错误由接口保留缺口，不能填为零。
+
+计量分别说明：入口准备量及原生接收、检索次数、正文/目录返回、重复读取、返回字符量；关联执行的输入/缓存/输出 Token 按 run 去重，先扣除线程早先任务的累计计数。共享执行可能包含补充输入，不能归成每条输入的独占用量。已结束执行的计量缓存供原采集读取。净增 Token 需要另有对照，未测保持 null；字符不伪装成精确分段 Token。首条内容/回复沿现有实际飞书投递回执，Web或无回执为未知；任务完成按原 Request 结算，服务端知识读取单列。不把首条开场当作有用最终答案。直接绕过入口读取本地文件、压缩后知识是否保留，不在此工具覆盖范围内。
+
+验证：`node tests/test-knowledge-pilot.mjs` 覆盖默认关闭、本人/他人/自动任务范围、实际 Prompt 入口、正文读回、重试/重复、越界路径、效果证据、安装验证排除及 Token 前缀/重置。原监管站须同步知识专用展示；仅改配置或源码不代表完成部署。
+
 ## 新功能持续观察
 
 `GET /api/monitoring/feature-observations` 沿现有实例认证提供观察汇总；`?view=1` 提供原工作、检查项、事件编号及阶段用量。公开监管页的 **AI Labor → Claude Tag → 新功能持续跟踪** 通过既有 120 秒采集器只读这个接口；公开投影不含 Person、原任务正文或检查证据，证据入口需要登录。前端补丁维护在该实例原监管站点，部署须与本接口配套；未部署不表示已开始观察。
