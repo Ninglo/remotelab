@@ -810,6 +810,10 @@ All observed messages remain in the Session. The
 group-feed nightly review preserves incremental provenance and current work
 summary. A later work turn also uses the bounded Feishu conversation window
 (at most 100 messages, 24 hours, 4-hour activity gap, and 48,000 characters).
+The activity gap includes the time since the latest prior message. Topics use
+their own latest 100 messages and the text budget, without a day/gap cutoff.
+Group turns do not fetch full history or create overflow pages to read; older
+material is retrieved only when needed. Private conversation paging is separate.
 The existing Session compactor can shorten a long Harness context when its
 token threshold is reached; it does not delete raw events. Automatic rotation
 or deletion of old group Sessions is not enabled by this pilot. Before adding

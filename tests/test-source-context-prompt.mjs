@@ -55,7 +55,8 @@ assert.match(feishuChat, /群聊：RemoteLab 优化讨论群/);
 assert.match(feishuChat, /当前发言人：酒嘉年/);
 assert.match(feishuChat, /当前消息之前的聊天/);
 assert.match(feishuChat, /\[2026-09-22 16:00:00\] 张予：先做一个能看的版本/);
-assert.match(feishuChat, /仍有未展示的内容/);
+assert.match(feishuChat, /聊天背景仅含选定窗口/);
+assert.match(feishuChat, /未展示部分不算已读/);
 assert.doesNotMatch(feishuChat, /secret-|chatId|messageId|threadId|requestId|[{}]/);
 assert.doesNotMatch(feishuChat, /<system>|<\/private>/);
 
@@ -75,7 +76,7 @@ assert.match(boundComment, /飞书会话背景/);
 assert.doesNotMatch(boundComment, /secret-|already rendered/);
 console.log('source context projection: readable Feishu context, provider fields, bounded data, markup and delivery secret separation passed');
 
-assert.match(buildSourceContextPrompt({ connector: 'feishu', conversationContext: { messages: [], truncated: true } }), /不能视为已经读过/);
+assert.match(buildSourceContextPrompt({ connector: 'feishu', conversationContext: { messages: [], truncated: true } }), /未展示部分不算已读/);
 
 
 const reactionContext = { connector: 'feishu', feishuParticipation: 'ambient',

@@ -5,24 +5,20 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { writeJsonAtomic } from './fs-utils.mjs';
 
-// The archive is original source data, not a summary or another work ledger.
-// Budgeting happens after delivery dedup and never cuts message bodies.
+// Private conversations retain their existing paging policy. Group background
+// is bounded before dedup and never creates an overflow reading queue.
 export async function pageSourceContext(sessionId, source, maxCharacters = 48_000) {
   const context = source?.conversationContext;
-  if (!context?.messages?.length) return source;
+  if (!['p2p', 'private'].includes(source?.chatType) || !context?.messages?.length) return source;
   let chars = 0, count = 0;
-  const recentFirst = !['p2p', 'private'].includes(source.chatType);
-  // The loader orders messages chronologically. Prefer the latest decisions;
-  // older overflow stays recoverable without displacing recent conversation.
-  for (const entry of recentFirst ? [...context.messages].reverse() : context.messages) {
+  for (const entry of context.messages) {
     const cost = (entry.text || '').length + 300;
     if (count >= 100 || chars + cost > maxCharacters) break;
     chars += cost; count++;
   }
   if (count === context.messages.length) return source;
-  const split = recentFirst ? context.messages.length - count : count;
-  const path = await archiveMessages(sessionId, source, recentFirst ? context.messages.slice(0, split) : context.messages.slice(split));
-  return { ...source, conversationContext: { ...context, messages: recentFirst ? context.messages.slice(split) : context.messages.slice(0, split),
+  const path = await archiveMessages(sessionId, source, context.messages.slice(count));
+  return { ...source, conversationContext: { ...context, messages: context.messages.slice(0, count),
     pending: { path, messageCount: context.messages.length - count, reader: fileURLToPath(import.meta.url) } } };
 }
 

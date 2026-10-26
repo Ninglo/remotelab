@@ -45,7 +45,7 @@ const edited = source([entry('background', 'CHANGED'), entry('direct', 'changed 
 assert.equal((await project(edited)).receipt.stats.removed, 0, 'body or revision edits are new');
 assert.equal((await project({ ...raw, chatId: 'another-chat' })).receipt.stats.removed, 1, 'background knowledge is chat scoped');
 assert.equal((await project({ ...raw, sourceRouteId: 'another-route' })).receipt.stats.removed, 1, 'background knowledge is connector scoped');
-assert.equal((await project(raw, { history: async () => { throw new Error('fixture missing history'); } })).sourceContext, raw);
+assert.deepEqual((await project(raw, { history: async () => { throw new Error('fixture missing history'); } })).sourceContext.conversationContext.messages.map(m=>m.text), raw.conversationContext.messages.map(m=>m.text));
 const samePacket = await project(source([entry('x', 'one'), entry('x', 'one'), entry('y', 'one')]), {}, { identity: null });
 assert.equal(samePacket.receipt.stats.removed, 1, 'equal text with different IDs is not deduplicated');
 const native = await project(raw, { request: async () => ({ nativeDispatchRunId: 'prior-run', requestId: 'prior', options: {}, nativeReceipt: { accepted: true }, nativeContextDelivery: first.receipt }) });
@@ -58,7 +58,7 @@ const distant = await project(raw, {
   history: async () => [...events, ...Array.from({length:45},(_,i)=>({type:'message',role:'user',requestId:'later-'+i,sourceContext:prior}))],
   request: async (_id,req) => req === 'prior' ? {runId:'prior-run',requestId:'prior',options:{}} : null,
 });
-assert.equal(distant.receipt.stats.removed,3,'complete replay retains delivery evidence older than 40 inputs');
+assert.equal(distant.receipt.stats.removed,3,'bounded selection retains delivery evidence older than 40 inputs');
 const failedPublication = source([entry('own', 'Platform could not publish the native final.', { senderType: 'app' })]);
 const failed = await project(failedPublication, {
   run: async id => ({ id, requestId: 'prior', sessionId: 'session', codexThreadId: 'thread-one' }),

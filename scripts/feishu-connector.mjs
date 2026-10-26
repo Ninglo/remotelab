@@ -79,7 +79,6 @@ import {
 } from '../connectors/feishu/index.mjs';
 import {
   loadFeishuConversationContext,
-  loadFeishuTurnContext,
 } from '../connectors/feishu/conversation-context.mjs';
 import {
   appendLinkedFeishuProjectDelivery,
@@ -1185,9 +1184,11 @@ async function submitRemoteLabRequest(runtime, summary, {
     ? await participationController(runtime).state(effectiveSummary) : null;
   const [attachmentResolution, conversationContext, linkedProjectContext, groupAnnouncement] = await Promise.all([
     attachmentsPromise,
-    // Select bounded recent group/topic background. Preparation still dedups
-    // only proven delivery and preserves complete selected message bodies.
-    loadFeishuTurnContext(runtime, effectiveSummary, {
+    // Select the recent activity/topic window. Preparation bounds group text
+    // before delivery dedup; raw selected bodies remain in the source snapshot.
+    loadFeishuConversationContext(runtime, effectiveSummary, {
+      includeMetadata: true, deferBudget: true,
+      complete: ['p2p', 'private'].includes(effectiveSummary.chatType),
       ...(session.privateConversationStart ? { sinceTimeMs: session.privateConversationStart.at,
         sinceMessageId: session.privateConversationStart.messageId } : {}),
     }).then(context => filterPrivateConversationContext(runtime, effectiveSummary, session, context))

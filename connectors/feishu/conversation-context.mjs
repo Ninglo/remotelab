@@ -171,8 +171,9 @@ async function listMessages(runtime, {
   return items;
 }
 
-function keepCurrentActivity(messages, maxGapMs) {
-  const newestFirst = [...messages].sort((left, right) => right.timestamp - left.timestamp);
+function keepCurrentActivity(messages, maxGapMs, currentTime = 0) {
+  const newestFirst = [...messages].sort((left, right) => left.timestamp - right.timestamp).reverse();
+  if (currentTime && newestFirst[0]?.timestamp && currentTime - newestFirst[0].timestamp > maxGapMs) return [];
   if (newestFirst.length < 2) return newestFirst;
   const selected = [newestFirst[0]];
   for (let index = 1; index < newestFirst.length; index += 1) {
@@ -181,22 +182,24 @@ function keepCurrentActivity(messages, maxGapMs) {
     if (newer.timestamp - older.timestamp > maxGapMs) break;
     selected.push(older);
   }
-  return selected;
+  return selected.reverse();
 }
 
 function fitCharacterBudget(messages, maxCharacters) {
-  const newestFirst = [...messages].sort((left, right) => right.timestamp - left.timestamp);
+  const newestFirst = [...messages].sort((left, right) => left.timestamp - right.timestamp).reverse();
   const selected = [];
   let characters = 0;
   let truncated = false;
   for (const message of newestFirst) {
-    const cost = message.time.length + message.sender.length + message.text.length + 8;
+    const overhead = (message.time || '').length + (message.sender || '').length + 8;
+    const cost = overhead + message.text.length;
     if (selected.length > 0 && characters + cost > maxCharacters) {
       truncated = true;
       break;
     }
     if (selected.length === 0 && cost > maxCharacters) {
-      const room = Math.max(1, maxCharacters - message.time.length - message.sender.length - 9);
+      let room = Math.max(0, maxCharacters - overhead - 1);
+      if (/[\uD800-\uDBFF]/.test(message.text[room - 1] || '')) room--;
       selected.push({ ...message, text: `${message.text.slice(0, room)}…` });
       truncated = true;
       break;
@@ -208,13 +211,24 @@ function fitCharacterBudget(messages, maxCharacters) {
   return { messages: selected.reverse(), truncated };
 }
 
-// Admission selects recent background; completeness of each selected message
-// is handled by the existing archive/paging layer after receipt-based dedup.
-export function loadFeishuTurnContext(runtime, summary, options = {}) {
-  return loadFeishuConversationContext(runtime, summary, { ...options,
-    complete: ['p2p', 'private'].includes(summary?.chatType),
-    includeMetadata: true, deferBudget: true, maxGapMs: 0,
-  });
+// Apply the group window before delivery receipts are computed. This also
+// bounds historical frozen Requests without modifying their original archive.
+export function boundFeishuGroupContext(source) {
+  const context = source?.conversationContext;
+  if (!context?.messages || ['p2p', 'private'].includes(source.chatType)) return source;
+  const now = parseFeishuMessageTime(source.createTime);
+  const topicId = buildFeishuTopicId(source);
+  const recent = context.messages.map(message => ({ ...message,
+    timestamp: parseFeishuMessageTime(message.timestamp || message.time),
+  })).filter(message => !now || !message.timestamp || (message.timestamp <= now
+    && (topicId || message.timestamp >= now - FEISHU_CONTEXT_MAX_AGE_MS)))
+    .sort((a, b) => a.timestamp - b.timestamp).slice(-FEISHU_CONTEXT_MAX_MESSAGES);
+  const active = topicId ? recent : keepCurrentActivity(recent, FEISHU_CONTEXT_ACTIVITY_GAP_MS, now);
+  const fitted = fitCharacterBudget(active, FEISHU_CONTEXT_MAX_CHARACTERS);
+  const { pending, coverage, ...metadata } = context;
+  return { ...source, conversationContext: { ...metadata, messages: fitted.messages,
+    truncated: context.truncated === true || fitted.truncated || fitted.messages.length < context.messages.length,
+  } };
 }
 
 export async function loadFeishuConversationContext(runtime, summary, options = {}) {
@@ -225,13 +239,13 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
   const now = parseFeishuMessageTime(summary?.createTime) || Date.now();
   const maxMessages = positiveInteger(options.maxMessages, FEISHU_CONTEXT_MAX_MESSAGES);
   const maxAgeMs = positiveInteger(options.maxAgeMs, FEISHU_CONTEXT_MAX_AGE_MS);
-  const maxGapMs = options.maxGapMs === 0 ? 0 : positiveInteger(options.maxGapMs, FEISHU_CONTEXT_ACTIVITY_GAP_MS);
+  const maxGapMs = positiveInteger(options.maxGapMs, FEISHU_CONTEXT_ACTIVITY_GAP_MS);
   const maxCharacters = positiveInteger(options.maxCharacters, FEISHU_CONTEXT_MAX_CHARACTERS);
   const timeoutMs = positiveInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS);
   const sinceTimeMs = positiveInteger(options.sinceTimeMs, 0);
   const sinceMessageId = trimString(options.sinceMessageId);
   const topicId = buildFeishuTopicId(summary);
-  const complete = options.complete === true;
+  const complete = options.complete === true && ['p2p', 'private'].includes(summary.chatType);
   const startTimeMs = complete ? sinceTimeMs : Math.max(topicId ? 0 : now - maxAgeMs, sinceTimeMs);
   const rawItems = await listMessages(runtime, {
     containerId: topicId || chatId,
@@ -254,7 +268,7 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
     })
     .filter((item) => item && item.timestamp <= now
       && (!startTimeMs || item.timestamp >= startTimeMs));
-  const relevant = complete || topicId || !maxGapMs ? normalized : keepCurrentActivity(normalized, maxGapMs);
+  const relevant = complete || topicId ? normalized : keepCurrentActivity(normalized, maxGapMs, now);
   const fitted = options.deferBudget === true || complete
     ? { messages: relevant.sort((a, b) => a.timestamp - b.timestamp), truncated: false }
     : fitCharacterBudget(relevant, maxCharacters);

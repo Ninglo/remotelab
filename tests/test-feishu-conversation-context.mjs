@@ -3,7 +3,7 @@ import { buildMessageSourceContext } from '../connectors/feishu/index.mjs';
 import {
   feishuConversationBoundary,
   loadFeishuConversationContext,
-  loadFeishuTurnContext,
+  boundFeishuGroupContext,
   normalizeFeishuHistoryItem,
   parseFeishuMessageTime,
 } from '../connectors/feishu/conversation-context.mjs';
@@ -184,7 +184,7 @@ const summary = { chatId:'group', chatType:'group', messageId:'current', createT
 const raw = Array.from({length:150},(_,i)=>fixture(String(i),now - (150-i)*60000));
 raw.push(fixture('yesterday',now - 25*hour));
 const calls = [];
-const bounded = await loadFeishuTurnContext(paginatedRuntime(raw,calls),summary);
+const bounded = await loadFeishuConversationContext(paginatedRuntime(raw,calls),summary, { complete: true });
 assert.equal(calls.length,2,'busy groups stop after 100 provider messages');
 assert.equal(bounded.messages.length,100);
 assert.equal(bounded.messages[0].messageId,'50');
@@ -192,23 +192,36 @@ assert.equal(bounded.messages.at(-1).messageId,'149');
 assert.equal(calls[0].start_time,String(Math.floor((now-24*hour)/1000)));
 assert.equal(bounded.truncated,true);
 assert.equal(bounded.coverage,undefined,'a recent window is not a complete-history receipt');
-const sparse = await loadFeishuTurnContext(paginatedRuntime([
+const sparse = await loadFeishuConversationContext(paginatedRuntime([
   fixture('previous-day',now-25*hour), fixture('morning',now-20*hour),
   fixture('same-second',now-100), fixture('future',now+100),
 ],[]),summary);
-assert.deepEqual(sparse.messages.map(m=>m.messageId),['morning','same-second'],
-  'retain the full day despite idle gaps; exclude later messages even in the same second');
+assert.deepEqual(sparse.messages.map(m=>m.messageId),['same-second'],
+  'stop at a four-hour gap; exclude later messages even in the same second');
+assert.equal(await loadFeishuConversationContext(paginatedRuntime([
+  fixture('previous-discussion',now-5*hour),
+],[]),summary), null, 'the current message starts a new activity after a quiet gap');
+const edge = await loadFeishuConversationContext(paginatedRuntime([
+  fixture('boundary',now-4*hour), fixture('before-boundary',now-8*hour-1),
+],[]),summary);
+assert.deepEqual(edge.messages.map(m=>m.messageId),['boundary'],'exactly four hours is still continuous');
 const threadCalls=[];
-const thread = await loadFeishuTurnContext(paginatedRuntime(raw,threadCalls),{...summary,threadId:'thread'});
+const thread = await loadFeishuConversationContext(paginatedRuntime(raw,threadCalls),{...summary,threadId:'thread'});
 assert.equal(thread.messages.length,100);
 assert.equal(threadCalls[0].container_id_type,'thread');
 assert.equal(threadCalls[0].start_time,undefined,'a quiet topic can retain its prior-day context');
-const quietThread = await loadFeishuTurnContext(paginatedRuntime([raw.at(-1)],[]),{...summary,threadId:'thread'});
+const quietThread = await loadFeishuConversationContext(paginatedRuntime([raw.at(-1)],[]),{...summary,threadId:'thread'});
 assert.equal(quietThread.messages[0].messageId,'yesterday');
-const privateContext = await loadFeishuTurnContext(paginatedRuntime(raw,[]),{...summary,chatType:'p2p'});
+const privateContext = await loadFeishuConversationContext(paginatedRuntime(raw,[]),{...summary,chatType:'p2p'}, { complete:true });
 assert.equal(privateContext.messages.length,151,'private conversation history policy is unchanged');
 const longText = '完整背景'.repeat(16000) + '末尾纠正：暂停';
-const longContext = await loadFeishuTurnContext(paginatedRuntime([fixture('long',now-100,longText)],[]),summary);
+const longContext = await loadFeishuConversationContext(paginatedRuntime([fixture('long',now-100,longText)],[]),summary,
+  { includeMetadata:true, deferBudget:true });
 assert.equal(longContext.messages[0].text,longText,'admission bounds the source selection, not message bodies');
+const projectedLong = boundFeishuGroupContext({ ...summary, conversationContext:longContext });
+assert.ok(projectedLong.conversationContext.messages[0].text.length < 48000);
+assert.equal(projectedLong.conversationContext.truncated,true);
+assert.equal(projectedLong.conversationContext.pending,undefined,'no group overflow reading queue');
+assert.equal(longContext.messages[0].text,longText,'the source snapshot retains the original');
 
-console.log('Feishu conversation context: bounded turn admission, same-second/gap handling, private scope, full selected bodies and legacy readers passed');
+console.log('Feishu conversation context: bounded group reads even with complete requested, four-hour activity, quiet topics, private scope and bounded long-message projection passed');

@@ -9,9 +9,12 @@ For standard prompts, `buildTurnContextHook` projects this request's sourceConte
 The projection never looks up the latest message in the Session and never reads `sourceDelivery`. Feishu chat turns use a readable transcript instead of JSON: the model sees the group name, current sender and time, followed by earlier messages as time, display name and content. Transport IDs stay out of the prompt and remain available through `/api/sessions/:id/source-context?requestId=:requestId`; the active Run exposes its request ID as `REMOTELAB_REQUEST_ID` when that lookup is genuinely needed. Other connectors retain their bounded provider-specific projection. Stable Session source metadata keeps its existing size limit.
 
 The Feishu connector freezes selected source messages before submission. Group
-mainline admission selects the latest 24 hours, at most 100 provider messages;
-topics select at most 100 messages from that topic, including older days. An idle
-gap does not discard earlier messages within the day. Private conversations keep
+mainline admission selects the latest continuous discussion within 24 hours,
+at most 100 provider messages. A gap greater than four hours stops the window,
+including a gap between the current input and the latest prior message. Topics
+select at most 100 messages from that topic, including older days, without the
+mainline activity-gap rule. Group reads cannot opt into full-history mode.
+Private conversations keep
 their existing history policy and explicit new-conversation boundary. Selection
 limits never prove that omitted history has been read. Large source snapshots are
 immutable local archives referenced by the Request, avoiding the admission HTTP
@@ -21,14 +24,16 @@ current user message can still proceed. Retries use the frozen source, not a new
 history fetch. Provider permissions, retention, deleted messages and unavailable
 attachments still constrain what can actually be retrieved.
 
-Preparation preserves receipt-based deduplication and complete selected message
-bodies. For groups, within the 48,000-character/100-message inline budget, the latest messages
-take priority; older overflow remains in the original-message archive. Its prompt
-offers an optional lookup, without requiring every page to be consumed before an
-answer. A relevant long message must still be read completely before relying on
-its conditions. Earlier history remains queryable through the source tools; it is
-not fetched or archived wholesale on every group turn. Existing native Session
-history and accepted Request snapshots are retained. This selection is
+Preparation applies the same group window to historical frozen Requests, then
+fits the latest messages into a 48,000-character text budget before computing
+receipt-based deduplication. An oversized latest message is an explicitly marked
+excerpt; its original remains in the source snapshot. Group overflow does not
+create pages, pending reading tasks or a full-history reading prompt. Earlier
+history and full selected originals remain queryable when the task needs them;
+they are not fetched or consumed wholesale on every group turn. Transport
+archives remain for large immutable source snapshots and compatibility with
+previously accepted Requests; they do not create model reading tasks. Existing
+native Session history and accepted Request snapshots are retained. This selection is
 deterministic and adds no model call, background worker or per-group index.
 
 For Jev-enabled ambient group inputs, preparation also reads this Bot's local
@@ -79,8 +84,8 @@ RemoteLab can only project context it constructs or explicitly passes to a Harne
 剩余优先级是验证实际任务效果及降低来源读取成本：
 
 1. 在更广的真实任务中对照成功率、遗漏、返工、人工补救、时延和非缓存用量，才能判断总体收益。[随机功能对照](feature-experiments.md)已提供默认关闭的留样和夜间评阅基础；更完整的标签分析与验收目标见[设计约定](../notes/current/feature-experiment-plan.md)。
-2. 10 月 26 日起，普通群恢复最近 24 小时、最多 100 条，话题最多 100 条；默认取消全历史补读。持久增量接入还未实现，原有会话历史没有清空，实际交付时间收益仍需自然任务验证。
-3. 超量原文有分页入口，但“给了入口”不等于“模型读过”。分页内容尚无足够强的接收记账，可能在后续输入重复出现；当前宁可重复也不凭推测省略。
+2. 10 月 26 日按原方案恢复普通群最近 24 小时内的连续讨论、最多 100 条、4 小时断档边界和约 48,000 字符；话题最多 100 条，可跨天。群聊全历史模式与分页补读逻辑已移除。原有会话历史没有清空，实际交付时间收益仍需自然任务验证。
+3. 私聊保留原有分页策略；“给了入口”不等于“模型读过”。分页内容尚无足够强的接收记账，可能在后续输入重复出现。群聊按实际选中正文生成回执，未展示的原文不算已读。
 4. 其他 Harness 的原生压缩恢复尚未接通；旧线程历史、当前任务状态、按需读取内容和个人规则也不属于已经消除的重复。
 
 因此，本轮完成的是已明确范围的默认注入清理、消息／规则去重和完整性补救。更广泛的质量与成本评估、增量接入和跨 Harness 恢复仍开放，不能把“这批交付完成”写成“所有上下文优化已完成”。
@@ -273,16 +278,18 @@ history/prompt-cache accounting remains separate from new appended text.
 Prompt delivery and model-context inspection now use the same assembled slots
 instead of rebuilding the turn context a second time.
 
-After dedup, up to 100 whole messages / about 48,000 characters are placed inline.
-Group inputs prefer the latest selected messages; private paging is unchanged.
-A message is never cut at 6,000 characters. The remaining original messages are
-stored together in an immutable source archive, in original order with author,
-message identity and reply relation. Group prompts offer optional retrieval of
-relevant originals; only an actual full read permits a claim of complete background. Each page is an exact
-substring with offsets and a next cursor, not a generated summary or relevance
-filter. No semantic deduplication operates on these segments. Full source files
-are retained; no TTL currently deletes them. A disk failure retains original
-messages without the old renderer's silent 100-message cut.
+Group preparation bounds the activity/topic window and text before dedup, so
+delivery receipts match the selected text rather than an omitted full message.
+Receipt lookup failures retain this bounded selection. Old full-history archives
+receive the same window when preparing a new input; already prepared native
+inputs and existing model history are not rewritten. Group prompts contain no
+overflow page commands, even when an old snapshot contains a pending pointer.
+
+Private conversations retain up to 100 whole messages / about 48,000 characters
+inline after dedup and archive the remainder in original order with author,
+message identity and reply relation. Each page is an exact substring with offsets
+and a next cursor. Full source files are retained; no TTL currently deletes them.
+A private paging failure retains original messages.
 
 A pointer does **not** create a read receipt: overflow entries are excluded from
 delivered-message receipts. They may recur on later inputs until consumption has
@@ -292,9 +299,11 @@ follow-up work. Linked-project background retains its separate bounded policy;
 this change concerns the selected topic/bound chat. Images and files need their
 normal attachment readers; a text placeholder is not proof of reading them.
 
-Verification uses isolated fixtures for 151-message multi-page history, long
-final caveats, Unicode reconstruction, reply/author identity, changed messages,
-archive/hash failures and unread receipts. A loopback Responses fixture drives
+Verification uses isolated fixtures for four-hour activity gaps, same-second
+messages, quiet topics, 2,440-message legacy group snapshots, long-message budgets,
+receipt failures, and private 151-message pagination with exact Unicode recovery.
+Reply/author identity, changed messages, archive/hash failures and unread receipts
+remain covered. A loopback Responses fixture drives
 installed Codex through manual and automatic mid-turn compaction, identity change,
 repeated compaction and missing-snapshot failure, without calling a real model or
 posting group messages. This proves delivery/recovery behavior, **not** unchanged

@@ -1,4 +1,5 @@
 import { pageSourceContext, hydrateSourceContext } from './source-context-pages.mjs';
+import { boundFeishuGroupContext } from '../connectors/feishu/conversation-context.mjs';
 import { createHash } from 'node:crypto';
 import { loadHistory } from './history.mjs';
 import { getRun, getRunManifest, runDir } from './runs.mjs';
@@ -49,8 +50,8 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
   const sameThread = value => identity && value?.sessionId === sessionId && value[identity.field] === identity.id;
   let scanned = 0;
   if (identity && wanted.size) {
-    // Complete source replay needs the canonical prior delivery evidence, not
-    // only the last 40 inputs. No semantic history or second memory is created.
+    // Match selected messages against canonical delivery evidence. This reads
+    // metadata only; it does not add old conversation bodies to model context.
     const events = await history(sessionId, { fromSeq: 1, includeBodies: false });
     const candidates = new Map();
     for (const event of [...events].reverse()) {
@@ -110,6 +111,7 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
   }
   const directKey = key(source, source);
   if (directKey && version(source)) receipt.entries.push({ key: directKey, direct: true, revision: version(source) });
+  if (!['p2p', 'private'].includes(source.chatType)) return { sourceContext: result, receipt };
   const paged = await (deps.page || pageSourceContext)(sessionId, result);
   // Only inline whole messages have been delivered. A file pointer is not a
   // read receipt; never mark overflow as seen merely because it was archived.
@@ -122,6 +124,7 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
 export async function projectFeishuContext(sessionId, source, options, deps) {
   try {
     source = await hydrateSourceContext(sessionId, source);
+    source = boundFeishuGroupContext(source);
     return await project(sessionId, source, options, deps);
   }
   catch (error) {
