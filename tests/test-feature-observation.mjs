@@ -47,15 +47,14 @@ try {
   const tool = await appendEvent(record.sessionId,{type:'tool_result',runId:record.runId,toolName:'shell',output:'actual,30',exitCode:0});
   await appendRunSpoolRecord(record.runId,{ts:'2026-10-22T03:00:05Z',stream:'stdout',json:{type:'remotelab.context_metrics',featureUsage:totals(1500,55,700)}});
   const input={action:'finish',outcome:'repaired',metrics:{found:1,fixed:1},
-    explanation:{reason:'本轮需要交付准确的订单统计',actions:['从原CSV复算总数并修正报告','确认已有附件'],nextStep:'修复已完成，没有后续待办',userAction:'无需操作'},
+    explanation:{note:'修正订单总数',reason:'本轮需要交付准确的订单统计',actions:['从原CSV复算总数并修正报告','确认已有附件'],nextStep:'修复已完成，没有后续待办',userAction:'无需操作'},
     checks:[{criterion:'真实CSV内容',verdict:'pass',evidenceSeqs:[tool.seq]},
     {criterion:'已有附件交付',verdict:'pass',evidenceSeqs:[attachment.seq]}]};
   const ended=await recordFeatureExecution(record,input,{root,now:t+5000});
   assert.equal(ended.usage,null,'finish does not guess the provider sample before its tool return');
   assert.equal(ended.durationMs,4000);
   const repairedText=(await appendFeatureReviewStatus({text:'统计结果'},record)).text;
-  assert.match(repairedText,/修复后核对通过（检查 2 项：通过 2，未通过 0，待确认 0）；修复 1 项/);
-  assert.match(repairedText,/从原CSV复算总数并修正报告/);
+  assert.equal(repairedText,'统计结果\n\n自检补做通过：修正订单总数');
   assert.deepEqual(await recordFeatureExecution(record,{...input,metrics:{found:9}},{root,now:t+6000}),ended,'finish replay cannot rewrite outcome');
   const lookup=async()=>({...record,nativeReceipt:{accepted:true}});
   const report=(await readFeatureObservations({root,now:t+6000,lookup})).trials[0];
@@ -99,17 +98,16 @@ try {
   assert.match(featureObservationPrompt(null,ordinary.requestId,true),/执行回执/);
   assert.equal(featureObservationPrompt(null,ordinary.requestId,false),'');
   assert.equal((await readFeatureReviewStatus(ordinary)).state,'no_record');
-  assert.match((await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary)).text,/无执行回执/);
+  assert.match((await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary)).text,/自检暂无执行记录/);
   assert.equal((await appendFeatureReviewStatus({text:'',attachments:[]},ordinary)).text,'','silent decisions stay silent');
   assert.equal((await appendFeatureReviewStatus({text:'普通答复'}, {...ordinary,options:{}})).text,'普通答复');
   await recordFeatureExecution(ordinary,{action:'begin'});
   assert.equal((await readFeatureReviewStatus(ordinary)).state,'started');
   await recordFeatureExecution(ordinary,{action:'finish',outcome:'passed',checks:[{criterion:'实际文件',verdict:'pass',evidenceSeqs:[tool.seq]}]});
   const shown=await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary);
-  assert.match(shown.text,/核对通过（检查 1 项：通过 1，未通过 0，待确认 0）/);
-  assert.match(shown.text,/回执未记录本轮触发或不适用的具体原因/);
+  assert.equal(shown.text,'结果\n\n自检通过');
   assert.deepEqual(await appendFeatureReviewStatus(shown,ordinary),shown,'no duplicate footer');
-  assert.match((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:{state:'no_record'}})).text,/无执行回执/);
+  assert.match((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:{state:'no_record'}})).text,/自检暂无执行记录/);
   const oldFooter='自检：仍有未解决项 · 4 项。';
   assert.equal((await appendFeatureReviewStatus({text:'旧结果'},ordinary,{frozenStatus:{state:'finished',outcome:'blocked',checks:4,metrics:{},footer:oldFooter}})).text,
     '旧结果\n\n'+oldFooter,'an already frozen delivery retains its old formatter on retry');
@@ -117,7 +115,7 @@ try {
   // receipt through the CLI/API, with distinct next actions for agent and user.
   const detailed=(await requests.accept({sessionId:'feature-test',requestId:'detailed',text:'交付报告',options})).record;
   await recordFeatureExecution(detailed,{action:'begin'});
-  const explanation={reason:'本轮交付报告与可访问的下载入口',actions:['读取报告并复算总数','检查下载入口，发现权限缺失'],
+  const explanation={note:'待提供目录权限',reason:'本轮交付报告与可访问的下载入口',actions:['读取报告并复算总数','检查下载入口，发现权限缺失'],
     nextStep:'我需要在获得访问权限后重验下载入口；尚未安排自动重试',userAction:'请提供可访问的目标目录'};
   const detailInput={outcome:'blocked',metrics:{found:2,fixed:0,unresolved:2},explanation,
     checks:[{criterion:'报告非空',verdict:'pass',evidenceSeqs:[tool.seq]},
@@ -126,6 +124,8 @@ try {
       {criterion:'下载权限确认',verdict:'unknown',evidenceSeqs:[]}]};
   await assert.rejects(recordFeatureExecution(detailed,{action:'finish',...detailInput,explanation:{...explanation,userAction:''}}),/用户所需动作/);
   await assert.rejects(recordFeatureExecution(detailed,{action:'finish',...detailInput,explanation:{...explanation,actions:[]}}),/实际操作/);
+  await assert.rejects(recordFeatureExecution(detailed,{action:'finish',...detailInput,explanation:{...explanation,note:'一二三四五六七八九'}}),/限8字/);
+  await assert.rejects(recordFeatureExecution(detailed,{action:'finish',...detailInput,explanation:{...explanation,note:'暂停\n'}}),/不能换行/);
   await assert.rejects(recordFeatureExecution(detailed,{action:'finish',...detailInput,outcome:'passed'}),/不能报告全部通过/);
   const resultFile=join(home,'review-result.json');
   await writeFile(resultFile,JSON.stringify(detailInput));
@@ -136,26 +136,31 @@ try {
   assert.deepEqual(detailStatus.explanation,explanation);
   assert.equal(detailStatus.checkDetails.length,4);
   const detailText=(await appendFeatureReviewStatus({text:'报告'},detailed)).text;
-  assert.match(detailText,/仍有未解决项（检查 4 项：通过 2，未通过 1，待确认 1）/);
-  for(const value of [explanation.reason,...explanation.actions,explanation.nextStep,explanation.userAction])assert.ok(detailText.includes(value));
-  assert.doesNotMatch(detailText,/仍有未解决项 · 4/);
+  assert.equal(detailText,'报告\n\n自检未完成：待提供目录权限');
+  assert.doesNotMatch(detailText,/原因：|已做：|后续：|你需要：/);
   // Inapplicable remains visible and says WHY. No fabricated task checks.
   const short=(await requests.accept({sessionId:'feature-test',requestId:'explained-short',text:'解释设置',options})).record;
   await recordFeatureExecution(short,{action:'begin'});
   await assert.rejects(recordFeatureExecution(short,{action:'finish',outcome:'not_applicable',checks:detailInput.checks}),/不适用不能/);
   await recordFeatureExecution(short,{action:'finish',outcome:'not_applicable',checks:[],
-    explanation:{reason:'本轮仅解释设置，没有文件或系统变更需要验收',actions:[],nextStep:'本轮问答已结束，没有后续验收',userAction:'无需操作'}});
+    explanation:{note:'仅问答',reason:'本轮仅解释设置，没有文件或系统变更需要验收',actions:[],nextStep:'本轮问答已结束，没有后续验收',userAction:'无需操作'}});
   const shortText=(await appendFeatureReviewStatus({text:'解释'},short)).text;
-  assert.match(shortText,/本轮不适用/);assert.match(shortText,/本轮仅解释设置/);
-  assert.match(shortText,/未执行额外产物验收操作/);assert.match(shortText,/你需要：无需操作/);
+  assert.equal(shortText,'解释\n\n自检不适用：仅问答');
   // Missing receipts never become "not triggered" or a promise to auto-run.
   for(const state of ['started','no_record','unavailable']) {
     const text=(await appendFeatureReviewStatus({text:'结果'},short,{frozenStatus:{state,enabledBy:'group'}})).text;
-    assert.match(text,/本群已开启/);assert.match(text,/无法确认/);
-    assert.match(text,/不会自动启动核查/);assert.match(text,/无需重做原任务/);
+    assert.ok([...text.split('\n\n').at(-1)].length<=15);
+    assert.doesNotMatch(text,/不适用|自动启动|本群已开启/);
+  }
+  for(const outcome of ['passed','repaired','blocked','not_applicable']) {
+    for(const note of [undefined,'一二三四五六七八','按要求暂停']) {
+      const text=(await appendFeatureReviewStatus({text:'正文'},short,{frozenStatus:{state:'finished',outcome,explanation:{note}}})).featureReview.footer;
+      assert.ok([...text].length<=15, text);assert.ok(!text.includes('\n'));
+    }
   }
   const prompt=featureObservationPrompt(null,'test',true);
   assert.match(prompt,/explanation/);assert.match(prompt,/不能只写“不适用”/);assert.match(prompt,/不把我能完成的工作推给用户/);
+  assert.match(prompt,/15字以内/);assert.match(prompt,/正文讲清一次/);
   // Receiving a root turn is real provider evidence, independent of a steer receipt.
   const unreviewed=(await requests.accept({sessionId:'feature-test',requestId:'no-review',text:'未自检',options:{...options,featureObservation}})).record;
   await observeFeatureAdmission(unreviewed,root,t+11000);

@@ -2050,3 +2050,9 @@ unknown execution record from a review that deliberately did not apply.
 Missing historical explanations remain unknown; status labels do not schedule
 follow-up work. A user should not have to redo the original task to investigate
 a receipt, nor be assigned recovery that the Agent can perform itself.
+
+The same user then found the expanded five-line receipt repetitive and limited
+the visible self-review footer to 15 characters. Keep a concrete short note
+within that limit, with the full explanation in the saved receipt. Explain
+remaining work or required human input once in the answer body, rather than
+repeating it in a second checklist. Preserve the original frozen text on retries.

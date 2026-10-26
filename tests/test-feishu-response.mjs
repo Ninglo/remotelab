@@ -37,7 +37,7 @@ try {
   const packet={text:envelope({replyMode:'thread'},'交付内容')};
   await publishFeishuResponse(reviewed,packet);
   const firstReceipt=(await requests.get(reviewed.key)).mainlineReply.contract.payload;
-  assert.match(firstReceipt.text,/已开启，本轮无执行回执/);
+  assert.match(firstReceipt.text,/自检暂无执行记录/);
   await recordFeatureExecution(reviewed,{action:'begin'});
   await recordFeatureExecution(reviewed,{action:'finish',outcome:'not_applicable',checks:[]});
   await publishFeishuResponse(reviewed,packet);
@@ -47,12 +47,10 @@ try {
   finishedReview=await requests.mutate(finishedReview.key,r=>({...r,options:{...r.options,messageReplyPolicy:{selfReview:true}}}));
   await recordFeatureExecution(finishedReview,{action:'begin'});
   await recordFeatureExecution(finishedReview,{action:'finish',outcome:'not_applicable',checks:[],
-    explanation:{reason:'仅回答功能含义，没有交付物需要验收',actions:[],nextStep:'没有后续验收',userAction:'无需操作'}});
+    explanation:{note:'仅问答',reason:'仅回答功能含义，没有交付物需要验收',actions:[],nextStep:'没有后续验收',userAction:'无需操作'}});
   await publish(finishedReview,[final('review-final',envelope({replyMode:'thread'},'简短回答'))]);
   const finishedText=(await requests.get(finishedReview.key)).deliveries.find(d=>d.kind==='content').text;
-  assert.match(finishedText,/本轮不适用/);
-  assert.match(finishedText,/仅回答功能含义，没有交付物需要验收/);
-  assert.match(finishedText,/你需要：无需操作/);
+  assert.ok(finishedText.endsWith('简短回答\n\n自检不适用：仅问答'));
 
   // Real live-publication surfaces must not occupy the terminal answer slot.
   // Cover native questions, direct supplementary replies and their combination.
