@@ -3,6 +3,7 @@ import { buildMessageSourceContext } from '../connectors/feishu/index.mjs';
 import {
   feishuConversationBoundary,
   loadFeishuConversationContext,
+  loadFeishuTurnContext,
   normalizeFeishuHistoryItem,
   parseFeishuMessageTime,
 } from '../connectors/feishu/conversation-context.mjs';
@@ -165,4 +166,49 @@ const missingApi = await loadFeishuConversationContext({ appClient: {} }, {
 });
 assert.equal(missingApi, null, 'connectors without history permission should fail open');
 
-console.log('Feishu conversation context: thread history, activity window, readable fields and fail-open behavior passed');
+// A provider-shaped fixture exercises the same admission policy as the connector.
+const now = Date.parse('2026-10-26T00:00:00.500Z');
+const hour = 3600000;
+function paginatedRuntime(items, calls) {
+  return { appClient: { im: { v1: { message: { list: async ({ params }) => {
+    calls.push(params);
+    const selected = items.filter(item => Number(item.create_time) >= Number(params.start_time || 0) * 1000
+      && Number(item.create_time) < Number(params.end_time) * 1000)
+      .sort((a,b) => Number(b.create_time) - Number(a.create_time));
+    const offset = Number(params.page_token || 0), end = offset + params.page_size;
+    return { code: 0, data: { items: selected.slice(offset,end), has_more: end < selected.length, page_token: String(end) } };
+  } } } } } };
+}
+const fixture = (id, time, text=id) => textItem(id,new Date(time).toISOString(),'Alice',text);
+const summary = { chatId:'group', chatType:'group', messageId:'current', createTime:String(now) };
+const raw = Array.from({length:150},(_,i)=>fixture(String(i),now - (150-i)*60000));
+raw.push(fixture('yesterday',now - 25*hour));
+const calls = [];
+const bounded = await loadFeishuTurnContext(paginatedRuntime(raw,calls),summary);
+assert.equal(calls.length,2,'busy groups stop after 100 provider messages');
+assert.equal(bounded.messages.length,100);
+assert.equal(bounded.messages[0].messageId,'50');
+assert.equal(bounded.messages.at(-1).messageId,'149');
+assert.equal(calls[0].start_time,String(Math.floor((now-24*hour)/1000)));
+assert.equal(bounded.truncated,true);
+assert.equal(bounded.coverage,undefined,'a recent window is not a complete-history receipt');
+const sparse = await loadFeishuTurnContext(paginatedRuntime([
+  fixture('previous-day',now-25*hour), fixture('morning',now-20*hour),
+  fixture('same-second',now-100), fixture('future',now+100),
+],[]),summary);
+assert.deepEqual(sparse.messages.map(m=>m.messageId),['morning','same-second'],
+  'retain the full day despite idle gaps; exclude later messages even in the same second');
+const threadCalls=[];
+const thread = await loadFeishuTurnContext(paginatedRuntime(raw,threadCalls),{...summary,threadId:'thread'});
+assert.equal(thread.messages.length,100);
+assert.equal(threadCalls[0].container_id_type,'thread');
+assert.equal(threadCalls[0].start_time,undefined,'a quiet topic can retain its prior-day context');
+const quietThread = await loadFeishuTurnContext(paginatedRuntime([raw.at(-1)],[]),{...summary,threadId:'thread'});
+assert.equal(quietThread.messages[0].messageId,'yesterday');
+const privateContext = await loadFeishuTurnContext(paginatedRuntime(raw,[]),{...summary,chatType:'p2p'});
+assert.equal(privateContext.messages.length,151,'private conversation history policy is unchanged');
+const longText = '完整背景'.repeat(16000) + '末尾纠正：暂停';
+const longContext = await loadFeishuTurnContext(paginatedRuntime([fixture('long',now-100,longText)],[]),summary);
+assert.equal(longContext.messages[0].text,longText,'admission bounds the source selection, not message bodies');
+
+console.log('Feishu conversation context: bounded turn admission, same-second/gap handling, private scope, full selected bodies and legacy readers passed');

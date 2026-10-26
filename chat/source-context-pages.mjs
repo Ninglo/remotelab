@@ -11,14 +11,18 @@ export async function pageSourceContext(sessionId, source, maxCharacters = 48_00
   const context = source?.conversationContext;
   if (!context?.messages?.length) return source;
   let chars = 0, count = 0;
-  for (const entry of context.messages) {
+  const recentFirst = !['p2p', 'private'].includes(source.chatType);
+  // The loader orders messages chronologically. Prefer the latest decisions;
+  // older overflow stays recoverable without displacing recent conversation.
+  for (const entry of recentFirst ? [...context.messages].reverse() : context.messages) {
     const cost = (entry.text || '').length + 300;
     if (count >= 100 || chars + cost > maxCharacters) break;
     chars += cost; count++;
   }
   if (count === context.messages.length) return source;
-  const path = await archiveMessages(sessionId, source, context.messages.slice(count));
-  return { ...source, conversationContext: { ...context, messages: context.messages.slice(0, count),
+  const split = recentFirst ? context.messages.length - count : count;
+  const path = await archiveMessages(sessionId, source, recentFirst ? context.messages.slice(0, split) : context.messages.slice(split));
+  return { ...source, conversationContext: { ...context, messages: recentFirst ? context.messages.slice(split) : context.messages.slice(0, split),
     pending: { path, messageCount: context.messages.length - count, reader: fileURLToPath(import.meta.url) } } };
 }
 

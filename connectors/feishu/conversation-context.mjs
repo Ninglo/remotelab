@@ -144,7 +144,7 @@ async function listMessages(runtime, {
       page_size: complete ? PAGE_SIZE : Math.min(PAGE_SIZE, maxMessages - items.length),
       with_sender_name: true,
       ...(startTimeMs ? { start_time: String(Math.floor(startTimeMs / 1000)) } : {}),
-      ...(endTimeMs ? { end_time: String(Math.floor(endTimeMs / 1000) + (complete ? 1 : 0)) } : {}),
+      ...(endTimeMs ? { end_time: String(Math.floor(endTimeMs / 1000) + 1) } : {}),
       ...(pageToken ? { page_token: pageToken } : {}),
     };
     const response = await withTimeout(
@@ -208,6 +208,15 @@ function fitCharacterBudget(messages, maxCharacters) {
   return { messages: selected.reverse(), truncated };
 }
 
+// Admission selects recent background; completeness of each selected message
+// is handled by the existing archive/paging layer after receipt-based dedup.
+export function loadFeishuTurnContext(runtime, summary, options = {}) {
+  return loadFeishuConversationContext(runtime, summary, { ...options,
+    complete: ['p2p', 'private'].includes(summary?.chatType),
+    includeMetadata: true, deferBudget: true, maxGapMs: 0,
+  });
+}
+
 export async function loadFeishuConversationContext(runtime, summary, options = {}) {
   if (isFeishuDocumentCommentSummary(summary)) return null;
   const chatId = trimString(summary?.chatId);
@@ -216,18 +225,19 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
   const now = parseFeishuMessageTime(summary?.createTime) || Date.now();
   const maxMessages = positiveInteger(options.maxMessages, FEISHU_CONTEXT_MAX_MESSAGES);
   const maxAgeMs = positiveInteger(options.maxAgeMs, FEISHU_CONTEXT_MAX_AGE_MS);
-  const maxGapMs = positiveInteger(options.maxGapMs, FEISHU_CONTEXT_ACTIVITY_GAP_MS);
+  const maxGapMs = options.maxGapMs === 0 ? 0 : positiveInteger(options.maxGapMs, FEISHU_CONTEXT_ACTIVITY_GAP_MS);
   const maxCharacters = positiveInteger(options.maxCharacters, FEISHU_CONTEXT_MAX_CHARACTERS);
   const timeoutMs = positiveInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS);
   const sinceTimeMs = positiveInteger(options.sinceTimeMs, 0);
   const sinceMessageId = trimString(options.sinceMessageId);
   const topicId = buildFeishuTopicId(summary);
   const complete = options.complete === true;
+  const startTimeMs = complete ? sinceTimeMs : Math.max(topicId ? 0 : now - maxAgeMs, sinceTimeMs);
   const rawItems = await listMessages(runtime, {
     containerId: topicId || chatId,
     containerIdType: topicId ? 'thread' : 'chat',
     endTimeMs: now,
-    startTimeMs: complete ? sinceTimeMs : Math.max(topicId ? 0 : now - maxAgeMs, sinceTimeMs),
+    startTimeMs,
     complete,
     maxMessages,
     timeoutMs,
@@ -243,8 +253,8 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
         edited: item.updated === true || parseFeishuMessageTime(item.update_time) > message.timestamp } : null;
     })
     .filter((item) => item && item.timestamp <= now
-      && (!sinceTimeMs || item.timestamp >= sinceTimeMs));
-  const relevant = complete || topicId ? normalized : keepCurrentActivity(normalized, maxGapMs);
+      && (!startTimeMs || item.timestamp >= startTimeMs));
+  const relevant = complete || topicId || !maxGapMs ? normalized : keepCurrentActivity(normalized, maxGapMs);
   const fitted = options.deferBudget === true || complete
     ? { messages: relevant.sort((a, b) => a.timestamp - b.timestamp), truncated: false }
     : fitCharacterBudget(relevant, maxCharacters);

@@ -79,6 +79,7 @@ import {
 } from '../connectors/feishu/index.mjs';
 import {
   loadFeishuConversationContext,
+  loadFeishuTurnContext,
 } from '../connectors/feishu/conversation-context.mjs';
 import {
   appendLinkedFeishuProjectDelivery,
@@ -1184,15 +1185,11 @@ async function submitRemoteLabRequest(runtime, summary, {
     ? await participationController(runtime).state(effectiveSummary) : null;
   const [attachmentResolution, conversationContext, linkedProjectContext, groupAnnouncement] = await Promise.all([
     attachmentsPromise,
-    // Admission time is not a Harness receipt. Fetch the authorized source;
-    // preparation removes only context proven present in the resumed thread.
-    loadFeishuConversationContext(runtime, effectiveSummary, {
-      includeMetadata: true, complete: true,
+    // Select bounded recent group/topic background. Preparation still dedups
+    // only proven delivery and preserves complete selected message bodies.
+    loadFeishuTurnContext(runtime, effectiveSummary, {
       ...(session.privateConversationStart ? { sinceTimeMs: session.privateConversationStart.at,
         sinceMessageId: session.privateConversationStart.messageId } : {}),
-      // The source container is the scope: a topic or the bound group.
-      // Neither Session creation nor the last admission proves older messages
-      // were read. Fetch every provider page before delivery dedup/budgeting.
     }).then(context => filterPrivateConversationContext(runtime, effectiveSummary, session, context))
       .catch((error) => {
         console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);

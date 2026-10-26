@@ -8,17 +8,28 @@ For standard prompts, `buildTurnContextHook` projects this request's sourceConte
 
 The projection never looks up the latest message in the Session and never reads `sourceDelivery`. Feishu chat turns use a readable transcript instead of JSON: the model sees the group name, current sender and time, followed by earlier messages as time, display name and content. Transport IDs stay out of the prompt and remain available through `/api/sessions/:id/source-context?requestId=:requestId`; the active Run exposes its request ID as `REMOTELAB_REQUEST_ID` when that lookup is genuinely needed. Other connectors retain their bounded provider-specific projection. Stable Session source metadata keeps its existing size limit.
 
-The Feishu connector freezes the authorized source before submission. Normal
-message admission fetches all provider pages in the selected topic or bound chat,
-up to the current input time; it does not treat a Session creation/admission time,
-24-hour window, four-hour gap or message-count cap as proof of reading. The legacy
-bounded reader remains available to preview callers. Large source snapshots are
+The Feishu connector freezes selected source messages before submission. Group
+mainline admission selects the latest 24 hours, at most 100 provider messages;
+topics select at most 100 messages from that topic, including older days. An idle
+gap does not discard earlier messages within the day. Private conversations keep
+their existing history policy and explicit new-conversation boundary. Selection
+limits never prove that omitted history has been read. Large source snapshots are
 immutable local archives referenced by the Request, avoiding the admission HTTP
 body limit. Preparation validates their Session/source/hash before hydration.
 Fetch or permission failures are visible as incomplete background, while the
 current user message can still proceed. Retries use the frozen source, not a new
 history fetch. Provider permissions, retention, deleted messages and unavailable
 attachments still constrain what can actually be retrieved.
+
+Preparation preserves receipt-based deduplication and complete selected message
+bodies. For groups, within the 48,000-character/100-message inline budget, the latest messages
+take priority; older overflow remains in the original-message archive. Its prompt
+offers an optional lookup, without requiring every page to be consumed before an
+answer. A relevant long message must still be read completely before relying on
+its conditions. Earlier history remains queryable through the source tools; it is
+not fetched or archived wholesale on every group turn. Existing native Session
+history and accepted Request snapshots are retained. This selection is
+deterministic and adds no model call, background worker or per-group index.
 
 For Jev-enabled ambient group inputs, preparation also reads this Bot's local
 outcome-reaction receipt once. The main Harness sees a bounded snapshot of the
@@ -68,7 +79,7 @@ RemoteLab can only project context it constructs or explicitly passes to a Harne
 剩余优先级是验证实际任务效果及降低来源读取成本：
 
 1. 在更广的真实任务中对照成功率、遗漏、返工、人工补救、时延和非缓存用量，才能判断总体收益。[随机功能对照](feature-experiments.md)已提供默认关闭的留样和夜间评阅基础；更完整的标签分析与验收目标见[设计约定](../notes/current/feature-experiment-plan.md)。
-2. 飞书当前每次输入仍抓取所选话题／绑定群的完整可访问历史；持久增量接入还未实现。
+2. 10 月 26 日起，普通群恢复最近 24 小时、最多 100 条，话题最多 100 条；默认取消全历史补读。持久增量接入还未实现，原有会话历史没有清空，实际交付时间收益仍需自然任务验证。
 3. 超量原文有分页入口，但“给了入口”不等于“模型读过”。分页内容尚无足够强的接收记账，可能在后续输入重复出现；当前宁可重复也不凭推测省略。
 4. 其他 Harness 的原生压缩恢复尚未接通；旧线程历史、当前任务状态、按需读取内容和个人规则也不属于已经消除的重复。
 
@@ -263,10 +274,11 @@ Prompt delivery and model-context inspection now use the same assembled slots
 instead of rebuilding the turn context a second time.
 
 After dedup, up to 100 whole messages / about 48,000 characters are placed inline.
+Group inputs prefer the latest selected messages; private paging is unchanged.
 A message is never cut at 6,000 characters. The remaining original messages are
 stored together in an immutable source archive, in original order with author,
-message identity and reply relation. The prompt directs the Harness to read every
-continuation page before claiming complete background. Each page is an exact
+message identity and reply relation. Group prompts offer optional retrieval of
+relevant originals; only an actual full read permits a claim of complete background. Each page is an exact
 substring with offsets and a next cursor, not a generated summary or relevance
 filter. No semantic deduplication operates on these segments. Full source files
 are retained; no TTL currently deletes them. A disk failure retains original
@@ -274,8 +286,8 @@ messages without the old renderer's silent 100-message cut.
 
 A pointer does **not** create a read receipt: overflow entries are excluded from
 delivered-message receipts. They may recur on later inputs until consumption has
-stronger evidence. Full provider pagination currently costs a history fetch each
-input; durable incremental ingestion and accepted page-read accounting remain
+stronger evidence. Group provider reads now use the bounded window described above;
+durable incremental ingestion and accepted page-read accounting remain
 follow-up work. Linked-project background retains its separate bounded policy;
 this change concerns the selected topic/bound chat. Images and files need their
 normal attachment readers; a text placeholder is not proof of reading them.
