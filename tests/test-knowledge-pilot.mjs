@@ -27,12 +27,25 @@ try {
   assert.equal(await captureKnowledgePilot(options,{groupFeed:true}),null);
   assert.equal(await captureKnowledgePilot(options,{internalRole:'worker'}),null);
   assert.match(knowledgePilotPrompt(p,'request1'),/remotelab knowledge search/);
+  assert.doesNotMatch(knowledgePilotPrompt(p,'request1'),/测试期标注/);
+  await writeFile(join(root,'config.json'),JSON.stringify({...config,helpedLabel:'【调用了示例wiki】'}));
+  const labeled=await captureKnowledgePilot(options);
+  assert.equal(labeled.helpedLabel,'【调用了示例wiki】');
+  assert.match(knowledgePilotPrompt(labeled,'r'),/实际读到知识正文.*效果记录为 helped.*【调用了示例wiki】/);
+  assert.doesNotMatch(knowledgePilotPrompt(p,'request1'),/测试期标注/,'accepted inputs retain their captured policy');
+  assert.equal(await captureKnowledgePilot({...options,viewPersonId:'person_b'}),null);
+  await writeFile(join(root,'config.json'),JSON.stringify({...config,helpedLabel:'bad\nlabel'}));
+  assert.equal(await captureKnowledgePilot(options),null,'invalid labels cannot enter the prompt');
+  await writeFile(join(root,'config.json'),JSON.stringify(config));
   assert.equal(knowledgePilotPrompt(null,'r'), '');
   const {buildPrompt}=await import('../chat/session-manager.mjs');
   const prepared={project:'',directory:'',personalMemory:'',skillExtraction:'',text:''};
   const actualPrompt=await buildPrompt('test-knowledge',{id:'test-knowledge',tool:'codex'},'loss为什么不一样',null,'codex',null,
     {...options,knowledgePilot:p,requestId:'request1'},prepared);
   assert.match(actualPrompt,/Organization knowledge on demand/);
+  const labeledPrompt=await buildPrompt('test-label',{id:'test-label',tool:'codex'},'分析',null,'codex',null,
+    {...options,knowledgePilot:labeled,requestId:'labeled'},prepared);
+  assert.match(labeledPrompt,/【调用了示例wiki】/);
   const otherPrompt=await buildPrompt('test-other',{id:'test-other',tool:'codex'},'hello',null,'codex',null,
     {...options,viewPersonId:'person_b',requestId:'other'},prepared);
   assert.doesNotMatch(otherPrompt,/remotelab knowledge search/);

@@ -21,7 +21,8 @@ export async function knowledgeConfig(root = KNOWLEDGE_ROOT) {
   if (!c) return null;
   if (c.version !== 1 || !safeId(c.id) || !safeId(c.projectId) || typeof c.enabled !== 'boolean'
     || !Array.isArray(c.personIds) || !c.personIds.length || c.personIds.some(p => !safeId(p))
-    || !isAbsolute(c.corpusPath || '') || typeof c.name !== 'string' || c.name.length > 120) fail('Invalid knowledge pilot configuration');
+    || !isAbsolute(c.corpusPath || '') || typeof c.name !== 'string' || c.name.length > 120
+    || c.helpedLabel != null && (typeof c.helpedLabel !== 'string' || !c.helpedLabel.trim() || [...c.helpedLabel].length > 80 || /[\r\n]/.test(c.helpedLabel))) fail('Invalid knowledge pilot configuration');
   return c;
 }
 export function knowledgeEligible(c, o, session = {}) {
@@ -33,12 +34,14 @@ export async function captureKnowledgePilot(options, session = {}, root = KNOWLE
   try {
     const c = await knowledgeConfig(root);
     return knowledgeEligible(c, options, session) ? { id: c.id, personId: options.viewPersonId,
-      projectId: c.projectId, specHash: fingerprint(c), mode: 'on-demand' } : null;
+      projectId: c.projectId, specHash: fingerprint(c), mode: 'on-demand',
+      ...(c.helpedLabel ? {helpedLabel:c.helpedLabel} : {}) } : null;
   } catch (e) { console.warn('[knowledge-pilot] ' + e.message); return null; }
 }
 export function knowledgePilotPrompt(p, requestId) {
   if (!p) return '';
-  return `组织具身知识库按需试用，仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>，再用 remotelab knowledge read --page <返回的文件名> 读相关正文，必要时沿原证据核查。无关问题无需查询，不自动加载整库。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。讨论和历史参数保留原适用条件，不提升为当前结论。当前输入 ${requestId}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
+  const label = p.helpedLabel ? `测试期标注：仅当本轮实际读到知识正文，并将其用于判断或行动、效果记录为 helped 时，在相关答复中标注一次 ${JSON.stringify(p.helpedLabel)}。只收到入口、只搜索目录、读后未采用或效果未知时不标注；不为添加标注而调用知识库。` : '';
+  return `组织具身知识库按需试用，仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>，再用 remotelab knowledge read --page <返回的文件名> 读相关正文，必要时沿原证据核查。无关问题无需查询，不自动加载整库。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。${label}讨论和历史参数保留原适用条件，不提升为当前结论。当前输入 ${requestId}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
 }
 export async function observeKnowledgeAdmission(record, root = KNOWLEDGE_ROOT, now = Date.now(), explicit = false) {
   const c = await knowledgeConfig(root);
