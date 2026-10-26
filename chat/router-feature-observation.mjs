@@ -23,7 +23,7 @@ export async function handleFeatureObservation({ req, res, pathname, parsedUrl, 
     }
     if (req.method !== 'POST') { writeJson(res, 405, { error: 'Method not allowed' }); return true; }
     const input = JSON.parse(await readBody(req, 32768) || '{}');
-    if (Object.keys(input).some(k => !['runId','requestId','action','outcome','metrics','checks'].includes(k))) throw new Error('Unknown observation field');
+    if (Object.keys(input).some(k => !['runId','requestId','action','outcome','metrics','checks','explanation'].includes(k))) throw new Error('Unknown observation field');
     const root = /^run_[\w-]+$/.test(input.runId || '') ? await requests.byRunId(input.runId) : null;
     const record = root && typeof input.requestId === 'string' ? await requests.byRequest(root.sessionId, input.requestId) : root;
     if (!root || root.result || root.releasedAt || !record

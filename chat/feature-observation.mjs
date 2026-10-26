@@ -29,21 +29,50 @@ export async function readFeatureReviewStatus(record, {root = ROOT} = {}) {
   if (effective(record?.options)?.selfReview !== true || record.options.internalOperation) return null;
   const row = await receipt(record, root);
   return { state: row?.finishedAt ? 'finished' : row?.startedAt ? 'started' : 'no_record',
+    enabledBy: effective(record.options).scope || null,
     ...(row ? { id:row.id, startedAt:row.startedAt, finishedAt:row.finishedAt || null,
-      outcome:row.outcome || null, checks:row.checks?.length || 0, metrics:row.metrics || {} } : {}) };
+      outcome:row.outcome || null, checks:row.checks?.length || 0, metrics:row.metrics || {},
+      checkDetails:row.checks || [], explanation:row.explanation || null } : {}) };
+}
+
+// Keep task acceptance, review execution and missing receipts distinct. Do not
+// infer a missing explanation, a user dependency or an automatic continuation.
+function reviewFooter(status) {
+  const result = {passed:'核对通过', repaired:'修复后核对通过', blocked:'仍有未解决项', not_applicable:'本轮不适用，未执行额外产物验收'};
+  const enabled = {person:'你的个人设置已开启交付前自检', group:'本群已开启交付前自检'}[status.enabledBy]
+    || '本轮已开启交付前自检';
+  const explanation = status.explanation;
+  if (status.state !== 'finished') {
+    const states = {
+      started:['已开始，未收到完成回执', '已记录自检开始；无法确认检查结果及未结束原因'],
+      no_record:['已开启，本轮无执行回执', '未收到执行记录，无法确认是否执行及缺记录的原因'],
+      unavailable:['回执暂不可读', '读取执行记录失败，无法确认本轮自检情况'],
+    };
+    const [label, action] = states[status.state] || states.unavailable;
+    return `自检：${label}。\n原因：${enabled}；本轮具体触发原因尚无法确认。\n已做：${action}。\n后续：需由我核查执行记录；这条状态不会自动启动核查。你如需查清，可回复“核查本轮自检”，无需重做原任务。`;
+  }
+  const checks = status.checkDetails;
+  const counts = Array.isArray(checks)
+    ? `检查 ${checks.length} 项：通过 ${checks.filter(c=>c.verdict==='pass').length}，未通过 ${checks.filter(c=>c.verdict==='fail').length}，待确认 ${checks.filter(c=>c.verdict==='unknown').length}`
+    : `共记录 ${status.checks || 0} 项检查，未通过项数未记录`;
+  const label = `${result[status.outcome] || '结果未确认'}${status.outcome === 'not_applicable' ? '' : `（${counts}）`}${status.metrics?.fixed ? `；修复 ${status.metrics.fixed} 项` : ''}`;
+  const reason = explanation?.reason || '回执未记录本轮触发或不适用的具体原因';
+  const actions = explanation ? explanation.actions.join('；') || '未执行额外产物验收操作'
+    : `回执未记录具体检查操作${checks?.length ? `；验收项：${checks.map(c=>`${c.criterion}（${{pass:'通过',fail:'未通过',unknown:'待确认'}[c.verdict]}）`).join('；')}` : ''}`;
+  const next = explanation?.nextStep || '回执未记录后续安排，无法确认是否仍有工作需要接续；这条状态不会自动续跑';
+  const user = explanation?.userAction || '未记录需要你做什么；如需补查，可回复“核查本轮自检”，无需重做原任务';
+  const sentence = text => text.replace(/[。；\s]+$/u, '') + '。';
+  return `自检：${label}。\n原因：${sentence(`${enabled}；${reason}`)}\n已做：${sentence(actions)}\n后续：${sentence(next)}\n你需要：${sentence(user)}`;
 }
 
 export async function appendFeatureReviewStatus(payload, record, {frozenStatus} = {}) {
   if (!payload || payload.featureReview || (!payload.text && !payload.attachments?.length)) return payload;
   let status;
   try { status = frozenStatus === undefined ? await readFeatureReviewStatus(record) : frozenStatus; }
-  catch { status = {state:'unavailable'}; }
+  catch { status = {state:'unavailable', enabledBy:effective(record?.options)?.scope || null}; }
   if (!status) return payload;
-  const result = {passed:'核对通过', repaired:'修复后核对通过', blocked:'仍有未解决项', not_applicable:'本轮不适用'};
-  const label = status.state === 'finished'
-    ? `${result[status.outcome]}${status.outcome === 'not_applicable' ? '' : ` · ${status.checks} 项`}${status.metrics.fixed ? ` · 修复 ${status.metrics.fixed} 项` : ''}`
-    : {started:'已开始，未收到完成回执', no_record:'已开启，本轮无执行回执', unavailable:'回执暂不可读'}[status.state];
-  const footer = `自检：${label}。`;
+  // A retry must retain even the previous formatter's exact frozen text.
+  const footer = status.footer || reviewFooter(status);
   return {...payload, featureReview:{...status, footer}, text:[payload.text, footer].filter(Boolean).join('\n\n')};
 }
 
@@ -106,7 +135,7 @@ export function featureObservationPrompt(observation, requestId, enabled = Boole
   if (!enabled) return '';
   observation ||= {metrics:REVIEW_METRICS};
   const quotedId = "'" + String(requestId).replaceAll("'", "'\\''") + "'";
-  return `已开启自检执行回执${observation.trialId ? '及限时功能观察' : ''}。最终交付前最多记录一次核对阶段：先运行 remotelab feature-observation begin --request-id ${quotedId}，再核对实际成果；完成后用 remotelab feature-observation finish --request-id ${quotedId} --file <JSON绝对路径> 保存结果。JSON为 {outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"实际验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际工具/附件事件编号]}]}。指标含义：${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核对，不编造；短问答不需要额外成果，用 not_applicable。系统根据实际回执在最终回复附自检状态，无需另写状态标志。记录失败如实保留缺口，不重复自检、阻塞交付或新发消息。回执只记录证据，不代替验收。`;
+  return `已开启自检执行回执${observation.trialId ? '及限时功能观察' : ''}。最终交付前最多记录一次核对阶段：先运行 remotelab feature-observation begin --request-id ${quotedId}，再核对实际成果；完成后用 remotelab feature-observation finish --request-id ${quotedId} --file <JSON绝对路径> 保存结果。JSON为 {outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"实际验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际工具/附件事件编号]}],explanation:{reason:"本轮为什么需要自检，或为什么不适用",actions:["实际做过的具体检查或修复"],nextStep:"谁接着做什么，以及是否已安排；无后续也写明",userAction:"用户具体需要提供什么或作什么决定；不需要时写无需操作"}}。explanation 必须按本轮事实填写，用简短、面向用户的文字，不复述内部命令；actions 只写实际完成的操作。仍有未解决项时，在 nextStep 写明缺项、下一步及负责方，区分我可继续处理、真实外部依赖与必须由用户决定；不能把建议写成已安排或正在执行，不把我能完成的工作推给用户。指标含义：${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核对，不编造；短问答不需要额外成果，用 not_applicable，checks 为 []，仍须解释本轮没有执行额外产物验收的具体原因，不能只写“不适用”。系统根据实际回执在最终回复附原因、已做和后续说明，无需重复手写。记录失败如实保留缺口，不重复自检、阻塞交付或新发消息。回执只记录证据，不代替验收。`;
 }
 
 // Codex exposes cumulative provider counters. Other Harnesses remain unknown
@@ -173,9 +202,26 @@ export async function recordFeatureExecution(record, input, { root = ROOT, now =
   }
   if (input.outcome !== 'not_applicable' && !input.checks.length) fail('缺少实际验收检查项');
   if (['passed', 'repaired'].includes(input.outcome) && input.checks.some(c => c.verdict !== 'pass')) fail('未通过或未知检查项不能报告全部通过');
+  // Older accepted inputs retain their frozen prompt and may omit explanations.
+  // Keep them readable without inventing why they ran or what the user must do.
+  let explanation;
+  if (input.explanation !== undefined) {
+    const value = input.explanation;
+    const validText = (s, limit = 600) => typeof s === 'string' && Boolean(s.trim()) && s.length <= limit;
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || Object.keys(value).some(k => !['reason','actions','nextStep','userAction'].includes(k))
+      || !['reason','nextStep','userAction'].every(k => validText(value[k]))
+      || !Array.isArray(value.actions) || value.actions.length > 10
+      || value.actions.some(s => !validText(s, 400))
+      || input.outcome !== 'not_applicable' && !value.actions.length) fail('自检说明需要具体原因、实际操作、后续安排及用户所需动作');
+    explanation = {reason:value.reason.trim(), actions:value.actions.map(s=>s.trim()),
+      nextStep:value.nextStep.trim(), userAction:value.userAction.trim()};
+  }
+  if (input.outcome === 'not_applicable' && (input.checks.length || Object.values(metrics).some(v=>v>0))) fail('不适用不能同时记录产物验收项或验收缺项');
   const after = await meter(executionRunId);
   return store(root).mutate(key, previous => previous?.finishedAt ? previous : ({ ...previous,
     finishedAt: now, durationMs: now - previous.startedAt, outcome: input.outcome, metrics,
+    ...(explanation ? {explanation} : {}),
     // Provider counters arrive after the finish tool returns. Reporting reads
     // the first samples following both boundaries; no timer or extra model turn.
     checks: input.checks, usage: null, after,

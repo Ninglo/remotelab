@@ -46,9 +46,13 @@ try {
   let finishedReview=await accept('receipt-finished');
   finishedReview=await requests.mutate(finishedReview.key,r=>({...r,options:{...r.options,messageReplyPolicy:{selfReview:true}}}));
   await recordFeatureExecution(finishedReview,{action:'begin'});
-  await recordFeatureExecution(finishedReview,{action:'finish',outcome:'not_applicable',checks:[]});
+  await recordFeatureExecution(finishedReview,{action:'finish',outcome:'not_applicable',checks:[],
+    explanation:{reason:'仅回答功能含义，没有交付物需要验收',actions:[],nextStep:'没有后续验收',userAction:'无需操作'}});
   await publish(finishedReview,[final('review-final',envelope({replyMode:'thread'},'简短回答'))]);
-  assert.match((await requests.get(finishedReview.key)).deliveries.find(d=>d.kind==='content').text,/本轮不适用/);
+  const finishedText=(await requests.get(finishedReview.key)).deliveries.find(d=>d.kind==='content').text;
+  assert.match(finishedText,/本轮不适用/);
+  assert.match(finishedText,/仅回答功能含义，没有交付物需要验收/);
+  assert.match(finishedText,/你需要：无需操作/);
 
   // Real live-publication surfaces must not occupy the terminal answer slot.
   // Cover native questions, direct supplementary replies and their combination.

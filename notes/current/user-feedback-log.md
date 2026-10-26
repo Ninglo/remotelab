@@ -2037,3 +2037,16 @@ left the user unable to verify the new conversation at the point of creation.
 The command receipt now uses the saved Session and the shared navigation footer,
 without waiting for a model turn. Retries retain the same Session and describe
 its actual runtime even when the instance default has since changed.
+
+## 2026-10-26 — Explain the delivery self-review trial, including non-applicability
+
+A user found “unresolved · 4 items” ambiguous: the number counted all checks,
+not unresolved conditions. A proposal to hide “not applicable” was rejected.
+During the trial, users need to know why a review did or did not apply, what
+actually ran, and what remains for the Agent versus the human to do. Preserve
+non-applicability with its concrete reason. Store these explanations with the
+receipt, label check totals and verdict counts explicitly, and distinguish an
+unknown execution record from a review that deliberately did not apply.
+Missing historical explanations remain unknown; status labels do not schedule
+follow-up work. A user should not have to redo the original task to investigate
+a receipt, nor be assigned recovery that the Agent can perform itself.
