@@ -72,7 +72,7 @@ async function awaitAnswer(sessionId, requestId, reviewExpected = false) {
   await until(async () => (await rpc('response', sessionId, requestId))?.state === 'ready', `${requestId} gets final response`);
   const result = await rpc('response', sessionId, requestId);
   if (reviewExpected) {
-    assert.equal(result.payload.text,'durable native answer\n\n自检暂无执行记录');
+    assert.equal(result.payload.text,'durable native answer');
   } else assert.equal(result.payload.text, 'durable native answer');
   return result;
 }

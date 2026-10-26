@@ -98,7 +98,8 @@ try {
   assert.match(featureObservationPrompt(null,ordinary.requestId,true),/执行回执/);
   assert.equal(featureObservationPrompt(null,ordinary.requestId,false),'');
   assert.equal((await readFeatureReviewStatus(ordinary)).state,'no_record');
-  assert.match((await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary)).text,/自检暂无执行记录/);
+  const absent=await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary);
+  assert.equal(absent.text,'结果');assert.equal(absent.featureReview.state,'no_record');assert.equal(absent.featureReview.footer,'');
   assert.equal((await appendFeatureReviewStatus({text:'',attachments:[]},ordinary)).text,'','silent decisions stay silent');
   assert.equal((await appendFeatureReviewStatus({text:'普通答复'}, {...ordinary,options:{}})).text,'普通答复');
   await recordFeatureExecution(ordinary,{action:'begin'});
@@ -107,7 +108,8 @@ try {
   const shown=await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary);
   assert.equal(shown.text,'结果\n\n自检通过');
   assert.deepEqual(await appendFeatureReviewStatus(shown,ordinary),shown,'no duplicate footer');
-  assert.match((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:{state:'no_record'}})).text,/自检暂无执行记录/);
+  assert.equal((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:absent.featureReview})).text,'结果','an initially hidden receipt stays hidden even after the review finishes');
+  assert.equal((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:{state:'finished',outcome:'passed',footer:''}})).text,'结果','a frozen empty footer is not regenerated');
   const oldFooter='自检：仍有未解决项 · 4 项。';
   assert.equal((await appendFeatureReviewStatus({text:'旧结果'},ordinary,{frozenStatus:{state:'finished',outcome:'blocked',checks:4,metrics:{},footer:oldFooter}})).text,
     '旧结果\n\n'+oldFooter,'an already frozen delivery retains its old formatter on retry');
@@ -138,14 +140,15 @@ try {
   const detailText=(await appendFeatureReviewStatus({text:'报告'},detailed)).text;
   assert.equal(detailText,'报告\n\n自检未完成：待提供目录权限');
   assert.doesNotMatch(detailText,/原因：|已做：|后续：|你需要：/);
-  // Inapplicable remains visible and says WHY. No fabricated task checks.
+  // Inapplicable stays in the record, including its reason, without a visible badge.
   const short=(await requests.accept({sessionId:'feature-test',requestId:'explained-short',text:'解释设置',options})).record;
   await recordFeatureExecution(short,{action:'begin'});
   await assert.rejects(recordFeatureExecution(short,{action:'finish',outcome:'not_applicable',checks:detailInput.checks}),/不适用不能/);
   await recordFeatureExecution(short,{action:'finish',outcome:'not_applicable',checks:[],
     explanation:{note:'仅问答',reason:'本轮仅解释设置，没有文件或系统变更需要验收',actions:[],nextStep:'本轮问答已结束，没有后续验收',userAction:'无需操作'}});
-  const shortText=(await appendFeatureReviewStatus({text:'解释'},short)).text;
-  assert.equal(shortText,'解释\n\n自检不适用：仅问答');
+  const skipped=await appendFeatureReviewStatus({text:'解释'},short);
+  assert.equal(skipped.text,'解释');assert.equal(skipped.featureReview.outcome,'not_applicable');
+  assert.equal(skipped.featureReview.explanation.note,'仅问答');assert.equal(skipped.featureReview.footer,'');
   // Missing receipts never become "not triggered" or a promise to auto-run.
   for(const state of ['started','no_record','unavailable']) {
     const text=(await appendFeatureReviewStatus({text:'结果'},short,{frozenStatus:{state,enabledBy:'group'}})).text;
@@ -156,11 +159,13 @@ try {
     for(const note of [undefined,'一二三四五六七八','按要求暂停']) {
       const text=(await appendFeatureReviewStatus({text:'正文'},short,{frozenStatus:{state:'finished',outcome,explanation:{note}}})).featureReview.footer;
       assert.ok([...text].length<=15, text);assert.ok(!text.includes('\n'));
+      if(outcome==='not_applicable') assert.equal(text,'');
     }
   }
   const prompt=featureObservationPrompt(null,'test',true);
   assert.match(prompt,/explanation/);assert.match(prompt,/不能只写“不适用”/);assert.match(prompt,/不把我能完成的工作推给用户/);
   assert.match(prompt,/15字以内/);assert.match(prompt,/正文讲清一次/);
+  assert.match(prompt,/不适用和无执行记录不显示尾注/);assert.match(prompt,/不要把任务成果或回执格式调整写成自检发现/);
   // Receiving a root turn is real provider evidence, independent of a steer receipt.
   const unreviewed=(await requests.accept({sessionId:'feature-test',requestId:'no-review',text:'未自检',options:{...options,featureObservation}})).record;
   await observeFeatureAdmission(unreviewed,root,t+11000);

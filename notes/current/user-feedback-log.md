@@ -2056,3 +2056,10 @@ the visible self-review footer to 15 characters. Keep a concrete short note
 within that limit, with the full explanation in the saved receipt. Explain
 remaining work or required human input once in the answer body, rather than
 repeating it in a second checklist. Preserve the original frozen text on retries.
+
+A further correction rejected “short note compressed” as a review result: it
+reported formatting work without saying what the review checked. The user now
+prefers no footer for inapplicable reviews or absent execution records. Preserve
+those states in observation data; visible notes name a checked object, an extra
+repair, or a real blocker. This supersedes the earlier request to display every
+non-applicability receipt, without changing the stored evidence or old deliveries.
