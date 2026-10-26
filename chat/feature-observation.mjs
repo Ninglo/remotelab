@@ -38,17 +38,11 @@ export async function readFeatureReviewStatus(record, {root = ROOT} = {}) {
 // Keep task acceptance, review execution and missing receipts distinct. Do not
 // infer a missing explanation, a user dependency or an automatic continuation.
 function reviewFooter(status) {
-  // No visible badge for skipped reviews or absent execution records. Keep the
-  // underlying receipt state so observation does not mistake silence for success.
-  if (status.state === 'no_record' || status.state === 'finished' && status.outcome === 'not_applicable') return '';
-  const result = {passed:'自检通过', repaired:'自检补做通过', blocked:'自检未完成'};
-  if (status.state !== 'finished') {
-    return {started:'自检已开始，结果未回', unavailable:'自检记录读取失败'}[status.state] || '自检结果未确认';
-  }
-  // The footer stays within 15 Unicode characters. Full reasons, actions and
-  // next steps remain in the receipt; material user dependencies belong in the
-  // answer itself. A legacy receipt without a short note keeps its status only.
-  const label = result[status.outcome] || '自检结果未确认';
+  // Show only extra work prompted by review or a real obstacle to progress.
+  // Routine checks and receipt bookkeeping remain available in stored records.
+  if (status.state !== 'finished') return '';
+  const label = {repaired:'自检补做', blocked:'推进受阻'}[status.outcome];
+  if (!label) return '';
   const note = status.explanation?.note;
   return note ? `${label}：${note}` : label;
 }
@@ -123,7 +117,7 @@ export function featureObservationPrompt(observation, requestId, enabled = Boole
   if (!enabled) return '';
   observation ||= {metrics:REVIEW_METRICS};
   const quotedId = "'" + String(requestId).replaceAll("'", "'\\''") + "'";
-  return `已开启自检执行回执${observation.trialId ? '及限时功能观察' : ''}。最终交付前最多记录一次核对阶段：先运行 remotelab feature-observation begin --request-id ${quotedId}，再核对实际成果；完成后用 remotelab feature-observation finish --request-id ${quotedId} --file <JSON绝对路径> 保存结果。JSON为 {outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"实际验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际工具/附件事件编号]}],explanation:{note:"8字以内具体原因或动作",reason:"本轮为什么需要自检，或为什么不适用",actions:["实际做过的具体检查或修复"],nextStep:"谁接着做什么，以及是否已安排；无后续也写明",userAction:"用户具体需要提供什么或作什么决定；不需要时写无需操作"}}。explanation 必须按本轮事实填写，用简短、面向用户的文字，不复述内部命令；actions 只写实际完成的操作。仍有未解决项时，在 nextStep 写明缺项、下一步及负责方，区分我可继续处理、真实外部依赖与必须由用户决定；不能把建议写成已安排或正在执行，不把我能完成的工作推给用户。指标含义：${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核对，不编造；短问答不需要额外成果，用 not_applicable，checks 为 []，仍须解释本轮没有执行额外产物验收的具体原因，不能只写“不适用”。不适用和无执行记录不显示尾注，仍保留内部回执。实际执行过的自检仅附15字以内状态短注，note 最多8字且不换行，写实际核对的对象、补修的问题或剩余阻塞，例如“统计口径已核”“已补齐下载”“待提供目录权限”。不要把任务成果或回执格式调整写成自检发现；只有自检额外发现并修复的问题才计入 fixed。完整 explanation 留在记录中，不再逐项追加到回复；影响交付的未解决问题、真实后续安排和用户所需动作放在正文讲清一次，不能只藏在记录里。记录失败如实保留缺口，不重复自检、阻塞交付或新发消息。回执只记录证据，不代替验收。`;
+  return `已开启自检执行回执${observation.trialId ? '及限时功能观察' : ''}。最终交付前最多记录一次核对阶段：先运行 remotelab feature-observation begin --request-id ${quotedId}，再核对实际成果；完成后用 remotelab feature-observation finish --request-id ${quotedId} --file <JSON绝对路径> 保存结果。JSON为 {outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"实际验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际工具/附件事件编号]}],explanation:{note:"8字以内具体原因或动作",reason:"本轮为什么需要自检，或为什么不适用",actions:["实际做过的具体检查或修复"],nextStep:"谁接着做什么，以及是否已安排；无后续也写明",userAction:"用户具体需要提供什么或作什么决定；不需要时写无需操作"}}。explanation 必须按本轮事实填写，用简短、面向用户的文字，不复述内部命令；actions 只写实际完成的操作。仍有未解决项时，在 nextStep 写明缺项、下一步及负责方，区分我可继续处理、真实外部依赖与必须由用户决定；不能把建议写成已安排或正在执行，不把我能完成的工作推给用户。指标含义：${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核对，不编造；短问答不需要额外成果，用 not_applicable，checks 为 []，仍须解释本轮没有执行额外产物验收的具体原因，不能只写“不适用”。正常检查通过、不适用、无记录及回执状态异常均不显示尾注，仍保留内部记录。只有自检发现问题后额外推进了工作（repaired），或推进受阻（blocked），才附15字以内短注；note 最多8字且不换行，写具体补做或阻塞，例如“已补齐下载”“待提供目录权限”。仅有回执缺失或读取失败不能判断为推进失败。不要把任务成果或回执格式调整写成自检发现；只有自检额外发现并修复的问题才计入 fixed。完整 explanation 留在记录中，不再逐项追加到回复；影响交付的未解决问题、真实后续安排和用户所需动作放在正文讲清一次，不能只藏在记录里。记录失败如实保留缺口，不重复自检、阻塞交付或新发消息。回执只记录证据，不代替验收。`;
 }
 
 // Codex exposes cumulative provider counters. Other Harnesses remain unknown

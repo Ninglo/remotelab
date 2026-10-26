@@ -2063,3 +2063,9 @@ prefers no footer for inapplicable reviews or absent execution records. Preserve
 those states in observation data; visible notes name a checked object, an extra
 repair, or a real blocker. This supersedes the earlier request to display every
 non-applicability receipt, without changing the stored evidence or old deliveries.
+
+The user clarified the notification boundary again: even a successful review is
+routine and should stay quiet. Show a short note only when review led to extra
+work or progress was blocked. Missing, pending or unreadable receipts are not
+business failures and remain in observation records. The feature should report
+an effect on the work, not its own execution or the formatting of its receipt.

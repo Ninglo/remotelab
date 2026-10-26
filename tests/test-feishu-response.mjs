@@ -53,6 +53,17 @@ try {
   const finishedText=(await requests.get(finishedReview.key)).deliveries.find(d=>d.kind==='content').text;
   assert.ok(finishedText.endsWith('简短回答'));assert.doesNotMatch(finishedText,/自检/);
 
+  // A successful routine review adds no badge to the actual Feishu publication.
+  const {appendEvent}=await import('../chat/history.mjs');
+  let passedReview=await accept('receipt-passed');
+  passedReview=await requests.mutate(passedReview.key,r=>({...r,options:{...r.options,messageReplyPolicy:{selfReview:true}}}));
+  await recordFeatureExecution(passedReview,{action:'begin'});
+  const evidence=await appendEvent(passedReview.sessionId,{type:'tool_result',runId:passedReview.runId,toolName:'shell',output:'actual file verified',exitCode:0});
+  await recordFeatureExecution(passedReview,{action:'finish',outcome:'passed',checks:[{criterion:'实际文件',verdict:'pass',evidenceSeqs:[evidence.seq]}]});
+  await publish(passedReview,[final('passed-final',envelope({replyMode:'thread'},'交付结果'))]);
+  const passedText=(await requests.get(passedReview.key)).deliveries.find(d=>d.kind==='content').text;
+  assert.ok(passedText.endsWith('交付结果'));assert.doesNotMatch(passedText,/自检/);
+
   // Real live-publication surfaces must not occupy the terminal answer slot.
   // Cover native questions, direct supplementary replies and their combination.
   for (const kinds of [['question'], ['reply'], ['question', 'reply']]) {

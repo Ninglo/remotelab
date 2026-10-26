@@ -54,7 +54,7 @@ try {
   assert.equal(ended.usage,null,'finish does not guess the provider sample before its tool return');
   assert.equal(ended.durationMs,4000);
   const repairedText=(await appendFeatureReviewStatus({text:'统计结果'},record)).text;
-  assert.equal(repairedText,'统计结果\n\n自检补做通过：修正订单总数');
+  assert.equal(repairedText,'统计结果\n\n自检补做：修正订单总数');
   assert.deepEqual(await recordFeatureExecution(record,{...input,metrics:{found:9}},{root,now:t+6000}),ended,'finish replay cannot rewrite outcome');
   const lookup=async()=>({...record,nativeReceipt:{accepted:true}});
   const report=(await readFeatureObservations({root,now:t+6000,lookup})).trials[0];
@@ -106,7 +106,7 @@ try {
   assert.equal((await readFeatureReviewStatus(ordinary)).state,'started');
   await recordFeatureExecution(ordinary,{action:'finish',outcome:'passed',checks:[{criterion:'实际文件',verdict:'pass',evidenceSeqs:[tool.seq]}]});
   const shown=await appendFeatureReviewStatus({text:'结果',attachments:[]},ordinary);
-  assert.equal(shown.text,'结果\n\n自检通过');
+  assert.equal(shown.text,'结果');assert.equal(shown.featureReview.outcome,'passed');assert.equal(shown.featureReview.footer,'');
   assert.deepEqual(await appendFeatureReviewStatus(shown,ordinary),shown,'no duplicate footer');
   assert.equal((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:absent.featureReview})).text,'结果','an initially hidden receipt stays hidden even after the review finishes');
   assert.equal((await appendFeatureReviewStatus({text:'结果'},ordinary,{frozenStatus:{state:'finished',outcome:'passed',footer:''}})).text,'结果','a frozen empty footer is not regenerated');
@@ -138,7 +138,7 @@ try {
   assert.deepEqual(detailStatus.explanation,explanation);
   assert.equal(detailStatus.checkDetails.length,4);
   const detailText=(await appendFeatureReviewStatus({text:'报告'},detailed)).text;
-  assert.equal(detailText,'报告\n\n自检未完成：待提供目录权限');
+  assert.equal(detailText,'报告\n\n推进受阻：待提供目录权限');
   assert.doesNotMatch(detailText,/原因：|已做：|后续：|你需要：/);
   // Inapplicable stays in the record, including its reason, without a visible badge.
   const short=(await requests.accept({sessionId:'feature-test',requestId:'explained-short',text:'解释设置',options})).record;
@@ -152,20 +152,21 @@ try {
   // Missing receipts never become "not triggered" or a promise to auto-run.
   for(const state of ['started','no_record','unavailable']) {
     const text=(await appendFeatureReviewStatus({text:'结果'},short,{frozenStatus:{state,enabledBy:'group'}})).text;
-    assert.ok([...text.split('\n\n').at(-1)].length<=15);
+    assert.equal(text,'结果','receipt bookkeeping alone does not announce progress or failure');
     assert.doesNotMatch(text,/不适用|自动启动|本群已开启/);
   }
   for(const outcome of ['passed','repaired','blocked','not_applicable']) {
     for(const note of [undefined,'一二三四五六七八','按要求暂停']) {
       const text=(await appendFeatureReviewStatus({text:'正文'},short,{frozenStatus:{state:'finished',outcome,explanation:{note}}})).featureReview.footer;
       assert.ok([...text].length<=15, text);assert.ok(!text.includes('\n'));
-      if(outcome==='not_applicable') assert.equal(text,'');
+      if(['not_applicable','passed'].includes(outcome)) assert.equal(text,'');
+      else assert.ok(text.length>0,'extra work and blocked progress remain visible');
     }
   }
   const prompt=featureObservationPrompt(null,'test',true);
   assert.match(prompt,/explanation/);assert.match(prompt,/不能只写“不适用”/);assert.match(prompt,/不把我能完成的工作推给用户/);
   assert.match(prompt,/15字以内/);assert.match(prompt,/正文讲清一次/);
-  assert.match(prompt,/不适用和无执行记录不显示尾注/);assert.match(prompt,/不要把任务成果或回执格式调整写成自检发现/);
+  assert.match(prompt,/正常检查通过、不适用、无记录及回执状态异常均不显示尾注/);assert.match(prompt,/不要把任务成果或回执格式调整写成自检发现/);
   // Receiving a root turn is real provider evidence, independent of a steer receipt.
   const unreviewed=(await requests.accept({sessionId:'feature-test',requestId:'no-review',text:'未自检',options:{...options,featureObservation}})).record;
   await observeFeatureAdmission(unreviewed,root,t+11000);
