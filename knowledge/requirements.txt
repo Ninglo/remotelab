@@ -1,0 +1,7 @@
+# Optional CPU retrieval runtime; installed outside the Node checkout.
+sentence-transformers==6.2.0
+rank-bm25==0.2.2
+jieba==0.42.1
+numpy==2.4.6
+torch==2.14.1+cpu
+transformers==5.20.2
