@@ -15,7 +15,11 @@ try {
   const {runKnowledgeCommand}=await import('../lib/knowledge-command.mjs');
   const corpus=join(temp,'corpus');await mkdir(corpus,{recursive:true});await mkdir(root,{recursive:true});
   const sources=[{id:'source-loss',title:'loss分母审计',attribution:'共享方法提供者',evidenceType:'方法提炼',timestamp:'2026-10-26',wikiRef:'sources.md#src-source-loss'}];
-  await writeFile(join(corpus,'index.json'),JSON.stringify({version:'v1',pages:[{file:'01-loss.md',title:'比较loss口径',aliases:['归一化','loss'],sources},{file:'02-escape.md',title:'escape',aliases:[]}]}));
+  const pages=[{file:'01-loss.md',title:'比较loss口径',whenToUse:'有无监督混合后，训练指标突然下降',aliases:['归一化','loss'],sources},
+    {file:'02-escape.md',title:'escape',aliases:[]},
+    ...Array.from({length:9},(_,i)=>({file:`hint-${i}.md`,title:'loss示例',aliases:['loss']})),
+    {file:'forgotten.md',title:'原域回放',whenToUse:'微调后旧任务退步',aliases:[]}];
+  await writeFile(join(corpus,'index.json'),JSON.stringify({version:'v1',pages}));
   await writeFile(join(corpus,'01-loss.md'),'只比较相同 mask 的 loss。');await writeFile(join(corpus,'README.md'),'目录');
   await writeFile(join(temp,'private.md'),'private');await symlink(join(temp,'private.md'),join(corpus,'02-escape.md'));
   const config={version:1,id:'kb',projectId:'claude-tag',enabled:true,name:'组织知识库',personIds:['person_a'],corpusPath:corpus,verificationRequestIds:['verify']};
@@ -28,6 +32,7 @@ try {
   assert.equal(await captureKnowledgePilot(options,{groupFeed:true}),null);
   assert.equal(await captureKnowledgePilot(options,{internalRole:'worker'}),null);
   assert.match(knowledgePilotPrompt(p,'request1'),/remotelab knowledge search/);
+  assert.match(knowledgePilotPrompt(p,'request1'),/完整问题目录.*按含义选页.*不限于命中项/);
   assert.doesNotMatch(knowledgePilotPrompt(p,'request1'),/测试期标注/);
   await writeFile(join(root,'config.json'),JSON.stringify({...config,helpedLabel:'【调用了示例wiki】'}));
   const labeled=await captureKnowledgePilot(options);
@@ -68,7 +73,16 @@ try {
   const at=Date.now();await observeKnowledgeAdmission(r,root,at);await observeKnowledgeAdmission(r,root,at+1);
   const search=await queryKnowledge(r,{action:'search',query:'loss 归一化',operationId:'search1'});
   assert.equal(search.matches[0].file,'01-loss.md');assert.equal(search.matches[0].text,undefined);
-  assert.equal((await queryKnowledge(r,{action:'search',query:'unmatched token',operationId:'search2'})).matches.length,0);
+  const missed=await queryKnowledge(r,{action:'search',query:'调完以后老本事忘了',operationId:'search2'});
+  assert.equal(missed.matches.length,0);
+  assert.equal(missed.catalogComplete,true);
+  assert.deepEqual(missed.catalog.map(p=>p.file),pages.map(p=>p.file),'zero hits retain every candidate');
+  assert.equal(missed.catalog.at(-1).whenToUse,'微调后旧任务退步');
+  assert.equal(search.matches.length,8,'lexical hints retain their bounded size');
+  assert.deepEqual(search.catalog,missed.catalog,'partial/top-eight hits cannot hide other candidates');
+  assert.equal(search.catalog[1].whenToUse,'','older indexes can still route by title');
+  assert.ok(search.catalog.every(p=>!('text' in p) && !('sources' in p)),'routing does not inject body or source content');
+  // Most catalog files deliberately do not exist; search must never open them.
   const read=await queryKnowledge(r,{action:'read',page:'01-loss.md',operationId:'read1'});
   assert.equal(read.chars,[...read.text].length);assert.equal(read.kind,'body');
   assert.equal(read.title,'比较loss口径');assert.deepEqual(read.sources,sources);

@@ -46,7 +46,7 @@ export function knowledgePilotPrompt(p, requestId) {
   const label = citation || p.helpedLabel ? `测试期标注：仅当本轮实际读到知识正文，并将其用于判断或行动、效果记录为 helped 时，${citation
     ? '在相关判断旁简短标注“【引用组织wiki中「具体条目」的发现：实际采用的发现；来源：具体原始来源】”。填写真实内容，不照抄占位词。以读取结果的 title、sources 和正文引用对应具体来源；有可用原件链接时附链接，不能把裸本机路径当可访问链接。区分材料提供者、Agent整理与原始证据：kuangzhi共享方法、团队报告、zijie讨论及官方源码按实际归属写，不把全库都归给同一个人。讨论或推断写成“讨论”或“待验证假设”，不能称为已验证发现；未核实作者时使用记录或项目名称，不猜姓名。同一发现只标注一次；不同发现各自对应来源。'
     : `在相关答复中标注一次 ${JSON.stringify(p.helpedLabel)}。`}只收到入口、只搜索目录、读后未采用或效果未知时不标注；不为添加标注而调用知识库。` : '';
-  return `组织具身知识库按需试用，仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>，再用 remotelab knowledge read --page <返回的文件名> 读相关正文，必要时沿原证据核查。无关问题无需查询，不自动加载整库。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。${label}讨论和历史参数保留原适用条件，不提升为当前结论。当前输入 ${requestId}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
+  return `组织具身知识库按需试用，仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>。结果同时提供词面命中和完整问题目录；结合标题与适用场景按含义选页，不限于命中项，不把排序当置信度。再用 remotelab knowledge read --page <返回的文件名> 先读最相关正文，必要时展开关联页、沿原证据核查；目录没找到不能证明原件中没有。无关问题无需查询，不自动加载整库正文。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。${label}讨论和历史参数保留原适用条件，不提升为当前结论。当前输入 ${requestId}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
 }
 export async function observeKnowledgeAdmission(record, root = KNOWLEDGE_ROOT, now = Date.now(), explicit = false) {
   const c = await knowledgeConfig(root);
@@ -93,8 +93,14 @@ export async function queryKnowledge(record, input, {root = KNOWLEDGE_ROOT, now 
       return { p, score: words.reduce((n, w) => n + Number(fields.includes(w)), 0)
         + (p.aliases || []).reduce((n, a) => n + (q.includes(a.toLowerCase()) ? 3 : 0), 0) };
     }).filter(p => p.score > 0).sort((a,b) => b.score - a.score).slice(0, 8);
-    response = { version:index.version, indexHash:sha(indexText), matches:scored.map(({p}) => ({file:p.file,title:p.title,aliases:p.aliases})),
-      ...(scored.length ? {} : {note:'没有词面命中；可读 README.md 查看领域目录，空结果不代表没有相关经验。'}) };
+    // Small pilot corpus: expose every question so vocabulary differences cannot
+    // remove it before the Harness makes a semantic choice. Matches remain only
+    // lexical hints; neither catalog visibility nor rank proves relevance.
+    const catalog = index.pages.map(p => ({file:p.file, title:p.title, whenToUse:p.whenToUse || ''}));
+    response = { version:index.version, indexHash:sha(indexText), retrievalStrategy:'catalog-routing-v1',
+      matches:scored.map(({p}) => ({file:p.file,title:p.title,aliases:p.aliases})),
+      catalogComplete:true, catalog,
+      note:(scored.length ? '' : '没有词面命中。') + 'matches仅为词面提示；请按问题含义从完整catalog选页读取，不限于命中项。目录不是正文证据，未匹配不能证明没有相关经验。' };
   } else if (input.action === 'read') {
     const allowed = new Set(['README.md','CONFIDENCE.md','sources.md', ...index.pages.map(p => p.file)]);
     if (!allowed.has(input.page)) fail('Page is not in the current knowledge index');

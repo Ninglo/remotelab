@@ -6,7 +6,9 @@
 
 实例配置 `CONFIG_DIR/knowledge-pilot/config.json`：`{version:1,id:"organization-knowledge-v1",projectId:"claude-tag",name:"组织知识库调用",enabled:true,enabledAt:"ISO时间",personIds:["明确授权的Person"],corpusPath:"现有知识库绝对路径",verificationRequestIds:[]}`。人群变化使用新 id 保留旧记录；关闭 enabled 停止新的入口和读取，保留统计。Person 只界定调用试点，知识内容仍归组织。Web、飞书的已验证本人普通输入可获得短入口；自动任务、内部调用和群主线背景处理排除。其他成员不继承。该试用持续运行，未设自动到期日；不改变原有七天自检观察窗口。
 
-每条符合范围的新输入捕获独立开关，并把短入口放进原规则上下文及恢复快照。Agent 根据工作需要调用 `remotelab knowledge search --query <问题>` 和 `read --page <文件名>`；搜索当前 `index.json` 的标题与别名，正文仅按页返回，不自动加载整库。空匹配可回读 README。读取只允许当前索引页及 README、CONFIDENCE、sources 三个入口，校验真实路径，记录实际版本、正文哈希、Unicode字符、字节、响应量及服务端处理时长。原件沿正文引用继续核查；工具不能修改知识库。重复读取保留次数，同一 operation-id 的传输重试幂等。
+每条符合范围的新输入捕获独立开关，并把短入口放进原规则上下文及恢复快照。Agent 根据工作需要调用 `remotelab knowledge search --query <问题>` 和 `read --page <文件名>`。`search` 返回当前 `index.json` 的词面提示 `matches`（标题、文件名、别名匹配，最多8条），以及完整的 `catalog`（每页文件名、标题、`whenToUse` 适用场景），标明 `catalogComplete:true` 与 `retrievalStrategy:catalog-routing-v1`。无论零命中还是部分命中，均保留完整目录，由 Harness 按问题含义选择页面；词面排序不是候选门槛或置信度。工具本身没有向量检索或语义重排模型，目录中的概括也不能代替正文证据。旧索引没有 `whenToUse` 时保留标题，新的索引应由正文适用条件生成该字段。
+
+当前21页小库采用完整目录以避免词汇差异造成硬漏检，目录返回量进入原监控；库扩大后需依据实测成本调整目录组织方式，不能静默截断后仍声称完整。只读选中的正文，必要时展开关联页和原件，不自动加载整库正文；目录没有匹配也不能证明原件中没有。读取只允许当前索引页及 README、CONFIDENCE、sources 三个入口，校验真实路径，记录实际版本、正文哈希、Unicode字符、字节、响应量及服务端处理时长。原件沿正文引用继续核查；工具不能修改知识库。重复读取保留次数，同一 operation-id 的传输重试幂等。
 
 实际读后，原 Harness 可用 `remotelab knowledge report --file <JSON>` 回报 `{effect:"helped|no_change|misled|unknown",reason:"具体改变的判断或没有帮助的原因",evidenceSeqs:[原任务工具/附件事件编号]}`。非 unknown 需要实际事件引用；效果保留为 Agent 自评，不能当作人的验收或因果收益。未读正文、读后未回报、无法判断分别保留；无需让用户每次填表。新增真实反馈仍在原工作记录中核查。
 
