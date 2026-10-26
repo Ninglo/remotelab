@@ -14,7 +14,8 @@ try {
   const {handleKnowledgePilot}=await import('../chat/router-knowledge-pilot.mjs');
   const {runKnowledgeCommand}=await import('../lib/knowledge-command.mjs');
   const corpus=join(temp,'corpus');await mkdir(corpus,{recursive:true});await mkdir(root,{recursive:true});
-  await writeFile(join(corpus,'index.json'),JSON.stringify({version:'v1',pages:[{file:'01-loss.md',title:'比较loss口径',aliases:['归一化','loss']},{file:'02-escape.md',title:'escape',aliases:[]}]}));
+  const sources=[{id:'source-loss',title:'loss分母审计',attribution:'共享方法提供者',evidenceType:'方法提炼',timestamp:'2026-10-26',wikiRef:'sources.md#src-source-loss'}];
+  await writeFile(join(corpus,'index.json'),JSON.stringify({version:'v1',pages:[{file:'01-loss.md',title:'比较loss口径',aliases:['归一化','loss'],sources},{file:'02-escape.md',title:'escape',aliases:[]}]}));
   await writeFile(join(corpus,'01-loss.md'),'只比较相同 mask 的 loss。');await writeFile(join(corpus,'README.md'),'目录');
   await writeFile(join(temp,'private.md'),'private');await symlink(join(temp,'private.md'),join(corpus,'02-escape.md'));
   const config={version:1,id:'kb',projectId:'claude-tag',enabled:true,name:'组织知识库',personIds:['person_a'],corpusPath:corpus,verificationRequestIds:['verify']};
@@ -36,6 +37,17 @@ try {
   assert.equal(await captureKnowledgePilot({...options,viewPersonId:'person_b'}),null);
   await writeFile(join(root,'config.json'),JSON.stringify({...config,helpedLabel:'bad\nlabel'}));
   assert.equal(await captureKnowledgePilot(options),null,'invalid labels cannot enter the prompt');
+  await writeFile(join(root,'config.json'),JSON.stringify({...config,helpedCitation:'finding-source',helpedLabel:'legacy label'}));
+  const cited=await captureKnowledgePilot(options);
+  assert.equal(cited.helpedCitation,'finding-source');
+  const citationPrompt=knowledgePilotPrompt(cited,'citation');
+  assert.match(citationPrompt,/实际读到知识正文.*效果记录为 helped.*引用组织wiki/);
+  assert.match(citationPrompt,/具体原始来源.*讨论或推断.*不能称为已验证发现/);
+  assert.doesNotMatch(citationPrompt,/legacy label/,'source citation replaces the generic label');
+  assert.doesNotMatch(knowledgePilotPrompt(labeled,'old'),/引用组织wiki/,'existing accepted label snapshots remain frozen');
+  assert.equal(await captureKnowledgePilot({...options,viewPersonId:'person_b'}),null);
+  await writeFile(join(root,'config.json'),JSON.stringify({...config,helpedCitation:'invalid'}));
+  assert.equal(await captureKnowledgePilot(options),null);
   await writeFile(join(root,'config.json'),JSON.stringify(config));
   assert.equal(knowledgePilotPrompt(null,'r'), '');
   const {buildPrompt}=await import('../chat/session-manager.mjs');
@@ -46,6 +58,9 @@ try {
   const labeledPrompt=await buildPrompt('test-label',{id:'test-label',tool:'codex'},'分析',null,'codex',null,
     {...options,knowledgePilot:labeled,requestId:'labeled'},prepared);
   assert.match(labeledPrompt,/【调用了示例wiki】/);
+  const citedPrompt=await buildPrompt('test-citation',{id:'test-citation',tool:'codex'},'分析',null,'codex',null,
+    {...options,knowledgePilot:cited,requestId:'citation'},prepared);
+  assert.match(citedPrompt,/引用组织wiki.*具体原始来源/);
   const otherPrompt=await buildPrompt('test-other',{id:'test-other',tool:'codex'},'hello',null,'codex',null,
     {...options,viewPersonId:'person_b',requestId:'other'},prepared);
   assert.doesNotMatch(otherPrompt,/remotelab knowledge search/);
@@ -56,6 +71,8 @@ try {
   assert.equal((await queryKnowledge(r,{action:'search',query:'unmatched token',operationId:'search2'})).matches.length,0);
   const read=await queryKnowledge(r,{action:'read',page:'01-loss.md',operationId:'read1'});
   assert.equal(read.chars,[...read.text].length);assert.equal(read.kind,'body');
+  assert.equal(read.title,'比较loss口径');assert.deepEqual(read.sources,sources);
+  assert.equal(search.matches[0].sources,undefined,'search does not inject all source metadata');
   assert.equal((await queryKnowledge(r,{action:'read',page:'01-loss.md',operationId:'read1'})).replayed,true);
   await assert.rejects(queryKnowledge(r,{action:'read',page:'README.md',operationId:'read1'}),/different/);
   await queryKnowledge(r,{action:'read',page:'01-loss.md',operationId:'read2'});
