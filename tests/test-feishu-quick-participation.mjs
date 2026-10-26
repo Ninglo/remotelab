@@ -69,6 +69,30 @@ try {
     alreadyDeleted.code = 231011;
     throw alreadyDeleted;
   }), true, 'a successful but unrecorded DELETE can be reconciled after restart');
+  for (const errorFields of [{ code: 231003 }, { response: { data: { code: 231003 } } }, { feishuCode: 231003 }]) {
+    const messageId = `deleted-message-${JSON.stringify(errorFields)}`;
+    const gone = async () => { throw Object.assign(new Error('message no longer exists'), errorFields); };
+    await readStore.add(messageId, async () => ({ reactionId: 'old-read-reaction' }));
+    assert.equal(await createFeishuReadReactionStore(home).remove(messageId, gone), true);
+    assert.equal(await readStore.remove(messageId, () => assert.fail('archived cleanup must not retry')), false);
+    assert(!(await readStore.active()).some(record => record.messageId === messageId));
+    await outcomeStore.apply(messageId, 'OnIt', createOutcome('old-outcome'));
+    await outcomeStore.apply(messageId, null, null, { stage: 2 });
+    await createFeishuOutcomeReactionStore(home).clean(messageId, gone);
+    await outcomeStore.clean(messageId, () => assert.fail('completed outcome cleanup must not retry'));
+    assert.equal((await outcomeStore.snapshot(messageId)).status, 'withdrawn');
+  }
+  for (const code of [231002, 231007, 231008, 231010, 'ETIMEDOUT']) {
+    const messageId = `retry-cleanup-${code}`;
+    const failure = Object.assign(new Error('cleanup still pending'), { code });
+    await readStore.add(messageId, async () => ({ reactionId: 'retain-read-receipt' }));
+    await assert.rejects(readStore.remove(messageId, async () => { throw failure; }), error => error === failure);
+    assert((await readStore.active()).some(record => record.messageId === messageId && !record.removed));
+    await outcomeStore.apply(messageId, 'OnIt', createOutcome('retain-outcome-receipt'));
+    await outcomeStore.apply(messageId, null, null, { stage: 2 });
+    await assert.rejects(outcomeStore.clean(messageId, async () => { throw failure; }), error => error === failure);
+    assert.equal((await outcomeStore.snapshot(messageId)).status, 'withdrawal-pending');
+  }
   const sdkCalls = [];
   const boundReaction = createQuickParticipationReaction({ appClient: { im: { v1: {
     messageReaction: { create: async request => {

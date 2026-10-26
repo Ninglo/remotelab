@@ -198,6 +198,62 @@ try {
   // Exercise the real outbox refinement after the opening learns a provider
   // thread ID. Mainline and topic epochs deliberately differ, as in the incident.
   const { createParticipationController } = await import('../connectors/feishu/participation-state.mjs');
+  const { createRecordStore } = await import('../lib/durable-records.mjs');
+  for (const scenario of ['deleted-message', 'cleanup-offline', 'cancel-offline', 'settled-cleanup-offline']) {
+    const storageDir = join(home, `startup-${scenario}`);
+    const recoveryRuntime = { config: { storageDir, sourceRouteId: 'startup-bot', groups:
+      Object.fromEntries(['failed', 'healthy'].map(chatId => [chatId, {
+        participationMode: 'ambient', participationControls: true, participationStatusCard: false,
+      }])) }, storagePaths: {} };
+    const receipts = createFeishuReadReactionStore(storageDir);
+    await receipts.add('old-message', async () => ({ reactionId: 'old-reaction' }));
+    let failing = true;
+    const cleaned = [], warnings = [];
+    const options = {
+      cancelSession: async id => {
+        if (failing && scenario === 'cancel-offline' && id === 'failed-session') throw new Error('cancel offline');
+      },
+      cleanup: async record => {
+        cleaned.push(record.source.chatId);
+        if (record.source.chatId !== 'failed') return;
+        await receipts.remove('old-message', async () => {
+          if (scenario === 'deleted-message') throw Object.assign(new Error('message no longer exists'), { code: 231003 });
+          if (failing) throw Object.assign(new Error('cleanup offline'), { code: 'ETIMEDOUT' });
+        });
+      },
+    };
+    let controller = createParticipationController(recoveryRuntime, options);
+    const records = createRecordStore(join(storageDir, 'participation-state'));
+    const sources = ['failed', 'healthy'].map(chatId => ({ chatId, chatType: 'group', chatMode: 'group', tenantKey: 'tenant' }));
+    for (const [index, summary] of sources.entries()) {
+      const initial = await controller.state(summary);
+      await records.mutate(initial.key, () => ({ ...initial, sequence: index, mode: 'paused', modeOverride: true,
+        stopPending: index === 0 && scenario !== 'settled-cleanup-offline', sessionId: `${summary.chatId}-session` }));
+    }
+    controller = createParticipationController(recoveryRuntime, options);
+    const originalWarn = console.warn;
+    try {
+      console.warn = message => warnings.push(message);
+      await controller.restore();
+    } finally { console.warn = originalWarn; }
+    assert(cleaned.includes('healthy'), `${scenario}: another conversation must still recover`);
+    assert.equal((await controller.state(sources[0])).mode, 'paused', 'startup cannot resume a paused group');
+    if (scenario === 'deleted-message') {
+      assert.equal((await controller.state(sources[0])).stopPending, false);
+      assert.equal((await receipts.active()).length, 0, 'missing message finishes the retained cleanup');
+      assert.equal(warnings.length, 0);
+    } else {
+      assert.equal(warnings.length, 1);
+      assert.match(warnings[0], /restore failed/);
+      assert.equal((await controller.state(sources[0])).stopPending, scenario !== 'settled-cleanup-offline');
+      assert.equal((await receipts.active()).length, 1, 'real failures retain cleanup evidence');
+      failing = false;
+      await createParticipationController(recoveryRuntime, options).restore();
+      assert.equal((await receipts.active()).length, 0, 'a later recovery can finish the original cleanup');
+      assert.equal((await controller.state(sources[0])).stopPending, false);
+      assert.equal((await controller.state(sources[0])).mode, 'paused');
+    }
+  }
   const { applyFeishuReplyRouting, buildFeishuRequestDeliveryTarget, buildFeishuSessionConversationTarget }
     = await import('../connectors/feishu/reply-routing.mjs');
   const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery, resolveSourceDelivery }

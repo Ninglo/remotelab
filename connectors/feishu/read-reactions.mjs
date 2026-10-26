@@ -3,6 +3,11 @@ import { join } from 'node:path';
 import { createRecordStore } from '../../lib/durable-records.mjs';
 
 const keyFor = messageId => createHash('sha256').update(messageId).digest('hex').slice(0, 24);
+// These IDs came from this Bot's successful create receipt. If either the
+// message or reaction is gone, removing that recorded reaction is complete.
+const reactionAlreadyGone = error => [231003, 231011].includes(
+  Number(error?.feishuCode ?? error?.response?.data?.code ?? error?.code),
+);
 
 // Keep the Bot's temporary reaction ID until the final reaction has replaced it.
 // The same store survives connector restarts and event redelivery.
@@ -30,10 +35,7 @@ export function createFeishuReadReactionStore(root) {
       try {
         await removeReaction(messageId, receipt.reactionId);
       } catch (error) {
-        // A prior DELETE may have succeeded before its local receipt was saved.
-        // The ID came from this Bot's successful create call, so invalid ID now
-        // means the temporary reaction is already gone.
-        if (Number(error?.code || error?.response?.data?.code) !== 231011) throw error;
+        if (!reactionAlreadyGone(error)) throw error;
       }
       await records.mutate(key, current => ({ ...current, removed: true }));
       await records.archive(key);
@@ -90,7 +92,7 @@ export function createFeishuOutcomeReactionStore(root) {
         const current = await records.get(key);
         for (const id of current?.pendingRemoval || []) {
           try { await remove(messageId, id); }
-          catch (error) { if (Number(error?.code || error?.response?.data?.code) !== 231011) throw error; }
+          catch (error) { if (!reactionAlreadyGone(error)) throw error; }
           await records.mutate(key, value => ({ ...value,
             pendingRemoval: value.pendingRemoval.filter(pending => pending !== id) }));
         }

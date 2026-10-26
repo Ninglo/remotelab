@@ -966,7 +966,12 @@ Jev does not interpret
 natural-language invitations, mode changes or topic changes. `/unmute` restores active participation for
 new messages; queued content from before restoration is not replayed as new work.
 Pausing or entering listening cancels that conversation's ongoing work and removes
-its retained THINKING reactions. Listening observations use a durable preparation
+its retained THINKING reactions. Cleanup of a recorded Bot reaction treats a
+missing message or reaction (231003 / 231011) as already removed; permission and
+transport failures retain the receipt. Startup restores conversations separately:
+a failed cancellation, cleanup or card refresh is logged without stopping the
+connector, and the saved participation mode and unfinished work remain intact.
+Listening observations use a durable preparation
 with the same Session resolver, attachment ingestion and fixed retry packet as
 normal inputs. Feedback for active inputs reads the accepted Request instead.
 Definite input rejections are archived with

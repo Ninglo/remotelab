@@ -341,14 +341,19 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   }
   async function restore() {
     for (const record of await records.active()) {
-      const source = await resolveSource(record.source);
-      if (!participationEnabled(runtime, source)) continue;
-      if (record.stopPending) await change(source, record.mode,
-        { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true, background: true });
-      else {
-        if (record.mode !== 'active') await cleanup?.(record);
-        try { await publish({ ...record, source }, { existingOnly: true, background: true }); }
-        catch (error) { console.warn(`[feishu-participation] card restore failed: ${error.message}`); }
+      try {
+        const source = await resolveSource(record.source);
+        if (!participationEnabled(runtime, source)) continue;
+        if (record.stopPending) await change(source, record.mode,
+          { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true, background: true });
+        else {
+          if (record.mode !== 'active') await cleanup?.(record);
+          await publish({ ...record, source }, { existingOnly: true, background: true });
+        }
+      } catch (error) {
+        // Mode and unfinished cleanup remain durable. A failed conversation
+        // must not prevent the connector from receiving all other messages.
+        console.warn(`[feishu-participation] restore failed (${record.key}): ${error.message}`);
       }
     }
   }
