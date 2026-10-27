@@ -7,7 +7,7 @@ const [modulePath,executablePath,extension,artifacts,deps]=process.argv.slice(2)
 const {chromium}=await import(pathToFileURL(modulePath));
 const {build}=await import(pathToFileURL(join(deps,'node_modules/esbuild/lib/main.js')));
 const bundle=await build({entryPoints:[resolve('tests/fixtures-feishu-native-list.jsx')],bundle:true,write:false,nodePaths:[join(deps,'node_modules')],format:'iife'});
-const html=`<!doctype html><meta charset="utf-8"><script>userId='1000000000000000001'</script><style>*{box-sizing:border-box}body{margin:0;font:14px system-ui}#app{display:flex;height:100vh}.appNavbar{width:150px;flex-shrink:0;background:#eee}.navbarMenu{display:flex;align-items:center;height:44px}.a11y_feed_filter_list{width:160px;flex-shrink:0;background:#f5f6f7}.native-group-scroll{height:100%;overflow:auto}.native-group-scroll button{display:block;width:100%;height:36px;border:0;background:transparent}.page-view-messenger{display:flex;width:520px;flex-shrink:0}.feed-column{display:flex;flex-direction:column;width:360px;flex-shrink:0;height:100vh}.feed-column header{display:flex;align-items:center;height:48px;padding:12px}.feed-column header>span{flex:1}.native-list-wrapper{flex:1;min-height:0}.feed-main-list{height:100%;width:100%;overflow:auto}.lark-chat{flex:1;min-width:0}.avatar{float:left;width:32px;height:32px;background:#70aaff;border-radius:50%;margin:12px}.a11y_feed_card_main{padding-top:12px;white-space:nowrap;overflow:hidden}._5d806a78{font-size:12px;color:#777}._3766bee7{position:absolute;right:10px;top:8px;font-size:10px;color:#777}</style><div id="app"></div><script src="/fixture.js"></script>`;
+const html=`<!doctype html><meta charset="utf-8"><script>userId='1000000000000000001'</script><style>*{box-sizing:border-box}body{margin:0;font:14px system-ui}#app{display:flex;height:100vh}.appNavbar{width:150px;flex-shrink:0;background:#eee}.navbarMenu{display:flex;align-items:center;height:44px}.a11y_feed_filter_list{width:160px;flex-shrink:0;background:#f5f6f7}.native-group-scroll{height:100%;overflow:auto}.native-group-scroll button{display:block;width:100%;height:36px;border:0;background:transparent}.page-view-messenger{display:flex;width:520px;flex-shrink:0}.feed-column{display:flex;flex-direction:column;width:360px;flex-shrink:0;height:100vh}.feed-column header{display:flex;align-items:center;height:48px;padding:12px}.feed-column header>span{flex:1}.native-list-wrapper{flex:1;min-height:0}.feed-main-list{height:100%;width:100%;overflow:auto}.page-view-messenger-chat{width:calc(100vw - 150px - 520px)}.lark-chat{width:100%;min-width:0}.avatar{float:left;width:32px;height:32px;background:#70aaff;border-radius:50%;margin:12px}.a11y_feed_card_main{padding-top:12px;white-space:nowrap;overflow:hidden}._5d806a78{font-size:12px;color:#777}._3766bee7{position:absolute;right:10px;top:8px;font-size:10px;color:#777}</style><div id="app" class="messagesLayout"></div><script src="/fixture.js"></script>`;
 const profile=await mkdtemp(join(tmpdir(),'feishu-native-'));await mkdir(artifacts,{recursive:true});let context;
 try{
  context=await chromium.launchPersistentContext(profile,{executablePath,headless:true,viewport:{width:1470,height:801},ignoreDefaultArgs:['--disable-extensions'],args:['--no-sandbox','--disable-extensions-except='+extension,'--load-extension='+extension]});
@@ -28,14 +28,22 @@ try{
  assert.equal(await page.locator('#rlfe-sort-host').count(),0);
  assert.equal(await page.locator('#rlfe-personal-nav').evaluate(e=>e.closest('#rlfe-web-sidebar')!==null),true);
  assert.equal(await page.locator('#rlfe-personal-nav button').first().evaluate(e=>e.getBoundingClientRect().height),32);
+ const chatFills=()=>page.locator('.page-view-messenger-chat').evaluate(e=>Math.abs(e.getBoundingClientRect().right-innerWidth)<1);
+ assert.equal(await chatFills(),true);
+ await page.evaluate(()=>document.documentElement.style.setProperty('--rlfe-ui-font','Smiley Sans'));
+ assert.ok((await page.getByRole('combobox',{name:'消息排序'}).evaluate(e=>getComputedStyle(e).fontFamily)).includes('Smiley Sans'));
+ await page.evaluate(()=>document.documentElement.style.setProperty('--rlfe-ui-font','serif'));
+ assert.equal(await page.getByRole('combobox',{name:'消息排序'}).evaluate(e=>getComputedStyle(e).fontFamily),'serif');
  const nav=page.getByRole('separator',{name:'调整左侧导航宽度'});await nav.focus();
  for(let i=0;i<4;i++)await page.keyboard.press('ArrowLeft');
  await page.waitForFunction(()=>document.querySelector('.appNavbar').getBoundingClientRect().width===96&&document.querySelector('.appNavbar').hasAttribute('data-rlfe-narrow'));
+ assert.equal(await chatFills(),true);
  assert.equal(await page.locator('.navbarMenu').first().evaluate(e=>getComputedStyle(e).flexDirection),'column');
  assert.equal(await page.locator('.navbarMenu-content').first().evaluate(e=>e.getBoundingClientRect().top>=e.previousElementSibling.getBoundingClientRect().bottom),true);
  await page.keyboard.press('Home');await page.waitForFunction(()=>!document.querySelector('.appNavbar').hasAttribute('data-rlfe-narrow'));
  const group=page.getByRole('separator',{name:'调整分组栏宽度'});await group.focus();await page.keyboard.press('ArrowRight');await page.waitForFunction(()=>document.querySelector('.a11y_feed_filter_list').getBoundingClientRect().width===176);
  assert.equal(await page.locator('.page-view-messenger').evaluate(e=>Math.round(e.getBoundingClientRect().right)===Math.round(e.querySelector('.feed-column').getBoundingClientRect().right)),true);
+ assert.equal(await chatFills(),true);
  const select=page.getByRole('combobox',{name:'消息排序'});
  await select.selectOption('status');
  await page.waitForFunction(()=>JSON.parse(document.documentElement.dataset.rlfeNativeSort).applied===true);
@@ -62,5 +70,5 @@ try{
  assert.equal(await page.locator('#rlfe-native-sort-control').evaluate(e=>e.getBoundingClientRect().bottom<=e.parentElement.getBoundingClientRect().bottom),true);
  assert.equal(await page.locator('#rlfe-resource-nav-host a').last().evaluate(e=>e.getBoundingClientRect().bottom<=innerHeight),true);
  assert.deepEqual(errors,[]);
- const result={scope:'real MV3 extension and React 17; synthetic native Feishu module and account, not device acceptance',checks:['mapped title and status preserve native summary and timestamp','compact shortcuts below existing groups and narrow app icons above labels','independent group-column width','full-list pagination before native-component sort','native pinned row remains first','status, group and topic sort','virtualized scrolling, click, keyboard and context menu retain native handlers','switch back to original order and draft preserved'],errors};await writeFile(join(artifacts,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+ const result={scope:'real MV3 extension and React 17; synthetic native Feishu module and account, not device acceptance',checks:['mapped title and status preserve native summary and timestamp','compact shortcuts below existing groups and narrow app icons above labels','chat fills remaining width after navigation and group resizing','sort control follows interface font changes','independent group-column width','full-list pagination before native-component sort','native pinned row remains first','status, group and topic sort','virtualized scrolling, click, keyboard and context menu retain native handlers','switch back to original order and draft preserved'],errors};await writeFile(join(artifacts,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
 }finally{await context?.close();await rm(profile,{recursive:true,force:true});}

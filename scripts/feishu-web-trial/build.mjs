@@ -36,7 +36,7 @@ const locator=await readFile(join(base,'../mini-live/native-feed-locator.js'),'u
 const pets={};for(const [id,name]of Object.entries({boocha:'boocha.gif','noto-cat':'cat.webp','noto-fox':'fox.webp','noto-panda':'panda.webp','noto-penguin':'penguin.webp'}))pets[id]='data:image/'+(name.endsWith('.gif')?'gif':'webp')+';base64,'+(await readFile(join(base,'assets',name))).toString('base64');
 const parts=await Promise.all(['themes.js','preferences.js','message-settings.js','settings.js','companion.js','reading.js','group-board.js','sidebar.js','resource-nav.js','personal-workspace.js','sort-ui.js','topic-labels.js','resize.js','topic-sync.js','runtime-ui.js'].map(n=>readFile(join(out,n),'utf8')));
 await writeFile(join(out,'content.js'),parts.join('\n').replaceAll('__LAB_PET_DATA__',JSON.stringify(pets)).replaceAll('__BEAR_DATA_URL__','data:image/gif;base64,'+(await readFile(join(base,'assets/sticker-bear.gif'))).toString('base64')).replaceAll('__RLFE_BOARD_LOCATOR__',locator));
-manifest.version='1.2.9';manifest.version_name='1.2.9 原生列表试用';manifest.description='保留飞书原生摘要与操作，微调左侧入口、列宽和排序。';
+manifest.version='1.2.10';manifest.version_name='1.2.10 原生列表试用';manifest.description='保留飞书原生摘要与操作，微调左侧入口、列宽和排序。';
 manifest.content_scripts.unshift({matches:manifest.content_scripts[0].matches,js:['native-sort.js'],world:'MAIN',run_at:'document_start'});
 await writeFile(join(out,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify({version:manifest.version,output:out,published:false}));
