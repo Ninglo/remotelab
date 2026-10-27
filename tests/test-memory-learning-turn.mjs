@@ -52,7 +52,8 @@ try {
   const after = await buildPrompt(session.id, session, '解释方案', 'codex', 'codex', { userMessageCount: 3 }, options);
   assert.doesNotMatch(after, /讲方案时使用具体例子/);
   const afterRetrieval = await m.buildLearningContext({ ...actor, query: '解释方案' });
-  assert.match(afterRetrieval, /withdrawn.*具体例子/);
+  assert.match(afterRetrieval, /withdrawn.*已撤销/);
+  assert.doesNotMatch(afterRetrieval, /讲方案时使用具体例子/);
   assert.doesNotMatch(afterRetrieval, /confirmed.*具体例子/);
   assert.match(afterRetrieval, /must no longer guide work/);
   // The reviewer sees actual turn delivery IDs, not a claim that retrieval
@@ -97,7 +98,9 @@ try {
   assert.equal(await runMemoryLearningCommand(['apply', '--file', payload, '--run-id', cliRun, '--json'], io), 0);
   assert.equal(JSON.parse(printed).results[0].status, 'withdrawn');
   assert.ok((await loadHistory(cliSession)).some(e => e.operation === 'write_memory' && e.phase === 'applied'));
-  assert.match(await m.buildLearningContext({ ...actor, query: '一个新任务' }), /withdrawn.*查询当前身份/);
+  assert.doesNotMatch(await m.buildLearningContext({ ...actor, query: '一个新任务' }), /withdrawn|查询当前身份/);
+  assert.match(await m.buildLearningContext({ ...actor, query: '权限' }), /withdrawn.*已撤销，停止使用/);
+  assert.doesNotMatch(await m.buildLearningContext({ ...actor, query: '权限' }), /查询当前身份/);
   const delegatedSession = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', delegatedRun = 'run_storage_delegated';
   await requests.accept({ sessionId: delegatedSession, requestId: 'storage_delegation', runId: delegatedRun,
     text: '维护行动手册存储', options: { viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId,
@@ -108,7 +111,7 @@ try {
   assert.equal(JSON.parse(printed).entries, 1);
   printed = '';
   await runMemoryLearningCommand(['context', '--handbook', '--query', '权限', '--run-id', delegatedRun, '--json'], io);
-  assert.match(JSON.parse(printed).context, /withdrawn.*查询当前身份/);
+  assert.match(JSON.parse(printed).context, /withdrawn.*已撤销，停止使用/);
   assert.doesNotMatch(JSON.parse(printed).context, /具体例子/);
   assert.ok((await loadHistory(delegatedSession)).some(e => e.operation === 'read_memory' && e.learningReceipts.length));
   printed = '';

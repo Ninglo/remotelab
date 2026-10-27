@@ -4,6 +4,7 @@ import {mkdtemp,mkdir,writeFile,readFile,symlink,unlink,rm} from 'node:fs/promis
 import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {fileId,recordFileEvidence,fileEvidence} from '../chat/monitoring-file-evidence.mjs';
 import {handleMonitoringEvidence} from '../chat/router-monitoring-evidence.mjs';
+import {migratePersonalProfile} from '../chat/memory-learning.mjs';
 const dir=await mkdtemp(join(tmpdir(),'monitoring-evidence-'));const sid='a'.repeat(32),path=join(dir,'memory.md');
 try{
  await writeFile(path,'private body <script>alert(1)</script>');
@@ -27,5 +28,16 @@ try{
  const content=await get(base+'&read=1');assert(content.body.includes('&lt;script&gt;'));assert(!content.body.includes('<script>'));
  const original=await get(base+'&source='+sid+':5');assert(original.body.includes('+after'));assert.equal((await get(base+'&source='+sid+':99')).status,404);
  await unlink(path);await symlink('/etc/passwd',path);assert.equal((await get(base+'&read=1')).status,409);
+ const profilePath=join(dir,'reference','people','person_fixture.md');await mkdir(join(dir,'reference','people'),{recursive:true});
+ const entries=['confirmed','observed','withdrawn'].map((status,i)=>({id:'mem_'+String(i).padStart(16,'0'),key:status,version:1,kind:'habit',status,content:status+'_BODY',evidence:[{quote:'PRIVATE_QUOTE'}]}));
+ await writeFile(profilePath,'# Fixture\n<!-- remotelab-learning:start -->\n<!-- remotelab-learning-data:'+Buffer.from(JSON.stringify({version:1,entries})).toString('base64')+' -->\n<!-- remotelab-learning:end -->\n');
+ await migratePersonalProfile(profilePath);
+ await writeFile(config.registryPath,JSON.stringify({groups:[{id:'navigation',name:'档案',collectVersions:true,paths:[profilePath]}]}));
+ await writeFile(config.statePath,JSON.stringify({groups:{navigation:{files:{[profilePath]:{target:profilePath,size:100}}}},events:[]}));
+ const query='groups=navigation&file='+fileId(profilePath)+'&read=1&fragment=1&profile=1';
+ assert.equal((await get(query,false)).status,401);
+ const projection=await get(query);assert.equal(projection.status,200);
+ assert.equal(JSON.parse(projection.body).profile.entries.length,3);
+ assert.match(projection.body,/confirmed_BODY|observed_BODY/);assert.doesNotMatch(projection.body,/withdrawn_BODY|PRIVATE_QUOTE|remotelab-learning-data/);
  console.log('PASS: authenticated catalogue/body, escaping, exact native provenance, failed/duplicate/out-of-scope events, unknown source, symlink retarget');
 }finally{await rm(dir,{recursive:true,force:true})}

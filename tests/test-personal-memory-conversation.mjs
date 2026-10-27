@@ -148,7 +148,7 @@ try {
   assert.equal(await mayReviewGroupPersonalMemory(groupInput), false);
   assert.equal((await apply([{ ...habit, key: 'new-pattern' }], '请联系熟悉的例子')).promotedCount, 0);
   assert.doesNotMatch(await m.buildLearningContext({ ...actor, memoryDir, query: '解释', authDocument: await loadAuthDocument({ persistMigration: false }) }), /解释陌生概念时先联系/);
-  assert.equal((await inspect()).profile.entries[0].status, 'confirmed', 'pause retains stored records');
+  assert.equal((await inspect()).profile.entries.find(e => e.key === habit.key).status, 'confirmed', 'pause retains stored records');
   const doc = await loadAuthDocument({ persistMigration: false });
   assert.equal(doc.people.find(p => p.id === bob.personId).preferences.personalMemory, undefined);
   assert.equal(doc.people.find(p => p.id === actor.personId).preferences.unrelated, 'alice');

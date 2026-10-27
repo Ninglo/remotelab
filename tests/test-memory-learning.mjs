@@ -58,10 +58,11 @@ try {
   assert.doesNotMatch(await context(), /倾向于大白话/);
   // Existing inferred records must remain reviewable without leaking into task
   // retrieval. Loading them must not rewrite statuses, evidence or versions.
-  const legacy = m.parseLearningDocument(await readFile(paths.profile, 'utf8'));
+  const legacy = await m.readPersonalProfile(paths.profile, { details: true });
   legacy.entries[0].status = 'inferred';
-  const legacyRaw = (await readFile(paths.profile, 'utf8')).replace(/<!-- remotelab-learning-data:[A-Za-z0-9+/=]+ -->/,
-    `<!-- remotelab-learning-data:${Buffer.from(JSON.stringify({ version: 1, entries: legacy.entries })).toString('base64')} -->`);
+  const legacyRaw = legacy.prefix + '<!-- remotelab-learning:start -->\n'
+    + `<!-- remotelab-learning-data:${Buffer.from(JSON.stringify({ version: 1, entries: legacy.entries })).toString('base64')} -->`
+    + '\n<!-- remotelab-learning:end -->' + legacy.suffix;
   await writeFile(paths.profile, legacyRaw);
   assert.equal((await snapshot()).profile.entries[0].status, 'inferred');
   assert.doesNotMatch(await context(), /倾向于大白话/);
@@ -95,6 +96,9 @@ try {
   });
   assert.equal(promptCalls, 1, 'reuse the one reviewer; do not also invoke legacy writeback');
   assert.equal(result.promotedCount, 1);
+  entry = (await snapshot()).profile.entries[0];
+  assert.equal(entry.status, 'observed', 'background model cannot self-certify an explicit preference');
+  await apply([{ ...habit, kind: 'preference', action: 'revise', expectedVersion: entry.version, explicit: true }], sources('explicit_owner', '以后解释都用大白话解释'));
   entry = (await snapshot()).profile.entries[0];
   assert.equal(entry.status, 'confirmed');
   assert.match(await context(), /confirmed.*大白话/);
@@ -189,13 +193,14 @@ try {
   assert.equal(entry.history.at(-1).status, 'confirmed');
   result = await apply([{ ...habit, expectedVersion: entry.version }], sources('later', '用大白话解释'));
   assert.equal(result.promotedCount, 0);
-  assert.match(await context(), /withdrawn.*大白话/);
+  assert.match(await context(), /withdrawn.*已撤销/);
+  assert.doesNotMatch(await context(), /倾向于大白话/);
   const manualWithdrawal = { key: 'name-address', kind: 'preference', action: 'withdraw', explicit: true,
     supersedesManual: '使用全名', content: '不再默认用全名称呼。',
     evidence: [{ seq: 1, quote: '撤销使用全名这个称呼偏好' }] };
   result = await apply([manualWithdrawal], sources('manual_withdraw', '撤销使用全名这个称呼偏好'));
   assert.equal(result.results[0].status, 'withdrawn');
-  assert.match(await context(), /替代人工原文：使用全名/);
+  assert.doesNotMatch(await context(), /人工维护的称呼偏好：使用全名/);
   assert.match((await snapshot()).profile.prefix, /人工维护的称呼偏好：使用全名/);
   const manualEntry = (await snapshot()).profile.entries.find(e => e.key === 'name-address');
   result = await apply([{ ...manualWithdrawal, key: 'fake-old-record', supersedesManual: '不存在的旧条目' }], sources('fake_manual', '撤销使用全名这个称呼偏好'));
@@ -238,7 +243,7 @@ try {
         evidence: [{ seq: 1, quote: '今后称呼我请用全名' }] }] });
     } });
   assert.equal(isolatedReviewCalls, 1);
-  assert.equal(personalOnly.results[0].status, 'confirmed');
+  assert.equal(personalOnly.results[0].status, 'observed');
   assert.equal((await readFile(paths.handbook, 'utf8')).length, 2 * 1024 * 1024 + 1);
   const blockedMethod = await apply([{ ...method, key: 'oversized-method' }], sources('bad-target', '检查权限', '{"code":0}'));
   assert.equal(blockedMethod.promotedCount, 0);

@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { MEMORY_DIR } from '../lib/config.mjs';
 import { findIdentity, getCachedAuthDocument, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
-import { parseLearningDocument } from './memory-learning.mjs';
+import { readPersonalProfile } from './memory-learning.mjs';
 import { readMemoryDocument } from './memory-document.mjs';
 
 const text = value => typeof value === 'string' ? value.trim() : '';
@@ -86,8 +86,7 @@ export async function buildRelatedPersonContext(options = {}) {
             : 'Profile unavailable or budget skipped; resolve applicable constraints before person-specific output.' });
         continue;
       }
-      const raw = source.text;
-      const document = parseLearningDocument(raw);
+      const document = await readPersonalProfile(path);
       const replacements = document.entries.filter(entry => entry.supersedesManual && ['confirmed', 'withdrawn'].includes(entry.status));
       const manual = document.prefix.split(/(?=^##\s)/m).filter(section => naming.test(section.split('\n')[0]))
         .map(section => replacements.reduce((body, entry) => body.replace(entry.supersedesManual, '[This manual statement has been superseded; see the current entry below.]'), section));

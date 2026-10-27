@@ -7,6 +7,7 @@ import { extname } from 'node:path';
 import { evidenceConfig, fileId, fileEvidence } from './monitoring-file-evidence.mjs';
 import { loadHistory } from './history.mjs';
 import { requests } from './requests.mjs';
+import { readPersonalProfile } from './memory-learning.mjs';
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const link=(label,q)=>`<a href="/api/monitoring-evidence?${esc(new URLSearchParams(q))}">${esc(label)}</a>`;
 const date=x=>new Date(x).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
@@ -61,7 +62,14 @@ export async function handleMonitoringEvidence({req,res,pathname,authSession,con
  }
  body=(fragment?'':link('← 返回文件清单',base))+`<p class="file-path">${esc(file.path)}</p>`;
  if(q.get('read')==='1'){
-  body+='<h2>当前文件正文</h2><p class="muted">只读预览；查看时间 '+esc(date(Date.now()))+'。</p><pre>'+esc(await readTrackedFile(file.path,file.entry))+'</pre>';
+  const tracked=await readTrackedFile(file.path,file.entry);
+  if(fragment&&q.get('profile')==='1'&&/\/reference\/people\/person_[a-zA-Z0-9_-]+\.md$/.test(file.path)){
+   const document=await readPersonalProfile(file.path);
+   const profile={prefix:document.prefix,suffix:document.suffix,entries:document.entries.map(e=>({id:e.id,version:e.version,status:e.status,
+    ...(e.status==='withdrawn'?{}:{content:e.content,conditions:e.conditions,exceptions:e.exceptions})}))};
+   res.writeHead(200,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({title:'个人档案',profile}));return true;
+  }
+  body+='<h2>当前文件正文</h2><p class="muted">只读预览；查看时间 '+esc(date(Date.now()))+'。</p><pre>'+esc(tracked)+'</pre>';
   if(fragment){send(200,'当前文件正文',body);return true}
  }else body+=`<p>${link('读取当前文件正文',{...base,file:file.id,read:'1'})}</p>`;
  const native=await fileEvidence(config,file.path);

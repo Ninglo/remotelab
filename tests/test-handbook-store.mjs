@@ -78,8 +78,9 @@ try {
     ...structuredClone(seed), id: `mem_person_${i}`, kind: 'preference', status: 'withdrawn',
     content: `PERSON_WITHDRAWAL_${i}`, updatedAt: '2030-01-01',
   }))));
-  assert.doesNotMatch(await m.buildLearningContext({ ...actor, query: '飞书权限' }), new RegExp(seed.id),
-    'default mixed-source budget behavior is unchanged');
+  assert.match(await m.buildLearningContext({ ...actor, query: '飞书权限' }), new RegExp(seed.id),
+    'withdrawn profiles cannot evict a relevant verified method');
+  assert.doesNotMatch(await m.buildLearningContext({ ...actor, query: '飞书权限' }), /PERSON_WITHDRAWAL/);
   const methodsOnly = await m.buildLearningContext({ ...actor, query: '飞书权限', handbookOnly: true });
   assert.match(methodsOnly, new RegExp(seed.id));
   assert.doesNotMatch(methodsOnly, /PERSON_WITHDRAWAL/);

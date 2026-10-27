@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 const START = '<!-- remotelab-learning:start -->';
 const END = '<!-- remotelab-learning:end -->';
-const POINTER = /<!-- remotelab-handbook-store:([a-f0-9-]{36}) -->/;
+const POINTER = /<!-- remotelab-(handbook|profile)-store:([a-f0-9-]{36}) -->/;
 const ARRAYS = ['evidence', 'history', 'counterexamples', 'outcomes'];
 const hash = value => createHash('sha256').update(value).digest('hex');
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -45,8 +45,8 @@ function envelope(raw) {
   const start = raw.indexOf(START), end = raw.indexOf(END);
   if (start < 0 || end < start || match.index < start || match.index > end
     || raw.indexOf(START, start + START.length) >= 0 || raw.indexOf(END, end + END.length) >= 0
-    || raw.match(/remotelab-handbook-store:/g)?.length !== 1) throw new Error('Malformed handbook store pointer');
-  return { prefix: raw.slice(0, start), suffix: raw.slice(end + END.length), generation: match[1] };
+    || raw.match(/remotelab-(?:handbook|profile)-store:/g)?.length !== 1) throw new Error('Malformed memory store pointer');
+  return { prefix: raw.slice(0, start), suffix: raw.slice(end + END.length), storeKind: match[1], generation: match[2] };
 }
 
 async function storeFor(path, generation, create = false) {
@@ -140,11 +140,12 @@ async function saveEntry(root, entry, previous, parent) {
   await atomic(currentPath(root, entry.id), JSON.stringify(summary(entry, head)));
 }
 
-export async function readHandbook(path, { parseLegacy, details = false, entryId, key, legacyLimit = 2 * 1024 * 1024 } = {}) {
+export async function readHandbook(path, { parseLegacy, details = false, entryId, key, legacyLimit = 2 * 1024 * 1024, storeKind = 'handbook' } = {}) {
   let raw;
   try { raw = await regular(path, legacyLimit); }
   catch (error) { if (error.code === 'ENOENT') raw = ''; else throw error; }
   const pointer = envelope(raw);
+  if (pointer && pointer.storeKind !== storeKind) throw new Error('Memory store kind mismatch');
   if (!pointer) {
     const document = parseLegacy(raw);
     if (key) document.entries = document.entries.filter(e => e.key === key || e.id === key);
@@ -200,9 +201,10 @@ export async function commitHandbook(path, document, entry) {
 
 // Called under the same cross-process learning lock as normal updates. The only
 // relaxed legacy limit belongs to this explicit, one-time conversion operation.
-export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 * 1024 * 1024 } = {}) {
+export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 * 1024 * 1024, storeKind = 'handbook' } = {}) {
   const raw = await regular(path, maxLegacyBytes);
   const existing = envelope(raw);
+  if (existing && existing.storeKind !== storeKind) throw new Error('Memory store kind mismatch');
   if (existing) {
     const root = await storeFor(path, existing.generation);
     const navigation = renderNavigation({ ...existing, managed: true }, root, existing.generation);
@@ -216,7 +218,8 @@ export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 *
   const document = parseLegacy(raw);
   const ids = new Set();
   for (const entry of document.entries) {
-    if (entry.kind !== 'method' || ids.has(entry.id)) throw new Error('Invalid or duplicate method in legacy handbook');
+    if ((storeKind === 'profile' ? !['habit', 'preference'].includes(entry.kind) : entry.kind !== 'method')
+      || ids.has(entry.id)) throw new Error('Invalid or duplicate entry in legacy memory');
     ids.add(entry.id);
   }
   const generation = randomUUID();
@@ -228,13 +231,21 @@ export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 *
     if (!equal(await hydrate(root, await readCurrent(root, entry.id)), entry)) throw new Error('Handbook migration round-trip mismatch');
   }
   if (await regular(path, maxLegacyBytes) !== raw) throw new Error('Memory changed concurrently; retry migration');
-  const intro = renderNavigation(document, root, generation);
+  const intro = renderNavigation({ ...document, storeKind }, root, generation);
   await atomic(path, intro);
   return { changed: true, path, format: 2, generation, entries: ids.size,
     backup: join(root, 'legacy.md'), sourceSha256: hash(raw), sourceBytes: Buffer.byteLength(raw) };
 }
 
 function renderNavigation(document, root, generation) {
+  if (document.storeKind === 'profile') return `${document.prefix}${document.managed ? '' : '\n\n'}${START}
+## 个人协作记忆
+
+已确认的记忆按任务读取：\`remotelab memory context --query <当前任务> --json\`。
+待确认候选与修订证据独立保存，不作为任务指令；按需审阅：\`remotelab memory inspect --key <ID> --json\`。
+
+<!-- remotelab-profile-store:${generation} -->
+${END}${document.suffix || '\n'}`;
   const intro = `${document.prefix}${document.managed ? '' : '\n\n'}${START}
 ## Agent 行动手册
 

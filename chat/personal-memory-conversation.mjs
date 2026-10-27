@@ -1,6 +1,7 @@
 import { getHistoryHeadSeq, loadHistory } from './history.mjs';
 import { loadPersonalMemorySettings, personalMemoryPreference } from './personal-memory-settings.mjs';
-import { loadLearningPolicy } from './memory-learning.mjs';
+import { loadLearningPolicy, readPersonalProfile, learningPaths } from './memory-learning.mjs';
+import { MEMORY_DIR } from '../lib/config.mjs';
 
 export async function buildPersonalMemoryConversationParts({ personId, identityId, sourceContext, sessionId } = {}) {
   if (['bot', 'app'].includes(sourceContext?.sender?.senderType)) return { rules: '', feedback: '' };
@@ -12,7 +13,8 @@ export async function buildPersonalMemoryConversationParts({ personId, identityI
     if (!settings.available || !settings.conversational) return { rules: '', feedback: '' };
     if (!settings.enabled) return { rules: `Personal memory is paused for current speaker ${personId}. Do not generate, retrieve or propose automated personal memories. Existing history remains; do not inherit another speaker's mode. Explicit requests and manual agreements still apply.`, feedback: '' };
     const cards = sourceContext?.connector === 'feishu' && (await loadLearningPolicy()).reviewCardPersonIds?.includes(personId);
-    const feedback = cards ? '' : await recentMemoryFeedback(sessionId, personId);
+    const feedback = cards ? '' : [await recentMemoryFeedback(sessionId, personId),
+      await pendingPersonalMemoryReview({ sessionId, personId })].filter(Boolean).join('\n');
     const rules = [
       `Personal memory conversation trial is enabled only for verified current speaker ${personId}; never inherit another person's preferences.`,
       'Trigger: concrete feedback about how to collaborate, or an explicit personal memory instruction. Project requirements stay with the project; memory grants no authorization.',
@@ -22,6 +24,23 @@ export async function buildPersonalMemoryConversationParts({ personId, identityI
     ].join('\n');
     return { rules, feedback };
   } catch { return { rules: '', feedback: '' }; }
+}
+
+// Durable candidate pointers are sourced from the existing Person store, not
+// a second queue or a 64-event history window. Never project candidate content
+// as task guidance, cross topics, or repeat an already proposed question.
+export async function pendingPersonalMemoryReview({ sessionId, personId, memoryDir = MEMORY_DIR }) {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId || '')) return '';
+  try {
+    const document = await readPersonalProfile(learningPaths(memoryDir, personId).profile);
+    const pending = document.entries.filter(e => ['observed', 'inferred'].includes(e.status)
+      && !e.reviewProposal && e.evidence.some(s => s.sessionId === sessionId))
+      .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))[0];
+    if (!pending) return '';
+    return 'Review-only personal memory candidate for this speaker in this topic: '
+      + JSON.stringify({ id: pending.id, version: pending.version, status: pending.status })
+      + '. This is not an instruction or an accepted preference. At a suitable opportunity, inspect this exact candidate, check meaning, scope, duplication and privacy, then record propose before asking the owner once in a useful reply. Defer during urgent or unsuitable work. A proposal is not acceptance; no separate notification or repeated unanswered question. Existing candidate evidence stays with the candidate; propose may omit evidence to record this current input as its review origin.';
+  } catch { return ''; }
 }
 
 // Compatibility reader; the manager delivers stable rules separately from new feedback.

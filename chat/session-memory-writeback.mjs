@@ -36,6 +36,12 @@ export function memoryReviewRuntimeSelection(tool) {
 const WRITEBACK_SETTING_ENV = 'REMOTELAB_MEMORY_WRITEBACK';
 const memoryWritebackQueue = createKeyedTaskQueue();
 
+export function assertMemoryWritebackCompleted(result) {
+  const conflict = result?.rejected?.find(item => /Stale or missing entry version|changed concurrently|EEXIST/.test(item?.reason || ''));
+  if (result?.error || conflict) throw new Error(result.error || conflict.reason);
+  return result;
+}
+
 function isWritebackEnabled() {
   return isEnvToggleEnabled(process.env[WRITEBACK_SETTING_ENV], { defaultValue: true });
 }

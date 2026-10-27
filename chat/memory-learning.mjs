@@ -110,9 +110,17 @@ async function mutateDocument(path, mutate, { handbook = false, entryId } = {}) 
   return withLearningLock(path, async () => {
     const temp = `${path}.tmp-${randomUUID()}`;
     try {
-      const profileRaw = handbook ? undefined : await readText(path);
+      // Personal candidates/history never enter the ordinary profile body.
+      // Migrate under the same lock; pointer publication follows verified backup.
+      if (!handbook) {
+        try { await lstat(path); } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+          await writeFile(path, '', { mode: 0o600, flag: 'wx' });
+        }
+        await migrateHandbook(path, { parseLegacy: parseLearningDocument, storeKind: 'profile' });
+      }
       const document = handbook ? await readHandbook(path, { parseLegacy: parseLearningDocument, entryId })
-        : { ...parseLearningDocument(profileRaw), raw: profileRaw };
+        : await readPersonalProfile(path, { entryId });
       const raw = document.raw;
       const result = mutate(document);
       if (!result.changed) return result;
@@ -127,6 +135,15 @@ async function mutateDocument(path, mutate, { handbook = false, entryId } = {}) 
       await rm(temp, { force: true });
     }
   });
+}
+
+export async function readPersonalProfile(path, options = {}) {
+  return readHandbook(path, { ...options, parseLegacy: parseLearningDocument, storeKind: 'profile' });
+}
+
+// Storage-only maintenance preserves every entry, version, decision and source.
+export async function migratePersonalProfile(path) {
+  return withLearningLock(path, () => migrateHandbook(path, { parseLegacy: parseLearningDocument, storeKind: 'profile' }));
 }
 
 export function learningTurnEvidence({ sessionId, runId, userMessage, sourceEventSeq, turnEvents = [] }) {
@@ -196,7 +213,7 @@ function mergeEvidence(existing, additions) {
 }
 
 export async function applyLearningUpdates({ updates, sources, personId, identityId, authDocument,
-  project = '', memoryDir = MEMORY_DIR, policy, delivered = [] } = {}) {
+  project = '', memoryDir = MEMORY_DIR, policy, delivered = [], reviewOnly = false } = {}) {
   policy ||= await loadLearningPolicy(memoryDir);
   const person = verifiedLearningPerson({ personId, identityId, authDocument });
   if (!policy.enabled || !person || !policy.personIds.includes(person)) return { promotedCount: 0, promotedFiles: [], rejected: ['learning not enabled for verified Person'] };
@@ -205,7 +222,7 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
   const results = [], rejected = [];
   for (const update of (Array.isArray(updates) ? updates : []).slice(0, 12)) {
     try {
-      const kind = update.kind;
+      let kind = update.kind;
       if (!['preference', 'habit', 'method'].includes(kind)) throw new Error('Unsupported kind');
       if (kind === 'method' ? !policy.handbook : !policy.profiles) throw new Error('Target disabled');
       if (kind !== 'method' && !personal.enabled && !(update.action === 'withdraw' && update.explicit === true)) throw new Error('Personal memory is paused');
@@ -215,12 +232,17 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
       if (scope === 'project' && !project) throw new Error('Missing verified project context');
       const family = kind === 'method' ? 'method' : 'personal';
       const id = `mem_${createHash('sha256').update(`${family}:${scope}:${scope === 'project' ? project : ''}:${update.key}`).digest('hex').slice(0, 16)}`;
-      const evidence = validatedEvidence(update, sources || []).map(e => ({ ...e, personId: person, identityId }));
-      if (!evidence.length) throw new Error('No matching original evidence');
       const action = update.action || 'upsert';
+      // Asking about an existing, version-checked candidate does not assert a
+      // new personal fact. Keep the current user event as the proposal origin.
+      const proposalSource = action === 'propose' && !update.evidence?.length && sources?.find(e => e.type === 'user');
+      const evidence = validatedEvidence(proposalSource ? { ...update,
+        evidence: [{ seq: proposalSource.seq, quote: proposalSource.output.slice(0, 500) }] } : update,
+      sources || []).map(e => ({ ...e, personId: person, identityId }));
+      if (!evidence.length) throw new Error('No matching original evidence');
       if (!['upsert', 'revise', 'withdraw', 'restore', 'counterexample', 'outcome', 'propose'].includes(action)) throw new Error('Unsupported action');
       if (kind !== 'method' && !evidence.some(e => e.type === 'user')) throw new Error('Personal entry needs original user evidence');
-      if (kind !== 'method' && !evidence.some(e => e.type === 'user'
+      if (kind !== 'method' && action !== 'propose' && !evidence.some(e => e.type === 'user'
         && !/^(?:好[的吧]?|可以|收到|是[的啊]?|嗯|ok|yes)[。.!！\s]*$/i.test(e.quote))) {
         throw new Error('Acknowledgement alone does not establish a personal default');
       }
@@ -230,6 +252,17 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
       results.push(await mutateDocument(path, document => {
         const current = document.entries.find(e => e.id === id);
         if (current && update.expectedVersion !== current.version) throw new Error('Stale or missing entry version');
+        if (reviewOnly && kind !== 'method') {
+          if (update.supersedesManual || ['propose', 'withdraw', 'restore'].includes(action)
+            || current?.status === 'confirmed' && action !== 'outcome' && action !== 'upsert') {
+            throw new Error('Personal decisions require the owner-facing confirmation path');
+          }
+          if (current?.status === 'confirmed' && action === 'upsert') {
+            if (text(update.content) !== current.content) throw new Error('Accepted personal meaning requires owner review');
+            return { changed: false, path, id, version: current.version, status: current.status };
+          }
+          if (action !== 'outcome') kind = 'habit';
+        }
         const manualQuote = text(update.supersedesManual, 500);
         if (manualQuote && (kind === 'method' || update.explicit !== true || !document.prefix.includes(manualQuote))) {
           throw new Error('Manual replacement requires an exact existing personal statement and explicit owner correction');
@@ -343,7 +376,7 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
 async function readLearningSource(kind, path, { details = false, key } = {}) {
   const document = kind === 'handbook'
     ? await readHandbook(path, { parseLegacy: parseLearningDocument, details, key })
-    : parseLearningDocument(await readText(path));
+    : await readPersonalProfile(path, { details, key });
   // Raw legacy data and internal transaction metadata never enter a prompt or
   // CLI snapshot. Explicit inspect retains the full entry schema by default.
   const { raw, store, ...publicDocument } = document;
@@ -432,9 +465,10 @@ export async function buildLearningContext({ personId, identityId, authDocument,
     const bodyBudget = budget - CONTEXT_HEADER.length - failureNotice.length - skippedNotice.length;
     // Hand-maintained profile text is still authoritative. Keep it whole and
     // bounded; a large legacy document stays behind the original file pointer.
-    if (includeProfiles && snapshot.profile.prefix.trim().length <= 1800 && snapshot.profile.prefix.trim()
-      && snapshot.profile.prefix.trim().length + 20 <= bodyBudget) {
-      blocks.push(`本人档案（人工维护）：\n${snapshot.profile.prefix.trim()}`);
+    const manual = snapshot.profile.entries.filter(e => e.supersedesManual && ['confirmed', 'withdrawn'].includes(e.status))
+      .reduce((body, e) => body.replace(e.supersedesManual, `[此项已${e.status === 'withdrawn' ? '撤销' : '修订'}，按 ${e.id} 核对当前状态]`), snapshot.profile.prefix).trim();
+    if (includeProfiles && manual.length <= 1800 && manual && manual.length + 20 <= bodyBudget) {
+      blocks.push(`本人档案（人工维护）：\n${manual}`);
     }
     // Source-specific eligibility also excludes legacy inferred records, without
     // rewriting people's evidence or treating a method as a personal default.
@@ -442,21 +476,24 @@ export async function buildLearningContext({ personId, identityId, authDocument,
       ...(includeProfiles ? snapshot.profile.entries.filter(e => ['confirmed', 'withdrawn'].includes(e.status)) : []),
       ...(policy.handbook ? snapshot.handbook.entries.filter(e => ['verified', 'withdrawn'].includes(e.status)) : []),
     ];
-    const chronological = candidates.filter(e =>
-      e.status === 'withdrawn' && (e.scope !== 'project' || e.project === project) || matches(e, query, project))
-      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-    const methods = chronological.filter(e => e.kind === 'method')
-      .sort((a, b) => cueRelevance(b, query) - cueRelevance(a, query));
-    let methodIndex = 0;
-    // Preserve the existing personal-memory order and budget positions.
-    const selected = chronological.map(entry => entry.kind === 'method' ? methods[methodIndex++] : entry);
-    let skipped = includeProfiles && snapshot.profile.prefix.trim() && !blocks.length ? 1 : 0;
-    for (const entry of selected.slice(0, 12)) {
+    const active = candidates.filter(e => e.status !== 'withdrawn' && matches(e, query, project))
+      .sort((a, b) => cueRelevance(b, query) - cueRelevance(a, query)
+        || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const withdrawn = candidates.filter(e => e.status === 'withdrawn' && e.cues?.length && matches(e, query, project));
+    let skipped = includeProfiles && manual && !blocks.length ? 1 : 0;
+    let delivered = 0;
+    for (const entry of active) {
       const body = entryBody(entry);
-      if (blocks.join('\n\n').length + body.length + 2 > bodyBudget) { skipped++; continue; }
-      blocks.push(body);
+      if (delivered === 12 || blocks.join('\n\n').length + body.length + 2 > bodyBudget) { skipped++; continue; }
+      blocks.push(body); delivered++;
     }
-    skipped += Math.max(0, selected.length - 12);
+    // Stop-use notices carry no revoked instruction, evidence or history, and
+    // cannot displace an eligible active entry. Manual replacements were masked above.
+    for (const entry of withdrawn.slice(0, 3)) {
+      const notice = `- ${entry.id} v${entry.version} [withdrawn; ${entry.kind}] 已撤销，停止使用；原文仅供按 ID 审阅。`;
+      if (blocks.join('\n\n').length + notice.length + 2 <= bodyBudget) blocks.push(notice);
+      else skipped++;
+    }
     onCoverage({ result: unavailable.length ? unavailable.length === targets.length ? 'source-unavailable' : 'partial-source-unavailable'
       : skipped ? 'partial-budget-skipped' : blocks.length ? 'found' : 'no-match-in-applicable-scoped-entries',
       paths: snapshot.paths, skipped, ...(unavailable.length ? { unavailable } : {}) });
@@ -510,7 +547,7 @@ export function buildLearningReviewPrompt({ userMessage, assistantTurnText, sour
     'Compare meaning AND scope, including older relevant entries; existing records can be misclassified. Reuse the matching semantic key rather than adding task-specific variants. An unchanged confirmed meaning needs no reinforcement write or repeated question. New evidence for the same unconfirmed meaning can be merged by upsert with exact existing content. Change meaning or conditions with revise and expectedVersion; preserve the old version, evidence and exceptions, and start support anew for the changed claim. A broader scope is an unconfirmed candidate, not an extension of an accepted narrower preference or business authorization. There is no per-turn or daily quota; return updates:[] when nothing needs changing.',
     'Unconfirmed observations can be refined from original evidence. Revising an accepted personal preference or withdrawing a personal record requires explicit owner correction. A counterexample suspends default use pending reconciliation. Never recreate a withdrawn meaning under an alias; restore requires a current explicit owner request, and a method also requires fresh successful execution. For a correction to hand-maintained personal text, supersedesManual must quote the exact replaced statement; retain the source and use a new version or withdrawal tombstone.',
     '3. When may it guide a task?',
-    'Personal state follows the owner\'s decision: an unconfirmed signal is kind habit, explicit:false, status observed; an explicit lasting personal requirement with its stated scope is kind preference, explicit:true, status confirmed. Repetition never confirms a personal preference or makes it eligible for task retrieval. Only confirmed personal entries may guide tasks; observed and legacy inferred stay review-only candidates. Silence, delivery, agreement that an observation is accurate and bare approval do not confirm a lasting default. A pending reviewProposal preserves the exact question, meaning and scope; do not repeat it, rewrite it or accept it without the owner\'s clear answer to that proposal. The hidden reviewer never creates proposals, sends messages or reminders. If personal learning is paused, produce no habit/preference updates; eligible method and project review may continue.',
+    'The background reviewer creates only observed personal candidates (kind habit, explicit:false), even if it thinks a preference is explicit. The foreground may save a direct owner request and handles confirmations; do not propose, confirm, withdraw, restore or replace manual personal text here. Repetition never confirms a personal preference or makes it eligible for task retrieval. Only confirmed personal entries may guide tasks; observed and legacy inferred stay review-only candidates. Silence, delivery, agreement that an observation is accurate and bare approval do not confirm a lasting default. A pending reviewProposal preserves the exact question, meaning and scope; do not repeat it, rewrite it or accept it without the owner\'s clear answer to that proposal. The hidden reviewer never creates proposals, sends messages or reminders. If personal learning is paused, produce no habit/preference updates; eligible method and project review may continue.',
     'Methods become verified only when tested:true cites a successful tool result demonstrating those steps and their conditions. Retrieval alone is not successful use: outcome requires a version actually delivered this turn and specific user/tool evidence of help, failure or correction. A resource lacking access is not a counterexample to a correct checking procedure whose conditions already cover that failure; suspend or revise when the procedure itself is wrong or misses a relevant exception. Withdrawn records provide a stop-use notice, not usable guidance.',
     'For every update, cite seq and a short exact quote from the supplied original user/tool sources. The code validates ownership, quote, result and version; you judge whether the evidence supports the meaning. Return at most 8 updates. Keep existing important-event collection in this same review: project decisions or environment facts outside profiles/methods may use shouldWrite:true and learnings:[{category:"decision|environment|workflow|solution",content:"concise candidate",layer:"user|system",targetId:"listed target"}]. These remain unaccepted and obey the allowlist. Do not duplicate updates there, put personal preferences into universal system memory, invent targets or make task progress permanent.',
     `Existing candidate targets: ${formatMemoryWritebackTargetsForPrompt(candidateTargets) || '[none]'}`,
@@ -544,8 +581,9 @@ export async function reviewMemoryLearning({ sessionId, session, run, userMessag
     + (sourceContext?.connector === 'feishu' && policy.reviewCardPersonIds?.includes(personId)
       ? '\nThis owner enabled independent memory review cards in Feishu. A new personal entry will automatically be shown in its source conversation through the existing outbox. Do not send anything yourself. Set deferReview:true on an update if urgency or privacy makes showing it here inappropriate; keep the observation without publishing. Never expose facts from other conversations. Card answers do not block or steer the original task.' : ''));
   const parsed = parseJsonObjectText(extractTaggedBlock(String(raw || ''), 'hide') || raw);
+  if (!parsed || !Array.isArray(parsed.updates)) throw new Error('Memory review returned no valid updates array');
   const result = await applyLearningUpdates({ updates: parsed?.updates, sources, personId, identityId,
-    authDocument, project, memoryDir, policy, delivered });
+    authDocument, project, memoryDir, policy, delivered, reviewOnly: true });
   return { ...result, attempted: true, written: result.promotedCount > 0, candidateResponse: raw };
 }
 
@@ -554,7 +592,7 @@ export function learningDeliveryReceipts(turnEvents = [], runId) {
   for (const e of turnEvents || []) {
     if (e.runId !== runId) continue;
     const delivered = e.type === 'manager_context' ? learningContextReceipts(e.content)
-      : e.type === 'context_operation' && e.operation === 'read_memory' && e.phase === 'delivered'
+      : e.type === 'context_operation' && e.operation === 'read_memory' && e.phase === 'delivered' && e.learningReadMode !== 'inspect'
         ? e.learningReceipts || [] : [];
     for (const receipt of delivered) {
       if (!/^mem_[a-f0-9]{16}$/.test(receipt?.id || '') || !Number.isInteger(receipt.version) || receipt.version < 1) continue;

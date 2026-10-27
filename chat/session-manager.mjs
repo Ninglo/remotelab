@@ -217,7 +217,7 @@ import {
   collectReplyPublicationHistory,
   normalizeReplyPublicationResponseIds,
 } from './reply-publication.mjs';
-import { maybeRunMemoryWriteback, memoryReviewRuntimeSelection } from './session-memory-writeback.mjs';
+import { maybeRunMemoryWriteback, memoryReviewRuntimeSelection, assertMemoryWritebackCompleted } from './session-memory-writeback.mjs';
 import { enqueueSourceDelivery, normalizeSourceDeliveryPlan, listSourceDeliveryIssues } from './source-deliveries.mjs';
 import { createSourceDeliveryIssueObserver } from './source-delivery-issue-observer.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
@@ -2019,11 +2019,12 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
 }
 
 
-function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
+async function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
   if (manifest?.internalOperation || isInternalSession(session)) {
     return false;
   }
-  void (async () => {
+  // The completion system is already detached. Return the real promise so its
+  // durable done/retry receipt follows learning, not merely process launch.
     try {
       const { userMessage, assistantTurnText, turnEvents } = await loadCompletedTurnContext(
         sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
@@ -2055,28 +2056,31 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
           },
         }),
       });
-      if (result?.promotedCount > 0 || result?.rejected?.length > 0 || result?.error) {
+      if (result?.attempted || result?.promotedCount > 0 || result?.rejected?.length > 0 || result?.error) {
         const paths = Array.isArray(result.promotedFiles)
           ? result.promotedFiles.map((filePath) => displayPromptPath(filePath)).filter(Boolean)
           : [];
         await appendEvent(sessionId, contextOperationEvent({
           operation: 'write_memory',
-          phase: result.promotedCount > 0 ? 'applied' : 'rejected',
+          phase: result.promotedCount > 0 ? 'applied' : result.error || result.rejected?.length ? 'rejected' : 'completed',
           trigger: 'automatic',
           title: result.promotedCount > 0 ? 'Memory entries saved' : 'Memory update not applied',
           summary: `RemoteLab updated ${result.promotedCount} memory entry(s). Entry status and execution evidence remain separate from retrieval or behavioral success.`,
           reason: paths.length > 0 ? `Updated: ${paths.join(', ')}` : '',
           learningOwnerPersonId: request?.options?.viewPersonId,
           learningSourceEventSeq: userMessage?.seq,
+          requestId: request?.requestId,
+          runId: finalizedRun.id,
           learningResults: result.results || [],
           rejectedLearningUpdates: result.rejected || [],
           ...(result.error ? { memoryLearningError: result.error } : {}),
         }));
       }
+      assertMemoryWritebackCompleted(result);
     } catch (error) {
       console.error(`[memory-writeback] Async writeback failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
+      throw error;
     }
-  })();
   return true;
 }
 
