@@ -20,7 +20,7 @@ export function createSessionTurnCompletionHelpers(services) {
     isInternalSession,
     isSessionRunning,
     isTerminalRunState,
-    loadHistory,
+    readLastTurnEvents,
     maybeApplyAssistantWorkSummary,
     normalizeAttachmentSizeBytes,
     normalizePublishedResultAssetAttachments,
@@ -62,7 +62,7 @@ export function createSessionTurnCompletionHelpers(services) {
   }
 
   async function loadLatestTurnBodyEvents(sessionId) {
-    const history = await loadHistory(sessionId, { includeBodies: true });
+    const history = await readLastTurnEvents(sessionId, { includeBodies: true });
     const body = [];
     for (let index = history.length - 1; index >= 0; index -= 1) {
       const event = history[index];

@@ -1122,7 +1122,7 @@ const {
   isInternalSession,
   isSessionRunning,
   isTerminalRunState,
-  loadHistory,
+  readLastTurnEvents,
   maybeApplyAssistantWorkSummary,
   normalizeAttachmentSizeBytes,
   normalizePublishedResultAssetAttachments,
