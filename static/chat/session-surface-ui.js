@@ -18,7 +18,7 @@ function getFolderLabel(folder) {
 }
 
 function getSessionDisplayName(session) {
-  return session?.name || getFolderLabel(session?.folder) || t("session.defaultName");
+  return window.RemoteLabSessionStateModel.getSessionDisplayName(session);
 }
 
 function formatQueuedMessageTimestamp(stamp) {

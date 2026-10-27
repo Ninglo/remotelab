@@ -23,6 +23,25 @@ test('projection shares native running precedence and never infers running from 
   s.workAwareness = { works: [{ goal: '已登记目标', updatedAt: '2026-10-12' }] };
   assert.equal(topicProjection(s, 'native').name, '已登记目标');
   assert.equal(topicProjection(s, 'native').summary, '已登记目标');
+  assert.equal(topicProjection(s, 'native').displayName, s.name, 'Web display uses the same title, without substituting another goal');
+  assert.equal(topicProjection(s, 'native').rowStatus, null);
+});
+test('Web presentation preserves RemoteLab title fallbacks and every row status transition', () => {
+  const s = session('a'.repeat(32), 'root');
+  s.name = ''; s.folder = '/work/project';
+  assert.equal(topicProjection(s, 'native').displayName, 'project');
+  s.folder = ''; assert.equal(topicProjection(s, 'native').displayName, 'Session');
+  assert.equal(topicProjection(s, 'native').rowStatus.className, 'status-running');
+  s.activity.run.waiting = true;
+  assert.equal(topicProjection(s, 'native').rowStatus.label, 'waiting');
+  s.activity.run.state = 'idle'; s.lastAssistantMessageAt = '2026-10-27T01:00:00Z';
+  assert.equal(topicProjection(s, 'native').rowStatus.label, 'review');
+  s.lastReviewedAt = s.lastAssistantMessageAt;
+  assert.equal(topicProjection(s, 'native').rowStatus, null);
+  s.workflowState = 'waiting_user';
+  assert.equal(topicProjection(s, 'native').rowStatus.key, 'waiting');
+  s.activity.queue = { state: 'queued', count: 1 };
+  assert.equal(topicProjection(s, 'native').rowStatus, null, 'queued rows follow the Web model instead of adding a plugin badge');
 });
 test('snapshot reads only requested verified bot-2 group topics and omits private and conflicting sessions', async () => {
   const valid = session('a'.repeat(32), 'root'), privateChat = session('b'.repeat(32), 'private'); privateChat.conversation.target.chatType = 'p2p';

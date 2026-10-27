@@ -2,6 +2,7 @@
 
 (function attachRemoteLabSessionStateModel(root) {
   const fallbackStrings = {
+    "session.defaultName": "Session",
     "status.idle": "idle",
     "status.running": "running",
     "status.waiting": "waiting",
@@ -159,6 +160,11 @@
   function parseSessionTime(value) {
     const time = new Date(value || "").getTime();
     return Number.isFinite(time) ? time : 0;
+  }
+
+  function getSessionDisplayName(session) {
+    const folder = (session?.folder || "").replace(/^\/Users\/[^/]+/, "~");
+    return session?.name || folder.split("/").pop() || t("session.defaultName");
   }
 
   function getSessionLatestChangeTime(session) {
@@ -368,6 +374,7 @@
   }
 
   root.RemoteLabSessionStateModel = {
+    getSessionDisplayName,
     createEmptyStatus,
     normalizeSessionWorkflowPriority,
     normalizeSessionWorkflowState,

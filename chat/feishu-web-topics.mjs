@@ -23,6 +23,7 @@ export function topicProjection(s, webThreadId) {
   const resultTime = new Date(s.lastAssistantMessageAt || '').getTime();
   const row = model.getSessionRowStatusInfo(s), status = row?.key === 'unread' ? 'review' : row?.key || 'idle';
   return { sessionId: s.id, webThreadId, chatId: s.conversation?.target?.chatId, rootId: s.conversation?.target?.rootId || s.conversation?.target?.messageId, ...topicTextView(s, { state: status }),
+    displayName: model.getSessionDisplayName(s), rowStatus: row,
     resultAt: Number.isFinite(resultTime) ? new Date(resultTime).toISOString() : '', status, label: row?.label || '', archived: !!s.archived, sourceUpdatedAt: s.updatedAt || '',
     sessionUrl: '/?session=' + s.id + '&tab=sessions' };
 }
