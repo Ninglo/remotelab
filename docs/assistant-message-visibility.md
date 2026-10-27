@@ -30,7 +30,8 @@ Run starts with “最终答复尚未确认送达”; the matching final answer'
 can change it to sending, cancelled, failed or delivered. Progress/opening
 receipts cannot establish final delivery. Delivered requires every declared
 content/attachment part and its provider receipt. Later answers in the same Run
-use their own receipts; card replay retains each checkpoint's delivery state.
+use their own receipts. Cold card refresh coalesces obsolete transport transitions
+into the latest receipt while retaining progress and acceptance history.
 Web-only Runs without external delivery show execution state alone.
 
 ## Shared Feishu message labels (trial)

@@ -105,8 +105,8 @@ test('progress completion follows the final reply receipt, including cancellatio
   const cardHistory = structuredClone(events);
   cardHistory[0].messageReplyPolicy = { version: 3, progress: 'card_latest' };
   const updates = expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(cardHistory, pilot(), session));
-  assert.equal(updates.find(update => update.latestSeq === 11).replyDeliveryState, 'cancelled',
-    'replaying a cancelled card snapshot cannot borrow a later successful receipt');
+  assert.deepEqual(updates.filter(update => update.executionState === 'ended').map(update => update.latestSeq), [18],
+    'cold refresh publishes the latest delivery state once without replaying obsolete transitions');
   assert.equal(updates.at(-1).replyDeliveryState, 'delivered');
   const webHistory = structuredClone(history);
   delete webHistory[0].sourceContext;
