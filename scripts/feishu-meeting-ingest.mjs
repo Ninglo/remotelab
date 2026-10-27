@@ -16,6 +16,7 @@ if (!['status', 'retry', 'retry-pending'].includes(action) || !value('--storage-
   process.exitCode = action === '--help' ? 0 : 1;
 } else {
   try {
+    if (args.includes('--dry-run') && action !== 'retry-pending') throw new Error('--dry-run requires retry-pending');
     const root = join(value('--storage-dir'), 'meeting-ingest');
     const meetingId = value('--meeting-id');
     if (meetingId && !/^\d{10,30}$/.test(meetingId)) throw new Error('Invalid meeting ID');

@@ -209,7 +209,8 @@ configured cutoff. Verified exclusions and identity mismatches are not retried.
 A group-membership lookup failure does not suppress an independently verified
 authorized organizer. No transcript, ACL change or group message is permitted
 until the Connector's fresh scope check succeeds. `retry-pending --dry-run`
-reports candidates without creating commands or receipts.
+reports candidates without creating commands or receipts; other actions reject
+`--dry-run` rather than silently executing a write.
 Each recovery retains its finite two-hour attempt budget. No extra timer or
 second daily consumer is created. Configure the existing daily review to read
 pending/failed entries and their original Request, retain unresolved reasons,

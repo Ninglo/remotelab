@@ -118,6 +118,8 @@ try {
   await writeDurableJson(join(jobRoot, 'b'.repeat(24) + '.json'), { ...failed, meetingId: '1234567890123456790', status: 'delivery_unknown', messageId: 'om_existing' });
   await writeDurableJson(join(jobRoot, 'c'.repeat(24) + '.json'), { ...failed, meetingId: '1234567890123456791', status: 'permission_recovery_accepted', submission: { sessionId: 'existing' } });
   const cli = resolve('scripts/feishu-meeting-ingest.mjs');
+  await assert.rejects(exec(process.execPath, [cli, 'retry', '--storage-dir', root, '--meeting-id', id, '--dry-run']),
+    error => error.stderr.includes('--dry-run requires retry-pending'));
   const first = JSON.parse((await exec(process.execPath, [cli, 'retry-pending', '--storage-dir', root])).stdout);
   assert.deepEqual(first.queued.map(x => x.meetingId), [id]);
   const twice = JSON.parse((await exec(process.execPath, [cli, 'retry-pending', '--storage-dir', root])).stdout);
