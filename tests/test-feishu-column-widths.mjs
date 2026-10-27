@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
+const [modulePath,executablePath,extension,artifacts]=process.argv.slice(2);
+const {chromium}=await import(pathToFileURL(modulePath));
+const profile=await mkdtemp(join(tmpdir(),'feishu-width-'));await mkdir(artifacts,{recursive:true});let context;
+try{
+ context=await chromium.launchPersistentContext(profile,{executablePath,headless:true,viewport:{width:1280,height:850},ignoreDefaultArgs:['--disable-extensions'],args:['--no-sandbox','--disable-extensions-except='+extension,'--load-extension='+extension]});
+ const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
+ await worker.evaluate(()=>{const original=fetch;globalThis.fetch=async(u,o)=>String(u).startsWith('chrome-extension:')?original(u,o):new Response(JSON.stringify({status:'confirmed',version:'1.2.2'}));});
+ await context.route('https://fixture.feishu.cn/**',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><meta charset="utf-8"><script>userId='1000000000000000001'</script><style>*{box-sizing:border-box}body{display:flex;margin:0;height:100vh;font:14px system-ui}.appNavbar{width:150px;flex-shrink:0;background:#eee}.feed-column{width:360px;flex-shrink:0;height:100vh}.feed-main-list{height:100%;width:100%}.lark-chat{flex:1;min-width:0}.avatar{width:32px;height:32px;background:#70aaff;border-radius:50%}</style><aside class="appNavbar"><div class="appNavbar-navbarMenu">飞书</div><div class="navItem-userAuthList">账号</div></aside><section class="feed-column"><div class="feed-main-list"><div data-feed-id="1000000000000000002"><div class="avatar"></div><div class="a11y_feed_card_item"><div class="a11y_feed_card_main"><div class="_2b17aec6">原生会话</div><div class="_5d806a78">原生消息预览</div></div></div></div></div></section><main class="lark-chat"><textarea>原生草稿保持不变</textarea></main>`}));
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(8000);
+ await page.goto('https://fixture.feishu.cn/next/messenger/');
+ const nav=page.getByRole('separator',{name:'调整左侧导航宽度'}),feed=page.getByRole('separator',{name:'调整消息列表宽度'});await nav.waitFor();
+ await page.locator('#rlfe-host #firstUseLater').click();
+ assert.equal(await page.locator('#rlfe-host #feedGrouping').count(),0);
+ assert.equal(await page.locator('#rlfe-sort-host').isVisible(),false);
+ const box=await nav.boundingBox();await page.mouse.move(box.x+3,box.y+60);await page.mouse.down();await page.mouse.move(box.x+73,box.y+60,{steps:5});await page.mouse.up();
+ await page.waitForFunction(()=>Math.abs(document.querySelector('.appNavbar').getBoundingClientRect().width-220)<2);
+ await feed.focus();await page.keyboard.press('ArrowRight');
+ await page.waitForFunction(()=>document.querySelector('.feed-main-list').getBoundingClientRect().width===376);
+ assert.equal(await page.locator('.lark-chat textarea').inputValue(),'原生草稿保持不变');
+ assert.equal(await page.locator('.avatar').isVisible(),true);
+ assert.equal(await page.locator('._5d806a78').isVisible(),true);
+ assert.equal(await page.locator('.feed-main-list').evaluate(e=>e.inert),false);
+ await page.waitForFunction(()=>document.querySelector('#rlfe-host').shadowRoot.querySelector('#status').textContent==='设置已保存。');
+ await page.screenshot({path:join(artifacts,'native-list-width.png')});
+ await page.reload();await nav.waitFor();await page.locator('#rlfe-host #firstUseLater').click();await page.waitForFunction(()=>document.querySelector('.appNavbar').getBoundingClientRect().width===220&&document.querySelector('.feed-main-list').getBoundingClientRect().width===376);
+ await nav.dblclick();await page.waitForFunction(()=>document.querySelector('.appNavbar').getBoundingClientRect().width===150);
+ await page.setViewportSize({width:640,height:850});await feed.waitFor({state:'hidden'});assert.equal(await page.locator('.feed-main-list').evaluate(e=>e.getBoundingClientRect().width),360);
+ await page.setViewportSize({width:1280,height:850});await page.waitForFunction(()=>document.querySelector('.feed-main-list').getBoundingClientRect().width===376);
+ assert.deepEqual(errors,[]);
+ const result={scope:'real MV3 extension with synthetic native Feishu markup',checks:['native list, avatar, preview and draft preserved','no new grouping control or list overlay','drag and keyboard resizing','widths saved and restored after reload','double-click reset','narrow screen restores native width'],errors};
+ await writeFile(join(artifacts,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+}finally{await context?.close();await rm(profile,{recursive:true,force:true});}
