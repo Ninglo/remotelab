@@ -22,6 +22,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 try {
   const { handleMessage, addProcessingReaction, processSourceDeliveryOnce, submitRemoteLabRequest } = await import('../scripts/feishu-connector.mjs');
   const { createFeishuReadReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
+  const { createParticipationController } = await import('../connectors/feishu/participation-state.mjs');
   for (const topic of ['', 'work-topic']) {
     const effects = { runs: [], observed: [], removed: [], resolved: [] };
     const runtime = { authCookie: 'fixture', config: { storageDir: join(home, topic || 'main'), sourceRouteId: 'bot',
@@ -95,6 +96,24 @@ try {
     assert.equal((await submitRemoteLabRequest(runtime, invited, { prepared })).ignored, true);
     assert.equal(submissions, before + 3, 'a prepared request from before resume cannot enter the model queue');
 
+    const deliverAccepted = async (invitation, id) => {
+      let sent = false;
+      await processSourceDeliveryOnce(runtime, {
+        requestRemoteLab: async (path, options) => path === '/api/source-deliveries/claim'
+          ? { response: { ok: true }, json: { claim: { leaseId: id, delivery: {
+            id, target: { ...invitation, participationScopeTopicId: topic || 'main',
+              participationScopeMessageId: invitation.messageId }, kind: 'content', text: 'accepted result',
+          } } } } : request(path, options),
+        sendFeishuText: async () => { sent = true; return { message_id: id + '-sent' }; },
+      });
+      return sent;
+    };
+    assert.equal(await deliverAccepted(invited, 'listening-resumed-answer'), true,
+      'resuming active participation preserves an already accepted listening invitation');
+    const restarted = createParticipationController(runtime);
+    assert.equal((await restarted.state(base)).deliveryEpochFloor, Number(invited.participationEpoch),
+      'the delivery boundary survives connector restart');
+
     const activeSnapshot = { ...await runtime.participation.state(base), receivedAt: Date.now() };
     await send('mute-queued', '/mute');
     await send('queued-at', '@_bot 之前的邀请', { mentions: [{ openId: 'bot' }] }, {
@@ -102,6 +121,8 @@ try {
     });
     assert.equal(effects.runs.length, count, 'arrival epoch survives intake; mute cancels queued older invitations');
     await send('resume-queued', '/unmute');
+    assert.equal(await deliverAccepted(invited, 'revoked-invitation'), false,
+      'a later stop still revokes the earlier invitation after resuming');
     const ongoingEpoch = (await runtime.participation.state(base)).epoch;
     await send('already-active', '/unmute');
     assert.equal((await runtime.participation.state(base)).epoch, ongoingEpoch,
@@ -153,7 +174,17 @@ try {
     assert.equal((await reactionStore.active()).length, 1);
     assert.equal((await createFeishuReadReactionStore(runtime.config.storageDir).active()).length, 1,
       'restart preserves cleanup receipts and the unrelated conversation');
+    await send('resume-paused-invitation', '/unmute');
+    assert.equal(await deliverAccepted(pausedInvite, 'paused-resumed-answer'), true,
+      'resuming active participation preserves an already accepted paused invitation');
     if (!topic) {
+      await send('inherited-listen', '/mute');
+      const inherited = { ...base, threadId: 'inherited-thread', messageId: 'inherited-invitation' };
+      await runtime.participation.assess(inherited, { mentioned: true });
+      inherited.participationEpoch = String((await runtime.participation.state(inherited)).epoch);
+      await send('inherited-resume', '/unmute');
+      assert.equal(await deliverAccepted(inherited, 'inherited-answer'), true,
+        'threads without an override inherit the preserved delivery boundary');
       await send('routing-resume', '/unmute');
       const originStatus = await runtime.participation.state(base);
       const routed = { ...base, threadId: 'separate-work', rootId: 'separate-root',
@@ -197,7 +228,6 @@ try {
   }
   // Exercise the real outbox refinement after the opening learns a provider
   // thread ID. Mainline and topic epochs deliberately differ, as in the incident.
-  const { createParticipationController } = await import('../connectors/feishu/participation-state.mjs');
   const { createRecordStore } = await import('../lib/durable-records.mjs');
   for (const scenario of ['deleted-message', 'cleanup-offline', 'cancel-offline', 'settled-cleanup-offline']) {
     const storageDir = join(home, `startup-${scenario}`);

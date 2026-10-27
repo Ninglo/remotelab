@@ -168,6 +168,11 @@ Existing progress-card buttons also produce usage observations without saving pe
 In Feishu conversations with progress cards enabled, ordinary progress updates the original card. Latest and previous progress share one 工作过程 panel that the reader can expand or collapse directly, as in Web. The executing Harness chooses the initial expansion from the task: use `assistant-message --progress-mode expanded|collapsed --compact --json`, optionally with the initial checklist. Start expanded when showing the work path is useful, collapsed for a routine result. Required decisions, exceptional risks, questions and final results retain separate notifications; they are not expansion criteria. No personal habit or extra model call is involved. `/progress expanded|collapsed` is an optional explicit override for this Run. Older messages/card/default commands remain accepted as expansion aliases. Without a progress card, useful progress still sends messages.
 
 
+An ended progress stream shows execution and final-reply delivery separately.
+It reports sending, cancelled, failed, unconfirmed or delivered from the final
+answer's durable receipts, including all declared text/file parts. A completed
+Run or an earlier progress receipt cannot claim that the final answer arrived.
+
 ### Bot-created document comment routing
 
 Create Bot docx documents through the instance `lark-cli` launcher so their creation

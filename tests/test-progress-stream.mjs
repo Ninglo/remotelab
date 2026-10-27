@@ -3,7 +3,8 @@ import test from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { projectProgressStreams } from '../lib/progress-stream.mjs';
+import { projectProgressStreams, progressExecutionLabel } from '../lib/progress-stream.mjs';
+import { buildFeishuGroupProgressCard } from '../connectors/feishu/group-progress-card.mjs';
 import { projectWorkboards } from '../lib/workboard-state.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
 import { collectFeishuInstanceWorkboardCycles, expandFeishuWorkboardUpdates,
@@ -61,6 +62,56 @@ test('Runs and cancellation remain separate from accepted task completion', () =
   const failed = projectProgressStreams([inbound(), progress(3, '进行中'),
     { seq: 4, type: 'status', runId: 'run', content: 'error: capacity' }]);
   assert.equal(failed[0].executionState, 'failed');
+});
+
+test('progress completion follows the final reply receipt, including cancellation and retry', () => {
+  const receipt = (seq, state, extra = {}) => ({ seq, type: 'source_delivery', runId: 'run',
+    deliveryId: 'final-delivery', providerMessageId: 'message-7', kind: 'content', state, ...extra });
+  const events = [...history];
+  const label = () => {
+    const stream = projectProgressStreams(events)[0];
+    const text = progressExecutionLabel(stream.executionState, stream.replyDeliveryState);
+    assert.equal(buildFeishuGroupProgressCard(stream).body.elements.at(-1).content, text);
+    return text;
+  };
+  assert.equal(label(), '执行已结束；最终答复尚未确认送达');
+  events.push(receipt(9, 'delivered', { providerMessageId: 'message-3' }));
+  assert.equal(label(), '执行已结束；最终答复尚未确认送达', 'a progress receipt cannot prove final delivery');
+  events.push(receipt(10, 'sending'));
+  assert.equal(label(), '执行已结束；最终答复正在发送');
+  events.push(receipt(11, 'cancelled'));
+  assert.equal(label(), '执行已结束；最终答复发送已取消');
+  assert.equal(projectProgressStreams(events)[0].latestSeq, 11);
+  events.push(receipt(12, 'sending'), receipt(13, 'delivery_failed'));
+  assert.equal(label(), '执行已结束；最终答复发送失败');
+  events.push(receipt(14, 'unknown'));
+  assert.equal(label(), '执行已结束；最终答复尚未确认送达');
+  events.push(receipt(14.1, 'delivered'));
+  assert.equal(label(), '执行已结束；最终答复尚未确认送达', 'delivery needs a provider receipt');
+  events.push(receipt(15, 'delivered', { externalId: 'om_answer' }));
+  assert.equal(label(), '执行已结束；最终答复已送达');
+  const latest = projectProgressStreams(events)[0];
+  assert.equal(latest.updates.at(-1).replyDeliveryState, 'delivered');
+  assert.equal(buildSessionDisplayEvents(events, { exposeWorkboard: true })
+    .find(event => event.messageKind === 'progress_panel').workboardStatusLabel, label());
+  // A later reply in the same Run has its own receipts; earlier delivery is insufficient.
+  events.push(msg(16, '补充结果', { phase: 'final_answer' }));
+  assert.equal(label(), '执行已结束；最终答复尚未确认送达');
+  events.push(receipt(17, 'delivered', { providerMessageId: 'message-16', providerPartCount: 2, externalId: 'om_text' }));
+  assert.equal(label(), '执行已结束；最终答复尚未确认送达', 'partial delivery cannot confirm the complete answer');
+  events.push(receipt(18, 'delivered', { providerMessageId: 'message-16', deliveryId: 'final-attachment',
+    kind: 'attachment', providerPartCount: 2, externalId: 'om_file' }));
+  assert.equal(label(), '执行已结束；最终答复已送达');
+  const cardHistory = structuredClone(events);
+  cardHistory[0].messageReplyPolicy = { version: 3, progress: 'card_latest' };
+  const updates = expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(cardHistory, pilot(), session));
+  assert.equal(updates.find(update => update.latestSeq === 11).replyDeliveryState, 'cancelled',
+    'replaying a cancelled card snapshot cannot borrow a later successful receipt');
+  assert.equal(updates.at(-1).replyDeliveryState, 'delivered');
+  const webHistory = structuredClone(history);
+  delete webHistory[0].sourceContext;
+  assert.equal(buildSessionDisplayEvents(webHistory, { exposeWorkboard: true })
+    .find(event => event.messageKind === 'progress_panel').workboardStatusLabel, '执行已结束');
 });
 
 test('Feishu unlisted progress creates no card, including replay and restart', async () => {

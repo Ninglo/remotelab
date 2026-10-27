@@ -2069,3 +2069,13 @@ routine and should stay quiet. Show a short note only when review led to extra
 work or progress was blocked. Missing, pending or unreadable receipts are not
 business failures and remain in observation records. The feature should report
 an effect on the work, not its own execution or the formatting of its receipt.
+
+## 2026-10-27 — Preserve accepted replies when participation resumes
+
+A user reported an ended progress card with no final message. The answer existed,
+but switching a listening Thread to active after its invitation was accepted
+advanced the participation revision and cancelled every pending content delivery.
+Resuming reception must preserve accepted invitations; a later pause/listen still
+revokes earlier replies even after another resume. Intake and control revisions
+remain strict so queued old discussion cannot become new work. Progress labels
+must distinguish execution completion from confirmed delivery of the final answer.

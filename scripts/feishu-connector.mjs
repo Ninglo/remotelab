@@ -1574,7 +1574,10 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         messageId: summary.participationScopeMessageId,
       } : summary;
       const originStatus = scopeId ? await controller.state(originSummary) : status;
-      const stale = summary.participationEpoch !== undefined && Number(summary.participationEpoch) !== originStatus.epoch;
+      const epoch = Number(summary.participationEpoch);
+      const stale = summary.participationEpoch !== undefined
+        && (!Number.isSafeInteger(epoch) || epoch < (originStatus.deliveryEpochFloor ?? originStatus.epoch)
+          || epoch > originStatus.epoch);
       const originBlocked = scopeId && originStatus.mode !== 'active'
         && !originStatus.invitedMessages?.includes(originSummary.messageId);
       if (stale || originBlocked || (status.mode !== 'active' && !status.invitedMessages?.includes(summary.messageId))) {

@@ -95,7 +95,9 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       parentId: '', conversationKind: 'main', chatMode: 'group', groupMessageType: 'group' }) : null;
     const mode = muted ? 'paused' : override ? existing.mode : parent?.mode || initial;
     const epoch = override ? existing.epoch : parent?.epoch || existing?.epoch || 0;
-    return { invitedMessages: [], processedControls: [], ...existing, key, source, mode, epoch,
+    const deliveryEpochFloor = override ? existing.deliveryEpochFloor ?? epoch
+      : parent?.deliveryEpochFloor ?? existing?.deliveryEpochFloor ?? epoch;
+    return { invitedMessages: [], processedControls: [], ...existing, key, source, mode, epoch, deliveryEpochFloor,
       modeOverride: override,
       ...(parent ? { beforePause: parent.beforePause, contextAfterMs: Math.max(parent.contextAfterMs || 0, existing?.contextAfterMs || 0),
         ...(existing?.epoch !== epoch ? { invitedMessages: [] } : {}) } : {}) };
@@ -256,6 +258,10 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         // Reasserting active reception is a no-op for ongoing work. Advancing
         // its epoch would silently suppress otherwise valid replies.
         epoch: prior.mode === 'active' && mode === 'active' ? (prior.epoch || 0) : (prior.epoch || 0) + 1,
+        // Resume changes intake/control revision, but does not revoke accepted
+        // invitations. A stop advances the delivery boundary permanently, even
+        // if reception resumes before the old reply reaches the outbox.
+        deliveryEpochFloor: mode === 'active' ? prior.deliveryEpochFloor : (prior.epoch || 0) + 1,
         topicHint: false, invitedMessages: [],
         stopPending: mode !== 'active', updatedAt: new Date().toISOString(),
         ...((prior.mode === 'paused' && mode !== 'paused') || (prior.mode !== 'active' && mode === 'active')

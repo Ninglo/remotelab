@@ -348,6 +348,9 @@
             "chat/message-reply-settings.mjs",
             "lib/workboard-command.mjs",
             "lib/workboard-state.mjs",
+            "lib/progress-stream.mjs",
+            "connectors/feishu/group-progress-card.mjs",
+            "connectors/feishu/workboard-pilot.mjs",
             "docs/assistant-message-visibility.md"
           ],
           "commands": [

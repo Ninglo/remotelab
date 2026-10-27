@@ -25,6 +25,14 @@ For adapters without message phases, Web can show a first reply before tool exec
 
 Verification: `tests/test-assistant-surface-messages.mjs`, `tests/test-session-display-events.mjs`, and `tests/test-reply-publication.mjs`. The integration fixture holds execution until the opening and tagged progress are claimed, then releases the final answer and verifies there are no duplicate deliveries.
 
+Progress stream footers distinguish execution from delivery. A completed external
+Run starts with “最终答复尚未确认送达”; the matching final answer's durable receipts
+can change it to sending, cancelled, failed or delivered. Progress/opening
+receipts cannot establish final delivery. Delivered requires every declared
+content/attachment part and its provider receipt. Later answers in the same Run
+use their own receipts; card replay retains each checkpoint's delivery state.
+Web-only Runs without external delivery show execution state alone.
+
 ## Shared Feishu message labels (trial)
 
 Feishu assistant replies receive a deterministic prefix in the durable outbox: `【进展】` while the current execution is running, and `【交付】` once it has stopped, including terminal fallback publication and replies fanned out to another destination. The backend supplies this state; message text and model-chosen phase do not select a label. An early final answer is held for terminal publication so a running execution cannot announce `【交付】`. The trial applies to all readers, with no personal setting. Original history, Web message text, other connectors, manually queued notices, reactions, and attachment-only deliveries retain their existing behavior.

@@ -970,6 +970,11 @@ attachment. Recording an attachment does not start a Harness turn.
 Jev does not interpret
 natural-language invitations, mode changes or topic changes. `/unmute` restores active participation for
 new messages; queued content from before restoration is not replayed as new work.
+Already accepted single-invitation replies remain deliverable when listening or
+paused reception changes to active. The control/intake revision still advances;
+the delivery epoch floor advances only on a stop. Thus a later pause/listen and
+resume cannot revive replies revoked by that stop. Threads without an explicit
+override inherit both boundaries, and connector restarts preserve them.
 Pausing or entering listening cancels that conversation's ongoing work and removes
 its retained THINKING reactions. Cleanup of a recorded Bot reaction treats a
 missing message or reaction (231003 / 231011) as already removed; permission and

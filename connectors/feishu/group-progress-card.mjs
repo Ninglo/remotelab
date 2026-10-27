@@ -42,6 +42,6 @@ export function buildFeishuGroupProgressCard(cycle) {
     body: { elements: [
       { tag: 'markdown', content: cycle.progress?.content || '暂无进度更新' },
       ...groupProgressCardHistory(cycle), ...groupProgressCardControls(cycle),
-      { tag: 'hr' }, { tag: 'markdown', content: progressExecutionLabel(cycle.executionState) },
+      { tag: 'hr' }, { tag: 'markdown', content: progressExecutionLabel(cycle.executionState, cycle.replyDeliveryState) },
     ] } };
 }

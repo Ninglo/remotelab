@@ -15,7 +15,7 @@ export function buildFeishuWorkboardCard(text, board = null, progress = null, cy
   if (cycle.progressOnly) return {
     schema: '2.0', config: { update_multi: true },
     header: { template: 'blue', title: { tag: 'plain_text', content: '处理进展' } },
-    body: { elements: [{ tag: 'markdown', content: progressExecutionLabel(cycle.executionState) },
+    body: { elements: [{ tag: 'markdown', content: progressExecutionLabel(cycle.executionState, cycle.replyDeliveryState) },
       ...replyProgressCardPanel(cycle, [{ tag: 'markdown', content: progress?.content || '暂无进度更新' }])] },
   };
   const lines = String(text || '').split(/\r?\n/).map(trim).filter(Boolean);
@@ -209,7 +209,8 @@ export function expandFeishuWorkboardUpdates(cycles) {
     || (cycle.messageReplyPolicy ? cycle.progressOnly && replyProgressUsesCard(cycle.messageReplyPolicy)
       : usesOctober7GroupMessaging(cycle.progressPolicy))).map(update => ({ ...cycle,
     latestSeq: update.seq, content: update.content, board: update.workboard, progress: update.progress,
-    progressOnly: !update.workboard, executionState: update.executionState || cycle.executionState })));
+    progressOnly: !update.workboard, executionState: update.executionState || cycle.executionState,
+    replyDeliveryState: update.replyDeliveryState })));
 }
 
 export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, verifyMessage }) {
