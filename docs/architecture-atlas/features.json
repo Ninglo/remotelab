@@ -472,6 +472,28 @@
           ],
           "commands": [],
           "sourceRevision": "c20124a67b31eee0387d7ba2815720eaeaee24e2"
+        },
+        {
+          "id": "automation-trial",
+          "name": "独立自动化试用",
+          "purpose": "在创建时确定输入输出、成本说明和故障处理，观察真实运行并在失败后转 Agent 修复或人工处理。",
+          "entry": "Agent 部署独立试用服务；从已发布的 preview 入口创建和操作任务。",
+          "condition": "仅本入口新任务生效，不修改旧自动化；成本仅告知。当前人类结果与预警在试用页和任务会话展示，未接飞书通知。周度审查暂不包含。",
+          "example": "创建短文本整理任务，运行一次，查看结果；缺少材料时补充并继续同一轮。",
+          "sources": [
+            "docs/automation-trial.md",
+            "automation/trial/model.mjs",
+            "automation/trial/store.mjs",
+            "automation/trial/engine.mjs",
+            "automation/trial/runtime.mjs",
+            "automation/trial/service.mjs",
+            "automation/trial/routes.mjs",
+            "automation/trial/server.mjs",
+            "static/automation-trial/index.html",
+            "static/automation-trial/app.js",
+            "static/automation-trial/style.css"
+          ],
+          "commands": []
         }
       ]
     },

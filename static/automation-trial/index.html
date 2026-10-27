@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>自动化试用 · RemoteLab</title><link rel="stylesheet" href="./style.css"></head>
+<body><main><header><div><a class="back" href="/?tab=tasks">RemoteLab</a><h1>自动化试用</h1><p>把任务交代清楚，执行与异常处理接着走。</p></div><span class="badge">独立试用</span></header>
+<p class="notice">仅管理从这里新建的任务。结果与预警可在本页、任务会话查看；交给 Agent 时会唤起所选会话。此版不发送飞书消息。</p>
+<div id="error" role="alert" hidden></div>
+<div class="layout"><section class="panel"><h2 id="form-title">新建任务</h2><form id="create">
+<label>任务目的<textarea name="purpose" rows="3" placeholder="希望完成什么？" required></textarea></label>
+<label>输入<textarea name="input" rows="2" placeholder="材料、链接、文件路径或直接粘贴内容"></textarea></label>
+<label>输出<textarea name="output" rows="2" placeholder="要交付什么结果？"></textarea></label>
+<div class="row"><label>交给谁<select name="recipientKind"><option value="human">给我 · 本页与任务会话</option><option value="agent">交给指定 Agent</option></select></label><label>什么时候做<select name="scheduleKind"><option value="manual">我点运行时</option><option value="once">指定时间，执行一次</option><option value="daily">每天</option><option value="cron">自定义周期</option></select></label></div>
+<label id="agent-field" hidden>接收 Agent 的会话 ID<input name="agentSessionId" placeholder="从会话链接的 session= 后复制"></label>
+<label id="once-field" hidden>执行时间（本地时区）<input type="datetime-local" name="at"></label>
+<label id="daily-field" hidden>每天执行时间（北京时间）<input type="time" name="dailyTime" value="09:00"></label>
+<label id="cron-field" hidden>执行周期（北京时间）<input name="cron" placeholder="0 9 * * *"></label>
+<details><summary>任务定义与执行 SOP</summary>
+<label>标题<input name="title" placeholder="默认使用任务目的"></label>
+<label>预计成本<textarea name="cost" rows="2" placeholder="粗略用量或费用说明；只做告知，不自动限额"></textarea></label>
+<div class="row"><label>负责人<input name="owner"></label><label>生效范围<input name="scope" value="仅本次试用任务及其工作目录"></label></div>
+<div class="row"><label>生效日期<input type="datetime-local" name="startsAt"></label><label>结束日期（可选）<input type="datetime-local" name="endsAt"></label></div>
+<label>执行 SOP<textarea name="sop" rows="3" placeholder="已有操作方法、需要遵守的范围及完成标准"></textarea></label>
+<label>监管与预警<textarea name="warning" rows="2" placeholder="启动失败、执行报错或缺少结果时处理；无法自行解决时交给负责人"></textarea></label>
+<label>无执行事件预警（分钟，可选）<input type="number" min="0" name="noProgressMinutes" placeholder="留空不设置时间阈值"></label>
+<p class="muted">失败后进入 Agent 诊断，最多两轮修复；缺少必要输入时直接提出具体问题。成本说明不会触发限额或暂停。</p>
+</details><div class="actions"><button type="submit" id="save">创建任务</button><button type="button" id="cancel-edit" class="secondary" hidden>取消编辑</button><button type="button" id="example" class="secondary">填入试用示例</button></div>
+</form></section><section class="results"><div class="list-heading"><h2>试用任务</h2><span id="connection" class="muted" aria-live="polite">正在读取</span></div><div id="tasks"></div></section></div>
+</main><script src="./app.js" defer></script></body></html>
