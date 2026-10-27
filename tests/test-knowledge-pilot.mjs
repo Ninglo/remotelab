@@ -125,6 +125,50 @@ try {
   assert.equal((await api(body)).status,200);
   let sent,output='';await runKnowledgeCommand(['read','--page','01-loss.md'],{requestId:'request1',runId:r.runId,stdout:{write:s=>output+=s},client:{request:async(path,options)=>{sent={path,...options};return {response:{ok:true},json:read};}}});
   assert.equal(sent.path,'/api/knowledge-pilot');assert.equal(sent.body.requestId,'request1');assert.equal(JSON.parse(output).sha256,read.sha256);
+  // Group enrollment follows the authenticated input, never the Session or a
+  // Person globally. These are synthetic groups/identities and a fixture corpus.
+  const groups=['chat_discuss','chat_work'].map(chatId=>({sourceRouteId:'bot_test',tenantKey:'tenant_test',chatId}));
+  const groupConfig={...config,id:'kb_groups',groups,helpedCitation:'experience-source'};
+  await writeFile(join(root,'config.json'),JSON.stringify(groupConfig));
+  const member={viewPersonId:'person_b',initiatedByIdentityId:'identity_b',feishuConnectorAuthenticated:true,
+    sourceContext:{connector:'feishu',chatType:'group',...groups[0]}};
+  const groupPolicy=await captureKnowledgePilot(member);
+  assert.equal(groupPolicy.scope,'group');assert.deepEqual(groupPolicy.group,groups[0]);
+  assert.equal((await captureKnowledgePilot({...member,sourceContext:{...member.sourceContext,...groups[1]}})).scope,'group');
+  assert.equal((await captureKnowledgePilot({...member,viewPersonId:'person_c',initiatedByIdentityId:'identity_c'})).scope,'group');
+  assert.equal((await captureKnowledgePilot(options)).scope,'person','existing personal opt-in remains enabled');
+  for(const change of [{connector:'web'},{chatType:'p2p'},{chatId:'elsewhere'},{tenantKey:'another'},{sourceRouteId:'another'}])
+    assert.equal(await captureKnowledgePilot({...member,sourceContext:{...member.sourceContext,...change}}),null);
+  for(const change of [{feishuConnectorAuthenticated:false},{initiatedByIdentityId:null},{sourceContext:undefined},
+    {internalOperation:'job'},{automationTitle:'job'},{scheduleId:'job'},{triggerId:'job'},{workReference:{}},{deliveryOnly:true},{recordUserMessage:false}])
+    assert.equal(await captureKnowledgePilot({...member,...change}),null);
+  assert.equal(await captureKnowledgePilot({...member,sourceContext:undefined},{conversation:{connector:'feishu',target:groups[0]}}),null);
+  assert.equal(await captureKnowledgePilot(member,{groupFeed:true}),null);
+  assert.equal(await captureKnowledgePilot(member,{internalRole:'worker'}),null);
+  const groupPrompt=await buildPrompt('test-kb-group',{id:'test-kb-group',tool:'codex'},'查已有经验',null,'codex',null,
+    {...member,knowledgePilot:groupPolicy,requestId:'group'},prepared);
+  assert.match(groupPrompt,/范围不延伸至成员的其他群或私聊/);
+  assert.match(groupPrompt,/参考组织 Wiki 中〈实际来源〉的经验/);
+  assert.match(groupPrompt,/本次实际采用的要点.*真实作者或团队.*不代表已在当前任务中验证有效/s);
+  assert.match(knowledgePilotPrompt(cited,'old'),/引用组织wiki/,'previous citation snapshots retain the old style');
+  const groupRecord=(await requests.accept({sessionId:'test-kb-group',requestId:'group',text:'查已有经验',options:{...member,knowledgePilot:groupPolicy}})).record;
+  await observeKnowledgeAdmission(groupRecord);
+  const groupBody={runId:groupRecord.runId,requestId:groupRecord.requestId,action:'read',page:'01-loss.md',operationId:'group-read'};
+  assert.equal((await api(groupBody,{authKind:'person',personId:'person_b'})).status,200,'group member can use the real API');
+  assert.equal((await api({...groupBody,operationId:'wrong-reader'},{authKind:'person',personId:'person_c'})).status,403);
+  const groupStats=await readKnowledgeObservations({lookup:async()=>null,meter:async()=>({usage:null}),nativeReceipt:async()=>false});
+  assert.equal(groupStats.inputRecords[0].scope,'group');assert.deepEqual(groupStats.inputRecords[0].group,groups[0]);
+  assert.equal(groupStats.totals.bodyReadCalls,1);
+  const copied={...groupRecord,options:{...groupRecord.options,sourceContext:{...member.sourceContext,chatId:'elsewhere'}}};
+  await assert.rejects(queryKnowledge(copied,{action:'read',page:'01-loss.md',operationId:'copied'}),/not enabled/);
+  await writeFile(join(root,'config.json'),JSON.stringify({...groupConfig,personIds:[]}));
+  assert.ok(await captureKnowledgePilot(member),'group-only enrollment is valid');
+  assert.equal(await captureKnowledgePilot(options),null);
+  await writeFile(join(root,'config.json'),JSON.stringify({...groupConfig,groups:[]}));
+  assert.equal((await api({...groupBody,operationId:'removed-group'})).status,403,'removing group stops further reads');
+  assert.ok(await captureKnowledgePilot(options),'removing groups preserves personal opt-in');
+  await writeFile(join(root,'config.json'),JSON.stringify({...groupConfig,groups:[{chatId:'chat_discuss'}]}));
+  assert.equal(await captureKnowledgePilot(member),null,'incomplete group identity fails closed');
   await writeFile(join(root,'config.json'),JSON.stringify({...config,enabled:false}));
   assert.equal(await captureKnowledgePilot(options),null);
   assert.equal((await api({...body,operationId:'disabled'})).status,403);

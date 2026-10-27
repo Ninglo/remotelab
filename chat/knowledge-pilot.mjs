@@ -21,10 +21,13 @@ export async function knowledgeConfig(root = KNOWLEDGE_ROOT) {
   const c = await readRecord(join(root, 'config.json'));
   if (!c) return null;
   if (c.version !== 1 || !safeId(c.id) || !safeId(c.projectId) || typeof c.enabled !== 'boolean'
-    || !Array.isArray(c.personIds) || !c.personIds.length || c.personIds.some(p => !safeId(p))
+    || !Array.isArray(c.personIds) || c.personIds.some(p => !safeId(p))
+    || c.groups != null && (!Array.isArray(c.groups) || c.groups.some(g => !g
+      || ['sourceRouteId','tenantKey','chatId'].some(k => !safeId(g[k]))))
+    || !c.personIds.length && !c.groups?.length
     || !isAbsolute(c.corpusPath || '') || typeof c.name !== 'string' || c.name.length > 120
     || c.helpedLabel != null && (typeof c.helpedLabel !== 'string' || !c.helpedLabel.trim() || [...c.helpedLabel].length > 80 || /[\r\n]/.test(c.helpedLabel))
-    || c.helpedCitation != null && c.helpedCitation !== 'finding-source') fail('Invalid knowledge pilot configuration');
+    || c.helpedCitation != null && !['finding-source','experience-source'].includes(c.helpedCitation)) fail('Invalid knowledge pilot configuration');
   if (c.retrieval) {
     const r=c.retrieval;
     if (!['catalog-routing-v1','hybrid-rerank-v1'].includes(r.strategy)
@@ -33,16 +36,27 @@ export async function knowledgeConfig(root = KNOWLEDGE_ROOT) {
   }
   return c;
 }
+function knowledgeGroup(c, o) {
+  const s = o.sourceContext;
+  // Only the authenticated input's origin grants group scope. A Web input in
+  // a group-bound Session (or a copied policy snapshot) must not inherit it.
+  if (o.feishuConnectorAuthenticated !== true || s?.connector !== 'feishu' || s.chatType !== 'group') return null;
+  return c?.groups?.find(g => g.sourceRouteId === s.sourceRouteId && g.tenantKey === s.tenantKey && g.chatId === s.chatId) || null;
+}
 export function knowledgeEligible(c, o, session = {}) {
-  return Boolean(c?.enabled && o.viewPersonId && o.initiatedByIdentityId && c.personIds.includes(o.viewPersonId)
+  return Boolean(c?.enabled && o.viewPersonId && o.initiatedByIdentityId
+    && (c.personIds.includes(o.viewPersonId) || knowledgeGroup(c, o))
     && !o.internalOperation && !o.automationTitle && !o.scheduleId && !o.triggerId && !o.workReference && !o.deliveryOnly
     && o.recordUserMessage !== false && !session.groupFeed && !session.internalRole);
 }
 export async function captureKnowledgePilot(options, session = {}, root = KNOWLEDGE_ROOT) {
   try {
     const c = await knowledgeConfig(root);
+    const group = knowledgeGroup(c, options);
     return knowledgeEligible(c, options, session) ? { id: c.id, personId: options.viewPersonId,
       projectId: c.projectId, specHash: fingerprint(c), mode: 'on-demand',
+      scope: group ? 'group' : 'person',
+      ...(group ? {group: {sourceRouteId:group.sourceRouteId,tenantKey:group.tenantKey,chatId:group.chatId}} : {}),
       retrievalStrategy:c.retrieval?.strategy || 'catalog-routing-v1',
       ...(c.helpedLabel ? {helpedLabel:c.helpedLabel} : {}),
       ...(c.helpedCitation ? {helpedCitation:c.helpedCitation} : {}) } : null;
@@ -51,13 +65,17 @@ export async function captureKnowledgePilot(options, session = {}, root = KNOWLE
 export function knowledgePilotPrompt(p, requestId) {
   if (!p) return '';
   const citation = p.helpedCitation === 'finding-source';
-  const label = citation || p.helpedLabel ? `测试期标注：仅当本轮实际读到知识正文，并将其用于判断或行动、效果记录为 helped 时，${citation
+  const experience = p.helpedCitation === 'experience-source';
+  const label = citation || experience || p.helpedLabel ? `测试期标注：仅当本轮实际读到知识正文，并将其用于判断或行动、效果记录为 helped 时，${experience
+    ? '在相关判断旁简短标注“【参考组织 Wiki 中〈实际来源〉的经验：〈本次实际采用的要点〉】”，后附可用的原文链接。填写本次真实采用的内容，不照抄占位词。按读取结果的 title、sources 和正文引用填写真实作者或团队；无法确认个人归属时用团队或条目名，不猜姓名，不把全库归给一个人。流程、报告或源码按实际材料称为方法、记录或源码。标注表示内容影响了本次回答或行动，不代表已在当前任务中验证有效；讨论和推断仍按讨论或待验证假设表述。同一要点只标一次；不同要点分别对应来源。裸本机路径不作为原文链接。'
+    : citation
     ? '在相关判断旁简短标注“【引用组织wiki中「具体条目」的发现：实际采用的发现；来源：具体原始来源】”。填写真实内容，不照抄占位词。以读取结果的 title、sources 和正文引用对应具体来源；有可用原件链接时附链接，不能把裸本机路径当可访问链接。区分材料提供者、Agent整理与原始证据：kuangzhi共享方法、团队报告、zijie讨论及官方源码按实际归属写，不把全库都归给同一个人。讨论或推断写成“讨论”或“待验证假设”，不能称为已验证发现；未核实作者时使用记录或项目名称，不猜姓名。同一发现只标注一次；不同发现各自对应来源。'
     : `在相关答复中标注一次 ${JSON.stringify(p.helpedLabel)}。`}只收到入口、只搜索目录、读后未采用或效果未知时不标注；不为添加标注而调用知识库。` : '';
   const retrieval=p.retrievalStrategy==='hybrid-rerank-v1'
     ? '搜索使用关键词＋语义检索＋重排，直接返回少量原文片段、适用条件和来源；已有证据够用就继续，必要时用 remotelab knowledge read --page <返回的文件名> 展开整页、沿原证据核查。排名不是置信度，没搜到不能证明原件中没有；冲突按对象、时间与条件保留双方证据。'
     : '结果同时提供词面命中和完整问题目录；结合标题与适用场景按含义选页，不限于命中项，不把排序当置信度。再用 remotelab knowledge read --page <返回的文件名> 先读最相关正文，必要时展开关联页、沿原证据核查；目录没找到不能证明原件中没有。';
-  return `组织具身知识库按需试用，仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>。${retrieval}无关问题无需查询，不自动加载整库正文。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。${label}讨论和历史参数保留原适用条件，不提升为当前结论。当前输入 ${requestId}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
+  const scope = p.scope === 'group' ? '本条来自已启用试用的飞书群，范围不延伸至成员的其他群或私聊；' : '';
+  return `组织具身知识库按需试用，${scope}仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>。${retrieval}无关问题无需查询，不自动加载整库正文。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。${label}讨论和历史参数保留原适用条件，不提升为当前结论。当前输入 ${requestId}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
 }
 export async function observeKnowledgeAdmission(record, root = KNOWLEDGE_ROOT, now = Date.now(), explicit = false) {
   const c = await knowledgeConfig(root);
@@ -69,6 +87,7 @@ export async function observeKnowledgeAdmission(record, root = KNOWLEDGE_ROOT, n
   return publishRecord(join(root, c.id, 'inputs', key + '.json'), {
     sessionId: record.sessionId, requestId: record.requestId, runId: record.runId,
     personId: record.options.viewPersonId, at: now, entryPrepared: Boolean(p),
+    scope: p?.scope || 'person', ...(p?.group ? {group:p.group} : {}),
     retrievalStrategy:p?.retrievalStrategy || 'catalog-routing-v1', entryChars: chars(prompt), entryBytes: Buffer.byteLength(prompt), entryHash: sha(prompt),
     verification: (c.verificationRequestIds || []).includes(record.requestId),
   });
@@ -238,7 +257,9 @@ export async function readKnowledgeObservations({root=KNOWLEDGE_ROOT, lookup=req
     return {day,inputs:a.length,readInputs:a.filter(r=>r.bodyReadCalls).length,bodyReadCalls:a.reduce((n,r)=>n+r.bodyReadCalls,0),bodyChars:a.reduce((n,r)=>n+r.bodyChars,0)};
   });
   return {id:c.id,projectId:c.projectId,featureId:'organization-knowledge',name:c.name,
-    state:c.enabled?'observing':'paused',scopeLabel:'已明确启用的本人输入；数据、预训练、后训练、评测与真机问题按需调用',
+    state:c.enabled?'observing':'paused',scopeLabel:c.groups?.length
+      ? '已明确启用的个人及指定群内输入；按需调用，不延伸至其他群或私聊'
+      : '已明确启用的本人输入；数据、预训练、后训练、评测与真机问题按需调用',
     retrieval:{strategy:c.retrieval?.strategy || 'catalog-routing-v1',activatedAt:c.retrieval?.activatedAt || null},
     startedAt:c.enabledAt, admittedInputs:rows.length, totals,timing,daily,
     verification:{inputs:verification.length,events:log.items.filter(e=>verification.some(r=>r.sessionId===e.sessionId && r.requestId===e.requestId)).length},
