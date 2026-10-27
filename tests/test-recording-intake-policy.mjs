@@ -23,6 +23,16 @@ try {
   assert.equal(result.sourceContext.captureRequestText, payload.text, 'capture template remains original evidence');
   assert.equal(result.attachments, payload.attachments, 'original audio references unchanged');
   assert.equal(result.sourceContext.recordingProcessing.mode, 'transcribe_archive');
+  await writeDurableJson(policyPath, { ...policy, rules: [{ ...policy.rules[0], mode: 'analyze' }] });
+  const analyzed = await apply();
+  assert.equal(analyzed.sourceContext.recordingProcessing.mode, 'analyze');
+  assert.match(analyzed.text, /基础分析和知识归档/);
+  assert.doesNotMatch(analyzed.text, /analysis 保持 pending/);
+  assert.equal(analyzed.sourceContext.captureRequestText, payload.text);
+  assert.equal(analyzed.attachments, payload.attachments);
+  const admittedArchive = { text: result.text, options: { sourceContext: result.sourceContext } };
+  assert.deepEqual(await applyRecordingIntakePolicy(payload, session, { policyPath, priorRequest: admittedArchive }), result,
+    'an analysis policy does not reprocess an already admitted archival request');
   assert.equal((await apply({ ...payload, requestId: 'human:analyze', text: 'Please analyze this recording' })).text,
     'Please analyze this recording', 'human follow-up is not suppressed');
   assert.equal((await apply({ ...payload, nativeQuestionId: 'question' })).text, payload.text);

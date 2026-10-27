@@ -16,15 +16,23 @@ private `recording-intake-policy.json` under its config directory:
 {"enabled":true,"rules":[{"sourceRouteId":"approved-route","chatId":"oc_approved_group","mode":"transcribe_archive","authorizationRefs":["actual-human-request"]}]}
 ```
 
+Use `mode: "analyze"` when the destination has authorized transcription,
+basic analysis and knowledge retention by default. This requests a source-based
+summary, decisions, disagreements and proposed actions under the destination's
+current recording workflow. It does not approve formal task creation, assignment,
+notifications or execution of actions mentioned in the recording. The two modes
+share the same exact destination matching and original-evidence preservation;
+retries retain the mode accepted by the original Request after policy changes.
+
 The message endpoint applies this rule only to an automatic recording request
 with matching machine/recording identity and a Session already bound to that
 exact Feishu route/group. It preserves the original capture template in
 `sourceContext.captureRequestText`, original audio references and delivery
-identity; the processing request now asks only for complete transcription,
-source preservation and intake registration. Old capture clients need no update.
+identity; the processing request follows the selected mode. Old capture clients need no update.
 Human follow-ups, explicit analysis requests and other destinations are unchanged.
-`analysis` stays pending, without automatically scheduling a later consumer.
-Admission remains separate from actual transcription/archive completion. The
+In `transcribe_archive` mode, `analysis` stays pending; in `analyze` mode,
+the Harness records actual analysis completion. Neither mode schedules a later consumer.
+Admission remains separate from actual transcription, archive or analysis completion. The
 rule does not start devices, release held recordings or expand upload authority.
 Ordinary phone/file uploads follow the destination's current intake workflow;
 they must not be mistaken for automatic recorder packets just because they have
