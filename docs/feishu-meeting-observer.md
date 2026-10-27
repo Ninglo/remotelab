@@ -67,7 +67,7 @@ analysis replies, and preserve failures for recovery. Keep attendance disabled;
 do not change another person's artifact sharing or execute proposed actions.”
 
 Supply the exact Connector/Bot, tenant, destination chat, tenant document origin,
-new-meeting cutoff, participation scope and any individually approved sample
+new-meeting cutoff, source-group/organizer scope and any individually approved sample
 meeting IDs/source links in one handoff. An unavailable resource ACL or enterprise event subscription is
 a human dependency only after checking the actual existing capability. This
 worker does not request per-file access, transfer ownership or enable attendance.
@@ -91,7 +91,19 @@ Create private `meeting-ingest-policy.json` alongside the discovery policy:
   "chatId": "oc_authorized_recording_group",
   "documentBaseUrl": "https://example.feishu.cn",
   "notBefore": "2026-10-15T16:50:00Z",
-  "scope": { "mode": "participating" },
+  "scope": {
+    "mode": "source_group_or_organizer",
+    "organizerOpenIds": ["ou_authorized_organizer"],
+    "organizerNotBefore": "2026-10-15T16:50:00Z",
+    "userOrganizerLookup": true
+  },
+  "userNoteLookup": true,
+  "userNoteTranscript": true,
+  "intake": {
+    "root": "/absolute/private/recordings/intake",
+    "scriptPath": "/absolute/existing/recording-analysis/scripts/intake.py"
+  },
+  "recovery": { "dailyRetry": true },
   "processingMode": "transcribe_archive",
   "sampleMeetingIds": ["1234567890123456789"],
   "samples": {
@@ -104,52 +116,38 @@ Create private `meeting-ingest-policy.json` alongside the discovery policy:
 }
 ```
 
-Participation is required even for historical samples and recovery commands.
-A missing `scope.mode: "participating"` denies ingestion; there is no implicit
-tenant-wide mode. A meeting is eligible when either:
+Source eligibility is required even for samples and recovery commands. In
+`scope.mode: "source_group_or_organizer"`, either of these qualifies:
 
-- the same Bot actually attended, proven by this observer's persisted successful
-  event read or the Bot's exact open ID with a join time/duration in the provider
-  participant snapshot; a join request or invitation alone does not qualify; or
-- the exact meeting's provider metadata contains its originating `chat_id`, and
-  the Bot-only `is_in_chat` API confirms current membership of that group.
+- The exact meeting's provider metadata supplies its originating `chat_id`, and
+  the Bot-only `is_in_chat` API confirms the Bot belongs to that group.
+- The provider's meeting owner (organizer) matches `scope.organizerOpenIds`.
+  This uses live meeting details or the same Bot/tenant's persisted discovery
+  owner, never a caller's assertion. `organizerNotBefore` bounds expansion to
+  newly authorized meetings without replaying older personal meetings.
 
-Source chat provenance comes from the meeting-detail API, not a claim derived
-from its title, organizer, attendees, a forwarded recording, the destination
-recording group or artifact access. The currently verified enterprise event
-payloads omit the source chat; meeting details supply it for group meetings.
-Meetings without a source chat need actual Bot attendance. No per-meeting group
-mapping or full-company material scan is needed for this check.
-Caller-supplied source IDs, transcript text and retry URL hints cannot change
-the provider's source. Human-posted recordings continue through the existing group
-intake and its source-specific authorization; they are not discovered by this
-enterprise worker.
+Bot attendance alone, membership of a named human in the group, the host,
+participants, title, destination group and existing artifact access do not
+qualify under this mode. If owner metadata is absent, explicit
+`userOrganizerLookup: true` permits the existing profile's authorized user to
+search by organizer and exact meeting time; all pages are checked for the exact
+meeting ID. A host is never substituted for the organizer. Unresolved ownership
+or lookup failures remain in the scope record and deny content/ACL work.
 
-An explicit `scope.groupMemberOpenIds` list with `scope.userGroupLookup: true`
-can additionally admit source groups containing any specified human. It uses
-the same CLI profile's already-authorized user identity to read that exact
-group's paginated member list, matching open ID, ID type and tenant. This does
-not treat a meeting attendee or a matching display name as group membership.
-Verify the existing identity before enabling it. If neither Bot nor authorized
-user can read the source group's membership, the result remains
-`source_group_membership_unavailable`; no artifact is read to infer membership.
-Do not claim coverage of every named person's groups when the reader lacks
-access. New scope does not restore deleted material or retry historical jobs;
-set the agreed new-meeting cutoff before deployment.
+Legacy `scope.mode: "participating"` remains supported for other instances:
+actual Bot attendance or source-group Bot membership qualify. Its optional
+`groupMemberOpenIds` plus `userGroupLookup` checks exact human membership via the
+existing user profile. These legacy extensions do not apply to the new mode.
+Top-level `ownerOpenIds` remains an additional restriction, not an alternative
+admission rule; use `scope.organizerOpenIds` for the union described above.
 
-`meeting-ingest/scope/<meetingId>.json` records the decision and evidence. Scope
-lookup failures deny content work. The same check applies before material reads,
-visible delivery and analysis/permission-recovery admission, including old queued
-jobs with cached text. A revoked pending job becomes `scope_excluded`; explicit
-recovery still needs current participation evidence. Enterprise discovery metadata
-remains separate from recording collection. The worker never obtains broader ACLs
-to discover whether a meeting is in scope.
-
-`ownerOpenIds` can further restrict organizers, but cannot replace participation.
-`meeting-observer-policy.json`
-continues to own discovery and attendance; keep its `targets` empty when
-attendance is stopped. Restart the existing Connector to load the implementation
-and recover discovery. Do not run a competing worker or WebSocket.
+`meeting-ingest/scope/<meetingId>.json` records the decision and evidence. The
+same check precedes material reads, visible delivery and permission/analysis
+admission, including old queued jobs with cached text. Revoked jobs become
+`scope_excluded`; restoration of an already-started ownership transfer must still
+finish. Discovery metadata remains separate from collection. Human/automatic
+audio uploads retain their existing intake policy and are not changed by this
+meeting policy. Do not open a competing worker or WebSocket.
 
 The material reader uses the existing Bot identity to resolve the meeting's
 recording URL and related artifact tokens. It exports speaker/timestamp text
@@ -157,8 +155,7 @@ from readable Minutes. It can also fetch the related original Docx transcript,
 or follow the explicit “文字记录” link in a readable note. Known note links from
 an authorized source can be supplied as sample/recovery hints. It does not scan
 other groups or borrow another person's OAuth, and does not treat an AI summary
-as an original transcript. Unified-note tabs without an independently readable
-transcript are not covered. A private Minutes file may deny access even when the
+as an original transcript. Unified-note originals require the explicit user transcript option described below. A private Minutes file may deny access even when the
 linked Docx transcript is readable. Public note discovery from personal
 notification messages is not provided by this worker; an empty artifacts API
 response therefore remains a coverage gap unless an authorized source supplies
@@ -169,10 +166,12 @@ profile, `userNoteLookup: true` explicitly enables one additional metadata path:
 Bot meeting details (`query_mode=0`) provide `note_id`, then the user-only
 `note +detail` resolves the note and standalone transcript tokens. This can work
 when `query_mode=1` returns an empty object. It does not log in, request new
-permissions, switch profiles or change resource ACLs. Transcript/Docx reads and
-group delivery still use the Bot. `source.json.noteLookup` records the separate
-metadata identity and note ID; default behavior remains Bot-only. Unified Note
-transcripts remain unsupported. Check the existing profile's actual authorization
+permissions, switch profiles or change resource ACLs. Normal transcript/Docx reads and group delivery still use the Bot. `source.json.noteLookup` records the separate
+metadata identity and note ID; default behavior remains Bot-only. For a verified unified Note, `userNoteTranscript: true` additionally permits
+`note +transcript` under that same existing authorized user identity. The CLI
+fetches all pages into a fresh file; failure or missing timestamped text does not
+publish a partial result. `source.json.transcriptIdentity` identifies the actual
+reader. This option does not transfer ownership or obtain new user authorization. Check the existing profile's actual authorization
 before enabling this option. Do not retry an old failure if its material has
 already been manually posted and analysed in the target group; retain that
 manual receipt separately rather than claiming automatic success or reposting it.
@@ -184,8 +183,29 @@ never produces a success message in the group. Generation retries are bounded to
 12 attempts with persisted due times (1, 2, 4, 8, then up to 15 minutes between
 attempts, with a durable two-hour material deadline). This accommodates observed production
 recording generation taking over forty minutes. Network retries start at 250 ms,
-then 500 ms, 1 s, 2 s, up to 5 s; application/ACL denial stops with recoverable
-evidence by default. Restart does not replenish an attempt budget.
+then 500 ms, 1 s, 2 s, up to 5 s; application/ACL denial stops the immediate attempt with recoverable evidence. Restart does not replenish an attempt budget.
+
+When `intake.root` and `intake.scriptPath` point to the instance's existing
+recording-analysis registry, the worker registers eligible meetings before
+material collection and updates them through failure, transcript acquisition and
+Request admission. Stable source IDs are `feishu-meeting:<meetingId>`; downstream
+Harness work updates this same entry rather than registering a second Minutes
+source. The existing registry owns file hashing, locking, versions and readback.
+Producer updates preserve consumer analysis, gaps and consumption receipts,
+including an explicit re-read/merge after a version conflict. Partial collection
+and failed transcription remain discoverable; Request admission never marks
+analysis or consumption complete. A successfully exported original transcript is
+saved locally; this worker does not download meeting audio.
+
+For `recovery.dailyRetry: true`, the instance's existing daily review may run
+`retry-pending` before reading the index. It queues eligible archived material
+failures through the same Connector mailbox, at most once per UTC date/meeting,
+and rechecks current scope. It does not replay pre-cutoff meetings, resend
+unknown deliveries, or re-admit already submitted analysis/permission work.
+Each recovery retains its finite two-hour attempt budget. No extra timer or
+second daily consumer is created. Configure the existing daily review to read
+pending/failed entries and their original Request, retain unresolved reasons,
+and read available full transcripts even when analysis is still pending.
 
 Before sending, the worker persists its intention and a stable provider UUID.
 After success it reads the real message back and checks destination and source
@@ -257,6 +277,7 @@ Inspect or recover through the existing Connector's private mailbox:
 
 ```bash
 node scripts/feishu-meeting-ingest.mjs status --storage-dir <connector-state>
+node scripts/feishu-meeting-ingest.mjs retry-pending --storage-dir <connector-state>
 node scripts/feishu-meeting-ingest.mjs retry --storage-dir <connector-state> \
   --meeting-id <id> --note-url <authorized-note-url> --source-ref <original-source>
 ```

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFeishuMeetingIngest, meetingIngestKey } from '../connectors/feishu/meeting-ingest.mjs';
@@ -192,8 +192,13 @@ try {
       return args.params.query_mode === 0 ? { meeting: { note_id: '123456789099' } } : { related_artifacts: {} };
     },
     exportTranscript: async () => { throw Object.assign(new Error('private Minutes'), { httpStatus: 403 }); },
-    cli: async (args, identity = 'bot') => {
+    cli: async (args, identity = 'bot', options = {}) => {
       lookupCalls.push({ kind: args[0], identity });
+      if (args[1] === '+transcript') {
+        assert.equal(identity, 'user');
+        await writeFile(join(options.cwd, args[args.indexOf('--output') + 1]), 'Speaker 00:00:01 original unified speech\nSpeaker 00:22:30 final page');
+        return { success: true };
+      }
       if (args[0] === 'note') return { note: { note_id: returnedNoteId, note_display_type: noteType,
         note_doc_token: 'note', verbatim_doc_token: 'transcript' } };
       assert.equal(identity, 'bot', 'user metadata authorization never changes content identity');
@@ -212,6 +217,20 @@ try {
   noteType = 'unified';
   const unified = await lookupReader(discovery('123456789014'), {}, { ...p, userNoteLookup: true });
   assert.equal(unified.transcriptPath, undefined, 'unified tokens are not standalone transcripts');
+  const unifiedEnabled = await lookupReader(discovery('123456789022'), {}, { ...p, userNoteLookup: true, userNoteTranscript: true });
+  assert.equal(unifiedEnabled.status, 'readable_transcript');
+  assert.equal(unifiedEnabled.transcriptIdentity, 'user');
+  assert.ok(unifiedEnabled.unifiedTranscriptPath);
+  const failedUnifiedReader = createMeetingMaterialReader(runtime, {
+    api: async args => args.params?.query_mode === 0 ? { meeting: { note_id: '123456789099' } } : {},
+    cli: async args => {
+      if (args[1] === '+detail') return { note: { note_id: '123456789099', note_display_type: 'unified' } };
+      throw Error('Second transcript page unavailable');
+    },
+  });
+  const failedUnified = await failedUnifiedReader(discovery('123456789023'), {}, { ...p, userNoteLookup: true, userNoteTranscript: true });
+  assert.equal(failedUnified.transcriptPath, undefined, 'failed pagination must never publish a partial transcript');
+  assert.ok(failedUnified.errors.some(e => e.stage === 'unified_transcript'));
   returnedNoteId = '123456789098';
   const mismatch = await lookupReader(discovery('123456789015'), {}, { ...p, userNoteLookup: true });
   assert.equal(mismatch.transcriptPath, undefined);

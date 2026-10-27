@@ -10,15 +10,15 @@ import { artifactToken } from '../connectors/feishu/meeting-materials.mjs';
 const args = process.argv.slice(2);
 const [action] = args;
 const value = flag => { const i = args.indexOf(flag); return i < 0 ? '' : args[i + 1] || ''; };
-if (!['status', 'retry'].includes(action) || !value('--storage-dir')) {
-  console.log('Usage: node scripts/feishu-meeting-ingest.mjs status|retry --storage-dir <connector-state> [--meeting-id <id>] [--minute-url <url>] [--note-url <url>] [--source-ref <ref>]');
+if (!['status', 'retry', 'retry-pending'].includes(action) || !value('--storage-dir')) {
+  console.log('Usage: node scripts/feishu-meeting-ingest.mjs status|retry|retry-pending --storage-dir <connector-state> [--meeting-id <id>] [--minute-url <url>] [--note-url <url>] [--source-ref <ref>]');
   process.exitCode = action === '--help' ? 0 : 1;
 } else {
   try {
     const root = join(value('--storage-dir'), 'meeting-ingest');
     const meetingId = value('--meeting-id');
     if (meetingId && !/^\d{10,30}$/.test(meetingId)) throw new Error('Invalid meeting ID');
-    if (action === 'status') {
+    if (action === 'status' || action === 'retry-pending') {
       const records = new Map();
       for (const area of ['archive', 'active']) {
         let files = []; try { files = await readdir(join(root, 'jobs', area)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -28,11 +28,30 @@ if (!['status', 'retry'].includes(action) || !value('--storage-dir')) {
         }
       }
       const policy = await readRecord(join(value('--storage-dir'), 'meeting-ingest-policy.json'));
+      if (action === 'retry-pending') {
+        if (!policy?.enabled || policy.recovery?.dailyRetry !== true) throw new Error('Daily material recovery is not enabled');
+        const queued = [], skipped = [];
+        for (const record of records.values()) {
+          const end = /^\d+$/.test(String(record.discovery?.endedAt))
+            ? Number(record.discovery.endedAt) * 1000 : Date.parse(record.discovery?.endedAt);
+          if (!record.complete || !record.receipt?.failed || record.submission || record.messageId
+            || !['waiting_material', 'material_deadline_expired', 'permission_denied'].includes(record.status)
+            || !(end >= Date.parse(policy.notBefore))) continue;
+          const key = createHash('sha256').update(`daily-retry:${record.meetingId}:${new Date().toISOString().slice(0, 10)}`).digest('hex').slice(0, 24);
+          if (await readRecord(join(root, 'command-receipts', key + '.json'))
+            || await readRecord(join(root, 'commands', key + '.json'))) { skipped.push(record.meetingId); continue; }
+          await writeDurableJson(join(root, 'commands', key + '.json'), { action: 'retry', meetingId: record.meetingId,
+            requestedAt: new Date().toISOString(), source: 'daily_material_recovery', hints: {} });
+          queued.push({ meetingId: record.meetingId, receiptPath: join(root, 'command-receipts', key + '.json') });
+        }
+        console.log(JSON.stringify({ queued, skipped, boundary: 'Existing Connector rechecks current scope before recovery; queued is not transcribed.' }, null, 2));
+      } else {
       console.log(JSON.stringify({ enabled: policy?.enabled === true, chatId: policy?.chatId, notBefore: policy?.notBefore,
         scopeMode: policy?.scope?.mode || 'unconfigured', processingMode: policy?.processingMode || 'analyze',
         jobs: [...records.values()].map(r => ({ meetingId: r.meetingId, status: r.status, complete: r.complete,
           attempts: r.attempts, nextAttemptAt: r.nextAttemptAt, messageId: r.messageId, threadId: r.threadId,
-          analysis: r.analysis, archive: r.archive, failure: r.failure, sourcePath: r.material?.sourcePath, receipt: r.receipt })) }, null, 2));
+          analysis: r.analysis, archive: r.archive, intake: r.intake, failure: r.failure, sourcePath: r.material?.sourcePath, receipt: r.receipt })) }, null, 2));
+      }
     } else {
       if (!meetingId) throw new Error('--meeting-id is required');
       const hints = {};

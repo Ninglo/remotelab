@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { writeDurableJson } from '../../lib/durable-records.mjs';
 
 const exec = promisify(execFile);
@@ -46,11 +46,11 @@ export function transcriptLink(xml) {
   return '';
 }
 export function createMeetingCli(runtime) {
-  return async (args, identity = 'bot') => {
+  return async (args, identity = 'bot', options = {}) => {
     let stdout;
     try {
       ({ stdout } = await exec(process.execPath, [launcher, '--profile', runtime.config.sourceRouteId || 'default', ...args,
-        '--as', identity, '--format', 'json'], { timeout: 60000, maxBuffer: 24 * 1024 * 1024,
+        '--as', identity, '--format', 'json'], { cwd: options.cwd, timeout: 60000, maxBuffer: 24 * 1024 * 1024,
         env: { ...process.env, LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' } }));
     } catch (error) {
       stdout = error.stdout || error.stderr;
@@ -111,9 +111,10 @@ export function createMeetingMaterialReader(runtime, options = {}) {
     let noteArtifacts;
     // Some tenants expose note_id in meeting metadata while hiding the
     // query_mode=1 artifact fields. The Note API is user-only: use an existing
-    // authorized identity only when this instance explicitly opts in. Content
-    // reads and all group writes remain Bot operations.
-    if (!transcript.trim() && !evidence.noteUrl && !related.verbatim_doc_token && policy.userNoteLookup === true) {
+    // authorized identity only when this instance explicitly opts in. Normal
+    // content reads and all group writes remain Bot operations; unified text
+    // has its own explicit userNoteTranscript opt-in below.
+    if (!transcript.trim() && policy.userNoteLookup === true) {
       const metadata = await attempt('meeting_note_id', () => api({ method: 'GET',
         url: `/open-apis/vc/v1/meetings/${state.meetingId}`, params: { query_mode: 0 } }));
       const noteId = metadata?.meeting?.note_id;
@@ -127,6 +128,24 @@ export function createMeetingMaterialReader(runtime, options = {}) {
         noteArtifacts = data?.note;
         evidence.noteLookup.displayType = noteArtifacts?.note_display_type || '';
         evidence.noteUrl ||= docUrl(noteArtifacts?.note_doc_token);
+      }
+    }
+    if (!transcript.trim() && noteArtifacts?.note_display_type === 'unified' && policy.userNoteTranscript === true) {
+      const original = await attempt('unified_transcript', async () => {
+        const filename = `unified-${randomUUID()}.txt`;
+        await cli(['note', '+transcript', '--note-id', evidence.noteLookup.noteId,
+          '--transcript-format', 'plain_text', '--output', filename], 'user', { cwd: dir });
+        // CLI finishes all pages before writing; never reuse an earlier file
+        // or mistake JSON/summary output for the original transcript.
+        const text = await readFile(join(dir, filename), 'utf8');
+        if (!text.trim() || !/\d{2}:\d{2}:\d{2}/.test(text)) throw Error('Unified transcript is empty or has no timestamps');
+        evidence.unifiedTranscriptPath = join(dir, filename);
+        return text;
+      });
+      if (original) {
+        transcript = original;
+        evidence.transcriptIdentity = 'user';
+        evidence.transcriptUrl = evidence.noteUrl;
       }
     }
     let note = '';
@@ -149,6 +168,7 @@ export function createMeetingMaterialReader(runtime, options = {}) {
       }
     }
     if (transcript.trim()) {
+      evidence.transcriptIdentity ||= 'bot';
       const path = join(dir, 'transcript.txt');
       await writeFile(path, transcript, { mode: 0o600 });
       evidence.transcriptPath = path;
