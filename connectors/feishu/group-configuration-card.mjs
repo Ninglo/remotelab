@@ -45,7 +45,7 @@ export function buildGroupConfigurationCard(record, view) {
     + (url ? `\n[打开主会话](${url})` : '')));
   const project = view.project;
   if (view.reading) elements.push(md(`**项目归属**：${view.reading.projectPath}\n**读取层级**：${view.reading.label}\n${view.reading.method}`));
-  if (project?.briefUrl) elements.push({ tag: 'hr' }, md(`[**${project.name || project.id}｜项目共同认知·群内对话默认注入**](${project.briefUrl})`
+  if (project?.briefUrl) elements.push({ tag: 'hr' }, md(`[**${project.name || project.id}｜项目共同认知·对话按需读取**](${project.briefUrl})`
     + (project.briefUpdated ? `\n更新时间：${project.briefUpdated}` : '')));
   if (project?.skills?.length) elements.push(md('**常用技能**\n'
     + project.skills.slice(0, 3).map(skill => `• **${skill.name}**：${skill.description}`).join('\n')));

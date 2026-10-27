@@ -69,6 +69,7 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
       if (project?.briefPath) {
         const body = await readFile(project.briefPath, 'utf8');
         project.briefUpdated = body.match(/^更新时间[：:]\s*(.+)$/m)?.[1] || '';
+        project.briefContentHash = hash(body.replace(/^更新时间[：:].*$/m, ''));
       }
     } catch { project = { error: '登记的项目说明暂时无法读取，请核对原来源。' }; }
     const topics = projectTopicRows(runtime.projectCardSessions || new Map(), chatId, runtime.config.sourceRouteId);

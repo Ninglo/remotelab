@@ -152,8 +152,12 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const sameContent = record.cardContentDigest
       ? record.cardContentDigest === contentDigest
       : record.cardDigest === hash(JSON.stringify(existingCard));
+    // The compact card links to the brief rather than displaying its body.
+    // Track body changes separately; changing only its date stays a no-op.
+    const briefContentHash = configuration?.project?.briefContentHash || '';
+    const sameBrief = !briefContentHash || record.cardBriefContentHash === briefContentHash;
     // Content comparison precedes every age read and renewal decision.
-    if (messageId && sameContent && !record.pinPending) return record;
+    if (messageId && sameContent && sameBrief && !record.pinPending) return record;
     let createdAt = record.cardCreatedAt || 0;
     const rejected = record.cardUpdateFailure?.messageId === messageId && record.cardUpdateFailure?.code === 230031;
     if (messageId && !createdAt && !rejected) {
@@ -236,6 +240,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     }
     return records.mutate(record.key, current => ({ ...record, ...current, cardMessageId: messageId,
       cardCreatedAt: current?.cardCreatedAt || createdAt, cardDigest: digest, cardContentDigest: contentDigest,
+      cardBriefContentHash: briefContentHash,
       pinPending: canPin ? false : record.pinPending }));
   }
   async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId,

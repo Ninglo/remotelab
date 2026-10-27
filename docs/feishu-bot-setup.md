@@ -952,6 +952,11 @@ the card adds the shared project document, concise skills and a paginated topic
 board. Native Session invalidations and registered-source file notifications
 refresh the card; per-card publication is serialized to avoid duplicate creates.
 See [project group cards and opening briefs](feishu-project-links.md#project-group-agent-cards-and-opening-briefs)
+for the shared brief contract. A linked brief's substantive content change also
+refreshes its date on the existing managed card; date-only changes do not.
+Document synchronization is independent of card availability, so a missing or
+suppressed card cannot prevent the project knowledge from being updated. The
+Harness receives the brief pointer and reads its body on demand. See that guide
 for scope, registration, feedback and acceptance boundaries.
 
 In ordinary groups, participation controls apply to the main timeline and each existing Thread;

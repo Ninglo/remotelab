@@ -262,7 +262,7 @@ Existing and new group configuration cards use the same compact presentation;
 legacy `cardLayout` flags no longer select a full editor. The card retains the
 available participation callbacks, actual main Session model/link, project
 brief/time, up to three skills and authorized personal trial controls. The brief
-link uses “项目名称｜项目共同认知·群内对话默认注入”. Work groups show their actual
+link uses “项目名称｜项目共同认知·对话按需读取”. Work groups show their actual
 per-message response policy even without a project binding. An unresolved `auto`
 model is displayed as automatic selection, never a guessed model. Topic boards,
 runtime/prompt editors and the refresh button are omitted from the group card;
@@ -282,6 +282,9 @@ another message are not maintained. New pin receipts retain `pinnedMessageId`;
 legacy `pinPending: false` records represent a completed top-notice write.
 
 The displayed content and its controls are compared before checking age.
+The linked project brief's body hash is also compared, so a substantive brief
+update refreshes the displayed date even though the compact card omits the body.
+Changing only the brief's update-date line does not trigger a refresh.
 Unchanged content never causes a patch, renewal, or age lookup. On a real change,
 a card still inside the provider update window is edited in place. An expired
 pinned card is replaced only for that change, and the successful send is recorded
@@ -310,7 +313,11 @@ binding because they do not carry a chat ID.
 For maintenance, reuse the existing document-comment binding and the existing
 04:00 project review workflow. Update local Markdown and the same Feishu document
 in place; preserve manual edits, comments and anchors. Do not create a second
-schedule or overwrite whole reviewed documents. API readback, native event tests,
+schedule or gate document synchronization on unrelated group-card records.
+Cards are derived views maintained by the Connector: missing or suppressed cards
+stay absent, and topic groups have no status card. Card refresh failures do not
+block the source document or the brief pointer consumed by the Harness.
+Do not overwrite whole reviewed documents. API readback, native event tests,
 actual client clicks, human comment response and the next naturally scheduled
 review are separate acceptance evidence.
 
