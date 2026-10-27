@@ -202,6 +202,14 @@ For `recovery.dailyRetry: true`, the instance's existing daily review may run
 failures through the same Connector mailbox, at most once per UTC date/meeting,
 and rechecks current scope. It does not replay pre-cutoff meetings, resend
 unknown deliveries, or re-admit already submitted analysis/permission work.
+It also retries unresolved scope metadata saved before inbox admission (lookup
+errors or a missing organizer), and jobs stopped for those unresolved reasons.
+These candidates come only from matching app/tenant observer records within the
+configured cutoff. Verified exclusions and identity mismatches are not retried.
+A group-membership lookup failure does not suppress an independently verified
+authorized organizer. No transcript, ACL change or group message is permitted
+until the Connector's fresh scope check succeeds. `retry-pending --dry-run`
+reports candidates without creating commands or receipts.
 Each recovery retains its finite two-hour attempt budget. No extra timer or
 second daily consumer is created. Configure the existing daily review to read
 pending/failed entries and their original Request, retain unresolved reasons,

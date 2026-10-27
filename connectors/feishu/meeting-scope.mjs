@@ -2,6 +2,12 @@ import { join } from 'node:path';
 import { readRecord } from '../../lib/durable-records.mjs';
 import { createMeetingCli, materialError } from './meeting-materials.mjs';
 
+// Unknown provenance can be checked again without admitting artifact access.
+// A verified exclusion or identity mismatch must never enter this recovery path.
+export const unresolvedMeetingScope = decision => decision?.allowed === false && [
+  'scope_lookup_failed', 'source_group_membership_unavailable', 'organizer_lookup_unavailable', 'organizer_unverified',
+].includes(decision.reason);
+
 // Enterprise discovery and artifact ACLs are capabilities, not participation.
 // Use the provider's exact source chat or explicitly authorized organizer, never a title, forwarded
 // link, caller-provided chat or ingestion destination.
@@ -40,10 +46,16 @@ export function createMeetingScopeChecker(runtime, api, options = {}) {
       organizerOpenId: ownerOpenId, evidence: owner ? 'meeting_owner' : 'observer_owner',
     });
     const chatId = data.meeting.chat_id;
+    let membershipError;
     if (/^oc_[A-Za-z0-9]+$/.test(chatId || '')) {
-      const membership = await api({ method: 'GET',
-        url: `/open-apis/im/v1/chats/${chatId}/members/is_in_chat` });
-      if (membership.is_in_chat === true) return result(true, 'source_group_member', {
+      let membership;
+      try {
+        membership = await api({ method: 'GET', url: `/open-apis/im/v1/chats/${chatId}/members/is_in_chat` });
+      } catch (error) {
+        if (!organizerMode) throw error;
+        membershipError = materialError(error);
+      }
+      if (membership?.is_in_chat === true) return result(true, 'source_group_member', {
         chatId, evidence: 'meeting_source_chat_and_bot_membership',
       });
       // Optional, explicitly authorized metadata lookup using this profile's
@@ -94,7 +106,9 @@ export function createMeetingScopeChecker(runtime, api, options = {}) {
         } catch (error) { return result(false, 'organizer_lookup_unavailable', { chatId, error: materialError(error) }); }
       }
     }
-    if (organizerMode) return result(false, ownerOpenId ? 'outside_source_group_and_organizers' : 'organizer_unverified', { chatId });
+    if (membershipError) return result(false, 'source_group_membership_unavailable', { chatId, error: membershipError });
+    if (organizerMode) return result(false, ownerOpenId || !organizerEligible
+      ? 'outside_source_group_and_organizers' : 'organizer_unverified', { chatId });
     return result(false, 'no_participation_evidence');
   };
 }

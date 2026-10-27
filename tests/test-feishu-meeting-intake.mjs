@@ -17,8 +17,12 @@ const policy = { enabled: true, appId: 'cli_test', tenantKey: 'tenant', chatId: 
   scope: { mode: 'source_group_or_organizer', organizerOpenIds: ['ou_authorized'],
     organizerNotBefore: '2026-10-27T09:28:24Z', userGroupLookup: true, groupMemberOpenIds: ['ou_member'] },
   intake: { root: join(root, 'intake'), scriptPath: '/existing/intake.py' }, recovery: { dailyRetry: true } };
-let meeting = { id, start_time: '1793093900' }, inChat = false, searchCalls = 0;
-const api = async args => args.url.endsWith('is_in_chat') ? { is_in_chat: inChat } : { meeting };
+let meeting = { id, start_time: '1793093900' }, inChat = false, searchCalls = 0, membershipFails = false;
+const api = async args => {
+  if (!args.url.endsWith('is_in_chat')) return { meeting };
+  if (membershipFails) throw Error('Membership lookup unavailable');
+  return { is_in_chat: inChat };
+};
 const checker = createMeetingScopeChecker(runtime, api, { cli: async args => {
   searchCalls++;
   assert.equal(args[0], 'vc', 'new policy must never use human group membership');
@@ -47,6 +51,13 @@ try {
   const searched = await checker({ ...policy, scope: { ...policy.scope, userOrganizerLookup: true } }, discovery);
   assert.equal(searched.evidence, 'provider_organizer_filtered_search');
   assert.equal(searchCalls, 2);
+  meeting.chat_id = 'oc_origin'; membershipFails = true;
+  assert.equal((await checker(policy, discovery)).reason, 'source_group_membership_unavailable');
+  assert.equal((await checker({ ...policy, scope: { ...policy.scope, userOrganizerLookup: true } }, discovery)).allowed,
+    true, 'a failed group lookup cannot suppress independent organizer evidence');
+  membershipFails = false;
+  assert.equal((await checker(policy, { ...discovery, endedAt: '1793000000' })).reason,
+    'outside_source_group_and_organizers', 'pre-expansion personal meetings must not remain pending');
   meeting.id = 'wrong';
   assert.equal((await checker(policy, discovery)).allowed, false);
 
@@ -111,5 +122,32 @@ try {
   assert.deepEqual(first.queued.map(x => x.meetingId), [id]);
   const twice = JSON.parse((await exec(process.execPath, [cli, 'retry-pending', '--storage-dir', root])).stdout);
   assert.equal(twice.queued.length, 0, 'same daily recovery cannot duplicate commands');
-  console.log('meeting intake: exact organizer/group boundary, pagination, cutoff, pending/failure index, consumer preservation, CAS merge and daily retry dedup passed');
+  const pendingId = '1234567890123456800', excludedId = '1234567890123456801', oldId = '1234567890123456802';
+  const foreignId = '1234567890123456803', admittedId = '1234567890123456804', activeId = '1234567890123456805';
+  const failedScopeId = '1234567890123456806';
+  for (const [mid, reason, extra] of [
+    [pendingId, 'organizer_unverified', {}], [excludedId, 'outside_source_group_and_organizers', {}],
+    [oldId, 'scope_lookup_failed', { endedAt: '1' }], [foreignId, 'scope_lookup_failed', { appId: 'different' }],
+    [admittedId, 'scope_lookup_failed', {}], [activeId, 'scope_lookup_failed', {}],
+    [failedScopeId, 'source_group_membership_unavailable', {}],
+  ]) {
+    await writeDurableJson(join(root, 'meeting-observer', mid + '.json'), { ...discovery, meetingId: mid, ...extra });
+    await writeDurableJson(join(root, 'meeting-ingest', 'scope', mid + '.json'), {
+      meetingId: mid, appId: policy.appId, tenantKey: policy.tenantKey, allowed: false, reason,
+    });
+  }
+  await writeDurableJson(join(jobRoot, 'd'.repeat(24) + '.json'), { ...failed, meetingId: admittedId,
+    status: 'permission_recovery_accepted', submission: { sessionId: 'existing' } });
+  await writeDurableJson(join(jobRoot, 'e'.repeat(24) + '.json'), { ...failed, meetingId: activeId, complete: false });
+  await writeDurableJson(join(jobRoot, 'f'.repeat(24) + '.json'), { ...failed, meetingId: failedScopeId, status: 'scope_excluded' });
+  await writeDurableJson(join(jobRoot, '1'.repeat(24) + '.json'), { ...failed, meetingId: excludedId });
+  const preview = JSON.parse((await exec(process.execPath, [cli, 'retry-pending', '--storage-dir', root, '--dry-run'])).stdout);
+  assert.equal(preview.dryRun, true); assert.equal(preview.queued, undefined);
+  assert.deepEqual(preview.candidates.map(x => x.meetingId).sort(), [pendingId, failedScopeId]);
+  const recovered = JSON.parse((await exec(process.execPath, [cli, 'retry-pending', '--storage-dir', root])).stdout);
+  assert.deepEqual(recovered.queued.map(x => x.meetingId).sort(), [pendingId, failedScopeId]);
+  for (const q of recovered.queued) assert.equal(q.source, 'daily_scope_recovery');
+  const again = JSON.parse((await exec(process.execPath, [cli, 'retry-pending', '--storage-dir', root])).stdout);
+  assert.equal(again.queued.length, 0);
+  console.log('meeting intake: exact organizer/group boundary, independent lookup failures, pagination, cutoff, pending/failure index, consumer preservation, CAS merge, unadmitted scope recovery and daily retry dedup passed');
 } finally { await rm(root, { recursive: true, force: true }); }
