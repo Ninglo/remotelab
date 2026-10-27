@@ -173,7 +173,7 @@ For any new feature doc that describes enabling, wiring, or operating a capabili
 
 The existing Monitor → Automations view presents four readable workflow categories, with live task times and background states: see [Automation flow explanations](task-center-v1.md#compact-flow-explanations) for aligned start/process/write/notify stages, explicit input reuse, visible scope notes and collapsible Session mechanics. [Delivery details and controls](task-center-v1.md#delivery-details-and-controls) show recipients directly beneath task titles and before flow diagrams, with sending conditions, message format, content and controls available on expansion.
 
-Chrome 飞书个人试用包仅增加边缘拖动调宽，保持原生消息列表；构建和验证见[话题同步：列宽试用](feishu-web-topics.md#chrome-列宽个人试用-125)。
+Chrome 飞书个人试用包 1.2.9 保留原生消息预览和分组，调整窄应用栏、底部入口、列宽及原生列表排序；构建、分页限制与验证范围见[话题同步：原生列表试用](feishu-web-topics.md#chrome-原生列表个人试用-129)。
 
 Mac 原生飞书增强的独立安装、本人连接、消息分组侧栏入口和保留数据升级见 [试装入口](../scripts/feishu-native/INSTALL.zh-CN.md)；原生列表只替换标题并显示状态，保留飞书最新消息预览，将四入口和设置置于消息分组侧栏的“测试中的功能”区；可见话题变化不再先清空状态，空闲状态也有标签；本人 Mac 的实际显示须单独验收。r16 统一主程序与本地化名称为“飞书增强版”，配独立紫色图标；保留应用标识和账号数据，经 LaunchServices 启动完整应用，方便在系统权限列表中区分原版。麦克风授权及 Fn 语音输入须在本人 Mac 单独验证。启动器仍确认本机服务就绪后再开窗口。群状态、用量与消息成果的数据边界见 [话题同步](feishu-web-topics.md)。
 
