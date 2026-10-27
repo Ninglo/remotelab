@@ -1,4 +1,4 @@
-// Personal trial: native Feishu rows, compact shortcuts and local display sorting.
+// Feishu Web 1.3: promote the accepted native-list trial onto the fixed 1.2.2 base.
 import { cp, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,12 +31,13 @@ await patch('topic-labels.js', [
  ["      let preview = main.querySelector('.rlfe-feed-preview');\n      if (!preview) { preview = node('div', 'rlfe-feed-preview'); originalPreview.before(preview); }\n      const summary = String(entry.summary || '').replace(/\\s+/g, ' ').trim();\n      if (preview.textContent !== summary) preview.textContent = summary;\n      preview.title = summary;", "      // Message previews remain owned and updated by Feishu."]
 ]);
 await patch('runtime-ui.js', [["话题运行状态、标题摘要和群汇总", "话题运行状态、标题和群汇总"]]);
+await patch('runtime-ui.js', [["const version = chrome.runtime.getManifest().version,", "const version = chrome.runtime.getManifest().version_name || chrome.runtime.getManifest().version,"]]);
 for(const file of ['resize.js','sidebar.js','native-sort.js','sort-ui.js'])await cp(join(here,file),join(out,file));
 const locator=await readFile(join(base,'../mini-live/native-feed-locator.js'),'utf8');
 const pets={};for(const [id,name]of Object.entries({boocha:'boocha.gif','noto-cat':'cat.webp','noto-fox':'fox.webp','noto-panda':'panda.webp','noto-penguin':'penguin.webp'}))pets[id]='data:image/'+(name.endsWith('.gif')?'gif':'webp')+';base64,'+(await readFile(join(base,'assets',name))).toString('base64');
 const parts=await Promise.all(['themes.js','preferences.js','message-settings.js','settings.js','companion.js','reading.js','group-board.js','sidebar.js','resource-nav.js','personal-workspace.js','sort-ui.js','topic-labels.js','resize.js','topic-sync.js','runtime-ui.js'].map(n=>readFile(join(out,n),'utf8')));
 await writeFile(join(out,'content.js'),parts.join('\n').replaceAll('__LAB_PET_DATA__',JSON.stringify(pets)).replaceAll('__BEAR_DATA_URL__','data:image/gif;base64,'+(await readFile(join(base,'assets/sticker-bear.gif'))).toString('base64')).replaceAll('__RLFE_BOARD_LOCATOR__',locator));
-manifest.version='1.2.10';manifest.version_name='1.2.10 原生列表试用';manifest.description='保留飞书原生摘要与操作，微调左侧入口、列宽和排序。';
+manifest.version='1.3.0';manifest.version_name='1.3';manifest.description='保留飞书原生摘要与操作，微调左侧入口、列宽和排序。';
 manifest.content_scripts.unshift({matches:manifest.content_scripts[0].matches,js:['native-sort.js'],world:'MAIN',run_at:'document_start'});
 await writeFile(join(out,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify({version:manifest.version,output:out,published:false}));
