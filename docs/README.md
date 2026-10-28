@@ -88,7 +88,8 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 - [Project feedback and review](project-feedback.md) — Monitor presents concise priorities and project understanding, with full feedback, cases (including those without feedback), and original evidence available on expansion. Review projections preserve original task status and human attribution.
 
-- [Stable automation homes](task-center-v1.md#stable-automation-home-explicit-opt-in) — task-only context branches (no copied source chat), distinct history/run entries, cross-run reuse explanations, clear bidirectional links, retained definitions and lifecycle history without occupying worker queues.
+- [Automation conversation workflow](automation-trial.md#普通自动化的默认创建流程) — ordinary new automations use one dedicated fixed execution Session per task; retain source links and corrections, with daily reports maintained separately. Read before creating a new automation through Schedule／Trigger.
+- [Stable automation homes](task-center-v1.md#stable-automation-home-explicit-opt-in) — an explicit alternative with a fixed discussion home and separate execution Sessions; task-only context branches (no copied source chat), distinct history/run entries, retained definitions and lifecycle history without occupying worker queues.
 - [Automation tasks and execution Sessions](task-center-v1.md#automation-session-collection) — explicit collection membership, existing-run migration and direct execution links.
 
 - [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.

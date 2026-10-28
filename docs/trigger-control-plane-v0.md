@@ -2,6 +2,8 @@
 
 RemoteLab has a server-owned trigger control plane for deferred and recurring AI work.
 
+Before creating a user-requested automation, follow the [automation conversation workflow](automation-trial.md#普通自动化的默认创建流程). Ordinary new automations get one dedicated execution Session reused on each trigger; the source Session remains the provenance, and daily reports keep their separate policy. `trigger create --help` and `schedule create --help` point to this workflow. The low-level APIs keep explicit target selection and do not migrate existing tasks.
+
 This is intentionally small.
 The goal is not to ship a general workflow engine or scheduler DSL.
 The goal is to stop hiding automation policy inside prompts and standalone scripts when the platform needs a durable, inspectable, retryable wake-up primitive.

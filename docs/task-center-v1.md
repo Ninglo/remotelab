@@ -147,6 +147,8 @@ The public projection keeps the existing `trg_*` / `sch_*` identity and makes ca
 
 There are two explicit execution modes:
 
+For Agent-created ordinary new automations, follow the [automation conversation workflow](automation-trial.md#普通自动化的默认创建流程): create a dedicated Session once, then reuse it for execution and follow-up. Daily reports keep their separate policy. This workflow choice does not change the explicit API modes or migrate existing tasks.
+
 - `fixed_session`: every occurrence submits its wake-up instruction to the selected existing Session. Normal Session queueing remains authoritative, so overlapping work is serialized there.
 - `new_session`: the selected Session supplies explicit provenance and starting context. Every occurrence creates an independent execution Session through the existing scheduled-session path.
 
