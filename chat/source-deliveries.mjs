@@ -134,6 +134,7 @@ export async function enqueueSourceDelivery(input = {}) {
     result: { state: 'completed', payload: { text: input.text || '', attachments: input.attachments || [], reaction } },
     plans: buildReplyDeliveries(plan, { text: input.text, attachments: input.attachments, reaction }).map(part => ({ ...part,
       ...(part.kind === 'content' && input.memoryReview ? { memoryReview: input.memoryReview } : {}),
+      ...(part.kind === 'content' && input.automationControl ? { automationControl: input.automationControl } : {}),
       ...(part.kind === 'content' && input.foldedDetails ? { foldedDetails: input.foldedDetails } : {}),
       ...(part.kind === 'reaction' ? { reactionStage } : {}),
       ...(workboard ? { workboardTaskId: workboard.taskId, workboardRevision: workboard.revision,

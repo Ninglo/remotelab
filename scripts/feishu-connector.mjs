@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
+import { sendAutomationCard, handleAutomationCardAction } from '../connectors/feishu/automation-cards.mjs';
 import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
 import { topicAnnouncementContext } from '../connectors/feishu/group-announcement.mjs';
 import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
@@ -1605,6 +1606,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         ? await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary)
         : delivery.memoryReview
         ? await sendMemoryReviewCard(runtime, delivery)
+        : delivery.automationControl
+        ? await sendAutomationCard(runtime, delivery, { request })
         : delivery.nativeQuestion
         ? await sendNativeQuestionCard(runtime, delivery)
         : delivery.kind === 'reaction'
@@ -1633,7 +1636,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     if (sent?.skipped) {
       const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
-        body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Question already ended without an original card; suppressed late notification' } });
+        body: { state: 'cancelled', leaseId: claim.leaseId, reason: delivery.automationControl
+          ? 'Automation stopped before its entry card; suppressed late notification'
+          : 'Question already ended without an original card; suppressed late notification' } });
       if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to suppress stale question delivery');
       return resolved.json?.delivery;
     }
@@ -2519,6 +2524,11 @@ async function main() {
     'calendar.calendar.changed_v4': displayHint('calendar.calendar.changed_v4'),
     'calendar.calendar.event.changed_v4': displayHint('calendar.calendar.event.changed_v4'),
     'card.action.trigger': async raw => {
+      const automationFeedback = await handleAutomationCardAction(runtime, raw, {
+        request: (path, options) => requestRemoteLab(runtime, path, options),
+        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+      });
+      if (automationFeedback) return automationFeedback;
       const personalFeedback = await runtime.personalSettings.action(raw);
       if (personalFeedback) return personalFeedback;
       const memoryFeedback = await handleMemoryReviewCardAction(runtime, raw, {

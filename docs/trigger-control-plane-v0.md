@@ -2,7 +2,7 @@
 
 RemoteLab has a server-owned trigger control plane for deferred and recurring AI work.
 
-Before creating a user-requested automation, follow the [automation conversation workflow](automation-trial.md#普通自动化的默认创建流程). Ordinary new automations get one dedicated execution Session reused on each trigger; the source Session remains the provenance, and daily reports keep their separate policy. `trigger create --help` and `schedule create --help` point to this workflow. The low-level APIs keep explicit target selection and do not migrate existing tasks.
+Before creating a user-requested automation, follow the [automation conversation workflow](automation-trial.md#普通自动化的默认创建流程). Ordinary Feishu automations use `POST /api/automation-confirmations`: create a paused native task and dedicated execution Session, send a confirmation card, then activate only after the owner's click and a verified task-topic receipt. Every occurrence reuses this Session; source provenance is retained and daily reports stay separate. Card stop cancels pending occurrences and requests cancellation of active Runs. Public Trigger PATCH keeps routing immutable; only the internal confirmation receipt can bind an unbound paused fixed-session trigger before activation. `trigger create --help` and `schedule create --help` point to this workflow. Low-level APIs retain explicit target selection and do not migrate existing tasks.
 
 This is intentionally small.
 The goal is not to ship a general workflow engine or scheduler DSL.

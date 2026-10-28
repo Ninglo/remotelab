@@ -340,7 +340,7 @@ export async function getTrigger(triggerId) {
   return cloneTrigger(triggers.find((trigger) => trigger.id === normalizedTriggerId) || null);
 }
 
-export async function createTrigger(input = {}) {
+export async function createTrigger(input = {}, options = {}) {
   const sourceSessionId = trimString(input.sourceSessionId);
   const sessionTemplate = normalizeSessionTemplate(input.sessionTemplate, input.tool, input);
   if (!sessionTemplate) {
@@ -352,14 +352,15 @@ export async function createTrigger(input = {}) {
     throw new Error('text is required');
   }
 
-  const id = createTriggerId();
+  if (options.id && !validTriggerId(options.id)) throw new Error('Invalid trigger creation identity');
+  const id = options.id || createTriggerId();
   const createdAt = nowIso();
-  const enabled = normalizeBoolean(input.enabled, true);
+  const enabled = options.paused === true ? false : normalizeBoolean(input.enabled, true);
   const trigger = {
     id,
     triggerType: TRIGGER_TYPE_AT_TIME,
     actionType: TRIGGER_ACTION_SESSION_MESSAGE,
-    status: enabled ? TRIGGER_STATUS_PENDING : TRIGGER_STATUS_CANCELLED,
+    status: options.paused === true ? TRIGGER_STATUS_PAUSED : enabled ? TRIGGER_STATUS_PENDING : TRIGGER_STATUS_CANCELLED,
     enabled,
     title: trimString(input.title),
     sourceSessionId,
@@ -382,6 +383,10 @@ export async function createTrigger(input = {}) {
   let createdTrigger = trigger;
   let deduplicated = false;
   await withTriggerMutation(async (triggers, saveTriggers) => {
+    if (options.id) {
+      const existing = triggers.find(entry => entry.id === id);
+      if (existing) { createdTrigger = existing; deduplicated = true; return; }
+    }
     if (trigger.occurrenceId) {
       const existing = triggers.find((entry) => entry.occurrenceId === trigger.occurrenceId);
       if (existing) {
@@ -465,7 +470,26 @@ export async function cancelScheduleTriggers(scheduleId, options = {}) {
   return { cancelledPending, cancelledActive };
 }
 
-export async function updateTrigger(triggerId, patch = {}) {
+// Stop one pending/admitting occurrence atomically with admission. Preserve an
+// admitted Run's historical receipt and cancel that Run through its owner.
+export async function stopTriggerExecution(triggerId) {
+  let runId = '', found = false;
+  await withTriggerMutation(async (triggers, saveTriggers) => {
+    const trigger = triggers.find(entry => entry.id === triggerId);
+    if (!trigger) return;
+    found = true; runId = trigger.runId || '';
+    if (trigger.status !== TRIGGER_STATUS_DELIVERED) {
+      trigger.status = TRIGGER_STATUS_CANCELLED; trigger.enabled = false;
+      trigger.claimedAt = ''; trigger.nextAttemptAt = ''; trigger.updatedAt = nowIso();
+      await saveTriggers(triggers);
+    }
+  });
+  if (!found) throw new Error('Trigger not found');
+  const run = runId ? await getRun(runId) : null;
+  return { cancelledActive: run && !isTerminalRunState(run.state) && await requestRunCancel(runId) ? 1 : 0 };
+}
+
+export async function updateTrigger(triggerId, patch = {}, options = {}) {
   const normalizedTriggerId = trimString(triggerId);
   if (!normalizedTriggerId) return null;
 
@@ -496,6 +520,7 @@ export async function updateTrigger(triggerId, patch = {}) {
     }
 
     const current = triggers[index];
+    options.validateCurrent?.(current);
     if (current.status === TRIGGER_STATUS_DELIVERING && !isClaimStale(current)) {
       throw new Error('Trigger is currently delivering');
     }
@@ -518,6 +543,14 @@ export async function updateTrigger(triggerId, patch = {}) {
 
     const next = { ...current };
     let changed = false;
+    // Only the confirmation receipt path may bind an as-yet unadmitted fixed
+    // execution. Public PATCH routing remains immutable.
+    if (options.confirmedConversation) {
+      if (current.status !== TRIGGER_STATUS_PAUSED || current.sessionTemplate?.reuse !== 'fixed_session'
+        || current.sessionTemplate.conversation) throw new Error('Only an unbound paused trigger can receive its confirmation topic');
+      next.sessionTemplate = normalizeSessionTemplate({ ...current.sessionTemplate, conversation: options.confirmedConversation }, current.tool);
+      changed = true;
+    }
     const runtimePatch = patchScheduledRuntime(current, patch);
     if (Object.keys(runtimePatch).length) {
       Object.assign(next, runtimePatch);

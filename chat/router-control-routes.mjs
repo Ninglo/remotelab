@@ -1,4 +1,5 @@
 import { findActiveFeishuThreadExecution } from './feishu-thread-continuation.mjs';
+import { handleAutomationConfirmationRoutes } from './router-automation-confirmations.mjs';
 import { setAutomationDelivery } from './automation-delivery.mjs';
 import { readSessionDiagnostics } from './session-diagnostics.mjs';
 import { ensureAutomationHome, readAutomationHomeView, recordAutomationHomeChange } from './automation-home.mjs';
@@ -345,6 +346,7 @@ export async function handleControlRoutes({
   writeJsonCached,
 }) {
   if (await handleInflightTrialRoutes({ req, res, pathname, authSession, writeJson })) return true;
+  if (await handleAutomationConfirmationRoutes({ req, res, pathname, authSession, writeJson })) return true;
   if (await handleMessageReplySettings({ req, res, pathname, parsedUrl, authSession, writeJson })) return true;
   if (await handlePersonalMemorySettings({ req, res, pathname, parsedUrl, authSession, writeJson })) return true;
   if (pathname === '/api/automation/resources' && req.method === 'GET') {

@@ -403,11 +403,15 @@
           "id": "recurring",
           "name": "重复执行的自动化",
           "purpose": "按时区和周期执行既有工作，保留每次尝试与结果。",
-          "entry": "在会话说明频率；监控器 → 常规自动化。",
-          "condition": "创建成功不证明未来运行或投递成功。暂停通常阻止后续接纳，已经运行的工作需另查。",
+          "entry": "在飞书说明任务与频率，收到卡片后确认启用；专属任务话题持续承接执行和修改。监控器仍保留原任务入口。",
+          "condition": "普通新任务经本人确认、任务话题投递与绑定后才启用，每轮复用同一执行 Session；日报单独维护。停止取消后续触发并请求结束当前自动化 Run，外部业务作业另按实际控制处理。",
           "example": "每天九点按这个已验证流程整理资料，结果发到原会话。",
           "sources": [
             "lib/schedule-command.mjs",
+            "chat/automation-confirmations.mjs",
+            "chat/router-automation-confirmations.mjs",
+            "connectors/feishu/automation-cards.mjs",
+            "docs/automation-trial.md",
             "docs/task-center-v1.md",
             "docs/trigger-control-plane-v0.md"
           ],

@@ -68,6 +68,8 @@ function normalizeCadence(raw, { strict = false } = {}) {
   };
 }
 
+export { normalizeCadence as normalizeRecurringCadence };
+
 function normalizeLifetime(value, { strict = false } = {}) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const requestedMode = trimString(raw.mode).toLowerCase();
@@ -430,10 +432,11 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     cron: cadence.type === 'cron' ? cadence.cron : '',
     timezone: cadence.type === 'cron' ? cadence.timezone : '',
   };
-  const schedule = normalizeStoredSchedule({
-    id: createScheduleId(),
-    status: input.enabled === false ? 'cancelled' : 'active',
-    enabled: input.enabled !== false,
+  if (options.id && !/^sch_[a-f0-9]{24}$/.test(options.id)) throw new Error('Invalid schedule creation identity');
+  let schedule = normalizeStoredSchedule({
+    id: options.id || createScheduleId(),
+    status: options.paused === true ? 'paused' : input.enabled === false ? 'cancelled' : 'active',
+    enabled: options.paused !== true && input.enabled !== false,
     sourceSessionId,
     createdByIdentityId: input.createdByIdentityId,
     sessionTemplate,
@@ -457,6 +460,10 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     updatedAt: createdAt,
   });
   await withScheduleMutation(async (schedules, save) => {
+    if (options.id) {
+      const existing = schedules.find(entry => entry.id === options.id);
+      if (existing) { schedule = existing; return; }
+    }
     schedules.push(schedule);
     await save(schedules);
   });
@@ -464,7 +471,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
   return clone(schedule);
 }
 
-export async function updateRecurringSchedule(scheduleId, patch = {}) {
+export async function updateRecurringSchedule(scheduleId, patch = {}, options = {}) {
   const id = trimString(scheduleId);
   if (Object.hasOwn(patch, 'createdByIdentityId')) {
     throw new Error('Task creator cannot be changed; create a new schedule instead');
@@ -474,6 +481,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     const index = schedules.findIndex((entry) => entry.id === id);
     if (index === -1) return;
     const current = schedules[index];
+    options.validateCurrent?.(current);
     const updatedAt = nowIso();
     const sourceSessionId = Object.prototype.hasOwnProperty.call(patch, 'sourceSessionId')
       ? trimString(patch.sourceSessionId)
