@@ -216,16 +216,6 @@ second daily consumer is created. Configure the existing daily review to read
 pending/failed entries and their original Request, retain unresolved reasons,
 and read available full transcripts even when analysis is still pending.
 
-In analysis mode, readable meetings and permission-recovery submissions share
-the recording intake instructions: reuse the full transcript and prior analysis,
-save a topic summary as `summary.md` / intake `files.summary`, and include it in
-the original thread's final reply with recording and full-transcript links.
-Important numbers, decisions and proposed actions retain transcript times;
-unknown identities and dates stay unknown. Native AI artifacts are optional
-comparison material. The summary is labelled as based on the full transcript,
-and uses the existing final source-delivery retry and deduplication. Archive-only
-mode does not generate summaries; neither mode authorizes meeting actions.
-
 Before sending, the worker persists its intention and a stable provider UUID.
 After success it reads the real message back and checks destination and source
 marker. Ambiguous sends are recovered by bounded history reads (up to 500 messages)

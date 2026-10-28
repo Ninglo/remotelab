@@ -6,7 +6,6 @@ import { createFeishuMeetingIngest, meetingIngestKey } from '../connectors/feish
 import { createFeishuMeetingObserver } from '../connectors/feishu/meeting-observer.mjs';
 import { createMeetingMaterialReader, transcriptLink, artifactToken } from '../connectors/feishu/meeting-materials.mjs';
 import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
-import { recordingSummaryInstructions } from '../lib/recording/intake-policy.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'meeting-ingest-'));
 let clock = Date.parse('2026-10-15T16:00:00Z');
@@ -60,8 +59,6 @@ try {
   assert.equal((await state(w, '123456789001')).status, 'analysis_accepted');
   assert.equal(submissions[0].summary.sender.senderType, 'app', 'do not impersonate a human approver');
   assert.match(submissions[0].summary.messageText, /不执行会议拟行动/);
-  assert.ok(submissions[0].summary.messageText.includes(recordingSummaryInstructions),
-    'readable meetings use the same summary delivery contract as authorized hardware recordings');
   await w.accept({ ...discovery('123456789001'), topic: 'enriched duplicate', discoveryEvents: ['extra'] }); await run(w);
   assert.equal(messages.length, 1); assert.equal(submissions.length, 1);
   w.stop();
@@ -144,8 +141,6 @@ try {
   assert.equal(messages.length, beforeRecovery + 1, 'recovery admission retry never duplicates group notice');
   assert.match(submissions.at(-1).summary.messageText, /先通知原所有者/);
   assert.match(submissions.at(-1).summary.messageText, /human:approved/);
-  assert.ok(submissions.at(-1).summary.messageText.includes(recordingSummaryInstructions),
-    'permission recovery keeps the same summary contract without changing its ownership recovery steps');
   await recovery.accept(discovery('123456789016')); await run(recovery);
   assert.equal(messages.length, beforeRecovery + 1);
   // A denial without an actual recording URL must not create noisy group work.
@@ -165,14 +160,12 @@ try {
   assert.equal(archivedRecovery.status, 'archive_accepted');
   assert.ok(archivedRecovery.archive.sessionId); assert.equal(archivedRecovery.analysis, undefined);
   assert.match(submissions.at(-1).summary.messageText, /只完成转写和归档/);
-  assert.ok(!submissions.at(-1).summary.messageText.includes(recordingSummaryInstructions));
   assert.match(submissions.at(-1).summary.messageText, /先通知原所有者/);
   assert.doesNotMatch(submissions.at(-1).summary.messageText, /交付妙记链接、总结、编号拟行动/);
   const archiveReader = make(); workers.push(archiveReader);
   await archiveReader.accept(discovery('123456789021')); await run(archiveReader);
   assert.equal((await state(archiveReader, '123456789021')).status, 'archive_accepted');
   assert.match(submissions.at(-1).summary.messageText, /analysis 保持 pending/);
-  assert.ok(!submissions.at(-1).summary.messageText.includes(recordingSummaryInstructions));
   assert.doesNotMatch(submissions.at(-1).summary.messageText, /独立总结/);
   assert.match(messages.at(-1).body.content, /正在归档/);
   await writeDurableJson(policyPath, p);
