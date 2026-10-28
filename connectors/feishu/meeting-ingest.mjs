@@ -7,7 +7,7 @@ import { readRecord, writeDurableJson, serialQueue } from '../../lib/durable-rec
 import { createMeetingMaterialReader, artifactToken, meetingApi, materialError } from './meeting-materials.mjs';
 import { classifyFeishuDeliveryError } from './delivery-errors.mjs';
 import { createMeetingScopeChecker } from './meeting-scope.mjs';
-import { archiveRecordingInstructions } from '../../lib/recording/intake-policy.mjs';
+import { archiveRecordingInstructions, analyzeRecordingInstructions } from '../../lib/recording/intake-policy.mjs';
 import { createMeetingIntakeWriter } from './meeting-intake.mjs';
 
 export const meetingIngestKey = id => createHash('sha256').update(`meeting:${id}`).digest('hex').slice(0, 24);
@@ -198,12 +198,12 @@ export function createFeishuMeetingIngest(runtime, options = {}) {
           `本次妙记：${record.material.minuteUrl}；权限失败证据：${record.material.sourcePath}`,
           `当前处理记录：${root}；目标群：${record.chatId}；只处理本次新录音，不回溯历史。`,
           '先核原所有者及原 ACL，先通知原所有者，再处理已授权的权限变更；完成后立即归还原所有权并核验，再通知完成。',
-          archiveOnly ? archiveRecordingInstructions : '获取 Index Bot 可读的完整原文，核实参会人，按照 recording-analysis 的录音上传群规则在当前话题交付妙记链接、总结、编号拟行动。',
+          archiveOnly ? archiveRecordingInstructions : analyzeRecordingInstructions,
           '未核实名字的说话人保留标签；不把主持人视为全部参会人；失败明确回报具体步骤，不声称已转写或已归还。',
           '不执行会议拟行动，不创建正式任务，不更改其他录音，不把内容分享到其他群。',
         ].join('\n') : [
           '会后材料自动入群：处理本场已授权送入录音上传群的材料。',
-          archiveOnly ? archiveRecordingInstructions : '先读取 recording-analysis SKILL.md 及录音上传群 review-pilot；按现行群规则给出原链接、基于完整原文的独立总结、编号拟行动，等待人工确认。',
+          archiveOnly ? archiveRecordingInstructions : analyzeRecordingInstructions,
           '不执行会议拟行动、不创建正式任务、不改既有妙记的所有权/分享、不另建全文文档、不向其他群发送。',
           `原始文字已由已授权身份 ${record.material.transcriptIdentity || 'bot'} 读取：${record.material.transcriptPath}`,
           `来源、读取身份与失败证据：${record.material.sourcePath}`,

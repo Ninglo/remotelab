@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyRecordingIntakePolicy } from '../lib/recording/intake-policy.mjs';
+import { applyRecordingIntakePolicy, recordingSummaryInstructions } from '../lib/recording/intake-policy.mjs';
 import { writeDurableJson } from '../lib/durable-records.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'recording-intake-'));
@@ -30,6 +30,12 @@ try {
   assert.doesNotMatch(analyzed.text, /analysis 保持 pending/);
   assert.equal(analyzed.sourceContext.captureRequestText, payload.text);
   assert.equal(analyzed.attachments, payload.attachments);
+  assert.ok(analyzed.text.includes(recordingSummaryInstructions), 'analysis admission includes the shared summary delivery contract');
+  assert.ok(!result.text.includes(recordingSummaryInstructions), 'archive-only admission does not request summaries');
+  const acceptedAnalysis = { text: analyzed.text, options: { sourceContext: analyzed.sourceContext } };
+  await writeDurableJson(policyPath, policy);
+  assert.deepEqual(await applyRecordingIntakePolicy(payload, session, { policyPath, priorRequest: acceptedAnalysis }), analyzed,
+    'lost-receipt retries retain the exact accepted summary request after policy changes');
   const admittedArchive = { text: result.text, options: { sourceContext: result.sourceContext } };
   assert.deepEqual(await applyRecordingIntakePolicy(payload, session, { policyPath, priorRequest: admittedArchive }), result,
     'an analysis policy does not reprocess an already admitted archival request');

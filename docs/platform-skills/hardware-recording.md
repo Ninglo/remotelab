@@ -18,8 +18,19 @@ private `recording-intake-policy.json` under its config directory:
 
 Use `mode: "analyze"` when the destination has authorized transcription,
 basic analysis and knowledge retention by default. This requests a source-based
-summary, decisions, disagreements and proposed actions under the destination's
-current recording workflow. It does not approve formal task creation, assignment,
+summary grouped by the actual discussion topics, with important numbers,
+decisions, disagreements, dependencies and proposed actions traced to transcript
+times. The Harness reuses the full transcript and existing analysis, saves the
+same summary as `summary.md` / intake `files.summary`, and includes it in the
+original upload thread's final reply with original-recording and full-transcript
+links. Native Minutes summaries may be read for comparison; the independent
+summary is labelled as based on the full transcript, and does not wait for native
+AI artifacts. The final reply uses normal durable source delivery and its retry
+and deduplication; analysis completion alone is not a delivery receipt. The
+authorized meeting-ingest analysis path shares these instructions. Ordinary
+phone/file uploads use the destination's recording-analysis workflow. No second
+analyzer, per-upload document or scheduled consumer is created.
+This does not approve formal task creation, assignment,
 notifications or execution of actions mentioned in the recording. The two modes
 share the same exact destination matching and original-evidence preservation;
 retries retain the mode accepted by the original Request after policy changes.
