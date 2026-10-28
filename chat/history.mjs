@@ -1,3 +1,4 @@
+import { ByteBudgetCache, cacheBudgetBytes } from './byte-budget-cache.mjs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { CHAT_HISTORY_DIR } from '../lib/config.mjs';
@@ -42,8 +43,9 @@ const PREVIEW_LIMITS = {
 const metaCache = new Map();
 const contextCache = new Map();
 const forkContextCache = new Map();
-const eventCache = new Map();
-const bodyCache = new Map();
+const eventCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_EVENT_CACHE_MIB', 512),
+  event => JSON.stringify(event).length * 2 + 256);
+const bodyCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_BODY_CACHE_MIB', 1024), text => text.length * 2);
 const runSessionMutation = createKeyedTaskQueue();
 
 function clone(value) {
@@ -258,18 +260,16 @@ async function writeBody(sessionId, seq, field, value) {
   return ref;
 }
 
-async function readBody(sessionId, ref) {
+async function readBody(sessionId, ref, cacheRead = true) {
   if (!ref) return '';
   const key = bodyCacheKey(sessionId, ref);
   const cacheable = !ref.endsWith('_diff');
-  if (cacheable && bodyCache.has(key)) return bodyCache.get(key);
-  try {
-    const value = await readFile(bodyPath(sessionId, ref), 'utf8');
-    if (cacheable) bodyCache.set(key, value);
-    return value;
-  } catch {
-    return '';
-  }
+  if (cacheable && bodyCache.has(key)) return cacheRead ? bodyCache.get(key) : bodyCache.peek(key);
+  // Eviction must never turn a failed reread into a successfully loaded empty
+  // body. Callers retain their cursor/receipt and can retry the actual failure.
+  const value = await readFile(bodyPath(sessionId, ref), 'utf8');
+  if (cacheable && cacheRead) bodyCache.set(key, value);
+  return value;
 }
 
 async function storeEvent(sessionId, event) {
@@ -303,13 +303,13 @@ async function storeEvent(sessionId, event) {
   return clone(stored);
 }
 
-async function loadStoredEvent(sessionId, seq) {
+async function loadStoredEvent(sessionId, seq, cacheRead = true) {
   const key = eventCacheKey(sessionId, seq);
   if (eventCache.has(key)) {
-    return clone(eventCache.get(key));
+    return clone(cacheRead ? eventCache.get(key) : eventCache.peek(key));
   }
   const stored = await readJson(eventPath(sessionId, seq), null);
-  if (stored) {
+  if (stored && cacheRead) {
     eventCache.set(key, stored);
   }
   return clone(stored);
@@ -327,10 +327,10 @@ async function countMessageEventsAfter(sessionId, afterSeq = 0) {
   return count;
 }
 
-async function hydrateEvent(sessionId, event) {
+async function hydrateEvent(sessionId, event, cacheRead = true) {
   if (!event?.bodyRef || !event?.bodyField) return event;
   const hydrated = { ...event };
-  hydrated[hydrated.bodyField] = await readBody(sessionId, hydrated.bodyRef);
+  hydrated[hydrated.bodyField] = await readBody(sessionId, hydrated.bodyRef, cacheRead);
   hydrated.bodyLoaded = true;
   return hydrated;
 }
@@ -514,9 +514,13 @@ export async function loadHistory(sessionId, options = {}) {
     : meta.latestSeq;
   const events = [];
   for (let seq = fromSeq; seq <= toSeq; seq += 1) {
-    const stored = await loadStoredEvent(sessionId, seq);
+    const stored = await loadStoredEvent(sessionId, seq, options.cacheRead !== false);
     if (!stored) continue;
-    events.push(includeBodies && !(options.deferFileDiffs && stored.type === 'file_change') ? await hydrateEvent(sessionId, stored) : stored);
+    const requestedBody = (!options.bodyTypes || options.bodyTypes.includes(stored.type))
+      && (!options.bodyRunId || stored.runId === options.bodyRunId
+        || stored.source === 'result_file_assets' && stored.resultRunId === options.bodyRunId);
+    events.push(includeBodies && requestedBody && !(options.deferFileDiffs && stored.type === 'file_change')
+      ? await hydrateEvent(sessionId, stored, options.cacheRead !== false) : stored);
   }
   return events;
 }
@@ -637,13 +641,13 @@ export async function readEventsAfter(sessionId, afterSeq = 0, options = {}) {
   return events;
 }
 
-export async function readEventBody(sessionId, seq) {
-  const stored = await loadStoredEvent(sessionId, seq);
+export async function readEventBody(sessionId, seq, options = {}) {
+  const stored = await loadStoredEvent(sessionId, seq, options.cacheRead !== false);
   const bodyField = stored?.bodyField || eventBodyField(stored);
   if (!stored || !bodyField) return null;
   let body = '';
   if (stored.bodyRef) {
-    body = await readBody(sessionId, stored.bodyRef);
+    body = await readBody(sessionId, stored.bodyRef, options.cacheRead !== false);
   } else if (typeof stored[bodyField] === 'string') {
     body = stored[bodyField];
   }

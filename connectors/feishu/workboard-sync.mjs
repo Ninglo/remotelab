@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import WebSocket from 'ws';
 import { createSerialTaskQueue, writeJsonAtomic } from '../../chat/fs-utils.mjs';
 import { createProgressCardRefresh } from './progress-card-refresh.mjs';
@@ -29,13 +30,33 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
     if (!result.response.ok) throw new Error(result.json?.error || `RemoteLab GET failed: ${result.response.status}`);
     return result.json;
   };
-  const eventReader = createWorkboardEventReader(requestJson);
-  async function cardEvents(sessionId) {
-    const { events, hasMore } = await eventReader.read(sessionId);
-    // Yield between bounded pages, including to queued human disclosure clicks.
-    // Do not publish an incomplete history before its final/authorization fence.
+  const eventReader = createWorkboardEventReader(requestJson, { checkpointDir: `${statePath}.projection` });
+  const projectionHeads = new Map();
+  const forceProjection = new Set();
+  async function cardEvents(sessionId, session) {
+    // Bump the renderer version when existing acknowledged cards need a new
+    // rendering without new history. Session display/authorization changes
+    // also invalidate an acknowledgement, without including activity clocks.
+    const renderKey = createHash('sha256').update(JSON.stringify({ renderer: 1,
+      policy: Object.fromEntries(Object.entries(session || {}).filter(([key]) => /^(feishu|workboard|conversation)/.test(key))),
+      scope: pilot.scope, sourceRouteId: pilot.sourceRouteId, senderOpenId: pilot.senderOpenId,
+      legacySenderOpenId: pilot.legacySenderOpenId, progressStartedAt: pilot.progressStartedAt,
+      groupProgressRestoredAt: pilot.groupProgressRestoredAt,
+    })).digest('hex');
+    const { events, afterSeq, hasMore } = await eventReader.read(sessionId, {
+      skipAcknowledged: true, renderKey, force: forceProjection.has(sessionId),
+    });
     if (hasMore) { enqueue(sessionId); return null; }
+    if (events) projectionHeads.set(sessionId, { afterSeq, renderKey });
     return events;
+  }
+  async function acknowledgeProjection(sessionId) {
+    const head = projectionHeads.get(sessionId);
+    if (head) {
+      await eventReader.acknowledge(sessionId, head.afterSeq, head.renderKey);
+      projectionHeads.delete(sessionId);
+      forceProjection.delete(sessionId);
+    }
   }
   const persistQueue = createSerialTaskQueue();
   const persist = () => persistQueue(() => writeJsonAtomic(statePath, pilot, { mode: 0o600 }));
@@ -104,7 +125,7 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
   async function syncDisclosure(change) {
     // On cold start, read this Session now rather than putting the click behind
     // the route's whole bootstrap backlog. The normal admission checks remain.
-    if (!change.cycle) { await syncOne(change.sessionId); return; }
+    if (!change.cycle) { forceProjection.add(change.sessionId); await syncOne(change.sessionId); return; }
     const stored = instanceScope ? pilot.sessions[change.sessionId]
       : change.sessionId === pilot.sessionId ? pilot : pilot.groupSessions[change.sessionId];
     const start = Date.now();
@@ -115,7 +136,7 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
   async function syncPrivate() {
     const session = (await requestJson(`/api/sessions/${encodeURIComponent(pilot.sessionId)}`)).session;
     if (!isFeishuWorkboardPilotSession(session, pilot)) return;
-    const events = await cardEvents(pilot.sessionId);
+    const events = await cardEvents(pilot.sessionId, session);
     if (!events) return;
     if (!Number.isInteger(pilot.protocolAfterSeq)) {
       pilot.protocolAfterSeq = migrating ? Math.max(0, ...events.map(event => event.seq || 0)) : 0;
@@ -125,6 +146,7 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
       if (stopped || expired()) { halt(); break; }
       await publishCycle(cycle, pilot, pilot.chatId);
     }
+    if (!stopped) await acknowledgeProjection(pilot.sessionId);
   }
 
   async function syncGroup(sessionId) {
@@ -145,7 +167,7 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
     if (stored.chatId !== target.chatId) throw new Error(`Group Session destination changed: ${sessionId}`);
     const groupPilot = { ...pilot, sessionId, chatId: target.chatId,
       startedAfterSeq: 0, cards: stored.cards };
-    const events = await cardEvents(sessionId);
+    const events = await cardEvents(sessionId, session);
     if (!events) return;
     if (!Number.isInteger(stored.protocolAfterSeq)) {
       // Upgrade fence: preserve old cards without replaying historical revisions.
@@ -157,6 +179,7 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
       if (stopped || expired()) { halt(); break; }
       await publishCycle(cycle, groupPilot, target.chatId);
     }
+    if (!stopped) await acknowledgeProjection(sessionId);
   }
 
   async function syncInstance(sessionId) {
@@ -169,12 +192,13 @@ export async function createFeishuWorkboardSync({ statePath, pilot, app, remote,
     const stored = pilot.sessions[sessionId] ||= { chatId: target.chatId, cards: [], protocolAfterSeq: 0 };
     if (stored.chatId !== target.chatId) throw new Error(`Workboard Session destination changed: ${sessionId}`);
     const sessionPilot = { ...pilot, ...stored, sessionId };
-    const events = await cardEvents(sessionId);
+    const events = await cardEvents(sessionId, session);
     if (!events) return;
     for (const cycle of expandFeishuWorkboardUpdates(collectFeishuInstanceWorkboardCycles(events, sessionPilot, session))) {
       if (stopped || expired()) { halt(); break; }
       await publishCycle(cycle, sessionPilot, target.chatId);
     }
+    if (!stopped) await acknowledgeProjection(sessionId);
   }
 
   async function discoverGroupSessions() {

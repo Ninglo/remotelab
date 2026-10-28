@@ -320,3 +320,24 @@ test('instance migration preserves known legacy cards but cannot create historic
     inbound(3, 'old-unknown'), { ...list(4), runId: 'old-unknown' }];
   assert.deepEqual(collectFeishuInstanceWorkboardCycles(events, state, group).map(task => task.anchorSeq), [2]);
 });
+
+test('expired card is fenced per provider message across restart; newer cards still publish', async () => {
+  for (const transport of [false, true]) {
+    let patches = 0, creates = 0;
+    let state = { ...pilot, cards: [{ anchorSeq: 12, messageId: 'expired', latestSeq: 12, contentHash: 'old' }] };
+    const app = { im: { v1: { message: {
+      patch: async () => { patches++; if (transport) throw Object.assign(new Error('expired'), { response: { status: 400, data: { code: 230031 } } }); return { code: 230031, msg: 'expired' }; },
+      create: async () => { creates++; return { code: 0, data: { message_id: 'new-card' } }; },
+    } } } };
+    const options = () => ({ pilot: state, app, persist: async () => {}, verifyMessage: async () => {} });
+    const old = { sessionId: pilot.sessionId, anchorSeq: 12, latestSeq: 14, content: list(14).content };
+    assert.equal(await publishFeishuWorkboardCycle(old, options()), null);
+    state = JSON.parse(JSON.stringify(state));
+    assert.equal(await publishFeishuWorkboardCycle({ ...old, latestSeq: 16 }, options()), null);
+    assert.equal(patches, 1);
+    assert.equal(state.cards[0].latestSeq, 12, 'failed patch cannot become a success receipt');
+    assert.equal(state.cards[0].updateUnavailable.messageId, 'expired');
+    assert.equal((await publishFeishuWorkboardCycle({ ...old, anchorSeq: 20, latestSeq: 20 }, options())).action, 'created');
+    assert.equal(creates, 1);
+  }
+});

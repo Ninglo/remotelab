@@ -230,9 +230,9 @@ export async function handleSessionMainRoutes({
       const readThrough = snapshot ? Math.min(snapshot.latestSeq, afterSeq + limit) : undefined;
       const events = await getSessionEventsAfter(sessionId, afterSeq, { limit,
         toSeq: readThrough,
-        includeBodies: parsedUrl.query.includeBodies !== 'false' });
+        includeBodies: parsedUrl.query.includeBodies !== 'false', cacheRead: parsedUrl.query.cacheRead !== 'false' });
       writeJsonCached(req, res, { sessionId, filter: 'all', events,
-        ...(snapshot ? { nextAfterSeq: Math.max(afterSeq, readThrough),
+        ...(snapshot ? { headSeq: snapshot.latestSeq, nextAfterSeq: Math.max(afterSeq, readThrough),
           hasMore: snapshot.latestSeq > afterSeq + limit } : {}) });
       return true;
     }
@@ -351,7 +351,7 @@ export async function handleSessionMainRoutes({
   if (sessionGetRoute?.kind === 'event-body') {
     const { sessionId, seq } = sessionGetRoute;
     if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-    const body = await readEventBody(sessionId, seq);
+    const body = await readEventBody(sessionId, seq, { cacheRead: parsedUrl.query.cacheRead !== 'false' });
     if (!body) {
       writeJson(res, 404, { error: 'Event body not found' });
       return true;

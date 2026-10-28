@@ -24,6 +24,32 @@ RemoteLab invalidation subscription. It has no independent systemd/launchd
 service, PID, signal handler or operator restart procedure. Ordinary messages
 and final replies continue if card publication fails.
 
+Historical recovery uses a rebuildable, per-Session projection next to the
+route receipt file (`feishu-<route>.json.projection/`). Each compact page is
+written before its read cursor advances; the publication acknowledgement is
+saved only after all card updates for that projection succeed. Original
+provider IDs, hashes, uncertain creates and delivery receipts stay in the
+existing route file. Memory eviction never removes the durable cursor.
+Unchanged acknowledged Sessions require one empty tail query after restart,
+without reloading their original event or tool-body history. Display-policy
+changes and cold human clicks still load the saved projection. Bump the
+`renderer` version in `workboard-sync.mjs` when a renderer change must refresh
+otherwise unchanged cards. A source-history head reset invalidates the derived
+projection, not provider receipts. Do not restore old receipts over newer ones.
+
+Background replay uses `cacheRead=false`: it can use foreground hot entries,
+but neither adds old history to the controller cache nor promotes its recency.
+This is coupled to durable incremental reading; disabling cache admission
+without preserving scan progress would turn repeated scans into repeated disk
+reads. The initial upgrade builds missing checkpoints once. Stopping the
+connector safely interrupts this build; restart resumes committed pages.
+
+Feishu rejection `230031` records `updateUnavailable` on that exact card message.
+It does not advance a successful publication receipt, complete a business task,
+create a replacement or stop other cards. Later background passes skip the
+permanent rejection, including after restart. Transient errors retain the
+existing retry behavior; unknown creations remain fenced.
+
 For an existing installation, stop the selected connector and retire its legacy
 card services before loading this version. Preserve the route receipt file at
 `workboards/feishu-<route>.json`; the embedded component adopts it in place.

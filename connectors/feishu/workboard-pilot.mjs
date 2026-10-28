@@ -1,3 +1,4 @@
+import { isFeishuCardExpired } from './card-renewal.mjs';
 import { createHash } from 'node:crypto';
 import { progressCardPanel, replyProgressCardPanel } from './progress-card-controls.mjs';
 import { replyProgressUsesCard } from '../../static/chat/message-reply-model.js';
@@ -265,6 +266,7 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
     await persist();
     return { action: 'created', anchorSeq: card.anchorSeq, revision: card.latestSeq };
   }
+  if (card.updateUnavailable?.messageId === card.messageId && card.updateUnavailable?.code === 230031) return null;
   if (!card.messageId) {
     throw new Error(`Feishu workboard create outcome is unknown for anchor ${card.anchorSeq}; inspect before retrying`);
   }
@@ -278,11 +280,20 @@ export async function publishFeishuWorkboardCycle(cycle, { pilot, app, persist, 
   }
   // A renderer upgrade may change the same acknowledged snapshot. Patch its
   // existing message once, then persist the hash so restart cannot repeat it.
-  const response = await app.im.v1.message.patch({
-    path: { message_id: card.messageId },
-    data: { content },
-  });
-  if (response?.code !== 0) throw feishuResponseError(response, 'Feishu workboard update failed');
+  try {
+    const response = await app.im.v1.message.patch({
+      path: { message_id: card.messageId }, data: { content },
+    });
+    if (response?.code !== 0) throw feishuResponseError(response, 'Feishu workboard update failed');
+  } catch (error) {
+    if (!isFeishuCardExpired(error)) throw error;
+    // This provider rejection applies to this message only. Preserve its last
+    // successful receipt and every other card/task; never create a replacement
+    // merely because a background renderer tried to refresh an old message.
+    card.updateUnavailable = { messageId: card.messageId, code: 230031, at: new Date().toISOString() };
+    await persist();
+    return null;
+  }
   await verifyMessage(card.messageId, { updated: true });
   card.latestSeq = cycle.latestSeq;
   card.taskId = cycle.taskId;

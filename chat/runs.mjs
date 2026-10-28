@@ -1,3 +1,4 @@
+import { ByteBudgetCache, cacheBudgetBytes } from './byte-budget-cache.mjs';
 import { readRunState } from '../lib/run-state.mjs';
 import { observeRunUsage } from './usage-event-projection.mjs';
 import { requests } from './requests.mjs';
@@ -21,7 +22,7 @@ const MAX_SPOOL_RECORD_CHARS = 2 * 1024 * 1024;
 const MAX_SPOOL_INLINE_CHARS = 16 * 1024;
 const MAX_SPOOL_PREVIEW_CHARS = 4096;
 const runManifestCache = new Map();
-const runArtifactCache = new Map();
+const runArtifactCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_RUN_ARTIFACT_CACHE_MIB', 256), text => text.length * 2);
 const localRunMutationQueue = createKeyedTaskQueue();
 
 function clone(value) {
@@ -94,13 +95,9 @@ async function writeRunArtifactText(runId, prefix, text) {
 async function readRunArtifactText(runId, ref) {
   const cacheKey = `${runId}:${ref}`;
   if (runArtifactCache.has(cacheKey)) return runArtifactCache.get(cacheKey);
-  try {
-    const value = await readFile(runArtifactPath(runId, ref), 'utf8');
-    runArtifactCache.set(cacheKey, value);
-    return value;
-  } catch {
-    return '';
-  }
+  const value = await readFile(runArtifactPath(runId, ref), 'utf8');
+  runArtifactCache.set(cacheKey, value);
+  return value;
 }
 
 export async function ensureRunDirectory(runId) {

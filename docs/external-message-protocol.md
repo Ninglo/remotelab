@@ -666,6 +666,27 @@ Current normalized event types include:
 - `file_change`
 - `usage`
 
+Incremental `filter=all` responses expose `headSeq`, `nextAfterSeq` and
+`hasMore` from the same captured history boundary. `cacheRead=false` on that
+endpoint or an event `/body` read allows background replay to use existing hot
+entries without retaining newly read data or promoting old entries. Consumers
+must retain their processing state and cursor together; this option is not a
+substitute for incremental processing. Default interactive reads still cache.
+
+Controller history caches use configurable estimated-byte budgets:
+`REMOTELAB_HISTORY_EVENT_CACHE_MIB` defaults to 512,
+`REMOTELAB_HISTORY_BODY_CACHE_MIB` to 1024, and
+`REMOTELAB_RUN_ARTIFACT_CACHE_MIB` to 256. Limits apply per process and are
+estimates of retained cache entries, not total RSS or V8 heap limits. Size
+estimation runs on admission, not each cache hit. Oversized values remain
+readable without displacing the entire hot set. Values of zero disable the
+corresponding cache; tune limits against the process heap budget, actual
+concurrency and repeat-read latency. Background scans do not refresh recency;
+ordinary reads do. Failed history-body or Run-artifact rereads fail explicitly
+instead of being reported as successfully loaded empty text. Ending a Run does not immediately discard recently used
+history. Live reply/board projection hydrates message bodies, while completed
+memory extraction hydrates its Run rather than all historical tool output.
+
 Normalized events support observation and debugging. Production source-delivery consumers send the committed request reply payload rather than selecting a session's latest assistant event: another request may already be running by then. The shared reply-selection logic excludes commentary and visible workboard checklists from final reply content, while retaining the fallback for older adapters without explicit message phases.
 
 Brief Feishu mainline replies quote the inbound message and publish only the final

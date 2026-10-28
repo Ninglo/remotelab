@@ -53,12 +53,13 @@ function belongsToRun(event, runId = '') {
   return event?.source === 'result_file_assets' && event?.resultRunId === runId;
 }
 
-export async function loadCompletedTurnContext(sessionId, runId, { loadSessionHistory } = {}) {
+export async function loadCompletedTurnContext(sessionId, runId, { loadSessionHistory, includePriorContext = true } = {}) {
   if (typeof loadSessionHistory !== 'function') {
     throw new TypeError('loadCompletedTurnContext requires loadSessionHistory');
   }
 
-  const history = await loadSessionHistory(sessionId, { includeBodies: true });
+  const history = await loadSessionHistory(sessionId, { includeBodies: true,
+    ...(!includePriorContext && runId ? { bodyRunId: runId } : {}) });
   const runHistory = [];
   let userMessage = null;
   let latestAssistantMessage = null;
@@ -78,7 +79,7 @@ export async function loadCompletedTurnContext(sessionId, runId, { loadSessionHi
     : runHistory;
 
   return {
-    priorContextText: buildPriorContext(history, userMessage?.seq),
+    priorContextText: includePriorContext ? buildPriorContext(history, userMessage?.seq) : '',
     userMessage,
     turnEvents: turnHistory,
     assistantTurnText: buildDisplayedAssistantTurn(turnHistory)

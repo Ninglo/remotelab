@@ -741,7 +741,7 @@ function observeDetachedRun(sessionId, runId) {
 
 async function buildSessionTimelineEvents(sessionId, options = {}) {
   return loadHistory(sessionId, { includeBodies: options.includeBodies !== false, deferFileDiffs: true,
-    fromSeq: options.fromSeq, toSeq: options.toSeq });
+    fromSeq: options.fromSeq, toSeq: options.toSeq, cacheRead: options.cacheRead });
 }
 
 async function syncDetachedRunUnlocked(sessionId, runId) {
@@ -767,7 +767,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       await forwardExecutionQuestions(record, normalizedEvents);
       const plan = normalizeSourceDeliveryPlan(record?.deliveryPlan || record?.options?.sourceDelivery);
       if (plan && !record.options?.suppressSourceDelivery && !record.options?.internalOperation) {
-        const history = await loadHistory(sessionId, { includeBodies: true, deferFileDiffs: true });
+        const history = await loadHistory(sessionId, { includeBodies: true, bodyTypes: ['message'], deferFileDiffs: true });
         await publishLiveRunReplies(record, history, {
           store: requests, run, plan, running: !isTerminalRunState(run.state),
           fullHistory: history,
@@ -1392,7 +1392,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
       ? 'system/surface-messages-feishu-group-20261007.md' : 'system/surface-messages.md')));
   const optedIn = options.workboardEnabled === true || session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
-  const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true })) : null;
+  const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true, bodyTypes: ['message'] })) : null;
   if ((optedIn && options.workboardEnabled !== false && options.messageReplyPolicy?.checklist !== false) || taskContext?.activeTasks.length) {
     slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
       (!options.messageReplyPolicy && usesOctober7GroupMessaging(session)
@@ -2027,7 +2027,7 @@ async function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedR
   // durable done/retry receipt follows learning, not merely process launch.
     try {
       const { userMessage, assistantTurnText, turnEvents } = await loadCompletedTurnContext(
-        sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
+        sessionId, finalizedRun.id, { loadSessionHistory: loadHistory, includePriorContext: false },
       );
       const request = await loadTurnSourceRequest(sessionId, userMessage, {
         getRequest: (id, requestId) => requests.get(requestKey(id, requestId)),
@@ -2191,6 +2191,7 @@ export async function getSessionEventsAfter(sessionId, afterSeq = 0, options = {
     ? options.toSeq : undefined;
   const events = await buildSessionTimelineEvents(sessionId, {
     includeBodies: options?.includeBodies !== false,
+    cacheRead: options.cacheRead,
     fromSeq: cursor + 1,
     toSeq: limit === null ? readThrough : Math.min(cursor + limit, readThrough ?? Infinity),
   });
@@ -3457,7 +3458,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     const root = await requests.byRunId(run.id);
     const plan = normalizeSourceDeliveryPlan(root?.deliveryPlan || root?.options?.sourceDelivery);
     if (root && plan) {
-      const history = await loadHistory(record.sessionId, { includeBodies: true, deferFileDiffs: true });
+      const history = await loadHistory(record.sessionId, { includeBodies: true, bodyTypes: ['message'], deferFileDiffs: true });
       const manifest = await getRunManifest(run.id);
       await publishLiveRunReplies(root, history, {
         store: requests, run, plan, running: true, fullHistory: history,
