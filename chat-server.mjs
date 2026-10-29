@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { join } from 'path';
+import { startRuntimeHealth } from './chat/runtime-health.mjs';
 
 const http = await import('http');
 // Finish the mail worker's shared async dependency graph before starting the
@@ -62,6 +63,7 @@ await new Promise((resolve, reject) => {
   server.once('error', reject);
   server.listen(CHAT_PORT, CHAT_BIND_HOST, resolve);
 });
+const stopRuntimeHealth = startRuntimeHealth();
 for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
   await ensureDir(dir);
 }
@@ -96,6 +98,7 @@ const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
 });
 
 async function shutdown() {
+  stopRuntimeHealth();
   if (!ready) return;
   ready = false;
   server.close();

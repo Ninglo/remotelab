@@ -8,6 +8,7 @@ import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { createMonitoringReader } from './monitoring.mjs';
 import { processMonitoringRecovery } from './monitoring-recovery.mjs';
 import { monitoringNotificationDecision } from '../lib/monitoring-policy.mjs';
+import { collectServiceIncidents, serviceIncidentAttention, recordRuntimeSample } from './service-incidents.mjs';
 import { diskRiskStage } from '../lib/monitoring-actions.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('base64url');
@@ -45,6 +46,10 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   // are not recovery. Rearm only an explicitly observed healthy or stopped item.
   for (const item of snapshot.disks) if (item.status === 'healthy') recovered.add(hash(`disk:${item.path || item.label}`));
   for (const item of snapshot.services) if (item.status === 'healthy') recovered.add(hash(`service:${item.unit || item.label}`));
+  if (snapshot.runtimeHealth && snapshot.runtimeHealth.heapUsed / snapshot.runtimeHealth.heapLimit < 0.75) {
+    const service = snapshot.services.find(s => s.pid === snapshot.runtimeHealth.pid);
+    if (service) recovered.add(hash(`servicePressure:${service.unit}`));
+  }
   for (const account of snapshot.accounts || []) {
     if (['available', 'exhausted'].includes(account.status)) recovered.add(hash(`account:${account.id}`));
     if (account.status === 'available') recovered.add(hash(`quota:${account.id}`));
@@ -64,8 +69,8 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
-  for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'automation', 'api'].includes(item.kind)
-    && !(item.kind === 'service' && (config.ignoreUnits || []).includes(item.id))
+  for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api'].includes(item.kind)
+    && !(['service', 'serviceCrash', 'servicePressure'].includes(item.kind) && (config.ignoreUnits || []).includes(item.unit || item.id))
     && !(item.kind === 'automation' && (config.ignoreAutomationIds || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
@@ -75,7 +80,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
-    let requiredCount = item.kind === 'disk' || item.kind === 'api' && item.code === 99991403 ? 1 : item.kind === 'automation' ? 3
+    let requiredCount = item.kind === 'serviceCrash' ? 1 : item.kind === 'disk' || item.kind === 'api' && item.code === 99991403 ? 1 : item.kind === 'automation' ? 3
       : item.kind === 'accountContinuity' ? Math.max(3, confirmationCount) : confirmationCount;
     const incident = !previous?.active ? { cycle: (previous?.cycle || 0) + 1, status: 'observing', observations: count, active: true } : previous;
     const originRunId = item.kind === 'automation'
@@ -244,14 +249,18 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
 }
 
 export async function runMonitoringAlerts({ baseline = false, dryRun = false, config: suppliedConfig,
-  reader = createMonitoringReader({ getUsage: async () => null }), recover = processMonitoringRecovery,
+  reader = createMonitoringReader({ getUsage: async () => null }), collectIncidents = collectServiceIncidents, recover = processMonitoringRecovery,
   dispatch = dispatchMonitoringAlerts, diagnose = processSessionDiagnostics } = {}) {
   let config = suppliedConfig;
   try { config ||= JSON.parse(await readFile(join(CONFIG_DIR, 'monitoring.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return { enabled: false }; throw error; }
   if (!config.alertDelivery) return { enabled: false };
   // This independent observer needs no model and no running HTTP server.
+  const incidents = await collectIncidents({ services: config.services, config: config.serviceIncidents, dryRun });
   const snapshot = await reader({ days: 1 });
+  if (!dryRun && snapshot.runtimeHealth) await recordRuntimeSample(snapshot.runtimeHealth);
+  snapshot.attention.push(...serviceIncidentAttention(incidents.events, snapshot.services).filter(e => !snapshot.attention.some(a => a.kind === e.kind && a.id === e.id)));
+  snapshot.coverage.gaps.push(...incidents.gaps);
   if (snapshot.apiHealth && !dryRun) await writeDurableJson(join(CONFIG_DIR, 'feishu-api-health.json'), snapshot.apiHealth);
   // Notification and recovery have separate receipts. A reported/baselined
   // incident remains eligible for repair; an uncertain send is never replayed.

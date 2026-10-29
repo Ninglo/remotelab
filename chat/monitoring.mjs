@@ -13,6 +13,7 @@ import { isStoppedAutomation, currentAutomationStatus, isCurrentRecovery } from 
 import { monitoringPolicies, monitoringDestinations } from '../lib/monitoring-policy.mjs';
 import { accountContinuity, continuityAttention } from '../lib/monitoring-actions.mjs';
 
+import { serviceIncidentAttention } from './service-incidents.mjs';
 const exec = promisify(execFile);
 const GiB = 1024 ** 3;
 const freshMs = 10 * 60_000;
@@ -61,7 +62,7 @@ export function projectAccounts(runtime, fleet, now = Date.now()) {
 export async function readService(item, execute = exec) {
   if (!/^[\w@.-]+\.(service|timer)$/.test(item.unit || '') || !['user', 'system'].includes(item.scope)) throw new Error('INVALID_UNIT');
   const { stdout } = await execute('systemctl', [...(item.scope === 'user' ? ['--user'] : []), 'show', item.unit,
-    '--property=LoadState,ActiveState,SubState,Result,Type,ExecMainStatus,ExecMainStartTimestamp,LastTriggerUSec,TimersCalendar,TimersMonotonic'], { timeout: 3000, maxBuffer: 8192 });
+    '--property=LoadState,ActiveState,SubState,Result,Type,ExecMainStatus,ExecMainStartTimestamp,MainPID,NRestarts,LastTriggerUSec,TimersCalendar,TimersMonotonic'], { timeout: 3000, maxBuffer: 8192 });
   const state = Object.fromEntries(stdout.trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
   const known = state.LoadState === 'loaded';
   const neverRan = state.Type === 'oneshot' && state.ActiveState === 'inactive' && !state.ExecMainStartTimestamp;
@@ -70,6 +71,7 @@ export async function readService(item, execute = exec) {
   const paused = known && state.ActiveState === 'inactive' && item.maintenance?.reason;
   return { label: text(item.label || item.unit), unit: item.unit, status: paused ? 'paused' : !known || neverRan ? 'unknown' : healthy ? 'healthy' : starting ? 'running' : 'failed',
     ...(paused ? { maintenanceReason: text(item.maintenance.reason), maintenanceSource: text(item.maintenance.source) } : {}),
+    pid: Number(state.MainPID) || null, restartCount: Number(state.NRestarts) || 0,
     state: state.ActiveState, lastResult: state.Result || null, lastRunAt: state.ExecMainStartTimestamp || state.LastTriggerUSec || null,
     ...(item.unit.endsWith('.timer') ? { timer: {
       calendars: [...(state.TimersCalendar || '').matchAll(/OnCalendar=(.*?)\s*;/g)].map(match => match[1]),
@@ -155,6 +157,10 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       observe('inspectionRegistration', () => getRecord(join(CONFIG_DIR, 'automation-background.json')), null),
       observe('recoveryDestinations', () => getRecord(join(CONFIG_DIR, 'chat-sessions.json')), []),
     ]);
+    const runtimeHealth = config.runtimeHealth?.unit ? await observe('runtimeHealth', () => getRecord(join(CONFIG_DIR, 'runtime-health.json')), null) : null;
+    const runtimeService = services.find(s => s.unit === config.runtimeHealth?.unit);
+    const runtimeFresh = runtimeHealth?.pid === runtimeService?.pid && now() - Date.parse(runtimeHealth?.observedAt) < 60_000;
+    if (config.runtimeHealth?.unit && !runtimeFresh) gaps.push({ source: 'runtimeHealth', code: 'STALE_OR_MISSING' });
     const accounts = projectAccounts(runtime, fleet, now());
     if (config.services?.length > 64) gaps.push({ source: 'services', code: 'SERVICE_LIMIT_EXCEEDED' });
     for (const disk of disks) {
@@ -199,7 +205,12 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       item.currentIssue = isCurrentRecovery(item);
     }
     const continuity = accountContinuity(runtime, now());
+    const savedIncidents = config.serviceIncidents?.enabled ? await observe('serviceIncidents', () => getRecord(join(CONFIG_DIR, 'service-incidents', 'state.json')), null) : null;
+    if (savedIncidents?.gaps) gaps.push(...savedIncidents.gaps);
+    if (config.serviceIncidents?.enabled && (!savedIncidents?.observedAt || now() - Date.parse(savedIncidents.observedAt) > 180_000)) gaps.push({ source: 'serviceIncidents', code: 'OBSERVER_STALE' });
     const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, continuity, now: now() });
+    analysis.attention.push(...serviceIncidentAttention(savedIncidents?.events || [], services));
+    if (runtimeFresh && runtimeHealth.heapUsed / runtimeHealth.heapLimit >= 0.85) analysis.attention.push({ kind: 'servicePressure', id: runtimeService.unit, unit: runtimeService.unit, subject: runtimeService.label, severity: 'critical', detail: `堆用量 ${(runtimeHealth.heapUsed / GiB).toFixed(2)} / ${(runtimeHealth.heapLimit / GiB).toFixed(2)} GiB`, signals: { pid: runtimeHealth.pid } });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
     const deliveryIssues = Object.values(alertState?.batches || {}).filter(batch => ['needs_review', 'blocked_dependency'].includes(batch.status));
     const alertDelivery = { unresolved: deliveryIssues.length, blocked: deliveryIssues.filter(batch => batch.status === 'blocked_dependency').length,
@@ -215,7 +226,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       calendars: timer?.timer?.calendars || [], lastTriggeredAt: timer?.timer?.lastTriggeredAt || null,
       lastObservedAt: alertState?.observedAt || null,
       source: timer ? 'service_manager' : 'unverified', recoveryEnabled: config.recovery?.enabled === true };
-    return { generatedAt, windowDays: days, observation,
+    return { generatedAt, windowDays: days, observation, runtimeHealth: runtimeFresh ? runtimeHealth : null,
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,

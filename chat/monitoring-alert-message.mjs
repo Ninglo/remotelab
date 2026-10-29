@@ -62,11 +62,12 @@ export function monitoringProgress(item, recovery) {
   if (!inFlight && recovery?.summary) return brief(recovery.summary.replace(/^同一[^。]*告警接续。/, ''));
   if (recovery?.status === 'running') return '补救任务已启动；本轮执行结果尚未回报。';
   if (recovery?.status === 'waiting') return '原会话已有任务执行，正在等待结果。';
+  if (item.kind === 'serviceCrash') return item.signals?.available ? '服务已恢复运行；崩溃原因仍需处理。' : '已保留异常退出证据，服务状态待核查。';
   if (item.continuity) return `已核对本实例账号；自动切换${item.continuity.autoSwitch ? '已开启' : '未开启'}，任务结果另行核验。`;
   return '已记录风险；尚无本轮已执行动作的回执。';
 }
 export function monitoringTitle(item) {
-  const issue = { disk: '磁盘空间不足', service: '服务运行异常', automation: '自动化执行异常',
+  const issue = { disk: '磁盘空间不足', service: '服务运行异常', serviceCrash: '服务发生崩溃', servicePressure: '堆内存接近上限', automation: '自动化执行异常',
     accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
   return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : ' · 已解决') : ''}`;
 }
