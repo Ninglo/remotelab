@@ -77,6 +77,19 @@ test('departures fence delayed joins; a later genuine join starts a new addition
   assert.equal(f.roster.get('c').has('one'), false, 'verify source still contains the joining person');
 });
 
+test('SDK-flattened events and independent invitations by the same Bot also propagate', async t => {
+  const f = await fixture(t); await f.sync.start();
+  const raw = f.raw('a', 'bot-manual-join', time, 'bot');
+  await f.event(ADDED, { ...raw.header, ...raw.event });
+  assert.deepEqual(f.writes.map(x => x.chat), ['b', 'c']);
+  f.roster.get('b').delete('one');
+  await f.event(DELETED, f.raw('b', 'left-b', time + 100));
+  f.roster.get('b').add('one');
+  f.roster.get('c').delete('one');
+  await f.event(ADDED, f.raw('b', 'bot-rejoin-b', time + 200, 'bot'));
+  assert.equal(f.roster.get('c').has('one'), true);
+});
+
 test('initial union is frozen and runs once across restart, including after someone leaves', async t => {
   const f = await fixture(t, { initial: true, groups: { a: ['one'], b: ['two'], c: [] } });
   await f.sync.start(); await f.sync.idle();

@@ -42,8 +42,9 @@ The existing WebSocket must subscribe to `im.chat.member.user.added_v1`,
 read and invitation permissions in each group. Configure these subscriptions
 through the existing app-management flow and verify actual event reception.
 
-A genuine new join invites that person into the other bound groups. Bot echoes
-are recorded without further propagation. Departures are recorded immediately
+A genuine new join invites that person into the other bound groups. Echoes of
+recorded synchronization writes are recorded without further propagation;
+independent invitations by the same Bot still propagate. Departures are recorded immediately
 and never cause removals elsewhere or periodic re-invitations. Delayed older
 joins respect those departure records and must still find the person in the
 source group. A later genuine join can begin a fresh round of invitations;

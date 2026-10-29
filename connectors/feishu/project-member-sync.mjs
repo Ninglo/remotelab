@@ -66,7 +66,7 @@ export function createProjectMemberSync(runtime, options = {}) {
     return Boolean(left && (initial || left.at >= at));
   }
   async function process(entry, update) {
-    if (entry.echo) return { ignored: 'own_bot' };
+    if (entry.echo) return { ignored: 'sync_echo' };
     const link = findLink(entry.projectId);
     if (!enabled || !link) return { ignored: 'disabled' };
     const chats = projectMemberChatIds(link);
@@ -79,8 +79,17 @@ export function createProjectMemberSync(runtime, options = {}) {
         const snapshots = await Promise.all(targets.map(async chatId => ({ chatId, ids: [...await list(chatId)] })));
         roster = [...new Set(snapshots.flatMap(snapshot => snapshot.ids))];
         await update({ roster, snapshots });
-      } else roster = entry.userIds;
+      } else {
+        roster = [];
+        for (const userId of entry.userIds) {
+          const state = entry.operatorId === runtime.botIdentity?.openId
+            ? await members.get(memberKey(entry.projectId, userId)) : null;
+          if (!state?.invitations?.[entry.chatId]) roster.push(userId);
+        }
+        await update({ roster });
+      }
     }
+    if (!roster.length) return { ignored: 'sync_echo_or_empty' };
     // Check the current source after restart/delay. An old join must not revive a leaver.
     const source = entry.initial ? null : await list(entry.chatId);
     const operations = { ...entry.operations };
@@ -117,6 +126,10 @@ export function createProjectMemberSync(runtime, options = {}) {
         if (!ids.length) { await save(); continue; }
         for (const userId of ids) results[userId] = { attempted: true, status: 'uncertain', attemptedAt: now() };
         await save(); // Persist before the external side effect.
+        for (const userId of ids) await members.mutate(memberKey(entry.projectId, userId), current => ({
+          ...current, projectId: entry.projectId, userId, invitations: { ...current?.invitations,
+            [chatId]: { at: results[userId].attemptedAt, cause: entry.id } },
+        }));
         try {
           const receipt = await api({ method: 'POST', url: `/open-apis/im/v1/chats/${encodeURIComponent(chatId)}/members`,
             params: { member_id_type: 'open_id', succeed_type: 1 }, data: { id_list: ids } });
@@ -157,18 +170,19 @@ export function createProjectMemberSync(runtime, options = {}) {
       // Apply departure fences immediately, even while a project addition is running.
       for (const userId of userIds) await members.mutate(memberKey(link.projectId, userId), current => {
         if ((current?.departures?.[event.chat_id]?.at || 0) >= at) return current;
-        return { ...current, projectId: link.projectId, userId, departures: { ...current?.departures,
+        const invitations = { ...current?.invitations };
+        if (at >= (invitations[event.chat_id]?.at || 0)) delete invitations[event.chat_id];
+        return { ...current, projectId: link.projectId, userId, invitations, departures: { ...current?.departures,
           [event.chat_id]: { at, eventId: id, type, operatorId: str(event.operator_id?.open_id) } } };
       });
       return {};
     }
     const operatorId = str(event.operator_id?.open_id);
-    // Provider echoes carry the caller Bot as operator. Missing identity cannot
-    // establish a new external join, so it must not cause another invitation.
+    // Suppress only invitations made by this synchronizer. An unrelated action
+    // by the same Bot is also a valid new join and must propagate normally.
     if (!operatorId || !runtime.botIdentity?.openId) return {};
     await inbox.accept(`${type}:${id}`, { projectId: link.projectId, chatId: event.chat_id,
-      chatIds: projectMemberChatIds(link), userIds, at, eventId: id, operatorId, initial: false,
-      echo: operatorId === runtime.botIdentity.openId });
+      chatIds: projectMemberChatIds(link), userIds, at, eventId: id, operatorId, initial: false });
     return {};
   }
   return {
