@@ -74,6 +74,11 @@ for (const text of ['/sota 深入分析这个问题', '/sota\n深入分析这个
   });
 }
 assert.deepEqual(parseFeishuCommandBlock('/sota'), { commands: [{ name: 'sota' }], body: '' });
+for (const text of ['/claude 处理任务', '/claude\n处理任务', '@Task Bot /CLAUDE\n\n处理任务']) {
+  assert.deepEqual(parseFeishuCommandBlock(text), { commands: [{ name: 'claude' }], body: '处理任务' });
+}
+assert.deepEqual(parseFeishuCommandBlock('/claude'), { commands: [{ name: 'claude' }], body: '' });
+assert.deepEqual(parseFeishuCommandBlock('/claude/results.json'), { commands: [], body: '/claude/results.json' });
 assert.deepEqual(parseFeishuCommandBlock('普通正文里提到 /thread 和 /model x'), {
   commands: [], body: '普通正文里提到 /thread 和 /model x',
 });

@@ -441,6 +441,21 @@ runtime, so start a new topic to use SOTA. `/sota` requires task text and cannot
 be combined with other task or runtime commands. The existing `/tier sota`
 command still changes an existing Session without submitting a task.
 
+Use `/claude 处理这个任务` to run with Claude Code, pinned to Opus 5.5
+(`claude-opus-5-5`) and `high` effort. It uses the same reply placement and
+Standard Session behavior as `/sota`; following messages in that Session keep
+the Claude selection. It requires task text, cannot be combined with other task
+or runtime commands, and cannot change an existing Quick Session. Unavailable
+Claude/model selections report an error before changing the Session or starting
+the task. Inbox retries reuse the saved runtime selection.
+
+Claude Code and Codex in the same RemoteLab instance receive the same shared
+memory pointers (bootstrap, projects, tasks and system memory) and the verified
+Person/project context. They read those files on demand. Their native private
+memory and provider conversation stores remain separate; switching Harnesses
+uses RemoteLab's Session continuation context, not the other provider's native
+thread.
+
 Only `/inline` and `/thread` accept `--harness <id>`, `--model <id>`, and
 `--effort <level>` before the task text. Use a standalone `--` before task text
 that itself starts with `--`.

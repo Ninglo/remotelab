@@ -16,13 +16,18 @@ try {
       { id: 'beta', reasoning: { kind: 'enum', levels: ['medium', 'high'], default: 'medium' } },
     ] },
     pi: { defaultModel: 'provider/gamma', models: [{ id: 'provider/gamma', reasoning: { kind: 'none' } }] },
+    claude: { defaultModel: 'sonnet', models: [
+      { id: 'sonnet', reasoning: { kind: 'enum', levels: ['low', 'medium', 'high'], default: 'medium' } },
+      { id: 'claude-opus-5-5', reasoning: { kind: 'enum', levels: ['low', 'medium', 'high'], default: 'medium' } },
+    ] },
   };
   const calls = [];
   let brokenCatalog = '';
+  let claudeAvailable = true;
   const request = async (path, options = {}) => {
     calls.push({ path, ...options });
     let json;
-    if (path === '/api/tools') json = { tools: [{ id: 'codex', available: true }, { id: 'pi', available: true }, { id: 'missing', available: false }] };
+    if (path === '/api/tools') json = { tools: [{ id: 'codex', available: true }, { id: 'pi', available: true }, { id: 'claude', available: claudeAvailable }, { id: 'missing', available: false }] };
     else if (path.startsWith('/api/models?tool=')) {
       const tool = decodeURIComponent(path.split('=')[1]);
       if (tool === brokenCatalog) throw new Error('Current provider is unavailable');
@@ -310,6 +315,53 @@ try {
     requestRemoteLab: async () => { throw new Error('must reuse the saved runtime plan'); },
   });
   assert.deepEqual(sotaSummary.runtimeSelectionOverride, sotaSelection);
+
+  const claudeSelection = { tool: 'claude', model: 'claude-opus-5-5', effort: 'high', thinking: false };
+  await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'claude-new',
+    messageText: '/claude 处理任务' }, 'test', sotaHelpers);
+  assert.equal(sotaSummary.startThread, true);
+  assert.equal(sotaSummary.messageText, '处理任务');
+  assert.equal(sotaSummary.quickMode, undefined);
+  assert.deepEqual(sotaSummary.runtimeSelectionOverride, claudeSelection);
+  assert.equal(sotaPlan.operations.length, 0);
+  const newClaudePlan = structuredClone(sotaPlan);
+  await handleMessage(runtime, { ...summary, messageId: 'claude-existing',
+    messageText: '/claude 继续任务' }, 'test', sotaHelpers);
+  assert.deepEqual(session.feishuRuntimeSelection, claudeSelection);
+  assert.equal(sotaPlan.operations[0].sessionId, 's1');
+  assert.equal(sotaSummary.threadId, 'thread');
+  for (const chatType of ['p2p', 'topic']) {
+    await handleMessage(runtime, { ...summary, chatType, threadId: '', rootId: '',
+      messageId: `claude-${chatType}`, messageText: '/claude 处理任务' }, 'test', sotaHelpers);
+    assert.equal(sotaSummary.conversationKind, chatType === 'topic' ? 'thread' : 'main');
+    assert.deepEqual(sotaSummary.runtimeSelectionOverride, claudeSelection);
+  }
+  const beforeInvalidClaude = structuredClone(session);
+  const beforeInvalidClaudeSubmissions = sotaSubmissions;
+  for (const messageText of ['/claude', '/claude --effort low 任务', '/claude\n/sota\n\n任务',
+    '/claude\n/quick\n\n任务', '/claude\n/thread\n\n任务', '/claude\n/claude\n\n任务']) {
+    await handleMessage(runtime, { ...summary, messageId: `invalid-${messageText}`, messageText }, 'test', sotaHelpers);
+    assert.match(replies.at(-1), /需要正文|单独使用|命令重复/);
+  }
+  claudeAvailable = false;
+  await handleMessage(runtime, { ...summary, messageId: 'claude-unavailable', messageText: '/claude 任务' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /Harness 不可用/);
+  claudeAvailable = true;
+  const opusModel = catalog.claude.models.pop();
+  await handleMessage(runtime, { ...summary, messageId: 'opus-unavailable', messageText: '/claude 任务' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /模型不可用/);
+  catalog.claude.models.push(opusModel);
+  assert.deepEqual(session, beforeInvalidClaude, 'invalid Claude shortcuts never partially persist a runtime switch');
+  session.executionProfile = 'quick';
+  await handleMessage(runtime, { ...summary, messageId: 'claude-in-quick', messageText: '/claude 任务' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /创建时固定/);
+  delete session.executionProfile;
+  assert.equal(sotaSubmissions, beforeInvalidClaudeSubmissions);
+  await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'claude-retry',
+    messageText: '/claude 重试任务' }, 'test', { ...sotaHelpers, preparedRuntimeCommand: newClaudePlan,
+    requestRemoteLab: async () => { throw new Error('must reuse the saved runtime plan'); },
+  });
+  assert.deepEqual(sotaSummary.runtimeSelectionOverride, claudeSelection);
 
   let commandBlockSummary;
   let commandBlockPlan;

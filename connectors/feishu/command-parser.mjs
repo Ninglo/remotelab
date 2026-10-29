@@ -16,6 +16,7 @@ const COMMANDS = Object.freeze({
   thread: { args: 'none', task: true },
   quick: { args: 'none', task: true, aliases: ['q'] },
   sota: { args: 'none', task: true },
+  claude: { args: 'none', task: true },
 });
 
 const RETIRED_RUNTIME_COMMANDS = new Set(['default', 'follow']);

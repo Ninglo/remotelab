@@ -1873,6 +1873,22 @@ try {
   assert.equal(planningSubmittedPayload.sourceDelivery.target.replyInThread, undefined);
   assert.equal(planningSubmittedPayload.sourceContext.feishuParticipation, 'ambient');
   assert.equal(planningSubmittedPayload.sourceContext.feishuReactionReceipt, undefined);
+  const claudeRuntime = { tool: 'claude', model: 'claude-opus-5-5', effort: 'high', thinking: false };
+  await submitRemoteLabRequest({
+    authCookie: 'session_token=test-cookie',
+    config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionFolder: repoRoot, sessionTool: 'codex',
+      groups: { chat_claude_scope: { participationMode: 'ambient' } } },
+  }, {
+    chatType: 'group', chatId: 'chat_claude_scope', messageId: 'msg_claude_scope',
+    messageText: '处理这个任务。', sender: { openId: 'ou_scope_test_claude' },
+    runtimeSelectionOverride: claudeRuntime,
+  });
+  for (const payload of [planningCreatedPayload, planningSubmittedPayload]) {
+    assert.equal(payload.tool, 'claude', 'Claude selection survives Session creation and first-task admission');
+    assert.equal(payload.model, 'claude-opus-5-5');
+    assert.equal(payload.effort, 'high');
+    assert.equal(payload.executionProfile, undefined);
+  }
   const { createFeishuOutcomeReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
   const reactionStore = createFeishuOutcomeReactionStore(join(tempHome, 'main-reactions'));
   await reactionStore.apply('main-received', 'Get', async () => ({ reactionId: 'quick-receipt' }));

@@ -525,7 +525,7 @@
           "id": "feishu-chat",
           "name": "飞书群、话题与会话控制",
           "purpose": "从已接入的飞书对话发起工作，在原话题接收回答、问题、附件和任务进度；超长聊天回复以完整 Markdown 文件交付。",
-          "entry": "已接入的飞书 Bot；按该群规则发消息；/status、/model 等命令。",
+          "entry": "已接入的飞书 Bot；按该群规则发消息；/status、/model 等命令；/claude 正文使用 Claude Code（Opus 5.5 high）执行并在当前 Session 保持该配置。",
           "condition": "新输入撤回主动分流；并行仅由独立 parallelWork 个人开关及已登记群范围启用。旧开关只读兼容为并行选择，已接受请求保留原快照。明确交接仍须核对人类指令、目标与真实回执。群接入、参与规则、来源权限和命令范围按 Bot 配置核对。个人执行试用只在登记的人与群生效：明确要求多项并行时创建独立子 Session；Agent 额外建议拆分则异步征询，原任务继续。混入其他话题的内容先辨归属。不能把试用行为推广到所有群。 误发内容先查询已登记群的少量候选，跨群任务须本人确认完整转交预览后才发送；原作者、附件、接收回执和结果回传一并保留。讨论转开工独立使用已登记 projectLinks 和 active 参与状态，由本人原生问题卡确认后在对应干活群建话题，实际送达绑定后才启动；不依赖个人分流试点，也不启用通用自动分流。普通群及其回复话题支持主动参与、旁听、暂停；原生话题群按人类输入直接续接。主动模式允许有依据的人对人问答补充。已有话题沿实际投递来源承接执行中及结束后的追加，不混入其他话题。表情从配置候选中自选，可不选或撤销，迟到的快速反馈不覆盖撤销。 Session 创建与续接按统一契约：主线、私聊和话题先查绑定，完成或重启不换会话，使用工具本身不要求拆分。正常输入只提交一次，快速反馈读取已接收的 Request；反馈失败不阻断执行，重试保留原会话、正文和回复位置。",
           "example": "在当前话题继续刚才的工作，把结果也回到这里。",
           "sources": [
@@ -545,6 +545,8 @@
             "lib/group-routing-pilot.mjs",
             "chat/session-observations.mjs",
             "connectors/feishu/index.mjs",
+            "connectors/feishu/command-parser.mjs",
+            "connectors/feishu/runtime-commands.mjs",
             "connectors/feishu/math-renderer.mjs",
             "connectors/feishu/reply-attachments.mjs",
             "connectors/feishu/group-settings.mjs",
