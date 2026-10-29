@@ -10,14 +10,28 @@ func property(_ device: IOHIDDevice, _ key: String) -> String {
     guard let value = IOHIDDeviceGetProperty(device, key as CFString) else { return "" }
     return String(describing: value)
 }
-func identity(_ device: IOHIDDevice) -> String {
+func legacyIdentity(_ device: IOHIDDevice) -> String {
     let serial = property(device, kIOHIDSerialNumberKey)
     let address = serial.isEmpty ? "location:" + property(device, kIOHIDLocationIDKey) : "serial:" + serial
     return "hid:" + property(device, kIOHIDVendorIDKey) + ":" + property(device, kIOHIDProductIDKey) + ":" + address
 }
+func identity(_ device: IOHIDDevice) -> String {
+    // Some Bluetooth keypads all report serial 000000. The hardware address
+    // distinguishes them even when vendor/product/serial are identical.
+    let transport = property(device, kIOHIDTransportKey)
+    let address = property(device, "DeviceAddress").lowercased()
+    if transport.lowercased().contains("bluetooth"), !address.isEmpty {
+        return "hid:" + property(device, kIOHIDVendorIDKey) + ":" + property(device, kIOHIDProductIDKey) + ":bluetooth:" + address
+    }
+    return legacyIdentity(device)
+}
 let arguments = Array(CommandLine.arguments.dropFirst())
 let mode = arguments.first ?? "list"
 let allowed = Set(arguments.dropFirst())
+func boundIdentity(_ device: IOHIDDevice) -> String {
+    let canonical = identity(device)
+    return allowed.contains(canonical) ? canonical : legacyIdentity(device)
+}
 if mode != "list" && mode != "listen" { emit(["error": "Expected list or listen"]); exit(1) }
 if mode == "listen" && allowed.isEmpty { emit(["error": "listen requires explicit keypad device IDs"]); exit(1) }
 var held = Set<String>()
@@ -34,7 +48,7 @@ if mode == "listen" {
         let fields = id.split(separator: ":", maxSplits: 3, omittingEmptySubsequences: false)
         guard fields.count == 4, fields[0] == "hid",
               let vendor = UInt32(fields[1]), let product = UInt32(fields[2]),
-              fields[3].hasPrefix("serial:") || fields[3].hasPrefix("location:") else { return nil }
+              fields[3].hasPrefix("serial:") || fields[3].hasPrefix("location:") || fields[3].hasPrefix("bluetooth:") else { return nil }
         return [kIOHIDVendorIDKey: vendor, kIOHIDProductIDKey: product]
     }
     guard matches.count == allowed.count else { emit(["error": "Invalid keypad device identity"]); exit(1) }
@@ -48,7 +62,7 @@ if IOHIDManagerOpen(manager, IOOptionBits(0)) != kIOReturnSuccess {
 }
 if mode == "list" {
     let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> ?? []
-    emit(devices.map { ["deviceId": identity($0), "name": property($0, kIOHIDProductKey)] })
+    emit(devices.map { ["deviceId": identity($0), "legacyDeviceId": legacyIdentity($0), "name": property($0, kIOHIDProductKey), "transport": property($0, kIOHIDTransportKey)] })
     exit(0)
 }
 // Read only explicitly bound keypads. Do not seize devices or install a global key tap.
@@ -57,7 +71,7 @@ IOHIDManagerRegisterInputValueCallback(manager, { _, _, _, value in
     let usagePage = IOHIDElementGetUsagePage(element)
     guard usagePage == 7 || usagePage == 12 || usagePage == 9 else { return }
     let device = IOHIDElementGetDevice(element)
-    let id = identity(device)
+    let id = boundIdentity(device)
     guard allowed.contains(id) else { return }
     let keyId = id + ":" + String(usagePage) + ":" + String(IOHIDElementGetUsage(element))
     if IOHIDValueGetIntegerValue(value) == 0 {
@@ -70,7 +84,7 @@ IOHIDManagerRegisterInputValueCallback(manager, { _, _, _, value in
     emit(["deviceId": id, "usagePage": usagePage, "key": IOHIDElementGetUsage(element), "pressed": true, "timestampMs": eventTime(value)])
 }, nil)
 IOHIDManagerRegisterDeviceRemovalCallback(manager, { _, _, _, device in
-    let id = identity(device)
+    let id = boundIdentity(device)
     guard allowed.contains(id) else { return }
     held = Set(held.filter { !$0.hasPrefix(id + ":") })
     emit(["deviceId": id, "disconnected": true])

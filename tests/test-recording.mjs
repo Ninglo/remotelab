@@ -13,6 +13,7 @@ import { loadRecord, recordDir, saveRecord, recoverRecordings, recordingSummary 
 import { startRecordingDaemon, controlRecording, RecordingUploadQueue, recordingInputBinding } from '../lib/recording/daemon.mjs';
 import { submitRecording } from '../lib/recording/transport.mjs';
 import { recordingServiceSpec } from '../lib/recording/service.mjs';
+import { AutoChannelSelector } from '../lib/recording/auto-channel.mjs';
 
 function config(extra = {}) {
   return normalizeRecordingConfig({ enabled: true, machineId: 'test_machine',
@@ -91,6 +92,96 @@ test('Bluetooth consumer controls require their own usage page and preserve lega
   assert.equal(recordingInputBinding(cfg.bindings, { ...press, usagePage: 13 }), undefined);
   assert.throws(() => config({ bindings: [keyboard, { ...keyboard, usagePage: 7 }] }), /only one lane/);
   assert.throws(() => config({ bindings: [{ ...consumer, usagePage: 13 }] }), /Unsupported keypad HID usage page/);
+});
+
+test('automatic microphones are claimed per recording, never shared, and reusable in reverse order', async (t) => {
+  const root = await temporary(t), factory = captureFactory();
+  const cfg = config({ submissionMode: 'local', lanes: ['a', 'b'].map(id => ({ id, receiverId: 'rx1', channel: 'auto' })) });
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  const { recording: a } = await manager.start('a');
+  assert.equal(manager.status()[0].state, 'selecting');
+  await assert.rejects(manager.start('b'), /上一段/);
+  const child = factory.captures.get('rx1');
+  // Equal input is ambiguous. It must not choose by configuration or start order.
+  await feed(manager, child, 'rx1', stereo(1000, 1000, 4800));
+  assert.equal(manager.status()[0].state, 'selecting');
+  // Pick up the right microphone. Short frames retain the first spoken samples.
+  await feed(manager, child, 'rx1', stereo(50, 2200, 1600));
+  await feed(manager, child, 'rx1', stereo(50, 2200, 3200));
+  assert.equal(manager.status()[0].channel, 1);
+  assert.equal(manager.status()[0].state, 'recording');
+  assert.equal((await loadRecord(root, a.id)).channel, 1);
+  const { recording: b } = await manager.start('b');
+  assert.equal(factory.captures.get('rx1'), child, 'The second discussion reuses the receiver capture');
+  // Speech on the busy mic leaking into the free mic cannot claim the free mic.
+  await feed(manager, child, 'rx1', stereo(500, 7000, 4800));
+  assert.equal(manager.status().find(x => x.laneId === 'b').state, 'selecting');
+  await feed(manager, child, 'rx1', stereo(3300, 50, 4800));
+  assert.equal(manager.status().find(x => x.laneId === 'b').channel, 0);
+  await feed(manager, child, 'rx1', stereo(4400, 8800, 1600));
+  const savedA = (await manager.stop('a')).recording;
+  assert.equal(child.killed, false);
+  await feed(manager, child, 'rx1', stereo(5500, 9000, 1600));
+  const savedB = (await manager.stop('b')).recording;
+  const audioA = await samples(root, savedA), audioB = await samples(root, savedB);
+  assert.deepEqual(audioA.slice(4800, 9600), Array(4800).fill(2200), 'Recognition preserves the beginning of speech');
+  assert.deepEqual(audioA.slice(-1600), Array(1600).fill(8800));
+  assert.deepEqual(audioB.slice(-3200), [...Array(1600).fill(4400), ...Array(1600).fill(5500)]);
+  assert.equal(audioB.includes(9000), false, 'The other channel is never mixed into this file');
+  assert.equal(child.killed, true);
+  const next = (await manager.start('a')).recording;
+  await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(6600, 50, 4800));
+  assert.equal(manager.status()[0].channel, 0, 'The same button may use the opposite microphone next time');
+  assert.notEqual(next.id, savedA.id);
+});
+
+test('automatic selection is invariant to PCM chunk boundaries and rejects silence and near ties', () => {
+  const options = config().autoSelect;
+  const selector = new AutoChannelSelector(options);
+  const split = new StereoSplitter();
+  assert.equal(selector.accept(split.split(stereo(0, 0, 16000)), [0, 1]), null);
+  assert.equal(selector.accept(split.split(stereo(1000, 1200, 16000)), [0, 1]), null);
+  const pcm = stereo(100, 5000, 4800);
+  let selected = null;
+  for (let i = 0; i < pcm.length; i += 28) selected = selector.accept(split.split(pcm.subarray(i, i + 28)), [0, 1]) ?? selected;
+  assert.equal(selected, 1);
+  const busy = new AutoChannelSelector(options);
+  assert.equal(busy.accept(split.split(stereo(5000, 100, 16000)), [1]), null);
+});
+
+test('unidentified recording cancels without uploading and fixed lanes cannot steal claimed microphones', async (t) => {
+  const root = await temporary(t), factory = captureFactory();
+  const cfg = config({ lanes: [{ id: 'a', receiverId: 'rx1', channel: 'auto' }, { id: 'b', receiverId: 'rx1', channel: 1 }] });
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  await manager.start('a');
+  await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(1000, 1000, 48000));
+  assert.ok(manager.active.get('a').preRoll[0].length <= 41600);
+  const cancelled = (await manager.stop('a')).recording;
+  assert.equal(cancelled.status, 'failed'); assert.equal(cancelled.channel, null);
+  await manager.start('a');
+  await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(50, 5000, 4800));
+  await assert.rejects(manager.start('b'), /另一段录音/);
+  assert.equal(manager.status().length, 1);
+});
+
+test('repeated status and input diagnostics leave the watched status file unchanged', async (t) => {
+  const root = await temporary(t), factory = captureFactory(), cfg = config({ submissionMode: 'local' });
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  const daemon = await startRecordingDaemon({ root, config: cfg, manager, listenInput: false });
+  t.after(() => daemon.stop());
+  const before = await readFile(join(root, 'status.json'), 'utf8');
+  const time = (await stat(join(root, 'status.json'))).mtimeMs;
+  const results = await Promise.all(Array.from({ length: 80 }, (_, i) => controlRecording(root, i % 2 ? 'status' : 'input-events')));
+  assert.equal(results.length, 80);
+  assert.equal(await readFile(join(root, 'status.json'), 'utf8'), before);
+  assert.equal((await stat(join(root, 'status.json'))).mtimeMs, time);
+  const started = await controlRecording(root, 'start', 'a');
+  await feed(manager, factory.captures.get('rx1'), 'rx1', stereo(1000, 2000));
+  await controlRecording(root, 'stop', 'a');
+  const status = await controlRecording(root, 'status');
+  assert.equal(status.records.find(r => r.id === started.recording.id).status, 'held');
 });
 
 test('arbitrary pipe boundaries preserve per-channel PCM without mixing receivers', () => {

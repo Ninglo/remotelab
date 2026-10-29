@@ -16,6 +16,10 @@ struct RecordingPanelStateTests {
         let starting: [String: Any] = ["pid": pid, "active": [["laneId": "a", "state": "starting"]], "records": []]
         assert(state(starting).tone == "starting", "Starting is not proof that audio is saved")
         assert(state(starting).action == "stop", "A failed or slow start can be cancelled")
+        let selecting: [String: Any] = ["pid": pid, "active": [["laneId": "a", "state": "selecting"]], "records": []]
+        assert(state(selecting).title == "等待认领麦克风")
+        assert(state(selecting).tone == "starting")
+        assert(state(selecting).action == "stop")
         let recording: [String: Any] = ["pid": pid, "active": [["laneId": "a", "state": "recording", "startedAt": "2026-01-01T00:00:00Z"]], "records": []]
         assert(state(recording).tone == "recording")
         assert(state(recording).action == "stop")

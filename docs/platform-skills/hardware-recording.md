@@ -96,12 +96,13 @@ The component requires Node.js 18.15 or newer (for disk-space checks) and FFmpeg
 }
 ```
 
-- Channel `0` means this receiver's left channel; `1` means its right channel. Sources are `(receiverId, channel)`, not global left/right. One capture process opens each active receiver; lane lifetimes are independent. Configuration rejects duplicate sources and ambiguous keypad buttons.
+- Channel `0` means this receiver's left channel; `1` means its right channel. Sources are `(receiverId, channel)`, not global left/right. One capture process opens each active receiver; lane lifetimes are independent. Configuration rejects duplicate fixed sources and ambiguous keypad buttons. Use `channel: "auto"` for the per-recording microphone selection described below.
 - Set each lane's optional `deviceLabel` to its verified capture device, for example `DJI Mic 2号麦` or `DJI接收器1-左声道`. This is independent of the panel's `label` (which may describe a button or discussion). It is snapshotted when recording starts and included in uploaded filenames. Do not infer a physical microphone number or a speaker from a channel alone.
 - macOS uses an FFmpeg build exposing AVFoundation `audio_device_id` and `uid:`/`serial:` identities. Older FFmpeg builds without that option fail `doctor`; upgrade them rather than binding same-name receivers by changing numeric indexes. Xcode Command Line Tools compile the included Swift HID helper once per source version.
 - Linux uses a stable named ALSA card (`hw:CARD=...`) or a named PulseAudio source, Python 3 and explicit `/dev/input/by-id/...-event-kbd` access. Identical receivers may require distinct stable card names/udev configuration. Grant only the device access needed by the host user. Numeric card indexes and the default source must not be used.
 - `free3p` requires learning its actual HID events and verifying a short recording on the first machine. The helper does not seize the keyboard: configure unused function keys so events do not type text or invoke normal application shortcuts.
 - On macOS, a keyboard HID device can also send consumer-control events through a separate HID collection. The listener opens the collections for explicitly bound vendor/product pairs and checks each event's full serial/location identity before emitting it; opening only the keyboard collection can miss Bluetooth consumer controls. `learn-input` reports `usagePage: 7` for keyboard keys and `usagePage: 12` for consumer controls. Bind the learned page explicitly when it is 12; existing bindings default to page 7. USB and Bluetooth may expose different device IDs and key codes, so learn and bind each transport separately. A Free3-P Bluetooth sample used consumer page 12 even though USB used page 7; this proves receipt of that input, while wireless recording and distance still require physical acceptance. The device's brief key light confirms local key response; use the recording window to confirm actual capture.
+- Bluetooth devices exposing `DeviceAddress` are discovered as `hid:VENDOR:PRODUCT:bluetooth:ADDRESS`; this distinguishes devices that all report the generic serial `000000`. Discovery also returns `legacyDeviceId` and transport. Existing serial/location bindings remain compatible, but newly calibrated Bluetooth bindings should use the address identity. Learn the actual button on the intended transport before assigning its lane. A USB-only vendor light interface does not establish Bluetooth light-control support.
 - Optional `session.tool` chooses an installed Harness; otherwise the service selects an available one. A lane may specify `sessionId`, or `conversation` in the canonical [conversation target format](../external-message-protocol.md). Default is a fresh Session for each recording. Conversation and Session targets are mutually exclusive. Use this instance's auth and base URL; cross-instance credential provisioning is outside this capability.
 - Capture and delivery are separate choices. Set `submissionMode: "local"` to keep keypad/UI recording available while saving audio only on this machine. This stops all upload/Session requests, including pending retries from earlier recordings. New and recovered recordings retain their local-only choice as `held`; switching the config back to the default `"automatic"` does not replay them. There is no automatic release of held recordings. Keep the setup Session out of the delivery bindings when the user already has a dedicated recording-analysis workflow; discover its actual upload entry and conversation before preparing delivery. A request to prepare that route does not authorize sending test recordings to a real group.
 
@@ -164,6 +165,48 @@ every ordered five-minute segment and retain its receipt before combining text.
 After preparing a config file, the AI uses `configure --file PATH`, `enable`, and `install --apply`, then reads `status`. `install` without `--apply` previews the launchd/systemd user service. On Linux, a usable user systemd manager is required; for service-less environments use `serve` under an existing process supervisor. macOS uses a user LaunchAgent, so logout stops capture. `uninstall --apply` stops/removes the service and preserves the recordings. Stop a manually supervised `serve` process with SIGTERM before changing bindings or disabling the config.
 
 ## What the service preserves
+
+### Buttons without permanently assigned microphones
+
+Configure each button's lane with the same receiver and `channel: "auto"`.
+The button still owns its independent recording, stop gesture, saved files and
+delivery target. At each start, take an idle microphone close to your mouth and
+speak. The recorder compares the two inputs, claims a clearly stronger input,
+then plays the existing start cue when selected PCM has actually been saved.
+The other button can then start its own recording with the other microphone.
+Stopping one lane leaves the other running. A source stays assigned until that
+recording ends; louder speech on the other mic never switches an active file.
+Both sources become available for either button again when released.
+
+Recognition uses 20 ms RMS windows, a default minimum of -45 dBFS, a 9 dB
+advantage over the other microphone, and 300 ms of consecutive evidence. These
+are configurable under `autoSelect: { minDb, marginDb, confirmMs, timeoutSeconds }`;
+the default selection timeout is 30 seconds. Validate them on the actual mics
+and room. This is a level-based interaction, not speaker identification or a
+guarantee of physical ownership. Two nearby mics hearing the same speech may
+remain ambiguous; move the intended mic close and the other away, then retry.
+The busy microphone remains a comparison reference so its acoustic leakage
+cannot alone claim the free microphone. Loud unrelated sound can still mislead
+level-based selection; confirm the actual behavior in physical acceptance.
+
+Only one unresolved selection is accepted per receiver: finish identifying the
+first microphone (listen for its start cue) before starting the next recording.
+Button order alone cannot identify two unassigned microphones. This does not
+limit concurrent recordings after identification. A full receiver or a fixed
+lane trying to use an already claimed source returns a clear error. Silence or
+ambiguous input never falls back to a mixture or an arbitrary channel.
+Before identification, a bounded in-memory pre-roll retains the start of speech;
+only the selected channel is written. Cancellation/timeout without selection
+produces no usable recording and no upload. The saved manifest snapshots the
+actual channel and device label, original button time (`requestedAt`), and
+selection time (`selectedAt`). Original fixed-channel configurations keep their
+existing behavior.
+
+Live `status` and `input-events` queries are read-only and use the daemon's
+current in-memory state. Only changes to recordings, input errors or submission
+state refresh the durable status snapshot; overlapping updates are coalesced.
+Watching the status file and reading live health therefore cannot create a
+file-write feedback loop.
 
 Files are private WAV segments under `records/<recording-id>/`, with an atomically saved manifest. Stereo frames stay separated even across partial pipe reads. Files contain mono PCM16 at 16 kHz. Segments remain in one ordered recording and are uploaded after that lane ends. Start/stop operations for one channel do not stop another active channel on the same receiver.
 
