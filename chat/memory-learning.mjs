@@ -32,8 +32,11 @@ export async function loadLearningPolicy(memoryDir = MEMORY_DIR) {
     if (!Array.isArray(policy.personIds) || !policy.personIds.every(id => /^person_[a-zA-Z0-9_-]{1,100}$/.test(id))) {
       throw new Error('learning-policy.json requires explicit personIds');
     }
+    // Review cards are part of enabled personal learning, not a second opt-in.
+    // Keep the projected field for existing consumers; never use the legacy
+    // per-person card list to silently exclude an enrolled learner.
     return { enabled: true, profiles: policy.profiles === true, handbook: policy.handbook === true,
-      context: policy.context === true, reviewCardPersonIds: Array.isArray(policy.reviewCardPersonIds) ? policy.reviewCardPersonIds.filter(id => policy.personIds.includes(id)) : [], personIds: policy.personIds };
+      context: policy.context === true, reviewCardPersonIds: policy.profiles === true ? [...policy.personIds] : [], personIds: policy.personIds };
   } catch (error) {
     if (error.code !== 'ENOENT') console.error(`[memory-learning] Policy disabled: ${error.message}`);
     return { enabled: false, readStatus: error.code === 'ENOENT' ? 'not-recorded' : 'unavailable' };
@@ -579,7 +582,7 @@ export async function reviewMemoryLearning({ sessionId, session, run, userMessag
   const raw = await runPrompt(buildLearningReviewPrompt({ userMessage, assistantTurnText, sources, snapshot, project, delivered, candidateTargets })
     + (personal.enabled ? '' : '\nPersonal learning is paused for this owner. No personal habit/preference updates.')
     + (sourceContext?.connector === 'feishu' && policy.reviewCardPersonIds?.includes(personId)
-      ? '\nThis owner enabled independent memory review cards in Feishu. A new personal entry will automatically be shown in its source conversation through the existing outbox. Do not send anything yourself. Set deferReview:true on an update if urgency or privacy makes showing it here inappropriate; keep the observation without publishing. Never expose facts from other conversations. Card answers do not block or steer the original task.' : ''));
+      ? '\nEvery new personal entry from authenticated Feishu input automatically receives an independent review card in its source conversation through the existing outbox. There is no separate card opt-in or model-controlled deferral. Do not send anything yourself or expose facts from other conversations. Card answers do not block or steer the original task.' : ''));
   const parsed = parseJsonObjectText(extractTaggedBlock(String(raw || ''), 'hide') || raw);
   if (!parsed || !Array.isArray(parsed.updates)) throw new Error('Memory review returned no valid updates array');
   const result = await applyLearningUpdates({ updates: parsed?.updates, sources, personId, identityId,

@@ -19,7 +19,7 @@ export async function buildPersonalMemoryConversationParts({ personId, identityI
       `Personal memory conversation trial is enabled only for verified current speaker ${personId}; never inherit another person's preferences.`,
       'Trigger: concrete feedback about how to collaborate, or an explicit personal memory instruction. Project requirements stay with the project; memory grants no authorization.',
       'On that trigger, before inspecting, proposing or writing memory, read the relevant section of $REMOTELAB_PROJECT_ROOT/docs/memory-learning.md. Use existing context otherwise; do not routinely read profiles. Preserve consent and accepted scope; report saves only after success.',
-      cards ? 'Review mode: existing independent memory outbox; do not duplicate its question in chat or block the task.'
+      cards ? 'Review mode: every new personal memory automatically receives an independent confirmation card through the existing outbox; do not duplicate its question in chat, defer the card, or block the task.'
         : 'Review mode: at most one natural question in a useful reply after recording the proposal. Keep the task moving.',
     ].join('\n');
     return { rules, feedback };

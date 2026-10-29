@@ -9,13 +9,15 @@ process.env.REMOTELAB_MEMORY_DIR = join(home, 'memory');
 try {
   const { updateAuthDocument, loadAuthDocument } = await import('../lib/auth-config.mjs');
   await updateAuthDocument(doc => {
-    doc.people = [{ id: 'person_alice', name: 'Alice', credentials: [], preferences: { personalMemory: { version: 1, revision: 1, enabled: true, conversational: true } },
-      identities: [{ id: 'identity_alice', kind: 'feishu', realm: 'fixture', subjectId: 'alice' }] }];
+    doc.people = ['alice', 'bob'].map(name => ({ id: `person_${name}`, name, credentials: [],
+      preferences: { personalMemory: { version: 1, revision: 1, enabled: true, conversational: true } },
+      identities: [{ id: `identity_${name}`, kind: 'feishu', realm: 'fixture', subjectId: name }] }));
     doc.primaryPersonId = 'person_alice';
   });
   const memoryDir = process.env.REMOTELAB_MEMORY_DIR;
   await mkdir(memoryDir, { recursive: true });
-  await writeFile(join(memoryDir, 'learning-policy.json'), JSON.stringify({ version: 1, enabled: true, profiles: true, personIds: ['person_alice'], reviewCardPersonIds: ['person_alice'] }));
+  // Reproduce enrollment expanding while the old independent card list did not.
+  await writeFile(join(memoryDir, 'learning-policy.json'), JSON.stringify({ version: 1, enabled: true, profiles: true, personIds: ['person_alice', 'person_bob'], reviewCardPersonIds: ['person_alice'] }));
   const m = await import('../chat/memory-learning.mjs');
   const { requests } = await import('../chat/requests.mjs');
   const { buildMemoryReviewCard, sendMemoryReviewCard, handleMemoryReviewCardAction } = await import('../connectors/feishu/memory-review-cards.mjs');
@@ -98,14 +100,38 @@ try {
   assert.equal((await entry()).version, e.version + 1, 'uncertain acknowledgement must not duplicate a mutation');
   const deferred = await m.applyLearningUpdates({ ...actor, updates: [{ ...habit, key: 'deferred-example', deferReview: true }], sources: [{ sessionId: 'session', runId: original.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
   assert.equal(deferred.promotedCount, 1);
-  assert.equal((await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview).length, 1, 'deferred observations do not publish');
+  assert.equal((await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview).length, 2, 'a legacy model deferral cannot leave a saved candidate without its card');
   const deferredEntry = (await m.inspectLearning(actor)).profile.entries.find(x => x.key === 'deferred-example');
   await m.applyLearningUpdates({ ...actor, updates: [{ key: deferredEntry.key, kind: 'habit', action: 'propose', expectedVersion: deferredEntry.version, question: '以后这样解释，可以吗？', evidence: habit.evidence }], sources: [{ sessionId: 'session', runId: original.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
-  assert.equal((await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview).length, 2, 'explicit later proposal publishes the deferred memory');
+  assert.equal((await listSourceDeliveries({ sessionId: 'session' })).filter(d => d.memoryReview).length, 2, 'a later proposal reuses the existing card request');
+
+  const bob = { personId: 'person_bob', identityId: 'identity_bob', authDocument: actor.authDocument };
+  const { record: bobRequest } = await requests.accept({ sessionId: 'bob-session', requestId: 'bob-human', text: '请用熟悉的例子解释',
+    options: { sourceDelivery: plan, viewPersonId: bob.personId, initiatedByIdentityId: bob.identityId, feishuConnectorAuthenticated: true } });
+  const background = await m.reviewMemoryLearning({ ...bob, sessionId: 'bob-session', session: {}, run: { id: bobRequest.runId },
+    userMessage: '请用熟悉的例子解释', sourceEventSeq: 1, turnEvents: [], sourceContext: { connector: 'feishu' },
+    runPrompt: async prompt => {
+      assert.match(prompt, /Every new personal entry.*independent review card/);
+      assert.doesNotMatch(prompt, /Set deferReview/);
+      return JSON.stringify({ updates: [habit] });
+    } });
+  assert.equal(background.promotedCount, 1);
+  assert.deepEqual(background.rejected, []);
+  const bobDeliveries = (await listSourceDeliveries({ sessionId: 'bob-session' })).filter(d => d.memoryReview);
+  assert.equal(bobDeliveries.length, 1, 'newly enrolled people receive a card without separate card enrollment');
+  assert.equal((await m.inspectLearning(bob)).profile.entries[0].status, 'observed', 'sending the card never accepts the candidate');
+  await sendMemoryReviewCard(runtime, bobDeliveries[0]);
+  assert.doesNotMatch(await m.buildLearningContext({ ...bob, query: '解释' }), /解释时先用熟悉的例子/);
+
+  // Removing the obsolete setting must retain the same default and outbox.
+  await writeFile(join(memoryDir, 'learning-policy.json'), JSON.stringify({ version: 1, enabled: true, profiles: true, personIds: ['person_alice', 'person_bob'] }));
+  assert.deepEqual((await m.loadLearningPolicy()).reviewCardPersonIds, ['person_alice', 'person_bob']);
+  await sendMemoryReviewCard(runtime, bobDeliveries[0]);
+  assert.equal(created, 2, 'repeated delivery still creates only one card per person and memory');
 
   assert.equal(JSON.stringify(await requests.byRunId(original.runId)), originalState, 'card interaction must not change the original request, queue input, or await an answer');
   const prompt = await buildPersonalMemoryConversationContext({ ...actor, sourceContext: { connector: 'feishu' } });
-  assert.match(prompt, /Review mode: existing independent memory outbox/); assert.doesNotMatch(prompt, /no separate private message, card/);
+  assert.match(prompt, /Review mode: every new personal memory automatically receives an independent confirmation card/); assert.doesNotMatch(prompt, /no separate private message, card/);
   await updateAuthDocument(doc => { doc.people[0].preferences.personalMemory.enabled = false; });
   assert.equal((await action(raw('keep', (await entry()).version))).toast.type, 'error', 'pause applies to old cards too');
   assert.equal((await sendMemoryReviewCard(runtime, delivery)).skipped, true, 'pause skips pending delivery without a new attention message');

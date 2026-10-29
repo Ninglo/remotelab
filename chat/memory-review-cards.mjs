@@ -21,7 +21,7 @@ export async function queueMemoryReviewCards({ personId, identityId, results = [
   for (const result of results) {
     if (!result.path.endsWith(`/people/${personId}.md`) || result.status === 'withdrawn') continue;
     const update = updates.find(u => result.id === `mem_${createHash('sha256').update(`personal:instance::${u.key}`).digest('hex').slice(0, 16)}`);
-    if (update?.deferReview === true || (result.version !== 1 && update?.action !== 'propose')) continue;
+    if (result.version !== 1 && update?.action !== 'propose') continue;
     const key = memoryReviewKey(personId, result.id);
     const path = join(CONFIG_DIR, 'memory-review-origins', `${key}.json`);
     const packet = { sessionId: request.sessionId, responseId: `memory-review:${key}`, sourceDelivery: plan,
