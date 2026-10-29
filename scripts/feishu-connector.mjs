@@ -3,6 +3,7 @@ import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connector
 import { sendAutomationCard, handleAutomationCardAction } from '../connectors/feishu/automation-cards.mjs';
 import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
 import { topicAnnouncementContext } from '../connectors/feishu/group-announcement.mjs';
+import { createProjectMemberSync, normalizeProjectMemberSync } from '../connectors/feishu/project-member-sync.mjs';
 import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
@@ -407,6 +408,7 @@ async function loadConfig(pathname) {
     jevReactions: parsed.jevReactions !== false,
     groupReactionCandidates: normalizeFeishuReactionCandidates(parsed.groupReactionCandidates),
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
+    projectMemberSync: normalizeProjectMemberSync(parsed?.projectMemberSync),
     projectCards: parsed.projectCards === true,
     personalSettings: {
       enabled: parsed.personalSettings?.enabled === true,
@@ -2343,6 +2345,7 @@ async function main() {
   runtime.botIdentity = await withTimeout(
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
   );
+  const projectMemberSync = createProjectMemberSync(runtime);
   await groupConfigurationController(runtime).restore();
   const discussionHandoff = createDiscussionHandoffPilot(runtime, {
     submitWork: async (proposal, found) => {
@@ -2434,6 +2437,7 @@ async function main() {
     inbox.stop();
     meetingObserver.stop();
     meetingIngest.stop();
+    projectMemberSync.stop();
     console.log(`[feishu-connector] closing connection (${reason})`);
     wsClient.close();
   };
@@ -2442,6 +2446,7 @@ async function main() {
     await inbox.idle();
     await meetingObserver.idle();
     await meetingIngest.idle();
+    await projectMemberSync.idle();
     await runtime.sourceDeliveryPollPromise;
     await documentEvents.stop();
     await cardsStopped;
@@ -2506,6 +2511,7 @@ async function main() {
     return {};
   };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
+    ...projectMemberSync.handlers,
     ...meetingObserver.handlers,
     'im.chat.access_event.bot_p2p_chat_entered_v1': async raw => {
       const summary = summarizePersonalChatEntered(raw);
@@ -2581,6 +2587,7 @@ async function main() {
   await meetingIngest.start();
   await wsClient.start({ eventDispatcher });
   if (closed) return;
+  await projectMemberSync.start();
   cardRecovery = startFeishuCardRecovery({
     startWorkboards: async () => (runtime.workboards = await startFeishuWorkboards(runtime, {
       configDir: CONFIG_DIR, configPath: options.configPath,

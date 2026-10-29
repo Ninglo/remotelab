@@ -2177,3 +2177,21 @@ source. A formula image requires explicit opt-in. The current message contract
 has no native formula component; Feishu documents provide that separately.
 Parser, renderer, rich-text, card and connector tests cover both text defaults
 and explicit image rendering, including fraction power grouping.
+
+## 2026-10-29 — Share membership across every group in a project
+
+A user requested matching membership across a project's discussion and work
+groups, then generalized the requirement to every bound project group, including
+evaluation submission groups. The membership unit should be the project; group
+roles and group count should not constrain it. Read-only inspection found a
+real membership difference between one existing discussion/work pair. Current
+project links share context but do not synchronize people.
+
+The user clarified the mechanism: fill existing gaps once, then propagate new
+join events only. People may leave a group normally; recurring union repair
+would incorrectly pull them back. The accepted implementation records departures,
+deduplicates event replay and Bot echoes, and persists one-time migration and
+invitation receipts. It deliberately permits differences after departures.
+See [project membership](../../docs/feishu-project-links.md#project-membership-initial-fill-then-join-events)
+for activation and recovery. Local regression tests establish behavior; live
+subscription, deployment and membership readback establish instance acceptance.

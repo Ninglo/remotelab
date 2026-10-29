@@ -1,5 +1,68 @@
 # Feishu project-linked context pilot
 
+## Project membership: initial fill, then join events
+
+Operator prompt: “Bind the exact groups in this project, fill their current human
+membership once, then propagate new joins. Preserve voluntary departures and
+record incomplete invitations. Reuse the current Bot connection.”
+
+Each `projectLinks` entry can include `chatIds` beyond its discussion/work pair,
+or use only `projectId` and `chatIds` for a project with other group roles.
+A project and a chat each belong to one link. The existing discussion/work
+context, announcement and handoff roles retain their previous behavior.
+Enable membership independently with `memberSync: true`:
+
+```json
+{
+  "projectMemberSync": {
+    "notBefore": "2026-10-29T00:00:00Z",
+    "initialSyncId": "approved-initial-fill-1"
+  },
+  "projectLinks": [{
+    "projectId": "evaluation",
+    "discussionChatId": "oc_discussion",
+    "workChatId": "oc_work",
+    "chatIds": ["oc_submissions"],
+    "memberSync": true
+  }]
+}
+```
+
+Use the actual activation time for `notBefore`. An explicit `initialSyncId`
+requests one initial fill per enabled project: completely read all bound
+groups, freeze the union of human members, then invite missing people. The
+durable receipt prevents repetition after restart. Retain that ID; changing it
+requests another migration. Adding a group to an existing binding does not
+silently rerun the migration. Omit the ID to enable future joins only. Confirm
+the bound group list and initial membership scope before activation.
+
+The existing WebSocket must subscribe to `im.chat.member.user.added_v1`,
+`im.chat.member.user.deleted_v1` (voluntary departure or removal), and
+`im.chat.member.user.withdrawn_v1` (invitation revoked). The Bot needs member
+read and invitation permissions in each group. Configure these subscriptions
+through the existing app-management flow and verify actual event reception.
+
+A genuine new join invites that person into the other bound groups. Bot echoes
+are recorded without further propagation. Departures are recorded immediately
+and never cause removals elsewhere or periodic re-invitations. Delayed older
+joins respect those departure records and must still find the person in the
+source group. A later genuine join can begin a fresh round of invitations;
+this deliberately permits groups to differ after someone leaves. Initial
+migrations respect all recorded departures. There is no periodic reconciliation
+or AI schedule for this feature.
+
+The connector persists events and per-target write attempts under
+`storageDir/project-member-sync/`. Projects process independently; additions
+within a project preserve admission order. Invitations use batches of at most
+50 and read back membership. Pending approvals, invalid IDs and ambiguous
+writes remain explicit in archived operation receipts and connector logs.
+An interrupted or uncertain write is read back, never blindly reissued for the
+same event: this also prevents recovery from pulling back someone who left
+after the original invitation. Resolve an incomplete invitation from its
+receipt and current membership before explicitly retrying. A successful API
+request alone does not prove every member joined. The synchronizer only manages
+human membership; group-specific Bots remain separate.
+
 ## Group reading levels and parent projects
 
 `project-runtime.json` is the common source for group cards and the existing inspection planner.

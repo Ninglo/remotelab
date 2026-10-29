@@ -14,6 +14,7 @@ const trimString = value => typeof value === 'string' ? value.trim() : '';
 export function normalizeFeishuProjectLinks(value = []) {
   if (!Array.isArray(value)) throw new Error('projectLinks must be an array');
   const usedChats = new Set();
+  const usedProjects = new Set();
   return value.map((entry) => {
     const projectId = trimString(entry?.projectId);
     const discussionChatId = trimString(entry?.discussionChatId);
@@ -28,15 +29,25 @@ export function normalizeFeishuProjectLinks(value = []) {
       throw new Error('projectLink handoffCards must be a boolean');
     }
     const handoffCards = entry?.handoffCards === true;
-    if (!projectId || !discussionChatId || !workChatId || discussionChatId === workChatId) {
+    if (entry.chatIds !== undefined && (!Array.isArray(entry.chatIds)
+      || entry.chatIds.some(id => !trimString(id)))) throw new Error('projectLink chatIds must be nonempty strings');
+    const chatIds = [...new Set([discussionChatId, workChatId, ...(entry.chatIds || []).map(trimString)].filter(Boolean))];
+    if (!projectId || chatIds.length < 2 || (discussionChatId && discussionChatId === workChatId)
+      || (!entry.chatIds && (!discussionChatId || !workChatId))) {
       throw new Error('Each projectLink needs a projectId and two distinct chat IDs');
     }
-    if (usedChats.has(discussionChatId) || usedChats.has(workChatId)) {
+    if (usedProjects.has(projectId)) throw new Error('A project cannot have multiple projectLinks');
+    usedProjects.add(projectId);
+    if (chatIds.some(id => usedChats.has(id))) {
       throw new Error('A Feishu chat cannot belong to multiple projectLinks');
     }
-    usedChats.add(discussionChatId);
-    usedChats.add(workChatId);
+    for (const id of chatIds) usedChats.add(id);
+    if (entry.memberSync !== undefined && typeof entry.memberSync !== 'boolean') {
+      throw new Error('projectLink memberSync must be a boolean');
+    }
     return { projectId, discussionChatId, discussionChatName, workChatId, workChatName,
+      ...(entry.chatIds ? { chatIds } : {}),
+      ...(entry.memberSync !== undefined ? { memberSync: entry.memberSync } : {}),
       workToDiscussionContext: entry?.workToDiscussionContext || '', handoffCards };
   });
 }

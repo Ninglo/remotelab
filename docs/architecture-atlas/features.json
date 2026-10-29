@@ -608,7 +608,9 @@
             "lib/feishu-document-creation.mjs",
             "lib/user-shell-env.mjs",
             "scripts/lark-cli.mjs",
-            "chat/session-conversations.mjs"
+            "chat/session-conversations.mjs",
+            "connectors/feishu/linked-project-context.mjs",
+            "connectors/feishu/project-member-sync.mjs"
           ],
           "commands": []
         },
