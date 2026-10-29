@@ -198,7 +198,9 @@ lane trying to use an already claimed source returns a clear error. Silence or
 ambiguous input never falls back to a mixture or an arbitrary channel.
 Before identification, a bounded in-memory pre-roll retains the start of speech;
 only the selected channel is written. Cancellation/timeout without selection
-produces no usable recording and no upload. The saved manifest snapshots the
+produces no usable recording and no upload. The panel acknowledges selection
+with a short tone; a failed selection also shows a notice and plays a short
+failure tone instead of silently returning to idle. The saved manifest snapshots the
 actual channel and device label, original button time (`requestedAt`), and
 selection time (`selectedAt`). Original fixed-channel configurations keep their
 existing behavior.
@@ -369,8 +371,12 @@ of saved recording manifests and uploads.
 
 On a verified new recording, the panel opens a nonmodal reminder above other
 windows and plays `<recording-root>/cues/started.mp3` locally. Prepare that cue
-before deployment; a missing cue uses the system Glass sound and emits a
-feedback error. Stop/failure clears the active reminder. The panel's close
+before deployment; a missing cue uses the Glass sound and emits a
+feedback error. All cues and short tones use the normal default audio output,
+not macOS's separate system-alert output, which may point at a conferencing
+virtual device. Playback logs include the selected output device UID; a
+successful playback call still requires an audible on-site check.
+Stop/failure clears the active reminder. The panel's close
 button hides its main window while feedback stays active; Quit still exits.
 For a desktop that must always receive keypad feedback, install the panel as
 an explicitly configured per-user login agent and verify it alongside the

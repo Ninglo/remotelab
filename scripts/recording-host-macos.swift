@@ -1,7 +1,22 @@
 import Foundation
 import AppKit
 import AVFoundation
+import CoreAudio
 import IOKit.hid
+
+func recordingOutputDeviceUID() -> String? {
+    var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    var device = AudioDeviceID(0), size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return nil }
+    address.mSelector = kAudioDevicePropertyDeviceUID
+    var uid: CFString?
+    size = UInt32(MemoryLayout<CFString?>.size)
+    let status = withUnsafeMutablePointer(to: &uid) {
+        AudioObjectGetPropertyData(device, &address, 0, nil, &size, $0)
+    }
+    guard status == noErr else { return nil }
+    return uid as String?
+}
 
 struct HostSettings {
     let mode: String
@@ -125,6 +140,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var lastMeter: [String: Any]?
     var announced = Set<String>()
     var cuePlayer: AVAudioPlayer?
+    var tonePlayer: AVAudioPlayer?
     var selectionNotified = Set<String>()
     var notice: NSPanel?
     var noticeText: NSTextField?
@@ -393,7 +409,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
                active["state"] as? String == "selecting",
                let id = active["recordingId"] as? String, !selectionNotified.contains(id) {
                 selectionNotified.insert(id)
-                NSSound(named: "Tink")?.play()
+                playFeedbackTone("Tink", laneID: lane.id)
                 emit(["feedback": "等待麦克风", "laneId": lane.id, "recordingId": id])
             }
             if !preview, state.tone == "recording",
@@ -405,6 +421,11 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let last = (lastSnapshot?["records"] as? [[String: Any]])?.filter { $0["laneId"] as? String == lane.id }.max { ($0["startedAt"] as? String ?? "") < ($1["startedAt"] as? String ?? "") }
                 let message = state.action != "start" ? state.title : last?["status"] as? String == "failed" ? "录音失败 · 请检查设备" : last?["interrupted"] as? Bool == true ? "录音中断 · 已保留采到的音频" : "录音已结束 · 原音已保存"
                 showNotice(message, laneID: lane.id, started: false)
+            } else if !preview, previousTone == "starting", state.tone == "warning", state.action == "start" {
+                let last = (lastSnapshot?["records"] as? [[String: Any]])?.filter { $0["laneId"] as? String == lane.id }.max { ($0["startedAt"] as? String ?? "") < ($1["startedAt"] as? String ?? "") }
+                if (last?["error"] as? String)?.hasPrefix("未能确认使用哪只麦") == true {
+                    showNotice("未识别到麦克风", laneID: lane.id, started: false)
+                }
             }
             lane.status.stringValue = state.title
             lane.button.title = lane.busy ? "处理中…" : state.action == "stop" ? "停止并保存" : state.action == "start" ? "开始录音" : "暂不可用"
@@ -484,6 +505,23 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    func feedbackPlayer(_ url: URL) throws -> AVAudioPlayer {
+        let player = try AVAudioPlayer(contentsOf: url)
+        // NSSound uses the separate system-alert route, which can point at a
+        // conferencing virtual device even while normal output uses speakers.
+        if let uid = recordingOutputDeviceUID() { player.currentDevice = uid }
+        player.prepareToPlay()
+        return player
+    }
+
+    func playFeedbackTone(_ name: String, laneID: String) {
+        do {
+            tonePlayer = try feedbackPlayer(URL(fileURLWithPath: "/System/Library/Sounds/\(name).aiff"))
+            guard tonePlayer?.play() == true else { throw NSError(domain: "RecordingFeedback", code: 2) }
+            emit(["feedbackTone": name, "laneId": laneID, "outputDevice": tonePlayer?.currentDevice ?? "default"])
+        } catch { emit(["feedbackAudioError": "提示音播放失败", "laneId": laneID]) }
+    }
+
     func showNotice(_ message: String, laneID: String, started: Bool) {
         if notice == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 110), styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -501,14 +539,14 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if started || message == "录音已结束 · 原音已保存" {
             let cue = settings.root.appendingPathComponent(started ? "cues/started.mp3" : "cues/stopped.mp3")
             do {
-                cuePlayer = try AVAudioPlayer(contentsOf: cue); cuePlayer?.prepareToPlay()
-                if cuePlayer?.play() == true { emit(["feedbackAudio": started ? "started" : "stopped", "laneId": laneID]) }
+                cuePlayer = try feedbackPlayer(cue)
+                if cuePlayer?.play() == true { emit(["feedbackAudio": started ? "started" : "stopped", "laneId": laneID, "outputDevice": cuePlayer?.currentDevice ?? "default"]) }
                 else { throw NSError(domain: "RecordingFeedback", code: 1) }
             } catch {
-                NSSound(named: started ? "Glass" : "Pop")?.play()
-                emit(["feedbackAudioError": started ? "开始语音不可用，已用系统提示音" : "结束语音不可用，已用系统提示音"])
+                playFeedbackTone(started ? "Glass" : "Pop", laneID: laneID)
+                emit(["feedbackAudioError": started ? "开始语音不可用，改用短提示音" : "结束语音不可用，改用短提示音"])
             }
-        } else { NSSound(named: "Pop")?.play() }
+        } else { playFeedbackTone("Pop", laneID: laneID) }
     }
 
     func renderMeters() {
