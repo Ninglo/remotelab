@@ -1,3 +1,4 @@
+import { readSessionCatalog } from '../lib/session-catalog.mjs';
 import { readRunState } from '../lib/run-state.mjs';
 import { businessStart, BUSINESS_OFFSET, DAY, injectionSources, buildAgentDashboard, readContextDocuments } from './monitoring-dashboard.mjs';
 import { projectResponseTiming, timingStats, summarizeResponseTiming } from './response-timing.mjs';
@@ -160,7 +161,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
   async function collect(days, dashboard) {
     await loadProjections();
     const started=now(), coverage={bytesRead:0,cacheHits:0,limitedFiles:0,readErrors:0,missingRuns:0,missingRequests:0,missingInjections:0};
-    const [usage, people, raw] = await Promise.all([getUsage({days,top:10000,...(dashboard ? { startMs: businessStart(started)-(days-1)*DAY, endMs: started, includeDailyTrend:true, dailyBoundaryOffsetMs:BUSINESS_OFFSET, dailyTimezoneOffsetMs:8*3600000, dailyTimezone:'Asia/Shanghai', includeTrendRuns:true, trendRunLimit:maxRuns } : {})}),getPeople(),readFile(sessionsFile,'utf8').catch(e=>{if(e.code==='ENOENT')return '[]';throw e;})]);
+    const [usage, people, raw] = await Promise.all([getUsage({days,top:10000,...(dashboard ? { startMs: businessStart(started)-(days-1)*DAY, endMs: started, includeDailyTrend:true, dailyBoundaryOffsetMs:BUSINESS_OFFSET, dailyTimezoneOffsetMs:8*3600000, dailyTimezone:'Asia/Shanghai', includeTrendRuns:true, trendRunLimit:maxRuns } : {})}),getPeople(),readSessionCatalog(sessionsFile)]);
     let contextExperiment = null;
     try {
       const experiment = await currentExperiment(join(configDir, 'feature-experiments'));
@@ -177,7 +178,7 @@ export function createSessionMonitoringReader({ configDir=CONFIG_DIR, runsDir=CH
     if(includeSamples) {
       try { experiments=(await readdir(join(configDir,'feature-experiments'),{withFileTypes:true})).filter(e=>e.isDirectory() && /^[\w.-]+$/.test(e.name)).map(e=>e.name).slice(0,20); } catch(e) { if(e.code!=='ENOENT')coverage.readErrors++; }
     }
-    const metadata=JSON.parse(raw), list=Array.isArray(metadata)?metadata:metadata.sessions||[];
+    const metadata=raw, list=Array.isArray(metadata)?metadata:metadata.sessions||[];
     const read = (file, project) => projected(file, project, coverage);
     const connectors = await monitoringConnectorSources(configDir, read, storageOverrides);
     const originFor = createMessageOriginLookup(connectors, read);

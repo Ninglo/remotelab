@@ -1,3 +1,4 @@
+import { readSessionCatalog } from '../lib/session-catalog.mjs';
 import { readFile, stat, statfs } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -155,7 +156,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
         previous: await getRecord(join(CONFIG_DIR, 'feishu-api-health.json')) || {}, now: now() }), null) : null,
       config.alertDelivery ? observe('alertDelivery', () => getRecord(join(CONFIG_DIR, 'monitoring-alerts.json')), null) : null,
       observe('inspectionRegistration', () => getRecord(join(CONFIG_DIR, 'automation-background.json')), null),
-      observe('recoveryDestinations', () => getRecord(join(CONFIG_DIR, 'chat-sessions.json')), []),
+      observe('recoveryDestinations', () => readSessionCatalog(join(CONFIG_DIR, 'chat-sessions.json')), []),
     ]);
     const runtimeHealth = config.runtimeHealth?.unit ? await observe('runtimeHealth', () => getRecord(join(CONFIG_DIR, 'runtime-health.json')), null) : null;
     const runtimeService = services.find(s => s.unit === config.runtimeHealth?.unit);

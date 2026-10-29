@@ -7,6 +7,14 @@ const home = await mkdtemp(join(tmpdir(), 'feishu-new-conversation-'));
 setIsolatedTestHome(home);
 process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://remote.example';
 try {
+  if (process.argv.includes('--indexed')) {
+    const { writeFile } = await import('node:fs/promises');
+    const { createSessionCatalog } = await import('../lib/session-catalog.mjs');
+    const file = join(home, '.config', 'remotelab', 'chat-sessions.json');
+    await mkdir(join(home, '.config', 'remotelab'), { recursive: true });
+    await writeFile(file, '[]');
+    await createSessionCatalog(file).migrate();
+  }
   const { createSession, getSession } = await import('../chat/session-manager.mjs');
   const { startFeishuPrivateConversation: start, filterPrivateConversationContext: filter } = await import('../connectors/feishu/private-conversations.mjs');
   const { extractLocalCommand, handleMessage } = await import('../scripts/feishu-connector.mjs');

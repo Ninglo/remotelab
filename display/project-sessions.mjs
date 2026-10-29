@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readSessionCatalog } from '../lib/session-catalog.mjs';
+import { stat } from 'node:fs/promises';
 import '../static/chat/session-state-model.js';
 
 const text = value => typeof value === 'string' ? value.trim() : '';
@@ -12,7 +13,7 @@ export function createProjectViewReader(filename) {
       const info = await stat(filename);
       const next = `${info.ino}:${info.size}:${info.mtimeMs}`;
       if (next === version) return views;
-      const records = JSON.parse(await readFile(filename, 'utf8'));
+      const records = await readSessionCatalog(filename);
       if (!Array.isArray(records)) throw new Error('Project views unavailable');
       const result = new Map(records.map(s => [s.id, s.personViews || {}]));
       views = result; version = next; return views;

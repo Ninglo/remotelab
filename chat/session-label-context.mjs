@@ -1,3 +1,4 @@
+import { readSessionCatalog } from '../lib/session-catalog.mjs';
 import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -761,7 +762,7 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
   const sessionId = sessionMeta?.id || '';
   const [contextHead, sessions, projectsMarkdown] = await Promise.all([
     sessionId ? getContextHead(sessionId) : null,
-    readJson(CHAT_SESSIONS_FILE, []),
+    readSessionCatalog(CHAT_SESSIONS_FILE),
     readOptionalText(PROJECTS_MD),
   ]);
 

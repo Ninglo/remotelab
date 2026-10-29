@@ -100,6 +100,8 @@
             "chat/router.mjs",
             "chat/router-session-main-routes.mjs",
             "chat/session-meta-store.mjs",
+            "lib/session-catalog.mjs",
+            "scripts/session-catalog.mjs",
             "docs/project-architecture.md",
             "chat/request-runtime.mjs",
             "chat/request-completion.mjs",

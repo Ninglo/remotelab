@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { join } from 'path';
+import { pruneSessionCatalog } from './chat/session-meta-store.mjs';
 import { startRuntimeHealth } from './chat/runtime-health.mjs';
 
 const http = await import('http');
@@ -64,6 +65,9 @@ await new Promise((resolve, reject) => {
   server.listen(CHAT_PORT, CHAT_BIND_HOST, resolve);
 });
 const stopRuntimeHealth = startRuntimeHealth();
+// Old immutable catalog bodies retain a full day for in-flight readers.
+const catalogCleanup = setInterval(() => { void pruneSessionCatalog().catch(error => console.error('[session-catalog]', error.message)); }, 3600_000);
+catalogCleanup.unref();
 for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
   await ensureDir(dir);
 }
@@ -99,6 +103,7 @@ const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
 
 async function shutdown() {
   stopRuntimeHealth();
+  clearInterval(catalogCleanup);
   if (!ready) return;
   ready = false;
   server.close();

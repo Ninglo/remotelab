@@ -2186,7 +2186,7 @@ export async function listSessionResources() {
   return Promise.all((await loadSessionsMeta()).map(sessionResourceFromMeta));
 }
 export async function getSessionResource(id) {
-  const meta = (await loadSessionsMeta()).find(entry => entry.id === id);
+  const meta = await findSessionMeta(id);
   return meta ? sessionResourceFromMeta(meta) : null;
 }
 
@@ -2356,7 +2356,10 @@ export async function createSession(folder, tool, name, extra = {}) {
         : JSON.stringify(refineConversation(requestedConversation, meta.conversation)) === JSON.stringify(meta.conversation)))) : -1;
     let displaced = null;
     const saveSessionsMeta = async current => {
-      if (displaced) displaced.conversation = null; // Preserve a tombstone against legacy index adoption.
+      if (displaced) {
+        const index = current.findIndex(meta => meta.id === displaced.id);
+        if (index >= 0) current[index] = { ...current[index], conversation: null };
+      } // Preserve a tombstone against legacy index adoption.
       await persist(current);
     };
     if (requestedConversation) {

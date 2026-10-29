@@ -13,6 +13,10 @@ await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryP
   { id: 'person_b', name: '乙', identities: [{ id: 'identity_b', kind: 'web', subjectId: 'b' }] },
 ] }));
 await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(['a', 'b', 'untouched'].map(id => ({ id, name: id, folder: home }))));
+if (process.argv.includes('--indexed')) {
+  const { createSessionCatalog } = await import('../lib/session-catalog.mjs');
+  await createSessionCatalog(join(config, 'chat-sessions.json')).migrate();
+}
 try {
   const { loadAuthDocument } = await import('../lib/auth-config.mjs');
   await loadAuthDocument({ persistMigration: false });
@@ -64,7 +68,7 @@ try {
   await mutateSessionMeta('b', session => { session.archived = true; return true; });
   await assert.rejects(m.decideWorkSuggestion({ sessionId: 'a', suggestionId: pending.suggestion.id, action: 'publish', actor: actorA, requestId: 'stale' }), /archived/);
   await m.decideWorkSuggestion({ sessionId: 'a', suggestionId: pending.suggestion.id, action: 'reject', actor: actorA, requestId: 'reject' });
-  const stored = JSON.parse(await readFile(join(config, 'chat-sessions.json'), 'utf8'));
+  const stored = await (await import('../lib/session-catalog.mjs')).readSessionCatalog(join(config, 'chat-sessions.json'));
   assert.equal(stored.find(session => session.id === 'a').workAwareness.suggestions[0].state, 'approved');
   const newRoute = await m.createWorkSuggestion({ sessionId: 'a', actor: actorA, requestId: 'new-route', sourceWorkId: a.work.id,
     purpose: 'routing', content: '新开 Session 的建议', impact: '改执行目的地，需核验', evidenceRefs: [a.eventSeq],

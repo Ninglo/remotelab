@@ -18,7 +18,8 @@ export async function findSessionConversation(value) {
 export async function updateSessionConversation(sessionId, value, { receipt } = {}) {
   const requested = requireConversation(value);
   const session = await withSessionsMetaMutation(async (metas, save) => {
-    const current = metas.find(meta => meta.id === sessionId);
+    const index = metas.findIndex(meta => meta.id === sessionId);
+    const current = index < 0 ? null : { ...metas[index] };
     if (!current) throw new Error('Session not found');
     let conversation = requested;
     if (receipt) {
@@ -36,6 +37,7 @@ export async function updateSessionConversation(sessionId, value, { receipt } = 
     if (conversation) current.conversation = conversation;
     else current.conversation = null; // Tombstone prevents legacy indexes from reattaching it.
     current.updatedAt = new Date().toISOString();
+    metas[index] = current;
     await save(metas);
     return current;
   });
