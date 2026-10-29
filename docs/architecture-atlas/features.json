@@ -1072,6 +1072,7 @@
           ],
           "commands": [
             "usage-summary",
+            "response-time",
             "feature-observation",
             "knowledge"
           ]
