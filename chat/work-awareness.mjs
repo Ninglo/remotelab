@@ -36,14 +36,19 @@ export async function projectAssociations(session, sourceContext) {
 async function mutate(sessionId, action, change) {
   let result;
   await withSessionsMetaMutation(async (stored, save) => {
-    // Mutations here edit workAwareness only. Keep those drafts independent,
-    // without duplicating every unrelated Session's prompts/source context.
-    const sessions = stored.map(session => ({ ...session,
-      ...(session.workAwareness ? { workAwareness: clone(session.workAwareness) } : {}) }));
-    const session = sessions.find(entry => entry.id === sessionId);
+    // Search unchanged records directly; clone only records this mutation edits.
+    const sessions = stored.slice(), drafts = new Map();
+    const editable = id => {
+      if (drafts.has(id)) return drafts.get(id);
+      const index = sessions.findIndex(entry => entry.id === id);
+      if (index < 0) return null;
+      const draft = { ...sessions[index], workAwareness: clone(state(sessions[index])) };
+      sessions[index] = draft; drafts.set(id, draft); return draft;
+    };
+    const session = editable(sessionId);
     if (!session) fail('Session not found', 404);
     session.workAwareness = state(session);
-    result = await change(session.workAwareness, sessions, session);
+    result = await change(session.workAwareness, sessions, session, editable);
     if (result?.duplicate) return;
     session.workAwareness.revision += 1;
     const changed = result?.work || result?.intent;
@@ -52,7 +57,7 @@ async function mutate(sessionId, action, change) {
     for (const other of sessions) if (other.id !== sessionId
       && other.workAwareness?.relatedReview?.items.some(item => item.sessionId === sessionId)) nearby.push({ sessionId: other.id });
     for (const otherId of new Set(nearby.map(entry => entry.sessionId))) {
-      const other = sessions.find(entry => entry.id === otherId);
+      const other = editable(otherId);
       other.workAwareness = state(other);
       other.workAwareness.revision += 1;
     }
@@ -154,7 +159,7 @@ export async function startWork({ sessionId, requestId, runId, actor, goal, obje
 }
 
 export async function updateWork({ sessionId, workId, expectedVersion, actor, status, result, evidenceRefs, artifacts = [], methods = [], suggestionId }) {
-  return mutate(sessionId, 'update', (data, sessions) => {
+  return mutate(sessionId, 'update', (data, sessions, _session, editable) => {
     const work = data.works.find(entry => entry.id === workId);
     if (!work) fail('Work not found', 404);
     if (work.version !== expectedVersion) fail('Work changed; read its current version before updating', 409);
@@ -172,7 +177,7 @@ export async function updateWork({ sessionId, workId, expectedVersion, actor, st
       artifacts: artifacts.slice(0, 8).map(value => clean(value, 500)), methods: methods.slice(0, 8).map(value => clean(value, 500)),
       actor, acceptance: 'reported-with-source-evidence', updatedAt: work.updatedAt });
     if (adopted) {
-      const original = state(sessions.find(session => session.id === adopted.sourceSessionId)).suggestions.find(suggestion => suggestion.id === suggestionId);
+      const original = state(editable(adopted.sourceSessionId)).suggestions.find(suggestion => suggestion.id === suggestionId);
       original.execution = { state: 'reported-with-source-evidence', workId, sessionId, evidenceRefs, at: now() };
     }
     return { work };

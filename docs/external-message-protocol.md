@@ -622,7 +622,18 @@ and:
 { "type": "sessions_invalidated" }
 ```
 
-When you receive one, re-fetch state via HTTP.
+When you receive one, re-fetch state via HTTP. Coalesce hints for the same
+Session before fetching, allow one read per Session in flight, and retain hints
+received during that read for a subsequent refresh. Use `?view=summary` when
+only status and conversation metadata are needed. The Feishu group-card worker
+uses its existing 500 ms card debounce for these reads as well as publication;
+different Sessions can refresh concurrently.
+
+The controller shares one catalog read/normalization among concurrent readers
+of the same atomic `chat-sessions.json` file version. A later file version or
+explicit save cannot be overwritten by an earlier read finishing late. Session
+list change detection retains content digests instead of full serialized
+metadata, without changing cross-process update detection or history caches.
 
 This matches the current architecture rule:
 

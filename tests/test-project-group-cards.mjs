@@ -57,9 +57,16 @@ try {
   const runtime={config:{projectCards:true,sourceRouteId:'bot',chatBaseUrl:`http://127.0.0.1:${wss.address().port}`,groups:{chat:{responseMode:'mention_only'}}}};
   const record={key:'k',source:{chatId:'chat'},sessionId:'main'};
   const connected=once(wss,'connection');const initial=signal();
-  let authAvailable=true;
+  let authAvailable=true, detailReads=0, reading=0, peakReading=0, holdRead, readStarted;
   worker=await startProjectGroupCards(runtime,{
-    request:async path=>({response:{ok:true},json:path==='/api/sessions'?{sessions:[topic,other]}:{session:topic}}),
+    request:async path=>{
+      if(path==='/api/sessions')return {response:{ok:true},json:{sessions:[topic,other]}};
+      assert.match(path,/\?view=summary$/);
+      detailReads++;reading++;peakReading=Math.max(peakReading,reading);
+      const snapshot=topic;
+      if(holdRead){const wait=holdRead;holdRead=null;readStarted?.();await wait;}
+      reading--;return {response:{ok:true},json:{session:snapshot}};
+    },
     ensureAuthCookie:async()=>{if(!authAvailable)throw Error('offline test');return 'test';},onboard:async(_s,opts)=>{assert.equal(opts.projectCard,true);assert.notEqual(_s.chatId,'overview');},
     participation:()=>({state:async summary=>({...record,source:{chatId:summary.chatId}}),publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);assert.equal(opts.background,true);published.push(_record.source.chatId);if(_record.source.chatId==='overview')overviewResolve();seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));if(_record.source.chatId===signalChat)signalResolve?.();}}),
   });
@@ -68,6 +75,24 @@ try {
   topic={...topic,activity:{run:{state:'idle'}},workflowState:'done'};
   const changed=signal();socket.send(JSON.stringify({type:'session_invalidated',sessionId:topic.id}));await changed;
   assert.equal(seen.at(-1)[0].state,'已完成');
+  // A burst shares the existing debounce, and hints arriving during a read
+  // trigger one later read instead of racing or losing the final state.
+  const beforeBurst=detailReads;
+  let releaseRead;
+  holdRead=new Promise(resolve=>{releaseRead=resolve;});
+  const startedRead=new Promise(resolve=>{readStarted=resolve;});
+  const hint=()=>socket.send(JSON.stringify({type:'session_invalidated',sessionId:topic.id}));
+  for(let i=0;i<100;i++)hint();
+  await startedRead;
+  assert.equal(detailReads,beforeBurst+1,'100 queued hints require one summary read');
+  topic={...topic,activity:{run:{state:'running'}},workflowState:'active'};
+  for(let i=0;i<100;i++)hint();
+  // WebSocket ping follows these frames, proving they arrived before release.
+  const pong=once(socket,'pong');socket.ping('received');await pong;
+  releaseRead();
+  while(seen.at(-1)?.[0]?.state!=='进行中')await signal();
+  assert.equal(detailReads,beforeBurst+2);
+  assert.equal(peakReading,1,'same Session never has overlapping reads');
   await writeFile(GROUP_ROUTING_PILOT_FILE, JSON.stringify({version:2,enabled:true,personalOptIn:true,publicRoster:true,groups:[{sourceRouteId:'bot',chatId:'chat',tenantKey:'tenant'}]}));
   const rosterChanged=signal();await writeFile(AUTH_FILE, JSON.stringify({changed:true}));await rosterChanged;
   config.readingPolicy={autoDiscover:true,defaultLevel:'overview',sourceRouteId:'bot',tenantKey:'tenant'};
@@ -75,13 +100,13 @@ try {
   await writeFile(PROJECT_MEMORY_RUNTIME_FILE,JSON.stringify(config));
   await Promise.race([overviewUpdated,new Promise((_,reject)=>setTimeout(()=>reject(Error('Reading-only card did not refresh')),5000).unref())]);
   assert.ok(published.includes('overview'));
-  const disconnected=signal();authAvailable=false;socket.close();await disconnected;
-  assert.equal(runtime.projectCardsConnected,false);
-  console.log('Project group cards: scoped live invalidations, disconnect, completion distinction, unchanged response policy, and fresh bounded brief pointers passed');
-} finally {worker?.stop();if(wss){for(const s of wss.clients)s.terminate();await new Promise(resolve=>wss.close(resolve));}await rm(home,{recursive:true,force:true});}
   const knowledgeChanged = signal('knowledge-only');
   const knowledgeWrites = published.filter(id => id === 'knowledge-only').length;
   await writeFile(join(KNOWLEDGE_ROOT,'config.json'),JSON.stringify({...knowledge,enabled:false,groups:[],personIds:['person_a']}));
   await knowledgeChanged;
   assert.ok(published.filter(id => id === 'knowledge-only').length > knowledgeWrites,
     'removing group scope refreshes its original card even without a project registration');
+  const disconnected=signal();authAvailable=false;socket.close();await disconnected;
+  assert.equal(runtime.projectCardsConnected,false);
+  console.log('Project group cards: scoped live invalidations, disconnect, completion distinction, unchanged response policy, and fresh bounded brief pointers passed');
+} finally {await worker?.stop();if(wss){for(const s of wss.clients)s.terminate();await new Promise(resolve=>wss.close(resolve));}await rm(home,{recursive:true,force:true});}

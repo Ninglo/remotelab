@@ -1,4 +1,5 @@
 import { dirname } from 'path';
+import { createHash } from 'node:crypto';
 import { CHAT_SESSIONS_FILE } from '../lib/config.mjs';
 import {
   createSerialTaskQueue,
@@ -30,6 +31,7 @@ import {
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheFileVersion = null;
+let sessionsMetaLoad = null;
 let sessionVersionIndex = null;
 let sessionVersionIndexFileVersion = null;
 const runSessionsMetaMutation = createSerialTaskQueue();
@@ -322,6 +324,7 @@ export async function loadSessionsMeta() {
   if (!stats) {
     sessionsMetaCache = [];
     sessionsMetaCacheFileVersion = null;
+    sessionsMetaLoad = null;
     return sessionsMetaCache;
   }
 
@@ -330,12 +333,24 @@ export async function loadSessionsMeta() {
     return sessionsMetaCache;
   }
 
-  const parsed = await readJson(CHAT_SESSIONS_FILE, []);
-  const normalized = normalizeStoredSessionsMeta(parsed);
-  sessionsMetaCache = normalized.list;
-  // Reads normalize the projection only. The next explicit mutation persists it.
-  sessionsMetaCacheFileVersion = fileVersion;
-  return sessionsMetaCache;
+  // All callers observing the same atomic file version share its read/parse.
+  // A burst of invalidations must not allocate one full catalog per request.
+  if (sessionsMetaLoad?.version === fileVersion) return sessionsMetaLoad.promise;
+  const previousVersion = sessionsMetaCacheFileVersion;
+  const loading = { version: fileVersion };
+  sessionsMetaLoad = loading;
+  loading.promise = (async () => {
+    const parsed = await readJson(CHAT_SESSIONS_FILE, []);
+    const normalized = normalizeStoredSessionsMeta(parsed);
+    // A newer read or explicit save may finish while this read is in flight.
+    // Return this snapshot to its callers without replacing the newer cache.
+    if (sessionsMetaLoad === loading && sessionsMetaCacheFileVersion === previousVersion) {
+      sessionsMetaCache = normalized.list;
+      sessionsMetaCacheFileVersion = fileVersion;
+    }
+    return normalized.list;
+  })().finally(() => { if (sessionsMetaLoad === loading) sessionsMetaLoad = null; });
+  return loading.promise;
 }
 
 export function findSessionMetaCached(sessionId) {
@@ -347,8 +362,12 @@ export function findSessionMetaCached(sessionId) {
 // Session. Serialize metadata only when its durable file actually changes.
 export async function loadSessionMetaVersionIndex() {
   const metas = await loadSessionsMeta();
-  if (sessionVersionIndex && sessionVersionIndexFileVersion === sessionsMetaCacheFileVersion) return sessionVersionIndex;
-  sessionVersionIndex = new Map(metas.map(meta => [meta.id, JSON.stringify(meta)]));
+  const current = metas === sessionsMetaCache;
+  if (current && sessionVersionIndex && sessionVersionIndexFileVersion === sessionsMetaCacheFileVersion) return sessionVersionIndex;
+  const index = new Map(metas.map(meta => [meta.id,
+    createHash('sha256').update(JSON.stringify(meta)).digest('hex')]));
+  if (!current) return index;
+  sessionVersionIndex = index;
   sessionVersionIndexFileVersion = sessionsMetaCacheFileVersion;
   return sessionVersionIndex;
 }

@@ -45,7 +45,7 @@ export function projectTopicRows(sessions, chatId, route) {
 export async function startProjectGroupCards(runtime, { request, ensureAuthCookie, onboard, participation }) {
   if (!runtime.config.projectCards) return { stop() {} };
   const sessions = new Map();
-  const reads = new Map();
+  const reads = new Map(), pendingReads = new Set();
   runtime.projectCardSessions = sessions;
   const pending = new Set();
   const active = new Set();
@@ -97,7 +97,32 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   function enqueue(chatId) {
     if (!chatId || stopped) return;
     pending.add(chatId);
-    if (!timer) timer = setTimeout(() => { timer = null; void track(drain()); }, 500);
+    schedule();
+  }
+  function schedule() {
+    if (stopped || timer) return;
+    // Apply the existing card debounce before HTTP reads as well as writes.
+    timer = setTimeout(() => {
+      timer = null;
+      for (const sessionId of pendingReads) {
+        if (reads.has(sessionId)) continue;
+        pendingReads.delete(sessionId);
+        const task = json(`/api/sessions/${encodeURIComponent(sessionId)}?view=summary`).then(({session}) => {
+          if (stopped) return;
+          const old = sessions.get(sessionId);
+          if (session) sessions.set(sessionId, session); else sessions.delete(sessionId);
+          for (const chatId of [old?.conversation?.target?.chatId, session?.conversation?.target?.chatId]) {
+            if (chatId) pending.add(chatId);
+          }
+          void track(drain());
+        }).catch(warn).finally(() => {
+          reads.delete(sessionId);
+          if (pendingReads.has(sessionId)) schedule();
+        });
+        reads.set(sessionId, task); track(task);
+      }
+      void track(drain());
+    }, 500);
   }
   function observe(file) {
     if (stopped || observers.has(file)) return;
@@ -111,6 +136,13 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   }
   async function reloadSources() {
     if (stopped) return;
+    const knowledge = await knowledgeConfig();
+    for (const group of knowledge?.groups || []) {
+      if (group.sourceRouteId === runtime.config.sourceRouteId) knowledgeGroups.set(group.chatId, group);
+    }
+    // Retain addresses already displayed so disabling/removing a scope also
+    // clears that experiment from its existing card.
+    for (const group of knowledgeGroups.values()) enqueue(group.chatId);
     for (const group of await routingGroups()) enqueue(group.chatId);
     const { config } = await loadProjectMemoryRuntime();
     for (const group of config.groups.filter(g => g.sourceRouteId === runtime.config.sourceRouteId && (config.readingPolicy || g.projectIds.length === 1))) {
@@ -136,13 +168,6 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   async function connect() {
     if (stopped) return;
     try {
-    const knowledge = await knowledgeConfig();
-    for (const group of knowledge?.groups || []) {
-      if (group.sourceRouteId === runtime.config.sourceRouteId) knowledgeGroups.set(group.chatId, group);
-    }
-    // Retain addresses already displayed so disabling/removing a scope also
-    // clears that experiment from its existing card.
-    for (const group of knowledgeGroups.values()) enqueue(group.chatId);
       const cookie = await ensureAuthCookie();
       if (stopped) return;
       socket = new WebSocket(runtime.config.chatBaseUrl.replace(/^http/, 'ws') + '/ws', { headers: { Cookie: cookie } });
@@ -150,14 +175,7 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
       socket.on('message', raw => {
         let m; try { m = JSON.parse(raw); } catch { return; }
         if (m.type !== 'session_invalidated' || !m.sessionId) return;
-        const version = (reads.get(m.sessionId) || 0) + 1; reads.set(m.sessionId, version);
-        // One current read per invalidation; keep card writes coalesced by chat.
-        void json(`/api/sessions/${encodeURIComponent(m.sessionId)}`).then(({session}) => {
-          if (stopped || reads.get(m.sessionId) !== version) return;
-          const old = sessions.get(m.sessionId);
-          if (session) sessions.set(m.sessionId, session); else sessions.delete(m.sessionId);
-          enqueue(old?.conversation?.target?.chatId); enqueue(session?.conversation?.target?.chatId);
-        }).catch(warn);
+        pendingReads.add(m.sessionId); schedule();
       });
       socket.on('error', warn);
       socket.on('close', () => {
@@ -175,10 +193,10 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   observe(PROJECT_MEMORY_RUNTIME_FILE);
   observe(AUTH_FILE);
   observe(GROUP_ROUTING_PILOT_FILE);
+  observe(join(KNOWLEDGE_ROOT, 'config.json'));
   await connect();
   return { async stop() { stopped = true; clearTimeout(timer); clearTimeout(reconnect); socket?.close();
     for (const w of observers.values()) w.close();
     await Promise.allSettled([...active]);
   } };
 }
-  observe(join(KNOWLEDGE_ROOT, 'config.json'));

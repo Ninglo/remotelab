@@ -12,7 +12,7 @@ await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryP
   { id: 'person_a', name: '甲', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
   { id: 'person_b', name: '乙', identities: [{ id: 'identity_b', kind: 'web', subjectId: 'b' }] },
 ] }));
-await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(['a', 'b'].map(id => ({ id, name: id, folder: home }))));
+await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(['a', 'b', 'untouched'].map(id => ({ id, name: id, folder: home }))));
 try {
   const { loadAuthDocument } = await import('../lib/auth-config.mjs');
   await loadAuthDocument({ persistMigration: false });
@@ -26,11 +26,14 @@ try {
   assert.deepEqual(await m.queryRelatedWork({ sessionId: 'a', query: goal }), []);
   assert.deepEqual(await m.queryRelatedWork({ sessionId: 'b', query: goal }), []);
   const start = performance.now();
+  const originalA = await findSessionMeta('a'), untouched = await findSessionMeta('untouched');
   const [a, b] = await Promise.all([
     m.startWork({ sessionId: 'a', requestId: 'a1', actor: actorA, goal, object: 'startup.md', projectId: 'example' }),
     m.startWork({ sessionId: 'b', requestId: 'b1', actor: actorB, goal, object: 'startup.md', projectId: 'example' }),
   ]);
   assert.equal(a.work.status, 'active'); assert.equal(b.work.status, 'active');
+  assert.equal(originalA.workAwareness, undefined, 'work mutations leave prior snapshots unchanged');
+  assert.equal(await findSessionMeta('untouched'), untouched, 'unrelated Session records are not copied on work updates');
   assert.equal(a.work.projects[0].status, 'candidate');
   assert.equal((await m.queryRelatedWork({ sessionId: 'a', query: goal }))[0].sessionId, 'b');
   assert.equal((await m.queryRelatedWork({ sessionId: 'b', query: goal }))[0].sessionId, 'a');

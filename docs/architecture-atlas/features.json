@@ -99,6 +99,7 @@
             "lib/connector-turn-flow.mjs",
             "chat/router.mjs",
             "chat/router-session-main-routes.mjs",
+            "chat/session-meta-store.mjs",
             "docs/project-architecture.md",
             "chat/request-runtime.mjs",
             "chat/request-completion.mjs",
