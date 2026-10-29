@@ -545,6 +545,7 @@
             "lib/group-routing-pilot.mjs",
             "chat/session-observations.mjs",
             "connectors/feishu/index.mjs",
+            "connectors/feishu/math-renderer.mjs",
             "connectors/feishu/reply-attachments.mjs",
             "connectors/feishu/group-settings.mjs",
             "connectors/feishu/participation-state.mjs",

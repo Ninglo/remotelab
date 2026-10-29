@@ -1144,10 +1144,16 @@ tables. Nested tables remain Markdown rather than becoming native table componen
 
 Feishu replies support standard LaTeX delimiters: `\(...\)` or `$...$` for
 inline math, and `\[...\]` or `$$...$$` for display math. The connector
-validates formulas with MathJax. Compact inline expressions are emitted as
-Unicode inside one Markdown element; complex inline expressions and display
-formulas are rendered to PNG, uploaded through Feishu's message-image API, and
-inserted into the rich-text reply. Identical formulas reuse an in-process
+validates formulas with MathJax. Compact expressions are emitted as Unicode:
+inline formulas stay inside their Markdown element, and short display formulas
+retain a separate text paragraph. Complex formulas are rendered to PNG, uploaded
+through Feishu's message-image API, and inserted into the rich-text reply. Their
+2x image uses a minimum 640-pixel-wide strip with small padding, rather than a
+tight glyph crop: current post images have no display-size field and clients can
+otherwise enlarge a tiny fraction to the full message width. The complete image
+is bounded to 1600 × 1200 pixels without cropping the formula. This also keeps
+formula images compact when the post is converted to a table card.
+Identical formulas reuse an in-process
 content-hash cache. If parsing, rendering, or upload fails, the complete LaTeX
 source is preserved as readable text instead of sending a partially converted
 formula.

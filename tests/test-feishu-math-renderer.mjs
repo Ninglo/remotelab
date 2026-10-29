@@ -18,6 +18,13 @@ assert.match(simpleDocument.blocks[0].segments[1].text, /∣/);
 assert.match(simpleDocument.blocks[0].segments[1].text, /∝/);
 assert.doesNotMatch(simpleDocument.blocks[0].segments[1].text, /\\[a-zA-Z]+/);
 
+const shortDisplay = await buildFeishuMathDocument('$$x^2 + y^2 = 1$$', {
+  resolveFormulaImage: () => { throw new Error('short formulas must not upload images'); },
+});
+assert.deepEqual(shortDisplay.blocks, [{
+  type: 'formula_text', source: 'x^2 + y^2 = 1', text: 'x² + y² = 1',
+}]);
+
 const displaySource = String.raw`\begin{aligned}
 \max_Z\quad &q_t(Z\mid query)\\
 &\propto p(Z)\cdot \text{未来问题}
@@ -117,5 +124,12 @@ assert.deepEqual(
   [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
 );
 assert.ok(png.length > 1000, 'rendered formula PNG should contain real image data');
+
+const fractionPng = await renderLatexToPng(String.raw`\frac{a}{b}`, { display: true });
+assert.equal(fractionPng.readUInt32BE(16), 640, 'short formula images need a wide canvas to prevent client magnification');
+assert.ok(fractionPng.readUInt32BE(20) <= 100, 'a single fraction must remain a compact strip');
+const widePng = await renderLatexToPng(Array(400).fill('x').join('+'), { display: true });
+assert.ok(widePng.readUInt32BE(16) <= 1600, 'long formulas must still respect the image width limit');
+assert.ok(widePng.readUInt32BE(20) <= 1200);
 
 console.log('ok - Feishu formulas use standard parsing, image rendering, cache reuse, and safe fallback');

@@ -24,7 +24,7 @@ const rich = await convert('| 姓名 | 内容 |\n|---|---|\n| @_user_1 | `a\\|b`
 assert.equal(rich.body.elements[0].rows[0].column_0, '<at id="ou_test">负责人</at>');
 assert.equal(rich.body.elements[0].rows[0].column_1, '`a|b` [链接](https://example.com)');
 
-const mixed = await convert(`${table}\n\n\`\`\`js\nconst literal = '<at user_id="ou_test">name</at>';\n\`\`\`\n\n$$x^2$$\n\n结束。`, [], {
+const mixed = await convert(`${table}\n\n\`\`\`js\nconst literal = '<at user_id="ou_test">name</at>';\n\`\`\`\n\n$$\\frac{a}{b}$$\n\n结束。`, [], {
   resolveFormulaImage: async () => 'img_formula',
 });
 assert.deepEqual(mixed.body.elements.map(item => item.tag), ['table', 'markdown', 'img', 'markdown']);

@@ -1121,6 +1121,10 @@ export async function buildFeishuPostContent(text, mentions, options = {}) {
       pushFeishuDocumentLine(content, block, mentionEntries);
       continue;
     }
+    if (block.type === 'formula_text') {
+      content.push(buildFeishuTextRow(block.text));
+      continue;
+    }
     if (block.type === 'formula_image' && block.imageKey) {
       content.push([{ tag: 'img', image_key: block.imageKey }]);
       continue;

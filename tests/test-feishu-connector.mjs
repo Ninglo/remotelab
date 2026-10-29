@@ -744,10 +744,23 @@ await sendFeishuText(
 );
 assert.equal(feishuImagePayload?.data?.image_type, 'message');
 assert.ok(Buffer.isBuffer(feishuImagePayload?.data?.image));
+assert.equal(feishuImagePayload.data.image.readUInt32BE(16), 640,
+  'the live send path uploads a wide formula strip, not a magnified glyph crop');
 assert.deepEqual(
   JSON.parse(feishuReplyPayload?.data?.content || '{}').zh_cn.content,
   [[{ tag: 'img', image_key: 'img_formula_uploaded_1' }]],
 );
+
+feishuImagePayload = null;
+await sendFeishuText(
+  fakeSendRuntime,
+  { chatType: 'group', chatId: 'chat_regular_1', messageId: 'msg_short_formula' },
+  '$$x^2$$',
+  'uuid-short-formula',
+);
+assert.equal(feishuImagePayload, null, 'short display formulas do not upload an image');
+assert.deepEqual(JSON.parse(feishuReplyPayload.data.content).zh_cn.content,
+  [[{ tag: 'text', text: 'x²' }]]);
 
 assert.equal(resolveFeishuOutboundFileType({ originalName: 'report.xlsx' }), 'xls');
 assert.equal(resolveFeishuOutboundFileType({ mimeType: 'application/pdf' }), 'pdf');

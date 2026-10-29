@@ -2110,3 +2110,13 @@ Fixed review and knowledge instructions embedded each request ID, invalidating r
 ## 2026-10-29 — Delivery review belongs to complex execution topics
 
 The user narrowed optional delivery self-review to complex work already executing in a task topic. Group mainline discussions must not run this workflow, even when a personal or group toggle is enabled. Topic existence, tool calls, long text and elapsed time do not establish complexity; the current Harness makes the contextual decision without another classifier, card or routing step. Mainline scope now suppresses review instructions, observation admission, receipt commands and review footers. Ordinary fact checks, tests and operation-result verification remain part of execution.
+
+## 2026-10-29 — Keep formulas at reading size in Feishu replies
+
+A user reported that formulas repeatedly became oversized images in chat.
+Short display expressions now use a separate Unicode text paragraph, matching
+the existing simple inline treatment. Complex formulas retain mathematical
+layout but render on a wide, short 2x canvas: the current post image tag has no
+display-size field, and a tight crop can be enlarged to the message width.
+Parser, renderer, rich-text, card and connector tests cover this change; a
+local preview checks that the full fraction and aligned equations survive.

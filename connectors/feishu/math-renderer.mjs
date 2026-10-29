@@ -4,7 +4,11 @@ const MAX_LATEX_SOURCE_LENGTH = 12_000;
 const MAX_SVG_BYTES = 4 * 1024 * 1024;
 const MAX_PNG_BYTES = 9 * 1024 * 1024;
 const MAX_FORMULA_CACHE_ENTRIES = 256;
-const FORMULA_RENDER_VERSION = 'mathjax4-png-v1';
+const FORMULA_RENDER_VERSION = 'mathjax4-png-strip-v2';
+const MIN_FORMULA_IMAGE_WIDTH = 640;
+const MAX_FORMULA_IMAGE_WIDTH = 1600;
+const MAX_FORMULA_IMAGE_HEIGHT = 1200;
+const FORMULA_IMAGE_PADDING = 12;
 const DISPLAY_ENVIRONMENTS = new Set([
   'Bmatrix',
   'Vmatrix',
@@ -303,17 +307,26 @@ export async function renderLatexToPng(value, { display = false } = {}) {
       defaultFontFamily: 'sans-serif',
     },
   });
-  const zoom = Math.max(0.1, Math.min(
+  const zoom = Math.min(
     2,
-    1600 / Math.max(1, measurement.width),
-    1200 / Math.max(1, measurement.height),
-  ));
-  const renderer = new Resvg(svg, {
+    (MAX_FORMULA_IMAGE_WIDTH - 2 * FORMULA_IMAGE_PADDING) / Math.max(1, measurement.width),
+    (MAX_FORMULA_IMAGE_HEIGHT - 2 * FORMULA_IMAGE_PADDING) / Math.max(1, measurement.height),
+  );
+  const width = Math.ceil(measurement.width * zoom);
+  const height = Math.ceil(measurement.height * zoom);
+  // Post images have no display-size attribute: clients fit them to the message
+  // width. A tightly cropped fraction can consequently become a giant poster.
+  // Keep a 2x text-sized formula on a wide, short canvas so both post and card
+  // image fitting preserve a readable size instead of magnifying the glyphs.
+  const formula = svg.replace(/^<svg\b[^>]*>/, opening => opening
+    .replace(/\bwidth="[^"]*"/, `width="${width}"`)
+    .replace(/\bheight="[^"]*"/, `height="${height}"`)
+    .replace('<svg', `<svg x="${FORMULA_IMAGE_PADDING}" y="${FORMULA_IMAGE_PADDING}"`));
+  const canvasWidth = Math.max(MIN_FORMULA_IMAGE_WIDTH, width + 2 * FORMULA_IMAGE_PADDING);
+  const canvasHeight = height + 2 * FORMULA_IMAGE_PADDING;
+  const canvas = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}">${formula}</svg>`;
+  const renderer = new Resvg(canvas, {
     background: '#ffffff',
-    fitTo: {
-      mode: 'zoom',
-      value: zoom,
-    },
     font: {
       loadSystemFonts: true,
       defaultFontFamily: 'sans-serif',
@@ -679,6 +692,13 @@ async function buildFormulaBlock(source, resolveFormulaImage, onFormulaError) {
     display: true,
   };
   try {
+    if (isSimpleInlineLatex(normalized)) {
+      await renderLatexToSvg(normalized, { display: true });
+      const text = renderSimpleLatexText(normalized);
+      if (text && !/\\[a-zA-Z]+/.test(text)) {
+        return { type: 'formula_text', source: normalized, text };
+      }
+    }
     if (resolveFormulaImage) {
       const imageKey = await resolveFormulaImage(formula);
       if (imageKey) {

@@ -36,13 +36,19 @@ assert.deepEqual(await rows(`前文\n\n${table}\n\n\`\`\`ts\n  const who = "@_us
   [{ tag: 'md', text: '后文' }],
 ], 'native code blocks remain separate without splitting adjacent tables');
 
-assert.deepEqual(await rows(`${table}\n\n$$x^2$$\n\n完成。`, [], {
+assert.deepEqual(await rows(`${table}\n\n$$\\frac{a}{b}$$\n\n完成。`, [], {
   resolveFormulaImage: async () => 'img_formula_test',
 }), [
   [{ tag: 'md', text: table }],
   [{ tag: 'img', image_key: 'img_formula_test' }],
   [{ tag: 'md', text: '完成。' }],
 ], 'display formula images keep their own paragraph between Markdown blocks');
+
+assert.deepEqual(await rows('前文\n\n$$x^2$$\n\n后文'), [
+  [{ tag: 'md', text: '前文' }],
+  [{ tag: 'text', text: 'x²' }],
+  [{ tag: 'md', text: '后文' }],
+], 'short display formulas stay text-sized in a separate paragraph');
 
 assert.deepEqual(await rows(`日报摘要\n\n![监管快照](img_v3_snapshot-key)\n\n${table}`), [
   [{ tag: 'md', text: '日报摘要' }],
