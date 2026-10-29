@@ -70,4 +70,15 @@ await external.read();
 versions = new Map([['external', 'v2']]);
 assert.equal(JSON.parse((await external.read()).body).sessions[0].name, 'changed by CLI');
 assert.equal(externalReads, 1, 'external metadata edits refresh just their changed IDs without a WS hint');
-console.log('test-session-list-cache: ok (2100 records; unchanged cold records are not reread)');
+
+let idleLoads = 0, idleClock = 0;
+const idleViews = createSessionListCache({ now: () => idleClock, maxAgeMs: 3_600_000,
+  loadAll: async person => { idleLoads++; return [{ id: 'i', name: person }]; }, loadOne: async () => null });
+await idleViews.read({ personId: 'a' }); await idleViews.read({ personId: 'b' });
+idleClock = 9 * 60_000; await idleViews.read({ personId: 'b' });
+assert.equal(idleViews.sweepIdle(10 * 60_000, 11 * 60_000), 1, 'only the view unread for the idle window is released');
+await idleViews.read({ personId: 'b' });
+assert.equal(idleLoads, 2, 'a recently read view keeps its records');
+await idleViews.read({ personId: 'a' });
+assert.equal(idleLoads, 3, 'a released view rebuilds on its next read');
+console.log('test-session-list-cache: ok (2100 records; unchanged cold records are not reread; idle views released)');

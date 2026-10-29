@@ -83,6 +83,7 @@ const sessionListCache = createSessionListCache({
   loadOne: (id, personId) => getSessionListItemForClient(id, { viewPersonId: personId, forList: true }),
 });
 onSessionInvalidation(sessionListCache.invalidate);
+export const sweepIdleSessionListViews = (maxIdleMs, now) => sessionListCache.sweepIdle(maxIdleMs, now);
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';

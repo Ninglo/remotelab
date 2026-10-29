@@ -21,9 +21,15 @@ const SPOOL_READ_CHUNK_BYTES = 1024 * 1024;
 const MAX_SPOOL_RECORD_CHARS = 2 * 1024 * 1024;
 const MAX_SPOOL_INLINE_CHARS = 16 * 1024;
 const MAX_SPOOL_PREVIEW_CHARS = 4096;
-const runManifestCache = new Map();
+// Manifests carry prompt snapshots; disk is authoritative, so cap and release them.
+const runManifestCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_RUN_MANIFEST_CACHE_MIB', 128),
+  manifest => JSON.stringify(manifest).length * 2 + 256);
 const runArtifactCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_RUN_ARTIFACT_CACHE_MIB', 256), text => text.length * 2);
 const localRunMutationQueue = createKeyedTaskQueue();
+
+export function sweepIdleRunCaches(maxIdleMs, now = Date.now()) {
+  return { manifests: runManifestCache.sweepIdle(maxIdleMs, now), artifacts: runArtifactCache.sweepIdle(maxIdleMs, now) };
+}
 
 function clone(value) {
   if (value === null || value === undefined) return value;

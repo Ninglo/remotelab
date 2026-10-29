@@ -40,9 +40,9 @@ const PREVIEW_LIMITS = {
   status: 800,
 };
 
-const metaCache = new Map();
-const contextCache = new Map();
-const forkContextCache = new Map();
+// Disk is authoritative; meta is write-through and safe to release when idle.
+const metaCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_META_CACHE_MIB', 64),
+  meta => JSON.stringify(meta).length * 2 + 256);
 const eventCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_EVENT_CACHE_MIB', 512),
   event => JSON.stringify(event).length * 2 + 256);
 const bodyCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_BODY_CACHE_MIB', 1024), text => text.length * 2);
@@ -196,13 +196,11 @@ async function saveMetaUnlocked(sessionId, meta) {
 
 async function loadContext(sessionId) {
   const context = await readJson(sessionContextPath(sessionId), null);
-  contextCache.set(sessionId, context);
   return clone(context);
 }
 
 async function loadForkContext(sessionId) {
   const context = await readJson(sessionForkContextPath(sessionId), null);
-  forkContextCache.set(sessionId, context);
   return clone(context);
 }
 
@@ -228,7 +226,6 @@ function normalizeForkContext(context = {}) {
 async function saveContextUnlocked(sessionId, context) {
   await ensureSessionDir(sessionId);
   await writeJsonAtomic(sessionContextPath(sessionId), context || null);
-  contextCache.set(sessionId, context || null);
   return clone(context || null);
 }
 
@@ -236,20 +233,17 @@ async function saveForkContextUnlocked(sessionId, context) {
   const normalized = context ? normalizeForkContext(context) : null;
   await ensureSessionDir(sessionId);
   await writeJsonAtomic(sessionForkContextPath(sessionId), normalized);
-  forkContextCache.set(sessionId, normalized);
   return clone(normalized);
 }
 
 async function clearContextUnlocked(sessionId) {
   await ensureSessionDir(sessionId);
   await writeJsonAtomic(sessionContextPath(sessionId), null);
-  contextCache.set(sessionId, null);
 }
 
 async function clearForkContextUnlocked(sessionId) {
   await ensureSessionDir(sessionId);
   await writeJsonAtomic(sessionForkContextPath(sessionId), null);
-  forkContextCache.set(sessionId, null);
 }
 
 async function writeBody(sessionId, seq, field, value) {
@@ -490,8 +484,6 @@ export async function appendSourceDeliveryReceipt(sessionId, event, { priorRecei
 
 function clearSessionCaches(sessionId) {
   metaCache.delete(sessionId);
-  contextCache.delete(sessionId);
-  forkContextCache.delete(sessionId);
   for (const key of [...eventCache.keys()]) {
     if (key.startsWith(`${sessionId}:`)) eventCache.delete(key);
   }
@@ -503,6 +495,11 @@ function clearSessionCaches(sessionId) {
 async function clearHistoryUnlocked(sessionId) {
   await removePath(sessionDir(sessionId));
   clearSessionCaches(sessionId);
+}
+
+export function sweepIdleHistoryCaches(maxIdleMs, now = Date.now()) {
+  return { meta: metaCache.sweepIdle(maxIdleMs, now), events: eventCache.sweepIdle(maxIdleMs, now),
+    bodies: bodyCache.sweepIdle(maxIdleMs, now) };
 }
 
 export async function loadHistory(sessionId, options = {}) {

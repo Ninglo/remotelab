@@ -71,6 +71,7 @@ export function createSessionListCache({ loadAll, loadOne, loadVersions, now = D
       views.set(personId, view);
       if (views.size > maxViews) views.delete(views.keys().next().value);
     }
+    view.readAt = now();
     if (loadVersions) {
       const versions = await loadVersions();
       if (view.versions && view.versions !== versions) {
@@ -100,7 +101,17 @@ export function createSessionListCache({ loadAll, loadOne, loadVersions, now = D
     if (view.responses.size > 16) view.responses.delete(view.responses.keys().next().value);
     return response;
   }
-  return { read, invalidate };
+  // A view holds every session plus encoded list bodies; drop views no client
+  // has read recently. The next read rebuilds it from the indexed catalog.
+  function sweepIdle(maxIdleMs, at = now()) {
+    let released = 0;
+    for (const [personId, view] of views) {
+      if (view.pending || at - (view.readAt || 0) < maxIdleMs) continue;
+      views.delete(personId); released += 1;
+    }
+    return released;
+  }
+  return { read, invalidate, sweepIdle };
 }
 
 function isHot(session) {

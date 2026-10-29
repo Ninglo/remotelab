@@ -1001,6 +1001,7 @@
             "chat/monitoring.mjs",
             "chat/service-incidents.mjs",
             "chat/runtime-health.mjs",
+            "chat/cache-release.mjs",
             "chat-server.mjs",
             "chat/monitoring-recovery.mjs",
             "chat/monitoring-alerts.mjs",

@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Release idle server caches on a fixed schedule
+
+- Feedback: after the poller was found, schedule fixed cache release instead of letting read-through caches stay resident until the heap limit.
+- Evidence: after a 17:17 restart the main heap sat near 0.9 GB, jumped to 5.2 GB at 17:47 and stayed at 3.3–4.0 GB; stopping the topic-live poller cut session reads by about 90% but did not lower the heap. History context and fork-context caches were written on every load/save and never read; run manifests, which carry prompt snapshots, were cached without a bound; session-list views never expired.
+- Change: remove the write-only context caches; cap session meta and run manifests with byte budgets; record access time in byte-budget caches; every 5 minutes release history, body, meta, manifest and artifact entries idle for 30 minutes and list views unread for 10 minutes (environment-configurable). Recently read data is untouched, so the hot-read path keeps its speed.
+- Verification: idle-release unit tests for byte-budget caches and list views plus existing history, run and compaction suites; a pre-existing fork-body ENOENT in test-file-change-durability also fails on the unmodified baseline. Production heap after deployment is observed separately.
+
 ### 2026-10-29 — Stop repetitive processing reactions in a busy group
 
 - Feedback: automatically adding THINKING to each input and removing it after a slow reply creates visible churn across a discussion.

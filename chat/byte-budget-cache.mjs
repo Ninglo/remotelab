@@ -12,13 +12,14 @@ export class ByteBudgetCache {
     const entry = this.#entries.get(key);
     if (!entry) return undefined;
     this.#entries.delete(key); this.#entries.set(key, entry);
+    entry.at = Date.now();
     return entry.value;
   }
   set(key, value) {
     this.delete(key);
     const bytes = this.sizeOf(value) + String(key).length * 2 + 96;
     if (bytes > this.maxBytes) return this;
-    this.#entries.set(key, { value, bytes }); this.#bytes += bytes;
+    this.#entries.set(key, { value, bytes, at: Date.now() }); this.#bytes += bytes;
     while (this.#bytes > this.maxBytes) this.delete(this.#entries.keys().next().value);
     return this;
   }
@@ -29,6 +30,16 @@ export class ByteBudgetCache {
     return this.#entries.delete(key);
   }
   clear() { this.#entries.clear(); this.#bytes = 0; }
+  // Release entries nobody has read or written recently. Map order is LRU, so
+  // the sweep stops at the first entry still inside the idle window.
+  sweepIdle(maxIdleMs, now = Date.now()) {
+    let released = 0;
+    for (const [key, entry] of this.#entries) {
+      if (now - entry.at < maxIdleMs) break;
+      this.delete(key); released += 1;
+    }
+    return released;
+  }
   keys() { return this.#entries.keys(); }
   *values() { for (const entry of this.#entries.values()) yield entry.value; }
   *[Symbol.iterator]() { for (const [key, entry] of this.#entries) yield [key, entry.value]; }
