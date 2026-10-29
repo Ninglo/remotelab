@@ -125,6 +125,7 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var lastMeter: [String: Any]?
     var announced = Set<String>()
     var cuePlayer: AVAudioPlayer?
+    var selectionNotified = Set<String>()
     var notice: NSPanel?
     var noticeText: NSTextField?
     var lastNoticeLane: String?
@@ -387,6 +388,14 @@ final class RecordingHost: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let state = shuttingDown ? RecordingPanelState(title: "正在停止并保存", detail: "保存完成后退出", action: nil, tone: "starting", startedAt: nil) : RecordingPanelState.project(laneID: lane.id, snapshot: lastSnapshot, servicePID: pid, serviceRunning: running, error: serviceError ?? readError)
             let previousTone = lane.state?.tone
             lane.state = state
+            if !preview,
+               let active = (lastSnapshot?["active"] as? [[String: Any]])?.first(where: { $0["laneId"] as? String == lane.id }),
+               active["state"] as? String == "selecting",
+               let id = active["recordingId"] as? String, !selectionNotified.contains(id) {
+                selectionNotified.insert(id)
+                NSSound(named: "Tink")?.play()
+                emit(["feedback": "等待麦克风", "laneId": lane.id, "recordingId": id])
+            }
             if !preview, state.tone == "recording",
                let active = (lastSnapshot?["active"] as? [[String: Any]])?.first(where: { $0["laneId"] as? String == lane.id }),
                let id = active["recordingId"] as? String, !announced.contains(id) {

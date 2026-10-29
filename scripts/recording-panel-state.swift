@@ -18,11 +18,10 @@ struct RecordingPanelState: Equatable {
         }
         if let lane = active.first(where: { $0["laneId"] as? String == laneID }) {
             if lane["state"] as? String == "recording" {
-                let mic = (lane["channel"] as? Int).map { $0 == 0 ? "左声道麦" : "右声道麦" }
-                return .init(title: "正在录音", detail: mic.map { "本段使用\($0) · 点击停止并保存" } ?? "点击停止并保存", action: "stop", tone: "recording", startedAt: lane["startedAt"] as? String)
+                return .init(title: "正在录音", detail: "点击停止并保存", action: "stop", tone: "recording", startedAt: lane["startedAt"] as? String)
             }
             if lane["state"] as? String == "selecting" {
-                return .init(title: "等待认领麦克风", detail: "拿起空闲麦靠近嘴边说话，听到开始提示后再开另一段 · 点击取消", action: "stop", tone: "starting", startedAt: nil)
+                return .init(title: "等待麦克风", detail: "拿起任意空闲麦说话 · 点击取消", action: "stop", tone: "starting", startedAt: nil)
             }
             return .init(title: "正在启动", detail: "尚未收到音频 · 点击取消", action: "stop", tone: "starting", startedAt: nil)
         }
