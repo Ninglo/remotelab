@@ -13,7 +13,7 @@ import { sessionRuntimeRevision } from '../lib/session-runtime-revision.mjs';
 import { resolveMessageReplyPolicy, messageReplyPrompt } from './message-reply-settings.mjs';
 import { mayReviewGroupPersonalMemory } from './personal-memory-settings.mjs';
 import { captureMessageRoutingOptions } from './message-routing-policy.mjs';
-import { deliverySelfReviewPrompt, captureGroupDeliverySelfReviewPolicy } from './delivery-self-review.mjs';
+import { deliverySelfReviewPrompt, captureGroupDeliverySelfReviewPolicy, deliverySelfReviewEnabled } from './delivery-self-review.mjs';
 import { captureFeatureObservation, observeFeatureAdmission, featureObservationPrompt, appendFeatureReviewStatus, clearFeatureReviewStatus } from './feature-observation.mjs';
 import { captureKnowledgePilot, observeKnowledgeAdmission, knowledgePilotPrompt } from './knowledge-pilot.mjs';
 import { strictStartCheckPrompt, strictStartCheckProvenance } from './strict-start-check.mjs';
@@ -1440,7 +1440,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   slots.push(createModelContextSlot('group_routing', 'Group routing policy and current state', turnContext.groupRouting));
   slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
   if (options.requestId && (options.knowledgePilot
-      || (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.selfReview === true && !options.internalOperation)) {
+      || deliverySelfReviewEnabled(options))) {
     slots.push(createModelContextSlot('current_input', 'Current input address', JSON.stringify({ requestId: options.requestId })));
   }
   slots.push(createModelContextSlot('organization_knowledge', 'Organization knowledge on demand',
@@ -1451,7 +1451,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     deliverySelfReviewPrompt(options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy,
       { ...options, personId: options.viewPersonId, identityId: options.initiatedByIdentityId })
       + '\n' + featureObservationPrompt(options.featureObservation, null,
-        (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.selfReview === true && !options.internalOperation,
+        deliverySelfReviewEnabled(options),
         { reviewVersion: (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.deliverySelfReview?.version })));
   const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;
   const startCheck = strictStartCheckPrompt(options.messageReplyPolicy, { personId: options.viewPersonId,

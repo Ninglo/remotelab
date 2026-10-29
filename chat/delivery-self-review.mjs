@@ -2,8 +2,23 @@ import { createHash } from 'node:crypto';
 import { buildPersonMemoryPromptBlock } from './person-memory-context.mjs';
 import { readPromptAsset } from './prompt-asset-loader.mjs';
 
-const source = 'experiments/delivery-self-review/v2.md';
+const source = 'experiments/delivery-self-review/v3.md';
 const digest = content => createHash('sha256').update(content).digest('hex');
+export function isGroupMainline(context = {}) {
+  const source = context.sourceContext, delivery = context.sourceDelivery;
+  const target = delivery?.connector === 'feishu' ? delivery.target : null;
+  if (source?.connector !== 'feishu' || (source.chatType !== 'group' && target?.chatType !== 'group')) return false;
+  // A reply/quoted-message root does not turn the group feed into a work topic.
+  if (source.conversationKind === 'main' || target?.conversationKind === 'main') return true;
+  if ([source.conversationKind, target?.conversationKind].some(kind => ['thread', 'document_comment'].includes(kind))) return false;
+  return !(source.threadId || target?.threadId || target?.topicId);
+}
+
+export function deliverySelfReviewEnabled(options = {}) {
+  const policy = options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy;
+  return policy?.selfReview === true && !options.internalOperation && !options.automationTitle
+    && !isGroupMainline(options);
+}
 function groupAddress(context) {
   const source = context.sourceContext, delivery = context.sourceDelivery;
   const tenantKey = source?.tenantKey || source?.sender?.tenantKey;
@@ -38,7 +53,7 @@ export async function captureGroupDeliverySelfReviewPolicy(options, personal, in
 // procedure across retry, queueing, native steer and future asset revisions.
 export async function captureDeliverySelfReview(policy, context = {}, { readAsset = readPromptAsset } = {}) {
   if (policy?.selfReview !== true || !matches(policy, context)) return undefined;
-  const provenance = { version: 2, personId: context.personId, policyId: policy.policyId };
+  const provenance = { version: 3, personId: context.personId, policyId: policy.policyId };
   try {
     const content = await readAsset(source);
     if (!content.trim() || content.length > 16000) throw new Error('invalid-review-body');
@@ -49,17 +64,22 @@ export async function captureDeliverySelfReview(policy, context = {}, { readAsse
 }
 
 export function deliverySelfReviewPrompt(policy, context = {}) {
+  if (isGroupMainline(context)) {
+    return 'Optional delivery self-review is OFF in this group mainline. Do not run its workflow or receipt commands here, even when personal/group settings are enabled. Ordinary fact checks and execution validation still apply.';
+  }
   if (policy?.selfReview !== true || !matches(policy, context)) {
     return 'Optional delivery self-review is OFF for this accepted work. Do not inherit another input’s opt-in. Ordinary honesty, task completion and necessary verification still apply.';
   }
   const rule = policy.deliverySelfReview;
-  if (rule?.status !== 'captured' || ![1, 2].includes(rule.version) || rule.personId !== policy.personId
+  if (rule?.status !== 'captured' || ![1, 2, 3].includes(rule.version) || rule.personId !== policy.personId
       || rule.policyId !== policy.policyId || typeof rule.content !== 'string' || rule.sha256 !== digest(rule.content)) {
     return 'The opted-in delivery self-review snapshot is unavailable. Do not claim that the optional review ran. Continue ordinary Harness execution and necessary verification; report the missing review if relevant to delivery.';
   }
   return [
-    'Optional delivery self-review is ON for this verified requester and accepted work only. The current Harness performs it before its final delivery, within this task run.',
-    policy.scope === 'group' ? 'Enabled by this Feishu group setting, including its mainline and topics; personal settings are unchanged.'
+    rule.version >= 3
+      ? 'Optional delivery self-review is available only for complex execution work in this task conversation. The current Harness decides whether this work needs it; ordinary discussion does not activate it.'
+      : 'Optional delivery self-review is ON for this verified requester and accepted work only. The current Harness performs it before its final delivery, within this task run.',
+    policy.scope === 'group' ? 'Enabled by this Feishu group setting for eligible work topics; group mainline is excluded and personal settings are unchanged.'
       : 'Enabled by this requester’s personal setting; other members are not opted in.',
     JSON.stringify({ version: rule.version, personId: rule.personId, source: rule.source, sha256: rule.sha256 }),
     rule.content,

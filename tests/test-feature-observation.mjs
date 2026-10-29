@@ -29,6 +29,11 @@ try {
   assert.throws(()=>validateFeatureTrials({...config,trials:[config.trials[0],config.trials[0]]}));
   const t = Date.parse('2026-10-22T03:00:00Z');
   const featureObservation = await captureFeatureObservation(options, root, t);
+  const mainline = { ...options, featureObservation,
+    sourceContext: { connector: 'feishu', chatType: 'group', conversationKind: 'main' } };
+  assert.equal(await captureFeatureObservation(mainline, root, t), null);
+  assert.equal(await readFeatureReviewStatus({ options: mainline }, { root }), null);
+  await assert.rejects(recordFeatureExecution({ options: mainline }, { action: 'begin' }, { root }), /未启用/);
   const record = (await requests.accept({sessionId:'feature-test',requestId:'r1',text:'交付汇总',options:{...options,featureObservation}})).record;
   await observeFeatureAdmission(record, root, t); await observeFeatureAdmission(record,root,t+1);
   const window = JSON.parse(await readFile(join(root,'review-week/window.json')));
@@ -170,6 +175,9 @@ try {
   assert.match(lean,/有实际执行成果需要验收/);
   assert.match(lean,/feature-observation begin/);
   assert.doesNotMatch(lean,/短问答不需要额外成果，用 not_applicable/);
+  const scoped=featureObservationPrompt(null,null,true,{reviewVersion:3});
+  assert.match(scoped,/仅当工作话题中的复杂执行任务实际触发/);
+  assert.match(scoped,/群主线、普通讨论、简短问答、状态查询及简单可逆操作不触发/);
   assert.match(prompt,/explanation/);assert.match(prompt,/不能只写“不适用”/);assert.match(prompt,/不把我能完成的工作推给用户/);
   assert.match(prompt,/15字以内/);assert.match(prompt,/正文讲清一次/);
   assert.match(prompt,/正常检查通过、不适用、无记录及回执状态异常均不显示尾注/);assert.match(prompt,/不要把任务成果或回执格式调整写成自检发现/);

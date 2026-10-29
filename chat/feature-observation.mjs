@@ -8,6 +8,7 @@ import { fingerprint, publishRecord, readRecord, records, safeId } from './featu
 import { requests } from './requests.mjs';
 import { runDir } from './runs.mjs';
 import { getHistoryHeadSeq, loadHistory } from './history.mjs';
+import { deliverySelfReviewEnabled } from './delivery-self-review.mjs';
 
 const ROOT = join(CONFIG_DIR, 'feature-observations');
 const DAY = 86400000;
@@ -26,7 +27,7 @@ async function receipt(record, root) {
 // Receipts belong to the feature, not to a temporary observation cohort. The
 // cohort may expire without making normal self-review invisible again.
 export async function readFeatureReviewStatus(record, {root = ROOT} = {}) {
-  if (effective(record?.options)?.selfReview !== true || record.options.internalOperation) return null;
+  if (!deliverySelfReviewEnabled(record?.options)) return null;
   const row = await receipt(record, root);
   return { state: row?.finishedAt ? 'finished' : row?.startedAt ? 'started' : 'no_record',
     enabledBy: effective(record.options).scope || null,
@@ -86,7 +87,7 @@ async function trials(root) { return validateFeatureTrials(await readRecord(join
 
 // A passive observation contract; no random assignment, model call or scheduler.
 export async function captureFeatureObservation(options, root = ROOT, now = Date.now()) {
-  if (effective(options)?.selfReview !== true || options.internalOperation || options.automationTitle) return null;
+  if (!deliverySelfReviewEnabled(options)) return null;
   try {
     const trial = (await trials(root)).find(t => t.enabled && t.featureId === 'delivery-self-review' && t.personIds.includes(options.viewPersonId));
     if (!trial) return null;
@@ -98,7 +99,7 @@ export async function captureFeatureObservation(options, root = ROOT, now = Date
 
 export async function observeFeatureAdmission(record, root = ROOT, now = Date.now()) {
   const observation = record.options?.featureObservation;
-  if (!observation) return;
+  if (!observation || !deliverySelfReviewEnabled(record.options)) return;
   try {
     const trial = (await trials(root)).find(t => t.id === observation.trialId);
     if (!trial?.enabled || fingerprint(trial) !== observation.specHash) return;
@@ -117,7 +118,7 @@ export function featureObservationPrompt(observation, requestId, enabled = Boole
   if (!enabled) return '';
   observation ||= {metrics:REVIEW_METRICS};
   const quotedId = requestId ? "'" + String(requestId).replaceAll("'", "'\\''") + "'" : '<本轮 Current input address 中的 requestId>';
-  if (reviewVersion === 2) return `有实际执行成果需要验收时，最终交付前最多记录一次：remotelab feature-observation begin --request-id ${quotedId}，核对后用 finish --request-id ${quotedId} --file <JSON绝对路径> 保存。普通讨论、简短问答无需为“不适用”调用这两个命令或生成文件。JSON：{outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际事件编号]}],explanation:{note:"8字以内",reason:"本次核对缘由",actions:["实际检查或修复"],nextStep:"后续负责人、缺项及是否已安排；无后续也写明",userAction:"具体所需动作或无需操作"}}。${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核实，不编造；按验收条件去重计数，只计自检额外发现的缺项，例行任务修改和回执格式调整不算修复。完整 explanation 留在记录中；未解决项和用户所需动作在正文说明一次。没有回执只表示没有记录，不代表已验收或失败。`;
+  if (reviewVersion >= 2) return `${reviewVersion >= 3 ? '仅当工作话题中的复杂执行任务实际触发交付自检时，' : '有实际执行成果需要验收时，'}最终交付前最多记录一次：remotelab feature-observation begin --request-id ${quotedId}，核对后用 finish --request-id ${quotedId} --file <JSON绝对路径> 保存。${reviewVersion >= 3 ? '群主线、普通讨论、简短问答、状态查询及简单可逆操作不触发；' : ''}普通讨论、简短问答无需为“不适用”调用这两个命令或生成文件。JSON：{outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际事件编号]}],explanation:{note:"8字以内",reason:"本次核对缘由",actions:["实际检查或修复"],nextStep:"后续负责人、缺项及是否已安排；无后续也写明",userAction:"具体所需动作或无需操作"}}。${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核实，不编造；按验收条件去重计数，只计自检额外发现的缺项，例行任务修改和回执格式调整不算修复。完整 explanation 留在记录中；未解决项和用户所需动作在正文说明一次。没有回执只表示没有记录，不代表已验收或失败。`;
   return `已开启自检执行回执${observation.trialId ? '及限时功能观察' : ''}。最终交付前最多记录一次核对阶段：先运行 remotelab feature-observation begin --request-id ${quotedId}，再核对实际成果；完成后用 remotelab feature-observation finish --request-id ${quotedId} --file <JSON绝对路径> 保存结果。JSON为 {outcome:"passed|repaired|blocked|not_applicable",metrics:{${observation.metrics.map(m => `${JSON.stringify(m.id)}:0`).join(',')}},checks:[{criterion:"实际验收条件",verdict:"pass|fail|unknown",evidenceSeqs:[实际工具/附件事件编号]}],explanation:{note:"8字以内具体原因或动作",reason:"本轮为什么需要自检，或为什么不适用",actions:["实际做过的具体检查或修复"],nextStep:"谁接着做什么，以及是否已安排；无后续也写明",userAction:"用户具体需要提供什么或作什么决定；不需要时写无需操作"}}。explanation 必须按本轮事实填写，用简短、面向用户的文字，不复述内部命令；actions 只写实际完成的操作。仍有未解决项时，在 nextStep 写明缺项、下一步及负责方，区分我可继续处理、真实外部依赖与必须由用户决定；不能把建议写成已安排或正在执行，不把我能完成的工作推给用户。指标含义：${observation.metrics.map(m => `${m.id}=${m.label}`).join('；')}。事件编号从当前 Session 的 /events?filter=all 核对，不编造；短问答不需要额外成果，用 not_applicable，checks 为 []，仍须解释本轮没有执行额外产物验收的具体原因，不能只写“不适用”。正常检查通过、不适用、无记录及回执状态异常均不显示尾注，仍保留内部记录。只有自检发现问题后额外推进了工作（repaired），或推进受阻（blocked），才附15字以内短注；note 最多8字且不换行，写具体补做或阻塞，例如“已补齐下载”“待提供目录权限”。仅有回执缺失或读取失败不能判断为推进失败。不要把任务成果或回执格式调整写成自检发现；只有自检额外发现并修复的问题才计入 fixed。完整 explanation 留在记录中，不再逐项追加到回复；影响交付的未解决问题、真实后续安排和用户所需动作放在正文讲清一次，不能只藏在记录里。记录失败如实保留缺口，不重复自检、阻塞交付或新发消息。回执只记录证据，不代替验收。`;
 }
 
@@ -152,7 +153,7 @@ export function featureUsageDelta(before, after) {
 
 export async function recordFeatureExecution(record, input, { root = ROOT, now = Date.now(), meter = readFeatureMeter } = {}) {
   const observation = record.options?.featureObservation || {metrics:REVIEW_METRICS};
-  if (effective(record.options)?.selfReview !== true || record.options.internalOperation) fail('当前输入未启用交付自检');
+  if (!deliverySelfReviewEnabled(record.options)) fail('当前输入未启用交付自检');
   const window = observation.trialId ? await readRecord(join(root, observation.trialId, 'window.json')) : null;
   const executionRunId = executionId(record);
   const existing = await receipt(record, root);
