@@ -38,3 +38,7 @@ test('normal stop is not a crash; cursor is durable and failed reads never advan
  assert.equal(disk.get('/test/state.json').units[unit].cursor,'cursor3');
  assert.ok([...disk.keys()].some(p=>p.startsWith('/test/events/')));
 });
+test('journal grep with no matches is healthy empty coverage, not a failed read',async()=>{
+ const result=await collectServiceIncidents({services:[{unit,scope:'system'}],config:{enabled:true},load:async()=>null,save:async()=>{},execute:async()=>{throw Object.assign(new Error('no matches'),{code:1,stdout:'',stderr:''})}});
+ assert.deepEqual(result.gaps,[]);assert.deepEqual(result.events,[]);
+});

@@ -44,7 +44,7 @@ export async function collectServiceIncidents({ services = [], config = {},
   const file = join(directory, 'state.json');
   const state = await load(file) || { version: 1, since: new Date(now).toISOString(), units: {}, events: [] };
   const gaps = [];
-  for (const service of services.filter(s => s.unit?.endsWith('.service'))) {
+  for (const service of services.filter(s => s.unit?.endsWith('.service') && (!config.units || config.units.includes(s.unit)))) {
     if (!/^[\w@.-]+\.service$/.test(service.unit) || !['system', 'user'].includes(service.scope)) continue;
     const prior = state.units[service.unit];
     const args = [...(service.scope === 'user' ? ['--user'] : []), '-u', service.unit,
@@ -53,7 +53,11 @@ export async function collectServiceIncidents({ services = [], config = {},
     try {
       const sudo = config.systemJournalSudo === true && service.scope === 'system';
       const { stdout } = await execute(sudo ? 'sudo' : 'journalctl', sudo ? ['-n', 'journalctl', ...args] : args,
-        { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+        { timeout: 5000, maxBuffer: 4 * 1024 * 1024 }).catch(error => {
+          // journalctl --grep returns 1 for a successful query with no matches.
+          if (error.code === 1 && !String(error.stderr || '').trim() && !String(error.stdout || '').trim()) return { stdout: '' };
+          throw error;
+        });
       const rows = stdout.trim() ? stdout.trim().split('\n').map(line => JSON.parse(line)) : [];
       const before = new Map(state.events.map(e => [e.id, JSON.stringify(e)]));
       state.events = mergeServiceJournal(state.events, rows, service.unit);
