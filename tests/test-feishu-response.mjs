@@ -29,6 +29,29 @@ try {
   const publish = (root, events) => publishNativeFeishuResponses(root, events,
     { id: root.runId, state: 'completed' }, { session: { id: 'session', sourceId: 'feishu' } });
 
+  // Real latency regression: a completed answer waited for a steered input's
+  // extra model calls, then vanished behind that input's combined final.
+  const live = await accept('live-root');
+  const liveExtra = await accept('live-extra', live);
+  const first = final('live-first', envelope({ replyMode: 'inline' }, '这条直接回复。'));
+  const next = final('live-next', envelope({ replyMode: 'inline',
+    requestIds: [live.requestId, liveExtra.requestId] }, '补问的回答。'));
+  const liveRun = { id: live.runId, state: 'running' };
+  const liveOptions = { session: { id: 'session', sourceId: 'feishu' }, running: true };
+  await publishNativeFeishuResponses(live, [{ ...first, phase: undefined }], liveRun, liveOptions);
+  assert.equal((await requests.get(live.key)).deliveries.length, 0, 'unfinished/legacy text waits for settlement');
+  await publishNativeFeishuResponses(live, [first], liveRun, { ...liveOptions, prepareFinal: async () => null });
+  assert.equal((await requests.get(live.key)).deliveries.length, 0, 'unready assets defer the entire answer');
+  await publishNativeFeishuResponses(live, [first], liveRun, liveOptions);
+  assert.equal((await requests.get(live.key)).deliveries[0].text, '这条直接回复。');
+  assert.equal((await requests.get(live.key)).result, null, 'publication does not finish the native execution');
+  await publishNativeFeishuResponses(await requests.get(live.key), [first, next], liveRun, liveOptions);
+  await publish(await requests.get(live.key), [first, next]);
+  assert.equal((await requests.get(live.key)).deliveries.length, 1, 'root receipt survives replay and later combined finals');
+  assert.equal((await requests.get(liveExtra.key)).deliveries[0].text, '补问的回答。');
+  assert.deepEqual((await requests.get(liveExtra.key)).mainlineReply.contract.requestIds, [liveExtra.requestId]);
+  assert.deepEqual((await requests.get(live.key)).responseDecisionErrors, {});
+
   // Final status comes from the real receipt, remains frozen on retry, and
   // does not weaken reply-content conflict detection or no-text decisions.
   const {recordFeatureExecution} = await import('../chat/feature-observation.mjs');

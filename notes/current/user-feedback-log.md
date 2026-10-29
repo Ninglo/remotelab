@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Send a finished chat answer before processing later supplements
+
+- Feedback: a brief latency probe still felt slow after optional acknowledgements and review overhead were removed.
+- Evidence: the first completed native answer arrived 32.5 seconds after the human message, but was held until a steered follow-up finished two more inferences. Only the later combined answer was sent, at 100.0 seconds. Its claim of roughly 33 seconds measured answer generation, not source delivery. The first inference retained about 197k input tokens at xhigh, with zero reported cached input; this is a separate remaining cost from publication waiting.
+- Change: completed structured Feishu finals reserve and publish their accepted input replies while native execution can continue. Later combined answers cover their still-unanswered inputs; durable receipts prevent replacement or duplicate sends. Partial text, unready files and legacy unstructured finals retain their existing boundaries. No extra model classification or acknowledgement is added.
+- Verification: isolated native admission, steering, outbox claims before turn completion, later overlapping input coverage and terminal replay; no live group test messages are sent. Natural latency after rollout remains to be measured.
+
 ### 2026-10-22 — Separate parallel work from the withdrawn routing trial
 
 - Feedback: actual parallel branches exist, while proactive misroute detection and delivery have not passed real-use acceptance. Keep parallel work and withdraw routing for independent redesign.

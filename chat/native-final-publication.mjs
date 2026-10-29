@@ -20,6 +20,7 @@ import { normalizeConversation, sameConversation } from '../lib/conversation-tar
 import { shouldPublishSessionProgress, usesOctober7GroupMessaging } from '../lib/session-progress-policy.mjs';
 import { withSessionProgressPolicy } from './session-progress-policy.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
+import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
 
 export async function prepareNativeFinalFiles(record, event, { run, manifest, publishAsset = publishLocalFileAssetFromPath } = {}) {
   const references = [...extractAssistantArtifactBlockReferences(event.content), ...extractAssistantLocalMarkdownImageReferences(event.content)];
@@ -47,6 +48,10 @@ export async function prepareNativeFinalFiles(record, event, { run, manifest, pu
 // Question answers and reference-only inputs do not start another reply.
 export async function publishLiveRunReplies(record, fullHistory, { store, run, ...options } = {}) {
   const rootEvents = collectReplyPublicationHistory(fullHistory, run);
+  if (options.plan?.connector === 'feishu' && hasFeishuInputReplyContract(record)) {
+    record = await publishNativeFeishuResponses(record, rootEvents, run,
+      { ...options, store, fullHistory, running: options.running !== false });
+  }
   if (options.plan?.connector !== 'feishu') {
     return publishLiveAssistantReplies(record, rootEvents, { ...options, store, fullHistory });
   }
@@ -76,7 +81,7 @@ export async function publishLiveRunReplies(record, fullHistory, { store, run, .
 // the existing card/message choice. The root owns durable delivery identities
 // and the terminal result for the shared execution.
 export async function publishLiveAssistantReplies(record, events, { store, plan, session, fullHistory = events, running = true, prepareFinal = async event => event, inputRecords = new Map() } = {}) {
-  if (!record || record.result || record.options?.suppressSourceDelivery || record.options?.internalOperation
+  if (!record || record.result || (record.options?.suppressSourceDelivery && !record.mainlineReply) || record.options?.internalOperation
       || !plan) return;
   // Admission remains per turn even when the Session has cards enabled.
   // Ordinary unlisted progress remains in Web/history rather than a new post.
@@ -109,13 +114,13 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const final = isFinalAssistantMessage(event);
     const directiveEvent = surface.messageUpdateSeq
       ? events.find(item => item.seq === surface.messageUpdateSeq) || event : event;
-    // Structured finals atomically bind their answer to accepted inputs at
-    // terminal publication. Do not publish them first through the legacy path.
+    // Structured finals bind their answer to inputs through the native
+    // publisher. Never also publish them through the legacy path.
     if ((final || surface.surfaceKind === 'final') && hasFeishuInputReplyContract(record)
         && readFeishuResponseDecision(directiveEvent.content).specified) continue;
     const owner = final || surface.surfaceKind === 'question' ? record : scopes.get(event) || record;
     if (owner !== record && !owner.nativeReceipt?.accepted) continue;
-    if (owner.options?.suppressSourceDelivery || owner.routingHandoff) continue;
+    if ((owner.options?.suppressSourceDelivery && !owner.mainlineReply) || owner.routingHandoff) continue;
     const messageReplyPolicy = owner.options?.messageReplyPolicy;
     const ownerPlan = owner === record ? plan : normalizeConversation(owner.deliveryPlan || owner.options?.sourceDelivery);
     if (!ownerPlan) continue;
@@ -126,7 +131,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const messageId = assistantSurfaceMessageId(event);
     if (!messageId) continue;
     let stored = await store.get(record.key);
-    if (stored?.options?.suppressSourceDelivery || stored?.routingHandoff) return;
+    if ((stored?.options?.suppressSourceDelivery && !stored.mainlineReply) || stored?.routingHandoff) return;
     // Placement belongs to this execution. A steered input retains its own
     // source policy, but must see the root's durable placement and receipts.
     const replyRecord = current => owner === record ? current : { ...owner, key: record.key,
@@ -218,7 +223,7 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     const parts = buildParts(stored || record);
     if (!parts.length) continue;
     const admit = () => store.mutate(record.key, current => {
-      if (!current || current.result || current.options?.suppressSourceDelivery || current.routingHandoff
+      if (!current || current.result || (current.options?.suppressSourceDelivery && !current.mainlineReply) || current.routingHandoff
           || suppressOpening(surface, current, owner, messageReplyPolicy, resolveAmbientFeishuReplyPlan(replyRecord(current), ownerPlan, [event]))
           || current.streamedSurfaceMessageIds?.includes(messageId)
           || current.streamedFinalReplyIds?.includes(messageId)) return current;

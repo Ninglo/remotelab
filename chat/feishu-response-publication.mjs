@@ -8,16 +8,17 @@ import { requests } from './requests.mjs';
 // A final's content and input coverage are one publication. No second tool
 // call, prose classifier, or assumption that all steered inputs were answered.
 export async function publishNativeFeishuResponses(record, history, run, {
-  store = requests, session, fullHistory = history, prepareFinal = async event => event,
+  store = requests, session, fullHistory = history, prepareFinal = async event => event, running = false,
 } = {}) {
-  if (!hasFeishuInputReplyContract(record) || run.state !== 'completed') return record;
+  if (!hasFeishuInputReplyContract(record) || (!running && run.state !== 'completed')) return record;
   const candidates = history.filter(isReplyMessage);
   const finals = candidates.filter(isFinalAssistantMessage);
   const selected = [];
   const covered = new Set();
-  // A later final can revise an answer before terminal publication. Preserve
-  // the latest decision; unrelated explicit input sets remain independent.
-  for (const event of (finals.length ? finals : candidates.slice(-1)).slice().reverse()) {
+  // Completed native items can answer an input while steering keeps its Run
+  // alive. Revisions in the same unread batch still select the latest answer;
+  // already committed input replies retain their original delivery identity.
+  for (const event of (finals.length ? finals : running ? [] : candidates.slice(-1)).slice().reverse()) {
     const decision = readFeishuResponseDecision(event.content);
     if (!decision.specified) continue;
     let ids = decision.requestIds || [record.requestId];
@@ -25,6 +26,7 @@ export async function publishNativeFeishuResponses(record, history, run, {
       // Question answers are accepted context, not independent reply owners.
       // Resolve real records; never discard an ID merely by its prefix.
       const owners = [];
+      let alreadyAnswered = false;
       for (const id of ids) {
         const input = await store.byRequest(record.sessionId, id);
         const origin = record.deliveryPlan || record.options?.sourceDelivery;
@@ -38,9 +40,25 @@ export async function publishNativeFeishuResponses(record, history, run, {
             && input.nativeReceipt.origin === 'user'
             && input.options.sourceContext?.connector === 'feishu'
             && input.options.sourceContext?.sender?.senderType === 'user') continue;
+        // A later combined answer may include the root already sent live.
+        // Publish its newly answered inputs without replacing the old receipt.
+        // Keep unknown/foreign inputs for the normal whole-packet validation.
+        if (source?.connector === 'feishu' && source.sourceRouteId === origin?.sourceRouteId
+            && source.target?.chatId === origin?.target?.chatId
+            && source.target?.tenantKey === origin?.target?.tenantKey
+            && (input.nativeDispatchRunId || input.runId) === run.id
+            && input.mainlineReply?.contract.providerMessageId
+            && input.mainlineReply.contract.providerMessageId !== assistantSurfaceMessageId(event)) {
+          alreadyAnswered = true;
+          continue;
+        }
         owners.push(id);
       }
-      if (!owners.length) decision.error = 'Response needs an accepted message owner';
+      if (!owners.length) {
+        // Only native question answers are not independent reply owners.
+        if (alreadyAnswered) continue;
+        decision.error = 'Response needs an accepted message owner';
+      }
       // A later final owns overlapping inputs; retain the earlier final for
       // the inputs it explicitly answered that the later final did not claim.
       ids = owners.filter(id => !covered.has(id));

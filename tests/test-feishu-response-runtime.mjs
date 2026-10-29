@@ -18,10 +18,20 @@ await chmod(executable, 0o755);
 const silentExecutable = join(home, 'bin/response-silent');
 await writeFile(silentExecutable, fixture.replace("finalText = 'durable native answer'", "finalText = ''"));
 await chmod(silentExecutable, 0o755);
+const liveExecutable = join(home, 'bin/response-live');
+const liveFirst = '<private>feishu-response:{"replyMode":"inline"}</private>第一条已回答。';
+const liveNext = '<private>feishu-response:{"replyMode":"inline","requestIds":["live-root","live-extra","live-followup"]}</private>补问也已回答。';
+await writeFile(liveExecutable, fixture.replace("finalText = 'durable native answer'", `finalText = ${JSON.stringify(liveNext)}`)
+  .replace("if (text.includes('RELEASE_NATIVE')) finish();", `
+    if (text.includes('PUBLISH_RESPONSE_FIRST')) notify('item/completed', { turnId: activeTurn,
+      item: { id: 'live-first', type: 'agentMessage', phase: 'final_answer', text: ${JSON.stringify(liveFirst)} } });
+    if (text.includes('RELEASE_NATIVE')) finish();`));
+await chmod(liveExecutable, 0o755);
 process.env.PATH = join(home, 'bin') + ':' + process.env.PATH;
 await writeFile(join(dir, 'tools.json'), JSON.stringify([{ id: 'response-native', name: 'Isolated response fixture',
   command: 'response-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
-  { id: 'response-silent', name: 'Silent fixture', command: 'response-silent', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' }]));
+  { id: 'response-silent', name: 'Silent fixture', command: 'response-silent', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
+  { id: 'response-live', name: 'Live fixture', command: 'response-live', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' }]));
 await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_a', people: [
   { id: 'person_a', name: 'A', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
 ] }));
@@ -30,6 +40,7 @@ await writeFile(join(dir, 'group-routing-pilot.json'), JSON.stringify({ version:
 await (await import('../lib/auth-config.mjs')).loadAuthDocument({ persistMigration: false });
 const manager = await import('../chat/session-manager.mjs');
 const { requests } = await import('../chat/requests.mjs');
+const { claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
 const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
 const { loadHistory } = await import('../chat/history.mjs');
 const actor = { personId: 'person_a', identityId: 'identity_a' };
@@ -57,7 +68,7 @@ try {
     sourceDelivery: { ...origin, target: { ...origin.target, messageId: id } },
     sourceContext: { connector: 'feishu', sourceRouteId: 'bot', chatId: 'group', chatType: 'group',
       messageId: id, sender: { openId: 'a', senderType: 'user' },
-      feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1 },
+      feishuParticipation: 'ambient', feishuReplyPlacementVersion: 1, feishuResponseProtocolVersion: 1 },
   });
   const root = await manager.submitHttpMessage(session.id, '核对这些分类。', [], opts('response-root'));
   await until(async () => (await requests.byRunId(root.run.id))?.preparedAt);
@@ -78,6 +89,43 @@ try {
   assert.equal(history.filter(e => e.type === 'work_event' && e.action === 'mainline-input-reply').length, 1);
   assert(!history.some(e => e.type === 'tool_use' && /work reply/.test(JSON.stringify(e))),
     'native final owns coverage without an additional model tool call');
+
+  // Observe the first final while the native peer deliberately remains open,
+  // then a second final after the root's reply has suppressed its fallback.
+  const liveSession = await manager.createSession(home, 'response-live', 'Live response fixture', {
+    sourceId: 'feishu', conversation: { ...origin, sourceRouteId: 'live-bot' }, groupFeed: true,
+  });
+  const liveOpts = id => ({ ...opts(id), tool: 'response-live',
+    sourceDelivery: { ...opts(id).sourceDelivery, sourceRouteId: 'live-bot' } });
+  const liveRoot = await manager.submitHttpMessage(liveSession.id, '直接回复测速。', [], liveOpts('live-root'));
+  await until(async () => (await requests.byRunId(liveRoot.run.id))?.preparedAt);
+  await manager.submitHttpMessage(liveSession.id, 'PUBLISH_RESPONSE_FIRST', [], liveOpts('live-extra'));
+  const firstReply = await until(async () => {
+    const r = await requests.byRunId(liveRoot.run.id); return r?.mainlineReply && r;
+  });
+  assert.equal(firstReply.result, null, 'first reply is queued before turn completion');
+  assert.equal(firstReply.deliveries.filter(d => d.kind === 'content').length, 1);
+  assert.match(firstReply.deliveries[0].text, /第一条已回答/);
+  const firstClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'live-bot' });
+  assert.equal(firstClaim.delivery.providerMessageId, 'live-first', 'connector can claim the answer while native work continues');
+  await completeSourceDelivery(firstClaim.delivery.id, firstClaim.leaseId, { externalId: 'fixture-first' });
+  await manager.submitHttpMessage(liveSession.id, 'PUBLISH_FINAL_EARLY', [], liveOpts('live-followup'));
+  const secondReply = await until(async () => {
+    const r = await requests.byRequest(liveSession.id, 'live-extra'); return r?.mainlineReply && r;
+  });
+  assert.equal((await requests.byRunId(liveRoot.run.id)).result, null);
+  assert.match(secondReply.deliveries[0].text, /补问也已回答/);
+  assert.deepEqual(secondReply.mainlineReply.contract.requestIds, ['live-extra', 'live-followup']);
+  const secondClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'live-bot' });
+  assert.match(secondClaim.delivery.text, /补问也已回答/);
+  await completeSourceDelivery(secondClaim.delivery.id, secondClaim.leaseId, { externalId: 'fixture-second' });
+  await writeFile(join(home, `${liveRoot.run.id}.release`), 'release');
+  const liveResult = await until(async () => { const r = await requests.byRunId(liveRoot.run.id); return r?.result && r; });
+  assert.equal(liveResult.result.state, 'completed', JSON.stringify(liveResult.responseDecisionErrors));
+  assert.equal(liveResult.deliveries.filter(d => d.kind === 'content').length, 1);
+  assert.equal((await requests.byRequest(liveSession.id, 'live-extra')).deliveries.filter(d => d.kind === 'content').length, 1);
+  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'live-bot' }), null,
+    'settlement cannot re-enqueue either delivered answer');
   // A rejected structural final emits a platform notice, not a receipt for
   // the model's unpublished text. The next native turn must see that notice.
   const rejectedSession = await manager.createSession(home, 'response-native', 'Rejected publication fixture', {

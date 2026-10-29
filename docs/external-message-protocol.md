@@ -340,7 +340,7 @@ WebUI; internal operations do not replace user preferences. Later routine Feishu
 send the ordinary final reply rather than a progress-only card. Task cards show
 the latest progress outside a callback disclosure, default collapsed. The last
 accepted click controls that shared card across updates and resumption.
-Feishu labels new-conversation openings `开始处理`, native questions `待你回复`, and stopped-Run results
+Feishu labels new-conversation openings `开始处理`, native questions `待你回复`, and completed input replies
 `最终答复`. Scheduled automation results use the task's name instead, snapshotted
 from the trigger title (or Session template name) when its request is accepted;
 retries and restarts retain that name. Task completion comes from verified
@@ -349,7 +349,7 @@ final-message behavior.
 
 In-flight supplementary replies and native questions do not consume the final
 reply for an accepted input. A combined final can still cover those inputs;
-terminal reply reservations continue to prevent duplicate final publication.
+per-input reply reservations continue to prevent duplicate final publication.
 If structural response validation fails, the platform's failure notice must
 not inherit the rejected model message's delivery identity. Such a notice is
 new context for the next turn, rather than already-known native output. The
@@ -366,7 +366,8 @@ before input acknowledgement, acknowledgement revisits the retained output
 without starting another model turn. Suppressed openings are consumed, so a
 later thread choice cannot resurrect them. Ambient thread placement and its
 receipts belong to the shared execution, including when a steered input selects
-that placement. Terminal publication remains once per stopped execution.
+that placement. Completed structured finals publish per accepted input while the
+execution may continue processing supplements; Run completion remains separate.
 
 New ambient mainline inputs carry `feishuThreadSessionVersion: 1`. A substantive
 independent thread is opened on explicit request or when work needs its own
@@ -705,7 +706,7 @@ body, without a phase heading. Personal opening/progress preferences do not
 override this surface contract; required questions remain deliverable. Requests
 requiring lookup, research or execution select a thread before work begins.
 
-Native Codex messages retain their provider item identity and `commentary` or `final_answer` phase. Feishu final answers wait for the actual Run to stop, including when steering keeps execution alive. The request atomically records the item identity and its deliveries; restart replay and terminal settlement cannot send that final twice. Declared files and local image references are materialized before publication; a missing or unready asset defers the answer. No-phase legacy adapters retain terminal settlement. Delivery receipts are retained in Session history after Request archival.
+Native Codex messages retain their provider item identity and `commentary` or `final_answer` phase. A completed final item with a structured `feishu-response` decision publishes as soon as its accepted input ownership and assets are ready, even when steering keeps the Run alive. It does not finish the Run or the task. The request atomically reserves the input reply and its deliveries; replay and terminal settlement cannot send that answer twice. Later combined finals publish only their still-unanswered inputs, preserving earlier receipts. Multiple unseen revisions in one projection batch still select the latest decision for each input. Declared files and local image references are materialized before publication; a missing or unready asset defers the whole answer. Legacy finals without the structured input contract, and adapters without explicit phases, retain terminal settlement. Delivery receipts are retained in Session history after Request archival.
 
 Terminal fallback publication retains an unambiguous final's provider identity
 and result-part count, just like live observation. Every text/file part must be
