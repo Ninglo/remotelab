@@ -102,6 +102,7 @@
             "chat/session-meta-store.mjs",
             "lib/session-catalog.mjs",
             "scripts/session-catalog.mjs",
+            "docs/session-catalog.md",
             "docs/project-architecture.md",
             "chat/request-runtime.mjs",
             "chat/request-completion.mjs",
