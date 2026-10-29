@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -164,6 +164,31 @@ try {
   await action('self-review-off');
   assert.equal((await controller.view(record)).selfReview, false);
   assert.equal(config.groups.group.systemPrompt, '', 'review toggles preserve the group prompt');
+  assert.doesNotMatch(JSON.stringify(lastCard()), /交付前自检|self-review-on/, 'disabled group experiments have no enrollment block');
+  const { KNOWLEDGE_ROOT } = await import('../chat/knowledge-pilot.mjs');
+  await mkdir(KNOWLEDGE_ROOT, { recursive: true });
+  const knowledge = { version: 1, id: 'wiki', projectId: 'project', name: '组织知识库',
+    enabled: true, corpusPath: home, personIds: ['person_human'], groups: [] };
+  const knowledgeFile = join(KNOWLEDGE_ROOT, 'config.json');
+  const rendered = async (sourcePatch = {}) => JSON.stringify(buildGroupConfigurationCard(record,
+    await controller.view({ ...record, source: { ...record.source, ...sourcePatch } })));
+  await writeFile(knowledgeFile, JSON.stringify(knowledge));
+  assert.doesNotMatch(await rendered(), /组织 Wiki/, 'personal enrollment never appears in a shared card');
+  knowledge.groups = [{ sourceRouteId: config.sourceRouteId, tenantKey: source.tenantKey, chatId: source.chatId }];
+  await writeFile(knowledgeFile, JSON.stringify(knowledge));
+  assert.match(await rendered(), /组织 Wiki.*本群已开启/);
+  assert.doesNotMatch(await rendered({ tenantKey: 'other' }), /组织 Wiki/, 'tenant isolation');
+  assert.doesNotMatch(await rendered({ chatId: 'work' }), /组织 Wiki/, 'group isolation');
+  knowledge.groups[0].sourceRouteId = 'other-bot';
+  await writeFile(knowledgeFile, JSON.stringify(knowledge));
+  assert.doesNotMatch(await rendered(), /组织 Wiki/, 'bot isolation');
+  knowledge.groups[0].sourceRouteId = config.sourceRouteId;
+  knowledge.enabled = false;
+  await writeFile(knowledgeFile, JSON.stringify(knowledge));
+  assert.doesNotMatch(await rendered(), /组织 Wiki/, 'disabled experiment disappears');
+  const nativeCard = await rendered({ chatMode: 'topic' });
+  assert.match(nativeCard, /每个话题独立承接工作/);
+  assert.doesNotMatch(nativeCard, /主 Session|打开主会话|"namespace":"participation"/);
   const writes = cards.length;
   await runtime.participation.remember({ ...source, chatId: 'hidden' }, session.id);
   assert.equal(cards.length, writes, 'hidden status cards are not recreated');

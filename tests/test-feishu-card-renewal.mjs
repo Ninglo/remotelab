@@ -139,5 +139,21 @@ try {
   assert.deepEqual({ sends: sends.length, patches: patches.length }, beforeMetadata,
     'a source-document timestamp alone does not repaint the persistent card');
   await controller.idle();
+  const native = await seed('native', { cardCreatedAt: Date.now() });
+  const nativeController = createParticipationController(runtime, {
+    resolveSource: async s => ({ ...s, chatMode: 'topic' }),
+    getConfiguration: async () => ({ nativeTopicGroup: true, participationControls: false }),
+  });
+  const beforeNative = { patches: patches.length, sends: sends.length };
+  await nativeController.publish(native, options);
+  assert.equal(patches.length, beforeNative.patches + 1, 'refresh an existing managed native-group card');
+  assert.match(patches.at(-1).data.content, /每个话题独立承接工作/);
+  assert.doesNotMatch(patches.at(-1).data.content, /"namespace":"participation"/);
+  await nativeController.publish(await nativeController.state(source('native-without-card')), options);
+  const nativeThread = await seed('native-thread', { source: { ...source('native'), topicId: 'topic' } });
+  await nativeController.publish(nativeThread, options);
+  assert.equal(patches.length, beforeNative.patches + 1, 'historical topic cards remain excluded');
+  assert.equal(sends.length, beforeNative.sends, 'native group refresh never creates an unbound card');
+  await nativeController.idle();
   console.log('PASS: renewal source, legacy age, concurrency, pause preservation, expiry fallback, pin recovery and uncertain sends');
 } finally { await rm(home, { recursive: true, force: true }); }

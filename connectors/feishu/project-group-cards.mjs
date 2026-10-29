@@ -7,6 +7,8 @@ import { dirname, basename } from 'node:path';
 import { loadProjectMemoryRuntime, PROJECT_MEMORY_RUNTIME_FILE } from '../../chat/project-memory-runtime.mjs';
 import { buildSessionNavigationHref } from '../../lib/session-navigation.mjs';
 import { effectiveFeishuGroup } from './group-settings.mjs';
+import { KNOWLEDGE_ROOT, knowledgeConfig } from '../../chat/knowledge-pilot.mjs';
+import { join } from 'node:path';
 
 export async function groupProject(runtime, chatId) {
   if (!runtime.config.projectCards) return null;
@@ -50,6 +52,7 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   const track = promise => { active.add(promise); promise.finally(() => active.delete(promise)).catch(() => {}); return promise; };
   let stopped = false, socket, timer, reconnect, draining = false, retryMs = 250;
   const observers = new Map();
+  const knowledgeGroups = new Map();
   const warn = e => console.warn(`[feishu-project-cards] ${e.message}`);
   async function json(path, options) {
     const r = await request(path, options);
@@ -74,8 +77,9 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
     const pilot = (await routingGroups()).find(g => g.chatId === chatId);
     const { config } = await loadProjectMemoryRuntime();
     const readingGroup = config.readingPolicy && config.groups.find(g => g.chatId === chatId && g.sourceRouteId === runtime.config.sourceRouteId);
-    if (!project && !pilot && !readingGroup) return;
-    const summary = summaryFor(project?.group || pilot || readingGroup);
+    const knowledgeGroup = knowledgeGroups.get(chatId);
+    if (!project && !pilot && !readingGroup && !knowledgeGroup) return;
+    const summary = summaryFor(project?.group || pilot || readingGroup || knowledgeGroup);
     if (!summary.tenantKey) throw Error(`Missing verified tenant for ${chatId}`);
     const record = await participation().state(summary);
     await participation().publish(record, { existingOnly: true, background: true });
@@ -132,6 +136,13 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
   async function connect() {
     if (stopped) return;
     try {
+    const knowledge = await knowledgeConfig();
+    for (const group of knowledge?.groups || []) {
+      if (group.sourceRouteId === runtime.config.sourceRouteId) knowledgeGroups.set(group.chatId, group);
+    }
+    // Retain addresses already displayed so disabling/removing a scope also
+    // clears that experiment from its existing card.
+    for (const group of knowledgeGroups.values()) enqueue(group.chatId);
       const cookie = await ensureAuthCookie();
       if (stopped) return;
       socket = new WebSocket(runtime.config.chatBaseUrl.replace(/^http/, 'ws') + '/ws', { headers: { Cookie: cookie } });
@@ -170,3 +181,4 @@ export async function startProjectGroupCards(runtime, { request, ensureAuthCooki
     await Promise.allSettled([...active]);
   } };
 }
+  observe(join(KNOWLEDGE_ROOT, 'config.json'));

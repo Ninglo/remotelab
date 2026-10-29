@@ -12,6 +12,11 @@ let worker, wss;
 try {
   const { GROUP_ROUTING_PILOT_FILE } = await import('../lib/group-routing-pilot.mjs');
   const { AUTH_FILE } = await import('../lib/config.mjs');
+  const { KNOWLEDGE_ROOT } = await import('../chat/knowledge-pilot.mjs');
+  await mkdir(KNOWLEDGE_ROOT, {recursive:true});
+  const knowledge = {version:1,id:'wiki',projectId:'p',name:'Wiki',enabled:true,personIds:[],corpusPath:home,
+    groups:[{sourceRouteId:'bot',tenantKey:'tenant',chatId:'knowledge-only'}]};
+  await writeFile(join(KNOWLEDGE_ROOT,'config.json'),JSON.stringify(knowledge));
   const { PROJECT_MEMORY_RUNTIME_FILE, buildProjectMemoryPromptBlock } = await import('../chat/project-memory-runtime.mjs');
   const brief = join(home, 'brief.md'); await writeFile(brief, '# Goal\nHuman correction takes priority.\n更新时间：today');
   const config = { schemaVersion: 1, enabled: true, contextEnabled: true, reviewEnabled: true, releaseId: 'v1',
@@ -45,8 +50,8 @@ try {
   assert.match(JSON.stringify(card),/点名回应/);assert.match(JSON.stringify(card),/Project/);
   assert.doesNotMatch(JSON.stringify(card),/"namespace":"participation"/);
   wss=new WebSocketServer({port:0});await once(wss,'listening');
-  let signalResolve;
-  const signal=()=>new Promise((resolve,reject)=>{signalResolve=resolve;setTimeout(()=>reject(Error('No card update within deadline')),5000).unref();});
+  let signalResolve, signalChat;
+  const signal=(chatId='chat')=>new Promise((resolve,reject)=>{signalChat=chatId;signalResolve=resolve;setTimeout(()=>reject(Error('No card update within deadline')),5000).unref();});
   const seen=[], published=[];let overviewResolve;
   const overviewUpdated=new Promise(resolve=>{overviewResolve=resolve;});
   const runtime={config:{projectCards:true,sourceRouteId:'bot',chatBaseUrl:`http://127.0.0.1:${wss.address().port}`,groups:{chat:{responseMode:'mention_only'}}}};
@@ -56,7 +61,7 @@ try {
   worker=await startProjectGroupCards(runtime,{
     request:async path=>({response:{ok:true},json:path==='/api/sessions'?{sessions:[topic,other]}:{session:topic}}),
     ensureAuthCookie:async()=>{if(!authAvailable)throw Error('offline test');return 'test';},onboard:async(_s,opts)=>{assert.equal(opts.projectCard,true);assert.notEqual(_s.chatId,'overview');},
-    participation:()=>({state:async summary=>({...record,source:{chatId:summary.chatId}}),publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);assert.equal(opts.background,true);published.push(_record.source.chatId);if(_record.source.chatId==='overview')overviewResolve();seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));signalResolve?.();}}),
+    participation:()=>({state:async summary=>({...record,source:{chatId:summary.chatId}}),publish:async(_record,opts)=>{assert.equal(opts.existingOnly,true);assert.equal(opts.background,true);published.push(_record.source.chatId);if(_record.source.chatId==='overview')overviewResolve();seen.push(projectTopicRows(runtime.projectCardSessions,'chat','bot'));if(_record.source.chatId===signalChat)signalResolve?.();}}),
   });
   const [socket]=await connected;await initial;
   assert.equal(seen.at(-1)[0].state,'进行中');
@@ -74,3 +79,9 @@ try {
   assert.equal(runtime.projectCardsConnected,false);
   console.log('Project group cards: scoped live invalidations, disconnect, completion distinction, unchanged response policy, and fresh bounded brief pointers passed');
 } finally {worker?.stop();if(wss){for(const s of wss.clients)s.terminate();await new Promise(resolve=>wss.close(resolve));}await rm(home,{recursive:true,force:true});}
+  const knowledgeChanged = signal('knowledge-only');
+  const knowledgeWrites = published.filter(id => id === 'knowledge-only').length;
+  await writeFile(join(KNOWLEDGE_ROOT,'config.json'),JSON.stringify({...knowledge,enabled:false,groups:[],personIds:['person_a']}));
+  await knowledgeChanged;
+  assert.ok(published.filter(id => id === 'knowledge-only').length > knowledgeWrites,
+    'removing group scope refreshes its original card even without a project registration');

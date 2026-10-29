@@ -248,8 +248,11 @@ register `name`, `briefPath`, `briefUrl` and `skills` (`name`, `description`,
 maintenance workflow. These are instance pointers, not repository business data.
 
 Enable `projectCards: true` on the intended Connector. Native topic groups use
-normal Agent conversations and have no participation/configuration status card;
-provider chat metadata is checked before onboarding or refreshing a card.
+normal Agent conversations and do not receive new participation/configuration cards.
+An existing managed group card is still refreshed after a group changes to native
+topic mode, so old personal trials do not remain visible. It omits the obsolete
+main Session and participation controls; historical topic cards remain excluded.
+Provider chat metadata is checked before onboarding or refreshing a card.
 For ordinary groups, on connection it resolves
 each registered group’s existing main conversation, creates an idempotent Session
 only when absent, and publishes the existing participation card. It sends no
@@ -261,7 +264,14 @@ operator. Unbound groups are not inferred from titles.
 Existing and new group configuration cards use the same compact presentation;
 legacy `cardLayout` flags no longer select a full editor. The card retains the
 available participation callbacks, actual main Session model/link, project
-brief/time, up to three skills and authorized personal trial controls. The brief
+brief/time, up to three skills and experiments enabled for that exact group. Personal
+experiments, member enrollment lists and personal switches appear only in personal
+settings. Disabled group experiments do not add an enrollment block to every card.
+Organization Wiki uses the same Bot, tenant and group match as runtime admission;
+personal Wiki enrollment cannot populate a group card. Its configuration changes
+refresh existing cards, including scope removal, without changing enrollment.
+An explicitly enabled group self-review remains visible with its group-only off
+control; disabling it does not alter members' personal choices. The brief
 link uses “项目名称｜项目共同认知·对话按需读取”. Work groups show their actual
 per-message response policy even without a project binding. An unresolved `auto`
 model is displayed as automatic selection, never a guessed model. Topic boards,

@@ -126,7 +126,14 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   }
   async function publishCurrent(record, { existingOnly = false, background = false } = {}) {
     const source = await resolveSource({ ...record.source, threadId: record.source.topicId });
-    if (isFeishuTopicGroup(source)) return record;
+    // Keep an already managed group card accurate after a group becomes a
+    // native topic group, without creating new cards or reviving topic controls.
+    if (isFeishuTopicGroup(source)) {
+      if (!getConfiguration || record.source.topicId || !record.cardMessageId) return record;
+      // Legacy group records may remember an ordinary input message. It must
+      // not become a native topic address when metadata is refreshed.
+      source.messageId = ''; source.rootId = ''; source.parentId = ''; source.threadId = ''; source.topicId = '';
+    }
     record = { ...record, ...await state(source) };
     // Withdrawing a status card does not change participation or intake. Keep
     // the durable opt-out when restoring or changing modes so it cannot resend.
@@ -354,6 +361,10 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     for (const record of await records.active()) {
       try {
         const source = await resolveSource(record.source);
+        if (isFeishuTopicGroup(source)) {
+          await publish({ ...record, source }, { existingOnly: true, background: true });
+          continue;
+        }
         if (!participationEnabled(runtime, source)) continue;
         if (record.stopPending) await change(source, record.mode,
           { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true, background: true });

@@ -948,8 +948,10 @@ withdraw the existing message and its top notice separately when requested.
 Restart refreshes only existing managed group top-notice cards; it never
 creates a missing card or repaints historical thread cards from remembered
 conversation state, even when finishing a pending mode change.
-Native topic records are excluded from
-restoration, including pending old pause operations.
+Native topic records are excluded from restoration, including pending old pause
+operations. An already managed group card from before conversion to native topic
+mode still refreshes its group configuration, without reviving participation
+controls or the old main Session. Native groups without a card remain unchanged.
 
 The opt-in `projectCards: true` setting extends this same card to groups explicitly
 registered in the instance project runtime, including ordinary work and mention-only

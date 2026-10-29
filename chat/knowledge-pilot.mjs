@@ -36,12 +36,17 @@ export async function knowledgeConfig(root = KNOWLEDGE_ROOT) {
   }
   return c;
 }
+export function knowledgeGroupScope(c, source) {
+  if (!c?.enabled || !source) return null;
+  return c.groups?.find(g => ['sourceRouteId', 'tenantKey', 'chatId']
+    .every(key => source[key] && g[key] === source[key])) || null;
+}
 function knowledgeGroup(c, o) {
   const s = o.sourceContext;
   // Only the authenticated input's origin grants group scope. A Web input in
   // a group-bound Session (or a copied policy snapshot) must not inherit it.
   if (o.feishuConnectorAuthenticated !== true || s?.connector !== 'feishu' || s.chatType !== 'group') return null;
-  return c?.groups?.find(g => g.sourceRouteId === s.sourceRouteId && g.tenantKey === s.tenantKey && g.chatId === s.chatId) || null;
+  return knowledgeGroupScope(c, s);
 }
 export function knowledgeEligible(c, o, session = {}) {
   return Boolean(c?.enabled && o.viewPersonId && o.initiatedByIdentityId

@@ -1,4 +1,6 @@
-import { personalRoutingCardAction, personalRoutingCardView } from './personal-routing-card.mjs';
+import { personalRoutingCardAction } from './personal-routing-card.mjs';
+import { knowledgeConfig, knowledgeGroupScope } from '../../chat/knowledge-pilot.mjs';
+import { isFeishuTopicGroup } from './index.mjs';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { groupProject, projectTopicRows } from './project-group-cards.mjs';
@@ -74,8 +76,12 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     } catch { project = { error: '登记的项目说明暂时无法读取，请核对原来源。' }; }
     const topics = projectTopicRows(runtime.projectCardSessions || new Map(), chatId, runtime.config.sourceRouteId);
     const boardPage = Math.min(runtime.groupBoardPages?.get(chatId) || 0, Math.max(0, Math.ceil(topics.length / 10) - 1));
-    return { routingTrial: await personalRoutingCardView({ connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId, target: record.source }), project, reading, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
-      participationControls: group.participationMode === 'ambient' && group.participationControls === true,
+    const knowledge = await knowledgeConfig();
+    const knowledgePilot = knowledgeGroupScope(knowledge, { ...record.source, sourceRouteId: runtime.config.sourceRouteId })
+      ? { id: knowledge.id, enabled: true } : null;
+    const nativeTopicGroup = isFeishuTopicGroup(record.source);
+    return { knowledgePilot, nativeTopicGroup, project, reading, topics, boardPage, boardConnected: runtime.projectCardsConnected === true,
+      participationControls: !nativeTopicGroup && group.participationMode === 'ambient' && group.participationControls === true,
       responseMode: group.responseMode, selection, catalog, reasoning: reasoningForRuntimeProfile(catalog, selection.model), systemPrompt,
       selfReview: group.selfReview === true,
       sessionAvailable: Boolean(session), effectiveSystemPrompt: session?.systemPrompt || '',
