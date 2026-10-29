@@ -2079,3 +2079,15 @@ Resuming reception must preserve accepted invitations; a later pause/listen stil
 revokes earlier replies even after another resume. Intake and control revisions
 remain strict so queued old discussion cannot become new work. Progress labels
 must distinguish execution completion from confirmed delivery of the final answer.
+
+## 2026-10-29 — Prefer useful response speed over automatic read reactions
+
+A user asked to disable Jev social reactions after sarcasm about a system failure
+received a cheerful emoji. The separate classifier did not reduce main-model
+calls, and the main model recognized the teasing without correcting the emoji.
+The user already trusts message reception; another read signal adds little value.
+The accepted change disables Jev for the requesting connector, including future
+groups, while preserving message admission and optional main-model reactions.
+Future latency work should measure time to a useful response and final answer,
+including preparation and model execution. Removing a fast reaction alone does
+not establish that useful responses became faster.
