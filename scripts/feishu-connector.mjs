@@ -11,6 +11,7 @@ import { participationEnabled, participationAllowsMessage, createParticipationCo
 import { createPersonalSettingsController, summarizePersonalChatEntered } from '../connectors/feishu/personal-settings-card.mjs';
 import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
 import { startProjectGroupCards } from '../connectors/feishu/project-group-cards.mjs';
+import { startFeishuCardRecovery } from '../connectors/feishu/card-startup.mjs';
 import { handleFeishuProgressPolicyAction } from '../connectors/feishu/progress-policy-actions.mjs';
 import { createFeishuCardReadSampler, handleFeishuCardReadEvent } from '../connectors/feishu/card-engagement.mjs';
 
@@ -2082,8 +2083,8 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     });
     if (runtime.groupConfiguration && !buildFeishuTopicId(summary) && participationEnabled(runtime, summary)) {
       const controller = participationController(runtime, helpers);
-      try { await controller.publish(await controller.state(summary)); }
-      catch (error) { console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`); }
+      void controller.state(summary).then(record => controller.publish(record))
+        .catch(error => console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`));
     }
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
   }
@@ -2122,7 +2123,13 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
       submitRemoteLabRequest(runtime, summary, { observeOnly: true })))(runtime, summary);
     if (receipt.ignored) return receipt;
     if (!receipt.observation?.eventSeq) throw new Error('Feishu message was not recorded in Session');
-    try { await controller?.remember(summary, receipt.sessionId, receipt.observation.recent); }
+    try {
+      const record = await controller?.remember(summary, receipt.sessionId, receipt.observation.recent, { refreshCard: false });
+      if (record && runtime.groupConfiguration && !buildFeishuTopicId(summary)) {
+        void controller.publish(record, { existingOnly: true, background: true })
+          .catch(error => console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`));
+      }
+    }
     catch (error) { console.warn(`[feishu-participation] remember: ${error.message}`); }
     return { ...receipt, observedOnly: true };
   }
@@ -2160,7 +2167,11 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
   if (runtime.groupConfiguration && !buildFeishuTopicId(summary) && participationEnabled(runtime, summary)) {
     const controller = participationController(runtime, helpers);
-    try { await controller.publish(await controller.remember(summary, receipt.sessionId)); }
+    try {
+      const record = await controller.remember(summary, receipt.sessionId, [], { refreshCard: false });
+      void controller.publish(record)
+        .catch(error => console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`));
+    }
     catch (error) { console.warn(`[feishu-group-configuration] card refresh failed: ${error.message}`); }
   } else if (controller) {
     try { await controller.remember(summary, receipt.sessionId); }
@@ -2323,9 +2334,6 @@ async function main() {
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
   );
   await groupConfigurationController(runtime).restore();
-  if (['active', 'listening', 'paused'].includes(config.defaultGroupParticipation) || Object.values(config.groups || {}).some(group => group.participationControls || ['active', 'listening', 'paused'].includes(group.participationMode))) {
-    await participationController(runtime).restore();
-  }
   const discussionHandoff = createDiscussionHandoffPilot(runtime, {
     submitWork: async (proposal, found) => {
       const source = proposal.source;
@@ -2401,25 +2409,15 @@ async function main() {
   });
 
   let closed = false;
+  let cardRecovery = null;
   runtime.resolveDocumentRuntime = () => resolveFeishuRuntimeSelection(runtime);
   runtime.handleDocumentMention = summary => handleMessage(runtime, summary, 'drive.notice.comment_add_v1');
   const documentEvents = await startDocumentBindingEvents(runtime);
-  runtime.workboards = await startFeishuWorkboards(runtime, { configDir: CONFIG_DIR, configPath: options.configPath,
-    remote: { baseUrl: config.chatBaseUrl,
-      request: (path, options) => requestRemoteLab(runtime, path, options),
-      ensureAuthCookie: () => ensureAuthCookie(runtime) },
-  });
-  runtime.projectCards = await startProjectGroupCards(runtime, {
-    request: (path, options) => requestRemoteLab(runtime, path, options),
-    ensureAuthCookie: () => ensureAuthCookie(runtime),
-    onboard: (summary, options) => onboardFeishuGroup(runtime, summary, options),
-    participation: () => participationController(runtime),
-  });
   let cardsStopped = null;
   const closeConnection = (reason) => {
     if (closed) return;
     closed = true;
-    cardsStopped = Promise.all([runtime.workboards.stop(), runtime.projectCards?.stop()]);
+    cardsStopped = cardRecovery?.stop();
     stopSourceDeliveryPoller(runtime);
     runtime.projectSurface?.stop();
     void documentEvents.stop();
@@ -2572,6 +2570,28 @@ async function main() {
   inbox.start();
   await meetingIngest.start();
   await wsClient.start({ eventDispatcher });
+  if (closed) return;
+  cardRecovery = startFeishuCardRecovery({
+    startWorkboards: async () => (runtime.workboards = await startFeishuWorkboards(runtime, {
+      configDir: CONFIG_DIR, configPath: options.configPath,
+      remote: { baseUrl: config.chatBaseUrl,
+        request: (path, options) => requestRemoteLab(runtime, path, options),
+        ensureAuthCookie: () => ensureAuthCookie(runtime) },
+    })),
+    startProjectCards: async () => (runtime.projectCards = await startProjectGroupCards(runtime, {
+      request: (path, options) => requestRemoteLab(runtime, path, options),
+      ensureAuthCookie: () => ensureAuthCookie(runtime),
+      onboard: (summary, options) => onboardFeishuGroup(runtime, summary, options),
+      participation: () => participationController(runtime),
+    })),
+    restoreParticipation: shouldContinue => {
+      if (['active', 'listening', 'paused'].includes(config.defaultGroupParticipation)
+          || Object.values(config.groups || {}).some(group => group.participationControls
+            || ['active', 'listening', 'paused'].includes(group.participationMode))) {
+        return participationController(runtime).restore({ shouldContinue });
+      }
+    },
+  });
   void meetingObserver.restore().catch(error =>
     console.warn(`[feishu-meeting] restore failed: ${error.message}`));
   void runtime.projectSurface?.restore().catch(error =>

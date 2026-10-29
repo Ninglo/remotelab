@@ -549,6 +549,7 @@
             "connectors/feishu/reply-attachments.mjs",
             "connectors/feishu/group-settings.mjs",
             "connectors/feishu/participation-state.mjs",
+            "connectors/feishu/card-startup.mjs",
             "connectors/feishu/quick-participation.mjs",
             "connectors/feishu/private-conversations.mjs",
             "chat/session-log-search.mjs",

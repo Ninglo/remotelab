@@ -103,7 +103,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         ...(existing?.epoch !== epoch ? { invitedMessages: [] } : {}) } : {}) };
   }
 
-  async function remember(summary, sessionId, recent = []) {
+  async function remember(summary, sessionId, recent = [], { refreshCard = true } = {}) {
     const key = keyFor(summary);
     const prior = await state(summary);
     const record = await records.mutate(key, current => ({ ...current, ...prior, sessionId,
@@ -112,7 +112,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       topicAnchor: (current?.mode === 'listening' ? current.topicAnchor : '') || recent.slice(-5).map(x => x.text).join('\n').slice(-2500)
         || String(summary.messageText || summary.textPreview || '').slice(0, 1200),
     }));
-    if (getConfiguration && !record.source.topicId) {
+    if (refreshCard && getConfiguration && !record.source.topicId) {
       const existing = Boolean(record.cardMessageId
         || effectiveFeishuGroup(runtime.config, record.source.chatId).participationStatusMessageId);
       try { return await publish(record, { existingOnly: existing, background: existing }); }
@@ -253,11 +253,14 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       pinPending: canPin ? false : record.pinPending }));
   }
   async function change(summary, requested, { sessionId = '', controlId = summary.eventId || summary.messageId,
-    existingOnly = false, background = false } = {}) {
+    existingOnly = false, background = false, expectedEpoch, waitForCard = true } = {}) {
     const key = keyFor(summary);
-    return exclusive(key, async () => {
+    const changed = await exclusive(key, async () => {
       let prior = await state(summary);
-      if (prior.processedControls?.includes(controlId)) return publish(prior, { existingOnly, background });
+      // Recovery can be waiting on metadata while a human changes this group.
+      // Check inside the same queue as live controls, before replaying a stop.
+      if (expectedEpoch !== undefined && ((prior.epoch || 0) !== expectedEpoch || !prior.stopPending)) return prior;
+      if (prior.processedControls?.includes(controlId)) return prior;
       const mode = requested === 'resume_read' ? (prior.beforePause || 'listening') : requested;
       if (!MODES.has(mode)) throw new Error('Invalid Agent participation mode');
       let record = await records.mutate(key, current => ({ ...prior, ...current, source: sourceFor(summary), mode, modeOverride: true,
@@ -281,7 +284,11 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         const target = sessionId || record.sessionId || await resolveSession?.(summary);
         if (target) {
           try { await cancelSession(target, record); }
-          catch (error) { await publish(record, { existingOnly, background }); throw error; }
+          catch (error) {
+            void publish(record, { existingOnly, background }).catch(error =>
+              console.warn(`[feishu-participation] pending stop card: ${error.message}`));
+            throw error;
+          }
         }
         await cleanup?.(record);
         if (!record.source.topicId) {
@@ -297,8 +304,14 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       }
       record = await records.mutate(key, current => ({ ...current, stopPending: false,
         processedControls: [...(current.processedControls || []), controlId].filter(Boolean).slice(-100) }));
-      return publish(record, { existingOnly, background });
+      return record;
     });
+    // Keep provider/card requests outside the control queue so slow views
+    // cannot delay admission or a newer human control.
+    const refresh = publish(changed, { existingOnly, background });
+    if (waitForCard) return refresh;
+    void refresh.catch(error => console.warn(`[feishu-participation] mode card: ${error.message}`));
+    return changed;
   }
   async function assess(summary, { mentioned = false, taskCommand = false } = {}) {
     const key = keyFor(summary);
@@ -319,13 +332,13 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     if (!participationEnabled(runtime, summary) || ['app', 'bot'].includes(summary.sender?.senderType)) return null;
     const record = await state(summary);
     if (record.processedControls?.includes(summary.messageId)) {
-      await publish(record);
+      void publish(record).catch(error => console.warn(`[feishu-participation] mode card: ${error.message}`));
       return { participationControl: true, duplicate: true };
     }
     const others = (summary.mentions || []).some(x => x.openId && x.openId !== runtime.botIdentity?.openId);
     const addressed = mentionsFeishuBot(runtime, summary);
     const mode = !others || addressed ? parseParticipationText(summary.messageText || summary.textPreview) : null;
-    if (mode) { await change(summary, mode); return { participationControl: true, mode }; }
+    if (mode) { await change(summary, mode, { waitForCard: false }); return { participationControl: true, mode }; }
     const at = Number(summary.createTime);
     const messageTime = at > 0 ? (at < 10_000_000_000 ? at * 1000 : at) : snapshot?.receivedAt;
     if ((snapshot && snapshot.epoch !== record.epoch && snapshot.mode !== 'active')
@@ -357,19 +370,27 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       .catch(error => console.warn(`[feishu-participation] ${error.message}`));
     return { toast: { type: 'info', content: '正在切换，生效后卡片会更新。' } };
   }
-  async function restore() {
+  async function restore({ shouldContinue = () => true } = {}) {
     for (const record of await records.active()) {
+      if (!shouldContinue()) return;
       try {
         const source = await resolveSource(record.source);
+        if (!shouldContinue()) return;
         if (isFeishuTopicGroup(source)) {
           await publish({ ...record, source }, { existingOnly: true, background: true });
           continue;
         }
         if (!participationEnabled(runtime, source)) continue;
         if (record.stopPending) await change(source, record.mode,
-          { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true, background: true });
+          { sessionId: record.sessionId, controlId: `restore:${record.epoch}`, existingOnly: true,
+            background: true, expectedEpoch: record.epoch || 0, waitForCard: false });
         else {
-          if (record.mode !== 'active') await cleanup?.(record);
+          if (record.mode !== 'active') await exclusive(record.key, async () => {
+            const current = await state(source);
+            if (shouldContinue() && current.mode !== 'active' && (current.epoch || 0) === (record.epoch || 0)) {
+              await cleanup?.(current);
+            }
+          });
           await publish({ ...record, source }, { existingOnly: true, background: true });
         }
       } catch (error) {

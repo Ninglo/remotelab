@@ -54,6 +54,7 @@ try {
   await send('listen', '你先旁听吧');
   assert.equal((await runtime.participation.state(base)).mode, 'listening');
   assert.deepEqual(calls.stopped, ['s1']);
+  await runtime.participation.idle();
   assert.equal(calls.cards[0].path.message_id, 'om_existing');
   assert.equal(calls.observed.length, 0);
 

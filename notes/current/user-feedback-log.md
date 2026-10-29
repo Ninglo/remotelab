@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Receive messages while group cards recover
+
+- Feedback: a group card displays and edits reply eligibility; its refresh should run asynchronously while saved participation and writing settings remain usable.
+- Evidence: one connector startup spent about 117 seconds reaching its WebSocket connection, with serial card restoration encountering three roughly 30-second request timeouts. Two messages sent during that gap first reached the connector about 316 seconds later. That delivery delay includes provider retry timing, rather than measuring card work alone.
+- Change: load local group prompts before intake, then recover cards after starting reception. Save participation and accepted-message state without waiting for card publication; reject stale recovery stops after newer human controls.
+- Verification: isolated tests hold card requests open while exercising ordinary intake, listening, pause, invitation and resume, plus recovery failures and shutdown. Runtime restart timing is verified separately from those synthetic failures.
+
 ### 2026-10-29 — Send a finished chat answer before processing later supplements
 
 - Feedback: a brief latency probe still felt slow after optional acknowledgements and review overhead were removed.

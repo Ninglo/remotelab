@@ -948,6 +948,14 @@ withdraw the existing message and its top notice separately when requested.
 Restart refreshes only existing managed group top-notice cards; it never
 creates a missing card or repaints historical thread cards from remembered
 conversation state, even when finishing a pending mode change.
+Startup loads local group prompts before reception and checks each incoming
+message against durable local participation settings. Participation cards,
+project cards and workboard views recover in the
+background after starting the Feishu connection. Slow or failed card requests
+do not delay message reception. Admitted messages and text mode controls also
+release intake after saving their state, without waiting for card publication.
+Recovery checks the current control revision before completing an old stop or
+cleanup, so a delayed restore cannot undo a newer resume.
 Native topic records are excluded from restoration, including pending old pause
 operations. An already managed group card from before conversion to native topic
 mode still refreshes its group configuration, without reviving participation
