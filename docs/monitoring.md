@@ -1,5 +1,24 @@
 # Operations overview
 
+## Response time query
+
+可直接交办：“用现有监控告诉我今天首次回应和完整交付用了多久，附统计时间、样本数和缺口。”
+`remotelab response-time --json` 单次调用既有 `/api/monitoring/sessions?days=1&dashboard=1`，
+复用缓存、来源分区和统计定义，只输出响应指标。`--days 7` 按天返回七日数据，不合成日分位数。
+普通会话首响从消息发出起算，包含开场、进展、提问和答复，排除表情与自动状态。
+完整交付复用 `journeyStages.total`，仅覆盖阶段时间完整且有序的记录；
+`acceptedToFinalMs` 另列受理至最终送达的既有统计，不能当作消息发出起算。
+群主线仅返回现有首响统计，完整交付指标保留未知。首响和最终送达样本数可不同；未回传或缺回执不计为零。
+
+查询具体消息使用 `remotelab response-time --request-id <输入ID> --session <SessionID> --json`，
+省略 Session 时沿当前执行环境。仅定点读取本实例 Request 及已关联的答复所属记录，不遍历目录或读取日志正文。
+运行中补充须有明确归属的回执；合并答复沿原契约追溯，不把整次执行的所有消息都算作已回答。
+最终正文及声明附件全部送达才提供完整交付耗时，运行状态另列，送达不等于任务验收。
+具体消息查询不接受 `--base-url`，避免把远端汇总与本地回执混用。
+
+这个入口不创建采集器、定时任务或模型判断，也不增加每轮注入规则。
+普通速度查询直接读统计；只有缺字段、异常或需要解释原因时才展开对应记录。
+
 ## 组织知识库按需调用与持续监管
 
 可交给实例 Agent：“将现有组织知识库的按需调用接入 Claude Tag 持续功能监管，先只对我生效；记录入口、正文读取量和次数、Token、时延及实际效果。复用原采集，不增加群消息或另一套定时监控。”执行者须核对当前已验证 Person、既有知识目录及原监管站点；默认关闭，配置不从公开网页接受。
@@ -446,6 +465,8 @@ Crash monitoring is opt-in with `serviceIncidents: {enabled: true}`. The existin
 The core writes credential-free `runtime-health.json` every ten seconds with PID, heap used/limit, RSS, GC duration/count and event-loop p99. Set `runtimeHealth: {unit: "your-core.service"}` to observe it; stale or mismatched-PID samples are unknown. The independent observer retains minute samples for 30 days in `runtime-health-history/`. Heap use over 85% for two distinct observations alerts; recovery below 75% rearms the pressure signal. The first deployment may trial a larger `--max-old-space-size` through the instance service configuration; it is headroom, not proof that retained memory is bounded. Optional fatal diagnostic reports should exclude environment and network details and stay in a private instance directory; do not generate near-limit heap snapshots in production. These local mechanisms cannot detect a complete host outage from outside the host; external heartbeat/availability monitoring requires a separately configured destination.
 
 The core also releases idle read-through caches on a fixed schedule (`chat/cache-release.mjs`). Every `REMOTELAB_CACHE_SWEEP_MINUTES` (default 5) it drops history events, bodies, session meta, run manifests and run artifacts untouched for `REMOTELAB_CACHE_IDLE_MINUTES` (default 30), and session-list views unread for `REMOTELAB_SESSION_LIST_IDLE_MINUTES` (default 10). Session meta (`REMOTELAB_HISTORY_META_CACHE_MIB`, 64) and run manifests (`REMOTELAB_RUN_MANIFEST_CACHE_MIB`, 128) are byte-budgeted like events and bodies. Disk remains authoritative, so a released entry is simply reread on next use; recently read data is not released. Byte budgets are estimates of serialized size, not exact V8 heap, so watch `runtime-health` after changing them.
+
+`GET /api/monitoring/sessions` runs its file-scanning readers in an on-demand worker thread (`chat/monitoring-sessions-worker.mjs`) with its own heap limit (`REMOTELAB_MONITORING_WORKER_HEAP_MB`, default 2048). Projection caches live in that worker; it exits after 10 idle minutes, a crash or a 120-second timeout fails only the pending monitoring reads, and the next read starts a fresh worker. Compaction and diagnostics stay in the core.
 
 An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP server or model. Run it under one user service/timer with an explicit instance environment. It batches newly actionable disk/service incidents and important native task failures persisting for three observations into shared, updateable Feishu cards. Normal account exhaustion stays in the account table; actionable local backup/switching failures use the continuity route below. Normal, restored and lower-priority states go into the report.
 

@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Move monitoring scans out of the core heap and stop full topic re-reads
+
+- Feedback: keep necessary background work but stop it from loading the service that receives messages; add a simple directory instead of whole-list reads.
+- Evidence: the topic-live display sync re-read the 14 MB summary list, the archived list and 1,015 full Sessions on every index cycle (about 5 s), because summaries omit work details, and kept reading while no browser page consumed its output. The dashboard monitoring read scans about 200 MB of request/run files in the core; a direct read grew the calling heap by 97 MiB versus 3 MiB through a worker.
+- Change: the display sync (instance workspace, not this repository) now uses `?view=refs` directory diffs and `?view=summary`, keeps hydrated work details while their revision is unchanged, debounces invalidations and pauses while no browser page is connected. Session monitoring runs in an on-demand worker thread with its own heap limit and idle exit.
+- Verification: live comparison of old/new projector output (identical digest; warm pass 2 refs + 3 summaries in 73 ms versus 2 lists + 1,015 full reads), invalidation-path work retention, worker client unit tests, live worker-versus-direct dashboard parity and existing monitoring suites.
+
 ### 2026-10-29 — Release idle server caches on a fixed schedule
 
 - Feedback: after the poller was found, schedule fixed cache release instead of letting read-through caches stay resident until the heap limit.

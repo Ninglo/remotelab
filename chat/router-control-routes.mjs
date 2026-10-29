@@ -106,7 +106,8 @@ import {
 import { queryUsageLedger } from './usage-ledger.mjs';
 import { readMemoryContextView } from './memory-context-view.mjs';
 import { readMonitoringOverview } from './monitoring.mjs';
-import { readSessionMonitoring, readDashboardSessions, compactSessionMonitoring } from './monitoring-sessions.mjs';
+import { compactSessionMonitoring } from './monitoring-sessions.mjs';
+import { sessionMonitoringClient } from './monitoring-sessions-client.mjs';
 import { readContextSource } from './monitoring-dashboard.mjs';
 import { readPromptReview, readPromptReviewSource, launchPromptReview } from './prompt-review.mjs';
 import { updateSessionProgressPolicy, updateProgressCardDisclosure } from './session-progress-policy.mjs';
@@ -1218,7 +1219,7 @@ export async function handleControlRoutes({
   if (pathname === '/api/monitoring/sessions' && req.method === 'GET') {
     try {
       const dashboard = parsedUrl?.query?.dashboard === '1';
-      const data = await (dashboard ? readDashboardSessions : readSessionMonitoring)({ days: parsedUrl?.query?.days, dashboard });
+      const data = await sessionMonitoringClient.read({ days: parsedUrl?.query?.days, dashboard });
       const view = parsedUrl?.query?.compact === '1' ? await compactSessionMonitoring(data, getSessionMonitoringActivity) : { ...data };
       try { view.diagnostics = await readSessionDiagnostics(); }
       catch { view.diagnostics = { unavailable: true, incidents: [] }; }
