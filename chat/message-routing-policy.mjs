@@ -1,4 +1,4 @@
-import { resolvePersonMessageReplyPolicy } from './person-message-replies.mjs';
+import { resolvePersonMessageReplySettings } from './person-message-replies.mjs';
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
 
 // Capture the sender's independent parallel setting at admission. The routing
@@ -26,17 +26,17 @@ export async function captureMessageRoutingOptions(session, supplied, preserved)
     && source.sourceRouteId === delivery.sourceRouteId;
   let personal = null;
   if (humanGroup) {
-    try { personal = await resolvePersonMessageReplyPolicy(options); }
+    try { personal = await resolvePersonMessageReplySettings(options); }
     catch (error) { console.warn(`[message-routing] ${error.message}; routing disabled`); }
   }
   // New inputs never acquire automatic routing. Already accepted inputs above
   // retain their snapshots, including pending confirmations and running plans.
   options.messageRoutingPolicy = { version: 1, mechanism: 'none' };
   const scope = humanGroup ? await routingPilotScope(session.conversation, undefined, personal?.personId) : null;
-  const enabled = personal?.parallelWork === true && scope?.version === 2
+  const enabled = personal?.choices.parallelWork === true && scope?.version === 2
     && isPilotInputSinceActivation(scope, source.createTime || source.eventTs);
   options.parallelWorkPolicy = { version: 1, enabled: Boolean(enabled),
-    ...(personal ? { personId: personal.personId, policyId: personal.policyId } : {}),
+    ...(personal ? { personId: personal.personId, ...(personal.active ? { policyId: personal.active.policyId } : {}) } : {}),
     ...(enabled ? { trialId: scope.trialId, trialVersion: 2 } : {}) };
   return options;
 }

@@ -550,8 +550,8 @@ export async function buildGroupRoutingContext(session, sourceContext, { inputRe
   if (sourceContext?.connector !== 'feishu' || sourceContext.chatType !== 'group'
       || session.conversation?.connector !== 'feishu') return '';
   return [
-    '## 主动分流试用已撤回',
-    '在当前话题接续工作，不沿用历史中的主动误发识别、自动分流或主线 work reply 指令。并行分工仅按本条独立的并行设置与人的授权执行。正常话题回复和用户明确要求的新话题不受影响。',
+    '## 话题接续与转交',
+    '在当前话题接续工作。并行分工按本条并行设置与人的授权执行。正常话题回复和用户明确要求的新话题沿现有入口处理。',
     '用户明确要求转交且内容、目标已确定时，仍可用 work route handoff 并携带本条指令的 authorization；已批准草稿可按 proposalId 恢复。保留登记范围、身份和实际投递核验，不自行扩权。',
   ].join('\n');
 }

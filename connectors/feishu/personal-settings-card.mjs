@@ -35,7 +35,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     choices('progress', c.progress, Object.entries(progressLabels).slice(0, 2)),
     choices('progress', c.progress, Object.entries(progressLabels).slice(2)),
     md('卡片会持续更新；选择“全部进展”时，历史记录默认收起，想看时再展开。')]),
-    ...toggle('多项工作并行（试用）', 'parallelWork', c.parallelWork === true, '有几件事能独立推进时，我会提出分工，确认后分开做，你仍在原话题收结果。关闭后不主动提出这类分工；目前仅在已开放的试点群生效。', ['主动建议分工', '不主动建议']),
+    ...toggle('多项工作并行', 'parallelWork', c.parallelWork === true, '有几件事能独立推进时，我会提出分工，确认后分开做，你仍在原话题收结果。关闭后不主动提出这类分工；在已接入的登记群生效，默认开启。', ['主动建议分工', '不主动建议']),
     ...(memory.available ? toggle('个人记忆', 'memory', memory.conversational && memory.enabled,
       '记住你的称呼、表达偏好和协作习惯，减少下次重复交代。新发现的习惯会先问你是否保留；你也可以随时问“你记住了什么”，或要求修改、删除。关闭不会删除已有记录。', ['开启', '关闭'], memory.revision)
       : [md('**个人记忆 · 尚未开放**\n用于记住称呼、表达偏好和协作习惯。当前账号暂未开放此试用。')]),
@@ -62,7 +62,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
     checklist: ['任务清单', '多项成果分别打勾，方便跟进和验收。'],
     memory: ['个人记忆', '记住称呼和协作习惯；新偏好先问你。'],
     opening: ['开始工作时', '动手前简短说明目标和做法。'],
-    parallelWork: ['多项工作并行 · 试用', '先提出分工，经你确认再分别推进。'],
+    parallelWork: ['多项工作并行', '先提出分工，经你确认再分别推进。'],
     selfReview: ['交付前自检', '默认关闭；核对成果、验收条件与交付入口。'],
     strictStartCheck: ['开工前核对 · 试用', '多查项目背景和已有工作，准备会稍久。'],
   };

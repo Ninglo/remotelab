@@ -15,7 +15,7 @@
 
 插件里的页面显示仍按原生飞书账号保存于当前浏览器；布局和宠物位置属于设备。
 消息设置直接读写 `person-message-replies.mjs` 的同一份个人配置，因此网页、飞书
-私聊、普通群和话题中的后续新工作沿用同一选择。多项工作并行仍受现有群试点限制。
+私聊、普通群和话题中的后续新工作沿用同一选择。多项工作并行在已登记群对全员默认开启，保留个人关闭选择。
 模型修改复用 Session 的运行配置，正在执行的 Run 保留已接纳的模型快照；共享
 群话题后续参与者也会使用这个对话的配置，Quick 对话保持创建后固定。
 
@@ -66,7 +66,7 @@
 固定记录 Web 发布版本及 SHA-256，安装检查试验资源基线、保留原包备份、重新签名
 并验证；新版本适配需要重新验证，不能直接套用浏览器扩展的自动更新器。
 
-The same personal parallel-work preference is also available from eligible Feishu group configuration cards. “为我开启试用 / 为我关闭试用 / 查看我的状态” resolve the signed callback operator to their own Person; they do not change group participation, other members, or already accepted inputs. Callback audit entries retain event/chat/message provenance, and repeated callback events cannot undo a later personal choice. See [the scoped trial contract](session-work-awareness.md#personal-trial-controls-on-feishu-group-cards).
+Parallel work is enabled by default for verified members in registered Feishu groups, with a personal opt-out in Web and personal Feishu settings. Shared group configuration cards no longer display parallel trial labels, enrollment buttons or participant lists. Old signed callbacks still resolve only the operator’s Person and retain replay protection. See [parallel work availability](session-work-awareness.md#parallel-work-availability-and-settings).
 
 ## 飞书私聊个人设置卡（2026-10-16，小范围试用）
 
@@ -79,7 +79,7 @@ The same personal parallel-work preference is also available from eligible Feish
 向该连接器访问策略允许的私聊用户开放“我的设置”和“使用说明”入口。
 未设 `enabled: true` 时，沿用 `openIds: ["ou_..."]` 限定试用人；默认空名单不触达其他人。
 全量开放只改变入口范围，仍按本次操作者解析本人身份，不改变已有人的选择，
-不自动开启个人对话记忆，也不扩大个人记忆试点和并行试点群范围。webUrl 只接受无凭据、无查询参数
+不自动开启个人对话记忆，也不扩大个人记忆试点和并行登记群范围。webUrl 只接受无凭据、无查询参数
 的 HTTPS 根入口；卡片追加 `?tab=settings`，不会携带所有者或个人登录票据。
 网页版需要本人独立登录，不能把飞书身份当作网页登录；链接仅放在明确说明登录要求
 的折叠备用区。尚未验证本人能登录的试点应省略 webUrl，使用卡片刷新或私聊
@@ -115,7 +115,7 @@ The same personal parallel-work preference is also available from eligible Feish
 
 机器人原生悬浮菜单可通过官方 v7 application ability 配置两个 `menu_content_type: 4` 的发送消息入口：“我的设置”和“使用说明”，复用消息处理通路；首次进入需增量订阅上述事件，保留其他事件与长连接方式。能力更改须发布并回读在线版本。菜单可见范围与连接器入口开放范围分开配置；向所有获准私聊用户推全时需显式设置 `personalSettings.enabled: true`，仅发布菜单不会改变后端开放范围。新用户未明确开启时对话个人记忆默认关闭，已有人的选择不变。
 
-并行开关现独立保存为 `parallelWork`。旧共用开关只读兼容为并行选择，新的自动分流固定关闭，旧卡回调不会重新开启它。关闭并行不停止已存在计划。实际实例部署与个人开启另行核验。
+并行开关现独立保存为 `parallelWork`。未设置时默认开启，已保存的个人关闭继续生效；新的自动分流固定关闭，旧卡回调不会重新开启它。关闭并行不停止已存在计划。实际实例部署与个人开启另行核验。
 
 ## 可选交付前自检
 

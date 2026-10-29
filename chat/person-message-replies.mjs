@@ -8,8 +8,9 @@ const choices = value => {
   if (!value || Object.keys(value).some(key => !['opening', 'checklist', 'progress', 'strictStartCheck', 'routing', 'parallelWork', 'selfReview'].includes(key))) fail('消息回复设置无效。');
   const { opening, checklist, progress, strictStartCheck = false, routing = 'none', selfReview = false } = validateReplyDraft({ ...value, groups: [] });
   if (progress === 'card') fail('请选择三种进展展示方式之一。');
-  // Preserve the parallel choice from the former combined setting without writing a migration.
-  const parallelWork = value.parallelWork ?? routing === 'experimental';
+  // Parallel suggestions are available by default; an explicit personal off
+  // remains authoritative. Reading defaults does not enroll other features.
+  const parallelWork = value.parallelWork ?? true;
   return { opening, checklist, progress, strictStartCheck, parallelWork, routing: 'none', selfReview };
 };
 const defaults = () => choices({ opening: DEFAULT_REPLY_DRAFT.opening,
@@ -87,10 +88,14 @@ export async function changePersonMessageReplies(input, actor) {
 
 // Admission already resolves Web and Feishu identities to a Person. Verify the
 // pair again; never infer the sender from the shared Session owner or bot ID.
-export async function resolvePersonMessageReplyPolicy(options) {
+export async function resolvePersonMessageReplySettings(options) {
   if (!options.viewPersonId || !options.initiatedByIdentityId) return null;
   const document = await loadAuthDocument({ persistMigration: false });
   const identity = findIdentity(document, options.initiatedByIdentityId);
   if (identity?.person.id !== options.viewPersonId) return null;
-  return settingsFor(findPerson(document, options.viewPersonId)).active;
+  return settingsFor(findPerson(document, options.viewPersonId));
+}
+
+export async function resolvePersonMessageReplyPolicy(options) {
+  return (await resolvePersonMessageReplySettings(options))?.active || null;
 }

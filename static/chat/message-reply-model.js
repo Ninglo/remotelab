@@ -37,11 +37,11 @@ export function buildReplyPreview(draft, locale = 'zh') {
   const en = locale.startsWith('en');
   const steps = [];
   steps.push({ kind: 'parallel_work', title: en ? 'Parallel work' : '多项工作并行',
-    text: (value.parallelWork ?? value.routing === 'experimental')
-      ? en ? 'Suggest independent branches in registered Feishu groups. Start after your authorization and return results to the original topic. Automatic message routing is withdrawn.'
-        : '在登记群中建议可独立推进的分工，经你授权后执行，结果回到原话题。主动分流试用已撤回。'
-      : en ? 'Parallel suggestions are off by default. Continue work in the current conversation.'
-        : '默认不主动建议并行，继续在当前会话推进工作。' });
+    text: (value.parallelWork ?? true)
+      ? en ? 'Suggest independent branches in registered Feishu groups. Start after your authorization and return results to the original topic.'
+        : '在登记群中建议可独立推进的分工，经你授权后执行，结果回到原话题。'
+      : en ? 'Parallel suggestions are off. Continue work in the current conversation.'
+        : '不主动建议并行，继续在当前会话推进工作。' });
   if (value.strictStartCheck) steps.push({ kind: 'start_check', title: en ? 'Strict work-start check' : '开工严格检查',
     text: en ? 'Check ownership, the existing mechanism and related work before starting. Decide work placement, reply destination and display separately.'
       : '先核对事项归属、现行机制和相关工作，再决定接续还是另开；回复位置与清单、进展展示分别判断。' });

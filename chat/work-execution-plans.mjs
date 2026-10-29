@@ -43,10 +43,10 @@ async function actorFor(record, { existing = false } = {}) {
   const source = await findSessionMeta(record.sessionId);
   const scope = await routingPilotScope(source?.conversation, undefined, actor.personId);
   if (!scope || scope.version !== 2 || !isPilotInputSinceActivation(scope, o.sourceContext.createTime || o.sourceContext.eventTs)) {
-    fail('Input is outside the personal execution trial');
+    fail('Input is outside the registered parallel-work scope');
   }
   const parallel = acceptedParallelWorkPolicy(o);
-  if (!existing && (parallel.version !== 1 || !parallel.enabled || parallel.trialId !== scope.trialId)) fail('Execution trial is disabled for this input');
+  if (!existing && (parallel.version !== 1 || !parallel.enabled || parallel.trialId !== scope.trialId)) fail('Parallel work is disabled for this input');
   return { actor, source, scope };
 }
 function validateBranches(branches) {

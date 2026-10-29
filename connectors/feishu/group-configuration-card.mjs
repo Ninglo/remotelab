@@ -3,23 +3,6 @@ import { buildSessionNavigationHref } from '../../lib/session-navigation.mjs';
 const plain = content => ({ tag: 'plain_text', content });
 const md = content => ({ tag: 'markdown', content });
 
-function routingControls(record, view) {
-  if (!view.routingTrial?.personalOptIn) return [];
-  const button = (label, action) => ({ tag: 'button', type: 'default', text: plain(label),
-    behaviors: [{ type: 'callback', value: { namespace: 'group-configuration', key: record.key, action } }] });
-  const names = view.routingTrial.enabledNames;
-  return [{ tag: 'hr' }, md('**多项工作并行 · 试用**\n建议可独立推进的分工，经你授权后执行，原话题收结果。'),
-  ...(Array.isArray(names) ? [md('**试点已开启**：' + (names.join('、') || '暂无'))] : []),
-  { tag: 'column_set', columns: [button('为我开启', 'parallel-on'), button('为我关闭', 'parallel-off'), button('我的状态', 'parallel-status')]
-    .map(element => ({ tag: 'column', width: 'weighted', weight: 1, elements: [element] })) },
-  { tag: 'collapsible_panel', expanded: false, header: { title: plain('范围与规则') }, elements: [
-    md(view.routingTrial.scopeLabel + '。个人开关在试点群共用。'
-      + (view.routingTrial.publicRoster ? '开启后，姓名显示在这些群的已开启名单中；关闭后移除。' : '')
-      + '\n明确要求并行时开独立子 Session；建议拆分先征询，未答继续原工作。主话题负责汇总验收；主动分流试用已撤回。'
-      + '\n子 Session 在 Web 打开，不自动新建飞书话题；开关只影响后续新输入。'),
-  ] }];
-}
-
 // Existing and new group cards share the compact presentation.
 // Legacy cardLayout flags no longer select a different UI.
 export function buildGroupConfigurationCard(record, view) {
@@ -49,7 +32,6 @@ export function buildGroupConfigurationCard(record, view) {
     + (project.briefUpdated ? `\n更新时间：${project.briefUpdated}` : '')));
   if (project?.skills?.length) elements.push(md('**常用技能**\n'
     + project.skills.slice(0, 3).map(skill => `• **${skill.name}**：${skill.description}`).join('\n')));
-  elements.push(...routingControls(record, view));
   elements.push({ tag: 'hr' }, md(`**交付前自检 · 本群：${view.selfReview === true ? '开启' : '关闭'}**`),
     md('默认关闭。开启后，本 Bot 在本群主线及话题接纳的新工作会核对成果、验收条件和交付入口，可能增加耗时与用量。当前运行和中途补充保留原设置。\n个人开关在“我的设置”中独立保存；群或个人任一开启即生效，关闭本群不关闭个人选择。'),
     { tag: 'button', type: 'default', text: plain(view.selfReview === true ? '关闭本群自检' : '开启本群自检'),

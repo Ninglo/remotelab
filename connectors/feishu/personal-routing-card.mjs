@@ -7,7 +7,7 @@ import { loadPersonMessageReplies, changePersonMessageReplies } from '../../chat
 export async function personalRoutingCardAction(runtime, record, openId, action, eventId) {
   try {
     const scope = await routingPilotCardScope({ connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId, target: record.source });
-    if (!scope?.personalOptIn) throw Error('本群尚未开放个人并行试用。');
+    if (!scope?.personalOptIn) throw Error('本群尚未开放并行协作。');
     const document = await loadAuthDocument({ persistMigration: false });
     const matches = document.people.flatMap(person => (person.identities || [])
       .filter(identity => identity.kind === 'feishu' && identity.realm === runtime.config.sourceRouteId && identity.subjectId === openId)
@@ -22,22 +22,13 @@ export async function personalRoutingCardAction(runtime, record, openId, action,
         settings = await changePersonMessageReplies({ action: 'parallel-work', enabled, confirm: true, expectedRevision: settings.revision }, actor);
       }
     }
-    return { toast: { type: 'success', content: `你本人的并行试用${settings.choices.parallelWork ? '已开启' : '已关闭'}。仅影响你的后续输入，其他成员不变；主动分流试用已撤回。` } };
+    return { toast: { type: 'success', content: `你本人的并行建议${settings.choices.parallelWork ? '已开启' : '已关闭'}。仅影响你的后续输入，其他成员不变。` } };
   } catch (error) {
     return { toast: { type: 'error', content: error.message } };
   }
 }
 
-// Only explicitly configured pilot cards expose the opt-in roster. This is the
-// pilot-wide list, not a claim that each listed Person belongs to this chat.
+// Keep old card callbacks compatible without projecting enrollment rosters.
 export async function personalRoutingCardView(conversation) {
-  const scope = await routingPilotCardScope(conversation);
-  if (!scope?.personalOptIn || !scope.publicRoster) return scope;
-  const document = await loadAuthDocument({ persistMigration: false });
-  const names = document.people.filter(person => {
-    const active = person.preferences?.messageReplies?.active;
-    return active?.version === 3 && active.scope === 'person' && active.personId === person.id
-      && (active.parallelWork ?? active.routing === 'experimental') && person.identities?.some(i => i.kind === 'feishu' && i.realm === conversation.sourceRouteId);
-  }).map(person => String(person.name || '未命名成员').replace(/[<>\[\]`*_\n\r]/g, '').slice(0, 64)).sort();
-  return { ...scope, enabledNames: names };
+  return routingPilotCardScope(conversation);
 }

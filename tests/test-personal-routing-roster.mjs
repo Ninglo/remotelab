@@ -22,16 +22,14 @@ try {
   const config={version:2,enabled:true,personalOptIn:true,publicRoster:true,groups:[{...source,folder:home}]};
   await writeFile(GROUP_ROUTING_PILOT_FILE,JSON.stringify(config));
   let view=await personalRoutingCardView(conversation);
-  assert.deepEqual(view.enabledNames,['enabled']);
+  assert.equal(view.enabledNames,undefined, 'enrollment roster is no longer projected');
   const card=buildGroupConfigurationCard({key:'key',mode:'active'}, {routingTrial:view});
   const content=JSON.stringify(card);
-  assert.match(content,/多项工作并行/);
+  assert.doesNotMatch(content,/多项工作并行|试用|试点|parallel-on|parallel-off|parallel-status/);
   assert.doesNotMatch(content,/信息分流机制/);
-  assert.match(content,/试点已开启/);
   assert.doesNotMatch(content,/个人分流与并行试用/);
-  assert.ok(card.body.elements.some(e=>e.tag==='collapsible_panel'&&e.expanded===false));
   await updateAuthDocument(doc=>{doc.people.find(p=>p.id==='enabled').preferences.messageReplies.active.routing='none';});
-  assert.deepEqual((await personalRoutingCardView(conversation)).enabledNames,[]);
+  assert.equal((await personalRoutingCardView(conversation)).enabledNames,undefined);
   await writeFile(GROUP_ROUTING_PILOT_FILE,JSON.stringify({...config,publicRoster:false}));
   assert.equal((await personalRoutingCardView(conversation)).enabledNames,undefined,'no roster without explicit publication setting');
   assert.equal(await personalRoutingCardView({...conversation,target:{...source,chatId:'outside'}}),null);
@@ -46,5 +44,5 @@ try {
   await controller.publish({...record,cardMessageId:'old',cardCreatedAt:Date.now(),pinPending:false,pinnedMessageId:'old'},{existingOnly:true});
   assert.equal(patches,1,'a current existing card is patched without replacement');
   assert.equal(creates,0);assert.equal(pins,0,'no extra message or top-notice update');
-  console.log('Public routing roster: explicit scope, personal state, removal, compact copy and patch-only refresh passed');
+  console.log('Retired parallel enrollment UI: no roster or group controls, legacy scope and patch-only refresh passed');
 } finally {await rm(home,{recursive:true,force:true});}

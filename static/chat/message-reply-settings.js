@@ -75,8 +75,8 @@ function renderCurrent() {
   byId('replySettingsCurrent').removeAttribute('data-i18n');
   byId('replySettingsCurrent').textContent = state?.active
     ? copy(`已生效：${describeChoices(state.active)}。`, `Active: ${describeChoices(state.active)}.`)
-    : copy('正在使用默认方式：不主动建议并行。保存后，网页与飞书将沿用你的选择。',
-      'Using defaults: parallel suggestions off. Save to use your choices on Web and Feishu.');
+    : copy('正在使用默认方式：在登记群中主动建议并行。保存后将沿用你的选择。',
+      'Using defaults: suggest parallel work in registered groups. Save to use your choices.');
 }
 function renderState() {
   const value = state.choices;
