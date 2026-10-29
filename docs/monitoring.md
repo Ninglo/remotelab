@@ -67,6 +67,8 @@ Python计算运行在控制服务的可选子进程，使用私有Unix socket；
 
 当前 Codex App Server 提供阶段计量。其他 Harness、计数器重置、缺少起止采样或未结束的执行显示未知，不能补零，也不能把整轮用量归给自检。阶段用量包括上下文及 finish 工具编排，begin 之前和 finish 返回后的最终答复未计入；它不是“开启相对于关闭”的净增成本。不增加独立审查模型；每次正常回报需要 begin、finish 及取证工具，真实代价见验证记录。保留未开始／未结束／不适用的分母，不能只用成功回执计算功能成功率。
 
+新接纳的交付自检 v2 工作只对实际执行成果保存核对回执；无额外交付验收的普通讨论、简短问答不再为 `not_applicable` 发起工具调用。此类输入可能显示 `no_record`，不能把该计数当成漏验收率。旧 v1 工作保留原规则与回执要求。
+
 确定性验证：`tests/test-feature-observation.mjs`；真实模型隔离验证：`REMOTELAB_LIVE_FEATURE_OBSERVATION=1 node tests/test-feature-observation-live.mjs`。两者不写生产配置、不发飞书消息。
 
 Monitor Overview (`?tab=tasks&monitor=overview`) displays running/active Session counts, all seven daily metrics and seven-day charts, the timing breakdown, context sources and account balances directly on the page. There is no summary-only card or details drawer. The day boundary is stated once above the charts (Beijing time, 05:00). Daily sample tables and statistical definitions remain available beside their data; context sources start expanded and refresh preserves the reader’s choice. Account quotas and reset times share one table, replacing the duplicate expandable account cards.

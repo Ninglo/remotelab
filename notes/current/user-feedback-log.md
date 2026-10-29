@@ -2091,3 +2091,10 @@ groups, while preserving message admission and optional main-model reactions.
 Future latency work should measure time to a useful response and final answer,
 including preparation and model execution. Removing a fast reaction alone does
 not establish that useful responses became faster.
+
+
+## 2026-10-29 — Remove procedural round trips from ordinary conversation
+
+A user asked for a stage-by-stage latency audit, removal of unnecessary workflow, and measurement of injected context after disabling automatic read reactions. A short opinion reply in the sampled conversation took about 2.2 seconds to prepare and 55.5 seconds in the native model turn. It ran receipt commands solely to record that no extra delivery acceptance was applicable, then required another inference before the final answer. The two inference inputs totaled about 282k tokens, while the per-inference context was about 140k; cached input must not be confused with fresh injected context.
+
+Fixed review and knowledge instructions embedded each request ID, invalidating rule-slot reuse. Parallel-work and withdrawn-routing guidance also repeated in the dynamic context. Separating input identity and independent policy slots reduced the second sampled input's added manager context from 8,464 to 2,914 characters in a stored-prompt projection replay (about 66%); this is a rendering comparison, not measured end-to-end speedup. New self-review v2 work answers ordinary discussion without commands/files solely for a not-applicable receipt; actual execution results retain acceptance checks. Existing v1 accepted work keeps its snapshot. Passive preparation stage timings now distinguish context assembly and bookkeeping from model execution without another model or monitoring task.

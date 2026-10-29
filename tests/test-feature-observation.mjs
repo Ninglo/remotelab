@@ -164,6 +164,12 @@ try {
     }
   }
   const prompt=featureObservationPrompt(null,'test',true);
+  const lean=featureObservationPrompt(null,null,true,{reviewVersion:2});
+  assert.match(lean,/普通讨论、简短问答无需/);
+  assert.match(lean,/Current input address/);
+  assert.match(lean,/有实际执行成果需要验收/);
+  assert.match(lean,/feature-observation begin/);
+  assert.doesNotMatch(lean,/短问答不需要额外成果，用 not_applicable/);
   assert.match(prompt,/explanation/);assert.match(prompt,/不能只写“不适用”/);assert.match(prompt,/不把我能完成的工作推给用户/);
   assert.match(prompt,/15字以内/);assert.match(prompt,/正文讲清一次/);
   assert.match(prompt,/正常检查通过、不适用、无记录及回执状态异常均不显示尾注/);assert.match(prompt,/不要把任务成果或回执格式调整写成自检发现/);

@@ -64,6 +64,7 @@ export async function captureKnowledgePilot(options, session = {}, root = KNOWLE
 }
 export function knowledgePilotPrompt(p, requestId) {
   if (!p) return '';
+  const inputAddress = requestId ? `当前输入 ${requestId}` : '当前输入编号取本轮 Current input address 中的 requestId';
   const citation = p.helpedCitation === 'finding-source';
   const experience = p.helpedCitation === 'experience-source';
   const label = citation || experience || p.helpedLabel ? `测试期标注：仅当本轮实际读到知识正文，并将其用于判断或行动、效果记录为 helped 时，${experience
@@ -75,7 +76,7 @@ export function knowledgePilotPrompt(p, requestId) {
     ? '搜索使用关键词＋语义检索＋重排，直接返回少量原文片段、适用条件和来源；已有证据够用就继续，必要时用 remotelab knowledge read --page <返回的文件名> 展开整页、沿原证据核查。排名不是置信度，没搜到不能证明原件中没有；冲突按对象、时间与条件保留双方证据。'
     : '结果同时提供词面命中和完整问题目录；结合标题与适用场景按含义选页，不限于命中项，不把排序当置信度。再用 remotelab knowledge read --page <返回的文件名> 先读最相关正文，必要时展开关联页、沿原证据核查；目录没找到不能证明原件中没有。';
   const scope = p.scope === 'group' ? '本条来自已启用试用的飞书群，范围不延伸至成员的其他群或私聊；' : '';
-  return `组织具身知识库按需试用，${scope}仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>。${retrieval}无关问题无需查询，不自动加载整库正文。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。${label}讨论和历史参数保留原适用条件，不提升为当前结论。当前输入 ${requestId}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
+  return `组织具身知识库按需试用，${scope}仅适用于本条已核发起人 ${p.personId}。范围：数据管线、预训练、后训练、评测诊断、真机部署。已有信息能推进就继续；需要历史经验时运行 remotelab knowledge search --query <问题>。${retrieval}无关问题无需查询，不自动加载整库正文。工具自动记录版本、返回量、次数和耗时。实际读取后，本轮结束前用 remotelab knowledge report --file <JSON路径> 记录一次 {effect:"helped|no_change|misled|unknown",reason:"改变了哪项判断，或为何没有帮助",evidenceSeqs:[原任务工具结果编号]}；这是Agent自评，不代表人的验收。${label}讨论和历史参数保留原适用条件，不提升为当前结论。${inputAddress}；多人补充时命令加 --request-id 指向实际使用知识的本人输入。`;
 }
 export async function observeKnowledgeAdmission(record, root = KNOWLEDGE_ROOT, now = Date.now(), explicit = false) {
   const c = await knowledgeConfig(root);

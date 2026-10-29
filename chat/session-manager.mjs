@@ -1436,16 +1436,23 @@ async function buildManagerTurnContextSlots(session, options = {}) {
   slots.push(createModelContextSlot('project_work_directory', 'Hidden project work directory', turnContext.directory));
   slots.push(createModelContextSlot('personal_memory_learning', 'Personal memory learning', turnContext.personalMemory));
   slots.push(createModelContextSlot('skill_extraction_trial', 'Personal Skill extraction pilot', turnContext.skillExtraction));
+  slots.push(createModelContextSlot('parallel_work', 'Parallel work policy and current plans', turnContext.parallelWork));
+  slots.push(createModelContextSlot('group_routing', 'Group routing policy and current state', turnContext.groupRouting));
   slots.push(createModelContextSlot('turn_context', 'Per-turn context', turnContext.text));
+  if (options.requestId && (options.knowledgePilot
+      || (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.selfReview === true && !options.internalOperation)) {
+    slots.push(createModelContextSlot('current_input', 'Current input address', JSON.stringify({ requestId: options.requestId })));
+  }
   slots.push(createModelContextSlot('organization_knowledge', 'Organization knowledge on demand',
-    knowledgePilotPrompt(options.knowledgePilot, options.requestId)));
+    knowledgePilotPrompt(options.knowledgePilot)));
   if (options.messageReplyPolicy) slots.push(createModelContextSlot('message_reply_mode',
     'Confirmed message reply choices for this accepted request', messageReplyPrompt(options.messageReplyPolicy)));
   slots.push(createModelContextSlot('delivery_self_review', 'Delivery self-review',
     deliverySelfReviewPrompt(options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy,
       { ...options, personId: options.viewPersonId, identityId: options.initiatedByIdentityId })
-      + '\n' + featureObservationPrompt(options.featureObservation, options.requestId,
-        (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.selfReview === true && !options.internalOperation)));
+      + '\n' + featureObservationPrompt(options.featureObservation, null,
+        (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.selfReview === true && !options.internalOperation,
+        { reviewVersion: (options.groupDeliverySelfReviewPolicy || options.messageReplyPolicy)?.deliverySelfReview?.version })));
   const strictStartEnabled = options.messageReplyPolicy?.scope === 'person' && options.messageReplyPolicy.strictStartCheck === true;
   const startCheck = strictStartCheckPrompt(options.messageReplyPolicy, { personId: options.viewPersonId,
     identityId: options.initiatedByIdentityId, resetDisabled: options.messageReplyPolicy?.scope === 'person'
@@ -3764,6 +3771,13 @@ async function prepareRequestRun(record) {
 }
 
 async function prepareRequestRunOnce(record) {
+  const preparationTimingsMs = {};
+  let stageStarted = performance.now();
+  const markPreparedStage = name => {
+    const now = performance.now();
+    preparationTimingsMs[name] = Math.round((now - stageStarted) * 100) / 100;
+    stageStarted = now;
+  };
   if ((record.options?.contextRetrieval || record.options?.reviewFeedback || record.options?.routingRethink || record.options?.confirmedHandoff || record.options?.workPlanChild || record.options?.workPlanReview
       || record.options?.sourceContext?.feishuContinuationRunId) && !record.preparedAt && !record.result) {
     try {
@@ -3798,8 +3812,10 @@ async function prepareRequestRunOnce(record) {
   const normalizedText = record.text;
   let session = await getSession(sessionId);
   if (!session) throw new Error('Accepted request has no session');
+  markPreparedStage('sessionLookup');
   const workDecisionContext = await recordWorkInputAndDeliver(session, record);
   session = await getSession(sessionId);
+  markPreparedStage('workInput');
   Object.assign(options, record.runtimeSelection || await resolveSessionRuntimeSelection(session, options), { workDecisionContext });
   let existingRun = await getRun(record.runId);
   const launchReceipt = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
@@ -3877,13 +3893,16 @@ async function prepareRequestRunOnce(record) {
         && !persistedAntigravityConversationId
   );
 
+  markPreparedStage('runtimeAndHistory');
   const contextProjection = await projectFeishuContext(sessionId, options.sourceContext, {
     identity: freshProviderSession ? null : feishuResumeIdentity({ codexThreadId: persistedCodexThreadId,
       claudeSessionId: persistedClaudeSessionId, antigravityConversationId: persistedAntigravityConversationId }), requestId,
   });
   const contextOptions = { ...options, modelSourceContext: contextProjection.sourceContext };
+  markPreparedStage('sourceContext');
   const turnSlots = effectiveToolDefinition?.promptMode === 'bare-user'
     ? [] : await buildManagerTurnContextSlots(session, { ...contextOptions, requestId });
+  markPreparedStage('turnContext');
   const ruleProjection = await projectRuleContext(sessionId, turnSlots, {
     enabled: effectiveToolDefinition?.inputMode === 'native',
     recovery: effectiveRuntimeFamily === 'codex-json' ? 'codex-session-start' : '',
@@ -3893,6 +3912,7 @@ async function prepareRequestRunOnce(record) {
     sourceContext: options.sourceContext,
   });
   const managerTurnContext = renderModelContextSlots(ruleProjection.slots);
+  markPreparedStage('ruleProjection');
   const autoQuick = options.autoRoutingReceipt?.decision?.tier === 'quick'
     || (session.runtimeTier === 'quick'
       && !options.autoRoutingReceipt
@@ -3926,6 +3946,7 @@ async function prepareRequestRunOnce(record) {
     { ...contextOptions, requestId, developerInstructions, systemPrefix },
     ruleProjection.slots,
   );
+  markPreparedStage('promptAssembly');
 
   const run = await createRun({
     status: {
@@ -4063,7 +4084,8 @@ async function prepareRequestRunOnce(record) {
     }
   }
 
-  await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso() }));
+  markPreparedStage('persistence');
+  await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso(), preparationTimingsMs }));
   await requestRuntime.refresh(record.key);
   observeDetachedRun(sessionId, run.id);
   const spawned = await launchAutomationRun(run.id, options);

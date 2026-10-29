@@ -53,20 +53,19 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     ...(!separateProjectContext ? [skillExtraction] : []),
     personalMemory.feedback,
   ];
-  const sectionsAfterProject = [
-    ...(!experimentInput.automated ? [await buildParallelWorkContext(session, sourceContext, { messageRoutingPolicy, parallelWorkPolicy })] : []),
-    await buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
+  const [parallelWork, topicDiscovery, background, deliveryReview] = await Promise.all([
+    !experimentInput.automated ? buildParallelWorkContext(session, sourceContext, { messageRoutingPolicy, parallelWorkPolicy }) : '',
+    buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
       automated: experimentInput.automated }),
-    await experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),
-    groupRouting,
-    await deliveryReviewPrompt(session, sourceContext),
-    // Classifier summaries are derived UI state, not fresh execution evidence.
-    // Keep them queryable on the session; do not replay stale blockers every turn.
-  ];
+    experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),
+    deliveryReviewPrompt(session, sourceContext),
+  ]);
+  const sectionsAfterProject = [topicDiscovery, background, deliveryReview];
   const render = parts => parts.map(section => String(section || '').trim()).filter(Boolean).join('\n\n');
   // Keep the public text-only reader compatible. The input assembler can put
   // the complete project block in the existing acknowledged/recoverable slots.
   return separateProjectContext
-    ? { project, directory, personalMemory: personalMemory.rules, skillExtraction, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
-    : render([...sectionsBeforeProject, project, directory, ...sectionsAfterProject]);
+    ? { project, directory, personalMemory: personalMemory.rules, skillExtraction,
+      parallelWork, groupRouting, text: render([...sectionsBeforeProject, ...sectionsAfterProject]) }
+    : render([...sectionsBeforeProject, project, directory, parallelWork, topicDiscovery, background, groupRouting, deliveryReview]);
 }

@@ -54,6 +54,15 @@ try {
   assert.deepEqual(await loadPersonMessageReplies(b), other);
   const policy = await resolveMessageReplyPolicy(options);
   assert.equal(policy.deliverySelfReview.status, 'captured');
+  assert.equal(policy.deliverySelfReview.version, 2);
+  const legacy = { ...policy, deliverySelfReview: { ...policy.deliverySelfReview, version: 1 } };
+  assert.match(deliverySelfReviewPrompt(legacy, a), /ON/, 'accepted version 1 snapshots remain valid');
+  const addressedPrompt = await buildPrompt('review', { id: 'review', codexThreadId: 'resumed' }, '简单讨论', 'codex', 'codex', null,
+    { ...options, requestId: 'current-human-input', messageReplyPolicy: policy });
+  assert.match(addressedPrompt, /## Current input address\n\n\{"requestId":"current-human-input"\}/);
+  const reviewBlock = addressedPrompt.split('## Delivery self-review\n\n')[1].split('\n\n---')[0];
+  assert.doesNotMatch(reviewBlock, /current-human-input/);
+  assert.match(reviewBlock, /Current input address/);
   for (const chatType of ['p2p', 'group']) {
     const p = await resolveMessageReplyPolicy({ viewPersonId: a.personId, initiatedByIdentityId: 'feishu_a', feishuConnectorAuthenticated: true,
       sourceContext: { connector: 'feishu', sourceRouteId: 'fixture', chatId: 'oc_a', chatType, messageId: 'om_a', sender: { openId: 'a', senderType: 'user' } },
@@ -73,10 +82,12 @@ try {
   for (const tool of ['codex', 'claude', 'pi']) {
     const prompt = await buildPrompt('review', { id: 'review', systemPrompt: '', codexThreadId: 'resumed' }, '完成原交办', tool, tool, null,
       { ...options, messageReplyPolicy: policy });
-    assert.match(prompt, /交付前自检 v1/);
+    assert.match(prompt, /交付前自检 v2/);
     assert.match(prompt, /attachment_delivery/);
     assert.match(prompt, /假数据/);
     assert.match(prompt, /验收条件/);
+    assert.match(prompt, /不为登记“不适用”调用工具/);
+    assert.doesNotMatch(prompt, /短问答不需要额外成果，用 not_applicable/);
   }
   // Older UI clients preserve an opt-in they cannot render.
   const oldUI = await changePersonMessageReplies({ action: 'apply', expectedRevision: enabled.revision, confirm: true,
@@ -96,7 +107,7 @@ try {
   assert.match(deliverySelfReviewPrompt(off, a), /OFF/);
   const prompt = await buildPrompt('review', { id: 'review', systemPrompt: '', codexThreadId: 'resumed' }, '新工作', 'codex', 'codex', null,
     { ...options, messageReplyPolicy: off });
-  assert.doesNotMatch(prompt, /交付前自检 v1/);
+  assert.doesNotMatch(prompt, /交付前自检 v2/);
   assert.match(prompt, /Optional delivery self-review is OFF/);
   const { projectRuleContext } = await import('../chat/rule-context.mjs');
   const scope = { enabled: true, identity: { field: 'codexThreadId', id: 'native' }, recovery: 'codex-session-start', requestId: 'next', personId: a.personId, identityId: a.identityId };
@@ -123,7 +134,7 @@ try {
   const groupContext = { ...groupInput, ...a };
   assert.match(deliverySelfReviewPrompt(group, groupContext), /Enabled by this Feishu group/);
   assert.match(await buildPrompt('review', { id: 'review', systemPrompt: '' }, '交付', 'codex', 'codex', null,
-    { ...groupInput, groupDeliverySelfReviewPolicy: group }), /交付前自检 v1/);
+    { ...groupInput, groupDeliverySelfReviewPolicy: group }), /交付前自检 v2/);
   const otherGroupInput = { ...groupInput, viewPersonId: b.personId, initiatedByIdentityId: b.identityId };
   assert.equal((await captureGroupDeliverySelfReviewPolicy(otherGroupInput, null)).personId, b.personId);
   assert.match(deliverySelfReviewPrompt(group, { ...groupInput, ...b }), /OFF/, 'a saved receipt cannot impersonate another sender');

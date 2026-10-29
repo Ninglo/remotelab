@@ -232,6 +232,20 @@ or truncate them. Confirmed personal reply settings use a transport-only display
 block alongside the effective personal policy, avoiding repeated default opening,
 progress and reply instructions. Other display modes retain their existing rules.
 
+Since 2026-10-29, review/knowledge instructions
+refer to a separate **Current input address** slot instead of embedding its
+request ID in the rule body. Parallel-work and group-routing blocks likewise
+have independent slots: unchanged policy and plans are reused; changed plans,
+withdrawn policies and identity/source changes still update or remove the whole
+applicable block. Dynamic human messages remain outside this reuse.
+
+Run preparation also records passive `preparationTimingsMs` on new root Request
+records: Session lookup, work-input bookkeeping, runtime/history setup, source
+context projection, turn-context reads, rule projection, prompt assembly and
+persistence. These intervals exclude queueing, launch and model execution; old
+records and native supplemental inputs may lack them. Independent turn-context
+readers run concurrently, without adding a model or background task.
+
 Receipts live in Run manifests and supplementary Request records and only count
 after native acknowledgement. Missing evidence, unknown native identity, legacy
 inputs or lookup/write failures retain full rules. Batch and bare-user tools do

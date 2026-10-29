@@ -40,6 +40,26 @@ try {
   assert.equal(snapshot.rules.length, 4);
   assert.doesNotMatch(JSON.stringify(snapshot), /NEW_FACT|CURRENT_TASK/);
   const acknowledged = { manifest: async () => ({ ruleContextDelivery: first.receipt }) };
+  // Changing only the current input must not resend fixed review/knowledge or
+  // routing rules. Plans and scope changes must still invalidate their slots.
+  const { featureObservationPrompt } = await import('../chat/feature-observation.mjs');
+  const { knowledgePilotPrompt } = await import('../chat/knowledge-pilot.mjs');
+  const compactRules = [
+    { id: 'delivery_self_review', content: featureObservationPrompt(null, null, true, { reviewVersion: 2 }) },
+    { id: 'organization_knowledge', content: knowledgePilotPrompt({ personId: 'a' }) },
+    { id: 'parallel_work', content: 'PLAN_A: requires human authorization' },
+    { id: 'group_routing', content: 'ROUTING_DISABLED: keep the current work' },
+  ];
+  const addressed = requestId => [...compactRules, { id: 'current_input', content: JSON.stringify({ requestId }) }];
+  const addressedFirst = await project(addressed('one'));
+  const addressedAck = { manifest: async () => ({ ruleContextDelivery: addressedFirst.receipt }) };
+  const addressedNext = await project(addressed('two'), {}, addressedAck);
+  assert.equal(addressedNext.receipt.mode, 'reference');
+  assert.match(renderModelContextSlots(addressedNext.slots), /"requestId":"two"/);
+  assert.doesNotMatch(renderModelContextSlots(addressedNext.slots), /PLAN_A|ROUTING_DISABLED|feature-observation|knowledge search/);
+  const changedPlan = await project(addressed('two').map(s => s.id === 'parallel_work' ? { ...s, content: 'PLAN_B' } : s), {}, addressedAck);
+  assert.deepEqual(changedPlan.receipt.changedIds, ['parallel_work']);
+  assert.equal((await project(addressed('two'), { personId: 'b' }, addressedAck)).receipt.mode, 'full');
   const next = await project(rules, {}, acknowledged);
   assert.equal(next.receipt.mode, 'reference');
   assert.doesNotMatch(renderModelContextSlots(next.slots), /DISPLAY_RULE|PERSON_A_STRICT|PERSONAL_TOOL_RULE|PROJECT_BRIEF_V1/);
