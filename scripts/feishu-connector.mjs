@@ -1238,7 +1238,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       ...(groupSettings.selfReview ? { groupSelfReview: { enabled: true,
         revision: groupSettings.selfReviewRevision } } : {}),
       ...(!['p2p', 'private'].includes(messageSummary.chatType) && !isFeishuBotSender(messageSummary)
-        ? { feishuResponseProtocolVersion: 1, feishuProcessingReaction: true } : {}),
+        ? { feishuResponseProtocolVersion: 1, feishuProcessingReaction: groupSettings.processingReactions } : {}),
       ...(threadBinding?.threadOriginRunId ? { feishuThreadOriginRunId: threadBinding.threadOriginRunId } : {}),
       ...(threadBinding?.continuationRunId ? { feishuContinuationRunId: threadBinding.continuationRunId } : {}),
       ...(messageSummary.logContinuation ? { feishuLog: {
@@ -1597,6 +1597,16 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     let sent;
     try {
+      // Recheck current policy so an old queued start cannot recreate the
+      // indicator after the group has disabled it. Finished cleanup still runs.
+      if (delivery.processingState === 'active' && !resolveFeishuGroupSettings(runtime.config, summary).processingReactions) {
+        await readReactionStore.remove(summary.messageId,
+          (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId));
+        const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
+          body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Processing reactions are disabled for this group' } });
+        if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to cancel disabled processing reaction');
+        return resolved.json?.delivery;
+      }
       if (delivery.kind === 'reaction' && !delivery.processingState && delivery.emojiType !== null
           && !resolveFeishuGroupSettings(runtime.config, summary).reactionCandidates.includes(delivery.emojiType)) {
         const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',

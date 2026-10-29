@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Stop repetitive processing reactions in a busy group
+
+- Feedback: automatically adding THINKING to each input and removing it after a slow reply creates visible churn across a discussion.
+- Cause: accepted group messages explicitly opted into a durable processing-reaction lifecycle, independently of optional social feedback.
+- Change: add a per-group `processingReactions` opt-out inherited by its topics, and recheck it before delivering queued starts. Preserve existing cleanup, ordinary replies and intentional social feedback. Apply the opt-out to the requesting group only.
+- Verification: isolated submission and durable delivery tests cover disabled intake, stale queued starts, cleanup after a setting change and retained social reactions. Existing groups keep their prior behavior unless explicitly changed.
+
 ### 2026-10-29 — Deliver an ordinary answer when placement metadata is omitted
 
 - Feedback: a user asked for an opinion on reply speed and received a platform error saying the answer had no selected destination. The generated answer and original source address both existed.

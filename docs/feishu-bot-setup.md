@@ -245,7 +245,8 @@ Notes:
 - accepted group inputs show temporary THINKING through the durable outbox;
   settlement clears it, independently of optional social reactions. Observed-only
   or blocked messages do not start processing feedback. Private-chat receipts
-  keep their existing behavior
+  keep their existing behavior. Set `groups[chatId].processingReactions: false`
+  to disable automatic processing indicators for that group and its topics
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
@@ -592,6 +593,10 @@ THINKING separately indicates an accepted input being processed: admission queue
 its start, and completion, silence, failure or cancellation queues its removal.
 Both edges use the durable outbox; restart preserves cleanup and Jev cannot clear
 an ongoing indicator. A silent decision may leave no text or social reaction.
+`groups[chatId].processingReactions: false` disables new THINKING lifecycles
+without changing optional social reactions or reply admission. The delivery
+worker also suppresses starts queued before this setting changed; existing
+finished cleanup remains valid. Omission preserves the group's existing behavior.
 
 The main model uses the same hidden response decision as text publication:
 `<private>feishu-response:{"reaction":"THANKS"}</private>`. Omission retains

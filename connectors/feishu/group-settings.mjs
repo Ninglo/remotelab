@@ -41,7 +41,7 @@ export function normalizeFeishuGroups(value = {}) {
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {
     if (!chatId.trim() || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid Feishu group settings');
     for (const key of Object.keys(raw)) {
-      if (!['reactionCandidates', 'responseMode', 'replyMode', 'systemPrompt', 'selfReview', 'participationMode', 'quickReactions', 'jevReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+      if (!['reactionCandidates', 'responseMode', 'replyMode', 'systemPrompt', 'selfReview', 'participationMode', 'quickReactions', 'jevReactions', 'processingReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
     }
     if (raw.selfReview !== undefined && typeof raw.selfReview !== 'boolean') throw new Error('Invalid selfReview');
     if (raw.participationControls !== undefined && typeof raw.participationControls !== 'boolean') throw new Error('Invalid participationControls');
@@ -52,6 +52,7 @@ export function normalizeFeishuGroups(value = {}) {
     if (raw.replyMode !== undefined && !['inline', 'thread'].includes(raw.replyMode)) throw new Error('Invalid group replyMode');
     if (raw.participationMode !== undefined && !['ambient', 'active', 'listening', 'paused'].includes(raw.participationMode)) throw new Error('Invalid group participationMode');
     if (raw.quickReactions !== undefined && typeof raw.quickReactions !== 'boolean') throw new Error('Invalid group quickReactions');
+    if (raw.processingReactions !== undefined && typeof raw.processingReactions !== 'boolean') throw new Error('Invalid group processingReactions');
     if (raw.jevReactions !== undefined && typeof raw.jevReactions !== 'boolean') throw new Error('Invalid group jevReactions');
     if (raw.jevReactions === true && !['active', 'listening', 'paused'].includes(raw.participationMode) && (raw.quickReactions !== true || !['ambient', 'active', 'listening', 'paused'].includes(raw.participationMode) || raw.groupFeed !== true)) {
       throw new Error('jevReactions requires quickReactions, ambient participation and groupFeed');
@@ -86,6 +87,7 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const candidates = normalizeFeishuReactionCandidates(group.reactionCandidates ?? (privateChat ? undefined : config.groupReactionCandidates));
   return {
     reactionCandidates: candidates,
+    processingReactions: privateChat || group.processingReactions !== false,
     // No inherited bot-wide default: every group starts off independently.
     selfReview: !privateChat && group.selfReview === true,
     selfReviewRevision: group.selfReviewRevision || 0,

@@ -1873,6 +1873,22 @@ try {
   assert.equal(planningSubmittedPayload.sourceDelivery.target.replyInThread, undefined);
   assert.equal(planningSubmittedPayload.sourceContext.feishuParticipation, 'ambient');
   assert.equal(planningSubmittedPayload.sourceContext.feishuReactionReceipt, undefined);
+  assert.equal(planningSubmittedPayload.sourceContext.feishuProcessingReaction, true);
+  for (const topic of [false, true]) {
+    await submitRemoteLabRequest({
+      authCookie: 'session_token=test-cookie',
+      config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionFolder: repoRoot, sessionTool: 'codex',
+        groups: { chat_quiet_processing: { participationMode: 'ambient', processingReactions: false } } },
+    }, {
+      chatType: 'group', chatId: 'chat_quiet_processing', messageId: `msg_quiet_processing_${topic}`,
+      ...(topic ? { threadId: 'quiet_topic', rootId: 'quiet_root' } : {}),
+      messageText: '直接回复即可。', sender: { openId: 'ou_scope_quiet' },
+    });
+    assert.equal(planningSubmittedPayload.sourceContext.feishuProcessingReaction, false,
+      'the group opt-out reaches admission on both mainline and topics');
+    assert.equal(planningSubmittedPayload.sourceContext.feishuResponseProtocolVersion, 1,
+      'disabling processing feedback preserves ordinary response delivery');
+  }
   const claudeRuntime = { tool: 'claude', model: 'claude-opus-5-5', effort: 'high', thinking: false };
   await submitRemoteLabRequest({
     authCookie: 'session_token=test-cookie',

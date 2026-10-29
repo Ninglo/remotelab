@@ -331,5 +331,44 @@ try {
     sourceContext: { feishuProcessingReaction: true }, sourceDelivery } });
   assert.equal(forwarded.record.deliveries.length, 0, 'handoff does not create another lifecycle on the original message');
 
+  assert.throws(() => normalizeFeishuGroups({ work: { processingReactions: 'false' } }), /processingReactions/);
+  const quietGroups = normalizeFeishuGroups({ quiet: { processingReactions: false } });
+  assert.equal(resolveFeishuGroupSettings({ groups: quietGroups }, { ...main, chatId: 'quiet' }).processingReactions, false);
+  assert.equal(resolveFeishuGroupSettings({ groups: quietGroups }, { ...base, chatId: 'quiet' }).processingReactions, false);
+  assert.equal(resolveFeishuGroupSettings({ groups: quietGroups }, main).processingReactions, true,
+    'other groups retain their existing processing policy');
+
+  const quietPlan = { ...sourceDelivery, sourceRouteId: 'processing',
+    target: { ...sourceDelivery.target, chatId: 'quiet', messageId: 'quiet-new' } };
+  processingRuntime.config.groups.quiet = { processingReactions: false, participationStatusCard: false };
+  const quiet = await requests.accept({ sessionId: 'quiet-session', requestId: 'quiet-new', text: 'input', options: {
+    feishuConnectorAuthenticated: true, sourceContext: { feishuProcessingReaction: false }, sourceDelivery: quietPlan } });
+  assert.equal(quiet.record.deliveries.length, 0, 'disabled intake queues no processing start');
+  await requests.settle(quiet.record.key, { state: 'completed', payload: { text: '' } });
+  assert.equal((await requests.get(quiet.record.key)).deliveries.length, 0, 'no start means no cleanup churn');
+
+  const beforeQuiet = processingAdds.length;
+  const stalePlan = { ...quietPlan, target: { ...quietPlan.target, messageId: 'quiet-stale' } };
+  const stale = await requests.accept({ sessionId: 'quiet-session', requestId: 'quiet-stale', text: 'input', options: {
+    feishuConnectorAuthenticated: true, sourceContext: { feishuProcessingReaction: true }, sourceDelivery: stalePlan } });
+  assert.equal((await drainProcessing()).state, 'cancelled', 'an old queued start respects the current opt-out');
+  assert.equal(processingAdds.length, beforeQuiet);
+  await requests.settle(stale.record.key, { state: 'completed', payload: { text: '' } });
+  assert.equal((await drainProcessing()).state, 'delivered', 'legacy cleanup remains valid');
+
+  processingRuntime.config.groups.quiet.processingReactions = true;
+  const activePlan = { ...quietPlan, target: { ...quietPlan.target, messageId: 'quiet-already-active' } };
+  const active = await requests.accept({ sessionId: 'quiet-session', requestId: 'quiet-active', text: 'input', options: {
+    feishuConnectorAuthenticated: true, sourceContext: { feishuProcessingReaction: true }, sourceDelivery: activePlan } });
+  await drainProcessing();
+  processingRuntime.config.groups.quiet.processingReactions = false;
+  await enqueueSourceDelivery({ sessionId: 'social-session', responseId: 'quiet-social',
+    sourceDelivery: activePlan, reaction: 'THANKS' });
+  assert.equal((await drainProcessing()).state, 'delivered', 'intentional social feedback is still available');
+  await requests.settle(active.record.key, { state: 'completed', payload: { text: '' } });
+  assert.equal((await drainProcessing()).state, 'delivered');
+  assert.equal(processingRemoves.filter(id => id === 'quiet-already-active').length, 1,
+    'disabling the setting does not strand a reaction already on the message');
+
   console.log('Unified participation: migration boundaries, topic inheritance, explicit scope override, invitation, silence, optional Jev, candidate enforcement and durable withdrawal passed');
 } finally { await rm(home, { recursive: true, force: true }); }
