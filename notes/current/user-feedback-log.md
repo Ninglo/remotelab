@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Keep conversational continuity without reinjecting known context
+
+- Feedback: users want accurate replies faster; necessary preceding conversation should remain available, while rules and recently delivered background should not be appended again. Native accumulated context and newly injected text are different measurements.
+- Verified failure: a native clarification answer with no rule payload erased the rule reuse baseline; a startup supplement could also be prepared before the initial input receipt/native identity became available.
+- Change: preserve the baseline across verified context-free question answers, and reuse the same Run's immutable initial context on the Codex supplement path whose driver orders it after successful initial acceptance. Changed rules, authors, messages and uncertain intervening supplements retain their existing handling. No new model call, history truncation or runtime downgrade is introduced.
+- Validation: targeted context tests and the native manager/transport integration cover immediate startup supplements, edits, A→B→A rules, controller restart and overlapping input. Reduced repeated payload is verified separately from end-to-end latency; elapsed-time improvement still needs natural traffic evidence.
+
 ### 2026-10-29 — Receive messages while group cards recover
 
 - Feedback: a group card displays and edits reply eligibility; its refresh should run asynchronously while saved participation and writing settings remain usable.

@@ -20,7 +20,7 @@ const signature = entry => digest([entry.text, entry.sender, entry.authorRef || 
 
 // Derived from canonical Requests, Runs and delivery receipts, never a second
 // read-state store. Missing evidence costs repetition, never message loss.
-async function project(sessionId, source, { identity, requestId = '' } = {}, deps = {}) {
+async function project(sessionId, source, { identity, requestId = '', initialDelivery = null } = {}, deps = {}) {
   if (source?.connector !== 'feishu' || !sessionId) return { sourceContext: source, receipt: null };
   const history = deps.history || loadHistory;
   const readRun = deps.run || getRun;
@@ -37,6 +37,13 @@ async function project(sessionId, source, { identity, requestId = '' } = {}, dep
   const wanted = new Set(entries.map(item => item.key).filter(Boolean));
   const wantedIds = new Set(entries.map(item => item.entry.messageId).filter(Boolean));
   const seen = new Map(), own = new Set();
+  // Only the Codex native supplement path supplies this: its driver guarantees
+  // the immutable initial prompt precedes every supplement, even during startup.
+  for (const item of initialDelivery?.entries || []) {
+    if (!wanted.has(item.key)) continue;
+    const versions = seen.get(item.key) || [];
+    versions.push(item); seen.set(item.key, versions);
+  }
   const runs = new Map();
   const publicationRequests = new Map();
   const run = id => { if (!runs.has(id)) runs.set(id, readRun(id)); return runs.get(id); };

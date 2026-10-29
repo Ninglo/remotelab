@@ -37,6 +37,10 @@ assert.equal(raw.conversationContext.messages.length, 7, 'immutable accepted sna
 assert.doesNotMatch(buildSourceContextPrompt(result.sourceContext), /native reply|new group discussion/);
 assert.match(buildSourceContextPrompt(result.sourceContext), /other bot reply/);
 assert.equal((await project(raw, {}, { identity: null })).sourceContext.conversationContext.messages.length, 7, 'fresh thread keeps background');
+const starting = { identity: null, initialDelivery: first.receipt };
+assert.equal((await project(raw, {}, starting)).receipt.stats.removed, 2, 'ordered startup supplement reuses root background and direct input without needing the thread id');
+assert.equal((await project(source([entry('background', 'changed during startup')]), {}, starting)).receipt.stats.removed, 0, 'changed content is still delivered during startup');
+assert.equal((await project({ ...raw, chatId: 'another-chat' }, {}, starting)).receipt.stats.removed, 0, 'initial context remains scoped by chat and message');
 assert.equal((await project(raw, {}, { identity: { ...identity, id: 'different-thread' } })).receipt.stats.removed, 0);
 assert.equal((await project(raw, { run: async () => ({ sessionId: 'other-session', codexThreadId: 'thread-one' }) })).receipt.stats.removed, 0);
 assert.equal((await project(raw, { accepted: async () => null })).receipt.stats.removed, 1, 'queued/failed/uncertain input is not seen; own output is independently proven');

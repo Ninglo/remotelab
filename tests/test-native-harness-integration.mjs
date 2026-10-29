@@ -685,13 +685,15 @@ try {
     sourceContext: { connector: 'feishu', sourceRouteId: 'default', chatId: 'context-chat', messageId: id,
       messageRevision: '1', conversationContext: { messages: [background] } } });
   const contextRoot = await rpc('accept', contextSession.id, 'first context', [], contextOptions('context-first'));
+  // Queue the supplement immediately, before the root's native handshake and
+  // receipt. Its context must reuse the root without delaying native steering.
+  await rpc('accept', contextSession.id, 'second context', [], contextOptions('context-second'));
   await until(async () => (await receipt(contextRoot.run.id, 'context-first'))?.state === 'accepted', 'root context input accepted');
   const initialManifest = JSON.parse(await readFile(join(config, 'chat-runs', contextRoot.run.id, 'manifest.json'), 'utf8'));
   assert.equal(initialManifest.feishuContextDelivery.entries.length, 2);
   assert.match(initialManifest.prompt, /UNSEEN_GROUP_FACT/);
   assert.equal(initialManifest.ruleContextDelivery.mode, 'full');
   assert.match(initialManifest.prompt, /## Message visibility on RemoteLab surfaces/);
-  await rpc('accept', contextSession.id, 'second context', [], contextOptions('context-second'));
   await until(async () => (await receipt(contextRoot.run.id, 'context-second'))?.state === 'accepted', 'supplementary context accepted');
   const supplement = await rpc('request', contextSession.id, 'context-second');
   assert.equal(supplement.nativeContextDelivery.stats.removed, 1);

@@ -3418,14 +3418,17 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     const decisionContext = await recordWorkInputAndDeliver(session, record);
     const tool = await getToolDefinitionAsync(manifest.tool);
     const execution = await getRun(manifest.id);
+    const orderedInitial = manifest.ruleContextDelivery?.recovery === 'codex-session-start';
     const projection = await projectFeishuContext(record.sessionId, record.options.sourceContext, {
       identity: feishuResumeIdentity(execution || {}), requestId: record.requestId,
+      initialDelivery: orderedInitial ? manifest.feishuContextDelivery : null,
     });
     const turnSlots = tool?.promptMode === 'bare-user' ? [] : await buildManagerTurnContextSlots(session, { ...record.options,
       modelSourceContext: projection.sourceContext, requestId: record.requestId, memoryQuery: record.text });
     const ruleProjection = await projectRuleContext(record.sessionId, turnSlots, {
       enabled: manifest.inputMode === 'native',
       recovery: manifest.ruleContextDelivery?.recovery || '', identity: feishuResumeIdentity(execution || {}),
+      initialDelivery: orderedInitial ? { runId: manifest.id, receipt: manifest.ruleContextDelivery } : null,
       requestId: record.requestId, personId: record.options.viewPersonId,
       identityId: record.options.initiatedByIdentityId, sourceContext: record.options.sourceContext,
     });

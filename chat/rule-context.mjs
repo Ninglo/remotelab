@@ -14,33 +14,47 @@ const stable = new Set(['surface_messages', 'session_workboard', 'source_runtime
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 // Use the latest input, not any historical matching version: A -> B -> A must
-// restore A. Missing/uncertain acknowledgements always keep the full rules.
-async function previousReceipt(sessionId, identity, requestId, deps) {
-  if (!identity) return null;
+// restore A. Uncertain supplements keep full rules; only the ordered native
+// initial prompt may be reused before its acknowledgement is persisted.
+async function previousReceipt(sessionId, identity, requestId, initialDelivery, deps) {
+  if (!identity && !initialDelivery) return null;
   const last = await (deps.head || getHistoryHeadSeq)(sessionId);
   const events = await (deps.history || loadHistory)(sessionId,
     { fromSeq: Math.max(1, last - 4999), includeBodies: false });
   let count = 0;
   for (const event of [...events].reverse()) {
     if (event.type !== 'message' || event.role !== 'user' || !event.requestId || event.requestId === requestId) continue;
-    if (++count > 40) break;
+    if (++count > 40) return null;
     const record = await (deps.request || ((id, req) => requests.byRequest(id, req)))(sessionId, event.requestId);
     if (!record) return null;
     if (record.options?.deliveryOnly) continue;
     const execution = await (deps.run || getRun)(record.nativeDispatchRunId || record.runId);
     if (!execution) return null;
-    if (execution?.sessionId !== sessionId || execution?.[identity.field] !== identity.id) continue;
-    const accepted = record.nativeReceipt?.accepted === true || (await (deps.accepted
-      || ((run, req) => readNativeInputReceipt(runDir(run), req)))(execution.id, record.requestId))?.state === 'accepted';
+    const initial = execution.id === initialDelivery?.runId && !record.nativeDispatchRunId;
+    if (execution.sessionId !== sessionId || !(execution.id === initialDelivery?.runId
+      || identity && execution[identity.field] === identity.id)) continue;
+    // Codex queues supplements behind successful initial input acceptance. Its
+    // immutable root prompt is therefore a predecessor even during handshake.
+    if (initial) return initialDelivery.receipt;
+    const transport = record.nativeReceipt?.accepted === true ? null : await (deps.accepted
+      || ((run, req) => readNativeInputReceipt(runDir(run), req)))(execution.id, record.requestId);
+    const nativeReceipt = record.nativeReceipt?.accepted === true ? record.nativeReceipt : transport?.result;
+    const accepted = record.nativeReceipt?.accepted === true || transport?.state === 'accepted';
     if (!accepted) return null;
+    // Native question answers contain no rule projection. They must not erase
+    // the last delivered rule baseline; uncertain/substantive inputs still do.
+    if (record.options?.nativeQuestionId && nativeReceipt?.mode === 'question_answer'
+        && nativeReceipt.questionId === record.options.nativeQuestionId
+        && !record.nativeRuleContextDelivery && !record.nativeContext) continue;
     if (record.nativeDispatchRunId) return record.nativeRuleContextDelivery || null;
     return (await (deps.manifest || getRunManifest)(record.runId))?.ruleContextDelivery || null;
   }
-  return null;
+  return initialDelivery?.receipt || null;
 }
 
 export async function projectRuleContext(sessionId, slots, { enabled = false, identity = null,
-  recovery = '', requestId = '', personId = '', identityId = '', sourceContext = null } = {}, deps = {}) {
+  recovery = '', requestId = '', personId = '', identityId = '', sourceContext = null,
+  initialDelivery = null } = {}, deps = {}) {
   if (!enabled || !sessionId || !requestId) return { slots, receipt: null };
   const rules = slots.filter(slot => stable.has(slot.id));
   if (!rules.length) return { slots, receipt: null };
@@ -58,7 +72,8 @@ export async function projectRuleContext(sessionId, slots, { enabled = false, id
       await mkdir(join(CONFIG_DIR, 'rule-context'), { recursive: true, mode: 0o700 });
       await writeJsonAtomic(file, snapshot, { mode: 0o600 });
     }
-    const previous = await previousReceipt(sessionId, identity, requestId, deps);
+    const previous = await previousReceipt(sessionId, identity, requestId,
+      recovery === 'codex-session-start' ? initialDelivery : null, deps);
     const scopeHash = hash(scope);
     const slotHashes = Object.fromEntries(rules.map(slot => [slot.id, hash(slot)]));
     const reusable = recovery === 'codex-session-start' && previous?.recovery === recovery

@@ -246,8 +246,15 @@ persistence. These intervals exclude queueing, launch and model execution; old
 records and native supplemental inputs may lack them. Independent turn-context
 readers run concurrently, without adding a model or background task.
 
-Receipts live in Run manifests and supplementary Request records and only count
-after native acknowledgement. Missing evidence, unknown native identity, legacy
+Receipts live in Run manifests and supplementary Request records and normally count
+after native acknowledgement. A verified native question answer with no rule
+context leaves the preceding rule baseline intact. During Codex startup, the
+supplement path may also reuse its own Run's immutable initial prompt: the native
+driver queues every supplement behind successful initial-input acceptance. This
+does not wait for model completion or serialize later inputs behind slow replies.
+An intervening unacknowledged supplement still prevents rule reuse; changed
+rules, people and conversation scopes retain their normal invalidation behavior.
+Outside that ordered initial-input boundary, missing evidence, unknown native identity, legacy
 inputs or lookup/write failures retain full rules. Batch and bare-user tools do
 not opt into this reuse. Work-start preferences still follow the accepted work's
 existing policy snapshot; this change does not redefine when a personal toggle

@@ -137,6 +137,36 @@ try {
   const supplement = { request: async () => ({ requestId: 'previous', nativeDispatchRunId: 'run',
     nativeReceipt: { accepted: true }, nativeRuleContextDelivery: first.receipt }) };
   assert.equal((await project(rules, {}, supplement)).receipt.mode, 'reference');
+  const question = { requestId: 'answer', nativeDispatchRunId: 'run', options: { nativeQuestionId: 'question' },
+    nativeReceipt: { accepted: true, mode: 'question_answer', questionId: 'question' }, nativeContext: '' };
+  const afterQuestion = { ...acknowledged,
+    history: async () => ['previous', 'answer'].map(requestId => ({ type: 'message', role: 'user', requestId })),
+    request: async (_session, id) => id === 'answer' ? question : { runId: 'run', requestId: 'previous' } };
+  assert.equal((await project(rules, {}, afterQuestion)).receipt.mode, 'reference', 'a native clarification answer does not erase delivered rules');
+  assert.deepEqual((await project(revised, {}, afterQuestion)).receipt.changedIds, ['surface_messages']);
+  assert.equal((await project(rules, { personId: 'b' }, afterQuestion)).receipt.mode, 'full');
+  const diskAnswer = { ...question }; delete diskAnswer.nativeReceipt;
+  assert.equal((await project(rules, {}, { ...afterQuestion,
+    request: async (_session, id) => id === 'answer' ? diskAnswer : { runId: 'run', requestId: 'previous' },
+    accepted: async (_run, id) => id === 'answer' ? { state: 'accepted', result: question.nativeReceipt } : { state: 'accepted' },
+  })).receipt.mode, 'reference', 'durable question receipts survive controller restart');
+  for (const q of [{ ...question, nativeReceipt: { accepted: true, mode: 'steer' } },
+    { ...question, nativeReceipt: null }, { ...question, nativeContext: 'substantive context' }]) {
+    assert.equal((await project(rules, {}, { ...afterQuestion,
+      request: async (_session, id) => id === 'answer' ? q : { runId: 'run', requestId: 'previous' },
+      accepted: async () => null,
+    })).receipt.mode, 'full', 'only a proven context-free question answer may be skipped');
+  }
+  const starting = { identity: null, initialDelivery: { runId: 'run', receipt: first.receipt } };
+  const unacknowledged = { accepted: async () => null };
+  assert.equal((await project(rules, starting, unacknowledged)).receipt.mode, 'reference', 'Codex supplements follow the immutable root prompt during startup');
+  assert.equal((await project(rules, { ...starting, personId: 'b' }, unacknowledged)).receipt.mode, 'full');
+  assert.equal((await project(rules, { ...starting, recovery: '' }, unacknowledged)).receipt.mode, 'full');
+  assert.equal((await project(rules, starting, { ...unacknowledged,
+    request: async () => ({ requestId: 'previous', nativeDispatchRunId: 'run' }),
+  })).receipt.mode, 'full', 'an intervening unacknowledged supplement cannot fall back to root rules');
+  assert.deepEqual((await project(rules, starting, { request: async () => ({ requestId: 'previous', nativeDispatchRunId: 'run',
+    nativeReceipt: { accepted: true }, nativeRuleContextDelivery: changed.receipt }) })).receipt.changedIds, ['strict_start_check'], 'accepted A-B-A updates take precedence over the initial baseline');
   assert.equal((await project(rules, {}, { ...acknowledged, run: async () => ({ id: 'run', sessionId: 'other', codexThreadId: 'thread' }) })).receipt.mode, 'full');
   assert.equal((await project(rules, { enabled: false })).receipt, null);
   const broken = await project(rules, {}, { snapshot: async () => { throw new Error('fixture disk unavailable'); } });
