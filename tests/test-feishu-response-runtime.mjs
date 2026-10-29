@@ -18,6 +18,9 @@ await chmod(executable, 0o755);
 const silentExecutable = join(home, 'bin/response-silent');
 await writeFile(silentExecutable, fixture.replace("finalText = 'durable native answer'", "finalText = ''"));
 await chmod(silentExecutable, 0o755);
+const plainExecutable = join(home, 'bin/response-plain');
+await writeFile(plainExecutable, fixture);
+await chmod(plainExecutable, 0o755);
 const liveExecutable = join(home, 'bin/response-live');
 const liveFirst = '<private>feishu-response:{"replyMode":"inline"}</private>第一条已回答。';
 const liveNext = '<private>feishu-response:{"replyMode":"inline","requestIds":["live-root","live-extra","live-followup"]}</private>补问也已回答。';
@@ -31,6 +34,7 @@ process.env.PATH = join(home, 'bin') + ':' + process.env.PATH;
 await writeFile(join(dir, 'tools.json'), JSON.stringify([{ id: 'response-native', name: 'Isolated response fixture',
   command: 'response-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
   { id: 'response-silent', name: 'Silent fixture', command: 'response-silent', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
+  { id: 'response-plain', name: 'Plain final fixture', command: 'response-plain', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
   { id: 'response-live', name: 'Live fixture', command: 'response-live', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' }]));
 await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_a', people: [
   { id: 'person_a', name: 'A', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
@@ -159,6 +163,29 @@ try {
   assert.match(silentResult.result.error, /尚未完成/);
   assert.equal(silentResult.deliveries.length, 0, 'transport does not speak over the silent model');
   assert.equal((await requests.byRunId(silentRoot.run.id)).deliveries.length, 0);
+  // Screenshot regression: an ordinary final omitted the display marker and
+  // was replaced with "未明确选择发送位置" despite its known source address.
+  const plainOrigin = { ...origin, sourceRouteId: 'plain-bot' };
+  const plainSession = await manager.createSession(home, 'response-plain', 'Plain response fixture', {
+    sourceId: 'feishu', conversation: plainOrigin, groupFeed: true,
+  });
+  const plainOptions = opts('plain-root');
+  plainOptions.tool = 'response-plain';
+  plainOptions.sourceContext = { ...plainOptions.sourceContext, sourceRouteId: 'plain-bot', feishuThreadSessionVersion: 1 };
+  plainOptions.sourceDelivery = { ...plainOrigin, target: { ...plainOrigin.target, messageId: 'plain-root' } };
+  const plainRoot = await manager.submitHttpMessage(plainSession.id, '你如何看待现在的回复速度？', [], plainOptions);
+  await until(async () => (await requests.byRunId(plainRoot.run.id))?.preparedAt);
+  await writeFile(join(home, `${plainRoot.run.id}.release`), 'release');
+  const plainResult = await until(async () => { const r = await requests.byRunId(plainRoot.run.id); return r?.result && r; });
+  assert.equal(plainResult.result.state, 'completed', JSON.stringify(plainResult.result));
+  const plainDeliveries = plainResult.deliveries.filter(d => d.kind === 'content');
+  assert.equal(plainDeliveries.length, 1, 'native and legacy publication cannot duplicate the plain final');
+  assert.match(plainDeliveries[0].text, /durable native answer/);
+  assert.equal(plainDeliveries[0].target.conversationKind, 'main');
+  const plainClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'plain-bot' });
+  assert.match(plainClaim.delivery.text, /durable native answer/);
+  await completeSourceDelivery(plainClaim.delivery.id, plainClaim.leaseId, { externalId: 'fixture-plain' });
+  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'plain-bot' }), null);
   console.log('FEISHU_RESPONSE_RUNTIME_VERIFIED: real admission, native steer, final projection and per-input settlement publish one combined answer and reaction; no Feishu or model network.');
 } finally {
   await manager.killAll();

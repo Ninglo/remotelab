@@ -29,6 +29,34 @@ try {
   const publish = (root, events) => publishNativeFeishuResponses(root, events,
     { id: root.runId, state: 'completed' }, { session: { id: 'session', sourceId: 'feishu' } });
 
+  // Missing optional placement metadata must not replace a usable answer with
+  // a protocol error. Preserve the accepted address, explicit decisions and
+  // per-input ownership without a model repair call.
+  for (const kind of ['main', 'thread']) {
+    let plain = await accept('plain-' + kind, null, { ...plan.target, conversationKind: kind,
+      ...(kind === 'thread' ? { rootId: 'existing-root', threadId: 'existing-thread', replyInThread: true } : {}) });
+    plain = await requests.mutate(plain.key, r => ({ ...r, options: { ...r.options,
+      sourceContext: { ...r.options.sourceContext, feishuThreadSessionVersion: 1 } } }));
+    const extra = await accept('unclaimed-' + kind, plain);
+    const answer = final('plain-final-' + kind, '这种回复速度明显偏慢。');
+    await publishNativeFeishuResponses(plain, [answer], { id: plain.runId, state: 'running' }, { running: true });
+    await publish(plain, [answer]);
+    const saved = await requests.get(plain.key);
+    const content = saved.deliveries.filter(d => d.kind === 'content');
+    assert.equal(content.length, 1);
+    assert.ok(content[0].text.endsWith('这种回复速度明显偏慢。'));
+    assert.equal(content[0].target.conversationKind, kind);
+    if (kind === 'thread') assert.equal(content[0].target.rootId, 'existing-root');
+    assert.equal((await requests.get(extra.key)).mainlineReply, undefined, 'plain final covers only its root input');
+    assert.deepEqual(saved.responseDecisionErrors, {});
+  }
+  let invalidDefault = await accept('invalid-default');
+  invalidDefault = await requests.mutate(invalidDefault.key, r => ({ ...r, options: { ...r.options,
+    sourceContext: { ...r.options.sourceContext, feishuThreadSessionVersion: 1 } } }));
+  await publish(invalidDefault, [final('invalid-default-final', envelope({ replyMode: 'invalid' }, '不能猜测这个显式决定'))]);
+  assert.equal((await requests.get(invalidDefault.key)).deliveries.filter(d => d.kind === 'content').length, 0);
+  assert.ok((await requests.get(invalidDefault.key)).responseDecisionErrors['invalid-default-final']);
+
   // Real latency regression: a completed answer waited for a steered input's
   // extra model calls, then vanished behind that input's combined final.
   const live = await accept('live-root');

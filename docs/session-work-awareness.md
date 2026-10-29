@@ -298,7 +298,7 @@ Harness 用 `remotelab work route --file packet.json --json`：
 
 原生追加工具沿用根 Run 的环境时，`sourceRequestId` 必须选取该执行中实际接受的输入；不能借其他 Session 或未进入当前执行的输入授权分流。
 
-主线回复统一使用一份回复决定：正文、可选表情、回复位置、覆盖的输入，以及明确不发正文时的理由。主模型在最终答复前写 `<private>feishu-response:{"replyMode":"thread","requestIds":["实际原输入ID","实际补充ID"],"reaction":"Get"}</private>`，随后给正文；只有原输入时可省略 requestIds。原生最终答复和输入处理记录一起提交，不再另调工具登记“已经回答”。开场只需选择 replyMode，后续沿已选位置回复。选择话题不授权另开执行或跨群转交。
+主线回复统一使用一份回复决定：正文、可选表情、回复位置、覆盖的输入，以及明确不发正文时的理由。主模型在最终答复前写 `<private>feishu-response:{"replyMode":"thread","requestIds":["实际原输入ID","实际补充ID"],"reaction":"Get"}</private>`，随后给正文；只有原输入时可省略 requestIds。现行话题绑定协议中，完整原生 final 若漏写整个标记，默认只回答根输入并回到原会话位置，不自动覆盖补充消息、不新开话题，也不为补标记再调模型；显式无效决定仍报错，明确静默仍保持静默。原生最终答复和输入处理记录一起提交，不再另调工具登记“已经回答”。开场只需选择 replyMode，后续沿已选位置回复。选择话题不授权另开执行或跨群转交。
 
 需要在执行中立即回答独立问题时，可用 `remotelab work reply --file reply.json --json`，字段为 `{sourceRequestId,text,requestIds?,replyMode?,reaction?,noTextReason?}`。它调用同一回复实现，不是第二次回执；同一答复只能选一个入口。相关补充共用一答，独立问题分别答；表情贴在该答复所归属的原消息上，正文留在已选话题。没有正文时保留理由和可选表情，不另发状态说明。开场和进展不阻止后续合并答复。
 

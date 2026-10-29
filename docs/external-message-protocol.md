@@ -369,8 +369,14 @@ receipts belong to the shared execution, including when a steered input selects
 that placement. Completed structured finals publish per accepted input while the
 execution may continue processing supplements; Run completion remains separate.
 
-New ambient mainline inputs carry `feishuThreadSessionVersion: 1`. A substantive
-independent thread is opened on explicit request or when work needs its own
+New ambient mainline inputs carry `feishuThreadSessionVersion: 1`. A
+completed native final without a response marker defaults to replying to its
+root input in the original conversation. This uses the existing accepted address,
+claims no steered inputs, and publishes through the same durable per-input reply
+reservation. It neither opens a new topic nor calls a model to repair display
+metadata. Explicit invalid decisions still fail validation, and deliberate
+no-text decisions remain silent. Existing topic addresses stay in their topics.
+A substantive independent thread is opened on explicit request or when work needs its own
 durable context and continuation. Tool use, message length and execution duration
 alone do not require splitting. The existing `work route` `mode:new` operation
 reserves an independent Session bound to the source message root before admitting

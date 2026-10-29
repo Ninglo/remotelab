@@ -1,5 +1,11 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Deliver an ordinary answer when placement metadata is omitted
+
+- Feedback: a user asked for an opinion on reply speed and received a platform error saying the answer had no selected destination. The generated answer and original source address both existed.
+- Change: under the current bound-topic protocol, a completed plain final answers its root input in the existing conversation. It uses the normal durable publication reservation, preserves topic addresses and does not infer coverage of supplements. Explicit invalid decisions and silence keep their existing semantics.
+- Validation: native admission through final settlement and claim/receipt tests deliver the actual answer once; ordinary mainline and existing-topic cases, malformed decisions, unclaimed supplements and legacy placement behavior are covered. No real-group test message or model repair call is required.
+
 ### 2026-10-29 — Keep conversational continuity without reinjecting known context
 
 - Feedback: users want accurate replies faster; necessary preceding conversation should remain available, while rules and recently delivered background should not be appended again. Native accumulated context and newly injected text are different measurements.

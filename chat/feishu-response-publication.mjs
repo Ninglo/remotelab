@@ -20,7 +20,14 @@ export async function publishNativeFeishuResponses(record, history, run, {
   // already committed input replies retain their original delivery identity.
   for (const event of (finals.length ? finals : running ? [] : candidates.slice(-1)).slice().reverse()) {
     const decision = readFeishuResponseDecision(event.content);
-    if (!decision.specified) continue;
+    if (!decision.specified) {
+      // A completed answer already has an accepted source address. New bound-
+      // topic inputs default to that conversation; omitting display metadata
+      // must not discard the answer or require another model round trip.
+      if (record.options?.sourceContext?.feishuThreadSessionVersion !== 1
+          || !isFinalAssistantMessage(event) || (!decision.text && !event.attachments?.length)) continue;
+      decision.replyMode ||= 'inline';
+    }
     let ids = decision.requestIds || [record.requestId];
     if (!decision.error) {
       // Question answers are accepted context, not independent reply owners.

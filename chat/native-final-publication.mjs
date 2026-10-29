@@ -117,7 +117,8 @@ export async function publishLiveAssistantReplies(record, events, { store, plan,
     // Structured finals bind their answer to inputs through the native
     // publisher. Never also publish them through the legacy path.
     if ((final || surface.surfaceKind === 'final') && hasFeishuInputReplyContract(record)
-        && readFeishuResponseDecision(directiveEvent.content).specified) continue;
+        && (readFeishuResponseDecision(directiveEvent.content).specified
+          || final && record.options?.sourceContext?.feishuThreadSessionVersion === 1)) continue;
     const owner = final || surface.surfaceKind === 'question' ? record : scopes.get(event) || record;
     if (owner !== record && !owner.nativeReceipt?.accepted) continue;
     if ((owner.options?.suppressSourceDelivery && !owner.mainlineReply) || owner.routingHandoff) continue;
