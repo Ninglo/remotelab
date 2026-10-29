@@ -2121,9 +2121,11 @@ The user narrowed optional delivery self-review to complex work already executin
 ## 2026-10-29 — Keep formulas at reading size in Feishu replies
 
 A user reported that formulas repeatedly became oversized images in chat.
-Short display expressions now use a separate Unicode text paragraph, matching
-the existing simple inline treatment. Complex formulas retain mathematical
-layout but render on a wide, short 2x canvas: the current post image tag has no
-display-size field, and a tight crop can be enlarged to the message width.
-Parser, renderer, rich-text, card and connector tests cover this change; a
-local preview checks that the full fraction and aligned equations survive.
+The initial fix kept short formulas as text and constrained complex image
+layout. The follow-up clarified that formula images should be avoided entirely.
+Chat now defaults to copyable text: supported symbols, scripts, fractions and
+roots are converted conservatively; unsupported layouts retain complete LaTeX
+source. A formula image requires explicit opt-in. The current message contract
+has no native formula component; Feishu documents provide that separately.
+Parser, renderer, rich-text, card and connector tests cover both text defaults
+and explicit image rendering, including fraction power grouping.

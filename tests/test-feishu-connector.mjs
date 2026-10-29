@@ -742,13 +742,10 @@ await sendFeishuText(
   '$$\\frac{a_b}{c^2}$$',
   'uuid-regular-formula-1',
 );
-assert.equal(feishuImagePayload?.data?.image_type, 'message');
-assert.ok(Buffer.isBuffer(feishuImagePayload?.data?.image));
-assert.equal(feishuImagePayload.data.image.readUInt32BE(16), 640,
-  'the live send path uploads a wide formula strip, not a magnified glyph crop');
+assert.equal(feishuImagePayload, null, 'ordinary replies must not upload formula images');
 assert.deepEqual(
   JSON.parse(feishuReplyPayload?.data?.content || '{}').zh_cn.content,
-  [[{ tag: 'img', image_key: 'img_formula_uploaded_1' }]],
+  [[{ tag: 'text', text: '(a_b)/(c²)' }]],
 );
 
 feishuImagePayload = null;

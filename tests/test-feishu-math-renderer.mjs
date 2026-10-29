@@ -33,6 +33,7 @@ const displayRequests = [];
 const displayDocument = await buildFeishuMathDocument(
   `推导如下：\n\\[\n${displaySource}\n\\]\n完成。`,
   {
+    renderFormulaImages: true,
     resolveFormulaImage: async (formula) => {
       displayRequests.push(formula);
       return 'img_formula_1';
@@ -51,6 +52,7 @@ assert.deepEqual(displayDocument.blocks[1], {
 const standaloneEnvironmentDocument = await buildFeishuMathDocument(
   displaySource,
   {
+    renderFormulaImages: true,
     resolveFormulaImage: async () => 'img_formula_environment_1',
   },
 );
@@ -64,6 +66,7 @@ const formulaErrors = [];
 const failedDocument = await buildFeishuMathDocument(
   `$$${displaySource}$$`,
   {
+    renderFormulaImages: true,
     resolveFormulaImage: async () => {
       throw new Error('synthetic render failure');
     },
@@ -79,6 +82,22 @@ assert.match(failedDocument.blocks[0].text, /\\text\{未来问题\}/);
 assert.equal(formulaErrors.length, 1);
 assert.match(formulaErrors[0].error.message, /synthetic render failure/);
 assert.equal(formulaErrors[0].formula.display, true);
+
+const textOnlyOptions = {
+  resolveFormulaImage: () => { throw new Error('automatic formula images are disabled'); },
+};
+const fractionText = await buildFeishuMathDocument(String.raw`\[\frac{a+b}{\sqrt{c}}\]`, textOnlyOptions);
+assert.deepEqual(fractionText.blocks, [{
+  type: 'formula_text', source: String.raw`\frac{a+b}{\sqrt{c}}`, text: '(a+b)/(√(c))',
+}]);
+const matrixSource = String.raw`\begin{pmatrix}a&b\\c&d\end{pmatrix}`;
+assert.deepEqual((await buildFeishuMathDocument(`$$${matrixSource}$$`, textOnlyOptions)).blocks, [{
+  type: 'formula_text', source: matrixSource, text: matrixSource,
+}], 'unsupported text layouts retain complete source without an image or warning label');
+const inlineFraction = await buildFeishuMathDocument(String.raw`比例 \(\frac{a}{b}\)。`, textOnlyOptions);
+assert.equal(inlineFraction.blocks[0].segments[1].text, '(a)/(b)');
+assert.equal((await buildFeishuMathDocument(String.raw`$$\frac{a}{b}^2$$`)).blocks[0].text,
+  '((a)/(b))²', 'a power on a fraction applies to the whole fraction, not its denominator');
 
 const fencedDocument = await buildFeishuMathDocument(
   '```latex\n$x^2$\n```\n正文 $x^2$',

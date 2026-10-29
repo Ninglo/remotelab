@@ -37,6 +37,7 @@ assert.deepEqual(await rows(`前文\n\n${table}\n\n\`\`\`ts\n  const who = "@_us
 ], 'native code blocks remain separate without splitting adjacent tables');
 
 assert.deepEqual(await rows(`${table}\n\n$$\\frac{a}{b}$$\n\n完成。`, [], {
+  renderFormulaImages: true,
   resolveFormulaImage: async () => 'img_formula_test',
 }), [
   [{ tag: 'md', text: table }],
@@ -49,6 +50,11 @@ assert.deepEqual(await rows('前文\n\n$$x^2$$\n\n后文'), [
   [{ tag: 'text', text: 'x²' }],
   [{ tag: 'md', text: '后文' }],
 ], 'short display formulas stay text-sized in a separate paragraph');
+
+assert.deepEqual(await rows('比例\\(\\frac{a}{b}\\)。\n\n$$\\frac{a+b}{c}$$'), [
+  [{ tag: 'md', text: '比例(a)/(b)。' }],
+  [{ tag: 'text', text: '(a+b)/(c)' }],
+], 'normal replies send complex inline and display formulas as text');
 
 assert.deepEqual(await rows(`日报摘要\n\n![监管快照](img_v3_snapshot-key)\n\n${table}`), [
   [{ tag: 'md', text: '日报摘要' }],

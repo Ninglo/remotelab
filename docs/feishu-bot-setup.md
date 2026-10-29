@@ -1151,20 +1151,21 @@ tables. Nested tables remain Markdown rather than becoming native table componen
 ### Formula rendering
 
 Feishu replies support standard LaTeX delimiters: `\(...\)` or `$...$` for
-inline math, and `\[...\]` or `$$...$$` for display math. The connector
-validates formulas with MathJax. Compact expressions are emitted as Unicode:
-inline formulas stay inside their Markdown element, and short display formulas
-retain a separate text paragraph. Complex formulas are rendered to PNG, uploaded
-through Feishu's message-image API, and inserted into the rich-text reply. Their
-2x image uses a minimum 640-pixel-wide strip with small padding, rather than a
-tight glyph crop: current post images have no display-size field and clients can
-otherwise enlarge a tiny fraction to the full message width. The complete image
-is bounded to 1600 × 1200 pixels without cropping the formula. This also keeps
-formula images compact when the post is converted to a table card.
-Identical formulas reuse an in-process
-content-hash cache. If parsing, rendering, or upload fails, the complete LaTeX
-source is preserved as readable text instead of sending a partially converted
-formula.
+inline math, and `\[...\]` or `$$...$$` for display math. Chat replies default
+to text and never automatically upload formula images. The connector validates
+with MathJax, then converts supported notation to readable Unicode: scripts and
+symbols remain text, fractions use `(numerator)/(denominator)`, and roots use
+`√(expression)`. Inline formulas stay in their paragraph; display formulas keep
+a separate text paragraph. Layouts that cannot be converted without losing
+content, such as matrices, retain their complete LaTeX source. This is readable
+chat text, not native LaTeX typesetting: the current message content contract
+does not define a formula component. Feishu documents have a separate native
+formula capability.
+
+The image helper remains available for explicitly requested image output via
+`renderFormulaImages: true`. Its 2x canvas uses at least 640 pixels of width to
+avoid enlarging a tightly cropped glyph in clients; total size is bounded to
+1600 × 1200 pixels. Rendering or upload failures preserve the complete source.
 
 ## Success state
 

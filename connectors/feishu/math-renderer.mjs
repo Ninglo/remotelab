@@ -134,6 +134,10 @@ const SIMPLE_INLINE_COMMAND_TEXT = {
   cos: 'cos',
   tan: 'tan',
   Pr: 'Pr',
+  sum: '∑',
+  prod: '∏',
+  int: '∫',
+  oint: '∮',
 };
 
 const SIMPLE_GROUP_COMMANDS = new Set([
@@ -443,6 +447,24 @@ function replaceGroupCommands(text) {
     }
     output += text.slice(cursor, match.index);
     const command = match[1];
+    if (['frac', 'dfrac', 'tfrac'].includes(command)) {
+      const numerator = readBalancedGroup(text, pattern.lastIndex);
+      const denominator = numerator && readBalancedGroup(text, numerator.end);
+      if (denominator) {
+        const fraction = `(${renderSimpleLatexText(numerator.text)})/(${renderSimpleLatexText(denominator.text)})`;
+        output += /^\s*[_^]/.test(text.slice(denominator.end)) ? `(${fraction})` : fraction;
+        cursor = denominator.end;
+        continue;
+      }
+    }
+    if (command === 'sqrt') {
+      const group = readBalancedGroup(text, pattern.lastIndex);
+      if (group) {
+        output += `√(${renderSimpleLatexText(group.text)})`;
+        cursor = group.end;
+        continue;
+      }
+    }
     if (SIMPLE_GROUP_COMMANDS.has(command)) {
       const group = readBalancedGroup(text, pattern.lastIndex);
       if (group) {
@@ -565,7 +587,7 @@ function reportFormulaError(onFormulaError, error, formula) {
   } catch {}
 }
 
-async function resolveInlineMathSegments(line, resolveFormulaImage, onFormulaError) {
+async function resolveInlineMathSegments(line, resolveFormulaImage, onFormulaError, renderFormulaImages) {
   const output = [];
   for (const segment of splitInlineMathSegments(line)) {
     if (segment.type !== 'math_source') {
@@ -578,7 +600,7 @@ async function resolveInlineMathSegments(line, resolveFormulaImage, onFormulaErr
     };
     try {
       await renderLatexToSvg(segment.source, { display: false });
-      if (isSimpleInlineLatex(segment.source)) {
+      if (!renderFormulaImages || isSimpleInlineLatex(segment.source)) {
         const text = renderSimpleLatexText(segment.source);
         if (text && !/\\[a-zA-Z]+/.test(text)) {
           output.push({
@@ -589,7 +611,7 @@ async function resolveInlineMathSegments(line, resolveFormulaImage, onFormulaErr
           continue;
         }
       }
-      if (resolveFormulaImage) {
+      if (renderFormulaImages && resolveFormulaImage) {
         const imageKey = await resolveFormulaImage(formula);
         if (imageKey) {
           output.push({
@@ -685,21 +707,24 @@ function consumeDisplayFormula(lines, startIndex, start) {
   return null;
 }
 
-async function buildFormulaBlock(source, resolveFormulaImage, onFormulaError) {
+async function buildFormulaBlock(source, resolveFormulaImage, onFormulaError, renderFormulaImages) {
   const normalized = normalizeLatexSource(source);
   const formula = {
     source: normalized,
     display: true,
   };
   try {
-    if (isSimpleInlineLatex(normalized)) {
+    if (!renderFormulaImages || isSimpleInlineLatex(normalized)) {
       await renderLatexToSvg(normalized, { display: true });
       const text = renderSimpleLatexText(normalized);
       if (text && !/\\[a-zA-Z]+/.test(text)) {
         return { type: 'formula_text', source: normalized, text };
       }
+      if (!renderFormulaImages) {
+        return { type: 'formula_text', source: normalized, text: normalized };
+      }
     }
-    if (resolveFormulaImage) {
+    if (renderFormulaImages && resolveFormulaImage) {
       const imageKey = await resolveFormulaImage(formula);
       if (imageKey) {
         return {
@@ -714,6 +739,9 @@ async function buildFormulaBlock(source, resolveFormulaImage, onFormulaError) {
   } catch (error) {
     reportFormulaError(onFormulaError, error, formula);
   }
+  if (!renderFormulaImages) {
+    return { type: 'formula_text', source: normalized, text: normalized };
+  }
   return {
     type: 'formula_fallback',
     source: normalized,
@@ -724,6 +752,7 @@ async function buildFormulaBlock(source, resolveFormulaImage, onFormulaError) {
 export async function buildFeishuMathDocument(value, {
   resolveFormulaImage = null,
   onFormulaError = null,
+  renderFormulaImages = false,
 } = {}) {
   const lines = String(value || '').replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
@@ -758,14 +787,14 @@ export async function buildFeishuMathDocument(value, {
     if (displayStart) {
       const formula = consumeDisplayFormula(lines, index, displayStart);
       if (formula?.source) {
-        blocks.push(await buildFormulaBlock(formula.source, resolveFormulaImage, onFormulaError));
+        blocks.push(await buildFormulaBlock(formula.source, resolveFormulaImage, onFormulaError, renderFormulaImages));
         index = formula.endIndex;
         continue;
       }
     }
     blocks.push({
       type: 'line',
-      segments: await resolveInlineMathSegments(line, resolveFormulaImage, onFormulaError),
+      segments: await resolveInlineMathSegments(line, resolveFormulaImage, onFormulaError, renderFormulaImages),
     });
   }
   return { blocks };
