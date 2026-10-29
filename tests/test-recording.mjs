@@ -548,6 +548,89 @@ test('queued HID events retain hardware timing instead of inventing simultaneous
   assert.equal(input.accept({ deviceId: 'pad', key: 3, pressed: true, timestampMs: 1500 }), undefined);
 });
 
+test('replayed HID down/up pairs toggle once without suppressing new rapid presses or other devices/pages', async () => {
+  const { RecordingKeypad } = await import('../lib/recording/keypad.mjs');
+  const input = new RecordingKeypad([
+    { deviceId: 'big', key: 104, laneId: 'b', action: 'toggle' },
+    { deviceId: 'small', key: 104, laneId: 'a', action: 'start' },
+    { deviceId: 'big', usagePage: 12, key: 104, laneId: 'c', action: 'start' },
+  ]);
+  const down = 1374612663.029875, up = 1374612663.339375;
+  const edge = (pressed, at, deviceId = 'big', usagePage = 7) => input.accept({ deviceId, usagePage, key: 104, pressed, timestampMs: at });
+  const actions = [];
+  for (let replay = 0; replay < 3; replay++) {
+    actions.push(edge(true, down)?.action); edge(false, up);
+  }
+  assert.deepEqual(actions, ['toggle', undefined, undefined]);
+  assert.equal(edge(true, down, 'small').laneId, 'a');
+  assert.equal(edge(true, down, 'big', 12).laneId, 'c');
+  assert.equal(edge(true, up + 1).action, 'toggle');
+  edge(false, up); // A stale release must not clear the newer held press.
+  assert.equal(edge(true, up + 2), undefined);
+  edge(false, up + 3);
+  assert.equal(edge(true, up + 4).action, 'toggle');
+  edge(false, up + 4); // Same timestamp for opposite edges is valid.
+  assert.equal(edge(true, up + 5).action, 'toggle');
+  input.accept({ deviceId: 'big', disconnected: true });
+  assert.equal(edge(true, 0).action, 'toggle');
+  edge(false, 0);
+  assert.equal(edge(true, 1).action, 'toggle');
+});
+
+test('shutdown closes a start still awaiting disk I/O and rejects queued and future starts', async (t) => {
+  const root = await temporary(t), factory = captureFactory();
+  const manager = new RecordingManager({ root, config: config({ submissionMode: 'local' }), spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  let release, entered;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const entering = new Promise((resolve) => { entered = resolve; });
+  const spaceCheck = manager.spaceCheck.bind(manager);
+  manager.spaceCheck = async () => { entered(); await blocked; await spaceCheck(); };
+  const starting = manager.start('a'); await entering;
+  assert.deepEqual(manager.status(), []);
+  const queued = manager.start('b');
+  const rejected = assert.rejects(queued, /service is stopping/);
+  const shutdown = manager.shutdown(); release();
+  const first = await starting;
+  await rejected; await shutdown;
+  assert.deepEqual(manager.status(), []); assert.equal(manager.receivers.size, 0);
+  assert.ok(factory.captures.get('rx1').killed);
+  const record = await loadRecord(root, first.recording.id);
+  assert.equal(record.status, 'failed'); assert.equal(record.error, 'Recording service stopped');
+  assert.ok(record.endedAt);
+  await assert.rejects(manager.toggle('b'), /service is stopping/);
+});
+
+test('captured triple toggle report starts one recording and the next physical press stops it independently', async (t) => {
+  const { RecordingKeypad } = await import('../lib/recording/keypad.mjs');
+  const root = await temporary(t), factory = captureFactory();
+  const cfg = config({ submissionMode: 'local', bindings: [{ deviceId: 'big', key: 104, laneId: 'b', action: 'toggle' }] });
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  const input = new RecordingKeypad(cfg.bindings), dispatched = [];
+  const pair = (down, up) => {
+    for (const [pressed, timestampMs] of [[true, down], [false, up]]) {
+      const binding = input.accept({ deviceId: 'big', key: 104, pressed, timestampMs });
+      if (binding) dispatched.push(manager[binding.action](binding.laneId));
+    }
+  };
+  await manager.start('a');
+  for (let replay = 0; replay < 3; replay++) pair(1374612663.029875, 1374612663.339375);
+  await Promise.all(dispatched);
+  assert.equal(dispatched.length, 1);
+  const child = factory.captures.get('rx1');
+  await feed(manager, child, 'rx1', stereo(1000, 2000));
+  assert.deepEqual(manager.status().map((s) => s.laneId).sort(), ['a', 'b']);
+  pair(1374612763.029875, 1374612763.339375);
+  const stopped = await dispatched[1];
+  assert.equal(dispatched.length, 2);
+  assert.deepEqual(manager.status().map((s) => s.laneId), ['a']);
+  await feed(manager, child, 'rx1', stereo(3000, 4000));
+  const first = await manager.stop('a');
+  assert.deepEqual(await samples(root, stopped.recording), [2000, 2000, 2000, 2000]);
+  assert.deepEqual(await samples(root, first.recording), [1000, 1000, 1000, 1000, 3000, 3000, 3000, 3000]);
+});
+
 test('start-only key and double-stop work with click-macro keypads and protect the first second', async () => {
   const { RecordingKeypad } = await import('../lib/recording/keypad.mjs');
   let now = 0, recording = false;
