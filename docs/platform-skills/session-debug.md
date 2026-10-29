@@ -8,6 +8,27 @@ Default behavior:
 - Keep the investigation scoped to the target session or run.
 - Report the concrete state, blocker, and next repair step.
 
+## Response time
+
+For ordinary "how fast are replies now?" questions, use `remotelab response-time --json`.
+It reads the existing monitoring snapshot once and returns first response, final
+delivery, stage statistics, observation time and coverage. `--days 7` returns the
+seven daily measurements; it does not average daily percentiles. This entry does
+not inspect transcripts, scan spools, call a model or create another collector.
+
+For a known message, use `remotelab response-time --request-id <accepted-input-id> --session <session-id> --json`.
+The current Session is the default. This is a bounded lookup of existing local
+Request and delivery-owner records, including explicitly attributed steered
+replies. Do not substitute the current input for a previous message. Missing or
+pending receipts remain unknown; use targeted diagnostics only if the reported
+gap or anomaly needs investigation.
+
+The summary separates ordinary conversations from group mainlines and preserves
+the monitoring definitions and coverage. First response includes openings and
+excludes automatic status and reactions. Final delivery is provider acceptance
+of the final result, not task acceptance. See [monitoring](../monitoring.md#response-time-query)
+for the maintained contract.
+
 ## Codex safety blocks
 
 For `Potentially unintended activity`, check the structured native error before

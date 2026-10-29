@@ -45,6 +45,7 @@ Usage:
   remotelab preview                  Expose an authenticated local preview on the stable instance domain
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
+  remotelab response-time            Read existing response-time statistics or an exact delivery receipt
   remotelab mail                     Manage agent mailbox and send outbound email
   remotelab gmail                    Manage the bound Gmail mailbox connector
   remotelab github-workspace         Prepare and verify a person's GitHub checkout
@@ -75,6 +76,12 @@ Usage:
 }
 
 switch (command) {
+  case 'response-time': {
+    const { runResponseTimeCommand } = await import(scriptPath('lib/response-time-command.mjs'));
+    try { process.exitCode = await runResponseTimeCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'knowledge': {
     const { runKnowledgeCommand } = await import(scriptPath('lib/knowledge-command.mjs'));
     try { process.exitCode = await runKnowledgeCommand(args); }
