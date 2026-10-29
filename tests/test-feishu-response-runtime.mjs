@@ -21,6 +21,12 @@ await chmod(silentExecutable, 0o755);
 const plainExecutable = join(home, 'bin/response-plain');
 await writeFile(plainExecutable, fixture);
 await chmod(plainExecutable, 0o755);
+const resumeExecutable = join(home, 'bin/response-resume');
+const resumeText = '<private>feishu-response:{"replyMode":"thread","requestIds":["resume-old","resume-current"]}</private>接续任务已完成，页面已上线。';
+await writeFile(resumeExecutable, fixture.replace("finalText = 'durable native answer'", `finalText = ${JSON.stringify(resumeText)}`)
+  .replace("notify('turn/started', { turn: { id: activeTurn, status: 'inProgress' } });",
+    "notify('turn/started', { turn: { id: activeTurn, status: 'inProgress' } }); if (text.includes('FAIL_RESUME_INITIAL')) finish('failed', false);"));
+await chmod(resumeExecutable, 0o755);
 const liveExecutable = join(home, 'bin/response-live');
 const liveFirst = '<private>feishu-response:{"replyMode":"inline"}</private>第一条已回答。';
 const liveNext = '<private>feishu-response:{"replyMode":"inline","requestIds":["live-root","live-extra","live-followup"]}</private>补问也已回答。';
@@ -35,6 +41,7 @@ await writeFile(join(dir, 'tools.json'), JSON.stringify([{ id: 'response-native'
   command: 'response-native', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
   { id: 'response-silent', name: 'Silent fixture', command: 'response-silent', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
   { id: 'response-plain', name: 'Plain final fixture', command: 'response-plain', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
+  { id: 'response-resume', name: 'Continuation fixture', command: 'response-resume', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' },
   { id: 'response-live', name: 'Live fixture', command: 'response-live', runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user' }]));
 await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_a', people: [
   { id: 'person_a', name: 'A', identities: [{ id: 'identity_a', kind: 'web', subjectId: 'a' }] },
@@ -93,6 +100,38 @@ try {
   assert.equal(history.filter(e => e.type === 'work_event' && e.action === 'mainline-input-reply').length, 1);
   assert(!history.some(e => e.type === 'tool_use' && /work reply/.test(JSON.stringify(e))),
     'native final owns coverage without an additional model tool call');
+
+  // Two actual executions in one topic: fail, then "continue". The native
+  // final refers to both inputs, but the new reply only settles its own input.
+  const resumeOrigin = { ...origin, sourceRouteId: 'resume-bot', target: { ...origin.target,
+    conversationKind: 'thread', threadId: 'resume-topic', rootId: 'resume-anchor', replyInThread: true } };
+  const resumeSession = await manager.createSession(home, 'response-resume', 'Continuation fixture', {
+    sourceId: 'feishu', conversation: resumeOrigin,
+  });
+  const resumeOpts = id => ({ ...opts(id), tool: 'response-resume',
+    sourceContext: { ...opts(id).sourceContext, sourceRouteId: 'resume-bot' },
+    sourceDelivery: { ...resumeOrigin, target: { ...resumeOrigin.target, messageId: id } } });
+  const oldRun = await manager.submitHttpMessage(resumeSession.id, 'FAIL_RESUME_INITIAL', [], resumeOpts('resume-old'));
+  const failed = await until(async () => { const r = await requests.byRunId(oldRun.run.id); return r?.result && r.releasedAt && r; });
+  assert.equal(failed.result.state, 'failed');
+  for (let claim; (claim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'resume-bot' }));) {
+    await completeSourceDelivery(claim.delivery.id, claim.leaseId, { externalId: 'fixture-old-failure' });
+  }
+  const resumedRun = await manager.submitHttpMessage(resumeSession.id, '继续', [], resumeOpts('resume-current'));
+  assert.notEqual(resumedRun.run.id, oldRun.run.id);
+  await until(async () => (await requests.byRunId(resumedRun.run.id))?.preparedAt);
+  await writeFile(join(home, `${resumedRun.run.id}.release`), 'release');
+  const resumed = await until(async () => { const r = await requests.byRunId(resumedRun.run.id); return r?.result && r; });
+  assert.equal(resumed.result.state, 'completed', JSON.stringify(resumed.responseDecisionErrors));
+  assert.deepEqual(resumed.mainlineReply.contract.requestIds, ['resume-current']);
+  assert.equal(resumed.deliveries.filter(d => d.kind === 'content').length, 1);
+  const resumeClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'resume-bot' });
+  assert.match(resumeClaim.delivery.text, /接续任务已完成/);
+  assert.doesNotMatch(resumeClaim.delivery.text, /字段无效|尚未完成投递/);
+  assert.equal(resumeClaim.delivery.target.threadId, 'resume-topic');
+  await completeSourceDelivery(resumeClaim.delivery.id, resumeClaim.leaseId, { externalId: 'fixture-resumed-answer' });
+  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'resume-bot' }), null);
+  assert.deepEqual((await requests.byRunId(oldRun.run.id)).result, failed.result);
 
   // Observe the first final while the native peer deliberately remains open,
   // then a second final after the root's reply has suppressed its fallback.

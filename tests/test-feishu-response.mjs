@@ -29,6 +29,59 @@ try {
   const publish = (root, events) => publishNativeFeishuResponses(root, events,
     { id: root.runId, state: 'completed' }, { session: { id: 'session', sourceId: 'feishu' } });
 
+  // Production regression: after a failed turn, "continue" produces a final
+  // naming both the original task and the new input. Old results are evidence,
+  // not reply reservations; their presence must not swallow the new answer.
+  const topic = { ...plan.target, conversationKind: 'thread', threadId: 'resume-topic',
+    rootId: 'resume-anchor', replyInThread: true };
+  const historical = async (id, state = 'failed', target = topic) => {
+    let input = await accept(id, null, target);
+    input = await requests.mutate(input.key, r => ({ ...r, options: { ...r.options,
+      sourceContext: { ...r.options.sourceContext, sender: { senderType: 'user' } } } }));
+    await requests.settle(input.key, { state, error: state === 'failed' ? 'model at capacity' : null,
+      payload: { text: state === 'completed' ? '上轮答复' : '', attachments: [] } });
+    await requests.mutate(input.key, r => ({ ...r, releasedAt: r.settledAt, postCompletionPending: false }));
+    await requests.archiveFinished(input.key);
+    return requests.get(input.key);
+  };
+  for (const state of ['failed', 'cancelled', 'completed']) {
+    const old = await historical('old-' + state, state);
+    const resumed = await accept('resumed-' + state, null, topic);
+    const extra = await accept('resume-extra-' + state, resumed, topic);
+    const answer = final('resume-final-' + state, envelope({ replyMode: 'thread', reaction: 'Get',
+      requestIds: [old.requestId, resumed.requestId, extra.requestId] }, '接续任务已完成。'));
+    await publishNativeFeishuResponses(resumed, [answer], { id: resumed.runId, state: 'running' }, { running: true });
+    await publish(resumed, [answer]);
+    const saved = await requests.get(resumed.key);
+    assert.deepEqual(saved.responseDecisionErrors, {});
+    assert.deepEqual(saved.mainlineReply.contract.requestIds, [resumed.requestId, extra.requestId]);
+    assert.deepEqual(saved.deliveries.map(d => d.kind), ['reaction', 'content']);
+    assert.equal(saved.deliveries[0].target.messageId, resumed.requestId, 'react to this input, not historical context');
+    assert.equal(saved.deliveries[1].target.threadId, topic.threadId);
+    assert.match(saved.deliveries[1].text, /接续任务已完成/);
+    assert.equal((await requests.get(extra.key)).deliveries.length, 0, 'combined final is sent once');
+    assert.deepEqual(await requests.get(old.key), old, 'keep archived results and receipts unchanged');
+  }
+  const previousOnly = await historical('previous-only');
+  const noOwner = await accept('no-current-owner', null, topic);
+  await publish(noOwner, [final('old-only-final', envelope({ replyMode: 'thread',
+    requestIds: [previousOnly.requestId] }, '没有选择本轮输入'))]);
+  assert.equal((await requests.get(noOwner.key)).deliveries.length, 0, 'never invent current input coverage');
+  const quietResume = await accept('quiet-resume', null, topic);
+  await publish(quietResume, [final('quiet-resume-final', envelope({ requestIds: [previousOnly.requestId, quietResume.requestId],
+    noTextReason: '无需文字回复' }))]);
+  assert.equal((await requests.get(quietResume.key)).deliveries.length, 0);
+  assert.deepEqual((await requests.get(quietResume.key)).mainlineReply.contract.requestIds, [quietResume.requestId]);
+  for (const target of [{ ...topic, threadId: 'foreign-topic', rootId: 'foreign-root' },
+    { ...topic, chatId: 'foreign-group' }, { ...topic, tenantKey: 'foreign-tenant' }]) {
+    const id = JSON.stringify(target);
+    const old = await historical('foreign-old-' + id, 'failed', target);
+    const resumed = await accept('foreign-resume-' + id, null, topic);
+    await publish(resumed, [final('foreign-final-' + id, envelope({ replyMode: 'thread',
+      requestIds: [old.requestId, resumed.requestId] }, '不得发送'))]);
+    assert.equal((await requests.get(resumed.key)).deliveries.length, 0, 'settlement cannot relax conversation boundaries');
+  }
+
   // Missing optional placement metadata must not replace a usable answer with
   // a protocol error. Preserve the accepted address, explicit decisions and
   // per-input ownership without a model repair call.

@@ -350,6 +350,13 @@ final-message behavior.
 In-flight supplementary replies and native questions do not consume the final
 reply for an accepted input. A combined final can still cover those inputs;
 per-input reply reservations continue to prevent duplicate final publication.
+When a continuation's native final also names settled human inputs from an
+earlier execution in the same conversation, those older IDs are context only.
+Publication reserves the explicitly selected current-execution inputs, sends
+the answer once to their accepted address, and preserves the older results and
+delivery receipts. At least one current reply owner is still required. Unknown
+IDs, another conversation, active foreign executions and handoffs retain their
+normal validation; a no-text decision remains silent.
 If structural response validation fails, the platform's failure notice must
 not inherit the rejected model message's delivery identity. Such a notice is
 new context for the next turn, rather than already-known native output. The

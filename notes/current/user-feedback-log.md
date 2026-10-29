@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Keep continuation answers when they reference a previous turn
+
+- Feedback: a generated answer was replaced by a message saying its input mapping was invalid, even though the failure notice itself could reach the original topic.
+- Cause: after an execution failed and the user said “continue”, the native final named both the earlier task and the new input. Publication rejected the entire answer because the older input belonged to another execution.
+- Change: settled earlier human inputs from the same conversation are context, while current explicitly selected inputs own the reply. Existing reservation and delivery deduplication remain in use; historical outcomes and receipts are preserved.
+- Verification: isolated publication tests cover failed/completed/cancelled history, supplementary input coverage, replay, reaction targeting, silence and foreign conversation rejection. A native runtime regression exercises two real local fixture executions, failure followed by continuation, final settlement and a single outbox claim/receipt without model or Feishu network calls.
+
 ### 2026-10-29 — Throttle per-Session hints and reuse unchanged topic records
 
 - Feedback: continue removing remaining read load on the core: unexplained event polling, connector Session reads and the in-process topic board refresh.

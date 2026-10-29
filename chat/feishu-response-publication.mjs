@@ -1,6 +1,7 @@
 import { readFeishuResponseDecision, hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
 import { isFinalAssistantMessage, isReplyMessage } from '../lib/assistant-message-phase.mjs';
 import { assistantSurfaceMessageId } from '../lib/assistant-surface-messages.mjs';
+import { sameConversation } from '../lib/conversation-target.mjs';
 import { buildReplyPublicationPayload } from './reply-publication.mjs';
 import { publishFeishuResponse } from './feishu-response.mjs';
 import { requests } from './requests.mjs';
@@ -38,6 +39,20 @@ export async function publishNativeFeishuResponses(record, history, run, {
         const input = await store.byRequest(record.sessionId, id);
         const origin = record.deliveryPlan || record.options?.sourceDelivery;
         const source = input?.deliveryPlan || input?.options?.sourceDelivery;
+        // A continuation may name the earlier task as well as the new input.
+        // Settled human inputs in this conversation are context, not new reply
+        // owners. Retain their original results and deliver only for this Run's
+        // explicitly selected inputs; unknown or foreign IDs still fail below.
+        if (input?.sequence < record.sequence && input.result
+            && (input.nativeDispatchRunId || input.runId) !== run.id
+            && hasFeishuInputReplyContract(input) && !input.routingHandoff
+            && !input.options.nativeQuestionId && !input.options.internalOperation
+            && !input.options.workReference && !input.options.deliveryOnly
+            && (!input.nativeDispatchRunId || input.nativeReceipt?.accepted === true)
+            && input.options.sourceContext?.connector === 'feishu'
+            && input.options.sourceContext?.sender?.senderType === 'user'
+            && source?.target?.tenantKey === origin?.target?.tenantKey
+            && sameConversation(source, origin)) continue;
         if (source?.connector === 'feishu' && source.sourceRouteId === origin?.sourceRouteId
             && source.target?.chatId === origin?.target?.chatId
             && source.target?.tenantKey === origin?.target?.tenantKey
