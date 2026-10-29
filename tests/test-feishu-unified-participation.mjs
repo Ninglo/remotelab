@@ -53,6 +53,24 @@ try {
   assert.match(discussionPrompt, /Listening and paused/);
   assert.doesNotMatch(discussionPrompt, /substantive discussion belongs in a Thread/);
   assert.equal(resolveFeishuGroupSettings(config, base).jevReactions, true, 'modern work topics share optional Jev feedback');
+  const disabledConfig = { ...config, storageDir: join(home, 'jev-disabled'), jevReactions: false,
+    groups: { ...config.groups, work: { ...config.groups.work, jevReactions: true, participationMode: 'active' } } };
+  const disabledRuntime = { config: disabledConfig, botIdentity: { openId: 'bot' }, storagePaths: {} };
+  disabledRuntime.participation = createParticipationController(disabledRuntime);
+  const disabledSubmissions = [];
+  for (const summary of [base, main, { ...main, chatId: 'new-group' }]) {
+    const settings = resolveFeishuGroupSettings(disabledConfig, summary);
+    assert.equal(settings.jevReactions, undefined, 'connector opt-out covers explicit group opt-in, threads and new groups');
+    assert.doesNotMatch(settings.systemPrompt, /Jev supplies/);
+    assert.deepEqual(settings.reactionCandidates, resolveFeishuGroupSettings(config, summary).reactionCandidates,
+      'main-model reaction choices remain available');
+    await handleMessage(disabledRuntime, summary, 'test', { ...helpers,
+      submitRemoteLabRequest: async (_runtime, input) => { disabledSubmissions.push(input); return { sessionId: 'topic' }; },
+      classifyJevReaction: async () => assert.fail('disabled connector must not call Jev'),
+    });
+  }
+  assert.equal(disabledSubmissions.length, 3, 'disabling feedback preserves main-model admission');
+  assert.equal(disabledRuntime.jevReactionJobs?.size || 0, 0);
   await handleMessage(runtime, base, 'test', helpers);
   await Promise.all(runtime.jevReactionJobs.values());
   assert.equal(submitted.length, 1, 'active topic admits a colleague-directed question for main-model judgment');

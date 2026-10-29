@@ -1099,6 +1099,11 @@ await writeFile(tempConfigPath, `${JSON.stringify({
 
 const loadedConfig = await loadConfig(tempConfigPath);
 const candidateConfigPath = join(tempConfigDir, 'candidate-config.json');
+assert.equal(loadedConfig.jevReactions, true, 'existing connector defaults remain unchanged');
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', jevReactions: false }));
+assert.equal((await loadConfig(candidateConfigPath)).jevReactions, false);
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', jevReactions: 'false' }));
+await assert.rejects(loadConfig(candidateConfigPath), /jevReactions must be boolean/);
 assert.equal(loadedConfig.personalSettings.enabled, false, 'personal settings full rollout is explicit');
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', personalSettings: { enabled: true, openIds: ['ou_legacy'] } }));
 assert.deepEqual((await loadConfig(candidateConfigPath)).personalSettings, { enabled: true, openIds: ['ou_legacy'], webUrl: '' });

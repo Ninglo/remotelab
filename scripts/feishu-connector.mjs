@@ -378,6 +378,9 @@ async function loadConfig(pathname) {
   if (parsed.defaultGroupParticipation !== undefined && !['active', 'listening', 'paused', 'mention_only'].includes(parsed.defaultGroupParticipation)) {
     throw new Error('defaultGroupParticipation must be active, listening or paused (legacy mention_only is supported)');
   }
+  if (parsed.jevReactions !== undefined && typeof parsed.jevReactions !== 'boolean') {
+    throw new Error('jevReactions must be boolean');
+  }
   for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
     if (Object.hasOwn(parsed, legacyKey)) {
       throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy, responsePolicy and replyPolicy`);
@@ -400,6 +403,7 @@ async function loadConfig(pathname) {
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
     defaultGroupParticipation: defaultFeishuGroupParticipation(parsed),
+    jevReactions: parsed.jevReactions !== false,
     groupReactionCandidates: normalizeFeishuReactionCandidates(parsed.groupReactionCandidates),
     projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     projectCards: parsed.projectCards === true,

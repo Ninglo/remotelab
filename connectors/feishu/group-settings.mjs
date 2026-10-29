@@ -81,7 +81,8 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const ambient = groupMainline && group.participationMode === 'ambient';
   const unified = !topicGroup && (groupMainline || topic) && Boolean(group.initialParticipationMode) && group.participationControls !== false;
   const quickReactions = !topicGroup && (groupMainline || topic) && group.quickReactions === true && !privateChat && (!topic || unified);
-  const jevReactions = group.jevReactions === true && !privateChat && (ambient || unified);
+  const jevReactions = config.jevReactions !== false
+    && group.jevReactions === true && !privateChat && (ambient || unified);
   const candidates = normalizeFeishuReactionCandidates(group.reactionCandidates ?? (privateChat ? undefined : config.groupReactionCandidates));
   return {
     reactionCandidates: candidates,

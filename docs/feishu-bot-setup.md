@@ -666,8 +666,14 @@ original message. Retries recover the same decision and outbox rather than sendi
 another answer. Quick Jev feedback remains a separate optional stage-1 receipt;
 the main model's stage-2 decision takes precedence.
 
-Unified controlled groups and topics enable this optional Jev path by default;
-explicit `jevReactions: false` disables it. Listening and paused controls gate
+Unified controlled groups and topics enable this optional Jev path by default.
+Set top-level `jevReactions: false` in the connector config and restart that
+connector to disable Jev for all its current and future groups and topics,
+including groups with explicit `jevReactions: true`. This switch leaves message
+admission, participation modes and optional main-model reactions unchanged.
+Omitting the top-level switch or setting it to `true` restores the existing
+per-group policy; group-level `jevReactions: false` still disables that group.
+Listening and paused controls gate
 Jev before any classification, just as they gate substantive participation. Supply the TypeSafe key through
 `TYPESAFE_API_KEY`, or `TYPESAFE_KEY_FILE` (default: `<config-dir>/typesafe.env`,
 containing `TYPESAFE_API_KEY=...`). No OpenAI API credential or Codex login is used
@@ -802,7 +808,8 @@ reusing a mainline observation must not omit the worker Session user event.
 
 Topics retain ordinary topic replies. Commands, explicit mute/pause state,
 access controls and Bot handoff limits retain their own admission paths.
-Disable `jevReactions` to keep only optional main-model reaction decisions.
+Disable top-level `jevReactions` for the whole connector, or its group-level
+setting for one group, to keep only optional main-model reaction decisions.
 No mandatory receipt or final reaction is restored. Neither path uses a small
 model to choose work placement.
 
@@ -850,7 +857,7 @@ blocked history. Listening retains its existing observation and invitation rules
 | Suppressed/withdrawn status card | Retain suppression |
 
 Modern controlled groups and topics use optional asynchronous Jev social feedback
-by default. Explicit `jevReactions: false` remains an opt-out; missing credentials
+by default. Connector-level or group-level `jevReactions: false` opts out; missing credentials
 produce no reaction and never delay main-model admission. Legacy quick/group flags
 no longer require a reaction or select content/work placement. The old ambient
 alias is normalized by the connector's default policy; test/embedded configurations
