@@ -629,6 +629,8 @@ and:
 { "type": "sessions_invalidated" }
 ```
 
+Per-session hints are rate-limited per Session (leading hint immediately, at most one trailing hint per 500 ms window), so a client must treat a hint as "re-read current state", never as a count of changes.
+
 When you receive one, re-fetch state via HTTP. Coalesce hints for the same
 Session before fetching, allow one read per Session in flight, and retain hints
 received during that read for a subsequent refresh. Use `?view=summary` when

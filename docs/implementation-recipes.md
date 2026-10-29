@@ -83,6 +83,8 @@ broadcastAll({ type: 'sessions_invalidated' });
 - `{ type: 'session_invalidated', sessionId }` — one session changed, frontend re-fetches that session
 - `{ type: 'sessions_invalidated' }` — session list changed, frontend re-fetches the full list
 
+Plain per-session hints are throttled at the WebSocket boundary: the first hint for a Session goes out at once, and further hints within `REMOTELAB_SESSION_HINT_WINDOW_MS` (default 500; `0` disables) collapse into one trailing hint. Hints that carry extra fields (for example `progressCard`) and `sessions_invalidated` are never merged, and in-process listeners registered with `onSessionInvalidation` still receive every hint.
+
 ### Step 5 — Frontend receives the update automatically
 
 No frontend code needed for data refresh — the WS invalidation triggers `handleWsMessage()` in `static/chat/realtime.js` (line ~427), which calls `refreshCurrentSession()` or `refreshSidebarSession()` depending on which session was invalidated.

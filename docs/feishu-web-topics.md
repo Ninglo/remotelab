@@ -181,3 +181,5 @@ node scripts/feishu-web-trial/build.mjs /path/to/1.2.2/extension /separate/relea
 拖动、恢复和窄屏。`tests/test-feishu-native-list-trial.mjs` 用 React 17 的模拟
 原生模块验证完整分页、四种排序、置顶、虚拟滚动、原生点击／键盘／菜单、
 摘要保留及共同外框；模拟用例不替代本人电脑的实际显示验收。
+
+话题同步订阅在单条会话变更时只重读该会话；每 60 秒及全局变更时按当前元数据重新核对话题成员，但更新时间未变的记录沿用缓存，只重读版本变化的会话。每 10 分钟做一次全量重读，兜底处理版本号未变化的变更。

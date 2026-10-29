@@ -61,13 +61,19 @@ export function createFeishuTopicSource(deps = {}) {
     const boardChats = new Set(pairs.flatMap(p => boardGroups(p).map(g=>g.chatId)));
     const relevant = s => eligible(s) && (wanted.has(config.bindings[s.conversation.target.rootId || s.conversation.target.messageId]) || boardChats.has(s.conversation.target.chatId));
     const incremental = changedId && previous;
-    const cache = incremental ? new Map(previous[sourceRecords] || []) : new Map();
+    // A periodic/global refresh rechecks membership against current metadata but
+    // reuses cached records whose metadata version is unchanged; a deep refresh
+    // (no previous snapshot) still rereads every relevant record.
+    const versioned = !changedId && previous && previous[sourceRecords];
+    const cache = incremental || versioned ? new Map(previous[sourceRecords] || []) : new Map();
+    const sameVersion = (cached, meta) => Boolean(cached?.updatedAt) && cached.updatedAt === meta.updatedAt;
     const relevantRecords = metadata.filter(relevant), relevantIds = new Set(relevantRecords.map(s => s.id));
     // Recheck membership on every hint: new topics, deleted topics and changed
     // bindings must still appear/disappear without rereading unrelated records.
     for (const id of cache.keys()) if (!relevantIds.has(id)) cache.delete(id);
     const changed = new Set(Array.isArray(changedId) ? changedId : [changedId]);
-    const records = relevantRecords.filter(s => !incremental || changed.has(s.id) || !cache.has(s.id));
+    const records = relevantRecords.filter(s => incremental ? changed.has(s.id) || !cache.has(s.id)
+      : !versioned || !sameVersion(cache.get(s.id), s));
     for (let i = 0; i < records.length; i += 4) await Promise.all(records.slice(i, i + 4).map(async record => {
       const s = await session(record.id); if (relevant(s)) cache.set(s.id, s); else cache.delete(record.id);
     }));
@@ -87,7 +93,7 @@ export function createFeishuTopicSource(deps = {}) {
     Object.defineProperty(data, sourceRecords, { value: cache }); return data;
   }
   async function subscribe(ids, emit, fail, groupIds = [], includeDetails = true) {
-    let alive = true, busy = false, pending = false, fullPending = false, last = null, healthy = false;
+    let alive = true, busy = false, pending = false, fullPending = false, last = null, healthy = false, deepAt = 0;
     const changedIds = new Set();
     let enrichment = null, enriching = false, detailsPending = false, detailsTimer, detailsAt = 0, lastDigest = '';
     const deliver = data => {
@@ -134,7 +140,11 @@ export function createFeishuTopicSource(deps = {}) {
         return;
       }
       busy = true;
-      void snapshot(ids, id, last, groupIds, false).then(data => { if (alive) { last = data; healthy = true; publish(); enrich(); } }).catch(error => { if (alive) { healthy = false; lastDigest = ''; fail(error); } }).finally(() => {
+      // Every tenth minute refresh rereads all records as a safety net for any
+      // change whose metadata version did not move.
+      const deep = !id && Date.now() - deepAt >= 600000;
+      if (deep) deepAt = Date.now();
+      void snapshot(ids, id, deep ? null : last, groupIds, false).then(data => { if (alive) { last = data; healthy = true; publish(); enrich(); } }).catch(error => { if (alive) { healthy = false; lastDigest = ''; fail(error); } }).finally(() => {
         busy = false; if (pending && alive) {
           const next = fullPending ? '' : [...changedIds];
           pending = false; fullPending = false; changedIds.clear(); refresh(next);

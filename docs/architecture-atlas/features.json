@@ -1004,6 +1004,7 @@
             "chat/cache-release.mjs",
             "chat/monitoring-sessions-client.mjs",
             "chat/monitoring-sessions-worker.mjs",
+            "chat/ws-clients.mjs",
             "chat-server.mjs",
             "chat/monitoring-recovery.mjs",
             "chat/monitoring-alerts.mjs",

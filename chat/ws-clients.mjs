@@ -39,11 +39,43 @@ export function broadcastMatching(msg, predicate = () => true) {
   }
 }
 
+// Every client rereads a Session on each hint, so a running Session's bursts
+// multiply across browser tabs, connectors and display sync. Send the first
+// hint at once, then at most one trailing hint per window per Session. Hints
+// carrying extra payload are delivered unchanged; local listeners stay immediate.
+const sessionHintWindowMs = Math.max(0, Number(process.env.REMOTELAB_SESSION_HINT_WINDOW_MS ?? 500) || 0);
+const sessionHintWindows = new Map();
+
+function plainSessionHint(msg) {
+  return msg.type === 'session_invalidated' && typeof msg.sessionId === 'string' && msg.sessionId
+    && Object.keys(msg).length === 2;
+}
+
+function closeSessionHintWindow(sessionId) {
+  const window = sessionHintWindows.get(sessionId);
+  if (!window) return;
+  if (!window.pending) { sessionHintWindows.delete(sessionId); return; }
+  window.pending = false;
+  broadcastMatching({ type: 'session_invalidated', sessionId });
+  window.timer = setTimeout(() => closeSessionHintWindow(sessionId), sessionHintWindowMs);
+  window.timer.unref?.();
+}
+
+function broadcastSessionHint(msg) {
+  if (!sessionHintWindowMs || !plainSessionHint(msg)) { broadcastMatching(msg); return; }
+  const window = sessionHintWindows.get(msg.sessionId);
+  if (window) { window.pending = true; return; }
+  broadcastMatching(msg);
+  const timer = setTimeout(() => closeSessionHintWindow(msg.sessionId), sessionHintWindowMs);
+  timer.unref?.();
+  sessionHintWindows.set(msg.sessionId, { timer, pending: false });
+}
+
 export function broadcastAll(msg) {
   for (const listener of invalidationListeners) {
     try { listener(msg); }
     catch (error) { console.error('[ws] local projection hint failed:', error.message); }
   }
   if (msg.type === 'session_invalidated' || msg.type === 'sessions_invalidated') hintAutomationActivity(msg.sessionId || '');
-  broadcastMatching(msg);
+  broadcastSessionHint(msg);
 }

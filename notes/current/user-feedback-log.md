@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-29 — Throttle per-Session hints and reuse unchanged topic records
+
+- Feedback: continue removing remaining read load on the core: unexplained event polling, connector Session reads and the in-process topic board refresh.
+- Evidence: the short-lived event polling seen earlier was absent in later samples (remaining event reads are incremental, about 5 ms each). Every WebSocket client rereads a Session on each `session_invalidated` hint (connector workboard sync, browser tabs, display sync; each browser tab also refetches delivery issues), so bursts from a running Session multiply. The in-process topic subscription reread every relevant board record on each 60-second and global refresh.
+- Change: send the first plain per-Session hint immediately and collapse further hints within 500 ms into one trailing hint; payload-carrying hints, global hints and local listeners are unchanged. Topic refreshes recheck membership from metadata but reuse records whose `updatedAt` is unchanged, with a deep reread every 10 minutes.
+- Verification: new hint-window test (leading send, trailing collapse, payload passthrough, local listeners), versioned topic refresh test, and existing broadcast, realtime refresh, progress disclosure and topic suites. `test-feishu-workboard-click-refresh` fails identically on the unmodified baseline.
+
 ### 2026-10-29 — Move monitoring scans out of the core heap and stop full topic re-reads
 
 - Feedback: keep necessary background work but stop it from loading the service that receives messages; add a simple directory instead of whole-list reads.

@@ -268,3 +268,24 @@ test('incremental refresh discovers new members and removes revoked or ambiguous
   prior = await api.snapshot(['native', 'new'], a.id, prior, [], false);
   assert.equal(prior.entries.length, 0);
 });
+
+test('periodic refresh reuses records whose metadata version is unchanged', async () => {
+  const a = { ...session('a'.repeat(32), 'root-a'), updatedAt: '2026-10-29T00:00:00.000Z' };
+  const b = { ...session('b'.repeat(32), 'root-b'), updatedAt: '2026-10-29T00:00:00.000Z' };
+  const records = [a, b], reads = [];
+  const config = { bindings: { 'root-a': 'one', 'root-b': 'two' } };
+  const api = createFeishuTopicSource({ sessions: async () => records.map(s => ({ ...s })),
+    session: async id => { reads.push(id); return records.find(s => s.id === id); }, bindings: async () => config });
+  let prior = await api.snapshot(['one', 'two'], '', null, [], false);
+  assert.equal(reads.length, 2, 'a deep refresh reads every relevant record');
+  reads.length = 0;
+  records[1] = { ...b, name: '新标题', updatedAt: '2026-10-29T00:01:00.000Z' };
+  prior = await api.snapshot(['one', 'two'], '', prior, [], false);
+  assert.deepEqual(reads, [b.id], 'only the record whose version moved is reread');
+  assert.equal(prior.entries.find(e => e.webThreadId === 'two').displayName, '新标题');
+  reads.length = 0;
+  delete config.bindings['root-a'];
+  prior = await api.snapshot(['one', 'two'], '', prior, [], false);
+  assert.deepEqual(reads, []);
+  assert.deepEqual(prior.entries.map(e => e.webThreadId), ['two'], 'membership is still rechecked without rereads');
+});
