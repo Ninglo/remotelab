@@ -29,15 +29,15 @@ const { handlePreviewProxy } = await import('../chat/preview-proxy.mjs');
 const { publishStaticSource } = await import('../lib/static-publish-command.mjs');
 const { runPreviewCommand } = await import('../lib/preview-command.mjs');
 const { isAuthenticated } = await import('../lib/auth.mjs');
-let now = Date.now(), calls = 0, tenant = config.tenantKey;
+let now = Date.now(), calls = 0, tenant = config.tenantKey, tokenResponse;
 const makeIdentity = () => createEmployeeSiteIdentity({ configDir: root, now: () => now,
   authDocument: () => auth.loadAuthDocument({ persistMigration: false }), registerIdentity: async () => people[0],
   fetchImpl: async url => {
     calls++;
     const value = url.includes('device_authorization') ? { device_code: 'fixture-device', verification_uri_complete: 'https://accounts.feishu.cn/fixture', expires_in: 600, interval: 5 }
-      : url.includes('/oauth/token') ? { access_token: 'fixture-token' }
+      : url.includes('/oauth/token') ? tokenResponse || { access_token: 'fixture-token' }
         : { code: 0, data: { open_id: 'fixture-open-a', tenant_key: tenant, name: people[0].name } };
-    return { ok: true, json: async () => value };
+    return { ok: !value.error, json: async () => value };
   } });
 let identity = makeIdentity();
 let login = createSiteLoginHandler({ identity, personFor: createEmployeeSiteAccess(identity, async () => null) });
@@ -103,6 +103,14 @@ try {
   assert.equal(calls, 1, 'refresh reuses pending authorization');
   assert.equal((await (await request('/api/site-login/poll', { headers: { Cookie: cookie } })).json()).state, 'pending');
   now += 5000;
+  tokenResponse = { error: 'authorization_pending', error_description: 'The authorization request is still pending. Please retry later.', code: 20094 };
+  const waiting = await request('/api/site-login/poll', { headers: { Cookie: cookie } });
+  assert.equal(waiting.status, 200, 'real Feishu HTTP 400 / code 20094 is a waiting state, not a server failure');
+  assert.equal((await waiting.json()).state, 'pending');
+  const waitingCalls = calls;
+  await request('/api/site-login/poll', { headers: { Cookie: cookie } });
+  assert.equal(calls, waitingCalls, 'pending response keeps provider polling interval');
+  now += 5000; tokenResponse = undefined;
   const connected = await request('/api/site-login/poll', { headers: { Cookie: cookie } });
   assert.equal((await connected.json()).state, 'connected');
   cookie = connected.headers.getSetCookie()[0].split(';')[0];

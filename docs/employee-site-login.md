@@ -102,6 +102,13 @@ Optional `EMPLOYEE_TEST_PLAYWRIGHT` (module path) and `EMPLOYEE_TEST_CHROME`
 an isolated provider fixture. The fixture is not a real employee authorization.
 Existing research, static publication and preview regression suites also apply.
 
+Feishu device polling returns HTTP 400 with both `error: authorization_pending`
+and numeric `code: 20094` while the person is confirming. This is a normal waiting
+state, not an unavailable service. Preserve the attempt and provider polling
+interval, then continue through token exchange, company validation and cookie
+issuance. Regression fixtures include this real response shape; live verification
+must observe provider polling, not stop when the authorization link appears.
+
 Verify the deployed anonymous boundary and actual Feishu authorization start.
 Employee content still needs an authenticated content read; the publisher's
 anonymous rejection result alone does not certify it. Keep existing URLs, owner
