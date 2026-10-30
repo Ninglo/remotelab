@@ -1182,3 +1182,7 @@ association display a missing value. These metadata projections do not change
 source evidence, existing case IDs, comments or reviews. The renderer is shared
 through `case-review/overview-model.js`; both the public site and authenticated
 Monitor proxy retain the same fields.
+
+### Standalone employee monitoring entrance
+
+The monitoring proxy allows the vertical GPU, account, usage-governance and employee-presentation modules alongside the existing dashboard assets. A deployment may publish a read-only employee preview pointing to the same monitoring backend, with a restricted upstream path/method allowlist and without forwarding console cookies or credentials. Employee site authentication remains separate from RemoteLab console authentication. The deployed monitoring service owns its data collection, standalone presentation and deployment records; the employee entrance must not create another collector or fork the snapshots.

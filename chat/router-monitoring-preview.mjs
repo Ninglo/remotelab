@@ -6,18 +6,18 @@ export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview'
  // A standalone '/' in JavaScript may be a date/path separator, not a URL.
  // Only the HTML home link and known presentation routes belong to this proxy.
  text=text.replace(/(\bhref\s*=\s*)(["'])\/\2/gi,(_,attribute,quote)=>attribute+quote+prefix+'/'+quote);
- text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution|auth\/|project-feedback)|app\.js|feature-trials\.js|group-participation\.js|style\.css)/g,'$1'+prefix+'/');
+ text=text.replace(/(["'])\/(?=\?|api\/(?!monitoring-evidence|monitoring-resolution|auth\/|project-feedback)|app\.js|feature-trials\.js|group-participation\.js|gpu-pool\.js|account-view\.js|usage-governance\.js|employee-view\.js|style\.css)/g,'$1'+prefix+'/');
  if(publicOrigin)for(const quote of ['"',"'"])text=text.split(quote+publicOrigin+'/?').join(quote+prefix+'/?');
  return text.replace(/(["'])\/case-review\//g,'$1'+prefix+'/case-review/');
 }
-const caseAssets=new Set(['','index.html','project-adapter.js','workbench.js','review-model.js','case-catalog.json','session-bindings.json','agent-assessments.json','workbench.css','workbench-layout.css','feedback-layout.css','overview-layout.css','compact-layout.css','project-overview.js','overview-model.js','project-overview.json','project-feedback.json','feedback-review.js']);
+const caseAssets=new Set(['','index.html','case-metadata.js','project-adapter.js','workbench.js','review-model.js','case-catalog.json','session-bindings.json','agent-assessments.json','workbench.css','workbench-layout.css','feedback-layout.css','overview-layout.css','compact-layout.css','project-overview.js','overview-model.js','project-overview.json','project-feedback.json','feedback-review.js']);
 export async function handleMonitoringPreview({req,res,pathname,configOverride}) {
  const prefix='/monitoring-preview';if(pathname!==prefix&&!pathname.startsWith(prefix+'/'))return false;
  const config=configOverride||await evidenceConfig(),port=config?.previewPort;
  const publicOrigin=(await readResolutionConfig())?.publicOrigin;
  if(!Number.isInteger(port)||port<1||port>65535){res.writeHead(404);res.end();return true}
  const path=pathname.slice(prefix.length)||'/';
- if(req.method!=='GET'||!(['/','/app.js','/feature-trials.js','/group-participation.js','/style.css','/api/snapshot','/api/reviews'].includes(path)||path.startsWith('/case-review/')&&caseAssets.has(path.slice('/case-review/'.length)))){res.writeHead(405);res.end();return true}
+ if(req.method!=='GET'||!(['/','/app.js','/feature-trials.js','/group-participation.js','/gpu-pool.js','/account-view.js','/usage-governance.js','/employee-view.js','/style.css','/api/snapshot','/api/reviews'].includes(path)||path.startsWith('/case-review/')&&caseAssets.has(path.slice('/case-review/'.length)))){res.writeHead(405);res.end();return true}
  const query=new URL(req.url,'http://local').search;
  await new Promise(resolve=>{
   const upstream=http.get({hostname:'127.0.0.1',port,path:path+query,timeout:12000},response=>{
