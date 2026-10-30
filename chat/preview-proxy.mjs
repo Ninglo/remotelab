@@ -1,6 +1,6 @@
 import { requireEmployeeSite, employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
 import { legacySiteLogin } from '../lib/legacy-site-login.mjs';
-import { siteUsageHtmlTransform } from './site-usage-html.mjs';
+import { siteUsageHtmlTransform, siteUsageCsp, siteUsageOrigin } from './site-usage-html.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -114,9 +114,12 @@ export async function handlePreviewProxy(req, res, pathname) {
     const html = person && req.method === 'GET' && !req.headers.range && response.statusCode === 200
       && /^text\/html(?:;|$)/i.test(response.headers['content-type'] || '')
       && (!response.headers['content-encoding'] || response.headers['content-encoding'] === 'identity');
-    if (html) { delete responseHeaders['content-length']; delete responseHeaders.etag; }
+    if (html) {
+      delete responseHeaders['content-length']; delete responseHeaders.etag;
+      if (responseHeaders['content-security-policy']) responseHeaders['content-security-policy'] = siteUsageCsp(responseHeaders['content-security-policy'], siteUsageOrigin(req));
+    }
     res.writeHead(response.statusCode || 502, responseHeaders);
-    if (html) response.pipe(siteUsageHtmlTransform(response.headers['content-security-policy'] || '')).pipe(res);
+    if (html) response.pipe(siteUsageHtmlTransform(responseHeaders['content-security-policy'] || '')).pipe(res);
     else response.pipe(res);
   });
   upstream.on('timeout', () => upstream.destroy(new Error('Preview service timed out')));

@@ -1,11 +1,32 @@
 import { Transform } from 'node:stream';
 
+export function siteUsageOrigin(req) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket?.encrypted ? 'https' : 'http');
+  if (!['http', 'https'].includes(proto)) return '';
+  try { const url = new URL(`${proto}://${host}`); return url.username || url.password ? '' : url.origin; } catch { return ''; }
+}
+
+// Add only this same-origin path. Other APIs and network origins stay subject
+// to the application's previous connect policy.
+export function siteUsageCsp(policy, origin) {
+  if (!policy || !origin || permits(policy, 'connect')) return policy;
+  const source = origin + '/api/site-usage/events';
+  if (policy.split(/\s+/).includes(source)) return policy;
+  const directives = policy.split(';');
+  const at = directives.findIndex(v => /^\s*connect-src(?:\s|$)/i.test(v));
+  if (at < 0) return policy.replace(/;?\s*$/, '; ') + 'connect-src ' + source;
+  directives[at] = directives[at].replace(/\s+'none'/g, '') + ' ' + source;
+  return directives.join(';');
+}
+
 function permits(policy, kind) {
   if (!policy) return true;
   const directives = Object.fromEntries(policy.split(';').map(v => v.trim().split(/\s+/)).filter(v => v[0]).map(([k, ...v]) => [k, v]));
   const values = directives[kind === 'script' ? 'script-src-elem' : 'connect-src']
     || (kind === 'script' ? directives['script-src'] : null) || directives['default-src'];
   return !values || values.includes("'self'") || values.includes('*')
+    || kind === 'connect' && values.some(v => /^https?:\/\/[^/]+\/api\/site-usage\/events$/.test(v))
     || kind === 'script' && values.some(v => /^'nonce-[A-Za-z0-9+/_=-]+'$/.test(v));
 }
 export function injectSiteUsageHtml(body, policy = '') {

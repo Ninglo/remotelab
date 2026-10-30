@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { injectSiteUsageHtml, siteUsageHtmlTransform } from '../chat/site-usage-html.mjs';
+import { injectSiteUsageHtml, siteUsageHtmlTransform, siteUsageCsp } from '../chat/site-usage-html.mjs';
 
 const html = Buffer.from('<!doctype html><html><head><title>测试站</title></head><body>原页面内容</body></html>');
 const injected = injectSiteUsageHtml(html);
@@ -8,6 +8,11 @@ assert.equal((injected.toString().match(/src="\/site-usage.js"/g) || []).length,
 assert.deepEqual(injectSiteUsageHtml(injected), injected);
 assert.deepEqual(injectSiteUsageHtml(html, "default-src 'self'; connect-src 'none'"), html);
 assert.deepEqual(injectSiteUsageHtml(html, "script-src https://other.test; connect-src 'self'"), html);
+const original = "default-src 'none'; script-src 'self'; connect-src 'none'; img-src 'self'";
+const csp = siteUsageCsp(original, 'https://sites.example.test');
+assert.equal(csp, "default-src 'none'; script-src 'self'; connect-src https://sites.example.test/api/site-usage/events; img-src 'self'");
+assert.match(injectSiteUsageHtml(html, csp).toString(), /\/site-usage.js/);
+assert.equal(siteUsageCsp(csp, 'https://sites.example.test'), csp);
 assert.match(injectSiteUsageHtml(html, "script-src 'nonce-fixture'; connect-src 'self'").toString(), /nonce="fixture"/);
 const meta = Buffer.from('<head><meta http-equiv="Content-Security-Policy" content="script-src &apos;self&apos;; connect-src &apos;none&apos;"></head>');
 assert.deepEqual(injectSiteUsageHtml(meta), meta);

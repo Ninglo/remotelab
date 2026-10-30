@@ -81,11 +81,11 @@ HTML 响应边界通过 `site-usage-html.mjs` 插入共用脚本标签
 当前与后续员工站、总站自动接入；已启用 `reuseIdentity` 的旧 Basic 站仅在该人拥有原站映射时接收事件。显式启用 `recognizeIdentity` 的公开旧站只为已核员工采集，匿名访问保留原行为。未接入的 public/basic 站、控制台、JSON、图片和其他资源不注入。
 
 接线需沿用原 CSP 的 nonce/script-src 规则（标签需要 nonce 时复用该响应 nonce），
-不扩大 CSP；保留 private/no-store、登录续期 Set-Cookie 和其他业务头。
+保留 private/no-store、登录续期 Set-Cookie 和其他业务头。若原 HTTP CSP 的 connect-src 禁止采集，只向该指令增加本站完整的 `/api/site-usage/events` 路径；不放行其他接口或外部域名，其他 CSP 指令保留。
 动态 HTML 转换需同步处理 Content-Length、ETag、压缩编码；不注入 HEAD、Range/206、304 或错误响应，
 不能直接把字节追加到压缩内容。可在该 HTML 通路请求 identity 编码后仅转换未压缩完整文档，
 保持其他响应透传；若原策略无法加载同源脚本，则留为明确接线缺项，不放宽访问策略。
-脚本在已核个人的成功完整 HTML 响应中集中加载。原 CSP 禁止脚本或同源连接时不放宽策略；流式 HTML 只缓存有界 head，压缩、Range、错误响应保持原样。
+脚本在已核个人的成功完整 HTML 响应中集中加载。原 CSP 禁止脚本时不放宽脚本策略；连接限制只增加同源采集接口的精确路径；流式 HTML 只缓存有界 head，压缩、Range、错误响应保持原样。
 
 扩展到独立域名或其他外部网站，需要其自己的同源受管入口和服务端站点登记；此实现不跨域发送身份。
 总站外部链接登记本身不构成该网站已接入采集的证据。
