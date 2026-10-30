@@ -7,84 +7,13 @@ state and implement only login.” Provide the source directory or a healthy
 loopback service and its stable slug. The accepted human Request supplies the
 creator; a manual or unattended publication supplies `--owner <person-id>`.
 
-## Company SSO gateway integration
+[项目总站](/sites) 自动汇总当前实例的静态发布和动态入口，并支持外部网站登记、维护信息补充与迁移清单导出；沿用同一员工登录。详见 [总站登记与迁移清单](site-directory.md)。
 
-The website adapter supports the existing Muka Envoy authentication contract.
-This is application-side support, not an automatically registered production SSO
-client. Production activation requires the SSO operator to register an independent
-website client, grant its entry permission to employees, and connect the gateway.
-Do not switch an instance's provider until that ingress works. A change to
-`site-login.json` alone cannot connect a website to company SSO.
-
-The intended experience is: open the target website → company SSO → return to that
-website. An existing Hub/Data root session is reused by the company issuer; when
-it is valid, entering a new application does not require another Feishu login.
-Each application retains its own host-only cookies. No site directory or password
-creation is required. Within the hosted-sites application, A and B share the same
-gateway login. Browser/WebView cookie isolation still applies.
-
-Give the deploying agent one packet: the registered issuer and app ID, website
-origin, entry permission, gateway/backend connection, private source-key file,
-and the SSO operator's registration/deployment entry. Reuse the company's existing
-Envoy OAuth implementation, including PKCE, root-session validation, token refresh
-and logout. Do not reconstruct these mechanisms inside each website.
-
-```json
-{
-  "provider": "muka-sso-gateway",
-  "issuer": "https://auth.example.test",
-  "appId": "remotelab-sites",
-  "publicOrigin": "https://sites.example.test",
-  "entryPermission": "app.remotelab-sites.access",
-  "sourceKeyFile": "/private/instance/site-sso-source.key"
-}
-```
-
-Keep `sourceKeyFile` private (0600) and outside Git. It contains the independent
-gateway-to-application source key, not a Hydra client secret or the Permission
-Center internal key. The gateway must remove caller-supplied `x-muka-*` identity
-headers and then insert the verified `x-muka-user-id`, `x-muka-platform-role`,
-`x-muka-permissions`, base64url JSON `x-muka-user-profile`, and `x-muka-source-key`.
-It must preserve the exact registered HTTPS origin in Host/forwarded headers.
-The adapter validates the source key, origin, entry permission and profile ID
-before registering an issuer/subject identity. A matching name/email never links
-an unrelated existing Person automatically. New identities have no workbench credential.
-
-The gateway must authenticate every employee HTML/data/asset request, `/preview`
-request and `/api/site-login/*` request, and handle `/oauth2/callback` and
-`/oauth2/signout` itself. `/site-login?returnTo=...` returns an authenticated user
-to a same-origin target. An unconnected gateway returns 503 there, not an endless
-login redirect. Existing public and Basic Auth routes must keep their policies;
-the gateway cannot simply put the entire mixed workbench domain behind employee
-SSO. A dedicated website ingress or a gateway route integration is a deployment
-prerequisite. Future websites need to inherit that ingress automatically, without
-a separate OAuth client or a manual route change for every publication.
-
-SSO mode does not accept old employee cookies or workbench login as a fallback,
-does not cache employee authorization locally, and does not create a second
-30-day session. Root expiry, offboarding and revocation remain the company's
-responsibility at the gateway. `POST /api/site-login/logout` returns
-`state: redirect` and `redirect_url`; the caller must navigate to it to complete
-company logout. Returning that URL alone does not mean the user has logged out.
-The separate research API retains its previous identity configuration during
-this hosted-site migration.
-
-Control-console SSO is a later integration. The identity adapter can be reused,
-but employee website access and even `platform_admin` do not grant workbench
-access. Website creator and reserved administrator records remain unchanged.
-
-Run `node scripts/run-with-clean-instance-env.mjs node tests/test-employee-site-gateway.mjs`
-for the gateway contract fixtures and the existing employee-login regression.
-Production acceptance still requires a real company login, Hub → website and
-A → B reuse, direct-origin/header-forgery rejection, logout/expiry, restart, and
-public/control-console policy preservation. Local fixtures do not establish that
-the production gateway or employee grant exists.
-
-## Existing Feishu device login
+## 当前使用飞书员工登录
 
 [点击体验首次登录与站点切换](/public-pages/remotelab-architecture-atlas/employee-login-demo.html)。
 演示位于现有整体说明网站，只切换模拟画面，不接触真实登录态。
-页面分别标注公司 SSO 目标流程与两个真实示例站当前仍使用的设备授权。
+页面与两个真实示例站均按当前飞书设备授权流程说明；公司 SSO 接入已暂停。
 
 实际访问顺序是：打开目标网站 → 未登录则跳到 `/site-login?returnTo=原网址` →
 点击“使用飞书登录”，在新标签页完成飞书身份确认 → 回到原标签页，它检测到成功后自动进入原网站。
@@ -178,3 +107,76 @@ Employee content still needs an authenticated content read; the publisher's
 anonymous rejection result alone does not certify it. Keep existing URLs, owner
 records and credentials when migrating a selected old site. Revert a migrated
 route using its retained prior policy; do not make it public as a login fallback.
+
+## Optional company SSO adapter (not active)
+
+Company SSO rollout is paused by the requester on 2026-10-30. The current deployment continues to use the original Feishu employee login. The retained website adapter supports the existing Muka Envoy authentication contract.
+This is application-side support, not an automatically registered production SSO
+client. Production activation requires the SSO operator to register an independent
+website client, grant its entry permission to employees, and connect the gateway.
+Do not switch an instance's provider until that ingress works. A change to
+`site-login.json` alone cannot connect a website to company SSO.
+
+The intended experience is: open the target website → company SSO → return to that
+website. An existing Hub/Data root session is reused by the company issuer; when
+it is valid, entering a new application does not require another Feishu login.
+Each application retains its own host-only cookies. No site directory or password
+creation is required. Within the hosted-sites application, A and B share the same
+gateway login. Browser/WebView cookie isolation still applies.
+
+Give the deploying agent one packet: the registered issuer and app ID, website
+origin, entry permission, gateway/backend connection, private source-key file,
+and the SSO operator's registration/deployment entry. Reuse the company's existing
+Envoy OAuth implementation, including PKCE, root-session validation, token refresh
+and logout. Do not reconstruct these mechanisms inside each website.
+
+```json
+{
+  "provider": "muka-sso-gateway",
+  "issuer": "https://auth.example.test",
+  "appId": "remotelab-sites",
+  "publicOrigin": "https://sites.example.test",
+  "entryPermission": "app.remotelab-sites.access",
+  "sourceKeyFile": "/private/instance/site-sso-source.key"
+}
+```
+
+Keep `sourceKeyFile` private (0600) and outside Git. It contains the independent
+gateway-to-application source key, not a Hydra client secret or the Permission
+Center internal key. The gateway must remove caller-supplied `x-muka-*` identity
+headers and then insert the verified `x-muka-user-id`, `x-muka-platform-role`,
+`x-muka-permissions`, base64url JSON `x-muka-user-profile`, and `x-muka-source-key`.
+It must preserve the exact registered HTTPS origin in Host/forwarded headers.
+The adapter validates the source key, origin, entry permission and profile ID
+before registering an issuer/subject identity. A matching name/email never links
+an unrelated existing Person automatically. New identities have no workbench credential.
+
+The gateway must authenticate every employee HTML/data/asset request, `/preview`
+request and `/api/site-login/*` request, and handle `/oauth2/callback` and
+`/oauth2/signout` itself. `/site-login?returnTo=...` returns an authenticated user
+to a same-origin target. An unconnected gateway returns 503 there, not an endless
+login redirect. Existing public and Basic Auth routes must keep their policies;
+the gateway cannot simply put the entire mixed workbench domain behind employee
+SSO. A dedicated website ingress or a gateway route integration is a deployment
+prerequisite. Future websites need to inherit that ingress automatically, without
+a separate OAuth client or a manual route change for every publication.
+
+SSO mode does not accept old employee cookies or workbench login as a fallback,
+does not cache employee authorization locally, and does not create a second
+30-day session. Root expiry, offboarding and revocation remain the company's
+responsibility at the gateway. `POST /api/site-login/logout` returns
+`state: redirect` and `redirect_url`; the caller must navigate to it to complete
+company logout. Returning that URL alone does not mean the user has logged out.
+The separate research API retains its previous identity configuration during
+this hosted-site migration.
+
+Control-console SSO is a later integration. The identity adapter can be reused,
+but employee website access and even `platform_admin` do not grant workbench
+access. Website creator and reserved administrator records remain unchanged.
+
+Run `node scripts/run-with-clean-instance-env.mjs node tests/test-employee-site-gateway.mjs`
+for the gateway contract fixtures and the existing employee-login regression.
+Production acceptance still requires a real company login, Hub → website and
+A → B reuse, direct-origin/header-forgery rejection, logout/expiry, restart, and
+public/control-console policy preservation. Local fixtures do not establish that
+the production gateway or employee grant exists.

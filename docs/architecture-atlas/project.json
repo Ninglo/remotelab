@@ -1118,7 +1118,13 @@
       "source": "docs/employee-site-login.md",
       "route": "manual-employee-site-login.html",
       "title": "网站统一员工登录",
-      "description": "新站默认员工访问、创建人负责；飞书设备授权与公司 SSO 网关适配、部署前提及首次登录演示。"
+      "description": "新站默认员工访问、创建人负责；当前飞书员工登录、会话复用与首次登录演示。"
+    },
+    {
+      "source": "docs/site-directory.md",
+      "route": "manual-site-directory.html",
+      "title": "项目总站与网站登记",
+      "description": "自动收录发布内容、补充维护信息和导出迁移清单；保留原网站权限。"
     }
   ]
 }

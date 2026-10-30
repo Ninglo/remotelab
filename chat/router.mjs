@@ -1,4 +1,5 @@
 import { handleSiteLogin } from './router-site-login.mjs';
+import { handleSiteDirectory } from './router-site-directory.mjs';
 import { checkEmployeeStaticAccess } from './employee-static-access.mjs';
 import {readMonitoringPortal} from './monitoring-portal.mjs';
 import { readFile, readdir } from 'fs/promises';
@@ -1347,6 +1348,7 @@ export async function handleRequest(req, res) {
   const pathname = parsedUrl.pathname;
 
   if (await handleSiteLogin(req, res, pathname)) return;
+  if (await handleSiteDirectory(req, res, pathname)) return;
   if (await checkEmployeeStaticAccess(req, res, pathname)) return;
 
   // Static assets (read from disk each time for hot-reload)
