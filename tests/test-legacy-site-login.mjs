@@ -42,13 +42,16 @@ const request = (headers = {}, options = {}) => fetch(base + '/preview/old/' + (
 try {
   await runPreviewCommand(['reuse-identity', '--slug', 'old']);
   const saved = JSON.parse(await readFile(join(root, 'preview-routes.json')));
-  assert.deepEqual(saved.old, { ...routes.old, reuseIdentity: true }, 'enabling preserves port, owner, allowed writes and headers');
+  assert.deepEqual(saved.old, routes.old, 'identity overlay leaves the entire original route unchanged');
+  const policy = JSON.parse(await readFile(join(root, 'site-identity-policies.json')));
+  assert.deepEqual(policy.routes.old, { port: routes.old.port, reuseIdentity: true });
   assert.equal((await request()).status, 401);
   assert.equal((await request({ Authorization: originalAuthorization })).status, 200, 'original callers need no employee login');
   assert.equal((await request({ Cookie: 'employee_site_session=cookie_0' })).status, 401, 'employee identity alone has no legacy-site grant');
   const res = await request({ Cookie: 'employee_site_session=cookie_0', Authorization: originalAuthorization });
   assert.equal(res.status, 200); assert.equal((await res.json()).person, people[0].id);
   await legacySiteLogin.flush();
+  assert.equal(await legacySiteLogin.lookup('old', people[0].id, routes.old.port + 1), '', 'a replaced upstream cannot receive an old credential');
   const source = { headers: { referer: base + '/preview/old/', origin: base } };
   assert.equal(await resolveSiteUsageSite(source, { configDir: root, personId: people[0].id }), 'preview:old');
   assert.equal(await resolveSiteUsageSite(source, { configDir: root, personId: people[1].id }), null,

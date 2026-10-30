@@ -39,7 +39,7 @@ still challenge anonymous root access. Only a verified employee who also
 successfully uses the original site's Basic login receives a reusable mapping;
 other employees gain no access. `preview recognize-identity --slug <existing-name>`
 adds optional attribution to an intentionally public upstream without gating it.
-Both commands preserve the existing route fields. See the employee-login guide
+Both commands store a private identity policy pinned to the original upstream port, leaving the existing route file untouched. See the employee-login guide
 for the private credential store, scope and rollback.
 
 Both modes use `<instance-domain>/preview/<name>/` and the existing domain/tunnel.

@@ -78,7 +78,7 @@ HTML 响应边界通过 `site-usage-html.mjs` 插入共用脚本标签
 `<script defer src="/site-usage.js"></script>`，已有同标签时不重复添加。
 静态响应只处理已通过 `checkEmployeeStaticAccess` 的 employee HTML；preview 只处理
 `access: employee` 上游的成功完整 HTML 响应；总站在服务端模板输出时走同一步骤。
-当前与后续员工站、总站自动接入；已启用 `reuseIdentity` 的旧 Basic 站仅在该人拥有原站映射时接收事件。显式启用 `recognizeIdentity` 的公开旧站只为已核员工采集，匿名访问保留原行为。未接入的 public/basic 站、控制台、JSON、图片和其他资源不注入。
+当前与后续员工站、总站自动接入；已在私有 `site-identity-policies.json` 启用 `reuseIdentity` 且上游端口仍匹配的旧 Basic 站仅在该人拥有原站映射时接收事件。同一身份策略中显式启用 `recognizeIdentity` 的公开旧站只为已核员工采集，匿名访问保留原行为。未接入的 public/basic 站、控制台、JSON、图片和其他资源不注入。
 
 接线需沿用原 CSP 的 nonce/script-src 规则（标签需要 nonce 时复用该响应 nonce），
 保留 private/no-store、登录续期 Set-Cookie 和其他业务头。若原 HTTP CSP 的 connect-src 禁止采集，只向该指令增加本站完整的 `/api/site-usage/events` 路径；不放行其他接口或外部域名，其他 CSP 指令保留。

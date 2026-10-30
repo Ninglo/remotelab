@@ -5,7 +5,7 @@ import { readBody } from '../lib/utils.mjs';
 import { employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
 import { createUsageEventStore, usageKey, validUsageSiteId as validSite } from './usage-events.mjs';
 import { reverseLedgerLines } from './context-query-ledger-reader.mjs';
-import { legacySiteLogin } from '../lib/legacy-site-login.mjs';
+import { legacySiteLogin, previewIdentityPolicy } from '../lib/legacy-site-login.mjs';
 
 const DAY = 86_400_000;
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
@@ -35,10 +35,11 @@ export async function resolveSiteUsageSite(req, { publicPagesDir = PUBLIC_PAGES_
       return policy.access === 'employee' ? site : null;
     }
     const routes = JSON.parse(await readFile(join(configDir, 'preview-routes.json'), 'utf8'));
-    const route = routes?.[slug];
+    let route = routes?.[slug];
     if (!Number.isInteger(route?.port) || route.port < 1 || route.port > 65535) return null;
+    route = { ...route, ...await previewIdentityPolicy(slug, route.port, configDir) };
     if (route.access === 'employee' || route.recognizeIdentity === true) return site;
-    return route.reuseIdentity === true && personId && await legacySiteLogin.lookup(slug, personId) ? site : null;
+    return route.reuseIdentity === true && personId && await legacySiteLogin.lookup(slug, personId, route.port) ? site : null;
   } catch (error) {
     if (error.code === 'ENOENT') return null;
     throw error; // Invalid/unreadable policy is unavailable, never public.

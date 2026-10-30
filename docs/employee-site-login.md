@@ -111,7 +111,7 @@ Ask the agent to enable compatible identity reuse for selected existing Basic
 websites, preserve the original URLs and allowed operations, and verify both the
 old login and the exact person's reused login. Use `preview reuse-identity --slug
 <existing-slug>` only after the original root still returns a Basic challenge.
-It adds `reuseIdentity: true`; it preserves the port, owner, access mode, registered
+It records `reuseIdentity: true` in private `site-identity-policies.json`, pinned to the current upstream port; it leaves the original route file untouched, including the port, owner, access mode, registered
 POST paths and forwarded-header list. It does not restart the application.
 
 The old Basic request continues unchanged. When a browser also has a verified
@@ -128,8 +128,9 @@ one employee, and anonymous historical visits are not attributed retrospectively
 `site-legacy-logins.json` is a private credential store (0600), outside Git. It
 contains reusable Basic authorization and must remain with private instance
 backup/credential handling; never include it in site-directory exports, telemetry
-or public artifacts. Disable reuse by removing `reuseIdentity` from the retained
-route; original Basic authentication remains in effect.
+or public artifacts. Disable reuse by removing that site from `site-identity-policies.json`; original
+Basic authentication remains in effect. Replacing the upstream port does not
+inherit the old policy or credential mapping.
 
 For an intentionally public existing application, `preview recognize-identity
 --slug <existing-slug>` adds optional verified attribution without requiring login

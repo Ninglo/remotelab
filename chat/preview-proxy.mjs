@@ -1,5 +1,5 @@
 import { requireEmployeeSite, employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
-import { legacySiteLogin } from '../lib/legacy-site-login.mjs';
+import { legacySiteLogin, previewIdentityPolicy } from '../lib/legacy-site-login.mjs';
 import { siteUsageHtmlTransform, siteUsageCsp, siteUsageOrigin } from './site-usage-html.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -30,11 +30,13 @@ async function routeFor(slug) {
     const routes = JSON.parse(await readFile(PREVIEW_ROUTES_FILE, 'utf8'));
     const route = routes?.[slug];
     if (!validPreviewPort(route?.port) || route.access && !['basic', 'employee'].includes(route.access)) return null;
+    let identity = {};
+    try { identity = await previewIdentityPolicy(slug, route.port); } catch {}
     return {
       port: route.port,
       access: route.access || 'basic',
-      reuseIdentity: route.reuseIdentity === true,
-      recognizeIdentity: route.recognizeIdentity === true,
+      reuseIdentity: route.reuseIdentity === true || identity.reuseIdentity === true,
+      recognizeIdentity: route.recognizeIdentity === true || identity.recognizeIdentity === true,
       postPaths: Array.isArray(route.postPaths) ? route.postPaths.filter(validPreviewPostPath) : [],
       requestHeaders: Array.isArray(route.requestHeaders) ? route.requestHeaders.filter(validPreviewRequestHeader) : [],
     };
@@ -88,7 +90,7 @@ export async function handlePreviewProxy(req, res, pathname) {
     // Keep the browser's original credential authoritative when it is present.
     if (typeof req.headers.authorization === 'string') headers.authorization = req.headers.authorization;
     else try {
-      headers.authorization = await legacySiteLogin.lookup(match[1], person.id) || undefined;
+      headers.authorization = await legacySiteLogin.lookup(match[1], person.id, route.port) || undefined;
       replayedAuthorization = Boolean(headers.authorization);
     } catch {}
     if (!headers.authorization) delete headers.authorization;
@@ -102,7 +104,7 @@ export async function handlePreviewProxy(req, res, pathname) {
       && req.headers.authorization?.startsWith('Basic ')) {
       // Enabling reuse verified the root rejects anonymous access. A successful
       // original root login is proof for this Person, never a company-wide grant.
-      await legacySiteLogin.remember(match[1], person.id, req.headers.authorization)
+      await legacySiteLogin.remember(match[1], person.id, req.headers.authorization, route.port)
         .catch(() => console.error('Could not retain a legacy site identity mapping'));
     }
     const allowed = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified',
