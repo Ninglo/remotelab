@@ -40,6 +40,12 @@ try {
   assert.equal(res.headers.get('set-cookie'), null);
   assert.equal(providerCalls, calls, 'existing login wins without a new identity check or Person switch');
   existing = null;
+  const beforePaused = providerCalls;
+  assert.equal(await (await request('/login', { headers: { Cookie: 'workbench_sso_paused=1' } })).text(), 'original login form');
+  assert.equal(providerCalls, beforePaused, 'an explicit workbench logout does not silently sign back in');
+  const resumed = await request('/login/feishu', { headers: { Cookie: 'workbench_sso_paused=1' } });
+  assert.equal(resumed.status, 303);
+  assert.ok(resumed.headers.getSetCookie().some(c => /workbench_sso_paused=;.*Max-Age=0/.test(c)), 'explicit sign-in resumes silent identity reuse');
   res = await request('/login?next=%2F%3Fsession%3Dkept');
   assert.equal(res.status, 303); assert.equal(res.headers.get('location'), '/?session=kept');
   const cookie = res.headers.get('set-cookie').split(';')[0];

@@ -1,6 +1,11 @@
 import { employeeSitePerson } from './employee-site-auth.mjs';
 import { loadAuthDocument, getWebIdentity } from '../lib/auth-config.mjs';
-import { getAuthSession, getOrCreateAuthenticatedSessionToken, saveAuthSessionsAsync, setCookie } from '../lib/auth.mjs';
+import { getAuthSession, getOrCreateAuthenticatedSessionToken, saveAuthSessionsAsync, setCookie, parseCookies } from '../lib/auth.mjs';
+
+export function workbenchAutoLoginCookie(req, paused) {
+  const secure = req.socket?.encrypted || String(req.headers['x-forwarded-proto']).split(',')[0] === 'https';
+  return `workbench_sso_paused=${paused ? '1' : ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${paused ? 30 * 86400 : 0}${secure ? '; Secure' : ''}`;
+}
 
 export function safeWorkbenchNext(value) {
   return typeof value === 'string' && value.length <= 2048 && value.startsWith('/')
@@ -21,12 +26,13 @@ export function createWorkbenchSiteLogin({ personFor = employeeSitePerson,
     const redirect = (location, cookie) => {
       const prior = res.getHeader('Set-Cookie');
       res.writeHead(303, { Location: location, 'Cache-Control': 'private, no-store',
-        ...(cookie ? { 'Set-Cookie': [...(Array.isArray(prior) ? prior : prior ? [prior] : []), cookie] } : {}) }); res.end(); return true;
+        ...(cookie ? { 'Set-Cookie': [...(Array.isArray(prior) ? prior : prior ? [prior] : []), ...(Array.isArray(cookie) ? cookie : [cookie])] } : {}) }); res.end(); return true;
     };
     try {
       const existing = current(req);
       // Never switch an already authenticated browser to a second Person.
       if (existing && existing.authKind !== 'service') return redirect(next);
+      if (!explicit && parseCookies(req.headers.cookie || '').workbench_sso_paused === '1') return false;
       const employee = await personFor(req, res);
       if (!employee) return explicit
         ? redirect('/site-login?returnTo=' + encodeURIComponent('/login/feishu?next=' + encodeURIComponent(next))) : false;
@@ -41,7 +47,7 @@ export function createWorkbenchSiteLogin({ personFor = employeeSitePerson,
       }
       const issued = mint({ personId: person.id, personName: person.name, credentialId: credential.id });
       await persist();
-      return redirect(next, cookieFor(issued.token));
+      return redirect(next, [cookieFor(issued.token), workbenchAutoLoginCookie(req, false)]);
     } catch {
       // An optional identity bridge must not break the original password form.
       if (!explicit) return false;

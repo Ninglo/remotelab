@@ -104,6 +104,10 @@ credential and Web identity. The bridge persists an ordinary workbench session
 before redirecting. New employees with no workbench credential are not admitted.
 The original password and Token forms remain usable when the optional bridge is
 unavailable. Existing requests, Sessions and credentials are not rewritten.
+An explicit workbench logout pauses automatic re-entry in that browser. The
+login form remains visible until the person chooses Feishu or successfully uses
+the original credential again. Employee website sessions are retained, so signing
+out of the console does not interrupt other websites.
 
 ## Existing websites without interrupting their original login
 

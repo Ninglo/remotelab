@@ -1,5 +1,5 @@
 import { readFile } from 'fs/promises';
-import { handleWorkbenchSiteLogin } from './workbench-site-login.mjs';
+import { handleWorkbenchSiteLogin, workbenchAutoLoginCookie } from './workbench-site-login.mjs';
 import { siteLoginConfigured } from '../lib/site-publication-policy.mjs';
 import { performance } from 'perf_hooks';
 import {
@@ -293,7 +293,7 @@ if (pathname === '/login' && req.method === 'POST') {
     clearFailedAttempts(ip);
     const { token: sessionToken, created } = getOrCreateAuthenticatedSessionToken(authenticatedIdentity);
     if (created) await saveAuthSessionsAsync();
-    res.writeHead(302, { 'Location': nextPath, 'Set-Cookie': setCookie(sessionToken) });
+    res.writeHead(302, { 'Location': nextPath, 'Set-Cookie': [setCookie(sessionToken), workbenchAutoLoginCookie(req, false)] });
   } else {
     recordFailedAttempt(ip);
     const mode = type === 'password' ? 'pw' : 'token';
@@ -353,7 +353,7 @@ if (pathname === '/logout') {
   }
   res.writeHead(302, {
     'Location': '/login',
-    'Set-Cookie': clearCookie(),
+    'Set-Cookie': [clearCookie(), workbenchAutoLoginCookie(req, true)],
   });
   res.end();
   return true;
