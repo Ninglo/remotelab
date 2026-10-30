@@ -2202,3 +2202,13 @@ invitation receipts. It deliberately permits differences after departures.
 See [project membership](../../docs/feishu-project-links.md#project-membership-initial-fill-then-join-events)
 for activation and recovery. Local regression tests establish behavior; live
 subscription, deployment and membership readback establish instance acceptance.
+
+## 2026-10-30 — Keep Feishu sign-in in the original workbench card
+
+A user reported a poorly placed Feishu link and a repeated login page after
+scanning. The new provider should fit the existing form and complete entry to
+the requested page without another login screen. The workbench now starts
+device authorization from its own card and exchanges the verified identity
+inline. Original account input, Token login, explicit logout and existing
+control-console admission remain intact. Browser fixtures cover the complete
+flow and blocked popups; real employee authorization still happens in Feishu.

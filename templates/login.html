@@ -103,7 +103,7 @@
       margin-bottom: 16px;
     }
 
-    .hidden { display: none !important; }
+    .hidden, [hidden] { display: none !important; }
 
     label {
       display: block;
@@ -162,6 +162,20 @@
 
     .btn:hover { opacity: 0.9; }
     .btn:active { transform: scale(0.98); opacity: 1; }
+    .btn:focus-visible, .feishu-actions a:focus-visible, .feishu-actions button:focus-visible {
+      outline: 2px solid var(--focus-border);
+      outline-offset: 3px;
+    }
+    .btn-feishu { background: #3370ff; color: #fff; margin-top: 0; }
+    .btn-feishu:disabled { cursor: progress; opacity: 0.65; }
+    .feishu-status { font-size: 12px; line-height: 1.6; color: var(--text-secondary); margin-top: 12px; }
+    .feishu-actions { display: flex; justify-content: center; gap: 16px; }
+    .feishu-actions a, .feishu-actions button {
+      font: inherit; font-size: 12px; color: var(--text-secondary); background: none;
+      border: 0; padding: 8px 0 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+    }
+    .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0; color: var(--text-muted); font-size: 11px; }
+    .divider::before, .divider::after { content: ''; height: 1px; flex: 1; background: var(--border); }
 
     .switch {
       text-align: center;
@@ -192,7 +206,15 @@
 
     <div class="error {{ERROR_CLASS}}" data-i18n="login.error">Invalid credentials. Please try again.</div>
 
-    <p id="feishu-entry" hidden><a id="feishu-link" href="/login/feishu">使用飞书登录</a></p>
+    <section id="feishu-entry" hidden>
+      <button id="feishu-signin" class="btn btn-feishu" type="button" data-i18n="login.feishu">Continue with Feishu</button>
+      <p id="feishu-status" class="feishu-status" role="status" aria-live="polite" hidden></p>
+      <div class="feishu-actions">
+        <a id="feishu-authorize" target="_blank" rel="noopener noreferrer" data-i18n="login.feishu.open" hidden>Open Feishu</a>
+        <button id="feishu-retry" type="button" data-i18n="login.feishu.retry" hidden>Try again</button>
+      </div>
+      <div class="divider" data-i18n="login.otherAccount">or use your account</div>
+    </section>
 
     <!-- Password form -->
     <form id="pw-form" method="POST" action="login">
@@ -228,16 +250,41 @@
   </div>
 
   <script src="chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+  <script src="/site-login.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
   <script nonce="{{NONCE}}">
-    if ('{{FEISHU_LOGIN_ENABLED}}' === 'yes') {
-      document.getElementById('feishu-link').href = '/login/feishu?next=' + encodeURIComponent(document.querySelector('input[name="next"]').value);
-      document.getElementById('feishu-entry').hidden = false;
-    }
     var tokenForm = document.getElementById('token-form');
     var pwForm = document.getElementById('pw-form');
     var toggleLink = document.getElementById('toggle-link');
     var usePw = '{{MODE}}' === 'pw';
     var t = window.remotelabT || function(key) { return key; };
+
+    if ('{{FEISHU_LOGIN_ENABLED}}' === 'yes' && window.RemoteLabSiteLogin) {
+      var feishuButton = document.getElementById('feishu-signin');
+      var feishuLogin = window.RemoteLabSiteLogin.create({
+        status: document.getElementById('feishu-status'),
+        authorize: document.getElementById('feishu-authorize'),
+        retry: document.getElementById('feishu-retry'),
+        openAuthorization: true,
+        messages: {
+          checking: t('login.feishu.checking'), connected: t('login.feishu.connected'),
+          waiting: t('login.feishu.waiting'), expired: t('login.feishu.expired'),
+          wrongCompany: t('login.feishu.wrongCompany'), incomplete: t('login.feishu.incomplete')
+        },
+        onBusy: function(busy) { feishuButton.disabled = busy; },
+        onConnected: async function() {
+          var response = await fetch('/api/auth/feishu/complete', {
+            method: 'POST', credentials: 'same-origin', cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ next: document.querySelector('input[name="next"]').value })
+          });
+          var value = await response.json();
+          if (!response.ok) throw new Error(value.error || t('login.feishu.incomplete'));
+          return value.redirect;
+        }
+      });
+      feishuButton.addEventListener('click', function() { feishuLogin.start(); });
+      document.getElementById('feishu-entry').hidden = false;
+    }
 
     function applyMode() {
       if (usePw) {

@@ -28,6 +28,11 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const request = (path, options) => fetch(`http://127.0.0.1:${server.address().port}` + path, { redirect: 'manual', ...options });
+const complete = (options = {}) => request('/api/auth/feishu/complete', {
+  method: 'POST', body: JSON.stringify({ next: '/?session=kept#draft' }),
+  headers: { Origin: `http://127.0.0.1:${server.address().port}`, 'Content-Type': 'application/json', ...options.headers },
+  ...Object.fromEntries(Object.entries(options).filter(([key]) => key !== 'headers')),
+});
 try {
   assert.equal(await (await request('/login')).text(), 'original login form');
   let res = await request('/login/feishu?next=' + encodeURIComponent('/?session=kept'));
@@ -69,6 +74,31 @@ try {
   assert.equal(await (await request('/login')).text(), 'original login form', 'identity bridge failure preserves original sign-in');
   for (const unsafe of ['//evil.test', '/\\evil.test', '/login/feishu', '/login?next=/x', '/bad\r\nLocation: bad']) assert.equal(safeWorkbenchNext(unsafe), '/');
   assert.equal(safeWorkbenchNext('/?session=kept#draft'), '/?session=kept#draft');
+  failPersistence = false; employee = null;
+  assert.equal((await complete()).status, 401, 'unverified browser cannot complete sign-in');
+  assert.equal((await request('/api/auth/feishu/complete')).status, 405);
+  assert.equal((await complete({ headers: { Origin: 'https://evil.test' } })).status, 403);
+  assert.equal((await complete({ body: '{bad' })).status, 400);
+  assert.equal((await complete({ body: 'x'.repeat(4097) })).status, 413);
+  employee = { id: person.id };
+  res = await complete({ headers: { Cookie: 'workbench_sso_paused=1' } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { state: 'connected', redirect: '/?session=kept#draft' });
+  assert.equal(res.headers.get('location'), null, 'inline completion never renders another login page');
+  assert.ok(res.headers.getSetCookie().some(c => /workbench_sso_paused=;.*Max-Age=0/.test(c)));
+  const completedCookie = res.headers.getSetCookie().find(c => c.startsWith('session_token=')).split(';')[0];
+  assert.equal(auth.getAuthSession({ headers: { cookie: completedCookie } }).personId, person.id);
+  res = await complete({ body: JSON.stringify({ next: '//evil.test' }) });
+  assert.equal((await res.json()).redirect, '/');
+  existing = { personId: 'person_original', authKind: 'web' };
+  const beforeComplete = providerCalls;
+  res = await complete();
+  assert.equal(res.status, 200); assert.equal(res.headers.get('set-cookie'), null);
+  assert.equal(providerCalls, beforeComplete, 'completion also preserves the already signed-in Person');
+  existing = null; employee = { id: 'unknown_employee' };
+  assert.equal((await complete()).status, 403);
+  employee = { id: person.id }; failPersistence = true;
+  res = await complete(); assert.equal(res.status, 503); assert.equal(res.headers.get('set-cookie'), null);
   console.log('Workbench Feishu bridge: existing-session precedence, exact account, persistent exchange, original credential, admission, failures and return path PASS');
 } finally {
   await new Promise(resolve => server.close(resolve));

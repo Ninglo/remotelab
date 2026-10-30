@@ -20,6 +20,22 @@ creator; a manual or unattended publication supplies `--owner <person-id>`.
 飞书页不负责跳到各个业务网站；原登录页按飞书给定间隔查询授权结果，再按 `returnTo` 继续。
 已有有效身份时直接进入，正常切站无需再打开飞书。
 
+RemoteLab 控制台在原 `/login` 卡片中提供飞书按钮，直接打开飞书确认页；确认后
+在原卡片完成账号映射并进入最初请求的页面，不再经过另一张员工登录页。返回原标签页
+会立即检查结果，服务端仍遵守飞书轮询间隔。被浏览器拦截新窗口时，可点击卡片中的
+“打开飞书确认”。失败或无控制台资格时在卡片内显示原因，保留已输入的原账号和 Token 登录。
+扫码成功后只映射同一个 Person 的现有个人凭据和 Web 身份；不会给其他员工新增控制台权限。
+主动退出后仍停留在登录页，重新点击飞书按钮才复用已有员工身份。
+
+`POST /api/auth/feishu/complete` 接受同源 JSON `{next}`，持久化原账号会话后才签发
+控制台 Cookie，并返回同源目标。已有控制台会话优先，不切换人员。旧 `/login/feishu`
+回调继续兼容；员工网站的 `/site-login` 流程保持原入口。
+
+浏览器回归入口为 `tests/test-workbench-login-browser.mjs`，通过
+`EMPLOYEE_TEST_PLAYWRIGHT` 和 `EMPLOYEE_TEST_CHROME` 指定已有 Playwright 模块与 Chromium。
+测试使用隔离身份与飞书响应夹具，覆盖首次确认直达目标、已核身份复用、退出暂停、
+弹窗拦截、内联拒绝，以及桌面／手机和浅色／深色布局。
+
 | 现有组件 | 承担的工作 |
 | --- | --- |
 | 域名的 HTTPS／反向代理入口 | 将静态网站、动态网站与登录请求送到同一 RemoteLab 服务 |
@@ -97,8 +113,9 @@ employee POSTs additionally require the same origin. Application input validatio
 and business behavior stay with the application.
 
 The employee cookie does not directly authenticate control-plane APIs. The
-RemoteLab login page offers `/login/feishu?next=...`: an existing valid workbench
-session continues unchanged; otherwise, a verified employee maps to the exact
+RemoteLab login page completes Feishu authorization in its original card via
+`POST /api/auth/feishu/complete`; `/login/feishu?next=...` remains a compatible
+callback. An existing valid workbench session continues unchanged; otherwise, a verified employee maps to the exact
 existing Person only if that Person currently has a personal password or token
 credential and Web identity. The bridge persists an ordinary workbench session
 before redirecting. New employees with no workbench credential are not admitted.
