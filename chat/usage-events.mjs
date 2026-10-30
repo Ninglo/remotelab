@@ -30,6 +30,8 @@ const CLIENT_TOKENS = {
   entry: new Set(['session_link', 'default', 'navigation', 'foreground']),
 };
 export const usageKey = value => createHash('sha256').update(`usage-v1:${value}`).digest('hex');
+export const validUsageSiteId = value => typeof value === 'string' && value.length <= 155
+  && /^(?:directory|static:[a-z0-9][a-z0-9._-]*|preview:[a-z][a-z0-9-]{0,62})$/.test(value);
 export function artifactKind(mime = '') {
   mime = typeof mime === 'string' ? mime : '';
   if (mime.startsWith('image/')) return 'image';
@@ -43,7 +45,7 @@ export function artifactKind(mime = '') {
 
 // Only these fields reach the ledger. Never forward a tool's arguments, message
 // text, answers, filenames, URLs, IP address or arbitrary client properties.
-export function normalizeUsageEvent(input, { personId = '', verifiedPersonHash = '', client = false, now = Date.now() } = {}) {
+export function normalizeUsageEvent(input, { personId = '', verifiedPersonHash = '', verifiedSiteId = '', client = false, now = Date.now() } = {}) {
   if (!(client ? CLIENT_USAGE_EVENTS : SERVER_EVENTS).has(input?.event)) return null;
   const eventId = identifier(input.eventId);
   if (!eventId) return null;
@@ -55,6 +57,9 @@ export function normalizeUsageEvent(input, { personId = '', verifiedPersonHash =
     actorKind: client ? 'human' : ['human', 'agent', 'automation', 'system'].includes(input.actorKind) ? input.actorKind : 'system' };
   if (personId) event.personHash = usageKey(`person:${personId}`);
   else if (!client && /^[a-f0-9]{64}$/.test(verifiedPersonHash)) event.personHash = verifiedPersonHash;
+  // Employee-website routes resolve this from server-side publication policy.
+  // Payload siteId/verifiedSiteId never establish website scope.
+  if (client && personId && validUsageSiteId(verifiedSiteId)) event.siteId = verifiedSiteId;
   if (input.event === 'context_query') {
     if (!['work', 'memory', 'people'].includes(input.kind) || !['started', 'succeeded', 'partial', 'failed'].includes(input.state)) return null;
     if (/^[a-f0-9]{64}$/.test(input.queryHash || '')) event.queryHash = input.queryHash;
