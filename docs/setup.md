@@ -77,20 +77,20 @@ dropdowns showing the concrete model and effort. Later messages keep that
 selection unless the user changes it; they do not run Jev again. The next new
 Session starts in Auto again. The default tier mappings are:
 
-- `quick`: GPT-6.1 Sol with `low` reasoning and a short-answer developer prompt
+- `quick`: GPT-6 Astra with `low` reasoning and a short-answer developer prompt
   for focused, low-risk requests that clearly prioritize fast turnaround.
   Straightforward reads or lookups can use tools; urgency does not justify
   less reasoning for complex or consequential work.
-- `balanced`: GPT-6.1 Sol with `medium` reasoning, retained for an explicit
+- `balanced`: GPT-6 Astra with `medium` reasoning, retained for an explicit
   medium-reasoning preference. Routine work does not automatically use it.
-- `quality`: GPT-6.1 Sol with `xhigh` reasoning is the default for the vast
+- `quality`: GPT-6 Astra with `xhigh` reasoning is the default for the vast
   majority of requests, including routine tasks, research, ordinary development,
   debugging, and tool use. A task seeming easy is not a reason to downgrade.
 - `sota`: GPT-6 Astra with `xhigh` reasoning for large engineering projects
   requiring serious architecture design or implementation, coupled components,
   and difficult system tradeoffs. Jev can choose it from the task itself without
   an explicit upgrade request. Explicit strongest/SOTA requests also qualify;
-  requesting `xhigh` alone does not mean Astra.
+  quality and sota currently share the same Astra/xhigh profile.
 - `economy`: GPT-6 Luna with `low` reasoning is exceptional, used only for an
   explicit Luna or absolute-lowest-cost preference on a trivial, low-risk task.
   Asking for speed selects Quick when appropriate.
@@ -103,7 +103,7 @@ An Auto-selected Quick Session can still use tools when a later request needs
 them. Legacy Quick Sessions and Feishu `/quick` remain compatible, but the Web
 new-session switch no longer exposes Quick as a separate mode.
 
-GPT-6.1 Sol and GPT-6 Luna availability can differ by ChatGPT workspace and Codex CLI
+GPT-6 Astra and GPT-6 Luna availability can differ by ChatGPT workspace and Codex CLI
 version. Before enabling these mappings on an existing instance, update Codex,
 refresh the native model catalog, and run one real low-effort canary for each
 model. Do not switch the tier file when either canary is rejected.
@@ -127,10 +127,10 @@ JSON file. The file can also be edited directly:
 
 ```json
 {
-  "quick": { "model": "gpt-6.1-sol", "effort": "low" },
+  "quick": { "model": "gpt-6-astra", "effort": "low" },
   "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
-  "quality": { "model": "gpt-6.1-sol", "effort": "xhigh" },
-  "balanced": { "model": "gpt-6.1-sol", "effort": "medium" },
+  "quality": { "model": "gpt-6-astra", "effort": "xhigh" },
+  "balanced": { "model": "gpt-6-astra", "effort": "medium" },
   "economy": { "model": "gpt-6-luna", "effort": "low" },
   "quickPrompt": "Answer directly and concisely in the user's language..."
 }

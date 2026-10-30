@@ -12,8 +12,8 @@ const layoutToolingSource = readFileSync(join(repoRoot, 'static', 'chat', 'layou
 
 assert.match(
   bootstrapSource,
-  /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6\.1-sol";/,
-  'the browser default should stay aligned with the GPT-6.1 Sol product default',
+  /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-astra";/,
+  'the browser default should stay aligned with the GPT-6 Astra product default',
 );
 
 function extractFunctionSource(source, functionName) {
@@ -73,7 +73,7 @@ const localStorageValues = new Map([
 const context = {
   console,
   DEFAULT_TOOL_ID: 'codex',
-  PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-6.1-sol',
+  PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-6-astra',
   CURRENT_CODEX_MODEL_IDS: new Set([
     'gpt-6-astra',
     'gpt-6.1-sol',

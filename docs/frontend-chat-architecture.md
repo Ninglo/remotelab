@@ -69,6 +69,13 @@ Settings values are ignored. Deferred Session loading preserves a newer user
 choice, including closing Settings before that load finishes. The navigation
 regressions live in `tests/test-monitor-navigation-race.mjs`.
 
+New Sessions start in Auto. Switching to Custom without an existing concrete
+selection uses `gpt-6-astra` with `low` effort. Keep the fallback values in
+`bootstrap.js`, `sidebar-ui.js`, and `tooling.js` aligned with
+`lib/legacy-micro-agent.mjs`; preserve saved concrete selections. Auto tier
+models and efforts come from the server settings described in
+[setup](setup.md#jev-auto-model-routing).
+
 ### 2.3 View-only ephemeral state
 
 These should stay in render/UI code and should not leak into the shared shell state model:
