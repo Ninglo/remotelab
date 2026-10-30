@@ -45,12 +45,14 @@ try {
   assert.deepEqual(resolveFeishuGroupSettings({ ...config, groupReactionCandidates: selected, groups: { work: { reactionCandidates: ['THANKS'] } } }, base).reactionCandidates, ['THANKS']);
   assert.doesNotMatch(prompt, /Reply to each human message|By default, the human is speaking to you/);
   assert.match(prompt, /participationReason/);
-  assert.match(prompt, /join human discussion when useful/);
+  assert.match(prompt, /every human message is addressed to the Agent and needs a reply/);
+  assert.match(prompt, /no participation gate/);
+  assert.doesNotMatch(prompt, /join human discussion when useful/);
   assert.doesNotMatch(prompt, /work kickoff/);
   const discussionPrompt = resolveFeishuGroupSettings({ ...config, projectLinks: [{ discussionChatId: 'work', workChatId: 'target' }] }, base).systemPrompt;
   assert.match(discussionPrompt, /work kickoff --file/);
   assert.match(discussionPrompt, /complete title and options unchanged/);
-  assert.match(discussionPrompt, /Listening and paused/);
+  assert.match(discussionPrompt, /Paused conversations/);
   assert.doesNotMatch(discussionPrompt, /substantive discussion belongs in a Thread/);
   assert.equal(resolveFeishuGroupSettings(config, base).jevReactions, true, 'modern work topics share optional Jev feedback');
   const disabledConfig = { ...config, storageDir: join(home, 'jev-disabled'), jevReactions: false,
@@ -76,35 +78,60 @@ try {
   assert.equal(submitted.length, 1, 'active topic admits a colleague-directed question for main-model judgment');
   await controller.remember(main, 'topic');
   const beforeCancel = cancelled.length;
-  await controller.change(main, 'listening', { controlId: 'listen-main' });
-  assert.equal(cancelled.length - beforeCancel, 2, 'main and inherited topic scopes both stop even when they share a Session');
-  assert.equal((await controller.state(base)).mode, 'listening');
-  await handleMessage(runtime, { ...base, messageId: 'quiet' }, 'test', helpers);
-  assert.equal(observed.length, 1, 'only listening inputs use observation admission');
-  assert.equal(submitted.length, 1);
-  assert.equal(decisions.length, 1, 'listening runs neither main model nor Jev without invitation');
+  await controller.change(main, 'paused', { controlId: 'mute-main' });
+  assert.equal(cancelled.length - beforeCancel, 1, 'mainline mute never cancels child topics');
+  assert.equal((await controller.state(base)).mode, 'active');
+  await handleMessage(runtime, { ...base, messageId: 'followup' }, 'test', helpers);
+  assert.equal(observed.length, 0);
+  assert.equal(submitted.length, 2, 'an existing thread continues while the mainline is paused');
   await handleMessage(runtime, { ...base, messageId: 'invite', mentions: [{ openId: 'bot' }] }, 'test', helpers);
   await Promise.all(runtime.jevReactionJobs.values());
-  assert.equal(submitted.at(-1).participationOnce, true);
-  assert.equal((await controller.state(base)).mode, 'listening');
-  await controller.change(main, 'paused', { controlId: 'pause-main' });
+  assert.equal(submitted.at(-1).participationOnce, undefined, 'thread @ is a normal request');
+  assert.equal((await controller.state(base)).mode, 'active');
+  assert.equal((await controller.state({ ...base, chatId: 'paused' })).mode, 'active', 'group defaults cannot pause threads');
+  await controller.change(base, 'paused', { controlId: 'topic-mute' });
   const paused = await handleMessage(runtime, { ...base, messageId: 'blocked', messageType: 'file' }, 'test', helpers);
   assert.equal(paused.reason, 'participation_paused');
-  assert.equal((await controller.state({ ...base, chatId: 'paused' })).mode, 'paused');
-  await controller.change(base, 'active', { controlId: 'topic-override' });
-  assert.equal((await controller.state(base)).mode, 'active');
-  assert.equal((await controller.state({ ...base, threadId: 't2', rootId: 'r2' })).mode, 'paused');
+  assert.equal((await controller.state({ ...base, threadId: 't2', rootId: 'r2' })).mode, 'active');
   const restored = createParticipationController(runtime);
-  assert.equal((await restored.state(base)).mode, 'active');
-  assert.equal((await restored.state(main)).mode, 'paused', 'upgrade/restart never resumes paused scopes');
+  assert.equal((await restored.state(base)).mode, 'paused', 'explicit topic mute survives restart');
+  assert.equal((await restored.state(main)).mode, 'paused');
+  await controller.change(main, 'active', { controlId: 'resume-main' });
+  assert.equal((await controller.state(base)).mode, 'paused', 'resuming the mainline does not resume a muted thread');
+  await controller.change(base, 'active', { controlId: 'topic-resume' });
 
-  const { createRecordStore } = await import('../lib/durable-records.mjs');
   const legacyTopic = { ...base, threadId: 'legacy-paused', rootId: 'legacy-root' };
+  const { createRecordStore } = await import('../lib/durable-records.mjs');
   const legacyState = await controller.state(legacyTopic);
   await createRecordStore(join(home, 'participation-state')).mutate(legacyState.key,
     () => ({ source: legacyState.source, mode: 'paused', epoch: 9 }));
   await controller.change(main, 'active', { controlId: 'resume-parent' });
   assert.equal((await controller.state(legacyTopic)).mode, 'paused', 'old paused records without a timestamp remain paused after migration');
+
+  const legacyStore = createRecordStore(join(home, 'participation-state'));
+  const inheritedTopic = { ...base, threadId: 'old-inherited', rootId: 'old-root' };
+  const inheritedState = await controller.state(inheritedTopic);
+  await legacyStore.mutate(inheritedState.key, () => ({ ...inheritedState,
+    mode: 'paused', modeOverride: false, epoch: 7, deliveryEpochFloor: 7 }));
+  assert.equal((await restored.state(inheritedTopic)).mode, 'active', 'inherited historical pauses no longer suppress threads');
+  await legacyStore.mutate(inheritedState.key, current => ({ ...current, mode: 'listening', modeOverride: true }));
+  assert.equal((await restored.state(inheritedTopic)).mode, 'paused', 'explicit old listening becomes mute');
+  assert.equal((await legacyStore.get(inheritedState.key)).retiredParticipationMode, 'listening');
+  const beforeLegacy = submitted.length;
+  await handleMessage(runtime, { ...inheritedTopic, messageId: 'legacy-muted-file', messageType: 'file' }, 'test', helpers);
+  assert.equal(submitted.length, beforeLegacy);
+  assert.equal(observed.length, 0, 'legacy listening never records new observations');
+  const beforeFirstMention = submitted.length;
+  const freshPausedGroupTopic = { ...base, chatId: 'paused', threadId: 'new-paused-group-thread',
+    messageId: 'first-mention', mentions: [{ openId: 'bot' }] };
+  const first = await handleMessage(runtime, freshPausedGroupTopic, 'test', helpers);
+  assert.equal(first.sessionId, 'topic');
+  assert.equal(submitted.length, beforeFirstMention + 1);
+  assert.equal(submitted.at(-1).participationOnce, undefined);
+  assert.equal((await controller.state(freshPausedGroupTopic)).cardMessageId, undefined,
+    'a first thread mention does not create a participation card');
+  const resumedController = createParticipationController(runtime);
+  assert.equal((await resumedController.state(freshPausedGroupTopic)).mode, 'active');
 
   normalizeFeishuGroups({ work: { participationMode: 'active', jevReactions: true, reactionCandidates: [] } });
   assert.throws(() => normalizeFeishuGroups({ work: { reactionCandidates: ['INVALID'] } }), /reactionCandidates/);
@@ -370,5 +397,5 @@ try {
   assert.equal(processingRemoves.filter(id => id === 'quiet-already-active').length, 1,
     'disabling the setting does not strand a reaction already on the message');
 
-  console.log('Unified participation: migration boundaries, topic inheritance, explicit scope override, invitation, silence, optional Jev, candidate enforcement and durable withdrawal passed');
+  console.log('Unified participation: migration boundaries, independent topics, explicit scope override, invitation, silence, optional Jev, candidate enforcement and durable withdrawal passed');
 } finally { await rm(home, { recursive: true, force: true }); }

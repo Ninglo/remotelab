@@ -45,7 +45,7 @@ assert.equal(d.reactionReceipts,2);assert.equal(d.reactionTimeUnknown,1);assert.
 assert.equal(d.processingReceipts,1);assert.equal(d.noReply,3);assert.equal(d.unconfirmed,2);assert.equal(d.failed,1);assert.equal(d.processing,1);
 assert.equal(['processed','noReply','failed','processing','unconfirmed'].reduce((n,k)=>n+d[k],0),10);
 assert.equal(d.usage.runs,1);assert.equal(d.usage.totalTokens,100);assert.equal(result.days.at(-2).usage.totalTokens,30);
-assert.equal(result.coverage.excludedRelatedRuns,1);assert.equal(result.current.listening,1);
+assert.equal(result.coverage.excludedRelatedRuns,1);assert.equal(result.current.paused,1);
 assert.equal(result.coverage.unattributedTextReceipts,1);
 const failedSend=aggregateGroupMonitoring({inputs:[msg('a')],requests:[req('a',{deliveries:[part('failed-send',{state:'failed'})]})],now});
 assert.equal(failedSend.today.failed,1);assert.equal(failedSend.coverage.failedDeliveryInputs,1);
@@ -74,7 +74,7 @@ try {
  await write(join(dir,'state','participation-state','active','abcd.json'),{source:{chatId:'chat',topicId:''},mode:'listening',modeOverride:true});
  await write(join(dir,'state','outcome-reactions','active','abce.json'),{messageId:'a',reactionId:'reaction',sequence:start+250,revision:2});
  const r=await collectGroupMonitoring({connectors,read:fsRead,requestFor:async()=>null,sessions:[],ledger:[],now,coverage:{limitedFiles:0,readErrors:0}});
- assert.equal(r.current.listening,1);assert.equal(r.today.received,1);assert.equal(r.today.noReply,1);assert.equal(r.today.reactionTimeUnknown,1);assert.equal(r.today.reactionLatency.count,0);
+ assert.equal(r.current.paused,1);assert.equal(r.today.received,1);assert.equal(r.today.noReply,1);assert.equal(r.today.reactionTimeUnknown,1);assert.equal(r.today.reactionLatency.count,0);
  assert.equal(projectInbox({summary:src('a'),submission:{sessionId:'main'},receipt:{sessionId:'main',workSessionId:'child'}}).sessionId,'child');
  // A routed work topic requires a source anchor and a real external thread receipt.
  await write(join(dir,'state','inbox','archive',recordKey('a')+'.json'),{...inbox,submission:{sessionId:'main',payload:{requestId:'a'}},receipt:{requestId:'a',runId:'r'}});

@@ -297,7 +297,7 @@ Private messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
 including stored-message replay. Mention matching uses the Bot's API identity.
 Session fallback never bypasses sender access control or Bot loop protection.
-Explicit mute, listening and paused state retain their existing meaning.
+Only an explicit mute on that topic pauses its reception; group mainline state is independent.
 Session-start routing
 can be overridden per group with `groups` below.
 
@@ -861,19 +861,20 @@ reply settings and commands cannot move it back to the mainline or split it.
 The inbound message ID is only a delivery address and is never part of mainline
 Session identity.
 
-Groups use `participationMode: "active" | "listening" | "paused"`;
-`ambient` remains a compatibility alias for active participation. `defaultGroupParticipation`
-accepts the same modes and legacy `mention_only`. Paused groups discard ordinary
-messages, but an explicit mention of this Bot admits that input as a one-time
-invitation. Its reply is allowed without changing the paused state or replaying
-blocked history. Listening retains its existing observation and invitation rules.
+Groups use `participationMode: "active" | "paused"`; `ambient` remains a
+compatibility alias for active participation. `defaultGroupParticipation`
+accepts these modes and legacy `mention_only`. Listening is retired: old
+`listening` settings and explicit saved states are read as paused, with no
+observation-only ingestion or attachment download. An explicit Bot mention in
+a paused scope admits that one input and its reply without resuming the scope.
 
 | Existing setting | Upgrade behavior |
 | --- | --- |
 | `responseMode: "all"` with active connector default | Ordinary groups use the active controller; native topic groups use normal conversation/steer |
-| Explicit `responseMode: "mention_only"` without a participation mode | Preserve invitation-only admission |
-| `participationControls: false` | Preserve the disabled control boundary |
-| Stored listening/paused state, or legacy conversation mute | Retain state; upgrading does not authorize resumption |
+| Explicit `responseMode: "mention_only"` without a participation mode | Preserve invitation-only admission for new conversations |
+| `participationControls: false` | Preserve the disabled mainline control boundary; thread mentions and continuation still work |
+| Explicit stored listening/paused state, or conversation mute | Preserve the scope's opt-out as paused; no observation intake |
+| Thread state inherited from its group (`modeOverride: false`) | Receive normally; only that thread's own mute pauses it |
 | Suppressed/withdrawn status card | Retain suppression |
 
 Modern controlled groups and topics use optional asynchronous Jev social feedback
@@ -883,18 +884,18 @@ no longer require a reaction or select content/work placement. The old ambient
 alias is normalized by the connector's default policy; test/embedded configurations
 without that default keep their explicit compatibility settings.
 
-Each topic inherits the group's current state until explicitly overridden in that
-topic. Merely recording messages does not freeze inherited state. Mainline state
-changes fence inherited topic output and stop remembered inherited topic executions;
-an explicitly controlled independent topic retains its own state. Topic identity,
-not a group name or its project role, determines conversation ownership. Cancellation
-is scoped to matching Requests rather than the whole Session, preserving unrelated
-queued or running work in that Session.
+Threads have independent reception and delivery revisions. An explicit Bot
+mention admits a request without a group configuration change or participation
+card; after the conversation binds, human follow-ups continue in the same Session
+without another mention. Muting or resuming the mainline never changes a thread,
+stops its work, or revokes its replies. Muting a thread affects only that thread.
+Topic identity determines ownership; cancellation matches that conversation's
+Requests rather than cancelling unrelated work in a shared Session.
 
 Native topic groups and ordinary groups have different participation rules.
 In a native topic group, human messages enter their topic Session by default and
 receive replies through normal Harness conversation/steer. No Jev participation
-decision or three-mode status card gates these messages. Explicit `/mute` still
+decision or participation status card gates these messages. Explicit `/mute` still
 blocks ordinary input in its conversation scope; a mention of this Bot or a task
 command wakes it once without clearing mute, and `/unmute` restores normal
 admission. Self/bot-loop protection remains. An ordinary group's thread is not
@@ -946,7 +947,7 @@ not choose a destination. Creating another execution Session or transferring wor
 to another group still uses the existing authorization workflow.
 
 For ordinary groups using `participationControls: true`, the pinned status card shows
-active, listening or paused reception, the main Session link, its saved model and
+active or paused reception, the main Session link, its saved model and
 effort, and native model/effort/prompt editing forms. Group prompts are stored
 durably in `group-configuration`, with version, actor and the last 20 revisions.
 They apply to subsequent inputs and new topics in that group; already accepted
@@ -996,36 +997,30 @@ suppressed card cannot prevent the project knowledge from being updated. The
 Harness receives the brief pointer and reads its body on demand. See that guide
 for scope, registration, feedback and acceptance boundaries.
 
-In ordinary groups, participation controls apply to the main timeline and each existing Thread;
-Threads inherit the group state until an explicit topic override. `/mute` selects listening: messages are recorded without a model turn unless
-that message @ mentions the Bot or uses a task command.
-Listening still downloads image/file resources into the normal Session asset
-store and records attachment references on the observed message, so the Web
-history displays the original images and files. Download failures remain explicit
-in the message's ingestion metadata; a text placeholder is not proof of a saved
-attachment. Recording an attachment does not start a Harness turn.
-Jev does not interpret
-natural-language invitations, mode changes or topic changes. `/unmute` restores active participation for
-new messages; queued content from before restoration is not replayed as new work.
-Already accepted single-invitation replies remain deliverable when listening or
-paused reception changes to active. The control/intake revision still advances;
-the delivery epoch floor advances only on a stop. Thus a later pause/listen and
-resume cannot revive replies revoked by that stop. Threads without an explicit
-override inherit both boundaries, and connector restarts preserve them.
-Pausing or entering listening cancels that conversation's ongoing work and removes
-its retained THINKING reactions. Cleanup of a recorded Bot reaction treats a
-missing message or reaction (231003 / 231011) as already removed; permission and
-transport failures retain the receipt. Startup restores conversations separately:
-a failed cancellation, cleanup or card refresh is logged without stopping the
-connector, and the saved participation mode and unfinished work remain intact.
-Listening observations use a durable preparation
-with the same Session resolver, attachment ingestion and fixed retry packet as
-normal inputs. Feedback for active inputs reads the accepted Request instead.
-Definite input rejections are archived with
-their error and enqueue one failure notice in the original conversation instead
-of silently disappearing. A notification retry never replays rejected work.
-Listening observations and normal admission accept delivered ambient-topic
-provenance, so an original mainline binding does not reject its own follow-ups.
+In ordinary groups, `/mute` pauses only the current mainline or thread. Muted
+ordinary messages do not enter the Session or download attachments. `/unmute`
+restores reception from that point; skipped messages are not replayed. The
+removed listening commands and buttons no longer select a third state. Old
+prepared observation packets are retired without ingestion or a model call.
+
+Already accepted single-invitation replies remain deliverable when paused
+reception changes to active. The delivery boundary advances on a stop, so a
+later mute/resume cannot revive revoked replies. Each thread keeps its own
+boundary across connector restarts. A reply routed from a mainline to a new
+thread retains its original input's boundary, while later thread inputs use
+their independent boundary.
+
+Pausing a controlled conversation cancels its ongoing work and removes its
+retained THINKING reactions. Cleanup treats missing messages or reactions
+(231003 / 231011) as already removed; permission and transport failures retain
+the receipt. Startup restores scopes separately; a failed cancellation, cleanup
+or card refresh does not stop other conversations. Invitations do not create
+or refresh status cards.
+
+Definite input rejections retain their error and enqueue one failure notice in
+the original conversation. A notification retry never replays rejected work.
+Normal admission accepts delivered ambient-topic provenance, so an original
+mainline binding does not reject its own follow-ups.
 Replies to scheduled result topics also reuse their recorded Bot/chat/root
 binding when optional topology or tenant metadata was not supplied by the task.
 Known conflicting identifiers and explicit private/mainline bindings remain
@@ -1063,8 +1058,8 @@ suppression cancels the matching unsent lease; it does not report a provider sen
 `inline`. `replyPolicy.chats[chatId]` and `groups[chatId].replyMode` override the
 default with `inline` or `thread`. `groups[chatId]` also supports
 `responseMode` (`all`/`mention_only`), optional `systemPrompt`, and the
-exact-chat `participationMode: "active" | "listening" | "paused"` setting
-(`"ambient"` remains a compatibility alias). New ordinary groups and their threads use
+exact-chat `participationMode: "active" | "paused"` setting
+(`"ambient"` remains a compatibility alias). New ordinary group mainlines use
 `defaultGroupParticipation` (active by default when no legacy global mention-only policy is explicitly configured). An existing explicit `responsePolicy.group: "mention_only"` remains mention-only unless the operator selects the new default; explicit per-group policies take
 precedence. A successfully bound topic continues without another mention. The
 group prompt is appended to global instructions and applied to existing Sessions

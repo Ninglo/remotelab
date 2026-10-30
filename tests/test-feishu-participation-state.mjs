@@ -12,7 +12,8 @@ try {
   const { handleMessage, handleFeishuReactionMute } = await import('../scripts/feishu-connector.mjs');
   const { classifyFeishuQuickParticipation, createFeishuQuickParticipationPilot } = await import('../connectors/feishu/quick-participation.mjs');
   const { normalizeFeishuGroups } = await import('../connectors/feishu/group-settings.mjs');
-  assert.equal(parseParticipationText('你先旁听吧'), 'listening');
+  assert.equal(parseParticipationText('你先旁听吧'), null);
+  assert.equal(parseParticipationText('/mute'), 'paused');
   assert.equal(parseParticipationText('暂停接收'), 'paused');
   assert.equal(parseParticipationText('恢复主动参与'), 'active');
   assert.equal(parseParticipationText('恢复接收消息'), 'resume_read');
@@ -51,22 +52,23 @@ try {
     addProcessingReaction: async () => calls.reactions.push('processing'),
   };
   const send = (id, text, extra = {}) => handleMessage(runtime, { ...base, messageId: id, messageText: text, ...extra }, 'test', helpers);
-  await send('listen', '你先旁听吧');
-  assert.equal((await runtime.participation.state(base)).mode, 'listening');
+  await send('mute', '/mute');
+  assert.equal((await runtime.participation.state(base)).mode, 'paused');
   assert.deepEqual(calls.stopped, ['s1']);
   await runtime.participation.idle();
   assert.equal(calls.cards[0].path.message_id, 'om_existing');
   assert.equal(calls.observed.length, 0);
 
   await send('discussion', '我们继续讨论预算');
-  assert.deepEqual(calls.observed, ['discussion'], 'listening information enters the Session');
+  assert.deepEqual(calls.observed, [], 'muted messages never enter the Session');
   assert.equal(calls.submitted.length, 0, 'classifier reply is not an invitation');
   assert.equal(calls.reactions.length, 0);
   verdict = { ...verdict, topicChanged: true };
   await send('new-topic', '换个话题，周末去哪玩');
   const changed = await runtime.participation.state(base);
-  assert.equal(changed.mode, 'listening');
-  assert.equal(changed.topicHint, false, 'emoji service cannot interpret topic changes');
+  assert.equal(changed.mode, 'paused');
+  assert.doesNotMatch(JSON.stringify(buildParticipationCard(changed)), /旁听/);
+  await assert.rejects(runtime.participation.change(base, 'listening'), /Invalid Agent participation mode/);
   assert.doesNotMatch(JSON.stringify(buildParticipationCard(changed)), /换了话题，要我参与吗/);
   assert.equal(calls.submitted.length, 0);
 
@@ -74,11 +76,11 @@ try {
   await send('other-person', '@_human_2 帮忙看看', { mentions: [{ openId: 'human_2' }] });
   assert.equal(calls.submitted.length, 0, 'cannot take a request addressed to another human');
   await send('not-invited', '你帮忙回答一下');
-  assert.equal(calls.submitted.length, 0, 'a small-model invitation cannot override explicit listening');
+  assert.equal(calls.submitted.length, 0, 'a small-model invitation cannot override mute');
   await send('invited-once', '@_bot 你帮忙回答一下', { mentions: [{ openId: 'bot' }] });
   assert.equal(calls.submitted.length, 1);
   assert.equal(calls.submitted[0].participationOnce, true);
-  assert.equal((await runtime.participation.state(base)).mode, 'listening');
+  assert.equal((await runtime.participation.state(base)).mode, 'paused');
 
   await send('pause', '暂停接收消息');
   const observed = calls.observed.length;
@@ -88,7 +90,7 @@ try {
   assert.equal(calls.observed.length, observed, 'paused messages never reach the Session or classifier');
   assert.equal(calls.submitted.length, submitted);
   await send('resume-read', '恢复接收消息');
-  assert.equal((await runtime.participation.state(base)).mode, 'listening', 'read restoration preserves prior listening mode');
+  assert.equal((await runtime.participation.state(base)).mode, 'active', 'resuming reception has only one active state');
   const resumed = await runtime.participation.state(base);
   assert.ok(resumed.contextAfterMs > 0, 'resumption fences history before the restore command');
   const log = join(home, 'events.jsonl');
@@ -96,12 +98,12 @@ try {
   const quick = createFeishuQuickParticipationPilot(runtime, { react: async () => { throw new Error('no reactions during restore'); } });
   assert.deepEqual(await quick.restore(log, { shouldRemember: async () => false }), [], 'paused history is not restored into classifier context');
   runtime.participation = createParticipationController(runtime, options);
-  assert.equal((await runtime.participation.state(base)).mode, 'listening', 'state survives restart');
+  assert.equal((await runtime.participation.state(base)).mode, 'active', 'state survives restart');
   await send('resume', '恢复参与');
   await send('ordinary-work', '先旁听', { chatId: 'work' });
   assert.equal(calls.submitted.at(-1).chatId, 'work', 'work groups keep their original admission');
   await handleFeishuReactionMute(runtime, { ...base, sourceKind: 'reaction_mute', messageId: 'hush', eventId: 'reaction-1', feedbackSessionId: 's1' }, helpers);
-  assert.equal((await runtime.participation.state(base)).mode, 'listening');
+  assert.equal((await runtime.participation.state(base)).mode, 'paused');
   assert.equal(calls.stopped.at(-1), 's1');
   const card = await runtime.participation.state(base);
   const rejected = await runtime.participation.action({ event: { action: { value: {
@@ -117,8 +119,8 @@ try {
 
   const cardCallsBeforeHide = calls.cards.length;
   runtime.config.groups.misc.participationStatusCard = false;
-  await runtime.participation.change({ ...base, messageId: 'hidden-listen' }, 'listening');
-  assert.equal((await runtime.participation.state(base)).mode, 'listening', 'hiding cards preserves mode controls');
+  await runtime.participation.change({ ...base, messageId: 'hidden-listen' }, 'paused');
+  assert.equal((await runtime.participation.state(base)).mode, 'paused', 'hiding cards preserves mode controls');
   await runtime.participation.change({ ...base, messageId: 'hidden-resume' }, 'active');
   runtime.participation = createParticipationController(runtime, options);
   await runtime.participation.restore();
@@ -177,7 +179,7 @@ try {
   await runtime.participation.publish(await runtime.participation.state(fresh), { existingOnly: true, background: true });
   assert.equal(creations, 1, 'suppressed cards stay suppressed even when overdue');
   await store.mutate(renewed.key, current => ({ ...current, cardCreatedAt: Date.now(), cardSuppressed: false }));
-  await runtime.participation.change(fresh, 'listening', { controlId: 'card-stall-listen' });
+  await runtime.participation.change(fresh, 'paused', { controlId: 'card-stall-listen' });
   let releaseCard, deadline;
   const cardGate = new Promise(resolve => { releaseCard = resolve; });
   runtime.appClient.im.v1.message.patch = () => cardGate;
@@ -195,5 +197,5 @@ try {
     await runtime.participation.idle();
   }
   await Promise.all([...(runtime.jevReactionJobs?.values() || [])]);
-  console.log('Feishu participation: observation, pause/resume, invitations, topic hints, scope and persistence passed');
+  console.log('Feishu participation: mute, resume, invitations, retired listening, scope and persistence passed');
 } finally { await rm(home, { recursive: true, force: true }); }

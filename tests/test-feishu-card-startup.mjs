@@ -85,12 +85,12 @@ try {
   try {
     await bounded(patchStarted.promise, 'start recovery');
     assert.equal((await f.send('active', '处理这个问题')).sessionId, 's1');
-    assert.equal((await f.send('listen', '先旁听')).participationControl, true);
-    assert.equal((await f.send('discussion', '我们继续讨论预算')).observedOnly, true);
+    assert.equal((await f.send('mute', '/mute')).participationControl, true);
+    assert.equal((await f.send('discussion', '我们继续讨论预算')).reason, 'participation_paused');
     assert.deepEqual(f.calls.submitted, ['active']);
     assert.equal((await f.send('pause', '暂停接收消息')).participationControl, true);
     assert.equal((await f.send('private', '这段别读')).reason, 'participation_paused');
-    assert.deepEqual(f.calls.observed, ['discussion']);
+    assert.deepEqual(f.calls.observed, []);
     assert.equal((await f.send('invited', '@_bot 帮忙看看', { mentions: [{ openId: 'bot' }] })).sessionId, 's1');
     assert.equal((await f.runtime.participation.state(source)).mode, 'paused');
     assert.deepEqual(f.calls.submitted, ['active', 'invited']);

@@ -1839,19 +1839,11 @@ try {
     messageType: 'image', contentSummary: 'Image attachment', imageKeys: ['img_observed'], sender: { openId: 'person' } };
   const previousSubmission = planningSubmittedPayload;
   const observedReceipt = await submitRemoteLabRequest(observedRuntime, observedImage, { observeOnly: true });
-  assert.equal(planningObservedPayload.attachments[0].assetId, 'fasset_observed_image');
-  assert.equal(planningSubmittedPayload, previousSubmission, 'listening uploads the image without submitting a model turn');
-  observedRuntime.appClient.im.v1.messageResource.get = async () => { throw new Error('fixture resource unavailable'); };
-  await submitRemoteLabRequest(observedRuntime, observedImage, {
-    skipUserMessage: true, observedSessionId: observedReceipt.sessionId,
-    observedAttachments: observedReceipt.attachmentResolution,
-  });
-  assert.equal(planningSubmittedPayload.attachments[0].assetId, 'fasset_observed_image',
-    'execution reuses the observed attachment without downloading a second copy');
-  await submitRemoteLabRequest(observedRuntime, observedImage, { observeOnly: true });
-  assert.deepEqual(planningObservedPayload.attachments, []);
-  assert.equal(planningObservedPayload.sourceContext.ingestion.status, 'partial',
-    'listening download failures must not masquerade as a complete image');
+  assert.equal(observedReceipt.reason, 'listening_retired');
+  assert.equal(planningSubmittedPayload, previousSubmission, 'retired observations cannot trigger execution');
+  assert.equal(planningObservedPayload, null, 'retired observations never download or ingest attachments');
+  const legacyPrepared = { mode: 'observe', sessionId: 'legacy', payload: { text: 'old queued chatter' } };
+  assert.equal((await submitRemoteLabRequest(observedRuntime, observedImage, { prepared: legacyPrepared })).reason, 'listening_retired');
 
   const sotaRuntime = { tool: 'codex', model: 'configured-frontier', effort: 'xhigh', thinking: false, runtimeTier: 'sota' };
   await submitRemoteLabRequest({

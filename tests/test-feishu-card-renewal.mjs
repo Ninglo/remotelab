@@ -57,7 +57,7 @@ try {
   assert.equal(sends.length, 1, 'concurrent refreshes renew only once');
   assert(sends[0].data.content.includes(CARD_RENEWAL_NOTICE));
   assert.equal(sends[0].data.receive_id, legacy.source.chatId);
-  assert.equal(renewed.mode, 'listening');
+  assert.equal(renewed.mode, 'paused', 'legacy listening renders as mute');
   assert.equal(renewed.cardHistory[0].messageId, legacy.cardMessageId);
   assert.equal(renewed.cardHistory[0].createdAt, oldTime);
   assert.equal(renewed.pinPending, false);

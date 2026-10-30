@@ -6,14 +6,14 @@ const md = content => ({ tag: 'markdown', content });
 // Existing and new group cards share the compact presentation.
 // Legacy cardLayout flags no longer select a different UI.
 export function buildGroupConfigurationCard(record, view) {
-  const states = { active: '主动参与', listening: '旁听', paused: '暂停' };
-  const mode = record.mode || 'active';
+  const states = { active: '主动参与', paused: '暂停' };
+  const mode = record.mode === 'listening' ? 'paused' : record.mode || 'active';
   const selection = view.selection || {};
   const responseLabel = view.participationControls === false
     ? (view.responseMode === 'mention_only' ? '点名回应' : '按需回应（控制关闭）') : states[mode];
   const elements = [md(view.nativeTopicGroup ? '本群每个话题独立承接工作。' : view.participationControls === false && view.responseMode === 'mention_only'
     ? '沿用本群的点名回应设置。' : { active: '持续接收群消息，按讨论需要参与。',
-    listening: '持续接收群消息；@我可邀请回应。', paused: '普通群消息不进入 Session；@我可单次回应，之后仍保持暂停。' }[mode])];
+    paused: '普通群主线消息不进入 Session；@我可单次回应。各话题独立接收，不受此开关影响。' }[mode])];
   if (record.cardRenewalNotice) elements.unshift(md(record.cardRenewalNotice));
   if (view.participationControls !== false) elements.push({ tag: 'column_set', columns: Object.keys(states).map(state => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [{ tag: 'button',
@@ -44,6 +44,6 @@ export function buildGroupConfigurationCard(record, view) {
   if (view.error) elements.push(md(view.error));
   if (record.stopPending) elements.push(md('正在停止当前任务。'));
   return { schema: '2.0', config: { update_multi: true, enable_forward: false },
-    header: { template: mode === 'active' ? 'green' : mode === 'listening' ? 'blue' : 'grey',
+    header: { template: mode === 'active' ? 'green' : 'grey',
       title: plain(view.nativeTopicGroup ? 'Agent · 群设置' : `Agent · ${responseLabel}`) }, body: { elements } };
 }

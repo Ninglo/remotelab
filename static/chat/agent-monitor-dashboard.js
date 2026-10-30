@@ -70,7 +70,7 @@
     const n = value => Number.isFinite(value) ? value.toLocaleString('zh-CN') : '—';
     const tab = (headers, rows) => '<div class="table-wrap agent-table"><table><thead><tr>' + headers.map(h => '<th scope="col">' + escape(h) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(row => '<tr>' + row.map(v => '<td>' + escape(v) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
     const d = g.days?.find(d => d.day === selectedDay) || g.today || {}, c = g.current || {}, coverage = g.coverage || {};
-    const stats = [['当前主动参与群', c.active, '有效启用 ' + n(c.enabledGroups) + '；旁听 ' + n(c.listening) + '；暂停 ' + n(c.paused)],
+    const stats = [['当前主动参与群', c.active, '有效启用 ' + n(c.enabledGroups)  + '；暂停 ' + n(c.paused)],
       ['收到主线消息', d.received, n(d.groupsWithInput) + ' 个群有输入'], ['有文字回执的输入', d.withTextReceipt, '含合并覆盖 ' + n(d.mergedInputs) + ' 条'],
       ['群主线 token', d.usage?.totalTokens, n(d.usage?.runs) + ' 个 Run；全实例总量的子集']];
     const receipts = [['群内文字',d.inlineReplies],['新话题文字',d.newThreadReplies],['已有话题文字',d.existingThreadReplies],['去向未确认',d.unknownPlacementReplies],['社交表情',d.reactionReceipts],['自动处理提示',d.processingReceipts]];
@@ -79,7 +79,7 @@
       + (coverage.ledgerTruncated ? '<p class="notice agent-note">用量账本读取已截断；群主线 token 仅为已读取部分。</p>' : '')
       + '<div class="grid metrics agent-counts">' + stats.map(([name,value,note]) => '<div class="metric"><small>' + escape(name) + '</small><strong>' + n(value) + '</strong><small>' + escape(note) + '</small></div>').join('') + '</div>'
       + '<h3>输入处理</h3>' + tab(['已处理','不回复','失败／取消','处理中','待确认'],[[d.processed,d.noReply,d.failed,d.processing,d.unconfirmed].map(n)])
-      + '<p class="meta agent-note">决定记录：旁听 ' + n(d.observed) + '、跳过 ' + n(d.skipped) + '、明确无文字决定 ' + n(d.explicitNoText) + '。无文字回执共 ' + n(d.withoutTextReceipt) + ' 条，不能全部当作不回复。</p>'
+      + '<p class="meta agent-note">决定记录：历史旁听 ' + n(d.observed) + '、跳过 ' + n(d.skipped) + '、明确无文字决定 ' + n(d.explicitNoText) + '。无文字回执共 ' + n(d.withoutTextReceipt) + ' 条，不能全部当作不回复。</p>'
       + '<h3>实际投递</h3>' + tab(receipts.map(r=>r[0]),[receipts.map(r=>n(r[1]))])
       + '<p class="meta agent-note">确认打开 ' + n(d.newThreads) + ' 个新话题，其中有 ' + n(d.newWorkSessions) + ' 个关联工作会话。话题建立通知单列；同一外部文字或表情回执只计一次，一个合并回复可覆盖多条输入。</p>'
       + '<h3>首个回执时延</h3>' + tab(['类型','样本数','均值','中位数','P95'],[['文字',d.textLatency],['工作话题建立',d.topicLatency],['社交表情',d.reactionLatency],['自动处理提示',d.processingLatency]].map(([label,s])=>[label,n(s?.count),duration(s?.mean),duration(s?.median),duration(s?.p95)]))

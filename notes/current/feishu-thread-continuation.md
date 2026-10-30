@@ -1,46 +1,33 @@
 # Feishu topic conversation and continuation
 
-Status: clarified 2026-10-06 after recovering a missed work-topic request and
-reviewing earlier per-group decisions. Work/learning entry points use exact-chat
-opt-in; sharing and newly joined groups keep passive defaults.
+Status: updated 2026-10-30 from the thread invitation and mute feedback.
 
 ## Product contract
 
-Groups and their uninvited topics require an explicit Bot mention or command
-unless that exact chat has
-`participationMode: "ambient"` or `responseMode: "all"`. Connector-wide settings,
-including legacy `all`, do not enable proactive participation in other groups.
-Creating or joining a group never opts it in. After an accepted invitation or
-an outbound-created conversation binds a topic, later human follow-ups need
-no additional mention. Other topics do not inherit that invitation. Admitted
-topics receive direct-conversation instructions. Explicit mute,
-listening and paused controls remain effective.
+An explicit Bot mention in an ordinary-group thread is a direct request. It
+requires no group setting, participation selection or status card. Once the
+conversation binds, human follow-ups continue in its Session without another
+mention. Native topic groups receive human messages by default. New uninvited
+ordinary-group conversations still follow their exact-chat admission policy;
+self messages and uninvited peer Bots remain excluded.
 
-A work or learning topic group intended to receive assistant tasks must have
-its own `responseMode: "all"`. Sharing groups retain `mention_only`; native
-topic metadata alone never overrides that distinction. Review actual group
-purpose and prior decisions instead of assuming every topic group is a work
-entry point. Keep existing automated workflows and explicitly enabled
-discussion groups separate from new, unconfigured groups.
+Mainline and thread reception are independent. Each thread starts active and
+only its own explicit mute pauses reception. Mainline defaults, mute/resume,
+control revisions and cancellation do not propagate to threads. Legacy
+inherited thread records (`modeOverride: false`) no longer constrain reception;
+explicit thread mute remains durable across restarts. A mention while explicitly
+muted still receives a single reply and leaves that scope muted.
 
-The earlier blanket topic policy fixed a plain question under an automated
-report, but also admitted uninvited new topics. The latest operator instruction
-requires passive defaults across groups. A report-created topic without an
-accepted Bot conversation now needs an explicit invitation. Bound report
-topics continue normally. Topic prompts remain distinct from mainline observer
-instructions.
-
-If a missing group opt-in filtered a real request before Session creation,
-recover the original sender and source message through the native connector
-submission path. The normal opening includes the accepted model, effort,
-Harness and Session link and stays in that original topic. The Session belongs
-to the original sender's workspace. Delegating from the repair operator's
-Session does not recover the original attribution or delivery route.
+Listening is retired. Old explicit listening states become paused without
+collecting observations or attachments. The normal thread prompt directs the
+Harness to answer human inputs and continue accepted work, with no mainline
+participation gate. Current prompts update on the next accepted input; already
+accepted execution snapshots remain historical.
 
 ## Implementation
 
 - `group-settings.mjs` recognizes native topics, thread/topic IDs and normalized
-  topic conversation kinds. Only exact-chat opt-in selects intake `all`;
+  topic conversation kinds. Native topic groups or exact-chat opt-in select intake `all`;
   admitted topics retain instructions to reply to each human message.
 - `response-policy.mjs` retains sender, self, peer-Bot and mute guards, and
   filters uninvited groups and new topics before any model submission.

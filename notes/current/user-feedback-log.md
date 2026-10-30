@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-10-30 — Treat thread mentions as requests and remove listening
+
+- Feedback: mentioning the Bot inside a thread is sufficient to request a reply. Thread reception must be independent of the group mainline, with only an explicit thread mute stopping it. Listening adds no useful interaction state.
+- Evidence: a thread request inherited the paused mainline and received a one-time-invitation prompt while an automatically emitted status card displayed active participation.
+- Change: independent thread state and delivery revisions; mainline controls no longer cancel child work. Admitted threads use direct conversation instructions. Remove listening buttons, commands and observation ingestion, including queued legacy observation packets. Existing explicit listening opt-outs become paused; inherited thread pauses no longer apply. Mentions do not publish participation cards.
+- Verification: isolated intake, continuation, card, restart, mute, cancellation and outbox tests cover the changed contract. Deployment and natural traffic acceptance remain separate evidence.
+
 ### 2026-10-29 — Keep continuation answers when they reference a previous turn
 
 - Feedback: a generated answer was replaced by a message saying its input mapping was invalid, even though the failure notice itself could reach the original topic.

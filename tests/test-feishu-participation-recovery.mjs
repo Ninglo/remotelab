@@ -61,15 +61,15 @@ try {
     const send = (id, text, extra = {}, overrides = {}) => handleMessage(runtime,
       { ...base, messageId: id, messageText: text, ...extra }, 'test', { ...helpers, ...overrides });
     await send('mute', '/mute');
-    assert.equal((await runtime.participation.state(base)).mode, 'listening');
+    assert.equal((await runtime.participation.state(base)).mode, 'paused');
     await send('discussion', '我们继续聊 Mini', {}, {
       classifyJevReaction: async () => ({ decision: 'reply', workMode: 'short', invited: false }),
     });
-    assert.deepEqual(effects.observed, ['discussion']);
-    assert.equal(effects.runs.length, 0, `${topic || 'main'} ordinary listening must not run`);
+    assert.deepEqual(effects.observed, []);
+    assert.equal(effects.runs.length, 0, `${topic || 'main'} muted input must not run`);
     await send('invitation', '@_bot 帮忙回答', { mentions: [{ openId: 'bot' }] });
     assert.equal(effects.runs.at(-1).participationOnce, true);
-    assert.equal((await runtime.participation.state(base)).mode, 'listening');
+    assert.equal((await runtime.participation.state(base)).mode, 'paused');
     await send('complex-invitation', '@_bot 帮忙调查', { mentions: [{ openId: 'bot' }] }, {
       classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex', invited: true }),
     });
@@ -80,7 +80,7 @@ try {
       sourceDelivery: { target: { participationEpoch: invited.participationEpoch } } } };
     const before = submissions;
     assert.equal((await submitRemoteLabRequest(runtime, invited, { prepared })).runId, 'fixture-run');
-    assert.equal(submissions, before + 1, 'a listening invitation may submit, including a new mainline work topic');
+    assert.equal(submissions, before + 1, 'an explicit muted invitation may submit, including a new mainline work topic');
 
     await submitRemoteLabRequest(runtime, invited, { prepared, skipUserMessage: true, observedSessionId: 's' });
     assert.equal(submittedBodies.at(-1).recordUserMessage, false, 'observation in the same Session is reused');
@@ -92,7 +92,7 @@ try {
     const count = effects.runs.length;
     const old = await send('old-discussion', '那也行', {}, { participationSnapshot: snapshot });
     assert.equal(old.reason, 'participation_before_resume');
-    assert.equal(effects.runs.length, count, 'resume cannot turn queued listening content into tasks');
+    assert.equal(effects.runs.length, count, 'resume cannot turn queued muted content into tasks');
     assert.equal((await submitRemoteLabRequest(runtime, invited, { prepared })).ignored, true);
     assert.equal(submissions, before + 3, 'a prepared request from before resume cannot enter the model queue');
 
@@ -109,7 +109,7 @@ try {
       return sent;
     };
     assert.equal(await deliverAccepted(invited, 'listening-resumed-answer'), true,
-      'resuming active participation preserves an already accepted listening invitation');
+      'resuming active participation preserves an already accepted muted invitation');
     const restarted = createParticipationController(runtime);
     assert.equal((await restarted.state(base)).deliveryEpochFloor, Number(invited.participationEpoch),
       'the delivery boundary survives connector restart');
@@ -183,8 +183,8 @@ try {
       await runtime.participation.assess(inherited, { mentioned: true });
       inherited.participationEpoch = String((await runtime.participation.state(inherited)).epoch);
       await send('inherited-resume', '/unmute');
-      assert.equal(await deliverAccepted(inherited, 'inherited-answer'), true,
-        'threads without an override inherit the preserved delivery boundary');
+      assert.equal((await runtime.participation.state(inherited)).epoch, Number(inherited.participationEpoch),
+        'group resume cannot change an independent thread epoch');
       await send('routing-resume', '/unmute');
       const originStatus = await runtime.participation.state(base);
       const routed = { ...base, threadId: 'separate-work', rootId: 'separate-root',
@@ -199,10 +199,10 @@ try {
           } } } } : request(path, options),
         sendFeishuText: async () => { sent++; return { message_id: 'sent-' + sent, thread_id: 'separate-work' }; },
       });
-      assert.equal(originStatus.epoch, (await runtime.participation.state(routed)).epoch, 'new topics inherit the group epoch until explicitly overridden');
+      assert.equal((await runtime.participation.state(routed)).epoch, 0, 'new topics have their own epoch');
       await deliver('routing-valid');
       assert.equal(sent, 1, 'a source mainline epoch must not be compared to a new topic epoch');
-      await runtime.participation.change(routed, 'listening');
+      await runtime.participation.change(routed, 'paused');
       await deliver('routing-destination-muted');
       assert.equal(sent, 1, 'destination participation remains authoritative');
       await runtime.participation.change(routed, 'active');
@@ -327,8 +327,8 @@ try {
   assert.equal((await deliver('final', root)).state, 'delivered',
     'learning the destination thread cannot turn a valid mainline result stale');
   const followup = { ...source, threadId: 'learned-thread', rootId: 'source-root', messageId: 'followup',
-    conversationKind: 'thread', replyInThread: true, participationEpoch: String(sourceEpoch) };
-  assert.equal(sourceEpoch, (await runtime.participation.state(followup)).epoch);
+    conversationKind: 'thread', replyInThread: true, participationEpoch: '0' };
+  assert.equal(0, (await runtime.participation.state(followup)).epoch);
   assert.equal((await deliver('followup-result', followup)).state, 'delivered');
   assert.equal(sent.at(-1).messageId, 'followup', 'the follow-up reply keeps its own anchor');
   await runtime.participation.change(followup, 'paused', { controlId: 'topic-pause' });

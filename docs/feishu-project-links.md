@@ -342,6 +342,11 @@ model is displayed as automatic selection, never a guessed model. Topic boards,
 runtime/prompt editors and the refresh button are omitted from the group card;
 existing configuration backends remain compatible.
 
+Participation controls now expose active and paused only. Listening has been
+removed; old explicit listening states are displayed as paused. These group
+controls affect the mainline only: each thread receives independently and
+requires its own mute to stop. A thread mention does not create a status card.
+
 An authorized style migration patches existing message IDs without creating
 cards or changing participation. Adding controls to a card does not by itself
 authorize creating one when no binding exists: check the original group card and

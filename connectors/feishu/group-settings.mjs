@@ -12,7 +12,7 @@ const QUICK_REACTION_SESSION_PROMPT = 'Social reactions are optional; no tempora
 const JEV_REACTION_SESSION_PROMPT = 'Jev supplies optional asynchronous social feedback. Use its receipt if available; never wait for Jev.';
 
 const WORK_KICKOFF_SESSION_PROMPT = [
-  'Only in active participation, when discussion has produced a concrete goal and executable plan, you may offer a discussion-to-work confirmation card. Judge the timing yourself from the discussion; do not use elapsed silence or an emoji as approval. Listening and paused modes do not offer this card.',
+  'Only in active participation, when discussion has produced a concrete goal and executable plan, you may offer a discussion-to-work confirmation card. Judge the timing yourself from the discussion; do not use elapsed silence or an emoji as approval. Paused conversations do not offer this card.',
   'Use node "$REMOTELAB_PROJECT_ROOT/cli.js" work kickoff --file <absolute JSON path> --json with {action:"propose",sourceRequestId:"the actual accepted human input ID",goal,plan,sources,unresolved,acceptance}. Include agreed scope, original sources, remaining decisions (or none), and concrete acceptance. The registered project relationship determines the target work group.',
   'If the result has a question, pass its complete title and options unchanged to the native user-input tool. The choices are transfer to the work group and start, continue discussion, or defer. Only the server-verified human answer creates a real work topic and starts execution after delivery. Do not substitute work plan start or route new for this confirmation. A missing question means there is no new card to send. Do not repeat an unchanged proposal already awaiting a reply.',
   'Keep discussion and follow-ups here until the actual work topic is created. Reuse that work topic for subsequent supplements and results. This cross-group work transfer is separate from choosing a thread for the current reply.',
@@ -28,11 +28,11 @@ export function effectiveFeishuGroup(config = {}, chatId = '') {
   if (group.participationControls === false || (group.responseMode === 'mention_only' && !group.participationMode)) return group;
   const explicit = ['active', 'listening', 'paused'].includes(group.participationMode);
   if (explicit) return { participationControls: true, groupFeed: true, quickReactions: true, jevReactions: true, ...group,
-    participationMode: 'ambient', initialParticipationMode: group.participationMode };
+    participationMode: 'ambient', initialParticipationMode: group.participationMode === 'listening' ? 'paused' : group.participationMode };
   if (!['active', 'listening', 'paused'].includes(config.defaultGroupParticipation)) return group;
   return { participationControls: true, groupFeed: true, quickReactions: true, jevReactions: true, ...group,
     participationMode: 'ambient', initialParticipationMode: group.participationMode === 'ambient' ? 'active'
-      : group.responseMode === 'mention_only' ? 'listening' : config.defaultGroupParticipation };
+      : config.defaultGroupParticipation === 'listening' ? 'paused' : config.defaultGroupParticipation };
 }
 
 // Per-chat overrides select intake policy and the mainline participation pilot.
@@ -107,7 +107,7 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
       jevReactions ? JEV_REACTION_SESSION_PROMPT
         : quickReactions ? QUICK_REACTION_SESSION_PROMPT : '',
       !topicGroup && (ambient || topic) && config.projectLinks?.some(link => link.discussionChatId === summary.chatId) ? WORK_KICKOFF_SESSION_PROMPT : '',
-      (groupMainline || topic) ? buildFeishuResponseDecisionPrompt({ topicGroup }) : '',
+      (groupMainline || topic) ? buildFeishuResponseDecisionPrompt({ topicGroup: topic }) : '',
       ambient ? AMBIENT_SESSION_PROMPT : topic && !topicGroup ? TOPIC_SESSION_PROMPT
         : groupMainline && group.responseMode === 'all' ? GROUP_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
