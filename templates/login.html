@@ -192,7 +192,7 @@
 
     <div class="error {{ERROR_CLASS}}" data-i18n="login.error">Invalid credentials. Please try again.</div>
 
-    <p class="{{FEISHU_LOGIN_CLASS}}"><a href="{{FEISHU_LOGIN_URL}}">使用飞书登录</a></p>
+    <p id="feishu-entry" hidden><a id="feishu-link" href="/login/feishu">使用飞书登录</a></p>
 
     <!-- Password form -->
     <form id="pw-form" method="POST" action="login">
@@ -229,6 +229,10 @@
 
   <script src="chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
   <script nonce="{{NONCE}}">
+    if ('{{FEISHU_LOGIN_ENABLED}}' === 'yes') {
+      document.getElementById('feishu-link').href = '/login/feishu?next=' + encodeURIComponent(document.querySelector('input[name="next"]').value);
+      document.getElementById('feishu-entry').hidden = false;
+    }
     var tokenForm = document.getElementById('token-form');
     var pwForm = document.getElementById('pw-form');
     var toggleLink = document.getElementById('toggle-link');

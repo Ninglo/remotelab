@@ -323,8 +323,7 @@ if (pathname === '/login') {
     ERROR_CLASS: hasError ? '' : 'hidden',
     MODE: mode,
     NEXT_PATH: escapeHtml(nextPath),
-    FEISHU_LOGIN_URL: escapeHtml('/login/feishu?next=' + encodeURIComponent(nextPath)),
-    FEISHU_LOGIN_CLASS: await siteLoginConfigured().catch(() => false) ? '' : 'hidden',
+    FEISHU_LOGIN_ENABLED: await siteLoginConfigured().catch(() => false) ? 'yes' : 'no',
   });
   const renderMs = performance.now() - renderStartMs;
   const totalMs = performance.now() - requestStartMs;
