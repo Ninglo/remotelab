@@ -20,6 +20,7 @@
 | 消息执行、Jev / Session 交接、异步与交付 | `docs/architecture-atlas/output/` | `output/index.html` |
 | 群消息分流与回复结构 | `docs/architecture-atlas/output/routing.html`、`routing.css` | `output/routing.html` |
 | 记忆与组织协作 | `docs/memory-architecture/` | `memory/index.html` |
+| 网站行为回收与汇总 | `docs/site-usage.md`，由统一出版器生成 | `manual-site-usage.html` |
 | 网站首次登录与同域复用演示 | `employee-login-demo.html`、同名 CSS／JS；接入正文在 `docs/employee-site-login.md` | `employee-login-demo.html` |
 
 消息阅读页09–14同时解释开工记忆、存储分类、项目进程、个人／公司背景和登录后的真实只读视图。正文数据维护于外置记忆章的 `reader-data.js`、`guide-data.js`，`output/memory-reader.js`引用同一源；构建器只重写章间相对路径，不再手工复制内容。

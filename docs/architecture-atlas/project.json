@@ -1125,6 +1125,12 @@
       "route": "manual-site-directory.html",
       "title": "项目总站与网站登记",
       "description": "自动收录发布内容、补充维护信息和导出迁移清单；保留原网站权限。"
+    },
+    {
+      "source": "docs/site-usage.md",
+      "route": "manual-site-usage.html",
+      "title": "网站行为回收与汇总",
+      "description": "复用已核身份采集网站访问和显式操作；按站点汇总，保留控制台权限与旧站访问方式。"
     }
   ]
 }
