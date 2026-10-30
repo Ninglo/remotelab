@@ -30,6 +30,10 @@ export function monitoringNextStep(item, config) {
   const sessionUrl = link(recovery?.sessionId, config.overviewUrl);
   const ordinary = { type: 'notice', label: '查看处理进展', url: sessionUrl || config.overviewUrl };
   if (item.recovered) return { ...ordinary, summary: '已恢复，无需操作。' };
+  if (item.continuity?.lastAccountWarning?.state === 'low') return {
+    type: 'input', label: '查看账号与额度', url: config.overviewUrl,
+    summary: `${item.continuity.lastAccountWarning.remainingPercent === 0 ? '账号额度已耗尽' : '账号即将耗尽'}，请准备重置或购入新账号。`,
+  };
   if (['running', 'waiting', 'admitting', 'pending', 'verifying'].includes(recovery?.status)) {
     const progress = recovery.status === 'running' ? '我在处理'
       : recovery.status === 'verifying' ? '我在核验结果' : '已安排处理，等待执行结果';
@@ -52,6 +56,8 @@ export function monitoringNextStep(item, config) {
 }
 
 export function monitoringProblem(item) {
+  const warning = item.continuity?.lastAccountWarning;
+  if (warning?.state === 'low') return `${text(warning.account?.label || '最后一个账号')} 剩余 ${warning.remainingPercent}%；已到 ${warning.threshold}% 预警线，其他账号均无高于10%的可用余量。`;
   if (item.kind === 'diskGrowth') return text(item.detail, 200);
   return item.kind === 'disk' && Number.isFinite(item.availableBytes) && Number.isFinite(item.usedPercent)
     ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) && item.inodeUsedPercent >= 85 ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
@@ -69,6 +75,7 @@ export function monitoringProgress(item, recovery) {
   return '已记录风险；尚无本轮已执行动作的回执。';
 }
 export function monitoringTitle(item) {
+  if (item.continuity?.lastAccountWarning?.state === 'low') return `${item.continuity.lastAccountWarning.remainingPercent === 0 ? '账号额度已耗尽' : '账号即将耗尽'}${item.recovered ? ' · 已恢复' : ''}`;
   const issue = { disk: '磁盘空间不足', diskGrowth: '磁盘短期快速增长', service: '服务运行异常', serviceCrash: '服务发生崩溃', servicePressure: '堆内存接近上限', automation: '自动化执行异常',
     accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
   return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : ' · 已解决') : ''}`;

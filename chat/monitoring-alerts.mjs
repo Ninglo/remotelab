@@ -42,7 +42,9 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   for (const incident of Object.values(state.incidents)) if (['account', 'quota'].includes(incident.kind)) {
     incident.active = false; incident.retiredReason = '由本实例账号连续性监管替代，单个账号耗尽不作为故障';
   }
-  if (['ready', 'preparing'].includes(snapshot.accountContinuity?.status)) recovered.add(hash('accountContinuity:local-codex'));
+  if (snapshot.accountContinuity?.lastAccountWarning
+    ? snapshot.accountContinuity.lastAccountWarning.state === 'ready'
+    : ['ready', 'preparing'].includes(snapshot.accountContinuity?.status)) recovered.add(hash('accountContinuity:local-codex'));
   // Absence after a source change, an unreadable source and an unfinished Run
   // are not recovery. Rearm only an explicitly observed healthy or stopped item.
   for (const item of snapshot.disks) if (item.status === 'healthy') recovered.add(hash(`disk:${item.path || item.label}`));
@@ -94,6 +96,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       && previous.event?.continuity?.status === item.continuity?.status
       && JSON.stringify(previous.event?.signals) === JSON.stringify(item.signals);
     const decision = monitoringNotificationDecision(item, { policy: config.noisePolicy, repair, now });
+    if (decision.reason === 'last_account_low') requiredCount = 1;
     if (config.noisePolicy?.mode === 'risk_only') {
       const sameQualification = previous?.notificationDecision?.notify && decision.notify
         && previous.notificationDecision.reason === decision.reason;
@@ -112,9 +115,15 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     } : null, signals: item.signals || null, notificationAvailable: item.notificationAvailable ?? null, action: item.action || null, continuity: item.continuity ? {
       status: item.continuity.status, backupCount: item.continuity.backupCount, autoSwitch: item.continuity.autoSwitch,
       currentId: item.continuity.current?.id, lastSwitch: item.continuity.lastSwitch,
+      ...(item.continuity.lastAccountWarning ? { lastAccountWarning: {
+        threshold: item.continuity.lastAccountWarning.threshold, state: item.continuity.lastAccountWarning.state,
+        accountId: item.continuity.lastAccountWarning.account?.id,
+      } } : {}),
     } : null }));
     const decisionVersion = repair?.plan?.requiresConfirmation ? hash(JSON.stringify(repair.plan)) : null;
     if (!baseline && incident.status === 'baseline' && (stage > (incident.riskStage || stage)
+      || item.continuity?.lastAccountWarning?.state === 'low'
+        && incident.event?.continuity?.lastAccountWarning?.threshold !== item.continuity.lastAccountWarning.threshold
       || decisionVersion && incident.decisionVersion !== decisionVersion)) incident.status = 'observing';
     incident.decisionVersion = decisionVersion;
     incident.riskStage = stage;

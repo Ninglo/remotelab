@@ -206,7 +206,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       }
       item.currentIssue = isCurrentRecovery(item);
     }
-    const continuity = accountContinuity(runtime, now());
+    const continuity = accountContinuity(runtime, now(), config.alertDelivery?.accountAlerts);
     const savedIncidents = config.serviceIncidents?.enabled ? await observe('serviceIncidents', () => getRecord(join(CONFIG_DIR, 'service-incidents', 'state.json')), null) : null;
     if (savedIncidents?.gaps) gaps.push(...savedIncidents.gaps);
     if (config.serviceIncidents?.enabled && (!savedIncidents?.observedAt || now() - Date.parse(savedIncidents.observedAt) > 180_000)) gaps.push({ source: 'serviceIncidents', code: 'OBSERVER_STALE' });
