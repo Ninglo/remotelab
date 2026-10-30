@@ -1,12 +1,13 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>项目总站</title><link rel="stylesheet" href="/sites/style.css?v=1"><script src="/sites/app.js?v=1" defer></script></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>项目总站</title><link rel="stylesheet" href="/sites/style.css?v=1"><script src="/sites/app.js?v=2" defer></script></head>
 <body><header class="top"><a href="/sites" class="brand">RemoteLab <span>项目总站</span></a><span id="viewer"></span></header>
 <main>
   <section class="intro"><div><p class="eyebrow">团队发布目录</p><h1>网站与项目，一处找到</h1><p>登记入口、负责人和部署位置，为后续维护与迁移保留依据。</p></div><div class="actions"><button id="register" class="primary">登记外部网站</button><a href="/api/sites/export" class="button" download>导出迁移清单</a></div></section>
   <section class="stats" aria-label="登记概况"><div><strong id="total">—</strong><span>全部记录</span></div><div><strong id="managed">—</strong><span>自动收录</span></div><div><strong id="external">—</strong><span>外部登记</span></div><div><strong id="pending">—</strong><span>待补充信息</span></div></section>
   <p id="scope" class="scope">正在读取发布记录…</p>
   <section class="catalog"><div class="filters"><label class="search"><span class="sr-only">搜索网站</span><input id="search" type="search" placeholder="搜索名称、项目、负责人或链接"></label><label><span class="sr-only">项目</span><select id="project"><option value="">全部项目</option><option value="__unassigned">待归类</option></select></label><label><span class="sr-only">内容类型</span><select id="kind"><option value="">全部类型</option><option value="static">静态网站</option><option value="preview">动态网站</option><option value="asset">下载与资源</option><option value="external">外部网站</option><option value="missing">入口已移除</option></select></label><label class="check"><input type="checkbox" id="incomplete">只看待补充</label><button id="refresh">刷新</button></div>
-    <p id="message" role="status" aria-live="polite"></p><div class="table-wrap"><table><thead><tr><th>名称与入口</th><th>项目 / 负责人</th><th>类型 / 访问</th><th>整理状态</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div class="filters" aria-label="身份与接入筛选"><label><span class="sr-only">身份方式</span><select id="identityMethod"><option value="">全部身份方式</option></select></label><label><span class="sr-only">账号映射</span><select id="accountMappingStatus"><option value="">全部账号映射</option></select></label><label><span class="sr-only">埋点接入</span><select id="telemetryStatus"><option value="">全部埋点接入</option></select></label></div>
+    <p id="message" role="status" aria-live="polite"></p><div class="table-wrap"><table><thead><tr><th>名称与入口</th><th>项目 / 负责人</th><th>访问 / 身份与接入</th><th>整理状态</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="rows"></tbody></table></div>
     <div class="pagination"><span id="count"></span><div><button id="previous">上一页</button><span id="page"></span><button id="next">下一页</button></div></div>
   </section>
   <footer>新发布内容自动入册；外部网站可手动登记。这里维护登记信息，不会修改网站权限、停止服务或执行迁移。</footer>
@@ -19,6 +20,9 @@
   <label>内容说明<textarea name="description" maxlength="600" rows="2" placeholder="这个网站用来做什么"></textarea></label>
   <div class="form-grid"><label>源码或部署位置<input name="sourceLocation" maxlength="1000" placeholder="仓库目录、服务或部署位置"></label><label>代码仓库<input name="repository" type="url" maxlength="1000" placeholder="https://"></label></div>
   <label>整理状态<select name="status"><option value="unreviewed">待整理</option><option value="active">在用</option><option value="planned">筹备中</option><option value="archived">已归档</option></select></label>
+  <div class="form-grid"><label>身份方式<select name="identityMethod" required></select></label><label>账号映射状态<select name="accountMappingStatus" required></select></label></div>
+  <label>埋点接入状态<select name="telemetryStatus" required></select></label>
+  <p class="hint">按核查结果登记；未核查保留待确认。请在备注中填写依据、覆盖范围和核查时间。</p>
   <label>维护 / 迁移备注<textarea name="notes" rows="3" maxlength="3000" placeholder="依赖、备份位置、迁移注意事项；请勿填写密码或密钥"></textarea></label>
   <details id="deployment"><summary>原始发布与部署记录</summary><dl id="facts"></dl></details>
   <p id="save-message" role="status" aria-live="polite"></p><div class="dialog-actions"><button type="button" id="cancel">取消</button><button type="submit" class="primary" id="save">保存登记</button></div>
