@@ -10,6 +10,7 @@ import { processMonitoringRecovery } from './monitoring-recovery.mjs';
 import { monitoringNotificationDecision } from '../lib/monitoring-policy.mjs';
 import { collectServiceIncidents, serviceIncidentAttention, recordRuntimeSample } from './service-incidents.mjs';
 import { diskRiskStage } from '../lib/monitoring-actions.mjs';
+import { recordDiskSamples } from './disk-growth.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('base64url');
 const errorCode = error => error.code || 'DELIVERY_UNCERTAIN';
@@ -45,6 +46,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
   // Absence after a source change, an unreadable source and an unfinished Run
   // are not recovery. Rearm only an explicitly observed healthy or stopped item.
   for (const item of snapshot.disks) if (item.status === 'healthy') recovered.add(hash(`disk:${item.path || item.label}`));
+  for (const item of snapshot.diskGrowth || []) if (item.status === 'healthy') recovered.add(hash(`diskGrowth:${item.path}`));
   for (const item of snapshot.services) if (item.status === 'healthy') recovered.add(hash(`service:${item.unit || item.label}`));
   if (snapshot.runtimeHealth && snapshot.runtimeHealth.heapUsed / snapshot.runtimeHealth.heapLimit < 0.75) {
     const service = snapshot.services.find(s => s.pid === snapshot.runtimeHealth.pid);
@@ -69,14 +71,14 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
       if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
-  for (const item of [...snapshot.attention.filter(item => ['disk', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api'].includes(item.kind)
+  for (const item of [...snapshot.attention.filter(item => ['disk', 'diskGrowth', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api'].includes(item.kind)
     && !(['service', 'serviceCrash', 'servicePressure'].includes(item.kind) && (config.ignoreUnits || []).includes(item.unit || item.id))
     && !(item.kind === 'automation' && (config.ignoreAutomationIds || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     // A local optimization signal must not pre-confirm a new outage.
     let count = previous?.active && previous.event?.severity === item.severity ? previous.observations + 1 : 1;
-    const eligible = item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
+    const eligible = item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'diskGrowth', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
@@ -258,6 +260,7 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
   // This independent observer needs no model and no running HTTP server.
   const incidents = await collectIncidents({ services: config.services, config: config.serviceIncidents, dryRun });
   const snapshot = await reader({ days: 1 });
+  if (!dryRun) await recordDiskSamples(snapshot.disks, config.diskGrowth);
   if (!dryRun && snapshot.runtimeHealth) await recordRuntimeSample(snapshot.runtimeHealth);
   snapshot.attention.push(...serviceIncidentAttention(incidents.events, snapshot.services).filter(e => !snapshot.attention.some(a => a.kind === e.kind && a.id === e.id)));
   snapshot.coverage.gaps.push(...incidents.gaps);

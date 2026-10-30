@@ -15,6 +15,7 @@ import { monitoringPolicies, monitoringDestinations } from '../lib/monitoring-po
 import { accountContinuity, continuityAttention } from '../lib/monitoring-actions.mjs';
 
 import { serviceIncidentAttention } from './service-incidents.mjs';
+import { assessDiskGrowth, diskGrowthAttention, DISK_GROWTH_FILE } from './disk-growth.mjs';
 const exec = promisify(execFile);
 const GiB = 1024 ** 3;
 const freshMs = 10 * 60_000;
@@ -144,7 +145,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
           const status = usedPercent >= 92 || item.system && availableBytes < 8 * GiB || inodeUsedPercent >= 92 ? 'critical'
             : usedPercent >= 85 || item.system && availableBytes < 15 * GiB || inodeUsedPercent >= 85 ? 'warning' : 'healthy';
           return { path: item.path, label: text(item.label || item.path), totalBytes, availableBytes, usedPercent, inodeUsedPercent,
-            device: info.dev, status, observedAt: generatedAt };
+            device: info.dev, filesystemId: String(info.dev), status, observedAt: generatedAt };
         }, { path: item.path, label: text(item.label || item.path), status: 'unknown', observedAt: generatedAt });
         return value;
       })),
@@ -210,6 +211,9 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     if (savedIncidents?.gaps) gaps.push(...savedIncidents.gaps);
     if (config.serviceIncidents?.enabled && (!savedIncidents?.observedAt || now() - Date.parse(savedIncidents.observedAt) > 180_000)) gaps.push({ source: 'serviceIncidents', code: 'OBSERVER_STALE' });
     const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, continuity, now: now() });
+    const growthHistory = config.diskGrowth?.enabled ? await observe('diskGrowth', () => getRecord(DISK_GROWTH_FILE), null) : null;
+    const diskGrowth = assessDiskGrowth(disks, growthHistory, config.diskGrowth, now());
+    analysis.attention.push(...diskGrowthAttention(diskGrowth, disks));
     analysis.attention.push(...serviceIncidentAttention(savedIncidents?.events || [], services));
     if (runtimeFresh && runtimeHealth.heapUsed / runtimeHealth.heapLimit >= 0.85) analysis.attention.push({ kind: 'servicePressure', id: runtimeService.unit, unit: runtimeService.unit, subject: runtimeService.label, severity: 'critical', detail: `堆用量 ${(runtimeHealth.heapUsed / GiB).toFixed(2)} / ${(runtimeHealth.heapLimit / GiB).toFixed(2)} GiB`, signals: { pid: runtimeHealth.pid } });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
@@ -227,7 +231,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       calendars: timer?.timer?.calendars || [], lastTriggeredAt: timer?.timer?.lastTriggeredAt || null,
       lastObservedAt: alertState?.observedAt || null,
       source: timer ? 'service_manager' : 'unverified', recoveryEnabled: config.recovery?.enabled === true };
-    return { generatedAt, windowDays: days, observation, runtimeHealth: runtimeFresh ? runtimeHealth : null,
+    return { generatedAt, windowDays: days, observation, diskGrowth, runtimeHealth: runtimeFresh ? runtimeHealth : null,
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,

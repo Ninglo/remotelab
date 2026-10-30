@@ -52,12 +52,14 @@ export function monitoringNextStep(item, config) {
 }
 
 export function monitoringProblem(item) {
+  if (item.kind === 'diskGrowth') return text(item.detail, 200);
   return item.kind === 'disk' && Number.isFinite(item.availableBytes) && Number.isFinite(item.usedPercent)
     ? `可用 ${(item.availableBytes / 1024 ** 3).toFixed(2)} GiB，已用 ${item.usedPercent.toFixed(1)}%${Number.isFinite(item.inodeUsedPercent) && item.inodeUsedPercent >= 85 ? `，inode 已用 ${item.inodeUsedPercent.toFixed(1)}%` : ''}`
     : item.continuity ? `当前剩余 ${item.continuity.remainingPercent ?? '未知'}%，额度高于10%的已登录备用 ${item.continuity.backupCount} 个`
     : brief(item.detail || '原记录未提供具体数值，详见处理记录');
 }
 export function monitoringProgress(item, recovery) {
+  if (item.kind === 'diskGrowth') return item.recovered ? '最新有效观测不再满足增长预警条件，容量继续独立监测。' : '已保存实际增长窗口与基线，容量继续独立监测。';
   const inFlight = ['pending', 'waiting', 'admitting', 'running'].includes(recovery?.status);
   if (!inFlight && recovery?.summary) return brief(recovery.summary.replace(/^同一[^。]*告警接续。/, ''));
   if (recovery?.status === 'running') return '补救任务已启动；本轮执行结果尚未回报。';
@@ -67,7 +69,7 @@ export function monitoringProgress(item, recovery) {
   return '已记录风险；尚无本轮已执行动作的回执。';
 }
 export function monitoringTitle(item) {
-  const issue = { disk: '磁盘空间不足', service: '服务运行异常', serviceCrash: '服务发生崩溃', servicePressure: '堆内存接近上限', automation: '自动化执行异常',
+  const issue = { disk: '磁盘空间不足', diskGrowth: '磁盘短期快速增长', service: '服务运行异常', serviceCrash: '服务发生崩溃', servicePressure: '堆内存接近上限', automation: '自动化执行异常',
     accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
   return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : ' · 已解决') : ''}`;
 }

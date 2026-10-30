@@ -1,5 +1,7 @@
 # Documentation Map
 
+[Short-term disk growth warnings](monitoring.md#short-term-disk-growth) use the existing minute observer and delivery ledger, independently of capacity thresholds.
+
 This repo now keeps documentation in four layers:
 
 - `README.md` / `README.zh.md` — top-level product overview, setup path, and daily operations
