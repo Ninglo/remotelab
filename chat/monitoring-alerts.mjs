@@ -109,7 +109,7 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     const stage = diskRiskStage(item);
     // The incident identity survives runtime retries, plan wording and disk
     // stage changes. These update its existing message, never rearm a send.
-    const version = hash(JSON.stringify({ cardFormat: 4, stage, severity: item.severity, repair: repair ? {
+    const version = hash(JSON.stringify({ cardFormat: item.kind === 'diskGrowth' ? 5 : 4, stage, severity: item.severity, repair: repair ? {
       status: repair.status, summary: ['running', 'pending', 'admitting', 'waiting'].includes(repair.status) ? null : repair.summary,
       plan: repair.plan, humanAction: repair.humanAction, runId: repair.runId,
     } : null, signals: item.signals || null, notificationAvailable: item.notificationAvailable ?? null, action: item.action || null, continuity: item.continuity ? {
@@ -128,7 +128,8 @@ export async function dispatchMonitoringAlerts({ config, snapshot, stateFile = j
     incident.decisionVersion = decisionVersion;
     incident.riskStage = stage;
     const at = snapshot.generatedAt || new Date(now).toISOString();
-    const existingBatch = Object.values(state.batches).find(b => b.messageId && b.messageId === previous?.messageId);
+    const existingBatch = previous?.active
+      ? Object.values(state.batches).find(b => b.messageId && b.messageId === previous.messageId) : null;
     if (existingBatch && !incident.historyOriginVerified) {
       // Old ledgers retain send time but overwrite samples. Do not invent the
       // original threshold or stamp the migration observation as the alert.

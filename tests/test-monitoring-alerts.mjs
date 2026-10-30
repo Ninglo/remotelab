@@ -527,3 +527,38 @@ test('legacy migration separates the original send time from later recorded data
   assert.equal(current.triggerEvidenceAt, '2026-10-03T07:00:00Z');
   assert.match(current.triggerReason, /原始触发数值未保存.*8.00 GiB/);
 });
+
+test('a new growth cycle keeps its own trigger instead of inheriting a recovered incident', async () => {
+  const f = fixture();
+  const event = { kind: 'diskGrowth', id: '/', subject: 'System disk', severity: 'warning',
+    detail: '11分钟净增 2.33 GiB；15分钟增长预警线 1.00 GiB。', signals: { growthRule: 'window:15' } };
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: snapshot([event]) });
+  const recovered = { ...snapshot([]), generatedAt: '2026-10-03T06:01:00Z', diskGrowth: [{ path: '/', status: 'healthy' }] };
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: recovered });
+  const next = { ...event, detail: '172分钟净增 20.87 GiB；180分钟增长预警线 8.00 GiB。',
+    signals: { growthRule: 'window:180' } };
+  const current = { ...snapshot([next]), generatedAt: '2026-10-03T07:00:00Z' };
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: current });
+  const incident = Object.values(f.getState().incidents)[0];
+  assert.equal(incident.cycle, 2);
+  assert.equal(incident.triggeredAt, current.generatedAt);
+  assert.equal(incident.triggerReason, next.detail);
+  assert.equal(incident.triggerEvidenceAt, current.generatedAt);
+  assert.equal(f.getSends(), 2);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: { ...current, generatedAt: '2026-10-03T07:01:00Z' } });
+  assert.equal(Object.values(f.getState().incidents)[0].triggerReason, next.detail);
+});
+
+test('an active growth card presents the current rule and preserves the original evidence in history', () => {
+  const original = '11分钟净增 2.33 GiB；15分钟增长预警线 1.00 GiB。';
+  const current = '172分钟净增 20.87 GiB；180分钟增长预警线 8.00 GiB。';
+  const event = { kind: 'diskGrowth', subject: 'System disk', severity: 'warning', detail: current,
+    triggerReason: original, observedAt: '2026-10-03T07:00:00Z',
+    history: [{ at: '2026-10-03T06:00:00Z', label: '触发预警', summary: original }] };
+  const card = renderMonitoringAlertCard([event], {});
+  const body = card.elements.find(element => element.tag === 'div').text.content;
+  assert.match(body, /预警原因：172分钟净增 20.87 GiB；180分钟增长预警线 8.00 GiB。/);
+  assert.doesNotMatch(body, /预警线 1.00 GiB/);
+  assert.match(body, /观测时间/);
+  assert.match(JSON.stringify(card.elements.find(element => element.tag === 'collapsible_panel')), /1.00 GiB/);
+});

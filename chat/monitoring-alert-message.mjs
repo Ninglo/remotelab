@@ -88,7 +88,8 @@ export function renderMonitoringAlert(events, config, { color = false, links = t
     const decision = color && next.type !== 'notice' ? `<font color="red">${next.summary}</font>` : next.summary;
     return `**${text(item.subject || monitoringTitle(item), 120)}**\n当前状态：${status}\n`
       + `上次预警：${alertTime(item.lastAlertAt || item.triggeredAt)}（北京时间）\n`
-      + `预警原因：${text(item.triggerReason || monitoringProblem(item), 200)}\n`
+      + `预警原因：${text(item.kind === 'diskGrowth' && !resolved ? monitoringProblem(item) : item.triggerReason || monitoringProblem(item), 200)}\n`
+      + (item.kind === 'diskGrowth' && !resolved ? `观测时间：${alertTime(item.observedAt)}（北京时间）\n` : '')
       + (resolved ? `处理方式：${item.recoveryStopped ? '任务停止，保留历史记录' : resolutionAttribution(recovery)}\n`
         + `处理结果：${monitoringProgress(item, recovery)}${item.recoveryObservation ? `；复查：${text(item.recoveryObservation, 160)}` : ''}\n`
         + `确认时间：${alertTime(item.recoveredAt || item.observedAt)}\n`
